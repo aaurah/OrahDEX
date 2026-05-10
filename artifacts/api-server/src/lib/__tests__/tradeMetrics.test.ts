@@ -67,7 +67,7 @@ test("aggregates metrics, computes averages, and reports sorted top errors", () 
 
 test("assigns performance badges based on latency and failure thresholds", () => {
   const baseNetwork = "evm";
-  const walletType = "orah";
+  const walletType = "orahdex";
 
   const fastSymbol = unique("FAST/USDT");
   recordTradeMetric({

@@ -1,5 +1,5 @@
 /**
- * OrahDEX BSV On-Chain Settlement — v2
+ * Orah BSV On-Chain Settlement — v2
  *
  * Architecture overview (per the BSV Core DEX specification):
  *
@@ -16,7 +16,7 @@
  *      same transaction, locking the trade commitment on-chain.
  *
  * OP_RETURN payload format (pipe-separated, UTF-8):
- *   ORAH|v2|<tradeId16>|<pair>|<buyer20>|<seller20>|<amount>|<price>|<ts>|H:<htlcHash>|P:<htlcAddr>
+ *   ORAHDEX|v2|<tradeId16>|<pair>|<buyer20>|<seller20>|<amount>|<price>|<ts>|H:<htlcHash>|P:<htlcAddr>
  *
  * Where:
  *   H:<htlcHash>  = SHA-256(secret) embedded for cross-chain verifiability
@@ -83,9 +83,9 @@ export function buildSettlement(trade: TradeSettlement): SettlementResult {
   const htlcAddr   = trade.htlcAddress     ?? "NONE";
 
   // ── v2 OP_RETURN payload ──────────────────────────────────────────────────
-  // Format: ORAH|v2|<tradeId16>|<pair>|<buyer20…>|<seller20…>|<amount>|<price>|<ts>|H:<hash>|P:<addr>
+  // Format: ORAHDEX|v2|<tradeId16>|<pair>|<buyer20…>|<seller20…>|<amount>|<price>|<ts>|H:<hash>|P:<addr>
   const opReturnData = [
-    "ORAH",
+    "ORAHDEX",
     "v2",
     trade.tradeId.replace(/-/g, "").slice(0, 16),
     trade.pair,

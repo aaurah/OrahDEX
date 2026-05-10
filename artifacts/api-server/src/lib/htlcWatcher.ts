@@ -1,5 +1,5 @@
 /**
- * HTLC Watcher — OrahDEX Relayer / Keeper subsystem (v3)
+ * HTLC Watcher — Orah Relayer / Keeper subsystem (v3)
  *
  * Maintains a DB-backed registry of cross-chain HTLC outputs with:
  *   • Adaptive polling (nextCheckAt) — HTLCs near locktime polled more often

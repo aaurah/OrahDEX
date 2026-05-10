@@ -1,5 +1,5 @@
 /**
- * deposit.ts — EVM deposit flow for OrahDEX
+ * deposit.ts — EVM deposit flow for Orah
  *
  * GET  /deposit/address   — provision and return a user's unique deposit address
  * POST /deposit/verify    — verify an on-chain tx and credit the internal ledger
@@ -23,7 +23,7 @@ import { eq } from "drizzle-orm";
 const router = Router();
 
 // ── GET /deposit/address ──────────────────────────────────────────────────────
-// Provisions (or returns) the user's dedicated OrahDEX deposit address.
+// Provisions (or returns) the user's dedicated Orah deposit address.
 // The address is unique per user wallet — funds sent here are credited to the
 // sender's internal ledger after verification via POST /deposit/verify.
 
@@ -212,7 +212,7 @@ router.post("/deposit/bsv-verify", async (req, res) => {
     );
 
     if (!output) {
-      res.status(400).json({ error: "Transaction does not send BSV to the OrahDEX deposit address. Please ensure you sent to the correct address." });
+      res.status(400).json({ error: "Transaction does not send BSV to the Orah deposit address. Please ensure you sent to the correct address." });
       return;
     }
 
@@ -446,7 +446,7 @@ router.post("/deposit/solana-verify", async (req, res) => {
     );
 
     if (depIdx === -1) {
-      res.status(400).json({ error: "Transaction does not send SOL to the OrahDEX deposit address. Please ensure you sent to the correct address." });
+      res.status(400).json({ error: "Transaction does not send SOL to the Orah deposit address. Please ensure you sent to the correct address." });
       return;
     }
 

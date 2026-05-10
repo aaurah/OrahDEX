@@ -15,11 +15,11 @@ import { useEvmBalances, type TokenBalance } from "@/hooks/useEvmBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import {
   addLiquidityOnChain, addLiquidityLive, getLiquidityMode,
-  addLiquidityOrahAmm, removeLiquidityOrahAmm,
+  addLiquidityOrahDEXAmm, removeLiquidityOrahDEXAmm,
   EXPLORER_TX, CHAIN_NAMES, type LiquidityTxStatus,
 } from "@/lib/onChainLiquidity";
 import { useLpBalance } from "@/hooks/useLpBalance";
-import { hasOrahAmm } from "@/lib/orahAmmAddresses";
+import { hasOrahDEXAmm } from "@/lib/orahdexAmmAddresses";
 
 const LP_BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -354,7 +354,7 @@ function LiquidityModal({
   const walletChain = walletChainId ?? 1;
   const targetChainId = pool?.chainId ?? walletChain;
   const wrongChain = !!(pool?.chainId && walletChainId && walletChainId !== pool.chainId);
-  // Always use the OrahDEX internal ledger for balance checks — funds deposited via
+  // Always use the Orah internal ledger for balance checks — funds deposited via
   // trading flow live here, not in the on-chain wallet.
   const { balances, refresh: refreshBackendBalances, loading: balancesLoading } = useBackendBalances(address);
   // Keep EVM hook alive so on-chain mode can refresh wallet display after a real tx.
@@ -416,9 +416,9 @@ function LiquidityModal({
 
     const mode = getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider);
 
-    // ── OrahDEX native AMM deposit (OrahRouter02) ───────────────────────────
-    if (mode === "orah_amm") {
-      await addLiquidityOrahAmm({
+    // ── Orah native AMM deposit (OrahDEXRouter02) ───────────────────────────
+    if (mode === "orahdex_amm") {
+      await addLiquidityOrahDEXAmm({
         base:    pool.base,
         quote:   pool.quote,
         amountA: nA,
@@ -437,12 +437,12 @@ function LiquidityModal({
             refreshBackendBalances();
             toast({
               title: "Liquidity added on-chain!",
-              description: `OrahRouter confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} ORAH-LP tokens minted.`,
+              description: `OrahDEXRouter confirmed. ${(s.lpTokens ?? lpTokens).toFixed(4)} ORAHDEX-LP tokens minted.`,
             });
             addNotification({
               type:  "liquidity",
               title: "Liquidity Added",
-              body:  `${nA.toFixed(4)} ${pool.base} + ${nB.toFixed(4)} ${pool.quote} · ${(s.lpTokens ?? lpTokens).toFixed(4)} ORAH-LP minted.`,
+              body:  `${nA.toFixed(4)} ${pool.base} + ${nB.toFixed(4)} ${pool.quote} · ${(s.lpTokens ?? lpTokens).toFixed(4)} ORAHDEX-LP minted.`,
             });
           }
         },
@@ -564,10 +564,10 @@ function LiquidityModal({
 
     const removeMode = getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider);
 
-    // ── OrahDEX native AMM — real on-chain LP token burn via OrahRouter02 ───
-    if (removeMode === "orah_amm") {
+    // ── Orah native AMM — real on-chain LP token burn via OrahDEXRouter02 ───
+    if (removeMode === "orahdex_amm") {
       const lpTokenAddress = pool ? (userPositions[pool.id]?.lpTokenAddress) : undefined;
-      await removeLiquidityOrahAmm({
+      await removeLiquidityOrahDEXAmm({
         base:  pool.base,
         quote: pool.quote,
         pct,
@@ -599,7 +599,7 @@ function LiquidityModal({
       return;
     }
 
-    // ── Simulated / live fallback (non-OrahAMM chains) ──────────────────────
+    // ── Simulated / live fallback (non-OrahDEXAMM chains) ──────────────────────
     await new Promise(r => setTimeout(r, 1500));
     removePositionPct(address, pool.id, pct);
     setSubmitting(false);
@@ -652,7 +652,7 @@ function LiquidityModal({
             <div>
               {(() => {
                 const hdrMode = getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider);
-                const badge = hdrMode === "orah_amm" || hdrMode === "on_chain"
+                const badge = hdrMode === "orahdex_amm" || hdrMode === "on_chain"
                   ? { label: "ON-CHAIN", cls: "bg-green-500/15 text-green-400 border-green-500/30" }
                   : hdrMode === "live"
                   ? { label: "LIVE", cls: "bg-primary/15 text-primary border-primary/30" }
@@ -683,11 +683,11 @@ function LiquidityModal({
         {/* Chain mode notice */}
         {(() => {
           const mode = pool ? getLiquidityMode(targetChainId, pool.base, pool.quote, walletProvider) : "simulated";
-          if (mode === "orah_amm") return (
+          if (mode === "orahdex_amm") return (
             <div className="flex items-start gap-2 bg-green-500/8 border border-green-500/20 rounded-xl px-3 py-2.5 mb-4">
               <CheckCircle2 size={13} className="text-green-400 shrink-0 mt-0.5" />
               <p className="text-xs text-green-300/90 leading-relaxed">
-                <strong>OrahDEX AMM — real on-chain.</strong> Tokens are deposited into OrahRouter02. You receive real ERC-20 LP tokens visible in MetaMask. Gas is spent on Sepolia.
+                <strong>Orah AMM — real on-chain.</strong> Tokens are deposited into OrahDEXRouter02. You receive real ERC-20 LP tokens visible in MetaMask. Gas is spent on Sepolia.
               </p>
             </div>
           );
@@ -1020,7 +1020,7 @@ function LiquidityModal({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 /**
- * OnChainLpBadge — reads the user's real OrahDEX LP token balance from the
+ * OnChainLpBadge — reads the user's real Orah LP token balance from the
  * on-chain pair contract and shows it alongside the locally-stored position.
  * Renders nothing when the AMM isn't deployed on the pool's chain.
  */
@@ -1029,7 +1029,7 @@ function OnChainLpBadge({
 }: { userAddress: string | null; chainId: number | null; base: string; quote: string }) {
   const { lpBalance, valueUsd, pairAddress, loading } = useLpBalance(userAddress, chainId, base, quote);
 
-  if (!chainId || !hasOrahAmm(chainId)) return null;
+  if (!chainId || !hasOrahDEXAmm(chainId)) return null;
   if (loading && lpBalance === null) {
     return (
       <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
@@ -1042,7 +1042,7 @@ function OnChainLpBadge({
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-[9px] px-1.5 py-0.5 bg-green-500/15 text-green-400 border border-green-500/30 rounded font-bold inline-flex items-center gap-1">
-        <CheckCircle2 size={9} /> ORAH-LP ON-CHAIN
+        <CheckCircle2 size={9} /> ORAHDEX-LP ON-CHAIN
       </span>
       {lpBalance > 0 && (
         <span className="text-[10px] text-muted-foreground">
@@ -1069,16 +1069,16 @@ type Tab = "pools" | "positions" | "farming";
 
 export function Liquidity() {
   useSEO({
-    title: "Liquidity Pools — Earn Yield on OrahDEX AMM",
-    description: "Provide liquidity to OrahDEX AMM pools and earn trading fees. Join BTC, ETH, BSV, and stablecoin pools with competitive APR. Your keys, your liquidity.",
-    keywords: "liquidity pools, AMM, yield farming, DeFi, LP tokens, trading fees, BSV liquidity, crypto yield, OrahDEX liquidity",
+    title: "Liquidity Pools — Earn Yield on Orah AMM",
+    description: "Provide liquidity to Orah AMM pools and earn trading fees. Join BTC, ETH, BSV, and stablecoin pools with competitive APR. Your keys, your liquidity.",
+    keywords: "liquidity pools, AMM, yield farming, DeFi, LP tokens, trading fees, BSV liquidity, crypto yield, Orah liquidity",
     url: "/liquidity",
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "WebPage",
-      "name": "OrahDEX Liquidity Pools",
+      "name": "Orah Liquidity Pools",
       "description": "Automated Market Maker (AMM) liquidity pools with competitive yield",
-      "url": "https://orahdex.replit.app/liquidity"
+      "url": "https://orah.replit.app/liquidity"
     }
   });
 
@@ -1138,7 +1138,7 @@ export function Liquidity() {
           className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-secondary/30 transition-colors"
         >
           <BookOpen size={16} className="text-primary shrink-0" />
-          <span className="font-semibold text-sm">How OrahDEX AMM Works</span>
+          <span className="font-semibold text-sm">How Orah AMM Works</span>
           <ChevronRight size={14} className={cn("ml-auto text-muted-foreground transition-transform", showAmmInfo && "rotate-90")} />
         </button>
         {showAmmInfo && (
@@ -1183,7 +1183,7 @@ export function Liquidity() {
                 {
                   icon: "⚡",
                   title: "BSV Settlement",
-                  body: "Every OrahDEX pool trade settles on BSV with sub-5s finality and ~$0.001 fees. No L2 bridges. No optimistic rollup delays. One canonical chain.",
+                  body: "Every Orah pool trade settles on BSV with sub-5s finality and ~$0.001 fees. No L2 bridges. No optimistic rollup delays. One canonical chain.",
                 },
               ].map(c => (
                 <div key={c.title} className="pt-2">
@@ -1468,7 +1468,7 @@ export function Liquidity() {
               <div className="px-5 py-4 border-b border-border">
                 <h3 className="font-bold">LP Token Farming</h3>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Stake your LP tokens to earn additional OrahDEX rewards on top of AMM fees. Fee APR is generated by the x·y=k pool formula.
+                  Stake your LP tokens to earn additional Orah rewards on top of AMM fees. Fee APR is generated by the x·y=k pool formula.
                 </p>
               </div>
               <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-5 py-3 border-b border-border text-xs font-semibold text-muted-foreground">

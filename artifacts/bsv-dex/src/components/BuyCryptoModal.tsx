@@ -940,7 +940,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
 
               <div className="flex items-center gap-2 p-3 bg-secondary/40 border border-border rounded-xl">
                 <Shield className="w-4 h-4 text-green-400 shrink-0"/>
-                <p className="text-[11px] text-muted-foreground">All payment providers are regulated and use bank-grade encryption. OrahDEX never sees your payment details.</p>
+                <p className="text-[11px] text-muted-foreground">All payment providers are regulated and use bank-grade encryption. Orah never sees your payment details.</p>
               </div>
             </div>
           )}
@@ -1263,7 +1263,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
               <div className="flex items-start gap-2 p-3 bg-secondary/40 border border-border rounded-xl">
                 <CheckCircle className="w-4 h-4 text-green-400 shrink-0 mt-0.5"/>
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  {selectedProvider.name} sends {coin} to your {coinNet.name} address. Typically within 5–30 minutes of payment confirmation. OrahDEX never handles your funds.
+                  {selectedProvider.name} sends {coin} to your {coinNet.name} address. Typically within 5–30 minutes of payment confirmation. Orah never handles your funds.
                 </p>
               </div>
             </div>

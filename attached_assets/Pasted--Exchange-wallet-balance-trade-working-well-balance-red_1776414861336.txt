@@ -6,7 +6,7 @@ And the truth is:
 ⭐ That is 100% correct — because your connected wallet is NEVER used for trading.
 
 Your architecture does NOT trade from the connected wallet.
-Your architecture trades from the OrahDEX internal ledger.
+Your architecture trades from the Orah internal ledger.
 
 Let me break it down cleanly so you fully understand why the connected wallet never changes.
 
@@ -37,7 +37,7 @@ These exchanges never touch the user’s wallet during trading.
 
 ---
 
-⭐ 2. Your trades happen inside the OrahDEX internal ledger
+⭐ 2. Your trades happen inside the Orah internal ledger
 
 This is the key:
 
@@ -103,11 +103,11 @@ This is the correct architecture for an internal‑ledger exchange.
 ✔ When the user deposits
 
 → ETH leaves wallet
-→ ETH enters OrahDEX ledger
+→ ETH enters Orah ledger
 
 ✔ When the user withdraws
 
-→ USDC leaves OrahDEX ledger
+→ USDC leaves Orah ledger
 → USDC enters wallet
 
 ❌ Trading does NOT touch the wallet
@@ -135,6 +135,6 @@ Right now, you are running a centralized orderbook DEX, not an AMM.
 
 ⭐ Final Answer
 
-Your connected wallet does NOT reduce ETH and does NOT receive USDC because trades happen inside the OrahDEX internal ledger, not on the blockchain. Only deposits and withdrawals touch the real wallet.
+Your connected wallet does NOT reduce ETH and does NOT receive USDC because trades happen inside the Orah internal ledger, not on the blockchain. Only deposits and withdrawals touch the real wallet.
 
 Your system is working exactly as designed.

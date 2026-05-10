@@ -62,11 +62,11 @@ const POOL_MAP: Record<string, { tvl: number; vol24: number; fee: number; farmAp
 };
 
 const CEX_SOURCES: { name: string; share: number; depth: number }[] = [
-  { name: "OrahDEX AMM",     share: 42.1, depth: 2.8 },
-  { name: "OrahDEX P2P",     share: 24.3, depth: 2.0 },
-  { name: "OrahDEX Vault",   share: 16.4, depth: 1.5 },
-  { name: "OrahDEX Futures", share: 11.6, depth: 1.2 },
-  { name: "OrahDEX Bridge",  share:  5.6, depth: 0.8 },
+  { name: "Orah AMM",     share: 42.1, depth: 2.8 },
+  { name: "Orah P2P",     share: 24.3, depth: 2.0 },
+  { name: "Orah Vault",   share: 16.4, depth: 1.5 },
+  { name: "Orah Futures", share: 11.6, depth: 1.2 },
+  { name: "Orah Bridge",  share:  5.6, depth: 0.8 },
 ];
 
 function fmtLiq(n: number): string {
@@ -89,7 +89,7 @@ function normalise(m: any) {
 export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
   const { address, internalBsvAddress, internalEvmAddress } = useWalletStore();
-  // Alt address: Orah wallet users have both a BSV and an EVM address.
+  // Alt address: OrahDEX wallet users have both a BSV and an EVM address.
   // Orders placed on the BSV network are stored against the BSV address, and
   // orders placed on the EVM network are stored against the EVM address.
   // We must query both so orders don't disappear when the user switches networks.
@@ -169,16 +169,16 @@ export function SpotTrading() {
   const seoJsonLd = useMemo(() => ({
     "@context": "https://schema.org",
     "@type": "WebPage",
-    "name": `${base}/${quote} Spot Trading on OrahDEX`,
+    "name": `${base}/${quote} Spot Trading on Orah`,
     "description": `Live ${base}/${quote} spot trading with real-time charts and order book`,
-    "url": `https://orahdex.replit.app/trade/${rawSymbol}`
+    "url": `https://orah.replit.app/trade/${rawSymbol}`
   }), [base, quote, rawSymbol]);
 
   const priceSign = ticker.priceChangePercent >= 0 ? "▲" : "▼";
   useSEO({
     title: `${priceSign} ${formatPrice(ticker.lastPrice)} | ${base}/${quote}`,
-    description: `Trade ${base}/${quote} on OrahDEX spot market. Real-time price chart, order book, and depth data. Place limit, market, and stop orders instantly.`,
-    keywords: `${base} ${quote} trading, ${base} price, buy ${base}, sell ${base}, ${rawSymbol} spot, OrahDEX spot`,
+    description: `Trade ${base}/${quote} on Orah spot market. Real-time price chart, order book, and depth data. Place limit, market, and stop orders instantly.`,
+    keywords: `${base} ${quote} trading, ${base} price, buy ${base}, sell ${base}, ${rawSymbol} spot, Orah spot`,
     url: `/trade/${rawSymbol}`,
     jsonLd: seoJsonLd,
   });
@@ -740,16 +740,16 @@ export function SpotTrading() {
                         <div className="space-y-1.5">
                           {CEX_SOURCES.map(cex => {
                             const vol = totalCexVol * (cex.share / 100);
-                            const isOrah = cex.name === "OrahDEX";
+                            const isOrahDEX = cex.name === "Orah";
                             return (
                               <div key={cex.name} className="flex items-center gap-2">
                                 <span className={cn(
                                   "text-[10px] font-semibold w-20 shrink-0",
-                                  isOrah ? "text-primary" : "text-foreground"
+                                  isOrahDEX ? "text-primary" : "text-foreground"
                                 )}>{cex.name}</span>
                                 <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
                                   <div
-                                    className={cn("h-full rounded-full transition-all", isOrah ? "bg-primary" : "bg-blue-400/60")}
+                                    className={cn("h-full rounded-full transition-all", isOrahDEX ? "bg-primary" : "bg-blue-400/60")}
                                     style={{ width: `${cex.share}%` }}
                                   />
                                 </div>

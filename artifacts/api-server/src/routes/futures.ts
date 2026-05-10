@@ -109,7 +109,7 @@ router.post("/futures/positions", async (req, res) => {
     const margin    = (entryPrice * quantity) / leverage;
 
     const walletSource = body.walletSource === "external" ? "external"
-      : body.walletSource === "orah" ? "orah" : "orah";
+      : body.walletSource === "orahdex" ? "orahdex" : "orahdex";
 
     const fundingVerif = await verifyAndLockFunding({
       walletAddress: body.walletAddress,

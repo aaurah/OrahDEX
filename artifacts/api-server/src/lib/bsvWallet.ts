@@ -1,5 +1,5 @@
 /**
- * BSV Settlement Wallet — OrahDEX
+ * BSV Settlement Wallet — Orah
  *
  * Manages the platform's on-chain BSV settlement address.
  * Private key is stored in platformSettingsTable (key: "bsv_settlement_wif").

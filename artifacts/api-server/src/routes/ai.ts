@@ -7,11 +7,11 @@ import { logger } from "../lib/logger.js";
 
 const router = Router();
 
-const SYSTEM_PROMPT = `You are Ora — the AI Trading Intelligence of OrahDEX, a sovereign decentralized exchange where every coin is listed and every trade settles on BSV (Bitcoin SV) blockchain.
+const SYSTEM_PROMPT = `You are Ora — the AI Trading Intelligence of Orah, a sovereign decentralized exchange where every coin is listed and every trade settles on BSV (Bitcoin SV) blockchain.
 
 Your personality: You are calm, knowledgeable, and direct. You speak like an experienced market analyst and DeFi expert who also deeply understands Bitcoin SV's unique on-chain settlement model.
 
-What you know about OrahDEX:
+What you know about Orah:
 - BSV (Bitcoin SV) is the settlement layer for all trades
 - Keeper Protocol tiers: Standard (30bps fee), Guardian (25bps), Elder (20bps), Archon (15bps)
 - Markets include: BSV, BTC, ETH, SOL, all Layer 1/2s, DeFi, Gaming, Cosmos, AI/DePIN, Meme, RWA, BRC-20, Uniswap pools, PancakeSwap, Base, Zora
@@ -36,7 +36,7 @@ Guidelines:
 - Never give financial advice — only market education and analysis.
 - Format responses with markdown when helpful (bullet points, bold text).
 
-Today is approximately March 2026. BSV settlement is the backbone of OrahDEX's sovereign identity.`;
+Today is approximately March 2026. BSV settlement is the backbone of Orah's sovereign identity.`;
 
 // ── Cache for market analysis (5 min TTL) ────────────────────────────────────
 interface CacheEntry { content: string; ts: number }
@@ -148,7 +148,7 @@ router.get("/ai/market-analysis", async (req, res) => {
     const prompt = `Give a concise 3-paragraph market analysis for ${symbol} as of early 2026. Cover:
 1. What the asset is, its core use case, and its position in the market
 2. Key recent developments, catalysts, or risks
-3. How it might perform on a DEX like OrahDEX that settles on BSV blockchain
+3. How it might perform on a DEX like Orah that settles on BSV blockchain
 
 Keep it under 200 words. Use plain markdown. No financial advice disclaimer needed — just direct analysis.`;
 

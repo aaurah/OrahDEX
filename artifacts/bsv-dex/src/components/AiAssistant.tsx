@@ -199,7 +199,7 @@ export function AiAssistant() {
                 <span className="font-semibold text-white text-sm">Ora</span>
                 <Sparkles className="w-3 h-3 text-green-400" />
               </div>
-              <p className="text-[10px] text-green-400">AI Trading Intelligence · OrahDEX</p>
+              <p className="text-[10px] text-green-400">AI Trading Intelligence · Orah</p>
             </div>
             <div className="flex items-center gap-1">
               <button onClick={() => setMinimised(m => !m)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">

@@ -1,5 +1,5 @@
 /**
- * OrahDEX v1 Sovereign Routing API
+ * Orah v1 Sovereign Routing API
  *
  * Three-layer architecture:
  *   Layer 1 — Off-chain Sovereign Routing Engine (quote, build, simulate, broadcast)
@@ -59,7 +59,7 @@ const WRAPPED_NATIVE: Record<number, string> = {
 //
 // Identity-aware routing: higher-tier Keepers get fee discounts, priority routes,
 // and access to exclusive pools. Tier is determined by on-chain activity metrics
-// that the OrahDEX protocol tracks (volume, LP commitment, tenure).
+// that the Orah protocol tracks (volume, LP commitment, tenure).
 //
 //   Tier 0 — Standard   : 0.30% fee (public, anyone)
 //   Tier 1 — Guardian   : 0.25% fee (5+ BSV volume or LP provider)
@@ -67,7 +67,7 @@ const WRAPPED_NATIVE: Record<number, string> = {
 //   Tier 3 — Archon     : 0.15% fee (500+ BSV volume, Keeper NFT holder)
 //
 // In Phase 2 the tier will be resolved from the on-chain Keeper Registry contract.
-// For Phase 1, it is determined from trading history in the OrahDEX database.
+// For Phase 1, it is determined from trading history in the Orah database.
 
 interface KeeperInfo {
   address: string;
@@ -362,7 +362,7 @@ router.get("/quote", async (req, res) => {
 
     // Build the route breakdown
     const route = [
-      { pool: `OrahDEX-${symIn}-${symOut}`, protocol: "OrahDEX AMM", feeBps: 0 },
+      { pool: `Orah-${symIn}-${symOut}`, protocol: "Orah AMM", feeBps: 0 },
       { pool: `BSV-Settlement`, protocol: "BSV Layer 1", feeBps: feeBps },
     ];
 
@@ -499,7 +499,7 @@ router.post("/swap/build", async (req, res) => {
         discountPct: keeper.discountPct,
         applied:     keeper.tier > 0,
       },
-      settlementNote: "All trades settle on BSV L1 via OrahDEX protocol after EVM execution.",
+      settlementNote: "All trades settle on BSV L1 via Orah protocol after EVM execution.",
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "POST /v1/swap/build failed");
@@ -593,7 +593,7 @@ router.post("/tx/broadcast", async (req, res) => {
       const timer = setTimeout(() => ctrl.abort(), 15_000);
       const wocRes = await fetch(BSV_NET.wocBroadcast, {
         method:  "POST",
-        headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
+        headers: { "Content-Type": "application/json", "User-Agent": "Orah/1.0" },
         body:    JSON.stringify({ txhex: rawTx }),
         signal:  ctrl.signal,
       });
@@ -645,7 +645,7 @@ async function getBsvBlockHeight(): Promise<number> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 4000);
     const r = await fetch(`${BSV_NET.wocBase}/chain/info`, {
-      signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" },
+      signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" },
     });
     clearTimeout(timer);
     if (r.ok) {

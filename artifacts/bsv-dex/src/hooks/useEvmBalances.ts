@@ -256,7 +256,7 @@ async function rpcCall(method: string, params: any[], chainId: number): Promise<
 }
 
 /**
- * Fetch USD prices for all tokens from the OrahDEX markets API.
+ * Fetch USD prices for all tokens from the Orah markets API.
  * Returns a symbol → USD price map, stablecoins always = 1.
  */
 async function fetchMarketPrices(): Promise<Record<string, number>> {

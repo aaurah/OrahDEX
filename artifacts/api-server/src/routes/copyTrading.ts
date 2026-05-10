@@ -11,7 +11,7 @@ import { buildSettlement, type TradeSettlement } from "../lib/settlement.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 import { debitAvailable } from "../lib/ledger.js";
 
-// OrahDEX takes 10% of the vault manager's performance fee as platform revenue
+// Orah takes 10% of the vault manager's performance fee as platform revenue
 const PLATFORM_COPY_FEE_SHARE = 0.10;
 
 const router: IRouter = Router();
@@ -308,7 +308,7 @@ router.post("/copy/vaults/:id/trade", async (req, res) => {
   try {
     const { symbol, side, price, quantity, leaderOrderId, secret } = req.body ?? {};
 
-    if (secret !== process.env.ORCHESTRATOR_SECRET && secret !== "orah-internal") {
+    if (secret !== process.env.ORCHESTRATOR_SECRET && secret !== "orahdex-internal") {
       res.status(403).json({ error: "Forbidden" });
       return;
     }
@@ -379,7 +379,7 @@ router.post("/copy/vaults/:id/trade", async (req, res) => {
 router.post("/copy/vaults/:id/sync-price", async (req, res) => {
   try {
     const { newTvl, secret } = req.body ?? {};
-    if (secret !== process.env.ORCHESTRATOR_SECRET && secret !== "orah-internal") {
+    if (secret !== process.env.ORCHESTRATOR_SECRET && secret !== "orahdex-internal") {
       res.status(403).json({ error: "Forbidden" });
       return;
     }

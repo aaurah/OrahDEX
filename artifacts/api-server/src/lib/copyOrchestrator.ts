@@ -1,7 +1,7 @@
 /**
  * CopyVault Off-Chain Orchestrator
  *
- * Watches the OrahDEX trade feed and automatically mirrors leader trades
+ * Watches the Orah trade feed and automatically mirrors leader trades
  * into all vaults that follow that leader. Proportional sizing based on
  * vault TVL vs leader portfolio.
  *
@@ -22,7 +22,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { logger } from "./logger.js";
 
-const ORCHESTRATOR_SECRET = process.env.ORCHESTRATOR_SECRET ?? "orah-internal";
+const ORCHESTRATOR_SECRET = process.env.ORCHESTRATOR_SECRET ?? "orahdex-internal";
 const BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8080";
 
 export interface LeaderTradeEvent {
@@ -36,7 +36,7 @@ export interface LeaderTradeEvent {
 }
 
 /**
- * Called whenever a trade is settled on OrahDEX.
+ * Called whenever a trade is settled on Orah.
  * Check if this trader is a vault leader and mirror the trade.
  */
 export async function onTradeSettled(event: LeaderTradeEvent): Promise<void> {

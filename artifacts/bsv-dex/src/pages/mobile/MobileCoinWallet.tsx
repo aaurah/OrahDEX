@@ -620,7 +620,7 @@ export function MobileCoinWallet({ coin }: Props) {
 
             {/* Market info card */}
             <div className="bg-[#1a1a1a] rounded-2xl p-4">
-              <p className="text-sm font-bold mb-3">{coinUpper} on OrahDEX</p>
+              <p className="text-sm font-bold mb-3">{coinUpper} on Orah</p>
               <div className="space-y-2">
                 <div className="flex justify-between text-xs">
                   <span className="text-white/50">Network</span>
@@ -875,7 +875,7 @@ export function MobileCoinWallet({ coin }: Props) {
                 <div className="bg-[#1a3a5c] rounded-2xl p-4 flex gap-3">
                   <Info className="w-4 h-4 text-[#4A9EF5] shrink-0 mt-0.5" />
                   <p className="text-xs text-white/70 leading-relaxed">
-                    OrahDEX will never ask you to send funds off the platform. If you have received communication that you're unsure of, please contact support which is available 24/7.
+                    Orah will never ask you to send funds off the platform. If you have received communication that you're unsure of, please contact support which is available 24/7.
                   </p>
                 </div>
 

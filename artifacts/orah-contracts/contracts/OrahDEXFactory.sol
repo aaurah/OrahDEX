@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./OrahPair.sol";
+import "./OrahDEXPair.sol";
 
 /**
- * @title OrahFactory
- * @notice Deploys OrahPair contracts and keeps a registry of all pools.
+ * @title OrahDEXFactory
+ * @notice Deploys OrahDEXPair contracts and keeps a registry of all pools.
  *         Uses CREATE2 for deterministic pair addresses.
  */
-contract OrahFactory {
+contract OrahDEXFactory {
     address public feeTo;
     address public feeToSetter;
 
@@ -30,19 +30,19 @@ contract OrahFactory {
      *         Tokens are sorted so token0 < token1 (by address).
      */
     function createPair(address tokenA, address tokenB) external returns (address pair) {
-        require(tokenA != tokenB, "OrahFactory: IDENTICAL_ADDRESSES");
+        require(tokenA != tokenB, "OrahDEXFactory: IDENTICAL_ADDRESSES");
         (address token0, address token1) = tokenA < tokenB
             ? (tokenA, tokenB)
             : (tokenB, tokenA);
-        require(token0 != address(0), "OrahFactory: ZERO_ADDRESS");
-        require(getPair[token0][token1] == address(0), "OrahFactory: PAIR_EXISTS");
+        require(token0 != address(0), "OrahDEXFactory: ZERO_ADDRESS");
+        require(getPair[token0][token1] == address(0), "OrahDEXFactory: PAIR_EXISTS");
 
-        bytes memory bytecode = type(OrahPair).creationCode;
+        bytes memory bytecode = type(OrahDEXPair).creationCode;
         bytes32 salt          = keccak256(abi.encodePacked(token0, token1));
         assembly {
             pair := create2(0, add(bytecode, 32), mload(bytecode), salt)
         }
-        OrahPair(pair).initialize(token0, token1);
+        OrahDEXPair(pair).initialize(token0, token1);
 
         getPair[token0][token1] = pair;
         getPair[token1][token0] = pair; // populate both directions
@@ -52,12 +52,12 @@ contract OrahFactory {
     }
 
     function setFeeTo(address _feeTo) external {
-        require(msg.sender == feeToSetter, "OrahFactory: FORBIDDEN");
+        require(msg.sender == feeToSetter, "OrahDEXFactory: FORBIDDEN");
         feeTo = _feeTo;
     }
 
     function setFeeToSetter(address _feeToSetter) external {
-        require(msg.sender == feeToSetter, "OrahFactory: FORBIDDEN");
+        require(msg.sender == feeToSetter, "OrahDEXFactory: FORBIDDEN");
         feeToSetter = _feeToSetter;
     }
 
@@ -73,7 +73,7 @@ contract OrahFactory {
                 hex"ff",
                 address(this),
                 keccak256(abi.encodePacked(token0, token1)),
-                keccak256(type(OrahPair).creationCode)
+                keccak256(type(OrahDEXPair).creationCode)
             )
         );
         return address(uint160(uint256(hash)));

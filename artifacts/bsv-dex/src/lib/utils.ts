@@ -40,7 +40,7 @@ export function shortenAddress(address: string): string {
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
-  "orah-wallet":   "Orah Wallet",
+  "orahdex-wallet":   "OrahDEX Wallet",
   "passkey":       "Passkey Wallet",
   "handcash":      "HandCash",
   "relayx":        "RelayX",
@@ -53,7 +53,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   "walletconnect": "WalletConnect",
   "tronlink":      "TronLink",
   "phantom":       "Phantom",
-  "reown":         "Orah Wallet",
+  "reown":         "OrahDEX Wallet",
 };
 
 export function getProviderLabel(provider: string | null | undefined): string {

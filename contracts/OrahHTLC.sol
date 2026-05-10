@@ -2,24 +2,24 @@
 pragma solidity ^0.8.24;
 
 /**
- * OrahDEX HTLC — Hash Time Lock Contract
+ * Orah HTLC — Hash Time Lock Contract
  *
  * ── PURPOSE ──────────────────────────────────────────────────────────────────
  *
- *   Non-custodial atomic settlement for OrahDEX P2P trades on EVM chains.
+ *   Non-custodial atomic settlement for Orah P2P trades on EVM chains.
  *   Supports both native ETH and any ERC-20 token (USDT, USDC, WBTC, etc.).
  *
- *   OrahDEX is fully non-custodial — this contract never holds user funds
+ *   Orah is fully non-custodial — this contract never holds user funds
  *   beyond the duration of an active trade settlement window.
  *
  * ── SETTLEMENT FLOW ──────────────────────────────────────────────────────────
  *
  *   1. Matching engine (off-chain) pairs a buyer and a seller.
- *   2. OrahDEX generates a random 32-byte `secret` server-side.
+ *   2. Orah generates a random 32-byte `secret` server-side.
  *      - `secretHash = keccak256(abi.encodePacked(secret))` is shared.
  *   3. Seller calls `lockETH` (or `lockToken`) with `secretHash`, locking funds.
  *   4. Buyer calls `lockToken` (or `lockETH`) with the SAME `secretHash`.
- *   5. OrahDEX relayer detects both locks and calls `reveal(secret)` on both.
+ *   5. Orah relayer detects both locks and calls `reveal(secret)` on both.
  *      - `reveal()` can be called by anyone who knows the secret.
  *      - Funds flow: seller's lock → buyer's address; buyer's lock → seller's address.
  *   6. If either party does NOT lock before `timelockUnix`, the other can call
@@ -28,7 +28,7 @@ pragma solidity ^0.8.24;
  * ── SECURITY PROPERTIES ──────────────────────────────────────────────────────
  *
  *   • Atomic: either both parties receive funds or neither does (via refund).
- *   • Non-custodial: OrahDEX cannot steal funds; it only reveals the preimage.
+ *   • Non-custodial: Orah cannot steal funds; it only reveals the preimage.
  *   • Trustless: after `lockETH`/`lockToken`, the counterparty's lock is
  *     independently verifiable on-chain before committing.
  *   • Refundable: if settlement stalls, `refund()` enforces the time guarantee.
@@ -36,7 +36,7 @@ pragma solidity ^0.8.24;
  *
  * ── LOCK IDs ─────────────────────────────────────────────────────────────────
  *
- *   Each lock has a unique `bytes32 id`.  OrahDEX generates:
+ *   Each lock has a unique `bytes32 id`.  Orah generates:
  *     sellerLockId = keccak256(abi.encodePacked(tradeId, "_seller"))
  *     buyerLockId  = keccak256(abi.encodePacked(tradeId, "_buyer"))
  *
@@ -54,12 +54,12 @@ pragma solidity ^0.8.24;
  *
  * ── DEPLOYED ADDRESSES ───────────────────────────────────────────────────────
  *
- *   Ethereum Mainnet  (chainId=1):   see OrahDEX docs / .env EVM_HTLC_CONTRACT_ETH
- *   Polygon Mainnet   (chainId=137): see OrahDEX docs / .env EVM_HTLC_CONTRACT_POLYGON
- *   BNB Smart Chain   (chainId=56):  see OrahDEX docs / .env EVM_HTLC_CONTRACT_BSC
+ *   Ethereum Mainnet  (chainId=1):   see Orah docs / .env EVM_HTLC_CONTRACT_ETH
+ *   Polygon Mainnet   (chainId=137): see Orah docs / .env EVM_HTLC_CONTRACT_POLYGON
+ *   BNB Smart Chain   (chainId=56):  see Orah docs / .env EVM_HTLC_CONTRACT_BSC
  *
- *   Source: https://github.com/orahdex/contracts
- *   Founder: Parminder Singh (Aura · Orah · Aaurah)
+ *   Source: https://github.com/orah/contracts
+ *   Founder: Parminder Singh (Aura · OrahDEX · Aaurah)
  *   Version: 4.2.0  |  Published: 9 April 2026
  */
 
@@ -68,7 +68,7 @@ interface IERC20 {
     function transfer(address to, uint256 amount) external returns (bool);
 }
 
-contract OrahDEXHTLC {
+contract OrahHTLC {
 
     // ── Storage ───────────────────────────────────────────────────────────────
 
@@ -218,7 +218,7 @@ contract OrahDEXHTLC {
     /**
      * Reveal the secret and transfer locked funds to the recipient.
      *
-     * Can be called by anyone — the OrahDEX relayer calls this once both
+     * Can be called by anyone — the Orah relayer calls this once both
      * sides have locked.  The caller reveals `secret`; if it hashes to the
      * stored `secretHash`, funds are released.
      *

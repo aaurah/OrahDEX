@@ -55,7 +55,7 @@ const MOCK_COLLECTIONS = [
   {
     id: "col-ordinals", name: "Bitcoin Ordinals Genesis",    slug: "ordinals-genesis", chain: "BSV",
     contractAddress: null,
-    description: "The first series of inscribed relics on BSV — proof-of-existence artifacts for the OrahDEX genesis epoch.",
+    description: "The first series of inscribed relics on BSV — proof-of-existence artifacts for the Orah genesis epoch.",
     imageUrl: "https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UDNn5NVIT3gxvEL669OVmuORexPloJjKFLhr0a5jDqTl_bqXRXwm?w=500&auto=format",
     bannerUrl: "https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxpYLoDl-KGSnMSmoXWijkMbZKSIQ1532MHf6DVbWObhH0yFdoVJLPT5yeBTZ?w=500&auto=format",
     category: "relics", floorPrice: "0.24", floorCurrency: "BSV", volume24h: "18.4",

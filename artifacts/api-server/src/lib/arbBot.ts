@@ -1,5 +1,5 @@
 /**
- * Arbitrage Bot — OrahDEX
+ * Arbitrage Bot — Orah
  *
  * Runs every 60 s. Scans all active markets for triangular arbitrage
  * opportunities: A/USDT, B/USDT, A/B — when the implied price via the

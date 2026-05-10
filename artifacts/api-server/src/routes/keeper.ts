@@ -1,7 +1,7 @@
 /**
  * Keeper Registry API
  *
- * The Keeper Registry is the identity spine of OrahDEX.
+ * The Keeper Registry is the identity spine of Orah.
  * Keepers are wallets that register with roles and metadata.
  *
  * Roles:

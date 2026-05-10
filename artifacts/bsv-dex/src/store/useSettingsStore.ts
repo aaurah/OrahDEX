@@ -87,7 +87,7 @@ export const useSettingsStore = create<SettingsState>()(
       quoteCurrency: "USDT",
       setQuoteCurrency: (code) => set({ quoteCurrency: code }),
     }),
-    { name: "orahdex-settings-v1" }
+    { name: "orah-settings-v1" }
   )
 );
 

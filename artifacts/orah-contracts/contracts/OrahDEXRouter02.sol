@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "./OrahFactory.sol";
-import "./OrahPair.sol";
+import "./OrahDEXFactory.sol";
+import "./OrahDEXPair.sol";
 
 interface IWETH {
     function deposit()  external payable;
@@ -14,21 +14,21 @@ interface IWETH {
 }
 
 /**
- * @title OrahRouter02
- * @notice User-facing router for OrahDEX AMM pools.
+ * @title OrahDEXRouter02
+ * @notice User-facing router for Orah AMM pools.
  *         Handles addLiquidity, removeLiquidity, and swaps for both
  *         token-token and ETH-token pairs.
  *
- * Deployable to any EVM chain. Wire by pointing at OrahFactory + chain WETH.
+ * Deployable to any EVM chain. Wire by pointing at OrahDEXFactory + chain WETH.
  */
-contract OrahRouter02 {
+contract OrahDEXRouter02 {
     using SafeERC20 for IERC20;
 
     address public immutable factory;
     address public immutable WETH;
 
     modifier ensure(uint256 deadline) {
-        require(deadline >= block.timestamp, "OrahRouter: EXPIRED");
+        require(deadline >= block.timestamp, "OrahDEXRouter: EXPIRED");
         _;
     }
 
@@ -44,7 +44,7 @@ contract OrahRouter02 {
     // ─── Internal helpers ─────────────────────────────────────────────────────
 
     function _pairFor(address tokenA, address tokenB) internal view returns (address) {
-        return OrahFactory(factory).getPair(tokenA, tokenB);
+        return OrahDEXFactory(factory).getPair(tokenA, tokenB);
     }
 
     function _getReserves(address tokenA, address tokenB)
@@ -52,23 +52,23 @@ contract OrahRouter02 {
         returns (uint256 reserveA, uint256 reserveB)
     {
         (address token0,) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
-        (uint112 r0, uint112 r1,) = OrahPair(_pairFor(tokenA, tokenB)).getReserves();
+        (uint112 r0, uint112 r1,) = OrahDEXPair(_pairFor(tokenA, tokenB)).getReserves();
         (reserveA, reserveB) = tokenA == token0 ? (r0, r1) : (r1, r0);
     }
 
     function _quote(uint256 amountA, uint256 reserveA, uint256 reserveB)
         internal pure returns (uint256 amountB)
     {
-        require(amountA > 0, "OrahRouter: INSUFFICIENT_AMOUNT");
-        require(reserveA > 0 && reserveB > 0, "OrahRouter: INSUFFICIENT_LIQUIDITY");
+        require(amountA > 0, "OrahDEXRouter: INSUFFICIENT_AMOUNT");
+        require(reserveA > 0 && reserveB > 0, "OrahDEXRouter: INSUFFICIENT_LIQUIDITY");
         amountB = (amountA * reserveB) / reserveA;
     }
 
     function _getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut)
         internal pure returns (uint256 amountOut)
     {
-        require(amountIn > 0, "OrahRouter: INSUFFICIENT_INPUT_AMOUNT");
-        require(reserveIn > 0 && reserveOut > 0, "OrahRouter: INSUFFICIENT_LIQUIDITY");
+        require(amountIn > 0, "OrahDEXRouter: INSUFFICIENT_INPUT_AMOUNT");
+        require(reserveIn > 0 && reserveOut > 0, "OrahDEXRouter: INSUFFICIENT_LIQUIDITY");
         uint256 amountInWithFee = amountIn * 997;
         uint256 numerator       = amountInWithFee * reserveOut;
         uint256 denominator     = reserveIn * 1000 + amountInWithFee;
@@ -78,8 +78,8 @@ contract OrahRouter02 {
     function _getAmountIn(uint256 amountOut, uint256 reserveIn, uint256 reserveOut)
         internal pure returns (uint256 amountIn)
     {
-        require(amountOut > 0, "OrahRouter: INSUFFICIENT_OUTPUT_AMOUNT");
-        require(reserveIn > 0 && reserveOut > 0, "OrahRouter: INSUFFICIENT_LIQUIDITY");
+        require(amountOut > 0, "OrahDEXRouter: INSUFFICIENT_OUTPUT_AMOUNT");
+        require(reserveIn > 0 && reserveOut > 0, "OrahDEXRouter: INSUFFICIENT_LIQUIDITY");
         uint256 numerator   = reserveIn * amountOut * 1000;
         uint256 denominator = (reserveOut - amountOut) * 997;
         amountIn = (numerator / denominator) + 1;
@@ -90,8 +90,8 @@ contract OrahRouter02 {
         uint256 amountADesired, uint256 amountBDesired,
         uint256 amountAMin, uint256 amountBMin
     ) internal returns (uint256 amountA, uint256 amountB) {
-        if (OrahFactory(factory).getPair(tokenA, tokenB) == address(0)) {
-            OrahFactory(factory).createPair(tokenA, tokenB);
+        if (OrahDEXFactory(factory).getPair(tokenA, tokenB) == address(0)) {
+            OrahDEXFactory(factory).createPair(tokenA, tokenB);
         }
         (uint256 reserveA, uint256 reserveB) = _getReserves(tokenA, tokenB);
         if (reserveA == 0 && reserveB == 0) {
@@ -99,12 +99,12 @@ contract OrahRouter02 {
         } else {
             uint256 amountBOptimal = _quote(amountADesired, reserveA, reserveB);
             if (amountBOptimal <= amountBDesired) {
-                require(amountBOptimal >= amountBMin, "OrahRouter: INSUFFICIENT_B_AMOUNT");
+                require(amountBOptimal >= amountBMin, "OrahDEXRouter: INSUFFICIENT_B_AMOUNT");
                 (amountA, amountB) = (amountADesired, amountBOptimal);
             } else {
                 uint256 amountAOptimal = _quote(amountBDesired, reserveB, reserveA);
                 assert(amountAOptimal <= amountADesired);
-                require(amountAOptimal >= amountAMin, "OrahRouter: INSUFFICIENT_A_AMOUNT");
+                require(amountAOptimal >= amountAMin, "OrahDEXRouter: INSUFFICIENT_A_AMOUNT");
                 (amountA, amountB) = (amountAOptimal, amountBDesired);
             }
         }
@@ -126,7 +126,7 @@ contract OrahRouter02 {
         address pair = _pairFor(tokenA, tokenB);
         IERC20(tokenA).safeTransferFrom(msg.sender, pair, amountA);
         IERC20(tokenB).safeTransferFrom(msg.sender, pair, amountB);
-        liquidity = OrahPair(pair).mint(to);
+        liquidity = OrahDEXPair(pair).mint(to);
     }
 
     /**
@@ -146,10 +146,10 @@ contract OrahRouter02 {
         IERC20(token).safeTransferFrom(msg.sender, pair, amountToken);
         IWETH(WETH).deposit{value: amountETH}();
         assert(IWETH(WETH).transfer(pair, amountETH));
-        liquidity = OrahPair(pair).mint(to);
+        liquidity = OrahDEXPair(pair).mint(to);
         if (msg.value > amountETH) {
             (bool ok,) = msg.sender.call{value: msg.value - amountETH}("");
-            require(ok, "OrahRouter: ETH_REFUND_FAILED");
+            require(ok, "OrahDEXRouter: ETH_REFUND_FAILED");
         }
     }
 
@@ -166,11 +166,11 @@ contract OrahRouter02 {
     ) public ensure(deadline) returns (uint256 amountA, uint256 amountB) {
         address pair = _pairFor(tokenA, tokenB);
         IERC20(pair).safeTransferFrom(msg.sender, pair, liquidity);
-        (uint256 amount0, uint256 amount1) = OrahPair(pair).burn(to);
+        (uint256 amount0, uint256 amount1) = OrahDEXPair(pair).burn(to);
         (address token0,) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
         (amountA, amountB) = tokenA == token0 ? (amount0, amount1) : (amount1, amount0);
-        require(amountA >= amountAMin, "OrahRouter: INSUFFICIENT_A_AMOUNT");
-        require(amountB >= amountBMin, "OrahRouter: INSUFFICIENT_B_AMOUNT");
+        require(amountA >= amountAMin, "OrahDEXRouter: INSUFFICIENT_A_AMOUNT");
+        require(amountB >= amountBMin, "OrahDEXRouter: INSUFFICIENT_B_AMOUNT");
     }
 
     /**
@@ -187,7 +187,7 @@ contract OrahRouter02 {
         IERC20(token).safeTransfer(to, amountToken);
         IWETH(WETH).withdraw(amountETH);
         (bool ok,) = to.call{value: amountETH}("");
-        require(ok, "OrahRouter: ETH_TRANSFER_FAILED");
+        require(ok, "OrahDEXRouter: ETH_TRANSFER_FAILED");
     }
 
     // ─── Swaps ────────────────────────────────────────────────────────────────
@@ -203,14 +203,14 @@ contract OrahRouter02 {
             address to = i < path.length - 2
                 ? _pairFor(output, path[i + 2])
                 : _to;
-            OrahPair(_pairFor(input, output)).swap(amount0Out, amount1Out, to, new bytes(0));
+            OrahDEXPair(_pairFor(input, output)).swap(amount0Out, amount1Out, to, new bytes(0));
         }
     }
 
     function getAmountsOut(uint256 amountIn, address[] calldata path)
         external view returns (uint256[] memory amounts)
     {
-        require(path.length >= 2, "OrahRouter: INVALID_PATH");
+        require(path.length >= 2, "OrahDEXRouter: INVALID_PATH");
         amounts = new uint256[](path.length);
         amounts[0] = amountIn;
         for (uint256 i; i < path.length - 1; i++) {
@@ -222,7 +222,7 @@ contract OrahRouter02 {
     function getAmountsIn(uint256 amountOut, address[] calldata path)
         external view returns (uint256[] memory amounts)
     {
-        require(path.length >= 2, "OrahRouter: INVALID_PATH");
+        require(path.length >= 2, "OrahDEXRouter: INVALID_PATH");
         amounts = new uint256[](path.length);
         amounts[amounts.length - 1] = amountOut;
         for (uint256 i = path.length - 1; i > 0; i--) {
@@ -239,7 +239,7 @@ contract OrahRouter02 {
         address[] calldata path, address to, uint256 deadline
     ) external ensure(deadline) returns (uint256[] memory amounts) {
         amounts = this.getAmountsOut(amountIn, path);
-        require(amounts[amounts.length - 1] >= amountOutMin, "OrahRouter: INSUFFICIENT_OUTPUT_AMOUNT");
+        require(amounts[amounts.length - 1] >= amountOutMin, "OrahDEXRouter: INSUFFICIENT_OUTPUT_AMOUNT");
         IERC20(path[0]).safeTransferFrom(msg.sender, _pairFor(path[0], path[1]), amounts[0]);
         _swap(amounts, path, to);
     }
@@ -250,9 +250,9 @@ contract OrahRouter02 {
     function swapExactETHForTokens(
         uint256 amountOutMin, address[] calldata path, address to, uint256 deadline
     ) external payable ensure(deadline) returns (uint256[] memory amounts) {
-        require(path[0] == WETH, "OrahRouter: INVALID_PATH");
+        require(path[0] == WETH, "OrahDEXRouter: INVALID_PATH");
         amounts = this.getAmountsOut(msg.value, path);
-        require(amounts[amounts.length - 1] >= amountOutMin, "OrahRouter: INSUFFICIENT_OUTPUT_AMOUNT");
+        require(amounts[amounts.length - 1] >= amountOutMin, "OrahDEXRouter: INSUFFICIENT_OUTPUT_AMOUNT");
         IWETH(WETH).deposit{value: amounts[0]}();
         assert(IWETH(WETH).transfer(_pairFor(path[0], path[1]), amounts[0]));
         _swap(amounts, path, to);
@@ -265,14 +265,14 @@ contract OrahRouter02 {
         uint256 amountIn, uint256 amountOutMin,
         address[] calldata path, address to, uint256 deadline
     ) external ensure(deadline) returns (uint256[] memory amounts) {
-        require(path[path.length - 1] == WETH, "OrahRouter: INVALID_PATH");
+        require(path[path.length - 1] == WETH, "OrahDEXRouter: INVALID_PATH");
         amounts = this.getAmountsOut(amountIn, path);
-        require(amounts[amounts.length - 1] >= amountOutMin, "OrahRouter: INSUFFICIENT_OUTPUT_AMOUNT");
+        require(amounts[amounts.length - 1] >= amountOutMin, "OrahDEXRouter: INSUFFICIENT_OUTPUT_AMOUNT");
         IERC20(path[0]).safeTransferFrom(msg.sender, _pairFor(path[0], path[1]), amounts[0]);
         _swap(amounts, path, address(this));
         IWETH(WETH).withdraw(amounts[amounts.length - 1]);
         (bool ok,) = to.call{value: amounts[amounts.length - 1]}("");
-        require(ok, "OrahRouter: ETH_TRANSFER_FAILED");
+        require(ok, "OrahDEXRouter: ETH_TRANSFER_FAILED");
     }
 
     // ─── Quote helpers (view) ─────────────────────────────────────────────────

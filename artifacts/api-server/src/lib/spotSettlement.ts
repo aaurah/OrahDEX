@@ -1,5 +1,5 @@
 /**
- * spotSettlement.ts — MARKET and LIMIT trade settlement for OrahDEX
+ * spotSettlement.ts — MARKET and LIMIT trade settlement for Orah
  *
  * Handles one fill at a time.  Called from the matching loop in orders.ts
  * (or any future matching engine) for each counter-order that is consumed.

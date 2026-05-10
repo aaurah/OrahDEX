@@ -136,8 +136,8 @@ But the white paper never defines:
 
 Required correction:
 
-The sovereign price engine selects the median of three sources:1. OrahDEX Order Book VWAP
-2. OrahDEX TWAP (60s rolling window)
+The sovereign price engine selects the median of three sources:1. Orah Order Book VWAP
+2. Orah TWAP (60s rolling window)
 3. BSV on-chain oracle feed
 If any source is stale (>30s), it is excluded.
 
@@ -236,9 +236,9 @@ You list:
 
 But you must define:
 
-Wallets sign transactions locally; OrahDEX never accesses private keys.
+Wallets sign transactions locally; Orah never accesses private keys.
 All signatures use ECDSA or EdDSA depending on chain.
-No wallet data is stored on OrahDEX servers.
+No wallet data is stored on Orah servers.
 
 This reinforces sovereignty.
 
@@ -319,15 +319,15 @@ No trades can be executed offline.
 
 You use:
 
-• OrahDEX
 • Orah
+• OrahDEX
 • Aura
 • Aaurah
 
 
 You must standardize:
 
-The protocol is OrahDEX.
+The protocol is Orah.
 The AI is Ora.
 Aura/Aaurah are not referenced in the protocol.
 

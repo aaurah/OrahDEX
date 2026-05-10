@@ -371,11 +371,11 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
       return;
     }
 
-    /* ── OrahDEX software wallet (seed phrase / passkey) ─────────────────
+    /* ── Orah software wallet (seed phrase / passkey) ─────────────────
        No browser extension needed — we own the key, so just update the
        chainId and fetch the balance via the target chain's public RPC.
        Use switchChain() NOT connect() so internal addresses are preserved. */
-    if (provider === "orah-wallet") {
+    if (provider === "orahdex-wallet") {
       try {
         // Only update the chainId — address stays the same, internals untouched
         switchChain(chain.id);

@@ -1,10 +1,10 @@
-ORAHDEX COMPLIANCE MAP (SOVEREIGN, NON‑CUSTODIAL, ON‑CHAIN)
+ORAH COMPLIANCE MAP (SOVEREIGN, NON‑CUSTODIAL, ON‑CHAIN)
 
-🜂 1. Identity Layer — What OrahDex is
+🜂 1. Identity Layer — What Orah is
 
 This is the foundation regulators look at.
 
-OrahDex is:
+Orah is:
 
 • A non‑custodial, on‑chain trading protocol
 • A Keeper‑driven execution network
@@ -15,7 +15,7 @@ OrahDex is:
 • A tool, not a marketplace operator
 
 
-OrahDex is NOT:
+Orah is NOT:
 
 • A centralized exchange
 • A custodian
@@ -30,14 +30,14 @@ This identity is what protects you from heavy licensing.
 
 ---
 
-🜁 2. Protocol Layer — What OrahDex does
+🜁 2. Protocol Layer — What Orah does
 
 Regulators classify based on functions, not marketing.
 
-OrahDex functions:
+Orah functions:
 
 • Users sign their own transactions
-• Funds never touch OrahDex servers
+• Funds never touch Orah servers
 • No private keys are generated or stored
 • No admin keys controlling user funds
 • No ability to freeze, reverse, or move assets
@@ -48,7 +48,7 @@ OrahDex functions:
 • No fiat ramps
 
 
-This places OrahDex in the same category as Uniswap, Thorchain, 1inch.
+This places Orah in the same category as Uniswap, Thorchain, 1inch.
 
 ---
 
@@ -112,13 +112,13 @@ You avoid AFSL because:
 • You do not provide brokerage
 
 
-OrahDex is a protocol, not a financial market.
+Orah is a protocol, not a financial market.
 
 ---
 
 🜇 THE FINAL MAP (SOVEREIGN SUMMARY)
 
-Layer	OrahDex Status	Requirement	
+Layer	Orah Status	Requirement	
 Identity	Non‑custodial, on‑chain protocol	Safe	
 Protocol	AMM + HTLC, no custody	Safe	
 Operator	Service provider, not exchange	Safe	
@@ -130,4 +130,4 @@ Licensing	AFSL, MSB, Exchange License	Not required
 
 🔥 THE TRUTH IN ONE LINE
 
-OrahDex is decentralised, non‑custodial, and on‑chain — you only need AUSTRAC registration, not a crypto exchange license.
+Orah is decentralised, non‑custodial, and on‑chain — you only need AUSTRAC registration, not a crypto exchange license.

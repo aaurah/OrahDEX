@@ -248,7 +248,7 @@ export function LedgerConnectPanel({ onConnected }: LedgerConnectPanelProps) {
       </a>
 
       <p className="text-[10px] text-center text-muted-foreground px-2 leading-relaxed">
-        Your private keys never leave the device. OrahDEX only reads your public address.
+        Your private keys never leave the device. Orah only reads your public address.
       </p>
     </div>
   );

@@ -17,10 +17,10 @@ This is basically a strategy vault whose strategy is: “do what this leader doe
 
 1. CopyVault smart contract• Accepts deposits/withdrawals
 • Tracks shares per follower
-• Executes swaps via OrahDex router
+• Executes swaps via Orah router
 • Only a trusted role (bot/leader) can trigger trades
 
-2. OrahDex router + pools• Already exist—vault just uses them
+2. Orah router + pools• Already exist—vault just uses them
 
 3. Off‑chain Copy Orchestrator• Watches leader wallet trades
 • Calls vault.copyTrade(...) with same direction
@@ -43,7 +43,7 @@ This is basically a strategy vault whose strategy is: “do what this leader doe
 • Withdraw:• User burns shares
 • Receives proportional share of vault assets
 
-• Copy trade:• Vault swaps a portion (or all) of its holdings from tokenIn to tokenOut via OrahDex router
+• Copy trade:• Vault swaps a portion (or all) of its holdings from tokenIn to tokenOut via Orah router
 • No per‑user action; all followers are affected via share price
 
 
@@ -65,7 +65,7 @@ interface IERC20 {
     function approve(address spender, uint256 amt) external returns (bool);
 }
 
-interface IOrahDexRouter {
+interface IOrahRouter {
     function swapExactTokensForTokens(
         uint256 amountIn,
         uint256 amountOutMin,
@@ -76,12 +76,12 @@ interface IOrahDexRouter {
 }
 
 contract CopyVault {
-    string public name = "Orah Copy Vault";
+    string public name = "OrahDEX Copy Vault";
     string public symbol = "OCV";
     uint8 public decimals = 18;
 
     IERC20 public baseToken;          // e.g. USDT
-    IOrahDexRouter public router;
+    IOrahRouter public router;
     address public leader;            // leader wallet (for reference)
     address public operator;          // bot / strategy executor
     bool public paused;
@@ -101,7 +101,7 @@ contract CopyVault {
 
     constructor(address _baseToken, address _router, address _leader, address _operator) {
         baseToken = IERC20(_baseToken);
-        router = IOrahDexRouter(_router);
+        router = IOrahRouter(_router);
         leader = _leader;
         operator = _operator;
     }
@@ -203,7 +203,7 @@ It just calls copyTrade on the vault when the leader trades.
 
 Flow:
 
-1. Listen to OrahDex router Swap events where sender == leader.
+1. Listen to Orah router Swap events where sender == leader.
 2. Extract:• tokenIn, tokenOut, amountIn
 
 3. Decide how much of the vault to move (e.g. same % as leader).
@@ -217,7 +217,7 @@ Flow:
 Example (Node.js + ethers):
 
 import { ethers } from "ethers";
-import routerAbi from "./OrahDexRouter.json";
+import routerAbi from "./OrahRouter.json";
 import vaultAbi from "./CopyVault.json";
 
 const RPC_URL = "https://your-rpc";
@@ -315,5 +315,5 @@ You’ve got:
 
 • A clear model: followers → vault shares, vault → trades, leader → signals.
 • A minimal CopyVault contract you can extend.
-• An off‑chain orchestrator pattern that plugs into your existing OrahDex router.
+• An off‑chain orchestrator pattern that plugs into your existing Orah router.
 • A path to make this fully sovereign and transparent on‑chain.

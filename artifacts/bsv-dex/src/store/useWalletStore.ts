@@ -212,7 +212,7 @@ export const useWalletStore = create<WalletState>()(
         })),
     }),
     {
-      name: 'orah-wallet',
+      name: 'orahdex-wallet',
       // v1: strip the `balance` field from any previously-persisted state.
       // Before the non-custodial refactor the store held an internal-ledger balance
       // (e.g. 1,472 ETH) that must never be shown to users again.

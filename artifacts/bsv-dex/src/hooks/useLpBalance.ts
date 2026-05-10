@@ -1,11 +1,11 @@
 /**
- * useLpBalance — reads the user's OrahDEX LP token balance on-chain.
+ * useLpBalance — reads the user's Orah LP token balance on-chain.
  *
  * Workflow:
- *   1. Call OrahFactory.getPair(tokenA, tokenB) → pair address
- *   2. Call OrahPair.balanceOf(userAddress)      → raw LP balance (wei)
- *   3. Call OrahPair.totalSupply()               → total LP supply (wei)
- *   4. Call OrahPair.getReserves()               → reserve0, reserve1
+ *   1. Call OrahDEXFactory.getPair(tokenA, tokenB) → pair address
+ *   2. Call OrahDEXPair.balanceOf(userAddress)      → raw LP balance (wei)
+ *   3. Call OrahDEXPair.totalSupply()               → total LP supply (wei)
+ *   4. Call OrahDEXPair.getReserves()               → reserve0, reserve1
  *   5. Derive the user's share of pool value in USD
  *
  * Returns null values while loading or when AMM is not deployed on chain.
@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getOrahAmm, ORAH_FACTORY_ABI, ORAH_PAIR_ABI } from "@/lib/orahAmmAddresses";
+import { getOrahDEXAmm, ORAHDEX_FACTORY_ABI, ORAHDEX_PAIR_ABI } from "@/lib/orahdexAmmAddresses";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -156,7 +156,7 @@ export function useLpBalance(
       return;
     }
 
-    const amm = getOrahAmm(chainId);
+    const amm = getOrahDEXAmm(chainId);
     if (!amm) {
       // AMM not deployed on this chain — nothing to show
       setLpBalance(null); setPoolShare(null); setValueUsd(null);

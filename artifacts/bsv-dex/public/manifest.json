@@ -1,6 +1,6 @@
 {
-  "name": "OrahDEX — Trade means DEX",
-  "short_name": "OrahDEX",
+  "name": "Orah — Trade means DEX",
+  "short_name": "Orah",
   "description": "Multi-chain DEX with spot trading, perpetual futures, P2P markets, and on-chain BSV settlement. 226+ markets with real-time prices.",
   "start_url": "/",
   "scope": "/",

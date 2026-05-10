@@ -111,7 +111,7 @@ class AppErrorBoundary extends Component<
     return { hasError: true, error };
   }
   componentDidCatch(error: Error, info: { componentStack: string }) {
-    console.error("[OrahDEX] Render error:", error, info.componentStack);
+    console.error("[Orah] Render error:", error, info.componentStack);
   }
   render() {
     if (this.state.hasError) {

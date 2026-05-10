@@ -84,7 +84,7 @@ export async function triggerStopOrders(): Promise<void> {
         const tradeId   = crypto.randomUUID();
 
         const opReturnPayload = [
-          "ORAH", "v1",
+          "ORAHDEX", "v1",
           tradeId.replace(/-/g, "").slice(0, 16),
           order.symbol,
           (order.side === "buy" ? order.walletAddress : match.walletAddress).slice(0, 20) + "…",

@@ -81,7 +81,7 @@ No fake balances.
 
 ✔ USDT will actually enter the seller’s wallet
 
-✔ No internal “OrahDEX Balance” needed
+✔ No internal “Orah Balance” needed
 
 ✔ No synthetic credits
 
@@ -95,7 +95,7 @@ No fake balances.
 
 ✔ No fake fills
 
-✔ No mismatch between wallet app and OrahDEX UI
+✔ No mismatch between wallet app and Orah UI
 
 This is the only way to make your exchange “mature” and real.
 
@@ -128,11 +128,11 @@ When an order fills:
 • Update UI
 
 
-3. Remove internal OrahDEX Balance completely
+3. Remove internal Orah Balance completely
 
 No more:
 
-• “52.55 USDT OrahDEX Balance”
+• “52.55 USDT Orah Balance”
 • “Not in your wallet — withdraw to claim”
 • “Exchange credits”
 

@@ -96,7 +96,7 @@ function getNftProfileAddress({
   internalEvmAddress: string | null;
 }) {
   if (!address) return null;
-  if (provider === "orah-wallet" && network !== "evm" && internalEvmAddress) return internalEvmAddress;
+  if (provider === "orahdex-wallet" && network !== "evm" && internalEvmAddress) return internalEvmAddress;
   return address;
 }
 
@@ -170,19 +170,19 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const [error, setError] = useState("");
   const { address, network, balance: storeBalance, provider } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
-  const isOrahWallet = provider === "orah-wallet";
+  const isOrahDEXWallet = provider === "orahdex-wallet";
 
   useBsvBalance();
   const { balances: evmBalances } = useEvmBalances(isEvm ? (address ?? null) : null, null);
 
   const nativeEvmBalance = evmBalances?.find(b => b.isNative);
-  const availableBsvNum = isEvm && !isOrahWallet
+  const availableBsvNum = isEvm && !isOrahDEXWallet
     ? (nativeEvmBalance ? nativeEvmBalance.amount || 0 : 0)
     : parseFloat(String(storeBalance ?? "0")) || 0;
-  const hasLoadedBalance = isEvm && !isOrahWallet
+  const hasLoadedBalance = isEvm && !isOrahDEXWallet
     ? (evmBalances != null && evmBalances.length > 0)
     : storeBalance != null;
-  const availableLabel = isEvm && !isOrahWallet
+  const availableLabel = isEvm && !isOrahDEXWallet
     ? (nativeEvmBalance ? `${nativeEvmBalance.amount.toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
 
@@ -1274,15 +1274,15 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const [listPrice, setListPrice] = useState("");
   const { address, network, balance: storeBalance, provider } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
-  const isOrahWallet = provider === "orah-wallet";
+  const isOrahDEXWallet = provider === "orahdex-wallet";
   useBsvBalance();
   const { balances: evmBalances } = useEvmBalances(isEvm ? (address ?? null) : null, null);
   const nativeEvmBalance = evmBalances?.find(b => b.isNative);
-  const availableNum = isEvm && !isOrahWallet
+  const availableNum = isEvm && !isOrahDEXWallet
     ? (nativeEvmBalance ? nativeEvmBalance.amount || 0 : 0)
     : parseFloat(String(storeBalance ?? "0")) || 0;
-  const hasLoadedBalance = isEvm && !isOrahWallet ? evmBalances != null : storeBalance != null;
-  const availableLabel = isEvm && !isOrahWallet
+  const hasLoadedBalance = isEvm && !isOrahDEXWallet ? evmBalances != null : storeBalance != null;
+  const availableLabel = isEvm && !isOrahDEXWallet
     ? (nativeEvmBalance ? `${nativeEvmBalance.amount.toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
   const mintPrice = parseFloat(String(post.mint_price)) || 0;
@@ -1379,7 +1379,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
             ) : (
               <>
                 <div className="py-3 border-b" style={{ borderColor: "var(--color-border)" }}>
-                  <p className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>Set a price to list your copy of this NFT on the OrahDEX marketplace. Buyers pay you directly.</p>
+                  <p className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>Set a price to list your copy of this NFT on the Orah marketplace. Buyers pay you directly.</p>
                   <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
                     <input type="number" min="0" step="0.0001" placeholder="0.0000"
                       className="flex-1 bg-transparent text-sm font-mono outline-none"
@@ -1710,7 +1710,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
     <div className="p-4 pb-32 overflow-y-auto h-full">
       <h2 className="text-lg font-bold mb-1" style={{ color: "var(--color-text)" }}>Create Post</h2>
       <p className="text-xs mb-4" style={{ color: "var(--color-text-secondary)" }}>
-        Every post = NFT inscription on BSV + tradeable creator coin. Multichain via OrahBridge.
+        Every post = NFT inscription on BSV + tradeable creator coin. Multichain via OrahDEXBridge.
       </p>
 
       {/* Media preview */}
@@ -1819,7 +1819,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
             {CHAINS.map(c => <span key={c} className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: `${CHAIN_COLOR[c]}20`, color: CHAIN_COLOR[c] }}>{c}</span>)}
           </div>
           <p className="text-[11px] mt-2" style={{ color: "var(--color-text-secondary)" }}>
-            Inscribed on BSV · Bridgeable to ETH, BNB, SOL via OrahBridge · Creator coin auto-created on first post
+            Inscribed on BSV · Bridgeable to ETH, BNB, SOL via OrahDEXBridge · Creator coin auto-created on first post
           </p>
         </div>
 
@@ -1945,7 +1945,7 @@ export function MobileNFT() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: "1px solid var(--color-border)" }}>
         <div>
-          <h1 className="text-lg font-black tracking-tight" style={{ color: "var(--color-text)" }}>Orah<span style={{ color: "var(--color-accent)" }}>NFT</span></h1>
+          <h1 className="text-lg font-black tracking-tight" style={{ color: "var(--color-text)" }}>OrahDEX<span style={{ color: "var(--color-accent)" }}>NFT</span></h1>
           <div className="text-[10px] font-mono" style={{ color: "var(--color-text-secondary)" }}>BSV · Multichain · Creator Coins</div>
         </div>
         <div className="flex items-center gap-2">

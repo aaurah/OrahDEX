@@ -177,15 +177,15 @@ app.get("/api/bsv-status", async (_req, res) => {
 /* ── Thunderbird / Mozilla autoconfig XML ─────────────────────────────────── */
 const AUTOCONFIG_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <clientConfig version="1.1">
-  <emailProvider id="orahdex.org">
-    <domain>orahdex.org</domain>
-    <domain>orahdex.com</domain>
-    <displayName>OrahDEX Mail</displayName>
-    <displayShortName>OrahDEX</displayShortName>
+  <emailProvider id="orah.org">
+    <domain>orah.org</domain>
+    <domain>orah.com</domain>
+    <displayName>Orah Mail</displayName>
+    <displayShortName>Orah</displayShortName>
 
     <!-- Incoming: IMAP -->
     <incomingServer type="imap">
-      <hostname>mail.orahdex.org</hostname>
+      <hostname>mail.orah.org</hostname>
       <port>993</port>
       <socketType>SSL</socketType>
       <authentication>password-cleartext</authentication>
@@ -194,7 +194,7 @@ const AUTOCONFIG_XML = `<?xml version="1.0" encoding="UTF-8"?>
 
     <!-- Outgoing: SMTP -->
     <outgoingServer type="smtp">
-      <hostname>mail.orahdex.org</hostname>
+      <hostname>mail.orah.org</hostname>
       <port>465</port>
       <socketType>SSL</socketType>
       <authentication>password-cleartext</authentication>

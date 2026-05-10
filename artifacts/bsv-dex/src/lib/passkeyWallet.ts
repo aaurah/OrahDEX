@@ -1,5 +1,5 @@
 /**
- * OrahDEX Passkey Wallet
+ * Orah Passkey Wallet
  *
  * Non-custodial EVM wallet backed by a WebAuthn passkey (Face ID, Touch ID,
  * Windows Hello, Android biometric, hardware security key, etc.).
@@ -22,9 +22,9 @@
 
 import { generateMnemonic, deriveAllAddresses } from "./seedPhrase";
 
-const STORAGE_KEY  = "orahdex_passkey_wallets_v1";
-const RP_NAME      = "OrahDEX";
-const PBKDF2_SALT  = new TextEncoder().encode("OrahDEX-passkey-wallet-v1");
+const STORAGE_KEY  = "orah_passkey_wallets_v1";
+const RP_NAME      = "Orah";
+const PBKDF2_SALT  = new TextEncoder().encode("Orah-passkey-wallet-v1");
 const PBKDF2_ITER  = 100_000;
 
 const API_BASE = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
@@ -450,7 +450,7 @@ export async function restoreFromTransferCode(
 // ─── On-chain transaction signing ─────────────────────────────────────────────
 
 /**
- * Authenticate with the Orah passkey wallet for the given EVM address and
+ * Authenticate with the OrahDEX passkey wallet for the given EVM address and
  * return a viem LocalAccount that can sign and send real on-chain transactions.
  *
  * Flow: passkey biometric auth → decrypt private key in-memory → viem account.
@@ -460,7 +460,7 @@ export async function restoreFromTransferCode(
  *   - No passkey wallet is found for the given address (seed-phrase-only wallets)
  *   - User cancels biometric auth
  */
-export async function getViemAccountForOrahWallet(address: string): Promise<import("viem").Account> {
+export async function getViemAccountForOrahDEXWallet(address: string): Promise<import("viem").Account> {
   if (!isPasskeySupported()) throw new Error("Passkeys not supported in this browser");
 
   const wallets = listPasskeyWallets();

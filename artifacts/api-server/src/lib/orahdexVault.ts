@@ -1,14 +1,14 @@
 /**
- * orahVault.ts — OrahDEX
+ * orahdexVault.ts — Orah
  *
- * Client for the OrahVault smart contract.
+ * Client for the OrahDEXVault smart contract.
  *
- * OrahVault interface:
+ * OrahDEXVault interface:
  *   function deposit(address token, uint256 amount) external
  *   function withdraw(address token, address to, uint256 amount) external onlyOwner
  *
  * Config (env vars):
- *   VAULT_CONTRACT_ADDRESS  — deployed OrahVault address (enables vault mode)
+ *   VAULT_CONTRACT_ADDRESS  — deployed OrahDEXVault address (enables vault mode)
  *   VAULT_CHAIN_ID          — chain the vault is deployed on (default: 8453 = Base)
  *   VAULT_OWNER_KEY         — 0x-hex private key of the vault owner
  *                             (falls back to EXCHANGE_HOT_WALLET_KEY if absent)
@@ -129,7 +129,7 @@ export interface VaultWithdrawResult {
 }
 
 /**
- * Calls OrahVault.withdraw(token, to, amount) on-chain.
+ * Calls OrahDEXVault.withdraw(token, to, amount) on-chain.
  *
  * For native ETH withdrawals (asset === "ETH" or the chain's native token),
  * the vault contract cannot be used since it only handles ERC-20.
@@ -159,7 +159,7 @@ export async function vaultWithdraw(params: {
 
   const tokenInfo = resolveTokenInfo(assetUp, chainId);
   if (!tokenInfo) {
-    throw new Error(`No token address known for ${assetUp} on chainId ${chainId}. Add it to TOKEN_REGISTRY in orahVault.ts.`);
+    throw new Error(`No token address known for ${assetUp} on chainId ${chainId}. Add it to TOKEN_REGISTRY in orahdexVault.ts.`);
   }
 
   // Get owner key: VAULT_OWNER_KEY env var, then fall back to hot wallet

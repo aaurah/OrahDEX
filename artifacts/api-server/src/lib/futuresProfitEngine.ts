@@ -1,11 +1,11 @@
 /**
- * Futures Profit Engine — OrahDEX
+ * Futures Profit Engine — Orah
  *
  * Two independent income streams from futures markets:
  *
  *  1. FUNDING RATE INCOME  (runs every 8 hours)
  *     Real open positions pay funding fees to counterparties every 8 h.
- *     OrahDEX retains 10 % of every funding payment as platform income.
+ *     Orah retains 10 % of every funding payment as platform income.
  *
  *  2. LIQUIDATION INCOME  (runs every 60 seconds)
  *     Positions whose mark-price crosses their liquidation price are closed

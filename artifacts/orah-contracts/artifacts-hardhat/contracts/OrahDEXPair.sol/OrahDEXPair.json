@@ -1,7 +1,7 @@
 {
   "_format": "hh-sol-artifact-1",
-  "contractName": "OrahPair",
-  "sourceName": "contracts/OrahPair.sol",
+  "contractName": "OrahDEXPair",
+  "sourceName": "contracts/OrahDEXPair.sol",
   "abi": [
     {
       "inputs": [],

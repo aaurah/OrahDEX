@@ -23,10 +23,10 @@ import { pool } from "@workspace/db";
 // ── Encryption helpers ────────────────────────────────────────────────────────
 
 const WALLET_SECRET =
-  process.env.BSV_WALLET_SECRET ?? "orahdex-internal-bsv-fallback-key-32bytes!";
+  process.env.BSV_WALLET_SECRET ?? "orah-internal-bsv-fallback-key-32bytes!";
 
 function deriveKey(): Buffer {
-  return scryptSync(WALLET_SECRET, "orahdex-bsv-salt-v1", 32) as Buffer;
+  return scryptSync(WALLET_SECRET, "orah-bsv-salt-v1", 32) as Buffer;
 }
 
 function encrypt(plaintext: string): string {
@@ -199,7 +199,7 @@ export interface BsvWalletResult {
  *
  * If `phantomBtcAddress` is provided (from Phantom's Bitcoin provider),
  * that address is used for all three forks instead of generating a random
- * custodial key. This ensures the BTC address shown in OrahDEX matches
+ * custodial key. This ensures the BTC address shown in Orah matches
  * what the user sees in their Phantom wallet.
  */
 export async function getOrCreateBsvWallet(

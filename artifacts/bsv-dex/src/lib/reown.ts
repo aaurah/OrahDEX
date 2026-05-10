@@ -26,7 +26,7 @@ export function setupReown(projectId: string): void {
       networks: REOWN_NETWORKS,
       projectId,
       metadata: {
-        name: "OrahDEX",
+        name: "Orah",
         description: "Trade means DEX — Multi-chain BSV DEX with instant on-chain settlement",
         url: window.location.origin,
         icons: [`${window.location.origin}/favicon.svg`, `${window.location.origin}/logo.png`],
@@ -50,7 +50,7 @@ export function setupReown(projectId: string): void {
     _initialized = true;
     suppressThirdPartyBranding();
   } catch (err) {
-    console.error("[OrahDEX] Failed to initialize Reown AppKit:", err);
+    console.error("[Orah] Failed to initialize Reown AppKit:", err);
   }
 }
 
@@ -61,7 +61,7 @@ export function setupReown(projectId: string): void {
  * each one so newly-added nested components are caught too.
  */
 function suppressThirdPartyBranding(): void {
-  const STYLE_ID = "orahdex-no-brand";
+  const STYLE_ID = "orah-no-brand";
   const HIDE_CSS = `
     wui-ux-by-reown,
     wui-footer,
@@ -131,7 +131,7 @@ type ReownView =
 
 export function openReownModal(view?: ReownView): boolean {
   if (!_modal) {
-    console.warn("[OrahDEX] Reown modal not ready — Project ID may not be configured.");
+    console.warn("[Orah] Reown modal not ready — Project ID may not be configured.");
     return false;
   }
   _modal.open(view ? { view } : undefined);
@@ -363,7 +363,7 @@ export async function disconnectReown(): Promise<void> {
   try {
     await (_modal as any).disconnect?.();
   } catch (err) {
-    console.warn("[OrahDEX] Reown disconnect:", err);
+    console.warn("[Orah] Reown disconnect:", err);
   }
 }
 

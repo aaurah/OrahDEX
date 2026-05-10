@@ -1,7 +1,7 @@
 {
   "_format": "hh-sol-artifact-1",
-  "contractName": "OrahRouter02",
-  "sourceName": "contracts/OrahRouter02.sol",
+  "contractName": "OrahDEXRouter02",
+  "sourceName": "contracts/OrahDEXRouter02.sol",
   "abi": [
     {
       "inputs": [

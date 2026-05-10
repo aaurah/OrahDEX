@@ -15,7 +15,7 @@ Example from your screenshot:
 
 This must never include:
 
-• OrahDEX credits
+• Orah credits
 • LP positions
 • pending orders
 • internal ledger balances
@@ -51,7 +51,7 @@ This prevents double‑spending and makes the UI feel real.
 
 ---
 
-3. OrahDEX Exchange Balance (internal credits from matched trades)
+3. Orah Exchange Balance (internal credits from matched trades)
 
 This is the USDT (or other quote tokens) earned from:
 
@@ -66,7 +66,7 @@ This is not LP.
 
 This is your internal ledger, and it must be shown as:
 
-“OrahDEX Balance (Exchange Credits)”
+“Orah Balance (Exchange Credits)”
 
 Example from your screenshot:
 
@@ -93,7 +93,7 @@ This must be shown as:
 “DeFi / Liquidity”
 
 Separate from wallet
-Separate from OrahDEX credits
+Separate from Orah credits
 Separate from busy-in-trade
 
 ---
@@ -125,7 +125,7 @@ Shows ONLY:
 
 Never includes:
 
-• OrahDEX credits
+• Orah credits
 • LP
 • busy-in-trade
 • internal balances
@@ -150,7 +150,7 @@ USDT: 25.00 (limit buy)
 
 ---
 
-3. OrahDEX Balance (Exchange Credits)
+3. Orah Balance (Exchange Credits)
 
 Shows:
 
@@ -161,7 +161,7 @@ Shows:
 
 Example:
 
-OrahDEX Balance
+Orah Balance
 USDT: 42.04
 
 

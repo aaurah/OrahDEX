@@ -123,7 +123,7 @@ function usePlatformAnnouncements() {
   useEffect(() => {
     const load = () => {
       try {
-        const raw: PlatformNotif[] = JSON.parse(localStorage.getItem("orahdex_notifications") ?? "[]");
+        const raw: PlatformNotif[] = JSON.parse(localStorage.getItem("orah_notifications") ?? "[]");
         setNotifs(raw.filter(n => n.active));
       } catch { setNotifs([]); }
     };

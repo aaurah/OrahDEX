@@ -95,7 +95,7 @@ function MobileConnectQR({ onConnected }: { onConnected: () => void }) {
     }
   };
 
-  const qrUri = token ? `orahdex://connect?token=${token}&expires=${expiresAt}` : "";
+  const qrUri = token ? `orah://connect?token=${token}&expires=${expiresAt}` : "";
   const mins = Math.floor(secondsLeft / 60);
   const secs = String(secondsLeft % 60).padStart(2, "0");
 
@@ -152,7 +152,7 @@ function MobileConnectQR({ onConnected }: { onConnected: () => void }) {
     <div className="w-full space-y-3">
       <div className="flex items-center gap-2">
         <QrCode className="w-3.5 h-3.5 text-primary" />
-        <span className="text-xs font-semibold text-foreground">Scan with OrahDEX Mobile</span>
+        <span className="text-xs font-semibold text-foreground">Scan with Orah Mobile</span>
         <span className={cn(
           "ml-auto text-[10px] font-mono font-bold tabular-nums",
           secondsLeft < 60 ? "text-red-400" : "text-muted-foreground",
@@ -172,7 +172,7 @@ function MobileConnectQR({ onConnected }: { onConnected: () => void }) {
         </div>
       </div>
       <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
-        Open the OrahDEX mobile app → QR Scanner → Scan to Connect.<br />
+        Open the Orah mobile app → QR Scanner → Scan to Connect.<br />
         Your wallet will link automatically.
       </p>
       <button
@@ -335,7 +335,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
-  const isOrahWallet = provider === "orah-wallet";
+  const isOrahDEXWallet = provider === "orahdex-wallet";
 
   // Wallet signing for external EVM wallets — used to authorise on-chain order placement.
   const { signMessageAsync } = useSignMessage();
@@ -351,14 +351,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     isEvm ? chainId : null
   );
 
-  // External EVM wallet = MetaMask/WalletConnect that is NOT the Orah-managed internal wallet.
+  // External EVM wallet = MetaMask/WalletConnect that is NOT the OrahDEX-managed internal wallet.
   // Non-custodial model: external EVM wallets trade directly from their connected on-chain balance.
-  const isExternalEvm = isEvm && !isOrahWallet;
+  const isExternalEvm = isEvm && !isOrahDEXWallet;
 
-  // Only the Orah internal wallet uses the API ledger balance.
+  // Only the OrahDEX internal wallet uses the API ledger balance.
   // All external wallets (EVM, BSV, BTC, SOL) use their on-chain wallet balance directly —
   // no deposit step required.
-  const usesApiBalance = isOrahWallet;
+  const usesApiBalance = isOrahDEXWallet;
 
   // ── API ledger balances (available + locked) ────────────────────────────────
   const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
@@ -489,7 +489,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const walletQuote = quoteBalEntry?.amount ?? 0;
 
   // Non-custodial: EVM wallets trade directly from their on-chain wallet.
-  // Orah Wallet users use the API ledger exclusively.
+  // OrahDEX Wallet users use the API ledger exclusively.
   // External wallets: merge on-chain balance with internal exchange balance so
   // assets accumulated via exchange trades can also be sold / used.
   const internalBase  = apiBalances[base]  ?? 0;
@@ -592,7 +592,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               ? `Your order matched! Lock ${receivedQty} ${receivedTok} in the HTLC contract below to complete the P2P atomic swap.`
               : isCrossChainFill
                 ? `+${receivedQty} ${receivedTok} settled on-chain. Provide your ${fillChainName} address to receive funds.`
-                : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
+                : `+${receivedQty} ${receivedTok} credited to your Orah balance`,
           });
           addNotification({
             type: "order_filled",
@@ -601,7 +601,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               ? `Lock ${receivedQty} ${receivedTok} on-chain to complete atomic swap — see settlement card`
               : isCrossChainFill
                 ? `+${receivedQty} ${receivedTok} settled on-chain · provide ${fillChainName} address to receive`
-                : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance · withdraw anytime`,
+                : `+${receivedQty} ${receivedTok} credited to your Orah balance · withdraw anytime`,
             pair: symbol,
             side: side as "buy" | "sell",
             txid: txid ?? undefined,
@@ -738,18 +738,18 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     confirmRef.current = false; // Reset for next submission
 
     // ── Step 4: Wallet signature for external EVM wallets ─────────────────────
-    // OrahDEX is a non-custodial DEX: external EVM wallets (MetaMask / WalletConnect)
+    // Orah is a non-custodial DEX: external EVM wallets (MetaMask / WalletConnect)
     // must sign the order intent with personal_sign to prove authorization.
     // The signature is stored on the order row (fundingRef: "evm-sig:…") and is
     // required by the server before the order enters the matching engine.
-    // Orah internal wallets use the API ledger and do not need a separate sign step.
+    // OrahDEX internal wallets use the API ledger and do not need a separate sign step.
     let evmSignature: string | undefined;
     if (isExternalEvm) {
       // Build a random nonce using crypto.getRandomValues to prevent signature replay.
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
       const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
-      const orderMsg = `OrahDEX order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
+      const orderMsg = `Orah order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
       try {
         setSigningOrder(true);
         evmSignature = await signMessageAsync({ message: orderMsg });
@@ -780,7 +780,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
           quantity:       parseFloat(amount),
           networkType:    isEvm ? "evm" : network === 'bch' ? "bch" : network === 'btc' ? "btc" : network === 'sol' ? "sol" : "bsv",
-          walletSource:   isOrahWallet ? "orah" : "external",
+          walletSource:   isOrahDEXWallet ? "orahdex" : "external",
           reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,
           receiveAddress: receiveAddress.trim() || undefined,
           autoBorrow,
@@ -822,7 +822,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
             toast({
               title: "Order Filled ✓",
-              description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
+              description: `+${receivedQty} ${receivedTok} credited to your Orah balance`,
             });
           } else {
             toast({
@@ -1198,7 +1198,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[11px] text-emerald-300 font-semibold leading-snug">
-                    Sent to your OrahDEX EVM wallet
+                    Sent to your Orah EVM wallet
                   </p>
                   <p className="text-[10px] text-emerald-200/70 leading-relaxed mt-0.5">
                     One address works on <span className="text-emerald-300 font-medium">all EVM networks</span> — Ethereum, BSC, Polygon, Arbitrum, Base and more.
@@ -1227,7 +1227,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                 <ShieldCheck className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[11px] text-teal-300 font-semibold leading-snug">
-                    Sent to your OrahDEX BSV wallet
+                    Sent to your Orah BSV wallet
                   </p>
                   <p className="text-[10px] text-teal-200/70 leading-relaxed mt-0.5">
                     {hasSeparateBtcAddr
@@ -1266,7 +1266,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               <div className="flex items-start gap-2">
                 <ShieldCheck className="w-3.5 h-3.5 text-orange-400 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11px] text-orange-300 font-semibold leading-snug">Sent to your OrahDEX BTC wallet</p>
+                  <p className="text-[11px] text-orange-300 font-semibold leading-snug">Sent to your Orah BTC wallet</p>
                   <p className="text-[10px] text-orange-200/70 leading-relaxed mt-0.5">
                     Derived from your seed phrase at <span className="text-orange-300 font-medium">m/44'/0'/0'/0/0</span> — fully compatible with any BIP44 wallet.
                   </p>
@@ -1289,7 +1289,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               <div className="flex items-start gap-2">
                 <ShieldCheck className="w-3.5 h-3.5 text-violet-400 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11px] text-violet-300 font-semibold leading-snug">Sent to your OrahDEX Solana wallet</p>
+                  <p className="text-[11px] text-violet-300 font-semibold leading-snug">Sent to your Orah Solana wallet</p>
                   <p className="text-[10px] text-violet-200/70 leading-relaxed mt-0.5">
                     Derived via <span className="text-violet-300 font-medium">SLIP-0010 ed25519 m/44'/501'/0'/0'</span> — Phantom-compatible. Import your seed phrase in Phantom to access it.
                   </p>

@@ -20,7 +20,7 @@ class RootErrorBoundary extends Component<
     return { crashed: true };
   }
   componentDidCatch(err: Error) {
-    console.warn("[OrahDEX] Root boundary caught error, re-rendering without WagmiProvider:", err.message);
+    console.warn("[Orah] Root boundary caught error, re-rendering without WagmiProvider:", err.message);
     /* Fall back to plain App on next tick */
     setTimeout(() => root.render(createElement(App)), 0);
   }
@@ -66,7 +66,7 @@ if (reownProjectId) {
         );
       }
     } catch (e) {
-      console.warn("[OrahDEX] Reown init failed — running without WagmiProvider:", e);
+      console.warn("[Orah] Reown init failed — running without WagmiProvider:", e);
       /* App is already rendered from Step 1, nothing to do */
     }
   };
@@ -77,5 +77,5 @@ if (reownProjectId) {
     setTimeout(initReown, 50);
   }
 } else {
-  console.warn("[OrahDEX] VITE_REOWN_PROJECT_ID not set — WalletConnect disabled.");
+  console.warn("[Orah] VITE_REOWN_PROJECT_ID not set — WalletConnect disabled.");
 }

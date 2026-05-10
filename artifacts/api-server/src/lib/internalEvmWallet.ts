@@ -22,10 +22,10 @@ import { pool } from "@workspace/db";
 // ── Encryption helpers ────────────────────────────────────────────────────────
 
 const WALLET_SECRET =
-  process.env.EVM_WALLET_SECRET ?? "orahdex-internal-evm-fallback-key-32bytes!";
+  process.env.EVM_WALLET_SECRET ?? "orah-internal-evm-fallback-key-32bytes!";
 
 function deriveKey(): Buffer {
-  return scryptSync(WALLET_SECRET, "orahdex-evm-salt-v1", 32) as Buffer;
+  return scryptSync(WALLET_SECRET, "orah-evm-salt-v1", 32) as Buffer;
 }
 
 function encrypt(plaintext: string): string {

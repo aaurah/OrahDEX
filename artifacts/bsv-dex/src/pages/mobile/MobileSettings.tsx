@@ -232,8 +232,8 @@ export function MobileSettings() {
           icon={Mail}
           iconColor="#3b82f6"
           label="Email Support"
-          value="support@orahdex.org"
-          onClick={() => { window.open("mailto:support@orahdex.org"); }}
+          value="support@orah.org"
+          onClick={() => { window.open("mailto:support@orah.org"); }}
         />
         <Row
           icon={HelpCircle}
@@ -246,7 +246,7 @@ export function MobileSettings() {
 
       <Section title="About">
         <Row icon={Info} label="Version" value="1.0.0" />
-        <Row icon={BookOpen} iconColor="#4ade80" label="White Paper" value="OrahDEX project white paper" onClick={() => navigate("/whitepaper")} />
+        <Row icon={BookOpen} iconColor="#4ade80" label="White Paper" value="Orah project white paper" onClick={() => navigate("/whitepaper")} />
         <Row icon={FileText} label="Terms of Service" onClick={() => navigate("/terms")} />
         <Row icon={Shield} label="Privacy Policy" onClick={() => navigate("/privacy")} />
       </Section>

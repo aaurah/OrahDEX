@@ -374,7 +374,7 @@ function AiModelSettings() {
   const [enabled, setEnabled] = useState(true);
   const [showPrompt, setShowPrompt] = useState(false);
 
-  const SYSTEM_PREVIEW = `You are Ora — the AI Trading Intelligence of OrahDEX, a sovereign decentralized exchange where every coin is listed and every trade settles on BSV (Bitcoin SV) blockchain.
+  const SYSTEM_PREVIEW = `You are Ora — the AI Trading Intelligence of Orah, a sovereign decentralized exchange where every coin is listed and every trade settles on BSV (Bitcoin SV) blockchain.
 
 Your personality: Calm, knowledgeable, and direct. You speak like an experienced market analyst.
 

@@ -1,4 +1,4 @@
-Your LP allocation is correct — but your wallet balance is NOT being reduced because OrahDEX uses a virtual AMM.
+Your LP allocation is correct — but your wallet balance is NOT being reduced because Orah uses a virtual AMM.
 
 Meaning:
 
@@ -21,7 +21,7 @@ LP ≠ staked tokens
 
 LP ≠ removed from wallet
 
-OrahDEX is a virtual AMM, so:
+Orah is a virtual AMM, so:
 
 • When you “add liquidity,”
 • You are NOT sending ETH to a pool contract

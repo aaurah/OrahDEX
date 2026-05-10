@@ -1,7 +1,7 @@
 /**
  * P2P Intent Layer API
  *
- * Implements the intent model from the OrahDEX architecture document:
+ * Implements the intent model from the Orah architecture document:
  *   "I will swap up to X of token A for token B at price P or better."
  *
  * Intents are signed off-chain, matched off-chain, settled on-chain.

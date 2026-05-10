@@ -1,6 +1,6 @@
  1. Release Notes — Publish‑Ready
 
-OrahDEX Release — Portfolio, Markets, and AI Stability Update
+Orah Release — Portfolio, Markets, and AI Stability Update
 
 Overview
 
@@ -102,9 +102,9 @@ If all remain green for 30 minutes, the release is confirmed stable.
 
 ⭐ 3. “What’s New” — User‑Facing Summary
 
-OrahDEX Update — Accurate Balances, Full Markets, and Faster Insights
+Orah Update — Accurate Balances, Full Markets, and Faster Insights
 
-We’ve rolled out a major upgrade to OrahDEX that makes your experience faster, clearer, and more accurate:
+We’ve rolled out a major upgrade to Orah that makes your experience faster, clearer, and more accurate:
 
 ✔ Accurate Portfolio Balances
 
@@ -122,7 +122,7 @@ AI‑powered market analysis and trade signals now respond faster and more relia
 
 The app is more stable than ever, with smoother performance across desktop and mobile.
 
-This update ensures OrahDEX always reflects the real state of the chain and markets — instantly and accurately.
+This update ensures Orah always reflects the real state of the chain and markets — instantly and accurately.
 
 ---
 

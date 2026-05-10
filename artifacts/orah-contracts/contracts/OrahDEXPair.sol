@@ -7,14 +7,14 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
- * @title OrahPair
+ * @title OrahDEXPair
  * @notice AMM liquidity pool (x·y = k) with ERC-20 LP tokens.
  *         Based on Uniswap V2 Core — LP tokens are real ERC-20s visible in
  *         MetaMask, Rabby, and any wallet that reads balanceOf.
  *
- * Deployed by OrahFactory. Never deploy directly.
+ * Deployed by OrahDEXFactory. Never deploy directly.
  */
-contract OrahPair is ERC20, ReentrancyGuard {
+contract OrahDEXPair is ERC20, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant MINIMUM_LIQUIDITY = 1_000;
@@ -44,7 +44,7 @@ contract OrahPair is ERC20, ReentrancyGuard {
 
     // ─── Constructor ──────────────────────────────────────────────────────────
 
-    constructor() ERC20("OrahDEX LP Token", "ORAH-LP") {
+    constructor() ERC20("Orah LP Token", "ORAHDEX-LP") {
         factory = msg.sender;
     }
 
@@ -52,7 +52,7 @@ contract OrahPair is ERC20, ReentrancyGuard {
      * @notice Called once by the factory to initialise token addresses.
      */
     function initialize(address _token0, address _token1) external {
-        require(msg.sender == factory, "OrahPair: FORBIDDEN");
+        require(msg.sender == factory, "OrahDEXPair: FORBIDDEN");
         token0 = _token0;
         token1 = _token1;
     }
@@ -62,11 +62,11 @@ contract OrahPair is ERC20, ReentrancyGuard {
     function name() public view override returns (string memory) {
         string memory s0 = _truncate(token0);
         string memory s1 = _truncate(token1);
-        return string(abi.encodePacked("OrahDEX LP: ", s0, "/", s1));
+        return string(abi.encodePacked("Orah LP: ", s0, "/", s1));
     }
 
     function symbol() public view override returns (string memory) {
-        return "ORAH-LP";
+        return "ORAHDEX-LP";
     }
 
     function decimals() public pure override returns (uint8) {
@@ -108,7 +108,7 @@ contract OrahPair is ERC20, ReentrancyGuard {
                 (amount1 * _totalSupply) / _reserve1
             );
         }
-        require(liquidity > 0, "OrahPair: INSUFFICIENT_LIQUIDITY_MINTED");
+        require(liquidity > 0, "OrahDEXPair: INSUFFICIENT_LIQUIDITY_MINTED");
         _mint(to, liquidity);
 
         _update(balance0, balance1, _reserve0, _reserve1);
@@ -135,7 +135,7 @@ contract OrahPair is ERC20, ReentrancyGuard {
 
         amount0 = (liquidity * balance0) / _totalSupply;
         amount1 = (liquidity * balance1) / _totalSupply;
-        require(amount0 > 0 && amount1 > 0, "OrahPair: INSUFFICIENT_LIQUIDITY_BURNED");
+        require(amount0 > 0 && amount1 > 0, "OrahDEXPair: INSUFFICIENT_LIQUIDITY_BURNED");
 
         _burn(address(this), liquidity);
         IERC20(_token0).safeTransfer(to, amount0);
@@ -159,11 +159,11 @@ contract OrahPair is ERC20, ReentrancyGuard {
         address to,
         bytes calldata /*data*/
     ) external nonReentrant {
-        require(amount0Out > 0 || amount1Out > 0, "OrahPair: INSUFFICIENT_OUTPUT_AMOUNT");
+        require(amount0Out > 0 || amount1Out > 0, "OrahDEXPair: INSUFFICIENT_OUTPUT_AMOUNT");
         (uint112 _reserve0, uint112 _reserve1,) = getReserves();
-        require(amount0Out < _reserve0 && amount1Out < _reserve1, "OrahPair: INSUFFICIENT_LIQUIDITY");
+        require(amount0Out < _reserve0 && amount1Out < _reserve1, "OrahDEXPair: INSUFFICIENT_LIQUIDITY");
 
-        require(to != token0 && to != token1, "OrahPair: INVALID_TO");
+        require(to != token0 && to != token1, "OrahDEXPair: INVALID_TO");
 
         if (amount0Out > 0) IERC20(token0).safeTransfer(to, amount0Out);
         if (amount1Out > 0) IERC20(token1).safeTransfer(to, amount1Out);
@@ -175,14 +175,14 @@ contract OrahPair is ERC20, ReentrancyGuard {
             ? balance0 - (_reserve0 - amount0Out) : 0;
         uint256 amount1In = balance1 > _reserve1 - amount1Out
             ? balance1 - (_reserve1 - amount1Out) : 0;
-        require(amount0In > 0 || amount1In > 0, "OrahPair: INSUFFICIENT_INPUT_AMOUNT");
+        require(amount0In > 0 || amount1In > 0, "OrahDEXPair: INSUFFICIENT_INPUT_AMOUNT");
 
         // k invariant check with 0.3% fee (997/1000)
         uint256 balance0Adjusted = balance0 * 1000 - amount0In * 3;
         uint256 balance1Adjusted = balance1 * 1000 - amount1In * 3;
         require(
             balance0Adjusted * balance1Adjusted >= uint256(_reserve0) * uint256(_reserve1) * 1000 * 1000,
-            "OrahPair: K"
+            "OrahDEXPair: K"
         );
 
         _update(balance0, balance1, _reserve0, _reserve1);
@@ -209,7 +209,7 @@ contract OrahPair is ERC20, ReentrancyGuard {
         uint112 /*_reserve0*/,
         uint112 /*_reserve1*/
     ) private {
-        require(balance0 <= type(uint112).max && balance1 <= type(uint112).max, "OrahPair: OVERFLOW");
+        require(balance0 <= type(uint112).max && balance1 <= type(uint112).max, "OrahDEXPair: OVERFLOW");
         reserve0           = uint112(balance0);
         reserve1           = uint112(balance1);
         blockTimestampLast = uint32(block.timestamp % 2**32);

@@ -1,5 +1,5 @@
 /**
- * exchangeHotWallet.ts — OrahDEX
+ * exchangeHotWallet.ts — Orah
  *
  * Manages the platform's EVM hot wallet used for paying out user withdrawals.
  *
@@ -27,10 +27,10 @@ import { logger } from "./logger.js";
 
 // ── Encryption (AES-256-GCM) ───────────────────────────────────────────────────
 
-const SECRET = process.env.EVM_WALLET_SECRET ?? "orahdex-internal-evm-fallback-key-32bytes!";
+const SECRET = process.env.EVM_WALLET_SECRET ?? "orah-internal-evm-fallback-key-32bytes!";
 
 function deriveKey(): Buffer {
-  return scryptSync(SECRET, "orahdex-hot-wallet-salt-v1", 32) as Buffer;
+  return scryptSync(SECRET, "orah-hot-wallet-salt-v1", 32) as Buffer;
 }
 
 function encrypt(plain: string): string {

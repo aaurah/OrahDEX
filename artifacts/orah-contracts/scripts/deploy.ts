@@ -22,7 +22,7 @@ async function main() {
   const chainId    = (await ethers.provider.getNetwork()).chainId;
   const chainIdNum = Number(chainId);
 
-  console.log(`\n=== OrahDEX AMM Deployment ===`);
+  console.log(`\n=== Orah AMM Deployment ===`);
   console.log(`Network:  ${network.name} (chainId: ${chainIdNum})`);
   console.log(`Deployer: ${deployer.address}`);
   console.log(`Balance:  ${ethers.formatEther(await ethers.provider.getBalance(deployer.address))} ETH\n`);
@@ -33,21 +33,21 @@ async function main() {
   }
   console.log(`WETH: ${weth}`);
 
-  // 1. Deploy OrahFactory
-  console.log("\n[1/2] Deploying OrahFactory...");
-  const Factory    = await ethers.getContractFactory("OrahFactory");
+  // 1. Deploy OrahDEXFactory
+  console.log("\n[1/2] Deploying OrahDEXFactory...");
+  const Factory    = await ethers.getContractFactory("OrahDEXFactory");
   const factory    = await Factory.deploy(deployer.address);
   await factory.waitForDeployment();
   const factoryAddr = await factory.getAddress();
-  console.log(`      OrahFactory deployed at: ${factoryAddr}`);
+  console.log(`      OrahDEXFactory deployed at: ${factoryAddr}`);
 
-  // 2. Deploy OrahRouter02
-  console.log("[2/2] Deploying OrahRouter02...");
-  const Router  = await ethers.getContractFactory("OrahRouter02");
+  // 2. Deploy OrahDEXRouter02
+  console.log("[2/2] Deploying OrahDEXRouter02...");
+  const Router  = await ethers.getContractFactory("OrahDEXRouter02");
   const router  = await Router.deploy(factoryAddr, weth);
   await router.waitForDeployment();
   const routerAddr = await router.getAddress();
-  console.log(`      OrahRouter02 deployed at: ${routerAddr}`);
+  console.log(`      OrahDEXRouter02 deployed at: ${routerAddr}`);
 
   // 3. Persist addresses for the frontend
   const addresses = {
@@ -79,7 +79,7 @@ async function main() {
   console.log(`\nFactory:  ${factoryAddr}`);
   console.log(`Router:   ${routerAddr}`);
   console.log(`WETH:     ${weth}`);
-  console.log(`\nNext: Update orahAmmAddresses.ts with these values for chainId ${chainIdNum}`);
+  console.log(`\nNext: Update orahdexAmmAddresses.ts with these values for chainId ${chainIdNum}`);
 }
 
 main()

@@ -1,5 +1,5 @@
 /**
- * evmHtlc.ts — EVM HTLC settlement service for OrahDEX
+ * evmHtlc.ts — EVM HTLC settlement service for Orah
  *
  * ── PURPOSE ───────────────────────────────────────────────────────────────────
  *
@@ -8,13 +8,13 @@
  *     • Seller locks ETH (or ERC-20) → buyer receives on reveal
  *     • Buyer  locks USDT (or ERC-20) → seller receives on reveal
  *
- *   The OrahDEX server generates the secret; users lock from their own wallets
+ *   The Orah server generates the secret; users lock from their own wallets
  *   (MetaMask/WalletConnect) by calling `lockETH()` or `lockToken()` on the
- *   deployed OrahDEXHTLC contract.
+ *   deployed OrahHTLC contract.
  *
  * ── NON-CUSTODIAL MODEL ───────────────────────────────────────────────────────
  *
- *   OrahDEX never holds user funds. The contract holds them atomically.
+ *   Orah never holds user funds. The contract holds them atomically.
  *   The server only:
  *     1. Generates the random secret (server-side entropy)
  *     2. Returns lock instructions (contract address, secretHash, calldata)
@@ -402,8 +402,8 @@ function buildLockInstruction(p: {
   if (!contractAddress) {
     calldata     = "0x";
     instructions = [
-      `OrahDEXHTLC contract not yet deployed on this chain.`,
-      `Contact OrahDEX support to complete settlement.`,
+      `OrahHTLC contract not yet deployed on this chain.`,
+      `Contact Orah support to complete settlement.`,
     ];
   } else if (isNative) {
     calldata = encodeFunctionData({
@@ -412,7 +412,7 @@ function buildLockInstruction(p: {
       args:         [lockId, secretHash, recipient, BigInt(timelockUnix)],
     });
     instructions = [
-      `Send ${formatAmount(amount, 18)} ${asset} to the OrahDEX HTLC contract.`,
+      `Send ${formatAmount(amount, 18)} ${asset} to the Orah HTLC contract.`,
       `Contract: ${contractAddress}`,
       `Lock ID: ${lockId}`,
       `The MetaMask transaction value must equal your trade amount.`,
@@ -426,7 +426,7 @@ function buildLockInstruction(p: {
       args:         [lockId, secretHash, tokenAddress, BigInt(amount), recipient, BigInt(timelockUnix)],
     });
     instructions = [
-      `Approve and lock ${asset} in the OrahDEX HTLC contract.`,
+      `Approve and lock ${asset} in the Orah HTLC contract.`,
       `Contract: ${contractAddress}`,
       `Token: ${tokenAddress}`,
       `Lock ID: ${lockId}`,
@@ -657,7 +657,7 @@ async function checkSessionOnChain(
 
 /**
  * Called by the watcher when both parties have locked.
- * The OrahDEX relayer wallet calls reveal() on both locks to settle the trade.
+ * The Orah relayer wallet calls reveal() on both locks to settle the trade.
  *
  * Requires: EVM_RELAYER_KEY env variable with the relayer's EVM private key.
  */

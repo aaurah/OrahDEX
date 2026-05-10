@@ -732,13 +732,13 @@ export function AdminBotProfit() {
             <div className="space-y-3">
               {/* Alert: EVM withdrawals marked complete but never sent */}
               {data.history.some(w =>
-                w.status === "completed" && w.network !== "BSV" && w.txid?.startsWith("orah_")
+                w.status === "completed" && w.network !== "BSV" && w.txid?.startsWith("orahdex_")
               ) && (
                 <div className="flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs text-red-300">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-semibold text-red-200 mb-1">Funds not sent — action required</p>
-                    <p>One or more EVM withdrawals were marked "complete" but were never actually broadcast on-chain. Go to <strong>Admin → Withdrawals</strong>, find these requests for <code className="font-mono">platform_bot</code>, and send the funds from your connected wallet. The "orah_..." reference is an internal ID, not a blockchain TXID.</p>
+                    <p>One or more EVM withdrawals were marked "complete" but were never actually broadcast on-chain. Go to <strong>Admin → Withdrawals</strong>, find these requests for <code className="font-mono">platform_bot</code>, and send the funds from your connected wallet. The "orahdex_..." reference is an internal ID, not a blockchain TXID.</p>
                   </div>
                 </div>
               )}
@@ -756,7 +756,7 @@ export function AdminBotProfit() {
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {data.history.map((w) => {
-                      const isRealTxid = w.txid && !w.txid.startsWith("orah_") && w.txid.length > 20;
+                      const isRealTxid = w.txid && !w.txid.startsWith("orahdex_") && w.txid.length > 20;
                       const isBsv = w.network === "BSV";
                       const unsentEvm = w.status === "completed" && !isBsv && !isRealTxid;
                       const explorerUrl = isBsv
@@ -843,7 +843,7 @@ export function AdminBotProfit() {
               <Activity className="w-3.5 h-3.5" /> Funding Rate Fees
             </strong>
             Every 8 hours, longs pay shorts (or vice versa) at 0.01%–0.015% per period.
-            OrahDEX retains 10% of all funding payments as platform income.
+            Orah retains 10% of all funding payments as platform income.
             Synthetic baseline from estimated market open-interest is added.
           </div>
           <div className="bg-orange-400/5 border border-orange-400/20 rounded-xl p-4 text-xs text-orange-300/70">

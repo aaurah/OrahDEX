@@ -225,9 +225,9 @@ type Tab = "assets" | "defi" | "orders" | "history";
 
 export function MobilePortfolio() {
   const { address, network, provider, chainId, balance, disconnect, internalEvmAddress } = useWalletStore();
-  // For orah-wallet, always query the ledger using the EVM address (primary account key)
+  // For orahdex-wallet, always query the ledger using the EVM address (primary account key)
   // so switching to BSV/BTC network doesn't fetch a different (empty) ledger account
-  const ledgerAddress = (provider === "orah-wallet" && internalEvmAddress) ? internalEvmAddress : address;
+  const ledgerAddress = (provider === "orahdex-wallet" && internalEvmAddress) ? internalEvmAddress : address;
   const { quoteCurrency } = useSettingsStore();
   const { getUserPositions, removePosition, clearWalletPositions } = useLiquidityStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
@@ -382,7 +382,7 @@ export function MobilePortfolio() {
   let tokensTotal = rows.reduce((s, r) => s + r.value, 0);
   const lpTotalValue = lpPositions.reduce((s, [, pos]) => s + (pos.depositedValueUsd ?? 0), 0);
 
-  // Non-custodial: wallet rows are shown as-is — no OrahDEX ledger adjustments.
+  // Non-custodial: wallet rows are shown as-is — no Orah ledger adjustments.
   // Trades settle directly wallet-to-wallet; no internal balance tracking needed.
 
   // ── BUCKET 2: Busy in Trade — assets locked in open limit/stop orders ─────
@@ -419,7 +419,7 @@ export function MobilePortfolio() {
     return s + v.amount * p;
   }, 0);
 
-  // ── BUCKET 1: Wallet balance (real on-chain, minus OrahDEX-consumed amounts) ──
+  // ── BUCKET 1: Wallet balance (real on-chain, minus Orah-consumed amounts) ──
   const total = tokensTotal;
   const nonZero = rows.filter(r => r.amount > 0);
   const totalChange = tokensTotal > 0 && nonZero.length > 0
@@ -579,7 +579,7 @@ export function MobilePortfolio() {
             color={withdrawAsset.color}
             initialTab={withdrawInitialTab}
             visibleTabs={withdrawVisibleTabs}
-            isOrahWallet={provider === "orah-wallet"}
+            isOrahDEXWallet={provider === "orahdex-wallet"}
           />
         );
       })()}
