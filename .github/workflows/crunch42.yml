@@ -31,6 +31,7 @@ on:
     branches: [ "master" ]
   schedule:
     - cron: '44 4 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -44,12 +45,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify OpenAPI spec exists
+        run: |
+          test -f lib/api-spec/openapi.yaml
+
       - name: 42Crunch REST API Static Security Testing
-        uses: 42Crunch/api-security-audit-action@fc01ea7a89e6268875868f9d89598af7a9899ae0
+        uses: 42Crunch/api-security-audit-action@v1
         with:
           # Please create free account at https://platform.42crunch.com/register
           # Follow these steps to configure API_TOKEN https://docs.42crunch.com/latest/content/tasks/integrate_github_actions.htm
           api-token: ${{ secrets.API_TOKEN }}
+          # Explicitly scan the repository OpenAPI document
+          api-file: lib/api-spec/openapi.yaml
           # Fail if any OpenAPI file scores lower than 75
           min-score: 75
           # Upload results to Github code scanning
