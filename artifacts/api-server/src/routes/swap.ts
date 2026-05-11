@@ -35,7 +35,12 @@ function verifyEvmSwapSignature(
   signature: unknown,
   context: "swap" | "swap_internal",
 ): boolean {
-  if (!String(walletAddress ?? "").startsWith("0x")) return true;
+  const wallet = String(walletAddress ?? "");
+  if (!wallet.startsWith("0x")) return true;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
+    res.status(400).json({ error: "Valid EVM walletAddress required (0x + 40 hex chars)." });
+    return false;
+  }
   if (!signature || !nonce) {
     res.status(401).json({
       error: context === "swap_internal"
@@ -338,10 +343,10 @@ router.post("/swap/execute", async (req, res) => {
 
     const source = decision.source;
 
-    const requiresInternalAuth =
+    const requiresEvmSignature =
       source === "internal" ||
       (source === "split" && !!decision.splitLegs?.internal && decision.splitLegs.internal.amount > 0);
-    if (requiresInternalAuth && !verifyEvmSwapSignature(res, walletAddress, nonce, signature, "swap_internal")) {
+    if (requiresEvmSignature && !verifyEvmSwapSignature(res, walletAddress, nonce, signature, "swap_internal")) {
       return;
     }
 

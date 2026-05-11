@@ -111,7 +111,9 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
 
 export function isValidAdminToken(token: unknown): boolean {
   if (typeof token !== "string" || token.length === 0 || !adminTokens.has(token)) return false;
-  if (!hasTokenExpired(token)) return true;
-  purgeExpiredToken(token);
-  return false;
+  if (hasTokenExpired(token)) {
+    purgeExpiredToken(token);
+    return false;
+  }
+  return true;
 }
