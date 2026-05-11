@@ -1,7 +1,7 @@
 import { pgTable, text, numeric, timestamp, index, uniqueIndex, boolean } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
-import { sql } from "drizzle-orm";
 
 export const ordersTable = pgTable("orders", {
   id: text("id").primaryKey(),
