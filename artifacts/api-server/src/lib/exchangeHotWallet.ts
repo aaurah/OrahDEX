@@ -24,13 +24,16 @@ import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { getRequiredEnv } from "./requiredEnv.js";
 
 // ── Encryption (AES-256-GCM) ───────────────────────────────────────────────────
 
-const SECRET = process.env.EVM_WALLET_SECRET ?? "orahdex-internal-evm-fallback-key-32bytes!";
-
 function deriveKey(): Buffer {
-  return scryptSync(SECRET, "orahdex-hot-wallet-salt-v1", 32) as Buffer;
+  return scryptSync(
+    getRequiredEnv("EVM_WALLET_SECRET", "[FATAL] EVM_WALLET_SECRET is not set. Refusing to derive hot-wallet encryption keys."),
+    "orahdex-hot-wallet-salt-v1",
+    32,
+  ) as Buffer;
 }
 
 function encrypt(plain: string): string {

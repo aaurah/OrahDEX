@@ -10,6 +10,15 @@ import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 const router: IRouter = Router();
 const USD_PEGGED_CURRENCIES = new Set(["USD", "USDT", "USDC", "USDB", "USDBC", "USDC.E", "USDBE", "BUSD", "TUSD", "USDD"]);
 
+router.use((_req, res, next) => {
+  if (process.env.NFT_ENABLED !== "true") {
+    return res.status(503).json({
+      error: "NFT features are not yet available. Coming soon.",
+    });
+  }
+  return next();
+});
+
 function uid(): string {
   return crypto.randomUUID();
 }

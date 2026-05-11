@@ -231,7 +231,7 @@ export async function probeWebhookReceiver(): Promise<ProbeResult> {
   const domain          = process.env["REPLIT_DEV_DOMAIN"] ?? "unknown";
 
   const parts = [
-    `EVM HMAC: ${hasHmacSecret ? "configured" : "⚠ not set (unsigned only)"}`,
+    `EVM HMAC: ${hasHmacSecret ? "configured" : "⚠ not set (webhook requests rejected)"}`,
     `Stripe sig: ${hasStripeSecret ? "configured" : "⚠ not set (insecure)"}`,
     hasDomain ? `domain: ${domain}` : "domain: unknown",
   ];

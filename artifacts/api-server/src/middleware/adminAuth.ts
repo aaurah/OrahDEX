@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
@@ -98,9 +98,20 @@ export async function revokeAllAdminTokens(): Promise<void> {
   } catch { /* best-effort */ }
 }
 
+function hasMatchingAdminToken(token: string): boolean {
+  const incoming = Buffer.from(token);
+  for (const candidate of adminTokens) {
+    const expected = Buffer.from(candidate);
+    if (incoming.length === expected.length && timingSafeEqual(incoming, expected)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function requireAdminToken(req: Request, res: Response, next: NextFunction): void {
   const token = (req.headers["x-admin-token"] as string | undefined) ?? "";
-  if (!token || !adminTokens.has(token)) {
+  if (!token || !hasMatchingAdminToken(token)) {
     res.status(401).json({ error: "Admin authentication required." });
     return;
   }
@@ -113,7 +124,7 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
 }
 
 export function isValidAdminToken(token: unknown): boolean {
-  if (typeof token !== "string" || token.length === 0 || !adminTokens.has(token)) return false;
+  if (typeof token !== "string" || token.length === 0 || !hasMatchingAdminToken(token)) return false;
   if (hasTokenExpired(token)) {
     purgeExpiredToken(token);
     return false;

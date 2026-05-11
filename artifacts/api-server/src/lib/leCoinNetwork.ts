@@ -163,3 +163,11 @@ export const LE_COIN_NETWORK: Record<string, { coin: string; network: string }> 
   RSR:    { coin: "RSR",    network: "ERC20"    },
   OGN:    { coin: "OGN",    network: "ERC20"    },
 };
+
+export function getLeCoinNetwork(coin: string): { coin: string; network: string } {
+  const network = LE_COIN_NETWORK[coin.toUpperCase()];
+  if (!network) {
+    throw new Error(`Unsupported coin for LetsExchange: ${coin}`);
+  }
+  return network;
+}

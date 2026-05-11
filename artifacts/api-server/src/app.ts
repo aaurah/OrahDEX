@@ -31,6 +31,19 @@ import { hydrateAlertsFromDB } from "./lib/alertBus.js";
 import { startExchangeApiRepairEngine } from "./lib/exchangeApiRepairEngine.js";
 
 const app: Express = express();
+const middlewareRegistrationOrder: string[] = [];
+
+function assertWebhookMiddlewareOrder(order: string[]): void {
+  const jsonIdx = order.indexOf("express.json");
+  const evmIdx = order.indexOf("evm-webhook");
+  const stripeIdx = order.indexOf("stripe-webhook");
+  if (jsonIdx === -1 || evmIdx === -1 || stripeIdx === -1) {
+    throw new Error("[FATAL] Missing middleware registration markers for webhook order assertion");
+  }
+  if (evmIdx > jsonIdx || stripeIdx > jsonIdx) {
+    throw new Error("[FATAL] Webhook routes must be registered before express.json()");
+  }
+}
 
 /* ── Trust proxy — required for correct IP detection behind Replit's reverse proxy
  * Enables accurate rate-limiting and X-Forwarded-For header parsing. ────────── */
@@ -101,6 +114,7 @@ app.use(
   express.raw({ type: "*/*" }),
   evmWebhookRouter,
 );
+middlewareRegistrationOrder.push("evm-webhook");
 
 /* ── Stripe webhook — MUST be registered BEFORE express.json() ───────────────
    Stripe requires the raw request body (Buffer) to verify the signature.
@@ -123,6 +137,7 @@ app.post(
     }
   }
 );
+middlewareRegistrationOrder.push("stripe-webhook");
 
 // Image-bearing endpoints (camera/AI base64 data-URLs ≈ 3-6 MB) get a higher
 // body-size cap; everything else stays at the safer 1 MB to limit DoS surface.
@@ -141,6 +156,8 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+middlewareRegistrationOrder.push("express.json");
+assertWebhookMiddlewareOrder(middlewareRegistrationOrder);
 
 /* ── Rate limiting ────────────────────────────────────────────────────────────
  * Layered approach:

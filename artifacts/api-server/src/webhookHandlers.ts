@@ -18,7 +18,8 @@ import { pool } from "@workspace/db";
 import { leRequest, AFFILIATE_ID } from "./lib/lePriceCache.js";
 import { createSsExchange, getSsExchange, isSimpleSwapConfigured } from "./lib/simpleswap.js";
 import { logger } from "./lib/logger.js";
-import { LE_COIN_NETWORK } from "./lib/leCoinNetwork.js";
+import { getLeCoinNetwork } from "./lib/leCoinNetwork.js";
+import { STRIPE_API_VERSION } from "./lib/stripeVersion.js";
 
 // ── Column migration — runs once at startup ────────────────────────────────────
 async function ensureFulfillmentColumns(): Promise<void> {
@@ -71,8 +72,10 @@ export async function fulfillOrder(paymentIntentId: string, metadata: Record<str
     [orderId]
   );
 
-  const leMeta = LE_COIN_NETWORK[coinSymbol.toUpperCase()];
-  if (!leMeta) {
+  let leMeta: ReturnType<typeof getLeCoinNetwork>;
+  try {
+    leMeta = getLeCoinNetwork(coinSymbol);
+  } catch {
     const msg = `No LetsExchange network mapping for ${coinSymbol}`;
     logger.error({ orderId, coinSymbol }, `Fulfillment: ${msg}`);
     await pool.query(
@@ -286,7 +289,7 @@ function verifyStripeSignature(payload: Buffer, signature: string): Stripe.Event
 
   if (!secretKey) throw new Error("STRIPE_SECRET_KEY not set");
 
-  const stripe = new Stripe(secretKey, { apiVersion: "2025-03-31.basil" as any });
+  const stripe = new Stripe(secretKey, { apiVersion: STRIPE_API_VERSION as any });
 
   if (webhookSecret) {
     // Full signature verification when secret is available

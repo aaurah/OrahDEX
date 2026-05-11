@@ -18,8 +18,8 @@
  *
  * Security: HMAC-SHA256 signature verified via x-webhook-signature header
  * (or x-qn-signature for backwards compatibility) when EVM_WEBHOOK_SECRET
- * is set. Without the secret the route still processes events but logs a
- * warning — acceptable during initial setup / dev.
+ * is set. Without the secret the route rejects the request to avoid accepting
+ * forged settlement events.
  *
  * IMPORTANT: This route MUST be registered BEFORE express.json() in app.ts
  * because signature verification requires the raw request body Buffer.
@@ -59,10 +59,10 @@ const KNOWN_CONTRACTS = new Set([
 function checkSignature(rawBody: Buffer, req: Request): boolean {
   const secret = getWebhookSecret();
   if (!secret) {
-    logger.warn(
-      "evmWebhook: EVM_WEBHOOK_SECRET not set — skipping HMAC verification (set it for production)"
+    logger.error(
+      "evmWebhook: EVM_WEBHOOK_SECRET not set — rejecting webhook request"
     );
-    return true;
+    return false;
   }
 
   const sig = resolveSignatureHeader(req.headers as Record<string, string | string[] | undefined>);

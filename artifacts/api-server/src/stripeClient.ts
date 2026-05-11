@@ -1,6 +1,7 @@
 // Stripe client — reads keys from environment secrets (STRIPE_SECRET_KEY / STRIPE_PUBLISHABLE_KEY)
 // Falls back to Replit Connectors proxy if env vars are not set.
 import Stripe from "stripe";
+import { STRIPE_API_VERSION } from "./lib/stripeVersion.js";
 
 async function getCredentials(): Promise<{ publishableKey: string; secretKey: string }> {
   const secretKey     = process.env.STRIPE_SECRET_KEY;
@@ -67,7 +68,7 @@ async function getCredentials(): Promise<{ publishableKey: string; secretKey: st
 // WARNING: Never cache this client — tokens may rotate.
 export async function getUncachableStripeClient(): Promise<Stripe> {
   const { secretKey } = await getCredentials();
-  return new Stripe(secretKey, { apiVersion: "2025-03-31.basil" as any });
+  return new Stripe(secretKey, { apiVersion: STRIPE_API_VERSION as any });
 }
 
 export async function getStripePublishableKey(): Promise<string> {
