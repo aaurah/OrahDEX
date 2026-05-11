@@ -4,11 +4,6 @@ packages:
   - lib/integrations/*
   - scripts
 
-allowBuilds:
-  '@reown/appkit': set this to true or false
-  esbuild: set this to true or false
-  keccak: set this to true or false
-
 autoInstallPeers: false
 
 catalog:
