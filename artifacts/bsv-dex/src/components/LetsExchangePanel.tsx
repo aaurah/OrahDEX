@@ -470,7 +470,8 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   const belowMin = minAmt !== null && numAmt !== null && numAmt < minAmt;
   const aboveMax = maxAmt !== null && numAmt !== null && numAmt > maxAmt;
 
-  const rateIdExpiresMs = estimate?.rate_id_expired_at ? parseInt(estimate.rate_id_expired_at) : null;
+  // rate_id_expired_at from LE API is a Unix timestamp in seconds — multiply by 1000 to get ms
+  const rateIdExpiresMs = estimate?.rate_id_expired_at ? parseInt(estimate.rate_id_expired_at) * 1000 : null;
   const rateSecondsLeft = rateIdExpiresMs ? Math.max(0, Math.round((rateIdExpiresMs - Date.now()) / 1000)) : RATE_REFRESH;
 
   const canContinue = fromCoin && toCoin && numAmt && numAmt > 0 && !belowMin && !aboveMax;
