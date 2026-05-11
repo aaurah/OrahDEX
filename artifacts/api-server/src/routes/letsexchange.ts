@@ -28,8 +28,29 @@ import {
   type NormalisedCoin,
 } from "../lib/lePriceCache.js";
 import { getCoinChangeMap } from "../lib/priceUpdater.js";
+import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
 
 const router: IRouter = Router();
+
+/**
+ * Returns the built-in coin catalog as NormalisedCoin[] stubs.
+ * Used as an ultimate fallback when the LE API is unreachable or when the
+ * LETSEXCHANGE_API_KEY environment variable has not been configured yet.
+ * The stubs carry null network/image/hasExtraId so they still render in every
+ * coin picker and market list; live metadata is filled in once the API key is set.
+ */
+function builtInCoinsAsFallback(): NormalisedCoin[] {
+  return getBuiltInLeCoins().map(symbol => ({
+    symbol,
+    name: symbol,
+    network: null,
+    networkName: null,
+    image: null,
+    hasExtraId: false,
+    minAmount: null,
+    maxAmount: null,
+  }));
+}
 
 const CACHE_TTL = 30 * 60 * 1000; // 30 min — coins list changes rarely
 interface CacheEntry { data: unknown; ts: number }
@@ -105,15 +126,25 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
 
 // ── GET /api/letsexchange/currencies ─────────────────────────────────────────
 router.get("/letsexchange/currencies", async (_req, res) => {
-  if (!process.env.LETSEXCHANGE_API_KEY) { res.json([]); return; }
+  // Return from cache first — fastest path
   const hit = cached("currencies") as NormalisedCoin[] | null;
-  if (hit) { res.json(hit); return; }
+  if (hit && hit.length > 0) { res.json(hit); return; }
+
+  // No API key configured — serve the built-in coin catalog so the swap UI
+  // always has coins to show.  Estimate / exchange calls still require a key.
+  if (!process.env.LETSEXCHANGE_API_KEY) {
+    res.json(builtInCoinsAsFallback());
+    return;
+  }
+
   try {
     const coins = await fetchAndCacheCurrencies();
-    res.json(coins);
+    // If the live API returned an empty list (e.g. temporary outage), fall back
+    // so the frontend never receives an empty coin picker.
+    res.json(coins.length > 0 ? coins : builtInCoinsAsFallback());
   } catch (err: any) {
     logger.error({ err }, "letsexchange /currencies failed");
-    res.json([]);
+    res.json(builtInCoinsAsFallback());
   }
 });
 
@@ -259,13 +290,19 @@ router.get("/letsexchange/pairs", async (req, res) => {
     // ── Merge DB catalog + live API for maximum pair coverage ──────────────
     // DB:      36 000+ all-to-all pairs (191 coins × 190 quotes) — real prices
     // Live API: ~14 000 pairs (972 unique coins × 14 quotes)     — newer coins
+    // Built-in: ~190 well-known coins × 22 quotes                — always available
     // Combined: ~47 000 unique pairs after deduplication
     //
     // Priority order (lower layer is applied first, higher layers override):
+    //   0. built-in catalog  (ultimate fallback — always present)
     //   1. live API buildPairs  (base layer — newer coins, lastPrice=0)
     //   2. DB pairs             (override — real prices, wide all-to-all catalog)
     //   3. native spot pairs    (override — most accurate prices from the DEX)
     const mergeMap = new Map<string, Record<string, unknown>>();
+
+    // Layer 0 (pre-seed): built-in catalog ensures we never serve an empty list
+    // even when the LE API key is missing or the API is temporarily unreachable.
+    buildPairs(builtInCoinsAsFallback()).forEach(p => mergeMap.set(p.symbol as string, p));
 
     // Layer 1: live LE API buildPairs (fresh coin list, 14 quotes)
     try {
@@ -411,8 +448,10 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
     let coins: NormalisedCoin[] | null | undefined;
 
     if (!lePairs) {
-      // Mirrors /pairs: merge live API buildPairs + DB all-to-all catalog
+      // Mirrors /pairs: Layer 0 (built-in) + Layer 1 (live API) + Layer 2 (DB)
       const mergeMap = new Map<string, Record<string, unknown>>();
+      // Layer 0: built-in catalog ensures a non-zero count even without API key / DB
+      buildPairs(builtInCoinsAsFallback()).forEach(p => mergeMap.set(p.symbol as string, p));
       try {
         coins = cached("currencies") as NormalisedCoin[] | null;
         if (!coins) coins = await fetchAndCacheCurrencies();
