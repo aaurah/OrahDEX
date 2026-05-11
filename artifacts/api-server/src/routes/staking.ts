@@ -229,7 +229,7 @@ router.get("/staking/positions", async (req, res) => {
         ...p,
         rewardAccrued: rewardAccrued.toFixed(8),
         daysRemaining,
-        canUnstake: daysRemaining === 0 || p.status === "active",
+        canUnstake: daysRemaining === 0 && p.status === "active",
       };
     });
     res.json(enriched);
