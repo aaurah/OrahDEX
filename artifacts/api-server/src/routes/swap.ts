@@ -345,7 +345,7 @@ router.post("/swap/execute", async (req, res) => {
 
     const requiresEvmSignature =
       source === "internal" ||
-      (source === "split" && !!decision.splitLegs?.internal && decision.splitLegs.internal.amount > 0);
+      (source === "split" && (decision.splitLegs?.internal?.amount ?? 0) > 0);
     if (requiresEvmSignature && !verifyEvmSwapSignature(res, walletAddress, nonce, signature, "swap_internal")) {
       return;
     }

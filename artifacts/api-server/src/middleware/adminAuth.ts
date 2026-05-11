@@ -23,8 +23,8 @@ function purgeExpiredToken(token: string): void {
   void db
     .delete(platformSettingsTable)
     .where(eq(platformSettingsTable.key, `${TOKEN_PREFIX}${token}`))
-    .catch((err: any) => {
-      logger.warn({ err: err?.message }, "adminAuth: failed to purge expired admin token from DB");
+    .catch((err: unknown) => {
+      logger.warn({ err }, "adminAuth: failed to purge expired admin token from DB");
     });
 }
 
