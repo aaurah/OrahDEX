@@ -9,7 +9,7 @@ import fs from "fs";
 import router from "./routes";
 import v1Router from "./routes/v1.js";
 import { logger } from "./lib/logger";
-import { startPriceUpdater } from "./lib/priceUpdater.js";
+import { startPriceUpdater, syncAllLEPairs } from "./lib/priceUpdater.js";
 import { startLiquidityBot } from "./lib/liquidityBot.js";
 import { startArbBot } from "./lib/arbBot.js";
 import { startFuturesProfitEngine } from "./lib/futuresProfitEngine.js";
@@ -317,6 +317,16 @@ startCopyOrchestrator();
 setTimeout(() => {
   warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
 }, 60_000);
+
+// Fire-and-forget: seed all-to-all LE pairs using the built-in coin catalog
+// (~331 coins × 330 = 109,230 pairs). Runs 45 s after boot in the background
+// so it doesn't delay server startup or block other services.
+setTimeout(() => {
+  syncAllLEPairs()
+    .then(({ coins, inserted }) =>
+      logger.info({ coins, inserted }, "Startup LE all-pairs sync complete"))
+    .catch(e => logger.warn({ err: e }, "Startup LE all-pairs sync failed (non-fatal)"));
+}, 45_000);
 try { startPriceUpdater();        } catch (e) { logger.error({ err: e }, "startPriceUpdater failed to init"); }
 try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startLiquidityBot failed to init"); }
 try { startArbBot();              } catch (e) { logger.error({ err: e }, "startArbBot failed to init"); }

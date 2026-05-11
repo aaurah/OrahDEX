@@ -22,7 +22,7 @@ import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
 import { marketsTable, leSwapsTable } from "@workspace/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import {
   leRequest, fetchLEPricesUSD, getCachedLEPrices, AFFILIATE_ID,
   type NormalisedCoin,
@@ -457,6 +457,19 @@ router.get("/letsexchange/pairs", async (req, res) => {
 router.get("/letsexchange/pairs/count", async (req, res) => {
   const filterQuote = typeof req.query.quote === "string" ? req.query.quote.toUpperCase() : null;
   const returnAll   = req.query.all === "true" || req.query.all === "1";
+
+  // Fast path: when ?all=true, return total DB market count directly
+  if (returnAll && !filterQuote) {
+    try {
+      const rows = await db.select({ count: sql<number>`count(*)` })
+        .from(marketsTable)
+        .where(eq(marketsTable.enabled, true));
+      const total = Number(rows[0]?.count ?? 0);
+      res.set("Cache-Control", `public, max-age=${COUNT_CACHE_MAX_AGE_SECONDS}`);
+      res.json({ count: total });
+      return;
+    } catch { /* fall through to original logic */ }
+  }
 
   try {
     const cacheKey = "le_pairs_all";
