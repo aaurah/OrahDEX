@@ -13,7 +13,8 @@ const adminTokenExpirations = new Map<string, number>();
 
 function hasTokenExpired(token: string): boolean {
   const expiresAt = adminTokenExpirations.get(token);
-  return typeof expiresAt === "number" && Number.isFinite(expiresAt) && Date.now() > expiresAt;
+  if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return true;
+  return Date.now() > expiresAt;
 }
 
 function purgeExpiredToken(token: string): void {

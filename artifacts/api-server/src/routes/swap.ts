@@ -52,8 +52,8 @@ function verifyEvmSwapSignature(
   try {
     verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
     return true;
-  } catch (authErr: any) {
-    res.status(401).json({ error: authErr.message });
+  } catch {
+    res.status(401).json({ error: "Invalid or expired swap signature challenge." });
     return false;
   }
 }
