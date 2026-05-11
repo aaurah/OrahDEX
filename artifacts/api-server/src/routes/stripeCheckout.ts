@@ -20,7 +20,8 @@ async function quoteFromLE(coinSymbol: string, netUsdt: number): Promise<{ coinA
   let meta: ReturnType<typeof getLeCoinNetwork>;
   try {
     meta = getLeCoinNetwork(coinSymbol);
-  } catch {
+  } catch (err: any) {
+    logger.warn({ coinSymbol, err: err?.message }, "LE price quote skipped for unsupported coin");
     return null;
   }
   try {
@@ -66,8 +67,8 @@ async function getFallbackUsdPrice(coinSymbol: string): Promise<{
         return { price, source: "markets" };
       }
     }
-  } catch {
-    /* fall through to static fallback */
+  } catch (err: any) {
+    logger.warn({ coinSymbol, err: err?.message }, "Stripe checkout market fallback lookup failed");
   }
 
   return {

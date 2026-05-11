@@ -75,9 +75,9 @@ export async function fulfillOrder(paymentIntentId: string, metadata: Record<str
   let leMeta: ReturnType<typeof getLeCoinNetwork>;
   try {
     leMeta = getLeCoinNetwork(coinSymbol);
-  } catch {
+  } catch (err: any) {
     const msg = `No LetsExchange network mapping for ${coinSymbol}`;
-    logger.error({ orderId, coinSymbol }, `Fulfillment: ${msg}`);
+    logger.error({ orderId, coinSymbol, err: err?.message }, `Fulfillment: ${msg}`);
     await pool.query(
       `UPDATE crypto_orders SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
       [msg, orderId]
