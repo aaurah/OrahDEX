@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
-import { eq, and, lte, gte, ne, isNotNull, desc } from "drizzle-orm";
+import { eq, and, lte, gte, ne, isNotNull, desc, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
@@ -16,7 +16,7 @@ import { settleEscrowMatch, isEscrowChain, findEscrowChain } from "../lib/escrow
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
-import { buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce } from "../lib/walletAuth.js";
+import { buildOrderAuthMessage, verifyEvmSignature, verifyBsvWithdrawSignature, verifySolWithdrawSignature, isOrderNonceConsumed, recordConsumedOrderNonce } from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
 
@@ -153,10 +153,13 @@ router.post("/orders", async (req, res) => {
     const fee           = (total || 0) * feeRate;
     const networkType   = body.networkType ?? (body.walletAddress.startsWith("0x") ? "evm" : "bsv");
 
+    // Derive wallet source from address format — never trust client-supplied walletSource.
+    // Any recognizable crypto address format must go through signature verification.
+    const isEvmAddress = /^0x[0-9a-fA-F]{40}$/i.test(body.walletAddress);
+    const isBsvAddress = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(body.walletAddress);
+    const isSolAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(body.walletAddress);
     const walletSource: "external" | "orah" =
-      body.walletSource === "external" ? "external"
-      : body.walletSource === "orah"   ? "orah"
-      : (body.evmSignature || body.signedTx) ? "external"
+      (isEvmAddress || isBsvAddress || isSolAddress) ? "external"
       : "orah";
 
     const isExternalWallet = walletSource === "external";
@@ -165,7 +168,7 @@ router.post("/orders", async (req, res) => {
     // The evmSignature must have been produced by the private key of walletAddress
     // over the canonical order-authorisation message. This prevents any caller who
     // merely knows a walletAddress from placing orders on its behalf.
-    if (body.walletAddress.startsWith("0x") && walletSource === "external") {
+    if (isEvmAddress && walletSource === "external") {
       const evmSig = body.evmSignature ?? body.signedTx;
       if (!evmSig) {
         res.status(401).json({
@@ -186,8 +189,20 @@ router.post("/orders", async (req, res) => {
         return;
       }
 
-      // Reject replayed nonces: each (walletAddress, nonce) pair is single-use.
+      // Reject replayed nonces (in-memory fast path): each (walletAddress, nonce) pair is single-use.
       if (isOrderNonceConsumed(body.walletAddress, orderNonce)) {
+        res.status(401).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
+        return;
+      }
+
+      // DB-level nonce uniqueness check (second line of defence, catches races).
+      const priorNonceUse = await db.select({ id: ordersTable.id }).from(ordersTable).where(
+        and(
+          sql`lower(${ordersTable.walletAddress}) = lower(${body.walletAddress})`,
+          eq(ordersTable.nonce, orderNonce),
+        ),
+      ).limit(1);
+      if (priorNonceUse.length > 0) {
         res.status(401).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
         return;
       }
@@ -209,6 +224,42 @@ router.post("/orders", async (req, res) => {
 
       // Consume the nonce after successful verification (single-use enforcement).
       recordConsumedOrderNonce(body.walletAddress, orderNonce, expiryUnixSec);
+    }
+
+    // ── Verify wallet ownership for external BSV wallets ─────────────────────
+    if (isBsvAddress && walletSource === "external") {
+      const sig = body.signedTx ?? body.bsvSignature;
+      if (!sig) {
+        res.status(401).json({
+          error: "BSV wallet signature is required for external BSV wallet orders.",
+          code: "SIGNATURE_REQUIRED",
+        });
+        return;
+      }
+      try {
+        verifyBsvWithdrawSignature(body.walletAddress, sig);
+      } catch (authErr: any) {
+        res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
+        return;
+      }
+    }
+
+    // ── Verify wallet ownership for external Solana wallets ───────────────────
+    if (isSolAddress && walletSource === "external") {
+      const sig = body.signedTx ?? body.solSignature;
+      if (!sig) {
+        res.status(401).json({
+          error: "Solana wallet signature is required for external Solana wallet orders.",
+          code: "SIGNATURE_REQUIRED",
+        });
+        return;
+      }
+      try {
+        verifySolWithdrawSignature(body.walletAddress, sig);
+      } catch (authErr: any) {
+        res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
+        return;
+      }
     }
 
     // ── Validate and extract optional chainId (additive — existing clients unaffected) ──
@@ -296,7 +347,19 @@ router.post("/orders", async (req, res) => {
       expiry:            body.expiry ? String(body.expiry) : String(Math.floor(Date.now() / 1000) + 5 * 60),
     };
 
-    await db.insert(ordersTable).values(newOrder);
+    try {
+      await db.insert(ordersTable).values(newOrder);
+    } catch (insertErr: any) {
+      const isNonceUniqueViolation =
+        insertErr?.code === "23505" &&
+        (insertErr?.constraint === "orders_wallet_nonce_uidx" ||
+         String(insertErr?.detail ?? "").includes("orders_wallet_nonce_uidx"));
+      if (isNonceUniqueViolation) {
+        res.status(401).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
+        return;
+      }
+      throw insertErr;
+    }
     req.log.info({ orderId: id, side, networkType, walletSource }, "Order placed");
 
     /* Push order-placed notification to the user */

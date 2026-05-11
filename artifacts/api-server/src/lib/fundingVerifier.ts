@@ -148,7 +148,7 @@ async function verifySpotFunding(
         valid:      false,
         fundingRef: "",
         error:      "Wallet signature required for on-chain order placement. Please sign the order in your wallet.",
-        code:       "SIGNATURE_REQUIRED",
+        code:       "FUNDING_PROOF_REQUIRED",
       };
     }
 
@@ -173,80 +173,94 @@ async function verifySpotFunding(
       }
     }
 
-    // 3. If chainId provided, verify on-chain native/ERC-20 balance via RPC.
-    //    This replaces the deprecated reportedBalance check.
-    if (chainId) {
-      const RPC_URLS: Record<number, string> = {
-        1:      process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
-        56:     process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
-        137:    process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",
-        8453:   process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
-        42161:  process.env.ARB_RPC_URL      ?? "https://arb1.arbitrum.io/rpc",
-        10:     process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",
-        43114:  process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
+    // 3. Require chainId for on-chain EVM balance verification.
+    //    Without it we cannot verify the caller holds the funds they claim.
+    if (!chainId) {
+      return {
+        valid:      false,
+        fundingRef: "",
+        error:      "chainId is required for on-chain order placement with an external EVM wallet.",
+        code:       "CHAIN_ID_REQUIRED",
       };
-      const rpcUrl = RPC_URLS[chainId];
-      if (rpcUrl) {
-        try {
-          const client = createPublicClient({ transport: http(rpcUrl) });
+    }
+    const RPC_URLS: Record<number, string> = {
+      1:      process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
+      56:     process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
+      137:    process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",
+      8453:   process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
+      42161:  process.env.ARB_RPC_URL      ?? "https://arb1.arbitrum.io/rpc",
+      10:     process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",
+      43114:  process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
+    };
+    const rpcUrl = RPC_URLS[chainId];
+    if (rpcUrl) {
+      try {
+        const client = createPublicClient({ transport: http(rpcUrl) });
 
-          // Minimal ERC-20 ABI for balanceOf
-          const ERC20_BALANCE_OF_ABI = [
-            {
-              type:    "function",
-              name:    "balanceOf",
-              inputs:  [{ name: "account", type: "address" }],
-              outputs: [{ name: "", type: "uint256" }],
-              stateMutability: "view",
-            },
-          ] as const;
+        // Minimal ERC-20 ABI for balanceOf
+        const ERC20_BALANCE_OF_ABI = [
+          {
+            type:    "function",
+            name:    "balanceOf",
+            inputs:  [{ name: "account", type: "address" }],
+            outputs: [{ name: "", type: "uint256" }],
+            stateMutability: "view",
+          },
+        ] as const;
 
-          let onChain: number;
+        let onChain: number;
 
-          if (isNativeAsset(chainId, asset)) {
-            // Native chain asset: ETH / BNB / MATIC / AVAX
-            const onChainBal = await client.getBalance({ address: walletAddress as `0x${string}` });
-            onChain = Number(onChainBal) / 1e18;
-          } else {
-            // ERC-20 token: look up contract address and decimals
-            const tokenInfo = getTokenInfo(chainId, asset);
-            if (!tokenInfo) {
-              // Token not in registry — log a warning and skip on-chain check.
-              // Never silently accept as if the check passed.
-              logger.warn(
-                { walletAddress, chainId, asset },
-                "fundingVerifier: token not in registry — on-chain balance check skipped",
-              );
-              const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
-              return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
-            }
-            const rawBalance = await client.readContract({
-              address:      tokenInfo.address as `0x${string}`,
-              abi:          ERC20_BALANCE_OF_ABI,
-              functionName: "balanceOf",
-              args:         [walletAddress as `0x${string}`],
-            });
-            onChain = Number(rawBalance) / 10 ** tokenInfo.decimals;
-          }
-
-          if (onChain < needed) {
+        if (isNativeAsset(chainId, asset)) {
+          // Native chain asset: ETH / BNB / MATIC / AVAX
+          const onChainBal = await client.getBalance({ address: walletAddress as `0x${string}` });
+          onChain = Number(onChainBal) / 1e18;
+        } else {
+          // ERC-20 token: look up contract address and decimals
+          const tokenInfo = getTokenInfo(chainId, asset);
+          if (!tokenInfo) {
+            // Token not in registry — fail closed. The operator must add it
+            // to TOKEN_REGISTRY before orders for this token can be placed.
+            logger.warn(
+              { walletAddress, chainId, asset },
+              "fundingVerifier: token not in registry — order rejected",
+            );
             return {
               valid:      false,
               fundingRef: "",
-              error:      `Insufficient on-chain ${asset} balance (verified via RPC)`,
-              code:       "INSUFFICIENT_FUNDS",
+              error:      `Token ${asset} is not supported for on-chain verification on chain ${chainId}.`,
+              code:       "TOKEN_UNSUPPORTED",
             };
           }
-        } catch (rpcErr: any) {
-          // Log the RPC failure — this is unexpected and may indicate an
-          // unavailable endpoint. Fall through and accept the signed order
-          // (signature already proves ownership; on-chain settlement is
-          // best-effort). Operators should monitor for repeated failures.
-          logger.warn(
-            { walletAddress, chainId, err: rpcErr?.message },
-            "fundingVerifier: on-chain RPC balance check failed — falling through",
-          );
+          const rawBalance = await client.readContract({
+            address:      tokenInfo.address as `0x${string}`,
+            abi:          ERC20_BALANCE_OF_ABI,
+            functionName: "balanceOf",
+            args:         [walletAddress as `0x${string}`],
+          });
+          onChain = Number(rawBalance) / 10 ** tokenInfo.decimals;
         }
+
+        if (onChain < needed) {
+          return {
+            valid:      false,
+            fundingRef: "",
+            error:      `Insufficient on-chain ${asset} balance (verified via RPC)`,
+            code:       "INSUFFICIENT_FUNDS",
+          };
+        }
+      } catch (rpcErr: any) {
+        // RPC failure — fail closed. On-chain balance could not be verified,
+        // so we must not accept the order. The user should retry when RPC is available.
+        logger.warn(
+          { walletAddress, chainId, err: rpcErr?.message },
+          "fundingVerifier: on-chain RPC balance check failed",
+        );
+        return {
+          valid:      false,
+          fundingRef: "",
+          error:      "On-chain balance verification is temporarily unavailable. Please retry in a moment.",
+          code:       "BALANCE_VERIFICATION_UNAVAILABLE",
+        };
       }
     }
 

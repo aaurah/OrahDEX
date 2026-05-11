@@ -28,6 +28,7 @@ import {
   type NormalisedCoin,
 } from "../lib/lePriceCache.js";
 import { getCoinChangeMap } from "../lib/priceUpdater.js";
+import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
 
 const router: IRouter = Router();
 
@@ -84,7 +85,7 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
       if (!seen.has(key)) { seen.add(key); result.push({ symbol, name, network:null, networkName:null, image, hasExtraId:false, minAmount, maxAmount }); }
     } else {
       for (const net of networks) {
-        if (net.is_active === 0) continue;
+        if (net.is_active === 0 || net.is_active === false) continue;
         const netCode = (net.code ?? "") as string;
         const key = `${symbol}::${netCode}`;
         if (seen.has(key)) continue;
@@ -94,7 +95,7 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
           network:     netCode || null,
           networkName: (net.name ?? null) as string|null,
           image:       (net.icon ?? image) as string|null,
-          hasExtraId:  !!(net.has_extra),
+          hasExtraId:  !!(net.has_extra ?? net.has_extra_id),
           minAmount, maxAmount,
         });
       }
@@ -105,7 +106,16 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
 
 // ── GET /api/letsexchange/currencies ─────────────────────────────────────────
 router.get("/letsexchange/currencies", async (_req, res) => {
-  if (!process.env.LETSEXCHANGE_API_KEY) { res.json([]); return; }
+  if (!process.env.LETSEXCHANGE_API_KEY) {
+    // No API key configured — return built-in coin list as fallback so the UI
+    // remains functional. Coins are returned as minimal NormalisedCoin objects.
+    const fallback: NormalisedCoin[] = getBuiltInLeCoins().map(sym => ({
+      symbol: sym, name: sym, network: null, networkName: null,
+      image: null, hasExtraId: false, minAmount: null, maxAmount: null,
+    }));
+    res.json(fallback);
+    return;
+  }
   const hit = cached("currencies") as NormalisedCoin[] | null;
   if (hit) { res.json(hit); return; }
   try {
@@ -113,7 +123,12 @@ router.get("/letsexchange/currencies", async (_req, res) => {
     res.json(coins);
   } catch (err: any) {
     logger.error({ err }, "letsexchange /currencies failed");
-    res.json([]);
+    // Live API failed — serve built-in fallback so the UI stays functional.
+    const fallback: NormalisedCoin[] = getBuiltInLeCoins().map(sym => ({
+      symbol: sym, name: sym, network: null, networkName: null,
+      image: null, hasExtraId: false, minAmount: null, maxAmount: null,
+    }));
+    res.json(fallback);
   }
 });
 
