@@ -369,6 +369,19 @@ router.post("/staking/unstake/:id", async (req, res) => {
       return;
     }
 
+    // Enforce lock period — reject early unstake requests server-side.
+    const now     = Date.now();
+    const unlocks = existing.unlocksAt.getTime();
+    if (now < unlocks) {
+      const daysRemaining = Math.max(1, Math.ceil((unlocks - now) / (1000 * 60 * 60 * 24)));
+      res.status(400).json({
+        error: `Position is still locked. ${daysRemaining} day${daysRemaining === 1 ? "" : "s"} remaining until unlock.`,
+        code:  "LOCK_PERIOD_ACTIVE",
+        daysRemaining,
+      });
+      return;
+    }
+
     const [updated] = await db
       .update(stakingPositionsTable)
       .set({ status: "completed", completedAt: new Date() })

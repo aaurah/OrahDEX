@@ -95,7 +95,7 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
           network:     netCode || null,
           networkName: (net.name ?? null) as string|null,
           image:       (net.icon ?? image) as string|null,
-          hasExtraId:  !!(net.has_extra ?? net.has_extra_id),
+          hasExtraId:  !!(net.has_extra_id ?? net.has_extra),
           minAmount, maxAmount,
         });
       }
