@@ -266,7 +266,9 @@ router.post("/orders", async (req, res) => {
           return;
         }
       } else if (isBsvAddress) {
-        // BSV: verify ECDSA signature from the BSV wallet
+        // BSV: verify ECDSA signature from the BSV wallet.
+        // verifyBsvWithdrawSignature verifies a BSV wallet's ECDSA message signature —
+        // the same cryptographic primitive is used here for order auth (not a withdrawal).
         const sig = body.bsvSignature ?? body.signedTx;
         if (!sig) {
           res.status(401).json({ error: "bsvSignature is required for external BSV wallet orders.", code: "SIGNATURE_REQUIRED" });
@@ -279,7 +281,9 @@ router.post("/orders", async (req, res) => {
           return;
         }
       } else if (isSolAddress) {
-        // Solana: verify Ed25519 signature from the Solana wallet
+        // Solana: verify Ed25519 signature from the Solana wallet.
+        // verifySolWithdrawSignature verifies a Solana wallet's Ed25519 message signature —
+        // the same cryptographic primitive is used here for order auth (not a withdrawal).
         const sig = body.solSignature ?? body.signedTx;
         if (!sig) {
           res.status(401).json({ error: "solSignature is required for external Solana wallet orders.", code: "SIGNATURE_REQUIRED" });

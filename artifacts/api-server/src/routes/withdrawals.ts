@@ -253,9 +253,10 @@ router.post("/withdrawals", async (req, res) => {
 
 // Alias: POST /withdraw → same handler as POST /withdrawals
 // Kept for backward compatibility with clients that call /api/withdraw (without the "s").
+// Uses the Express Router's internal dispatch to re-route the request.
 router.post("/withdraw", (req, res, next) => {
   req.url = "/withdrawals";
-  (router as any)(req, res, next);
+  (router as any).handle(req, res, next);
 });
 
 // ── GET /admin/withdrawals ────────────────────────────────────────────────────
