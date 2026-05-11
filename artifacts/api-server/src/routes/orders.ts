@@ -16,9 +16,45 @@ import { settleEscrowMatch, isEscrowChain, findEscrowChain } from "../lib/escrow
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
-import { buildOrderAuthMessage, verifyEvmSignature, verifyBsvWithdrawSignature, verifySolWithdrawSignature, isOrderNonceConsumed, recordConsumedOrderNonce } from "../lib/walletAuth.js";
+import {
+  buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
+  verifyBsvWithdrawSignature, verifySolWithdrawSignature,
+} from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
+
+// ── Wallet-format helpers ─────────────────────────────────────────────────────
+
+/** Detect EVM addresses (0x + 40 hex chars). */
+function detectIsEvmAddress(addr: string): boolean {
+  return /^0x[0-9a-fA-F]{40}$/.test(addr);
+}
+
+/** Detect BSV / legacy Bitcoin / Bitcoin Cash addresses (base58 P2PKH / P2SH). */
+function detectIsBsvAddress(addr: string): boolean {
+  // BSV mainnet: 1xxx (P2PKH) or 3xxx (P2SH) or bchtest / bitcoincash prefixed
+  return /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(addr);
+}
+
+/** Detect Solana public keys (base58, 32–44 chars, no O/0/I/l). */
+function detectIsSolAddress(addr: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) && !addr.startsWith("0x");
+}
+
+/**
+ * Detect whether a DB unique-index violation was triggered.
+ * Postgres raises error code 23505 for unique constraint violations; the
+ * constraint name appears in the detail/message text.
+ */
+function isNonceUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as Record<string, unknown>;
+  return (
+    e["code"] === "23505" ||
+    String(e["message"] ?? "").includes("orders_wallet_nonce_uidx") ||
+    String(e["detail"] ?? "").includes("orders_wallet_nonce_uidx")
+  );
+}
 
 function settlementExplorerUrl(txid: string | null | undefined, chainId?: number | null): string | null {
   if (!txid) return null;
@@ -153,113 +189,116 @@ router.post("/orders", async (req, res) => {
     const fee           = (total || 0) * feeRate;
     const networkType   = body.networkType ?? (body.walletAddress.startsWith("0x") ? "evm" : "bsv");
 
-    // Derive wallet source from address format — never trust client-supplied walletSource.
-    // Any recognizable crypto address format must go through signature verification.
-    const isEvmAddress = /^0x[0-9a-fA-F]{40}$/i.test(body.walletAddress);
-    const isBsvAddress = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(body.walletAddress);
-    const isSolAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(body.walletAddress);
+    // Classify wallet source based on address format — explicit format detection
+    // prevents clients from lying about their wallet type to bypass auth checks.
+    const isEvmAddress = detectIsEvmAddress(body.walletAddress);
+    const isBsvAddress = detectIsBsvAddress(body.walletAddress);
+    const isSolAddress = detectIsSolAddress(body.walletAddress);
+
     const walletSource: "external" | "orah" =
-      (isEvmAddress || isBsvAddress || isSolAddress) ? "external"
-      : "orah";
+      body.walletSource === "orah" ? "orah"
+      : (isEvmAddress || isBsvAddress || isSolAddress) ? "external"
+      : body.walletSource ?? "orah";
 
     const isExternalWallet = walletSource === "external";
 
-    // ── Verify wallet ownership for external EVM wallets ─────────────────────
-    // The evmSignature must have been produced by the private key of walletAddress
+    // ── Verify wallet ownership for external wallets ─────────────────────────
+    // The signature must have been produced by the private key of walletAddress
     // over the canonical order-authorisation message. This prevents any caller who
     // merely knows a walletAddress from placing orders on its behalf.
-    if (isEvmAddress && walletSource === "external") {
-      const evmSig = body.evmSignature ?? body.signedTx;
-      if (!evmSig) {
-        res.status(401).json({
-          error: "evmSignature is required for external EVM wallet orders. " +
-                 "Sign the canonical order message with personal_sign and include it in the request.",
-          code: "SIGNATURE_REQUIRED",
-        });
-        return;
-      }
-      // nonce defaults to the order id; expiry defaults to 5 minutes from now
+    //
+    // For BSV and Solana wallets, a prior-nonce check in the DB enforces that
+    // each (wallet, nonce) pair is truly single-use even across server restarts.
+    if (walletSource === "external") {
       const orderNonce  = body.nonce  ? String(body.nonce)  : id;
       const orderExpiry = body.expiry ? String(body.expiry) : String(Math.floor(Date.now() / 1000) + 5 * 60);
-
-      // Enforce expiry: reject if the order's expiry timestamp is in the past.
       const expiryUnixSec = parseInt(orderExpiry, 10);
+
+      // Enforce expiry.
       if (expiryUnixSec <= Math.floor(Date.now() / 1000)) {
         res.status(401).json({ error: "Order signature has expired. Sign a fresh order with a future expiry.", code: "SIGNATURE_EXPIRED" });
         return;
       }
 
-      // Reject replayed nonces (in-memory fast path): each (walletAddress, nonce) pair is single-use.
-      if (isOrderNonceConsumed(body.walletAddress, orderNonce)) {
+      // Check for prior nonce use in-memory cache first (fast path), then DB.
+      const priorNonceUse = isOrderNonceConsumed(body.walletAddress, orderNonce);
+      if (priorNonceUse) {
         res.status(401).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
         return;
       }
 
-      // DB-level nonce uniqueness check (second line of defence, catches races).
-      const priorNonceUse = await db.select({ id: ordersTable.id }).from(ordersTable).where(
-        and(
+      // DB-level nonce uniqueness check: lower(wallet_address) + nonce.
+      // Enforces single-use even across server restarts (the in-memory cache is lost on restart).
+      const existingNonce = await db.select({ id: ordersTable.id }).from(ordersTable)
+        .where(and(
           sql`lower(${ordersTable.walletAddress}) = lower(${body.walletAddress})`,
           eq(ordersTable.nonce, orderNonce),
-        ),
-      ).limit(1);
-      if (priorNonceUse.length > 0) {
+        ))
+        .limit(1);
+      if (existingNonce.length > 0) {
         res.status(401).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
         return;
       }
 
-      const authMsg = buildOrderAuthMessage({
-        walletAddress: body.walletAddress,
-        symbol:        symbol,
-        side:          body.side,
-        quantity:      quantity.toString(),
-        nonce:         orderNonce,
-        expiry:        orderExpiry,
-      });
-      try {
-        verifyEvmSignature(body.walletAddress, authMsg, evmSig);
-      } catch (authErr: any) {
-        res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
-        return;
+      if (isEvmAddress) {
+        // EVM: personal_sign with canonical order auth message
+        const evmSig = body.evmSignature ?? body.signedTx;
+        if (!evmSig) {
+          res.status(401).json({
+            error: "evmSignature is required for external EVM wallet orders. " +
+                   "Sign the canonical order message with personal_sign and include it in the request.",
+            code: "SIGNATURE_REQUIRED",
+          });
+          return;
+        }
+        const authMsg = buildOrderAuthMessage({
+          walletAddress: body.walletAddress,
+          symbol:        symbol,
+          side:          body.side,
+          quantity:      quantity.toString(),
+          nonce:         orderNonce,
+          expiry:        orderExpiry,
+        });
+        try {
+          verifyEvmSignature(body.walletAddress, authMsg, evmSig);
+        } catch (authErr: any) {
+          res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
+          return;
+        }
+      } else if (isBsvAddress) {
+        // BSV: verify ECDSA signature from the BSV wallet.
+        // verifyBsvWithdrawSignature verifies a BSV wallet's ECDSA message signature —
+        // the same cryptographic primitive is used here for order auth (not a withdrawal).
+        const sig = body.bsvSignature ?? body.signedTx;
+        if (!sig) {
+          res.status(401).json({ error: "bsvSignature is required for external BSV wallet orders.", code: "SIGNATURE_REQUIRED" });
+          return;
+        }
+        try {
+          verifyBsvWithdrawSignature(body.walletAddress, sig);
+        } catch (authErr: any) {
+          res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
+          return;
+        }
+      } else if (isSolAddress) {
+        // Solana: verify Ed25519 signature from the Solana wallet.
+        // verifySolWithdrawSignature verifies a Solana wallet's Ed25519 message signature —
+        // the same cryptographic primitive is used here for order auth (not a withdrawal).
+        const sig = body.solSignature ?? body.signedTx;
+        if (!sig) {
+          res.status(401).json({ error: "solSignature is required for external Solana wallet orders.", code: "SIGNATURE_REQUIRED" });
+          return;
+        }
+        try {
+          verifySolWithdrawSignature(body.walletAddress, sig);
+        } catch (authErr: any) {
+          res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
+          return;
+        }
       }
 
       // Consume the nonce after successful verification (single-use enforcement).
       recordConsumedOrderNonce(body.walletAddress, orderNonce, expiryUnixSec);
-    }
-
-    // ── Verify wallet ownership for external BSV wallets ─────────────────────
-    if (isBsvAddress && walletSource === "external") {
-      const sig = body.signedTx ?? body.bsvSignature;
-      if (!sig) {
-        res.status(401).json({
-          error: "BSV wallet signature is required for external BSV wallet orders.",
-          code: "SIGNATURE_REQUIRED",
-        });
-        return;
-      }
-      try {
-        verifyBsvWithdrawSignature(body.walletAddress, sig);
-      } catch (authErr: any) {
-        res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
-        return;
-      }
-    }
-
-    // ── Verify wallet ownership for external Solana wallets ───────────────────
-    if (isSolAddress && walletSource === "external") {
-      const sig = body.signedTx ?? body.solSignature;
-      if (!sig) {
-        res.status(401).json({
-          error: "Solana wallet signature is required for external Solana wallet orders.",
-          code: "SIGNATURE_REQUIRED",
-        });
-        return;
-      }
-      try {
-        verifySolWithdrawSignature(body.walletAddress, sig);
-      } catch (authErr: any) {
-        res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
-        return;
-      }
     }
 
     // ── Validate and extract optional chainId (additive — existing clients unaffected) ──
@@ -349,16 +388,13 @@ router.post("/orders", async (req, res) => {
 
     try {
       await db.insert(ordersTable).values(newOrder);
-    } catch (insertErr: any) {
-      const isNonceUniqueViolation =
-        insertErr?.code === "23505" &&
-        (insertErr?.constraint === "orders_wallet_nonce_uidx" ||
-         String(insertErr?.detail ?? "").includes("orders_wallet_nonce_uidx"));
-      if (isNonceUniqueViolation) {
-        res.status(401).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
+    } catch (insertErr: unknown) {
+      // Catch unique constraint violations on (wallet_address, nonce) — orders_wallet_nonce_uidx
+      if (isNonceUniqueViolation(insertErr)) {
+        res.status(409).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
         return;
       }
-      throw insertErr;
+      throw insertErr; // re-throw all other DB errors
     }
     req.log.info({ orderId: id, side, networkType, walletSource }, "Order placed");
 

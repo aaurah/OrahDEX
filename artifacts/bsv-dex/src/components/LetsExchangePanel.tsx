@@ -422,8 +422,14 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
         }),
       });
       const d = await r.json();
-      if (!r.ok) { setEstError(d.error ?? "Rate unavailable"); setEstimate(null); }
-      else { setEstimate(d as Estimate); }
+      if (!r.ok) {
+        if (d.code === "LE_KEY_NOT_CONFIGURED") {
+          setEstError("Cross-chain exchange is not yet configured on this server. The administrator needs to add the LETSEXCHANGE_API_KEY secret to enable live rates.");
+        } else {
+          setEstError(d.error ?? "Rate unavailable");
+        }
+        setEstimate(null);
+      } else { setEstimate(d as Estimate); }
     } catch { setEstError("Network error"); }
     setEstLoading(false);
   }, [fromCoin, toCoin, amount]);
@@ -470,7 +476,8 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   const belowMin = minAmt !== null && numAmt !== null && numAmt < minAmt;
   const aboveMax = maxAmt !== null && numAmt !== null && numAmt > maxAmt;
 
-  const rateIdExpiresMs = estimate?.rate_id_expired_at ? parseInt(estimate.rate_id_expired_at) : null;
+  // rate_id_expired_at from LE API is a Unix timestamp in seconds — multiply by 1000 to get ms
+  const rateIdExpiresMs = estimate?.rate_id_expired_at ? parseInt(estimate.rate_id_expired_at) * 1000 : null;
   const rateSecondsLeft = rateIdExpiresMs ? Math.max(0, Math.round((rateIdExpiresMs - Date.now()) / 1000)) : RATE_REFRESH;
 
   const canContinue = fromCoin && toCoin && numAmt && numAmt > 0 && !belowMin && !aboveMax;
@@ -1229,9 +1236,10 @@ export function LetsExchangePanel({
       const d = await r.json();
 
       if (!r.ok) {
-        // Show a clean error — extract validation messages if available
         let msg = d.error ?? "Failed to create exchange";
-        if (d.detail?.error?.validation) {
+        if (d.code === "LE_KEY_NOT_CONFIGURED") {
+          msg = "Cross-chain exchange is not yet configured on this server. The administrator needs to add the LETSEXCHANGE_API_KEY secret.";
+        } else if (d.detail?.error?.validation) {
           const v = d.detail.error.validation as Record<string,string>;
           msg = Object.values(v).join(". ");
         }

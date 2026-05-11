@@ -22,7 +22,7 @@ import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
 import { marketsTable, leSwapsTable } from "@workspace/db/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import {
   leRequest, fetchLEPricesUSD, getCachedLEPrices, AFFILIATE_ID,
   type NormalisedCoin,
@@ -31,6 +31,26 @@ import { getCoinChangeMap } from "../lib/priceUpdater.js";
 import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
 
 const router: IRouter = Router();
+
+/**
+ * Returns the built-in coin catalog as NormalisedCoin[] stubs.
+ * Used as an ultimate fallback when the LE API is unreachable or when the
+ * LETSEXCHANGE_API_KEY environment variable has not been configured yet.
+ * The stubs carry null network/image/hasExtraId so they still render in every
+ * coin picker and market list; live metadata is filled in once the API key is set.
+ */
+function builtInCoinsAsFallback(): NormalisedCoin[] {
+  return getBuiltInLeCoins().map(symbol => ({
+    symbol,
+    name: symbol,
+    network: null,
+    networkName: null,
+    image: null,
+    hasExtraId: false,
+    minAmount: null,
+    maxAmount: null,
+  }));
+}
 
 const CACHE_TTL = 30 * 60 * 1000; // 30 min — coins list changes rarely
 interface CacheEntry { data: unknown; ts: number }
@@ -106,29 +126,25 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
 
 // ── GET /api/letsexchange/currencies ─────────────────────────────────────────
 router.get("/letsexchange/currencies", async (_req, res) => {
+  // Return from cache first — fastest path
+  const hit = cached("currencies") as NormalisedCoin[] | null;
+  if (hit && hit.length > 0) { res.json(hit); return; }
+
+  // No API key configured — serve the built-in coin catalog so the swap UI
+  // always has coins to show.  Estimate / exchange calls still require a key.
   if (!process.env.LETSEXCHANGE_API_KEY) {
-    // No API key configured — return built-in coin list as fallback so the UI
-    // remains functional. Coins are returned as minimal NormalisedCoin objects.
-    const fallback: NormalisedCoin[] = getBuiltInLeCoins().map(sym => ({
-      symbol: sym, name: sym, network: null, networkName: null,
-      image: null, hasExtraId: false, minAmount: null, maxAmount: null,
-    }));
-    res.json(fallback);
+    res.json(builtInCoinsAsFallback());
     return;
   }
-  const hit = cached("currencies") as NormalisedCoin[] | null;
-  if (hit) { res.json(hit); return; }
+
   try {
     const coins = await fetchAndCacheCurrencies();
-    res.json(coins);
+    // If the live API returned an empty list (e.g. temporary outage), fall back
+    // so the frontend never receives an empty coin picker.
+    res.json(coins.length > 0 ? coins : builtInCoinsAsFallback());
   } catch (err: any) {
     logger.error({ err }, "letsexchange /currencies failed");
-    // Live API failed — serve built-in fallback so the UI stays functional.
-    const fallback: NormalisedCoin[] = getBuiltInLeCoins().map(sym => ({
-      symbol: sym, name: sym, network: null, networkName: null,
-      image: null, hasExtraId: false, minAmount: null, maxAmount: null,
-    }));
-    res.json(fallback);
+    res.json(builtInCoinsAsFallback());
   }
 });
 
@@ -274,13 +290,19 @@ router.get("/letsexchange/pairs", async (req, res) => {
     // ── Merge DB catalog + live API for maximum pair coverage ──────────────
     // DB:      36 000+ all-to-all pairs (191 coins × 190 quotes) — real prices
     // Live API: ~14 000 pairs (972 unique coins × 14 quotes)     — newer coins
+    // Built-in: ~190 well-known coins × 22 quotes                — always available
     // Combined: ~47 000 unique pairs after deduplication
     //
     // Priority order (lower layer is applied first, higher layers override):
+    //   0. built-in catalog  (ultimate fallback — always present)
     //   1. live API buildPairs  (base layer — newer coins, lastPrice=0)
     //   2. DB pairs             (override — real prices, wide all-to-all catalog)
     //   3. native spot pairs    (override — most accurate prices from the DEX)
     const mergeMap = new Map<string, Record<string, unknown>>();
+
+    // Layer 0 (pre-seed): built-in catalog ensures we never serve an empty list
+    // even when the LE API key is missing or the API is temporarily unreachable.
+    buildPairs(builtInCoinsAsFallback()).forEach(p => mergeMap.set(p.symbol as string, p));
 
     // Layer 1: live LE API buildPairs (fresh coin list, 14 quotes)
     try {
@@ -294,11 +316,27 @@ router.get("/letsexchange/pairs", async (req, res) => {
       logger.warn({ err }, "letsexchange /pairs: live API layer failed (non-fatal)");
     }
 
-    // Layer 2: DB all-to-all pairs (191 coins × 190 quotes — real prices)
+    // Layer 2: DB all-to-all pairs — only update price fields; keep live API metadata
+    // (network, networkName, image, hasExtraId, minAmount, maxAmount) from Layer 1.
+    // XRP/TON/XMR etc. need correct hasExtraId to show memo/tag fields in the UI.
     try {
       const dbPairs = await fetchLEPairsFromDB();
-      dbPairs.forEach(p => mergeMap.set(p.symbol as string, p)); // DB overrides live (has real prices)
-      logger.debug({ db: dbPairs.length, total: mergeMap.size }, "letsexchange /pairs: DB layer merged");
+      dbPairs.forEach(p => {
+        const existing = mergeMap.get(p.symbol as string);
+        if (existing) {
+          // Merge: keep live API metadata, update only price-related fields from DB
+          mergeMap.set(p.symbol as string, {
+            ...existing,
+            lastPrice:             (p.lastPrice as number) > 0 ? p.lastPrice : existing.lastPrice,
+            priceChangePercent24h: p.priceChangePercent24h != null ? p.priceChangePercent24h : existing.priceChangePercent24h,
+            volume:                p.volume != null ? p.volume : existing.volume,
+          });
+        } else {
+          // DB-only pair (not in live API): insert as-is
+          mergeMap.set(p.symbol as string, p);
+        }
+      });
+      logger.debug({ db: dbPairs.length, total: mergeMap.size }, "letsexchange /pairs: DB layer merged (price-only)");
     } catch (err: any) {
       logger.warn({ err }, "letsexchange /pairs: DB layer failed (non-fatal)");
     }
@@ -420,14 +458,29 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
   const filterQuote = typeof req.query.quote === "string" ? req.query.quote.toUpperCase() : null;
   const returnAll   = req.query.all === "true" || req.query.all === "1";
 
+  // Fast path: when ?all=true, return total DB market count directly
+  if (returnAll && !filterQuote) {
+    try {
+      const rows = await db.select({ count: sql<number>`count(*)` })
+        .from(marketsTable)
+        .where(eq(marketsTable.enabled, true));
+      const total = Number(rows[0]?.count ?? 0);
+      res.set("Cache-Control", `public, max-age=${COUNT_CACHE_MAX_AGE_SECONDS}`);
+      res.json({ count: total });
+      return;
+    } catch { /* fall through to original logic */ }
+  }
+
   try {
     const cacheKey = "le_pairs_all";
     let lePairs = cached(cacheKey) as Record<string, unknown>[] | null;
     let coins: NormalisedCoin[] | null | undefined;
 
     if (!lePairs) {
-      // Mirrors /pairs: merge live API buildPairs + DB all-to-all catalog
+      // Mirrors /pairs: Layer 0 (built-in) + Layer 1 (live API) + Layer 2 (DB)
       const mergeMap = new Map<string, Record<string, unknown>>();
+      // Layer 0: built-in catalog ensures a non-zero count even without API key / DB
+      buildPairs(builtInCoinsAsFallback()).forEach(p => mergeMap.set(p.symbol as string, p));
       try {
         coins = cached("currencies") as NormalisedCoin[] | null;
         if (!coins) coins = await fetchAndCacheCurrencies();
@@ -435,7 +488,19 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
       } catch { /* non-fatal */ }
       try {
         const dbPairs = await fetchLEPairsFromDB();
-        dbPairs.forEach(p => mergeMap.set(p.symbol as string, p)); // DB overrides live (has real prices)
+        dbPairs.forEach(p => {
+          const existing = mergeMap.get(p.symbol as string);
+          if (existing) {
+            mergeMap.set(p.symbol as string, {
+              ...existing,
+              lastPrice:             (p.lastPrice as number) > 0 ? p.lastPrice : existing.lastPrice,
+              priceChangePercent24h: p.priceChangePercent24h != null ? p.priceChangePercent24h : existing.priceChangePercent24h,
+              volume:                p.volume != null ? p.volume : existing.volume,
+            });
+          } else {
+            mergeMap.set(p.symbol as string, p);
+          }
+        });
       } catch { /* non-fatal */ }
       lePairs = Array.from(mergeMap.values());
       if (lePairs.length > 0) cache.set(cacheKey, { data: lePairs, ts: Date.now() });
@@ -499,6 +564,14 @@ router.post("/letsexchange/estimate", async (req, res) => {
   const amt = parseFloat(String(amount));
   if (!isFinite(amt) || amt <= 0) { res.status(400).json({ error: "amount must be positive" }); return; }
 
+  if (!process.env.LETSEXCHANGE_API_KEY) {
+    res.status(503).json({
+      error: "LetsExchange is not configured — set the LETSEXCHANGE_API_KEY secret to enable cross-chain rates.",
+      code: "LE_KEY_NOT_CONFIGURED",
+    });
+    return;
+  }
+
   try {
     const body: Record<string,unknown> = {
       from,
@@ -555,6 +628,14 @@ router.post("/letsexchange/exchange", async (req, res) => {
   const withdrawalStr = String(withdrawal).trim();
   if (withdrawalStr.length < 10 || withdrawalStr.length > 200) {
     res.status(400).json({ error: "Invalid withdrawal address" }); return;
+  }
+
+  if (!process.env.LETSEXCHANGE_API_KEY) {
+    res.status(503).json({
+      error: "LetsExchange is not configured — set the LETSEXCHANGE_API_KEY secret to enable cross-chain exchange.",
+      code: "LE_KEY_NOT_CONFIGURED",
+    });
+    return;
   }
 
   try {

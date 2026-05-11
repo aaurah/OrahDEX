@@ -4,9 +4,11 @@
  * GET  /trade/modes          — describe both trading modes
  * POST /trade/wallet/quote   — on-chain swap quote (price only; tx signed client-side)
  * POST /trade/wallet         — validate & return on-chain routing params (no server-side signing)
- * POST /trade/wallet/settle  — record confirmed on-chain swap & credit balance (EVM only, requires walletSignature)
  * POST /trade/exchange/quote — internal AMM quote
  * POST /trade/exchange       — settle internal ledger trade (proxies /swap)
+ * POST /trade/wallet/settle  — record confirmed on-chain swap & credit balance (EVM wallets only)
+ *
+ * Withdrawal endpoints (/withdraw, /withdraw/challenge) live in withdrawals.ts.
  */
 
 import { Router, type IRouter } from "express";
@@ -16,20 +18,12 @@ import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { or, eq, desc } from "drizzle-orm";
 import { settleSwap, getBalances, creditAvailable, debitAvailable } from "../lib/ledger.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
-import { processWithdrawal } from "../lib/withdrawalProcessor.js";
-import { isVaultConfigured, getVaultAddress, getVaultChainId, vaultWithdraw } from "../lib/orahVault.js";
+import { isVaultConfigured, getVaultAddress, getVaultChainId } from "../lib/orahVault.js";
 import { db as _db, pool } from "@workspace/db";
-import { withdrawalRequestsTable } from "@workspace/db/schema";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import {
-  issueWithdrawChallenge,
-  verifyWithdrawSignature,
-  issueBsvWithdrawChallenge,
-  verifyBsvWithdrawSignature,
-  issueSolWithdrawChallenge,
-  verifySolWithdrawSignature,
   buildExchangeAuthMessage,
   verifyEvmSignature,
   issueExchangeChallenge,
@@ -300,13 +294,13 @@ router.post("/trade/wallet", async (req, res) => {
 // ── POST /trade/wallet/settle — record confirmed on-chain swap & credit balance ──
 /**
  * Called by the frontend AFTER the user's on-chain swap transaction is confirmed.
- * 1. Verifies the caller owns walletAddress via EVM personal_sign (walletSignature).
+ * 1. Verifies the EVM wallet signature to prove the caller owns walletAddress.
  * 2. Fetches the tx receipt from the chain to verify success.
  * 3. Inserts a record in the trades table (with txid).
- * 4. Credits the user's internal exchange balance with the received assetOut amount.
+ * 4. Credits the user's internal exchange balance with the received assetOut amount,
+ *    so tokens are immediately available for exchange-mode trading or withdrawal.
  *
  * Body: { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature }
- * walletSignature: personal_sign of buildExchangeAuthMessage({ walletAddress, assetIn, assetOut, amountIn, nonce: txHash })
  */
 router.post("/trade/wallet/settle", async (req, res) => {
   const { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature } = req.body ?? {};
@@ -316,31 +310,35 @@ router.post("/trade/wallet/settle", async (req, res) => {
     return;
   }
 
-  // Only EVM addresses are supported for on-chain settle
-  if (!/^0x[0-9a-fA-F]{40}$/i.test(String(walletAddress))) {
-    res.status(422).json({ error: "walletAddress must be an EVM address (0x...) for /trade/wallet/settle." });
+  // Only EVM wallets can initiate on-chain swap settlements via this endpoint.
+  if (!/^0x[0-9a-fA-F]{40}$/.test(String(walletAddress))) {
+    res.status(400).json({ error: "walletAddress must be an EVM address (0x...) for /trade/wallet/settle." });
     return;
   }
 
-  // Require caller to prove ownership of walletAddress
+  // Require a wallet signature to prove the caller owns walletAddress.
+  // This prevents any party who merely knows a wallet address from crediting its balance.
   if (!walletSignature) {
     res.status(401).json({
-      error: "walletSignature is required. Sign the settle auth message with personal_sign.",
-      code: "SIGNATURE_REQUIRED",
+      error: "walletSignature is required. Sign the settlement auth message with your EVM wallet before calling this endpoint.",
+      code: "WALLET_SIGNATURE_REQUIRED",
     });
     return;
   }
-  const authMsg = buildExchangeAuthMessage({
-    walletAddress: String(walletAddress),
-    assetIn:       String(assetIn).toUpperCase(),
-    assetOut:      String(assetOut).toUpperCase(),
-    amountIn:      String(amountIn),
-    nonce:         String(txHash),
-  });
+
+  // Verify the signature. The auth message commits to the txHash so the signature
+  // is single-purpose and cannot be replayed for a different transaction.
+  const authMsg = [
+    "Authorize OrahDEX on-chain swap settlement",
+    `Wallet: ${walletAddress}`,
+    `TxHash: ${txHash}`,
+    `AssetIn: ${assetIn}`,
+    `AssetOut: ${assetOut}`,
+  ].join("\n");
   try {
     verifyEvmSignature(walletAddress, authMsg, walletSignature);
-  } catch (sigErr: any) {
-    res.status(401).json({ error: sigErr.message ?? "Wallet signature mismatch", code: "SIGNATURE_MISMATCH" });
+  } catch {
+    res.status(401).json({ error: "Invalid wallet signature for settlement.", code: "SIGNATURE_MISMATCH" });
     return;
   }
 

@@ -98,7 +98,11 @@ router.post("/swap/quote", async (req, res) => {
   try {
     const rate = await resolveRate(assetIn.toUpperCase(), assetOut.toUpperCase());
     if (!rate) {
-      res.status(422).json({ error: "No price available for this pair" });
+      res.status(422).json({
+        error: "No price available for this pair",
+        hint: "Market prices for this pair have not loaded yet. Prices refresh automatically — please try again in a moment, or check that market data is seeded.",
+        code: "NO_PRICE_DATA",
+      });
       return;
     }
 

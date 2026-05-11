@@ -130,7 +130,8 @@ async function verifySpotFunding(
   // These wallets hold funds on-chain. They may also have accumulated internal
   // exchange balance from previous trades (e.g. bought BSV, now selling).
   // Strategy: try the internal ledger first (zero-friction if balance is there),
-  // then fall back to a verified on-chain balance check if chainId is provided.
+  // then verify on-chain balance via RPC (chainId required). Fails closed:
+  // any unverifiable state is rejected rather than silently accepted.
   if (walletSource === "external") {
     // 1. Try internal ledger — covers exchange-accumulated balance
     try {
@@ -140,9 +141,8 @@ async function verifySpotFunding(
       // Not enough internal balance — fall through to on-chain check
     }
 
-    // 2. Require wallet signature to prove the caller owns walletAddress.
-    //    A signature alone does not prove on-chain funds, but it proves identity —
-    //    the order cannot be placed on behalf of another address without their key.
+    // 2. Require wallet signature (proof of identity).
+    //    Without a signature the caller cannot prove they control walletAddress.
     if (!signature) {
       return {
         valid:      false,
@@ -152,16 +152,8 @@ async function verifySpotFunding(
       };
     }
 
-    // Verify the signature recovers to walletAddress.
-    // The message is the canonical order auth message (built in orders.ts and
-    // passed down via the signature field); we verify it here as a double-check.
-    // If recovery fails, reject — never trust a signature that cannot be verified.
+    // Verify the signature recovers to walletAddress (lightweight format check).
     if (walletAddress.startsWith("0x")) {
-      // Signature was already verified at the route boundary (orders.ts).
-      // Perform a lightweight re-check: ensure the sig is structurally valid and
-      // recovers to some address (we cannot reconstruct the exact message here,
-      // so we only reject obviously malformed sigs — the route-level check is the
-      // canonical enforcement point).
       const sigStr = signature.startsWith("0x") ? signature.slice(2) : signature;
       if (sigStr.length !== 130) {
         return {
@@ -173,16 +165,17 @@ async function verifySpotFunding(
       }
     }
 
-    // 3. Require chainId for on-chain EVM balance verification.
-    //    Without it we cannot verify the caller holds the funds they claim.
+    // 3. chainId is required to verify on-chain balance — reject without it.
+    //    Accepting unverified balance claims is a security risk (funds could be absent).
     if (!chainId) {
       return {
         valid:      false,
         fundingRef: "",
-        error:      "chainId is required for on-chain order placement with an external EVM wallet.",
+        error:      "chainId is required for external EVM wallet orders so on-chain balance can be verified.",
         code:       "CHAIN_ID_REQUIRED",
       };
     }
+
     const RPC_URLS: Record<number, string> = {
       1:      process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
       56:     process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
@@ -193,75 +186,81 @@ async function verifySpotFunding(
       43114:  process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
     };
     const rpcUrl = RPC_URLS[chainId];
-    if (rpcUrl) {
-      try {
-        const client = createPublicClient({ transport: http(rpcUrl) });
+    if (!rpcUrl) {
+      return {
+        valid:      false,
+        fundingRef: "",
+        error:      `chainId ${chainId} is not supported for on-chain balance verification.`,
+        code:       "CHAIN_ID_REQUIRED",
+      };
+    }
 
-        // Minimal ERC-20 ABI for balanceOf
-        const ERC20_BALANCE_OF_ABI = [
-          {
-            type:    "function",
-            name:    "balanceOf",
-            inputs:  [{ name: "account", type: "address" }],
-            outputs: [{ name: "", type: "uint256" }],
-            stateMutability: "view",
-          },
-        ] as const;
+    try {
+      const client = createPublicClient({ transport: http(rpcUrl) });
 
-        let onChain: number;
+      // Minimal ERC-20 ABI for balanceOf
+      const ERC20_BALANCE_OF_ABI = [
+        {
+          type:    "function",
+          name:    "balanceOf",
+          inputs:  [{ name: "account", type: "address" }],
+          outputs: [{ name: "", type: "uint256" }],
+          stateMutability: "view",
+        },
+      ] as const;
 
-        if (isNativeAsset(chainId, asset)) {
-          // Native chain asset: ETH / BNB / MATIC / AVAX
-          const onChainBal = await client.getBalance({ address: walletAddress as `0x${string}` });
-          onChain = Number(onChainBal) / 1e18;
-        } else {
-          // ERC-20 token: look up contract address and decimals
-          const tokenInfo = getTokenInfo(chainId, asset);
-          if (!tokenInfo) {
-            // Token not in registry — fail closed. The operator must add it
-            // to TOKEN_REGISTRY before orders for this token can be placed.
-            logger.warn(
-              { walletAddress, chainId, asset },
-              "fundingVerifier: token not in registry — order rejected",
-            );
-            return {
-              valid:      false,
-              fundingRef: "",
-              error:      `Token ${asset} is not supported for on-chain verification on chain ${chainId}.`,
-              code:       "TOKEN_UNSUPPORTED",
-            };
-          }
-          const rawBalance = await client.readContract({
-            address:      tokenInfo.address as `0x${string}`,
-            abi:          ERC20_BALANCE_OF_ABI,
-            functionName: "balanceOf",
-            args:         [walletAddress as `0x${string}`],
-          });
-          onChain = Number(rawBalance) / 10 ** tokenInfo.decimals;
-        }
+      let onChain: number;
 
-        if (onChain < needed) {
+      if (isNativeAsset(chainId, asset)) {
+        // Native chain asset: ETH / BNB / MATIC / AVAX
+        const onChainBal = await client.getBalance({ address: walletAddress as `0x${string}` });
+        onChain = Number(onChainBal) / 1e18;
+      } else {
+        // ERC-20 token: look up contract address and decimals.
+        // Unknown tokens are rejected — accepting without verification is a security risk.
+        const tokenInfo = getTokenInfo(chainId, asset);
+        if (!tokenInfo) {
+          logger.warn(
+            { walletAddress, chainId, asset },
+            "fundingVerifier: token not in registry — rejecting order",
+          );
           return {
             valid:      false,
             fundingRef: "",
-            error:      `Insufficient on-chain ${asset} balance (verified via RPC)`,
-            code:       "INSUFFICIENT_FUNDS",
+            error:      `Token ${asset} is not supported on chain ${chainId}. Add it to the token registry or deposit via a supported path.`,
+            code:       "TOKEN_UNSUPPORTED",
           };
         }
-      } catch (rpcErr: any) {
-        // RPC failure — fail closed. On-chain balance could not be verified,
-        // so we must not accept the order. The user should retry when RPC is available.
-        logger.warn(
-          { walletAddress, chainId, err: rpcErr?.message },
-          "fundingVerifier: on-chain RPC balance check failed",
-        );
+        const rawBalance = await client.readContract({
+          address:      tokenInfo.address as `0x${string}`,
+          abi:          ERC20_BALANCE_OF_ABI,
+          functionName: "balanceOf",
+          args:         [walletAddress as `0x${string}`],
+        });
+        onChain = Number(rawBalance) / 10 ** tokenInfo.decimals;
+      }
+
+      if (onChain < needed) {
         return {
           valid:      false,
           fundingRef: "",
-          error:      "On-chain balance verification is temporarily unavailable. Please retry in a moment.",
-          code:       "BALANCE_VERIFICATION_UNAVAILABLE",
+          error:      `Insufficient on-chain ${asset} balance (verified via RPC)`,
+          code:       "INSUFFICIENT_FUNDS",
         };
       }
+    } catch (rpcErr: any) {
+      // RPC verification failed — fail closed rather than proceeding unverified.
+      // Operators should monitor for repeated failures and check RPC health.
+      logger.warn(
+        { walletAddress, chainId, err: rpcErr?.message },
+        "fundingVerifier: on-chain RPC balance check failed",
+      );
+      return {
+        valid:      false,
+        fundingRef: "",
+        error:      "On-chain balance verification is temporarily unavailable. Please try again later.",
+        code:       "BALANCE_VERIFICATION_UNAVAILABLE",
+      };
     }
 
     const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
