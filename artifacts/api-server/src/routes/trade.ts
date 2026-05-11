@@ -737,7 +737,7 @@ router.post("/trade/exchange", async (req, res) => {
 // ── POST /trade/exchange/advanced ───────────────────────────────────────────────
 // Dedicated advanced market-style endpoint: { walletAddress, symbol, side, quantity }
 router.post("/trade/exchange/advanced", async (req, res) => {
-  const { walletAddress, symbol, side, quantity, minAmountOut } = req.body ?? {};
+  const { walletAddress, symbol, side, quantity, minAmountOut, signature, nonce } = req.body ?? {};
   const pair = parseTradeSymbol(symbol);
   const normalizedSide = String(side ?? "").toLowerCase();
   const qty = parseFloat(String(quantity));
@@ -745,6 +745,21 @@ router.post("/trade/exchange/advanced", async (req, res) => {
   if (!walletAddress || !pair || (normalizedSide !== "buy" && normalizedSide !== "sell") || !Number.isFinite(qty) || qty <= 0) {
     res.status(400).json({ error: "walletAddress, symbol, side (buy|sell), quantity are required" });
     return;
+  }
+
+  if (String(walletAddress).startsWith("0x")) {
+    if (!signature || !nonce) {
+      res.status(401).json({
+        error: "signature and nonce are required for EVM wallet exchange swaps. Request a challenge via POST /trade/exchange/challenge and include signature + nonce.",
+      });
+      return;
+    }
+    try {
+      verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
+      return;
+    }
   }
 
   try {

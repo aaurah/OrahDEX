@@ -21,11 +21,40 @@ import {
 import { recordPlatformFee } from "../lib/feeCollector.js";
 import { getHybridRoute } from "../lib/hybridRouter.js";
 import { leRequest, AFFILIATE_ID } from "../lib/lePriceCache.js";
+import { issueExchangeChallenge, verifyExchangeSignature } from "../lib/walletAuth.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
 const FEE_PCT = 0.003; // 0.3%
+
+// ── POST /swap/challenge ───────────────────────────────────────────────────────
+// Issues a single-use nonce/message that an EVM wallet must sign before
+// calling POST /swap or POST /swap/execute when an internal ledger leg is used.
+router.post("/swap/challenge", (req, res) => {
+  const { walletAddress, assetIn, assetOut, amountIn } = req.body ?? {};
+  if (!walletAddress || !/^0x[0-9a-fA-F]{40}$/.test(String(walletAddress))) {
+    res.status(400).json({ error: "Valid EVM address required (0x…)" });
+    return;
+  }
+  if (!assetIn || !assetOut || amountIn == null) {
+    res.status(400).json({ error: "assetIn, assetOut, amountIn are required" });
+    return;
+  }
+  const amt = parseFloat(String(amountIn));
+  if (!Number.isFinite(amt) || amt <= 0) {
+    res.status(400).json({ error: "amountIn must be a positive finite number" });
+    return;
+  }
+
+  const challenge = issueExchangeChallenge({
+    walletAddress: String(walletAddress),
+    assetIn: String(assetIn).toUpperCase(),
+    assetOut: String(assetOut).toUpperCase(),
+    amountIn: String(amt),
+  });
+  res.json(challenge);
+});
 
 // ── POST /swap/quote ───────────────────────────────────────────────────────────
 // Returns an estimated output amount without mutating any state.
@@ -72,10 +101,25 @@ router.post("/swap/quote", async (req, res) => {
 // address to observe balance/rate data.  External (on-chain) wallets with zero
 // internal balance are safe; on-chain funds are never touched here.
 router.post("/swap", async (req, res) => {
-  const { walletAddress, assetIn, assetOut, amountIn, minAmountOut } = req.body ?? {};
+  const { walletAddress, assetIn, assetOut, amountIn, minAmountOut, signature, nonce } = req.body ?? {};
   if (!walletAddress || !assetIn || !assetOut || !amountIn) {
     res.status(400).json({ error: "walletAddress, assetIn, assetOut, amountIn are required" });
     return;
+  }
+
+  if (String(walletAddress).startsWith("0x")) {
+    if (!signature || !nonce) {
+      res.status(401).json({
+        error: "signature and nonce are required for EVM swap requests. Request a challenge via POST /swap/challenge and include signature + nonce.",
+      });
+      return;
+    }
+    try {
+      verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
+      return;
+    }
   }
 
   // Strict numeric validation — reject NaN, Infinity, non-positive amounts
@@ -248,7 +292,7 @@ router.post("/swap/execute", async (req, res) => {
   const {
     walletAddress, assetIn, assetOut, amountIn,
     minAmountOut, withdrawal, networkFrom, networkTo, withdrawal_extra_id,
-    return: refund, rate_id, email, forceSource, allowSplit,
+    return: refund, rate_id, email, forceSource, allowSplit, signature, nonce,
   } = req.body ?? {};
 
   if (!assetIn || !assetOut || !amountIn) {
@@ -279,6 +323,24 @@ router.post("/swap/execute", async (req, res) => {
     }
 
     const source = decision.source;
+
+    const requiresInternalAuth =
+      source === "internal" ||
+      (source === "split" && !!decision.splitLegs?.internal && decision.splitLegs.internal.amount > 0);
+    if (requiresInternalAuth && String(walletAddress ?? "").startsWith("0x")) {
+      if (!signature || !nonce) {
+        res.status(401).json({
+          error: "signature and nonce are required for EVM swap requests with internal settlement. Request a challenge via POST /swap/challenge and include signature + nonce.",
+        });
+        return;
+      }
+      try {
+        verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
+      } catch (authErr: any) {
+        res.status(401).json({ error: authErr.message });
+        return;
+      }
+    }
 
     // ── Helper: execute LE leg ────────────────────────────────────────────────
     const executeLELeg = async (leAmt: number): Promise<{ ok: boolean; status: number; data: unknown }> => {
