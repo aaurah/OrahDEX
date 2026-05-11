@@ -328,8 +328,8 @@ router.get("/letsexchange/pairs", async (req, res) => {
           mergeMap.set(p.symbol as string, {
             ...existing,
             lastPrice:             (p.lastPrice as number) > 0 ? p.lastPrice : existing.lastPrice,
-            priceChangePercent24h: (p.priceChangePercent24h as number) !== 0 ? p.priceChangePercent24h : existing.priceChangePercent24h,
-            volume:                p.volume ?? existing.volume,
+            priceChangePercent24h: p.priceChangePercent24h != null ? p.priceChangePercent24h : existing.priceChangePercent24h,
+            volume:                p.volume != null ? p.volume : existing.volume,
           });
         } else {
           // DB-only pair (not in live API): insert as-is
@@ -481,8 +481,8 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
             mergeMap.set(p.symbol as string, {
               ...existing,
               lastPrice:             (p.lastPrice as number) > 0 ? p.lastPrice : existing.lastPrice,
-              priceChangePercent24h: (p.priceChangePercent24h as number) !== 0 ? p.priceChangePercent24h : existing.priceChangePercent24h,
-              volume:                p.volume ?? existing.volume,
+              priceChangePercent24h: p.priceChangePercent24h != null ? p.priceChangePercent24h : existing.priceChangePercent24h,
+              volume:                p.volume != null ? p.volume : existing.volume,
             });
           } else {
             mergeMap.set(p.symbol as string, p);
