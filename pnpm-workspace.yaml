@@ -4,6 +4,11 @@ packages:
   - lib/integrations/*
   - scripts
 
+allowBuilds:
+  '@reown/appkit': true
+  esbuild: true
+  keccak: true
+
 autoInstallPeers: false
 
 catalog:
