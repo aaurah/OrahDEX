@@ -16,10 +16,12 @@ async function ping() {
   if (!navigator.onLine) { notifyAll(false); return; }
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 5_000);
-    const res = await fetch(`${API_BASE}/ping`, { method: 'GET', cache: 'no-store', signal: ctrl.signal });
+    const t = setTimeout(() => ctrl.abort(), 8_000);
+    const res = await fetch(`${API_BASE}/health`, { method: 'GET', cache: 'no-store', signal: ctrl.signal });
     clearTimeout(t);
-    notifyAll(res.ok || res.status === 204);
+    if (!res.ok) { notifyAll(false); return; }
+    const data = await res.json().catch(() => null);
+    notifyAll(data?.status === 'ok');
   } catch {
     notifyAll(false);
   }
@@ -28,7 +30,7 @@ async function ping() {
 function startSingleton() {
   if (_timer !== null) return;
   ping();
-  _timer = setInterval(ping, 15_000);
+  _timer = setInterval(ping, 30_000);
 
   window.addEventListener('online',  () => { notifyAll(true);  ping(); });
   window.addEventListener('offline', () => { notifyAll(false); });
