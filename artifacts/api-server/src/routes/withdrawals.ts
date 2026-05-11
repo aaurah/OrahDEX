@@ -251,9 +251,14 @@ router.post("/withdrawals", async (req, res) => {
   }
 });
 
+// Alias: POST /withdraw → same handler as POST /withdrawals
+// Kept for backward compatibility with clients that call /api/withdraw (without the "s").
+router.post("/withdraw", (req, res, next) => {
+  req.url = "/withdrawals";
+  (router as any)(req, res, next);
+});
+
 // ── GET /admin/withdrawals ────────────────────────────────────────────────────
-// Returns ALL withdrawal requests for the admin panel, newest first.
-router.get("/admin/withdrawals", requireAdminToken, async (req, res) => {
   try {
     // Honor ?status=pending  or  ?status=pending,cancelled,failed  to filter rows.
     // Without it we return every row (legacy behavior).
