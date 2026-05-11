@@ -11,7 +11,7 @@
  * A 0.3% fee is deducted from the output amount.
  */
 
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { or, eq } from "drizzle-orm";
@@ -27,6 +27,31 @@ import { logger } from "../lib/logger.js";
 const router: IRouter = Router();
 
 const FEE_PCT = 0.003; // 0.3%
+
+function verifyEvmSwapSignature(
+  res: Response,
+  walletAddress: unknown,
+  nonce: unknown,
+  signature: unknown,
+  context: "swap" | "swap_internal",
+): boolean {
+  if (!String(walletAddress ?? "").startsWith("0x")) return true;
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: context === "swap_internal"
+        ? "signature and nonce are required for EVM swap requests with internal settlement. Request a challenge via POST /swap/challenge and include signature + nonce."
+        : "signature and nonce are required for EVM swap requests. Request a challenge via POST /swap/challenge and include signature + nonce.",
+    });
+    return false;
+  }
+  try {
+    verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
+    return true;
+  } catch (authErr: any) {
+    res.status(401).json({ error: authErr.message });
+    return false;
+  }
+}
 
 // ── POST /swap/challenge ───────────────────────────────────────────────────────
 // Issues a single-use nonce/message that an EVM wallet must sign before
@@ -107,19 +132,8 @@ router.post("/swap", async (req, res) => {
     return;
   }
 
-  if (String(walletAddress).startsWith("0x")) {
-    if (!signature || !nonce) {
-      res.status(401).json({
-        error: "signature and nonce are required for EVM swap requests. Request a challenge via POST /swap/challenge and include signature + nonce.",
-      });
-      return;
-    }
-    try {
-      verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
-    }
+  if (!verifyEvmSwapSignature(res, walletAddress, nonce, signature, "swap")) {
+    return;
   }
 
   // Strict numeric validation — reject NaN, Infinity, non-positive amounts
@@ -327,19 +341,8 @@ router.post("/swap/execute", async (req, res) => {
     const requiresInternalAuth =
       source === "internal" ||
       (source === "split" && !!decision.splitLegs?.internal && decision.splitLegs.internal.amount > 0);
-    if (requiresInternalAuth && String(walletAddress ?? "").startsWith("0x")) {
-      if (!signature || !nonce) {
-        res.status(401).json({
-          error: "signature and nonce are required for EVM swap requests with internal settlement. Request a challenge via POST /swap/challenge and include signature + nonce.",
-        });
-        return;
-      }
-      try {
-        verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
-      } catch (authErr: any) {
-        res.status(401).json({ error: authErr.message });
-        return;
-      }
+    if (requiresInternalAuth && !verifyEvmSwapSignature(res, walletAddress, nonce, signature, "swap_internal")) {
+      return;
     }
 
     // ── Helper: execute LE leg ────────────────────────────────────────────────

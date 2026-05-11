@@ -11,6 +11,20 @@ const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const adminTokens = new Set<string>();
 const adminTokenExpirations = new Map<string, number>();
 
+function hasTokenExpired(token: string): boolean {
+  const expiresAt = adminTokenExpirations.get(token);
+  return typeof expiresAt === "number" && Number.isFinite(expiresAt) && Date.now() > expiresAt;
+}
+
+function purgeExpiredToken(token: string): void {
+  adminTokens.delete(token);
+  adminTokenExpirations.delete(token);
+  void db
+    .delete(platformSettingsTable)
+    .where(eq(platformSettingsTable.key, `${TOKEN_PREFIX}${token}`))
+    .catch(() => {});
+}
+
 export async function hydrateAdminTokens(): Promise<void> {
   try {
     const rows = await db
@@ -87,14 +101,8 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
     res.status(401).json({ error: "Admin authentication required." });
     return;
   }
-  const expiresAt = adminTokenExpirations.get(token);
-  if (typeof expiresAt === "number" && Number.isFinite(expiresAt) && Date.now() > expiresAt) {
-    adminTokens.delete(token);
-    adminTokenExpirations.delete(token);
-    void db
-      .delete(platformSettingsTable)
-      .where(eq(platformSettingsTable.key, `${TOKEN_PREFIX}${token}`))
-      .catch(() => {});
+  if (hasTokenExpired(token)) {
+    purgeExpiredToken(token);
     res.status(401).json({ error: "Admin session expired. Please log in again." });
     return;
   }
@@ -103,7 +111,7 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
 
 export function isValidAdminToken(token: unknown): boolean {
   if (typeof token !== "string" || token.length === 0 || !adminTokens.has(token)) return false;
-  const expiresAt = adminTokenExpirations.get(token);
-  if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return true;
-  return Date.now() <= expiresAt;
+  if (!hasTokenExpired(token)) return true;
+  purgeExpiredToken(token);
+  return false;
 }
