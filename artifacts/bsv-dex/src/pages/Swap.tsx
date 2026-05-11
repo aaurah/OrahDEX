@@ -30,7 +30,7 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { ALL_SPOT_MOCK } from "@/lib/mock-data";
 import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData, erc20Abi, maxUint256 } from "viem";
 import type { Account } from "viem";
-import { writeContract as coreWriteContract } from "@wagmi/core";
+import { writeContract as coreWriteContract, signMessage } from "@wagmi/core";
 import { getWagmiConfig, CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS } from "@/lib/reown";
 import { checkAllowance, pollTxReceipt } from "@/lib/reown";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
@@ -1080,7 +1080,7 @@ function ExchangeSwapPanel({
 }) {
   const { toast } = useToast();
   // Use the wallet's actual connected chainId (not the on-chain DEX chain picker)
-  const { chainId: walletChainId } = useWalletStore();
+  const { chainId: walletChainId, provider } = useWalletStore();
   const [fromAsset, setFromAsset] = useState("ETH");
   const [toAsset,   setToAsset]   = useState("USDT");
   const [amount,    setAmount]    = useState("");
@@ -1167,11 +1167,67 @@ function ExchangeSwapPanel({
     if (!address || !amount || !quote || swapping) return;
     setSwapping(true); setSwapErr(null); setResult(null);
     try {
+      let nonce: string | undefined;
+      let signature: string | undefined;
+      if (/^0x[0-9a-fA-F]{40}$/.test(address)) {
+        let challengeRes: Response;
+        try {
+          challengeRes = await fetch(`${API_BASE}/swap/challenge`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              walletAddress: address,
+              assetIn: fromAsset,
+              assetOut: toAsset,
+              amountIn: amount,
+            }),
+          });
+        } catch (err: any) {
+          const reason = err?.message ? `: ${err.message}` : "";
+          throw new Error(`Network error while requesting swap signature challenge${reason}`);
+        }
+        const challengeData = await challengeRes.json();
+        if (!challengeRes.ok || !challengeData?.nonce || !challengeData?.message) {
+          throw new Error(challengeData?.error ?? "Failed to obtain swap signature challenge");
+        }
+        nonce = String(challengeData.nonce);
+        const message = String(challengeData.message);
+        if (provider === "orah-wallet") {
+          const account = await getViemAccountForAddress(address, {
+            title: "Authorize exchange swap",
+            subtitle: `Sign to swap ${amount} ${fromAsset} → ${toAsset} on OrahDEX.`,
+          });
+          const walletClient = createWalletClient({
+            account,
+            transport: http(
+              CHAIN_RPC_URLS[walletChainId as keyof typeof CHAIN_RPC_URLS]
+              ?? CHAIN_RPC_FALLBACKS[walletChainId as keyof typeof CHAIN_RPC_FALLBACKS]
+              ?? undefined,
+            ),
+          });
+          signature = await walletClient.signMessage({ account, message });
+        } else {
+          const cfg = getWagmiConfig();
+          if (!cfg) throw new Error("Wallet not initialized. Please reconnect and try again.");
+          signature = await signMessage(cfg, {
+            account: address as `0x${string}`,
+            message,
+          });
+        }
+      }
+
       const minOut = (parseFloat(quote.amountOut) * 0.995).toFixed(8);
       const r = await fetch(`${API_BASE}/swap`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address, assetIn: fromAsset, assetOut: toAsset, amountIn: amount, minAmountOut: minOut }),
+        body: JSON.stringify({
+          walletAddress: address,
+          assetIn: fromAsset,
+          assetOut: toAsset,
+          amountIn: amount,
+          minAmountOut: minOut,
+          ...(nonce && signature ? { nonce, signature } : {}),
+        }),
       });
       const data = await r.json();
       if (!r.ok) {
