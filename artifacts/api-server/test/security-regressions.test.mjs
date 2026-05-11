@@ -94,7 +94,7 @@ test("EVM webhook rejects requests when HMAC secret is missing", async () => {
 
   assert.match(src, /EVM_WEBHOOK_SECRET not set — rejecting webhook request/);
   assert.doesNotMatch(src, /EVM_WEBHOOK_SECRET not set — skipping HMAC verification/);
-  assert.doesNotMatch(src, /if \(!secret\) \{[\s\S]*return true;/);
+  assert.match(src, /if \(!secret\) \{[\s\S]*return false;\n  \}/);
 });
 
 test("wallet encryption code no longer falls back to a hard-coded secret", async () => {
