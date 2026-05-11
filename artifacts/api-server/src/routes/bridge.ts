@@ -287,6 +287,45 @@ router.post("/htlc/:id/cancel", async (req, res) => {
   }
 });
 
+// ── GET /bridge/coins — list all swappable coins via LetsExchange ────────────
+router.get("/coins", async (_req, res) => {
+  try {
+    const apiKey = process.env.LETSEXCHANGE_API_KEY;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+    const r = await fetch("https://api.letsexchange.io/api/v1/coins", {
+      headers,
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (r.ok) {
+      const data = await r.json();
+      res.json(data);
+      return;
+    }
+  } catch { /* fallback below */ }
+  // Fallback: return a curated list of popular coins
+  res.json([
+    { symbol: "BTC",  name: "Bitcoin",       network: "BTC",      image: null },
+    { symbol: "BSV",  name: "Bitcoin SV",    network: "BSV",      image: null },
+    { symbol: "ETH",  name: "Ethereum",      network: "ETH",      image: null },
+    { symbol: "USDT", name: "Tether",        network: "ETH",      image: null },
+    { symbol: "USDC", name: "USD Coin",      network: "ETH",      image: null },
+    { symbol: "SOL",  name: "Solana",        network: "SOL",      image: null },
+    { symbol: "BNB",  name: "BNB",           network: "BSC",      image: null },
+    { symbol: "XRP",  name: "Ripple",        network: "XRP",      image: null },
+    { symbol: "ADA",  name: "Cardano",       network: "ADA",      image: null },
+    { symbol: "DOGE", name: "Dogecoin",      network: "DOGE",     image: null },
+    { symbol: "LTC",  name: "Litecoin",      network: "LTC",      image: null },
+    { symbol: "MATIC",name: "Polygon",       network: "MATIC",    image: null },
+    { symbol: "DOT",  name: "Polkadot",      network: "DOT",      image: null },
+    { symbol: "AVAX", name: "Avalanche",     network: "AVAX",     image: null },
+    { symbol: "LINK", name: "Chainlink",     network: "ETH",      image: null },
+  ]);
+});
+
 // ── CCTP: list supported chains ───────────────────────────────────────────────
 router.get("/cctp/networks", (_req, res) => {
   res.json({

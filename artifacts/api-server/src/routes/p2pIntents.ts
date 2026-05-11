@@ -231,6 +231,35 @@ router.delete("/p2p/intents/:id", async (req, res) => {
   }
 });
 
+// ── GET /api/p2p/listings — alias for /api/p2p/intents (status=open) ─────────
+router.get("/p2p/listings", async (req, res) => {
+  try {
+    const {
+      tokenIn, tokenOut,
+      limit: limitStr = "50",
+    } = req.query as Record<string, string | undefined>;
+    const limitN = Math.min(parseInt(limitStr ?? "50"), 200);
+
+    await db.update(p2pIntentsTable)
+      .set({ status: "expired", updatedAt: new Date() })
+      .where(and(eq(p2pIntentsTable.status, "open"), drizzleSql`expires_at < NOW()`));
+
+    const conditions = [eq(p2pIntentsTable.status, "open")];
+    if (tokenIn)  conditions.push(eq(p2pIntentsTable.tokenIn,  tokenIn.toUpperCase()));
+    if (tokenOut) conditions.push(eq(p2pIntentsTable.tokenOut, tokenOut.toUpperCase()));
+
+    const listings = await db.select().from(p2pIntentsTable)
+      .where(and(...conditions))
+      .orderBy(desc(p2pIntentsTable.createdAt))
+      .limit(limitN);
+
+    res.json({ listings, total: listings.length });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "GET /p2p/listings failed");
+    res.status(500).json({ error: err?.message ?? "Failed to list listings" });
+  }
+});
+
 // ── GET /api/p2p/stats ────────────────────────────────────────────────────────
 router.get("/p2p/stats", async (_req, res) => {
   try {

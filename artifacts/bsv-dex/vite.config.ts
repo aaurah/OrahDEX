@@ -35,14 +35,22 @@ export default defineConfig({
     },
     dedupe: ["react", "react-dom"],
   },
+  optimizeDeps: {
+    /* Pre-bundle heavy deps so they are served as single files instead of
+       hundreds of individual requests — critical for mobile Safari which
+       fails lazy module imports when too many concurrent requests are made. */
+    include: [
+      "wagmi",
+      "@wagmi/core",
+      "@reown/appkit-adapter-wagmi",
+      "viem",
+    ],
+  },
   root: path.resolve(import.meta.dirname),
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
     chunkSizeWarningLimit: 3000,
-    /* Let Rolldown do automatic code splitting — manualChunks was causing
-       the entry chunk to statically import 4 MB of JS (modals + pages chunks),
-       blocking the app from mounting on mobile. */
     rollupOptions: {},
   },
   server: {
@@ -51,6 +59,13 @@ export default defineConfig({
     allowedHosts: true,
     hmr: {
       overlay: false,
+    },
+    /* Explicit CORS headers so mobile Safari accepts dynamically-imported
+       modules served via the Replit reverse proxy. */
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "*",
     },
     fs: {
       strict: true,

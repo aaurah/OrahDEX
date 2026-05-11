@@ -24,6 +24,29 @@ const FUNDING_RATES = [
   { symbol: "ADA/USDT", fundingRate: 0.00004, interval: "8h" },
 ];
 
+// ── GET /futures/markets — list perpetual futures markets ─────────────────────
+router.get("/futures/markets", async (_req, res) => {
+  try {
+    const markets = await db.select().from(marketsTable)
+      .where(eq(marketsTable.type, "futures"));
+    res.json(markets.map(m => ({
+      symbol:           m.symbol,
+      baseAsset:        m.baseAsset,
+      quoteAsset:       m.quoteAsset,
+      lastPrice:        parseFloat(m.lastPrice),
+      priceChange24h:   parseFloat(m.priceChange24h),
+      priceChangePercent24h: parseFloat(m.priceChangePercent24h),
+      volume24h:        parseFloat(m.volume24h),
+      high24h:          parseFloat(m.high24h),
+      low24h:           parseFloat(m.low24h),
+      status:           m.status,
+      type:             m.type,
+    })));
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to fetch futures markets" });
+  }
+});
+
 router.get("/futures/funding-rates", (_req, res) => {
   const now = new Date();
   const nextFunding = new Date(now.getTime());

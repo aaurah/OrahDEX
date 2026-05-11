@@ -5,7 +5,7 @@ import App from "./App";
 import "./index.css";
 import { applyStoredTheme } from "./store/useThemeStore";
 
-applyStoredTheme();
+try { applyStoredTheme(); } catch {}
 
 /* ── Root-level error boundary that keeps the app alive even if WagmiProvider crashes ── */
 class RootErrorBoundary extends Component<
@@ -30,14 +30,31 @@ class RootErrorBoundary extends Component<
   }
 }
 
-const root = createRoot(document.getElementById("root")!);
+/* ── Inline crash fallback — shows something instead of blank white ── */
+function showCrashFallback(msg: string) {
+  const el = document.getElementById("root");
+  if (!el) return;
+  el.innerHTML = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0a0a0a;color:#f1f5f9;font-family:sans-serif;padding:2rem;text-align:center"><div><div style="font-size:2rem;margin-bottom:1rem">⚠️</div><h1 style="font-size:1.2rem;font-weight:700;margin-bottom:0.5rem">Something went wrong</h1><p style="font-size:0.85rem;color:#94a3b8;margin-bottom:1.5rem">${msg}</p><button onclick="location.reload()" style="padding:0.6rem 1.5rem;background:#22c55e;color:#000;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:0.9rem">Reload</button></div></div>`;
+}
 
-/* ── Step 1: Render immediately — fast first paint ── */
-root.render(createElement(App));
+let root: ReturnType<typeof createRoot>;
 
-/* ── Suppress benign resize-observer noise ── */
+try {
+  const rootEl = document.getElementById("root");
+  if (!rootEl) throw new Error("Root element not found");
+  root = createRoot(rootEl);
+
+  /* ── Step 1: Render immediately — fast first paint ── */
+  root.render(createElement(App));
+} catch (e) {
+  console.error("[Orah] Fatal boot error:", e);
+  showCrashFallback(e instanceof Error ? e.message : "Startup failed");
+}
+
+/* ── Suppress benign resize-observer noise only — do NOT suppress empty messages
+   as those hide real Safari/iOS errors ── */
 window.addEventListener("error", (e) => {
-  if (e.message === "ResizeObserver loop limit exceeded" || e.message === "") {
+  if (e.message === "ResizeObserver loop limit exceeded") {
     e.stopImmediatePropagation();
     e.preventDefault();
   }
@@ -56,7 +73,7 @@ if (reownProjectId) {
       ]);
       setupReown(reownProjectId);
       const cfg = getWagmiConfig();
-      if (cfg) {
+      if (cfg && root) {
         root.render(
           createElement(
             RootErrorBoundary,

@@ -1035,8 +1035,8 @@ export function startPriceUpdater() {
     try { await updateMarketPrices(); }
     catch (err) { logger.warn({ err }, "Price updater tick error"); }
     finally { _priceUpdating = false; }
-  }, 60_000);
-  logger.info("Live price updater started (interval: 60s)");
+  }, 90_000);
+  logger.info("Live price updater started (interval: 90s)");
 }
 
 export function stopPriceUpdater() {

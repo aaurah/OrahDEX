@@ -523,7 +523,7 @@ router.get("/trade-analytics", async (_req, res) => {
         if (o.side === "sell") bucket.sell += 1;
         return acc;
       }, {} as Record<string, { symbol: string; total: number; open: number; filled: number; cancelled: number; buy: number; sell: number; volume: number }>)
-    ).sort((a, b) => b.volume - a.volume).slice(0, 20);
+    ).sort((a: any, b: any) => b.volume - a.volume).slice(0, 20);
 
     const limitBreakdown = allOrders.reduce((acc, o) => {
       const key = o.type ?? "unknown";
@@ -566,7 +566,7 @@ router.get("/trade-analytics", async (_req, res) => {
         timestamp: t.timestamp,
       })),
       pairStats,
-      limitBreakdown: Object.values(limitBreakdown).sort((a, b) => b.volume - a.volume),
+      limitBreakdown: Object.values(limitBreakdown).sort((a: any, b: any) => b.volume - a.volume),
       liquidityDepth,
     });
   } catch (err: any) {
@@ -2396,8 +2396,8 @@ router.get("/db-health", requireAdminToken, async (req, res) => {
       run("SELECT COUNT(*) AS cnt FROM orders WHERE status = 'open'"),
       run("SELECT COUNT(*) AS cnt FROM trades"),
       run("SELECT COUNT(*) AS cnt FROM withdrawal_requests WHERE status = 'pending'"),
-      run("SELECT COUNT(*) AS cnt FROM evm_deposits_verified"),
-      run("SELECT COUNT(*) AS cnt FROM evm_deposit_addresses"),
+      pool.query("SELECT COUNT(*) AS cnt FROM evm_deposits_verified").then(r => r.rows).catch(() => [{ cnt: "0" }]),
+      pool.query("SELECT COUNT(*) AS cnt FROM evm_deposit_addresses").then(r => r.rows).catch(() => [{ cnt: "0" }]),
       run("SELECT COUNT(*) AS cnt FROM mint_burn_log"),
       run("SELECT network_type, COUNT(*) AS cnt FROM wallets GROUP BY network_type ORDER BY cnt DESC"),
       run(`SELECT w.address, w.network_type, w.provider, w.last_seen,
@@ -2466,11 +2466,11 @@ router.post("/db-sync", requireAdminToken, async (req, res) => {
            FROM trades
            WHERE wallet_address IS NOT NULL AND wallet_address NOT IN (SELECT address FROM wallets)
            ON CONFLICT (address) DO UPDATE SET last_seen = NOW()`),
-      run(`INSERT INTO wallets (address, network_type, status, first_seen, last_seen)
+      pool.query(`INSERT INTO wallets (address, network_type, status, first_seen, last_seen)
            SELECT DISTINCT user_wallet, 'evm', 'active', NOW(), NOW()
            FROM evm_deposit_addresses
            WHERE user_wallet NOT IN (SELECT address FROM wallets)
-           ON CONFLICT (address) DO UPDATE SET last_seen = NOW()`),
+           ON CONFLICT (address) DO UPDATE SET last_seen = NOW()`).then(r => r.rowCount ?? 0).catch(() => 0),
     ]);
 
     const totalInserted = fromBalances + fromOrders + fromTrades + fromDeposits;
@@ -2508,7 +2508,7 @@ router.get("/wallet-detail/:address", requireAdminToken, async (req, res) => {
                 fee::text, txid, timestamp
          FROM trades WHERE wallet_address = $1 ORDER BY timestamp DESC LIMIT 20`, [addr]),
       pool.query(`SELECT tx_hash, chain_id, asset, amount::text, verified_at
-         FROM evm_deposits_verified WHERE user_wallet = $1 ORDER BY verified_at DESC`, [addr]),
+         FROM evm_deposits_verified WHERE user_wallet = $1 ORDER BY verified_at DESC`, [addr]).catch(() => ({ rows: [] })),
       pool.query(`SELECT id, asset, amount::text, network, status, txid, created_at
          FROM withdrawal_requests WHERE wallet_address = $1 ORDER BY created_at DESC LIMIT 20`, [addr]),
     ]);
@@ -2755,7 +2755,7 @@ router.get("/seeded-pool", requireAdminToken, async (req, res) => {
        WHERE seeded > 0
        GROUP BY asset_symbol
        ORDER BY total_seeded::numeric DESC`,
-    );
+    ).catch(() => ({ rows: [] as any[] }));
     res.json({ pool: rows });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
@@ -2778,7 +2778,7 @@ router.get("/seeded-pool/summary", requireAdminToken, async (req, res) => {
          SUM(CASE WHEN asset_symbol IN ('USDT','USDC','DAI','BUSD') THEN seeded ELSE 0 END) AS total_seeded_usdt_equiv
        FROM user_balances
        WHERE seeded > 0`,
-    );
+    ).catch(() => ({ rows: [] as any[] }));
     res.json(rows[0] ?? { total_wallets: "0", total_assets: "0", total_seeded_usdt_equiv: "0" });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
@@ -2788,8 +2788,6 @@ router.get("/seeded-pool/summary", requireAdminToken, async (req, res) => {
 /* ── POST /admin/seeded-pool/reclaim ─────────────────────────────────────────
    Remove a specific seeded asset balance from all user wallets (platform
    reclaims). Supply { asset } to reclaim one asset, or leave blank for all.
-   This reduces available balance by the seeded amount and clears the seeded
-   column — effectively the platform pulling back its liquidity.
 ──────────────────────────────────────────────────────────────────────────────── */
 router.post("/seeded-pool/reclaim", requireAdminToken, async (req, res) => {
   try {
@@ -2804,7 +2802,7 @@ router.post("/seeded-pool/reclaim", requireAdminToken, async (req, res) => {
                 updated_at  = now()
           WHERE asset_symbol = $1 AND seeded > 0`,
         [sym],
-      );
+      ).catch(() => ({ rowCount: 0 }));
     } else {
       result = await pool.query(
         `UPDATE user_balances
@@ -2812,12 +2810,96 @@ router.post("/seeded-pool/reclaim", requireAdminToken, async (req, res) => {
                 seeded      = 0,
                 updated_at  = now()
           WHERE seeded > 0`,
-      );
+      ).catch(() => ({ rowCount: 0 }));
     }
     req.log.info({ asset: asset ?? "ALL", rowsAffected: result.rowCount }, "admin: seeded pool reclaimed");
     res.json({ success: true, rowsAffected: result.rowCount });
   } catch (err: any) {
     res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ── GET /admin/le-income ────────────────────────────────────────────────────
+   LetsExchange affiliate income summary. Reads from platform_settings where
+   the LE webhook stores revenue data, or falls back to zeros if not yet set.
+──────────────────────────────────────────────────────────────────────────────── */
+router.get("/le-income", requireAdminToken, async (req, res) => {
+  try {
+    const keys = [
+      "le_total_volume_usd", "le_total_revenue_usd", "le_total_swaps",
+      "le_last_swap_at", "le_affiliate_id",
+    ];
+    const { rows } = await pool.query<{ key: string; value: string }>(
+      `SELECT key, value FROM platform_settings WHERE key = ANY($1)`,
+      [keys],
+    );
+    const kv = Object.fromEntries(rows.map(r => [r.key, r.value]));
+    res.json({
+      affiliateId:    kv["le_affiliate_id"]    ?? process.env.LETSEXCHANGE_API_KEY?.slice(0, 8) ?? "not-set",
+      totalVolumeUsd: parseFloat(kv["le_total_volume_usd"]  ?? "0"),
+      totalRevenueUsd:parseFloat(kv["le_total_revenue_usd"] ?? "0"),
+      totalSwaps:     parseInt(kv["le_total_swaps"]         ?? "0"),
+      lastSwapAt:     kv["le_last_swap_at"] ?? null,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ── GET /admin/stripe-orders ────────────────────────────────────────────────
+   Returns Stripe crypto purchase orders from platform_settings ledger, or
+   an empty list if Stripe has not been used yet.
+──────────────────────────────────────────────────────────────────────────────── */
+router.get("/stripe-orders", requireAdminToken, async (req, res) => {
+  try {
+    const { rows } = await pool.query<{
+      id: string; amount: string; currency: string; status: string;
+      wallet_address: string; asset: string; created_at: string;
+    }>(
+      `SELECT id, amount::text, currency, status, wallet_address, asset, created_at
+       FROM stripe_orders ORDER BY created_at DESC LIMIT 100`,
+    ).catch(() => ({ rows: [] as any[] }));
+    const { rows: summary } = await pool.query<{ total_revenue: string; order_count: string }>(
+      `SELECT COALESCE(SUM(amount),0)::text AS total_revenue, COUNT(*)::text AS order_count
+       FROM stripe_orders WHERE status = 'succeeded'`,
+    ).catch(() => ({ rows: [{ total_revenue: "0", order_count: "0" }] }));
+    res.json({
+      orders: rows,
+      summary: {
+        totalRevenue: parseFloat(summary[0]?.total_revenue ?? "0"),
+        orderCount:   parseInt(summary[0]?.order_count     ?? "0"),
+      },
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message });
+  }
+});
+
+/* ── GET /admin/letsexchange/affiliate ───────────────────────────────────────
+   Proxies the LetsExchange affiliate stats API and returns income data.
+──────────────────────────────────────────────────────────────────────────────── */
+router.get("/letsexchange/affiliate", requireAdminToken, async (req, res) => {
+  try {
+    const apiKey = process.env.LETSEXCHANGE_API_KEY;
+    if (!apiKey) {
+      res.json({ error: "LETSEXCHANGE_API_KEY not configured", stats: null });
+      return;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const r = await fetch("https://api.letsexchange.io/api/v1/affiliate/stats", {
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!r.ok) {
+      res.json({ error: `LetsExchange API returned ${r.status}`, stats: null });
+      return;
+    }
+    const data = await r.json();
+    res.json({ stats: data });
+  } catch (err: any) {
+    res.json({ error: err?.message ?? "Failed to fetch affiliate stats", stats: null });
   }
 });
 

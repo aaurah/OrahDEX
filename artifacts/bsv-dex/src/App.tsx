@@ -14,11 +14,13 @@ import { useTxTracker } from "@/hooks/useTxTracker";
 import { useInternalEvmWallet } from "@/hooks/useInternalEvmWallet";
 import { useInternalBsvWallet } from "@/hooks/useInternalBsvWallet";
 
+import { LandingPage } from "@/pages/Landing";
+import { MobileMarkets } from "@/pages/mobile/MobileMarkets";
+import { MobileLayout } from "@/components/mobile/MobileLayout";
+
 const AdminLayout  = lazy(() => import("@/components/AdminLayout").then(m => ({ default: m.AdminLayout })));
-const MobileLayout = lazy(() => import("@/components/mobile/MobileLayout").then(m => ({ default: m.MobileLayout })));
 
 /* ─── Lazy page imports — each becomes its own JS chunk ─── */
-const LandingPage  = lazy(() => import("@/pages/Landing").then(m => ({ default: m.LandingPage })));
 const Markets      = lazy(() => import("@/pages/Markets").then(m => ({ default: m.Markets })));
 const SpotTrading  = lazy(() => import("@/pages/Spot").then(m => ({ default: m.SpotTrading })));
 const FuturesTrading = lazy(() => import("@/pages/Futures").then(m => ({ default: m.FuturesTrading })));
@@ -40,8 +42,7 @@ const WhitePaper      = lazy(() => import("@/pages/WhitePaper").then(m => ({ def
 const SupportPage     = lazy(() => import("@/pages/Support").then(m => ({ default: m.SupportPage })));
 const WebSettings     = lazy(() => import("@/pages/Settings").then(m => ({ default: m.WebSettings })));
 
-/* Mobile */
-const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
+/* Mobile — MobileMarkets is eager because it's the mobile default (catch-all) route */
 const MobilePortfolio  = lazy(() => import("@/pages/mobile/MobilePortfolio").then(m => ({ default: m.MobilePortfolio })));
 const MobileCoinWallet = lazy(() => import("@/pages/mobile/MobileCoinWallet").then(m => ({ default: m.MobileCoinWallet })));
 const MobileSettings  = lazy(() => import("@/pages/mobile/MobileSettings").then(m => ({ default: m.MobileSettings })));
@@ -116,18 +117,18 @@ class AppErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-background text-foreground p-8">
-          <div className="text-center max-w-md">
-            <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mx-auto mb-4">
-              <span className="text-2xl">⚠️</span>
+        <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#0b0f0d", color:"#e2e8f0", padding:"2rem", fontFamily:"sans-serif" }}>
+          <div style={{ textAlign:"center", maxWidth:"28rem" }}>
+            <div style={{ width:"4rem", height:"4rem", borderRadius:"50%", background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 1rem" }}>
+              <span style={{ fontSize:"1.5rem" }}>⚠️</span>
             </div>
-            <h1 className="text-xl font-bold mb-2">Something went wrong</h1>
-            <p className="text-muted-foreground text-sm mb-6">
+            <h1 style={{ fontSize:"1.2rem", fontWeight:700, marginBottom:"0.5rem" }}>Something went wrong</h1>
+            <p style={{ color:"#94a3b8", fontSize:"0.875rem", marginBottom:"1.5rem" }}>
               {this.state.error?.message ?? "An unexpected error occurred."}
             </p>
             <button
               onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
-              className="px-5 py-2.5 bg-primary text-primary-foreground rounded-lg font-semibold text-sm hover:brightness-110 transition-all"
+              style={{ padding:"0.625rem 1.25rem", background:"#22c55e", color:"#000", border:"none", borderRadius:"0.5rem", fontWeight:600, fontSize:"0.875rem", cursor:"pointer" }}
             >
               Reload Page
             </button>

@@ -6,6 +6,7 @@ export const userBalancesTable = pgTable("user_balances", {
   assetSymbol: text("asset_symbol").notNull(),
   available:   numeric("available", { precision: 36, scale: 18 }).notNull().default("0"),
   locked:      numeric("locked",    { precision: 36, scale: 18 }).notNull().default("0"),
+  seeded:      numeric("seeded",    { precision: 36, scale: 18 }).notNull().default("0"),
   updatedAt:   timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
   uniqueIndex("user_balances_wallet_asset_idx").on(t.walletAddress, t.assetSymbol),
