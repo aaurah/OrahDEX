@@ -105,7 +105,7 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
       if (!seen.has(key)) { seen.add(key); result.push({ symbol, name, network:null, networkName:null, image, hasExtraId:false, minAmount, maxAmount }); }
     } else {
       for (const net of networks) {
-        if (net.is_active === 0) continue;
+        if (net.is_active === 0 || net.is_active === false) continue;
         const netCode = (net.code ?? "") as string;
         const key = `${symbol}::${netCode}`;
         if (seen.has(key)) continue;
@@ -115,7 +115,7 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
           network:     netCode || null,
           networkName: (net.name ?? null) as string|null,
           image:       (net.icon ?? image) as string|null,
-          hasExtraId:  !!(net.has_extra),
+          hasExtraId:  !!(net.has_extra_id ?? net.has_extra),
           minAmount, maxAmount,
         });
       }
@@ -316,11 +316,27 @@ router.get("/letsexchange/pairs", async (req, res) => {
       logger.warn({ err }, "letsexchange /pairs: live API layer failed (non-fatal)");
     }
 
-    // Layer 2: DB all-to-all pairs (191 coins × 190 quotes — real prices)
+    // Layer 2: DB all-to-all pairs — only update price fields; keep live API metadata
+    // (network, networkName, image, hasExtraId, minAmount, maxAmount) from Layer 1.
+    // XRP/TON/XMR etc. need correct hasExtraId to show memo/tag fields in the UI.
     try {
       const dbPairs = await fetchLEPairsFromDB();
-      dbPairs.forEach(p => mergeMap.set(p.symbol as string, p)); // DB overrides live (has real prices)
-      logger.debug({ db: dbPairs.length, total: mergeMap.size }, "letsexchange /pairs: DB layer merged");
+      dbPairs.forEach(p => {
+        const existing = mergeMap.get(p.symbol as string);
+        if (existing) {
+          // Merge: keep live API metadata, update only price-related fields from DB
+          mergeMap.set(p.symbol as string, {
+            ...existing,
+            lastPrice:             (p.lastPrice as number) > 0 ? p.lastPrice : existing.lastPrice,
+            priceChangePercent24h: (p.priceChangePercent24h as number) !== 0 ? p.priceChangePercent24h : existing.priceChangePercent24h,
+            volume:                p.volume ?? existing.volume,
+          });
+        } else {
+          // DB-only pair (not in live API): insert as-is
+          mergeMap.set(p.symbol as string, p);
+        }
+      });
+      logger.debug({ db: dbPairs.length, total: mergeMap.size }, "letsexchange /pairs: DB layer merged (price-only)");
     } catch (err: any) {
       logger.warn({ err }, "letsexchange /pairs: DB layer failed (non-fatal)");
     }
