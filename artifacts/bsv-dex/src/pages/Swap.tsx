@@ -1140,8 +1140,14 @@ function ExchangeSwapPanel({
         body: JSON.stringify({ assetIn: fromAsset, assetOut: toAsset, amountIn: val }),
       });
       const data = await r.json();
-      if (!r.ok) { setQuoteErr(data.error ?? "No price found"); setQuote(null); }
-      else setQuote(data);
+      if (!r.ok) {
+        if (data.code === "NO_PRICE_DATA") {
+          setQuoteErr((data.hint as string) ?? data.error ?? "No price found");
+        } else {
+          setQuoteErr(data.error ?? "No price found");
+        }
+        setQuote(null);
+      } else setQuote(data);
     } catch { setQuoteErr("Quote failed"); setQuote(null); }
     setQuoting(false);
   }, [fromAsset, toAsset]);
@@ -1490,8 +1496,11 @@ function BuyCryptoPanel({
       });
       const data = await r.json();
       if (!r.ok) {
-        // 422 with route:"letsexchange" means LE but network fields needed
-        if (data.route === "letsexchange") {
+        if (data.code === "LE_KEY_NOT_CONFIGURED") {
+          setQuoteErr("Cross-chain exchange is not yet configured on this server. The administrator needs to set the LETSEXCHANGE_API_KEY secret.");
+          setQuote(null);
+        } else if (data.route === "letsexchange") {
+          // 422 with route:"letsexchange" means LE but network fields needed
           setQuoteErr(`Cross-chain pair — enter networks and destination address below to get a quote.`);
           setQuote({ route: "letsexchange", coinToSpend, coinToBuy, amountToSpend: val, estimatedAmountOut: null });
         } else {

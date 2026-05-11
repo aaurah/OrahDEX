@@ -169,6 +169,15 @@ router.post("/buy/quote", async (req, res) => {
       return;
     }
 
+    if (!process.env.LETSEXCHANGE_API_KEY) {
+      res.status(503).json({
+        error: "LetsExchange is not configured — an administrator must set the LETSEXCHANGE_API_KEY secret to enable cross-chain exchange.",
+        code: "LE_KEY_NOT_CONFIGURED",
+        route: "letsexchange",
+      });
+      return;
+    }
+
     const leBody = {
       from:         from,
       to:           to,
@@ -348,6 +357,15 @@ router.post("/buy/execute", async (req, res) => {
     const withdrawalStr = String(withdrawal).trim();
     if (withdrawalStr.length < 10 || withdrawalStr.length > 200) {
       res.status(400).json({ error: "Invalid withdrawal address" });
+      return;
+    }
+
+    if (!process.env.LETSEXCHANGE_API_KEY) {
+      res.status(503).json({
+        error: "LetsExchange is not configured — an administrator must set the LETSEXCHANGE_API_KEY secret to enable cross-chain exchange.",
+        code: "LE_KEY_NOT_CONFIGURED",
+        route: "letsexchange",
+      });
       return;
     }
 

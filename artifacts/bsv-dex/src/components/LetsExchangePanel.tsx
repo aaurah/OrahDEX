@@ -422,8 +422,14 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
         }),
       });
       const d = await r.json();
-      if (!r.ok) { setEstError(d.error ?? "Rate unavailable"); setEstimate(null); }
-      else { setEstimate(d as Estimate); }
+      if (!r.ok) {
+        if (d.code === "LE_KEY_NOT_CONFIGURED") {
+          setEstError("Cross-chain exchange is not yet configured on this server. The administrator needs to add the LETSEXCHANGE_API_KEY secret to enable live rates.");
+        } else {
+          setEstError(d.error ?? "Rate unavailable");
+        }
+        setEstimate(null);
+      } else { setEstimate(d as Estimate); }
     } catch { setEstError("Network error"); }
     setEstLoading(false);
   }, [fromCoin, toCoin, amount]);
@@ -1230,9 +1236,10 @@ export function LetsExchangePanel({
       const d = await r.json();
 
       if (!r.ok) {
-        // Show a clean error — extract validation messages if available
         let msg = d.error ?? "Failed to create exchange";
-        if (d.detail?.error?.validation) {
+        if (d.code === "LE_KEY_NOT_CONFIGURED") {
+          msg = "Cross-chain exchange is not yet configured on this server. The administrator needs to add the LETSEXCHANGE_API_KEY secret.";
+        } else if (d.detail?.error?.validation) {
           const v = d.detail.error.validation as Record<string,string>;
           msg = Object.values(v).join(". ");
         }

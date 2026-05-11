@@ -564,6 +564,14 @@ router.post("/letsexchange/estimate", async (req, res) => {
   const amt = parseFloat(String(amount));
   if (!isFinite(amt) || amt <= 0) { res.status(400).json({ error: "amount must be positive" }); return; }
 
+  if (!process.env.LETSEXCHANGE_API_KEY) {
+    res.status(503).json({
+      error: "LetsExchange is not configured — set the LETSEXCHANGE_API_KEY secret to enable cross-chain rates.",
+      code: "LE_KEY_NOT_CONFIGURED",
+    });
+    return;
+  }
+
   try {
     const body: Record<string,unknown> = {
       from,
@@ -620,6 +628,14 @@ router.post("/letsexchange/exchange", async (req, res) => {
   const withdrawalStr = String(withdrawal).trim();
   if (withdrawalStr.length < 10 || withdrawalStr.length > 200) {
     res.status(400).json({ error: "Invalid withdrawal address" }); return;
+  }
+
+  if (!process.env.LETSEXCHANGE_API_KEY) {
+    res.status(503).json({
+      error: "LetsExchange is not configured — set the LETSEXCHANGE_API_KEY secret to enable cross-chain exchange.",
+      code: "LE_KEY_NOT_CONFIGURED",
+    });
+    return;
   }
 
   try {
