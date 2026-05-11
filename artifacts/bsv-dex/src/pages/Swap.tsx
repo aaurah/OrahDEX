@@ -1164,16 +1164,22 @@ function ExchangeSwapPanel({
       let nonce: string | undefined;
       let signature: string | undefined;
       if (/^0x[0-9a-fA-F]{40}$/.test(address)) {
-        const challengeRes = await fetch(`${API_BASE}/swap/challenge`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            walletAddress: address,
-            assetIn: fromAsset,
-            assetOut: toAsset,
-            amountIn: amount,
-          }),
-        });
+        let challengeRes: Response;
+        try {
+          challengeRes = await fetch(`${API_BASE}/swap/challenge`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              walletAddress: address,
+              assetIn: fromAsset,
+              assetOut: toAsset,
+              amountIn: amount,
+            }),
+          });
+        } catch (err: any) {
+          const reason = err?.message ? `: ${err.message}` : "";
+          throw new Error(`Network error while requesting swap signature challenge${reason}`);
+        }
         const challengeData = await challengeRes.json();
         if (!challengeRes.ok || !challengeData?.nonce || !challengeData?.message) {
           throw new Error(challengeData?.error ?? "Failed to obtain swap signature challenge");
