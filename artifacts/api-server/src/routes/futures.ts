@@ -14,6 +14,15 @@ import { verifyAndLockFunding } from "../lib/fundingVerifier.js";
 
 const router: IRouter = Router();
 
+router.use((_req, res, next) => {
+  if (process.env.FUTURES_ENABLED !== "true") {
+    return res.status(503).json({
+      error: "Perpetual futures are not yet available. Coming soon.",
+    });
+  }
+  return next();
+});
+
 const FUNDING_RATES = [
   { symbol: "BSV/USDT", fundingRate: 0.0001, interval: "8h" },
   { symbol: "BTC/USDT", fundingRate: 0.00015, interval: "8h" },

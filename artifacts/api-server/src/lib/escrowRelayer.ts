@@ -24,6 +24,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { mainnet, sepolia } from "viem/chains";
+import { getRequiredEnv } from "./requiredEnv.js";
 
 // ── Contract config ───────────────────────────────────────────────────────────
 
@@ -56,6 +57,11 @@ const EXPLORER: Record<number, string> = {
   11155111: "https://sepolia.etherscan.io/tx/",
 };
 
+const EVM_WALLET_SECRET = getRequiredEnv(
+  "EVM_WALLET_SECRET",
+  "[FATAL] EVM_WALLET_SECRET is not set. Refusing to start relayer.",
+);
+
 export function escrowExplorerUrl(chainId: number, txHash: string): string {
   const base = EXPLORER[chainId] ?? EXPLORER[1]!;
   return `${base}${txHash}`;
@@ -74,7 +80,7 @@ export function isEscrowChain(chainId: number): boolean {
  * broadcasting — the trade still records as filled internally.
  */
 function getRelayerPrivateKey(): Hex | null {
-  const raw = process.env.EVM_WALLET_SECRET ?? "";
+  const raw = EVM_WALLET_SECRET;
   const stripped = raw.startsWith("0x") ? raw.slice(2) : raw;
   if (stripped.length === 64 && /^[0-9a-fA-F]+$/.test(stripped)) {
     return ("0x" + stripped) as Hex;

@@ -110,6 +110,9 @@ export function guardedInterval(
   intervalMs: number,
   options: GuardedIntervalOptions = {},
 ): () => void {
+  // Cap backoff to ~16 intervals so repeated failures do not effectively disable
+  // a background worker for many hours before the next retry.
+  const MAX_SKIP_INTERVALS = 16;
   const timeoutMs           = options.timeoutMs            ?? Math.floor(intervalMs * 0.9);
   const maxFails            = options.maxFailsBeforeBackoff ?? 5;
   const initialDelayMs      = options.initialDelayMs        ?? 0;
@@ -159,7 +162,7 @@ export function guardedInterval(
       logger.warn({ service: name, err, isTimeout }, `[SelfHeal] ${name}: tick failed`);
 
       if (entry.consecutiveFails + 1 >= maxFails) {
-        skipCount = Math.min(skipCount + 1, 8);
+        skipCount = Math.min(skipCount + 1, MAX_SKIP_INTERVALS);
         skipsLeft = skipCount;
         logger.warn({ service: name, skipCount },
           `[SelfHeal] ${name}: backing off — will skip next ${skipCount} interval(s)`);

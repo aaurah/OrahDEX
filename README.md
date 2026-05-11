@@ -162,17 +162,23 @@ Markets
 
 Installation
 
-git clone https://github.com/<your-org>/OrahDEX.git
+git clone https://github.com/aaurah/OrahDEX.git
 cd OrahDEX
-npm install
-npm run dev
+corepack pnpm install
+PORT=8080 corepack pnpm --filter @workspace/api-server run dev
+PORT=20180 corepack pnpm --filter @workspace/bsv-dex run dev
 
 
 Environment variables:
 
-RPC_URL=<EVM RPC>
-LE_API_KEY=<LetsExchange API key>
-DATABASE_URL=<Postgres/Mongo>
+See `.env.example` for the full environment contract.
+
+Monorepo packages:
+
+• artifacts/api-server
+• artifacts/bsv-dex
+• lib/db
+• lib/*
 
 
 ---
