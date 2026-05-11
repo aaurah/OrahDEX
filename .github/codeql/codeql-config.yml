@@ -18,9 +18,6 @@ paths-ignore:
   - '**/dist/**'
   - '**/build/**'
   - '**/coverage/**'
-  - '**/__tests__/**'
-  - '**/*.test.*'
-  - '**/*.spec.*'
   - attached_assets/**
   - .canvas/**
   - .codesight/**

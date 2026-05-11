@@ -8,8 +8,5 @@ exclude_paths:
   - '**/dist/**'
   - '**/build/**'
   - '**/coverage/**'
-  - '**/__tests__/**'
-  - '**/*.test.*'
-  - '**/*.spec.*'
   - artifacts/**/assets/**
   - artifacts/mockup-sandbox/**
