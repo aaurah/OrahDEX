@@ -475,7 +475,19 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
       } catch { /* non-fatal */ }
       try {
         const dbPairs = await fetchLEPairsFromDB();
-        dbPairs.forEach(p => mergeMap.set(p.symbol as string, p)); // DB overrides live (has real prices)
+        dbPairs.forEach(p => {
+          const existing = mergeMap.get(p.symbol as string);
+          if (existing) {
+            mergeMap.set(p.symbol as string, {
+              ...existing,
+              lastPrice:             (p.lastPrice as number) > 0 ? p.lastPrice : existing.lastPrice,
+              priceChangePercent24h: (p.priceChangePercent24h as number) !== 0 ? p.priceChangePercent24h : existing.priceChangePercent24h,
+              volume:                p.volume ?? existing.volume,
+            });
+          } else {
+            mergeMap.set(p.symbol as string, p);
+          }
+        });
       } catch { /* non-fatal */ }
       lePairs = Array.from(mergeMap.values());
       if (lePairs.length > 0) cache.set(cacheKey, { data: lePairs, ts: Date.now() });
