@@ -1,0 +1,15 @@
+---
+exclude_paths:
+  - .agents/**
+  - .canvas/**
+  - .codesight/**
+  - attached_assets/**
+  - '**/node_modules/**'
+  - '**/dist/**'
+  - '**/build/**'
+  - '**/coverage/**'
+  - '**/__tests__/**'
+  - '**/*.test.*'
+  - '**/*.spec.*'
+  - artifacts/**/assets/**
+  - artifacts/mockup-sandbox/**
