@@ -260,6 +260,7 @@ router.post("/withdraw", (req, res, next) => {
 });
 
 // ── GET /admin/withdrawals ────────────────────────────────────────────────────
+router.get("/admin/withdrawals", requireAdminToken, async (req, res) => {
   try {
     // Honor ?status=pending  or  ?status=pending,cancelled,failed  to filter rows.
     // Without it we return every row (legacy behavior).
