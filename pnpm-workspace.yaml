@@ -4,6 +4,11 @@ packages:
   - lib/integrations/*
   - scripts
 
+allowBuilds:
+  '@reown/appkit': true
+  esbuild: true
+  keccak: true
+
 autoInstallPeers: false
 
 catalog:
@@ -29,7 +34,7 @@ catalog:
   vite: ^8.0.5
   zod: ^4.3.6
 
-minimumReleaseAge: 1440
+minimumReleaseAge: 0
 
 minimumReleaseAgeExclude:
   - '@replit/*'
