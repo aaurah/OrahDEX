@@ -236,6 +236,10 @@ export async function withRetry<T>(
 export function startOrderReconciler(): void {
   const RECONCILE_INTERVAL_MS = 5 * 60_000;
   const STUCK_ORDER_AGE_MS    = 30 * 60_000;
+  // Process-local lock to avoid duplicate in-flight cancellation attempts
+  // in a single API instance. Cross-instance idempotency is enforced by the
+  // SQL WHERE status='open' predicate in the UPDATE below.
+  const cancellingOrders = new Set<string>();
 
   const reconcile = async () => {
     try {
@@ -259,20 +263,41 @@ export function startOrderReconciler(): void {
 
       if (stuck.length === 0) return;
 
+      let cancelled = 0;
+      const cancelledSymbols = new Set<string>();
+
       for (const order of stuck) {
-        await db
-          .update(ordersTable)
-          .set({ status: "cancelled", updatedAt: new Date() })
-          .where(
-            and(
-              eq(ordersTable.id, order.id),
-              eq(ordersTable.status, "open"),
+        if (cancellingOrders.has(order.id)) {
+          logger.debug({ orderId: order.id }, "[SelfHeal] Order reconciler: skip in-flight cancel lock");
+          continue;
+        }
+        cancellingOrders.add(order.id);
+        try {
+          const rows = await db
+            .update(ordersTable)
+            .set({ status: "cancelled", updatedAt: new Date() })
+            .where(
+              and(
+                eq(ordersTable.id, order.id),
+                eq(ordersTable.status, "open"),
+              )
             )
-          );
+            .returning({ id: ordersTable.id });
+          if (rows.length > 0) {
+            cancelled++;
+            cancelledSymbols.add(order.symbol);
+          } else {
+            logger.debug({ orderId: order.id }, "[SelfHeal] Order reconciler: skip already-processed order");
+          }
+        } finally {
+          cancellingOrders.delete(order.id);
+        }
       }
 
-      logger.warn({ count: stuck.length, symbols: [...new Set(stuck.map(o => o.symbol))] },
-        `[SelfHeal] Order reconciler: auto-cancelled ${stuck.length} stuck order(s)`);
+      if (cancelled > 0) {
+        logger.warn({ count: cancelled, symbols: [...cancelledSymbols] },
+          `[SelfHeal] Order reconciler: auto-cancelled ${cancelled} stuck order(s)`);
+      }
     } catch (err) {
       logger.warn({ err }, "[SelfHeal] Order reconciler: cycle failed");
     }

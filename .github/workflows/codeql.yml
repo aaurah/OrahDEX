@@ -57,6 +57,15 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Check for EVM wallet secret leaks
+      shell: bash
+      run: |
+        set -euo pipefail
+        if grep -RInE "(console\.log|logger\.[A-Za-z]+)\([^)]*EVM_WALLET_SECRET" artifacts/api-server/src; then
+          echo "Potential EVM_WALLET_SECRET logging detected."
+          exit 1
+        fi
+
     # Add any setup steps before running the `github/codeql-action/init` action.
     # This includes steps like installing compilers or runtimes (`actions/setup-node`
     # or others). This is typically only required for manual builds.
