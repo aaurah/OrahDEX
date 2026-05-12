@@ -94,8 +94,8 @@ export function buildSettlement(trade: TradeSettlement): SettlementResult {
     trade.amount,
     trade.price,
     trade.timestamp.toString(),
-    "H:" + htlcHash.slice(0, 16),   // first 16 chars of secretHash is enough for OP_RETURN
-    "P:" + htlcAddr.slice(0, 20),   // first 20 chars of P2SH address
+    "H:" + htlcHash,   // full secretHash for verifiability
+    "P:" + htlcAddr,   // full P2SH address (or "NONE")
   ].join("|");
 
   const payloadBuf = Buffer.from(opReturnData, "utf8");

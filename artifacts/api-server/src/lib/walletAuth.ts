@@ -865,6 +865,192 @@ export function buildOrderAuthMessage(params: {
   ].join("\n");
 }
 
+// ── BSV / Solana order challenge store ────────────────────────────────────────
+// Server-issued single-use challenges bound to order parameters.
+// These are separate from the withdrawal-challenge store to prevent a captured
+// withdrawal challenge from being replayed as an order signature.
+
+interface BsvOrderNonce {
+  nonce:    string;
+  message:  string;
+  symbol:   string;
+  side:     string;
+  quantity: string;
+  expiresAt: number;
+}
+
+const bsvOrderNonces = new Map<string, BsvOrderNonce>();
+const BSV_ORDER_NONCE_TTL_MS = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of bsvOrderNonces.entries()) {
+    if (v.expiresAt < now) bsvOrderNonces.delete(k);
+  }
+}, BSV_ORDER_NONCE_TTL_MS).unref();
+
+/**
+ * Issue a BSV order challenge bound to specific order parameters.
+ * The client must sign the returned `message` with their BSV wallet.
+ */
+export function issueBsvOrderChallenge(params: {
+  walletAddress: string;
+  symbol:        string;
+  side:          string;
+  quantity:      string;
+  nonce:         string;
+  expiry:        string;
+}): { nonce: string; message: string } {
+  // Always generate the nonce server-side to prevent nonce-grinding attacks.
+  // Any client-provided nonce is intentionally ignored.
+  const nonce   = crypto.randomBytes(16).toString("hex");
+  const message = buildOrderAuthMessage({
+    walletAddress: params.walletAddress,
+    symbol:        params.symbol,
+    side:          params.side,
+    quantity:      params.quantity,
+    nonce,
+    expiry:        params.expiry,
+  });
+
+  // Normalise wallet address to lower-case to prevent duplicate challenges
+  // from different case representations of the same BSV address.
+  bsvOrderNonces.set(`bsv:${params.walletAddress.toLowerCase()}`, {
+    nonce,
+    message,
+    symbol:   params.symbol,
+    side:     params.side,
+    quantity: params.quantity,
+    expiresAt: Date.now() + BSV_ORDER_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+/**
+ * Verify a BSV order challenge signature.
+ * Binds to (symbol, side, quantity) to prevent cross-intent replay.
+ * Consumes the nonce on success (single-use).
+ * Throws on any failure.
+ */
+export function verifyBsvOrderSignature(
+  walletAddress:   string,
+  signatureBase64: string,
+  expectedParams: { symbol: string; side: string; quantity: string },
+): void {
+  const key    = `bsv:${walletAddress.toLowerCase()}`;
+  const stored = bsvOrderNonces.get(key);
+
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error(
+      "BSV order challenge expired or not found. " +
+      "Request a fresh challenge via POST /orders/bsv-challenge.",
+    );
+  }
+
+  if (stored.symbol !== expectedParams.symbol) {
+    throw new Error(`BSV order challenge symbol mismatch: expected ${stored.symbol}, got ${expectedParams.symbol}.`);
+  }
+  if (stored.side !== expectedParams.side) {
+    throw new Error(`BSV order challenge side mismatch: expected ${stored.side}, got ${expectedParams.side}.`);
+  }
+  if (stored.quantity !== expectedParams.quantity) {
+    throw new Error(`BSV order challenge quantity mismatch.`);
+  }
+
+  verifyBsvMessageSignature(walletAddress, stored.message, signatureBase64);
+  bsvOrderNonces.delete(key);
+}
+
+// ── Solana order challenge store ──────────────────────────────────────────────
+
+interface SolOrderNonce {
+  nonce:     string;
+  message:   string;
+  symbol:    string;
+  side:      string;
+  quantity:  string;
+  expiresAt: number;
+}
+
+const solOrderNonces = new Map<string, SolOrderNonce>();
+const SOL_ORDER_NONCE_TTL_MS = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of solOrderNonces.entries()) {
+    if (v.expiresAt < now) solOrderNonces.delete(k);
+  }
+}, SOL_ORDER_NONCE_TTL_MS).unref();
+
+/**
+ * Issue a Solana order challenge bound to specific order parameters.
+ */
+export function issueSolOrderChallenge(params: {
+  walletAddress: string;
+  symbol:        string;
+  side:          string;
+  quantity:      string;
+  nonce:         string;
+  expiry:        string;
+}): { nonce: string; message: string } {
+  // Always generate the nonce server-side to prevent nonce-grinding attacks.
+  const nonce   = crypto.randomBytes(16).toString("hex");
+  const message = buildOrderAuthMessage({
+    walletAddress: params.walletAddress,
+    symbol:        params.symbol,
+    side:          params.side,
+    quantity:      params.quantity,
+    nonce,
+    expiry:        params.expiry,
+  });
+
+  solOrderNonces.set(`sol:${params.walletAddress.toLowerCase()}`, {
+    nonce,
+    message,
+    symbol:   params.symbol,
+    side:     params.side,
+    quantity: params.quantity,
+    expiresAt: Date.now() + SOL_ORDER_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+/**
+ * Verify a Solana order challenge signature.
+ * Binds to (symbol, side, quantity) to prevent cross-intent replay.
+ * Consumes the nonce on success (single-use).
+ */
+export function verifySolOrderSignature(
+  walletAddress:   string,
+  signatureBase64: string,
+  expectedParams: { symbol: string; side: string; quantity: string },
+): void {
+  const key    = `sol:${walletAddress.toLowerCase()}`;
+  const stored = solOrderNonces.get(key);
+
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error(
+      "Solana order challenge expired or not found. " +
+      "Request a fresh challenge via POST /orders/sol-challenge.",
+    );
+  }
+
+  if (stored.symbol !== expectedParams.symbol) {
+    throw new Error(`Solana order challenge symbol mismatch.`);
+  }
+  if (stored.side !== expectedParams.side) {
+    throw new Error(`Solana order challenge side mismatch.`);
+  }
+  if (stored.quantity !== expectedParams.quantity) {
+    throw new Error(`Solana order challenge quantity mismatch.`);
+  }
+
+  verifySolanaSignature(walletAddress, stored.message, signatureBase64);
+  solOrderNonces.delete(key);
+}
+
 /**
  * Canonical message a client must sign to authorise an internal exchange swap.
  * Both client and server MUST produce the identical string.
