@@ -236,6 +236,9 @@ export async function withRetry<T>(
 export function startOrderReconciler(): void {
   const RECONCILE_INTERVAL_MS = 5 * 60_000;
   const STUCK_ORDER_AGE_MS    = 30 * 60_000;
+  // Process-local lock to avoid duplicate in-flight cancellation attempts
+  // in a single API instance. Cross-instance idempotency is enforced by the
+  // SQL WHERE status='open' predicate in the UPDATE below.
   const cancellingOrders = new Set<string>();
 
   const reconcile = async () => {
@@ -276,7 +279,11 @@ export function startOrderReconciler(): void {
               )
             )
             .returning({ id: ordersTable.id });
-          if (rows.length > 0) cancelled++;
+          if (rows.length > 0) {
+            cancelled++;
+          } else {
+            logger.debug({ orderId: order.id }, "[SelfHeal] Order reconciler: skip already-processed order");
+          }
         } finally {
           cancellingOrders.delete(order.id);
         }
