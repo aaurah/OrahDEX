@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity, Moon, Sun, Smartphone } from "lucide-react";
@@ -21,7 +21,7 @@ function shouldUseLowMotionLandingMode() {
   );
 }
 
-function bindMediaListener(query: MediaQueryList, onChange: () => void) {
+function subscribeToMediaQuery(query: MediaQueryList, onChange: () => void) {
   if (typeof query.addEventListener === "function") {
     query.addEventListener("change", onChange);
     return () => query.removeEventListener("change", onChange);
@@ -42,8 +42,8 @@ function useLowMotionLandingMode() {
     const update = () => setEnabled(mobileQuery.matches || reducedMotionQuery.matches);
 
     update();
-    const unbindMobile = bindMediaListener(mobileQuery, update);
-    const unbindReducedMotion = bindMediaListener(reducedMotionQuery, update);
+    const unbindMobile = subscribeToMediaQuery(mobileQuery, update);
+    const unbindReducedMotion = subscribeToMediaQuery(reducedMotionQuery, update);
     return () => {
       unbindMobile();
       unbindReducedMotion();
@@ -442,12 +442,22 @@ function TickerStrip({ markets, animated = true }: { markets: any[]; animated?: 
     : p >= 0.001 ? "$" + p.toPrecision(3)
     : "$" + p.toExponential(2);
 
+  const handleTickerKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (animated) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.currentTarget.scrollBy({
+      left: event.key === "ArrowRight" ? 160 : -160,
+      behavior: "smooth",
+    });
+  };
+
   return (
     <div
       className={`w-full border-b border-border/30 bg-card/40 ${animated ? "overflow-hidden backdrop-blur-sm" : "overflow-x-auto"}`}
       role="region"
       aria-label="Live market ticker"
       tabIndex={0}
+      onKeyDown={handleTickerKeyDown}
       style={{ height: 38 }}
     >
       {animated && <style>{`@keyframes orah-ticker{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>}
