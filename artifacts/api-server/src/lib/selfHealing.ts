@@ -267,7 +267,10 @@ export function startOrderReconciler(): void {
       const cancelledSymbols = new Set<string>();
 
       for (const order of stuck) {
-        if (cancellingOrders.has(order.id)) continue;
+        if (cancellingOrders.has(order.id)) {
+          logger.debug({ orderId: order.id }, "[SelfHeal] Order reconciler: skip in-flight cancel lock");
+          continue;
+        }
         cancellingOrders.add(order.id);
         try {
           const rows = await db
