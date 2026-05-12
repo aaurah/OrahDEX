@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity, Moon, Sun, Smartphone } from "lucide-react";
@@ -11,9 +11,50 @@ const LAND_THEME_CYCLE = ["amoled", "dark", "light"] as const;
 type LandTheme = typeof LAND_THEME_CYCLE[number];
 const LAND_THEME_ICONS: Record<LandTheme, typeof Moon> = { amoled: Smartphone, dark: Moon, light: Sun };
 const LAND_THEME_LABELS: Record<LandTheme, string> = { amoled: "AMOLED", dark: "Dark", light: "Light" };
+const LANDING_LOW_MOTION_BREAKPOINT_PX = 767;
+
+function shouldUseLowMotionLandingMode() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return (
+    window.matchMedia(`(max-width: ${LANDING_LOW_MOTION_BREAKPOINT_PX}px), (pointer: coarse)`).matches ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+function subscribeToMediaQuery(query: MediaQueryList, onChange: () => void) {
+  if (typeof query.addEventListener === "function") {
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }
+  query.addListener(onChange);
+  return () => query.removeListener(onChange);
+}
+
+function useLowMotionLandingMode() {
+  const [enabled, setEnabled] = useState(() => shouldUseLowMotionLandingMode());
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    // Treat coarse-pointer tablets like mobile here because the Safari/WebKit crash report
+    // is device-class specific rather than strictly width specific.
+    const mobileQuery = window.matchMedia(`(max-width: ${LANDING_LOW_MOTION_BREAKPOINT_PX}px), (pointer: coarse)`);
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setEnabled(mobileQuery.matches || reducedMotionQuery.matches);
+
+    update();
+    const unbindMobile = subscribeToMediaQuery(mobileQuery, update);
+    const unbindReducedMotion = subscribeToMediaQuery(reducedMotionQuery, update);
+    return () => {
+      unbindMobile();
+      unbindReducedMotion();
+    };
+  }, []);
+
+  return enabled;
+}
 
 /* ── Animated OrahO sigil — large sovereign version ───────────────────── */
-function SovereignSigil({ size = 160 }: { size?: number }) {
+function SovereignSigil({ size = 160, animated = true }: { size?: number; animated?: boolean }) {
   return (
     <svg
       viewBox="0 0 200 200"
@@ -21,7 +62,7 @@ function SovereignSigil({ size = 160 }: { size?: number }) {
       height={size}
       fill="none"
       aria-hidden
-      className="drop-shadow-[0_0_40px_rgba(74,222,128,0.35)]"
+      className={animated ? "drop-shadow-[0_0_40px_rgba(74,222,128,0.35)]" : undefined}
     >
       {/* Outer ring */}
       <circle cx="100" cy="100" r="88" stroke="#4ade80" strokeWidth="6" opacity="0.25" />
@@ -29,16 +70,25 @@ function SovereignSigil({ size = 160 }: { size?: number }) {
       <circle cx="100" cy="100" r="72" stroke="#4ade80" strokeWidth="10" />
       {/* Gold accent ring */}
       <circle cx="100" cy="100" r="52" stroke="#F5A623" strokeWidth="2" opacity="0.5" />
-      {/* Inner pulsing dot — ring 1 */}
-      <circle cx="100" cy="100" r="22" fill="#4ade80" opacity="0.15">
-        <animate attributeName="r"       from="22" to="60" dur="2.4s" repeatCount="indefinite" />
-        <animate attributeName="opacity" from="0.15" to="0"  dur="2.4s" repeatCount="indefinite" />
-      </circle>
-      {/* Inner pulsing dot — ring 2 (offset) */}
-      <circle cx="100" cy="100" r="22" fill="#4ade80" opacity="0.12">
-        <animate attributeName="r"       from="22" to="60" dur="2.4s" begin="1.2s" repeatCount="indefinite" />
-        <animate attributeName="opacity" from="0.12" to="0"  dur="2.4s" begin="1.2s" repeatCount="indefinite" />
-      </circle>
+      {animated ? (
+        <>
+          {/* Inner pulsing dot — ring 1 */}
+          <circle cx="100" cy="100" r="22" fill="#4ade80" opacity="0.15">
+            <animate attributeName="r" from="22" to="60" dur="2.4s" repeatCount="indefinite" />
+            <animate attributeName="opacity" from="0.15" to="0" dur="2.4s" repeatCount="indefinite" />
+          </circle>
+          {/* Inner pulsing dot — ring 2 (offset) */}
+          <circle cx="100" cy="100" r="22" fill="#4ade80" opacity="0.12">
+            <animate attributeName="r" from="22" to="60" dur="2.4s" begin="1.2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" from="0.12" to="0" dur="2.4s" begin="1.2s" repeatCount="indefinite" />
+          </circle>
+        </>
+      ) : (
+        <>
+          <circle cx="100" cy="100" r="34" fill="#4ade80" opacity="0.1" />
+          <circle cx="100" cy="100" r="48" fill="#4ade80" opacity="0.06" />
+        </>
+      )}
       {/* Core */}
       <circle cx="100" cy="100" r="20" fill="#4ade80" />
       {/* Gold crosshair marks */}
@@ -357,6 +407,8 @@ function CoinAvatar({ symbol, size = 26 }: { symbol: string; size?: number }) {
           alt={sym}
           width={size}
           height={size}
+          loading="lazy"
+          decoding="async"
           style={{ width: size, height: size, objectFit: "contain" }}
           onError={() => setErr(true)}
         />
@@ -368,7 +420,7 @@ function CoinAvatar({ symbol, size = 26 }: { symbol: string; size?: number }) {
 }
 
 /* ── Scrolling price ticker ───────────────────────────────────────────────── */
-function TickerStrip({ markets }: { markets: any[] }) {
+function TickerStrip({ markets, animated = true }: { markets: any[]; animated?: boolean }) {
   const items = useMemo(() => {
     const usdt = markets
       .filter(m => m.quoteAsset === "USDT" && m.status === "active")
@@ -390,14 +442,30 @@ function TickerStrip({ markets }: { markets: any[] }) {
     : p >= 0.001 ? "$" + p.toPrecision(3)
     : "$" + p.toExponential(2);
 
+  const handleTickerKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (animated) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.currentTarget.scrollBy({
+      left: event.key === "ArrowRight" ? 160 : -160,
+      behavior: "smooth",
+    });
+  };
+
   return (
-    <div className="w-full overflow-hidden border-b border-border/30 bg-card/40 backdrop-blur-sm" style={{ height: 38 }}>
-      <style>{`@keyframes orah-ticker{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>
+    <div
+      className={`w-full border-b border-border/30 bg-card/40 ${animated ? "overflow-hidden backdrop-blur-sm" : "overflow-x-auto"}`}
+      role="region"
+      aria-label="Live market ticker"
+      tabIndex={0}
+      onKeyDown={handleTickerKeyDown}
+      style={{ height: 38 }}
+    >
+      {animated && <style>{`@keyframes orah-ticker{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>}
       <div
         className="flex items-center h-full"
-        style={{ animation: "orah-ticker 80s linear infinite", width: "max-content" }}
+        style={{ animation: animated ? "orah-ticker 80s linear infinite" : undefined, width: "max-content" }}
       >
-        {[...items, ...items].map((m, i) => {
+        {(animated ? [...items, ...items] : items).map((m, i) => {
           const up = m.priceChangePercent24h >= 0;
           return (
             <Link
@@ -546,6 +614,7 @@ function FeaturedMarkets({ markets }: { markets: any[] }) {
 export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { theme, setTheme } = useThemeStore();
+  const lowMotionMode = useLowMotionLandingMode();
   const MARKET_COUNT_PLACEHOLDER = 1000; // startup placeholder until live total is fetched
   const MARKETS_PREVIEW_LIMIT = 50;
 
@@ -615,22 +684,34 @@ export function LandingPage() {
             <svg viewBox="0 0 100 100" className="w-7 h-7 overflow-visible" fill="none">
               {/* Outer O ring — white, no glow */}
               <circle cx="50" cy="50" r="40" stroke="white" strokeWidth="12" fill="none" />
-              {/* Pulsing glow around dot */}
-              <circle cx="50" cy="50" r="13" fill="#4ade80" opacity="0.7"
-                style={{ filter: "blur(2px) drop-shadow(0 0 6px rgba(74,222,128,0.8))" }}>
-                <animate attributeName="r"       from="13" to="34" dur="1.2s" repeatCount="indefinite" />
-                <animate attributeName="opacity" from="0.7" to="0"  dur="1.2s" repeatCount="indefinite" />
-              </circle>
+              {!lowMotionMode && (
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="13"
+                  fill="#4ade80"
+                  opacity="0.7"
+                  style={{ filter: "blur(2px) drop-shadow(0 0 6px rgba(74,222,128,0.8))" }}
+                >
+                  <animate attributeName="r" from="13" to="34" dur="1.2s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" from="0.7" to="0" dur="1.2s" repeatCount="indefinite" />
+                </circle>
+              )}
               {/* Center dot with glow */}
-              <circle cx="50" cy="50" r="13" fill="#4ade80"
-                style={{ filter: "drop-shadow(0 0 5px rgba(74,222,128,0.8)) drop-shadow(0 0 2px rgba(74,222,128,0.8))" }} />
+              <circle
+                cx="50"
+                cy="50"
+                r="13"
+                fill="#4ade80"
+                style={lowMotionMode ? undefined : { filter: "drop-shadow(0 0 5px rgba(74,222,128,0.8)) drop-shadow(0 0 2px rgba(74,222,128,0.8))" }}
+              />
             </svg>
             <span><span className="text-foreground">Orah</span><span className="text-green-400">DEX</span></span>
           </div>
           <div className="flex items-center gap-2.5">
             {bsvBlock > 0 && (
               <span className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-green-400 border border-green-500/30 px-2.5 py-1 rounded-full bg-green-500/8 uppercase tracking-widest">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                <span className={`w-1.5 h-1.5 rounded-full bg-green-400 ${lowMotionMode ? "" : "animate-pulse"}`} />
                 BSV #{bsvBlock.toLocaleString()}
               </span>
             )}
@@ -656,14 +737,14 @@ export function LandingPage() {
         <div className="relative z-10 flex flex-col items-center text-center max-w-4xl mx-auto gap-8">
           {/* Sigil */}
           <div>
-            <SovereignSigil size={140} />
+            <SovereignSigil size={140} animated={!lowMotionMode} />
           </div>
 
           {/* Identity badge */}
           <div>
             <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.2em] border"
               style={{ borderColor: "#F5A623cc", color: "#F5A623", background: "rgba(245,166,35,0.08)" }}>
-              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "#F5A623" }} />
+              <span className={`w-1.5 h-1.5 rounded-full ${lowMotionMode ? "" : "animate-pulse"}`} style={{ background: "#F5A623" }} />
               Sovereign Decentralized Exchange
             </span>
           </div>
@@ -723,7 +804,7 @@ export function LandingPage() {
 
       {/* ── LIVE TICKER STRIP ─────────────────────────────────────────────── */}
       <div className="relative z-0">
-        <TickerStrip markets={markets ?? []} />
+        <TickerStrip markets={markets ?? []} animated={!lowMotionMode} />
       </div>
 
       {/* ── PROTOCOL SNAPSHOT ─────────────────────────────────────────────── */}
@@ -734,7 +815,7 @@ export function LandingPage() {
             <div className="flex items-center justify-between px-5 py-3 border-b border-border/50">
               <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Protocol Snapshot</span>
               <div className="flex items-center gap-1.5 text-[10px] font-black text-green-400 uppercase tracking-widest">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                <span className={`w-1.5 h-1.5 rounded-full bg-green-400 ${lowMotionMode ? "" : "animate-pulse"}`} />
                 Online
               </div>
             </div>
@@ -1036,7 +1117,7 @@ export function LandingPage() {
         <div className="relative z-10 max-w-4xl mx-auto text-center flex flex-col items-center gap-8">
           <div className="w-20 h-20 rounded-full flex items-center justify-center"
             style={{ background: "linear-gradient(135deg, rgba(74,222,128,0.15), rgba(245,166,35,0.1))", border: "1px solid rgba(74,222,128,0.2)" }}>
-            <SovereignSigil size={50} />
+            <SovereignSigil size={50} animated={!lowMotionMode} />
           </div>
 
           <div className="flex flex-col gap-3">
