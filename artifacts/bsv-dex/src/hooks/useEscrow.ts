@@ -113,7 +113,9 @@ export function useEscrow() {
       setStatus("error");
       return null;
     }
-  }, [escrowAvailable, address, chainId]);
+  // provider is included so the wallet-path booleans (isOrahWallet / isReown /
+  // hasInjected) are never stale when the user changes their wallet connection.
+  }, [escrowAvailable, address, chainId, provider]);
 
   const cancelOrder = useCallback(async (orderId: string): Promise<EscrowTxResult | null> => {
     if (!escrowAvailable || !address) return null;
@@ -138,7 +140,9 @@ export function useEscrow() {
       setStatus("error");
       return null;
     }
-  }, [escrowAvailable, address, chainId]);
+  // provider is included so the wallet-path booleans (isOrahWallet / isReown /
+  // hasInjected) are never stale when the user changes their wallet connection.
+  }, [escrowAvailable, address, chainId, provider]);
 
   const reset = useCallback(() => {
     setStatus("idle");

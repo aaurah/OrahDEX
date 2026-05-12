@@ -215,7 +215,7 @@ export async function lockEthViaInjected(
 
 /**
  * Lock an ERC-20 token in the escrow via injected wallet.
- * Sends an `approve` tx first, then a `lockERC20` tx.
+ * Sends an `approve` tx first, waits for confirmation, then a `lockERC20` tx.
  */
 export async function lockErc20ViaInjected(
   orderId:      string,
@@ -229,8 +229,9 @@ export async function lockErc20ViaInjected(
   const eth = (window as any).ethereum;
   if (!eth) throw new Error("No injected wallet found");
 
-  // Step 1: approve
-  await eth.request({
+  // Step 1: approve — wait for on-chain confirmation so the allowance is
+  // visible when lockERC20 executes (mirrors lockErc20ViaOrah/Reown).
+  const approveTxHash: string = await eth.request({
     method: "eth_sendTransaction",
     params: [{
       from,
@@ -238,6 +239,7 @@ export async function lockErc20ViaInjected(
       data: buildApproveCalldata(escrow, rawAmount),
     }],
   });
+  await getPublicClient(chainId).waitForTransactionReceipt({ hash: approveTxHash as `0x${string}` });
 
   // Step 2: lockERC20
   const txHash: string = await eth.request({

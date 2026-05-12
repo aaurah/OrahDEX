@@ -531,7 +531,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     price: number;
   } | null>(_bootLockFlow?.order ?? null);
   const [escrowTx, setEscrowTx] = useState<{ txHash: string; explorerUrl: string } | null>(_bootLockFlow?.tx ?? null);
-  const { escrowAvailable, status: escrowStatus, lockOrder, cancelOrder: cancelOrderOnChain, isLoading: escrowLoading, errorMsg: escrowErrorMsg, txResult: escrowTxResult } = useEscrow();
+  const { escrowAvailable, status: escrowStatus, lockOrder, cancelOrder: cancelOrderOnChain, isLoading: escrowLoading, errorMsg: escrowErrorMsg, txResult: escrowTxResult, reset: resetEscrow } = useEscrow();
   // Lock-funds confirmation dialog (opens when user taps "Lock funds on X")
   // ── Persistence: mobile Safari kills the tab when the user opens imToken
   // to sign, so we save the in-flight lock state to sessionStorage and
@@ -676,6 +676,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           quantity: Number(ordQtyDisplay) || 0,
           price:    usePrice,
         });
+        resetEscrow();
         setLockDialogOpen(true);
       }
 
@@ -2317,6 +2318,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           quantity: orderResult.quantity || orderResult.filledQty || 0,
                           price:    usePrice,
                         });
+                        resetEscrow();
                         setLockDialogOpen(true);
                       }}
                       className={cn(
