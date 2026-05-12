@@ -34,6 +34,9 @@ function useLowMotionLandingMode() {
   const [enabled, setEnabled] = useState(() => shouldUseLowMotionLandingMode());
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    // Treat coarse-pointer tablets like mobile here because the Safari/WebKit crash report
+    // is device-class specific rather than strictly width specific.
     const mobileQuery = window.matchMedia(`(max-width: ${LANDING_LOW_MOTION_BREAKPOINT_PX}px), (pointer: coarse)`);
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setEnabled(mobileQuery.matches || reducedMotionQuery.matches);
@@ -442,9 +445,9 @@ function TickerStrip({ markets, animated = true }: { markets: any[]; animated?: 
   return (
     <div
       className={`w-full border-b border-border/30 bg-card/40 ${animated ? "overflow-hidden backdrop-blur-sm" : "overflow-x-auto"}`}
-      role={animated ? undefined : "region"}
-      aria-label={animated ? undefined : "Live market ticker"}
-      tabIndex={animated ? undefined : 0}
+      role="region"
+      aria-label="Live market ticker"
+      tabIndex={0}
       style={{ height: 38 }}
     >
       {animated && <style>{`@keyframes orah-ticker{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>}
