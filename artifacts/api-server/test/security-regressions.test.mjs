@@ -31,8 +31,10 @@ test("orders route enforces external auth for recognized wallet formats", async 
   assert.match(src, /priorNonceUse/);
   assert.match(src, /lower\(\$\{ordersTable\.walletAddress\}\) = lower\(\$\{body\.walletAddress\}\)/);
   assert.match(src, /eq\(ordersTable\.nonce, orderNonce\)/);
-  assert.match(src, /verifyBsvWithdrawSignature\(body\.walletAddress, sig\)/);
-  assert.match(src, /verifySolWithdrawSignature\(body\.walletAddress, sig\)/);
+  // BSV and Solana orders now use order-bound challenges instead of withdrawal challenges
+  // to prevent replay attacks (H-07 fix).
+  assert.match(src, /verifyBsvOrderSignature\(body\.walletAddress, sig/);
+  assert.match(src, /verifySolOrderSignature\(body\.walletAddress, sig/);
   assert.match(src, /isNonceUniqueViolation/);
   assert.match(src, /orders_wallet_nonce_uidx/);
 });

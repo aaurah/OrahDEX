@@ -54,6 +54,25 @@ router.post("/withdrawals", async (req, res) => {
     return;
   }
 
+  // Validate recipient address format based on network type.
+  // This prevents misdirected withdrawals to malformed or wrong-network addresses.
+  const networkUp = String(network).toUpperCase();
+  const isEvmNetwork = ["ETH", "BNB", "MATIC", "AVAX", "FTM", "BASE", "ARB", "OP", "ZKSYNC", "LINEA",
+    "SCROLL", "BLAST", "MODE", "TAIKO", "SEPOLIA", "BASE_SEP", "ARB_SEP", "EVM"].includes(networkUp);
+  const isBsvNetwork = ["BSV"].includes(networkUp);
+  if (isEvmNetwork && !/^0x[0-9a-fA-F]{40}$/.test(recipient)) {
+    res.status(400).json({
+      error: `Invalid recipient address for ${network} network. Expected 0x-prefixed 20-byte EVM address (0x + 40 hex chars).`,
+    });
+    return;
+  }
+  if (isBsvNetwork && !/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(recipient)) {
+    res.status(400).json({
+      error: "Invalid recipient address for BSV network. Expected a P2PKH (1…) or P2SH (3…) address.",
+    });
+    return;
+  }
+
   const parsed = parseFloat(amount);
   if (isNaN(parsed) || parsed <= 0) {
     res.status(400).json({ error: "Amount must be a positive number" });

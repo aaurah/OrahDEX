@@ -12,7 +12,7 @@
  */
 
 import { Router, type IRouter, type Response } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { or, eq } from "drizzle-orm";
 import {
@@ -421,7 +421,7 @@ router.post("/swap/execute", async (req, res) => {
       const internalAmt = decision.splitLegs.internal!.amount;
       const externalAmt = decision.splitLegs.external!.amount;
 
-      // Execute internal leg first (ledger debit — reversible if LE fails)
+      // Execute internal leg first (ledger debit)
       const internalResult = await executeInternalLeg(internalAmt).catch(err => {
         const msg = String(err?.message ?? "");
         if (msg === "MISSING_WALLET") throw Object.assign(new Error("walletAddress is required for split swap internal leg"), { status: 400 });
@@ -429,14 +429,39 @@ router.post("/swap/execute", async (req, res) => {
         throw err;
       });
 
-      // Execute LE leg for the remainder
-      const leResult = await executeLELeg(externalAmt).catch(err => {
-        const msg = String(err?.message ?? "");
+      // Execute LE leg for the remainder.
+      // If LE fails AFTER the internal leg succeeded, refund the user's internal
+      // debit so they don't lose funds on a partial split execution.
+      let leResult: { ok: boolean; status: number; data: unknown };
+      try {
+        leResult = await executeLELeg(externalAmt);
+      } catch (leErr: any) {
+        // Compensate: reverse the internal leg settlement so the user is whole.
+        try {
+          await pool.query(
+            `UPDATE user_balances
+               SET available  = available + $1, updated_at = now()
+             WHERE wallet_address = $2 AND asset_symbol = $3`,
+            [internalAmt.toFixed(18), walletAddress, a],
+          );
+          await pool.query(
+            `UPDATE user_balances
+               SET available  = GREATEST(available - $1, 0), updated_at = now()
+             WHERE wallet_address = $2 AND asset_symbol = $3`,
+            [internalResult.amtOut.toFixed(18), walletAddress, b],
+          );
+        } catch (refundErr: any) {
+          logger.error(
+            { refundErr: refundErr?.message, walletAddress },
+            "swap: split route compensation refund failed — manual reconciliation needed",
+          );
+        }
+        const msg = String(leErr?.message ?? "");
         if (msg === "MISSING_WITHDRAWAL") throw Object.assign(new Error("withdrawal is required for split swap LetsExchange leg"), { status: 400 });
         if (msg === "MISSING_NETWORK")    throw Object.assign(new Error("networkFrom and networkTo required for LE leg"), { status: 400 });
         if (msg === "INVALID_WITHDRAWAL") throw Object.assign(new Error("Invalid withdrawal address"), { status: 400 });
-        throw err;
-      });
+        throw leErr;
+      }
 
       if (leResult.status === 403) { res.status(403).json({ error: "LetsExchange API key invalid" }); return; }
       if (leResult.status === 422) { res.status(422).json({ error: "LE validation error", detail: leResult.data }); return; }

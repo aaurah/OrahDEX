@@ -19,6 +19,8 @@ import { recordPlatformFee } from "../lib/feeCollector.js";
 import {
   buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
   verifyBsvWithdrawSignature, verifySolWithdrawSignature,
+  issueBsvOrderChallenge, verifyBsvOrderSignature,
+  issueSolOrderChallenge, verifySolOrderSignature,
 } from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
@@ -124,6 +126,39 @@ router.get("/orders", async (req, res) => {
   }
 });
 
+// ── POST /orders/bsv-challenge — Issue a BSV order challenge ─────────────────
+// BSV wallets must request an order-bound challenge (not a withdrawal challenge)
+// and sign it before placing an order.  This prevents a withdrawal challenge
+// from being replayed as an order signature.
+router.post("/orders/bsv-challenge", (req, res) => {
+  const { walletAddress, symbol, side, quantity, nonce, expiry } = req.body;
+  if (!walletAddress || !symbol || !side || !quantity || !nonce || !expiry) {
+    res.status(400).json({ error: "walletAddress, symbol, side, quantity, nonce, and expiry are required" });
+    return;
+  }
+  if (!detectIsBsvAddress(walletAddress)) {
+    res.status(400).json({ error: "walletAddress must be a BSV P2PKH/P2SH address" });
+    return;
+  }
+  const challenge = issueBsvOrderChallenge({ walletAddress, symbol, side, quantity, nonce, expiry });
+  res.json(challenge);
+});
+
+// ── POST /orders/sol-challenge — Issue a Solana order challenge ───────────────
+router.post("/orders/sol-challenge", (req, res) => {
+  const { walletAddress, symbol, side, quantity, nonce, expiry } = req.body;
+  if (!walletAddress || !symbol || !side || !quantity || !nonce || !expiry) {
+    res.status(400).json({ error: "walletAddress, symbol, side, quantity, nonce, and expiry are required" });
+    return;
+  }
+  if (!detectIsSolAddress(walletAddress)) {
+    res.status(400).json({ error: "walletAddress must be a Solana base58 address" });
+    return;
+  }
+  const challenge = issueSolOrderChallenge({ walletAddress, symbol, side, quantity, nonce, expiry });
+  res.json(challenge);
+});
+
 // ── POST /orders ───────────────────────────────────────────────────────────────
 // Accepts a required `evmSignature` field (MetaMask personal_sign) for external
 // EVM wallets that proves the trader authorised this specific order.
@@ -167,6 +202,12 @@ router.post("/orders", async (req, res) => {
     const stopPrice = body.stopPrice != null ? parseFloat(body.stopPrice) : undefined;
     if (type === "stop" && (stopPrice == null || !Number.isFinite(stopPrice) || stopPrice <= 0)) {
       res.status(400).json({ error: "Stop orders require a valid stopPrice" });
+      return;
+    }
+    // Stop orders also require a limit price (worst-case fill price) to prevent
+    // execution at an arbitrary or zero price after the trigger fires.
+    if (type === "stop" && (rawPrice == null || !Number.isFinite(rawPrice) || rawPrice <= 0)) {
+      res.status(400).json({ error: "Stop orders require a valid price (limit price after trigger)" });
       return;
     }
     if (type === "limit" && (rawPrice == null || !Number.isFinite(rawPrice) || rawPrice <= 0)) {
@@ -269,31 +310,48 @@ router.post("/orders", async (req, res) => {
           return;
         }
       } else if (isBsvAddress) {
-        // BSV: verify ECDSA signature from the BSV wallet.
-        // verifyBsvWithdrawSignature verifies a BSV wallet's ECDSA message signature —
-        // the same cryptographic primitive is used here for order auth (not a withdrawal).
+        // BSV: verify ECDSA signature against an order-bound challenge.
+        // Clients must obtain a challenge via POST /orders/bsv-challenge
+        // (which binds to symbol/side/quantity) and sign it.
         const sig = body.bsvSignature ?? body.signedTx;
         if (!sig) {
-          res.status(401).json({ error: "bsvSignature is required for external BSV wallet orders.", code: "SIGNATURE_REQUIRED" });
+          res.status(401).json({
+            error: "bsvSignature is required for external BSV wallet orders. " +
+                   "Request an order challenge via POST /orders/bsv-challenge, sign it with your BSV wallet, " +
+                   "and include the signature in this request.",
+            code: "SIGNATURE_REQUIRED",
+          });
           return;
         }
         try {
-          verifyBsvWithdrawSignature(body.walletAddress, sig);
+          verifyBsvOrderSignature(body.walletAddress, sig, {
+            symbol,
+            side,
+            quantity: quantity.toString(),
+          });
         } catch (authErr: any) {
           res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
           return;
         }
       } else if (isSolAddress) {
-        // Solana: verify Ed25519 signature from the Solana wallet.
-        // verifySolWithdrawSignature verifies a Solana wallet's Ed25519 message signature —
-        // the same cryptographic primitive is used here for order auth (not a withdrawal).
+        // Solana: verify Ed25519 signature against an order-bound challenge.
+        // Clients must obtain a challenge via POST /orders/sol-challenge.
         const sig = body.solSignature ?? body.signedTx;
         if (!sig) {
-          res.status(401).json({ error: "solSignature is required for external Solana wallet orders.", code: "SIGNATURE_REQUIRED" });
+          res.status(401).json({
+            error: "solSignature is required for external Solana wallet orders. " +
+                   "Request an order challenge via POST /orders/sol-challenge, sign it with your Solana wallet, " +
+                   "and include the signature in this request.",
+            code: "SIGNATURE_REQUIRED",
+          });
           return;
         }
         try {
-          verifySolWithdrawSignature(body.walletAddress, sig);
+          verifySolOrderSignature(body.walletAddress, sig, {
+            symbol,
+            side,
+            quantity: quantity.toString(),
+          });
         } catch (authErr: any) {
           res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
           return;

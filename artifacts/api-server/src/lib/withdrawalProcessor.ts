@@ -20,6 +20,7 @@ import {
   createWalletClient,
   http,
   parseAbi,
+  parseUnits,
   type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -209,7 +210,9 @@ async function processEvmWithdrawal(params: {
 
   if (isNative) {
     // ── Native token transfer (ETH, BNB, MATIC, AVAX, FTM) ──────────────────
-    const weiAmount = BigInt(Math.round(params.amount * 1e18));
+    // Use parseUnits (string → BigInt) to avoid IEEE-754 precision loss on
+    // large balances (> ~9007 ETH would overflow Number.MAX_SAFE_INTEGER).
+    const weiAmount = parseUnits(params.amount.toFixed(18), 18);
     txHash = await walletClient.sendTransaction({
       to:    params.recipient as Address,
       value: weiAmount,
@@ -219,7 +222,8 @@ async function processEvmWithdrawal(params: {
     const tokenInfo = ERC20_TOKENS[assetUp]?.[chainId];
     if (!tokenInfo) throw new Error(`No ERC-20 contract known for ${assetUp} on chainId ${chainId}`);
 
-    const tokenAmount = BigInt(Math.round(params.amount * 10 ** tokenInfo.decimals));
+    // Use parseUnits to avoid precision loss for tokens with up to 18 decimals.
+    const tokenAmount = parseUnits(params.amount.toFixed(tokenInfo.decimals), tokenInfo.decimals);
 
     txHash = await walletClient.writeContract({
       address:      tokenInfo.address,

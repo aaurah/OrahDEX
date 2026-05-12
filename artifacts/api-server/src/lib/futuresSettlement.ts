@@ -54,6 +54,8 @@ import crypto from "node:crypto";
 
 const MAINTENANCE_MARGIN_RATE   = 0.005;   // 0.5%
 const DEFAULT_TAKER_FEE_RATE    = 0.0005;  // 0.05% — fallback when market row has no fee
+/** Maximum allowed leverage to prevent instant-liquidation abuse. */
+export const MAX_FUTURES_LEVERAGE = 100;
 
 /** Look up the taker fee for a perp symbol from the markets table; falls back to the constant. */
 async function getTakerFeeRate(symbol: string): Promise<number> {
@@ -281,6 +283,13 @@ export async function openFuturesPosition(
     margin, quantity, entryPrice, fundingRef,
   } = params;
 
+  // Validate leverage to prevent instant-liquidation abuse
+  if (!Number.isFinite(leverage) || leverage < 1 || leverage > MAX_FUTURES_LEVERAGE) {
+    throw new Error(
+      `INVALID_LEVERAGE: leverage must be between 1 and ${MAX_FUTURES_LEVERAGE}, got ${leverage}`,
+    );
+  }
+
   // Lock margin from the futures bucket
   await lockFuturesMargin(walletAddress, margin);
 
@@ -391,36 +400,57 @@ export async function closeFuturesPosition(
 /**
  * Liquidate a position when mark price crosses the liquidation threshold.
  * The entire margin is lost (goes to the protocol insurance fund).
+ * Uses SELECT FOR UPDATE to prevent double-liquidation race conditions.
  */
 export async function liquidateFuturesPosition(
   positionId: string,
   markPrice:  number,
 ): Promise<FuturesLiquidateResult> {
-  const [pos] = await db
-    .select()
-    .from(futuresPositionsTable)
-    .where(eq(futuresPositionsTable.id, positionId));
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
 
-  if (!pos || pos.status !== "open") return { loss: 0 };
+    // Row-lock the position first to prevent concurrent liquidations from
+    // both reading status='open' and each proceeding with full liquidation.
+    const { rows: posRows } = await client.query<{
+      id: string; wallet_address: string; margin: string; status: string;
+    }>(
+      `SELECT id, wallet_address, margin, status FROM futures_positions WHERE id = $1 FOR UPDATE`,
+      [positionId],
+    );
 
-  const margin = parseFloat(pos.margin);
+    const pos = posRows[0];
+    if (!pos || pos.status !== "open") {
+      await client.query("ROLLBACK");
+      return { loss: 0 };
+    }
 
-  // Confiscate the locked margin (it stays locked, removed from account)
-  await pool.query(
-    `UPDATE futures_margin_accounts
-     SET locked     = GREATEST(locked - $1, 0),
-         updated_at = now()
-     WHERE wallet_address = $2 AND asset = 'USDT'`,
-    [margin.toFixed(8), pos.walletAddress],
-  );
+    const margin = parseFloat(pos.margin);
 
-  await db.update(futuresPositionsTable)
-    .set({
-      status:    "liquidated",
-      markPrice: markPrice.toFixed(8),
-      closedAt:  new Date(),
-    })
-    .where(eq(futuresPositionsTable.id, positionId));
+    // Confiscate the locked margin (it stays locked, removed from account)
+    await client.query(
+      `UPDATE futures_margin_accounts
+       SET locked     = GREATEST(locked - $1, 0),
+           updated_at = now()
+       WHERE wallet_address = $2 AND asset = 'USDT'`,
+      [margin.toFixed(8), pos.wallet_address],
+    );
 
-  return { loss: margin };
+    await client.query(
+      `UPDATE futures_positions
+       SET status     = 'liquidated',
+           mark_price = $1,
+           closed_at  = now()
+       WHERE id = $2 AND status = 'open'`,
+      [markPrice.toFixed(8), positionId],
+    );
+
+    await client.query("COMMIT");
+    return { loss: margin };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }

@@ -36,6 +36,7 @@ import {
   registerRelayerKeeper,
 } from "../lib/htlcWatcher.js";
 import { computeKeeperReputation } from "../lib/keeperReputation.js";
+import { requireAdminToken } from "../middleware/adminAuth.js";
 
 const router = Router();
 
@@ -310,9 +311,9 @@ router.get("/keepers", async (req, res) => {
 });
 
 // ── DELETE /api/keeper/:address ───────────────────────────────────────────────
-router.delete("/keeper/:address", async (req, res) => {
+router.delete("/keeper/:address", requireAdminToken, async (req, res) => {
   try {
-    const addr = req.params.address?.toLowerCase() ?? "";
+    const addr = (req.params.address as string)?.toLowerCase() ?? "";
     if (!addr) { res.status(400).json({ error: "address required" }); return; }
 
     await db.update(keepersTable)
