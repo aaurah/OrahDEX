@@ -264,6 +264,7 @@ export function startOrderReconciler(): void {
       if (stuck.length === 0) return;
 
       let cancelled = 0;
+      const cancelledSymbols = new Set<string>();
 
       for (const order of stuck) {
         if (cancellingOrders.has(order.id)) continue;
@@ -281,6 +282,7 @@ export function startOrderReconciler(): void {
             .returning({ id: ordersTable.id });
           if (rows.length > 0) {
             cancelled++;
+            cancelledSymbols.add(order.symbol);
           } else {
             logger.debug({ orderId: order.id }, "[SelfHeal] Order reconciler: skip already-processed order");
           }
@@ -290,7 +292,7 @@ export function startOrderReconciler(): void {
       }
 
       if (cancelled > 0) {
-        logger.warn({ count: cancelled, symbols: [...new Set(stuck.map(o => o.symbol))] },
+        logger.warn({ count: cancelled, symbols: [...cancelledSymbols] },
           `[SelfHeal] Order reconciler: auto-cancelled ${cancelled} stuck order(s)`);
       }
     } catch (err) {

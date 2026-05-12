@@ -61,7 +61,7 @@ jobs:
       shell: bash
       run: |
         set -euo pipefail
-        if grep -RInE "console\.log.*EVM_WALLET_SECRET|logger\..*EVM_WALLET_SECRET" artifacts/api-server/src; then
+        if grep -RInE "console\.log|logger\." artifacts/api-server/src | grep -E "EVM_WALLET_SECRET|\$\{[^}]*EVM_WALLET_SECRET[^}]*\}|EVM_WALLET_SECRET:"; then
           echo "Potential EVM_WALLET_SECRET logging detected."
           exit 1
         fi
