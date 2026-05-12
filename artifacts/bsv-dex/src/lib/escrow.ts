@@ -286,7 +286,7 @@ async function getOrahWalletClient(from: string, chainId: number) {
   });
 }
 
-function getPublicClient(chainId: number) {
+export function getPublicClient(chainId: number) {
   return createPublicClient({
     chain: inlineChain(chainId) as any,
     transport: rpcTransport(chainId),
