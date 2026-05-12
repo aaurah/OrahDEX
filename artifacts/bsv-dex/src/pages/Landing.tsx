@@ -11,6 +11,15 @@ const LAND_THEME_CYCLE = ["amoled", "dark", "light"] as const;
 type LandTheme = typeof LAND_THEME_CYCLE[number];
 const LAND_THEME_ICONS: Record<LandTheme, typeof Moon> = { amoled: Smartphone, dark: Moon, light: Sun };
 const LAND_THEME_LABELS: Record<LandTheme, string> = { amoled: "AMOLED", dark: "Dark", light: "Light" };
+const LANDING_LOW_MOTION_BREAKPOINT_PX = 767;
+
+function shouldUseLowMotionLandingMode() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return (
+    window.matchMedia(`(max-width: ${LANDING_LOW_MOTION_BREAKPOINT_PX}px), (pointer: coarse)`).matches ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
 
 function bindMediaListener(query: MediaQueryList, onChange: () => void) {
   if (typeof query.addEventListener === "function") {
@@ -22,10 +31,10 @@ function bindMediaListener(query: MediaQueryList, onChange: () => void) {
 }
 
 function useLowMotionLandingMode() {
-  const [enabled, setEnabled] = useState(false);
+  const [enabled, setEnabled] = useState(() => shouldUseLowMotionLandingMode());
 
   useEffect(() => {
-    const mobileQuery = window.matchMedia("(max-width: 767px), (pointer: coarse)");
+    const mobileQuery = window.matchMedia(`(max-width: ${LANDING_LOW_MOTION_BREAKPOINT_PX}px), (pointer: coarse)`);
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const update = () => setEnabled(mobileQuery.matches || reducedMotionQuery.matches);
 
@@ -433,6 +442,9 @@ function TickerStrip({ markets, animated = true }: { markets: any[]; animated?: 
   return (
     <div
       className={`w-full border-b border-border/30 bg-card/40 ${animated ? "overflow-hidden backdrop-blur-sm" : "overflow-x-auto"}`}
+      role={animated ? undefined : "region"}
+      aria-label={animated ? undefined : "Live market ticker"}
+      tabIndex={animated ? undefined : 0}
       style={{ height: 38 }}
     >
       {animated && <style>{`@keyframes orah-ticker{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>}
