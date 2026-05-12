@@ -1389,7 +1389,7 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           <label className="text-xs font-bold block mb-2" style={{ color: "var(--color-text-secondary)" }}>COVER PHOTO</label>
           {coverPreview && (
             <div className="rounded-2xl overflow-hidden mb-3" style={{ height: 120 }}>
-              <img src={coverPreview} alt="" className="w-full h-full object-cover" onError={() => setCoverPreview("")} />
+              <img src={sanitizeImageUrl(coverPreview)} alt="" className="w-full h-full object-cover" onError={() => setCoverPreview("")} />
             </div>
           )}
           <button type="button" onClick={() => setCaptureField("cover")}
@@ -1424,7 +1424,7 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           {avatarPreview && (
             <div className="mb-3 flex justify-center">
               <div className="w-20 h-20 rounded-full overflow-hidden" style={{ border: "3px solid var(--color-accent)" }}>
-                <img src={avatarPreview} alt="" className="w-full h-full object-cover" onError={() => setAvatarPreview("")} />
+                <img src={sanitizeImageUrl(avatarPreview)} alt="" className="w-full h-full object-cover" onError={() => setAvatarPreview("")} />
               </div>
             </div>
           )}
@@ -2384,7 +2384,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
       {/* Media preview */}
       {effectiveImage ? (
         <div className="rounded-2xl overflow-hidden mb-3 relative group" style={{ aspectRatio: "1/1" }}>
-          <img src={effectiveImage} alt="" className="w-full h-full object-cover" onError={() => { setFilePreview(""); setFileData(""); setForm(f => ({ ...f, imageUrl: "" })); }} />
+          <img src={sanitizeImageUrl(effectiveImage)} alt="" className="w-full h-full object-cover" onError={() => { setFilePreview(""); setFileData(""); setForm(f => ({ ...f, imageUrl: "" })); }} />
           <button onClick={() => { setFilePreview(""); setFileData(""); setForm(f => ({ ...f, imageUrl: "" })); }}
             className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
             style={{ background: "rgba(0,0,0,0.6)" }}>

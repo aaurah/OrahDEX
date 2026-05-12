@@ -9,7 +9,7 @@ import fs from "fs";
 import router from "./routes";
 import v1Router from "./routes/v1.js";
 import { logger } from "./lib/logger";
-import { startPriceUpdater, syncAllLEPairs } from "./lib/priceUpdater.js";
+import { startPriceUpdater } from "./lib/priceUpdater.js";
 import { startLiquidityBot } from "./lib/liquidityBot.js";
 import { startArbBot } from "./lib/arbBot.js";
 import { startFuturesProfitEngine } from "./lib/futuresProfitEngine.js";
@@ -284,6 +284,15 @@ app.get("/api/ping", (_req, res) => {
   res.status(204).end();
 });
 
+/* ── Health checks — MUST be registered BEFORE app.use("/api", router).
+   The main router mounts futuresRouter at "/" without a prefix, and that
+   router has a blanket middleware that returns 503 for all requests when
+   FUTURES_ENABLED !== "true". Registering /health here (before the router)
+   means Express matches these routes first and never reaches the futures
+   middleware, so the health pulse stays green when futures are disabled. ── */
+app.get("/api/health",  healthHandler);
+app.get("/api/healthz", healthHandler);
+
 app.use("/api", apiKeyAuth);
 app.use("/v1", apiKeyAuth);
 app.use("/api", router);
@@ -335,15 +344,11 @@ setTimeout(() => {
   warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
 }, 60_000);
 
-// Fire-and-forget: seed all-to-all LE pairs using the built-in coin catalog
-// (~331 coins × 330 = 109,230 pairs). Runs 45 s after boot in the background
-// so it doesn't delay server startup or block other services.
-setTimeout(() => {
-  syncAllLEPairs()
-    .then(({ coins, inserted }) =>
-      logger.info({ coins, inserted }, "Startup LE all-pairs sync complete"))
-    .catch(e => logger.warn({ err: e }, "Startup LE all-pairs sync failed (non-fatal)"));
-}, 45_000);
+// syncAllLEPairs() is intentionally NOT called at startup.
+// The DB already holds LE pairs from a previous run (36 K+ rows).
+// Calling it here would build 109,230 pair objects in RAM before the first
+// JSON.stringify completes, causing an out-of-memory crash on every boot.
+// The /api/admin/sync-le-pairs endpoint triggers it on demand when needed.
 try { startPriceUpdater();        } catch (e) { logger.error({ err: e }, "startPriceUpdater failed to init"); }
 try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startLiquidityBot failed to init"); }
 try { startArbBot();              } catch (e) { logger.error({ err: e }, "startArbBot failed to init"); }
@@ -369,8 +374,21 @@ async function healthHandler(_req: any, res: any) {
   try { const bsv = await getBsvChainStatus(); bsvChain = { online: bsv.online, blockHeight: bsv.blockHeight }; }
   catch { /* non-fatal */ }
 
+  // Only CRITICAL services failing should degrade the public health signal.
+  // Non-critical reconcilers (le-status-sync, ghost-order-detector, etc.) being
+  // stuck or dead should not cause the logo pulse to go red or load-balancers to
+  // pull the instance — the core exchange still works fine without them.
+  const CRITICAL_SERVICES = new Set([
+    "price-updater",
+    "db-watchdog",
+    "liquidity-bot",
+  ]);
+  const anyCriticalDead = services.some(
+    s => s.status === "dead" && CRITICAL_SERVICES.has(s.name),
+  );
+
   const payload = {
-    status:    anyDead ? "degraded" : "ok",
+    status:    anyCriticalDead ? "degraded" : "ok",
     uptime:    Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     bsvChain,
@@ -394,10 +412,11 @@ async function healthHandler(_req: any, res: any) {
     logger.warn({ alerts: payload.alerts }, "Health check: degraded services detected");
   }
 
-  res.status(anyDead ? 503 : 200).json(payload);
+  res.status(anyCriticalDead ? 503 : 200).json(payload);
 }
-app.get("/api/health", healthHandler);
-app.get("/api/healthz", healthHandler);
+// NOTE: /api/health and /api/healthz are registered BEFORE app.use("/api", router)
+// further up in this file. These duplicate registrations are intentionally removed
+// to avoid shadowing the correctly-ordered registrations above.
 
 /* ── BSV chain status ─────────────────────────────────────────────────────── */
 app.get("/api/bsv-status", async (_req, res) => {

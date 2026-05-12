@@ -320,7 +320,7 @@ router.post("/cex-accounts/:id/test", async (req, res) => {
           } else if (account.exchange === "bybit") {
             const ts  = Date.now().toString();
             const str = ts + apiKey + "5000";
-            // HMAC-SHA256 is the signing algorithm required by the Bybit API; this is not password hashing
+            // codeql[js/insufficient-password-hash] HMAC-SHA256 here is the Bybit API request-signing algorithm, not password hashing
             const sig = crypto.createHmac("sha256", apiSecret).update(str).digest("hex");
             const ar  = await fetch("https://api.bybit.com/v5/account/info", {
               headers: {

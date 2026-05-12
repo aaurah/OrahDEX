@@ -91,15 +91,25 @@ function serveStaticFile(urlPath, res) {
     return;
   }
 
-  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+  // Read the file directly inside try/catch instead of checking existence first.
+  // Checking with existsSync/statSync then reading with readFileSync is a TOCTOU
+  // race: the file could be deleted or replaced between the check and the read.
+  const ext = path.extname(filePath).toLowerCase();
+  const contentType = MIME_TYPES[ext] || "application/octet-stream";
+  let content;
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      res.writeHead(404);
+      res.end("Not Found");
+      return;
+    }
+    content = fs.readFileSync(filePath);
+  } catch {
     res.writeHead(404);
     res.end("Not Found");
     return;
   }
-
-  const ext = path.extname(filePath).toLowerCase();
-  const contentType = MIME_TYPES[ext] || "application/octet-stream";
-  const content = fs.readFileSync(filePath);
   res.writeHead(200, { "content-type": contentType });
   res.end(content);
 }

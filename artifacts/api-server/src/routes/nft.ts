@@ -10,8 +10,12 @@ import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 const router: IRouter = Router();
 const USD_PEGGED_CURRENCIES = new Set(["USD", "USDT", "USDC", "USDB", "USDBC", "USDC.E", "USDBE", "BUSD", "TUSD", "USDD"]);
 
-router.use((_req, res, next) => {
-  if (process.env.NFT_ENABLED !== "true") {
+// Scope the "not available" guard to /nft/* paths only.
+// A blanket router.use() without a path prefix intercepts every request that
+// reaches this router (e.g. /bsv-status, /staking/providers) because Express
+// walks sub-routers in registration order.
+router.use((req, res, next) => {
+  if (process.env.NFT_ENABLED !== "true" && req.path.startsWith("/nft")) {
     return res.status(503).json({
       error: "NFT features are not yet available. Coming soon.",
     });

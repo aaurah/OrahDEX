@@ -195,10 +195,13 @@ router.post("/orders", async (req, res) => {
     const isBsvAddress = detectIsBsvAddress(body.walletAddress);
     const isSolAddress = detectIsSolAddress(body.walletAddress);
 
+    // Address format detection always takes priority over client-supplied walletSource.
+    // This prevents a client from setting walletSource:"orah" with an EVM address to
+    // skip the cryptographic signature verification that external wallets require.
     const walletSource: "external" | "orah" =
-      body.walletSource === "orah" ? "orah"
-      : (isEvmAddress || isBsvAddress || isSolAddress) ? "external"
-      : body.walletSource ?? "orah";
+      (isEvmAddress || isBsvAddress || isSolAddress) ? "external"
+      : body.walletSource === "orah" ? "orah"
+      : "orah";
 
     const isExternalWallet = walletSource === "external";
 

@@ -694,7 +694,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           <label className="text-xs text-muted-foreground font-semibold">Image</label>
           {imageUrl && (
             <div className="rounded-xl overflow-hidden border border-border" style={{ aspectRatio: "1/1", maxWidth: 280 }}>
-              <img src={imageUrl} alt="" className="w-full h-full object-cover"
+              <img src={sanitizeImageUrl(imageUrl)} alt="" className="w-full h-full object-cover"
                    onError={() => setImageUrl("")} />
             </div>
           )}

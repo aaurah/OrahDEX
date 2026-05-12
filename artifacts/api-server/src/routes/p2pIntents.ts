@@ -561,14 +561,13 @@ router.delete("/p2p/intents/:id", async (req, res) => {
     const id = req.params.id;
     if (!UUID_RE.test(id)) { res.status(400).json({ error: "Invalid intent id" }); return; }
 
-    // Accept walletAddress / nonce / signature from body or query (back-compat).
+    // Accept walletAddress / nonce / signature from the request body only.
+    // Query-string parameters are recorded in access logs and proxies, which
+    // would expose cryptographic signatures to unintended parties.
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const rawAddr = (typeof body.walletAddress === "string" ? body.walletAddress
-                    : (req.query.walletAddress as string | undefined)) ?? "";
-    const nonce     = typeof body.nonce     === "string" ? body.nonce
-                    : (req.query.nonce     as string | undefined) ?? "";
-    const signature = typeof body.signature === "string" ? body.signature
-                    : (req.query.signature as string | undefined) ?? "";
+    const rawAddr   = typeof body.walletAddress === "string" ? body.walletAddress : "";
+    const nonce     = typeof body.nonce         === "string" ? body.nonce         : "";
+    const signature = typeof body.signature     === "string" ? body.signature     : "";
 
     if (!rawAddr) {
       res.status(400).json({ error: "walletAddress is required to cancel an intent" });
