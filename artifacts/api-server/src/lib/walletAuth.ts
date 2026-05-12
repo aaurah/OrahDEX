@@ -901,7 +901,9 @@ export function issueBsvOrderChallenge(params: {
   nonce:         string;
   expiry:        string;
 }): { nonce: string; message: string } {
-  const nonce   = params.nonce || crypto.randomBytes(16).toString("hex");
+  // Always generate the nonce server-side to prevent nonce-grinding attacks.
+  // Any client-provided nonce is intentionally ignored.
+  const nonce   = crypto.randomBytes(16).toString("hex");
   const message = buildOrderAuthMessage({
     walletAddress: params.walletAddress,
     symbol:        params.symbol,
@@ -911,7 +913,9 @@ export function issueBsvOrderChallenge(params: {
     expiry:        params.expiry,
   });
 
-  bsvOrderNonces.set(`bsv:${params.walletAddress}`, {
+  // Normalise wallet address to lower-case to prevent duplicate challenges
+  // from different case representations of the same BSV address.
+  bsvOrderNonces.set(`bsv:${params.walletAddress.toLowerCase()}`, {
     nonce,
     message,
     symbol:   params.symbol,
@@ -934,7 +938,7 @@ export function verifyBsvOrderSignature(
   signatureBase64: string,
   expectedParams: { symbol: string; side: string; quantity: string },
 ): void {
-  const key    = `bsv:${walletAddress}`;
+  const key    = `bsv:${walletAddress.toLowerCase()}`;
   const stored = bsvOrderNonces.get(key);
 
   if (!stored || stored.expiresAt < Date.now()) {
@@ -990,7 +994,8 @@ export function issueSolOrderChallenge(params: {
   nonce:         string;
   expiry:        string;
 }): { nonce: string; message: string } {
-  const nonce   = params.nonce || crypto.randomBytes(16).toString("hex");
+  // Always generate the nonce server-side to prevent nonce-grinding attacks.
+  const nonce   = crypto.randomBytes(16).toString("hex");
   const message = buildOrderAuthMessage({
     walletAddress: params.walletAddress,
     symbol:        params.symbol,
@@ -1000,7 +1005,7 @@ export function issueSolOrderChallenge(params: {
     expiry:        params.expiry,
   });
 
-  solOrderNonces.set(`sol:${params.walletAddress}`, {
+  solOrderNonces.set(`sol:${params.walletAddress.toLowerCase()}`, {
     nonce,
     message,
     symbol:   params.symbol,
@@ -1022,7 +1027,7 @@ export function verifySolOrderSignature(
   signatureBase64: string,
   expectedParams: { symbol: string; side: string; quantity: string },
 ): void {
-  const key    = `sol:${walletAddress}`;
+  const key    = `sol:${walletAddress.toLowerCase()}`;
   const stored = solOrderNonces.get(key);
 
   if (!stored || stored.expiresAt < Date.now()) {

@@ -71,8 +71,14 @@ import { logger } from "./logger.js";
 
 // ── HTLC secret encryption (AES-256-GCM) ─────────────────────────────────────
 // Secrets are encrypted at rest to prevent DB dump / read-replica disclosure.
-// Key is derived from EVM_RELAYER_KEY or EVM_WALLET_SECRET — must be set.
-// Format stored in DB: "iv(hex):authTag(hex):ciphertext(hex)"
+// Key is derived via SHA-256 from EVM_RELAYER_KEY or EVM_WALLET_SECRET.
+//
+// IMPORTANT: The source env var must be high-entropy (>= 32 random bytes / 64
+// hex chars, e.g. a secp256k1 private key).  A low-entropy passphrase could be
+// brute-forced to recover historical secrets.
+//
+// Storage format: "iv_hex:authTag_hex:ciphertext_hex" (colon-delimited).
+// Legacy plain-hex secrets (no ":") are read back as-is for migration compatibility.
 
 function getHtlcEncryptionKey(): Buffer {
   const raw = process.env.EVM_RELAYER_KEY ?? process.env.EVM_WALLET_SECRET ?? "";
@@ -97,8 +103,17 @@ function encryptHtlcSecret(plainHex: string): string {
 function decryptHtlcSecret(stored: string): string {
   // Legacy plain hex secrets (pre-encryption migration): no ":" separators
   if (!stored.includes(":")) return stored;
-  const [ivHex, tagHex, encHex] = stored.split(":");
-  if (!ivHex || !tagHex || !encHex) return stored; // malformed — treat as plain
+  const parts = stored.split(":");
+  if (parts.length !== 3) {
+    // Malformed encrypted value — log a warning so operators notice.
+    logger.warn({ storedLen: stored.length }, "evmHtlc: malformed encrypted secret (wrong part count) — treating as plaintext");
+    return stored;
+  }
+  const [ivHex, tagHex, encHex] = parts;
+  if (!ivHex || !tagHex || !encHex) {
+    logger.warn("evmHtlc: malformed encrypted secret (empty part) — treating as plaintext");
+    return stored;
+  }
   const key = getHtlcEncryptionKey();
   const d   = createDecipheriv("aes-256-gcm", key, Buffer.from(ivHex, "hex"), { authTagLength: 16 });
   d.setAuthTag(Buffer.from(tagHex, "hex"));
