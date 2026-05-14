@@ -11,7 +11,6 @@ import { ChatWidget } from "@/components/ChatWidget";
 
 const NAV_TABS = [
   { path: "/swap",                       matchPrefix: "/swap",       label: "Exchange",   Icon: Waves },
-  { path: "/exchange",                   matchPrefix: "/exchange",   label: "X-Chain",    Icon: Repeat2 },
   { path: "/trade/BSV-USDT",             matchPrefix: "/trade",      label: "Trade",      Icon: ArrowRightLeft },
   { path: "/futures/BSV-USDT-PERP",      matchPrefix: "/futures",    label: "Futures",    Icon: TrendingUp },
   { path: "/markets",                    matchPrefix: "/markets",    label: "Markets",    Icon: BarChart2 },

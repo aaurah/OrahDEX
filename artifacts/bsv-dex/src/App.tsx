@@ -24,7 +24,6 @@ const Layout = lazy(() => import("@/components/Layout").then(m => ({ default: m.
 const LandingPage  = lazy(() => import("@/pages/Landing").then(m => ({ default: m.LandingPage })));
 const Markets      = lazy(() => import("@/pages/Markets").then(m => ({ default: m.Markets })));
 const SpotTrading  = lazy(() => import("@/pages/Spot").then(m => ({ default: m.SpotTrading })));
-const ExchangePage = lazy(() => import("@/pages/Exchange").then(m => ({ default: m.ExchangePage })));
 const FuturesTrading = lazy(() => import("@/pages/Futures").then(m => ({ default: m.FuturesTrading })));
 const Portfolio    = lazy(() => import("@/pages/Portfolio").then(m => ({ default: m.Portfolio })));
 const WalletPage   = lazy(() => import("@/pages/Wallet"));
@@ -435,7 +434,6 @@ function Router() {
             <Layout>
               <Suspense fallback={<PageSkeleton />}>
                 <Switch>
-                  <Route path="/exchange/:pair?" component={ExchangePage} />
                   <Route path="/markets"        component={Markets} />
                   <Route path="/trade/:symbol"  component={SpotTrading} />
                   <Route path="/futures/:symbol" component={FuturesTrading} />
