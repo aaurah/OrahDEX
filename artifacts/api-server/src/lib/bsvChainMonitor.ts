@@ -16,6 +16,7 @@ import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
+import { serviceState } from "../routes/admin.js";
 
 const WOC_BASE       = BSV_NET.wocBase;
 const WOC_CHAIN_INFO = `${WOC_BASE}/chain/info`;
@@ -88,8 +89,10 @@ async function fetchChainInfo(): Promise<void> {
     difficulty    = (chainData["difficulty"]   as number) || 0;
     medianTime    = (chainData["mediantime"]   as number) || 0;
     online        = blockHeight > 0;
+    serviceState.bsvMonitorLastAt = Date.now();
     logger.info({ blockHeight, difficulty }, "BSV chain monitor: chain info updated");
   } else {
+    serviceState.bsvMonitorErrors++;
     logger.warn("BSV chain monitor: chain info fetch failed");
   }
 

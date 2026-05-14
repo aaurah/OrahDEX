@@ -4,6 +4,7 @@ import { eq, desc, gte, inArray, notInArray, and, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
+import { serviceState } from "../routes/admin.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
 import { getCachedLEPrices, warmLEPriceCache, leRequest, fetchLEKeyPricesIfNeeded } from "./lePriceCache.js";
@@ -1216,6 +1217,8 @@ export async function updateMarketPrices() {
   try {
     // ── Sovereign price engine: Binance + WhatsOnChain + own trades ───────────
     const prices = await fetchSovereignPrices();
+    serviceState.priceEngineLastRunAt = Date.now();
+    serviceState.priceEngineRuns++;
     logger.info({ symbols: Object.keys(prices).length }, "Market prices updated (sovereign engine)");
 
     // Wrapped / synthetic BTC tokens should always track BTC 1:1.
