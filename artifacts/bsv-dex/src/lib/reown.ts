@@ -454,6 +454,72 @@ export async function sendEvmTransfer({
 }
 
 /**
+ * Send an ERC-20 `transfer(to, amount)` via any connected wallet.
+ * Automatically switches to `targetChainId`. Returns the tx hash.
+ */
+export async function sendErc20Transfer({
+  tokenAddress,
+  from,
+  to,
+  amount,
+  targetChainId,
+}: {
+  tokenAddress: string;
+  from: string;
+  to: string;
+  amount: bigint;
+  targetChainId: number;
+}): Promise<string> {
+  // transfer(address,uint256) selector
+  const paddedTo  = to.replace("0x", "").padStart(64, "0");
+  const paddedAmt = amount.toString(16).padStart(64, "0");
+  const data      = "0xa9059cbb" + paddedTo + paddedAmt;
+  const chainHex  = "0x" + targetChainId.toString(16);
+
+  async function tryProvider(provider: any): Promise<string | null> {
+    try {
+      const currentHex: string = await provider.request({ method: "eth_chainId" });
+      if (parseInt(currentHex, 16) !== targetChainId) {
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: chainHex }],
+        });
+      }
+      const hash: string = await provider.request({
+        method: "eth_sendTransaction",
+        params: [{ from, to: tokenAddress, data }],
+      });
+      return hash ?? null;
+    } catch (err: any) {
+      if (err?.code === 4001 || err?.message?.includes("rejected")) throw err;
+      return null;
+    }
+  }
+
+  const injected = (window as any).ethereum;
+  if (injected) {
+    const hash = await tryProvider(injected);
+    if (hash) return hash;
+  }
+
+  const config = _adapter?.wagmiConfig;
+  if (config) {
+    for (const connector of config.connectors) {
+      try {
+        const provider = await (connector as any).getProvider?.();
+        if (!provider) continue;
+        const hash = await tryProvider(provider);
+        if (hash) return hash;
+      } catch (err: any) {
+        if (err?.code === 4001 || err?.message?.includes("rejected")) throw err;
+      }
+    }
+  }
+
+  throw new Error("No active wallet found. Please connect MetaMask or use the WalletConnect button.");
+}
+
+/**
  * Fully disconnect from the Reown session — kills the WalletConnect/AppKit
  * session so re-opening the modal shows the wallet picker from scratch.
  */
