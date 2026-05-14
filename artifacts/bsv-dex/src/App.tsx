@@ -284,40 +284,30 @@ function Router() {
     }
 
     let reownUnsub: (() => void) | null = null;
-    let pollTries = 0;
-    const pollReown = setInterval(async () => {
-      /* Lazily import reown — it's a heavy SDK, load it only after first render */
-      const reown = await import("@/lib/reown").catch(() => null);
-      if (!reown) { clearInterval(pollReown); return; }
-      const { isReownReady, subscribeReownAccount, fetchEvmBalance, parseChainFromCaip, isUserDisconnecting, setUserDisconnecting } = reown;
-      if (isReownReady()) {
-        clearInterval(pollReown);
-        reownUnsub = subscribeReownAccount(async (state) => {
-          const { provider: current } = useWalletStore.getState();
-          if (state.isConnected && state.address) {
-            if (isUserDisconnecting()) return;
-            const chainId = parseChainFromCaip(state.caipAddress) ?? 1;
-            useWalletStore.getState().connect({
-              address: state.address,
-              provider: "reown",
-              network: "evm",
-              chainId,
-            });
-            const bal = await fetchEvmBalance(state.address, chainId);
-            if (bal !== null) {
-              useWalletStore.getState().setBalance(bal);
-            }
-          } else if (current === "reown") {
-            useWalletStore.getState().disconnect();
-            setUserDisconnecting(false);
+    import("@/lib/reown").then(({ subscribeReownAccount, fetchEvmBalance, parseChainFromCaip, isUserDisconnecting, setUserDisconnecting }) => {
+      reownUnsub = subscribeReownAccount(async (state) => {
+        const { provider: current } = useWalletStore.getState();
+        if (state.isConnected && state.address) {
+          if (isUserDisconnecting()) return;
+          const chainId = parseChainFromCaip(state.caipAddress) ?? 1;
+          useWalletStore.getState().connect({
+            address: state.address,
+            provider: "reown",
+            network: "evm",
+            chainId,
+          });
+          const bal = await fetchEvmBalance(state.address, chainId);
+          if (bal !== null) {
+            useWalletStore.getState().setBalance(bal);
           }
-        });
-      }
-      if (++pollTries > 100) clearInterval(pollReown);
-    }, 300);
+        } else if (current === "reown") {
+          useWalletStore.getState().disconnect();
+          setUserDisconnecting(false);
+        }
+      });
+    });
 
     return () => {
-      clearInterval(pollReown);
       reownUnsub?.();
       if (eth) {
         eth.removeListener?.("accountsChanged", onAccountsChanged);

@@ -12,7 +12,6 @@ import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { WalletConnectModal } from "@/components/WalletConnectModal";
 import { useAccount, useChainId, useBalance, useDisconnect } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
 import { cn } from "@/lib/utils";
@@ -144,7 +143,7 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 function AdminWalletWidget() {
-  const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
+  const { open: openWallet } = useWalletModalStore();
   const walletStore = useWalletStore();
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
   const chainId = useChainId();
@@ -192,7 +191,6 @@ function AdminWalletWidget() {
           <Wallet className="w-3.5 h-3.5" />
           <span className="hidden sm:block">Connect Wallet</span>
         </button>
-        <WalletConnectModal isOpen={walletOpen} onClose={closeWallet} />
       </>
     );
   }
@@ -286,7 +284,6 @@ function AdminWalletWidget() {
           </>
         )}
       </div>
-      <WalletConnectModal isOpen={walletOpen} onClose={closeWallet} />
     </>
   );
 }

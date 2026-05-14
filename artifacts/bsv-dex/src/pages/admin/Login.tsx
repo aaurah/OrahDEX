@@ -6,15 +6,13 @@ import {
   RefreshCw, Wallet, LogIn, Layers, AlertTriangle,
 } from 'lucide-react';
 import { useAdminAuthStore } from '@/store/useAdminAuthStore';
-import { useWalletModalStore } from '@/store/useWalletModalStore';
 import { useWalletStore } from '@/store/useWalletStore';
-import { WalletConnectModal } from '@/components/WalletConnectModal';
 import { generateTOTP } from '@/lib/totp';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { cn } from '@/lib/utils';
 import { BrandLogo } from '@/components/BrandLogo';
 import { useAccount, useSignMessage, useChainId } from 'wagmi';
-import { openReownModal, isReownReady } from '@/lib/reown';
+import { openReownModal } from '@/lib/reown';
 
 const API = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
@@ -47,26 +45,12 @@ export function AdminLogin() {
   const [totpSecret, setTotpSecret] = useState('');
   const [totpIssuer, setTotpIssuer] = useState('OrahDEX');
 
-  // Wallet connect modal (embedded on the login page)
-  const { isOpen: walletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
   const walletStore = useWalletStore();
 
   // Wagmi account + signMessage
   const { address: evmAddress, isConnected: evmConnected } = useAccount();
   const chainId = useChainId();
   const { signMessageAsync } = useSignMessage();
-
-  // Track if Reown is ready for WalletConnect
-  const [reownReady, setReownReady] = useState(false);
-  useEffect(() => {
-    if (isReownReady()) { setReownReady(true); return; }
-    let tries = 0;
-    const t = setInterval(() => {
-      if (isReownReady()) { setReownReady(true); clearInterval(t); }
-      if (++tries > 30) clearInterval(t);
-    }, 200);
-    return () => clearInterval(t);
-  }, []);
 
   // Active EVM address — prefer wagmi (covers MetaMask + Reown), fallback to injected
   const injectedAddress: string | null = (() => {
@@ -382,7 +366,7 @@ export function AdminLogin() {
 
               {/* Primary: WalletConnect via Reown */}
               <button
-                onClick={() => reownReady ? openReownModal('Connect') : openWalletModal()}
+                onClick={() => openReownModal('Connect')}
                 className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-r from-violet-600/90 to-blue-600/80 border border-violet-500/30 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-violet-500/20 hover:shadow-violet-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all"
               >
                 <svg className="w-4 h-4" viewBox="0 0 40 25" fill="currentColor">
@@ -415,7 +399,7 @@ export function AdminLogin() {
               {/* Switch wallet (when already connected) */}
               {canSign && (
                 <button
-                  onClick={() => reownReady ? openReownModal('Connect') : openWalletModal()}
+                  onClick={() => openReownModal('Connect')}
                   className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 text-xs font-medium transition-all"
                 >
                   <Layers className="w-3.5 h-3.5" />
@@ -459,9 +443,6 @@ export function AdminLogin() {
             </div>
           </div>
         )}
-
-        {/* Embedded wallet connect modal */}
-        <WalletConnectModal isOpen={walletModalOpen} onClose={closeWalletModal} />
 
         {/* ── 2FA Setup ── */}
         {step === 'setup' && (

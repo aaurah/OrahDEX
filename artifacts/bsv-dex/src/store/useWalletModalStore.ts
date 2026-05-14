@@ -6,8 +6,12 @@ interface WalletModalState {
   close: () => void;
 }
 
-export const useWalletModalStore = create<WalletModalState>((set) => ({
+export const useWalletModalStore = create<WalletModalState>(() => ({
   isOpen: false,
-  open: () => set({ isOpen: true }),
-  close: () => set({ isOpen: false }),
+  open: () => {
+    import('@/lib/reown').then(({ modal }) => modal.open({ view: 'Connect' }));
+  },
+  close: () => {
+    import('@/lib/reown').then(({ modal }) => modal.close());
+  },
 }));
