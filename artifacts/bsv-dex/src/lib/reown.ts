@@ -55,13 +55,53 @@ export const modal = createAppKit({
   themeMode: "dark",
   themeVariables: {
     "--w3m-accent":               "#4ade80",
+    "--w3m-color-mix":            "#0a0c0f",
+    "--w3m-color-mix-strength":   40,
     "--w3m-border-radius-master": "12px",
     "--w3m-font-family":          "inherit",
     "--w3m-z-index":              9999,
-  },
+  } as any,
 });
 
 suppressThirdPartyBranding();
+
+/* ── Theme sync ─────────────────────────────────────────────────────────── */
+
+/** Call whenever the app theme changes to keep the modal in sync. */
+export function syncReownTheme(theme: string): void {
+  const prefersDark =
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+  const isDark =
+    theme === "dark" ||
+    theme === "amoled" ||
+    (theme === "system" && prefersDark);
+
+  modal.setThemeMode(isDark ? "dark" : "light");
+
+  if (isDark) {
+    const bg       = theme === "amoled" ? "#000000" : "#0a0c0f";
+    const strength = theme === "amoled" ? 60        : 40;
+    (modal as any).setThemeVariables({
+      "--w3m-accent":               "#4ade80",
+      "--w3m-color-mix":            bg,
+      "--w3m-color-mix-strength":   strength,
+      "--w3m-border-radius-master": "12px",
+      "--w3m-font-family":          "inherit",
+      "--w3m-z-index":              9999,
+    });
+  } else {
+    (modal as any).setThemeVariables({
+      "--w3m-accent":               "#4ade80",
+      "--w3m-color-mix":            "#ffffff",
+      "--w3m-color-mix-strength":   0,
+      "--w3m-border-radius-master": "12px",
+      "--w3m-font-family":          "inherit",
+      "--w3m-z-index":              9999,
+    });
+  }
+}
 
 function suppressThirdPartyBranding(): void {
   const STYLE_ID = "orahdex-no-brand";
