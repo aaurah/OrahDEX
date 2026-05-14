@@ -12,6 +12,10 @@ const basePath = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   base: basePath,
+  define: {
+    'import.meta.env.VITE_REOWN_PROJECT_ID': JSON.stringify(process.env.VITE_REOWN_PROJECT_ID ?? ''),
+    'import.meta.env.VITE_API_BASE': JSON.stringify(process.env.VITE_API_BASE ?? ''),
+  },
   plugins: [
     nodePolyfills({
       globals: { Buffer: true, global: true, process: true },
