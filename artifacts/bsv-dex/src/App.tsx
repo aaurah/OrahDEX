@@ -162,13 +162,37 @@ const queryClient = new QueryClient({
   },
 });
 
-/* ─── Lightweight skeleton shown while a lazy chunk is downloading ─── */
+/* ─── Skeleton shown while a lazy chunk is downloading ─── */
 function PageSkeleton() {
   return (
-    <div className="flex-1 flex items-center justify-center min-h-[60vh]">
-      <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-        <span className="text-xs text-muted-foreground">Loading…</span>
+    <div className="flex-1 flex flex-col gap-3 p-4 animate-pulse">
+      {/* Top bar skeleton */}
+      <div className="flex items-center gap-2 mb-1">
+        <div className="h-7 w-28 rounded-lg bg-muted/40" />
+        <div className="h-5 w-16 rounded-md bg-muted/30" />
+        <div className="ml-auto h-5 w-20 rounded-md bg-muted/30" />
+      </div>
+      {/* Chart area */}
+      <div className="h-48 rounded-xl bg-muted/25 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-muted/10 to-transparent -translate-x-full animate-[shimmer_1.4s_infinite]" />
+      </div>
+      {/* Two columns */}
+      <div className="flex gap-3">
+        <div className="flex-1 flex flex-col gap-2">
+          {[1,2,3,4].map(i => (
+            <div key={i} className="h-8 rounded-lg bg-muted/25" />
+          ))}
+        </div>
+        <div className="flex-1 flex flex-col gap-2">
+          {[1,2,3,4].map(i => (
+            <div key={i} className="h-8 rounded-lg bg-muted/20" />
+          ))}
+        </div>
+      </div>
+      {/* Bottom row */}
+      <div className="flex gap-2 mt-1">
+        <div className="flex-1 h-10 rounded-xl bg-primary/10" />
+        <div className="flex-1 h-10 rounded-xl bg-muted/20" />
       </div>
     </div>
   );
