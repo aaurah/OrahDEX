@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import {
-  Fingerprint, Loader2, Plus, LogIn, Shield, KeyRound,
-  AlertCircle, Download, ArrowLeft, Eye, EyeOff, CheckCircle2,
-  HardDrive,
+  Fingerprint, Loader2, Plus, LogIn, Shield, AlertCircle,
+  Download, ArrowLeft, Eye, EyeOff, CheckCircle2,
+  HardDrive, ChevronRight, X, Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,6 +25,12 @@ import {
   GridPlusPanel,
   type HWDevice,
 } from "@/components/HardwareWalletPanels";
+
+const srOnly: React.CSSProperties = {
+  position: "absolute", width: 1, height: 1, padding: 0,
+  margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)",
+  whiteSpace: "nowrap", border: 0,
+};
 
 type Tab =
   | "choose"
@@ -52,6 +58,79 @@ function applyOrahWallet(address: string, chains?: PasskeyChainAddresses) {
   }
 }
 
+/* ─── Shared UI atoms ───────────────────────────────────────────────────── */
+
+function OptionCard({
+  onClick,
+  iconBg,
+  icon,
+  title,
+  sub,
+  badge,
+  featured,
+}: {
+  onClick: () => void;
+  iconBg: string;
+  icon: React.ReactNode;
+  title: string;
+  sub: string;
+  badge?: React.ReactNode;
+  featured?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`group relative w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl border transition-all duration-200 text-left ${
+        featured
+          ? "bg-primary/[0.07] border-primary/25 hover:bg-primary/[0.12] hover:border-primary/50 hover:shadow-[0_0_20px_-4px_hsl(142_71%_58%/0.25)]"
+          : "bg-white/[0.02] border-white/[0.07] hover:bg-white/[0.05] hover:border-white/[0.15]"
+      }`}
+    >
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${iconBg} transition-all duration-200`}>
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold text-foreground leading-tight">{title}</div>
+        <div className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed truncate">{sub}</div>
+      </div>
+      {badge && <div className="shrink-0">{badge}</div>}
+      <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-muted-foreground/80 group-hover:translate-x-0.5 transition-all shrink-0" />
+    </button>
+  );
+}
+
+function SubHeader({
+  onBack,
+  icon,
+  title,
+  description,
+}: {
+  onBack: () => void;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="px-6 pt-6 pb-4 border-b border-white/[0.06]">
+      <button
+        onClick={onBack}
+        className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors mb-4 -ml-0.5"
+      >
+        <ArrowLeft className="w-3 h-3" /> Back
+      </button>
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          {icon}
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{description}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Passkey Panel ─────────────────────────────────────────────────────── */
 
 function PasskeyPanel({ onDone }: { onDone: () => void }) {
@@ -64,10 +143,7 @@ function PasskeyPanel({ onDone }: { onDone: () => void }) {
     try {
       const result = await registerPasskeyWallet("OrahDEX Wallet");
       applyOrahWallet(result.address, result.chains);
-      toast({
-        title: "Passkey wallet created",
-        description: `${result.address.slice(0, 6)}…${result.address.slice(-4)} · BSV, BTC, ETH, SOL + more`,
-      });
+      toast({ title: "Passkey wallet created", description: `${result.address.slice(0, 6)}…${result.address.slice(-4)} · BSV, BTC, ETH, SOL + more` });
       onDone();
     } catch (err: any) {
       const msg: string = err?.message ?? "";
@@ -76,9 +152,7 @@ function PasskeyPanel({ onDone }: { onDone: () => void }) {
       } else {
         toast({ title: "Create failed", description: msg || "Could not create passkey wallet.", variant: "destructive" });
       }
-    } finally {
-      setLoading(null);
-    }
+    } finally { setLoading(null); }
   };
 
   const handleLogin = async () => {
@@ -88,9 +162,7 @@ function PasskeyPanel({ onDone }: { onDone: () => void }) {
       applyOrahWallet(result.address, result.chains);
       toast({
         title: result.restoredFromBackup ? "Wallet restored" : `Welcome back${result.label ? ` · ${result.label}` : ""}`,
-        description: result.restoredFromBackup
-          ? "Restored from cloud backup — all chains available"
-          : `${result.address.slice(0, 6)}…${result.address.slice(-4)}`,
+        description: result.restoredFromBackup ? "Restored from cloud backup" : `${result.address.slice(0, 6)}…${result.address.slice(-4)}`,
       });
       onDone();
     } catch (err: any) {
@@ -102,43 +174,50 @@ function PasskeyPanel({ onDone }: { onDone: () => void }) {
       } else {
         toast({ title: "Login failed", description: msg || "Could not authenticate.", variant: "destructive" });
       }
-    } finally {
-      setLoading(null);
-    }
+    } finally { setLoading(null); }
   };
 
-  if (!supported) {
-    return (
-      <div className="flex items-start gap-2.5 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-sm text-destructive mt-2">
-        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-        <span>Passkeys are not supported in this browser. Try Chrome, Safari, or Edge on a device with biometrics.</span>
-      </div>
-    );
-  }
+  if (!supported) return (
+    <div className="flex items-start gap-2.5 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-sm text-destructive">
+      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+      <span>Passkeys are not supported in this browser. Try Chrome, Safari, or Edge on a device with biometrics.</span>
+    </div>
+  );
 
   return (
-    <div className="space-y-2.5 mt-2">
-      <Button
-        className="w-full h-[52px] gap-3 justify-start px-4 text-sm"
+    <div className="space-y-2.5">
+      <button
         onClick={handleCreate}
         disabled={!!loading}
+        className="group w-full flex items-center gap-4 px-4 py-4 rounded-2xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 hover:shadow-[0_0_20px_-6px_hsl(142_71%_58%/0.3)] transition-all duration-200 text-left disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        {loading === "create" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4 shrink-0" />}
-        <span className="flex-1 text-left">Create New Wallet</span>
-        <span className="text-[10px] opacity-60 shrink-0">Face ID · Touch ID</span>
-      </Button>
-      <Button
-        variant="outline"
-        className="w-full h-[52px] gap-3 justify-start px-4 text-sm"
+        <div className="w-11 h-11 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+          {loading === "create" ? <Loader2 className="w-5 h-5 text-primary animate-spin" /> : <Plus className="w-5 h-5 text-primary" />}
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">Create New Wallet</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Face ID · Touch ID · Security Key</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-primary/40 group-hover:text-primary/70 group-hover:translate-x-0.5 transition-all shrink-0" />
+      </button>
+
+      <button
         onClick={handleLogin}
         disabled={!!loading}
+        className="group w-full flex items-center gap-4 px-4 py-4 rounded-2xl border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.15] transition-all duration-200 text-left disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        {loading === "login" ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4 shrink-0" />}
-        <span className="flex-1 text-left">Use Existing Passkey</span>
-        <span className="text-[10px] opacity-60 shrink-0">Any device</span>
-      </Button>
-      <div className="flex items-start gap-1.5 pt-1">
-        <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5 text-green-500" />
+        <div className="w-11 h-11 rounded-xl bg-white/[0.05] border border-white/[0.07] flex items-center justify-center shrink-0">
+          {loading === "login" ? <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" /> : <LogIn className="w-5 h-5 text-muted-foreground" />}
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">Use Existing Passkey</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Any paired device or cloud backup</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 group-hover:translate-x-0.5 transition-all shrink-0" />
+      </button>
+
+      <div className="flex items-start gap-2 pt-1 px-1">
+        <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-500" />
         <p className="text-[11px] text-muted-foreground leading-relaxed">
           Keys generated locally, encrypted by your passkey. OrahDEX never sees your seed phrase.
         </p>
@@ -159,42 +238,29 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   const wordCount = phrase.trim().split(/\s+/).filter(Boolean).length;
   const isReady = wordCount === 12 || wordCount === 24;
 
-  const handleChange = (v: string) => {
-    setPhrase(v);
-    setValidationError(null);
-  };
-
   const handleImport = async () => {
     const { valid, words, error } = validateMnemonic(phrase);
-    if (!valid) {
-      setValidationError(error ?? "Invalid seed phrase.");
-      return;
-    }
+    if (!valid) { setValidationError(error ?? "Invalid seed phrase."); return; }
     setLoading(true);
     try {
       const chains = await deriveAllAddresses(words);
       applyOrahWallet(chains.evm, chains);
-      toast({
-        title: "Wallet imported",
-        description: `${chains.evm.slice(0, 6)}…${chains.evm.slice(-4)} · BSV · BTC · ETH · SOL + more`,
-      });
+      toast({ title: "Wallet imported", description: `${chains.evm.slice(0, 6)}…${chains.evm.slice(-4)} · BSV · BTC · ETH + more` });
       onDone();
     } catch (err: any) {
       toast({ title: "Import failed", description: err?.message || "Could not derive addresses.", variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   return (
-    <div className="space-y-3 mt-2">
+    <div className="space-y-3">
       <div className="relative">
         <Textarea
           placeholder="Enter your 12 or 24 word seed phrase, separated by spaces…"
-          className={`min-h-[100px] text-sm resize-none pr-10 font-mono leading-relaxed ${validationError ? "border-destructive" : ""}`}
+          className={`min-h-[108px] text-sm resize-none pr-10 font-mono leading-relaxed bg-white/[0.03] border-white/[0.08] placeholder:text-muted-foreground/40 focus:border-primary/40 focus:bg-white/[0.05] transition-all ${validationError ? "border-destructive/60" : ""}`}
           style={!show ? { WebkitTextSecurity: "disc" } as any : undefined}
           value={phrase}
-          onChange={e => handleChange(e.target.value)}
+          onChange={e => { setPhrase(e.target.value); setValidationError(null); }}
           spellCheck={false}
           autoComplete="off"
           autoCorrect="off"
@@ -203,7 +269,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
         <button
           type="button"
           onClick={() => setShow(s => !s)}
-          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground transition-colors"
+          className="absolute right-3 top-3 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
           tabIndex={-1}
         >
           {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -217,19 +283,29 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between text-[11px] text-muted-foreground px-0.5">
-        <span>
+      <div className="flex items-center justify-between px-0.5">
+        <span className="text-[11px] text-muted-foreground">
           {wordCount > 0
             ? isReady
-              ? <span className="flex items-center gap-1 text-green-500"><CheckCircle2 className="w-3 h-3" />{wordCount} words</span>
-              : `${wordCount} words · need 12 or 24`
-            : "Words typed: 0"
+              ? <span className="flex items-center gap-1 text-emerald-500 font-medium"><CheckCircle2 className="w-3 h-3" />{wordCount} words — ready</span>
+              : <span className="text-amber-500">{wordCount} / {wordCount < 12 ? 12 : 24} words</span>
+            : <span>Enter your seed phrase above</span>
           }
         </span>
       </div>
 
+      {/* word count progress */}
+      {wordCount > 0 && !isReady && (
+        <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden -mt-1">
+          <div
+            className="h-full rounded-full bg-amber-500/60 transition-all duration-300"
+            style={{ width: `${Math.min((wordCount / (wordCount < 12 ? 12 : 24)) * 100, 100)}%` }}
+          />
+        </div>
+      )}
+
       <Button
-        className="w-full h-[46px] gap-2 text-sm"
+        className="w-full h-[46px] gap-2 text-sm font-semibold rounded-xl mt-1"
         onClick={handleImport}
         disabled={!isReady || loading}
       >
@@ -237,30 +313,23 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
         {loading ? "Deriving addresses…" : "Import Wallet"}
       </Button>
 
-      <div className="flex items-start gap-1.5 pt-0.5">
+      <div className="flex items-start gap-2 px-1">
         <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          Your seed phrase is never sent to any server. All derivation happens locally in your browser.
+          Your phrase never leaves this device. All derivation runs locally in your browser.
         </p>
       </div>
     </div>
   );
 }
 
-/* ─── Helpers ───────────────────────────────────────────────────────────── */
+/* ─── Hardware sub-panel header map ─────────────────────────────────────── */
 
-const HW_LABELS: Record<HWDevice, string> = {
-  ledger: "Ledger",
-  trezor: "Trezor",
-  keystone: "Keystone",
-  gridplus: "GridPlus",
-};
-
-const HW_DESCRIPTIONS: Record<HWDevice, string> = {
-  ledger:   "USB connection via WebHID — requires Chrome or Edge.",
-  trezor:   "USB connection via Trezor popup — works in all browsers.",
-  keystone: "Air-gapped QR connection — no USB or Bluetooth required.",
-  gridplus: "Wi-Fi connection to your Lattice1 via the GridPlus relay.",
+const HW_META: Record<HWDevice, { emoji: string; title: string; description: string }> = {
+  ledger:   { emoji: "🔲", title: "Ledger",          description: "USB WebHID — Chrome or Edge on desktop." },
+  trezor:   { emoji: "🛡",  title: "Trezor",          description: "USB — Trezor popup works in all browsers." },
+  keystone: { emoji: "🔳", title: "Keystone",         description: "Air-gapped — scan animated QR from device." },
+  gridplus: { emoji: "⚡", title: "GridPlus Lattice1", description: "Wi-Fi — connects via the GridPlus relay." },
 };
 
 /* ─── Main Dialog ───────────────────────────────────────────────────────── */
@@ -268,200 +337,178 @@ const HW_DESCRIPTIONS: Record<HWDevice, string> = {
 export function WalletChooserDialog() {
   const { isOpen, close, openEvm } = useWalletModalStore();
   const [tab, setTab] = useState<Tab>("choose");
-  const [hwDevice, setHwDevice] = useState<HWDevice | null>(null);
 
-  const handleClose = () => { setTab("choose"); setHwDevice(null); close(); };
+  const handleClose = () => { setTab("choose"); close(); };
+  const handleEvmClick = () => { handleClose(); setTimeout(() => openEvm(), 100); };
+  const handleHWPick = (device: HWDevice) => setTab(device);
 
-  const handleEvmClick = () => {
-    handleClose();
-    setTimeout(() => openEvm(), 100);
-  };
-
-  const handleHWPick = (device: HWDevice) => {
-    setHwDevice(device);
-    setTab(device);
-  };
-
-  const backLabel =
-    tab === "ledger" || tab === "trezor" || tab === "keystone" || tab === "gridplus"
-      ? "hardware"
-      : "choose";
-
-  function BackButton({ to }: { to: Tab }) {
-    return (
-      <button
-        onClick={() => setTab(to)}
-        className="text-muted-foreground hover:text-foreground transition-colors text-xs flex items-center gap-1"
-      >
-        <ArrowLeft className="w-3 h-3" /> Back
-      </button>
-    );
-  }
+  const isDeviceTab = (t: Tab): t is HWDevice =>
+    t === "ledger" || t === "trezor" || t === "keystone" || t === "gridplus";
 
   return (
     <Dialog open={isOpen} onOpenChange={v => { if (!v) handleClose(); }}>
-      <DialogContent className="sm:max-w-sm max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="p-0 gap-0 border-white/[0.06] bg-black sm:max-w-[420px] overflow-hidden rounded-2xl shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_24px_48px_-8px_rgba(0,0,0,0.9)]"
+        style={{ backgroundImage: "radial-gradient(ellipse 70% 45% at 50% -5%, hsl(142 71% 58% / 0.10) 0%, transparent 70%)" }}
+      >
+        <DialogTitle style={srOnly}>Connect Wallet</DialogTitle>
+        <DialogDescription style={srOnly}>Choose how to connect your wallet to OrahDEX.</DialogDescription>
+        {/* ── Close button ── */}
+        <button
+          onClick={handleClose}
+          className="absolute right-4 top-4 z-10 w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-white/[0.06] transition-all"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
 
-        {/* ── Choose ── */}
+        {/* ══════════════════════════════════════
+            CHOOSE PANEL
+        ══════════════════════════════════════ */}
         {tab === "choose" && (
+          <div className="flex flex-col">
+            {/* Header */}
+            <div className="px-6 pt-7 pb-5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                  <Wallet className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-foreground tracking-tight">Connect Wallet</h2>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Choose how to connect to OrahDEX</p>
+                </div>
+              </div>
+
+              {/* Section label */}
+              <p className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase mb-2.5">Wallet Options</p>
+
+              <div className="space-y-2">
+                {/* EVM */}
+                <OptionCard
+                  onClick={handleEvmClick}
+                  iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
+                  icon={<span className="text-xl leading-none text-blue-400">⟠</span>}
+                  title="EVM Wallets"
+                  sub="MetaMask · WalletConnect · Coinbase · Injected"
+                  badge={
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 tracking-wider">
+                      EVM
+                    </span>
+                  }
+                />
+
+                {/* OrahDEX Wallet — featured */}
+                <OptionCard
+                  onClick={() => setTab("passkey")}
+                  iconBg="bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40"
+                  icon={<Fingerprint className="w-5 h-5 text-primary" />}
+                  title="OrahDEX Wallet"
+                  sub="Passkey · BSV · BTC · ETH · SOL · LTC · DOGE + more"
+                  badge={
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 tracking-wider">
+                      NEW
+                    </span>
+                  }
+                  featured
+                />
+
+                {/* Hardware */}
+                <OptionCard
+                  onClick={() => setTab("hardware")}
+                  iconBg="bg-amber-500/10 border border-amber-500/20 group-hover:bg-amber-500/15 group-hover:border-amber-500/30"
+                  icon={<HardDrive className="w-5 h-5 text-amber-400" />}
+                  title="Hardware Wallet"
+                  sub="Ledger · Trezor · Keystone · GridPlus"
+                />
+
+                {/* Import */}
+                <OptionCard
+                  onClick={() => setTab("import")}
+                  iconBg="bg-violet-500/10 border border-violet-500/20 group-hover:bg-violet-500/15 group-hover:border-violet-500/30"
+                  icon={<Download className="w-5 h-5 text-violet-400" />}
+                  title="Import Wallet"
+                  sub="Seed phrase · 12 or 24 words · all chains"
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3.5 border-t border-white/[0.05] flex items-center gap-2">
+              <Shield className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <p className="text-[11px] text-muted-foreground/60">
+                Non-custodial · Your keys, your coins · End-to-end encrypted
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════
+            ORAHDEX WALLET (PASSKEY)
+        ══════════════════════════════════════ */}
+        {tab === "passkey" && (
           <>
-            <DialogHeader>
-              <DialogTitle className="text-base">Connect Wallet</DialogTitle>
-              <DialogDescription className="text-xs">
-                Choose how you want to connect to OrahDEX.
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-2 py-1">
-              {/* EVM wallets */}
-              <button
-                onClick={handleEvmClick}
-                className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-accent/50 transition-colors text-left"
-              >
-                <span className="text-2xl leading-none">⟠</span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-foreground">EVM Wallets</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">MetaMask · WalletConnect · Coinbase · Injected</div>
-                </div>
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 border border-blue-500/30 shrink-0">EVM</span>
-              </button>
-
-              {/* OrahDEX Wallet (passkey) */}
-              <button
-                onClick={() => setTab("passkey")}
-                className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors text-left"
-              >
-                <Fingerprint className="w-6 h-6 text-primary shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-foreground">OrahDEX Wallet</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">Passkey · BSV · BTC · ETH · SOL · LTC · DOGE + more</div>
-                </div>
-                <KeyRound className="w-3.5 h-3.5 text-primary/60 shrink-0" />
-              </button>
-
-              {/* Hardware Wallet */}
-              <button
-                onClick={() => setTab("hardware")}
-                className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-accent/50 transition-colors text-left"
-              >
-                <HardDrive className="w-6 h-6 text-muted-foreground shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-foreground">Hardware Wallet</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">Ledger · Trezor · Keystone · GridPlus</div>
-                </div>
-              </button>
-
-              {/* Import wallet */}
-              <button
-                onClick={() => setTab("import")}
-                className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-accent/50 transition-colors text-left"
-              >
-                <Download className="w-6 h-6 text-muted-foreground shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-foreground">Import Wallet</div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">Seed phrase · 12 or 24 words · all chains</div>
-                </div>
-              </button>
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<Fingerprint className="w-5 h-5 text-primary" />}
+              title="OrahDEX Wallet"
+              description="Non-custodial · secured by Face ID, Touch ID or Windows Hello"
+            />
+            <div className="px-6 py-5">
+              <PasskeyPanel onDone={handleClose} />
             </div>
           </>
         )}
 
-        {/* ── Passkey ── */}
-        {tab === "passkey" && (
-          <>
-            <DialogHeader>
-              <BackButton to="choose" />
-              <DialogTitle className="flex items-center gap-2 text-base mt-1">
-                <Fingerprint className="w-5 h-5 text-primary" />
-                OrahDEX Wallet
-              </DialogTitle>
-              <DialogDescription className="text-xs leading-relaxed">
-                Non-custodial multi-chain wallet secured by Face ID, Touch ID, or Windows Hello.
-              </DialogDescription>
-            </DialogHeader>
-            <PasskeyPanel onDone={handleClose} />
-          </>
-        )}
-
-        {/* ── Import ── */}
+        {/* ══════════════════════════════════════
+            IMPORT WALLET
+        ══════════════════════════════════════ */}
         {tab === "import" && (
           <>
-            <DialogHeader>
-              <BackButton to="choose" />
-              <DialogTitle className="flex items-center gap-2 text-base mt-1">
-                <Download className="w-5 h-5 text-muted-foreground" />
-                Import Wallet
-              </DialogTitle>
-              <DialogDescription className="text-xs leading-relaxed">
-                Enter your 12 or 24-word seed phrase to restore your wallet across all chains.
-              </DialogDescription>
-            </DialogHeader>
-            <ImportPanel onDone={handleClose} />
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<Download className="w-5 h-5 text-violet-400" />}
+              title="Import Wallet"
+              description="Restore from a 12 or 24-word BIP39 seed phrase · all chains"
+            />
+            <div className="px-6 py-5">
+              <ImportPanel onDone={handleClose} />
+            </div>
           </>
         )}
 
-        {/* ── Hardware chooser ── */}
+        {/* ══════════════════════════════════════
+            HARDWARE CHOOSER
+        ══════════════════════════════════════ */}
         {tab === "hardware" && (
           <>
-            <DialogHeader>
-              <BackButton to="choose" />
-              <DialogTitle className="flex items-center gap-2 text-base mt-1">
-                <HardDrive className="w-5 h-5 text-muted-foreground" />
-                Hardware Wallet
-              </DialogTitle>
-              <DialogDescription className="text-xs leading-relaxed">
-                Connect your physical hardware wallet. Your private keys never leave the device.
-              </DialogDescription>
-            </DialogHeader>
-            <HardwareChooser onPick={handleHWPick} />
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<HardDrive className="w-5 h-5 text-amber-400" />}
+              title="Hardware Wallet"
+              description="Your private keys never leave the physical device"
+            />
+            <div className="px-6 py-5">
+              <HardwareChooser onPick={handleHWPick} />
+            </div>
           </>
         )}
 
-        {/* ── Ledger ── */}
-        {tab === "ledger" && (
+        {/* ══════════════════════════════════════
+            INDIVIDUAL DEVICE PANELS
+        ══════════════════════════════════════ */}
+        {isDeviceTab(tab) && (
           <>
-            <DialogHeader>
-              <BackButton to="hardware" />
-              <DialogTitle className="text-base mt-1">🔲 Ledger</DialogTitle>
-              <DialogDescription className="text-xs">{HW_DESCRIPTIONS.ledger}</DialogDescription>
-            </DialogHeader>
-            <LedgerPanel onDone={handleClose} />
-          </>
-        )}
-
-        {/* ── Trezor ── */}
-        {tab === "trezor" && (
-          <>
-            <DialogHeader>
-              <BackButton to="hardware" />
-              <DialogTitle className="text-base mt-1">🛡 Trezor</DialogTitle>
-              <DialogDescription className="text-xs">{HW_DESCRIPTIONS.trezor}</DialogDescription>
-            </DialogHeader>
-            <TrezorPanel onDone={handleClose} />
-          </>
-        )}
-
-        {/* ── Keystone ── */}
-        {tab === "keystone" && (
-          <>
-            <DialogHeader>
-              <BackButton to="hardware" />
-              <DialogTitle className="text-base mt-1">🔳 Keystone</DialogTitle>
-              <DialogDescription className="text-xs">{HW_DESCRIPTIONS.keystone}</DialogDescription>
-            </DialogHeader>
-            <KeystonePanel onDone={handleClose} />
-          </>
-        )}
-
-        {/* ── GridPlus ── */}
-        {tab === "gridplus" && (
-          <>
-            <DialogHeader>
-              <BackButton to="hardware" />
-              <DialogTitle className="text-base mt-1">⚡ GridPlus Lattice1</DialogTitle>
-              <DialogDescription className="text-xs">{HW_DESCRIPTIONS.gridplus}</DialogDescription>
-            </DialogHeader>
-            <GridPlusPanel onDone={handleClose} />
+            <SubHeader
+              onBack={() => setTab("hardware")}
+              icon={<span className="text-xl leading-none">{HW_META[tab].emoji}</span>}
+              title={HW_META[tab].title}
+              description={HW_META[tab].description}
+            />
+            <div className="px-6 py-5 max-h-[60vh] overflow-y-auto">
+              {tab === "ledger"   && <LedgerPanel   onDone={handleClose} />}
+              {tab === "trezor"   && <TrezorPanel   onDone={handleClose} />}
+              {tab === "keystone" && <KeystonePanel onDone={handleClose} />}
+              {tab === "gridplus" && <GridPlusPanel onDone={handleClose} />}
+            </div>
           </>
         )}
 
