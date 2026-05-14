@@ -61,13 +61,7 @@ function applyOrahWallet(address: string, chains?: PasskeyChainAddresses) {
 /* ─── Shared UI atoms ───────────────────────────────────────────────────── */
 
 function OptionCard({
-  onClick,
-  iconBg,
-  icon,
-  title,
-  sub,
-  badge,
-  featured,
+  onClick, iconBg, icon, title, sub, badge, featured,
 }: {
   onClick: () => void;
   iconBg: string;
@@ -80,13 +74,13 @@ function OptionCard({
   return (
     <button
       onClick={onClick}
-      className={`group relative w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl border transition-all duration-200 text-left ${
+      className={`group relative w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all duration-200 text-left ${
         featured
-          ? "bg-primary/[0.07] border-primary/25 hover:bg-primary/[0.12] hover:border-primary/50 hover:shadow-[0_0_20px_-4px_hsl(142_71%_58%/0.25)]"
-          : "bg-white/[0.02] border-white/[0.07] hover:bg-white/[0.05] hover:border-white/[0.15]"
+          ? "bg-primary/[0.07] border-primary/25 hover:bg-primary/[0.12] hover:border-primary/50 hover:shadow-[0_0_22px_-6px_hsl(var(--primary)/0.3)]"
+          : "bg-card border-border hover:bg-accent hover:border-primary/20"
       }`}
     >
-      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${iconBg} transition-all duration-200`}>
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200 ${iconBg}`}>
         {icon}
       </div>
       <div className="flex-1 min-w-0">
@@ -99,19 +93,14 @@ function OptionCard({
   );
 }
 
-function SubHeader({
-  onBack,
-  icon,
-  title,
-  description,
-}: {
+function SubHeader({ onBack, icon, title, description }: {
   onBack: () => void;
   icon: React.ReactNode;
   title: string;
   description: string;
 }) {
   return (
-    <div className="px-6 pt-6 pb-4 border-b border-white/[0.06]">
+    <div className="px-6 pt-6 pb-4 border-b border-border">
       <button
         onClick={onBack}
         className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors mb-4 -ml-0.5"
@@ -189,7 +178,7 @@ function PasskeyPanel({ onDone }: { onDone: () => void }) {
       <button
         onClick={handleCreate}
         disabled={!!loading}
-        className="group w-full flex items-center gap-4 px-4 py-4 rounded-2xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 hover:shadow-[0_0_20px_-6px_hsl(142_71%_58%/0.3)] transition-all duration-200 text-left disabled:opacity-60 disabled:cursor-not-allowed"
+        className="group w-full flex items-center gap-4 px-4 py-4 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 hover:shadow-[0_0_22px_-6px_hsl(var(--primary)/0.3)] transition-all duration-200 text-left disabled:opacity-60 disabled:cursor-not-allowed"
       >
         <div className="w-11 h-11 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
           {loading === "create" ? <Loader2 className="w-5 h-5 text-primary animate-spin" /> : <Plus className="w-5 h-5 text-primary" />}
@@ -204,9 +193,9 @@ function PasskeyPanel({ onDone }: { onDone: () => void }) {
       <button
         onClick={handleLogin}
         disabled={!!loading}
-        className="group w-full flex items-center gap-4 px-4 py-4 rounded-2xl border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.15] transition-all duration-200 text-left disabled:opacity-60 disabled:cursor-not-allowed"
+        className="group w-full flex items-center gap-4 px-4 py-4 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/20 transition-all duration-200 text-left disabled:opacity-60 disabled:cursor-not-allowed"
       >
-        <div className="w-11 h-11 rounded-xl bg-white/[0.05] border border-white/[0.07] flex items-center justify-center shrink-0">
+        <div className="w-11 h-11 rounded-xl bg-muted border border-border flex items-center justify-center shrink-0">
           {loading === "login" ? <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" /> : <LogIn className="w-5 h-5 text-muted-foreground" />}
         </div>
         <div className="flex-1">
@@ -217,7 +206,7 @@ function PasskeyPanel({ onDone }: { onDone: () => void }) {
       </button>
 
       <div className="flex items-start gap-2 pt-1 px-1">
-        <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-500" />
+        <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
         <p className="text-[11px] text-muted-foreground leading-relaxed">
           Keys generated locally, encrypted by your passkey. OrahDEX never sees your seed phrase.
         </p>
@@ -257,7 +246,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
       <div className="relative">
         <Textarea
           placeholder="Enter your 12 or 24 word seed phrase, separated by spaces…"
-          className={`min-h-[108px] text-sm resize-none pr-10 font-mono leading-relaxed bg-white/[0.03] border-white/[0.08] placeholder:text-muted-foreground/40 focus:border-primary/40 focus:bg-white/[0.05] transition-all ${validationError ? "border-destructive/60" : ""}`}
+          className={`min-h-[108px] text-sm resize-none pr-10 font-mono leading-relaxed bg-muted/50 border-border placeholder:text-muted-foreground/40 focus-visible:ring-primary/40 transition-all ${validationError ? "border-destructive/60" : ""}`}
           style={!show ? { WebkitTextSecurity: "disc" } as any : undefined}
           value={phrase}
           onChange={e => { setPhrase(e.target.value); setValidationError(null); }}
@@ -283,20 +272,19 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between px-0.5">
+      <div className="flex items-center px-0.5">
         <span className="text-[11px] text-muted-foreground">
           {wordCount > 0
             ? isReady
-              ? <span className="flex items-center gap-1 text-emerald-500 font-medium"><CheckCircle2 className="w-3 h-3" />{wordCount} words — ready</span>
+              ? <span className="flex items-center gap-1 text-primary font-medium"><CheckCircle2 className="w-3 h-3" />{wordCount} words — ready</span>
               : <span className="text-amber-500">{wordCount} / {wordCount < 12 ? 12 : 24} words</span>
             : <span>Enter your seed phrase above</span>
           }
         </span>
       </div>
 
-      {/* word count progress */}
       {wordCount > 0 && !isReady && (
-        <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden -mt-1">
+        <div className="h-1 rounded-full bg-muted overflow-hidden -mt-1">
           <div
             className="h-full rounded-full bg-amber-500/60 transition-all duration-300"
             style={{ width: `${Math.min((wordCount / (wordCount < 12 ? 12 : 24)) * 100, 100)}%` }}
@@ -326,9 +314,9 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
 /* ─── Hardware sub-panel header map ─────────────────────────────────────── */
 
 const HW_META: Record<HWDevice, { emoji: string; title: string; description: string }> = {
-  ledger:   { emoji: "🔲", title: "Ledger",          description: "USB WebHID — Chrome or Edge on desktop." },
-  trezor:   { emoji: "🛡",  title: "Trezor",          description: "USB — Trezor popup works in all browsers." },
-  keystone: { emoji: "🔳", title: "Keystone",         description: "Air-gapped — scan animated QR from device." },
+  ledger:   { emoji: "🔲", title: "Ledger",           description: "USB WebHID — Chrome or Edge on desktop." },
+  trezor:   { emoji: "🛡",  title: "Trezor",           description: "USB — Trezor popup works in all browsers." },
+  keystone: { emoji: "🔳", title: "Keystone",          description: "Air-gapped — scan animated QR from device." },
   gridplus: { emoji: "⚡", title: "GridPlus Lattice1", description: "Wi-Fi — connects via the GridPlus relay." },
 };
 
@@ -348,15 +336,16 @@ export function WalletChooserDialog() {
   return (
     <Dialog open={isOpen} onOpenChange={v => { if (!v) handleClose(); }}>
       <DialogContent
-        className="p-0 gap-0 border-white/[0.06] bg-black sm:max-w-[420px] overflow-hidden rounded-2xl shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_24px_48px_-8px_rgba(0,0,0,0.9)]"
-        style={{ backgroundImage: "radial-gradient(ellipse 70% 45% at 50% -5%, hsl(142 71% 58% / 0.10) 0%, transparent 70%)" }}
+        className="p-0 gap-0 bg-background border-border sm:max-w-[420px] overflow-hidden rounded-2xl shadow-2xl"
+        style={{ backgroundImage: "radial-gradient(ellipse 70% 40% at 50% -5%, hsl(var(--primary) / 0.08) 0%, transparent 70%)" }}
       >
         <DialogTitle style={srOnly}>Connect Wallet</DialogTitle>
         <DialogDescription style={srOnly}>Choose how to connect your wallet to OrahDEX.</DialogDescription>
+
         {/* ── Close button ── */}
         <button
           onClick={handleClose}
-          className="absolute right-4 top-4 z-10 w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-muted-foreground hover:bg-white/[0.06] transition-all"
+          className="absolute right-4 top-4 z-10 w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-accent transition-all"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -366,9 +355,8 @@ export function WalletChooserDialog() {
         ══════════════════════════════════════ */}
         {tab === "choose" && (
           <div className="flex flex-col">
-            {/* Header */}
             <div className="px-6 pt-7 pb-5">
-              <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-3 mb-5">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
                   <Wallet className="w-5 h-5 text-primary" />
                 </div>
@@ -378,11 +366,9 @@ export function WalletChooserDialog() {
                 </div>
               </div>
 
-              {/* Section label */}
               <p className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase mb-2.5">Wallet Options</p>
 
               <div className="space-y-2">
-                {/* EVM */}
                 <OptionCard
                   onClick={handleEvmClick}
                   iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
@@ -396,7 +382,6 @@ export function WalletChooserDialog() {
                   }
                 />
 
-                {/* OrahDEX Wallet — featured */}
                 <OptionCard
                   onClick={() => setTab("passkey")}
                   iconBg="bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40"
@@ -411,7 +396,6 @@ export function WalletChooserDialog() {
                   featured
                 />
 
-                {/* Hardware */}
                 <OptionCard
                   onClick={() => setTab("hardware")}
                   iconBg="bg-amber-500/10 border border-amber-500/20 group-hover:bg-amber-500/15 group-hover:border-amber-500/30"
@@ -420,7 +404,6 @@ export function WalletChooserDialog() {
                   sub="Ledger · Trezor · Keystone · GridPlus"
                 />
 
-                {/* Import */}
                 <OptionCard
                   onClick={() => setTab("import")}
                   iconBg="bg-violet-500/10 border border-violet-500/20 group-hover:bg-violet-500/15 group-hover:border-violet-500/30"
@@ -431,10 +414,9 @@ export function WalletChooserDialog() {
               </div>
             </div>
 
-            {/* Footer */}
-            <div className="px-6 py-3.5 border-t border-white/[0.05] flex items-center gap-2">
-              <Shield className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-              <p className="text-[11px] text-muted-foreground/60">
+            <div className="px-6 py-3.5 border-t border-border flex items-center gap-2">
+              <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
+              <p className="text-[11px] text-muted-foreground/70">
                 Non-custodial · Your keys, your coins · End-to-end encrypted
               </p>
             </div>
