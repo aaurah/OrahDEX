@@ -89,6 +89,7 @@
     "@stripe/react-stripe-js": "^6.3.0",
     "@stripe/stripe-js": "^9.4.0",
     "@wagmi/core": "^3.4.1",
+    "@walletconnect/ethereum-provider": "^2.23.9",
     "@workspace/integrations-openai-ai-react": "workspace:*",
     "buffer": "^6.0.3",
     "dompurify": "^3.4.3",
