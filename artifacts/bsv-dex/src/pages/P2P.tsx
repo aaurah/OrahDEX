@@ -686,7 +686,7 @@ export function P2P() {
       "@type": "WebPage",
       "name": "OrahDEX P2P Trading",
       "description": "Peer-to-peer cryptocurrency marketplace with escrow-protected trades",
-      "url": "https://orahdex.replit.app/p2p"
+      "url": "https://orahdex.org/p2p"
     }
   });
 
