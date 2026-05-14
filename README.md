@@ -244,6 +244,13 @@ pnpm --filter @workspace/aura-dex-mobile run start
 
 ## Changelog
 
+### 2026-05-14 (session 2)
+- **DEX tab — Multi-DEX Aggregator**: Quotes now fetched in parallel from Uniswap V3, PancakeSwap V3, and OpenOcean (100+ DEXes via free API proxy). Best on-chain route auto-selected; protocol selector UI shows live quote comparison and "BEST" badge. Swap execution routes through the winning protocol's router (`PANCAKE_SWAP_ROUTER` or `SWAP_ROUTER`).
+- **Backend** — Added `GET /api/dex/aggregator/quote` and `GET /api/dex/aggregator/swap` proxy routes for OpenOcean free API (no key required).
+- **DEX hero** updated: title "DEX Aggregator", subtitle lists Uniswap V3 · PancakeSwap · OpenOcean · Best route · Non-custodial; feature badges updated.
+- **Buy/Sell tab** — Removed all `window.open` redirects; replaced with native `LetsExchangePanel` (Buy preset USDT→, Sell preset →USDT). Removed unused state and imports.
+- **LetsExchangePanel** — Removed "1082+ coins" badge.
+
 ### 2026-05-14
 - **Security — SSRF guards** applied across all outbound HTTP clients (StealthEX, ChangeNOW, SimpleSwap, LetsExchange price cache, ERC-8004, notifier) — private-IP blocklist blocks internal network access
 - **Security — XSS fixes** applied to AiAssistant, AiTradeAnalysis (DOMPurify.sanitize), ReceiveModal (innerHTML → React state), and chart style injection stripping
