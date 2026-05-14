@@ -31,6 +31,51 @@ const RESOLUTION_MAP: Record<string, string> = {
 
 const SUPPORTED_RESOLUTIONS = ["1", "5", "15", "30", "60", "240", "1D", "1W"];
 
+/* ─── Asset inception timestamps (Unix seconds) ─────────────────────────────
+   Chart will not show synthetic data before the asset actually existed.
+   Use Bitcoin genesis as the absolute floor for anything not listed here.   */
+const ASSET_INCEPTION: Record<string, number> = {
+  "BTC":  1231006505, // Jan  3 2009 — Bitcoin genesis block
+  "LTC":  1317513600, // Oct  2 2011 — Litecoin launch
+  "XRP":  1356998400, // Jan  1 2013 — XRP launch
+  "DOGE": 1388534400, // Jan  1 2014 — Dogecoin launch
+  "ETH":  1438300800, // Jul 30 2015 — Ethereum genesis
+  "ETC":  1469404800, // Jul 25 2016 — Ethereum Classic
+  "ZEC":  1477929600, // Nov  1 2016 — Zcash launch
+  "BNB":  1503014400, // Aug 17 2017 — BNB on Binance
+  "BCH":  1501545600, // Aug  1 2017 — BCH fork from BTC
+  "ADA":  1506643200, // Sep 29 2017 — Cardano mainnet
+  "XLM":  1404172800, // Jul  1 2014 — Stellar launch
+  "TRX":  1504224000, // Sep  1 2017 — TRON launch
+  "VET":  1533081600, // Aug  1 2018 — VeChain mainnet
+  "BSV":  1542240000, // Nov 15 2018 — BSV fork from BCH
+  "LINK": 1503619200, // Aug 24 2017 — Chainlink
+  "ATOM": 1552953600, // Mar 13 2019 — Cosmos mainnet
+  "MATIC":1557273600, // May  8 2019 — Polygon (Matic)
+  "SOL":  1568502000, // Sep 14 2019 — Solana genesis
+  "DOT":  1594684800, // Jul 14 2020 — Polkadot genesis
+  "AVAX": 1597622400, // Aug 17 2020 — Avalanche mainnet
+  "UNI":  1600473600, // Sep 18 2020 — Uniswap token
+  "AAVE": 1601856000, // Oct  5 2020 — Aave token
+  "LUNA": 1612137600, // Feb  1 2021 — Terra LUNA
+  "SHIB": 1619222400, // Apr 24 2021 — SHIB launch
+  "MANA": 1511136000, // Nov 20 2017 — Decentraland
+  "SAND": 1575504000, // Dec  5 2019 — The Sandbox
+  "APE":  1645574400, // Feb 23 2022 — ApeCoin
+  "ARB":  1678924800, // Mar 16 2023 — Arbitrum token
+  "OP":   1655251200, // Jun 15 2022 — Optimism token
+  "SUI":  1683072000, // May  3 2023 — Sui mainnet
+  "PEPE": 1681948800, // Apr 20 2023 — PEPE launch
+  "WIF":  1702944000, // Dec 19 2023 — dogwifhat
+  "BONK": 1672531200, // Jan  1 2023 — BONK
+};
+const CRYPTO_GENESIS = 1231006505; // Bitcoin genesis = absolute floor
+
+function getInceptionTs(symbol: string): number {
+  const base = symbol.split(/[-_/]/)[0]?.toUpperCase() ?? "";
+  return ASSET_INCEPTION[base] ?? CRYPTO_GENESIS;
+}
+
 /* Track latency for admin monitoring */
 export const tvMetrics = {
   lastHistoryLatencyMs: 0,
@@ -161,10 +206,23 @@ router.get("/history", async (req, res) => {
 
   const symbol     = (req.query.symbol as string ?? "").replace(/^OrahDEX:/, "");
   const resolution = req.query.resolution as string ?? "60";
-  const from       = parseInt(req.query.from as string ?? "0");
+  const rawFrom    = parseInt(req.query.from as string ?? "0");
   const to         = parseInt(req.query.to   as string ?? String(Math.floor(Date.now() / 1000)));
 
   if (!symbol) { res.json({ s: "error", errmsg: "symbol required" }); return; }
+
+  // Clamp 'from' to no earlier than the asset's actual launch date.
+  // This prevents the synthetic candle generator from producing candles
+  // in years when the asset did not exist (e.g. BSV/USDT back to 1945).
+  const inceptionTs = getInceptionTs(symbol);
+  const from = Math.max(rawFrom, inceptionTs);
+
+  // If the entire requested window is before the asset existed, tell
+  // TradingView where real history begins so it stops paging backwards.
+  if (to < inceptionTs) {
+    res.json({ s: "no_data", nextTime: inceptionTs });
+    return;
+  }
 
   const interval = RESOLUTION_MAP[resolution] ?? "1h";
 
