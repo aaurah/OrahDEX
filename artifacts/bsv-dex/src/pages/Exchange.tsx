@@ -17,6 +17,7 @@ import {
   Search, X, AlertTriangle, History, BarChart2, BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { VENUE_LABELS, VENUE_COLORS } from "@/lib/venues";
 import { API_BASE } from "@/lib/api";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -93,22 +94,6 @@ interface HistoryEntry {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
-
-const VENUE_COLORS: Record<string, string> = {
-  letsexchange: "text-emerald-400",
-  changenow:    "text-blue-400",
-  simpleswap:   "text-violet-400",
-  stealthex:    "text-orange-400",
-  changelly:    "text-cyan-400",
-};
-
-const VENUE_LABELS: Record<string, string> = {
-  letsexchange: "OrahRouter",
-  changenow:    "OrahBridge",
-  simpleswap:   "OrahSwap",
-  stealthex:    "OrahLink",
-  changelly:    "OrahPath",
-};
 
 const COIN_CACHE_TTL = 30 * 60 * 1000;
 let _coinsCache: Coin[] | null = null;

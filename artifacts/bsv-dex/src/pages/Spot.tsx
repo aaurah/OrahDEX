@@ -23,6 +23,7 @@ import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingU
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
+import { VENUE_LABELS, VENUE_COLORS } from "@/lib/venues";
 
 type BottomTab = "open" | "history" | "trades" | "liquidity";
 type QuoteTab =
@@ -158,6 +159,8 @@ export function SpotTrading() {
   const [cancelPairOnly, setCancelPairOnly] = useState(false);
   // Track whether to highlight the LE panel (set when user clicks LE orderbook rows)
   const [lePanelKey, setLePanelKey] = useState(0);
+  // Buy/Sell direction for cross-chain swap mode
+  const [swapSide, setSwapSide] = useState<"buy" | "sell">("buy");
   const lePanelRef = useRef<HTMLDivElement>(null);
   const pairDropRef = useRef<HTMLDivElement>(null);
 
@@ -1106,39 +1109,38 @@ export function SpotTrading() {
                 </div>
               </>
             ) : (
-              <div ref={lePanelRef} className="p-2">
-                {/* Swap rate summary */}
-                {leRateData && (
-                  <div className="flex items-center gap-2 px-3 py-2 bg-yellow-500/8 border border-yellow-500/20 rounded-xl mb-2">
-                    <RefreshCw className="w-3 h-3 text-yellow-400 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-[9px] text-yellow-400/70 leading-none mb-0.5">Live swap rate</p>
-                      <p className="text-[11px] font-bold text-yellow-400 leading-none">
-                        1 {base} = {parseFloat(leRateData.rate).toFixed(6)} {quote}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => { setTradeMode("order"); setTradeModeLockedByUser(true); }}
-                      className="ml-auto text-[9px] text-muted-foreground hover:text-foreground underline shrink-0"
-                    >
-                      Trade instead
-                    </button>
-                  </div>
-                )}
-                {!leRateData && (
-                  <div className="flex items-center gap-2 px-3 py-2 bg-secondary/60 border border-border rounded-xl mb-2">
-                    <Zap className="w-3 h-3 text-muted-foreground shrink-0" />
-                    <p className="text-[10px] text-muted-foreground">Swap rate not available for this pair</p>
-                  </div>
-                )}
-                <LetsExchangePanel
-                  key={lePanelKey}
-                  initialFrom={base}
-                  initialTo={quote}
-                  walletAddress={address}
-                  onConnectWallet={openWalletModal}
-                  onExchangeCreated={handleLeExchangeCreated}
-                />
+              <div ref={lePanelRef} className="flex flex-col h-full min-h-0">
+                {/* Buy / Sell direction tabs */}
+                <div className="shrink-0 flex border-b border-border">
+                  <button
+                    onClick={() => { setSwapSide("buy"); setLePanelKey(k => k + 1); }}
+                    className={cn(
+                      "flex-1 py-2 text-[11px] font-bold transition-all",
+                      swapSide === "buy"
+                        ? "bg-green-600/15 text-green-400 border-b-2 border-green-500"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >Buy {base}</button>
+                  <button
+                    onClick={() => { setSwapSide("sell"); setLePanelKey(k => k + 1); }}
+                    className={cn(
+                      "flex-1 py-2 text-[11px] font-bold transition-all border-l border-border",
+                      swapSide === "sell"
+                        ? "bg-red-600/15 text-red-400 border-b-2 border-red-500"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >Sell {base}</button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                  <LetsExchangePanel
+                    key={`${lePanelKey}-${swapSide}`}
+                    initialFrom={swapSide === "sell" ? base : quote}
+                    initialTo={swapSide === "sell" ? quote : base}
+                    walletAddress={address}
+                    onConnectWallet={openWalletModal}
+                    onExchangeCreated={handleLeExchangeCreated}
+                  />
+                </div>
               </div>
             )}
           </div>
@@ -1190,15 +1192,38 @@ export function SpotTrading() {
           {tradeMode === "order" ? (
             <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} onTradeFlash={handleTradeFlash} />
           ) : (
-            <div className="p-3">
-              <LetsExchangePanel
-                key={lePanelKey}
-                initialFrom={base}
-                initialTo={quote}
-                walletAddress={address}
-                onConnectWallet={openWalletModal}
-                onExchangeCreated={handleLeExchangeCreated}
-              />
+            <div className="flex flex-col">
+              {/* Buy / Sell direction tabs — mobile */}
+              <div className="flex border-b border-border">
+                <button
+                  onClick={() => { setSwapSide("buy"); setLePanelKey(k => k + 1); }}
+                  className={cn(
+                    "flex-1 py-2.5 text-xs font-bold transition-all",
+                    swapSide === "buy"
+                      ? "bg-green-600/15 text-green-400 border-b-2 border-green-500"
+                      : "text-muted-foreground"
+                  )}
+                >Buy {base}</button>
+                <button
+                  onClick={() => { setSwapSide("sell"); setLePanelKey(k => k + 1); }}
+                  className={cn(
+                    "flex-1 py-2.5 text-xs font-bold transition-all border-l border-border",
+                    swapSide === "sell"
+                      ? "bg-red-600/15 text-red-400 border-b-2 border-red-500"
+                      : "text-muted-foreground"
+                  )}
+                >Sell {base}</button>
+              </div>
+              <div className="p-3">
+                <LetsExchangePanel
+                  key={`${lePanelKey}-${swapSide}-m`}
+                  initialFrom={swapSide === "sell" ? base : quote}
+                  initialTo={swapSide === "sell" ? quote : base}
+                  walletAddress={address}
+                  onConnectWallet={openWalletModal}
+                  onExchangeCreated={handleLeExchangeCreated}
+                />
+              </div>
             </div>
           )}
         </div>

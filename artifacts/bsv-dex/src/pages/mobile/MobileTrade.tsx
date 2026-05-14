@@ -17,6 +17,7 @@ import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanReceive } from "@/lib/crossChain";
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
+import { VENUE_LABELS, VENUE_COLORS } from "@/lib/venues";
 import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 import { useEscrow } from "@/hooks/useEscrow";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
@@ -1123,15 +1124,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   async function handlePlaceOrder() {
     if (!address || !amount || amtNum <= 0) return;
 
-    // ── LetsExchange min/max guard ────────────────────────────────────────────
-    if (belowLeMin) {
-      toast({
-        title: "Amount too low",
-        description: `Minimum trade via exchange is ${leMinBase < 0.0001 ? leMinBase.toFixed(8) : leMinBase.toFixed(6)} ${base}`,
-        variant: "destructive",
-      });
-      return;
-    }
+    // ── LetsExchange max guard ────────────────────────────────────────────────
+    // belowLeMin is intentionally not a hard block here — the multi-venue router
+    // may find a provider (SimpleSwap, ChangeNOW) that accepts the amount even
+    // when it is below LetsExchange's minimum.  The API will reject with a clear
+    // error if truly no venue can fill the order.
     if (aboveLeMax) {
       toast({
         title: "Amount too high",
@@ -1883,7 +1880,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </button>
             </div>
 
-            {/* LE min/max hint */}
+            {/* LE min/max + winning venue hint */}
             {leMinBase > 0 && (
               <div className="flex items-center justify-between text-[10px] px-1 -mt-0.5">
                 <span className={cn("font-semibold", belowLeMin ? "text-red-400" : "text-muted-foreground/55")}>
@@ -1894,11 +1891,25 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       : leMinBase.toFixed(4)
                   } {base}
                 </span>
-                {leMaxBase > 0 && (
-                  <span className={cn("font-semibold", aboveLeMax ? "text-red-400" : "text-muted-foreground/40")}>
-                    Max: {leMaxBase < 1 ? leMaxBase.toFixed(4) : leMaxBase.toFixed(2)} {base}
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5">
+                  {leMaxBase > 0 && (
+                    <span className={cn("font-semibold", aboveLeMax ? "text-red-400" : "text-muted-foreground/40")}>
+                      Max: {leMaxBase < 1 ? leMaxBase.toFixed(4) : leMaxBase.toFixed(2)} {base}
+                    </span>
+                  )}
+                  {leMinData?.best_venue && (
+                    <span className={cn(
+                      "px-1 py-0.5 rounded text-[9px] font-bold border",
+                      VENUE_COLORS[leMinData.best_venue] ?? "text-muted-foreground",
+                      leMinData.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/25" :
+                      leMinData.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/25" :
+                      leMinData.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/25" :
+                      "bg-violet-500/10 border-violet-500/25"
+                    )}>
+                      {VENUE_LABELS[leMinData.best_venue] ?? leMinData.best_venue}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             {(belowLeMin || aboveLeMax) && (
@@ -2467,13 +2478,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             ) : (
               <button
                 onClick={handlePlaceOrder}
-                disabled={!amount || amtNum <= 0 || isSubmitting || belowLeMin || aboveLeMax}
+                disabled={!amount || amtNum <= 0 || isSubmitting || aboveLeMax}
                 className={cn(
                   "w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2",
                   side === "sell"
                     ? "bg-red-600 shadow-lg shadow-red-500/20"
                     : "bg-green-600 shadow-lg shadow-green-500/20",
-                  (!amount || amtNum <= 0 || isSubmitting || belowLeMin || aboveLeMax) && "opacity-50 cursor-not-allowed"
+                  (!amount || amtNum <= 0 || isSubmitting || aboveLeMax) && "opacity-50 cursor-not-allowed"
                 )}
               >
                 {isSubmitting ? (

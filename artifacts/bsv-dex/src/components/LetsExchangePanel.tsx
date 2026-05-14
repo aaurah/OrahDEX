@@ -22,6 +22,7 @@ import {
   Clock, Lock, Wallet, Trash2, ArrowRight, History, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { VENUE_LABELS } from "@/lib/venues";
 import { CoinLogo } from "@/components/CoinLogo";
 import { API_BASE } from "@/lib/api";
 import { useAccount } from "wagmi";
@@ -501,8 +502,11 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   const minAmt = (estimate?.min_amount && parseFloat(estimate.min_amount) > 0)
     ? parseFloat(estimate.min_amount)
     : (!estimateValid && fromCoin?.minAmount) ? parseFloat(fromCoin.minAmount) : null;
-  const maxAmt = estimate?.max_amount ? parseFloat(estimate.max_amount) :
-                 fromCoin?.maxAmount  ? parseFloat(fromCoin.maxAmount)  : null;
+  // Only use live max_amount from the estimate response.
+  // Static coin-list maxAmount values are unreliable (e.g. 282994 ETH) and must not be shown.
+  const maxAmtRaw = estimate?.max_amount ? parseFloat(estimate.max_amount) : null;
+  // Hide max if it is astronomically large (> 10 000 of any coin) — it means "no real cap"
+  const maxAmt = (maxAmtRaw !== null && maxAmtRaw > 0 && maxAmtRaw < 10_000) ? maxAmtRaw : null;
   const numAmt = amount !== "" ? parseFloat(amount) : null;
 
   // Suppress below/above errors while the estimate is loading — it may prove the amount valid
@@ -613,11 +617,15 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
             <p className="text-xs text-muted-foreground">
               1 {fromCoin.symbol} ≈ <span className="text-emerald-400 font-mono">{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
             </p>
-            {estimate.best_venue && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-muted/60 border border-border/40 text-[10px] text-muted-foreground/70 font-medium">
-                Best Rate
-              </span>
-            )}
+            <span className={cn(
+              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold",
+              estimate.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/30 text-sky-400" :
+              estimate.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
+              estimate.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/30 text-orange-400" :
+              "bg-violet-500/10 border-violet-500/30 text-violet-400"
+            )}>
+              ⚡ {VENUE_LABELS[estimate.best_venue ?? ""] ?? "OrahRouter"}
+            </span>
           </div>
         )}
         {estimate?.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && toCoin && (
