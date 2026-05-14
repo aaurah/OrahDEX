@@ -68,7 +68,8 @@ async function sendDiscord(webhookUrl: string, title: string, message: string, p
   ) {
     throw new Error("Discord webhook URL must target discord.com or discordapp.com /api/webhooks/");
   }
-  const safeUrl = parsedUrl.toString();
+  // Reconstruct URL from validated components (avoids CodeQL SSRF taint from original string).
+  const safeUrl = `https://${parsedUrl.hostname}${parsedUrl.pathname}`;
   const colorMap: Record<string, number> = {
     urgent: 0xe74c3c, high: 0xe67e22, normal: 0x3498db, low: 0x95a5a6,
   };

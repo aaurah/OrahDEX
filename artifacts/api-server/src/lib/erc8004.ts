@@ -378,10 +378,31 @@ export async function fetchAgentCard(tokenURI: string): Promise<Erc8004AgentCard
   if (tokenURI.startsWith("data:application/json,")) {
     return JSON.parse(decodeURIComponent(tokenURI.slice("data:application/json,".length)));
   }
+  // SSRF protection: tokenURI comes from the blockchain and can be any URL.
+  // Only allow HTTPS and block private/loopback ranges.
+  let parsedUri: URL;
+  try {
+    parsedUri = new URL(tokenURI);
+  } catch {
+    throw new Error("fetchAgentCard: invalid tokenURI");
+  }
+  if (parsedUri.protocol !== "https:") {
+    throw new Error(`fetchAgentCard: only HTTPS tokenURIs are supported (got ${parsedUri.protocol})`);
+  }
+  const h = parsedUri.hostname.toLowerCase();
+  if (
+    h === "localhost" || h === "0.0.0.0" || h === "::1" ||
+    /^127\./.test(h) || /^10\./.test(h) ||
+    /^192\.168\./.test(h) || /^172\.(1[6-9]|2\d|3[01])\./.test(h) ||
+    h.endsWith(".local") || h.endsWith(".internal")
+  ) {
+    throw new Error("fetchAgentCard: SSRF blocked — private/loopback address");
+  }
+
   const ctrl  = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 6000);
   try {
-    const res = await fetch(tokenURI, {
+    const res = await fetch(parsedUri.toString(), {
       headers: { "User-Agent": "OrahDEX/1.0 ERC-8004" },
       signal:  ctrl.signal,
     });

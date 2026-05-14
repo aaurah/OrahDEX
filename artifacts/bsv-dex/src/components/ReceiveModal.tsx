@@ -27,19 +27,23 @@ const BADGE_COLOR: Record<string, string> = {
 };
 
 function QRCodeImage({ address }: { address: string }) {
+  const [failed, setFailed] = useState(false);
   const url = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(address)}&size=180x180&bgcolor=0d1117&color=ffffff&margin=10&format=png`;
   return (
     <div className="w-44 h-44 rounded-2xl overflow-hidden border border-border bg-white flex items-center justify-center mx-auto">
-      <img
-        src={url}
-        alt="Wallet QR Code"
-        className="w-full h-full object-cover"
-        onError={(e) => {
-          (e.target as HTMLImageElement).style.display = "none";
-          (e.target as HTMLImageElement).parentElement!.innerHTML =
-            `<div class="flex flex-col items-center justify-center w-full h-full bg-card gap-2"><span class="text-3xl">📱</span><span class="text-xs text-muted-foreground text-center px-3">Scan in your wallet app</span></div>`;
-        }}
-      />
+      {failed ? (
+        <div className="flex flex-col items-center justify-center w-full h-full bg-card gap-2">
+          <span className="text-3xl">📱</span>
+          <span className="text-xs text-muted-foreground text-center px-3">Scan in your wallet app</span>
+        </div>
+      ) : (
+        <img
+          src={url}
+          alt="Wallet QR Code"
+          className="w-full h-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      )}
     </div>
   );
 }

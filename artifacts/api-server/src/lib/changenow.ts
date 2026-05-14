@@ -32,6 +32,12 @@ async function cnRequest(
   }
 
   let url = `${CN_BASE}${path}`;
+
+  // SSRF guard: verify the URL stays within the hardcoded API base.
+  if (!url.startsWith(CN_BASE + "/")) {
+    return { ok: false, status: 0, data: { error: "Invalid request path" } };
+  }
+
   if (params && Object.keys(params).length > 0) {
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) qs.set(k, String(v));

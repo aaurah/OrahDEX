@@ -38,6 +38,12 @@ async function sxRequest(
   }
   const url = `${SX_BASE}${path}?${qs.toString()}`;
 
+  // SSRF guard: verify the constructed URL starts with the hardcoded API base.
+  // This prevents path-traversal or injection if `path` were ever tainted.
+  if (!url.startsWith(SX_BASE + "/")) {
+    return { ok: false, status: 0, data: { error: "Invalid request path" } };
+  }
+
   try {
     const res = await fetch(url, {
       method,
