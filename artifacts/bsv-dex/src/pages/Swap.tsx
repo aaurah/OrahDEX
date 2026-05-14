@@ -1946,7 +1946,7 @@ function BuyCryptoPanel({
           {quote.route === "letsexchange" && (
             <div className="flex items-center gap-1 mt-0.5 pt-1.5 border-t border-border/30">
               <span className="text-muted-foreground/60">Route:</span>
-              <span className="text-blue-400 font-medium">LetsExchange (cross-chain)</span>
+              <span className="text-blue-400 font-medium">OrahDEX Cross-chain</span>
             </div>
           )}
         </div>
@@ -2150,7 +2150,7 @@ function BuyCryptoPanel({
       )}
 
       <p className="text-[11px] text-muted-foreground/50 text-center">
-        {isLE ? "Cross-chain via LetsExchange · Non-custodial" : "Instant settlement · 0.3% fee · Uses OrahDEX balance"}
+        {isLE ? "Cross-chain · Non-custodial · Best rate routing" : "Instant settlement · 0.3% fee · Uses OrahDEX balance"}
       </p>
     </div>
   );
