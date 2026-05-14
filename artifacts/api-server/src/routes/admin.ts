@@ -30,22 +30,11 @@ import {
 } from "../lib/evmWebhook.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
-export const serviceState = {
-  priceEngineLastRunAt:  Date.now(),
-  priceEngineRuns:       0,
-  priceEngineErrors:     0,
-  botLastCycleAt:        Date.now(),
-  botCycles:             0,
-  bsvMonitorLastAt:      Date.now(),
-  bsvMonitorErrors:      0,
-  incidentLog:           [] as { ts: number; level: "info"|"warn"|"error"; service: string; msg: string }[],
-  restartCount:          0,
-  lastRestartAt:         0,
-};
+export { serviceState } from "../lib/serviceState.js";
+import { serviceState, logIncident } from "../lib/serviceState.js";
 
 export function recordServiceEvent(service: string, level: "info"|"warn"|"error", msg: string) {
-  serviceState.incidentLog.unshift({ ts: Date.now(), level, service, msg });
-  if (serviceState.incidentLog.length > 100) serviceState.incidentLog.pop();
+  logIncident(level, service, msg);
 }
 
 const router = Router();
