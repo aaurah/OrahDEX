@@ -471,20 +471,29 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromCoin?.symbol, toCoin?.symbol, amount]);
 
-  // Use live min/max from estimate if available, otherwise fall back to coin data
-  const minAmt = estimate?.min_amount ? parseFloat(estimate.min_amount) :
-                 fromCoin?.minAmount  ? parseFloat(fromCoin.minAmount)  : null;
+  // A live estimate with a positive output is proof the amount is accepted by at least one venue
+  const estimateValid = estimate !== null && parseFloat(estimate.amount) > 0;
+
+  // Use live min/max from estimate when meaningful (min > 0), otherwise fall back to coin data.
+  // Only fall back to static coin data when no live estimate has confirmed the amount yet.
+  const minAmt = (estimate?.min_amount && parseFloat(estimate.min_amount) > 0)
+    ? parseFloat(estimate.min_amount)
+    : (!estimateValid && fromCoin?.minAmount) ? parseFloat(fromCoin.minAmount) : null;
   const maxAmt = estimate?.max_amount ? parseFloat(estimate.max_amount) :
                  fromCoin?.maxAmount  ? parseFloat(fromCoin.maxAmount)  : null;
   const numAmt = amount !== "" ? parseFloat(amount) : null;
-  const belowMin = minAmt !== null && numAmt !== null && numAmt < minAmt;
-  const aboveMax = maxAmt !== null && numAmt !== null && numAmt > maxAmt;
+
+  // Suppress below/above errors while the estimate is loading — it may prove the amount valid
+  // by routing to a venue with a lower minimum.  Also suppress when estimate already confirmed.
+  const belowMin = !estLoading && !estimateValid && minAmt !== null && numAmt !== null && numAmt < minAmt;
+  const aboveMax = !estLoading && !estimateValid && maxAmt !== null && numAmt !== null && numAmt > maxAmt;
 
   // rate_id_expired_at from LE API is a Unix timestamp in seconds — multiply by 1000 to get ms
   const rateIdExpiresMs = estimate?.rate_id_expired_at ? parseInt(estimate.rate_id_expired_at) * 1000 : null;
   const rateSecondsLeft = rateIdExpiresMs ? Math.max(0, Math.round((rateIdExpiresMs - Date.now()) / 1000)) : RATE_REFRESH;
 
-  const canContinue = fromCoin && toCoin && numAmt && numAmt > 0 && !belowMin && !aboveMax;
+  // Require a confirmed live quote before allowing continue — no quote means no venue is ready
+  const canContinue = fromCoin && toCoin && numAmt && numAmt > 0 && estimateValid && !belowMin && !aboveMax;
 
   return (
     <div className="flex flex-col gap-0">
@@ -656,9 +665,12 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
             : "bg-muted/60 text-muted-foreground/60 cursor-not-allowed")}>
         {!fromCoin || !toCoin ? "Select coins" :
          !numAmt             ? "Enter amount" :
+         estLoading          ? "Finding best rate…" :
+         estError            ? (estError.length < 48 ? estError : "No route available for this amount") :
          belowMin            ? `Below minimum (${fmtNum(minAmt)} ${fromCoin.symbol})` :
          aboveMax            ? `Above maximum (${fmtNum(maxAmt, 7)} ${fromCoin.symbol})` :
-                               "Continue →"}
+         estimateValid       ? "Continue →" :
+                               "Enter amount"}
       </button>
     </div>
   );
