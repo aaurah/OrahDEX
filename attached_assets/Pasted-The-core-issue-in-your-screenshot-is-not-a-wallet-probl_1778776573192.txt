@@ -1,0 +1,139 @@
+The core issue in your screenshot is not a wallet problem — it’s your frontend connector setup.
+The message “WalletConnectConnector not found” means your app is trying to use a WalletConnect connector that was never registered in your wagmi / web3‑modal / rainbowkit config.
+
+Below is the exact fix, step‑by‑step, written for your OrahDEX stack.
+
+---
+
+✅ The Fix (RainbowKit + Wagmi v1/v2)
+
+1. Install WalletConnect dependencies
+
+If you haven’t already:
+
+npm install @walletconnect/ethereum-provider @walletconnect/modal wagmi viem
+
+
+---
+
+2. Add the WalletConnect connector to your wagmi config
+
+If you are using wagmi v1 (most likely):
+
+import { configureChains, createConfig } from 'wagmi'
+import { walletConnect } from 'wagmi/connectors'
+import { mainnet } from 'wagmi/chains'
+import { publicProvider } from 'wagmi/providers/public'
+
+const { chains, publicClient } = configureChains(
+  [mainnet],
+  [publicProvider()]
+)
+
+export const config = createConfig({
+  autoConnect: true,
+  connectors: [
+    walletConnect({
+      projectId: "YOUR_WALLETCONNECT_PROJECT_ID",
+      metadata: {
+        name: "OrahDEX",
+        description: "Hybrid DEX",
+        url: "https://orahdex.com",
+        icons: ["https://orahdex.com/icon.png"]
+      }
+    })
+  ],
+  publicClient
+})
+
+
+---
+
+3. If you are using RainbowKit
+
+You MUST include WalletConnect in connectorsForWallets.
+
+import {
+  connectorsForWallets,
+  walletConnectWallet,
+  metaMaskWallet,
+  trustWallet
+} from '@rainbow-me/rainbowkit'
+
+export const connectors = connectorsForWallets([
+  {
+    groupName: 'Recommended',
+    wallets: [
+      metaMaskWallet({ projectId }),
+      trustWallet({ projectId }),
+      walletConnectWallet({ projectId })
+    ]
+  }
+])
+
+
+Then pass it into wagmi:
+
+const wagmiConfig = createConfig({
+  autoConnect: true,
+  connectors,
+  publicClient
+})
+
+
+---
+
+4. If you are using Web3Modal
+
+You must register the WalletConnect provider:
+
+import { EthereumClient, w3mConnectors, w3mProvider } from '@web3modal/ethereum'
+import { Web3Modal } from '@web3modal/html'
+
+const projectId = "YOUR_PROJECT_ID"
+
+const chains = [mainnet]
+
+const wagmiConfig = createConfig({
+  autoConnect: true,
+  connectors: w3mConnectors({ projectId, chains }),
+  publicClient: w3mProvider({ projectId })
+})
+
+const ethereumClient = new EthereumClient(wagmiConfig, chains)
+
+new Web3Modal({
+  projectId,
+  themeMode: "dark"
+}, ethereumClient)
+
+
+---
+
+🎯 Why your error appears
+
+Your UI shows wallet options (MetaMask, TrustWallet, SafePal, etc.) but WalletConnectConnector is missing from your wagmi config.
+
+So when the user taps a wallet, the modal tries to call:
+
+new WalletConnectConnector(...)
+
+
+…but since you never registered it, wagmi throws:
+
+WalletConnectConnector not found
+
+
+---
+
+🚀 Next Step for You
+
+Tell me which stack your OrahDEX frontend uses:
+
+• RainbowKit
+• Web3Modal
+• Wagmi_only
+• Custom_connector
+
+
+I’ll give you the exact code patch for your repo.
