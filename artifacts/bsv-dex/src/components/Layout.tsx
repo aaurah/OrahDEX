@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, BellOff, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target, Upload, Droplets, Headphones, MessageCircle, ArrowUpDown, TrendingUp, Search, Moon as MoonIcon, Filter } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, BellOff, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target, Upload, Droplets, Headphones, MessageCircle, ArrowUpDown, TrendingUp, Search, Moon as MoonIcon, Filter, Fingerprint } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -19,6 +19,7 @@ import { CATEGORY_OF, ALL_CATEGORIES, CATEGORY_META, type NotifCategory } from "
 
 /* ── Heavy modals — loaded only when first opened ── */
 const AiAssistant = lazy(() => import("./AiAssistant").then(m => ({ default: m.AiAssistant })));
+const OrahWalletDialog = lazy(() => import("./OrahWalletDialog").then(m => ({ default: m.OrahWalletDialog })));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -207,7 +208,9 @@ export function Layout({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
   const { address, network, provider, chainId } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
-  const { open: openWalletModal } = useWalletModalStore();
+  const { open: openWalletModal, openOrahWallet, isOrahWalletOpen, closeOrahWallet } = useWalletModalStore();
+  const [showWalletChooser, setShowWalletChooser] = useState(false);
+  const walletChooserRef = useRef<HTMLDivElement>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showMoreNav, setShowMoreNav] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -815,14 +818,43 @@ export function Layout({ children }: { children: ReactNode }) {
           {address ? (
             <WalletOptionsDropdown />
           ) : (
-            <button
-              onClick={() => openWalletModal()}
-              className="flex items-center gap-1.5 bg-gradient-to-r from-red-500 to-primary text-white px-2.5 py-1.5 rounded-lg font-semibold text-xs shadow-md shadow-primary/20 hover:brightness-110 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/30 active:scale-95 transition-all"
-            >
-              <Wallet className="w-3 h-3" />
-              <span className="hidden sm:inline">Connect Wallet</span>
-              <span className="sm:hidden">Connect</span>
-            </button>
+            <div className="relative" ref={walletChooserRef}>
+              <button
+                onClick={() => setShowWalletChooser(v => !v)}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-red-500 to-primary text-white px-2.5 py-1.5 rounded-lg font-semibold text-xs shadow-md shadow-primary/20 hover:brightness-110 hover:scale-[1.02] hover:shadow-lg hover:shadow-primary/30 active:scale-95 transition-all"
+              >
+                <Wallet className="w-3 h-3" />
+                <span className="hidden sm:inline">Connect Wallet</span>
+                <span className="sm:hidden">Connect</span>
+              </button>
+              {showWalletChooser && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowWalletChooser(false)} />
+                  <div className="absolute top-full right-0 mt-1.5 w-56 bg-card border border-border rounded-xl shadow-2xl shadow-black/40 overflow-hidden z-50 animate-in slide-in-from-top-1 fade-in duration-150">
+                    <button
+                      onClick={() => { setShowWalletChooser(false); openWalletModal(); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-white/5 text-left transition-colors border-b border-border"
+                    >
+                      <span className="text-base leading-none">⟠</span>
+                      <div>
+                        <div className="text-xs font-semibold text-foreground">EVM Wallets</div>
+                        <div className="text-[10px] text-muted-foreground">MetaMask · WalletConnect</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => { setShowWalletChooser(false); openOrahWallet(); }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-white/5 text-left transition-colors"
+                    >
+                      <Fingerprint className="w-4 h-4 text-primary shrink-0" />
+                      <div>
+                        <div className="text-xs font-semibold text-foreground">OrahDEX Wallet</div>
+                        <div className="text-[10px] text-muted-foreground">Passkey · BSV · BTC · SOL</div>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
 
         </div>
@@ -929,13 +961,22 @@ export function Layout({ children }: { children: ReactNode }) {
                 <span className="text-sm">Settings</span>
               </Link>
               {!address && (
-                <button
-                  onClick={() => { openWalletModal(); setIsMobileMenuOpen(false); }}
-                  className="mt-1 w-full flex items-center justify-center gap-2 bg-gradient-to-r from-red-500 to-primary text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-primary/30 hover:brightness-110 transition-all"
-                >
-                  <Wallet className="w-4 h-4" />
-                  Connect Wallet
-                </button>
+                <div className="mt-1 space-y-1.5">
+                  <button
+                    onClick={() => { openWalletModal(); setIsMobileMenuOpen(false); }}
+                    className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-red-500 to-primary text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-lg shadow-primary/30 hover:brightness-110 transition-all"
+                  >
+                    <Wallet className="w-4 h-4" />
+                    EVM Wallets
+                  </button>
+                  <button
+                    onClick={() => { openOrahWallet(); setIsMobileMenuOpen(false); }}
+                    className="w-full flex items-center justify-center gap-2 border border-primary/30 bg-primary/5 text-primary px-4 py-2.5 rounded-xl font-bold text-sm hover:bg-primary/10 transition-all"
+                  >
+                    <Fingerprint className="w-4 h-4" />
+                    OrahDEX Wallet
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -954,6 +995,11 @@ export function Layout({ children }: { children: ReactNode }) {
       {(location.startsWith("/trade") || location.startsWith("/futures") || location.startsWith("/swap")) && (
         <Suspense fallback={null}><AiAssistant /></Suspense>
       )}
+
+      {/* OrahDEX passkey wallet dialog */}
+      <Suspense fallback={null}>
+        <OrahWalletDialog open={isOrahWalletOpen} onClose={closeOrahWallet} />
+      </Suspense>
 
     </div>
   );
