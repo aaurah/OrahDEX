@@ -9,6 +9,7 @@ import type { OrderBookFill } from "@/components/trading/OrderBook";
 import type { OrderFormFill } from "@/components/trading/OrderForm";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
+import type { ExternalFlash } from "@/components/trading/OrderBook";
 import { OrderForm } from "@/components/trading/OrderForm";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { useLetsExchangeCoins } from "@/hooks/useLetsExchangeCoins";
@@ -27,6 +28,7 @@ type BottomTab = "open" | "history" | "trades" | "liquidity";
 type QuoteTab =
   | "USDT" | "USDC" | "BTC" | "ETH" | "BSV" | "BCH" | "BNB"
   | "ARB"  | "OP"   | "MATIC" | "AVAX" | "SOL" | "TRX"
+  | "XRP"  | "DOGE" | "LTC"
   | "FTM"  | "CRO"  | "MNT"  | "ZK"  | "SCR" | "LINEA";
 
 const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
@@ -37,12 +39,15 @@ const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
   { id: "BSV",   label: "BSV",   color: "text-yellow-400" },
   { id: "BCH",   label: "BCH",   color: "text-emerald-400"},
   { id: "BNB",   label: "BNB",   color: "text-yellow-500" },
+  { id: "XRP",   label: "XRP",   color: "text-sky-400"    },
+  { id: "SOL",   label: "SOL",   color: "text-cyan-400"   },
+  { id: "DOGE",  label: "DOGE",  color: "text-yellow-300" },
+  { id: "LTC",   label: "LTC",   color: "text-slate-300"  },
+  { id: "TRX",   label: "TRX",   color: "text-red-500"    },
+  { id: "AVAX",  label: "AVAX",  color: "text-red-400"    },
+  { id: "MATIC", label: "MATIC", color: "text-violet-400" },
   { id: "ARB",   label: "ARB",   color: "text-blue-400"   },
   { id: "OP",    label: "OP",    color: "text-red-400"    },
-  { id: "MATIC", label: "MATIC", color: "text-violet-400" },
-  { id: "AVAX",  label: "AVAX",  color: "text-red-400"    },
-  { id: "SOL",   label: "SOL",   color: "text-cyan-400"   },
-  { id: "TRX",   label: "TRX",   color: "text-red-500"    },
   { id: "FTM",   label: "FTM",   color: "text-blue-500"   },
   { id: "CRO",   label: "CRO",   color: "text-indigo-400" },
   { id: "MNT",   label: "MNT",   color: "text-teal-400"   },
@@ -138,9 +143,14 @@ export function SpotTrading() {
   })();
 
   const [quoteTab, setQuoteTab] = useState<QuoteTab>(urlQuote);
-  const [candleInterval, setCandleInterval] = useState("1h");
+  const [candleInterval, setCandleInterval] = useState(() => {
+    const saved = localStorage.getItem('orahdex-spot-interval');
+    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y','All'];
+    return saved && valid.includes(saved) ? saved : "1h";
+  });
   const [marketSearch, setMarketSearch] = useState("");
   const [orderBookFill, setOrderBookFill] = useState<OrderFormFill | null>(null);
+  const [obFlash, setObFlash] = useState<ExternalFlash | null>(null);
   const [pairDropOpen, setPairDropOpen] = useState(false);
   const [dropSearch, setDropSearch] = useState("");
   const [dropQuote, setDropQuote] = useState<QuoteTab>(urlQuote);
@@ -173,21 +183,35 @@ export function SpotTrading() {
     setQuoteTab(urlQuote);
   }, [urlQuote]);
 
+  // Persist candle interval across page refreshes
+  useEffect(() => { localStorage.setItem('orahdex-spot-interval', candleInterval); }, [candleInterval]);
+
   const handleOrderBookFill = (fill: OrderBookFill) => {
     setOrderBookFill(fill as OrderFormFill);
   };
+
+  // Flash the OrderBook spread row when a trade is placed or LE swap confirmed
+  const handleTradeFlash = useCallback((fill: { price: number; side: "buy" | "sell"; source?: "order" | "letsexchange" }) => {
+    setObFlash({ price: fill.price, side: fill.side, ts: Date.now(), source: fill.source ?? "order" });
+  }, []);
+
+  const handleLeExchangeCreated = useCallback((fill: { price: number; side: "buy" | "sell" }) => {
+    handleTradeFlash({ ...fill, source: "letsexchange" });
+  }, [handleTradeFlash]);
 
   // Handle both dash-separated (/trade/BTC-USDT) and URL-encoded slash (/trade/BTC%2FUSDT)
   const decodedRaw = decodeURIComponent(rawSymbol);
   const symbol = decodedRaw.includes('/') ? decodedRaw : decodedRaw.replace(/-/g, '/');
   const [base = '', quote = ''] = symbol.split('/');
 
-  const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol));
-  const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: candleInterval as any, limit: 300 });
+  const noStoreRequest = { cache: "no-store" as const };
+  const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol), { request: noStoreRequest });
+  const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: candleInterval as any, limit: 300 }, { request: noStoreRequest });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, {
+    request: noStoreRequest,
     query: { refetchInterval: 4000, staleTime: 2000 },
   });
-  const { data: apiTrades }    = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 });
+  const { data: apiTrades }    = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 }, { request: noStoreRequest });
   const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
     { walletAddress: address || '' },
     { query: { enabled: !!address, refetchInterval: 5000 } }
@@ -233,7 +257,7 @@ export function SpotTrading() {
   const QUOTE_TO_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1, BUSD: 1, DAI: 1,
     BTC:  crossRates.BTC?.usd  || 83000,
-    ETH:  crossRates.ETH?.usd  || 1800,
+    ETH:  crossRates.ETH?.usd  || 2400,
     BSV:  crossRates.BSV?.usd  || 14,
     BNB: 580, BCH: 320, SOL: 130, MATIC: 0.32,
     AVAX: 18, ARB: 0.42, OP: 0.70, FTM: 0.51, CRO: 0.085, TRX: 0.24,
@@ -506,12 +530,12 @@ export function SpotTrading() {
                 <span className="w-20 text-right">Price</span>
                 <span className="w-14 text-right">24h %</span>
               </div>
-              {/* Pair list */}
+              {/* Pair list — cap at 200 rows per tab to keep the DOM fast */}
               <div className="overflow-y-auto max-h-64 min-h-0">
                 {dropFiltered.length === 0 ? (
                   <div className="flex items-center justify-center h-16 text-xs text-muted-foreground">No pairs found</div>
                 ) : (
-                  dropFiltered.map(m => {
+                  dropFiltered.slice(0, 200).map(m => {
                     const urlSymbol = m.symbol.replace('/', '-');
                     const isActive = m.symbol === symbol;
                     const isUp = m.priceChangePercent24h >= 0;
@@ -548,6 +572,14 @@ export function SpotTrading() {
                       </Link>
                     );
                   })
+                )}
+                {dropFiltered.length > 200 && (
+                  <div className="flex items-center justify-center gap-1.5 py-2 border-t border-border/50 bg-secondary/20">
+                    <Search className="w-3 h-3 text-muted-foreground/60" />
+                    <span className="text-[10px] text-muted-foreground">
+                      Showing 200 of {dropFiltered.length.toLocaleString()} — search to find more
+                    </span>
+                  </div>
                 )}
               </div>
             </div>
@@ -981,6 +1013,7 @@ export function SpotTrading() {
             } : null}
             hasInternalLiquidity={hasRealOB}
             onLeSwap={handleLeSwap}
+            externalFlash={obFlash}
           />
         </div>
 
@@ -1048,7 +1081,7 @@ export function SpotTrading() {
           <div className="flex-1 overflow-y-auto min-h-0">
             {tradeMode === "order" ? (
               <>
-                <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
+                <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} onTradeFlash={handleTradeFlash} />
                 {/* Swap nudge when no internal OB liquidity */}
                 {!hasRealOB && leRateData && (
                   <button
@@ -1101,6 +1134,7 @@ export function SpotTrading() {
                   initialTo={quote}
                   walletAddress={address}
                   onConnectWallet={openWalletModal}
+                  onExchangeCreated={handleLeExchangeCreated}
                 />
               </div>
             )}
@@ -1151,7 +1185,7 @@ export function SpotTrading() {
           )}
 
           {tradeMode === "order" ? (
-            <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} />
+            <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} onTradeFlash={handleTradeFlash} />
           ) : (
             <div className="p-3">
               <LetsExchangePanel
@@ -1160,6 +1194,7 @@ export function SpotTrading() {
                 initialTo={quote}
                 walletAddress={address}
                 onConnectWallet={openWalletModal}
+                onExchangeCreated={handleLeExchangeCreated}
               />
             </div>
           )}

@@ -180,7 +180,7 @@ function ProvidersTab() {
         </button>
 
         <div className="flex items-center gap-3 p-4 bg-[var(--color-surface)] rounded-2xl border border-[var(--color-border)]">
-          <CoinLogo coin={selectedCoin.symbol} size={44} />
+          <CoinLogo symbol={selectedCoin.symbol} size={44} />
           <div className="flex-1 min-w-0">
             <div className="font-bold text-[var(--color-text)] text-lg">{selectedCoin.name}</div>
             <div className="text-xs text-[var(--color-text-secondary)]">{selectedCoin.symbol} · {selectedCoin.chain} network</div>
@@ -259,7 +259,7 @@ function ProvidersTab() {
             onClick={() => { setSelectedCoin(coin); setView("detail"); }}
             className="w-full flex items-center gap-3 p-3 bg-[var(--color-surface)] hover:bg-[var(--color-surface-hover,var(--color-surface))] border border-[var(--color-border)] rounded-xl transition-all text-left group"
           >
-            <CoinLogo coin={coin.symbol} size={36} />
+            <CoinLogo symbol={coin.symbol} size={36} />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
                 <span className="font-semibold text-[var(--color-text)] text-sm">{coin.symbol}</span>
@@ -545,7 +545,7 @@ function EarnTab() {
         >
           {selectedCoin ? (
             <>
-              <CoinLogo coin={selectedCoin.symbol} size={32} />
+              <CoinLogo symbol={selectedCoin.symbol} size={32} />
               <div className="flex-1 text-left min-w-0">
                 <div className="font-semibold text-[var(--color-text)] text-sm">{selectedCoin.symbol}</div>
                 <div className="text-xs text-[var(--color-text-secondary)]">{selectedCoin.name}</div>
@@ -585,7 +585,7 @@ function EarnTab() {
                     selectedCoin?.symbol === c.symbol && "bg-orange-500/10"
                   )}
                 >
-                  <CoinLogo coin={c.symbol} size={24} />
+                  <CoinLogo symbol={c.symbol} size={24} />
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-semibold text-[var(--color-text)]">{c.symbol}</div>
                     <div className="text-[10px] text-[var(--color-text-secondary)] truncate">{c.name}</div>
@@ -742,7 +742,7 @@ function EarnTab() {
                   >
                     <div className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">
-                        <CoinLogo coin={pos.coin} size={20} />
+                        <CoinLogo symbol={pos.coin} size={20} />
                         <span className="text-[var(--color-text)]">{fmtAmount(pos.amount)} {pos.coin}</span>
                       </div>
                       <span className="text-green-400">+{fmtAmount(pos.rewardAccrued, 8)} {pos.coin}</span>
@@ -774,7 +774,7 @@ function PositionCard({
   return (
     <div className="p-3 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl">
       <div className="flex items-center gap-2.5 mb-2">
-        <CoinLogo coin={pos.coin} size={32} />
+        <CoinLogo symbol={pos.coin} size={32} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="font-semibold text-[var(--color-text)] text-sm">{fmtAmount(pos.amount)} {pos.coin}</span>

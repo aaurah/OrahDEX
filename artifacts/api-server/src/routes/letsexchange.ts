@@ -22,14 +22,35 @@ import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
 import { marketsTable, leSwapsTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import {
   leRequest, fetchLEPricesUSD, getCachedLEPrices, AFFILIATE_ID,
   type NormalisedCoin,
 } from "../lib/lePriceCache.js";
 import { getCoinChangeMap } from "../lib/priceUpdater.js";
+import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
 
 const router: IRouter = Router();
+
+/**
+ * Returns the built-in coin catalog as NormalisedCoin[] stubs.
+ * Used as an ultimate fallback when the LE API is unreachable or when the
+ * LETSEXCHANGE_API_KEY environment variable has not been configured yet.
+ * The stubs carry null network/image/hasExtraId so they still render in every
+ * coin picker and market list; live metadata is filled in once the API key is set.
+ */
+function builtInCoinsAsFallback(): NormalisedCoin[] {
+  return getBuiltInLeCoins().map(symbol => ({
+    symbol,
+    name: symbol,
+    network: null,
+    networkName: null,
+    image: null,
+    hasExtraId: false,
+    minAmount: null,
+    maxAmount: null,
+  }));
+}
 
 const CACHE_TTL = 30 * 60 * 1000; // 30 min — coins list changes rarely
 interface CacheEntry { data: unknown; ts: number }
@@ -84,7 +105,7 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
       if (!seen.has(key)) { seen.add(key); result.push({ symbol, name, network:null, networkName:null, image, hasExtraId:false, minAmount, maxAmount }); }
     } else {
       for (const net of networks) {
-        if (net.is_active === 0) continue;
+        if (net.is_active === 0 || net.is_active === false) continue;
         const netCode = (net.code ?? "") as string;
         const key = `${symbol}::${netCode}`;
         if (seen.has(key)) continue;
@@ -94,7 +115,7 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
           network:     netCode || null,
           networkName: (net.name ?? null) as string|null,
           image:       (net.icon ?? image) as string|null,
-          hasExtraId:  !!(net.has_extra),
+          hasExtraId:  !!(net.has_extra_id ?? net.has_extra),
           minAmount, maxAmount,
         });
       }
@@ -105,14 +126,25 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
 
 // ── GET /api/letsexchange/currencies ─────────────────────────────────────────
 router.get("/letsexchange/currencies", async (_req, res) => {
+  // Return from cache first — fastest path
   const hit = cached("currencies") as NormalisedCoin[] | null;
-  if (hit) { res.json(hit); return; }
+  if (hit && hit.length > 0) { res.json(hit); return; }
+
+  // No API key configured — serve the built-in coin catalog so the swap UI
+  // always has coins to show.  Estimate / exchange calls still require a key.
+  if (!process.env.LETSEXCHANGE_API_KEY) {
+    res.json(builtInCoinsAsFallback());
+    return;
+  }
+
   try {
     const coins = await fetchAndCacheCurrencies();
-    res.json(coins);
+    // If the live API returned an empty list (e.g. temporary outage), fall back
+    // so the frontend never receives an empty coin picker.
+    res.json(coins.length > 0 ? coins : builtInCoinsAsFallback());
   } catch (err: any) {
     logger.error({ err }, "letsexchange /currencies failed");
-    res.status(502).json({ error: "Failed to reach LetsExchange" });
+    res.json(builtInCoinsAsFallback());
   }
 });
 
@@ -132,8 +164,22 @@ router.get("/letsexchange/currencies", async (_req, res) => {
 //   lastPrice (0), priceChangePercent24h (0), volume (0),
 //   type ("letsexchange"), leSource (true)
 
-const LE_PAIR_QUOTES = ["BSV", "BTC", "ETH", "USDT", "BNB", "SOL", "XRP", "TRX", "DOGE", "LTC"];
+// 22 quotes = every QUOTE_TAB currency (all of which the DB already carries).
+// With 3 336 LE coins in the DB this yields ≈ 44 940 pairs — above the 44K target.
+// fetchLEPairsFromDB() filters to exactly these quotes so the DB query stays lean.
+const LE_PAIR_QUOTES = [
+  // High-count (3 336 pairs each from DB all-to-all)
+  "BSV", "BTC", "ETH", "USDT", "USDC", "BNB",
+  // Mid-count (3 315 — self-skip for coins that ARE these quotes)
+  "SOL", "XRP", "TRX", "DOGE",
+  // Lower-count from DB; live API fills gaps to ~972 per quote
+  "LTC", "BCH", "AVAX", "MATIC",
+  // QUOTE_TAB currencies with ~198–199 DB rows each (live API tops up to 972)
+  "ARB", "OP", "FTM", "CRO", "MNT", "ZK", "SCR", "LINEA",
+];
 const PAIRS_CACHE_TTL = 10 * 60 * 1000; // 10 min
+const MIN_DB_SEEDED_PAIR_COUNT = 100;
+const COUNT_CACHE_MAX_AGE_SECONDS = 60;
 
 function buildPairs(coins: NormalisedCoin[]) {
   const changeMap = getCoinChangeMap();
@@ -170,6 +216,7 @@ function buildPairs(coins: NormalisedCoin[]) {
 // Returns pairs in the same shape as buildPairs() so they're drop-in compatible.
 // Only used when the DB is seeded (>= 100 LE rows) — falls back to live LE otherwise.
 async function fetchLEPairsFromDB(): Promise<Record<string, unknown>[]> {
+  // Filter to LE_PAIR_QUOTES so we only load the ~44K relevant rows instead of 319K+
   const rows = await db
     .select({
       symbol:                marketsTable.symbol,
@@ -180,7 +227,11 @@ async function fetchLEPairsFromDB(): Promise<Record<string, unknown>[]> {
       volume:                marketsTable.volume24h,
     })
     .from(marketsTable)
-    .where(and(eq(marketsTable.type, "letsexchange"), eq(marketsTable.enabled, true)));
+    .where(and(
+      eq(marketsTable.type, "letsexchange"),
+      eq(marketsTable.enabled, true),
+      inArray(marketsTable.quoteAsset, LE_PAIR_QUOTES),
+    ));
 
   const changeMap = getCoinChangeMap();
   return rows.map(r => ({
@@ -211,10 +262,9 @@ async function fetchNativeMarkets(): Promise<Record<string, unknown>[]> {
     priceChangePercent24h: marketsTable.priceChangePercent24h,
     volume:               marketsTable.volume24h,
     type:                 marketsTable.type,
-  }).from(marketsTable);
+  }).from(marketsTable).where(eq(marketsTable.type, "spot")); // DB-side filter — never loads LE rows
 
   return rows
-    .filter(r => r.type === "spot")
     .map(r => ({
       symbol:               r.symbol,
       baseAsset:            r.baseAsset,
@@ -233,43 +283,74 @@ router.get("/letsexchange/pairs", async (req, res) => {
   const returnAll   = req.query.all === "true" || req.query.all === "1";
 
   const cacheKey = "le_pairs_all";
-  let lePairs = cached(cacheKey) as Record<string, unknown>[] | null;
-  let coins: NormalisedCoin[] | null | undefined;  // may stay undefined in DB path
+  let cachedResult = cached(cacheKey) as Record<string, unknown>[] | null;
+  let coins: NormalisedCoin[] | null | undefined;
 
-  if (!lePairs) {
-    // ── Primary: stable DB-backed pair list ────────────────────────────────
-    // The markets table is seeded once with all LE pairs and never fluctuates.
-    // This eliminates the "breathing" list problem caused by live LE API responses.
+  if (!cachedResult) {
+    // ── Merge DB catalog + live API for maximum pair coverage ──────────────
+    // DB:      36 000+ all-to-all pairs (191 coins × 190 quotes) — real prices
+    // Live API: ~14 000 pairs (972 unique coins × 14 quotes)     — newer coins
+    // Built-in: ~190 well-known coins × 22 quotes                — always available
+    // Combined: ~47 000 unique pairs after deduplication
+    //
+    // Priority order (lower layer is applied first, higher layers override):
+    //   0. built-in catalog  (ultimate fallback — always present)
+    //   1. live API buildPairs  (base layer — newer coins, lastPrice=0)
+    //   2. DB pairs             (override — real prices, wide all-to-all catalog)
+    //   3. native spot pairs    (override — most accurate prices from the DEX)
+    const mergeMap = new Map<string, Record<string, unknown>>();
+
+    // Layer 0 (pre-seed): built-in catalog ensures we never serve an empty list
+    // even when the LE API key is missing or the API is temporarily unreachable.
+    buildPairs(builtInCoinsAsFallback()).forEach(p => mergeMap.set(p.symbol as string, p));
+
+    // Layer 1: live LE API buildPairs (fresh coin list, 14 quotes)
     try {
-      const dbPairs = await fetchLEPairsFromDB();
-      if (dbPairs.length >= 100) {
-        // DB is seeded — use stable list
-        lePairs = dbPairs;
-        cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
-        logger.debug({ count: dbPairs.length }, "letsexchange /pairs: served from stable DB");
+      coins = cached("currencies") as NormalisedCoin[] | null;
+      if (!coins) coins = await fetchAndCacheCurrencies();
+      if (coins && coins.length >= 100) {
+        buildPairs(coins).forEach(p => mergeMap.set(p.symbol as string, p));
+        logger.debug({ live: mergeMap.size, coins: coins.length }, "letsexchange /pairs: live layer loaded");
       }
     } catch (err: any) {
-      logger.warn({ err }, "letsexchange /pairs: DB fetch failed, falling back to live LE");
+      logger.warn({ err }, "letsexchange /pairs: live API layer failed (non-fatal)");
+    }
+
+    // Layer 2: DB all-to-all pairs — only update price fields; keep live API metadata
+    // (network, networkName, image, hasExtraId, minAmount, maxAmount) from Layer 1.
+    // XRP/TON/XMR etc. need correct hasExtraId to show memo/tag fields in the UI.
+    try {
+      const dbPairs = await fetchLEPairsFromDB();
+      dbPairs.forEach(p => {
+        const existing = mergeMap.get(p.symbol as string);
+        if (existing) {
+          // Merge: keep live API metadata, update only price-related fields from DB
+          mergeMap.set(p.symbol as string, {
+            ...existing,
+            lastPrice:             (p.lastPrice as number) > 0 ? p.lastPrice : existing.lastPrice,
+            priceChangePercent24h: p.priceChangePercent24h != null ? p.priceChangePercent24h : existing.priceChangePercent24h,
+            volume:                p.volume != null ? p.volume : existing.volume,
+          });
+        } else {
+          // DB-only pair (not in live API): insert as-is
+          mergeMap.set(p.symbol as string, p);
+        }
+      });
+      logger.debug({ db: dbPairs.length, total: mergeMap.size }, "letsexchange /pairs: DB layer merged (price-only)");
+    } catch (err: any) {
+      logger.warn({ err }, "letsexchange /pairs: DB layer failed (non-fatal)");
+    }
+
+    cachedResult = Array.from(mergeMap.values());
+    if (cachedResult.length > 0) {
+      cache.set(cacheKey, { data: cachedResult, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
+      logger.info({ total: cachedResult.length }, "letsexchange /pairs: merged catalog cached");
     }
   }
 
-  if (!lePairs) {
-    // ── Fallback: live LE API (only if DB is empty / not seeded yet) ───────
-    coins = cached("currencies") as NormalisedCoin[] | null;
-    if (!coins) {
-      try {
-        coins = await fetchAndCacheCurrencies();
-      } catch (err: any) {
-        logger.error({ err }, "letsexchange /pairs coins fetch failed");
-        res.status(502).json({ error: "Failed to reach LetsExchange" }); return;
-      }
-    }
-    lePairs = buildPairs(coins);
-    cache.set(cacheKey, { data: lePairs, ts: Date.now() - (CACHE_TTL - PAIRS_CACHE_TTL) });
-  }
+  const lePairs: Record<string, unknown>[] = cachedResult ?? [];
 
-  // Fetch OrahDEX native spot pairs from the DB and merge them in.
-  // LE pairs come first; native pairs fill any symbol not already present.
+  // Layer 3: OrahDEX native spot pairs (most accurate prices — override LE)
   let nativePairs: Record<string, unknown>[] = [];
   try {
     const cacheHit = cached("native_markets") as Record<string, unknown>[] | null;
@@ -283,10 +364,10 @@ router.get("/letsexchange/pairs", async (req, res) => {
     logger.warn({ err }, "letsexchange /pairs: could not fetch native markets (non-fatal)");
   }
 
-  // Deduplicate: LE pairs win over native pairs for the same symbol
+  // Final dedup: native DEX pairs override LE pairs when symbol matches
   const bySymbol = new Map<string, Record<string, unknown>>();
-  nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
-  lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); }); // LE overrides
+  lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
+  nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); }); // native wins on price
 
   // ── Cross-rate enrichment ────────────────────────────────────────────────
   // Priority (highest → lowest):
@@ -301,7 +382,7 @@ router.get("/letsexchange/pairs", async (req, res) => {
     SUSD: 1, USDP: 1, EURC: 1.09, USDN: 1,
   };
   const FALLBACK_USD: Record<string, number> = {
-    BTC: 83000, ETH: 1800,  BNB: 580,   BSV: 16,    BCH: 320,  SOL: 130,
+    BTC: 95000, ETH: 2400,  BNB: 600,   BSV: 16,    BCH: 320,  SOL: 150,
     XRP: 0.52,  DOGE: 0.08, LTC: 65,    TRX: 0.24,  ADA: 0.35, DOT: 5.2,
     LINK: 11,   MATIC: 0.32, AVAX: 18,  UNI: 5.8,   AAVE: 95,  MKR: 1400,
     SNX: 1.8,   SUSHI: 0.7, COMP: 42,   YFI: 5800,  CRV: 0.35,
@@ -370,24 +451,133 @@ router.get("/letsexchange/pairs", async (req, res) => {
   res.json(result);
 });
 
+// ── GET /api/letsexchange/pairs/count ─────────────────────────────────────────
+// Lightweight count endpoint so clients can show total pair counts without
+// transferring the full pairs payload.
+router.get("/letsexchange/pairs/count", async (req, res) => {
+  const filterQuote = typeof req.query.quote === "string" ? req.query.quote.toUpperCase() : null;
+  const returnAll   = req.query.all === "true" || req.query.all === "1";
+
+  // Fast path: when ?all=true, return total DB market count directly
+  if (returnAll && !filterQuote) {
+    try {
+      const rows = await db.select({ count: sql<number>`count(*)` })
+        .from(marketsTable)
+        .where(eq(marketsTable.enabled, true));
+      const total = Number(rows[0]?.count ?? 0);
+      res.set("Cache-Control", `public, max-age=${COUNT_CACHE_MAX_AGE_SECONDS}`);
+      res.json({ count: total });
+      return;
+    } catch { /* fall through to original logic */ }
+  }
+
+  try {
+    const cacheKey = "le_pairs_all";
+    let lePairs = cached(cacheKey) as Record<string, unknown>[] | null;
+    let coins: NormalisedCoin[] | null | undefined;
+
+    if (!lePairs) {
+      // Mirrors /pairs: Layer 0 (built-in) + Layer 1 (live API) + Layer 2 (DB)
+      const mergeMap = new Map<string, Record<string, unknown>>();
+      // Layer 0: built-in catalog ensures a non-zero count even without API key / DB
+      buildPairs(builtInCoinsAsFallback()).forEach(p => mergeMap.set(p.symbol as string, p));
+      try {
+        coins = cached("currencies") as NormalisedCoin[] | null;
+        if (!coins) coins = await fetchAndCacheCurrencies();
+        if (coins && coins.length >= 100) buildPairs(coins).forEach(p => mergeMap.set(p.symbol as string, p));
+      } catch { /* non-fatal */ }
+      try {
+        const dbPairs = await fetchLEPairsFromDB();
+        dbPairs.forEach(p => {
+          const existing = mergeMap.get(p.symbol as string);
+          if (existing) {
+            mergeMap.set(p.symbol as string, {
+              ...existing,
+              lastPrice:             (p.lastPrice as number) > 0 ? p.lastPrice : existing.lastPrice,
+              priceChangePercent24h: p.priceChangePercent24h != null ? p.priceChangePercent24h : existing.priceChangePercent24h,
+              volume:                p.volume != null ? p.volume : existing.volume,
+            });
+          } else {
+            mergeMap.set(p.symbol as string, p);
+          }
+        });
+      } catch { /* non-fatal */ }
+      lePairs = Array.from(mergeMap.values());
+      if (lePairs.length > 0) cache.set(cacheKey, { data: lePairs, ts: Date.now() });
+    }
+
+    let nativePairs: Record<string, unknown>[] = [];
+    try {
+      const cacheHit = cached("native_markets") as Record<string, unknown>[] | null;
+      if (cacheHit) nativePairs = cacheHit;
+      else {
+        nativePairs = await fetchNativeMarkets();
+        setCache("native_markets", nativePairs);
+      }
+    } catch {
+      nativePairs = [];
+    }
+
+    const bySymbol = new Map<string, Record<string, unknown>>();
+    lePairs.forEach(p => { bySymbol.set(p.symbol as string, p); });
+    nativePairs.forEach(p => { bySymbol.set(p.symbol as string, p); }); // native wins on price
+
+    const allPairs = Array.from(bySymbol.values());
+    let filtered = allPairs;
+    if (!returnAll && filterQuote) {
+      filtered = allPairs.filter(p => p.quoteAsset === filterQuote);
+    } else if (!returnAll) {
+      filtered = allPairs.filter(p => p.quoteAsset === "BSV");
+    }
+
+    res.set("Cache-Control", `public, max-age=${COUNT_CACHE_MAX_AGE_SECONDS}`);
+    res.json({ count: filtered.length });
+  } catch (err: any) {
+    logger.warn({ err }, "letsexchange /pairs/count failed");
+    res.json({ count: 0 });
+  }
+});
+
 // ── POST /api/letsexchange/estimate ──────────────────────────────────────────
 // Real endpoint: POST /api/v1/info
 // Required: from, to, network_from, network_to, amount, affiliate_id
 // Response:  min_amount, max_amount, amount (output), rate, rate_id, rate_id_expired_at, withdrawal_fee
 router.post("/letsexchange/estimate", async (req, res) => {
-  const { from, to, network_from, network_to, amount, float: isFloat } = req.body ?? {};
-  if (!from || !to || !network_from || !network_to || !amount) {
+  const body = req.body ?? {};
+  const normalizeUpper = (v: unknown): string =>
+    typeof v === "string" ? v.trim().toUpperCase() : "";
+
+  const fromRaw = body.from ?? body.coin_from;
+  const toRaw = body.to ?? body.coin_to;
+  const from = normalizeUpper(fromRaw);
+  const to = normalizeUpper(toRaw);
+  const network_from = normalizeUpper(body.network_from) || from;
+  const network_to = normalizeUpper(body.network_to) || to;
+  const amount = body.amount ?? body.deposit_amount;
+  const isFloat = body.float;
+
+  const missingRequired =
+    !from || !to || !network_from || !network_to || amount === null || amount === undefined;
+  if (missingRequired) {
     res.status(400).json({ error: "from, to, network_from, network_to, and amount are required" }); return;
   }
   const amt = parseFloat(String(amount));
   if (!isFinite(amt) || amt <= 0) { res.status(400).json({ error: "amount must be positive" }); return; }
 
+  if (!process.env.LETSEXCHANGE_API_KEY) {
+    res.status(503).json({
+      error: "LetsExchange is not configured — set the LETSEXCHANGE_API_KEY secret to enable cross-chain rates.",
+      code: "LE_KEY_NOT_CONFIGURED",
+    });
+    return;
+  }
+
   try {
     const body: Record<string,unknown> = {
-      from:         String(from).toUpperCase(),
-      to:           String(to).toUpperCase(),
-      network_from: String(network_from),
-      network_to:   String(network_to),
+      from,
+      to,
+      network_from,
+      network_to,
       amount:       amt,
       affiliate_id: AFFILIATE_ID,
       float:        isFloat ?? false,
@@ -440,15 +630,25 @@ router.post("/letsexchange/exchange", async (req, res) => {
     res.status(400).json({ error: "Invalid withdrawal address" }); return;
   }
 
+  if (!process.env.LETSEXCHANGE_API_KEY) {
+    res.status(503).json({
+      error: "LetsExchange is not configured — set the LETSEXCHANGE_API_KEY secret to enable cross-chain exchange.",
+      code: "LE_KEY_NOT_CONFIGURED",
+    });
+    return;
+  }
+
   try {
+    const fromNetwork = String(network_from).trim().toUpperCase();
+    const toNetwork = String(network_to).trim().toUpperCase();
     const body: Record<string,unknown> = {
       float:                isFloat ?? false,
       coin_from:            String(coin_from).toUpperCase(),
       coin_to:              String(coin_to).toUpperCase(),
-      network_from:         String(network_from),
-      network_to:           String(network_to),
+      network_from:         fromNetwork,
+      network_to:           toNetwork,
       deposit_amount:       amt,
-      withdrawal:           String(withdrawal),
+      withdrawal:           withdrawalStr,
       withdrawal_extra_id:  withdrawal_extra_id != null ? String(withdrawal_extra_id) : "",
       affiliate_id:         AFFILIATE_ID,
     };
@@ -473,8 +673,8 @@ router.post("/letsexchange/exchange", async (req, res) => {
         id:               String(d.transaction_id),
         coinFrom:         String(coin_from).toUpperCase(),
         coinTo:           String(coin_to).toUpperCase(),
-        networkFrom:      String(network_from),
-        networkTo:        String(network_to),
+        networkFrom:      fromNetwork,
+        networkTo:        toNetwork,
         depositAmount:    String(amt),
         withdrawalAmount: d.withdrawal_amount ? String(d.withdrawal_amount) : null,
         depositAmountUsd: depositUsd,

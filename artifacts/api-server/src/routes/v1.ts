@@ -739,6 +739,15 @@ router.post("/bridge/reveal", async (req, res) => {
     }
 
     const lock = rows[0];
+
+    // Validate the user-supplied secret before passing it to verifySecret.
+    // A valid HTLC preimage is a hex-encoded 32-byte value (64 hex chars).
+    // Rejecting malformed values early prevents unexpected input from reaching
+    // the cryptographic comparison and keeps error messages unambiguous.
+    if (typeof secret !== "string" || !/^[0-9a-fA-F]{1,128}$/.test(secret)) {
+      res.status(400).json({ error: "secret must be a hex string (HTLC preimage)" });
+      return;
+    }
     const valid = verifySecret(secret, lock.secretHash);
 
     if (!valid) {

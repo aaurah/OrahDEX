@@ -103,7 +103,8 @@ export function isBsvAddress(addr: string): boolean {
 
 /** Check whether a string looks like a paymail address (user@domain.tld) */
 export function isPaymail(addr: string): boolean {
-  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr);
+  // Use [^@\s.]+ in domain parts to avoid ReDoS via backtracking on inputs with no dot
+  return /^[^@\s]+@[^@\s.]+\.[^@\s.]+$/.test(addr);
 }
 
 /* ── Persistent key storage ─────────────────────────────────────────────── */

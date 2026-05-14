@@ -20,6 +20,18 @@ import { MediaCapture } from "@/components/MediaCapture";
 
 const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
+/** Only allow http/https URLs or raster-format data URIs for image src attributes.
+ *  SVG is excluded because it can contain embedded JavaScript. */
+function sanitizeImageUrl(url: string): string {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    if (u.protocol === "https:" || u.protocol === "http:") return u.href;
+    if (u.protocol === "data:" && /^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(url)) return url;
+  } catch { /* invalid URL */ }
+  return "";
+}
+
 function Portal({ children }: { children: React.ReactNode }) {
   const target = typeof document !== "undefined"
     ? (document.getElementById("modal-root") ?? document.body)
@@ -618,11 +630,22 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const [cat, setCat] = useState("art");
   const [chain, setChain] = useState("BSV");
   const [imageUrl, setImageUrl] = useState("");
+
+  /** Sanitize image URLs at state-set time: only allow http/https or raster data URIs */
+  function setValidatedImageUrl(url: string) {
+    setImageUrl(sanitizeImageUrl(url));
+  }
   const [mintPrice, setMintPrice] = useState("0.001");
   const [maxSupply, setMaxSupply] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureTab, setCaptureTab] = useState<"camera" | "ai" | "photos">("camera");
+
+  function openCapture(tab: "camera" | "ai" | "photos") {
+    setCaptureTab(tab);
+    setCaptureOpen(true);
+  }
 
   async function publish() {
     if (!address) { navigate("/settings"); return; }
@@ -646,23 +669,17 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
     finally { setLoading(false); }
   }
 
-  if (!address) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center p-8">
-          <Lock size={32} className="mx-auto mb-3 text-muted-foreground" />
-          <h3 className="text-lg font-bold text-foreground mb-2">Connect Wallet</h3>
-          <p className="text-sm text-muted-foreground mb-4">Connect your wallet to create posts on OrahNFT</p>
-          <button onClick={() => navigate("/settings")} className="px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Connect</button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="h-full overflow-y-auto px-4 py-4">
       <div className="max-w-2xl mx-auto space-y-4">
         <h2 className="text-lg font-bold text-foreground">Create Post</h2>
+        {!address && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+               style={{ background: "rgba(255,170,0,0.12)", color: "#ffaa00" }}>
+            <Lock size={13} />
+            <span>Connect a wallet to publish — you can still generate AI images now.</span>
+          </div>
+        )}
         <div className="space-y-2">
           <label className="text-xs text-muted-foreground font-semibold">Title *</label>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Give your creation a title"
@@ -677,23 +694,32 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           <label className="text-xs text-muted-foreground font-semibold">Image</label>
           {imageUrl && (
             <div className="rounded-xl overflow-hidden border border-border" style={{ aspectRatio: "1/1", maxWidth: 280 }}>
-              <img src={imageUrl} alt="" className="w-full h-full object-cover"
+              <img src={sanitizeImageUrl(imageUrl)} alt="" className="w-full h-full object-cover"
                    onError={() => setImageUrl("")} />
             </div>
           )}
-          <button type="button" onClick={() => setCaptureOpen(true)}
-            className="w-full py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-2"
-            style={{ background: "#00ff88", color: "#000" }}>
-            <Camera size={14} /> Camera
-            <span style={{ opacity: 0.5 }}>•</span>
-            <Sparkles size={14} /> AI generate
-            <span style={{ opacity: 0.5 }}>•</span>
-            <ImageIcon size={14} /> Upload
-          </button>
-          <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="…or paste image URL"
+          <div className="flex gap-2">
+            <button type="button" onClick={() => openCapture("camera")}
+              className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+              style={{ background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)" }}>
+              <Camera size={13} /> Camera
+            </button>
+            <button type="button" onClick={() => openCapture("ai")}
+              className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+              style={{ background: "#00ff88", color: "#000" }}>
+              <Sparkles size={13} /> AI Generate
+            </button>
+            <button type="button" onClick={() => openCapture("photos")}
+              className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+              style={{ background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)" }}>
+              <ImageIcon size={13} /> Upload
+            </button>
+          </div>
+          <input value={imageUrl} onChange={e => setValidatedImageUrl(e.target.value)} placeholder="…or paste image URL"
             className="w-full px-3 py-2.5 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary" />
           <MediaCapture open={captureOpen} onClose={() => setCaptureOpen(false)}
-            onSelect={(dataUrl) => setImageUrl(dataUrl)} />
+            initialTab={captureTab}
+            onSelect={(dataUrl) => setValidatedImageUrl(dataUrl)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
@@ -727,7 +753,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
         <button onClick={publish} disabled={loading}
           className="w-full py-3 rounded-xl text-sm font-bold disabled:opacity-50 transition-all"
           style={{ background: "#00ff88", color: "#000" }}>
-          {loading ? "Publishing…" : "Publish to BSV"}
+          {loading ? "Publishing…" : !address ? "Connect Wallet to Publish" : "Publish to BSV"}
         </button>
       </div>
     </div>

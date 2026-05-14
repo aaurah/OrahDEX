@@ -5,37 +5,25 @@ import { logger } from "../lib/logger.js";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { leRequest, AFFILIATE_ID } from "../lib/lePriceCache.js";
 import { quoteFromSS, getSsRange, isSimpleSwapConfigured, SS_COIN_TICKER } from "../lib/simpleswap.js";
+import { getLeCoinNetwork } from "../lib/leCoinNetwork.js";
+import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 
 /* Small-order threshold: orders with net USDT under this amount route to
    SimpleSwap (≈$10 min). At/above, they route to LetsExchange ($120 min after fee). */
 const LE_THRESHOLD_USD = 122;
 const SS_FLOOR_USD     = 10;
 
-/* Coin → LetsExchange network mapping (must mirror webhookHandlers.ts) */
-const LE_COIN_NETWORK: Record<string, { coin: string; network: string }> = {
-  BTC:   { coin: "BTC",   network: "BTC"   },
-  ETH:   { coin: "ETH",   network: "ETH"   },
-  BSV:   { coin: "BSV",   network: "BSV"   },
-  BNB:   { coin: "BNB",   network: "BEP20" },
-  SOL:   { coin: "SOL",   network: "SOL"   },
-  XRP:   { coin: "XRP",   network: "XRP"   },
-  ADA:   { coin: "ADA",   network: "ADA"   },
-  DOGE:  { coin: "DOGE",  network: "DOGE"  },
-  DOT:   { coin: "DOT",   network: "DOT"   },
-  AVAX:  { coin: "AVAX",  network: "AVAX"  },
-  MATIC: { coin: "MATIC", network: "POL"   },
-  USDT:  { coin: "USDT",  network: "ERC20" },
-  USDC:  { coin: "USDC",  network: "ERC20" },
-  LINK:  { coin: "LINK",  network: "ERC20" },
-  UNI:   { coin: "UNI",   network: "ERC20" },
-};
-
 /* Ask LE: "for `netUsdt` USDT (ERC-20), how much TARGET coin do we get?"
    Returns { coinAmount, ratePerCoin } where ratePerCoin = USD price the
    customer effectively pays per unit (so the UI's "rate" matches reality). */
 async function quoteFromLE(coinSymbol: string, netUsdt: number): Promise<{ coinAmount: number; ratePerCoin: number } | null> {
-  const meta = LE_COIN_NETWORK[coinSymbol.toUpperCase()];
-  if (!meta) return null;
+  let meta: ReturnType<typeof getLeCoinNetwork>;
+  try {
+    meta = getLeCoinNetwork(coinSymbol);
+  } catch (err: any) {
+    logger.warn({ coinSymbol, err: err?.message }, "LE price quote skipped for unsupported coin");
+    return null;
+  }
   try {
     const body = {
       from:         "USDT",
@@ -62,6 +50,31 @@ async function quoteFromLE(coinSymbol: string, netUsdt: number): Promise<{ coinA
     logger.warn({ err: e?.message, coinSymbol }, "LE price quote failed");
     return null;
   }
+}
+
+async function getFallbackUsdPrice(coinSymbol: string): Promise<{
+  price: number;
+  source: "markets" | "fallback_prices";
+}> {
+  try {
+    const priceRes = await pool.query(
+      `SELECT last_price FROM markets WHERE symbol = $1 LIMIT 1`,
+      [`${coinSymbol}/USDT`]
+    );
+    if (priceRes.rows.length > 0) {
+      const price = parseFloat(priceRes.rows[0].last_price ?? "0");
+      if (price > 0) {
+        return { price, source: "markets" };
+      }
+    }
+  } catch (err: any) {
+    logger.warn({ coinSymbol, err: err?.message }, "Stripe checkout market fallback lookup failed");
+  }
+
+  return {
+    price: FALLBACK_PRICES[coinSymbol.toUpperCase()] ?? 0,
+    source: "fallback_prices",
+  };
 }
 
 const router = Router();
@@ -187,7 +200,7 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
 
     let price = 0;
     let cryptoAmount = 0;
-    let priceSource: "letsexchange" | "simpleswap" | "markets" | "internal_prices" = provider as "letsexchange" | "simpleswap";
+    let priceSource: "letsexchange" | "simpleswap" | "markets" | "fallback_prices" = provider as "letsexchange" | "simpleswap";
 
     const primaryQuote = provider === "simpleswap"
       ? await quoteFromSS(coinSymbol, netUsd)
@@ -197,29 +210,9 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
       price = primaryQuote.ratePerCoin;
       cryptoAmount = primaryQuote.coinAmount;
     } else {
-      /* FALLBACK 1: internal markets table (may be stale) */
-      try {
-        const priceRes = await pool.query(
-          `SELECT last_price FROM markets WHERE symbol = $1 LIMIT 1`,
-          [`${coinSymbol}/USDT`]
-        );
-        if (priceRes.rows.length > 0) {
-          price = parseFloat(priceRes.rows[0].last_price ?? "0");
-          if (price > 0) priceSource = "markets";
-        }
-      } catch { /* fallback below */ }
-
-      /* FALLBACK 2: internal /api/prices */
-      if (!price) {
-        try {
-          const r = await fetch(`http://localhost:${process.env.PORT}/api/prices`);
-          if (r.ok) {
-            const prices = await r.json() as Record<string, number>;
-            price = prices[coinSymbol] ?? 0;
-            if (price > 0) priceSource = "internal_prices";
-          }
-        } catch { /* ignore */ }
-      }
+      const fallback = await getFallbackUsdPrice(coinSymbol);
+      price = fallback.price;
+      if (price > 0) priceSource = fallback.source;
 
       if (!price || price <= 0) {
         res.status(422).json({ error: `Price unavailable for ${coinSymbol} — try again shortly` });

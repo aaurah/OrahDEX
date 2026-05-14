@@ -109,13 +109,16 @@ let _coinsCacheTs = 0;
 let _coinsInflight: Promise<LeCoin[]> | null = null;
 
 async function fetchCoins(): Promise<LeCoin[]> {
-  if (_coinsCache && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
+  // Only use cache when it has real data — never cache an empty list
+  if (_coinsCache && _coinsCache.length > 0 && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
   if (_coinsInflight) return _coinsInflight;
   _coinsInflight = fetch(`${API}/letsexchange/currencies`)
     .then(r => { if (!r.ok) throw new Error("currencies failed"); return r.json(); })
     .then((d: LeCoin[]) => {
-      _coinsCache = d;
-      _coinsCacheTs = Date.now();
+      if (d.length > 0) {         // only cache a real non-empty response
+        _coinsCache = d;
+        _coinsCacheTs = Date.now();
+      }
       _coinsInflight = null;
       return d;
     })
@@ -419,8 +422,14 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
         }),
       });
       const d = await r.json();
-      if (!r.ok) { setEstError(d.error ?? "Rate unavailable"); setEstimate(null); }
-      else { setEstimate(d as Estimate); }
+      if (!r.ok) {
+        if (d.code === "LE_KEY_NOT_CONFIGURED") {
+          setEstError("Cross-chain exchange is not yet configured on this server. The administrator needs to add the LETSEXCHANGE_API_KEY secret to enable live rates.");
+        } else {
+          setEstError(d.error ?? "Rate unavailable");
+        }
+        setEstimate(null);
+      } else { setEstimate(d as Estimate); }
     } catch { setEstError("Network error"); }
     setEstLoading(false);
   }, [fromCoin, toCoin, amount]);
@@ -467,7 +476,8 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   const belowMin = minAmt !== null && numAmt !== null && numAmt < minAmt;
   const aboveMax = maxAmt !== null && numAmt !== null && numAmt > maxAmt;
 
-  const rateIdExpiresMs = estimate?.rate_id_expired_at ? parseInt(estimate.rate_id_expired_at) : null;
+  // rate_id_expired_at from LE API is a Unix timestamp in seconds — multiply by 1000 to get ms
+  const rateIdExpiresMs = estimate?.rate_id_expired_at ? parseInt(estimate.rate_id_expired_at) * 1000 : null;
   const rateSecondsLeft = rateIdExpiresMs ? Math.max(0, Math.round((rateIdExpiresMs - Date.now()) / 1000)) : RATE_REFRESH;
 
   const canContinue = fromCoin && toCoin && numAmt && numAmt > 0 && !belowMin && !aboveMax;
@@ -644,7 +654,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
 function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, walletAddress }: {
   fromCoin: LeCoin; toCoin: LeCoin; amount: string; estimate: Estimate|null;
   onBack: () => void;
-  onContinue: (address: string, extraId: string) => void;
+  onContinue: (address: string, extraId: string, refund?: string) => void;
   walletAddress?: string | null;
 }) {
   const [address,    setAddress]    = useState("");
@@ -764,7 +774,7 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
       )}
 
       <button type="button" disabled={!addrOk || !extraOk}
-        onClick={() => addrOk && extraOk && onContinue(address.trim(), extraId.trim())}
+        onClick={() => addrOk && extraOk && onContinue(address.trim(), extraId.trim(), refund.trim() || undefined)}
         className={cn("w-full py-4 rounded-xl font-bold text-base transition-all",
           addrOk && extraOk
             ? "bg-emerald-500 hover:bg-emerald-400 text-black active:scale-[0.98]"
@@ -1167,11 +1177,13 @@ export function LetsExchangePanel({
   initialTo,
   walletAddress,
   onConnectWallet,
+  onExchangeCreated,
 }: {
   initialFrom?: string;
   initialTo?: string;
   walletAddress?: string | null;
   onConnectWallet?: () => void;
+  onExchangeCreated?: (fill: { price: number; side: "buy" | "sell" }) => void;
 } = {}) {
   const [coins,    setCoins]    = useState<LeCoin[]>([]);
   const [coinsErr, setCoinsErr] = useState(false);
@@ -1200,10 +1212,11 @@ export function LetsExchangePanel({
     setStep(2);
   };
 
-  const handleAddressContinue = async (address: string, extraId: string) => {
+  const handleAddressContinue = async (address: string, extraId: string, refund?: string) => {
     if (!fromCoin || !toCoin) return;
     setCreating(true); setCreateError(null);
     try {
+      const fixedRateId = estimate?.rate_id ?? null;
       const body: Record<string,unknown> = {
         coin_from:           fromCoin.symbol,
         coin_to:             toCoin.symbol,
@@ -1212,8 +1225,10 @@ export function LetsExchangePanel({
         deposit_amount:      parseFloat(sendAmount),
         withdrawal:          address,
         withdrawal_extra_id: extraId,   // always sent, even if ""
-        float:               true,
+        float:               !fixedRateId,
       };
+      if (fixedRateId) body.rate_id = fixedRateId;
+      if (refund) body.return = refund;
 
       const r = await fetch(`${API}/letsexchange/exchange`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
@@ -1221,9 +1236,10 @@ export function LetsExchangePanel({
       const d = await r.json();
 
       if (!r.ok) {
-        // Show a clean error — extract validation messages if available
         let msg = d.error ?? "Failed to create exchange";
-        if (d.detail?.error?.validation) {
+        if (d.code === "LE_KEY_NOT_CONFIGURED") {
+          msg = "Cross-chain exchange is not yet configured on this server. The administrator needs to add the LETSEXCHANGE_API_KEY secret.";
+        } else if (d.detail?.error?.validation) {
           const v = d.detail.error.validation as Record<string,string>;
           msg = Object.values(v).join(". ");
         }
@@ -1235,6 +1251,11 @@ export function LetsExchangePanel({
       addHistoryEntry(newOrder);
       setOrder(newOrder);
       setStep(3);
+      // Notify parent so the OrderBook can flash on swap confirmation
+      if (estimate && fromCoin && toCoin) {
+        const rateNum = parseFloat(estimate.amount) / parseFloat(sendAmount || "1");
+        onExchangeCreated?.({ price: isFinite(rateNum) ? rateNum : 0, side: "buy" });
+      }
     } catch { setCreateError("Network error — please try again"); }
     setCreating(false);
   };
@@ -1252,10 +1273,10 @@ export function LetsExchangePanel({
       </div>
     );
   }
-  if (coinsErr) {
+  if (coinsErr || (!loading && coins.length === 0)) {
     return (
-      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-red-400 flex items-center gap-2">
-        <AlertTriangle className="w-4 h-4 shrink-0" /> Failed to load coin list.
+      <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground flex items-center gap-2">
+        <AlertTriangle className="w-4 h-4 shrink-0 text-yellow-400/70" /> Cross-chain swap unavailable.
       </div>
     );
   }

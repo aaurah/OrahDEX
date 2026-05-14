@@ -136,7 +136,7 @@ function AiTradeSignalsCard() {
   const fetchSignal = async (sym: string) => {
     setSignals(s => ({ ...s, [sym]: { ...s[sym], loading: true } }));
     try {
-      const r = await fetch(`${BASE}/api/ai/trade-signal?symbol=${sym.replace("/", "%2F")}`);
+      const r = await fetch(`${BASE}/api/ai/trade-signal?symbol=${encodeURIComponent(sym)}`);
       const d = await r.json();
       setSignals(s => ({ ...s, [sym]: { signal: d.signal, sentiment: d.sentiment, loading: false } }));
     } catch {
@@ -221,7 +221,7 @@ function AiTestTradeRunner() {
         const start = Date.now();
 
         // 1. Fetch AI signal for this pair
-        const sigResp = await fetch(`${BASE}/api/ai/trade-signal?symbol=${pair.replace("/", "%2F")}`);
+        const sigResp = await fetch(`${BASE}/api/ai/trade-signal?symbol=${encodeURIComponent(pair)}`);
         const sigData = await sigResp.json();
         const side: "buy" | "sell" = sigData.sentiment === "bearish" ? "sell" : "buy";
 

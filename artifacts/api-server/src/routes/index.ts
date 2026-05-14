@@ -38,6 +38,7 @@ import tradeRouter from "./trade.js";
 import letsexchangeRouter from "./letsexchange.js";
 import stakingRouter from "./staking.js";
 import stripeCheckoutRouter from "./stripeCheckout.js";
+import adminDiagnosticsRouter from "./adminDiagnostics.js";
 import coinbaseRouter from "./coinbase.js";
 import kycRouter from "./kyc.js";
 import { db, pool } from "@workspace/db";
@@ -93,6 +94,7 @@ router.use("/admin", (req, res, next) => {
   return requireAdminToken(req, res, next);
 });
 router.use("/admin", adminRouter);
+router.use("/admin", adminDiagnosticsRouter);
 router.use("/admin", cexRouter);
 router.use("/tv", tvRouter);
 router.use("/global-markets", globalMarketsRouter);
@@ -106,10 +108,10 @@ router.use(virtualAmmRouter);
 router.use(keeperRouter);
 router.use(p2pIntentsRouter);
 router.use(feeRevenueRouter);
+router.use(withdrawalsRouter);
 router.use(tradeRouter);
 router.use("/chat", chatRouter);
 router.use("/settlement/evm", evmSettlementRouter);
-router.use(withdrawalsRouter);
 router.use(depositRouter);
 router.use(nftRouter);
 router.use(socialNftRouter);
@@ -234,6 +236,12 @@ router.get("/bsv/balance/:address", async (req, res) => {
     // Try paymail PKI resolution to get the P2PKH address
     const [alias, domain] = raw.split("@");
 
+    // Validate domain is a safe public hostname to prevent SSRF
+    if (!/^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/.test(domain)) {
+      res.status(400).json({ error: "Invalid paymail domain." });
+      return;
+    }
+
     // Strategy 1: Try well-known bsvalias to find pki endpoint
     const paymailDomains = [domain, `bsvalias.${domain}`];
     for (const d of paymailDomains) {
@@ -246,9 +254,11 @@ router.get("/bsv/balance/:address", async (req, res) => {
           const caps = await wk.json() as any;
           const pkiTmpl: string | undefined = caps?.capabilities?.pki;
           if (pkiTmpl) {
+            // Only follow https:// PKI template URLs to prevent SSRF
             const pkiUrl = pkiTmpl
-              .replace("{alias}", alias)
-              .replace("{domain.tld}", domain);
+              .replace("{alias}", encodeURIComponent(alias))
+              .replace("{domain.tld}", encodeURIComponent(domain));
+            if (!pkiUrl.startsWith("https://")) { break; }
             const ctrl2 = new AbortController();
             const t2 = setTimeout(() => ctrl2.abort(), 3000);
             const pkiRes = await fetch(pkiUrl, { signal: ctrl2.signal });
@@ -270,10 +280,12 @@ router.get("/bsv/balance/:address", async (req, res) => {
 
     // Strategy 2: Try well-known direct PKI endpoint patterns
     if (!bsvAddress) {
+      const encodedAlias = encodeURIComponent(alias);
+      const encodedDomain = encodeURIComponent(domain);
       const pkiPatterns = [
-        `https://bsvalias.${domain}/${alias}@${domain}/id-key`,
-        `https://bsvalias.${domain}/${alias}@${domain}/public-key`,
-        `https://${domain}/${alias}@${domain}/id-key`,
+        `https://bsvalias.${domain}/${encodedAlias}@${encodedDomain}/id-key`,
+        `https://bsvalias.${domain}/${encodedAlias}@${encodedDomain}/public-key`,
+        `https://${domain}/${encodedAlias}@${encodedDomain}/id-key`,
       ];
       for (const url of pkiPatterns) {
         try {
@@ -352,6 +364,8 @@ router.get("/bsv/balance/:address", async (req, res) => {
 router.get("/bsv/utxos/:address", async (req, res) => {
   const address = req.params.address ?? "";
   if (!address) { res.status(400).json({ error: "address required" }); return; }
+  // Validate BSV address format to prevent SSRF
+  if (!isBsvAddress(address)) { res.status(400).json({ error: "invalid BSV address" }); return; }
   try {
     const ctrl  = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
@@ -541,7 +555,19 @@ router.post("/webhook/email-inbound", async (req, res) => {
       b["body-html"] ?? b.html ?? b.HtmlBody ?? "(empty)";
 
     // Strip basic HTML tags for storage if we only got HTML
-    const cleanBody = body.replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim();
+    // Use a character-by-character approach to avoid ReDoS on untrusted input.
+    // Handles nested `<` by tracking the outermost opening tag only.
+    const MAX_EMAIL_BODY_LENGTH = 50_000;
+    const cleanBody = (() => {
+      let out = "";
+      let tagDepth = 0;
+      for (const ch of body.slice(0, MAX_EMAIL_BODY_LENGTH)) {
+        if (ch === "<") { tagDepth++; continue; }
+        if (ch === ">" && tagDepth > 0) { tagDepth--; if (tagDepth === 0) out += " "; continue; }
+        if (tagDepth === 0) out += ch;
+      }
+      return out.replace(/  +/g, " ").trim();
+    })();
 
     if (!from || !subject) {
       res.status(400).json({ error: "Missing required fields: from, subject" });

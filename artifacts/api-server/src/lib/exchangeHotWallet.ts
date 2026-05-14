@@ -24,13 +24,16 @@ import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { getRequiredEnv } from "./requiredEnv.js";
 
 // ── Encryption (AES-256-GCM) ───────────────────────────────────────────────────
 
-const SECRET = process.env.EVM_WALLET_SECRET ?? "orahdex-internal-evm-fallback-key-32bytes!";
-
 function deriveKey(): Buffer {
-  return scryptSync(SECRET, "orahdex-hot-wallet-salt-v1", 32) as Buffer;
+  return scryptSync(
+    getRequiredEnv("EVM_WALLET_SECRET", "[FATAL] EVM_WALLET_SECRET is not set. Refusing to derive hot-wallet encryption keys."),
+    "orahdex-hot-wallet-salt-v1",
+    32,
+  ) as Buffer;
 }
 
 function encrypt(plain: string): string {
@@ -111,17 +114,28 @@ export async function getOrCreateEvmHotWallet(): Promise<HotWalletInfo> {
   const envKey = process.env.EXCHANGE_HOT_WALLET_KEY;
   if (isPrivKeyShape(envKey)) return toAccount(envKey!);
 
-  // 1b. Tolerate the common operator mistake of pasting the private key into
-  // EVM_WALLET_SECRET instead. If EVM_WALLET_SECRET is private-key shaped AND
-  // EXCHANGE_HOT_WALLET_KEY is not, treat EVM_WALLET_SECRET as the key and
-  // log a warning so the operator knows to fix the naming.
+  // 1b. Allow operators to reuse EVM_WALLET_SECRET as the hot wallet key ONLY
+  // when EXCHANGE_HOT_WALLET_KEY_ALLOW_EVM_SECRET=1 is explicitly set.
+  // This opt-in prevents silent key sharing between the escrow relayer and the
+  // hot withdrawal wallet (key compromise would affect both roles otherwise).
+  const allowSharedKey = process.env.EXCHANGE_HOT_WALLET_KEY_ALLOW_EVM_SECRET === "1";
   const evmSecret = process.env.EVM_WALLET_SECRET;
-  if (isPrivKeyShape(evmSecret) && !isPrivKeyShape(envKey)) {
+  if (allowSharedKey && isPrivKeyShape(evmSecret) && !isPrivKeyShape(envKey)) {
     logger.warn(
-      "EVM_WALLET_SECRET appears to be a private key (64 hex chars). Using it as the hot wallet key. " +
-      "For clarity, please move this value to EXCHANGE_HOT_WALLET_KEY and set EVM_WALLET_SECRET to a random passphrase instead."
+      "Using EVM_WALLET_SECRET as the exchange hot wallet key because " +
+      "EXCHANGE_HOT_WALLET_KEY_ALLOW_EVM_SECRET=1 is set. " +
+      "This shares one key between the escrow relayer and hot wallet. " +
+      "Set EXCHANGE_HOT_WALLET_KEY to a separate key for production deployments."
     );
     return toAccount(evmSecret!);
+  }
+  if (!allowSharedKey && isPrivKeyShape(evmSecret) && !isPrivKeyShape(envKey)) {
+    logger.warn(
+      "EXCHANGE_HOT_WALLET_KEY is not set. EVM_WALLET_SECRET is a private key but " +
+      "EXCHANGE_HOT_WALLET_KEY_ALLOW_EVM_SECRET is not set, so it will not be used " +
+      "as the hot wallet key. Set EXCHANGE_HOT_WALLET_KEY for EVM withdrawals, or " +
+      "set EXCHANGE_HOT_WALLET_KEY_ALLOW_EVM_SECRET=1 to share the key (not recommended)."
+    );
   }
 
   // 2. DB (encrypted)

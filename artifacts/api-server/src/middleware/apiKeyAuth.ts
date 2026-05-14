@@ -22,7 +22,14 @@ export interface StoredApiKey {
 }
 
 export function sha256Hex(s: string): string {
-  return crypto.createHash("sha256").update(s).digest("hex");
+  // Use scrypt (a memory-hard KDF) so the key hash has meaningful computational cost.
+  // A server-side pepper (API_KEY_HMAC_SECRET) is used as the salt, which ensures
+  // that leaked hashes from the database cannot be attacked without the server secret.
+  const pepper = process.env["API_KEY_HMAC_SECRET"];
+  if (!pepper) {
+    throw new Error("API_KEY_HMAC_SECRET environment variable is required but not set");
+  }
+  return crypto.scryptSync(s, Buffer.from(pepper), 32, { N: 32768, r: 8, p: 1 }).toString("hex");
 }
 
 export async function loadStoredApiKeys(): Promise<StoredApiKey[]> {

@@ -19,6 +19,7 @@ import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanRece
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 import { useEscrow } from "@/hooks/useEscrow";
+import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
 import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
 import { hasEscrow, chainLabel, checkEscrowDeposit } from "@/lib/escrow";
@@ -334,7 +335,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { prices: crossPrices } = useWalletPrices();
   const BTC_USD_RATE = crossPrices.BTC.usd || 83000;
   const BSV_USD_RATE = crossPrices.BSV.usd || 16;
-  const ETH_USD_RATE = crossPrices.ETH.usd || 1800;
+  const ETH_USD_RATE = crossPrices.ETH.usd || 2400;
   const QUOTE_TO_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
     BTC: BTC_USD_RATE, ETH: ETH_USD_RATE, BSV: BSV_USD_RATE,
@@ -530,7 +531,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     price: number;
   } | null>(_bootLockFlow?.order ?? null);
   const [escrowTx, setEscrowTx] = useState<{ txHash: string; explorerUrl: string } | null>(_bootLockFlow?.tx ?? null);
-  const { escrowAvailable, status: escrowStatus, lockOrder, cancelOrder: cancelOrderOnChain, isLoading: escrowLoading, errorMsg: escrowErrorMsg, txResult: escrowTxResult } = useEscrow();
+  const { escrowAvailable, status: escrowStatus, lockOrder, cancelOrder: cancelOrderOnChain, isLoading: escrowLoading, errorMsg: escrowErrorMsg, txResult: escrowTxResult, reset: resetEscrow } = useEscrow();
   // Lock-funds confirmation dialog (opens when user taps "Lock funds on X")
   // ── Persistence: mobile Safari kills the tab when the user opens imToken
   // to sign, so we save the in-flight lock state to sessionStorage and
@@ -675,6 +676,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           quantity: Number(ordQtyDisplay) || 0,
           price:    usePrice,
         });
+        resetEscrow();
         setLockDialogOpen(true);
       }
 
@@ -766,7 +768,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     },
   });
 
-  const [interval, setInterval] = useState<string>("1h");
+  const [interval, setInterval] = useState<string>(() => {
+    const saved = localStorage.getItem('orahdex-mobile-interval');
+    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y','All'];
+    return saved && valid.includes(saved) ? saved : "1h";
+  });
   const [activeIndicator, setActiveIndicator] = useState<IndicatorName | null>(null);
   const [bottomTab, setBottomTab] = useState<BottomTab>("orderbook");
   const [starred, setStarred] = useState(false);
@@ -842,11 +848,22 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     refetchInterval: 5000,
   });
 
+  const { pairs: rawLePairs } = useLetsExchangePairs({ all: true });
+  const lePair = useMemo(() => {
+    if (!Array.isArray(rawLePairs)) return null;
+    const key = symbol.toUpperCase();
+    return rawLePairs.find((p) => String(p.symbol).toUpperCase() === key) ?? null;
+  }, [rawLePairs, symbol]);
+
+  const lePairPrice = Number(lePair?.lastPrice ?? 0) || 0;
+  const lePairChange = Number(lePair?.priceChangePercent24h ?? 0) || 0;
+
   const MOBILE_RANGE_PRESET_MAP: Record<string, { apiInterval: string; limit: number }> = {
     '1Y':  { apiInterval: '1d', limit: 365 },
     '2Y':  { apiInterval: '1w', limit: 104 },
     '5Y':  { apiInterval: '1w', limit: 261 },
     '10Y': { apiInterval: '1M', limit: 120 },
+    'All': { apiInterval: '1M', limit: 1500 },
   };
   const mobilePreset = MOBILE_RANGE_PRESET_MAP[interval];
   const mobileApiInterval = mobilePreset ? mobilePreset.apiInterval : interval;
@@ -884,7 +901,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       const r = await fetch(`${BASE}/api/letsexchange/estimate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ coin_from, coin_to, amount: 1 }),
+        body: JSON.stringify({
+          from:         coin_from,
+          to:           coin_to,
+          network_from: coin_from,
+          network_to:   coin_to,
+          amount:       1,
+        }),
       });
       if (!r.ok) return null;
       return r.json();
@@ -893,7 +916,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     retry: false,
   });
 
-  const lastPrice = parseFloat(ticker?.lastPrice) || 0;
+  const lastPrice = parseFloat(ticker?.lastPrice) || lePairPrice || 0;
 
   // ── lockedBuySpend: quote asset spent in open buy orders ───────────────────
   // Market orders have price: null in the DB, so we fall back to lastPrice to
@@ -912,7 +935,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       return sum + qty * px;
     }, 0);
 
-  const change = parseFloat(ticker?.priceChangePercent) || 0;
+  const change = parseFloat(ticker?.priceChangePercent) || lePairChange || 0;
   const high24 = parseFloat(ticker?.highPrice) || 0;
   const low24  = parseFloat(ticker?.lowPrice)  || 0;
   const vol24  = parseFloat(ticker?.volume)    || 0;
@@ -941,6 +964,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     document.title = `${sign} ${fmt(lastPrice)} | ${base}/${quote} | OrahDEX`;
     return () => { document.title = "OrahDEX"; };
   }, [lastPrice, change, base, quote]);
+
+  // Persist interval across page refreshes
+  useEffect(() => { localStorage.setItem('orahdex-mobile-interval', interval); }, [interval]);
 
   // Quote-currency and cross-rate computations
   const quoteToUSD    = QUOTE_TO_USD[quote] ?? 1;
@@ -1353,7 +1379,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {/* ── TIMEFRAME + INDICATOR ROW ── */}
         <div className="flex items-center gap-0 border-b border-border bg-card overflow-x-auto no-scrollbar px-2 py-1.5">
           {/* Timeframe pills */}
-          {(["1m","3m","5m","15m","30m","1h","2h","4h","1d","1w","1M","1Y","2Y","5Y","10Y"]).map(iv => (
+          {(["1m","3m","5m","15m","30m","1h","2h","4h","1d","1w","1M","1Y","2Y","5Y","10Y","All"]).map(iv => (
             <button
               key={iv}
               onClick={() => handleIntervalChange(iv)}
@@ -2292,6 +2318,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           quantity: orderResult.quantity || orderResult.filledQty || 0,
                           price:    usePrice,
                         });
+                        resetEscrow();
                         setLockDialogOpen(true);
                       }}
                       className={cn(

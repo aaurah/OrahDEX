@@ -18,14 +18,14 @@ import {
   scryptSync,
 } from "node:crypto";
 import { pool } from "@workspace/db";
-
-// ── Encryption helpers ────────────────────────────────────────────────────────
-
-const WALLET_SECRET =
-  process.env.EVM_WALLET_SECRET ?? "orahdex-internal-evm-fallback-key-32bytes!";
+import { getRequiredEnv } from "./requiredEnv.js";
 
 function deriveKey(): Buffer {
-  return scryptSync(WALLET_SECRET, "orahdex-evm-salt-v1", 32) as Buffer;
+  return scryptSync(
+    getRequiredEnv("EVM_WALLET_SECRET", "[FATAL] EVM_WALLET_SECRET is not set. Refusing to derive internal EVM wallet keys."),
+    "orahdex-evm-salt-v1",
+    32,
+  ) as Buffer;
 }
 
 function encrypt(plaintext: string): string {

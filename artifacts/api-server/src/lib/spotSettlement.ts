@@ -37,6 +37,7 @@ import {
 } from "./htlc.js";
 import { getBsvChainStatus } from "./bsvChainMonitor.js";
 import { settleTrade } from "./ledger.js";
+import { BOT_ADDRESS } from "./liquidityBot.js";
 import { onTradeSettled as copyVaultOnTradeSettled } from "./copyOrchestrator.js";
 import { registerHtlc } from "./htlcWatcher.js";
 
@@ -152,7 +153,33 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
     htlcLocktimeBlocks: htlcResult?.locktimeBlocks,
   });
 
-  // ── 4. Attempt real BSV broadcast ────────────────────────────────────────
+  // ── 4. Settle ledger balances FIRST (atomic, source of truth) ───────────
+  // Run for every fill — bot fills too.  The ledger must be committed before
+  // any on-chain broadcast so the two cannot diverge (broadcast is best-effort;
+  // ledger is authoritative). If ledger settlement fails we do NOT broadcast.
+  try {
+    await settleTrade({
+      buyerAddress,
+      sellerAddress,
+      baseAsset:   baseAsset!,
+      quoteAsset:  quoteAsset!,
+      amount:      fillQty.toString(),
+      price:       fillPrice.toString(),
+      isBotSeller: sellerAddress === BOT_ADDRESS,
+      isBotBuyer:  buyerAddress  === BOT_ADDRESS,
+    });
+  } catch (err) {
+    // Ledger settlement is the source of truth for balances.
+    // A failure here means the fill cannot be credited — propagate so the
+    // caller can roll back order state and avoid phantom balances.
+    log.error({ err, tradeId }, "spotSettlement: ledger settlement failed — aborting fill (no broadcast)");
+    throw err;
+  }
+
+  // ── 5. Attempt real BSV broadcast (best-effort) ──────────────────────────
+  // Only broadcast AFTER the ledger is committed.  If broadcast fails the
+  // deterministic txid is used as the audit reference; the ledger is already
+  // settled so user balances are correct regardless.
   let broadcastTxid    = fallback.txid;
   let wasRealBroadcast = false;
 
@@ -188,7 +215,7 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
       }
     }
   } catch (err) {
-    log.warn({ err }, "spotSettlement: BSV broadcast failed — using deterministic txid");
+    log.warn({ err }, "spotSettlement: BSV broadcast failed — using deterministic txid (ledger already settled)");
   }
 
   // Mark unbroadcast (local-only) settlement txids so the UI doesn't link
@@ -211,27 +238,6 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
       ? `spotSettlement: BROADCAST to mainnet ✓ (${fallback.settlementType})`
       : `spotSettlement: deterministic txid committed (${fallback.settlementType})`
   );
-
-  // ── 5. Settle ledger balances ────────────────────────────────────────────
-  // This runs for every fill — bot fills too.  The ledger is the source of
-  // truth for free/locked balances; on-chain broadcast is best-effort.
-  try {
-    await settleTrade({
-      buyerAddress,
-      sellerAddress,
-      baseAsset:  baseAsset!,
-      quoteAsset: quoteAsset!,
-      amount:     fillQty.toString(),
-      price:      fillPrice.toString(),
-    });
-  } catch (err) {
-    // Ledger settlement is the source of truth for balances.
-    // A failure here (e.g. SETTLEMENT_INSUFFICIENT_LOCK) means the fill cannot
-    // be credited — propagate so the caller can roll back the order state and
-    // avoid creating phantom balances.
-    log.error({ err, tradeId }, "spotSettlement: ledger settlement failed — aborting fill");
-    throw err;
-  }
 
   // ── 5b. CopyVault hook: mirror this trade into any vault led by buyer/seller ─
   // Fire-and-forget — copy bookkeeping must never fail the underlying fill.

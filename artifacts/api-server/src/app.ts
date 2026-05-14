@@ -3,6 +3,9 @@ import cors from "cors";
 import compression from "compression";
 import pinoHttp from "pino-http";
 import rateLimit from "express-rate-limit";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
 import router from "./routes";
 import v1Router from "./routes/v1.js";
 import { logger } from "./lib/logger";
@@ -21,10 +24,26 @@ import { hydrateAdminTokens } from "./middleware/adminAuth.js";
 import { startCopyOrchestrator } from "./lib/copyOrchestrator.js";
 import { apiKeyAuth, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
 import { WebhookHandlers } from "./webhookHandlers.js";
-import quicknodeWebhookRouter from "./routes/quicknodeWebhook.js";
+import evmWebhookRouter from "./routes/evmWebhookRouter.js";
 import { getHealthReport, startOrderReconciler } from "./lib/selfHealing.js";
+import { startAllReconcilers } from "./lib/selfHealingReconcilers.js";
+import { hydrateAlertsFromDB } from "./lib/alertBus.js";
+import { startExchangeApiRepairEngine } from "./lib/exchangeApiRepairEngine.js";
 
 const app: Express = express();
+const middlewareRegistrationOrder: string[] = [];
+
+function assertWebhookMiddlewareOrder(order: string[]): void {
+  const jsonIdx = order.indexOf("express.json");
+  const evmIdx = order.indexOf("evm-webhook");
+  const stripeIdx = order.indexOf("stripe-webhook");
+  if (jsonIdx === -1 || evmIdx === -1 || stripeIdx === -1) {
+    throw new Error("[FATAL] Missing middleware registration markers for webhook order assertion");
+  }
+  if (evmIdx > jsonIdx || stripeIdx > jsonIdx) {
+    throw new Error("[FATAL] Webhook routes must be registered before express.json()");
+  }
+}
 
 /* ── Trust proxy — required for correct IP detection behind Replit's reverse proxy
  * Enables accurate rate-limiting and X-Forwarded-For header parsing. ────────── */
@@ -59,21 +78,43 @@ app.use(
     },
   }),
 );
+// Build the allowed-origin list:
+//   1. ALLOWED_ORIGINS env var (comma-separated, takes full precedence when set)
+//   2. Hard-coded custom domains
+//   3. All *.replit.app / *.replit.dev subdomains (covers all Replit deployments)
+//   4. localhost variants (dev convenience)
+const _allowedOrigins: (string | RegExp)[] = process.env["ALLOWED_ORIGINS"]
+  ? process.env["ALLOWED_ORIGINS"].split(",").map(o => o.trim()).filter(Boolean)
+  : [
+      "https://orahdex.org",
+      "https://www.orahdex.org",
+      /^https?:\/\/[^.]+\.replit\.app$/,
+      /^https?:\/\/[^.]+\.replit\.dev$/,
+      /^https?:\/\/localhost(:\d+)?$/,
+      /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+    ];
+
 app.use(cors({
-  origin: "*",
+  origin: _allowedOrigins,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "x-admin-token"],
+  credentials: true,
 }));
 
-/* ── QuickNode Streams webhook — registered BEFORE express.json() ─────────────
+/* ── EVM webhook — registered BEFORE express.json() ──────────────────────────
    HMAC-SHA256 signature verification requires the raw request body (Buffer).
    Any body-parsing middleware applied before this route would break verification.
+   Receives EVM log events from any compatible provider (Alchemy, Infura, etc.).
+   Env: EVM_WEBHOOK_SECRET — shared HMAC secret for payload verification.
+   Paths: POST /api/webhooks/evm  (primary)
+          POST /api/webhooks/quicknode  (legacy, for existing registrations)
 ── */
 app.use(
   "/api/webhooks",
   express.raw({ type: "*/*" }),
-  quicknodeWebhookRouter,
+  evmWebhookRouter,
 );
+middlewareRegistrationOrder.push("evm-webhook");
 
 /* ── Stripe webhook — MUST be registered BEFORE express.json() ───────────────
    Stripe requires the raw request body (Buffer) to verify the signature.
@@ -96,6 +137,7 @@ app.post(
     }
   }
 );
+middlewareRegistrationOrder.push("stripe-webhook");
 
 // Image-bearing endpoints (camera/AI base64 data-URLs ≈ 3-6 MB) get a higher
 // body-size cap; everything else stays at the safer 1 MB to limit DoS surface.
@@ -114,6 +156,8 @@ app.use((req, res, next) => {
 });
 app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true, limit: "1mb" }));
+middlewareRegistrationOrder.push("express.json");
+assertWebhookMiddlewareOrder(middlewareRegistrationOrder);
 
 /* ── Rate limiting ────────────────────────────────────────────────────────────
  * Layered approach:
@@ -221,7 +265,9 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
 
 /* ── Request timeout — prevents hung external calls blocking a slot ────────── */
 app.use((_req: Request, res: Response, next: NextFunction) => {
-  const ms = _req.method === "GET" ? 30_000 : 60_000;
+  // AI image generation (gpt-image-1) can take 90–120 s — give it extra headroom.
+  const isAiImage = _req.path === "/social/ai/image" && _req.method === "POST";
+  const ms = isAiImage ? 120_000 : (_req.method === "GET" ? 30_000 : 60_000);
   const timer = setTimeout(() => {
     if (!res.headersSent) {
       res.status(503).json({ error: "Request timeout" });
@@ -238,11 +284,46 @@ app.get("/api/ping", (_req, res) => {
   res.status(204).end();
 });
 
+/* ── Health checks — MUST be registered BEFORE app.use("/api", router).
+   The main router mounts futuresRouter at "/" without a prefix, and that
+   router has a blanket middleware that returns 503 for all requests when
+   FUTURES_ENABLED !== "true". Registering /health here (before the router)
+   means Express matches these routes first and never reaches the futures
+   middleware, so the health pulse stays green when futures are disabled. ── */
+app.get("/api/health",  healthHandler);
+app.get("/api/healthz", healthHandler);
+
 app.use("/api", apiKeyAuth);
 app.use("/v1", apiKeyAuth);
 app.use("/api", router);
 app.use("/v1", v1Router);
 startApiKeyCounterFlusher();
+
+/* ── Static frontend — served in production (Replit deployment) ──────────────
+   The Vite build outputs to artifacts/bsv-dex/dist/public.
+   From the compiled server at artifacts/api-server/dist/, that is two levels up.
+   Serving from the same Express process eliminates the need for a separate
+   preview server and the /api proxy problem it creates.
+── */
+if (process.env.NODE_ENV === "production") {
+  const __serverDir = path.dirname(fileURLToPath(import.meta.url));
+  const frontendDist = path.resolve(__serverDir, "../../bsv-dex/dist/public");
+  if (fs.existsSync(frontendDist)) {
+    logger.info({ frontendDist }, "Serving static frontend in production");
+    // Static assets — long-lived cache for hashed filenames
+    app.use(express.static(frontendDist, {
+      maxAge: "1y",
+      immutable: true,
+      index: false,
+    }));
+    // SPA catch-all: any path not matched by /api or /v1 serves index.html
+    app.get(/^(?!\/api|\/v1).*$/, (_req: Request, res: Response) => {
+      res.sendFile(path.join(frontendDist, "index.html"));
+    });
+  } else {
+    logger.warn({ frontendDist }, "Frontend dist not found — skipping static serving");
+  }
+}
 
 /* ── Global Express error handler — catches any sync/async route throw ─────── */
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
@@ -257,7 +338,17 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 /* ── Background services — each wrapped so one failure can't crash others ──── */
 hydrateAdminTokens().catch(e => logger.warn({ err: e }, "hydrateAdminTokens failed (non-fatal)"));
 startCopyOrchestrator();
-warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
+// Delay the LE currencies warm-up by 60 s so it doesn't add to the boot-time
+// memory spike caused by other concurrent startup tasks.
+setTimeout(() => {
+  warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
+}, 60_000);
+
+// syncAllLEPairs() is intentionally NOT called at startup.
+// The DB already holds LE pairs from a previous run (36 K+ rows).
+// Calling it here would build 109,230 pair objects in RAM before the first
+// JSON.stringify completes, causing an out-of-memory crash on every boot.
+// The /api/admin/sync-le-pairs endpoint triggers it on demand when needed.
 try { startPriceUpdater();        } catch (e) { logger.error({ err: e }, "startPriceUpdater failed to init"); }
 try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startLiquidityBot failed to init"); }
 try { startArbBot();              } catch (e) { logger.error({ err: e }, "startArbBot failed to init"); }
@@ -268,7 +359,10 @@ try { startEvmDepositWatcher();   } catch (e) { logger.error({ err: e }, "startE
 startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed to init"));
 startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
 try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
-try { startOrderReconciler();     } catch (e) { logger.error({ err: e }, "startOrderReconciler failed to init"); }
+try { startOrderReconciler();              } catch (e) { logger.error({ err: e }, "startOrderReconciler failed to init"); }
+try { startAllReconcilers();               } catch (e) { logger.error({ err: e }, "startAllReconcilers failed to init"); }
+try { startExchangeApiRepairEngine();      } catch (e) { logger.error({ err: e }, "startExchangeApiRepairEngine failed to init"); }
+hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 
 /* ── Health check — both /health and /healthz (artifact.toml uses healthz) ── */
 async function healthHandler(_req: any, res: any) {
@@ -280,8 +374,21 @@ async function healthHandler(_req: any, res: any) {
   try { const bsv = await getBsvChainStatus(); bsvChain = { online: bsv.online, blockHeight: bsv.blockHeight }; }
   catch { /* non-fatal */ }
 
+  // Only CRITICAL services failing should degrade the public health signal.
+  // Non-critical reconcilers (le-status-sync, ghost-order-detector, etc.) being
+  // stuck or dead should not cause the logo pulse to go red or load-balancers to
+  // pull the instance — the core exchange still works fine without them.
+  const CRITICAL_SERVICES = new Set([
+    "price-updater",
+    "db-watchdog",
+    "liquidity-bot",
+  ]);
+  const anyCriticalDead = services.some(
+    s => s.status === "dead" && CRITICAL_SERVICES.has(s.name),
+  );
+
   const payload = {
-    status:    anyDead ? "degraded" : "ok",
+    status:    anyCriticalDead ? "degraded" : "ok",
     uptime:    Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
     bsvChain,
@@ -305,10 +412,11 @@ async function healthHandler(_req: any, res: any) {
     logger.warn({ alerts: payload.alerts }, "Health check: degraded services detected");
   }
 
-  res.status(anyDead ? 503 : 200).json(payload);
+  res.status(anyCriticalDead ? 503 : 200).json(payload);
 }
-app.get("/api/health", healthHandler);
-app.get("/api/healthz", healthHandler);
+// NOTE: /api/health and /api/healthz are registered BEFORE app.use("/api", router)
+// further up in this file. These duplicate registrations are intentionally removed
+// to avoid shadowing the correctly-ordered registrations above.
 
 /* ── BSV chain status ─────────────────────────────────────────────────────── */
 app.get("/api/bsv-status", async (_req, res) => {

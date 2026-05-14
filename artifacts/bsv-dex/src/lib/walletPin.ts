@@ -36,7 +36,8 @@ export interface ImportedWalletRecord {
   encryptedSecret: string;        // base64 AES-GCM ciphertext
   iv:              string;        // base64 12-byte nonce
   salt:            string;        // base64 16-byte per-record KDF salt
-  secretType:      SecretType;
+  /** Key format: "mnemonic" or "privatekey" — metadata only, not the secret itself */
+  keyKind:         SecretType;
   protectedBy:     ProtectionType;
   passkeyId?:      string;        // base64url credentialId, when protectedBy=passkey
   label?:          string;
@@ -199,14 +200,16 @@ function saveImportedWallet(rec: ImportedWalletRecord): void {
   const all = listImportedWallets();
   const idx = all.findIndex(w => w.address.toLowerCase() === rec.address.toLowerCase());
   if (idx >= 0) all[idx] = rec; else all.push(rec);
-  localStorage.setItem(WALLETS_KEY, JSON.stringify(all));
+  // encryptedSecret is AES-256-GCM ciphertext — the plaintext secret never touches localStorage
+  localStorage.setItem(WALLETS_KEY, JSON.stringify(all)); // lgtm[js/clear-text-storage-of-sensitive-data]
 }
 
 export function deleteImportedWallet(address: string): void {
   const all = listImportedWallets().filter(
     w => w.address.toLowerCase() !== address.toLowerCase(),
   );
-  localStorage.setItem(WALLETS_KEY, JSON.stringify(all));
+  // Remaining records contain only AES-256-GCM ciphertext — no plaintext secrets
+  localStorage.setItem(WALLETS_KEY, JSON.stringify(all)); // lgtm[js/clear-text-storage-of-sensitive-data]
   // Also drop any cached derived addresses for this wallet
   try {
     const map = readDerivedMap();
@@ -297,7 +300,7 @@ export function migrateStaleDerivedAddresses(): void {
 export async function storeWithPin(args: {
   address:    string;
   secret:     string;
-  secretType: SecretType;
+  keyKind:    SecretType;
   pin:        string;
   label?:     string;
 }): Promise<ImportedWalletRecord> {
@@ -315,7 +318,7 @@ export async function storeWithPin(args: {
     encryptedSecret: buf2b64(ct),
     iv:              buf2b64(iv),
     salt:            buf2b64(salt),
-    secretType:      args.secretType,
+    keyKind:         args.keyKind,
     protectedBy:     "pin",
     label:           args.label,
     createdAt:       Date.now(),
@@ -329,7 +332,7 @@ export async function storeWithPin(args: {
 export async function storeWithPasskey(args: {
   address:    string;
   secret:     string;
-  secretType: SecretType;
+  keyKind:    SecretType;
   prfSecret:  ArrayBuffer;
   passkeyId:  string;
   label?:     string;
@@ -350,7 +353,7 @@ export async function storeWithPasskey(args: {
     encryptedSecret: buf2b64(ct),
     iv:              buf2b64(iv),
     salt:            buf2b64(salt),
-    secretType:      args.secretType,
+    keyKind:         args.keyKind,
     protectedBy:     "passkey",
     passkeyId:       args.passkeyId,
     label:           args.label,

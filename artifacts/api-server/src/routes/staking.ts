@@ -229,7 +229,7 @@ router.get("/staking/positions", async (req, res) => {
         ...p,
         rewardAccrued: rewardAccrued.toFixed(8),
         daysRemaining,
-        canUnstake: daysRemaining === 0 || p.status === "active",
+        canUnstake: daysRemaining === 0 && p.status === "active",
       };
     });
     res.json(enriched);
@@ -366,6 +366,17 @@ router.post("/staking/unstake/:id", async (req, res) => {
     }
     if (existing.status !== "active") {
       res.status(400).json({ error: `Position is already ${existing.status}` });
+      return;
+    }
+
+    // Enforce lock period — server-side guard (canUnstake in /positions is UI-only)
+    if (existing.unlocksAt && new Date(existing.unlocksAt) > new Date()) {
+      const msLeft = new Date(existing.unlocksAt).getTime() - Date.now();
+      const daysLeft = Math.ceil(msLeft / (1000 * 60 * 60 * 24));
+      res.status(400).json({
+        error: `Position is still locked for ${daysLeft} more day${daysLeft === 1 ? "" : "s"}`,
+        unlocksAt: existing.unlocksAt,
+      });
       return;
     }
 

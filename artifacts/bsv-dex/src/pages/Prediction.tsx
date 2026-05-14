@@ -207,7 +207,11 @@ export function PredictionTrading() {
   const [myBets, setMyBets] = useState<BetRecord[]>([]);
   const [tab, setTab] = useState<"chart" | "rounds" | "history">("chart");
   const [usdtBalance, setUsdtBalance] = useState(0);
-  const [candleInterval, setCandleInterval] = useState("5m");
+  const [candleInterval, setCandleInterval] = useState(() => {
+    const saved = localStorage.getItem('orahdex-prediction-interval');
+    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y'];
+    return saved && valid.includes(saved) ? saved : "5m";
+  });
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { address } = useWalletStore();
@@ -259,6 +263,9 @@ export function PredictionTrading() {
   }, [fetchRounds]);
 
   useEffect(() => { fetchHistory(); fetchBalance(); }, [fetchHistory, fetchBalance]);
+
+  // Persist candle interval across page refreshes
+  useEffect(() => { localStorage.setItem('orahdex-prediction-interval', candleInterval); }, [candleInterval]);
 
   const placeBet = async () => {
     if (!address || !selectedRound) return;

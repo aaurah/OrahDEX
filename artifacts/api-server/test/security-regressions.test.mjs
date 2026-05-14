@@ -12,6 +12,13 @@ const ordersSchemaPath = path.join(__dirname, "..", "..", "..", "lib", "db", "sr
 const tradePath = path.join(__dirname, "..", "src", "routes", "trade.ts");
 const fundingVerifierPath = path.join(__dirname, "..", "src", "lib", "fundingVerifier.ts");
 const routesIndexPath = path.join(__dirname, "..", "src", "routes", "index.ts");
+const adminAuthPath = path.join(__dirname, "..", "src", "middleware", "adminAuth.ts");
+const evmWebhookRouterPath = path.join(__dirname, "..", "src", "routes", "evmWebhookRouter.ts");
+const depositAddressesPath = path.join(__dirname, "..", "src", "lib", "depositAddresses.ts");
+const internalEvmWalletPath = path.join(__dirname, "..", "src", "lib", "internalEvmWallet.ts");
+const exchangeHotWalletPath = path.join(__dirname, "..", "src", "lib", "exchangeHotWallet.ts");
+const futuresPath = path.join(__dirname, "..", "src", "routes", "futures.ts");
+const nftPath = path.join(__dirname, "..", "src", "routes", "nft.ts");
 
 async function read(filePath) {
   return readFile(filePath, "utf8");
@@ -24,8 +31,10 @@ test("orders route enforces external auth for recognized wallet formats", async 
   assert.match(src, /priorNonceUse/);
   assert.match(src, /lower\(\$\{ordersTable\.walletAddress\}\) = lower\(\$\{body\.walletAddress\}\)/);
   assert.match(src, /eq\(ordersTable\.nonce, orderNonce\)/);
-  assert.match(src, /verifyBsvWithdrawSignature\(body\.walletAddress, sig\)/);
-  assert.match(src, /verifySolWithdrawSignature\(body\.walletAddress, sig\)/);
+  // BSV and Solana orders now use order-bound challenges instead of withdrawal challenges
+  // to prevent replay attacks (H-07 fix).
+  assert.match(src, /verifyBsvOrderSignature\(body\.walletAddress, sig/);
+  assert.match(src, /verifySolOrderSignature\(body\.walletAddress, sig/);
   assert.match(src, /isNonceUniqueViolation/);
   assert.match(src, /orders_wallet_nonce_uidx/);
 });
@@ -73,4 +82,39 @@ test("withdrawals router is mounted before trade router", async () => {
   assert.notEqual(withdrawalsPos, -1, "withdrawals router mount not found");
   assert.notEqual(tradePos, -1, "trade router mount not found");
   assert.ok(withdrawalsPos < tradePos, "withdrawals router should be mounted before trade router");
+});
+
+test("admin auth uses timing-safe token checks", async () => {
+  const src = await read(adminAuthPath);
+
+  assert.match(src, /timingSafeEqual/);
+  assert.match(src, /function hasMatchingAdminToken/);
+});
+
+test("EVM webhook rejects requests when HMAC secret is missing", async () => {
+  const src = await read(evmWebhookRouterPath);
+
+  assert.match(src, /EVM_WEBHOOK_SECRET not set — rejecting webhook request/);
+  assert.doesNotMatch(src, /EVM_WEBHOOK_SECRET not set — skipping HMAC verification/);
+  assert.match(src, /if \(!secret\) \{[\s\S]*return false;\n  \}/);
+});
+
+test("wallet encryption code no longer falls back to a hard-coded secret", async () => {
+  const [depositSrc, internalSrc, hotWalletSrc] = await Promise.all([
+    read(depositAddressesPath),
+    read(internalEvmWalletPath),
+    read(exchangeHotWalletPath),
+  ]);
+
+  for (const src of [depositSrc, internalSrc, hotWalletSrc]) {
+    assert.doesNotMatch(src, /orahdex-internal-evm-fallback-key-32bytes!/);
+    assert.match(src, /getRequiredEnv\("EVM_WALLET_SECRET"/);
+  }
+});
+
+test("futures and NFT routes are behind explicit feature flags", async () => {
+  const [futuresSrc, nftSrc] = await Promise.all([read(futuresPath), read(nftPath)]);
+
+  assert.match(futuresSrc, /process\.env\.FUTURES_ENABLED !== "true"/);
+  assert.match(nftSrc, /process\.env\.NFT_ENABLED !== "true"/);
 });

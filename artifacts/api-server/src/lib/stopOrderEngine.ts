@@ -104,7 +104,8 @@ export async function triggerStopOrders(): Promise<void> {
           timestamp:     Date.now(),
         });
 
-        let broadcastTxid = fallbackSettlement.txid;
+        let broadcastTxid    = fallbackSettlement.txid;
+        let wasRealBroadcast = false;
         try {
           const wallet  = await getOrCreateWallet();
           const balance = await fetchWalletBalance(wallet.address);
@@ -116,9 +117,15 @@ export async function triggerStopOrders(): Promise<void> {
               utxo:          best,
               opReturnPayload: fallbackSettlement.opReturnData,
             });
-            if (result.broadcast) broadcastTxid = result.txid;
+            if (result.broadcast) { broadcastTxid = result.txid; wasRealBroadcast = true; }
           }
         } catch (_) { /* fall back to deterministic txid */ }
+
+        // Mark non-broadcast (local-only) settlement txids so the UI doesn't link
+        // them to WhatsOnChain (which would 404). Real broadcasts stay un-prefixed.
+        if (!wasRealBroadcast && !broadcastTxid.startsWith("local:")) {
+          broadcastTxid = `local:${broadcastTxid}`;
+        }
 
         // Mark counter-order (partially or fully consumed)
         const newMatchFilled    = parseFloat(match.filledQuantity ?? "0") + fillQty;
@@ -156,20 +163,21 @@ export async function triggerStopOrders(): Promise<void> {
         // Settle balances: move quote from buyer's locked to seller's available
         // and base from seller's locked to buyer's available.
         const [baseAsset, quoteAsset = "USDT"] = order.symbol.split("/");
-        // Skip ledger settlement if either side is the bot (bot uses simulated balances)
-        if (order.walletAddress !== BOT_ADDRESS && match.walletAddress !== BOT_ADDRESS) {
-          try {
-            await settleTrade({
-              buyerAddress,
-              sellerAddress,
-              baseAsset:  baseAsset!,
-              quoteAsset,
-              amount:     fillQty.toString(),
-              price:      fillPrice.toString(),
-            });
-          } catch (settleErr) {
-            logger.warn({ settleErr, orderId: order.id }, "Stop order: settleTrade failed after fill");
-          }
+        // Use isBotSeller/isBotBuyer flags so real users' balances are always
+        // updated correctly even when the bot is on the other side.
+        try {
+          await settleTrade({
+            buyerAddress,
+            sellerAddress,
+            baseAsset:  baseAsset!,
+            quoteAsset,
+            amount:     fillQty.toString(),
+            price:      fillPrice.toString(),
+            isBotSeller: sellerAddress === BOT_ADDRESS,
+            isBotBuyer:  buyerAddress  === BOT_ADDRESS,
+          });
+        } catch (settleErr) {
+          logger.warn({ settleErr, orderId: order.id }, "Stop order: settleTrade failed after fill");
         }
 
         const base = order.symbol.split("/")[0] ?? order.symbol;

@@ -12,7 +12,7 @@
 
 import { db } from "@workspace/db";
 import { ordersTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, notInArray } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
@@ -218,7 +218,8 @@ async function refreshMarket(
 /* ── Full cycle: iterate all active markets ─────────────────────────────── */
 async function runCycle(): Promise<void> {
   try {
-    const markets = await db.select().from(marketsTable);
+    const markets = await db.select().from(marketsTable)
+      .where(notInArray(marketsTable.type, ["letsexchange"]));
     const active  = markets.filter(m => m.status === "active");
 
     // ── Step 1: Build the master USD price map from live USDT spot markets ──
@@ -242,7 +243,10 @@ async function runCycle(): Promise<void> {
     // ── Step 2: Recompute & persist cross-pair DB prices from USD map ───────
     // This keeps every ticker mathematically consistent with the order book.
     // ETH/BTC price = ETH_USD / BTC_USD — same snapshot, no drift window.
-    const crossUpdates: Promise<unknown>[] = [];
+    // Process in batches of 50 to avoid overwhelming the DB connection pool
+    // (firing hundreds of concurrent UPDATE queries causes latency spikes and
+    // can exhaust connections on constrained Replit PostgreSQL instances).
+    const crossUpdates: { symbol: string; price: string }[] = [];
     for (const m of active) {
       // Skip stablecoin-quoted and futures markets (their prices come from external APIs)
       if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") continue;
@@ -251,15 +255,21 @@ async function runCycle(): Promise<void> {
       if (!baseUSD || !quoteUSD || quoteUSD <= 0) continue;
       const crossPrice = baseUSD / quoteUSD;
       if (!Number.isFinite(crossPrice) || crossPrice <= 0) continue;
+      crossUpdates.push({ symbol: m.symbol, price: crossPrice.toFixed(8) });
+    }
 
-      crossUpdates.push(
-        db.update(marketsTable)
-          .set({ lastPrice: crossPrice.toFixed(8) })
-          .where(eq(marketsTable.symbol, m.symbol))
-          .catch(err => logger.warn({ err, symbol: m.symbol }, "Bot: failed to update cross-price")),
+    const CROSS_BATCH = 50;
+    for (let ci = 0; ci < crossUpdates.length; ci += CROSS_BATCH) {
+      const batch = crossUpdates.slice(ci, ci + CROSS_BATCH);
+      await Promise.all(
+        batch.map(({ symbol, price }) =>
+          db.update(marketsTable)
+            .set({ lastPrice: price })
+            .where(eq(marketsTable.symbol, symbol))
+            .catch(err => logger.warn({ err, symbol }, "Bot: failed to update cross-price")),
+        ),
       );
     }
-    await Promise.all(crossUpdates);
 
     // ── Step 3: Seed order books using the now-consistent prices ────────────
     // Process in batches of 20 to avoid overwhelming the DB connection pool.

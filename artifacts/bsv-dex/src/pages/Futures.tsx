@@ -118,7 +118,7 @@ function useFundingCountdown() {
 
 export function FuturesTrading() {
   const { symbol: rawSymbol = "BSV-USDT-PERP" } = useParams();
-  const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
+  const symbol = rawSymbol.replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
   const seoBase = rawSymbol.split("-")[0];
 
   const { address, network, balance, chainId: walletChainId, provider, internalBsvAddress, internalEvmAddress } = useWalletStore();
@@ -148,9 +148,10 @@ export function FuturesTrading() {
     }
   });
 
-  const { data: apiTicker } = useGetTicker(encodeURIComponent(symbol));
-  const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: "1h", limit: 100 });
-  const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 });
+  const noStoreRequest = { cache: "no-store" as const };
+  const { data: apiTicker } = useGetTicker(encodeURIComponent(symbol), { request: noStoreRequest });
+  const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: "1h", limit: 100 }, { request: noStoreRequest });
+  const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, { request: noStoreRequest });
 
   const defaultLeverage = useSettingsStore((s) => s.defaultLeverage);
   const setDefaultLeverage = useSettingsStore((s) => s.setDefaultLeverage);
@@ -165,7 +166,11 @@ export function FuturesTrading() {
   const [orderType, setOrderType] = useState<"limit" | "market" | "stop">("limit");
   const [size, setSize] = useState("");
   const [price, setPrice] = useState("");
-  const [chartInterval, setChartInterval] = useState("1h");
+  const [chartInterval, setChartInterval] = useState(() => {
+    const saved = localStorage.getItem('orahdex-futures-interval');
+    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y','All'];
+    return saved && valid.includes(saved) ? saved : "1h";
+  });
   const [futuresSide, setFuturesSide] = useState<"buy" | "sell">("buy");
   const [bottomTab, setBottomTab] = useState<"positions" | "orders" | "history">("positions");
 
@@ -184,6 +189,9 @@ export function FuturesTrading() {
     if (pairDropOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [pairDropOpen]);
+
+  // Persist chart interval across page refreshes
+  useEffect(() => { localStorage.setItem('orahdex-futures-interval', chartInterval); }, [chartInterval]);
 
   const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
     { walletAddress: address || "" },
@@ -478,6 +486,7 @@ export function FuturesTrading() {
               <Chart
                 symbol={symbol}
                 interval={chartInterval}
+                onIntervalChange={setChartInterval}
               />
             </div>
             <div className="h-[220px] shrink-0 bg-card flex flex-col">

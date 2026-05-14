@@ -37,13 +37,13 @@ export function getHealthReport(): ServiceHealth[] {
   const now = Date.now();
   return Array.from(registry.values()).map(e => {
     const staleSinceMs = e.lastRunAt ? now - e.lastRunAt.getTime() : null;
-    const staleness    = staleSinceMs ?? Infinity;
+    const staleness    = staleSinceMs ?? 0;   // null = never run yet → not stale
 
     let status: ServiceHealth["status"] = "healthy";
-    if (e.consecutiveFails >= 10)          status = "dead";
-    else if (staleness > e.intervalMs * 5) status = "dead";
-    else if (e.consecutiveFails >= 3)      status = "degraded";
-    else if (staleness > e.intervalMs * 3) status = "stuck";
+    if (e.consecutiveFails >= 10)                                    status = "dead";
+    else if (e.lastRunAt && staleness > e.intervalMs * 5)            status = "dead";
+    else if (e.consecutiveFails >= 3)                                 status = "degraded";
+    else if (e.lastRunAt && staleness > e.intervalMs * 3)            status = "stuck";
 
     return { ...e, staleSinceMs, status };
   });
@@ -110,6 +110,9 @@ export function guardedInterval(
   intervalMs: number,
   options: GuardedIntervalOptions = {},
 ): () => void {
+  // Cap backoff to ~16 intervals so repeated failures do not effectively disable
+  // a background worker for many hours before the next retry.
+  const MAX_SKIP_INTERVALS = 16;
   const timeoutMs           = options.timeoutMs            ?? Math.floor(intervalMs * 0.9);
   const maxFails            = options.maxFailsBeforeBackoff ?? 5;
   const initialDelayMs      = options.initialDelayMs        ?? 0;
@@ -159,7 +162,7 @@ export function guardedInterval(
       logger.warn({ service: name, err, isTimeout }, `[SelfHeal] ${name}: tick failed`);
 
       if (entry.consecutiveFails + 1 >= maxFails) {
-        skipCount = Math.min(skipCount + 1, 8);
+        skipCount = Math.min(skipCount + 1, MAX_SKIP_INTERVALS);
         skipsLeft = skipCount;
         logger.warn({ service: name, skipCount },
           `[SelfHeal] ${name}: backing off — will skip next ${skipCount} interval(s)`);
@@ -233,6 +236,10 @@ export async function withRetry<T>(
 export function startOrderReconciler(): void {
   const RECONCILE_INTERVAL_MS = 5 * 60_000;
   const STUCK_ORDER_AGE_MS    = 30 * 60_000;
+  // Process-local lock to avoid duplicate in-flight cancellation attempts
+  // in a single API instance. Cross-instance idempotency is enforced by the
+  // SQL WHERE status='open' predicate in the UPDATE below.
+  const cancellingOrders = new Set<string>();
 
   const reconcile = async () => {
     try {
@@ -256,20 +263,41 @@ export function startOrderReconciler(): void {
 
       if (stuck.length === 0) return;
 
+      let cancelled = 0;
+      const cancelledSymbols = new Set<string>();
+
       for (const order of stuck) {
-        await db
-          .update(ordersTable)
-          .set({ status: "cancelled", updatedAt: new Date() })
-          .where(
-            and(
-              eq(ordersTable.id, order.id),
-              eq(ordersTable.status, "open"),
+        if (cancellingOrders.has(order.id)) {
+          logger.debug({ orderId: order.id }, "[SelfHeal] Order reconciler: skip in-flight cancel lock");
+          continue;
+        }
+        cancellingOrders.add(order.id);
+        try {
+          const rows = await db
+            .update(ordersTable)
+            .set({ status: "cancelled", updatedAt: new Date() })
+            .where(
+              and(
+                eq(ordersTable.id, order.id),
+                eq(ordersTable.status, "open"),
+              )
             )
-          );
+            .returning({ id: ordersTable.id });
+          if (rows.length > 0) {
+            cancelled++;
+            cancelledSymbols.add(order.symbol);
+          } else {
+            logger.debug({ orderId: order.id }, "[SelfHeal] Order reconciler: skip already-processed order");
+          }
+        } finally {
+          cancellingOrders.delete(order.id);
+        }
       }
 
-      logger.warn({ count: stuck.length, symbols: [...new Set(stuck.map(o => o.symbol))] },
-        `[SelfHeal] Order reconciler: auto-cancelled ${stuck.length} stuck order(s)`);
+      if (cancelled > 0) {
+        logger.warn({ count: cancelled, symbols: [...cancelledSymbols] },
+          `[SelfHeal] Order reconciler: auto-cancelled ${cancelled} stuck order(s)`);
+      }
     } catch (err) {
       logger.warn({ err }, "[SelfHeal] Order reconciler: cycle failed");
     }

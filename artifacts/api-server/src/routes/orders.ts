@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
-import { eq, and, lte, gte, ne, isNotNull, desc } from "drizzle-orm";
+import { eq, and, lte, gte, ne, isNotNull, desc, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
@@ -16,9 +16,47 @@ import { settleEscrowMatch, isEscrowChain, findEscrowChain } from "../lib/escrow
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
-import { buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce } from "../lib/walletAuth.js";
+import {
+  buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
+  verifyBsvWithdrawSignature, verifySolWithdrawSignature,
+  issueBsvOrderChallenge, verifyBsvOrderSignature,
+  issueSolOrderChallenge, verifySolOrderSignature,
+} from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
+
+// ── Wallet-format helpers ─────────────────────────────────────────────────────
+
+/** Detect EVM addresses (0x + 40 hex chars). */
+function detectIsEvmAddress(addr: string): boolean {
+  return /^0x[0-9a-fA-F]{40}$/.test(addr);
+}
+
+/** Detect BSV / legacy Bitcoin / Bitcoin Cash addresses (base58 P2PKH / P2SH). */
+function detectIsBsvAddress(addr: string): boolean {
+  // BSV mainnet: 1xxx (P2PKH) or 3xxx (P2SH) or bchtest / bitcoincash prefixed
+  return /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(addr);
+}
+
+/** Detect Solana public keys (base58, 32–44 chars, no O/0/I/l). */
+function detectIsSolAddress(addr: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) && !addr.startsWith("0x");
+}
+
+/**
+ * Detect whether a DB unique-index violation was triggered.
+ * Postgres raises error code 23505 for unique constraint violations; the
+ * constraint name appears in the detail/message text.
+ */
+function isNonceUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as Record<string, unknown>;
+  return (
+    e["code"] === "23505" ||
+    String(e["message"] ?? "").includes("orders_wallet_nonce_uidx") ||
+    String(e["detail"] ?? "").includes("orders_wallet_nonce_uidx")
+  );
+}
 
 function settlementExplorerUrl(txid: string | null | undefined, chainId?: number | null): string | null {
   if (!txid) return null;
@@ -88,6 +126,39 @@ router.get("/orders", async (req, res) => {
   }
 });
 
+// ── POST /orders/bsv-challenge — Issue a BSV order challenge ─────────────────
+// BSV wallets must request an order-bound challenge (not a withdrawal challenge)
+// and sign it before placing an order.  This prevents a withdrawal challenge
+// from being replayed as an order signature.
+router.post("/orders/bsv-challenge", (req, res) => {
+  const { walletAddress, symbol, side, quantity, nonce, expiry } = req.body;
+  if (!walletAddress || !symbol || !side || !quantity || !nonce || !expiry) {
+    res.status(400).json({ error: "walletAddress, symbol, side, quantity, nonce, and expiry are required" });
+    return;
+  }
+  if (!detectIsBsvAddress(walletAddress)) {
+    res.status(400).json({ error: "walletAddress must be a BSV P2PKH/P2SH address" });
+    return;
+  }
+  const challenge = issueBsvOrderChallenge({ walletAddress, symbol, side, quantity, nonce, expiry });
+  res.json(challenge);
+});
+
+// ── POST /orders/sol-challenge — Issue a Solana order challenge ───────────────
+router.post("/orders/sol-challenge", (req, res) => {
+  const { walletAddress, symbol, side, quantity, nonce, expiry } = req.body;
+  if (!walletAddress || !symbol || !side || !quantity || !nonce || !expiry) {
+    res.status(400).json({ error: "walletAddress, symbol, side, quantity, nonce, and expiry are required" });
+    return;
+  }
+  if (!detectIsSolAddress(walletAddress)) {
+    res.status(400).json({ error: "walletAddress must be a Solana base58 address" });
+    return;
+  }
+  const challenge = issueSolOrderChallenge({ walletAddress, symbol, side, quantity, nonce, expiry });
+  res.json(challenge);
+});
+
 // ── POST /orders ───────────────────────────────────────────────────────────────
 // Accepts a required `evmSignature` field (MetaMask personal_sign) for external
 // EVM wallets that proves the trader authorised this specific order.
@@ -133,6 +204,12 @@ router.post("/orders", async (req, res) => {
       res.status(400).json({ error: "Stop orders require a valid stopPrice" });
       return;
     }
+    // Stop orders also require a limit price (worst-case fill price) to prevent
+    // execution at an arbitrary or zero price after the trigger fires.
+    if (type === "stop" && (rawPrice == null || !Number.isFinite(rawPrice) || rawPrice <= 0)) {
+      res.status(400).json({ error: "Stop orders require a valid price (limit price after trigger)" });
+      return;
+    }
     if (type === "limit" && (rawPrice == null || !Number.isFinite(rawPrice) || rawPrice <= 0)) {
       res.status(400).json({ error: "Limit orders require a valid price" });
       return;
@@ -153,58 +230,132 @@ router.post("/orders", async (req, res) => {
     const fee           = (total || 0) * feeRate;
     const networkType   = body.networkType ?? (body.walletAddress.startsWith("0x") ? "evm" : "bsv");
 
+    // Classify wallet source based on address format — explicit format detection
+    // prevents clients from lying about their wallet type to bypass auth checks.
+    const isEvmAddress = detectIsEvmAddress(body.walletAddress);
+    const isBsvAddress = detectIsBsvAddress(body.walletAddress);
+    const isSolAddress = detectIsSolAddress(body.walletAddress);
+
+    // Address format detection always takes priority over client-supplied walletSource.
+    // This prevents a client from setting walletSource:"orah" with an EVM address to
+    // skip the cryptographic signature verification that external wallets require.
     const walletSource: "external" | "orah" =
-      body.walletSource === "external" ? "external"
-      : body.walletSource === "orah"   ? "orah"
-      : (body.evmSignature || body.signedTx) ? "external"
+      (isEvmAddress || isBsvAddress || isSolAddress) ? "external"
+      : body.walletSource === "orah" ? "orah"
       : "orah";
 
     const isExternalWallet = walletSource === "external";
 
-    // ── Verify wallet ownership for external EVM wallets ─────────────────────
-    // The evmSignature must have been produced by the private key of walletAddress
+    // ── Verify wallet ownership for external wallets ─────────────────────────
+    // The signature must have been produced by the private key of walletAddress
     // over the canonical order-authorisation message. This prevents any caller who
     // merely knows a walletAddress from placing orders on its behalf.
-    if (body.walletAddress.startsWith("0x") && walletSource === "external") {
-      const evmSig = body.evmSignature ?? body.signedTx;
-      if (!evmSig) {
-        res.status(401).json({
-          error: "evmSignature is required for external EVM wallet orders. " +
-                 "Sign the canonical order message with personal_sign and include it in the request.",
-          code: "SIGNATURE_REQUIRED",
-        });
-        return;
-      }
-      // nonce defaults to the order id; expiry defaults to 5 minutes from now
+    //
+    // For BSV and Solana wallets, a prior-nonce check in the DB enforces that
+    // each (wallet, nonce) pair is truly single-use even across server restarts.
+    if (walletSource === "external") {
       const orderNonce  = body.nonce  ? String(body.nonce)  : id;
       const orderExpiry = body.expiry ? String(body.expiry) : String(Math.floor(Date.now() / 1000) + 5 * 60);
-
-      // Enforce expiry: reject if the order's expiry timestamp is in the past.
       const expiryUnixSec = parseInt(orderExpiry, 10);
+
+      // Enforce expiry.
       if (expiryUnixSec <= Math.floor(Date.now() / 1000)) {
         res.status(401).json({ error: "Order signature has expired. Sign a fresh order with a future expiry.", code: "SIGNATURE_EXPIRED" });
         return;
       }
 
-      // Reject replayed nonces: each (walletAddress, nonce) pair is single-use.
-      if (isOrderNonceConsumed(body.walletAddress, orderNonce)) {
+      // Check for prior nonce use in-memory cache first (fast path), then DB.
+      const priorNonceUse = isOrderNonceConsumed(body.walletAddress, orderNonce);
+      if (priorNonceUse) {
         res.status(401).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
         return;
       }
 
-      const authMsg = buildOrderAuthMessage({
-        walletAddress: body.walletAddress,
-        symbol:        body.symbol,
-        side:          body.side,
-        quantity:      quantity.toString(),
-        nonce:         orderNonce,
-        expiry:        orderExpiry,
-      });
-      try {
-        verifyEvmSignature(body.walletAddress, authMsg, evmSig);
-      } catch (authErr: any) {
-        res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
+      // DB-level nonce uniqueness check: lower(wallet_address) + nonce.
+      // Enforces single-use even across server restarts (the in-memory cache is lost on restart).
+      const existingNonce = await db.select({ id: ordersTable.id }).from(ordersTable)
+        .where(and(
+          sql`lower(${ordersTable.walletAddress}) = lower(${body.walletAddress})`,
+          eq(ordersTable.nonce, orderNonce),
+        ))
+        .limit(1);
+      if (existingNonce.length > 0) {
+        res.status(401).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
         return;
+      }
+
+      if (isEvmAddress) {
+        // EVM: personal_sign with canonical order auth message
+        const evmSig = body.evmSignature ?? body.signedTx;
+        if (!evmSig) {
+          res.status(401).json({
+            error: "evmSignature is required for external EVM wallet orders. " +
+                   "Sign the canonical order message with personal_sign and include it in the request.",
+            code: "SIGNATURE_REQUIRED",
+          });
+          return;
+        }
+        const authMsg = buildOrderAuthMessage({
+          walletAddress: body.walletAddress,
+          symbol:        symbol,
+          side:          body.side,
+          quantity:      quantity.toString(),
+          nonce:         orderNonce,
+          expiry:        orderExpiry,
+        });
+        try {
+          verifyEvmSignature(body.walletAddress, authMsg, evmSig);
+        } catch (authErr: any) {
+          res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
+          return;
+        }
+      } else if (isBsvAddress) {
+        // BSV: verify ECDSA signature against an order-bound challenge.
+        // Clients must obtain a challenge via POST /orders/bsv-challenge
+        // (which binds to symbol/side/quantity) and sign it.
+        const sig = body.bsvSignature ?? body.signedTx;
+        if (!sig) {
+          res.status(401).json({
+            error: "bsvSignature is required for external BSV wallet orders. " +
+                   "Request an order challenge via POST /orders/bsv-challenge, sign it with your BSV wallet, " +
+                   "and include the signature in this request.",
+            code: "SIGNATURE_REQUIRED",
+          });
+          return;
+        }
+        try {
+          verifyBsvOrderSignature(body.walletAddress, sig, {
+            symbol,
+            side,
+            quantity: quantity.toString(),
+          });
+        } catch (authErr: any) {
+          res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
+          return;
+        }
+      } else if (isSolAddress) {
+        // Solana: verify Ed25519 signature against an order-bound challenge.
+        // Clients must obtain a challenge via POST /orders/sol-challenge.
+        const sig = body.solSignature ?? body.signedTx;
+        if (!sig) {
+          res.status(401).json({
+            error: "solSignature is required for external Solana wallet orders. " +
+                   "Request an order challenge via POST /orders/sol-challenge, sign it with your Solana wallet, " +
+                   "and include the signature in this request.",
+            code: "SIGNATURE_REQUIRED",
+          });
+          return;
+        }
+        try {
+          verifySolOrderSignature(body.walletAddress, sig, {
+            symbol,
+            side,
+            quantity: quantity.toString(),
+          });
+        } catch (authErr: any) {
+          res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
+          return;
+        }
       }
 
       // Consume the nonce after successful verification (single-use enforcement).
@@ -214,7 +365,7 @@ router.post("/orders", async (req, res) => {
     // ── Validate and extract optional chainId (additive — existing clients unaffected) ──
     // When provided, enables on-chain RPC balance verification in fundingVerifier.
     // Must be a numeric value in the supported set; unknown values are silently ignored.
-    const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114]);
+    const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114, 11155111]);
     const chainId = body.chainId != null
       ? (() => {
           const n = parseInt(String(body.chainId), 10);
@@ -240,8 +391,13 @@ router.post("/orders", async (req, res) => {
       return;
     }
 
+    // Market buy orders lock against the last market price, but the actual fill
+    // happens at the bot's ask (slightly higher). Add a 0.5% slippage buffer so
+    // the locked amount always covers the fill cost and settleTrade never throws
+    // SETTLEMENT_INSUFFICIENT_LOCK due to a small price discrepancy.
+    const lockSlippage = (side === "buy" && type === "market") ? 1.005 : 1;
     const lockAmount = side === "buy"
-      ? (lockPrice ? (lockPrice * quantity).toString() : "0")
+      ? (lockPrice ? (lockPrice * quantity * lockSlippage).toString() : "0")
       : quantity.toString();
 
     let fundingRef = "";
@@ -291,7 +447,16 @@ router.post("/orders", async (req, res) => {
       expiry:            body.expiry ? String(body.expiry) : String(Math.floor(Date.now() / 1000) + 5 * 60),
     };
 
-    await db.insert(ordersTable).values(newOrder);
+    try {
+      await db.insert(ordersTable).values(newOrder);
+    } catch (insertErr: unknown) {
+      // Catch unique constraint violations on (wallet_address, nonce) — orders_wallet_nonce_uidx
+      if (isNonceUniqueViolation(insertErr)) {
+        res.status(409).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
+        return;
+      }
+      throw insertErr; // re-throw all other DB errors
+    }
     req.log.info({ orderId: id, side, networkType, walletSource }, "Order placed");
 
     /* Push order-placed notification to the user */
@@ -318,6 +483,9 @@ router.post("/orders", async (req, res) => {
     let lastHtlcLocktimeBlocks: number | undefined;
     let lastCrossChain = false;
     let lastOpReturnPayload: string | undefined;
+    // Hoisted so the IOC check after the match block can read them
+    let totalFilled    = 0;
+    let totalFillValue = 0;
     // EVM HTLC session — set when both parties are external EVM wallets
     let lastEvmHtlcSession: Awaited<ReturnType<typeof initiateEvmHtlcSession>> | null = null;
 
@@ -395,8 +563,7 @@ router.post("/orders", async (req, res) => {
       // and does partial consumption of bot orders (instead of deleting the
       // entire bot order when only a fraction of it is needed).
       let remainingQty   = quantity;
-      let totalFilled    = 0;
-      let totalFillValue = 0;
+      // totalFilled / totalFillValue are hoisted to outer scope (see above)
       let lastFillPrice  = 0;
       let lastTxid: string | null = null;
       let lastMatchId: string | null = null;
@@ -631,14 +798,15 @@ router.post("/orders", async (req, res) => {
             : 1;  // default to Ethereum mainnet (where escrow is deployed)
 
           // ── Pre-flight: does ANY escrow deposit exist for either order? ─
-          // If yes, escrow is the binding settlement venue: never fall back
-          // to HTLC because the locked funds can't be in two places at once.
-          const [incomingEscrowChain, matchEscrowChain] = await Promise.all([
-            findEscrowChain(id),
-            findEscrowChain(match.id),
-          ]).catch(() => [null, null] as [number | null, number | null]);
+          // Reuse the chain values already resolved by the fail-CLOSED precheck
+          // above (lines ~473-478). Those values are authoritative: if the precheck
+          // RPC failed it threw and we already `continue`d past this match. A
+          // second scan here with a swallowed catch would be fail-OPEN — an RPC
+          // blip would make `anyEscrowDeposit` look false and allow HTLC to run
+          // against locked funds. Reusing prefetchedBuyerChain/SellerChain keeps
+          // the settlement decision consistent with the precheck decision.
           const anyEscrowDeposit =
-            incomingEscrowChain !== null || matchEscrowChain !== null;
+            prefetchedBuyerChain !== null || prefetchedSellerChain !== null;
 
           // ── Partial-fill safety: release(orderId) drains the WHOLE deposit. ─
           // We must only call it when this single fill consumes BOTH orders
@@ -683,7 +851,6 @@ router.post("/orders", async (req, res) => {
                 sellerOrderId,
                 buyerAddress,
                 sellerAddress,
-                chainId: releaseChainId,
                 // Reuse precheck values to keep the per-request settlement
                 // decision deterministic and avoid contradictory re-scans.
                 prefetchedBuyerChain,
@@ -888,6 +1055,24 @@ router.post("/orders", async (req, res) => {
             // The trade is not yet settled — the fill loop will record the fill with
             // a deterministic txid and the UI will guide the user to complete locking.
             req.log.error({ err: evmErr?.message, tradeId }, "orders: EVM HTLC session creation failed");
+          }
+        }
+      }
+
+      // ── Release the slippage buffer after a fully-filled market buy ──────────
+      // settleTrade only debits the actual fill cost; the 0.5% over-lock stays
+      // in the locked column until we explicitly release it here.
+      if (
+        side === "buy" && type === "market" &&
+        remainingQty <= 0.000001 && totalFilled > 0 && parseFloat(lockAmount) > 0
+      ) {
+        const actualCost = totalFillValue;
+        const excess = parseFloat(lockAmount) - actualCost;
+        if (excess > 1e-9 && lockAsset) {
+          try {
+            await unlockFunds({ walletAddress: body.walletAddress, asset: lockAsset!, amount: excess.toFixed(18) });
+          } catch (excessErr: any) {
+            req.log.warn({ excessErr: excessErr?.message }, "orders: failed to release market-buy slippage buffer excess");
           }
         }
       }
@@ -1162,7 +1347,7 @@ router.post("/orders/precheck", async (req, res) => {
   try {
     const { side, type, amount, price, slippageBps = 50, currentPrice } = req.body;
     // Normalize symbol format: accept both "BSV-USDT" (URL style) and "BSV/USDT" (DB style)
-    const symbol: string = (req.body.symbol ?? "").replace("-", "/");
+    const symbol: string = (req.body.symbol ?? "").replace(/-/g, "/");
 
     if (!symbol || !side || !amount) {
       res.status(400).json({ ok: false, errors: [{ code: "AMOUNT_TOO_SMALL", detail: "Missing fields" }], warnings: [] });
@@ -1318,6 +1503,16 @@ router.get("/settlements/htlc-status", async (req, res) => {
 
   if (!htlcAddress || typeof htlcAddress !== "string") {
     res.status(400).json({ error: "htlcAddress query param required" });
+    return;
+  }
+
+  // Strict allow-list validation for BSV P2SH addresses:
+  // - mainnet starts with "3", testnet starts with "2"
+  // - Base58 charset only (no 0, O, I, l)
+  // - Typical P2SH length range
+  const p2shAddressPattern = /^[23][1-9A-HJ-NP-Za-km-z]{24,50}$/;
+  if (!p2shAddressPattern.test(htlcAddress)) {
+    res.status(400).json({ error: "Invalid htlcAddress format" });
     return;
   }
 

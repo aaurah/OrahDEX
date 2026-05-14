@@ -58,17 +58,17 @@ async function getCompiled(): Promise<{ abi: object[]; bytecode: `0x${string}` }
   const abiPath = path.join(__dirname, "OrahDEXHTLC.abi.json");
   const binPath = path.join(__dirname, "OrahDEXHTLC.bin");
 
-  const [abiExists, binExists] = await Promise.all([
-    fs.access(abiPath).then(() => true).catch(() => false),
-    fs.access(binPath).then(() => true).catch(() => false),
-  ]);
-
-  if (abiExists && binExists) {
+  // Read the compiled artifacts directly with try/catch instead of checking
+  // for file existence first (fs.access → fs.readFile is a TOCTOU race:
+  // a file could be removed between the check and the read).
+  try {
     const [abi, bin] = await Promise.all([
       fs.readFile(abiPath, "utf8").then(JSON.parse),
       fs.readFile(binPath, "utf8"),
     ]);
     return { abi, bytecode: ("0x" + bin.trim()) as `0x${string}` };
+  } catch {
+    // Compiled artifacts not found — fall through to solc compilation.
   }
 
   console.log("📦 Compiled artifacts not found — attempting to compile with solc…");

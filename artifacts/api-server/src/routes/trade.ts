@@ -6,8 +6,9 @@
  * POST /trade/wallet         — validate & return on-chain routing params (no server-side signing)
  * POST /trade/exchange/quote — internal AMM quote
  * POST /trade/exchange       — settle internal ledger trade (proxies /swap)
- * POST /withdraw             — withdraw from internal balance to wallet (proxies /withdrawals)
- * POST /withdraw/challenge   — issue a nonce the EVM wallet must sign before /withdraw
+ * POST /trade/wallet/settle  — record confirmed on-chain swap & credit balance (EVM wallets only)
+ *
+ * Withdrawal endpoints (/withdraw, /withdraw/challenge) live in withdrawals.ts.
  */
 
 import { Router, type IRouter } from "express";
@@ -17,20 +18,12 @@ import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { or, eq, desc } from "drizzle-orm";
 import { settleSwap, getBalances, creditAvailable, debitAvailable } from "../lib/ledger.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
-import { processWithdrawal } from "../lib/withdrawalProcessor.js";
-import { isVaultConfigured, getVaultAddress, getVaultChainId, vaultWithdraw } from "../lib/orahVault.js";
+import { isVaultConfigured, getVaultAddress, getVaultChainId } from "../lib/orahVault.js";
 import { db as _db, pool } from "@workspace/db";
-import { withdrawalRequestsTable } from "@workspace/db/schema";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import {
-  issueWithdrawChallenge,
-  verifyWithdrawSignature,
-  issueBsvWithdrawChallenge,
-  verifyBsvWithdrawSignature,
-  issueSolWithdrawChallenge,
-  verifySolWithdrawSignature,
   buildExchangeAuthMessage,
   verifyEvmSignature,
   issueExchangeChallenge,
@@ -73,27 +66,6 @@ import { TOKEN_REGISTRY } from "../lib/tokenRegistry.js";
 const router: IRouter = Router();
 
 const FEE_PCT = 0.003; // 0.3%
-
-// ── POST /withdraw/challenge ───────────────────────────────────────────────────
-// Issues a server-side nonce that the wallet must sign before calling
-// POST /withdraw. This proves the caller owns the walletAddress.
-// Supports EVM (0x…), BSV (1…/3…), and Solana (base58) addresses.
-router.post("/withdraw/challenge", (req, res) => {
-  const { walletAddress } = req.body as { walletAddress?: string };
-  if (!walletAddress) {
-    res.status(400).json({ error: "walletAddress is required" });
-    return;
-  }
-  if (/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
-    res.json(issueWithdrawChallenge(walletAddress));
-  } else if (/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(walletAddress)) {
-    res.json(issueBsvWithdrawChallenge(walletAddress));
-  } else if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
-    res.json(issueSolWithdrawChallenge(walletAddress));
-  } else {
-    res.status(400).json({ error: "Unsupported wallet address format. Supported: EVM (0x…), BSV (1…/3…), Solana (base58)." });
-  }
-});
 
 // ── Shared: resolve mid-market rate from DB ────────────────────────────────────
 async function resolveRate(assetIn: string, assetOut: string): Promise<number | null> {
@@ -322,18 +294,51 @@ router.post("/trade/wallet", async (req, res) => {
 // ── POST /trade/wallet/settle — record confirmed on-chain swap & credit balance ──
 /**
  * Called by the frontend AFTER the user's on-chain swap transaction is confirmed.
- * 1. Fetches the tx receipt from the chain to verify success.
- * 2. Inserts a record in the trades table (with txid).
- * 3. Credits the user's internal exchange balance with the received assetOut amount,
+ * 1. Verifies the EVM wallet signature to prove the caller owns walletAddress.
+ * 2. Fetches the tx receipt from the chain to verify success.
+ * 3. Inserts a record in the trades table (with txid).
+ * 4. Credits the user's internal exchange balance with the received assetOut amount,
  *    so tokens are immediately available for exchange-mode trading or withdrawal.
  *
- * Body: { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut }
+ * Body: { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature }
  */
 router.post("/trade/wallet/settle", async (req, res) => {
-  const { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut } = req.body ?? {};
+  const { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature } = req.body ?? {};
 
   if (!txHash || !chainId || !walletAddress || !assetIn || !assetOut || !amountIn || !amountOut) {
     res.status(400).json({ error: "txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut are required" });
+    return;
+  }
+
+  // Only EVM wallets can initiate on-chain swap settlements via this endpoint.
+  if (!/^0x[0-9a-fA-F]{40}$/.test(String(walletAddress))) {
+    res.status(400).json({ error: "walletAddress must be an EVM address (0x...) for /trade/wallet/settle." });
+    return;
+  }
+
+  // Require a wallet signature to prove the caller owns walletAddress.
+  // This prevents any party who merely knows a wallet address from crediting its balance.
+  if (!walletSignature) {
+    res.status(401).json({
+      error: "walletSignature is required. Sign the settlement auth message with your EVM wallet before calling this endpoint.",
+      code: "WALLET_SIGNATURE_REQUIRED",
+    });
+    return;
+  }
+
+  // Verify the signature. The auth message commits to the txHash so the signature
+  // is single-purpose and cannot be replayed for a different transaction.
+  const authMsg = [
+    "Authorize OrahDEX on-chain swap settlement",
+    `Wallet: ${walletAddress}`,
+    `TxHash: ${txHash}`,
+    `AssetIn: ${assetIn}`,
+    `AssetOut: ${assetOut}`,
+  ].join("\n");
+  try {
+    verifyEvmSignature(walletAddress, authMsg, walletSignature);
+  } catch {
+    res.status(401).json({ error: "Invalid wallet signature for settlement.", code: "SIGNATURE_MISMATCH" });
     return;
   }
 
@@ -737,7 +742,7 @@ router.post("/trade/exchange", async (req, res) => {
 // ── POST /trade/exchange/advanced ───────────────────────────────────────────────
 // Dedicated advanced market-style endpoint: { walletAddress, symbol, side, quantity }
 router.post("/trade/exchange/advanced", async (req, res) => {
-  const { walletAddress, symbol, side, quantity, minAmountOut } = req.body ?? {};
+  const { walletAddress, symbol, side, quantity, minAmountOut, signature, nonce } = req.body ?? {};
   const pair = parseTradeSymbol(symbol);
   const normalizedSide = String(side ?? "").toLowerCase();
   const qty = parseFloat(String(quantity));
@@ -745,6 +750,21 @@ router.post("/trade/exchange/advanced", async (req, res) => {
   if (!walletAddress || !pair || (normalizedSide !== "buy" && normalizedSide !== "sell") || !Number.isFinite(qty) || qty <= 0) {
     res.status(400).json({ error: "walletAddress, symbol, side (buy|sell), quantity are required" });
     return;
+  }
+
+  if (String(walletAddress).startsWith("0x")) {
+    if (!signature || !nonce) {
+      res.status(401).json({
+        error: "signature and nonce are required for EVM wallet exchange swaps. Request a challenge via POST /trade/exchange/challenge and include signature + nonce.",
+      });
+      return;
+    }
+    try {
+      verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
+      return;
+    }
   }
 
   try {
@@ -864,174 +884,6 @@ router.post("/trade/exchange/burn", async (req, res) => {
     } else {
       res.status(500).json({ error: err?.message ?? "Burn failed" });
     }
-  }
-});
-
-// ── POST /withdraw ─────────────────────────────────────────────────────────────
-// Withdraw from internal exchange balance to the user's on-chain wallet.
-// Deducts the internal balance atomically, then attempts on-chain broadcast
-// via the hot wallet. If a Vault contract address is configured, it will be
-// used instead (set VAULT_CONTRACT_ADDRESS env var + deploy the contract first).
-// EVM wallet callers (0x…) must supply a `signature` obtained via
-// POST /withdraw/challenge to prove ownership of walletAddress.
-router.post("/withdraw", async (req, res) => {
-  const { walletAddress, asset, amount, network, recipient, networkLabel, signature } = req.body ?? {};
-
-  if (!walletAddress || !asset || !amount || !network || !recipient) {
-    res.status(400).json({ error: "walletAddress, asset, amount, network, recipient are required" });
-    return;
-  }
-
-  const parsed = parseFloat(amount);
-  if (isNaN(parsed) || parsed <= 0) {
-    res.status(400).json({ error: "amount must be a positive number" });
-    return;
-  }
-
-  // Require wallet ownership proof for all external wallet types.
-  if (walletAddress.startsWith("0x")) {
-    // EVM wallet: verify challenge/signature round-trip
-    if (!signature) {
-      res.status(401).json({
-        error: "signature is required for EVM wallet withdrawals. " +
-               "Request a challenge via POST /withdraw/challenge, sign it with your wallet, " +
-               "and include the signature in this request.",
-      });
-      return;
-    }
-    try {
-      verifyWithdrawSignature(walletAddress, signature);
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
-    }
-  } else if (/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(walletAddress)) {
-    // BSV P2PKH / P2SH wallet
-    if (!signature) {
-      res.status(401).json({
-        error: "signature is required for BSV wallet withdrawals. " +
-               "Request a challenge via POST /withdraw/challenge, sign it with your BSV wallet, " +
-               "and include the base64 signature in this request.",
-      });
-      return;
-    }
-    try {
-      verifyBsvWithdrawSignature(walletAddress, signature);
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
-    }
-  } else if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
-    // Solana base58 public key (32–44 chars, no version prefix)
-    if (!signature) {
-      res.status(401).json({
-        error: "signature is required for Solana wallet withdrawals. " +
-               "Request a challenge via POST /withdraw/challenge, sign it with your Solana wallet, " +
-               "and include the signature in this request.",
-      });
-      return;
-    }
-    try {
-      verifySolWithdrawSignature(walletAddress, signature);
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
-    }
-  } else {
-    res.status(400).json({
-      error: "Unsupported wallet address format. Supported: EVM (0x…), BSV (1…/3…), Solana (base58).",
-    });
-    return;
-  }
-
-  // If a Vault contract is configured, note it in the response (wiring deferred until contract is deployed)
-  const vaultAddress = process.env.VAULT_CONTRACT_ADDRESS ?? null;
-
-  const id     = crypto.randomUUID();
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-
-    const { rows: balRows } = await client.query<{ available: string }>(
-      `SELECT available FROM user_balances
-       WHERE wallet_address = $1 AND asset_symbol = $2
-       FOR UPDATE`,
-      [walletAddress, asset],
-    );
-
-    const available = parseFloat(balRows[0]?.available ?? "0");
-    if (available < parsed) {
-      await client.query("ROLLBACK");
-      res.status(400).json({
-        error: `Insufficient balance. Available: ${available} ${asset}, requested: ${parsed} ${asset}`,
-        code: "INSUFFICIENT_FUNDS",
-      });
-      return;
-    }
-
-    await client.query(
-      `UPDATE user_balances SET available = available - $1, updated_at = now()
-       WHERE wallet_address = $2 AND asset_symbol = $3`,
-      [parsed.toString(), walletAddress, asset],
-    );
-
-    await client.query(
-      `INSERT INTO withdrawal_requests
-         (id, wallet_address, asset, amount, network, network_label, recipient, status, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',now(),now())`,
-      [id, walletAddress, asset, parsed.toString(), network, networkLabel ?? network, recipient],
-    );
-
-    await client.query("COMMIT");
-
-    const useVault   = isVaultConfigured();
-    const vaultAddr  = getVaultAddress();
-    const vaultChain = getVaultChainId();
-
-    logger.info({ id, walletAddress, asset, amount: parsed, network, recipient, useVault, vaultAddr }, "withdraw: request created");
-
-    // Attempt async on-chain broadcast (vault → hot-wallet fallback)
-    setImmediate(async () => {
-      try {
-        if (useVault) {
-          await vaultWithdraw({ asset, amount: parsed, recipient, chainId: vaultChain });
-          logger.info({ id, asset, amount: parsed, recipient, vault: vaultAddr }, "withdraw: vault.withdraw() succeeded");
-        } else {
-          await processWithdrawal({ asset, amount: parsed, network, recipient });
-        }
-        // Mark completed in DB
-        await client.query(
-          `UPDATE withdrawal_requests SET status='completed', updated_at=now() WHERE id=$1`,
-          [id],
-        ).catch(() => {});
-      } catch (err: any) {
-        logger.warn({ id, err: err?.message }, "withdraw: on-chain broadcast failed — staying pending");
-      }
-    });
-
-    res.status(201).json({
-      id,
-      status:           "pending",
-      walletAddress,
-      asset,
-      amount:           parsed.toString(),
-      network,
-      recipient,
-      settlementMethod: useVault ? "vault" : "hot-wallet",
-      vaultAddress:     vaultAddr,
-      vaultChainId:     useVault ? vaultChain : null,
-      note: useVault
-        ? `vault.withdraw() called on OrahVault at ${vaultAddr} (chainId ${vaultChain}).`
-        : "Hot-wallet broadcast initiated. Fund the hot wallet to enable instant auto-withdrawals.",
-      createdAt: new Date().toISOString(),
-    });
-  } catch (err: any) {
-    await client.query("ROLLBACK").catch(() => {});
-    logger.error({ err: err?.message }, "withdraw: transaction failed");
-    res.status(500).json({ error: err?.message ?? "Withdrawal failed" });
-  } finally {
-    client.release();
   }
 });
 

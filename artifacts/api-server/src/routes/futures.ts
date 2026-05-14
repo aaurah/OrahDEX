@@ -14,6 +14,20 @@ import { verifyAndLockFunding } from "../lib/fundingVerifier.js";
 
 const router: IRouter = Router();
 
+// Only block requests that are actually for futures endpoints.
+// A blanket router.use() without a path prefix intercepts ALL requests that
+// reach this router (including /health, /dex/prices, etc.) because Express
+// tries every sub-router in registration order.  Scoping to /futures/* here
+// ensures only actual futures paths are blocked when the feature is disabled.
+router.use((req, res, next) => {
+  if (process.env.FUTURES_ENABLED !== "true" && req.path.startsWith("/futures")) {
+    return res.status(503).json({
+      error: "Perpetual futures are not yet available. Coming soon.",
+    });
+  }
+  return next();
+});
+
 const FUNDING_RATES = [
   { symbol: "BSV/USDT", fundingRate: 0.0001, interval: "8h" },
   { symbol: "BTC/USDT", fundingRate: 0.00015, interval: "8h" },

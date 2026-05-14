@@ -302,6 +302,12 @@ export interface RouteDecision {
   };
   slippageEstimate:      number | null;
   routeVersion:          string;
+  /**
+   * When source is "letsexchange" or "split", this field names the winning
+   * external venue as chosen by the meta-router.  Null for internal-only routes
+   * or when the meta-router has not been invoked (backward-compatible default).
+   */
+  externalVenue:         import("./metaRouter.js").ExternalVenue | null;
 }
 
 // ─── Liquidity check ──────────────────────────────────────────────────────────
@@ -527,5 +533,6 @@ export async function getHybridRoute(
     fees, effectiveRate,
     slippageEstimate:  sim.slippage,
     routeVersion:      ROUTE_VERSION,
+    externalVenue:     null,
   };
 }

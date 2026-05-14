@@ -20,6 +20,7 @@ import {
   type EvmHtlcSession,
   type LockInstruction,
 } from "../../hooks/useEvmHtlcSession";
+import { getPublicClient } from "../../lib/escrow";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -104,13 +105,14 @@ interface LockPanelProps {
   locked:       boolean;
   lockTxid:     string | null;
   userAddress:  string;
+  partyAddress: string;  // wallet address of the seller or buyer for this panel
   sessionId:    string;
   chainId:      number;
   onConfirmed:  (txHash: string) => void;
 }
 
 function LockPanel({
-  lock, side, locked, lockTxid, userAddress, chainId, onConfirmed,
+  lock, side, locked, lockTxid, userAddress, partyAddress, chainId, onConfirmed,
 }: LockPanelProps) {
   const [step,    setStep]    = useState<"idle" | "approving" | "locking" | "done" | "error">("idle");
   const [txHash,  setTxHash]  = useState<string | null>(lockTxid ?? null);
@@ -140,7 +142,12 @@ function LockPanel({
           lock.amount,
           userAddress
         );
-        await sendTx(approveParams);
+        const approveTxHash = await sendTx(approveParams);
+        // Wait for the approve confirmation so the allowance is on-chain
+        // before lockERC20 executes (prevents "allowance too low" reverts).
+        await getPublicClient(chainId).waitForTransactionReceipt({
+          hash: approveTxHash as `0x${string}`,
+        });
       }
 
       setStep("locking");
@@ -160,11 +167,9 @@ function LockPanel({
     }
   }
 
-  const isUserSide = userAddress.toLowerCase() === (
-    side === "seller"
-      ? lock.contractAddress?.toLowerCase()
-      : lock.contractAddress?.toLowerCase()
-  );
+  // True when the connected wallet address matches this panel's party (seller or buyer).
+  // Only the relevant party should see an active Lock button.
+  const isUserSide = userAddress.toLowerCase() === partyAddress.toLowerCase();
 
   const sideLabel = side === "seller" ? "Seller" : "Buyer";
   const verb = isNative ? "Lock ETH" : `Approve & Lock ${lock.asset}`;
@@ -217,7 +222,7 @@ function LockPanel({
         >
           Tx: {shortHash(txHash)} ↗
         </a>
-      ) : !locked && lock.contractAddress ? (
+      ) : !locked && lock.contractAddress && isUserSide ? (
         <div className="space-y-2">
           {step === "idle" || step === "error" ? (
             <button
@@ -241,6 +246,10 @@ function LockPanel({
           {errMsg && (
             <div className="text-xs text-red-400">{errMsg}</div>
           )}
+        </div>
+      ) : !locked && lock.contractAddress && !isUserSide ? (
+        <div className="text-xs text-zinc-500 italic">
+          Waiting for counterparty to lock…
         </div>
       ) : !lock.contractAddress ? (
         <div className="text-xs text-zinc-500 italic">
@@ -365,6 +374,7 @@ export function HTLCSettlementCard({
           locked={session.sellerLocked}
           lockTxid={session.sellerLockTxid}
           userAddress={userAddress}
+          partyAddress={session.sellerAddress}
           sessionId={sessionId}
           chainId={session.chainId}
           onConfirmed={(hash) => confirmLock("seller", hash)}
@@ -375,6 +385,7 @@ export function HTLCSettlementCard({
           locked={session.buyerLocked}
           lockTxid={session.buyerLockTxid}
           userAddress={userAddress}
+          partyAddress={session.buyerAddress}
           sessionId={sessionId}
           chainId={session.chainId}
           onConfirmed={(hash) => confirmLock("buyer", hash)}

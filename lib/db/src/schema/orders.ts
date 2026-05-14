@@ -1,4 +1,5 @@
-import { pgTable, text, numeric, timestamp, index, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, timestamp, index, uniqueIndex, boolean } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -50,6 +51,7 @@ export const ordersTable = pgTable("orders", {
 }, (t) => [
   index("orders_symbol_status_idx").on(t.symbol, t.status),
   index("orders_wallet_status_idx").on(t.walletAddress, t.status),
+  uniqueIndex("orders_wallet_nonce_uidx").on(sql`lower(${t.walletAddress})`, t.nonce),
 ]);
 
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ createdAt: true, updatedAt: true });

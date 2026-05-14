@@ -9,7 +9,11 @@ async function getSetting(key: string): Promise<string> {
 
 /* ── Telegram Bot ─────────────────────────────────────────────────────────── */
 async function sendTelegram(token: string, chatId: string, text: string): Promise<void> {
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
+  // Validate token format to prevent SSRF via malformed tokens
+  if (!/^\d{8,12}:[A-Za-z0-9_-]{35,}$/.test(token)) {
+    throw new Error("Invalid Telegram bot token format");
+  }
+  const url = `https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -23,6 +27,10 @@ async function sendTelegram(token: string, chatId: string, text: string): Promis
 
 /* ── ntfy.sh Push Notification ────────────────────────────────────────────── */
 async function sendNtfy(topic: string, title: string, message: string, priority: string): Promise<void> {
+  // Validate topic is a simple alphanumeric identifier to prevent SSRF
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(topic)) {
+    throw new Error("ntfy topic must contain only alphanumeric characters, hyphens, or underscores");
+  }
   const ntfyPriority: Record<string, string> = {
     urgent: "5", high: "4", normal: "3", low: "2",
   };
@@ -44,10 +52,27 @@ async function sendNtfy(topic: string, title: string, message: string, priority:
 
 /* ── Discord Webhook ──────────────────────────────────────────────────────── */
 async function sendDiscord(webhookUrl: string, title: string, message: string, priority: string): Promise<void> {
+  // Parse and strictly validate the URL using the URL constructor to prevent SSRF.
+  // startsWith() can be bypassed with tricks like https://discord.com@evil.com/…
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(webhookUrl);
+  } catch {
+    throw new Error("Invalid Discord webhook URL");
+  }
+  const allowedHostnames = new Set(["discord.com", "discordapp.com"]);
+  if (
+    parsedUrl.protocol !== "https:" ||
+    !allowedHostnames.has(parsedUrl.hostname) ||
+    !parsedUrl.pathname.startsWith("/api/webhooks/")
+  ) {
+    throw new Error("Discord webhook URL must target discord.com or discordapp.com /api/webhooks/");
+  }
+  const safeUrl = parsedUrl.toString();
   const colorMap: Record<string, number> = {
     urgent: 0xe74c3c, high: 0xe67e22, normal: 0x3498db, low: 0x95a5a6,
   };
-  const res = await fetch(webhookUrl, {
+  const res = await fetch(safeUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

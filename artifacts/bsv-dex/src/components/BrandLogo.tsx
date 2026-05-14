@@ -12,7 +12,7 @@ export function BrandLogo({ textSize = 'text-xl', tooltip = true, suffix = 'DEX'
   return (
     <span
       className={`inline-flex items-center font-bold tracking-tight text-foreground leading-none ${textSize}`}
-      title={tooltip ? (online ? 'Connected to internet' : 'No internet connection') : undefined}
+      title={tooltip ? (online ? 'All systems operational' : 'Service issues detected') : undefined}
     >
       <OrahO online={online} />
       <span>rah</span>

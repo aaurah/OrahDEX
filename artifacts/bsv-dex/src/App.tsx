@@ -103,6 +103,8 @@ const AdminIntegrations      = lazy(() => import("@/pages/admin/Integrations").t
 const AdminMintBurn          = lazy(() => import("@/pages/admin/MintBurn").then(m => ({ default: m.AdminMintBurn })));
 const AdminLedgerManager     = lazy(() => import("@/pages/admin/LedgerManager").then(m => ({ default: m.AdminLedgerManager })));
 const AdminDbSync            = lazy(() => import("@/pages/admin/DbSync").then(m => ({ default: m.AdminDbSync })));
+const AdminCexConnections    = lazy(() => import("@/pages/admin/CexConnections").then(m => ({ default: m.AdminCexConnections })));
+const AdminDiagnostics       = lazy(() => import("@/pages/admin/Diagnostics"));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -370,6 +372,8 @@ function Router() {
       <Route path="/admin/api-monitor"><AdminRoute><AdminApiMonitor /></AdminRoute></Route>
       <Route path="/admin/trade-analytics"><AdminRoute><AdminTradeAnalytics /></AdminRoute></Route>
       <Route path="/admin/le-income">     <AdminRoute><AdminLEIncome /></AdminRoute></Route>
+      <Route path="/admin/cex-connections"><AdminRoute><AdminCexConnections /></AdminRoute></Route>
+      <Route path="/admin/diagnostics">   <AdminRoute><AdminDiagnostics /></AdminRoute></Route>
 
       {/* ── Landing page ── */}
       <Route path="/home">
@@ -430,8 +434,8 @@ function Router() {
                 <Route path="/copy"       component={CopyTrading} />
                 <Route path="/fees"       component={RevenuePage} />
                 <Route path="/keeper"     component={KeeperProfile} />
-                <Route path="/wallet"     component={MobileWalletPortfolio} />
-                <Route path="/portfolio"  component={MobileWalletPortfolio} />
+                <Route path="/wallet">{() => <MobileWalletPortfolio />}</Route>
+                <Route path="/portfolio">{() => <MobileWalletPortfolio />}</Route>
                 <Route path="/portfolio/:coin">
                   {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
                 </Route>
@@ -470,7 +474,7 @@ function Router() {
                   <Route path="/copy"           component={CopyTrading} />
                   <Route path="/fees"           component={RevenuePage} />
                   <Route path="/keeper"         component={KeeperProfile} />
-                  <Route path="/wallet"         component={WalletPage} />
+                  <Route path="/wallet">{() => <WalletPage />}</Route>
                   <Route path="/portfolio"      component={Portfolio} />
                   <Route path="/portfolio/:coin">
                     {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}

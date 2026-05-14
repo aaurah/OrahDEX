@@ -6,7 +6,7 @@ import {
   Wallet, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle, Search, ArrowDownToLine,
-  Landmark, Plug2, Printer, Database, CreditCard,
+  Landmark, Plug2, Printer, Database, CreditCard, Link2,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
@@ -89,6 +89,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "AI Intelligence",
     items: [
       { href: "/admin/ai",           label: "Ora AI Settings",    icon: Brain },
+      { href: "/admin/cex-connections", label: "CEX Connections",  icon: Link2 },
     ],
   },
   {
@@ -102,6 +103,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "System",
     items: [
       { href: "/admin/health",       label: "System Health",      icon: HeartPulse },
+      { href: "/admin/diagnostics",  label: "Diagnostics",        icon: Activity },
       { href: "/admin/api-monitor",  label: "API Monitor",        icon: Activity },
       { href: "/admin/liquidity",    label: "Liquidity Bot",      icon: Bot },
       { href: "/admin/tradingview",  label: "TradingView Feed",   icon: TrendingUp },

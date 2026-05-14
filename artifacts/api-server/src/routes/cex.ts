@@ -298,7 +298,7 @@ router.post("/cex-accounts/:id/test", async (req, res) => {
             const sig   = crypto.createHmac("sha256", apiSecret).update(query).digest("hex");
             const ar    = await fetch(
               `https://api.binance.com/api/v3/account?${query}&signature=${sig}`,
-              { headers: { "X-MBX-APIKEY": apiKey }, signal: new AbortController().signal }
+              { headers: { "X-MBX-APIKEY": apiKey }, signal: AbortSignal.timeout(10_000) }
             ).catch(() => null);
             if (ar && ar.ok) {
               const data = await ar.json() as any;
@@ -320,6 +320,7 @@ router.post("/cex-accounts/:id/test", async (req, res) => {
           } else if (account.exchange === "bybit") {
             const ts  = Date.now().toString();
             const str = ts + apiKey + "5000";
+            // codeql[js/insufficient-password-hash] HMAC-SHA256 here is the Bybit API request-signing algorithm, not password hashing
             const sig = crypto.createHmac("sha256", apiSecret).update(str).digest("hex");
             const ar  = await fetch("https://api.bybit.com/v5/account/info", {
               headers: {

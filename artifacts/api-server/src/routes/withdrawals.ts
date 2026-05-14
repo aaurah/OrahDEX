@@ -46,11 +46,38 @@ router.post("/withdraw/challenge", (req, res) => {
 // request is rejected so the user cannot over-withdraw.
 // EVM wallet callers (0x…) must supply a `signature` obtained via
 // POST /withdraw/challenge to prove ownership of `walletAddress`.
+// ── Recipient address validation ──────────────────────────────────────────────
+// Networks that use standard EVM (0x-prefixed 20-byte) addresses.
+const EVM_NETWORKS = new Set([
+  "ETH", "BNB", "MATIC", "AVAX", "FTM", "BASE", "ARB", "OP", "ZKSYNC", "LINEA",
+  "SCROLL", "BLAST", "MODE", "TAIKO", "SEPOLIA", "BASE_SEP", "ARB_SEP", "EVM",
+]);
+// BSV P2PKH (1…) or P2SH (3…) address, base58 chars, 26-35 chars.
+const BSV_ADDRESS_RE = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
+
 router.post("/withdrawals", async (req, res) => {
   const { walletAddress, asset, amount, network, networkLabel, recipient, fee, signature } = req.body;
 
   if (!walletAddress || !asset || !amount || !network || !recipient) {
     res.status(400).json({ error: "Missing required fields: walletAddress, asset, amount, network, recipient" });
+    return;
+  }
+
+  // Validate recipient address format based on network type.
+  // This prevents misdirected withdrawals to malformed or wrong-network addresses.
+  const networkUp = String(network).toUpperCase();
+  const isEvmNetwork = EVM_NETWORKS.has(networkUp);
+  const isBsvNetwork = networkUp === "BSV";
+  if (isEvmNetwork && !/^0x[0-9a-fA-F]{40}$/.test(recipient)) {
+    res.status(400).json({
+      error: `Invalid recipient address for ${network} network. Expected 0x-prefixed 20-byte EVM address (0x + 40 hex chars).`,
+    });
+    return;
+  }
+  if (isBsvNetwork && !BSV_ADDRESS_RE.test(recipient)) {
+    res.status(400).json({
+      error: "Invalid recipient address for BSV network. Expected a P2PKH (1…) or P2SH (3…) address.",
+    });
     return;
   }
 
@@ -251,8 +278,15 @@ router.post("/withdrawals", async (req, res) => {
   }
 });
 
+// Alias: POST /withdraw → same handler as POST /withdrawals
+// Kept for backward compatibility with clients that call /api/withdraw (without the "s").
+// Uses the Express Router's internal dispatch to re-route the request.
+router.post("/withdraw", (req, res, next) => {
+  req.url = "/withdrawals";
+  (router as any).handle(req, res, next);
+});
+
 // ── GET /admin/withdrawals ────────────────────────────────────────────────────
-// Returns ALL withdrawal requests for the admin panel, newest first.
 router.get("/admin/withdrawals", requireAdminToken, async (req, res) => {
   try {
     // Honor ?status=pending  or  ?status=pending,cancelled,failed  to filter rows.
@@ -272,7 +306,7 @@ router.get("/admin/withdrawals", requireAdminToken, async (req, res) => {
           `SELECT * FROM withdrawal_requests ORDER BY created_at DESC LIMIT 500`,
         );
 
-    res.json(rows.map(r => ({
+    res.json(rows.map((r: any) => ({
       id:           r.id,
       walletAddress: r.wallet_address,
       asset:        r.asset,

@@ -62,6 +62,19 @@ function Portal({ children }: { children: React.ReactNode }) {
 }
 
 /* ─── types ─────────────────────────────────────────────────────────────────── */
+
+/** Only allow http/https URLs or raster-format data URIs for image src attributes.
+ *  SVG is excluded because it can contain embedded JavaScript. */
+function sanitizeImageUrl(url: string): string {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    if (u.protocol === "https:" || u.protocol === "http:") return u.href;
+    if (u.protocol === "data:" && /^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(url)) return url;
+  } catch { /* invalid URL */ }
+  return "";
+}
+
 interface Post {
   id: string; creator: string; creator_name: string; creator_avatar: string;
   title: string; description: string; image_url: string; category: string;
@@ -80,7 +93,8 @@ interface Creator {
   is_verified: boolean; follower_count: number; following_count: number;
   post_count: number; symbol: string; coin_name: string;
   price_usd: number; market_cap_usd: number; ath_usd: number;
-  volume_24h_usd: number; holder_count: number; circulating_supply: number;
+  volume_24h_usd: number; holder_count: number; holding_count?: number;
+  circulating_supply: number;
   total_supply: number; virtual_bsv: number; virtual_tokens: number;
   price_bsv: number; trade_count: number;
 }
@@ -495,6 +509,7 @@ function CreatorProfileSheet({
   const [followList, setFollowList] = useState<{ type: "followers" | "following"; items: any[] } | null>(null);
   const [statSheet, setStatSheet] = useState<{ type: "holders" | "holding"; items: any[] } | null>(null);
   const [holdingItems, setHoldingItems] = useState<any[]>(_profileHoldingsCache[creatorAddress] ?? []);
+  const [, navigate] = useLocation();
   const hybrid = useHybridBalance(60_000);
   const [notifOpen, setNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -1249,17 +1264,18 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
   });
   const [avatarMode, setAvatarMode] = useState<"url" | "file">("url");
   const [coverMode, setCoverMode] = useState<"url" | "file">("url");
-  const [avatarPreview, setAvatarPreview] = useState(profile.avatar_url || "");
-  const [coverPreview, setCoverPreview] = useState(profile.cover_url || "");
+  const [avatarPreview, setAvatarPreview] = useState(sanitizeImageUrl(profile.avatar_url || ""));
+  const [coverPreview, setCoverPreview] = useState(sanitizeImageUrl(profile.cover_url || ""));
   const [captureField, setCaptureField] = useState<null | "avatar" | "cover">(null);
 
   function applyCapture(dataUrl: string) {
+    const safeUrl = sanitizeImageUrl(dataUrl);
     if (captureField === "avatar") {
-      setAvatarPreview(dataUrl);
-      setForm(f => ({ ...f, avatar_url: dataUrl }));
+      setAvatarPreview(safeUrl);
+      setForm(f => ({ ...f, avatar_url: safeUrl }));
     } else if (captureField === "cover") {
-      setCoverPreview(dataUrl);
-      setForm(f => ({ ...f, cover_url: dataUrl }));
+      setCoverPreview(safeUrl);
+      setForm(f => ({ ...f, cover_url: safeUrl }));
     }
   }
   const [loading, setLoading] = useState(false);
@@ -1280,12 +1296,13 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
       reader.onload = ev => {
         const raw = ev.target?.result as string;
         compressProfileImage(raw).then(dataUrl => {
+          const safeDataUrl = sanitizeImageUrl(dataUrl);
           if (field === "avatar") {
-            setAvatarPreview(dataUrl);
-            setForm(f => ({ ...f, avatar_url: dataUrl }));
+            setAvatarPreview(safeDataUrl);
+            setForm(f => ({ ...f, avatar_url: safeDataUrl }));
           } else {
-            setCoverPreview(dataUrl);
-            setForm(f => ({ ...f, cover_url: dataUrl }));
+            setCoverPreview(safeDataUrl);
+            setForm(f => ({ ...f, cover_url: safeDataUrl }));
           }
         });
       };
@@ -1372,7 +1389,7 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           <label className="text-xs font-bold block mb-2" style={{ color: "var(--color-text-secondary)" }}>COVER PHOTO</label>
           {coverPreview && (
             <div className="rounded-2xl overflow-hidden mb-3" style={{ height: 120 }}>
-              <img src={coverPreview} alt="" className="w-full h-full object-cover" onError={() => setCoverPreview("")} />
+              <img src={sanitizeImageUrl(coverPreview)} alt="" className="w-full h-full object-cover" onError={() => setCoverPreview("")} />
             </div>
           )}
           <button type="button" onClick={() => setCaptureField("cover")}
@@ -1390,7 +1407,7 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           </div>
           {coverMode === "url" ? (
             <input style={inp} placeholder="https://… cover image URL" value={form.cover_url}
-              onChange={e => { set("cover_url")(e); setCoverPreview(e.target.value); }} />
+              onChange={e => { set("cover_url")(e); setCoverPreview(sanitizeImageUrl(e.target.value)); }} />
           ) : (
             <label className="flex flex-col items-center justify-center gap-2 rounded-xl cursor-pointer"
               style={{ background: "var(--color-surface)", border: "2px dashed var(--color-border)", padding: "20px 0" }}>
@@ -1407,7 +1424,7 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           {avatarPreview && (
             <div className="mb-3 flex justify-center">
               <div className="w-20 h-20 rounded-full overflow-hidden" style={{ border: "3px solid var(--color-accent)" }}>
-                <img src={avatarPreview} alt="" className="w-full h-full object-cover" onError={() => setAvatarPreview("")} />
+                <img src={sanitizeImageUrl(avatarPreview)} alt="" className="w-full h-full object-cover" onError={() => setAvatarPreview("")} />
               </div>
             </div>
           )}
@@ -1426,7 +1443,7 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           </div>
           {avatarMode === "url" ? (
             <input style={inp} placeholder="https://… avatar URL" value={form.avatar_url}
-              onChange={e => { set("avatar_url")(e); setAvatarPreview(e.target.value); }} />
+              onChange={e => { set("avatar_url")(e); setAvatarPreview(sanitizeImageUrl(e.target.value)); }} />
           ) : (
             <label className="flex flex-col items-center justify-center gap-2 rounded-xl cursor-pointer"
               style={{ background: "var(--color-surface)", border: "2px dashed var(--color-border)", padding: "20px 0" }}>
@@ -2267,6 +2284,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureTab, setCaptureTab] = useState<"camera" | "ai" | "photos">("camera");
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
@@ -2307,7 +2325,8 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
     reader.readAsDataURL(file);
   }
 
-  const effectiveImage = mediaMode === "file" ? (filePreview || fileData) : form.imageUrl;
+  const rawImage = mediaMode === "file" ? (filePreview || fileData) : form.imageUrl;
+  const effectiveImage = sanitizeImageUrl(rawImage);
   const canSubmit = form.title && (mediaMode === "url" ? !!form.imageUrl : !!fileData);
 
   async function submit() {
@@ -2365,7 +2384,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
       {/* Media preview */}
       {effectiveImage ? (
         <div className="rounded-2xl overflow-hidden mb-3 relative group" style={{ aspectRatio: "1/1" }}>
-          <img src={effectiveImage} alt="" className="w-full h-full object-cover" onError={() => { setFilePreview(""); setFileData(""); setForm(f => ({ ...f, imageUrl: "" })); }} />
+          <img src={sanitizeImageUrl(effectiveImage)} alt="" className="w-full h-full object-cover" onError={() => { setFilePreview(""); setFileData(""); setForm(f => ({ ...f, imageUrl: "" })); }} />
           <button onClick={() => { setFilePreview(""); setFileData(""); setForm(f => ({ ...f, imageUrl: "" })); }}
             className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
             style={{ background: "rgba(0,0,0,0.6)" }}>
@@ -2387,13 +2406,18 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
       )}
 
       {/* Camera + AI quick action */}
-      <button onClick={() => setCaptureOpen(true)}
-        className="w-full mb-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
-        style={{ background: "var(--color-accent)", color: "#000" }}>
-        <Camera size={14} /> Camera
-        <span style={{ opacity: 0.6 }}>•</span>
-        <Sparkles size={14} /> AI generate
-      </button>
+      <div className="flex gap-2 mb-3">
+        <button onClick={() => { setCaptureTab("camera"); setCaptureOpen(true); }}
+          className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+          style={{ background: "var(--color-surface)", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
+          <Camera size={14} /> Camera
+        </button>
+        <button onClick={() => { setCaptureTab("ai"); setCaptureOpen(true); }}
+          className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+          style={{ background: "var(--color-accent)", color: "#000" }}>
+          <Sparkles size={14} /> AI Generate
+        </button>
+      </div>
 
       <MediaCapture open={captureOpen} onClose={() => setCaptureOpen(false)}
         onSelect={(dataUrl) => {
@@ -2401,7 +2425,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           setForm(f => ({ ...f, imageUrl: "" }));
           setMediaMode("file");
         }}
-        accept="image/*" initialTab="camera" />
+        accept="image/*" initialTab={captureTab} />
 
       {/* Media mode toggle */}
       <div className="flex mb-4 p-1 rounded-xl gap-1" style={{ background: "var(--color-surface)" }}>
@@ -2524,12 +2548,22 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
 
         {error && <div className="p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
 
+        {!address && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+               style={{ background: "rgba(255,170,0,0.12)", color: "#ffaa00" }}>
+            <Lock size={13} />
+            <span>Connect a wallet to publish — you can still generate AI images now.</span>
+          </div>
+        )}
+
         <button onClick={submit} disabled={loading || !canSubmit}
           className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-40"
           style={{ background: "linear-gradient(135deg,var(--color-accent),#00aaff)", color: "#000" }}>
           {loading
             ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" />
-            : <><Zap size={15} /> Inscribe on BSV</>
+            : !address
+              ? <><Lock size={15} /> Connect Wallet to Publish</>
+              : <><Zap size={15} /> Inscribe on BSV</>
           }
         </button>
       </div>

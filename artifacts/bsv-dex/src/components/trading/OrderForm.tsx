@@ -327,11 +327,12 @@ export interface OrderFormFill {
 }
 
 // ── Main OrderForm ─────────────────────────────────────────────────────────────
-export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlaced }: {
+export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlaced, onTradeFlash }: {
   symbol: string;
   currentPrice?: number;
   externalFill?: OrderFormFill | null;
   onOrderPlaced?: () => void;
+  onTradeFlash?: (fill: { price: number; side: "buy" | "sell" }) => void;
 }) {
   const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
@@ -653,12 +654,17 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         }
         setAmount("");
         if (address) fetchApiBalances(base, quote, address);
+        refreshBalances();
+        useWalletStore.getState().triggerBalanceRefresh();
+        // Flash the order book at the fill price
+        onTradeFlash?.({ price: avgFillPrice, side: side as "buy" | "sell" });
         setTimeout(() => onOrderPlaced?.(), 500);
       },
       onError: (err: any) => {
-        const code        = err?.data?.code ?? err?.code;
-        const serverMsg   = err?.data?.error ?? err?.data?.message ?? err?.message;
-        const isInsufficient = code === "INSUFFICIENT_FUNDS" || serverMsg?.includes("Insufficient");
+        const errData     = err?.response?.data ?? err?.data ?? {};
+        const code        = errData?.code ?? err?.data?.code ?? err?.code;
+        const serverMsg   = errData?.error ?? errData?.message ?? err?.data?.error ?? err?.data?.message ?? err?.message;
+        const isInsufficient = code === "INSUFFICIENT_FUNDS" || serverMsg?.toLowerCase?.().includes("insufficient");
         const isNoLiquidity  = code === "NO_LIQUIDITY";
 
         toast({
@@ -860,83 +866,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           chainId: isEvm ? chainId : undefined,
         } as any,
       },
-      {
-        onSuccess: async (data: any) => {
-          const matched = data?.matched ?? false;
-          const txid    = data?.settlementTxid ?? data?.txid ?? null;
-          const url     = data?.explorerUrl ?? null;
-
-          if (matched && txid && !txid.startsWith("htlc-pending-")) {
-            const fallbackExplorer = txid.startsWith("0x")
-              ? `https://etherscan.io/tx/${txid}`
-              : `https://whatsonchain.com/tx/${txid}`;
-            addTx({
-              hash:                 txid,
-              chainId:              0,
-              label:                `Settlement · ${side.toUpperCase()} ${amount} ${base}`,
-              status:               "confirmed",
-              confirmations:        1,
-              requiredConfirmations: 1,
-              timestamp:            Date.now(),
-              explorerUrl:          url ?? fallbackExplorer,
-            });
-          }
-
-          if (matched) {
-            const filledQty    = data?.filledQuantity ?? parseFloat(amount || "0");
-            const avgFillPrice = data?.price ?? (data?.total && filledQty > 0 ? data.total / filledQty : parseFloat(price || "0"));
-            const fillFee      = data?.fee ?? 0;
-            const receivedQty  = side === "sell"
-              ? ((filledQty * avgFillPrice - fillFee) > 0 ? (filledQty * avgFillPrice - fillFee) : filledQty * avgFillPrice).toFixed(2)
-              : filledQty > 0 ? filledQty.toFixed(6) : "0";
-            const receivedTok  = side === "sell" ? quote : base;
-
-            toast({
-              title: "Order Filled ✓",
-              description: `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
-            });
-          } else {
-            toast({
-              title: "Order Open",
-              description: `${side.toUpperCase()} ${amount} ${base} @ $${price} · waiting for match`,
-            });
-          }
-          setAmount("");
-
-          if (address) {
-            fetchApiBalances(base, quote, address);
-          }
-          refreshBalances();
-          useWalletStore.getState().triggerBalanceRefresh();
-          setTimeout(() => onOrderPlaced?.(), 500);
-        },
-        onError: (err: any) => {
-          // Surface server rejection messages (e.g. INSUFFICIENT_FUNDS, NO_LIQUIDITY, bad signature)
-          const data = err?.response?.data ?? err?.data ?? {};
-          const serverMsg: string =
-            data?.message ??
-            data?.detail ??
-            data?.error ??
-            err?.message ??
-            "Order rejected by the server.";
-          const isInsufficient =
-            data?.error === "INSUFFICIENT_FUNDS" ||
-            data?.code  === "INSUFFICIENT_FUNDS" ||
-            serverMsg.toLowerCase().includes("insufficient");
-          const isNoLiquidity =
-            data?.code  === "NO_LIQUIDITY" ||
-            err?.code   === "NO_LIQUIDITY";
-          toast({
-            title:       isNoLiquidity  ? "No Liquidity"
-                       : isInsufficient ? "Insufficient Balance"
-                       : "Order Failed",
-            description: isNoLiquidity
-              ? "No matching sellers found. Place a limit order to set your price instead."
-              : serverMsg,
-            variant:     "destructive",
-          });
-        },
-      }
     );
   };
 

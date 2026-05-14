@@ -51,12 +51,21 @@ async function fetchCoins(): Promise<LeCoin[]> {
 }
 
 export function useLetsExchangeCoins() {
-  const [coins, setCoins] = useState<LeCoin[]>(coinsCache ?? []);
-  const [loading, setLoading] = useState(!coinsCache);
+  // Only use the module-level cache when it has real data — never treat [] as valid
+  const validCache = coinsCache && coinsCache.length > 0 ? coinsCache : null;
+  const [coins, setCoins] = useState<LeCoin[]>(validCache ?? []);
+  const [loading, setLoading] = useState(!validCache);
 
   useEffect(() => {
-    if (coinsCache) { setCoins(coinsCache); setLoading(false); return; }
-    if (!fetchPromise) fetchPromise = fetchCoins().then(c => { coinsCache = c; return c; });
+    // Re-check on every mount: if cache is empty, always retry
+    if (coinsCache && coinsCache.length > 0) { setCoins(coinsCache); setLoading(false); return; }
+    if (!fetchPromise) {
+      fetchPromise = fetchCoins().then(c => {
+        if (c.length > 0) coinsCache = c; // only persist a non-empty result
+        fetchPromise = null;              // clear so next empty-cache mount retries
+        return c;
+      }).catch(() => { fetchPromise = null; return [] as LeCoin[]; });
+    }
     let cancelled = false;
     fetchPromise.then(c => { if (!cancelled) { setCoins(c); setLoading(false); } });
     return () => { cancelled = true; };
