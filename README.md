@@ -242,6 +242,20 @@ pnpm --filter @workspace/aura-dex-mobile run start
 
 ---
 
+## Changelog
+
+### 2026-05-14
+- **Security — SSRF guards** applied across all outbound HTTP clients (StealthEX, ChangeNOW, SimpleSwap, LetsExchange price cache, ERC-8004, notifier) — private-IP blocklist blocks internal network access
+- **Security — XSS fixes** applied to AiAssistant, AiTradeAnalysis (DOMPurify.sanitize), ReceiveModal (innerHTML → React state), and chart style injection stripping
+- **Dependencies** — axios bumped to 1.16.1, fast-uri pinned to ≥3.1.2, tmp 0.2.5 added; all via `pnpm.overrides` to cover transitive dependencies
+- **Performance — liquidityBot** O(n²) `active.find()` loop replaced with O(1) Map lookup; 4003-element intermediate array removed
+- **Performance — priceUpdater** sequential `await db.update()` per market replaced with batched parallel writes (50 at a time via `Promise.all`) — eliminates the primary API server OOM source
+- **API server** dev script fixed: port kill corrected 8090 → 8080; memory limit raised 2048 → 3072 MB
+- **SEO** — `sitemap.xml` all 18 URLs corrected from `orahdex.replit.app` → `orahdex.org`; `robots.txt` sitemap declaration updated; production server now sends `X-Robots-Tag: index, follow`
+- **README** fully rewritten with complete feature list, tech stack table, architecture diagram, full API reference, security section, and module status
+
+---
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
