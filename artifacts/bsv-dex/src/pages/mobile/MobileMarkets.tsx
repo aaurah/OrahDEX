@@ -11,7 +11,6 @@ import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { MobileWalletSheet } from "@/components/mobile/MobileWalletSheet";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { MobileBaseMarket } from "@/components/mobile/MobileBaseMarket";
-import { MobileNetworksExplorer } from "@/components/mobile/MobileNetworksExplorer";
 import { MobileCoinVote } from "@/components/mobile/MobileCoinVote";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
@@ -73,14 +72,13 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "new" | "chains" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "vote",      label: "🗳️ Vote" },
   { id: "favorites", label: "Favs" },
   { id: "all",       label: "All" },
   { id: "new",       label: "NEW" },
-  { id: "chains",    label: "🌐 Chains" },
   { id: "usd",       label: "USD" },
   { id: "btc",       label: "BTC" },
   { id: "bsv",       label: "BSV" },
@@ -401,7 +399,7 @@ export function MobileMarkets() {
 
   return (
     <>
-    <div className={cn("flex flex-col bg-background", (cat === "base" || cat === "chains" || cat === "vote") ? "h-full" : "h-full overflow-y-auto pb-24")}>
+    <div className={cn("flex flex-col bg-background", (cat === "base" || cat === "vote") ? "h-full" : "h-full overflow-y-auto pb-24")}>
       {/* ── Sticky header ── */}
       <div className="sticky top-0 z-20 bg-background border-b border-border/30">
         {/* Spot label + Search bar */}
@@ -499,9 +497,7 @@ export function MobileMarkets() {
       </div>
 
       {/* ── Special full-screen views ── */}
-      {cat === "chains" ? (
-        <MobileNetworksExplorer />
-      ) : cat === "base" ? (
+      {cat === "base" ? (
         <MobileBaseMarket />
       ) : cat === "vote" ? (
         <MobileCoinVote />
