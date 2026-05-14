@@ -159,10 +159,7 @@ function getCatRows(
     apiRows.filter(m => m.quote === quote && m.type !== "futures" && m.price > 0);
 
   switch (cat) {
-    case "all":       return [
-      ...enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures" && m.price > 0),
-      ...leAllPairs.filter(p => !MOBILE_ALL_POOL.some((m: any) => (m.symbol ?? `${m.baseAsset}/${m.quoteAsset}`) === p.symbol) && p.price > 0),
-    ];
+    case "all":       return enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures" && m.price > 0);
     case "favorites": return [
       ...enrich(MOBILE_ALL_POOL).filter(m => favorites.has(m.symbol)),
       ...leAllPairs.filter(p => favorites.has(p.symbol)),
