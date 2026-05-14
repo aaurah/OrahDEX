@@ -1,45 +1,43 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Wallet as WalletIcon, Download, ArrowDownUp, Copy, Check,
-  ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles, RefreshCw,
+  ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles,
+  RefreshCw, Link2, Link2Off, Send, TrendingUp,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useNativeChainBalance } from "@/hooks/useNativeChainBalance";
-import { getImportedWallet, getDerivedAddresses, saveDerivedAddresses, type DerivedAddresses } from "@/lib/walletPin";
+import {
+  getImportedWallet, getDerivedAddresses, saveDerivedAddresses,
+  type DerivedAddresses,
+} from "@/lib/walletPin";
 import { listPasskeyWallets, loginWithPasskey } from "@/lib/passkeyWallet";
 import { ReceiveModal } from "@/components/ReceiveModal";
 import { RevealSecretSheet } from "@/components/wallet/RevealSecretSheet";
 import { ChainReceiveSheet } from "@/components/wallet/ChainReceiveSheet";
+import { ManualImportSheet, type ImportChain } from "@/components/wallet/ManualImportSheet";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 
-/** Sums balances across all 8 live EVM chains for a given address.
- *  Each chain is a static hook call — rules of hooks are satisfied. */
+/** Sums balances across all 8 live EVM chains for a given address. */
 function useAllEvmBalances(address: string | null) {
-  const c1    = useEvmBalances(address, 1);
-  const c56   = useEvmBalances(address, 56);
-  const c137  = useEvmBalances(address, 137);
-  const c42161= useEvmBalances(address, 42161);
-  const c10   = useEvmBalances(address, 10);
-  const c8453 = useEvmBalances(address, 8453);
-  const c43114= useEvmBalances(address, 43114);
-  const c59144= useEvmBalances(address, 59144);
-
+  const c1     = useEvmBalances(address, 1);
+  const c56    = useEvmBalances(address, 56);
+  const c137   = useEvmBalances(address, 137);
+  const c42161 = useEvmBalances(address, 42161);
+  const c10    = useEvmBalances(address, 10);
+  const c8453  = useEvmBalances(address, 8453);
+  const c43114 = useEvmBalances(address, 43114);
+  const c59144 = useEvmBalances(address, 59144);
   const all = [c1, c56, c137, c42161, c10, c8453, c43114, c59144];
-  const totalUsd = all.reduce((sum, { balances }) =>
+  return all.reduce((sum, { balances }) =>
     sum + balances.reduce((s, b) => s + (b.usdValue ?? 0), 0), 0);
-  return totalUsd;
 }
 
-/** Chain catalogue — what an imToken / Guarda style wallet exposes.
- *  `live: true` chains have working balance + send today.
- *  `live: false` are derived addresses we'll wire up in subsequent phases
- *  (BTC/BCH in Phase 2, Tron in Phase 3, Solana in Phase 4, Ledger in Phase 6). */
 type ChainRow = {
   id: string;
   name: string;
@@ -52,25 +50,22 @@ type ChainRow = {
 };
 
 const CHAINS: ChainRow[] = [
-  // EVM (live)
-  { id: "eth",    name: "Ethereum",   symbol: "ETH",   color: "#627EEA", family: "evm", evmChainId: 1,     live: true },
-  { id: "bnb",    name: "BNB Chain",  symbol: "BNB",   color: "#F3BA2F", family: "evm", evmChainId: 56,    live: true },
-  { id: "polygon",name: "Polygon",    symbol: "MATIC", color: "#8247E5", family: "evm", evmChainId: 137,   live: true },
-  { id: "arb",    name: "Arbitrum",   symbol: "ETH",   color: "#28A0F0", family: "evm", evmChainId: 42161, live: true },
-  { id: "op",     name: "Optimism",   symbol: "ETH",   color: "#FF0420", family: "evm", evmChainId: 10,    live: true },
-  { id: "base",   name: "Base",       symbol: "ETH",   color: "#0052FF", family: "evm", evmChainId: 8453,  live: true },
-  { id: "avax",   name: "Avalanche",  symbol: "AVAX",  color: "#E84142", family: "evm", evmChainId: 43114, live: true },
-  { id: "linea",  name: "Linea",      symbol: "ETH",   color: "#121212", family: "evm", evmChainId: 59144, live: true },
-  // BSV (live)
-  { id: "bsv",    name: "Bitcoin SV", symbol: "BSV",   color: "#EAB300", family: "bsv", live: true },
-  // Derived from the same seed (BIP44) — receive works today, send via Phase 3+
-  { id: "btc",    name: "Bitcoin",      symbol: "BTC", color: "#F7931A", family: "btc",    live: true },
-  { id: "bch",    name: "Bitcoin Cash", symbol: "BCH", color: "#0AC18E", family: "bch",    live: true },
-  { id: "sol",    name: "Solana",       symbol: "SOL", color: "#14F195", family: "solana", live: true },
-  { id: "tron",   name: "Tron",         symbol: "TRX",  color: "#FF060A", family: "tron",   live: true },
-  { id: "xrp",   name: "XRP Ledger",   symbol: "XRP",  color: "#00AAE4", family: "xrp",    live: true },
-  { id: "ltc",   name: "Litecoin",     symbol: "LTC",  color: "#A6A9AA", family: "ltc",    live: true },
-  { id: "doge",  name: "Dogecoin",     symbol: "DOGE", color: "#C2A633", family: "doge",   live: true },
+  { id: "eth",     name: "Ethereum",     symbol: "ETH",  color: "#627EEA", family: "evm",    evmChainId: 1,     live: true },
+  { id: "bnb",     name: "BNB Chain",    symbol: "BNB",  color: "#F3BA2F", family: "evm",    evmChainId: 56,    live: true },
+  { id: "polygon", name: "Polygon",      symbol: "MATIC",color: "#8247E5", family: "evm",    evmChainId: 137,   live: true },
+  { id: "arb",     name: "Arbitrum",     symbol: "ETH",  color: "#28A0F0", family: "evm",    evmChainId: 42161, live: true },
+  { id: "op",      name: "Optimism",     symbol: "ETH",  color: "#FF0420", family: "evm",    evmChainId: 10,    live: true },
+  { id: "base",    name: "Base",         symbol: "ETH",  color: "#0052FF", family: "evm",    evmChainId: 8453,  live: true },
+  { id: "avax",    name: "Avalanche",    symbol: "AVAX", color: "#E84142", family: "evm",    evmChainId: 43114, live: true },
+  { id: "linea",   name: "Linea",        symbol: "ETH",  color: "#121212", family: "evm",    evmChainId: 59144, live: true },
+  { id: "bsv",     name: "Bitcoin SV",   symbol: "BSV",  color: "#EAB300", family: "bsv",                      live: true },
+  { id: "btc",     name: "Bitcoin",      symbol: "BTC",  color: "#F7931A", family: "btc",                      live: true },
+  { id: "bch",     name: "Bitcoin Cash", symbol: "BCH",  color: "#0AC18E", family: "bch",                      live: true },
+  { id: "sol",     name: "Solana",       symbol: "SOL",  color: "#14F195", family: "solana",                   live: true },
+  { id: "tron",    name: "Tron",         symbol: "TRX",  color: "#FF060A", family: "tron",                     live: true },
+  { id: "xrp",     name: "XRP Ledger",   symbol: "XRP",  color: "#00AAE4", family: "xrp",                      live: true },
+  { id: "ltc",     name: "Litecoin",     symbol: "LTC",  color: "#A6A9AA", family: "ltc",                      live: true },
+  { id: "doge",    name: "Dogecoin",     symbol: "DOGE", color: "#C2A633", family: "doge",                     live: true },
 ];
 
 function shortAddr(a: string | null) {
@@ -78,15 +73,6 @@ function shortAddr(a: string | null) {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
-/** Returns the on-chain address for the given chain.
- *
- *  evmAddress   — always the EVM 0x address (never a BSV/BTC address)
- *  bsvAddress   — the currently connected address when the network is BSV
- *                 (used only as a fallback for BSV-only wallets that have no derived entry)
- *
- *  Critical: never fall back to the EVM address for non-EVM chains — handing
- *  back a 0x… address as a BSV/BTC/BCH deposit address would route real funds
- *  to a wrong-format address and lose them. */
 function addressForChain(
   chain: ChainRow,
   evmAddress: string | null,
@@ -97,7 +83,6 @@ function addressForChain(
   if (chain.family === "evm") return evmAddress;
   if (chain.family === "bsv") {
     if (derived?.bsv) return derived.bsv;
-    // Only use the connected address when the wallet itself is a native BSV-only wallet
     if ((connectedNetwork === "bsv" || connectedNetwork === "bsv-test") && bsvAddress)
       return bsvAddress;
     return null;
@@ -112,28 +97,31 @@ function addressForChain(
   return null;
 }
 
-// ─── Shared row shell ────────────────────────────────────────────────────────
+// ─── Chain row shell (imToken / MetaMask hybrid style) ───────────────────────
 
 function ChainRowShell({
-  chain, chainAddr, balanceSlot, onReceive,
+  chain, chainAddr, balanceSlot, onReceive, onImport,
 }: {
   chain: ChainRow;
   chainAddr: string | null;
   balanceSlot: ReactNode;
   onReceive: () => void;
+  onImport: () => void;
 }) {
-  const canReceive = !!chainAddr && chain.live;
-  const addrLabel = chainAddr
+  const hasAddr   = !!chainAddr;
+  const canReceive = hasAddr && chain.live;
+
+  const addrLabel = hasAddr
     ? `${chainAddr.slice(0, 8)}…${chainAddr.slice(-5)}`
     : chain.live
-      ? "Connect wallet to derive address"
+      ? "No address linked"
       : "Coming soon";
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/30 transition-colors">
+    <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/30 transition-colors group">
       {/* Chain icon */}
       <div
-        className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow"
+        className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm"
         style={{ backgroundColor: chain.color }}
       >
         {chain.symbol.slice(0, 3)}
@@ -148,44 +136,85 @@ function ChainRowShell({
               {chain.badge}
             </span>
           )}
+          {/* Watch-mode indicator */}
+          {hasAddr && chain.family !== "evm" && (
+            <span className="hidden group-hover:inline-flex items-center gap-0.5 text-[9px] font-semibold text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded-full uppercase tracking-wide shrink-0">
+              <Link2 size={8} /> Linked
+            </span>
+          )}
         </div>
-        <p className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate">{addrLabel}</p>
+
+        {hasAddr ? (
+          <p className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate">{addrLabel}</p>
+        ) : (
+          chain.live ? (
+            <button
+              onClick={onImport}
+              className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-primary/80 hover:text-primary transition-colors"
+            >
+              <Plus size={10} />
+              Link address or import key
+            </button>
+          ) : (
+            <p className="text-[11px] text-muted-foreground mt-0.5">{addrLabel}</p>
+          )
+        )}
       </div>
 
-      {/* Balance slot (right side) */}
+      {/* Balance slot */}
       {balanceSlot}
 
-      {/* Receive button */}
-      <button
-        onClick={onReceive}
-        disabled={!canReceive}
-        className="w-8 h-8 rounded-lg bg-secondary/60 hover:bg-secondary disabled:opacity-30 flex items-center justify-center shrink-0"
-        title="Receive"
-      >
-        <Download size={14} />
-      </button>
+      {/* Action buttons */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        {/* Import / link button (always visible for non-EVM chains) */}
+        {chain.family !== "evm" && chain.live && (
+          <button
+            onClick={onImport}
+            title={hasAddr ? "Manage linked address" : "Link address or import key"}
+            className={cn(
+              "w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0",
+              hasAddr
+                ? "bg-primary/10 hover:bg-primary/20 text-primary"
+                : "bg-secondary/60 hover:bg-primary/15 text-muted-foreground hover:text-primary",
+            )}
+          >
+            {hasAddr ? <Link2 size={13} /> : <Link2Off size={13} />}
+          </button>
+        )}
+
+        {/* Receive button */}
+        <button
+          onClick={onReceive}
+          disabled={!canReceive}
+          className="w-8 h-8 rounded-lg bg-secondary/60 hover:bg-secondary disabled:opacity-30 flex items-center justify-center transition-colors shrink-0"
+          title="Receive"
+        >
+          <Download size={14} />
+        </button>
+      </div>
     </div>
   );
 }
 
-// ─── EVM chain row (uses useEvmBalances) ─────────────────────────────────────
+// ─── EVM row ─────────────────────────────────────────────────────────────────
 
 function EvmChainRow({
-  chain, evmAddress, quoteCurrency, onReceive,
+  chain, evmAddress, quoteCurrency, onReceive, onImport,
 }: {
   chain: ChainRow;
   evmAddress: string | null;
   quoteCurrency: string;
   onReceive: () => void;
+  onImport: () => void;
 }) {
   const { balances } = useEvmBalances(evmAddress, chain.evmChainId ?? null);
-  const native      = balances.find(b => b.isNative);
-  const nativeAmt   = native?.amount ?? 0;
-  const tokenCount  = balances.filter(b => !b.isNative && b.amount > 0).length;
-  const totalUsd    = balances.reduce((s, b) => s + (b.usdValue ?? 0), 0);
+  const native     = balances.find(b => b.isNative);
+  const nativeAmt  = native?.amount ?? 0;
+  const tokenCount = balances.filter(b => !b.isNative && b.amount > 0).length;
+  const totalUsd   = balances.reduce((s, b) => s + (b.usdValue ?? 0), 0);
 
   const balanceSlot = evmAddress ? (
-    <div className="text-right shrink-0 min-w-[70px]">
+    <div className="text-right shrink-0 min-w-[72px]">
       <p className="text-sm font-semibold text-foreground tabular-nums">
         {nativeAmt > 0 ? `${nativeAmt.toFixed(4)} ${chain.symbol}` : `0 ${chain.symbol}`}
       </p>
@@ -201,25 +230,27 @@ function EvmChainRow({
       chainAddr={evmAddress}
       balanceSlot={balanceSlot}
       onReceive={onReceive}
+      onImport={onImport}
     />
   );
 }
 
-// ─── Native (non-EVM) chain row (uses useNativeChainBalance) ─────────────────
+// ─── Native (non-EVM) row ─────────────────────────────────────────────────────
 
 function NativeChainRow({
-  chain, chainAddr, quoteCurrency, onReceive,
+  chain, chainAddr, quoteCurrency, onReceive, onImport,
 }: {
   chain: ChainRow;
   chainAddr: string | null;
   quoteCurrency: string;
   onReceive: () => void;
+  onImport: () => void;
 }) {
   const family = chain.family as any;
   const { native, usd, loading } = useNativeChainBalance(family, chainAddr);
 
   const balanceSlot = chainAddr ? (
-    <div className="text-right shrink-0 min-w-[70px]">
+    <div className="text-right shrink-0 min-w-[72px]">
       <p className="text-sm font-semibold text-foreground tabular-nums">
         {loading
           ? <span className="inline-block w-16 h-3.5 bg-muted/40 rounded animate-pulse" />
@@ -239,14 +270,15 @@ function NativeChainRow({
       chainAddr={chainAddr}
       balanceSlot={balanceSlot}
       onReceive={onReceive}
+      onImport={onImport}
     />
   );
 }
 
-// ─── Dispatcher — chooses EVM or Native row ───────────────────────────────────
+// ─── Chain row dispatcher ─────────────────────────────────────────────────────
 
 function ChainBalanceRow({
-  chain, address, evmAddress, network, derived, quoteCurrency, onReceive,
+  chain, address, evmAddress, network, derived, quoteCurrency, onReceive, onImport,
 }: {
   chain: ChainRow;
   address: string | null;
@@ -255,9 +287,11 @@ function ChainBalanceRow({
   derived: DerivedAddresses | null;
   quoteCurrency: string;
   onReceive: (chain: ChainRow) => void;
+  onImport:  (chain: ChainRow) => void;
 }) {
-  const chainAddr = addressForChain(chain, evmAddress, address, network, derived);
+  const chainAddr    = addressForChain(chain, evmAddress, address, network, derived);
   const handleReceive = () => onReceive(chain);
+  const handleImport  = () => onImport(chain);
 
   if (chain.family === "evm") {
     return (
@@ -266,6 +300,7 @@ function ChainBalanceRow({
         evmAddress={evmAddress}
         quoteCurrency={quoteCurrency}
         onReceive={handleReceive}
+        onImport={handleImport}
       />
     );
   }
@@ -276,9 +311,26 @@ function ChainBalanceRow({
       chainAddr={chainAddr}
       quoteCurrency={quoteCurrency}
       onReceive={handleReceive}
+      onImport={handleImport}
     />
   );
 }
+
+// ─── Quick-stat pill ─────────────────────────────────────────────────────────
+
+function StatPill({ label, value, icon: Icon, accent }: { label: string; value: string; icon: any; accent: string }) {
+  return (
+    <div className={cn("flex-1 rounded-2xl border p-3 flex flex-col gap-1", accent)}>
+      <div className="flex items-center gap-1.5">
+        <Icon size={12} className="text-muted-foreground" />
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</span>
+      </div>
+      <p className="text-sm font-bold text-foreground">{value}</p>
+    </div>
+  );
+}
+
+// ─── Main Wallet page ────────────────────────────────────────────────────────
 
 export default function Wallet({ afterActions }: { afterActions?: ReactNode } = {}) {
   const {
@@ -291,39 +343,29 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
     setInternalSolAddress, setInternalTronAddress, setInternalXrpAddress,
     setInternalLtcAddress, setInternalDogeAddress,
   } = useWalletStore();
-  const openWalletModal   = useWalletModalStore(s => s.open);
-  const [, navigate]      = useLocation();
-  const { toast }         = useToast();
+  const openWalletModal = useWalletModalStore(s => s.open);
+  const [, navigate]   = useLocation();
+  const { toast }      = useToast();
 
-  // evmAddress is always the EVM 0x address regardless of which network is currently active.
-  // When BSV is active, `address` becomes the BSV address — so we must use `internalEvmAddress`
-  // for EVM balance queries and as the key for derived-address lookup (which is keyed by EVM addr).
   const evmAddress = internalEvmAddress ?? (network === "evm" ? address : null);
 
-  const imported = useMemo(() => (address ? getImportedWallet(address) : null), [address]);
+  const imported     = useMemo(() => (address ? getImportedWallet(address) : null), [address]);
   const passkeyOwned = useMemo(
     () => (address ? listPasskeyWallets().some(w => w.address.toLowerCase() === address.toLowerCase()) : false),
     [address],
   );
-  // Backup is offered for any sovereign wallet — both PIN/passkey-imported AND native passkey-created.
   const canBackup = !!imported || passkeyOwned;
 
-  // Derived addresses are keyed by the EVM address in localStorage — use evmAddress, not `address`
-  // (when BSV is the active network, `address` is the BSV address and the lookup would miss).
   const derivedKey = evmAddress ?? address;
   const [storedDerived, setStoredDerived] = useState<DerivedAddresses | null>(() => getDerivedAddresses(derivedKey));
   useEffect(() => { setStoredDerived(getDerivedAddresses(derivedKey)); }, [derivedKey]);
 
-  // Merge localStorage derived addresses with the zustand store's internal addresses.
-  // Store values fill gaps left by the migration that cleared stale localStorage entries.
-  // Apply the same format guards the migration uses so stale store values aren't promoted:
-  //   BTC must be native SegWit ("bc1…"), BCH must be CashAddr ("bitcoincash:q…").
   const derived = useMemo<DerivedAddresses | null>(() => {
-    const btcStore  = internalBtcAddress?.startsWith("bc1")             ? internalBtcAddress : undefined;
-    const bchStore  = internalBchAddress?.startsWith("bitcoincash:q")   ? internalBchAddress : undefined;
+    const btcStore = internalBtcAddress?.startsWith("bc1")           ? internalBtcAddress : undefined;
+    const bchStore = internalBchAddress?.startsWith("bitcoincash:q") ? internalBchAddress : undefined;
     const storeAddrs: DerivedAddresses = {
-      evm:  evmAddress          ?? undefined,
-      bsv:  internalBsvAddress  ?? undefined,   // BSV "1…" format is always valid
+      evm:  evmAddress         ?? undefined,
+      bsv:  internalBsvAddress ?? undefined,
       btc:  btcStore,
       bch:  bchStore,
       sol:  internalSolAddress  ?? undefined,
@@ -334,7 +376,6 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
     };
     const hasStore = Object.values(storeAddrs).some(Boolean);
     if (!storedDerived && !hasStore) return null;
-    // localStorage wins over store (it's always newer — the store only fills gaps)
     return { ...storeAddrs, ...storedDerived };
   }, [
     storedDerived, evmAddress,
@@ -346,22 +387,26 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const { quoteCurrency } = useSettingsStore();
   const totalUsd = useAllEvmBalances(evmAddress);
 
-  const [receiveOpen, setReceiveOpen]       = useState(false);
-  const [chainReceive, setChainReceive]     = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
-  const [revealOpen, setRevealOpen]         = useState(false);
-  const [copied, setCopied]                 = useState(false);
-  const [refreshing, setRefreshing]         = useState(false);
+  // Count linked non-EVM chains
+  const linkedChains = CHAINS.filter(c => c.family !== "evm" && !!addressForChain(c, evmAddress, address, network, derived)).length;
+  const totalNonEvm  = CHAINS.filter(c => c.family !== "evm").length;
 
-  // True when a sovereign wallet has unresolved chain addresses (needs re-derive).
+  const [receiveOpen, setReceiveOpen]   = useState(false);
+  const [chainReceive, setChainReceive] = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
+  const [revealOpen, setRevealOpen]     = useState(false);
+  const [copied, setCopied]             = useState(false);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [importChain, setImportChain]   = useState<ChainRow | null>(null);
+
   const hasMissingChains = canBackup && (!derived?.btc || !derived?.bch || !derived?.tron || !derived?.xrp || !derived?.ltc || !derived?.doge);
 
+  // ── Passkey / sovereign refresh ──────────────────────────────────────────
   const refreshAddresses = async () => {
     setRefreshing(true);
     try {
       const result = await loginWithPasskey();
       if (result.chains) {
         const c = result.chains;
-        const key = c.evm;
         if (c.bsv)  setInternalBsvAddress(c.bsv);
         if (c.btc)  setInternalBtcAddress(c.btc);
         if (c.bch)  setInternalBchAddress(c.bch);
@@ -370,17 +415,74 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         if (c.xrp)  setInternalXrpAddress(c.xrp);
         if (c.ltc)  setInternalLtcAddress(c.ltc);
         if (c.doge) setInternalDogeAddress(c.doge);
-        // Persist fresh addresses to localStorage so they survive future sessions.
-        saveDerivedAddresses(key, c);
-        setStoredDerived(getDerivedAddresses(key));
+        saveDerivedAddresses(c.evm!, c);
+        setStoredDerived(getDerivedAddresses(c.evm!));
         toast({ title: "All chain addresses refreshed" });
       }
     } catch {
-      // Passkey not available — fall back to wallet modal reconnect.
       openWalletModal();
     } finally {
       setRefreshing(false);
     }
+  };
+
+  // ── Manual import handlers ────────────────────────────────────────────────
+  const familyToField: Record<string, keyof DerivedAddresses> = {
+    bsv: "bsv", btc: "btc", bch: "bch", solana: "sol",
+    tron: "tron", xrp: "xrp", ltc: "ltc", doge: "doge",
+  };
+
+  const handleImportSave = (chain: ImportChain, importedAddr: string) => {
+    if (!derivedKey) return;
+    const field = familyToField[chain.family];
+    if (!field) return;
+
+    // Persist to localStorage (source of truth for manually imported addresses)
+    saveDerivedAddresses(derivedKey, { [field]: importedAddr });
+    setStoredDerived(getDerivedAddresses(derivedKey));
+
+    // Mirror to store so other parts of the app can read it immediately
+    if (chain.family === "bsv")    setInternalBsvAddress(importedAddr);
+    if (chain.family === "btc")    setInternalBtcAddress(importedAddr);
+    if (chain.family === "bch")    setInternalBchAddress(importedAddr);
+    if (chain.family === "solana") setInternalSolAddress(importedAddr);
+    if (chain.family === "tron")   setInternalTronAddress(importedAddr);
+    if (chain.family === "xrp")    setInternalXrpAddress(importedAddr);
+    if (chain.family === "ltc")    setInternalLtcAddress(importedAddr);
+    if (chain.family === "doge")   setInternalDogeAddress(importedAddr);
+
+    setImportChain(null);
+    toast({
+      title: `${chain.name} address linked`,
+      description: `${importedAddr.slice(0, 14)}…`,
+    });
+  };
+
+  const handleImportRemove = (chain: ImportChain) => {
+    if (!derivedKey) return;
+    const field = familyToField[chain.family];
+    if (!field) return;
+
+    // Write undefined for this field to clear it
+    const current = getDerivedAddresses(derivedKey) ?? {};
+    delete current[field];
+    const map: Record<string, DerivedAddresses> = {};
+    try { Object.assign(map, JSON.parse(localStorage.getItem("orahdex_derived_addresses_v1") ?? "{}")); } catch {}
+    map[derivedKey.toLowerCase()] = current;
+    localStorage.setItem("orahdex_derived_addresses_v1", JSON.stringify(map));
+    setStoredDerived(getDerivedAddresses(derivedKey));
+
+    if (chain.family === "bsv")    setInternalBsvAddress(null);
+    if (chain.family === "btc")    setInternalBtcAddress(null);
+    if (chain.family === "bch")    setInternalBchAddress(null);
+    if (chain.family === "solana") setInternalSolAddress(null);
+    if (chain.family === "tron")   setInternalTronAddress(null);
+    if (chain.family === "xrp")    setInternalXrpAddress(null);
+    if (chain.family === "ltc")    setInternalLtcAddress(null);
+    if (chain.family === "doge")   setInternalDogeAddress(null);
+
+    setImportChain(null);
+    toast({ title: `${chain.name} address unlinked` });
   };
 
   const copyAddress = async () => {
@@ -430,33 +532,48 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
 
         {/* Total balance */}
         <div className="mb-4">
-          <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Total balance</p>
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Total EVM balance</p>
           <p className="text-3xl font-bold text-foreground tracking-tight">
             {formatQuoteAmount(totalUsd, quoteCurrency)}
           </p>
         </div>
 
         <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Your address</p>
-        <button
-          onClick={copyAddress}
-          className="flex items-center gap-2 group w-full text-left"
-        >
+        <button onClick={copyAddress} className="flex items-center gap-2 group w-full text-left mb-5">
           <span className="font-mono text-sm sm:text-base text-foreground truncate">{shortAddr(address)}</span>
           {copied
             ? <Check size={14} className="text-green-400" />
             : <Copy size={14} className="text-muted-foreground group-hover:text-foreground" />}
         </button>
 
-        <div className="grid grid-cols-3 gap-2 mt-5">
-          <ActionButton icon={Download}   label="Receive" onClick={() => setReceiveOpen(true)} />
-          <ActionButton icon={ArrowDownUp} label="Swap"   onClick={() => navigate("/swap")} />
-          <ActionButton icon={Sparkles}   label="Buy"     onClick={() => navigate("/swap")} />
+        {/* Action buttons — imToken / MetaMask style */}
+        <div className="grid grid-cols-4 gap-2">
+          <ActionButton icon={Download}    label="Receive" onClick={() => setReceiveOpen(true)} />
+          <ActionButton icon={Send}        label="Send"    onClick={() => navigate("/swap")} />
+          <ActionButton icon={ArrowDownUp} label="Swap"    onClick={() => navigate("/swap")} />
+          <ActionButton icon={Sparkles}    label="Buy"     onClick={() => navigate("/swap")} />
         </div>
+      </div>
+
+      {/* ── Quick stats — Atomic Wallet style ── */}
+      <div className="flex gap-2 mb-4">
+        <StatPill
+          label="Chains linked"
+          value={`${linkedChains} / ${totalNonEvm}`}
+          icon={Link2}
+          accent="border-border bg-card"
+        />
+        <StatPill
+          label="EVM networks"
+          value="8 active"
+          icon={TrendingUp}
+          accent="border-border bg-card"
+        />
       </div>
 
       {afterActions}
 
-      {/* ── Backup CTA (any sovereign wallet — imported or native passkey) ── */}
+      {/* ── Backup CTA ── */}
       {canBackup && (
         <button
           onClick={() => setRevealOpen(true)}
@@ -477,16 +594,17 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         <div className="mb-4 rounded-2xl border border-border bg-card p-4 flex items-start gap-3">
           <AlertCircle size={16} className="text-muted-foreground shrink-0 mt-0.5" />
           <p className="text-xs text-muted-foreground">
-            You're connected via an external wallet (WalletConnect). Backup is managed by that wallet's own app.
+            You're connected via an external wallet. Backup is managed by that wallet's own app.
+            Use the <strong>Link</strong> button on any chain below to add watch addresses or import keys.
           </p>
         </div>
       )}
 
-      {/* ── All chains ── */}
+      {/* ── Chain list — Guarda / Atomic / imToken style ── */}
       <div>
         <div className="flex items-center justify-between px-1 mb-2">
           <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
-            Chains
+            Assets &amp; Chains
           </p>
           {hasMissingChains && (
             <button
@@ -499,6 +617,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
             </button>
           )}
         </div>
+
         <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
           {CHAINS.map(c => (
             <ChainBalanceRow
@@ -516,22 +635,39 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
                   setChainReceive({ open: true, chain, address: addressForChain(chain, evmAddress, address, network, derived) });
                 }
               }}
+              onImport={(chain) => setImportChain(chain)}
             />
           ))}
         </div>
+
+        {/* Import hint — MetaMask style tip */}
+        <p className="mt-3 text-center text-[10px] text-muted-foreground/60">
+          Tap <Link2 size={9} className="inline mb-0.5" /> on any chain to link an address or import a private key
+        </p>
       </div>
 
-      {/* ── Modals ── */}
+      {/* ── Modals & sheets ── */}
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
+
       <ChainReceiveSheet
         open={chainReceive.open}
         onClose={() => setChainReceive({ open: false })}
         chainName={chainReceive.chain?.name ?? ""}
         symbol={chainReceive.chain?.symbol ?? ""}
         address={chainReceive.address ?? null}
-        hint={canBackup ? undefined : "Connect a sovereign Orah wallet (passkey or seed phrase) to derive an on-chain address for this network."}
+        hint={canBackup ? undefined : "Tap the link icon on this chain to add your address."}
       />
+
       <RevealSecretSheet open={revealOpen} onClose={() => setRevealOpen(false)} address={address} />
+
+      <ManualImportSheet
+        open={!!importChain}
+        chain={importChain}
+        existingAddress={importChain ? addressForChain(importChain, evmAddress, address, network, derived) : null}
+        onClose={() => setImportChain(null)}
+        onSave={handleImportSave}
+        onRemove={handleImportRemove}
+      />
     </div>
   );
 }

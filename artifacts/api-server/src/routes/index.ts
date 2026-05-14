@@ -41,6 +41,7 @@ import stripeCheckoutRouter from "./stripeCheckout.js";
 import adminDiagnosticsRouter from "./adminDiagnostics.js";
 import coinbaseRouter from "./coinbase.js";
 import kycRouter from "./kyc.js";
+import walletRouter from "./wallet.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
@@ -123,6 +124,7 @@ router.use(stakingRouter);
 router.use(stripeCheckoutRouter);
 router.use(coinbaseRouter);
 router.use(kycRouter);
+router.use("/wallet", walletRouter);
 
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
