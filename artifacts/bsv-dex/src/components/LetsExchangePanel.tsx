@@ -35,7 +35,7 @@ interface LeCoin {
   image: string|null; hasExtraId: boolean; minAmount: string|null; maxAmount: string|null;
 }
 
-// Response from POST /v1/info
+// Response from POST /v1/info (now hybrid — also includes best_venue)
 interface Estimate {
   amount: string;           // output amount you'll receive
   rate: string;
@@ -46,9 +46,10 @@ interface Estimate {
   withdrawal_fee: string;
   deposit_min_amount?: string;
   deposit_max_amount?: string;
+  best_venue?: string;      // winning venue from meta-router
 }
 
-// Response from POST /v1/transaction
+// Response from POST /v1/transaction (normalised across all venues)
 interface OrderResult {
   transaction_id: string;
   status: string;
@@ -62,6 +63,7 @@ interface OrderResult {
   coin_from_network: string;
   coin_to_network: string;
   rate?: string;
+  best_venue?: string;          // venue that filled this exchange
 }
 
 // Response from GET /v1/transaction/{id}
@@ -90,6 +92,7 @@ interface HistoryEntry {
   deposit_extra_id: string | null;
   status:          string;
   rate?:           string;
+  venue?:          string;
   createdAt:       number;
 }
 
@@ -154,6 +157,7 @@ function addHistoryEntry(order: OrderResult) {
     deposit_extra_id: order.deposit_extra_id,
     status:           order.status ?? "wait",
     rate:             order.rate,
+    venue:            order.best_venue ?? "letsexchange",
     createdAt:        Date.now(),
   };
   // deduplicate by transaction_id
@@ -572,12 +576,23 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
         </div>
         <CoinPicker coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); }} exclude={fromCoin?.symbol} />
 
-        {/* Rate + fixed rate badge */}
+        {/* Rate + venue badge */}
         {estimate && fromCoin && toCoin && (
           <div className="mt-2 flex items-center gap-2 flex-wrap">
             <p className="text-xs text-muted-foreground">
               1 {fromCoin.symbol} ≈ <span className="text-emerald-400 font-mono">{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
             </p>
+            {estimate.best_venue && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-muted/60 border border-border/40 text-[10px] text-muted-foreground/70 font-medium">
+                via {
+                  estimate.best_venue === "changenow"   ? "ChangeNOW"   :
+                  estimate.best_venue === "stealthex"   ? "StealthEX"   :
+                  estimate.best_venue === "simpleswap"  ? "SimpleSwap"  :
+                  estimate.best_venue === "changelly"   ? "Changelly"   :
+                  "LetsExchange"
+                }
+              </span>
+            )}
           </div>
         )}
         {estimate?.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && toCoin && (
@@ -798,12 +813,15 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/letsexchange/status/${order.transaction_id}`);
+      const venueSuffix = order.best_venue && order.best_venue !== "letsexchange"
+        ? `?venue=${encodeURIComponent(order.best_venue)}`
+        : "";
+      const r = await fetch(`${API}/letsexchange/status/${order.transaction_id}${venueSuffix}`);
       const d = await r.json();
       if (r.ok && d.transaction_id) { setStatus(d); setStatusError(false); }
       else setStatusError(true);
     } catch { setStatusError(true); }
-  }, [order.transaction_id]);
+  }, [order.transaction_id, order.best_venue]);
 
   useEffect(() => { fetchStatus(); }, [fetchStatus, refreshKey]);
 
@@ -959,11 +977,14 @@ function HistoryView({ onClose }: { onClose: () => void }) {
     if (fetching.has(id)) return;
     setFetching(prev => new Set(prev).add(id));
     try {
-      const r = await fetch(`${API}/letsexchange/status/${id}`);
+      const entry = entries.find(e => e.transaction_id === id);
+      const venueSuffix = entry?.venue && entry.venue !== "letsexchange"
+        ? `?venue=${encodeURIComponent(entry.venue)}`
+        : "";
+      const r = await fetch(`${API}/letsexchange/status/${id}${venueSuffix}`);
       const d = await r.json();
       if (r.ok && d.transaction_id) {
         setLiveStatus(prev => ({ ...prev, [id]: d as StatusResult }));
-        // Update cached status in localStorage
         setEntries(prev => {
           const updated = prev.map(e => e.transaction_id === id ? { ...e, status: d.status ?? e.status } : e);
           saveHistory(updated);
@@ -972,7 +993,7 @@ function HistoryView({ onClose }: { onClose: () => void }) {
       }
     } catch {}
     setFetching(prev => { const s = new Set(prev); s.delete(id); return s; });
-  }, [fetching]);
+  }, [fetching, entries]);
 
   // Auto-fetch status for expanded entry
   useEffect(() => {
@@ -1226,6 +1247,7 @@ export function LetsExchangePanel({
         withdrawal:          address,
         withdrawal_extra_id: extraId,   // always sent, even if ""
         float:               !fixedRateId,
+        best_venue:          estimate?.best_venue ?? "letsexchange",
       };
       if (fixedRateId) body.rate_id = fixedRateId;
       if (refund) body.return = refund;
