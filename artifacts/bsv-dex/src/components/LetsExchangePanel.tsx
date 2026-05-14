@@ -450,7 +450,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
       const d = await r.json();
       if (!r.ok) {
         if (d.code === "LE_KEY_NOT_CONFIGURED") {
-          setEstError("Cross-chain exchange is not yet configured on this server. The administrator needs to add the LETSEXCHANGE_API_KEY secret to enable live rates.");
+          setEstError("Cross-chain exchange is temporarily unavailable. Please try again later or contact support.");
         } else {
           setEstError(d.error ?? "Rate unavailable");
         }
@@ -1490,7 +1490,7 @@ export function LetsExchangePanel({
       if (!r.ok) {
         let msg = d.error ?? "Failed to create exchange";
         if (d.code === "LE_KEY_NOT_CONFIGURED") {
-          msg = "Cross-chain exchange is not yet configured on this server. The administrator needs to add the LETSEXCHANGE_API_KEY secret.";
+          msg = "Cross-chain exchange is temporarily unavailable. Please try again later or contact support.";
         } else if (d.detail?.error?.validation) {
           const v = d.detail.error.validation as Record<string,string>;
           msg = Object.values(v).join(". ");
