@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, Target, TrendingUp, Copy, Repeat, Waves, Users, Wallet, Flame } from "lucide-react";
 
@@ -8,8 +8,6 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { WalletOptionsDropdown } from "@/components/WalletOptionsDropdown";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
 import { ChatWidget } from "@/components/ChatWidget";
-
-const WalletConnectModal = lazy(() => import("@/components/WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
 
 const NAV_TABS = [
   { path: "/swap",                       matchPrefix: "/swap",       label: "Exchange",   Icon: Waves },
@@ -37,7 +35,7 @@ const THEME_META: Record<Theme, { icon: React.ComponentType<{ size: number; clas
 
 export function MobileLayout({ children }: { children: React.ReactNode }) {
   const [location, navigate] = useLocation();
-  const { isOpen: walletOpen, open: openWallet, close: closeWallet } = useWalletModalStore();
+  const { open: openWallet } = useWalletModalStore();
   const { address } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const [chatOpen, setChatOpen] = useState(false);
@@ -161,9 +159,6 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         {children}
       </div>
 
-      <Suspense fallback={null}>
-        <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
-      </Suspense>
       {!chatOpen && !location.startsWith("/nft") && (
         <button
           onClick={() => setChatOpen(true)}
