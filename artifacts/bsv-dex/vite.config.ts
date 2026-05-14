@@ -13,11 +13,11 @@ const basePath = process.env.BASE_PATH ?? "/";
 export default defineConfig({
   base: basePath,
   optimizeDeps: {
+    include: ["jsqr"],
     exclude: [
       "gridplus-sdk",
       "@trezor/connect-web",
       "@keystonehq/bc-ur-registry-eth",
-      "jsqr",
     ],
   },
   define: {

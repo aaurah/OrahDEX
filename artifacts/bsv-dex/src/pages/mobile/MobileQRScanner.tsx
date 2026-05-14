@@ -4,7 +4,8 @@ import {
   ArrowLeft, QrCode, Zap, Link2, Copy, Check, X,
   RefreshCw, Smartphone, Wifi, WifiOff, User
 } from "lucide-react";
-import jsQR from "jsqr";
+import * as jsQRModule from "jsqr";
+const jsQR: typeof import("jsqr").default = (jsQRModule as any).default ?? jsQRModule;
 import { QRCodeCanvas } from "qrcode.react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
