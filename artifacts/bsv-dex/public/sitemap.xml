@@ -4,118 +4,118 @@
 
   <!-- Home / Markets -->
   <url>
-    <loc>https://orahdex.replit.app/</loc>
+    <loc>https://orahdex.org/</loc>
     <changefreq>always</changefreq>
     <priority>1.0</priority>
   </url>
 
   <!-- Spot Trading — top pairs -->
   <url>
-    <loc>https://orahdex.replit.app/trade/BTC-USDT</loc>
+    <loc>https://orahdex.org/trade/BTC-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/ETH-USDT</loc>
+    <loc>https://orahdex.org/trade/ETH-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/BSV-USDT</loc>
+    <loc>https://orahdex.org/trade/BSV-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/BCH-USDT</loc>
+    <loc>https://orahdex.org/trade/BCH-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/SOL-USDT</loc>
+    <loc>https://orahdex.org/trade/SOL-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/BNB-USDT</loc>
+    <loc>https://orahdex.org/trade/BNB-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/XRP-USDT</loc>
+    <loc>https://orahdex.org/trade/XRP-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/DOGE-USDT</loc>
+    <loc>https://orahdex.org/trade/DOGE-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/ADA-USDT</loc>
+    <loc>https://orahdex.org/trade/ADA-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/AVAX-USDT</loc>
+    <loc>https://orahdex.org/trade/AVAX-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/MATIC-USDT</loc>
+    <loc>https://orahdex.org/trade/MATIC-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/DOT-USDT</loc>
+    <loc>https://orahdex.org/trade/DOT-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/trade/LINK-USDT</loc>
+    <loc>https://orahdex.org/trade/LINK-USDT</loc>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
 
   <!-- Futures -->
   <url>
-    <loc>https://orahdex.replit.app/futures/BTC-USDT-PERP</loc>
+    <loc>https://orahdex.org/futures/BTC-USDT-PERP</loc>
     <changefreq>always</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/futures/ETH-USDT-PERP</loc>
+    <loc>https://orahdex.org/futures/ETH-USDT-PERP</loc>
     <changefreq>always</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/futures/BSV-USDT-PERP</loc>
+    <loc>https://orahdex.org/futures/BSV-USDT-PERP</loc>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/futures/SOL-USDT-PERP</loc>
+    <loc>https://orahdex.org/futures/SOL-USDT-PERP</loc>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
   </url>
 
   <!-- Other pages -->
   <url>
-    <loc>https://orahdex.replit.app/dex</loc>
+    <loc>https://orahdex.org/dex</loc>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/p2p</loc>
+    <loc>https://orahdex.org/p2p</loc>
     <changefreq>hourly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/portfolio</loc>
+    <loc>https://orahdex.org/portfolio</loc>
     <changefreq>always</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://orahdex.replit.app/liquidity</loc>
+    <loc>https://orahdex.org/liquidity</loc>
     <changefreq>daily</changefreq>
     <priority>0.7</priority>
   </url>

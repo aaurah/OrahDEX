@@ -19,4 +19,4 @@ User-agent: facebookexternalhit
 Allow: /
 
 # Sitemap
-Sitemap: https://orahdex.replit.app/sitemap.xml
+Sitemap: https://orahdex.org/sitemap.xml
