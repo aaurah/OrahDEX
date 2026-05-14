@@ -76,6 +76,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@keystonehq/bc-ur-registry-eth": "^0.22.1",
     "@ledgerhq/errors": "^6.33.0",
     "@ledgerhq/hw-app-eth": "^7.8.0",
     "@ledgerhq/hw-transport-webhid": "^6.35.0",
@@ -88,10 +89,12 @@
     "@scure/bip39": "^2.0.1",
     "@stripe/react-stripe-js": "^6.3.0",
     "@stripe/stripe-js": "^9.4.0",
+    "@trezor/connect-web": "^9.7.3",
     "@wagmi/core": "^3.4.1",
     "@workspace/integrations-openai-ai-react": "workspace:*",
     "buffer": "^6.0.3",
     "dompurify": "^3.4.3",
+    "gridplus-sdk": "^4.0.0",
     "jsqr": "^1.4.0",
     "lightweight-charts": "^5.1.0",
     "postcss": "^8.5.10",

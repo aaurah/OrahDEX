@@ -12,6 +12,14 @@ const basePath = process.env.BASE_PATH ?? "/";
 
 export default defineConfig({
   base: basePath,
+  optimizeDeps: {
+    exclude: [
+      "gridplus-sdk",
+      "@trezor/connect-web",
+      "@keystonehq/bc-ur-registry-eth",
+      "jsqr",
+    ],
+  },
   define: {
     'import.meta.env.VITE_REOWN_PROJECT_ID': JSON.stringify(process.env.VITE_REOWN_PROJECT_ID ?? ''),
     'import.meta.env.VITE_API_BASE': JSON.stringify(process.env.VITE_API_BASE ?? ''),

@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { Fingerprint, Loader2, Plus, LogIn, Shield, KeyRound, AlertCircle, Download, ArrowLeft, Eye, EyeOff, CheckCircle2 } from "lucide-react";
+import {
+  Fingerprint, Loader2, Plus, LogIn, Shield, KeyRound,
+  AlertCircle, Download, ArrowLeft, Eye, EyeOff, CheckCircle2,
+  HardDrive,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -13,8 +17,24 @@ import {
   type PasskeyChainAddresses,
 } from "@/lib/passkeyWallet";
 import { validateMnemonic, deriveAllAddresses } from "@/lib/seedPhrase";
+import {
+  HardwareChooser,
+  LedgerPanel,
+  TrezorPanel,
+  KeystonePanel,
+  GridPlusPanel,
+  type HWDevice,
+} from "@/components/HardwareWalletPanels";
 
-type Tab = "choose" | "passkey" | "import";
+type Tab =
+  | "choose"
+  | "passkey"
+  | "import"
+  | "hardware"
+  | "ledger"
+  | "trezor"
+  | "keystone"
+  | "gridplus";
 
 function applyOrahWallet(address: string, chains?: PasskeyChainAddresses) {
   const store = useWalletStore.getState();
@@ -32,7 +52,7 @@ function applyOrahWallet(address: string, chains?: PasskeyChainAddresses) {
   }
 }
 
-/* ─── Passkey Panel ─────────────────────────────────────────────────────────── */
+/* ─── Passkey Panel ─────────────────────────────────────────────────────── */
 
 function PasskeyPanel({ onDone }: { onDone: () => void }) {
   const { toast } = useToast();
@@ -127,7 +147,7 @@ function PasskeyPanel({ onDone }: { onDone: () => void }) {
   );
 }
 
-/* ─── Import Wallet Panel ───────────────────────────────────────────────────── */
+/* ─── Import Wallet Panel ───────────────────────────────────────────────── */
 
 function ImportPanel({ onDone }: { onDone: () => void }) {
   const { toast } = useToast();
@@ -171,7 +191,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
       <div className="relative">
         <Textarea
           placeholder="Enter your 12 or 24 word seed phrase, separated by spaces…"
-          className={`min-h-[100px] text-sm resize-none pr-10 font-mono leading-relaxed ${!show ? "text-security" : ""} ${validationError ? "border-destructive" : ""}`}
+          className={`min-h-[100px] text-sm resize-none pr-10 font-mono leading-relaxed ${validationError ? "border-destructive" : ""}`}
           style={!show ? { WebkitTextSecurity: "disc" } as any : undefined}
           value={phrase}
           onChange={e => handleChange(e.target.value)}
@@ -227,22 +247,60 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   );
 }
 
-/* ─── Main Dialog ───────────────────────────────────────────────────────────── */
+/* ─── Helpers ───────────────────────────────────────────────────────────── */
+
+const HW_LABELS: Record<HWDevice, string> = {
+  ledger: "Ledger",
+  trezor: "Trezor",
+  keystone: "Keystone",
+  gridplus: "GridPlus",
+};
+
+const HW_DESCRIPTIONS: Record<HWDevice, string> = {
+  ledger:   "USB connection via WebHID — requires Chrome or Edge.",
+  trezor:   "USB connection via Trezor popup — works in all browsers.",
+  keystone: "Air-gapped QR connection — no USB or Bluetooth required.",
+  gridplus: "Wi-Fi connection to your Lattice1 via the GridPlus relay.",
+};
+
+/* ─── Main Dialog ───────────────────────────────────────────────────────── */
 
 export function WalletChooserDialog() {
   const { isOpen, close, openEvm } = useWalletModalStore();
   const [tab, setTab] = useState<Tab>("choose");
+  const [hwDevice, setHwDevice] = useState<HWDevice | null>(null);
 
-  const handleClose = () => { setTab("choose"); close(); };
+  const handleClose = () => { setTab("choose"); setHwDevice(null); close(); };
 
   const handleEvmClick = () => {
     handleClose();
     setTimeout(() => openEvm(), 100);
   };
 
+  const handleHWPick = (device: HWDevice) => {
+    setHwDevice(device);
+    setTab(device);
+  };
+
+  const backLabel =
+    tab === "ledger" || tab === "trezor" || tab === "keystone" || tab === "gridplus"
+      ? "hardware"
+      : "choose";
+
+  function BackButton({ to }: { to: Tab }) {
+    return (
+      <button
+        onClick={() => setTab(to)}
+        className="text-muted-foreground hover:text-foreground transition-colors text-xs flex items-center gap-1"
+      >
+        <ArrowLeft className="w-3 h-3" /> Back
+      </button>
+    );
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={v => { if (!v) handleClose(); }}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="sm:max-w-sm max-h-[90vh] overflow-y-auto">
 
         {/* ── Choose ── */}
         {tab === "choose" && (
@@ -281,6 +339,18 @@ export function WalletChooserDialog() {
                 <KeyRound className="w-3.5 h-3.5 text-primary/60 shrink-0" />
               </button>
 
+              {/* Hardware Wallet */}
+              <button
+                onClick={() => setTab("hardware")}
+                className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-accent/50 transition-colors text-left"
+              >
+                <HardDrive className="w-6 h-6 text-muted-foreground shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-foreground">Hardware Wallet</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">Ledger · Trezor · Keystone · GridPlus</div>
+                </div>
+              </button>
+
               {/* Import wallet */}
               <button
                 onClick={() => setTab("import")}
@@ -300,14 +370,7 @@ export function WalletChooserDialog() {
         {tab === "passkey" && (
           <>
             <DialogHeader>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setTab("choose")}
-                  className="text-muted-foreground hover:text-foreground transition-colors text-xs flex items-center gap-1"
-                >
-                  <ArrowLeft className="w-3 h-3" /> Back
-                </button>
-              </div>
+              <BackButton to="choose" />
               <DialogTitle className="flex items-center gap-2 text-base mt-1">
                 <Fingerprint className="w-5 h-5 text-primary" />
                 OrahDEX Wallet
@@ -324,14 +387,7 @@ export function WalletChooserDialog() {
         {tab === "import" && (
           <>
             <DialogHeader>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setTab("choose")}
-                  className="text-muted-foreground hover:text-foreground transition-colors text-xs flex items-center gap-1"
-                >
-                  <ArrowLeft className="w-3 h-3" /> Back
-                </button>
-              </div>
+              <BackButton to="choose" />
               <DialogTitle className="flex items-center gap-2 text-base mt-1">
                 <Download className="w-5 h-5 text-muted-foreground" />
                 Import Wallet
@@ -341,6 +397,71 @@ export function WalletChooserDialog() {
               </DialogDescription>
             </DialogHeader>
             <ImportPanel onDone={handleClose} />
+          </>
+        )}
+
+        {/* ── Hardware chooser ── */}
+        {tab === "hardware" && (
+          <>
+            <DialogHeader>
+              <BackButton to="choose" />
+              <DialogTitle className="flex items-center gap-2 text-base mt-1">
+                <HardDrive className="w-5 h-5 text-muted-foreground" />
+                Hardware Wallet
+              </DialogTitle>
+              <DialogDescription className="text-xs leading-relaxed">
+                Connect your physical hardware wallet. Your private keys never leave the device.
+              </DialogDescription>
+            </DialogHeader>
+            <HardwareChooser onPick={handleHWPick} />
+          </>
+        )}
+
+        {/* ── Ledger ── */}
+        {tab === "ledger" && (
+          <>
+            <DialogHeader>
+              <BackButton to="hardware" />
+              <DialogTitle className="text-base mt-1">🔲 Ledger</DialogTitle>
+              <DialogDescription className="text-xs">{HW_DESCRIPTIONS.ledger}</DialogDescription>
+            </DialogHeader>
+            <LedgerPanel onDone={handleClose} />
+          </>
+        )}
+
+        {/* ── Trezor ── */}
+        {tab === "trezor" && (
+          <>
+            <DialogHeader>
+              <BackButton to="hardware" />
+              <DialogTitle className="text-base mt-1">🛡 Trezor</DialogTitle>
+              <DialogDescription className="text-xs">{HW_DESCRIPTIONS.trezor}</DialogDescription>
+            </DialogHeader>
+            <TrezorPanel onDone={handleClose} />
+          </>
+        )}
+
+        {/* ── Keystone ── */}
+        {tab === "keystone" && (
+          <>
+            <DialogHeader>
+              <BackButton to="hardware" />
+              <DialogTitle className="text-base mt-1">🔳 Keystone</DialogTitle>
+              <DialogDescription className="text-xs">{HW_DESCRIPTIONS.keystone}</DialogDescription>
+            </DialogHeader>
+            <KeystonePanel onDone={handleClose} />
+          </>
+        )}
+
+        {/* ── GridPlus ── */}
+        {tab === "gridplus" && (
+          <>
+            <DialogHeader>
+              <BackButton to="hardware" />
+              <DialogTitle className="text-base mt-1">⚡ GridPlus Lattice1</DialogTitle>
+              <DialogDescription className="text-xs">{HW_DESCRIPTIONS.gridplus}</DialogDescription>
+            </DialogHeader>
+            <GridPlusPanel onDone={handleClose} />
           </>
         )}
 
