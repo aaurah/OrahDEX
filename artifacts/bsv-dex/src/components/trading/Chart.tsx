@@ -315,7 +315,8 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
       if (!res.ok) return;
       const raw = await res.json();
       const arr: Candle[] = Array.isArray(raw) ? raw : raw.candles ?? [];
-      const sorted = arr.filter(c => c?.time && c.open && c.high && c.low && c.close)
+      const MIN_TS = 1000000000; // Sep 2001 — anything older is a bad timestamp
+      const sorted = arr.filter(c => c?.time && Number(c.time) > MIN_TS && c.open && c.high && c.low && c.close)
         .sort((a, b) => Number(a.time) - Number(b.time));
       if (sorted.length) setCandles(sorted);
     } catch (_) {}
