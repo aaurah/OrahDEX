@@ -497,10 +497,32 @@ export function WalletChooserDialog() {
 
               <div className="space-y-2">
                 <OptionCard
+                  onClick={() => setTab("passkey")}
+                  iconBg="bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40"
+                  icon={<Fingerprint className="w-5 h-5 text-primary" />}
+                  title="OrahDEX Wallet"
+                  sub="Passkey · BSV · BTC · ETH · SOL · LTC · DOGE + more"
+                  badge={
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 tracking-wider">
+                      NEW
+                    </span>
+                  }
+                  featured
+                />
+
+                <OptionCard
+                  onClick={() => setTab("import")}
+                  iconBg="bg-violet-500/10 border border-violet-500/20 group-hover:bg-violet-500/15 group-hover:border-violet-500/30"
+                  icon={<Download className="w-5 h-5 text-violet-400" />}
+                  title="Import Wallet"
+                  sub="Seed phrase · 12 or 24 words · all chains"
+                />
+
+                <OptionCard
                   onClick={handleEvmClick}
                   iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
                   icon={<span className="text-xl leading-none text-blue-400">⟠</span>}
-                  title="EVM Wallets"
+                  title="Reown Connect"
                   sub="MetaMask · WalletConnect · Coinbase · Injected"
                   badge={
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 tracking-wider">
@@ -518,33 +540,11 @@ export function WalletChooserDialog() {
                 />
 
                 <OptionCard
-                  onClick={() => setTab("passkey")}
-                  iconBg="bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40"
-                  icon={<Fingerprint className="w-5 h-5 text-primary" />}
-                  title="OrahDEX Wallet"
-                  sub="Passkey · BSV · BTC · ETH · SOL · LTC · DOGE + more"
-                  badge={
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 tracking-wider">
-                      NEW
-                    </span>
-                  }
-                  featured
-                />
-
-                <OptionCard
                   onClick={() => setTab("hardware")}
                   iconBg="bg-amber-500/10 border border-amber-500/20 group-hover:bg-amber-500/15 group-hover:border-amber-500/30"
                   icon={<HardDrive className="w-5 h-5 text-amber-400" />}
                   title="Hardware Wallet"
                   sub="Ledger · Trezor · Keystone · GridPlus"
-                />
-
-                <OptionCard
-                  onClick={() => setTab("import")}
-                  iconBg="bg-violet-500/10 border border-violet-500/20 group-hover:bg-violet-500/15 group-hover:border-violet-500/30"
-                  icon={<Download className="w-5 h-5 text-violet-400" />}
-                  title="Import Wallet"
-                  sub="Seed phrase · 12 or 24 words · all chains"
                 />
               </div>
             </div>
