@@ -21,7 +21,11 @@ import {
   revealPasskeyWalletSecret,
   type PasskeyChainAddresses,
 } from "@/lib/passkeyWallet";
-import { validateMnemonic, deriveAllAddresses } from "@/lib/seedPhrase";
+import { validateMnemonic, deriveAllAddresses, generateMnemonic } from "@/lib/seedPhrase";
+import {
+  validatePin, hasPin, setPin, storeWithPin,
+  storeWithPasskey, createImportPasskey, saveDerivedAddresses,
+} from "@/lib/walletPin";
 import {
   HardwareChooser,
   LedgerPanel,
@@ -41,6 +45,7 @@ type Tab =
   | "choose"
   | "passkey"
   | "create-wallet"
+  | "seed-create"
   | "view-seed"
   | "import"
   | "hardware"
@@ -394,6 +399,220 @@ function CreateWalletPanel({ onDone }: { onDone: () => void }) {
   );
 }
 
+/* ─── Seed Create Panel ─────────────────────────────────────────────────── */
+
+type SeedStep = "backup" | "protect" | "biometric" | "pin-setup" | "pin-entry";
+
+function SeedCreatePanel({ onDone }: { onDone: () => void }) {
+  const { toast } = useToast();
+  const [step, setStep] = useState<SeedStep>("backup");
+  const [words, setWords] = useState<string[]>([]);
+  const [confirmed, setConfirmed] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const mnemonicRef = useRef<string>("");
+
+  useEffect(() => {
+    const w = generateMnemonic(12);
+    setWords(w);
+    mnemonicRef.current = w.join(" ");
+  }, []);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(mnemonicRef.current);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const finishWithAddrs = (addrs: Awaited<ReturnType<typeof deriveAllAddresses>>) => {
+    const chains: PasskeyChainAddresses = {
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch,
+      bsv: addrs.bsv, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+    };
+    saveDerivedAddresses(addrs.evm, chains);
+    applyOrahWallet(addrs.evm, chains);
+  };
+
+  /* ── Biometric ─────────────────────────────────────────────────────────── */
+  const handleBiometric = async () => {
+    setLoading(true);
+    try {
+      const addrs = await deriveAllAddresses(words);
+      const { credentialId, prfSecret } = await createImportPasskey("OrahDEX Wallet");
+      await storeWithPasskey({
+        address: addrs.evm, secret: mnemonicRef.current,
+        keyKind: "mnemonic", prfSecret, passkeyId: credentialId, label: "OrahDEX Wallet",
+      });
+      finishWithAddrs(addrs);
+      toast({ title: "Wallet created!", description: `Face/Touch protected · ${addrs.evm.slice(0, 6)}…${addrs.evm.slice(-4)}` });
+      onDone();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+        toast({ title: "Cancelled", description: "Biometric authentication was cancelled.", variant: "destructive" });
+      } else {
+        toast({ title: "Failed", description: msg || "Could not create wallet.", variant: "destructive" });
+      }
+    } finally { setLoading(false); }
+  };
+
+  /* ── PIN helpers ───────────────────────────────────────────────────────── */
+  const finishWithPin = async (pinVal: string) => {
+    const addrs = await deriveAllAddresses(words);
+    await storeWithPin({ address: addrs.evm, secret: mnemonicRef.current, keyKind: "mnemonic", pin: pinVal, label: "OrahDEX Wallet" });
+    finishWithAddrs(addrs);
+    toast({ title: "Wallet created!", description: `PIN protected · ${addrs.evm.slice(0, 6)}…${addrs.evm.slice(-4)}` });
+    onDone();
+  };
+
+  const handlePinSetup = async () => {
+    const v = validatePin(pin);
+    if (!v.valid) { setPinError(v.error!); return; }
+    if (pin !== pinConfirm) { setPinError("PINs do not match"); return; }
+    setPinError(null);
+    setLoading(true);
+    try { await setPin(pin); await finishWithPin(pin); }
+    catch (err: any) { setPinError(err?.message || "Could not set PIN"); }
+    finally { setLoading(false); }
+  };
+
+  const handlePinEntry = async () => {
+    setPinError(null);
+    setLoading(true);
+    try { await finishWithPin(pin); }
+    catch (err: any) { setPinError(err?.message || "Incorrect PIN"); }
+    finally { setLoading(false); }
+  };
+
+  /* ── Step: backup ──────────────────────────────────────────────────────── */
+  if (step === "backup") return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/[0.08] p-3">
+        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+        <p className="text-[11px] text-amber-200/80 leading-relaxed">
+          Write down these 12 words in order. They are the only way to recover your wallet.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5">
+        {words.map((word, i) => (
+          <div key={i} className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-2 py-1.5">
+            <span className="text-[9px] text-muted-foreground/40 w-3.5 shrink-0 text-right">{i + 1}</span>
+            <span className="text-[11px] font-mono font-semibold text-foreground truncate">{word}</span>
+          </div>
+        ))}
+      </div>
+
+      <button onClick={handleCopy} className="w-full flex items-center justify-center gap-2 py-1.5 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+        {copied ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
+        {copied ? "Copied!" : "Copy seed phrase"}
+      </button>
+
+      <label className="flex items-start gap-2.5 cursor-pointer">
+        <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} className="mt-0.5 accent-primary" />
+        <span className="text-[11px] text-muted-foreground leading-relaxed">
+          I've written down my seed phrase and stored it safely.
+        </span>
+      </label>
+
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={() => setStep("protect")} disabled={!confirmed || words.length === 0}>
+        Choose Protection <ChevronRight className="w-4 h-4" />
+      </Button>
+    </div>
+  );
+
+  /* ── Step: protect ─────────────────────────────────────────────────────── */
+  if (step === "protect") return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground text-center pb-1">How should this wallet be protected?</p>
+
+      <button onClick={() => setStep("biometric")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-all text-left">
+        <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+          <Fingerprint className="w-5 h-5 text-primary" />
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">Face ID / Touch ID</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Biometric — no PIN to remember</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-primary/40 group-hover:text-primary/70 shrink-0" />
+      </button>
+
+      <button onClick={() => setStep(hasPin() ? "pin-entry" : "pin-setup")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/20 transition-all text-left">
+        <div className="w-10 h-10 rounded-xl bg-muted border border-border flex items-center justify-center shrink-0">
+          <KeyRound className="w-5 h-5 text-muted-foreground" />
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">PIN</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">6–10 digit code · works offline</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/70 shrink-0" />
+      </button>
+
+      <button onClick={() => setStep("backup")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── Step: biometric ───────────────────────────────────────────────────── */
+  if (step === "biometric") return (
+    <div className="space-y-4">
+      <div className="flex flex-col items-center gap-3 py-3">
+        <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          {loading ? <Loader2 className="w-6 h-6 text-primary animate-spin" /> : <Fingerprint className="w-6 h-6 text-primary" />}
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-semibold text-foreground">Biometric Protection</p>
+          <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+            Your seed phrase will be encrypted and only unlockable with your biometric.
+          </p>
+        </div>
+      </div>
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handleBiometric} disabled={loading}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Fingerprint className="w-4 h-4" />}
+        {loading ? "Waiting for biometric…" : "Authenticate & Create Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── Step: pin-setup (first time) ──────────────────────────────────────── */
+  if (step === "pin-setup") return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground text-center leading-relaxed">Create a PIN for this device. You'll use it every time you sign a transaction.</p>
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="New PIN (6–10 digits)"
+        value={pin} onChange={e => { setPin(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="Confirm PIN"
+        value={pinConfirm} onChange={e => { setPinConfirm(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      {pinError && <div className="flex items-start gap-2 text-destructive text-[11px]"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{pinError}</span></div>}
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handlePinSetup} disabled={loading || pin.length < 6}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+        {loading ? "Creating wallet…" : "Set PIN & Create Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── Step: pin-entry (PIN already exists on device) ────────────────────── */
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground text-center leading-relaxed">Enter your PIN to protect this wallet with your existing device PIN.</p>
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="Enter your PIN"
+        value={pin} onChange={e => { setPin(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      {pinError && <div className="flex items-start gap-2 text-destructive text-[11px]"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{pinError}</span></div>}
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handlePinEntry} disabled={loading || pin.length < 6}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+        {loading ? "Creating wallet…" : "Create Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+}
+
 /* ─── View Seed Phrase Panel ────────────────────────────────────────────── */
 
 function ViewSeedPanel({ onBack }: { onBack: () => void }) {
@@ -678,6 +897,14 @@ export function WalletChooserDialog() {
                 />
 
                 <OptionCard
+                  onClick={() => setTab("seed-create")}
+                  iconBg="bg-violet-500/10 border border-violet-500/20 group-hover:bg-violet-500/15 group-hover:border-violet-500/35"
+                  icon={<FileKey className="w-5 h-5 text-violet-400" />}
+                  title="Seed Phrase Wallet"
+                  sub="12-word backup · protect with Face ID, Touch ID, or PIN"
+                />
+
+                <OptionCard
                   onClick={() => setTab("passkey")}
                   iconBg="bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40"
                   icon={<Fingerprint className="w-5 h-5 text-primary" />}
@@ -746,6 +973,20 @@ export function WalletChooserDialog() {
             />
             <div className="px-6 py-5">
               <CreateWalletPanel onDone={handleClose} />
+            </div>
+          </>
+        )}
+
+        {tab === "seed-create" && (
+          <>
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<FileKey className="w-5 h-5 text-violet-400" />}
+              title="Seed Phrase Wallet"
+              description="Generate a 12-word backup · protect with Face ID, Touch ID, or PIN"
+            />
+            <div className="px-6 py-5">
+              <SeedCreatePanel onDone={handleClose} />
             </div>
           </>
         )}
