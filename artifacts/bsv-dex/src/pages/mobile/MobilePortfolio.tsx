@@ -360,6 +360,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
     network === "tron" ? address : null,
   );
 
+  const bsvUnconfirmed = useWalletStore(s => s.bsvUnconfirmed);
   const nativeAsset = getNativeAsset(network, chainId);
   const walletStoreNativeBalance = Number.isFinite(Number(balance)) ? Number(balance) : 0;
   const liveNativeBalance =
@@ -1010,6 +1011,11 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                         {r.isNative && (
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-green-500/15 text-green-400 border border-green-500/25">
                             NATIVE
+                          </span>
+                        )}
+                        {r.isNative && network === "bsv" && bsvUnconfirmed > 0 && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/25 animate-pulse">
+                            +{bsvUnconfirmed.toFixed(8)} PENDING
                           </span>
                         )}
                       </div>

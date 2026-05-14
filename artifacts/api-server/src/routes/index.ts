@@ -323,33 +323,54 @@ router.get("/bsv/balance/:address", async (req, res) => {
     return;
   }
 
-  // Fetch balance from WhatsOnChain
+  // Fetch balance from WhatsOnChain, falling back to UTXO sum when the
+  // balance endpoint lags behind the mempool (common for fresh unconfirmed txs).
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5000);
-    const wocRes = await fetch(
-      `${BSV_NET.wocBase}/address/${bsvAddress}/balance`,
-      { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
-    );
-    clearTimeout(timer);
+    const fetchWithTimeout = async (url: string, ms = 5000) => {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), ms);
+      try { return await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }); }
+      finally { clearTimeout(t); }
+    };
 
-    if (!wocRes.ok) {
-      res.json({ input: raw, bsvAddress, paymailResolved, balance: 0, balanceSatoshis: 0, confirmed: 0, unconfirmed: 0 });
-      return;
+    const wocRes = await fetchWithTimeout(`${BSV_NET.wocBase}/address/${bsvAddress}/balance`);
+
+    let confirmedSat = 0;
+    let unconfirmedSat = 0;
+
+    if (wocRes.ok) {
+      const data = await wocRes.json() as { confirmed: number; unconfirmed: number };
+      confirmedSat   = data.confirmed   ?? 0;
+      unconfirmedSat = data.unconfirmed ?? 0;
     }
 
-    const data = await wocRes.json() as { confirmed: number; unconfirmed: number };
-    const totalSatoshis = (data.confirmed ?? 0) + (data.unconfirmed ?? 0);
+    // WhatsonChain's /balance endpoint sometimes returns 0 for both fields
+    // even when an unconfirmed UTXO is in the mempool.  Fall back to the
+    // /unspent endpoint and sum the raw values — it is always up-to-date.
+    if (confirmedSat === 0 && unconfirmedSat === 0) {
+      try {
+        const utxoRes = await fetchWithTimeout(`${BSV_NET.wocBase}/address/${bsvAddress}/unspent`);
+        if (utxoRes.ok) {
+          const utxos = await utxoRes.json() as Array<{ value: number; height: number }>;
+          for (const u of utxos) {
+            if ((u.height ?? 0) > 0) confirmedSat   += u.value;
+            else                      unconfirmedSat += u.value;
+          }
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    const totalSatoshis = confirmedSat + unconfirmedSat;
     const bsvBalance = totalSatoshis / 1e8;
 
     res.json({
       input: raw,
       bsvAddress,
       paymailResolved,
-      balance: bsvBalance,
+      balance:        bsvBalance,
       balanceSatoshis: totalSatoshis,
-      confirmed: (data.confirmed ?? 0) / 1e8,
-      unconfirmed: (data.unconfirmed ?? 0) / 1e8,
+      confirmed:      confirmedSat   / 1e8,
+      unconfirmed:    unconfirmedSat / 1e8,
     });
   } catch (err: any) {
     logger.warn({ bsvAddress, err: err?.message }, "WhatsOnChain balance fetch failed");
