@@ -38,7 +38,7 @@ router.get("/diagnostics", async (_req, res) => {
     const report = await runAllProbes();
     res.json(report);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Diagnostics probe failed" });
+    res.status(500).json({ error: "Diagnostics probe failed" });
   }
 });
 
@@ -56,7 +56,7 @@ router.get("/diagnostics/rpc", async (_req, res) => {
       rpc: rpcResults,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -118,7 +118,7 @@ router.post("/repair/stuck-orders", async (req, res) => {
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "admin: repair/stuck-orders failed");
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -150,7 +150,7 @@ router.post("/repair/cancel-ghost-orders", async (req, res) => {
       orders:      rows,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -200,7 +200,7 @@ router.post("/repair/sync-le-swaps", async (req, res) => {
 
     res.json({ ok: true, total: rows.length, synced, changed, errors });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -215,7 +215,7 @@ router.post("/repair/rebuild-price", async (_req, res) => {
     alertInfo("price", `Admin repair: price engine force-run completed in ${elapsed}ms`);
     res.json({ ok: true, elapsedMs: elapsed, updatedAt: new Date().toISOString() });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -277,7 +277,7 @@ router.post("/exchange-repair/reset-circuit", async (req, res) => {
     alertInfo("admin", `Admin manually reset circuit breaker: ${name}`);
     res.json({ ok: true, circuit: name, action: "force-reset" });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

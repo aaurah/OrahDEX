@@ -76,7 +76,7 @@ router.get("/social/feed", async (req, res) => {
 
     res.json({ posts: result.rows, total: result.rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -112,7 +112,7 @@ router.get("/social/posts/:id", async (req, res) => {
 
     res.json({ post: posts[0], comments, mints });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -142,7 +142,7 @@ router.post("/social/posts", async (req, res) => {
     const { rows } = await pool.query("SELECT * FROM social_posts WHERE id = $1", [id]);
     res.json({ success: true, post: rows[0], inscriptionId });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -181,7 +181,7 @@ router.post("/social/posts/:id/mint", async (req, res) => {
 
     res.json({ success: true, mintCount: post.mint_count + 1, inscriptionId: post.inscription_id });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -214,7 +214,7 @@ router.post("/social/posts/:id/like", async (req, res) => {
       res.json({ liked: true });
     }
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -272,7 +272,7 @@ router.post("/social/posts/:id/comment", async (req, res) => {
     );
     res.json({ success: true, comments: rows });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -291,7 +291,7 @@ router.get("/social/trending", async (req, res) => {
     );
     res.json({ topPosts, hotMints, newest });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -312,7 +312,7 @@ router.get("/social/profile/:address", async (req, res) => {
     const totalMints = posts.reduce((s: number, p: any) => s + (p.mint_count ?? 0), 0);
     res.json({ posts, mints, stats: { totalLikes, totalMints, postCount: posts.length, collectCount: mints.length } });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

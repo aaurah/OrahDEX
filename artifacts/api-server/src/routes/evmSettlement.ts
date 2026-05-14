@@ -101,7 +101,7 @@ router.post("/session", requireInternalToken, async (req, res) => {
     res.status(201).json({ session });
   } catch (err: any) {
     logger.error({ err: err?.message }, "evmSettlement: failed to create session");
-    res.status(500).json({ error: err?.message ?? "Failed to create EVM HTLC session" });
+    res.status(500).json({ error: "Failed to create EVM HTLC session" });
   }
 });
 
@@ -117,7 +117,7 @@ router.get("/session/:id", async (req, res) => {
     res.json({ session });
   } catch (err: any) {
     logger.error({ err: err?.message }, "evmSettlement: session lookup failed");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch session" });
+    res.status(500).json({ error: "Failed to fetch session" });
   }
 });
 
@@ -133,7 +133,7 @@ router.get("/trade/:tradeId", async (req, res) => {
     res.json({ session });
   } catch (err: any) {
     logger.error({ err: err?.message }, "evmSettlement: trade session lookup failed");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch session" });
+    res.status(500).json({ error: "Failed to fetch session" });
   }
 });
 
@@ -171,7 +171,7 @@ router.post("/confirm-lock", async (req, res) => {
     res.json({ success: true, status: result.status });
   } catch (err: any) {
     logger.error({ err: err?.message }, "evmSettlement: lock confirmation failed");
-    res.status(500).json({ error: err?.message ?? "Failed to confirm lock" });
+    res.status(500).json({ error: "Failed to confirm lock" });
   }
 });
 

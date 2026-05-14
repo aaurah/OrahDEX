@@ -732,9 +732,9 @@ router.post("/trade/exchange", async (req, res) => {
         amountOut: err.message.split(":")[1] ?? null,
       });
     } else if (err?.message?.includes("Insufficient") || err?.message?.includes("INSUFFICIENT_FUNDS")) {
-      res.status(400).json({ error: err.message, code: "INSUFFICIENT_FUNDS" });
+      res.status(400).json({ error: "Internal server error", code: "INSUFFICIENT_FUNDS" });
     } else {
-      res.status(500).json({ error: err?.message ?? "Trade failed" });
+      res.status(500).json({ error: "Trade failed" });
     }
   }
 });
@@ -820,9 +820,9 @@ router.post("/trade/exchange/advanced", async (req, res) => {
     if (err?.message?.startsWith("SLIPPAGE_EXCEEDED:")) {
       res.status(422).json({ error: "Slippage exceeded", amountOut: err.message.split(":")[1] ?? null });
     } else if (err?.message?.includes("Insufficient") || err?.message?.includes("INSUFFICIENT_FUNDS")) {
-      res.status(400).json({ error: err.message, code: "INSUFFICIENT_FUNDS" });
+      res.status(400).json({ error: "Internal server error", code: "INSUFFICIENT_FUNDS" });
     } else {
-      res.status(500).json({ error: err?.message ?? "Advanced trade failed" });
+      res.status(500).json({ error: "Advanced trade failed" });
     }
   }
 });
@@ -851,7 +851,7 @@ router.post("/trade/exchange/mint", async (req, res) => {
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "trade/exchange/mint failed");
-    res.status(500).json({ error: err?.message ?? "Mint failed" });
+    res.status(500).json({ error: "Mint failed" });
   }
 });
 
@@ -880,9 +880,9 @@ router.post("/trade/exchange/burn", async (req, res) => {
   } catch (err: any) {
     logger.error({ err: err?.message }, "trade/exchange/burn failed");
     if (err?.message?.includes("INSUFFICIENT_FUNDS")) {
-      res.status(400).json({ error: err.message, code: "INSUFFICIENT_FUNDS" });
+      res.status(400).json({ error: "Internal server error", code: "INSUFFICIENT_FUNDS" });
     } else {
-      res.status(500).json({ error: err?.message ?? "Burn failed" });
+      res.status(500).json({ error: "Burn failed" });
     }
   }
 });

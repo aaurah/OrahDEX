@@ -118,7 +118,7 @@ router.get("/social/creators", async (req, res) => {
     );
     res.json({ creators: rows });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -207,7 +207,7 @@ router.get("/social/creators/:address", async (req, res) => {
     };
     res.json({ profile, posts, topHolders, trades, holdings: holdingsRows });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -274,7 +274,7 @@ router.post("/social/trade/challenge", (req, res) => {
     const challenge = issueTradeChallenge({ walletAddress, creator: String(creator), side, amount: amt, asset: a });
     res.json(challenge);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to issue challenge" });
+    res.status(500).json({ error: "Failed to issue challenge" });
   }
 });
 
@@ -537,7 +537,7 @@ router.get("/social/quote/:address", async (req, res) => {
       res.json({ bsvOut: payOut.toFixed(18), fee: calc.fee, priceImpact: (tokensIn / vTok * 100).toFixed(2) });
     }
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -565,7 +565,7 @@ router.post("/social/follow", async (req, res) => {
       res.json({ following: true });
     }
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -582,7 +582,7 @@ router.get("/social/creators/:address/holders", async (req, res) => {
     );
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -599,7 +599,7 @@ router.get("/social/creators/:address/followers", async (req, res) => {
     );
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -616,7 +616,7 @@ router.get("/social/creators/:address/following", async (req, res) => {
     );
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -634,7 +634,7 @@ router.get("/social/holdings/:address", async (req, res) => {
     );
     res.json({ holdings: rows });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -649,7 +649,7 @@ router.get("/social/holdings/:holderAddress/coin/:creatorAddress", async (req, r
     );
     res.json({ amount: parseFloat(rows[0]?.amount ?? "0") });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -674,7 +674,7 @@ router.get("/social/search", async (req, res) => {
     ]);
     res.json({ creators, posts });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -690,7 +690,7 @@ router.get("/social/trending-coins", async (req, res) => {
     );
     res.json({ coins: rows });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -747,7 +747,7 @@ router.delete("/social/creators/:address", async (req, res) => {
   } catch (err: any) {
     if (client) await client.query("ROLLBACK");
     logger.error({ err }, "delete creator profile failed");
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   } finally {
     client?.release();
   }

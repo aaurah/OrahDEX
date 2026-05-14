@@ -478,7 +478,7 @@ router.get("/admin/hot-wallet-status", requireAdminToken, async (req, res) => {
     });
   } catch (err: any) {
     req.log.error({ err: err?.message }, "admin/hot-wallet-status: failed");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch hot wallet status" });
+    res.status(500).json({ error: "Failed to fetch hot wallet status" });
   }
 });
 

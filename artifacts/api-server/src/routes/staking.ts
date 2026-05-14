@@ -309,7 +309,7 @@ router.post("/staking/stake", async (req, res) => {
       });
     } catch (err: any) {
       logger.warn({ err: err?.message, walletAddress: addrStr }, "staking: signature verification failed");
-      res.status(401).json({ error: err?.message ?? "Invalid stake signature" });
+      res.status(401).json({ error: "Invalid stake signature" });
       return;
     }
   }
