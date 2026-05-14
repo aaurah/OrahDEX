@@ -27,7 +27,7 @@ export async function fetchBsvBalance(address: string): Promise<BsvBalanceResult
 }
 
 export function useBsvBalance() {
-  const { address, network, setBalance } = useWalletStore();
+  const { address, network, setBalance, setBsvUnconfirmed } = useWalletStore();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastAddressRef = useRef<string | null>(null);
 
@@ -39,8 +39,9 @@ export function useBsvBalance() {
     const result = await fetchBsvBalance(currentAddress);
     if (result && result.balance !== undefined && result.error !== "paymail_unresolved") {
       setBalance(result.balance.toFixed(8));
+      setBsvUnconfirmed(result.unconfirmed ?? 0);
     }
-  }, [setBalance]);
+  }, [setBalance, setBsvUnconfirmed]);
 
   useEffect(() => {
     if ((network !== "bsv" && network !== "bsv-test") || !address) {
