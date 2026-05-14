@@ -1219,7 +1219,11 @@ router.delete("/orders/:orderId", async (req, res) => {
     const [order] = await db
       .update(ordersTable)
       .set({ status: "cancelled", updatedAt: new Date() })
-      .where(and(eq(ordersTable.id, req.params.orderId), eq(ordersTable.walletAddress, body.walletAddress)))
+      .where(and(
+        eq(ordersTable.id, req.params.orderId),
+        eq(ordersTable.walletAddress, body.walletAddress),
+        eq(ordersTable.status, "open"),   // guard: never cancel an already-filled/cancelled order
+      ))
       .returning();
 
     if (!order) {

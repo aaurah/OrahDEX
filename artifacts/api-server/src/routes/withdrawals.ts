@@ -424,7 +424,7 @@ router.post("/admin/withdrawals/:id/retry", requireAdminToken, async (req, res) 
   } catch (err: any) {
     await client.query("ROLLBACK").catch(() => {});
     req.log.error({ err: err?.message, id }, "withdrawals: retry failed");
-    res.status(500).json({ error: err?.message ?? "Retry failed" });
+    res.status(500).json({ error: "Retry failed. Check server logs for details." });
   } finally {
     client.release();
   }
