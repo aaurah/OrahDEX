@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { validateAltChainAddress } from "@/lib/addressValidation";
+import { isAddress as isEvmAddress } from "viem";
 import { CHAIN_RPC_URLS } from "@/lib/reown";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 import { cn } from "@/lib/utils";
@@ -456,8 +457,9 @@ export function WithdrawSheet({
     if (isSolana)     return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(r);
     if (isBitcoinFork) return /^[13mn][a-km-zA-HJ-NP-Z1-9]{25,50}$/.test(r);
     if (isAltChain)   return validateAltChainAddress(network, r);
-    // EVM: 0x + 40 hex chars
-    return /^0x[0-9a-fA-F]{40}$/.test(r);
+    // EVM: viem's isAddress validates EIP-55 checksum so a single mistyped
+    // character is caught rather than silently passing regex.
+    return isEvmAddress(r, { strict: false });
   })();
 
   const canSubmit = parsedAmount > 0 && !exceedsBalance && isValidRecipient && !submitting;
