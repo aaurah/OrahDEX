@@ -1,11 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import {
   Fingerprint, Loader2, Plus, LogIn, Shield, AlertCircle,
   Download, ArrowLeft, Eye, EyeOff, CheckCircle2,
   HardDrive, ChevronRight, Wallet, QrCode,
+  Smartphone, RefreshCw, Check, WifiOff,
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import { API_BASE } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -40,7 +43,8 @@ type Tab =
   | "ledger"
   | "trezor"
   | "keystone"
-  | "gridplus";
+  | "gridplus"
+  | "mobile-qr";
 
 function applyOrahWallet(address: string, chains?: PasskeyChainAddresses) {
   const store = useWalletStore.getState();
@@ -320,6 +324,136 @@ const HW_META: Record<HWDevice, { emoji: string; title: string; description: str
   gridplus: { emoji: "⚡", title: "GridPlus Lattice1", description: "Wi-Fi — connects via the GridPlus relay." },
 };
 
+/* ─── Mobile QR Panel ──────────────────────────────────────────────────── */
+
+function MobileQRPanel({ onDone }: { onDone: () => void }) {
+  const { toast } = useToast();
+  const [token,     setToken]     = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<number>(0);
+  const [status,    setStatus]    = useState<"loading" | "waiting" | "connected" | "expired" | "error">("loading");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const createSession = useCallback(async () => {
+    setStatus("loading");
+    setToken(null);
+    try {
+      const res  = await fetch(`${API_BASE}/connect-session`, { method: "POST" });
+      const data = await res.json() as { token: string; expiresAt: number };
+      setToken(data.token);
+      setExpiresAt(data.expiresAt);
+      setStatus("waiting");
+    } catch {
+      setStatus("error");
+    }
+  }, []);
+
+  useEffect(() => { createSession(); }, [createSession]);
+
+  useEffect(() => {
+    if (!token || status !== "waiting") return;
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const res  = await fetch(`${API_BASE}/connect-session/${token}`);
+        if (res.status === 404) { setStatus("expired"); clearInterval(pollRef.current!); return; }
+        const data = await res.json() as { status: string; address?: string; chain?: string; walletType?: string };
+        if (data.status === "connected" && data.address) {
+          clearInterval(pollRef.current!);
+          setStatus("connected");
+          const network = (data.chain ?? "BSV") === "BSV" ? "bsv" : "evm";
+          useWalletStore.getState().connect({ address: data.address, provider: "mobile-qr", network });
+          toast({ title: "Mobile wallet connected!", description: `${data.address.slice(0, 14)}…` });
+          setTimeout(onDone, 1200);
+        }
+      } catch { /* ignore transient */ }
+    }, 2000);
+
+    const expireTimer = setTimeout(() => {
+      clearInterval(pollRef.current!);
+      setStatus("expired");
+    }, Math.max(0, expiresAt - Date.now()));
+
+    return () => { clearInterval(pollRef.current!); clearTimeout(expireTimer); };
+  }, [token, status, expiresAt, onDone, toast]);
+
+  const qrValue = token ? `orahdex://connect?token=${token}&expires=${expiresAt}` : "";
+  const ttlSec  = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+
+  return (
+    <div className="px-6 py-5 flex flex-col items-center gap-4">
+
+      {/* Loading */}
+      {status === "loading" && (
+        <div className="w-full flex flex-col items-center gap-3 py-8">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Generating session…</p>
+        </div>
+      )}
+
+      {/* Error */}
+      {status === "error" && (
+        <div className="w-full flex flex-col items-center gap-3 py-8">
+          <WifiOff className="w-8 h-8 text-destructive" />
+          <p className="text-sm text-muted-foreground text-center">Could not reach server.<br />Check your connection and try again.</p>
+          <Button size="sm" variant="outline" onClick={createSession} className="gap-2">
+            <RefreshCw className="w-3.5 h-3.5" /> Retry
+          </Button>
+        </div>
+      )}
+
+      {/* Waiting — show QR */}
+      {status === "waiting" && (
+        <>
+          <p className="text-sm text-muted-foreground text-center leading-relaxed">
+            Open <span className="text-foreground font-semibold">OrahDEX</span> on your phone, tap the{" "}
+            <QrCode className="inline w-3.5 h-3.5 mb-0.5 text-cyan-400" /> barcode icon, then scan this code.
+          </p>
+
+          <div className="relative p-3 rounded-2xl bg-white shadow-lg">
+            <QRCodeSVG value={qrValue} size={192} bgColor="#ffffff" fgColor="#000000" level="M" />
+            {/* Corner accent */}
+            <div className="absolute inset-0 rounded-2xl ring-1 ring-border/30 pointer-events-none" />
+          </div>
+
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Waiting for mobile scan… expires in {ttlSec}s
+          </div>
+
+          <div className="w-full rounded-xl bg-cyan-500/8 border border-cyan-500/20 px-4 py-3 flex items-start gap-2.5">
+            <Smartphone className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Your mobile wallet address will be linked to this desktop session. No seed phrase is shared.
+            </p>
+          </div>
+        </>
+      )}
+
+      {/* Connected */}
+      {status === "connected" && (
+        <div className="w-full flex flex-col items-center gap-3 py-8">
+          <div className="w-14 h-14 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center">
+            <Check className="w-7 h-7 text-primary" strokeWidth={2.5} />
+          </div>
+          <p className="text-sm font-semibold text-foreground">Mobile wallet connected!</p>
+          <p className="text-[11px] text-muted-foreground">Closing…</p>
+        </div>
+      )}
+
+      {/* Expired */}
+      {status === "expired" && (
+        <div className="w-full flex flex-col items-center gap-3 py-8">
+          <QrCode className="w-8 h-8 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground text-center">Session expired. Generate a new code.</p>
+          <Button size="sm" variant="outline" onClick={createSession} className="gap-2">
+            <RefreshCw className="w-3.5 h-3.5" /> New Code
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Main Dialog ───────────────────────────────────────────────────────── */
 
 export function WalletChooserDialog() {
@@ -328,7 +462,7 @@ export function WalletChooserDialog() {
 
   const handleClose = () => { setTab("choose"); close(); };
   const handleEvmClick = () => { handleClose(); setTimeout(() => openEvm(), 100); };
-  const handleMobileQr = () => { handleClose(); setTimeout(() => openEvm(), 100); };
+  const handleMobileQr = () => setTab("mobile-qr");
   const handleHWPick = (device: HWDevice) => setTab(device);
 
   const isDeviceTab = (t: Tab): t is HWDevice =>
@@ -492,6 +626,21 @@ export function WalletChooserDialog() {
               {tab === "keystone" && <KeystonePanel onDone={handleClose} />}
               {tab === "gridplus" && <GridPlusPanel onDone={handleClose} />}
             </div>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════
+            MOBILE QR CONNECT
+        ══════════════════════════════════════ */}
+        {tab === "mobile-qr" && (
+          <>
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<QrCode className="w-5 h-5 text-cyan-400" />}
+              title="Connect via Mobile QR"
+              description="Scan the code below with the OrahDEX mobile app"
+            />
+            <MobileQRPanel onDone={handleClose} />
           </>
         )}
 
