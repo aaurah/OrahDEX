@@ -14,7 +14,7 @@ export interface TokenBalance {
 }
 
 // ERC-20 token registry per chainId
-const ERC20_TOKENS: Record<number, Array<{ symbol: string; name: string; address: string; decimals: number; color: string }>> = {
+export const ERC20_TOKENS: Record<number, Array<{ symbol: string; name: string; address: string; decimals: number; color: string }>> = {
   1: [ // Ethereum Mainnet
     { symbol: "USDT",  name: "Tether USD",         address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6,  color: "#22C55E" },
     { symbol: "USDC",  name: "USD Coin",            address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6,  color: "#3B82F6" },
