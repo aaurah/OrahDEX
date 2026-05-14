@@ -35,7 +35,10 @@ export async function triggerStopOrders(): Promise<void> {
     if (openStops.length === 0) return;
 
     // Fetch all markets into a quick lookup map
-    const markets = await db.select().from(marketsTable);
+    const markets = await db.select({
+      symbol:    marketsTable.symbol,
+      lastPrice: marketsTable.lastPrice,
+    }).from(marketsTable);
     const priceMap = new Map<string, number>(
       markets.map(m => [m.symbol, parseFloat(m.lastPrice)])
     );

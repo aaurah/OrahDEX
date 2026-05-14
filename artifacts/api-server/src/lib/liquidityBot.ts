@@ -219,7 +219,15 @@ async function refreshMarket(
 /* ── Full cycle: iterate all active markets ─────────────────────────────── */
 async function runCycle(): Promise<void> {
   try {
-    const markets = await db.select().from(marketsTable)
+    const markets = await db.select({
+      symbol:     marketsTable.symbol,
+      baseAsset:  marketsTable.baseAsset,
+      quoteAsset: marketsTable.quoteAsset,
+      lastPrice:  marketsTable.lastPrice,
+      volume24h:  marketsTable.volume24h,
+      type:       marketsTable.type,
+      status:     marketsTable.status,
+    }).from(marketsTable)
       .where(notInArray(marketsTable.type, ["letsexchange"]));
     const active  = markets.filter(m => m.status === "active");
 

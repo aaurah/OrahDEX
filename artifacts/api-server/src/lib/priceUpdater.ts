@@ -548,7 +548,12 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
   try {
     const since = new Date(Date.now() - 60 * 60 * 1000); // last 1 hour
     const recentTrades = await db
-      .select()
+      .select({
+        symbol:    tradesTable.symbol,
+        price:     tradesTable.price,
+        total:     tradesTable.total,
+        timestamp: tradesTable.timestamp,
+      })
       .from(tradesTable)
       .where(gte(tradesTable.timestamp, since))
       .orderBy(desc(tradesTable.timestamp));
@@ -1247,7 +1252,12 @@ export async function updateMarketPrices() {
       _coinChangeMap[sym] = data.usd_24h_change ?? 0;
     }
 
-    const markets = await db.select().from(marketsTable)
+    const markets = await db.select({
+      symbol:     marketsTable.symbol,
+      baseAsset:  marketsTable.baseAsset,
+      quoteAsset: marketsTable.quoteAsset,
+      type:       marketsTable.type,
+    }).from(marketsTable)
       .where(notInArray(marketsTable.type, ["letsexchange"]));
 
     const pendingUpdates: Array<{
