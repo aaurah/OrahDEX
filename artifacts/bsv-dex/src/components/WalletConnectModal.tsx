@@ -37,7 +37,7 @@ import {
 import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { ReownConnectPanel } from "@/components/ReownConnectButton";
 import { LedgerConnectPanel } from "@/components/LedgerConnectPanel";
-import { openReownModal, isReownReady, connectViaWalletConnect, cancelWalletConnect } from "@/lib/reown";
+import { openReownModal, isReownReady } from "@/lib/reown";
 import { fetchBsvBalance } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { getChainName } from "@/lib/chainConfig";
@@ -205,7 +205,7 @@ function getEvmProvider(walletId: string): any {
   return eth;
 }
 
-type View = "landing" | "create" | "import" | "connect" | "prep" | "passkey" | "mobileqr" | "wc-qr";
+type View = "landing" | "create" | "import" | "connect" | "prep" | "passkey" | "mobileqr";
 type ConnectTab = "reown" | "bsv" | "tron" | "ledger";
 type CreateStep = "generate" | "done";
 type ImportStep = "enter" | "secure" | "done";
@@ -345,11 +345,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [mqrStatus,  setMqrStatus]  = useState<"pending" | "connected" | "expired" | "error">("pending");
   const [mqrAddress, setMqrAddress] = useState<string | null>(null);
   const mqrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  /* WalletConnect v2 direct QR connection */
-  const [wcUri,        setWcUri]        = useState<string | null>(null);
-  const [wcWalletName, setWcWalletName] = useState<string>("Wallet");
-  const wcAbortRef = useRef<(() => void) | null>(null);
 
   const stopMqrPoll = () => { if (mqrPollRef.current) { clearInterval(mqrPollRef.current); mqrPollRef.current = null; } };
 
@@ -505,9 +500,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
   const handleClose = () => {
     stopMqrPoll();
-    wcAbortRef.current?.();
-    wcAbortRef.current = null;
-    setWcUri(null);
     onClose();
     setTimeout(() => {
       setView("landing");
@@ -744,41 +736,17 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
 
     let provider: any = getEvmProvider(walletId);
 
-    // No browser extension — connect via WalletConnect v2 QR directly
-    // (bypasses AppKit WagmiAdapter to avoid "WalletConnectConnector not found")
+    // No browser extension found — open Reown/WalletConnect modal as fallback.
+    // This works on mobile (deep-link) and desktop (QR scan) for all WC-compatible wallets.
     if (!provider) {
-      const walletDef = EVM_WALLETS.find(w => w.id === walletId);
-      setWcWalletName(walletDef?.name ?? "Wallet");
-      setWcUri(null);
-      setConnecting(walletId);
-      setView("wc-qr");
-
-      let cancelled = false;
-      wcAbortRef.current = () => {
-        cancelled = true;
-        cancelWalletConnect();
-      };
-
-      try {
-        const result = await connectViaWalletConnect((uri) => {
-          setWcUri(uri);
-        });
-        if (cancelled) return;
-        connect({ address: result.address, provider: "reown", network: "evm", chainId: result.chainId });
-        setConnected(walletId);
-        setWcUri(null);
-        setTimeout(() => goToPrep(result.address, "evm", "reown"), 800);
-      } catch (err: any) {
-        if (cancelled) return;
-        const msg: string = err?.message ?? "";
-        if (!msg.includes("rejected") && !msg.includes("cancelled") && !msg.includes("deleted") && !msg.includes("User rejected")) {
-          setConnectError(msg || "WalletConnect connection failed. Try again.");
-        }
-        setView("connect");
-      } finally {
-        wcAbortRef.current = null;
-        setConnecting(null);
-        if (!cancelled) setWcUri(null);
+      if (isReownReady()) {
+        onClose(); // close our custom modal first
+        openReownModal("Connect");
+      } else if (installUrl) {
+        window.open(installUrl, "_blank");
+        setConnectError("Extension not found. Install the wallet extension, or scan the QR code from your mobile wallet.");
+      } else {
+        setConnectError("Wallet extension not detected. Use a mobile wallet and scan the QR code via 'EVM Wallets' → Connect Wallet.");
       }
       return;
     }
@@ -1265,13 +1233,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
               <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border shrink-0">
                 <div className="flex items-center gap-3">
                   {view !== "landing" && view !== "prep" && (
-                    <button onClick={() => {
-                      if (view === "wc-qr") {
-                        wcAbortRef.current?.();
-                        wcAbortRef.current = null;
-                      }
-                      setView("landing");
-                    }}
+                    <button onClick={() => setView("landing")}
                       className="p-1.5 text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/5 transition-colors">
                       <ArrowLeft className="w-4 h-4" />
                     </button>
@@ -1285,7 +1247,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                       {view === "prep" && "Wallet Setup"}
                       {view === "passkey" && <span className="flex items-center gap-2"><Fingerprint className="w-5 h-5 text-primary" /> Passkey Wallet</span>}
                       {view === "mobileqr" && <span className="flex items-center gap-2"><Smartphone className="w-5 h-5 text-white/70" /> Mobile QR Connect</span>}
-                      {view === "wc-qr" && <span className="flex items-center gap-2"><QrCode className="w-5 h-5 text-primary" /> Scan to Connect</span>}
                     </h2>
                     <p className="text-xs text-muted-foreground mt-0.5 italic">Trade means DEX ✦</p>
                   </div>
@@ -2961,79 +2922,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <RefreshCw className="w-4 h-4" /> Generate New QR
                         </button>
                       )}
-
-                    </motion.div>
-                  )}
-
-                  {/* ── WC QR ── Direct WalletConnect v2 QR connect (bypasses AppKit) */}
-                  {view === "wc-qr" && (
-                    <motion.div key="wc-qr" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
-                      className="p-6 flex flex-col items-center gap-5">
-
-                      {/* Wallet name + subtitle */}
-                      <div className="text-center">
-                        <p className="text-sm text-muted-foreground">
-                          {wcUri ? `Open ${wcWalletName} and scan the code below` : "Connecting to WalletConnect relay…"}
-                        </p>
-                      </div>
-
-                      {/* QR code or spinner */}
-                      {wcUri ? (
-                        <div className="p-4 bg-white rounded-2xl shadow-lg" style={{ colorScheme: "light" }}>
-                          <QRCodeCanvas
-                            value={wcUri}
-                            size={220}
-                            bgColor="#ffffff"
-                            fgColor="#000000"
-                            level="M"
-                            marginSize={0}
-                          />
-                        </div>
-                      ) : (
-                        <div className="w-16 h-16 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
-                      )}
-
-                      {/* Waiting indicator */}
-                      {wcUri && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <div className="w-4 h-4 rounded-full border-2 border-primary/60 border-t-primary animate-spin shrink-0" />
-                          Waiting for wallet approval…
-                        </div>
-                      )}
-
-                      {/* Mobile: open in wallet + copy link */}
-                      {wcUri && (
-                        <div className="w-full space-y-2">
-                          <button
-                            onClick={() => { window.location.href = wcUri!; }}
-                            className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:brightness-110 active:scale-95 transition-all shadow-md shadow-primary/20"
-                          >
-                            Open in {wcWalletName}
-                          </button>
-                          <button
-                            onClick={() => navigator.clipboard?.writeText(wcUri!)}
-                            className="w-full py-2.5 rounded-xl border border-border text-muted-foreground text-xs hover:text-foreground hover:border-foreground/20 transition-colors flex items-center justify-center gap-2"
-                          >
-                            <Copy className="w-3.5 h-3.5" /> Copy connection link
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Instructions */}
-                      <div className="w-full rounded-xl border border-white/10 bg-white/3 p-4 space-y-2.5">
-                        <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">How to connect</p>
-                        {[
-                          { n: "1", text: `Open ${wcWalletName} on your phone` },
-                          { n: "2", text: "Tap the scan / QR icon inside the wallet" },
-                          { n: "3", text: "Point the camera at the QR code above" },
-                          { n: "4", text: "Approve the connection request" },
-                        ].map(({ n, text }) => (
-                          <div key={n} className="flex items-start gap-3">
-                            <span className="w-5 h-5 rounded-full bg-white/10 text-white/60 text-[10px] font-black flex items-center justify-center shrink-0 mt-0.5">{n}</span>
-                            <p className="text-xs text-muted-foreground leading-relaxed">{text}</p>
-                          </div>
-                        ))}
-                      </div>
 
                     </motion.div>
                   )}

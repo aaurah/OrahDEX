@@ -157,14 +157,12 @@ function generateKeypair(): {
 } {
   const privBytes     = randomBytes(32);
   const compressedPub = secp.getPublicKey(privBytes, true); // 33 bytes
-  const pkh           = hash160(Buffer.from(compressedPub));
   const legacy        = pubKeyToLegacyAddress(compressedPub);
-  const bchAddr       = pubKeyHashToCashAddr(pkh);          // proper CashAddr for BCH
 
   return {
     privateKeyHex: Buffer.from(privBytes).toString("hex"),
     legacyAddress: legacy,
-    bchAddress:    bchAddr,
+    bchAddress:    legacy,
   };
 }
 
@@ -237,10 +235,7 @@ export async function getOrCreateBsvWallet(
 
   if (rows.length > 0) {
     const bsvAddress = rows[0].bsv_address;
-    const bchAddress = rows[0].bch_address && rows[0].bch_address.startsWith("bitcoincash:")
-      ? rows[0].bch_address
-      : bsvAddress;
-    return { bsvAddress, btcAddress: bsvAddress, bchAddress, isNew: false };
+    return { bsvAddress, btcAddress: bsvAddress, bchAddress: bsvAddress, isNew: false };
   }
 
   const { privateKeyHex, legacyAddress, bchAddress } = generateKeypair();
@@ -265,8 +260,5 @@ export async function getBsvWallet(evmAddress: string): Promise<BsvWalletResult 
   );
   if (!rows[0]) return null;
   const bsvAddress = rows[0].bsv_address;
-  const bchAddress = rows[0].bch_address && rows[0].bch_address.startsWith("bitcoincash:")
-    ? rows[0].bch_address
-    : bsvAddress;
-  return { bsvAddress, btcAddress: bsvAddress, bchAddress, isNew: false };
+  return { bsvAddress, btcAddress: bsvAddress, bchAddress: bsvAddress, isNew: false };
 }
