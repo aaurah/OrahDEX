@@ -6,6 +6,7 @@ import {
   Download, ArrowLeft, Eye, EyeOff, CheckCircle2,
   HardDrive, ChevronRight, Wallet, QrCode,
   Smartphone, RefreshCw, Check, WifiOff,
+  FileKey, Copy, AlertTriangle, KeyRound,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
@@ -17,6 +18,7 @@ import {
   registerPasskeyWallet,
   loginWithPasskey,
   isPasskeySupported,
+  revealPasskeyWalletSecret,
   type PasskeyChainAddresses,
 } from "@/lib/passkeyWallet";
 import { validateMnemonic, deriveAllAddresses } from "@/lib/seedPhrase";
@@ -38,6 +40,8 @@ const srOnly: React.CSSProperties = {
 type Tab =
   | "choose"
   | "passkey"
+  | "create-wallet"
+  | "view-seed"
   | "import"
   | "hardware"
   | "ledger"
@@ -126,7 +130,7 @@ function SubHeader({ onBack, icon, title, description }: {
 
 /* ─── Passkey Panel ─────────────────────────────────────────────────────── */
 
-function PasskeyPanel({ onDone }: { onDone: () => void }) {
+function PasskeyPanel({ onDone, onViewSeed }: { onDone: () => void; onViewSeed?: () => void }) {
   const { toast } = useToast();
   const [loading, setLoading] = useState<"create" | "login" | null>(null);
   const supported = isPasskeySupported();
@@ -215,6 +219,16 @@ function PasskeyPanel({ onDone }: { onDone: () => void }) {
           Keys generated locally, encrypted by your passkey. OrahDEX never sees your seed phrase.
         </p>
       </div>
+
+      {onViewSeed && (
+        <button
+          onClick={onViewSeed}
+          className="w-full flex items-center justify-center gap-2 py-2 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors border-t border-border/50 mt-1 pt-3"
+        >
+          <FileKey className="w-3.5 h-3.5" />
+          View Seed Phrase (optional)
+        </button>
+      )}
     </div>
   );
 }
@@ -311,6 +325,159 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
           Your phrase never leaves this device. All derivation runs locally in your browser.
         </p>
       </div>
+    </div>
+  );
+}
+
+/* ─── Create Wallet Panel ───────────────────────────────────────────────── */
+
+function CreateWalletPanel({ onDone }: { onDone: () => void }) {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const supported = isPasskeySupported();
+
+  const handleCreate = async () => {
+    setLoading(true);
+    try {
+      const result = await registerPasskeyWallet("OrahDEX Wallet");
+      applyOrahWallet(result.address, result.chains);
+      toast({ title: "Wallet created!", description: `${result.address.slice(0, 6)}…${result.address.slice(-4)} · BSV, BTC, ETH, SOL + more` });
+      onDone();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (err?.name === "NotAllowedError" || msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+        toast({ title: "Cancelled", description: "Passkey creation was cancelled.", variant: "destructive" });
+      } else {
+        toast({ title: "Create failed", description: msg || "Could not create passkey wallet.", variant: "destructive" });
+      }
+    } finally { setLoading(false); }
+  };
+
+  if (!supported) return (
+    <div className="flex items-start gap-2.5 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-sm text-destructive">
+      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+      <span>Passkeys are not supported in this browser. Try Chrome, Safari, or Edge on a device with biometrics.</span>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-4 flex flex-col items-center gap-3 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-primary/15 border border-primary/25 flex items-center justify-center">
+          <KeyRound className="w-7 h-7 text-primary" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-foreground">Create a new OrahDEX Wallet</p>
+          <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+            Generates a 12-word seed phrase encrypted with your biometric.<br />
+            Supports BSV · BTC · ETH · SOL · LTC · DOGE + more.
+          </p>
+        </div>
+      </div>
+
+      <Button
+        className="w-full h-[46px] gap-2 text-sm font-semibold rounded-xl"
+        onClick={handleCreate}
+        disabled={loading}
+      >
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+        {loading ? "Creating wallet…" : "Create with Face ID / Touch ID"}
+      </Button>
+
+      <div className="flex items-start gap-2 px-1">
+        <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Your seed phrase is generated locally and encrypted by your passkey. OrahDEX never sees it.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ─── View Seed Phrase Panel ────────────────────────────────────────────── */
+
+function ViewSeedPanel({ onBack }: { onBack: () => void }) {
+  const { toast } = useToast();
+  const { address } = useWalletStore();
+  const [loading, setLoading] = useState(false);
+  const [words, setWords] = useState<string[]>([]);
+  const [copied, setCopied] = useState(false);
+
+  const handleReveal = async () => {
+    if (!address) {
+      toast({ title: "No wallet connected", description: "Connect your OrahDEX wallet first.", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const secret = await revealPasskeyWalletSecret(address);
+      const phraseWords = secret.trim().split(/\s+/);
+      if (phraseWords.length < 12) {
+        toast({ title: "Legacy wallet", description: "This wallet uses a raw private key, not a seed phrase.", variant: "destructive" });
+      } else {
+        setWords(phraseWords);
+      }
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+        toast({ title: "Cancelled", description: "Authentication was cancelled.", variant: "destructive" });
+      } else {
+        toast({ title: "Could not reveal", description: msg || "Authentication failed.", variant: "destructive" });
+      }
+    } finally { setLoading(false); }
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(words.join(" "));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast({ title: "Copied", description: "Seed phrase copied to clipboard." });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/8 p-3.5">
+        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+        <p className="text-[11px] text-amber-200/80 leading-relaxed">
+          Never share your seed phrase with anyone. Anyone with these words can access your wallet permanently.
+        </p>
+      </div>
+
+      {words.length === 0 ? (
+        <Button
+          className="w-full h-[46px] gap-2 text-sm font-semibold rounded-xl"
+          onClick={handleReveal}
+          disabled={loading}
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Fingerprint className="w-4 h-4" />}
+          {loading ? "Authenticating…" : "Authenticate to Reveal"}
+        </Button>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            {words.map((word, i) => (
+              <div key={i} className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-2.5 py-2">
+                <span className="text-[10px] text-muted-foreground/50 w-4 shrink-0 text-right">{i + 1}</span>
+                <span className="text-xs font-mono font-medium text-foreground truncate">{word}</span>
+              </div>
+            ))}
+          </div>
+          <Button
+            variant="outline"
+            className="w-full h-[40px] gap-2 text-sm rounded-xl"
+            onClick={handleCopy}
+          >
+            {copied ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
+            {copied ? "Copied!" : "Copy Seed Phrase"}
+          </Button>
+          <button
+            onClick={() => setWords([])}
+            className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1"
+          >
+            Hide phrase
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -497,17 +664,25 @@ export function WalletChooserDialog() {
 
               <div className="space-y-2">
                 <OptionCard
-                  onClick={() => setTab("passkey")}
-                  iconBg="bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40"
-                  icon={<Fingerprint className="w-5 h-5 text-primary" />}
-                  title="OrahDEX Wallet"
-                  sub="Passkey · BSV · BTC · ETH · SOL · LTC · DOGE + more"
+                  onClick={() => setTab("create-wallet")}
+                  iconBg="bg-emerald-500/10 border border-emerald-500/20 group-hover:bg-emerald-500/15 group-hover:border-emerald-500/35"
+                  icon={<Plus className="w-5 h-5 text-emerald-400" />}
+                  title="Create Wallet"
+                  sub="New passkey wallet · Face ID · Touch ID · 12-word seed"
                   badge={
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 tracking-wider">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 tracking-wider">
                       NEW
                     </span>
                   }
                   featured
+                />
+
+                <OptionCard
+                  onClick={() => setTab("passkey")}
+                  iconBg="bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40"
+                  icon={<Fingerprint className="w-5 h-5 text-primary" />}
+                  title="Passkey Wallet"
+                  sub="Use existing OrahDEX passkey · BSV · BTC · ETH · SOL + more"
                 />
 
                 <OptionCard
@@ -561,16 +736,44 @@ export function WalletChooserDialog() {
         {/* ══════════════════════════════════════
             ORAHDEX WALLET (PASSKEY)
         ══════════════════════════════════════ */}
+        {tab === "create-wallet" && (
+          <>
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<Plus className="w-5 h-5 text-emerald-400" />}
+              title="Create Wallet"
+              description="Generate a new passkey-protected multi-chain wallet"
+            />
+            <div className="px-6 py-5">
+              <CreateWalletPanel onDone={handleClose} />
+            </div>
+          </>
+        )}
+
         {tab === "passkey" && (
           <>
             <SubHeader
               onBack={() => setTab("choose")}
               icon={<Fingerprint className="w-5 h-5 text-primary" />}
-              title="OrahDEX Wallet"
+              title="Passkey Wallet"
               description="Non-custodial · secured by Face ID, Touch ID or Windows Hello"
             />
             <div className="px-6 py-5">
-              <PasskeyPanel onDone={handleClose} />
+              <PasskeyPanel onDone={handleClose} onViewSeed={() => setTab("view-seed")} />
+            </div>
+          </>
+        )}
+
+        {tab === "view-seed" && (
+          <>
+            <SubHeader
+              onBack={() => setTab("passkey")}
+              icon={<FileKey className="w-5 h-5 text-amber-400" />}
+              title="View Seed Phrase"
+              description="Authenticate with your passkey to reveal your 12-word phrase"
+            />
+            <div className="px-6 py-5">
+              <ViewSeedPanel onBack={() => setTab("passkey")} />
             </div>
           </>
         )}
