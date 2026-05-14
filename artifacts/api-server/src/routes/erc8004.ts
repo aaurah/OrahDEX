@@ -242,7 +242,7 @@ router.get("/erc8004/keepers", async (req, res) => {
 
     res.json({ keepers: results, count: results.length });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to list keepers" });
+    res.status(500).json({ error: "Failed to list keepers" });
   }
 });
 
@@ -289,7 +289,7 @@ router.post("/erc8004/admin/register", requireAdminToken, async (req, res) => {
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "admin: OrahDEX ERC-8004 register failed");
-    res.status(500).json({ error: err?.message ?? "Registration failed" });
+    res.status(500).json({ error: "Registration failed" });
   }
 });
 
@@ -337,7 +337,7 @@ router.post("/erc8004/admin/keeper/:address/register", requireAdminToken, async 
     });
   } catch (err: any) {
     logger.error({ err: err?.message, address }, "admin: Keeper ERC-8004 register failed");
-    res.status(500).json({ error: err?.message ?? "Registration failed" });
+    res.status(500).json({ error: "Registration failed" });
   }
 });
 
@@ -382,7 +382,7 @@ router.post("/erc8004/admin/keeper/:address/sync", requireAdminToken, async (req
     });
   } catch (err: any) {
     logger.error({ err: err?.message, address }, "admin: Keeper reputation sync failed");
-    res.status(500).json({ error: err?.message ?? "Reputation sync failed" });
+    res.status(500).json({ error: "Reputation sync failed" });
   }
 });
 
@@ -457,7 +457,7 @@ router.post("/erc8004/admin/keepers/sync-all", requireAdminToken, async (req, re
     res.json({ ok: true, synced, failed, newlyRegistered: newlyReg, results });
   } catch (err: any) {
     logger.error({ err: err?.message }, "admin: bulk keeper sync failed");
-    res.status(500).json({ error: err?.message ?? "Bulk sync failed" });
+    res.status(500).json({ error: "Bulk sync failed" });
   }
 });
 
@@ -483,7 +483,7 @@ router.post("/erc8004/admin/preauthorize", adminOpsLimiter, requireAdminToken, a
     const txHash = await preauthorizeReviewer(agentId, reviewerAddress);
     res.json({ ok: true, agentId, reviewerAddress, txHash });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Preauthorize failed" });
+    res.status(500).json({ error: "Preauthorize failed" });
   }
 });
 

@@ -338,7 +338,7 @@ router.get("/prediction/rounds/:symbol", async (req, res) => {
     }));
     res.json({ rounds: normalized, currentPrice: price ?? 0, serverTime: Math.floor(Date.now() / 1000) });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -415,7 +415,7 @@ router.post("/prediction/bet", async (req, res) => {
       round: { bullAmount: round.bullAmount, bearAmount: round.bearAmount, totalAmount: round.totalAmount },
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -546,7 +546,7 @@ router.post("/prediction/claim", async (req, res) => {
 
     res.json({ success: true, payout: totalPayout, bets: claimCount });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -580,7 +580,7 @@ router.get("/prediction/history/:wallet", async (req, res) => {
     });
     res.json({ bets: result });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

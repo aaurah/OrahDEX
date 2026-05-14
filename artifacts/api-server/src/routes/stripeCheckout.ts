@@ -275,7 +275,7 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "Failed to create payment intent");
-    res.status(500).json({ error: err?.message ?? "Failed to create order" });
+    res.status(500).json({ error: "Failed to create order" });
   }
 });
 
@@ -304,7 +304,7 @@ router.get("/stripe/order/:id", async (req, res) => {
     }
     res.json(result.rows[0]);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to fetch order" });
+    res.status(500).json({ error: "Failed to fetch order" });
   }
 });
 
@@ -335,7 +335,7 @@ router.get("/stripe/orders", async (req, res) => {
     );
     res.json(result.rows);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to fetch orders" });
+    res.status(500).json({ error: "Failed to fetch orders" });
   }
 });
 
@@ -393,7 +393,7 @@ router.delete("/stripe/orders/:id", async (req, res) => {
     res.json({ ok: true });
   } catch (err: any) {
     logger.error({ err: err?.message }, "user delete stripe order failed");
-    res.status(500).json({ error: err?.message ?? "Delete failed" });
+    res.status(500).json({ error: "Delete failed" });
   }
 });
 
@@ -456,7 +456,7 @@ router.get("/admin/stripe-orders", requireAdminToken, async (req, res) => {
     res.json({ orders: result.rows, stats: stats.rows[0] ?? {} });
   } catch (err: any) {
     logger.error({ err: err?.message }, "admin: list stripe orders failed");
-    res.status(500).json({ error: err?.message ?? "Failed to list orders" });
+    res.status(500).json({ error: "Failed to list orders" });
   }
 });
 
@@ -481,7 +481,7 @@ router.post("/admin/stripe-orders/:id/refund", requireAdminToken, async (req, re
     res.json({ ok: true, refundId: refund.id });
   } catch (err: any) {
     logger.error({ err: err?.message }, "admin: refund stripe order failed");
-    res.status(500).json({ error: err?.message ?? "Refund failed" });
+    res.status(500).json({ error: "Refund failed" });
   }
 });
 
@@ -510,7 +510,7 @@ router.post("/admin/stripe-orders/:id/cancel", requireAdminToken, async (req, re
     );
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Cancel failed" });
+    res.status(500).json({ error: "Cancel failed" });
   }
 });
 
@@ -520,7 +520,7 @@ router.delete("/admin/stripe-orders/:id", requireAdminToken, async (req, res) =>
     const r = await pool.query(`DELETE FROM crypto_orders WHERE id = $1`, [req.params.id]);
     res.json({ ok: true, deleted: r.rowCount ?? 0 });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Delete failed" });
+    res.status(500).json({ error: "Delete failed" });
   }
 });
 
@@ -560,7 +560,7 @@ router.post("/admin/stripe-orders/:id/fulfill", requireAdminToken, async (req, r
     res.json({ ok: true, order: updated[0] });
   } catch (err: any) {
     logger.error({ err: err?.message }, "admin: manual fulfillment failed");
-    res.status(500).json({ error: err?.message ?? "Fulfillment failed" });
+    res.status(500).json({ error: "Fulfillment failed" });
   }
 });
 
@@ -577,7 +577,7 @@ router.post("/admin/stripe-orders/:id/mark", requireAdminToken, async (req, res)
     if (!r.rowCount) { res.status(404).json({ error: "Order not found" }); return; }
     res.json({ ok: true, order: r.rows[0] });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Update failed" });
+    res.status(500).json({ error: "Update failed" });
   }
 });
 
@@ -599,7 +599,7 @@ router.post("/admin/stripe-orders/bulk-delete", requireAdminToken, async (req, r
     const r = await pool.query(`DELETE FROM crypto_orders WHERE ${where.join(" AND ")}`, params);
     res.json({ ok: true, deleted: r.rowCount ?? 0 });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Bulk delete failed" });
+    res.status(500).json({ error: "Bulk delete failed" });
   }
 });
 

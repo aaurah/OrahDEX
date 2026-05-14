@@ -685,7 +685,7 @@ router.get("/trade-analytics", async (_req, res) => {
       liquidityDepth: [],
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to build trade analytics" });
+    res.status(500).json({ error: "Failed to build trade analytics" });
   }
 });
 
@@ -743,7 +743,7 @@ router.get("/activity", async (_req, res) => {
     const deduped = activities.slice(0, limit);
     res.json(deduped);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -851,7 +851,7 @@ router.get("/transactions", async (_req, res) => {
     const paged = filtered.slice((PAGE - 1) * LIMIT, PAGE * LIMIT);
     res.json({ transactions: paged, total, page: PAGE, pages: Math.ceil(total / LIMIT) });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to load transactions" });
+    res.status(500).json({ error: "Failed to load transactions" });
   }
 });
 
@@ -874,7 +874,7 @@ router.get("/users", async (_req, res) => {
     const paged = users.slice((p - 1) * l, p * l);
     res.json({ users: paged, total, page: p, pages: Math.ceil(total / l) });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to load users" });
+    res.status(500).json({ error: "Failed to load users" });
   }
 });
 
@@ -918,7 +918,7 @@ router.patch("/users/:id", async (req, res) => {
 /* ─── ADMINS (DB-backed) ─── */
 router.get("/admins", async (_req, res) => {
   try { res.json(await loadAdmins()); }
-  catch (err: any) { res.status(500).json({ error: err?.message }); }
+  catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
 });
 
 router.post("/admins", async (req, res) => {
@@ -936,7 +936,7 @@ router.post("/admins", async (req, res) => {
     admins.push(newAdmin);
     await saveAdmins(admins);
     res.status(201).json(newAdmin);
-  } catch (err: any) { res.status(500).json({ error: err?.message }); }
+  } catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
 });
 
 router.delete("/admins/:id", async (req, res) => {
@@ -947,7 +947,7 @@ router.delete("/admins/:id", async (req, res) => {
     admins.splice(idx, 1);
     await saveAdmins(admins);
     res.json({ success: true });
-  } catch (err: any) { res.status(500).json({ error: err?.message }); }
+  } catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
 });
 
 router.patch("/admins/:id", async (req, res) => {
@@ -963,7 +963,7 @@ router.patch("/admins/:id", async (req, res) => {
     if (status !== undefined) admin.status = status;
     await saveAdmins(admins);
     res.json({ success: true, admin });
-  } catch (err: any) { res.status(500).json({ error: err?.message }); }
+  } catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
 });
 
 router.patch("/admins/:id/password", async (req, res) => {
@@ -973,7 +973,7 @@ router.patch("/admins/:id/password", async (req, res) => {
     if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
     // Password field stored as hash in future; acknowledge for now
     res.json({ success: true });
-  } catch (err: any) { res.status(500).json({ error: err?.message }); }
+  } catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
 });
 
 router.patch("/admins/:id/2fa", async (req, res) => {
@@ -985,7 +985,7 @@ router.patch("/admins/:id/2fa", async (req, res) => {
     if (typeof twoFa === "boolean") admin.twoFa = twoFa;
     await saveAdmins(admins);
     res.json({ success: true, admin });
-  } catch (err: any) { res.status(500).json({ error: err?.message }); }
+  } catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
 });
 
 /* ─── TRADE PAIRS ─── */
@@ -1024,7 +1024,7 @@ router.get("/pairs", async (req, res) => {
 
     res.json({ pairs, total: countRow.total, limit, offset });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to fetch pairs" });
+    res.status(500).json({ error: "Failed to fetch pairs" });
   }
 });
 
@@ -1053,7 +1053,7 @@ router.patch("/pairs/:symbol/contracts", async (req, res) => {
     await db.update(marketsTable).set({ contractAddresses }).where(eq(marketsTable.symbol, symbolDecoded));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to update contracts" });
+    res.status(500).json({ error: "Failed to update contracts" });
   }
 });
 
@@ -1063,7 +1063,7 @@ router.get("/api-keys", async (_req, res) => {
     const keys = await loadApiKeys();
     res.json(keys.map(publicKeyView));
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1107,7 +1107,7 @@ router.post("/api-keys", async (req, res) => {
     // Return cleartext key ONCE — the server only stores the hash from now on.
     res.status(201).json({ ...publicKeyView(created), key, oneTimeReveal: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1126,7 +1126,7 @@ router.delete("/api-keys/:id", async (req, res) => {
     }
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -1215,7 +1215,7 @@ router.put("/api-config", async (req, res) => {
         .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: String(value), updatedAt: new Date() } });
     }
     res.json({ success: true });
-  } catch (e: any) { res.status(500).json({ error: e?.message ?? "Failed to save" }); }
+  } catch (e: any) { res.status(500).json({ error: "Failed to save" }); }
 });
 
 router.post("/api-config/reset", async (_req, res) => {
@@ -1227,13 +1227,13 @@ router.post("/api-config/reset", async (_req, res) => {
         .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: API_CONFIG_DEFAULTS[key], updatedAt: new Date() } });
     }
     res.json({ success: true, config: API_CONFIG_DEFAULTS });
-  } catch (e: any) { res.status(500).json({ error: e?.message ?? "Reset failed" }); }
+  } catch (e: any) { res.status(500).json({ error: "Reset failed" }); }
 });
 
 /* ─── CONTRACTS / NEW COIN ─── */
 router.get("/contracts", async (_req, res) => {
   try { res.json(await loadContracts()); }
-  catch (e: any) { res.status(500).json({ error: e?.message ?? "Failed to load contracts" }); }
+  catch (e: any) { res.status(500).json({ error: "Failed to load contracts" }); }
 });
 
 router.post("/contracts/deploy", async (req, res) => {
@@ -1261,7 +1261,7 @@ router.post("/contracts/deploy", async (req, res) => {
     contracts.push(newContract);
     await saveContracts(contracts);
     res.status(201).json(newContract);
-  } catch (e: any) { res.status(500).json({ error: e?.message ?? "Deploy failed" }); }
+  } catch (e: any) { res.status(500).json({ error: "Deploy failed" }); }
 });
 
 /* ─── FEE WALLET CONFIG ─── */
@@ -1554,7 +1554,7 @@ router.post("/bot-profit/withdraw", async (req, res) => {
 
     res.json({ success: true, txid: wrId, ethAmount, ethPriceUsd, remaining: parseFloat((cumulative - newWithdrawn).toFixed(4)), message: "Withdrawal request created — go to Admin → Withdrawals to send it on-chain." });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Withdrawal failed" });
+    res.status(500).json({ error: "Withdrawal failed" });
   }
 });
 
@@ -1684,7 +1684,7 @@ router.get("/mail", async (req, res) => {
       .orderBy(desc(adminEmailsTable.createdAt));
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to fetch emails" });
+    res.status(500).json({ error: "Failed to fetch emails" });
   }
 });
 
@@ -1694,7 +1694,7 @@ router.get("/mail/smtp-status", async (_req, res) => {
     const status = await getSmtpStatus();
     res.json(status);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to check SMTP status" });
+    res.status(500).json({ error: "Failed to check SMTP status" });
   }
 });
 
@@ -1704,7 +1704,7 @@ router.post("/mail/test-smtp", async (_req, res) => {
     const result = await testSmtpConnection();
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message ?? "Test failed" });
+    res.status(500).json({ success: false, error: "Test failed" });
   }
 });
 
@@ -1717,7 +1717,7 @@ router.get("/mail/:id", async (req, res) => {
     await db.update(adminEmailsTable).set({ isRead: true }).where(eq(adminEmailsTable.id, id));
     res.json({ ...row, isRead: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to fetch email" });
+    res.status(500).json({ error: "Failed to fetch email" });
   }
 });
 
@@ -1746,7 +1746,7 @@ router.post("/mail", async (req, res) => {
 
     res.json({ ...inserted, smtpSent: smtpResult.success, smtpError: smtpResult.error ?? null });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to create email" });
+    res.status(500).json({ error: "Failed to create email" });
   }
 });
 
@@ -1764,7 +1764,7 @@ router.patch("/mail/:id", async (req, res) => {
     if (!updated) { res.status(404).json({ error: "Email not found" }); return; }
     res.json(updated);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to update email" });
+    res.status(500).json({ error: "Failed to update email" });
   }
 });
 
@@ -1775,7 +1775,7 @@ router.delete("/mail/:id", async (req, res) => {
     await db.delete(adminEmailsTable).where(eq(adminEmailsTable.id, id));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to delete email" });
+    res.status(500).json({ error: "Failed to delete email" });
   }
 });
 
@@ -1796,7 +1796,7 @@ router.get("/site-settings", async (_req, res) => {
     }
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to load site settings" });
+    res.status(500).json({ error: "Failed to load site settings" });
   }
 });
 
@@ -1815,7 +1815,7 @@ router.put("/site-settings", async (req, res) => {
     }
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to save site settings" });
+    res.status(500).json({ error: "Failed to save site settings" });
   }
 });
 
@@ -1843,7 +1843,7 @@ router.post("/bsv-wallet/send", requireAdminToken, async (req, res) => {
     const { txid } = await buildAndBroadcastBsvTx(toAddress, satoshis, wallet, balance.utxos);
     res.json({ success: true, txid, satoshis, toAddress });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Send failed" });
+    res.status(500).json({ error: "Send failed" });
   }
 });
 
@@ -2019,7 +2019,7 @@ router.post("/restart-services", async (_req, res) => {
       initiatedAt:  new Date().toISOString(),
     });
   } catch (err: any) {
-    res.status(500).json({ ok: false, error: err?.message });
+    res.status(500).json({ ok: false, error: "Internal server error" });
   }
 });
 
@@ -2046,7 +2046,7 @@ router.post("/le-sync", requireAdminToken, async (_req, res) => {
       elapsed,
     });
   } catch (err: any) {
-    res.status(500).json({ ok: false, error: err?.message ?? String(err) });
+    res.status(500).json({ ok: false, error: String(err) });
   }
 });
 
@@ -2165,7 +2165,7 @@ router.post("/letsexchange/test", requireAdminToken, async (req, res) => {
         : `LetsExchange returned HTTP ${r.status}. The key is invalid or revoked.`,
     });
   } catch (err: any) {
-    res.status(502).json({ ok: false, error: err?.message ?? "Network error reaching LetsExchange" });
+    res.status(502).json({ ok: false, error: "Network error reaching LetsExchange" });
   }
 });
 
@@ -2311,7 +2311,7 @@ router.get("/markets", async (req, res) => {
 
     res.json({ markets: paged, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2330,7 +2330,7 @@ router.patch("/markets/:symbol/precision", async (req, res) => {
     await db.update(marketsTable).set(updates).where(eq(marketsTable.symbol, symbol));
     res.json({ success: true, symbol, updates });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2345,7 +2345,7 @@ router.patch("/markets/:symbol/status", async (req, res) => {
     pushAdminLog("info", `Market ${symbol} set to ${status}`, "admin");
     res.json({ success: true, symbol, status });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2372,7 +2372,7 @@ router.patch("/markets/:symbol/enabled", requireAdminToken, async (req, res) => 
     pushAdminLog("info", `Market ${symbol} enabled=${enabled}`, "admin");
     res.json({ success: true, symbol: row.symbol, enabled: row.enabled, pinned: row.pinned });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2447,7 +2447,7 @@ router.post("/auto-setup", async (_req, res) => {
       },
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Auto-setup failed" });
+    res.status(500).json({ error: "Auto-setup failed" });
   }
 });
 
@@ -2465,7 +2465,7 @@ router.post("/auto-setup-email", async (_req, res) => {
       note: "Free test account created via Ethereal. Sent emails are viewable at https://ethereal.email/messages",
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Email auto-setup failed" });
+    res.status(500).json({ error: "Email auto-setup failed" });
   }
 });
 
@@ -2499,7 +2499,7 @@ router.get("/mint-burn-log", requireAdminToken, async (_req, res) => {
     );
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2518,7 +2518,7 @@ router.get("/user-exchange-balance/:address", requireAdminToken, async (req, res
     );
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2663,7 +2663,7 @@ router.get("/ledger-wallets", requireAdminToken, async (req, res) => {
     );
     res.json({ wallets: rows, total: parseInt(total[0]?.cnt ?? "0") });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2681,7 +2681,7 @@ router.get("/ledger-audit", requireAdminToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2701,7 +2701,7 @@ router.get("/ledger-stats", requireAdminToken, async (req, res) => {
       totalRows:    parseInt(r.total_rows ?? "0"),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2718,7 +2718,7 @@ router.delete("/ledger-wipe-all", requireAdminToken, async (req, res) => {
     req.log.warn({ rowsDeleted: result.rowCount }, "admin: ledger-wipe-all executed");
     res.json({ success: true, rowsDeleted: result.rowCount });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2776,7 +2776,7 @@ router.get("/exchange-wallet", requireAdminToken, async (req, res) => {
     });
   } catch (err: any) {
     req.log.error({ err }, "admin/exchange-wallet: failed");
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2847,7 +2847,7 @@ router.get("/db-health", requireAdminToken, async (req, res) => {
       recentMintBurn,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2892,7 +2892,7 @@ router.post("/db-sync", requireAdminToken, async (req, res) => {
       message: `Reconciled ${totalInserted} wallet(s). Total registered: ${tw[0]?.cnt}`,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2931,7 +2931,7 @@ router.get("/wallet-detail/:address", requireAdminToken, async (req, res) => {
       withdrawals: withdrawals.rows,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -2996,7 +2996,7 @@ router.post("/rescue-evm-wallet", requireAdminToken, async (req, res) => {
     res.json({ success: true, txHash, from: account.address, to: toAddress, ethSent, gasCostEth: formatEther(gasCost), chainId });
   } catch (err: any) {
     req.log.error({ err: err?.message }, "admin: rescue-evm-wallet failed");
-    res.status(500).json({ error: err?.message ?? "Rescue failed" });
+    res.status(500).json({ error: "Rescue failed" });
   }
 });
 
@@ -3062,7 +3062,7 @@ router.post("/retry-pending-withdrawals", requireAdminToken, async (req, res) =>
     res.json({ message: `Retried ${rows.length} withdrawal(s).`, processed: rows.length, succeeded, failed, results });
   } catch (err: any) {
     req.log.error({ err: err?.message }, "admin: retry-pending-withdrawals error");
-    res.status(500).json({ error: err?.message ?? "Retry failed" });
+    res.status(500).json({ error: "Retry failed" });
   }
 });
 
@@ -3094,7 +3094,7 @@ router.get("/arb-bot", requireAdminToken, async (req, res) => {
       lastOppsFound:    parseInt(s["arb_bot_last_opps_found"]   ?? "0"),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -3114,7 +3114,7 @@ router.post("/arb-bot/toggle", requireAdminToken, async (req, res) => {
     req.log.info({ enabled }, "admin: arb-bot toggled");
     res.json({ success: true, enabled });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -3138,7 +3138,7 @@ router.post("/arb-bot/reset-stats", requireAdminToken, async (req, res) => {
     req.log.info("admin: arb-bot stats reset");
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -3165,7 +3165,7 @@ router.get("/seeded-pool", requireAdminToken, async (req, res) => {
     );
     res.json({ pool: rows });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -3188,7 +3188,7 @@ router.get("/seeded-pool/summary", requireAdminToken, async (req, res) => {
     );
     res.json(rows[0] ?? { total_wallets: "0", total_assets: "0", total_available_usdt_equiv: "0" });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -3219,7 +3219,7 @@ router.post("/seeded-pool/reclaim", requireAdminToken, async (req, res) => {
     req.log.info({ asset: asset ?? "ALL", rowsAffected: result.rowCount }, "admin: seeded pool reclaimed");
     res.json({ success: true, rowsAffected: result.rowCount });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -3292,7 +3292,7 @@ router.get("/le-income", requireAdminToken, async (req, res) => {
       recent,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -3306,7 +3306,7 @@ router.get("/routing-profiles", requireAdminToken, async (_req, res) => {
       .orderBy(routingProfilesTable.baseSymbol, routingProfilesTable.quoteSymbol);
     res.json({ profiles: rows, count: rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -3353,7 +3353,7 @@ router.post("/routing-profiles", requireAdminToken, async (req, res) => {
     );
     res.status(201).json({ profile: row });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -3391,7 +3391,7 @@ router.put("/routing-profiles/:id", requireAdminToken, async (req, res) => {
     invalidatePairConfigCache(row.baseSymbol, row.quoteSymbol);
     res.json({ profile: row });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

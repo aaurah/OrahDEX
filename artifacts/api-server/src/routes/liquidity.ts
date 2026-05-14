@@ -123,7 +123,7 @@ router.post("/liquidity", async (req, res) => {
     amountA = asAmount(body.amountA, "amountA");
     amountB = asAmount(body.amountB, "amountB");
   } catch (err: any) {
-    res.status(400).json({ error: err?.message ?? "Invalid input" });
+    res.status(400).json({ error: "Invalid input" });
     return;
   }
   if (assetA === assetB) {
@@ -164,7 +164,7 @@ router.post("/liquidity", async (req, res) => {
         try {
           verifyLiquiditySignature({ walletAddress, nonce, signature, action: "add", poolId });
         } catch (err: any) {
-          res.status(401).json({ error: err?.message ?? "Invalid signature" });
+          res.status(401).json({ error: "Invalid signature" });
           return;
         }
       }
@@ -174,7 +174,7 @@ router.post("/liquidity", async (req, res) => {
       try {
         verifyLiquiditySignature({ walletAddress, nonce, signature, action: "add", poolId });
       } catch (err: any) {
-        res.status(401).json({ error: err?.message ?? "Invalid signature" });
+        res.status(401).json({ error: "Invalid signature" });
         return;
       }
     } else if (signature) {
@@ -183,7 +183,7 @@ router.post("/liquidity", async (req, res) => {
       try {
         verifyLiquiditySignature({ walletAddress, nonce, signature, action: "add", poolId });
       } catch (err: any) {
-        res.status(401).json({ error: err?.message ?? "Invalid signature" });
+        res.status(401).json({ error: "Invalid signature" });
         return;
       }
     }
@@ -276,7 +276,7 @@ router.delete("/liquidity/:positionId", async (req, res) => {
           walletAddress, nonce, signature, action: "remove", poolId: resolvedPool,
         });
       } catch (err: any) {
-        res.status(401).json({ error: err?.message ?? "Invalid signature" });
+        res.status(401).json({ error: "Invalid signature" });
         return;
       }
     }

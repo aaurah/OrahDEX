@@ -152,7 +152,7 @@ router.post("/keeper/register", async (req, res) => {
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "POST /keeper/register failed");
-    res.status(500).json({ error: err?.message ?? "Registration failed" });
+    res.status(500).json({ error: "Registration failed" });
   }
 });
 
@@ -199,7 +199,7 @@ router.get("/keeper/relayer-events", async (req, res) => {
     });
   } catch (err: any) {
     logger.error({ err }, "keeper/relayer-events: fetch failed");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch relayer events" });
+    res.status(500).json({ error: "Failed to fetch relayer events" });
   }
 });
 
@@ -266,7 +266,7 @@ router.get("/keeper/:address", async (req, res) => {
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "GET /keeper/:address failed");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch Keeper" });
+    res.status(500).json({ error: "Failed to fetch Keeper" });
   }
 });
 
@@ -306,7 +306,7 @@ router.get("/keepers", async (req, res) => {
     res.json({ keepers: result, total: result.length });
   } catch (err: any) {
     logger.error({ err: err?.message }, "GET /keepers failed");
-    res.status(500).json({ error: err?.message ?? "Failed to list Keepers" });
+    res.status(500).json({ error: "Failed to list Keepers" });
   }
 });
 
@@ -323,7 +323,7 @@ router.delete("/keeper/:address", requireAdminToken, async (req, res) => {
     res.json({ success: true, walletAddress: addr, active: false });
   } catch (err: any) {
     logger.error({ err: err?.message }, "DELETE /keeper/:address failed");
-    res.status(500).json({ error: err?.message ?? "Deactivation failed" });
+    res.status(500).json({ error: "Deactivation failed" });
   }
 });
 
@@ -347,7 +347,7 @@ router.get("/keeper/:address/roles", async (req, res) => {
       isOracleKeeper:    roles.includes("OracleKeeper"),
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to fetch roles" });
+    res.status(500).json({ error: "Failed to fetch roles" });
   }
 });
 
@@ -379,7 +379,7 @@ router.get("/keeper/:address/earnings", async (req, res) => {
       recentEarnings:   rows,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to fetch earnings" });
+    res.status(500).json({ error: "Failed to fetch earnings" });
   }
 });
 
@@ -397,7 +397,7 @@ router.get("/keeper/:address/reputation", async (req, res) => {
     res.json(reputation);
   } catch (err: any) {
     logger.error({ err }, "keeper/reputation: computation failed");
-    res.status(500).json({ error: err?.message ?? "Failed to compute reputation" });
+    res.status(500).json({ error: "Failed to compute reputation" });
   }
 });
 
@@ -426,7 +426,7 @@ router.get("/keeper/:address/actions", async (req, res) => {
       actions,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to fetch keeper actions" });
+    res.status(500).json({ error: "Failed to fetch keeper actions" });
   }
 });
 

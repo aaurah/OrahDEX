@@ -28,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { CoinLogo } from "@/components/CoinLogo";
 import { ALL_SPOT_MOCK } from "@/lib/mock-data";
-import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData, erc20Abi, maxUint256 } from "viem";
+import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData, erc20Abi } from "viem";
 import type { Account } from "viem";
 import { writeContract as coreWriteContract, signMessage } from "@wagmi/core";
 import { getWagmiConfig, CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS } from "@/lib/reown";
@@ -419,7 +419,7 @@ async function executeSwapWithLocalAccount(
         address: fromToken.address,
         abi: erc20Abi,
         functionName: "approve",
-        args: [routerAddr, maxUint256],
+        args: [routerAddr, amountIn], // exact amount — never grant unlimited allowance
         chain: chain as Parameters<typeof createWalletClient>[0]["chain"],
       });
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
