@@ -15,10 +15,13 @@
 import { logger } from "./logger.js";
 
 const CN_BASE = "https://api.changenow.io/v2";
-const API_KEY = process.env.CHANGENOW_API_KEY ?? "";
+
+function getApiKey(): string {
+  return process.env.CHANGENOW_API_KEY ?? "";
+}
 
 export function isChangeNowConfigured(): boolean {
-  return API_KEY.length > 0;
+  return getApiKey().length > 0;
 }
 
 async function cnRequest(
@@ -27,7 +30,8 @@ async function cnRequest(
   body?: unknown,
   params?: Record<string, string | number>,
 ): Promise<{ ok: boolean; status: number; data: unknown }> {
-  if (!API_KEY) {
+  const apiKey = getApiKey();
+  if (!apiKey) {
     return { ok: false, status: 0, data: { error: "CHANGENOW_API_KEY not configured" } };
   }
 
@@ -49,7 +53,7 @@ async function cnRequest(
       method,
       headers: {
         "Content-Type":        "application/json",
-        "x-changenow-api-key": API_KEY,
+        "x-changenow-api-key": apiKey,
       },
       body: method === "POST" && body !== undefined ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(8000),
