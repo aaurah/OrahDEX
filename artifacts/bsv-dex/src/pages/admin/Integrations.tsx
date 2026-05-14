@@ -37,6 +37,7 @@ interface IntegrationSettings {
   telegram_bot_token: string;
   telegram_chat_id: string;
   letsexchange_api_key: string;
+  changenow_api_key: string;
   sumsub_api_key: string;
 }
 
@@ -64,6 +65,7 @@ const DEFAULTS: IntegrationSettings = {
   telegram_bot_token: "",
   telegram_chat_id: "",
   letsexchange_api_key: "",
+  changenow_api_key: "",
   sumsub_api_key: "",
 };
 
@@ -873,6 +875,29 @@ export function AdminIntegrations() {
         setKey={set("letsexchange_api_key")}
         configuredCount={countSet("letsexchange_api_key")}
       />
+
+      {/* ── Cross-chain Swaps — ChangeNOW ── */}
+      <Section
+        icon={<Zap className="w-4 h-4" />}
+        title="Cross-chain Swaps — ChangeNOW"
+        description="Powers the Cross-chain Swap venue alongside LetsExchange. Adds ChangeNOW as a competing quote source — the meta-router automatically picks whichever venue gives users the best rate."
+        badge="Recommended"
+        badgeColor="bg-green-400/10 text-green-400 border-green-400/20"
+        configuredCount={countSet("changenow_api_key")}
+        totalCount={1}
+      >
+        <MaskedField
+          label="ChangeNOW API Key"
+          value={form.changenow_api_key}
+          onChange={set("changenow_api_key")}
+          placeholder="your-changenow-api-key"
+          hint="Get your API key from changenow.io → API → My API Keys. Free tier supports live quotes and swap creation."
+        />
+        <div className="p-3 bg-green-400/5 border border-green-400/15 rounded-xl text-xs text-green-300 space-y-1">
+          <p className="font-semibold">Once saved, ChangeNOW competes with StealthEX and SimpleSwap on every cross-chain swap quote. Users automatically get the best rate.</p>
+          <p className="text-green-300/70">No restart required — the key is picked up within 60 seconds.</p>
+        </div>
+      </Section>
 
       {/* ── KYC / AML ── */}
 

@@ -209,7 +209,7 @@ async function quoteChangeNow(
   to:     string,
   amount: number,
 ): Promise<{ quote: RouteQuote | null; error: string | null }> {
-  if (!isChangeNowConfigured()) {
+  if (!(await isChangeNowConfigured())) {
     return { quote: null, error: "CHANGENOW_API_KEY not configured" };
   }
 

@@ -13,15 +13,44 @@
  */
 
 import { logger } from "./logger.js";
+import { db } from "@workspace/db";
+import { platformSettingsTable } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
 
 const CN_BASE = "https://api.changenow.io/v2";
 
-function getApiKey(): string {
-  return process.env.CHANGENOW_API_KEY ?? "";
+/* ── API key resolution: env var → DB (with 60s cache) ─────────────────────
+   Secrets added mid-session may not reach process.env until container
+   restart, so we also check platform_settings.changenow_api_key at runtime. */
+let _cachedKey: string | null = null;
+let _cacheExpiry = 0;
+
+async function getApiKey(): Promise<string> {
+  const envKey = process.env.CHANGENOW_API_KEY ?? "";
+  if (envKey) return envKey;
+
+  const now = Date.now();
+  if (_cachedKey !== null && now < _cacheExpiry) return _cachedKey;
+
+  try {
+    const rows = await db.select()
+      .from(platformSettingsTable)
+      .where(eq(platformSettingsTable.key, "changenow_api_key"));
+    _cachedKey  = rows[0]?.value ?? "";
+    _cacheExpiry = now + 60_000;
+    return _cachedKey;
+  } catch {
+    return "";
+  }
 }
 
-export function isChangeNowConfigured(): boolean {
-  return getApiKey().length > 0;
+export async function isChangeNowConfigured(): Promise<boolean> {
+  return (await getApiKey()).length > 0;
+}
+
+export function invalidateCnKeyCache(): void {
+  _cachedKey = null;
+  _cacheExpiry = 0;
 }
 
 async function cnRequest(
@@ -30,7 +59,7 @@ async function cnRequest(
   body?: unknown,
   params?: Record<string, string | number>,
 ): Promise<{ ok: boolean; status: number; data: unknown }> {
-  const apiKey = getApiKey();
+  const apiKey = await getApiKey();
   if (!apiKey) {
     return { ok: false, status: 0, data: { error: "CHANGENOW_API_KEY not configured" } };
   }
