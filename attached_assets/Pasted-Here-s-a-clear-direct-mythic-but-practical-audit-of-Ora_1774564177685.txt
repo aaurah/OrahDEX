@@ -1,14 +1,14 @@
-Here’s a clear, direct, mythic‑but‑practical audit of OrahDEXdex.org based on the live content I fetched and the latest indexed information.
-I’ll give you exact problems, not generic feedback — so you can tighten the site into a sovereign front gate worthy of Orah.
+Here’s a clear, direct, mythic‑but‑practical audit of Orahdex.org based on the live content I fetched and the latest indexed information.
+I’ll give you exact problems, not generic feedback — so you can tighten the site into a sovereign front gate worthy of OrahDex.
 
 ---
 
-⚠️ Critical Problems on OrahDEXdex.org
+⚠️ Critical Problems on Orahdex.org
 
 (Based on fetched page content and fresh search results)
-orah.org +1
+orahdex.org +1
 
-❌ 1. Brand Identity Conflict — The Site Is Not Orah
+❌ 1. Brand Identity Conflict — The Site Is Not OrahDex
 
 The live page describes:
 
@@ -20,7 +20,7 @@ The live page describes:
 • BSV settlement
 
 
-This reads like a generic multi‑chain DEX, not the mythic, Keeper‑driven Orah you are building.
+This reads like a generic multi‑chain DEX, not the mythic, Keeper‑driven OrahDex you are building.
 
 There is zero mention of:
 
@@ -34,7 +34,7 @@ There is zero mention of:
 
 
 This is the biggest mismatch.
-Right now, OrahDEXdex.org looks like a normal exchange, not a sovereign mythic DEX.
+Right now, Orahdex.org looks like a normal exchange, not a sovereign mythic DEX.
 
 ---
 
@@ -48,7 +48,7 @@ The site has:
 • No dark sovereign aesthetic
 
 
-It visually communicates nothing about Orah’s mythic identity.
+It visually communicates nothing about OrahDex’s mythic identity.
 
 ---
 
@@ -76,7 +76,7 @@ Your DEX is:
 
 
 But the site only says “multi‑chain DEX” with no architecture explanation.
-This removes the sovereign engineering clarity that defines Orah.
+This removes the sovereign engineering clarity that defines OrahDex.
 
 ---
 
@@ -89,7 +89,7 @@ The site uses generic exchange language:
 • “226+ markets”
 
 
-This is not Orah.
+This is not OrahDex.
 Your brand is ceremonial, sovereign, identity‑anchored.
 The site currently feels like a template.
 
@@ -126,9 +126,9 @@ None of this exists on the site.
 
 ❌ 8. SEO + Messaging Mismatch
 
-Search engines currently index OrahDEXdex.org as a generic DEX.
+Search engines currently index Orahdex.org as a generic DEX.
 This dilutes your mythic positioning and confuses new visitors.
-orah.org
+orahdex.org
 
 ---
 

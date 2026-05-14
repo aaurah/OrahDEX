@@ -21,6 +21,33 @@ import { logger } from "../lib/logger.js";
 
 const router = Router();
 
+// ── Internal token guard for session creation ──────────────────────────────────
+// POST /session is called only by the internal orders route — it must never be
+// reachable without a valid INTERNAL_API_TOKEN to prevent arbitrary session
+// creation by external callers.
+const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN ?? "";
+
+function requireInternalToken(
+  req: import("express").Request,
+  res: import("express").Response,
+  next: import("express").NextFunction,
+): void {
+  if (!INTERNAL_API_TOKEN) {
+    // No token configured — this endpoint is inaccessible from the outside in
+    // production (should be behind an internal network), so log the warning and
+    // block to fail closed.
+    logger.warn("POST /settlement/evm/session rejected: INTERNAL_API_TOKEN not set");
+    res.status(503).json({ error: "EVM session creation is not available (INTERNAL_API_TOKEN not configured)." });
+    return;
+  }
+  const provided = req.headers["x-internal-token"] ?? req.headers["authorization"]?.replace(/^Bearer\s+/i, "");
+  if (provided !== INTERNAL_API_TOKEN) {
+    res.status(401).json({ error: "Unauthorized: invalid or missing internal token" });
+    return;
+  }
+  next();
+}
+
 // ── GET /api/settlement/evm/chains ────────────────────────────────────────────
 
 router.get("/chains", (_req, res) => {
@@ -39,7 +66,7 @@ router.get("/chains", (_req, res) => {
 
 // ── POST /api/settlement/evm/session ──────────────────────────────────────────
 
-router.post("/session", async (req, res) => {
+router.post("/session", requireInternalToken, async (req, res) => {
   try {
     const body = req.body as Partial<EvmHtlcSessionParams>;
 
@@ -74,7 +101,7 @@ router.post("/session", async (req, res) => {
     res.status(201).json({ session });
   } catch (err: any) {
     logger.error({ err: err?.message }, "evmSettlement: failed to create session");
-    res.status(500).json({ error: err?.message ?? "Failed to create EVM HTLC session" });
+    res.status(500).json({ error: "Failed to create EVM HTLC session" });
   }
 });
 
@@ -90,7 +117,7 @@ router.get("/session/:id", async (req, res) => {
     res.json({ session });
   } catch (err: any) {
     logger.error({ err: err?.message }, "evmSettlement: session lookup failed");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch session" });
+    res.status(500).json({ error: "Failed to fetch session" });
   }
 });
 
@@ -106,7 +133,7 @@ router.get("/trade/:tradeId", async (req, res) => {
     res.json({ session });
   } catch (err: any) {
     logger.error({ err: err?.message }, "evmSettlement: trade session lookup failed");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch session" });
+    res.status(500).json({ error: "Failed to fetch session" });
   }
 });
 
@@ -144,7 +171,7 @@ router.post("/confirm-lock", async (req, res) => {
     res.json({ success: true, status: result.status });
   } catch (err: any) {
     logger.error({ err: err?.message }, "evmSettlement: lock confirmation failed");
-    res.status(500).json({ error: err?.message ?? "Failed to confirm lock" });
+    res.status(500).json({ error: "Failed to confirm lock" });
   }
 });
 

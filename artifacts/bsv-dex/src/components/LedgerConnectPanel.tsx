@@ -26,12 +26,11 @@ const STEPS = [
 function shortAddr(addr: string) { return `${addr.slice(0, 8)}…${addr.slice(-6)}`; }
 
 export function LedgerConnectPanel({ onConnected }: LedgerConnectPanelProps) {
-  const [status,       setStatus]       = useState<LedgerStatus>("idle");
-  const [error,        setError]        = useState<string | null>(null);
-  const [accounts,     setAccounts]     = useState<LedgerAccount[]>([]);
-  const [session,      setSession]      = useState<LedgerSession | null>(null);
-  const [showMore,     setShowMore]     = useState(false);
-  const [loadingMore,  setLoadingMore]  = useState(false);
+  const [status,   setStatus]   = useState<LedgerStatus>("idle");
+  const [error,    setError]    = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
+  const [session,  setSession]  = useState<LedgerSession | null>(null);
+  const [showMore, setShowMore] = useState(false);
 
   const webHIDSupported = isWebHIDSupported();
 
@@ -60,7 +59,6 @@ export function LedgerConnectPanel({ onConnected }: LedgerConnectPanelProps) {
   // ── load more accounts ─────────────────────────────────────────────────────
   const loadMore = useCallback(async () => {
     if (!session) return;
-    setLoadingMore(true);
     setStatus("deriving");
     try {
       const more = await deriveAccounts(session.eth, LEDGER_PATHS.slice(5));
@@ -73,8 +71,6 @@ export function LedgerConnectPanel({ onConnected }: LedgerConnectPanelProps) {
     } catch (err) {
       setError(ledgerErrMsg(err));
       setStatus("error");
-    } finally {
-      setLoadingMore(false);
     }
   }, [session]);
 
@@ -210,7 +206,7 @@ export function LedgerConnectPanel({ onConnected }: LedgerConnectPanelProps) {
               onClick={loadMore}
               className="w-full py-2 text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 transition-colors"
             >
-              {loadingMore ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronDown className="w-3 h-3" />}
+              {(status as string) === "deriving" ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronDown className="w-3 h-3" />}
               Load more accounts (legacy paths)
             </button>
           )}
@@ -248,7 +244,7 @@ export function LedgerConnectPanel({ onConnected }: LedgerConnectPanelProps) {
       </a>
 
       <p className="text-[10px] text-center text-muted-foreground px-2 leading-relaxed">
-        Your private keys never leave the device. Orah only reads your public address.
+        Your private keys never leave the device. OrahDEX only reads your public address.
       </p>
     </div>
   );

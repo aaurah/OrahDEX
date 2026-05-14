@@ -43,7 +43,7 @@ const DEFAULT_TICKER: TickerMsg[] = [
   { id: "1", text: "BSV — World's Fastest Settlement Chain", active: true },
   { id: "2", text: "Instant On-Chain Settlement · No Bridges · No L2s", active: true },
   { id: "3", text: "Every trade settled on BSV in seconds", active: true },
-  { id: "4", text: "Orah — Trade means DEX", active: true },
+  { id: "4", text: "OrahDEX — Trade means DEX", active: true },
 ];
 
 const DEFAULT_BANNERS: Banner[] = [
@@ -75,7 +75,7 @@ const DEFAULT_STATS = {
 };
 
 const DEFAULT_FOOTER = {
-  col1Title: "Orah",
+  col1Title: "OrahDEX",
   col1Links: "Markets\nSpot Trading\nFutures\nAMM Pools\nP2P",
   col2Title: "Company",
   col2Links: "About Us\nCareers\nBlog\nPress Kit\nPartners",
@@ -118,15 +118,15 @@ export function AdminHomeBuilder() {
   const [tab, setTab] = useState<Tab>("sections");
   const [saving, setSaving] = useState(false);
   const [sections, setSections] = useState<Section[]>(() => {
-    try { return JSON.parse(localStorage.getItem("orah_sections") ?? "null") ?? DEFAULT_SECTIONS; }
+    try { return JSON.parse(localStorage.getItem("orahdex_sections") ?? "null") ?? DEFAULT_SECTIONS; }
     catch { return DEFAULT_SECTIONS; }
   });
   const [ticker, setTicker] = useState<TickerMsg[]>(() => {
-    try { return JSON.parse(localStorage.getItem("orah_ticker") ?? "null") ?? DEFAULT_TICKER; }
+    try { return JSON.parse(localStorage.getItem("orahdex_ticker") ?? "null") ?? DEFAULT_TICKER; }
     catch { return DEFAULT_TICKER; }
   });
   const [banners, setBanners] = useState<Banner[]>(() => {
-    try { return JSON.parse(localStorage.getItem("orah_banners") ?? "null") ?? DEFAULT_BANNERS; }
+    try { return JSON.parse(localStorage.getItem("orahdex_banners") ?? "null") ?? DEFAULT_BANNERS; }
     catch { return DEFAULT_BANNERS; }
   });
   const [hero, setHero] = useState({ ...DEFAULT_HERO });
@@ -137,9 +137,9 @@ export function AdminHomeBuilder() {
   const save = async () => {
     setSaving(true);
     await new Promise(r => setTimeout(r, 400));
-    localStorage.setItem("orah_sections", JSON.stringify(sections));
-    localStorage.setItem("orah_ticker", JSON.stringify(ticker));
-    localStorage.setItem("orah_banners", JSON.stringify(banners));
+    localStorage.setItem("orahdex_sections", JSON.stringify(sections));
+    localStorage.setItem("orahdex_ticker", JSON.stringify(ticker));
+    localStorage.setItem("orahdex_banners", JSON.stringify(banners));
     setSaving(false);
     toast({ title: "Homepage saved", description: "All homepage settings have been updated." });
   };

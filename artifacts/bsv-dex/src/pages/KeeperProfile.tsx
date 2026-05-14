@@ -78,7 +78,7 @@ interface KeeperInDirectory {
 }
 
 export function KeeperProfile() {
-  useSEO({ title: "Keeper Registry — Orah" });
+  useSEO({ title: "Keeper Registry — OrahDEX" });
 
   const { address: walletAddress } = useWalletStore();
   const [registerName, setRegisterName] = useState("");
@@ -180,7 +180,7 @@ export function KeeperProfile() {
             Keeper Registry
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Identity is primitive. Keepers are the core actors of Orah.
+            Identity is primitive. Keepers are the core actors of OrahDEX.
           </p>
         </div>
         {keeper && (

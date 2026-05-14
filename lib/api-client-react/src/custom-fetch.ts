@@ -30,11 +30,10 @@ export function setBaseUrl(url: string | null): void {
     _baseUrl = null;
     return;
   }
-  let normalized = url;
-  while (normalized.length > 0 && normalized.endsWith("/")) {
-    normalized = normalized.slice(0, -1);
-  }
-  _baseUrl = normalized;
+  // Trim trailing slashes without using a regex on uncontrolled input
+  let trimmed = url;
+  while (trimmed.endsWith("/")) trimmed = trimmed.slice(0, -1);
+  _baseUrl = trimmed || null;
 }
 
 /**

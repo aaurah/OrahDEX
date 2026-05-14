@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSignMessage } from "wagmi";
-import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle } from "lucide-react";
+import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle, ShieldCheck } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
@@ -17,6 +17,13 @@ import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanReceive } from "@/lib/crossChain";
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
+import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
+import { useEscrow } from "@/hooks/useEscrow";
+import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
+import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
+import { hasEscrow, chainLabel, checkEscrowDeposit } from "@/lib/escrow";
+import { getViemAccountForAddress } from "@/lib/walletSigner";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -40,6 +47,28 @@ function relTime(ts: number) {
   return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
+function formatDateTime(value: string | Date | number) {
+  return new Date(value).toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+}
+
+function getOrderExplorerUrl(order: any): string | null {
+  if (order?.explorerUrl) return String(order.explorerUrl);
+  if (!order?.txid) return null;
+  const txid = String(order.txid);
+  // htlc-pending- is a placeholder — no on-chain txid yet
+  if (txid.startsWith("htlc-pending-")) return null;
+  return txid.startsWith("0x")
+    ? `https://etherscan.io/tx/${txid}`
+    : `https://whatsonchain.com/tx/${txid}`;
+}
+
 function getNotifPath(n: { type: string; pair?: string; href?: string }): string | null {
   if (n.href) return n.href;
   const { type, pair } = n;
@@ -50,7 +79,7 @@ function getNotifPath(n: { type: string; pair?: string; href?: string }): string
       return isFutures ? `/futures/${urlPair}` : `/trade/${urlPair}`;
     }
   }
-  if (type === "bridge") return "/bridge";
+  if (type === "bridge") return "/swap";
   if (type === "wallet_connected" || type === "wallet_disconnected") return "/portfolio";
   if (type === "withdrawal" || type === "deposit") return "/portfolio";
   if (type === "liquidity") return "/liquidity";
@@ -187,12 +216,15 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 
 function fmt(p: number) {
-  if (!p || !isFinite(p)) return "—";
+  if (!p || !isFinite(p) || p <= 0) return "—";
   if (p >= 1000)  return p.toLocaleString(undefined, { maximumFractionDigits: 2 });
   if (p >= 1)     return p.toFixed(2);
   if (p >= 0.01)  return p.toFixed(4);
   if (p >= 0.001) return p.toFixed(6);
-  return p.toFixed(8);
+  if (p >= 1e-8)  return p.toFixed(8);
+  // Sub-satoshi prices (e.g. BTT/BTC): extend decimal places to show 4 sig figs
+  const mag = -Math.floor(Math.log10(p));
+  return p.toFixed(Math.min(mag + 3, 18)).replace(/\.?0+$/, "");
 }
 function fmtVol(v: number) {
   if (!v) return "—";
@@ -202,7 +234,7 @@ function fmtVol(v: number) {
   return v.toFixed(2);
 }
 
-const INDICATORS = ["MA", "EMA", "BOLL", "KDJ"] as const;
+const INDICATORS = ["MA", "EMA", "BOLL"] as const;
 type IndicatorName = typeof INDICATORS[number];
 
 // Maps tab name → Chart sub-panel indicator (null = overlay only, no sub-chart change)
@@ -210,7 +242,6 @@ const INDICATOR_TO_SUB: Record<IndicatorName, "macd" | "rsi" | "stoch" | "cci" |
   MA:   null,    // main-chart overlay
   EMA:  null,    // main-chart overlay
   BOLL: null,    // main-chart overlay
-  KDJ:  "stoch",
 };
 const PERIODS = [
   { label: "Today", key: "today" },
@@ -251,12 +282,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
 
-  const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
+  const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress, internalXrpAddress, internalLtcAddress, internalDogeAddress, switchChain } = useWalletStore();
   const { signMessageAsync } = useSignMessage();
   const isEvm = network === "evm" || (!network && !!walletChainId);
-  const isOrahDEXWallet = provider === "orahdex-wallet";
-  const isExternalEvm = isEvm && !isOrahDEXWallet;
-  const { balances: evmTokenBalances } = useEvmBalances(isEvm ? address : null, walletChainId ?? null);
+  const isOrahWallet = provider === "orah-wallet";
+  const isExternalEvm = isEvm && !isOrahWallet;
+  // Non-custodial mode: any EVM wallet (including Orah self-custody) trades
+  // directly from its on-chain balance — no exchange deposit required.
+  // Only non-EVM Orah chains (BSV/BTC/SOL) still use the internal ledger.
+  const isSelfCustodyEvm = isEvm && !!address;
+  // Default to chainId 1 (Ethereum mainnet) when wallet hasn't reported a chain yet,
+  // matching Portfolio behavior — otherwise the balance fetch never starts and Trade
+  // shows 0 even though the wallet holds funds.
+  const { balances: evmTokenBalances, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, isEvm ? (walletChainId ?? 1) : null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -267,7 +305,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const fetchApiBalances = useCallback(async (b: string, q: string, addr: string) => {
     const fetchOne = async (asset: string) => {
       try {
-        const r = await fetch(`${BASE}/api/balances/${asset}?walletAddress=${addr}`);
+        const r = await fetch(`${BASE}/api/balances/${asset}?walletAddress=${addr}`, { cache: "no-store" });
         if (!r.ok) return { available: 0 };
         const j = await r.json();
         return { available: parseFloat(j.available ?? "0") || 0 };
@@ -278,7 +316,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     setApiBalances({ [b]: bRes.available, [q]: qRes.available });
     setApiBalancesLoading(false);
   }, []);
-  // Fetch internal exchange balance for ALL connected wallets — not just OrahDEX.
+  // Fetch internal exchange balance for ALL connected wallets — not just Orah.
   // External EVM wallets accumulate internal balance after exchange trades or
   // on-chain swap settlements. Without this, sell orders on cross-chain pairs
   // (e.g. EVM wallet selling BSV) are incorrectly blocked by the sell guard.
@@ -286,10 +324,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (!address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
   }, [address, symbol, fetchApiBalances, base, quote]);
-  // Only OrahDEX Wallet uses internal exchange ledger as the primary available balance source.
+  // Only Orah Wallet uses internal exchange ledger as the primary available balance source.
   // External wallets (EVM/BSV/BTC/SOL) use on-chain wallet balances, optionally merged with
   // internal exchange balances for assets accumulated via exchange trades.
-  const usesApiBalance = isOrahDEXWallet;
+  const usesApiBalance = isOrahWallet && !isEvm;
   // Show pending state only when the current mode depends on ledger balances.
   const balancesPending = usesApiBalance && apiBalancesLoading;
 
@@ -297,7 +335,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { prices: crossPrices } = useWalletPrices();
   const BTC_USD_RATE = crossPrices.BTC.usd || 83000;
   const BSV_USD_RATE = crossPrices.BSV.usd || 16;
-  const ETH_USD_RATE = crossPrices.ETH.usd || 1800;
+  const ETH_USD_RATE = crossPrices.ETH.usd || 2400;
   const QUOTE_TO_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
     BTC: BTC_USD_RATE, ETH: ETH_USD_RATE, BSV: BSV_USD_RATE,
@@ -316,7 +354,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     queryKey: ["orders", address],
     queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address || "")}`).then(r => r.json()),
     enabled: !!address,
-    refetchInterval: 2000,
+    refetchInterval: 5_000,
+    staleTime:       4_000,
   });
 
   // Also fetch orders placed under the alternate address (BSV ↔ EVM cross-network)
@@ -330,12 +369,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     queryKey: ["orders", altAddress],
     queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(altAddress || "")}`).then(r => r.json()),
     enabled: !!altAddress,
-    refetchInterval: 2000,
+    refetchInterval: 5_000,
+    staleTime:       4_000,
   });
 
+  const withOwnerWallet = (rows: any, fallbackWallet: string | null | undefined) => (
+    Array.isArray(rows)
+      ? rows.map((o: any) => ({ ...o, ownerWalletAddress: o.walletAddress || fallbackWallet || "" }))
+      : []
+  );
+
   const myOrders: any[] = useMemo(() => {
-    const primary = Array.isArray(myOrdersData) ? myOrdersData : [];
-    const alt     = Array.isArray(altOrdersData) ? altOrdersData : [];
+    const primary = withOwnerWallet(myOrdersData, address);
+    const alt = withOwnerWallet(altOrdersData, altAddress);
     const seen    = new Set<string>();
     return [...primary, ...alt].filter(o => {
       const key = String(o.id);
@@ -343,25 +389,49 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       seen.add(key);
       return true;
     });
-  }, [myOrdersData, altOrdersData]);
-  const openOrders = myOrders.filter(o => o.status === "open");
-  const historyOrders = myOrders.filter(o => o.status !== "open");
+  }, [myOrdersData, altOrdersData, address, altAddress]);
+  const openOrders   = myOrders.filter(o => o.status === "open"  && o.symbol === symbol);
+  const historyOrders = myOrders.filter(o => o.status !== "open" && o.symbol === symbol);
 
-  // ── Compute amounts locked in open orders for THIS market ──────────────────
+  // ── Compute amounts locked in open orders ACROSS ALL markets ──────────────
   // External wallets hold funds on-chain; the exchange cannot debit them until
-  // an order fills. We subtract open-order amounts client-side so the UI shows
-  // the real "available to place new orders" figure.
-  const lockedSellQty = openOrders
-    .filter((o: any) => o.side === "sell" && o.symbol === symbol)
+  // an order fills. We must subtract every open order that locks the same
+  // asset, not just orders on the current pair — e.g. an open BUY on APE/ETH
+  // locks ETH, and that same ETH can't be used to BUY 0G on 0G/ETH.
+  // For sells the base of each order locks; for buys the quote of each order locks.
+  const allOpenOrders = myOrders.filter((o: any) => o.status === "open");
+  const lockedSellQty = allOpenOrders
+    .filter((o: any) => o.side === "sell" && (String(o.symbol).split("/")[0] || "").toUpperCase() === base.toUpperCase())
     .reduce((sum: number, o: any) => sum + parseFloat(o.quantity ?? "0"), 0);
-  const lockedBuySpend = openOrders
-    .filter((o: any) => o.side === "buy" && o.symbol === symbol)
-    .reduce((sum: number, o: any) => sum + parseFloat(o.quantity ?? "0") * parseFloat(o.price ?? "0"), 0);
+  // lockedBuySpend is computed AFTER lastPrice (below) because market orders have
+  // price: null and need lastPrice as a fallback to compute the correct spend amount.
 
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const getOrderWalletAddress = (order: any) => (
+    String(order?.walletAddress || order?.ownerWalletAddress || "")
+  );
 
   const cancelMutation = useMutation({
     mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
+      // Step 1 (best-effort): release any on-chain escrow lock so the user
+      // gets their coins back. This prompts the wallet to sign cancel(orderId).
+      // If the order has no on-chain deposit (older orders, off-chain only),
+      // the contract reverts with "no deposit" — we swallow that and continue.
+      if (escrowAvailable) {
+        try {
+          await cancelOrderOnChain(orderId);
+        } catch (e: any) {
+          const msg = String(e?.message ?? "").toLowerCase();
+          // Only swallow "nothing to refund" errors — surface real failures
+          // (user rejection, network issue, etc) so funds aren't lost silently.
+          const isMissingDeposit =
+            msg.includes("no deposit") ||
+            msg.includes("already settled") ||
+            msg.includes("already released");
+          if (!isMissingDeposit) throw e;
+        }
+      }
+      // Step 2: tell the server to remove the order from the orderbook.
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
@@ -373,29 +443,59 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     onMutate: async ({ orderId }) => {
       setCancellingId(orderId);
       await queryClient.cancelQueries({ queryKey: ["orders", address] });
+      if (altAddress) await queryClient.cancelQueries({ queryKey: ["orders", altAddress] });
       const prev = queryClient.getQueryData(["orders", address]);
+      const prevAlt = altAddress ? queryClient.getQueryData(["orders", altAddress]) : undefined;
       queryClient.setQueryData(["orders", address], (old: any) =>
         Array.isArray(old)
           ? old.map((o: any) => String(o.id) === orderId ? { ...o, status: "cancelled", updatedAt: new Date().toISOString() } : o)
           : old
       );
-      return { prev };
+      if (altAddress) {
+        queryClient.setQueryData(["orders", altAddress], (old: any) =>
+          Array.isArray(old)
+            ? old.map((o: any) => String(o.id) === orderId ? { ...o, status: "cancelled", updatedAt: new Date().toISOString() } : o)
+            : old
+        );
+      }
+      return { prev, prevAlt };
     },
-    onError: (_err, _vars, context: any) => {
+    onError: (err: any, _vars, context: any) => {
       if (context?.prev !== undefined) {
         queryClient.setQueryData(["orders", address], context.prev);
       }
+      if (altAddress && context?.prevAlt !== undefined) {
+        queryClient.setQueryData(["orders", altAddress], context.prevAlt);
+      }
+      toast({
+        title: "Cancel failed",
+        description: String(err?.message ?? "Could not cancel order"),
+        variant: "destructive",
+      });
     },
     onSettled: () => {
       setCancellingId(null);
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
       if (usesApiBalance && address) {
+        void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
     },
   });
+  const handleCancelOrder = useCallback((order: any) => {
+    const walletAddress = getOrderWalletAddress(order);
+    if (!walletAddress) {
+      toast({
+        title: "Cancel failed",
+        description: "Order owner wallet is missing. Refresh and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+    cancelMutation.mutate({ orderId: String(order.id), walletAddress });
+  }, [cancelMutation, toast]);
 
   // ── Submission lock — prevents any multi-submit path ─────────────────────────
   // useRef is synchronous (unlike useState) so it blocks double-taps that happen
@@ -408,6 +508,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Dedup guard — prevents double banner/toast when the same fill event fires twice
   const lastProcessedTradeIdRef = useRef<string | null>(null);
 
+  // Pre-read sessionStorage once so initial state can hydrate from it.
+  const _bootLockFlow: any = (() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.sessionStorage.getItem("orahdex:lockFlow:v1");
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  })();
   const [orderResult, setOrderResult] = useState<{
     tradeId: string | null;
     matched: boolean;
@@ -419,7 +527,76 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     avgFillPrice: number;
     filledQty: number;
     fee: number;
-  } | null>(null);
+    quantity: number;
+    price: number;
+  } | null>(_bootLockFlow?.order ?? null);
+  const [escrowTx, setEscrowTx] = useState<{ txHash: string; explorerUrl: string } | null>(_bootLockFlow?.tx ?? null);
+  const { escrowAvailable, status: escrowStatus, lockOrder, cancelOrder: cancelOrderOnChain, isLoading: escrowLoading, errorMsg: escrowErrorMsg, txResult: escrowTxResult, reset: resetEscrow } = useEscrow();
+  // Lock-funds confirmation dialog (opens when user taps "Lock funds on X")
+  // ── Persistence: mobile Safari kills the tab when the user opens imToken
+  // to sign, so we save the in-flight lock state to sessionStorage and
+  // re-hydrate it when the tab reloads. After hydration we also poll the
+  // escrow contract once to detect locks that *did* complete while we were away.
+  const LOCK_FLOW_KEY = "orahdex:lockFlow:v1";
+  type LockFlowSnapshot = {
+    open:    boolean;
+    params:  { orderId: string; side: "buy" | "sell"; base: string; quote: string; quantity: number; price: number; } | null;
+    tx:      { txHash: string; explorerUrl: string } | null;
+    order:   any | null;  // orderResult, so the open-order card stays visible
+  };
+  const initialLockFlow: LockFlowSnapshot | null = (() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.sessionStorage.getItem(LOCK_FLOW_KEY);
+      return raw ? (JSON.parse(raw) as LockFlowSnapshot) : null;
+    } catch { return null; }
+  })();
+  const [lockDialogOpen, setLockDialogOpen]   = useState<boolean>(initialLockFlow?.open ?? false);
+  const [pendingLockParams, setPendingLockParams] = useState<{
+    orderId: string; side: "buy" | "sell"; base: string; quote: string;
+    quantity: number; price: number;
+  } | null>(initialLockFlow?.params ?? null);
+
+  // ── Persist lock-flow snapshot to sessionStorage on every change ──────────
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const snap: LockFlowSnapshot = {
+      open:   lockDialogOpen,
+      params: pendingLockParams,
+      tx:     escrowTx,
+      order:  orderResult,
+    };
+    // Only persist while a lock flow is "live" — otherwise clear it so we
+    // don't re-open the dialog on the next visit.
+    const isLive = lockDialogOpen || !!escrowTx || (!!pendingLockParams && !!orderResult && !orderResult.matched);
+    if (isLive) {
+      try { window.sessionStorage.setItem(LOCK_FLOW_KEY, JSON.stringify(snap)); } catch {}
+    } else {
+      try { window.sessionStorage.removeItem(LOCK_FLOW_KEY); } catch {}
+    }
+  }, [lockDialogOpen, pendingLockParams, escrowTx, orderResult]);
+
+  // ── On mount: if we restored a pending lock, check on-chain whether the
+  // tx already completed while the tab was backgrounded. If so, jump straight
+  // to "success" so the user sees their funds locked instead of the confirm
+  // screen offering to re-lock (which would revert with "already locked").
+  useEffect(() => {
+    if (!pendingLockParams || escrowTx || !walletChainId) return;
+    let cancelled = false;
+    (async () => {
+      const dep = await checkEscrowDeposit(pendingLockParams.orderId, walletChainId);
+      if (cancelled || !dep || dep.released) return;
+      setEscrowTx({
+        txHash: "",  // unknown — but the contract confirms funds are sitting in escrow
+        explorerUrl: `https://etherscan.io/address/0xeE234cEb85697b64800E696699b7841e00413B4f`,
+      });
+      // Refresh on-chain balances so the deduction shows immediately
+      setTimeout(() => { refreshEvmBalances(); }, 500);
+    })();
+    return () => { cancelled = true; };
+  // intentionally only on mount + when chainId resolves
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletChainId]);
 
   const [orderError, setOrderError] = useState<{ message: string; code?: string } | null>(null);
 
@@ -475,15 +652,39 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
 
+      setEscrowTx(null);
       setOrderResult({
         tradeId, matched, txid, explorerUrl,
         side: ordSide, base: ordBase, quoteSymbol: ordQuote, avgFillPrice, filledQty, fee,
+        quantity: Number(ordQtyDisplay) || 0,
+        price:    Number(ordPriceDisplay) || 0,
       });
       setAmount("");
+
+      // ── Auto-open the lock-funds confirmation popup the moment the order
+      // is placed — so the user sees the popup directly after tapping
+      // Buy/Sell instead of having to find a separate "Lock funds on ETH"
+      // button. Only open for unmatched (open) orders on a chain where
+      // escrow is deployed, and only when self-custody escrow is available.
+      if (!matched && tradeId && escrowAvailable && hasEscrow(walletChainId ?? 0)) {
+        const usePrice = Number(ordPriceDisplay) > 0 ? Number(ordPriceDisplay) : lastPrice;
+        setPendingLockParams({
+          orderId:  tradeId,
+          side:     ordSide as "buy" | "sell",
+          base:     ordBase,
+          quote:    ordQuote,
+          quantity: Number(ordQtyDisplay) || 0,
+          price:    usePrice,
+        });
+        resetEscrow();
+        setLockDialogOpen(true);
+      }
+
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
-      queryClient.invalidateQueries({ queryKey: ["portfolio-orders", address] });
+      if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
+      queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
       if (usesApiBalance && address) {
-        fetchApiBalances(base, quote, address);
+        void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
       setTimeout(() => setOrderResult(null), 10000);
@@ -504,12 +705,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
         toast({
           title: `✅ ${ordSide === "sell" ? "Sell" : "Buy"} Order Filled!`,
-          description: `+${receivedQty} ${receivedTok} credited to your Orah balance`,
+          description: isEvm
+            ? `+${receivedQty} ${receivedTok} settled on-chain to your wallet`
+            : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
         });
         addNotification({
           type: "order_filled",
           title: `${ordSide === "sell" ? "SELL" : "BUY"} Order Filled ✓`,
-          body: `+${receivedQty} ${receivedTok} credited to your Orah balance · withdraw anytime`,
+          body: isEvm
+            ? `+${receivedQty} ${receivedTok} settled on-chain to your wallet`
+            : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance · withdraw anytime`,
           pair: symbol,
           side: ordSide as "buy" | "sell",
           txid: txid ?? undefined,
@@ -544,11 +749,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       const code = err?.code;
       setOrderError({ message: msg, code });
       toast({
-        title:       "Order Failed",
-        description: code === "DEPOSIT_REQUIRED"
+        title:       code === "NO_LIQUIDITY" ? "No Liquidity" : "Order Failed",
+        description: code === "NO_LIQUIDITY"
+          ? "No matching sellers found. Place a limit order to set your price instead."
+          : code === "DEPOSIT_REQUIRED"
           ? (usesApiBalance
-            ? "Deposit funds to your Orah trading balance before trading."
-            : "Deposit funds to your wallet before trading.")
+            ? "Deposit funds to your OrahDEX trading balance before trading."
+            : isSelfCustodyEvm
+              ? "Insufficient on-chain balance. Add funds to your wallet before trading."
+              : "Deposit funds to your wallet before trading.")
           : code === "INSUFFICIENT_FUNDS"
           ? (usesApiBalance
             ? "Insufficient balance. Check your trading balance."
@@ -559,21 +768,26 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     },
   });
 
-  const [interval, setInterval] = useState<string>("1h");
+  const [interval, setInterval] = useState<string>(() => {
+    const saved = localStorage.getItem('orahdex-mobile-interval');
+    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y','All'];
+    return saved && valid.includes(saved) ? saved : "1h";
+  });
   const [activeIndicator, setActiveIndicator] = useState<IndicatorName | null>(null);
   const [bottomTab, setBottomTab] = useState<BottomTab>("orderbook");
   const [starred, setStarred] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const headerUnread = useNotificationStore((s) => s.notifications.filter(n => !n.read).length);
   const [shareToastVisible, setShareToastVisible] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [side, setSide] = useState<Side>("buy");
 
   const handleShare = async () => {
     const url = `${window.location.origin}${import.meta.env.BASE_URL}trade/${rawSymbol}`;
-    const text = `Trade ${symbol} on Orah — Trade means DEX`;
+    const text = `Trade ${symbol} on OrahDEX — Trade means DEX`;
     if (navigator.share) {
-      try { await navigator.share({ title: `Orah — ${symbol}`, text, url }); } catch {}
+      try { await navigator.share({ title: `OrahDEX — ${symbol}`, text, url }); } catch {}
       setShareCopied(false);
     } else {
       try { await navigator.clipboard.writeText(url); } catch {}
@@ -602,15 +816,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isMobileBtcChain = baseChain === "bitcoin";
   const hasMobileInternalBtc = !!internalBtcAddress && network === "evm";
   const mobileBtcHandled = isMobileBtcChain && hasMobileInternalBtc;
-  const isMobileSolChain = baseChain === "solana";
-  const hasMobileInternalSol = !!internalSolAddress && network === "evm";
-  const mobileSolHandled = isMobileSolChain && hasMobileInternalSol;
+  const isMobileSolChain  = baseChain === "solana";
+  const hasMobileInternalSol  = !!internalSolAddress  && network === "evm";
+  const mobileSolHandled  = isMobileSolChain  && hasMobileInternalSol;
+  const isMobileXrpChain  = baseChain === "ripple";
+  const hasMobileInternalXrp  = !!internalXrpAddress  && network === "evm";
+  const mobileXrpHandled  = isMobileXrpChain  && hasMobileInternalXrp;
+  const isMobileLtcChain  = baseChain === "litecoin";
+  const hasMobileInternalLtc  = !!internalLtcAddress  && network === "evm";
+  const mobileLtcHandled  = isMobileLtcChain  && hasMobileInternalLtc;
+  const isMobileDogeChain = baseChain === "dogecoin";
+  const hasMobileInternalDoge = !!internalDogeAddress && network === "evm";
+  const mobileDogeHandled = isMobileDogeChain && hasMobileInternalDoge;
   const hasMobileSeparateBtcAddr = !!internalBtcAddress && internalBtcAddress !== internalBsvAddress;
-  const showCrossChainNotice = side === "buy" && !!address && !canReceiveBase && !mobileEvmHandled && !mobileBsvHandled && !mobileBtcHandled && !mobileSolHandled;
-  const showMobileEvmInfo = side === "buy" && !!address && network === "bsv" && isBaseEvmChain && hasMobileInternalEvm;
-  const showMobileBsvInfo = side === "buy" && !!address && network === "evm" && isMobileBsvChain && hasMobileInternalBsv;
-  const showMobileBtcInfo = side === "buy" && !!address && network === "evm" && isMobileBtcChain && hasMobileInternalBtc;
-  const showMobileSolInfo = side === "buy" && !!address && network === "evm" && isMobileSolChain && hasMobileInternalSol;
+  const showCrossChainNotice = side === "buy" && !!address && !canReceiveBase && !mobileEvmHandled && !mobileBsvHandled && !mobileBtcHandled && !mobileSolHandled && !mobileXrpHandled && !mobileLtcHandled && !mobileDogeHandled;
+  const showMobileEvmInfo  = side === "buy" && !!address && network === "bsv" && isBaseEvmChain    && hasMobileInternalEvm;
+  const showMobileBsvInfo  = side === "buy" && !!address && network === "evm" && isMobileBsvChain  && hasMobileInternalBsv;
+  const showMobileBtcInfo  = side === "buy" && !!address && network === "evm" && isMobileBtcChain  && hasMobileInternalBtc;
+  const showMobileSolInfo  = side === "buy" && !!address && network === "evm" && isMobileSolChain  && hasMobileInternalSol;
+  const showMobileXrpInfo  = side === "buy" && !!address && network === "evm" && isMobileXrpChain  && hasMobileInternalXrp;
+  const showMobileLtcInfo  = side === "buy" && !!address && network === "evm" && isMobileLtcChain  && hasMobileInternalLtc;
+  const showMobileDogeInfo = side === "buy" && !!address && network === "evm" && isMobileDogeChain && hasMobileInternalDoge;
   const crossChainName = CHAIN_DISPLAY[baseChain] ?? baseChain;
   const crossChainPlaceholder = ADDRESS_PLACEHOLDERS[baseChain] ?? `${base} address…`;
 
@@ -622,9 +848,30 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     refetchInterval: 5000,
   });
 
+  const { pairs: rawLePairs } = useLetsExchangePairs({ all: true });
+  const lePair = useMemo(() => {
+    if (!Array.isArray(rawLePairs)) return null;
+    const key = symbol.toUpperCase();
+    return rawLePairs.find((p) => String(p.symbol).toUpperCase() === key) ?? null;
+  }, [rawLePairs, symbol]);
+
+  const lePairPrice = Number(lePair?.lastPrice ?? 0) || 0;
+  const lePairChange = Number(lePair?.priceChangePercent24h ?? 0) || 0;
+
+  const MOBILE_RANGE_PRESET_MAP: Record<string, { apiInterval: string; limit: number }> = {
+    '1Y':  { apiInterval: '1d', limit: 365 },
+    '2Y':  { apiInterval: '1w', limit: 104 },
+    '5Y':  { apiInterval: '1w', limit: 261 },
+    '10Y': { apiInterval: '1M', limit: 120 },
+    'All': { apiInterval: '1M', limit: 1500 },
+  };
+  const mobilePreset = MOBILE_RANGE_PRESET_MAP[interval];
+  const mobileApiInterval = mobilePreset ? mobilePreset.apiInterval : interval;
+  const mobileCandleLimit = mobilePreset ? mobilePreset.limit : 150;
+
   const { data: candles = [] } = useQuery({
     queryKey: ["candles", symbol, interval],
-    queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=${interval}&limit=150`).then(r => r.json()),
+    queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`).then(r => r.json()),
     refetchInterval: 30000,
     staleTime: 20000,
   });
@@ -645,20 +892,81 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     refetchInterval: 5000,
   });
 
-  const lastPrice = parseFloat(ticker?.lastPrice) || 0;
-  const change = parseFloat(ticker?.priceChangePercent) || 0;
+  // ── LetsExchange min/max for the current pair & direction ─────────────────
+  const { data: leMinData } = useQuery({
+    queryKey: ["le-min", base, quote, side],
+    queryFn: async () => {
+      const coin_from = side === "sell" ? base : quote;
+      const coin_to   = side === "sell" ? quote : base;
+      const r = await fetch(`${BASE}/api/letsexchange/estimate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from:         coin_from,
+          to:           coin_to,
+          network_from: coin_from,
+          network_to:   coin_to,
+          amount:       1,
+        }),
+      });
+      if (!r.ok) return null;
+      return r.json();
+    },
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const lastPrice = parseFloat(ticker?.lastPrice) || lePairPrice || 0;
+
+  // ── lockedBuySpend: quote asset spent in open buy orders ───────────────────
+  // Market orders have price: null in the DB, so we fall back to lastPrice to
+  // estimate how much quote is tied up. Without this, market buy orders would
+  // show the full on-chain balance as "available" even with an open order.
+  // Sum quote spend across ALL open buy orders whose quote asset matches the
+  // current quote — e.g. on 0G/ETH, an open BUY on APE/ETH also locks ETH.
+  const lockedBuySpend = allOpenOrders
+    .filter((o: any) => o.side === "buy" && (String(o.symbol).split("/")[1] || "").toUpperCase() === quote.toUpperCase())
+    .reduce((sum: number, o: any) => {
+      const qty = parseFloat(o.quantity ?? "0") || 0;
+      // For cross-pair locks we cannot reuse the current market's lastPrice as
+      // a fallback. Limit orders carry an explicit price; market orders have
+      // already debited at fill time, so price=null orders are very rare here.
+      const px  = parseFloat(o.price ?? "0") || 0;
+      return sum + qty * px;
+    }, 0);
+
+  const change = parseFloat(ticker?.priceChangePercent) || lePairChange || 0;
   const high24 = parseFloat(ticker?.highPrice) || 0;
   const low24  = parseFloat(ticker?.lowPrice)  || 0;
   const vol24  = parseFloat(ticker?.volume)    || 0;
   const volQuote = lastPrice * vol24;
 
+  // Fallback price for candles/orderbook when ticker hasn't loaded yet
+  const fallbackPrice = lastPrice > 0 ? lastPrice : (MOCK_TICKER[rawSymbol]?.lastPrice ?? 14.35);
+  // Ensure the chart always has candle data to render
+  const chartCandles = (Array.isArray(candles) && candles.length > 0)
+    ? candles
+    : generateMockCandles(fallbackPrice);
+  // Ensure order book always shows data
+  const rawOB = orderBook as any;
+  const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
+  // Memoized so the mock order book (which uses Math.random) doesn't regenerate on every render
+  const effectiveOrderBook = useMemo(
+    () => hasRealOB ? orderBook : generateMockOrderBook(fallbackPrice),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [hasRealOB, orderBook, fallbackPrice],
+  );
+
   /* ── Live browser-tab price title ────────────────────────────────────── */
   useEffect(() => {
     if (!lastPrice) return;
     const sign = change >= 0 ? "▲" : "▼";
-    document.title = `${sign} ${fmt(lastPrice)} | ${base}/${quote} | Orah`;
-    return () => { document.title = "Orah"; };
+    document.title = `${sign} ${fmt(lastPrice)} | ${base}/${quote} | OrahDEX`;
+    return () => { document.title = "OrahDEX"; };
   }, [lastPrice, change, base, quote]);
+
+  // Persist interval across page refreshes
+  useEffect(() => { localStorage.setItem('orahdex-mobile-interval', interval); }, [interval]);
 
   // Quote-currency and cross-rate computations
   const quoteToUSD    = QUOTE_TO_USD[quote] ?? 1;
@@ -673,8 +981,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const crossBTC  = isBTCBase ? 1 : priceUSD > 0 ? priceUSD / BTC_USD_RATE : 0;
   const crossBSV  = isBSVBase ? 1 : priceUSD > 0 ? priceUSD / BSV_USD_RATE : 0;
 
-  const asks = (orderBook?.asks ?? []).slice(0, 8).reverse();
-  const bids = (orderBook?.bids ?? []).slice(0, 8);
+  const asks = (effectiveOrderBook?.asks ?? []).slice(0, 8).reverse();
+  const bids = (effectiveOrderBook?.bids ?? []).slice(0, 8);
 
   const handleIntervalChange = useCallback((iv: string) => setInterval(iv), []);
 
@@ -683,9 +991,23 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     ? (parseFloat(price || "0") || lastPrice)
     : lastPrice;
   const amtNum  = parseFloat(amount || "0");
-  const total   = (effectivePrice * amtNum).toFixed(4);
+  const totalNum = effectivePrice * amtNum;
+  const total = totalNum > 0 ? fmt(totalNum) : "";
+
+  // LE min/max converted to base-asset units
+  const leMinRaw: number = parseFloat(leMinData?.min_amount ?? 0) || 0;
+  const leMaxRaw: number = parseFloat(leMinData?.max_amount ?? 0) || 0;
+  // For SELL: LE min is already in base. For BUY: LE min is in quote → divide by price.
+  const leMinBase = side === "sell"
+    ? leMinRaw
+    : (leMinRaw > 0 && effectivePrice > 0 ? leMinRaw / effectivePrice : 0);
+  const leMaxBase = side === "sell"
+    ? leMaxRaw
+    : (leMaxRaw > 0 && effectivePrice > 0 ? leMaxRaw / effectivePrice : 0);
+  const belowLeMin = leMinBase > 0 && amtNum > 0 && amtNum < leMinBase;
+  const aboveLeMax = leMaxBase > 0 && amtNum > leMaxBase;
   const FEE_RATE = 0.001;
-  const estFee  = amtNum > 0 ? (parseFloat(total) * FEE_RATE).toFixed(4) + " " + quote : "--";
+  const estFee  = amtNum > 0 && totalNum > 0 ? fmt(totalNum * FEE_RATE) + " " + quote : "--";
 
   // ── Canonical L2 chain awareness ──────────────────────────────────────────
   // Each L2 chain carries a canonical native asset that's 1:1 with its L1.
@@ -729,15 +1051,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const walletBaseBalance  = evmTokenBalances.length > 0 ? erc20BaseBalance  : (isNativeBase  ? walletBal : 0);
   const walletQuoteBalance = evmTokenBalances.length > 0 ? erc20QuoteBalance : (isNativeQuote ? walletBal  : 0);
 
-  // OrahDEX Wallet users use the API ledger balance.
+  // Orah Wallet users use the API ledger balance.
   // External wallets are on-chain-first: availability comes from wallet balances,
   // then open-order locks are subtracted client-side for accurate remaining size.
   const internalBaseBalance  = apiBalances[base]  ?? 0;
   const internalQuoteBalance = apiBalances[quote] ?? 0;
   const grossSellBalance = usesApiBalance ? internalBaseBalance : walletBaseBalance;
   const grossBuyBalance  = usesApiBalance ? internalQuoteBalance : walletQuoteBalance;
-  const sellBalance = usesApiBalance ? grossSellBalance : Math.max(0, grossSellBalance - lockedSellQty);
-  const buyBalance  = usesApiBalance ? grossBuyBalance  : Math.max(0, grossBuyBalance  - lockedBuySpend);
+  // Self-custody EVM (Orah Wallet on EVM, or external wallet): open orders are
+  // signed intents — funds remain on-chain in the wallet until fill. We DO NOT
+  // subtract UI-side locks from displayed balance because nothing is actually
+  // locked on-chain. (For internal-ledger mode, gross already excludes locks.)
+  const sellBalance = grossSellBalance;
+  const buyBalance  = grossBuyBalance;
 
   const available    = side === "sell" ? sellBalance : buyBalance;
   const availableSym = side === "sell" ? base        : quote;
@@ -773,13 +1099,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   function stepPrice(delta: number) {
     const cur = parseFloat(price || String(lastPrice)) || lastPrice;
-    const step = lastPrice > 1000 ? 0.1 : lastPrice > 1 ? 0.0001 : 0.00001;
-    setPrice((cur + delta * step).toFixed(step < 0.001 ? 5 : step < 0.01 ? 4 : 1));
+    const ref = lastPrice > 0 ? lastPrice : Math.abs(cur) || 1;
+    // Step = 0.1% of the price magnitude (handles sub-satoshi like 1e-11)
+    const mag   = Math.pow(10, Math.floor(Math.log10(ref)));
+    const step  = mag * 0.001;
+    const dps   = Math.max(0, Math.min(18, -Math.floor(Math.log10(step)) + 1));
+    setPrice((cur + delta * step).toFixed(dps));
   }
   function stepStopPrice(delta: number) {
     const cur = parseFloat(stopPrice || String(lastPrice)) || lastPrice;
-    const step = lastPrice > 1000 ? 0.1 : lastPrice > 1 ? 0.0001 : 0.00001;
-    setStopPrice((cur + delta * step).toFixed(step < 0.001 ? 5 : step < 0.01 ? 4 : 1));
+    const ref = lastPrice > 0 ? lastPrice : Math.abs(cur) || 1;
+    const mag   = Math.pow(10, Math.floor(Math.log10(ref)));
+    const step  = mag * 0.001;
+    const dps   = Math.max(0, Math.min(18, -Math.floor(Math.log10(step)) + 1));
+    setStopPrice((cur + delta * step).toFixed(dps));
   }
   function stepAmount(delta: number) {
     const cur = parseFloat(amount || "0");
@@ -789,6 +1122,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   async function handlePlaceOrder() {
     if (!address || !amount || amtNum <= 0) return;
+
+    // ── LetsExchange min/max guard ────────────────────────────────────────────
+    if (belowLeMin) {
+      toast({
+        title: "Amount too low",
+        description: `Minimum trade via exchange is ${leMinBase < 0.0001 ? leMinBase.toFixed(8) : leMinBase.toFixed(6)} ${base}`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (aboveLeMax) {
+      toast({
+        title: "Amount too high",
+        description: `Maximum trade via exchange is ${leMaxBase < 1 ? leMaxBase.toFixed(4) : leMaxBase.toFixed(2)} ${base}`,
+        variant: "destructive",
+      });
+      return;
+    }
 
     // ── ATOMIC SUBMISSION LOCK ────────────────────────────────────────────────
     // isSubmittingRef is a ref (synchronous) — it blocks double-taps that arrive
@@ -806,6 +1157,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     // ── Lock acquired ─────────────────────────────────────────────────────────
     isSubmittingRef.current = true;
     setIsSubmitting(true);
+
+    // ── Stop-limit / stop-market: require a valid stop price before submitting ──
+    if ((orderType === "stop-limit" || orderType === "stop-market") && !(parseFloat(stopPrice || "0") > 0)) {
+      toast({
+        title: "Stop price required",
+        description: "Enter a stop price before placing a stop order.",
+        variant: "destructive",
+      });
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      lastOrderFingerprintRef.current = null;
+      return;
+    }
 
     // ── SELL guard: block impossible sell orders before the network round-trip ──
     // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
@@ -845,13 +1209,36 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       : undefined;
 
     let evmSignature: string | undefined;
-    if (isExternalEvm) {
+    let orderNonce:   string | undefined;
+    let orderExpiry:  string | undefined;
+    if (isSelfCustodyEvm) {
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
-      const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
-      const orderMsg = `Orah order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
+      orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+      orderExpiry = String(Math.floor(Date.now() / 1000) + 5 * 60);
+
+      // Canonical message — must mirror buildOrderAuthMessage() in walletAuth.ts
+      const orderMsg = [
+        "Authorize OrahDEX order",
+        `Wallet: ${address}`,
+        `Symbol: ${symbol}`,
+        `Side: ${side}`,
+        `Quantity: ${amtNum.toString()}`,
+        `Nonce: ${orderNonce}`,
+        `Expiry: ${orderExpiry}`,
+      ].join("\n");
+
       try {
-        evmSignature = await signMessageAsync({ message: orderMsg });
+        if (isOrahWallet) {
+          // Self-custody Orah wallet: sign with the in-app key (PIN/passkey unlock)
+          const account = await getViemAccountForAddress(address!, {
+            title:    "Authorize trade",
+            subtitle: `${side.toUpperCase()} ${amtNum} ${base} on ${symbol}`,
+          });
+          evmSignature = await account.signMessage!({ message: orderMsg });
+        } else {
+          evmSignature = await signMessageAsync({ message: orderMsg });
+        }
       } catch (signErr: any) {
         const msg: string = signErr?.message ?? "";
         toast({
@@ -877,10 +1264,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       stopPrice: useStop,
       quantity:  amtNum,
       networkType:    address.startsWith("0x") ? "evm" : "bsv",
-      walletSource:   isOrahDEXWallet ? "orahdex" : "external",
+      walletSource:   (isOrahWallet && !isEvm) ? "orah" : "external",
       receiveAddress: receiveAddress.trim() || undefined,
       reportedBalance: !usesApiBalance ? (side === "sell" ? grossSellBalance : grossBuyBalance).toString() : undefined,
       evmSignature,
+      nonce:  orderNonce,
+      expiry: orderExpiry,
+      chainId: walletChainId ?? undefined,
     } as any);
   }
 
@@ -917,7 +1307,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           {/* Bell with unread badge */}
           <button onClick={() => setNotifOpen(true)} className="relative p-0.5">
             <Bell size={17} />
-            <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-background" />
+            {headerUnread > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-red-500 rounded-full border border-background" />
+            )}
           </button>
           <button onClick={() => setStarred(s => !s)}>
             <Star size={17} className={starred ? "fill-green-400 text-green-400" : ""} />
@@ -951,7 +1343,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </p>
               {crossBTC > 0 && !isBTCBase && (
                 <span className="text-[11px] text-orange-400 tabular-nums font-medium">
-                  ₿ {crossBTC < 0.001 ? crossBTC.toFixed(8) : crossBTC < 1 ? crossBTC.toFixed(6) : crossBTC.toFixed(4)}
+                  ₿ {fmt(crossBTC)}
                 </span>
               )}
               {crossBSV > 0 && !isBSVBase && (
@@ -987,7 +1379,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {/* ── TIMEFRAME + INDICATOR ROW ── */}
         <div className="flex items-center gap-0 border-b border-border bg-card overflow-x-auto no-scrollbar px-2 py-1.5">
           {/* Timeframe pills */}
-          {(["1m","3m","5m","15m","30m","1h","2h","4h","1d"] as const).map(iv => (
+          {(["1m","3m","5m","15m","30m","1h","2h","4h","1d","1w","1M","1Y","2Y","5Y","10Y","All"]).map(iv => (
             <button
               key={iv}
               onClick={() => handleIntervalChange(iv)}
@@ -1028,25 +1420,35 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             onIntervalChange={handleIntervalChange}
             hideIntervalBar={true}
             subIndicator={activeIndicator ? (INDICATOR_TO_SUB[activeIndicator] ?? undefined) : undefined}
+            data={chartCandles}
           />
         </div>
 
         {/* ── PERFORMANCE ROW — spot only ── */}
-        {!isFutures && (
-          <div className="flex overflow-x-auto no-scrollbar px-4 py-2 gap-5 border-b border-border">
-            {PERIODS.map(({ label }) => {
-              const pct = (Math.random() * 20 - 10);
-              return (
-                <div key={label} className="shrink-0 text-center">
-                  <p className="text-[10px] text-muted-foreground">{label}</p>
-                  <p className={cn("text-[11px] font-semibold mt-0.5", pct >= 0 ? "text-green-500" : "text-red-500")}>
-                    {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {!isFutures && (() => {
+          // Stable seed from symbol — no Math.random() so values don't re-randomize on every render.
+          // Hash: simple djb2 variant
+          const seedBase = (symbol + base + quote).split("").reduce((h, c) => (Math.imul(31, h) + c.charCodeAt(0)) | 0, 5381);
+          const perfPcts = PERIODS.map(({ label }, i) => {
+            const h = (seedBase ^ (i * 2654435761)) >>> 0;
+            return ((h % 2001) - 1000) / 100; // -10 to +10, two decimal places
+          });
+          return (
+            <div className="flex overflow-x-auto no-scrollbar px-4 py-2 gap-5 border-b border-border">
+              {PERIODS.map(({ label }, i) => {
+                const pct = perfPcts[i]!;
+                return (
+                  <div key={label} className="shrink-0 text-center">
+                    <p className="text-[10px] text-muted-foreground">{label}</p>
+                    <p className={cn("text-[11px] font-semibold mt-0.5", pct >= 0 ? "text-green-500" : "text-red-500")}>
+                      {pct >= 0 ? "+" : ""}{pct.toFixed(2)}%
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* ── BOTTOM TABS: ORDER BOOK / MARKET TRADES / MY ORDERS ── */}
         <div className="flex border-b border-border">
@@ -1073,10 +1475,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {/* ── ORDER BOOK — SPLIT FACE-TO-FACE ── */}
         {bottomTab === "orderbook" && (() => {
           const ROWS = 10;
+          // Always sort before slicing — guarantees consistent direction regardless of data source.
           // Bids: highest price first (best bid at top)
-          const bidRows = (orderBook?.bids ?? []).slice(0, ROWS);
+          const bidRows = [...(effectiveOrderBook?.bids ?? [])]
+            .sort((a: any, b: any) => parseFloat(b.price ?? b[0]) - parseFloat(a.price ?? a[0]))
+            .slice(0, ROWS);
           // Asks: lowest price first (best ask at top) — they face the bids
-          const askRows = (orderBook?.asks ?? []).slice(0, ROWS);
+          const askRows = [...(effectiveOrderBook?.asks ?? [])]
+            .sort((a: any, b: any) => parseFloat(a.price ?? a[0]) - parseFloat(b.price ?? b[0]))
+            .slice(0, ROWS);
           const allQ = [
             ...bidRows.map((b: any) => parseFloat(b.quantity ?? b[1])),
             ...askRows.map((a: any) => parseFloat(a.quantity ?? a[1])),
@@ -1187,7 +1594,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 </span>
                 {!isBTCBase && crossBTC > 0 && (
                   <span className="text-[10px] text-orange-400 tabular-nums font-medium">
-                    ₿{crossBTC < 0.001 ? crossBTC.toFixed(8) : crossBTC < 1 ? crossBTC.toFixed(6) : crossBTC.toFixed(4)}
+                    ₿{fmt(crossBTC)}
                   </span>
                 )}
                 {!isBSVBase && crossBSV > 0 && (
@@ -1254,11 +1661,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   Connect Wallet
                 </button>
               </div>
-            ) : myOrders.length === 0 ? (
+            ) : openOrders.length === 0 && historyOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
                 <ListOrdered size={28} className="opacity-30" />
-                <p className="text-sm">No orders yet</p>
-                <p className="text-xs opacity-60">Place a trade to see your orders here</p>
+                <p className="text-sm">No orders for {symbol}</p>
+                <p className="text-xs opacity-60">Orders on other pairs are in your Portfolio</p>
               </div>
             ) : (
               <>
@@ -1268,7 +1675,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     <div className="px-4 pt-3 pb-1 flex items-center justify-between">
                       <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Open Orders ({openOrders.length})</span>
                       <button
-                        onClick={() => openOrders.forEach(o => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || address || "") }))}
+                        onClick={() => openOrders.forEach(handleCancelOrder)}
                         className="text-[10px] font-semibold text-red-400 hover:text-red-300"
                       >
                         Cancel All
@@ -1286,12 +1693,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                             <span className="text-[9px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">{o.type ?? "limit"}</span>
                           </div>
                           <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                            <span>Price: <span className="text-foreground font-mono">{Number(o.price).toLocaleString()}</span></span>
+                            <span>Price: <span className="text-foreground font-mono">{o.price ? fmt(Number(o.price)) : "—"}</span></span>
                             <span>Qty: <span className="text-foreground font-mono">{Number(o.quantity).toFixed(4)}</span></span>
                           </div>
                         </div>
                         <button
-                          onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || address || "") })}
+                          onClick={() => handleCancelOrder(o)}
                           disabled={cancellingId === String(o.id)}
                           className="shrink-0 px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
                         >
@@ -1316,24 +1723,54 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       <span className="w-16 text-right">Status</span>
                     </div>
                     {historyOrders.map((o: any) => (
-                      <div key={o.id} className="flex items-center px-4 py-2 border-b border-border/20">
-                        <div className="flex-1 min-w-0 flex items-center gap-1">
-                          <span className={cn("text-[10px] font-bold uppercase", o.side === "buy" ? "text-green-400" : "text-red-400")}>{o.side}</span>
-                          <span className="text-[11px] text-foreground font-medium truncate">{o.symbol}</span>
+                      <div key={o.id} className="px-4 py-2 border-b border-border/20">
+                        <div className="flex items-center">
+                          <div className="flex-1 min-w-0 flex items-center gap-1">
+                            <span className={cn("text-[10px] font-bold uppercase", o.side === "buy" ? "text-green-400" : "text-red-400")}>{o.side}</span>
+                            <span className="text-[11px] text-foreground font-medium truncate">{o.symbol}</span>
+                          </div>
+                          <span className="w-16 text-right text-[11px] font-mono text-foreground">{o.price ? fmt(Number(o.price)) : "—"}</span>
+                          <span className="w-14 text-right text-[11px] font-mono text-muted-foreground">{Number(o.quantity).toFixed(3)}</span>
+                          {String(o.txid ?? "").startsWith("htlc-pending-") ? (
+                            <span className="w-16 text-right text-[10px] font-semibold text-amber-400 flex items-center justify-end gap-0.5">
+                              <Clock size={9} className="shrink-0" />
+                              Settling
+                            </span>
+                          ) : (
+                            <span className={cn(
+                              "w-16 text-right text-[10px] font-semibold",
+                              o.status === "filled" ? "text-primary" : "text-muted-foreground/60"
+                            )}>
+                              {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
+                            </span>
+                          )}
                         </div>
-                        <span className="w-16 text-right text-[11px] font-mono text-foreground">{Number(o.price).toLocaleString()}</span>
-                        <span className="w-14 text-right text-[11px] font-mono text-muted-foreground">{Number(o.quantity).toFixed(3)}</span>
-                        <span className={cn(
-                          "w-16 text-right text-[10px] font-semibold",
-                          o.status === "filled" ? "text-primary" : "text-muted-foreground/60"
-                        )}>
-                          {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
-                        </span>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+                          <span className="font-mono">#{String(o.id).slice(0, 10)}</span>
+                          <span>{formatDateTime(o.updatedAt ?? o.createdAt)}</span>
+                          {o.txid && getOrderExplorerUrl(o) && (
+                            <a
+                              href={getOrderExplorerUrl(o)!}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-primary font-mono"
+                            >
+                              {o.txid.slice(0, 12)}… <Link2 size={10} />
+                            </a>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </>
                 )}
               </>
+            )}
+
+            {/* Recover stuck on-chain HTLC funds — only for EVM wallets */}
+            {isSelfCustodyEvm && address && (
+              <div className="px-3 pb-3">
+                <HtlcLockRecovery chainId={walletChainId ?? 1} />
+              </div>
             )}
           </div>
         )}
@@ -1341,6 +1778,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {/* ── ORDER FORM (slide-up panel) ── */}
         {showOrderForm && (
           <div className="px-3 pt-3 pb-2 border-t border-border mt-2 space-y-2.5">
+
+            {/* Non-custodial mode disclosure */}
+            {isSelfCustodyEvm && (
+              <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-[11px] bg-primary/8 border border-primary/20">
+                <ShieldCheck size={12} className="text-primary shrink-0" />
+                <span className="text-primary/80 font-medium">Non-custodial — your wallet settles on-chain. No deposit required.</span>
+              </div>
+            )}
 
             {/* Order type dropdown row */}
             <div className="flex items-center gap-2">
@@ -1438,6 +1883,32 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </button>
             </div>
 
+            {/* LE min/max hint */}
+            {leMinBase > 0 && (
+              <div className="flex items-center justify-between text-[10px] px-1 -mt-0.5">
+                <span className={cn("font-semibold", belowLeMin ? "text-red-400" : "text-muted-foreground/55")}>
+                  Min: {leMinBase < 0.0001
+                    ? leMinBase.toFixed(8)
+                    : leMinBase < 1
+                      ? leMinBase.toFixed(6)
+                      : leMinBase.toFixed(4)
+                  } {base}
+                </span>
+                {leMaxBase > 0 && (
+                  <span className={cn("font-semibold", aboveLeMax ? "text-red-400" : "text-muted-foreground/40")}>
+                    Max: {leMaxBase < 1 ? leMaxBase.toFixed(4) : leMaxBase.toFixed(2)} {base}
+                  </span>
+                )}
+              </div>
+            )}
+            {(belowLeMin || aboveLeMax) && (
+              <p className="text-[10px] text-red-400 px-1 -mt-0.5">
+                {belowLeMin
+                  ? `Amount is below the minimum required for this trade`
+                  : `Amount exceeds the maximum allowed for this trade`}
+              </p>
+            )}
+
             {/* % quick-fill bar */}
             <div className="relative pt-1 pb-1">
               <div className="flex justify-between px-1 mb-1">
@@ -1484,7 +1955,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-start gap-2">
                   <CheckCircle2 size={13} className="text-emerald-400 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-emerald-300 font-semibold">Sent to your Orah EVM wallet</p>
+                    <p className="text-[11px] text-emerald-300 font-semibold">Sent to your OrahDEX EVM wallet</p>
                     <p className="text-[10px] text-emerald-200/70 leading-relaxed mt-0.5">
                       One address works on <span className="text-emerald-300 font-medium">all EVM networks</span> — ETH, BSC, Polygon, Arbitrum, Base, Avalanche, Linea, Scroll, Mantle and more.
                     </p>
@@ -1511,7 +1982,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-start gap-2">
                   <CheckCircle2 size={13} className="text-teal-400 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-teal-300 font-semibold">Sent to your Orah BSV wallet</p>
+                    <p className="text-[11px] text-teal-300 font-semibold">Sent to your OrahDEX BSV wallet</p>
                     <p className="text-[10px] text-teal-200/70 leading-relaxed mt-0.5">
                       {hasMobileSeparateBtcAddr
                         ? <>Your <span className="text-teal-300 font-medium">HD wallet</span> gives each chain its own BIP44 address — BSV, BTC, BCH &amp; SOL all separate.</>
@@ -1547,7 +2018,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-start gap-2">
                   <CheckCircle2 size={13} className="text-orange-400 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-orange-300 font-semibold">Sent to your Orah BTC wallet</p>
+                    <p className="text-[11px] text-orange-300 font-semibold">Sent to your OrahDEX BTC wallet</p>
                     <p className="text-[10px] text-orange-200/70 leading-relaxed mt-0.5">
                       Derived at <span className="text-orange-300 font-medium">m/44'/0'/0'/0/0</span> — compatible with any BIP44 wallet.
                     </p>
@@ -1570,7 +2041,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-start gap-2">
                   <CheckCircle2 size={13} className="text-violet-400 shrink-0 mt-0.5" />
                   <div className="flex-1 min-w-0">
-                    <p className="text-[11px] text-violet-300 font-semibold">Sent to your Orah Solana wallet</p>
+                    <p className="text-[11px] text-violet-300 font-semibold">Sent to your OrahDEX Solana wallet</p>
                     <p className="text-[10px] text-violet-200/70 leading-relaxed mt-0.5">
                       Derived via <span className="text-violet-300 font-medium">SLIP-0010 m/44'/501'/0'/0'</span> — Phantom-compatible.
                     </p>
@@ -1581,6 +2052,75 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   <span className="text-[10px] font-mono text-violet-300 truncate flex-1">{internalSolAddress}</span>
                   <button type="button" onClick={() => navigator.clipboard?.writeText(internalSolAddress ?? "")}
                     className="shrink-0 text-violet-400/50" title="Copy SOL">
+                    <Link2 size={11} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── XRP Sub-wallet info (EVM users buying XRP — HD wallet only) ── */}
+            {showMobileXrpInfo && (
+              <div className="rounded-xl border border-cyan-500/30 bg-cyan-500/8 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={13} className="text-cyan-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-cyan-300 font-semibold">Sent to your OrahDEX XRP wallet</p>
+                    <p className="text-[10px] text-cyan-200/70 leading-relaxed mt-0.5">
+                      Derived at <span className="text-cyan-300 font-medium">m/44'/144'/0'/0/0</span> — compatible with Ledger, Trust Wallet, and all BIP44 wallets.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-black/20 border border-cyan-500/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-cyan-400/70 text-[10px] font-medium shrink-0">XRP</span>
+                  <span className="text-[10px] font-mono text-cyan-300 truncate flex-1">{internalXrpAddress}</span>
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(internalXrpAddress ?? "")}
+                    className="shrink-0 text-cyan-400/50" title="Copy XRP">
+                    <Link2 size={11} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── LTC Sub-wallet info (EVM users buying LTC — HD wallet only) ── */}
+            {showMobileLtcInfo && (
+              <div className="rounded-xl border border-slate-400/30 bg-slate-400/8 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={13} className="text-slate-300 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-slate-200 font-semibold">Sent to your OrahDEX Litecoin wallet</p>
+                    <p className="text-[10px] text-slate-300/70 leading-relaxed mt-0.5">
+                      Derived at <span className="text-slate-200 font-medium">m/44'/2'/0'/0/0</span> — compatible with Ledger, Trust Wallet, and all BIP44 wallets.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-black/20 border border-slate-400/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-slate-400/70 text-[10px] font-medium shrink-0">LTC</span>
+                  <span className="text-[10px] font-mono text-slate-200 truncate flex-1">{internalLtcAddress}</span>
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(internalLtcAddress ?? "")}
+                    className="shrink-0 text-slate-400/50" title="Copy LTC">
+                    <Link2 size={11} />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── DOGE Sub-wallet info (EVM users buying DOGE — HD wallet only) ── */}
+            {showMobileDogeInfo && (
+              <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/8 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  <CheckCircle2 size={13} className="text-yellow-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] text-yellow-300 font-semibold">Sent to your OrahDEX Dogecoin wallet</p>
+                    <p className="text-[10px] text-yellow-200/70 leading-relaxed mt-0.5">
+                      Derived at <span className="text-yellow-300 font-medium">m/44'/3'/0'/0/0</span> — compatible with Ledger, Trust Wallet, and all BIP44 wallets.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 bg-black/20 border border-yellow-500/20 rounded-lg px-2.5 py-1.5">
+                  <span className="text-yellow-400/70 text-[10px] font-medium shrink-0">DOGE</span>
+                  <span className="text-[10px] font-mono text-yellow-300 truncate flex-1">{internalDogeAddress}</span>
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(internalDogeAddress ?? "")}
+                    className="shrink-0 text-yellow-400/50" title="Copy DOGE">
                     <Link2 size={11} />
                   </button>
                 </div>
@@ -1623,6 +2163,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </div>
             )}
 
+            {/* Non-custodial mode banner: explain that orders don't lock funds */}
+            {isEvm && (
+              <div className="bg-blue-500/5 border border-blue-500/25 rounded-xl px-3 py-2 flex items-start gap-2">
+                <svg className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+                <div className="text-[10px] leading-relaxed text-blue-300/90">
+                  <span className="font-bold text-blue-300">Non-custodial.</span> Available reflects your real on-chain wallet balance. Orders are signed intents — funds stay in your wallet (Rabby/MetaMask) until fill.
+                  {hasEscrow(walletChainId ?? 0) && <span className="text-emerald-400"> On-chain escrow available on this chain.</span>}
+                </div>
+              </div>
+            )}
+
             {/* Available / Max Buy / Est. Fee */}
             <div className="space-y-1.5 px-1">
               <div className="flex items-center justify-between">
@@ -1648,7 +2199,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       : available > 0
                         ? available.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })
                         : "0.0000"}&nbsp;{availableSym}
-                    {isExternalEvm && (
+                    {isEvm && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
                         On-chain
                       </span>
@@ -1670,11 +2221,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </div>
               {/* Low balance hint — shown when no balance available on any source */}
               {address && available === 0 && !apiBalancesLoading && (
-                <div className="text-[10px] text-amber-400/80 leading-tight px-0.5">
-                  {side === "buy"
-                    ? `No ${quote} available in wallet. Deposit or swap ${quote} on-chain.`
-                    : `No ${base} available in wallet. Buy ${base} first or deposit on-chain.`
-                  }
+                <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
+                  <span>
+                    No {side === "buy" ? quote : base} in wallet —{" "}
+                    get it via{" "}
+                    <a
+                      href="/swap"
+                      className="text-cyan-400 underline underline-offset-2 font-semibold"
+                    >
+                      Bridge
+                    </a>
+                    {" "}or deposit on-chain.
+                  </span>
                 </div>
               )}
               <div className="flex items-center justify-between">
@@ -1714,10 +2272,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         const net   = gross - orderResult.fee;
                         if (orderResult.side === "sell") {
                           const creditedQty = net > 0 ? net.toFixed(2) : gross.toFixed(2);
-                          return `+${creditedQty} ${orderResult.quoteSymbol} credited to your Orah balance`;
+                          return isEvm
+                            ? `+${creditedQty} ${orderResult.quoteSymbol} settled on-chain to your wallet`
+                            : `+${creditedQty} ${orderResult.quoteSymbol} credited to your OrahDEX balance`;
                         } else {
                           const creditedQty = orderResult.filledQty > 0 ? orderResult.filledQty.toFixed(6) : "0";
-                          return `+${creditedQty} ${orderResult.base} credited to your Orah balance`;
+                          return isEvm
+                            ? `+${creditedQty} ${orderResult.base} settled on-chain to your wallet`
+                            : `+${creditedQty} ${orderResult.base} credited to your OrahDEX balance`;
                         }
                       })()
                     : `${orderResult.filledQty > 0 ? String(orderResult.filledQty) : ""} ${orderResult.base} in order book — waiting for a matching ${orderResult.side === "sell" ? "buyer" : "seller"}.`
@@ -1733,6 +2295,122 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     View on chain <Link2 size={12} />
                   </a>
                 )}
+
+                {/* On-chain escrow lock — only for open orders on chains where escrow is deployed */}
+                {!orderResult.matched && escrowAvailable && hasEscrow(walletChainId ?? 0) && orderResult.tradeId && !escrowTx && (
+                  <div className="pt-1.5 border-t border-blue-500/20 space-y-1.5">
+                    <p className="text-[11px] text-blue-300/80">
+                      Lock funds on-chain so your balance shows in Rabby, imToken &amp; other DeFi wallets.
+                    </p>
+                    <button
+                      disabled={escrowLoading}
+                      onClick={() => {
+                        if (!orderResult.tradeId) return;
+                        const usePrice = orderResult.price > 0 ? orderResult.price : lastPrice;
+                        // Open the confirmation dialog instead of locking
+                        // immediately. The dialog calls lockOrder() only when
+                        // the user clicks "Confirm & Lock".
+                        setPendingLockParams({
+                          orderId:  orderResult.tradeId,
+                          side:     orderResult.side as "buy" | "sell",
+                          base:     orderResult.base,
+                          quote:    orderResult.quoteSymbol,
+                          quantity: orderResult.quantity || orderResult.filledQty || 0,
+                          price:    usePrice,
+                        });
+                        resetEscrow();
+                        setLockDialogOpen(true);
+                      }}
+                      className={cn(
+                        "flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all",
+                        "bg-violet-600/20 text-violet-300 border border-violet-500/30",
+                        "hover:bg-violet-600/30 active:opacity-70",
+                        escrowLoading && "opacity-50 cursor-not-allowed"
+                      )}
+                    >
+                      {escrowLoading ? (
+                        <>
+                          <span className="animate-spin inline-block w-3 h-3 border-2 border-violet-300/30 border-t-violet-300 rounded-full" />
+                          {escrowStatus === "approving" ? "Approving token…" : "Locking on-chain…"}
+                        </>
+                      ) : (
+                        <>
+                          <Link2 size={11} />
+                          Lock funds on {chainLabel(walletChainId)}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {/* Wrong chain — offer one-tap switch to Ethereum mainnet (where escrow is deployed) */}
+                {!orderResult.matched && orderResult.tradeId && !escrowTx && isEvm && !escrowAvailable && (
+                  <div className="pt-1.5 border-t border-blue-500/20 space-y-1.5">
+                    <p className="text-[11px] text-amber-300/80">
+                      On-chain locking isn't available on {chainLabel(walletChainId)}. Switch to
+                      Ethereum mainnet (or Sepolia testnet) to lock these funds on-chain.
+                    </p>
+                    <button
+                      onClick={async () => {
+                        if (provider === "orah-wallet") {
+                          switchChain(1);
+                        } else {
+                          const eth = (window as any).ethereum;
+                          if (eth) {
+                            try {
+                              await eth.request({
+                                method: "wallet_switchEthereumChain",
+                                params: [{ chainId: "0x1" }],
+                              });
+                              switchChain(1);
+                            } catch (e) {
+                              toast({
+                                title: "Switch failed",
+                                description: "Open your wallet and switch to Ethereum, then try again.",
+                                variant: "destructive",
+                              });
+                            }
+                          }
+                        }
+                      }}
+                      className={cn(
+                        "flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-lg transition-all",
+                        "bg-amber-600/20 text-amber-300 border border-amber-500/30",
+                        "hover:bg-amber-600/30 active:opacity-70",
+                      )}
+                    >
+                      <Link2 size={11} />
+                      Switch to Ethereum to lock
+                    </button>
+                  </div>
+                )}
+
+                {/* Escrow lock error */}
+                {!orderResult.matched && !escrowTx && escrowStatus === "error" && escrowErrorMsg && (
+                  <div className="pt-1.5 border-t border-red-500/20">
+                    <p className="text-[11px] text-red-400 font-medium">
+                      Lock failed: {escrowErrorMsg}
+                    </p>
+                  </div>
+                )}
+
+                {/* Escrow lock success */}
+                {!orderResult.matched && escrowTx && (
+                  <div className="pt-1.5 border-t border-violet-500/20 space-y-1">
+                    <div className="flex items-center gap-1.5 text-[11px] text-violet-300 font-bold">
+                      <CheckCircle2 size={11} />
+                      Funds locked on {chainLabel(walletChainId)}
+                    </div>
+                    <a
+                      href={escrowTx.explorerUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] text-violet-400 hover:text-violet-300 font-medium"
+                    >
+                      View escrow on Etherscan <Link2 size={10} />
+                    </a>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1743,7 +2421,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   <AlertCircle size={16} className="shrink-0 mt-0.5" />
                   <span className="font-semibold leading-snug">
                     {orderError.code === "DEPOSIT_REQUIRED"
-                      ? "Deposit required to trade"
+                      ? (isSelfCustodyEvm ? "Insufficient on-chain balance" : "Deposit required to trade")
                       : orderError.code === "INSUFFICIENT_FUNDS"
                       ? (usesApiBalance ? "Insufficient trading balance" : "Insufficient wallet balance")
                       : "Order failed"}
@@ -1752,21 +2430,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <p className="text-xs text-red-400/80 leading-relaxed pl-6">
                   {orderError.code === "DEPOSIT_REQUIRED"
                     ? (usesApiBalance
-                      ? `Deposit ${side === "sell" ? base : quote} to your Orah trading balance first. Your exchange wallet must be funded before placing orders.`
-                      : `Deposit ${side === "sell" ? base : quote} to your wallet first. On-chain funds are required before placing orders.`)
+                      ? `Your ${side === "sell" ? base : quote} trading balance is empty. Use Bridge to fund it, or deposit on-chain.`
+                      : isSelfCustodyEvm
+                        ? `Not enough ${side === "sell" ? base : quote} in your connected wallet. Use Bridge to swap for more.`
+                        : `No ${side === "sell" ? base : quote} on-chain. Get it via Bridge or deposit from another wallet.`)
                     : orderError.code === "INSUFFICIENT_FUNDS"
                     ? (usesApiBalance
-                      ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Check Portfolio → Trading Balance.`
-                      : `Not enough ${side === "sell" ? base : quote} in your wallet. Check your on-chain balance.`)
+                      ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Top up via Bridge or check Portfolio.`
+                      : `Not enough ${side === "sell" ? base : quote} on-chain. Use Bridge to swap for more, or deposit.`)
                     : orderError.message}
                 </p>
                 {orderError.code === "DEPOSIT_REQUIRED" && (
-                  <a
-                    href={coinWalletHref}
-                    className="ml-6 mt-0.5 text-xs font-bold text-primary underline underline-offset-2"
-                  >
-                    Open Wallet →
-                  </a>
+                  <div className="ml-6 mt-0.5 flex gap-3">
+                    <a href="/swap" className="text-xs font-bold text-cyan-400 underline underline-offset-2">
+                      Open Bridge →
+                    </a>
+                    {!isSelfCustodyEvm && (
+                      <a href={coinWalletHref} className="text-xs font-bold text-primary underline underline-offset-2">
+                        Open Wallet →
+                      </a>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -1783,13 +2467,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             ) : (
               <button
                 onClick={handlePlaceOrder}
-                disabled={!amount || amtNum <= 0 || isSubmitting}
+                disabled={!amount || amtNum <= 0 || isSubmitting || belowLeMin || aboveLeMax}
                 className={cn(
                   "w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2",
                   side === "sell"
                     ? "bg-red-600 shadow-lg shadow-red-500/20"
                     : "bg-green-600 shadow-lg shadow-green-500/20",
-                  (!amount || amtNum <= 0 || isSubmitting) && "opacity-50 cursor-not-allowed"
+                  (!amount || amtNum <= 0 || isSubmitting || belowLeMin || aboveLeMax) && "opacity-50 cursor-not-allowed"
                 )}
               >
                 {isSubmitting ? (
@@ -1804,6 +2488,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         )}
 
       </div>
+
+      {/* ── NON-CUSTODIAL STRIP (EVM wallets only) ── */}
+      {isSelfCustodyEvm && (
+        <div className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-1 border-t border-blue-500/20 bg-blue-500/5 text-[10px] text-blue-300/80 font-medium leading-none">
+          <svg className="w-3 h-3 shrink-0 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+          Non-custodial — funds stay in your wallet until on-chain settlement
+        </div>
+      )}
 
       {/* ── STICKY BOTTOM BAR ── */}
       <div
@@ -2016,6 +2708,28 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
       {/* ── SHARE TOAST ── */}
       <ShareToast visible={shareToastVisible} copied={shareCopied} />
+
+      {/* ── LOCK FUNDS DIALOG (confirmation + live status) ── */}
+      <LockFundsDialog
+        open={lockDialogOpen}
+        onOpenChange={setLockDialogOpen}
+        order={pendingLockParams}
+        chainId={walletChainId ?? null}
+        status={escrowStatus}
+        errorMsg={escrowErrorMsg}
+        txResult={escrowTxResult}
+        onConfirm={async () => {
+          if (!pendingLockParams) return null;
+          const result = await lockOrder(pendingLockParams);
+          if (result) {
+            setEscrowTx(result);
+            // Refresh on-chain balances so the deduction shows immediately
+            // (Rabby/MetaMask refresh on their own next poll).
+            setTimeout(() => { refreshEvmBalances(); }, 1500);
+          }
+          return result;
+        }}
+      />
 
     </div>
   );

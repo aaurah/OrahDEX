@@ -1,5 +1,5 @@
 /**
- * BSV On-Chain Broadcaster — Orah
+ * BSV On-Chain Broadcaster — OrahDEX
  *
  * Builds, signs, and broadcasts a real BSV transaction to the network
  * via the WhatsOnChain raw-tx API.
@@ -242,7 +242,7 @@ export async function broadcastSettlement(params: BroadcastParams): Promise<Broa
   try {
     const res = await fetch(WOC_BROADCAST, {
       method:  "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "Orah/1.0" },
+      headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
       body:    JSON.stringify({ txhex: rawTxHex }),
       signal:  AbortSignal.timeout(15_000),
     });

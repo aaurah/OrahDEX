@@ -123,7 +123,7 @@ So your TradingView datafeed service does:
 
 
 No CoinGecko. No CMC.
-Just Orah → TradingView.
+Just OrahDex → TradingView.
 
 ---
 
@@ -155,4 +155,4 @@ You run your own price engine by:
 
 
 No CoinGecko. No CoinMarketCap.
-Just Orah as a sovereign source of truth.
+Just OrahDex as a sovereign source of truth.

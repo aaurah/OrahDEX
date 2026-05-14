@@ -15,6 +15,56 @@ import { cn, formatPrice } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+/**
+ * Fetch + sign a P2P challenge for an external EVM wallet.
+ * Returns { nonce, signature } or { } for non-EVM (BSV/SOL) wallets,
+ * which the API treats as fall-through.
+ *
+ * Throws if signing fails so the caller can surface a clear error.
+ */
+async function signP2PIfNeeded(params: {
+  walletAddress: string;
+  network:       string | null;
+  action:        "post" | "fill" | "cancel";
+  targetFields:  Record<string, string>;
+}): Promise<{ nonce?: string; signature?: string }> {
+  const { walletAddress, network, action, targetFields } = params;
+  // Only external EVM wallets need a signature. The server treats
+  // internal-EVM wallets (server-provisioned) as fall-through, but it'll
+  // still ask for a sig if the address looks like 0x… and isn't in the
+  // internal registry. Easiest: always sign for EVM wallets; the server
+  // will accept either path.
+  const isEvm = network === "evm" && /^0x[0-9a-fA-F]{40}$/.test(walletAddress);
+  if (!isEvm) return {};
+
+  const challengeRes = await fetch(`${BASE}/api/p2p/challenge`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ walletAddress, action, ...targetFields }),
+  });
+  if (!challengeRes.ok) {
+    const e = await challengeRes.json().catch(() => ({}));
+    throw new Error(e.error ?? "Failed to obtain P2P challenge");
+  }
+  const { nonce, message } = await challengeRes.json() as { nonce: string; message: string };
+
+  const { signMessage } = await import("@wagmi/core");
+  const { getWagmiConfig } = await import("@/lib/reown");
+  const cfg = getWagmiConfig();
+  if (!cfg) throw new Error("Wallet not initialised. Please refresh and reconnect.");
+
+  let signature: string;
+  try {
+    signature = await signMessage(cfg, { account: walletAddress as `0x${string}`, message });
+  } catch (err: any) {
+    if (err?.code === 4001 || err?.code === "ACTION_REJECTED") {
+      throw new Error("Signature rejected. Action cancelled.");
+    }
+    throw new Error(err?.message ?? "Wallet signature failed");
+  }
+  return { nonce, signature };
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Side = "buy" | "sell";
@@ -387,7 +437,7 @@ function PostAdModal({ onClose }: { onClose: () => void }) {
   const [posted, setPosted] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
   const [isPosting, setIsPosting] = useState(false);
-  const { address: walletAddress } = useWalletStore();
+  const { address: walletAddress, network: walletNetwork } = useWalletStore();
   const qc = useQueryClient();
 
   const togglePayment = (m: string) =>
@@ -568,21 +618,32 @@ function PostAdModal({ onClose }: { onClose: () => void }) {
                     ? (availAmt * 0.9)   // buyer intents: willing to give FIAT, get coin
                     : (availAmt * 0.9);  // seller intents: willing to give coin
 
-                  const makerAddr = walletAddress ?? `anon-${Math.random().toString(36).slice(2,8)}`;
+                  if (!walletAddress) {
+                    throw new Error("Connect a wallet to post an ad.");
+                  }
+                  const tokenIn   = adSide === "buy" ? fiat : coin;
+                  const tokenOut  = adSide === "buy" ? coin : fiat;
+                  const amountIn  = String(adSide === "buy" ? parseFloat(maxLimit || "1000") : availAmt);
+                  const minAmountOut = String(minAmtOut);
+                  const auth = await signP2PIfNeeded({
+                    walletAddress, network: walletNetwork, action: "post",
+                    targetFields: { tokenIn, tokenOut, amountIn, minAmountOut },
+                  });
                   const r = await fetch(`${BASE}/api/p2p/intents`, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({
-                      makerAddress:  makerAddr,
-                      tokenIn:       adSide === "buy" ? fiat  : coin,
-                      tokenOut:      adSide === "buy" ? coin  : fiat,
-                      amountIn:      String(adSide === "buy" ? parseFloat(maxLimit || "1000") : availAmt),
-                      minAmountOut:  String(minAmtOut),
+                      makerAddress:  walletAddress,
+                      tokenIn,
+                      tokenOut,
+                      amountIn,
+                      minAmountOut,
                       price:         String(price),
                       fiat,
                       paymentMethods: selectedPayments.join(","),
                       terms,
                       expiresInMs: 24 * 60 * 60 * 1000,
+                      ...auth,
                     }),
                   });
                   if (!r.ok) {
@@ -617,15 +678,15 @@ const FIATS: Fiat[] = ["USD", "EUR", "GBP", "AUD", "NGN", "INR", "BRL", "CAD", "
 export function P2P() {
   useSEO({
     title: "P2P Trading — Buy & Sell Crypto Peer-to-Peer",
-    description: "Buy and sell Bitcoin, Ethereum, BSV and more with 0 fees on Orah P2P. Escrow-secured trades, 100+ payment methods, global merchants.",
-    keywords: "P2P crypto, peer to peer bitcoin, buy BTC, sell ETH, crypto OTC, escrow trading, zero fee P2P, Orah P2P",
+    description: "Buy and sell Bitcoin, Ethereum, BSV and more with 0 fees on OrahDEX P2P. Escrow-secured trades, 100+ payment methods, global merchants.",
+    keywords: "P2P crypto, peer to peer bitcoin, buy BTC, sell ETH, crypto OTC, escrow trading, zero fee P2P, OrahDEX P2P",
     url: "/p2p",
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "WebPage",
-      "name": "Orah P2P Trading",
+      "name": "OrahDEX P2P Trading",
       "description": "Peer-to-peer cryptocurrency marketplace with escrow-protected trades",
-      "url": "https://orah.replit.app/p2p"
+      "url": "https://orahdex.replit.app/p2p"
     }
   });
 
@@ -680,7 +741,7 @@ export function P2P() {
   const [dtCancelId,  setDtCancelId]  = useState<string | null>(null);
   const [dtFilterCoin, setDtFilterCoin] = useState<DirectCoin | "ALL">("ALL");
 
-  const { address: walletAddress } = useWalletStore();
+  const { address: walletAddress, network: walletNetwork } = useWalletStore();
   const { open: openWalletModal }  = useWalletModalStore();
   const qcDirect = useQueryClient();
 
@@ -724,6 +785,10 @@ export function P2P() {
     if (!dtGiveAmt || !dtWantAmt || parseFloat(dtGiveAmt) <= 0 || parseFloat(dtWantAmt) <= 0) return;
     setDtPosting(true);
     try {
+      const auth = await signP2PIfNeeded({
+        walletAddress, network: walletNetwork, action: "post",
+        targetFields: { tokenIn: dtGiveCoin, tokenOut: dtWantCoin, amountIn: dtGiveAmt, minAmountOut: dtWantAmt },
+      });
       const body = {
         makerAddress: walletAddress,
         tokenIn:  dtGiveCoin,
@@ -732,6 +797,7 @@ export function P2P() {
         minAmountOut: dtWantAmt,
         expiresInMs: dtExpiry,
         terms: dtCounterparty ? `private:${dtCounterparty.toLowerCase()}` : "",
+        ...auth,
       };
       const r = await fetch(`${BASE}/api/p2p/intents`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -754,15 +820,22 @@ export function P2P() {
     setDtFilling(true);
     setDtFillId(intentId);
     try {
+      const auth = await signP2PIfNeeded({
+        walletAddress, network: walletNetwork, action: "fill",
+        targetFields: { intentId },
+      });
       const r = await fetch(`${BASE}/api/p2p/intents/${intentId}/fill`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ takerAddress: walletAddress, amountOut: wantAmt }),
+        body: JSON.stringify({ takerAddress: walletAddress, amountOut: wantAmt, ...auth }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Fill failed");
       qcDirect.invalidateQueries({ queryKey: ["direct-intents"] });
       qcDirect.invalidateQueries({ queryKey: ["my-direct-intents"] });
-      alert("Trade filled! Both parties' balances have been updated.");
+      // Be truthful: the fill endpoint marks the intent as accepted but does
+      // not move funds — settlement is coordinated off-chain between the two
+      // wallets. Don't claim balances changed.
+      alert("Trade accepted! Coordinate settlement with the maker — funds are not moved automatically by this offer.");
     } catch (e: any) {
       alert(e.message ?? "Fill failed");
     } finally {
@@ -775,7 +848,15 @@ export function P2P() {
     if (!walletAddress) return;
     setDtCancelId(intentId);
     try {
-      const r = await fetch(`${BASE}/api/p2p/intents/${intentId}?walletAddress=${walletAddress}`, { method: "DELETE" });
+      const auth = await signP2PIfNeeded({
+        walletAddress, network: walletNetwork, action: "cancel",
+        targetFields: { intentId },
+      });
+      const r = await fetch(`${BASE}/api/p2p/intents/${intentId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress, ...auth }),
+      });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Cancel failed");
       qcDirect.invalidateQueries({ queryKey: ["direct-intents"] });
@@ -898,7 +979,7 @@ export function P2P() {
                 Trade Crypto Peer-to-Peer
               </h1>
               <p className="text-muted-foreground text-sm lg:text-base">
-                Buy and sell directly with verified traders. Funds secured by Orah escrow.
+                Buy and sell directly with verified traders. Funds secured by OrahDEX escrow.
               </p>
             </div>
             <button
@@ -1306,9 +1387,21 @@ export function P2P() {
                 </div>
                 {openDirectIntents.map(intent => {
                   const isOwnOffer = walletAddress && intent.makerAddress.toLowerCase() === walletAddress.toLowerCase();
-                  const isPrivate = intent.terms?.startsWith("private:");
-                  const privateTarget = isPrivate ? intent.terms!.replace("private:", "") : null;
-                  const canFill = !isOwnOffer && (!isPrivate || (walletAddress && privateTarget === walletAddress.toLowerCase()));
+                  // Mirror the server's parsing exactly: trim, case-insensitive
+                  // prefix, then trim+lowercase the address. Any divergence
+                  // here causes the Accept button to be shown when the server
+                  // will 403, or hidden when the server would allow.
+                  const trimmedTerms = (intent.terms ?? "").trim();
+                  const isPrivate = trimmedTerms.toLowerCase().startsWith("private:");
+                  const privateTarget = isPrivate
+                    ? trimmedTerms.slice("private:".length).trim().toLowerCase()
+                    : null;
+                  const canFill = !isOwnOffer && (
+                    !isPrivate
+                      ? true
+                      : !!privateTarget && !!walletAddress
+                          && privateTarget === walletAddress.toLowerCase()
+                  );
                   const expiresAt = new Date(intent.expiresAt);
                   const minsLeft = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 60000));
                   const timeLabel = minsLeft > 60 * 24 ? `${Math.floor(minsLeft/1440)}d` : minsLeft > 60 ? `${Math.floor(minsLeft/60)}h` : `${minsLeft}m`;
@@ -1417,7 +1510,7 @@ export function P2P() {
             {[
               { icon: Send,         title: "Create an Offer",    desc: "Choose what you give and what you want. Set your own rate. Optionally restrict to a specific wallet address for a private trade." },
               { icon: Copy,         title: "Share the Link",     desc: "Copy the unique trade link and send it to your counterparty — or leave the offer open for anyone in the market to fill." },
-              { icon: CheckCircle2, title: "Instant Settlement", desc: "When filled, both sides settle atomically on Orah internal ledger. No slippage, no gas, instant confirmation." },
+              { icon: CheckCircle2, title: "Off-Chain Settlement", desc: "Accepting an offer signals agreement on price and amount. The two wallets then settle the actual transfer between themselves — no slippage, no gas." },
             ].map(({ icon: Icon, title, desc }) => (
               <div key={title} className="flex items-start gap-4 p-5 bg-card border border-border rounded-2xl">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
@@ -1443,9 +1536,13 @@ export function P2P() {
                 <Lock className="w-4 h-4 text-primary" />
                 <span className="text-sm font-bold text-foreground">HTLC Atomic Swap</span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 font-bold">Trustless</span>
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold uppercase tracking-wider">Preview</span>
               </div>
               <p className="text-xs text-muted-foreground">
                 Swap crypto directly with a counterparty using Hash Time-Locked Contracts — no custodian, no wrapped tokens. Both sides lock funds simultaneously; revealing the secret preimage unlocks both.
+              </p>
+              <p className="text-[11px] text-amber-400/80 mt-1">
+                This screen is a protocol walkthrough — pressing “Initiate” simulates the four HTLC steps so you can see how a real swap would flow. No funds move and no on-chain transaction is broadcast.
               </p>
             </div>
 
@@ -1510,7 +1607,7 @@ export function P2P() {
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">Settlement</span>
-                    <span className="text-green-400 font-semibold flex items-center gap-1"><Zap className="w-3 h-3" /> BSV on-chain</span>
+                    <span className="text-amber-300 font-semibold flex items-center gap-1"><Zap className="w-3 h-3" /> Preview only — would settle BSV on-chain</span>
                   </div>
                 </div>
               )}
@@ -1524,7 +1621,7 @@ export function P2P() {
                   { icon: <Lock className="w-3.5 h-3.5"/>,    label: `You lock ${atomicAmt||"0"} ${atomicFrom}`, detail: `HTLC script with hash H = ${htlcHash.slice(0,8)}…` },
                   { icon: <Link2 className="w-3.5 h-3.5"/>,   label: `Counterparty locks ${atomicOutput.toFixed(6)||"0"} ${atomicTo}`, detail: "Same hash H used — funds are mirrored on both chains" },
                   { icon: <Unlock className="w-3.5 h-3.5"/>,  label: "You reveal preimage S → unlock their funds", detail: "Revealing S on destination triggers your side" },
-                  { icon: <CheckCircle2 className="w-3.5 h-3.5"/>, label: "Swap complete — BSV Settlement recorded", detail: "OP_RETURN on BSV chain confirms the atomic swap" },
+                  { icon: <CheckCircle2 className="w-3.5 h-3.5"/>, label: "Walkthrough complete — protocol illustrated", detail: "In a real swap, an OP_RETURN on BSV would record the settlement" },
                 ].map((step, i) => (
                   <div key={i} className={cn(
                     "flex items-start gap-2.5 p-2.5 rounded-xl border transition-all",
@@ -1561,8 +1658,8 @@ export function P2P() {
               className="w-full py-4 rounded-2xl font-bold text-base bg-gradient-to-r from-orange-600 to-primary text-white flex items-center justify-center gap-2.5 shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
             >
               {htlcRunning
-                ? <><RefreshCw className="w-5 h-5 animate-spin" /> Executing HTLC…</>
-                : <><Lock className="w-5 h-5" /> Initiate HTLC Swap</>
+                ? <><RefreshCw className="w-5 h-5 animate-spin" /> Simulating HTLC…</>
+                : <><Lock className="w-5 h-5" /> Run HTLC Walkthrough</>
               }
             </button>
           </div>
@@ -1733,7 +1830,7 @@ export function P2P() {
         {/* Trust badges */}
         <div className="mt-10 grid grid-cols-1 lg:grid-cols-3 gap-4">
           {[
-            { icon: Lock, title: "Escrow Protection", desc: "All crypto is held in Orah smart-contract escrow until payment is confirmed by both parties." },
+            { icon: Lock, title: "Escrow Protection", desc: "All crypto is held in OrahDEX smart-contract escrow until payment is confirmed by both parties." },
             { icon: Shield, title: "Verified Traders", desc: "Our verification system ensures you trade with trustworthy counterparties with proven track records." },
             { icon: MessageSquare, title: "Real-time Chat", desc: "Built-in encrypted chat for every trade. Resolve disputes quickly with our moderation team." },
           ].map(({ icon: Icon, title, desc }) => (

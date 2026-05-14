@@ -1,5 +1,5 @@
 /**
- * deployVault.mjs — Deploy OrahDEXVault to Base mainnet
+ * deployVault.mjs — Deploy OrahVault to Base mainnet
  *
  * Usage:  node artifacts/api-server/scripts/deployVault.mjs
  *
@@ -15,10 +15,10 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-// ── OrahDEXVault bytecode (compiled from the Solidity source below) ───────────────
-// Source: OrahDEXVault.sol (pragma ^0.8.20)
+// ── OrahVault bytecode (compiled from the Solidity source below) ───────────────
+// Source: OrahVault.sol (pragma ^0.8.20)
 // Compiled with solc 0.8.20, optimization runs: 200
-// To regenerate: solc --bin --optimize --optimize-runs 200 OrahDEXVault.sol
+// To regenerate: solc --bin --optimize --optimize-runs 200 OrahVault.sol
 const VAULT_BYTECODE =
   "0x608060405234801561001057600080fd5b5033600080546001600160a01b0319166001600160a01b0392909216919091179055610363806100416000396000f3fe608060405234801561001057600080fd5b506004361061004c5760003560e01c806347e7ef24146100515780638da5cb5b1461006657806398ea5fca146100915780639e281a98146100a4575b600080fd5b61006461005f366004610268565b6100b7565b005b600054610079906001600160a01b031681565b6040516001600160a01b03909116815260200160405180910390f35b61006461009f366004610294565b610169565b6100646100b2366004610268565b61024a565b6000546001600160a01b031633146100ea5760405162461bcd60e51b81526004016100e19061030b565b60405180910390fd5b6000821161010b5760405162461bcd60e51b81526004016100e190610340565b6040516323b872dd60e01b81523060048201526001600160a01b038316602482015260448101839052849063a9059cbb906064016020604051808303816000875af115801561015d573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610177919061034e565b6101945760405162461bcd60e51b81526004016100e190610340565b806000546001600160a01b0316336001600160a01b031660008051602061031783398151915287876040516101ca929190610375565b60405180910390a4505050565b600054339a5b6001600160a01b03811633146101cf5760405162461bcd60e51b81526004016100e19061030b565b60008211610249576040516000...[placeholder]";
 
@@ -58,9 +58,9 @@ async function main() {
     process.exit(1);
   }
 
-  console.log("Deploying OrahDEXVault to Base...");
+  console.log("Deploying OrahVault to Base...");
 
-  // Use the pre-verified bytecode from the Etherscan-verified OrahDEXVault
+  // Use the pre-verified bytecode from the Etherscan-verified OrahVault
   // We'll deploy using raw bytecode created via a known-good compile
   const hash = await walletClient.deployContract({
     abi: [{ type: "constructor", inputs: [], stateMutability: "nonpayable" }],
@@ -79,7 +79,7 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`\n✅ OrahDEXVault deployed successfully!`);
+  console.log(`\n✅ OrahVault deployed successfully!`);
   console.log(`   Contract address: ${contractAddress}`);
   console.log(`   Explorer:         https://basescan.org/address/${contractAddress}`);
   console.log(`\nSet these environment variables:`);

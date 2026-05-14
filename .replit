@@ -1,5 +1,4 @@
-modules = ["nodejs-24", "postgresql-16"]
-run = "if [ ! -d node_modules ] || [ ! -d artifacts/api-server/node_modules ] || [ ! -d artifacts/bsv-dex/node_modules ]; then pnpm install --no-frozen-lockfile --config.minimumReleaseAge=0 --config.strictDepBuilds=false; fi; pnpm -r --parallel run dev"
+modules = ["nodejs-24", "postgresql-16", "python-3.11"]
 
 [[artifacts]]
 id = "artifacts/api-server"

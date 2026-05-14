@@ -1,10 +1,22 @@
 import { db } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
-import { eq, desc, gte } from "drizzle-orm";
+import { eq, desc, gte, inArray, notInArray, and, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { guardedInterval } from "./selfHealing.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
+import { getCachedLEPrices, warmLEPriceCache, leRequest, fetchLEKeyPricesIfNeeded } from "./lePriceCache.js";
+
+/** Format a price with enough decimal places so sub-satoshi values aren't lost.
+ *  e.g. 4.2e-12 → "0.0000000000042000" rather than "0.00000000"
+ */
+function fmtPrice(p: number): string {
+  if (!Number.isFinite(p) || p <= 0) return "0";
+  if (p >= 1e-8) return p.toFixed(8);
+  const mag = -Math.floor(Math.log10(p));
+  return p.toFixed(Math.min(mag + 4, 18));
+}
 
 export const STABLECOIN_QUOTES = new Set(["USDT", "USDC", "TUSD", "USDD", "BUSD"]);
 
@@ -97,9 +109,10 @@ export const COINGECKO_IDS: Record<string, string> = {
   POWR:  "power-ledger",
   LPT:   "livepeer",
   // DeFi
-  CAKE:  "pancakeswap-token",
-  GMX:   "gmx",
-  DYDX:  "dydx-chain",
+  CAKE:   "pancakeswap-token",
+  ALPACA: "alpaca-finance",
+  GMX:    "gmx",
+  DYDX:   "dydx-chain",
   PENDLE:"pendle",
   BAL:   "balancer",
   STX:   "blockstack",
@@ -109,18 +122,20 @@ export const COINGECKO_IDS: Record<string, string> = {
   SPELL: "spell-token",
   PERP:  "perpetual-protocol",
   // Meme / culture
-  TRUMP: "official-trump",
-  TURBO: "turbo",
-  MOG:   "mog-coin",
-  POPCAT:"popcat",
-  MEW:   "cat-in-a-dogs-world",
-  NEIRO: "first-neiro-on-ethereum",
+  TRUMP:   "official-trump",
+  TURBO:   "turbo",
+  MOG:     "mog-coin",
+  POPCAT:  "popcat",
+  MEW:     "cat-in-a-dogs-world",
+  NEIRO:   "first-neiro-on-ethereum",
+  DOGINME: "doginme",
   BABYDOGE:"baby-doge-coin",
   MEME:  "memecoin-2",
   NOT:   "notcoin",
   HMSTR: "hamster-kombat",
   DOGS:  "dogs",
   EIGEN: "eigenlayer",
+  LMWR:  "limewire-token",
   // L2 / bridge tokens
   ZK:    "zksync",
   SCR:   "scroll",
@@ -132,6 +147,7 @@ export const COINGECKO_IDS: Record<string, string> = {
   BOBA:  "boba-network",
   METIS: "metis-token",
   // Gaming / Metaverse
+  APE:   "apecoin",
   AXS:   "axie-infinity",
   ENJ:   "enjincoin",
   GALA:  "gala",
@@ -174,9 +190,10 @@ export const COINGECKO_IDS: Record<string, string> = {
   BGB:   "bitget-token",
   WBT:   "whitebit",
   // BRC-20 / Ordinals
-  ORDI:  "ordinals",
-  SATS:  "1000sats-ordinals",
-  RATS:  "rats-ordinals",
+  ORDI:       "ordinals",
+  SATS:       "1000sats-ordinals",
+  "1000SATS": "1000sats-ordinals",
+  RATS:       "rats-ordinals",
   // Polkadot ecosystem
   KSM:   "kusama",
   ACA:   "acala",
@@ -249,7 +266,7 @@ export const USDT_PAIRS = [
   "FET","AGIX","OCEAN","RNDR","TAO","ARKM","NMR","ORAI","CTXC","WLD","ALT",
   "HNT","IOTX","GLM","STORJ","POWR","LPT",
   // ── Gaming / Metaverse ──────────────────────────────────────────────────────
-  "AXS","ENJ","GALA","ILV","ALICE","TLM","SLP","WAXP","PIXEL","BIGTIME",
+  "APE","AXS","ENJ","GALA","ILV","ALICE","TLM","SLP","WAXP","PIXEL","BIGTIME",
   "BEAM","PRIME","RON","MC","GODS",
   // ── Cosmos ecosystem ────────────────────────────────────────────────────────
   "OSMO","STARS","JUNO","EVMOS","STRD","AKT","SCRT","LUNA","LUNC","DYM","NTRN","BAND",
@@ -263,7 +280,7 @@ export const USDT_PAIRS = [
   "KSM","ACA","ASTR","PHA",
   // ── Meme coins ───────────────────────────────────────────────────────────────
   "TRUMP","STX","FLOKI","TURBO","MOG","POPCAT","MEW","NEIRO",
-  "MEME","NOT","HMSTR","DOGS","EIGEN",
+  "MEME","NOT","HMSTR","DOGS","EIGEN","DOGINME",
   // ── L2 / bridge ──────────────────────────────────────────────────────────────
   "1INCH","ZRO","ZK","SCR","MNT","STRK","IMX","BOBA","METIS",
   "WBTC","WSTETH","RETH",
@@ -274,144 +291,131 @@ export const USDT_PAIRS = [
   "ZORA","ENJOY","BUILD",
 ];
 
-// BTC pairs — wide coverage vs BTC
-export const BTC_PAIRS = [
-  "ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
-  "AAVE","DASH","XMR","ZEC","MKR","CRV","RUNE","YFI",
-  "COMP","SNX","GRT","SUSHI","LDO","FIL","ALGO","XLM","HBAR","TRX",
-  "ETC","FTM","EOS","THETA","VET","BSV","BCH",
-  "TON","KAS","SEI","TIA","KAVA","ONE","ZIL","AXS","GALA","ENJ",
-  "SAND","MANA","IMX","OSMO","ATOM","INJ","ONDO","ORDI",
-  "STX","GMX","DYDX","PENDLE","FET","RNDR","TAO","WLD",
-  "WIF","JUP","PYTH","RON","AKT","LUNA",
-];
-
-// ETH pairs — top coins vs ETH
-export const ETH_PAIRS = [
-  "BTC","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","NEAR","APT","ARB","OP","SUI","INJ",
-  "AAVE","MKR","CRV","LDO","COMP","SNX","GRT","RUNE","YFI",
-  "TON","SEI","TIA","AXS","GALA","ENJ","IMX","SAND","MANA",
-  "OSMO","ONDO","ORDI","STX","FET","RNDR","TAO","BONK","WIF",
-];
-
-// Stablecoin pairs — USDC, TUSD, USDD quote assets (same as USDT, minus niche tokens)
-const STABLE_BASE_PAIRS = [
+// ── Comprehensive base-coin pool ────────────────────────────────────────────
+// Mirrors USDT_PAIRS exactly; used to auto-build every chain-native pair list
+// so that ALL markets carry the same full depth of tradeable assets.
+const ALL_BASE_COINS: string[] = [
+  // ── Top L1 blue-chips ──────────────────────────────────────────────────────
   "BSV","BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX",
   "MATIC","LINK","UNI","ATOM","LTC","BCH","TRX","ETC","NEAR","ICP",
   "VET","FIL","APT","ARB","OP","SUI","INJ","PEPE","SHIB",
-  "MKR","AAVE","CRV","ENS","LDO","SUSHI","COMP","GRT","SNX","RUNE",
-  "FTM","ALGO","XLM","HBAR","EGLD","EOS","ZEC","DASH","XMR","SAND","MANA",
-  "TON","KAS","SEI","TIA","KAVA","AXS","ENJ","GALA","IMX","RON",
-  "OSMO","ATOM","ONDO","PAXG","OKB","KCS","ORDI","SATS",
-  "BONK","WIF","JUP","PYTH","FET","RNDR","TAO","WLD","STX","GMX","DYDX",
-];
-export const USDC_PAIRS = [
-  ...STABLE_BASE_PAIRS,
-  // ── Base chain assets vs USDC ────────────────────────────────────────────
+  // ── DeFi ───────────────────────────────────────────────────────────────────
+  "MKR","AAVE","CRV","ENS","LDO","SUSHI","COMP","GRT","SNX",
+  "YFI","RUNE","BAL","GMX","DYDX","PENDLE","CVX","FXS","SPELL","PERP","CAKE",
+  // ── L1 alts ────────────────────────────────────────────────────────────────
+  "FTM","ALGO","XLM","HBAR","EGLD","THETA","EOS","ZEC","DASH","XMR",
+  "SAND","MANA","CRO","KAVA","ONE","ZIL","ICX","WAVES","NEO","CFX",
+  "ROSE","FLR","CELO","CKB","CORE","BTT","XDC","GLMR","MOVR","KDA","ZEN",
+  "TON","KAS","SEI","TIA",
+  // ── Solana ecosystem ───────────────────────────────────────────────────────
+  "BONK","WIF","JUP","PYTH","JTO","ORCA","BOME","RAY","MSOL","W","TNSR",
+  // ── AI / DePIN ─────────────────────────────────────────────────────────────
+  "FET","AGIX","OCEAN","RNDR","TAO","ARKM","NMR","ORAI","CTXC","WLD","ALT",
+  "HNT","IOTX","GLM","STORJ","POWR","LPT",
+  // ── Gaming / Metaverse ─────────────────────────────────────────────────────
+  "APE","AXS","ENJ","GALA","ILV","ALICE","TLM","SLP","WAXP","PIXEL","BIGTIME",
+  "BEAM","PRIME","RON","MC","GODS",
+  // ── Cosmos ecosystem ───────────────────────────────────────────────────────
+  "OSMO","STARS","JUNO","EVMOS","STRD","AKT","SCRT","LUNA","LUNC","DYM","NTRN","BAND",
+  // ── RWA ────────────────────────────────────────────────────────────────────
+  "ONDO","PAXG","XAUT","CFG","MPL",
+  // ── Exchange tokens ────────────────────────────────────────────────────────
+  "OKB","GT","KCS","HT","BGB","WBT",
+  // ── BRC-20 / Ordinals ──────────────────────────────────────────────────────
+  "ORDI","SATS","RATS",
+  // ── Polkadot ecosystem ─────────────────────────────────────────────────────
+  "KSM","ACA","ASTR","PHA",
+  // ── Meme coins ─────────────────────────────────────────────────────────────
+  "TRUMP","STX","FLOKI","TURBO","MOG","POPCAT","MEW","NEIRO",
+  "MEME","NOT","HMSTR","DOGS","EIGEN","DOGINME",
+  // ── L2 / bridge ────────────────────────────────────────────────────────────
+  "1INCH","ZRO","ZK","SCR","MNT","STRK","IMX","BOBA","METIS",
+  "WBTC","WSTETH","RETH",
+  // ── Base chain assets ──────────────────────────────────────────────────────
   "CBBTC","CBETH","AERO","BRETT","TOSHI","DEGEN","HIGHER",
   "MORPHO","MOONWELL","SEAM","BALD","NORMIE",
-  // ── Zora ecosystem vs USDC ──────────────────────────────────────────────
+  // ── Zora ecosystem ─────────────────────────────────────────────────────────
   "ZORA","ENJOY","BUILD",
 ];
-export const TUSD_PAIRS = STABLE_BASE_PAIRS;
-export const USDD_PAIRS = STABLE_BASE_PAIRS;
 
-// BCH pairs — top coins vs Bitcoin Cash
-export const BCH_PAIRS = [
-  "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","LTC","NEAR","APT","ARB","OP","SUI","INJ",
-];
+// Pure fiat-pegged stablecoins that should not appear as base tokens in
+// chain-native markets (e.g. no DAI/ETH or FRAX/BNB).
+const STABLECOIN_BASE_EXCL = new Set([
+  "USDT","USDC","TUSD","USDD","BUSD","DAI","FRAX","LUSD","GUSD","USDP",
+]);
 
-// BNB pairs — top coins vs BNB
-export const BNB_PAIRS = [
-  "BTC","ETH","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","BSV","TRX","NEAR","APT","ARB","OP",
-  "SUI","INJ","PEPE","SHIB","AAVE","CRV","MKR","FIL","ALGO","XLM",
-];
+/**
+ * Build a deduplicated chain-native pair list: all ALL_BASE_COINS except
+ * the quote token itself and pure stablecoins, plus optional chain-specific extras.
+ */
+function buildChainPairs(quote: string, extras: string[] = []): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const b of [...ALL_BASE_COINS, ...extras]) {
+    if (b !== quote && !STABLECOIN_BASE_EXCL.has(b) && !seen.has(b)) {
+      seen.add(b);
+      result.push(b);
+    }
+  }
+  return result;
+}
 
-// ── EVM chain quote markets ────────────────────────────────────────────────
+// ── Per-quote pair lists (auto-generated from ALL_BASE_COINS) ───────────────
 
-// MATIC (Polygon) pairs
-export const MATIC_PAIRS = [
-  // Blue-chips
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","LINK",
-  "UNI","ATOM","LTC","BCH","BSV","TRX","NEAR","APT","ARB","OP","SUI","INJ",
-  // Stablecoins (bridged on Polygon)
-  "USDC","USDT","DAI","WBTC",
-  // Polygon / DeFi ecosystem
-  "AAVE","CRV","SUSHI","BAL","COMP","SNX","GRT","YFI","MKR","LDO",
-  "1INCH","SAND","MANA","AXS","IMX","GALA","ENJ",
-  "GHST","QUICK","DFYN",
-];
+// Stablecoin variants — full USDT depth
+export const USDC_PAIRS = [...USDT_PAIRS];
+export const TUSD_PAIRS = [...USDT_PAIRS];
+export const USDD_PAIRS = [...USDT_PAIRS];
 
-// AVAX (Avalanche) pairs
-export const AVAX_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","MATIC","LINK",
-  "UNI","ATOM","LTC","BCH","BSV","NEAR","APT","ARB","OP","SUI","INJ",
-];
+// BTC pairs — every base vs Bitcoin
+export const BTC_PAIRS = buildChainPairs("BTC");
 
-// ARB (Arbitrum) pairs
-export const ARB_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR","OP","SUI","INJ","AAVE","CRV",
-];
+// ETH pairs — every base vs Ether
+export const ETH_PAIRS = buildChainPairs("ETH");
 
-// OP (Optimism) pairs
-export const OP_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR","ARB","SUI","INJ","AAVE","CRV",
-];
+// BCH pairs — every base vs Bitcoin Cash
+export const BCH_PAIRS = buildChainPairs("BCH");
 
-// FTM (Fantom) pairs
-export const FTM_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR","ARB","OP","AAVE",
-];
+// BNB pairs — every base vs BNB
+export const BNB_PAIRS = buildChainPairs("BNB");
 
-// CRO (Cronos) pairs
-export const CRO_PAIRS = [
-  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","NEAR",
-];
+// BSV pairs — every base vs Bitcoin SV
+export const BSV_PAIRS = buildChainPairs("BSV");
 
-// BASE (Coinbase L2) pairs
-export const BASE_PAIRS = [
-  "ETH","BTC","USDC","DAI","LINK","UNI","AAVE","ARB","OP","DOGE",
-  "SHIB","PEPE","MKR","CRV","LDO","COMP","GRT","SNX","RUNE","SUSHI",
-];
+// ── EVM chain quote markets ─────────────────────────────────────────────────
 
-// LINEA (MetaMask L2) pairs
-export const LINEA_PAIRS = [
-  "ETH","BTC","USDC","DAI","LINK","UNI","AAVE","SNX","CRV","LDO",
-  "COMP","GRT","MKR","SUSHI","RUNE","ZEC","INJ","NEAR","DOT","SOL",
-];
+// MATIC (Polygon) — all bases + bridged stables + Polygon ecosystem
+export const MATIC_PAIRS = buildChainPairs("MATIC", ["USDC","USDT","DAI","WBTC","GHST","QUICK","DFYN"]);
 
-// ZK (zkSync Era) pairs
-export const ZK_PAIRS = [
-  "ETH","BTC","USDC","USDT","DAI","ARB","OP","LINK","UNI","AAVE",
-  "COMP","CRV","LDO","GRT","SNX","NEAR","INJ","APT","SUI","DOT",
-];
+// AVAX (Avalanche) — all bases
+export const AVAX_PAIRS = buildChainPairs("AVAX");
 
-// SCR (Scroll L2) pairs
-export const SCR_PAIRS = [
-  "ETH","BTC","USDC","USDT","DAI","LINK","UNI","AAVE","LDO","CRV",
-  "MKR","SNX","COMP","GRT","RUNE","SUSHI","INJ","NEAR","DOT","SOL",
-];
+// ARB (Arbitrum) — all bases
+export const ARB_PAIRS = buildChainPairs("ARB");
 
-// MNT (Mantle L2) pairs
-export const MNT_PAIRS = [
-  "ETH","BTC","USDC","USDT","DAI","LINK","UNI","AAVE","ARB","OP",
-  "CRV","LDO","COMP","GRT","SNX","NEAR","INJ","APT","SUI","DOT",
-];
+// OP (Optimism) — all bases
+export const OP_PAIRS = buildChainPairs("OP");
 
-// BSV pairs — top coins vs BSV
-export const BSV_PAIRS = [
-  "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
-  "LINK","UNI","ATOM","LTC","BCH","TRX","NEAR","PEPE","SHIB","APT",
-  "ARB","OP","SUI","INJ","FIL","ALGO","XLM","HBAR","FTM","ZEC",
-];
+// FTM (Fantom) — all bases
+export const FTM_PAIRS = buildChainPairs("FTM");
+
+// CRO (Cronos) — all bases
+export const CRO_PAIRS = buildChainPairs("CRO");
+
+// BASE (Coinbase L2) — all bases + bridged stables
+export const BASE_PAIRS = buildChainPairs("BASE", ["USDC","DAI"]);
+
+// LINEA (MetaMask L2) — all bases + bridged stables
+export const LINEA_PAIRS = buildChainPairs("LINEA", ["USDC","DAI"]);
+
+// ZK (zkSync Era) — all bases + bridged stables
+export const ZK_PAIRS = buildChainPairs("ZK", ["USDC","USDT","DAI"]);
+
+// SCR (Scroll L2) — all bases + bridged stables
+export const SCR_PAIRS = buildChainPairs("SCR", ["USDC","USDT","DAI"]);
+
+// MNT (Mantle L2) — all bases + bridged stables
+export const MNT_PAIRS = buildChainPairs("MNT", ["USDC","USDT","DAI"]);
 
 // Futures PERP pairs
 export const FUTURES_PAIRS = [
@@ -475,6 +479,31 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     }
   } catch (err) {
     logger.warn({ err }, "Binance 24h-ticker fetch failed");
+  }
+
+  // ── 1b. LetsExchange live prices — direct fetch when Binance is unavailable ─
+  // Triggered when Binance didn't return ETH (blocked / down in this environment).
+  // Fetches the top liquid coins directly from LE /v1/info in parallel and
+  // populates the shared LE cache so subsequent cycles benefit from it too.
+  if (!out["ETH"]) {
+    try {
+      const lePrices = await fetchLEKeyPricesIfNeeded();
+      for (const [sym, usd] of Object.entries(lePrices)) {
+        if (!out[sym] && usd > 0) {
+          out[sym] = {
+            usd,
+            usd_24h_change: 0,
+            usd_24h_vol:    usd * 1_000_000,
+            usd_market_cap: 0,
+          };
+        }
+      }
+      if (out["ETH" as string]) {
+        logger.debug({ count: Object.keys(lePrices).length }, "Key coin prices from LetsExchange (Binance unavailable)");
+      }
+    } catch (err) {
+      logger.warn({ err }, "LetsExchange key-coin direct fetch failed");
+    }
   }
 
   // ── 2. BSV via WhatsOnChain exchange rate ─────────────────────────────────
@@ -564,7 +593,34 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     }
   }
 
-  // ── Merge any missing symbols from FALLBACK_PRICES ─────────────────────────
+  // ── LetsExchange live prices — fills all remaining gaps before static fallback
+  // Moved BEFORE FALLBACK_PRICES so live LE rates always take priority over
+  // stale hardcoded values (especially critical when Binance is blocked).
+  try {
+    const lePrices = getCachedLEPrices();
+    for (const [sym, usd] of Object.entries(lePrices)) {
+      if (!out[sym] && usd > 0) {
+        // Coin not yet priced — use LE live rate
+        out[sym] = {
+          usd,
+          usd_24h_change: simulateDailyChange(sym),
+          usd_24h_vol: usd * 100_000,
+          usd_market_cap: 0,
+        };
+      } else if (out[sym] && out[sym].usd === 0 && usd > 0) {
+        // Zero-price entry — replace with LE rate
+        out[sym].usd = usd;
+      }
+    }
+    if (Object.keys(lePrices).length > 0) {
+      logger.debug({ count: Object.keys(lePrices).length }, "LE prices merged into sovereign engine");
+    }
+  } catch (err) {
+    logger.warn({ err }, "LE price merge failed (non-fatal)");
+  }
+
+  // ── Merge any missing symbols from FALLBACK_PRICES (last resort) ────────────
+  // Only reached for coins that neither Binance nor LetsExchange could price.
   for (const [sym, usd] of Object.entries(FALLBACK_PRICES)) {
     if (!out[sym]) {
       out[sym] = {
@@ -627,7 +683,7 @@ function simulateDailyChange(symbol: string): number {
 // Default fallback prices (approximate) when Binance is down — updated Apr 2026
 export const FALLBACK_PRICES: Record<string, number> = {
   // ── Top L1s ─────────────────────────────────────────────────────────────────
-  BSV:16,BTC:83000,ETH:1800,SOL:130,XRP:0.52,BNB:580,ADA:0.44,
+  BSV:16,BTC:95000,ETH:2400,SOL:150,XRP:0.60,BNB:600,ADA:0.45,
   DOGE:0.12,DOT:6.8,AVAX:18,MATIC:0.32,LINK:14.5,UNI:6.2,ATOM:4.2,
   LTC:82,BCH:320,TRX:0.24,ETC:18,NEAR:2.4,ICP:7.5,VET:0.022,FIL:3.5,
   SAND:0.25,MANA:0.25,APT:5.0,ARB:0.42,OP:0.70,SUI:2.2,INJ:16,
@@ -635,7 +691,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   // ── DeFi ─────────────────────────────────────────────────────────────────────
   MKR:1800,AAVE:130,CRV:0.27,ENS:17,LDO:0.90,SUSHI:0.60,COMP:43,
   GRT:0.12,SNX:1.5,YFI:5500,RUNE:1.5,BAL:3.2,GMX:25,DYDX:1.24,
-  PENDLE:3.5,CVX:2.8,FXS:2.1,SPELL:0.00082,PERP:0.42,CAKE:2.24,
+  PENDLE:3.5,CVX:2.8,FXS:2.1,SPELL:0.00082,PERP:0.42,CAKE:2.24,ALPACA:0.00046,
   // ── L1 alts ──────────────────────────────────────────────────────────────────
   FTM:0.20,ALGO:0.14,XLM:0.11,HBAR:0.17,EGLD:25,THETA:0.90,EOS:0.60,
   ZEC:30,DASH:27,XMR:155,CRO:0.09,AERO:1.2,
@@ -647,7 +703,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   BASE:0.85,LINEA:0.05,ZK:0.15,SCR:0.52,MNT:1.02,
   STRK:0.42,IMX:1.85,BOBA:0.18,METIS:28,
   "1INCH":0.35,ZRO:2.52,RETH:3980,
-  DAI:1.00,WBTC:70215,WSTETH:3981,
+  DAI:1.00,WBTC:83000,WSTETH:3200,
   // ── Solana ecosystem ─────────────────────────────────────────────────────────
   BONK:0.0000248,WIF:0.892,JUP:0.842,PYTH:0.382,JTO:2.42,ORCA:2.84,
   BOME:0.00842,RAY:2.12,MSOL:172,W:0.24,TNSR:0.35,
@@ -656,7 +712,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   ORAI:4.82,CTXC:0.142,WLD:2.84,ALT:0.18,
   HNT:8.42,IOTX:0.042,GLM:0.28,STORJ:0.45,POWR:0.22,LPT:7.5,
   // ── Gaming / Metaverse ───────────────────────────────────────────────────────
-  AXS:6.82,ENJ:0.18,GALA:0.022,ILV:35,ALICE:0.82,TLM:0.012,SLP:0.0028,
+  APE:1.25,AXS:6.82,ENJ:0.18,GALA:0.022,ILV:35,ALICE:0.82,TLM:0.012,SLP:0.0028,
   WAXP:0.042,PIXEL:0.14,BIGTIME:0.082,BEAM:0.018,PRIME:2.8,RON:2.42,
   MC:0.12,GODS:0.082,
   // ── Cosmos ecosystem ─────────────────────────────────────────────────────────
@@ -667,19 +723,19 @@ export const FALLBACK_PRICES: Record<string, number> = {
   // ── Exchange tokens ──────────────────────────────────────────────────────────
   OKB:42,GT:6.5,KCS:8.5,HT:2.8,BGB:3.5,WBT:22,
   // ── BRC-20 / Ordinals ────────────────────────────────────────────────────────
-  ORDI:28,SATS:0.00000035,RATS:0.00000042,
+  ORDI:28,SATS:0.00000035,"1000SATS":0.00000035,RATS:0.00000042,
   // ── Polkadot ecosystem ───────────────────────────────────────────────────────
   KSM:22,ACA:0.052,ASTR:0.042,PHA:0.082,
   // ── Meme / culture ───────────────────────────────────────────────────────────
   TRUMP:15,STX:1.52,FLOKI:0.000152,TURBO:0.0082,MOG:0.0000082,
   POPCAT:0.84,MEW:0.0058,NEIRO:0.00048,BABYDOGE:0.0000000018,
-  MEME:0.012,NOT:0.0082,HMSTR:0.0014,DOGS:0.00048,EIGEN:2.42,
+  MEME:0.012,NOT:0.0082,HMSTR:0.0014,DOGS:0.00048,EIGEN:2.42,LMWR:0.021,
   // ── Polygon ecosystem tokens ─────────────────────────────────────────────────
   GHST:1.42,QUICK:0.042,DFYN:0.048,DQUICK:82.4,
   // ── Stablecoins / other ──────────────────────────────────────────────────────
   USDT:1,USDC:1,TUSD:1,USDD:1,BUSD:1,
   // ── Base chain assets ────────────────────────────────────────────────────────
-  CBBTC:70725,CBETH:3400,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
+  CBBTC:95000,CBETH:2400,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
   HIGHER:0.00215,MORPHO:1.82,MOONWELL:0.182,SEAM:4.82,
   BALD:0.00284,NORMIE:0.00182,
   // ── Zora ecosystem ───────────────────────────────────────────────────────────
@@ -689,9 +745,12 @@ export const FALLBACK_PRICES: Record<string, number> = {
 export async function seedMarketsIfNeeded() {
   try {
     // ── Cleanup: remove legacy dash-separator symbols (e.g. "AAVE-USDT") ───
-    // These were created by an old seeder; only slash-format is canonical now.
-    const allMarkets = await db.select().from(marketsTable);
-    const dashFormat = allMarkets.filter(m => m.symbol.includes("-") && !m.symbol.endsWith("-PERP"));
+    // Fetch only the symbol column (not all columns) to keep memory usage low
+    // even when the table has 36K+ rows from a previous LE sync.
+    const dashFormat = await db
+      .select({ symbol: marketsTable.symbol })
+      .from(marketsTable)
+      .where(sql`symbol LIKE '%-%' AND symbol NOT LIKE '%-PERP'`);
     if (dashFormat.length > 0) {
       logger.info({ count: dashFormat.length }, "Removing legacy dash-format market symbols");
       for (const m of dashFormat) {
@@ -699,8 +758,9 @@ export async function seedMarketsIfNeeded() {
       }
     }
 
-    const existing = await db.select().from(marketsTable);
-    const existingSymbols = new Set(existing.map(m => m.symbol));
+    // Fetch only the symbol column so we don't load full rows for 36K+ LE pairs
+    const existingRows = await db.select({ symbol: marketsTable.symbol }).from(marketsTable);
+    const existingSymbols = new Set(existingRows.map(m => m.symbol));
 
     const toInsert: any[] = [];
 
@@ -711,8 +771,8 @@ export async function seedMarketsIfNeeded() {
         const fp = (FALLBACK_PRICES[base] ?? 1);
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "USDT",
-          lastPrice: fp.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (fp*1.02).toFixed(8), low24h: (fp*0.98).toFixed(8),
+          lastPrice: fmtPrice(fp), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(fp*1.02), low24h: fmtPrice(fp*0.98),
           status: "active", type: "spot",
         });
       }
@@ -726,8 +786,8 @@ export async function seedMarketsIfNeeded() {
           const fp = FALLBACK_PRICES[base] ?? 1;
           toInsert.push({
             symbol: sym, baseAsset: base, quoteAsset: quote,
-            lastPrice: fp.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-            volume24h: "0", high24h: (fp*1.02).toFixed(8), low24h: (fp*0.98).toFixed(8),
+            lastPrice: fmtPrice(fp), priceChange24h: "0", priceChangePercent24h: "0",
+            volume24h: "0", high24h: fmtPrice(fp*1.02), low24h: fmtPrice(fp*0.98),
             status: "active", type: "spot",
           });
         }
@@ -743,8 +803,8 @@ export async function seedMarketsIfNeeded() {
         const crossPrice = basePrice / ethPrice;
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "ETH",
-          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+          lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
           status: "active", type: "spot",
         });
       }
@@ -759,8 +819,8 @@ export async function seedMarketsIfNeeded() {
         const crossPrice = basePrice / bnbPrice;
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "BNB",
-          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+          lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
           status: "active", type: "spot",
         });
       }
@@ -783,8 +843,8 @@ export async function seedMarketsIfNeeded() {
           const crossPrice = basePrice / quotePrice;
           toInsert.push({
             symbol: sym, baseAsset: base, quoteAsset: quote,
-            lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-            volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+            lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+            volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
             status: "active", type: "spot",
           });
         }
@@ -807,8 +867,8 @@ export async function seedMarketsIfNeeded() {
           const crossPrice = basePrice / quotePrice;
           toInsert.push({
             symbol: sym, baseAsset: base, quoteAsset: quote,
-            lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-            volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+            lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+            volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
             status: "active", type: "spot",
           });
         }
@@ -824,8 +884,8 @@ export async function seedMarketsIfNeeded() {
         const crossPrice = basePrice / bchPrice;
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "BCH",
-          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+          lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
           status: "active", type: "spot",
         });
       }
@@ -840,8 +900,8 @@ export async function seedMarketsIfNeeded() {
         const crossPrice = basePrice / btcPrice;
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "BTC",
-          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+          lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
           status: "active", type: "spot",
         });
       }
@@ -856,8 +916,8 @@ export async function seedMarketsIfNeeded() {
         const crossPrice = basePrice / bsvPrice;
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "BSV",
-          lastPrice: crossPrice.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (crossPrice*1.02).toFixed(8), low24h: (crossPrice*0.98).toFixed(8),
+          lastPrice: fmtPrice(crossPrice), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(crossPrice*1.02), low24h: fmtPrice(crossPrice*0.98),
           status: "active", type: "spot",
         });
       }
@@ -870,8 +930,8 @@ export async function seedMarketsIfNeeded() {
         const fp = (FALLBACK_PRICES[base] ?? 1);
         toInsert.push({
           symbol: sym, baseAsset: base, quoteAsset: "USDT",
-          lastPrice: fp.toFixed(8), priceChange24h: "0", priceChangePercent24h: "0",
-          volume24h: "0", high24h: (fp*1.02).toFixed(8), low24h: (fp*0.98).toFixed(8),
+          lastPrice: fmtPrice(fp), priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: fmtPrice(fp*1.02), low24h: fmtPrice(fp*0.98),
           status: "active", type: "futures",
         });
       }
@@ -881,10 +941,276 @@ export async function seedMarketsIfNeeded() {
       await db.insert(marketsTable).values(toInsert).onConflictDoNothing();
       logger.info(`Seeded ${toInsert.length} new markets`);
     }
+
+    // Ensure all internal (non-LE) pairs are flagged as pinned.
+    // This is idempotent and handles any rows seeded before this flag existed.
+    await db
+      .update(marketsTable)
+      .set({ pinned: true, enabled: true })
+      .where(and(
+        inArray(marketsTable.type, ["spot", "futures"]),
+        eq(marketsTable.pinned, false),
+      ));
   } catch (err) {
     logger.warn({ err }, "Failed to seed markets");
   }
 }
+
+// ── Quote currencies to seed for every LE coin ────────────────────────────────
+// Extended set of major quote currencies so every LE token gets full coverage.
+const LE_SEED_QUOTES = [
+  "USDT", "USDC", "BSV", "BTC", "ETH", "BNB", "SOL", "XRP", "TRX", "DOGE",
+] as const;
+
+export async function seedLEPairsIfNeeded() {
+  try {
+    // Fetch the canonical LE coin list — leRequest returns { ok, data }
+    const res = await leRequest("/v2/coins");
+    if (!res.ok || !Array.isArray(res.data) || res.data.length === 0) return;
+    const rawCoins = res.data as Record<string, unknown>[];
+
+    // Deduplicate by ticker (same coin, multiple networks)
+    const seen = new Set<string>();
+    const coins: Array<{ code: string }> = [];
+    for (const item of rawCoins) {
+      const code = ((item.code ?? item.ticker ?? item.symbol ?? "") as string).toUpperCase();
+      if (!code || seen.has(code)) continue;
+      seen.add(code);
+      coins.push({ code });
+    }
+
+    // Current live LE USD prices (may be empty if warm-up still running)
+    const lePrices = getCachedLEPrices();
+
+    // Pull prices for the five quote coins so we can compute cross-rates
+    const bsvUSD  = lePrices["BSV"]  ?? FALLBACK_PRICES["BSV"]  ?? 16;
+    const btcUSD  = lePrices["BTC"]  ?? FALLBACK_PRICES["BTC"]  ?? 95000;
+    const ethUSD  = lePrices["ETH"]  ?? FALLBACK_PRICES["ETH"]  ?? 3500;
+    const bnbUSD  = lePrices["BNB"]  ?? FALLBACK_PRICES["BNB"]  ?? 600;
+
+    // Existing DB symbols (to avoid duplicates)
+    const existing = await db.select({ symbol: marketsTable.symbol }).from(marketsTable);
+    const existingSymbols = new Set(existing.map(r => r.symbol));
+
+    const toInsert: any[] = [];
+
+    for (const coin of coins) {
+      // LE /v2/coins uses "code" as the ticker symbol
+      const base = (coin.code ?? "").toUpperCase().trim();
+      if (!base) continue;
+
+      // Base USD price from LE cache, then fallback map, then 0
+      const baseUSD = lePrices[base] ?? FALLBACK_PRICES[base] ?? 0;
+
+      for (const quote of LE_SEED_QUOTES) {
+        if (base === quote) continue;                 // skip e.g. USDT/USDT
+        const sym = `${base}/${quote}`;
+        if (existingSymbols.has(sym)) continue;       // already seeded
+
+        let price = 0;
+        if (quote === "USDT") {
+          price = baseUSD;
+        } else if (quote === "BSV" && bsvUSD > 0) {
+          price = baseUSD / bsvUSD;
+        } else if (quote === "BTC" && btcUSD > 0) {
+          price = baseUSD / btcUSD;
+        } else if (quote === "ETH" && ethUSD > 0) {
+          price = baseUSD / ethUSD;
+        } else if (quote === "BNB" && bnbUSD > 0) {
+          price = baseUSD / bnbUSD;
+        }
+
+        const p = price > 0 ? price.toFixed(price < 0.0001 ? 10 : 8) : "0";
+        toInsert.push({
+          symbol: sym, baseAsset: base, quoteAsset: quote,
+          lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
+          volume24h: "0", high24h: p, low24h: p,
+          status: "active", type: "letsexchange",
+        });
+        existingSymbols.add(sym); // prevent duplicates within this batch
+      }
+    }
+
+    if (toInsert.length > 0) {
+      // Insert in chunks to avoid giant DB transactions
+      const CHUNK = 500;
+      for (let i = 0; i < toInsert.length; i += CHUNK) {
+        await db.insert(marketsTable).values(toInsert.slice(i, i + CHUNK)).onConflictDoNothing();
+      }
+      logger.info({ count: toInsert.length, coins: coins.length }, "LE pairs seeded into DB");
+    } else {
+      logger.info("LE pairs: all already present in DB");
+    }
+
+    // ── One-time migration: reclassify existing LE-seeded pairs ──────────────
+    // Any "spot" pair whose quote is one of the 5 LE quotes AND whose base is
+    // NOT in the pre-LE original static list gets marked "letsexchange" so the
+    // frontend knows to route trades through the LE swap panel.
+    try {
+      const leCodes = new Set(coins.map(c => c.code));
+      // Original coins seeded before LE — keep as "spot" (internal order book)
+      const originalBases = new Set(USDT_PAIRS);
+      // LE-only = in LE coin list AND not in the original Binance seeded list
+      const leBases = [...leCodes].filter(s => !originalBases.has(s));
+      if (leBases.length > 0) {
+        const MCHUNK = 500;
+        let migrated = 0;
+        for (let i = 0; i < leBases.length; i += MCHUNK) {
+          const chunk = leBases.slice(i, i + MCHUNK);
+          const res = await db.update(marketsTable)
+            .set({ type: "letsexchange" })
+            .where(and(
+              eq(marketsTable.type, "spot"),
+              inArray(marketsTable.quoteAsset, [...LE_SEED_QUOTES]),
+              inArray(marketsTable.baseAsset, chunk),
+            ));
+          migrated += ((res as any).rowsAffected ?? (res as any).changes ?? 0);
+        }
+        if (migrated > 0) {
+          logger.info({ migrated }, "Migrated existing LE pairs → type:letsexchange");
+        }
+      }
+    } catch (migErr) {
+      logger.warn({ migErr }, "LE type migration failed (non-fatal)");
+    }
+  } catch (err) {
+    logger.warn({ err }, "seedLEPairsIfNeeded failed (non-fatal)");
+  }
+}
+
+/**
+ * syncAllLEPairs — Full forced resync of ALL LetsExchange pairs in the DB.
+ *
+ * Unlike seedLEPairsIfNeeded (onConflictDoNothing), this function:
+ *   1. Fetches the full LE coin list from the API
+ *   2. Runs a fresh sovereign price pass (Binance + LE cache + fallbacks)
+ *   3. UPSERTS every coin × every quote — updating zero-price rows with real prices
+ *   4. Returns { coins, inserted, updated } for the admin endpoint
+ *
+ * Called by POST /api/admin/le-sync (admin panel) and at startup after warm-up.
+ */
+/**
+ * syncAllLEPairs — Full all-to-all LetsExchange pair sync.
+ *
+ * Generates every coin×coin combination (excluding self-pairs) from the
+ * LetsExchange coin catalog — producing ~36,099+ pairs depending on the
+ * live LE coin list. Falls back to the built-in catalog when the API key
+ * is not configured.
+ *
+ * Strategy:
+ *   1. Try LE /v2/coins (needs API key). If 403/unavailable → use built-in list.
+ *   2. Fetch sovereign prices for cross-rate math.
+ *   3. For every (base, quote) pair where base ≠ quote, compute price = baseUSD / quoteUSD.
+ *   4. Upsert in 500-row DB chunks (no giant transactions).
+ */
+export async function syncAllLEPairs(): Promise<{ coins: number; inserted: number; updated: number; quotes: number }> {
+  const { getBuiltInLeCoins } = await import("./leAllCoins.js");
+
+  // 1. Determine coin list — live API preferred, built-in fallback
+  let coinTickers: string[] = [];
+  let source = "api";
+
+  try {
+    const res = await leRequest("/v2/coins");
+    if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+      const seen = new Set<string>();
+      for (const item of res.data as Record<string, unknown>[]) {
+        const code = ((item.code ?? item.ticker ?? item.symbol ?? "") as string).toUpperCase().trim();
+        if (code && !seen.has(code)) { seen.add(code); coinTickers.push(code); }
+      }
+    } else {
+      source = "builtin";
+      coinTickers = getBuiltInLeCoins();
+    }
+  } catch {
+    source = "builtin";
+    coinTickers = getBuiltInLeCoins();
+  }
+
+  if (coinTickers.length === 0) throw new Error("LE sync: no coins available from API or built-in list");
+
+  logger.info({ coins: coinTickers.length, source }, "LE sync: coin list loaded");
+
+  // 2. Get sovereign prices for cross-rate computation
+  const prices = await fetchSovereignPrices();
+
+  // Build a USD price lookup (sovereign engine → FALLBACK_PRICES → 0)
+  const usdOf = (sym: string): number =>
+    prices[sym]?.usd || FALLBACK_PRICES[sym] || 0;
+
+  // 3. All-to-all: every base paired with every other coin as quote
+  const CHUNK = 500;
+  let inserted = 0;
+  let updated  = 0;
+  let totalPairs = 0;
+
+  // Process base coins in batches of 20 to keep memory bounded
+  // Each batch of 20 bases produces up to 20 × (N-1) rows
+  const BASE_BATCH = 20;
+
+  for (let bi = 0; bi < coinTickers.length; bi += BASE_BATCH) {
+    const baseBatch = coinTickers.slice(bi, bi + BASE_BATCH);
+    const rows: Record<string, unknown>[] = [];
+
+    for (const base of baseBatch) {
+      const baseUSD = usdOf(base);
+
+      for (const quote of coinTickers) {
+        if (base === quote) continue; // skip self-pair
+        const quoteUSD = usdOf(quote);
+
+        let price = 0;
+        if (baseUSD > 0 && quoteUSD > 0) {
+          price = baseUSD / quoteUSD;
+        }
+
+        const p = fmtPrice(price);
+        rows.push({
+          symbol:               `${base}/${quote}`,
+          baseAsset:            base,
+          quoteAsset:           quote,
+          lastPrice:            p,
+          priceChange24h:       "0",
+          priceChangePercent24h:"0",
+          volume24h:            "0",
+          high24h:              p,
+          low24h:               p,
+          status:               "active",
+          type:                 "letsexchange",
+        });
+      }
+    }
+
+    totalPairs += rows.length;
+
+    // Upsert in DB chunks — only update price fields, never touch type/status
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      const result = await db.insert(marketsTable)
+        .values(chunk as any[])
+        .onConflictDoUpdate({
+          target: marketsTable.symbol,
+          set: {
+            lastPrice: sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.last_price != '0' THEN excluded.last_price ELSE ${marketsTable.lastPrice} END`,
+            high24h:   sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.high_24h  != '0' THEN excluded.high_24h  ELSE ${marketsTable.high24h}  END`,
+            low24h:    sql`CASE WHEN ${marketsTable.type} = 'letsexchange' AND excluded.low_24h   != '0' THEN excluded.low_24h   ELSE ${marketsTable.low24h}   END`,
+          },
+        });
+      const affected = (result as any).rowCount ?? (result as any).rowsAffected ?? 0;
+      inserted += affected;
+    }
+  }
+
+  logger.info(
+    { coins: coinTickers.length, totalPairs, inserted, source },
+    "LE all-to-all pairs sync complete",
+  );
+  return { coins: coinTickers.length, inserted, updated, quotes: coinTickers.length - 1 };
+}
+
+// Shared in-memory map of coin → 24h change percent (populated each sovereign cycle)
+const _coinChangeMap: Record<string, number> = {};
+export function getCoinChangeMap(): Record<string, number> { return _coinChangeMap; }
 
 export async function updateMarketPrices() {
   try {
@@ -892,7 +1218,34 @@ export async function updateMarketPrices() {
     const prices = await fetchSovereignPrices();
     logger.info({ symbols: Object.keys(prices).length }, "Market prices updated (sovereign engine)");
 
-    const markets = await db.select().from(marketsTable);
+    // Wrapped / synthetic BTC tokens should always track BTC 1:1.
+    // If Binance / CoinGecko doesn't provide an independent price, copy BTC.
+    const btcData = prices["BTC"];
+    if (btcData) {
+      for (const wrapper of ["WBTC", "CBBTC", "RBTC", "TBTC"]) {
+        if (!prices[wrapper]) {
+          prices[wrapper] = { ...btcData };
+        }
+      }
+    }
+
+    // Wrapped / synthetic ETH tokens track ETH 1:1 when no independent price.
+    const ethData = prices["ETH"];
+    if (ethData) {
+      for (const wrapper of ["WETH", "CBETH", "RETH", "WSTETH"]) {
+        if (!prices[wrapper] || prices[wrapper].usd < ethData.usd * 0.5) {
+          prices[wrapper] = { ...ethData };
+        }
+      }
+    }
+
+    // Populate the shared change map so other modules (e.g. letsexchange route) can read it
+    for (const [sym, data] of Object.entries(prices)) {
+      _coinChangeMap[sym] = data.usd_24h_change ?? 0;
+    }
+
+    const markets = await db.select().from(marketsTable)
+      .where(notInArray(marketsTable.type, ["letsexchange"]));
 
     for (const market of markets) {
       // Look up by base-asset symbol directly — no CoinGecko ID needed
@@ -1000,12 +1353,12 @@ export async function updateMarketPrices() {
       }
 
       await db.update(marketsTable).set({
-        lastPrice:            lastPrice.toFixed(8),
-        priceChange24h:       change.toFixed(8),
+        lastPrice:            fmtPrice(lastPrice),
+        priceChange24h:       fmtPrice(Math.abs(change)) === "0" ? "0" : change.toFixed(18).replace(/0+$/, "").replace(/\.$/, "0"),
         priceChangePercent24h: changePercent.toFixed(4),
         volume24h:            (safePrice(vol) ? vol : 0).toFixed(2),
-        high24h:              (safePrice(high24h) ? high24h : lastPrice * 1.01).toFixed(8),
-        low24h:               (safePrice(low24h)  ? low24h  : lastPrice * 0.99).toFixed(8),
+        high24h:              fmtPrice(safePrice(high24h) ? high24h : lastPrice * 1.01),
+        low24h:               fmtPrice(safePrice(low24h)  ? low24h  : lastPrice * 0.99),
         marketCap:            data?.usd_market_cap ? data.usd_market_cap.toFixed(2) : null,
       }).where(eq(marketsTable.symbol, market.symbol));
     }
@@ -1024,24 +1377,38 @@ export async function updateMarketPrices() {
   }
 }
 
-let updateInterval: NodeJS.Timeout | null = null;
-let _priceUpdating = false;
+let _stopPriceUpdater: (() => void) | null = null;
 
 export function startPriceUpdater() {
-  seedMarketsIfNeeded().then(() => updateMarketPrices());
-  updateInterval = setInterval(async () => {
-    if (_priceUpdating) { logger.warn("Price updater: previous tick still running, skipping"); return; }
-    _priceUpdating = true;
-    try { await updateMarketPrices(); }
-    catch (err) { logger.warn({ err }, "Price updater tick error"); }
-    finally { _priceUpdating = false; }
+  // Warm the LE price cache at 90 s (price lookups only — no pair sync).
+  // syncAllLEPairs() is intentionally NOT called at startup: the DB already
+  // holds 36K+ LE pairs from a previous run, and inserting them again while
+  // the markets endpoint is live causes JSON.stringify OOM on the full table.
+  // The /api/letsexchange/pairs route serves from the DB when ≥100 rows exist.
+  setTimeout(() => {
+    warmLEPriceCache()
+      .catch(err => logger.warn({ err }, "Startup: LE price cache warm failed"));
   }, 90_000);
-  logger.info("Live price updater started (interval: 90s)");
+
+  // Seed any missing market rows at 15 s (lightweight DB write, no network).
+  // Do NOT call updateMarketPrices() here — the guarded interval below owns that.
+  setTimeout(() => {
+    seedMarketsIfNeeded().catch(err => logger.warn({ err }, "seedMarketsIfNeeded failed"));
+  }, 15_000);
+
+  // First Binance price fetch deferred to 35 s so the server is fully settled
+  // before the large ticker-24hr response (~5 MB / 2000+ objects) is parsed.
+  // After the first run, the guarded interval takes over every 60 s.
+  _stopPriceUpdater = guardedInterval(
+    "price-updater", updateMarketPrices, 60_000,
+    { timeoutMs: 55_000, initialDelayMs: 35_000 },
+  );
+  logger.info("Live price updater started (interval: 60s, self-healing)");
 }
 
 export function stopPriceUpdater() {
-  if (updateInterval) {
-    clearInterval(updateInterval);
-    updateInterval = null;
+  if (_stopPriceUpdater) {
+    _stopPriceUpdater();
+    _stopPriceUpdater = null;
   }
 }

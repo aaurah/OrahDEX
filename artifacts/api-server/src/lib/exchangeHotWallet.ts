@@ -1,5 +1,5 @@
 /**
- * exchangeHotWallet.ts — Orah
+ * exchangeHotWallet.ts — OrahDEX
  *
  * Manages the platform's EVM hot wallet used for paying out user withdrawals.
  *
@@ -24,13 +24,16 @@ import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { getRequiredEnv } from "./requiredEnv.js";
 
 // ── Encryption (AES-256-GCM) ───────────────────────────────────────────────────
 
-const SECRET = process.env.EVM_WALLET_SECRET ?? "orah-internal-evm-fallback-key-32bytes!";
-
 function deriveKey(): Buffer {
-  return scryptSync(SECRET, "orah-hot-wallet-salt-v1", 32) as Buffer;
+  return scryptSync(
+    getRequiredEnv("EVM_WALLET_SECRET", "[FATAL] EVM_WALLET_SECRET is not set. Refusing to derive hot-wallet encryption keys."),
+    "orahdex-hot-wallet-salt-v1",
+    32,
+  ) as Buffer;
 }
 
 function encrypt(plain: string): string {
@@ -92,14 +95,47 @@ export interface HotWalletInfo {
  * Returns the private key hex IN MEMORY only — never persisted in plaintext.
  */
 export async function getOrCreateEvmHotWallet(): Promise<HotWalletInfo> {
-  // 1. Env var override
-  const envKey = process.env.EXCHANGE_HOT_WALLET_KEY;
-  if (envKey && envKey.length >= 64) {
-    const raw = (envKey.startsWith("0x") ? envKey : `0x${envKey}`) as `0x${string}`;
+  // Helper: a string is "private-key shaped" if it's exactly 64 hex chars
+  // (with optional 0x prefix → 66 total).
+  const isPrivKeyShape = (s?: string): boolean => {
+    if (!s) return false;
+    const stripped = s.startsWith("0x") ? s.slice(2) : s;
+    return stripped.length === 64 && /^[0-9a-fA-F]+$/.test(stripped);
+  };
+  const toAccount = (s: string): HotWalletInfo => {
+    const raw  = (s.startsWith("0x") ? s : `0x${s}`) as `0x${string}`;
     const pub  = secp.getPublicKey(Buffer.from(raw.slice(2), "hex"), false);
     const hash = keccak_256(pub.slice(1));
     const addr = checksumAddress(Buffer.from(hash.slice(-20)).toString("hex"));
     return { privKeyHex: raw, address: addr, source: "env" };
+  };
+
+  // 1a. Standard env var
+  const envKey = process.env.EXCHANGE_HOT_WALLET_KEY;
+  if (isPrivKeyShape(envKey)) return toAccount(envKey!);
+
+  // 1b. Allow operators to reuse EVM_WALLET_SECRET as the hot wallet key ONLY
+  // when EXCHANGE_HOT_WALLET_KEY_ALLOW_EVM_SECRET=1 is explicitly set.
+  // This opt-in prevents silent key sharing between the escrow relayer and the
+  // hot withdrawal wallet (key compromise would affect both roles otherwise).
+  const allowSharedKey = process.env.EXCHANGE_HOT_WALLET_KEY_ALLOW_EVM_SECRET === "1";
+  const evmSecret = process.env.EVM_WALLET_SECRET;
+  if (allowSharedKey && isPrivKeyShape(evmSecret) && !isPrivKeyShape(envKey)) {
+    logger.warn(
+      "Using EVM_WALLET_SECRET as the exchange hot wallet key because " +
+      "EXCHANGE_HOT_WALLET_KEY_ALLOW_EVM_SECRET=1 is set. " +
+      "This shares one key between the escrow relayer and hot wallet. " +
+      "Set EXCHANGE_HOT_WALLET_KEY to a separate key for production deployments."
+    );
+    return toAccount(evmSecret!);
+  }
+  if (!allowSharedKey && isPrivKeyShape(evmSecret) && !isPrivKeyShape(envKey)) {
+    logger.warn(
+      "EXCHANGE_HOT_WALLET_KEY is not set. EVM_WALLET_SECRET is a private key but " +
+      "EXCHANGE_HOT_WALLET_KEY_ALLOW_EVM_SECRET is not set, so it will not be used " +
+      "as the hot wallet key. Set EXCHANGE_HOT_WALLET_KEY for EVM withdrawals, or " +
+      "set EXCHANGE_HOT_WALLET_KEY_ALLOW_EVM_SECRET=1 to share the key (not recommended)."
+    );
   }
 
   // 2. DB (encrypted)
@@ -126,18 +162,7 @@ export async function getOrCreateEvmHotWallet(): Promise<HotWalletInfo> {
 
 /** Returns just the address (no key) — safe to expose to admin UI */
 export async function getEvmHotWalletAddress(): Promise<string> {
-  // Check env first for the address
-  const envKey = process.env.EXCHANGE_HOT_WALLET_KEY;
-  if (envKey && envKey.length >= 64) {
-    const raw  = (envKey.startsWith("0x") ? envKey : `0x${envKey}`) as `0x${string}`;
-    const pub  = secp.getPublicKey(Buffer.from(raw.slice(2), "hex"), false);
-    const hash = keccak_256(pub.slice(1));
-    return checksumAddress(Buffer.from(hash.slice(-20)).toString("hex"));
-  }
-  // Try cached address in DB (faster — no decryption needed)
-  const cached = await getSetting("exchange_hot_wallet_address").catch(() => null);
-  if (cached) return cached;
-  // Fall back to full init
+  // Always go through the full loader so the swap-tolerant env logic applies.
   const { address } = await getOrCreateEvmHotWallet();
   return address;
 }

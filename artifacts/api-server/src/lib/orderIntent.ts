@@ -2,7 +2,7 @@
  * orderIntent.ts — Canonical OrderIntent type + server-side validation
  *
  * OrderIntent is the single, authoritative contract for every order that
- * enters the Orah matching engine.  Both the wallet (front-end) and the
+ * enters the OrahDEX matching engine.  Both the wallet (front-end) and the
  * server speak this type; the server never accepts an order whose intent
  * cannot be fully reconstructed and validated.
  *
@@ -23,7 +23,7 @@
  *
  *   "ledger:{walletAddress}:{asset}:{amount}"
  *       Internal API ledger — funds already moved available→locked.
- *       Used for orahdex wallets.
+ *       Used for orah wallets.
  *
  *   "evm-sig:{signatureHash}"
  *       EVM personal_sign signature proves authorisation.
@@ -57,7 +57,7 @@ export type OrderKind = "SPOT" | "FUTURES";
 /** MARKET executes at the best available price; LIMIT rests in the book. */
 export type OrderType = "MARKET" | "LIMIT";
 
-export type WalletSource = "external" | "orahdex";
+export type WalletSource = "external" | "orah";
 
 /**
  * The canonical order intent shared between wallet and server.

@@ -1,0 +1,25 @@
+I’d like a deep, production‑grade audit of this Replit project (OrahDEX), including the admin panel, before I treat it as publish‑ready.Please review the admin panel in particular for:1. Auth & access control• Only authorized admins can access the panel and its APIs.
+• No way for normal users to escalate into admin via URL, token, or client‑side tricks.
+• Session handling, cookies, JWTs, and any admin tokens are secure and not exposed in frontend code.
+
+2. Admin capabilities & blast radius• What can an admin change? (orders, balances, configs, routing, KYC, limits, etc.)
+• Ensure there are no dangerous actions without confirmation (e.g., wiping data, changing addresses, disabling safeguards).
+• Check that all admin actions are logged with who/when/what.
+
+3. Data integrity• Admin actions should not corrupt orders, user balances, or routing logic.
+• No way to put the system into an inconsistent or “ghost” state from the admin panel.
+
+4. Security of sensitive data• No KYC data, secrets, or internal keys are exposed in the admin UI or logs.
+• Any sensitive fields (KYC, identity, payment info) are properly protected and only shown where absolutely necessary.
+
+5. Fiat → crypto + KYC oversight• Admin views for Stripe/KYC/LE orders are accurate and cannot accidentally trigger double‑funding, double‑sending, or missed refunds.
+• State transitions (pending → funded → completed → failed → refunded) are safe and consistent.
+
+6. Production readiness• Any logic in the admin panel that could break the live exchange if misused or if a bug exists.
+• Any missing guards, confirmations, or validations you’d consider essential for an exchange‑like system.
+
+Please treat this as a full admin‑surface audit and return:• Critical issues (must fix before going live)
+• High‑risk design flaws
+• Medium/low issues and recommended hardening
+• Any unclear or undocumented behavior in the admin panel.
+Goal: Admin panel is safe, access‑controlled, and cannot accidentally or maliciously break OrahDEX or user funds.

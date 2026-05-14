@@ -1,18 +1,25 @@
-import { useState } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ToggleLeft, ToggleRight, Pencil, Check, X, Plus, Trash2, FileCode } from "lucide-react";
+import { ToggleLeft, ToggleRight, Pencil, Check, X, Plus, Trash2, FileCode, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { KNOWN_CONTRACTS } from "@/lib/contracts";
+import { adminFetch } from "@/lib/adminFetch";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const fetchPairs = () => fetch(`${BASE}/api/admin/pairs`).then(r => r.json());
+const PAGE_SIZE = 100;
 
 type Market = {
   symbol: string; baseAsset: string; quoteAsset: string;
   type: string; status: string; makerFee: string; takerFee: string;
   lastPrice: string; volume24h: string;
   contractAddresses?: Record<string, string> | null;
+};
+
+type PairsResponse = {
+  pairs: Market[];
+  total: number;
+  limit: number;
+  offset: number;
 };
 
 // ── Contract edit modal ────────────────────────────────────────────────────
@@ -54,7 +61,6 @@ function ContractModal({ pair, onClose, onSave }: {
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl max-h-[85vh] flex flex-col">
-        {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
           <div>
             <h3 className="font-bold text-base flex items-center gap-2">
@@ -70,7 +76,6 @@ function ContractModal({ pair, onClose, onSave }: {
           </button>
         </div>
 
-        {/* Entries */}
         <div className="flex-1 overflow-y-auto p-5 space-y-2">
           {entries.map(([chain, addr], idx) => (
             <div key={idx} className="flex gap-2 items-center">
@@ -87,7 +92,6 @@ function ContractModal({ pair, onClose, onSave }: {
             </div>
           ))}
 
-          {/* Add new row */}
           <div className="flex gap-2 items-center pt-2 border-t border-border/50">
             <input value={newChain} onChange={e => setNewChain(e.target.value)}
               className="w-36 shrink-0 bg-secondary border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-primary"
@@ -103,7 +107,6 @@ function ContractModal({ pair, onClose, onSave }: {
           </div>
         </div>
 
-        {/* Footer */}
         <div className="flex gap-3 p-5 border-t border-border shrink-0">
           <button onClick={onClose}
             className="flex-1 py-2 rounded-xl border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">
@@ -122,15 +125,51 @@ function ContractModal({ pair, onClose, onSave }: {
 // ── Main page ──────────────────────────────────────────────────────────────
 export function AdminTradePairs() {
   const qc = useQueryClient();
-  const { data: pairs = [], isLoading } = useQuery({ queryKey: ["admin-pairs"], queryFn: fetchPairs });
-  const [editFees,      setEditFees]     = useState<string | null>(null);
-  const [feeForm,       setFeeForm]      = useState({ maker: "", taker: "" });
-  const [typeFilter,    setTypeFilter]   = useState("all");
-  const [contractPair,  setContractPair] = useState<Market | null>(null);
+  const [typeFilter,   setTypeFilter]   = useState("all");
+  const [search,       setSearch]       = useState("");
+  const [searchInput,  setSearchInput]  = useState("");
+  const [page,         setPage]         = useState(0);
+  const [editFees,     setEditFees]     = useState<string | null>(null);
+  const [feeForm,      setFeeForm]      = useState({ maker: "", taker: "" });
+  const [contractPair, setContractPair] = useState<Market | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const fetchPairs = useCallback(() => {
+    const params = new URLSearchParams({
+      limit:  String(PAGE_SIZE),
+      offset: String(page * PAGE_SIZE),
+    });
+    if (search)               params.set("search", search);
+    if (typeFilter !== "all") params.set("type",   typeFilter);
+    return adminFetch(`/api/admin/pairs?${params}`).then(r => r.json()) as Promise<PairsResponse>;
+  }, [page, search, typeFilter]);
+
+  const { data, isLoading } = useQuery<PairsResponse>({
+    queryKey: ["admin-pairs", page, search, typeFilter],
+    queryFn:  fetchPairs,
+  });
+
+  const pairs = data?.pairs ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  const handleSearchChange = (val: string) => {
+    setSearchInput(val);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setSearch(val.trim());
+      setPage(0);
+    }, 350);
+  };
+
+  const handleTypeFilter = (t: string) => {
+    setTypeFilter(t);
+    setPage(0);
+  };
 
   const toggleStatus = useMutation({
     mutationFn: ({ symbol, status }: { symbol: string; status: string }) =>
-      fetch(`${BASE}/api/admin/pairs/${encodeURIComponent(symbol)}/status`, {
+      adminFetch(`/api/admin/pairs/${encodeURIComponent(symbol)}/status`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       }).then(r => r.json()),
@@ -139,7 +178,7 @@ export function AdminTradePairs() {
 
   const updateFees = useMutation({
     mutationFn: ({ symbol }: { symbol: string }) =>
-      fetch(`${BASE}/api/admin/pairs/${encodeURIComponent(symbol)}/fees`, {
+      adminFetch(`/api/admin/pairs/${encodeURIComponent(symbol)}/fees`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ makerFee: feeForm.maker, takerFee: feeForm.taker }),
       }).then(r => r.json()),
@@ -148,25 +187,26 @@ export function AdminTradePairs() {
 
   const updateContracts = useMutation({
     mutationFn: ({ symbol, contractAddresses }: { symbol: string; contractAddresses: Record<string, string> }) =>
-      fetch(`${BASE}/api/admin/pairs/${encodeURIComponent(symbol)}/contracts`, {
+      adminFetch(`/api/admin/pairs/${encodeURIComponent(symbol)}/contracts`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contractAddresses }),
       }).then(r => r.json()),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-pairs"] }); setContractPair(null); },
   });
 
-  const filtered = pairs.filter((p: Market) => typeFilter === "all" || p.type === typeFilter);
-
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold">Trade Pairs</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Enable, disable, configure fees, and manage contract addresses for all trading pairs</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Enable, disable, configure fees, and manage contract addresses
+            {total > 0 && <span className="ml-1 text-primary font-medium">· {total.toLocaleString()} total pairs</span>}
+          </p>
         </div>
         <div className="flex gap-2 bg-card border border-border rounded-xl p-1 text-xs font-medium">
           {["all", "spot", "futures"].map(t => (
-            <button key={t} onClick={() => setTypeFilter(t)}
+            <button key={t} onClick={() => handleTypeFilter(t)}
               className={cn("px-3 py-1.5 rounded-lg capitalize transition-all",
                 typeFilter === t ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
               )}>
@@ -176,18 +216,21 @@ export function AdminTradePairs() {
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-4">
-        {[
-          { label: "Total Pairs", value: pairs.length },
-          { label: "Active", value: pairs.filter((p: Market) => p.status === "active").length, color: "text-green-400" },
-          { label: "Disabled", value: pairs.filter((p: Market) => p.status !== "active").length, color: "text-red-400" },
-        ].map(s => (
-          <div key={s.label} className="bg-card border border-border rounded-xl p-4">
-            <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
-            <p className={cn("text-2xl font-bold font-mono", s.color ?? "")}>{s.value}</p>
-          </div>
-        ))}
+      {/* Search bar */}
+      <div className="relative">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        <input
+          value={searchInput}
+          onChange={e => handleSearchChange(e.target.value)}
+          placeholder="Search by symbol or base asset (e.g. BTC, ETH, SOL)…"
+          className="w-full pl-9 pr-9 py-2.5 bg-card border border-border rounded-xl text-sm placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+        />
+        {searchInput && (
+          <button onClick={() => { setSearchInput(""); setSearch(""); setPage(0); }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+            <X size={14} />
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -208,12 +251,17 @@ export function AdminTradePairs() {
             </thead>
             <tbody className="divide-y divide-border">
               {isLoading ? (
-                Array.from({ length: 8 }).map((_, i) => (
+                Array.from({ length: 10 }).map((_, i) => (
                   <tr key={i}>{Array.from({length:8}).map((_,j) => <td key={j} className="px-4 py-3"><div className="h-4 bg-secondary rounded animate-pulse" /></td>)}</tr>
                 ))
-              ) : filtered.map((p: Market) => (
+              ) : pairs.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-12 text-center text-muted-foreground text-sm">
+                    {search ? `No pairs matching "${search}"` : "No pairs found"}
+                  </td>
+                </tr>
+              ) : pairs.map((p: Market) => (
                 <tr key={p.symbol} className="hover:bg-secondary/20 transition-colors">
-                  {/* Pair + contract address */}
                   <td className="px-4 py-3">
                     <div className="font-bold text-foreground">{p.baseAsset}<span className="text-muted-foreground font-normal">/{p.quoteAsset}</span></div>
                     <div className="text-xs text-muted-foreground font-mono">{p.symbol}</div>
@@ -241,7 +289,6 @@ export function AdminTradePairs() {
                   <td className="px-4 py-3 text-right font-mono text-xs">${parseFloat(p.lastPrice || "0").toFixed(2)}</td>
                   <td className="px-4 py-3 text-right font-mono text-xs">{parseFloat(p.volume24h || "0").toLocaleString()}</td>
 
-                  {/* Fees — editable */}
                   {editFees === p.symbol ? (
                     <>
                       <td className="px-4 py-3 text-center">
@@ -294,6 +341,34 @@ export function AdminTradePairs() {
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-secondary/10">
+            <p className="text-xs text-muted-foreground">
+              Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total.toLocaleString()} pairs
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                disabled={page === 0}
+                className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="text-xs font-medium text-foreground tabular-nums">
+                {page + 1} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+                className="p-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Contract address edit modal */}

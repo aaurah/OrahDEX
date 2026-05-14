@@ -1,8 +1,0 @@
-{
-  "chainId": 11155111,
-  "network": "sepolia",
-  "factory": "0x8c6bdD68078Eb20b99dd8E644fF347013415220c",
-  "router": "0x03EdB4b914A0D05E6Aee0a8389A90eE33c8f664a",
-  "weth": "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9",
-  "deployedAt": "2026-04-16T13:27:49.264Z"
-}

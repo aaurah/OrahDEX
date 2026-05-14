@@ -6,7 +6,7 @@ import {
   Wallet, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle, Search, ArrowDownToLine,
-  Landmark, Plug2, Printer, Database,
+  Landmark, Plug2, Printer, Database, CreditCard, Link2,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
@@ -16,7 +16,8 @@ import { WalletConnectModal } from "@/components/WalletConnectModal";
 import { useAccount, useChainId, useBalance, useDisconnect } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
 import { cn } from "@/lib/utils";
-import { BrandLogo, OrahDEXInline } from "./BrandLogo";
+import { BrandLogo, OrahInline } from "./BrandLogo";
+import { SupportChatToaster } from "./SupportChatToaster";
 
 const CHAIN_NAMES: Record<number, { name: string; color: string; short: string }> = {
   1:      { name: "Ethereum",    color: "text-blue-400 bg-blue-400/10 border-blue-400/20",    short: "ETH" },
@@ -58,7 +59,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Overview",
     items: [
       { href: "/admin",              label: "Dashboard",          icon: LayoutDashboard, exact: true },
-      { href: "/admin/setup",        label: "Setup",              icon: Rocket, badge: "A–Z" },
+      { href: "/admin/setup",        label: "Setup",              icon: Rocket },
       { href: "/admin/mail",         label: "Email Inbox",        icon: Mail },
       { href: "/admin/integrations", label: "Integrations",       icon: Plug2 },
     ],
@@ -77,31 +78,33 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/features",     label: "Feature Flags",      icon: ToggleLeft },
       { href: "/admin/pairs",        label: "Trade Pairs",        icon: ArrowRightLeft },
-      { href: "/admin/trade-analytics", label: "Trade Analytics", icon: TrendingUp, badge: "NEW" },
+      { href: "/admin/trade-analytics", label: "Trade Analytics", icon: TrendingUp },
       { href: "/admin/fees",         label: "Fee Configuration",  icon: DollarSign },
       { href: "/admin/contracts",    label: "Contracts & Coins",  icon: Cpu },
-      { href: "/admin/copy-vaults",  label: "CopyVault",          icon: Copy,    badge: "NEW" },
-      { href: "/admin/prediction",  label: "Prediction",         icon: TrendingUp, badge: "NEW" },
+      { href: "/admin/copy-vaults",  label: "CopyVault",          icon: Copy },
+      { href: "/admin/prediction",   label: "Prediction",         icon: TrendingUp },
     ],
   },
   {
     title: "AI Intelligence",
     items: [
-      { href: "/admin/ai",           label: "Ora AI Settings",    icon: Brain,   badge: "AI" },
+      { href: "/admin/ai",           label: "Ora AI Settings",    icon: Brain },
+      { href: "/admin/cex-connections", label: "CEX Connections",  icon: Link2 },
     ],
   },
   {
     title: "Support",
     items: [
       { href: "/admin/support",      label: "Support & Contact",  icon: Headphones },
-      { href: "/admin/support/inbox", label: "Support Inbox",      icon: Inbox },
+      { href: "/admin/support/inbox", label: "Support Inbox",     icon: Inbox },
     ],
   },
   {
     title: "System",
     items: [
-      { href: "/admin/health",       label: "System Health",      icon: HeartPulse, badge: "LIVE" },
-      { href: "/admin/api-monitor",  label: "API Monitor",        icon: Activity,   badge: "NEW" },
+      { href: "/admin/health",       label: "System Health",      icon: HeartPulse },
+      { href: "/admin/diagnostics",  label: "Diagnostics",        icon: Activity },
+      { href: "/admin/api-monitor",  label: "API Monitor",        icon: Activity },
       { href: "/admin/liquidity",    label: "Liquidity Bot",      icon: Bot },
       { href: "/admin/tradingview",  label: "TradingView Feed",   icon: TrendingUp },
       { href: "/admin/logs",         label: "System Logs",        icon: Terminal },
@@ -111,16 +114,17 @@ const NAV_GROUPS: NavGroup[] = [
     title: "Security",
     items: [
       { href: "/admin/security",     label: "Security Settings",  icon: Shield },
-      { href: "/admin/api",          label: "API Keys",           icon: Key },
+      { href: "/admin/api",          label: "API Settings",       icon: Key },
       { href: "/admin/admins",       label: "Admin Users",        icon: ShieldCheck },
     ],
   },
   {
     title: "Finance",
     items: [
-      { href: "/admin/db-sync",      label: "DB Sync & Health",   icon: ShieldCheck,     badge: "NEW" },
+      { href: "/admin/db-sync",      label: "DB Sync & Health",   icon: ShieldCheck },
       { href: "/admin/ledger",       label: "Ledger Manager",     icon: Database },
       { href: "/admin/withdrawals",  label: "Withdrawals",        icon: ArrowDownToLine },
+      { href: "/admin/stripe-orders", label: "Stripe Orders",     icon: CreditCard },
       { href: "/admin/treasury",     label: "Treasury",           icon: Landmark },
       { href: "/admin/mint-burn",    label: "Mint & Burn",        icon: Printer },
       { href: "/admin/fee-wallet",   label: "Fee Wallet",         icon: Wallet },
@@ -128,6 +132,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/arb-bot",      label: "Arb Bot",            icon: Bot },
       { href: "/admin/seeded-pool",  label: "Seeded Pool",        icon: Database },
       { href: "/admin/transactions", label: "On-Chain Txns",      icon: Activity },
+      { href: "/admin/le-income",    label: "Swap Income",        icon: TrendingUp },
     ],
   },
   {
@@ -326,16 +331,16 @@ export function AdminLayout({ children }: { children: ReactNode }) {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed top-0 left-0 h-full z-50 w-60 bg-card border-r border-border flex flex-col transition-transform duration-200",
+          "fixed top-0 left-0 h-full z-50 w-60 bg-gradient-to-b from-card via-card to-background border-r border-border flex flex-col transition-transform duration-200 shadow-2xl shadow-black/20",
           "md:relative md:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
         {/* Brand */}
-        <div className="h-14 flex items-center justify-between px-4 border-b border-border shrink-0">
+        <div className="h-14 flex items-center justify-between px-4 border-b border-border shrink-0 bg-gradient-to-r from-primary/5 to-transparent">
           <Link href="/" className="flex items-center gap-2 group">
             <BrandLogo textSize="text-sm" />
-            <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded-md border border-primary/20">Admin</span>
+            <span className="text-[9px] uppercase tracking-widest font-black bg-gradient-to-br from-primary to-emerald-400 bg-clip-text text-transparent border border-primary/30 px-1.5 py-0.5 rounded-md">Admin</span>
           </Link>
           <button className="md:hidden text-muted-foreground p-1" onClick={() => setSidebarOpen(false)}>
             <X className="w-4 h-4" />
@@ -387,7 +392,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-4">
+        <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/5">
           {NAV_GROUPS.map(group => {
             const isCollapsed = collapsed[group.title];
             const hasActive = group.items.some(isActive);
@@ -397,37 +402,51 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                   onClick={() => toggleGroup(group.title)}
                   className="w-full flex items-center justify-between px-3 py-1 mb-1 group"
                 >
-                  <span className={cn("text-[10px] uppercase tracking-widest font-bold transition-colors", hasActive ? "text-primary" : "text-muted-foreground group-hover:text-foreground")}>
+                  <span className={cn(
+                    "text-[10px] uppercase tracking-[0.12em] font-bold transition-colors",
+                    hasActive ? "text-primary" : "text-muted-foreground/70 group-hover:text-foreground"
+                  )}>
                     {group.title}
                   </span>
-                  <ChevronDown className={cn("w-3 h-3 text-muted-foreground transition-transform", isCollapsed ? "-rotate-90" : "")} />
+                  <ChevronDown className={cn(
+                    "w-3 h-3 transition-all",
+                    hasActive ? "text-primary/70" : "text-muted-foreground/40 group-hover:text-muted-foreground",
+                    isCollapsed ? "-rotate-90" : ""
+                  )} />
                 </button>
                 {!isCollapsed && (
                   <div className="space-y-0.5">
                     {group.items.map(item => {
                       const active = isActive(item);
+                      const showUnread = item.href === "/admin/support/inbox" && adminUnreadCount > 0;
                       return (
                         <Link
                           key={item.href}
                           href={item.href}
                           onClick={() => setSidebarOpen(false)}
                           className={cn(
-                            "flex items-center justify-between px-3 py-2 rounded-xl text-sm font-medium transition-all group",
+                            "relative flex items-center justify-between pl-3 pr-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 group",
                             active
-                              ? "bg-primary/10 text-primary"
-                              : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                              ? "bg-primary/10 text-primary shadow-[inset_2px_0_0_0] shadow-primary"
+                              : "text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"
                           )}
                         >
-                          <div className="flex items-center gap-2.5">
-                            <item.icon className={cn("w-3.5 h-3.5 shrink-0", active ? "text-primary" : "text-muted-foreground group-hover:text-foreground")} />
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <item.icon className={cn(
+                              "w-4 h-4 shrink-0 transition-colors",
+                              active ? "text-primary" : "text-muted-foreground/70 group-hover:text-foreground"
+                            )} />
                             <span className="truncate">{item.label}</span>
                           </div>
-                          {active && <ChevronRight className="w-3 h-3 shrink-0" />}
-                          {item.href === "/admin/support/inbox" && adminUnreadCount > 0 ? (
-                            <span className="text-[9px] font-black min-w-[18px] text-center px-1.5 py-0.5 rounded-full bg-red-500 text-white tabular-nums">{adminUnreadCount > 99 ? "99+" : adminUnreadCount}</span>
-                          ) : item.badge && (
+                          {showUnread ? (
+                            <span className="text-[9px] font-black min-w-[18px] text-center px-1.5 py-0.5 rounded-full bg-red-500 text-white tabular-nums shadow-lg shadow-red-500/30">
+                              {adminUnreadCount > 99 ? "99+" : adminUnreadCount}
+                            </span>
+                          ) : item.badge ? (
                             <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md bg-primary/15 text-primary border border-primary/25">{item.badge}</span>
-                          )}
+                          ) : active ? (
+                            <ChevronRight className="w-3 h-3 shrink-0 text-primary/70" />
+                          ) : null}
                         </Link>
                       );
                     })}
@@ -439,22 +458,25 @@ export function AdminLayout({ children }: { children: ReactNode }) {
         </nav>
 
         {/* Footer */}
-        <div className="p-2 border-t border-border space-y-1">
+        <div className="p-2 border-t border-border bg-background/40 space-y-1">
           {email && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/3 border border-white/5 mb-1">
-              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-violet-500 to-primary flex items-center justify-center text-[10px] font-bold text-white shrink-0">
-                A
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/5 mb-1">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-violet-500 via-primary to-emerald-400 flex items-center justify-center text-[10px] font-black text-black shrink-0 shadow-lg shadow-primary/20">
+                {email.charAt(0).toUpperCase()}
               </div>
-              <span className="text-xs text-muted-foreground truncate flex-1">{email}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[9px] uppercase tracking-widest font-bold text-muted-foreground/70 leading-tight">Signed in</p>
+                <p className="text-[11px] text-foreground truncate font-medium leading-tight">{email}</p>
+              </div>
             </div>
           )}
-          <Link href="/" className="flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground rounded-xl hover:bg-white/5 transition-all">
+          <Link href="/" className="flex items-center gap-2 px-3 py-2 text-[13px] text-muted-foreground hover:text-foreground rounded-lg hover:bg-white/[0.04] transition-all">
             <ArrowRightLeft className="w-3.5 h-3.5" />
             Back to Exchange
           </Link>
           <button
             onClick={logout}
-            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-destructive rounded-xl hover:bg-destructive/5 transition-all"
+            className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-muted-foreground hover:text-red-400 rounded-lg hover:bg-red-500/5 transition-all"
           >
             <LogOut className="w-3.5 h-3.5" />
             Sign Out
@@ -465,31 +487,51 @@ export function AdminLayout({ children }: { children: ReactNode }) {
       {/* Main content */}
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
         {/* Top bar */}
-        <header className="h-14 border-b border-border bg-card flex items-center justify-between px-4 lg:px-6 shrink-0">
-          <div className="flex items-center gap-3">
+        <header className="h-14 border-b border-border bg-card/80 backdrop-blur-xl flex items-center justify-between px-4 lg:px-6 shrink-0 sticky top-0 z-30">
+          <div className="flex items-center gap-3 min-w-0">
             <button className="md:hidden p-2 text-muted-foreground hover:text-foreground" onClick={() => setSidebarOpen(true)}>
               <Menu className="w-5 h-5" />
             </button>
-            <div>
-              <h1 className="text-sm font-bold text-foreground">
-                {NAV_GROUPS.flatMap(g => g.items).find(isActive)?.label ?? "Admin Panel"}
-              </h1>
-              <p className="text-xs text-muted-foreground flex items-center gap-1"><OrahDEXInline className="text-xs" /> Platform Management</p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const current = NAV_GROUPS.flatMap(g => g.items.map(i => ({ ...i, group: g.title }))).find(isActive);
+                  const Icon = current?.icon;
+                  return (
+                    <>
+                      {Icon && (
+                        <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+                          <Icon className="w-3.5 h-3.5 text-primary" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <h1 className="text-sm font-bold text-foreground leading-tight truncate">
+                          {current?.label ?? "Admin Panel"}
+                        </h1>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold leading-tight">
+                          {current?.group ?? "Platform"}
+                        </p>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-500/10 border border-green-500/20">
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-500/10 border border-green-500/20">
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              <span className="text-xs text-green-400 font-medium hidden sm:block">System Operational</span>
+              <span className="text-xs text-green-400 font-medium">Operational</span>
             </div>
             <AdminWalletWidget />
           </div>
         </header>
 
-        <main className="flex-1 p-4 lg:p-6 overflow-auto">
+        <main className="flex-1 p-4 lg:p-6 pb-[calc(env(safe-area-inset-bottom)+5rem)] lg:pb-6 overflow-auto">
           {children}
         </main>
       </div>
+      <SupportChatToaster />
     </div>
   );
 }

@@ -1,0 +1,413 @@
+1. Vision
+
+OrahDex is a sovereign, Keeper‑driven DEX ecosystem where:
+
+• Identity is primitive: Keepers, not wallets, are the core actors.
+• Ritual is UX: Every swap, bridge, and position is a ceremonial act with clear stages.
+• Modularity is law: Spot, AMM, P2P, and cross‑chain bridges are composable modules, not monoliths.
+
+
+OrahDex is built to be:
+
+• Sovereign: No dependency on centralized order books or custodial bridges.
+• Extensible: New markets, chains, and Keeper rituals can be added without breaking the core.
+• Transparent: On‑chain logic is legible, auditable, and narratively clear.
+
+
+---
+
+2. System overview
+
+2.1 Core components
+
+• Keeper Registry: Maps wallets and contracts to Keeper identities and roles.
+• Virtual AMM Engine: Capital‑efficient AMM for spot and margin, with virtual liquidity.
+• P2P Layer: Intent and RFQ rails for negotiated trades between Keepers.
+• Bridge & HTLC Layer: Cross‑chain movement of wrapped assets (e.g., wBSV) via HTLC‑style flows.
+• Settlement & Fee Router: Unified fee logic, revenue sharing, and protocol treasury.
+
+
+2.2 High‑level flow
+
+1. Keeper onboards: Wallet registers as a Keeper with optional metadata and roles.
+2. Keeper selects ritual: Swap, provide liquidity, open position, bridge, or P2P deal.
+3. Module executes: The relevant module (AMM, P2P, Bridge) processes the action.
+4. Settlement: Balances update, fees route, events emit for off‑chain indexers and UIs.
+
+
+---
+
+3. Keeper registry and identity
+
+The Keeper Registry is the identity spine of OrahDex.
+
+3.1 Design goals
+
+• One‑to‑many: A Keeper can control multiple wallets and contracts.
+• Role‑aware: Roles (Trader, LiquidityKeeper, Relayer, OracleKeeper) are first‑class.
+• Composable: Other contracts can query Keeper status and roles in a single call.
+
+
+3.2 Keeper registry interface (Solidity‑style)
+
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+interface IKeeperRegistry {
+    enum Role {
+        Trader,
+        LiquidityKeeper,
+        Relayer,
+        OracleKeeper
+    }
+
+    struct KeeperProfile {
+        bool active;
+        string uri;          // off-chain metadata (JSON, lore, etc.)
+        uint8[] roles;       // encoded Role values
+    }
+
+    event KeeperRegistered(address indexed keeper, string uri, uint8[] roles);
+    event KeeperUpdated(address indexed keeper, string uri, uint8[] roles);
+    event KeeperDeactivated(address indexed keeper);
+
+    function registerKeeper(
+        string calldata uri,
+        uint8[] calldata roles
+    ) external;
+
+    function updateKeeper(
+        string calldata uri,
+        uint8[] calldata roles
+    ) external;
+
+    function deactivateKeeper() external;
+
+    function isKeeper(address account) external view returns (bool);
+
+    function hasRole(
+        address account,
+        Role role
+    ) external view returns (bool);
+
+    function getProfile(
+        address account
+    ) external view returns (KeeperProfile memory);
+}
+
+
+This registry becomes the canonical identity source for all OrahDex modules.
+
+---
+
+4. Virtual AMM engine
+
+4.1 Goals
+
+• Capital efficiency: Use virtual reserves to simulate deep liquidity.
+• Unified engine: Power spot swaps, leveraged trades, and potentially perps.
+• Keeper‑aware: Fees and rewards can be modulated by Keeper roles and status.
+
+
+4.2 AMM pair interface
+
+pragma solidity ^0.8.20;
+
+interface IVirtualAmmPair {
+    event Swap(
+        address indexed keeper,
+        address indexed tokenIn,
+        address indexed tokenOut,
+        uint256 amountIn,
+        uint256 amountOut,
+        uint256 feeAmount
+    );
+
+    event LiquidityChanged(
+        address indexed keeper,
+        int256 baseDelta,
+        int256 quoteDelta,
+        uint256 lpTokensMintedOrBurned
+    );
+
+    function swapExactIn(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn,
+        uint256 minAmountOut,
+        address to
+    ) external returns (uint256 amountOut);
+
+    function getQuoteOut(
+        address tokenIn,
+        address tokenOut,
+        uint256 amountIn
+    ) external view returns (uint256 amountOut, uint256 feeAmount);
+
+    function provideLiquidity(
+        int256 baseDelta,
+        int256 quoteDelta
+    ) external returns (uint256 lpTokensMinted);
+
+    function removeLiquidity(
+        uint256 lpTokens
+    ) external returns (int256 baseDelta, int256 quoteDelta);
+}
+
+
+4.3 Virtual reserve logic (conceptual)
+
+Let:
+
+• \( R_b, R_q \) be virtual base and quote reserves.
+• \( k = R_b \cdot R_q \) be the invariant.
+• Swaps adjust virtual reserves while real collateral is tracked separately.
+
+
+This allows:
+
+• Synthetic depth: Large trades with bounded slippage.
+• Risk controls: Admin or governance can adjust virtual reserves without moving real funds.
+
+
+---
+
+5. Bridge and HTLC flows (e.g., wBSV)
+
+5.1 Design principles
+
+• Non‑custodial: No opaque multi‑sig custody.
+• HTLC‑style: Hash‑time‑locked contracts coordinate between chains.
+• Relayer‑aware: Relayers are Keepers with explicit roles and incentives.
+
+
+5.2 Simplified HTLC contract (EVM side)
+
+pragma solidity ^0.8.20;
+
+contract OrahHtlcBridge {
+    struct Lock {
+        address sender;
+        address recipient;
+        address token;
+        uint256 amount;
+        bytes32 hashlock;
+        uint256 timelock;
+        bool claimed;
+        bool refunded;
+    }
+
+    mapping(bytes32 => Lock) public locks;
+
+    event Locked(
+        bytes32 indexed lockId,
+        address indexed sender,
+        address indexed recipient,
+        address token,
+        uint256 amount,
+        bytes32 hashlock,
+        uint256 timelock
+    );
+
+    event Claimed(bytes32 indexed lockId, bytes32 preimage);
+    event Refunded(bytes32 indexed lockId);
+
+    function lock(
+        address recipient,
+        address token,
+        uint256 amount,
+        bytes32 hashlock,
+        uint256 timelock
+    ) external returns (bytes32 lockId) {
+        require(timelock > block.timestamp, "timelock in past");
+
+        lockId = keccak256(
+            abi.encodePacked(msg.sender, recipient, token, amount, hashlock, timelock, block.number)
+        );
+
+        require(locks[lockId].sender == address(0), "lock exists");
+
+        locks[lockId] = Lock({
+            sender: msg.sender,
+            recipient: recipient,
+            token: token,
+            amount: amount,
+            hashlock: hashlock,
+            timelock: timelock,
+            claimed: false,
+            refunded: false
+        });
+
+        IERC20(token).transferFrom(msg.sender, address(this), amount);
+
+        emit Locked(lockId, msg.sender, recipient, token, amount, hashlock, timelock);
+    }
+
+    function claim(bytes32 lockId, bytes32 preimage) external {
+        Lock storage l = locks[lockId];
+        require(!l.claimed && !l.refunded, "already resolved");
+        require(l.recipient == msg.sender, "not recipient");
+        require(keccak256(abi.encodePacked(preimage)) == l.hashlock, "invalid preimage");
+        require(block.timestamp <= l.timelock, "timelock passed");
+
+        l.claimed = true;
+        IERC20(l.token).transfer(l.recipient, l.amount);
+
+        emit Claimed(lockId, preimage);
+    }
+
+    function refund(bytes32 lockId) external {
+        Lock storage l = locks[lockId];
+        require(!l.claimed && !l.refunded, "already resolved");
+        require(l.sender == msg.sender, "not sender");
+        require(block.timestamp > l.timelock, "timelock not passed");
+
+        l.refunded = true;
+        IERC20(l.token).transfer(l.sender, l.amount);
+
+        emit Refunded(lockId);
+    }
+}
+
+interface IERC20 {
+    function transferFrom(address, address, uint256) external returns (bool);
+    function transfer(address, uint256) external returns (bool);
+}
+
+
+On the BSV side, a corresponding HTLC script locks native BSV with the same hashlock/timelock. Relayers observe events on both chains and coordinate mint/burn of wrapped assets (e.g., wBSV) on OrahDex’s EVM‑compatible side.
+
+---
+
+6. Fees, incentives, and Keeper economics
+
+6.1 Fee model
+
+• Swap fees: Percentage of trade volume, configurable per pair.
+• Bridge fees: Flat or percentage fee per cross‑chain transfer.
+• P2P fees: Maker/taker or RFQ‑based fees.
+
+
+6.2 Distribution
+
+• Liquidity Keepers: Receive a share of swap fees proportional to their liquidity.
+• Relayer Keepers: Receive bridge fees for successful cross‑chain settlements.
+• Protocol Treasury: Receives a protocol cut for long‑term sustainability and development.
+
+
+All distributions are on‑chain and queryable for transparent accounting.
+
+---
+
+7. P2P and intent layer
+
+7.1 Intent model
+
+Keepers can post intents:
+
+• Swap intents: “I will swap up to X of token A for token B at price P or better.”
+• Bridge intents: “I will bridge X from chain A to chain B for fee F.”
+• RFQ intents: “Quote me a price for this size within T seconds.”
+
+
+These intents are signed messages, matched off‑chain, and settled on‑chain via minimal contracts.
+
+7.2 Minimal P2P settlement contract
+
+pragma solidity ^0.8.20;
+
+contract OrahP2PSettlement {
+    struct Order {
+        address maker;
+        address tokenIn;
+        address tokenOut;
+        uint256 amountIn;
+        uint256 minAmountOut;
+        uint256 expiry;
+        uint8 v;
+        bytes32 r;
+        bytes32 s;
+    }
+
+    event Filled(
+        bytes32 indexed orderHash,
+        address indexed maker,
+        address indexed taker,
+        uint256 amountIn,
+        uint256 amountOut
+    );
+
+    function fillOrder(
+        Order calldata order,
+        uint256 amountOut
+    ) external {
+        require(block.timestamp <= order.expiry, "expired");
+
+        bytes32 orderHash = keccak256(
+            abi.encode(
+                order.maker,
+                order.tokenIn,
+                order.tokenOut,
+                order.amountIn,
+                order.minAmountOut,
+                order.expiry
+            )
+        );
+
+        address recovered = ecrecover(
+            keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", orderHash)),
+            order.v,
+            order.r,
+            order.s
+        );
+        require(recovered == order.maker, "invalid sig");
+
+        require(amountOut >= order.minAmountOut, "slippage");
+
+        IERC20(order.tokenIn).transferFrom(order.maker, msg.sender, order.amountIn);
+        IERC20(order.tokenOut).transferFrom(msg.sender, order.maker, amountOut);
+
+        emit Filled(orderHash, order.maker, msg.sender, order.amountIn, amountOut);
+    }
+}
+
+
+---
+
+8. Security, risk, and governance
+
+8.1 Security posture
+
+• Audited contracts: All core modules (Registry, AMM, Bridge, P2P) undergo independent audits.
+• Defense‑in‑depth: Rate limits, circuit breakers, and role‑based permissions.
+• Upgradability with restraint: Governance‑controlled upgrade paths with timelocks and on‑chain signaling.
+
+
+8.2 Governance
+
+• Keeper‑weighted: Governance power can be tied to Keeper roles, activity, and stake.
+• Module‑scoped: Changes can be scoped to specific modules (e.g., AMM fees, bridge parameters).
+• Transparent: All proposals, votes, and outcomes are on‑chain and indexable.
+
+
+---
+
+9. Roadmap (active‑everything logic)
+
+• Phase 1 — Genesis Liquidity Engine:• Virtual AMM for core pairs.
+• Keeper Registry live.
+• Basic swap UI and events.
+
+• Phase 2 — Bridge & wBSV:• HTLC bridge contracts deployed.
+• wBSV and other wrapped assets live.
+• Relayer Keeper roles and incentives activated.
+
+• Phase 3 — P2P & Intents:• P2P settlement contracts.
+• Off‑chain intent relays and RFQ flows.
+• Keeper reputation and role‑aware fee tiers.
+
+• Phase 4 — Perps & Advanced Rituals:• Perpetuals on top of the virtual AMM.
+• Advanced Keeper roles (OracleKeeper, RiskKeeper).
+• Expanded cross‑chain mesh.
+
+

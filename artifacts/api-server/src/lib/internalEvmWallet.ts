@@ -18,14 +18,14 @@ import {
   scryptSync,
 } from "node:crypto";
 import { pool } from "@workspace/db";
-
-// ── Encryption helpers ────────────────────────────────────────────────────────
-
-const WALLET_SECRET =
-  process.env.EVM_WALLET_SECRET ?? "orah-internal-evm-fallback-key-32bytes!";
+import { getRequiredEnv } from "./requiredEnv.js";
 
 function deriveKey(): Buffer {
-  return scryptSync(WALLET_SECRET, "orah-evm-salt-v1", 32) as Buffer;
+  return scryptSync(
+    getRequiredEnv("EVM_WALLET_SECRET", "[FATAL] EVM_WALLET_SECRET is not set. Refusing to derive internal EVM wallet keys."),
+    "orahdex-evm-salt-v1",
+    32,
+  ) as Buffer;
 }
 
 function encrypt(plaintext: string): string {
@@ -125,4 +125,21 @@ export async function getEvmWallet(
     [bsvAddress],
   );
   return rows[0]?.evm_address ?? null;
+}
+
+/**
+ * Whether `evmAddress` is a server-provisioned (internal) EVM wallet.
+ * Internal wallets are derived server-side and have no `personal_sign`
+ * surface that the API can verify, so routes that normally require an EVM
+ * signature for external wallets accept these without one. The check is
+ * case-insensitive on the hex address.
+ */
+export async function isInternalEvmWallet(evmAddress: string): Promise<boolean> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(evmAddress)) return false;
+  await ensureTable();
+  const { rows } = await pool.query<{ exists: boolean }>(
+    "SELECT 1 AS exists FROM internal_evm_wallets WHERE LOWER(evm_address) = LOWER($1) LIMIT 1",
+    [evmAddress],
+  );
+  return rows.length > 0;
 }

@@ -1,0 +1,167 @@
+ 1. Release Notes — Publish‑Ready
+
+OrahDEX Release — Portfolio, Markets, and AI Stability Update
+
+Overview
+
+This release delivers a full stabilization of the Markets, Portfolio, and AI subsystems.
+All data flows now derive directly from chain + DB, eliminating drift and ensuring consistent, real‑time correctness across the entire platform.
+
+---
+
+Key Improvements
+
+1. Portfolio Overhaul
+
+• Expanded ERC‑20 registry across all supported chains (15–35 tokens per chain)
+• Switched pricing source from /api/dex/prices → /api/markets?quote=USDT
+• Accurate AUD totals for all supported tokens
+• Correct 24h change and price display
+• Mobile + desktop parity via shared hooks
+
+
+2. Markets Engine Upgrade
+
+• Full dynamic category generation from DB
+• 953 markets now visible across all quote‑asset tabs
+• No static lists, no drift, no missing pairs
+• Real‑time BSV block height and market status
+
+
+3. AI Route Hardening
+
+• Added AbortSignal.timeout(25_000) to all AI calls
+• Added res.headersSent guards to prevent late writes
+• Reduced max_completion_tokens from 8192 → 256–512
+• Eliminated “Cannot set headers after they are sent” crashes
+• Server remains stable under AI load
+
+
+4. Server Stability
+
+• Zero unhandled rejections
+• Zero Express header errors
+• Zero auto‑restarts during verification
+• All workflows (Markets, Portfolio, AI) running clean
+
+
+---
+
+Impact
+
+• Accurate balances
+• Accurate pricing
+• Complete market visibility
+• Stable AI endpoints
+• Fully deterministic API behavior
+• Production‑ready stability
+
+
+---
+
+⭐ 2. Post‑Publish Monitoring Plan
+
+Monitor for 15–30 minutes after deployment:
+
+A. API Health
+
+• /api/ping latency < 10ms
+• /api/markets returns full dataset
+• No 5xx responses in logs
+
+
+B. AI Routes
+
+• /api/ai/insights returns < 10s (cached or short)
+• /api/market-analysis returns < 25s
+• /api/trade-signal returns < 25s
+• No proxy timeouts
+• No “headers already sent”
+
+
+C. Server Logs
+
+• No unhandled promise rejections
+• No OpenAI timeout stack traces
+• No Express write errors
+• No restarts
+
+
+D. UI
+
+• Portfolio totals correct
+• LP positions correct
+• Markets tabs fully populated
+• No missing tokens
+• No “≈ $0.00” for priced assets
+
+
+If all remain green for 30 minutes, the release is confirmed stable.
+
+---
+
+⭐ 3. “What’s New” — User‑Facing Summary
+
+OrahDEX Update — Accurate Balances, Full Markets, and Faster Insights
+
+We’ve rolled out a major upgrade to OrahDEX that makes your experience faster, clearer, and more accurate:
+
+✔ Accurate Portfolio Balances
+
+Your token balances now reflect your real on‑chain holdings with correct AUD totals and live price updates.
+
+✔ Full Market Coverage
+
+All 953 markets are now visible across every category — no missing tokens, no empty tabs.
+
+✔ Faster AI Insights
+
+AI‑powered market analysis and trade signals now respond faster and more reliably.
+
+✔ Improved Stability
+
+The app is more stable than ever, with smoother performance across desktop and mobile.
+
+This update ensures OrahDEX always reflects the real state of the chain and markets — instantly and accurately.
+
+---
+
+⭐ 4. QA Sheet — Team‑Facing
+
+Functional QA
+
+Portfolio
+
+• ETH balance matches wallet
+• ERC‑20 balances detected for all registry tokens
+• AUD totals correct
+• 24h change correct
+• LP positions correct
+• Mobile + desktop parity
+
+
+Markets
+
+• All 953 markets visible
+• All quote‑asset tabs populated
+• No empty categories
+• Prices match DB
+• BSV block height updates live
+
+
+AI Routes
+
+• /ai/insights returns 200
+• /market-analysis returns 200
+• /trade-signal returns 200
+• No proxy timeouts
+• No header errors
+
+
+Server
+
+• No unhandled rejections
+• No restarts
+• No “headers already sent”
+• No OpenAI timeout stack traces
+

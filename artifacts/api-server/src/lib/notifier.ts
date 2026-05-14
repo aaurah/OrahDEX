@@ -2,47 +2,6 @@ import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { logger } from "./logger.js";
 
-function isAsciiTokenChar(ch: string): boolean {
-  return (
-    (ch >= "a" && ch <= "z") ||
-    (ch >= "A" && ch <= "Z") ||
-    (ch >= "0" && ch <= "9") ||
-    ch === "_" ||
-    ch === "-"
-  );
-}
-
-function isValidTelegramToken(token: string): boolean {
-  const sep = token.indexOf(":");
-  if (sep < 6 || sep !== token.lastIndexOf(":") || sep >= token.length - 20) return false;
-  for (let i = 0; i < sep; i++) {
-    const ch = token[i];
-    if (ch < "0" || ch > "9") return false;
-  }
-  for (let i = sep + 1; i < token.length; i++) {
-    if (!isAsciiTokenChar(token[i])) return false;
-  }
-  return true;
-}
-
-function normalizeDiscordWebhook(webhookUrl: string): URL | null {
-  try {
-    const url = new URL(webhookUrl);
-    if (url.protocol !== "https:") return null;
-    const host = url.hostname.toLowerCase();
-    let origin: string | null = null;
-    if (host === "discord.com") origin = "https://discord.com";
-    if (host === "discordapp.com") origin = "https://discordapp.com";
-    if (host === "canary.discord.com") origin = "https://canary.discord.com";
-    if (host === "ptb.discord.com") origin = "https://ptb.discord.com";
-    if (!origin) return null;
-    if (!url.pathname.startsWith("/api/webhooks/")) return null;
-    return new URL(`${url.pathname}${url.search}`, origin);
-  } catch {
-    return null;
-  }
-}
-
 async function getSetting(key: string): Promise<string> {
   const rows = await db.select().from(platformSettingsTable);
   return rows.find(r => r.key === key)?.value ?? "";
@@ -50,10 +9,11 @@ async function getSetting(key: string): Promise<string> {
 
 /* ── Telegram Bot ─────────────────────────────────────────────────────────── */
 async function sendTelegram(token: string, chatId: string, text: string): Promise<void> {
-  if (!isValidTelegramToken(token)) {
+  // Validate token format to prevent SSRF via malformed tokens
+  if (!/^\d{8,12}:[A-Za-z0-9_-]{35,}$/.test(token)) {
     throw new Error("Invalid Telegram bot token format");
   }
-  const url = new URL(`/bot${encodeURIComponent(token)}/sendMessage`, "https://api.telegram.org");
+  const url = `https://api.telegram.org/bot${encodeURIComponent(token)}/sendMessage`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -67,6 +27,10 @@ async function sendTelegram(token: string, chatId: string, text: string): Promis
 
 /* ── ntfy.sh Push Notification ────────────────────────────────────────────── */
 async function sendNtfy(topic: string, title: string, message: string, priority: string): Promise<void> {
+  // Validate topic is a simple alphanumeric identifier to prevent SSRF
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(topic)) {
+    throw new Error("ntfy topic must contain only alphanumeric characters, hyphens, or underscores");
+  }
   const ntfyPriority: Record<string, string> = {
     urgent: "5", high: "4", normal: "3", low: "2",
   };
@@ -88,13 +52,28 @@ async function sendNtfy(topic: string, title: string, message: string, priority:
 
 /* ── Discord Webhook ──────────────────────────────────────────────────────── */
 async function sendDiscord(webhookUrl: string, title: string, message: string, priority: string): Promise<void> {
-  const safeWebhook = normalizeDiscordWebhook(webhookUrl);
-  if (!safeWebhook) throw new Error("Invalid Discord webhook URL");
-
+  // Parse and strictly validate the URL using the URL constructor to prevent SSRF.
+  // startsWith() can be bypassed with tricks like https://discord.com@evil.com/…
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(webhookUrl);
+  } catch {
+    throw new Error("Invalid Discord webhook URL");
+  }
+  const allowedHostnames = new Set(["discord.com", "discordapp.com"]);
+  if (
+    parsedUrl.protocol !== "https:" ||
+    !allowedHostnames.has(parsedUrl.hostname) ||
+    !parsedUrl.pathname.startsWith("/api/webhooks/")
+  ) {
+    throw new Error("Discord webhook URL must target discord.com or discordapp.com /api/webhooks/");
+  }
+  // Reconstruct URL from validated components (avoids CodeQL SSRF taint from original string).
+  const safeUrl = `https://${parsedUrl.hostname}${parsedUrl.pathname}`;
   const colorMap: Record<string, number> = {
     urgent: 0xe74c3c, high: 0xe67e22, normal: 0x3498db, low: 0x95a5a6,
   };
-  const res = await fetch(safeWebhook, {
+  const res = await fetch(safeUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -102,7 +81,7 @@ async function sendDiscord(webhookUrl: string, title: string, message: string, p
         title,
         description: message,
         color: colorMap[priority] ?? colorMap.normal,
-        footer: { text: "Orah Support" },
+        footer: { text: "OrahDEX Support" },
         timestamp: new Date().toISOString(),
       }],
     }),
@@ -155,13 +134,14 @@ export async function notifyNewTicket(ticket: NotifyTicketOptions): Promise<void
     ticket.message.slice(0, 300) + (ticket.message.length > 300 ? "…" : ""),
   ].join("\n");
 
+  const esc = (s: string) => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   const htmlBody = [
     `<b>New Support Ticket #${ticket.id}</b>`,
-    `<b>From:</b> ${ticket.name} (${ticket.email})`,
-    `<b>Category:</b> ${ticket.category}  |  <b>Priority:</b> ${ticket.priority}`,
-    `<b>Subject:</b> ${ticket.subject}`,
+    `<b>From:</b> ${esc(ticket.name)} (${esc(ticket.email)})`,
+    `<b>Category:</b> ${esc(ticket.category)}  |  <b>Priority:</b> ${esc(ticket.priority)}`,
+    `<b>Subject:</b> ${esc(ticket.subject)}`,
     ``,
-    ticket.message.slice(0, 400) + (ticket.message.length > 400 ? "…" : ""),
+    esc(ticket.message.slice(0, 400) + (ticket.message.length > 400 ? "…" : "")),
   ].join("\n");
 
   const jobs: Promise<void>[] = [];
@@ -221,8 +201,8 @@ export async function notifyNewTicket(ticket: NotifyTicketOptions): Promise<void
 
 /* ── Test notification ───────────────────────────────────────────────────── */
 export async function sendTestNotification(channel: string, settings: Record<string, string>): Promise<{ success: boolean; error?: string }> {
-  const title = "Orah Support — Test Notification";
-  const body = "This is a test notification from Orah Admin Panel. Your alerts are working correctly!";
+  const title = "OrahDEX Support — Test Notification";
+  const body = "This is a test notification from OrahDEX Admin Panel. Your alerts are working correctly!";
 
   try {
     if (channel === "telegram") {

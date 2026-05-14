@@ -1,7 +1,7 @@
 import { pgTable, text, timestamp, boolean, jsonb, index, uniqueIndex, bigserial, numeric } from "drizzle-orm/pg-core";
 
 /**
- * Keeper Registry — identity spine of Orah.
+ * Keeper Registry — identity spine of OrahDEX.
  *
  * A Keeper is a wallet that has explicitly registered an identity on the
  * protocol. Roles are first-class: Trader, LiquidityKeeper, Relayer,

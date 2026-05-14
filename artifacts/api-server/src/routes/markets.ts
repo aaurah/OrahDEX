@@ -1,10 +1,12 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
+import { fetchKeyPrices } from "./dex.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
 import { fetchRealCandles } from "../lib/candleFetcher.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
@@ -22,10 +24,23 @@ class TtlCache<T> {
   set(key: string, data: T) { this.store.set(key, { data, ts: Date.now() }); }
 }
 
-const marketsCache    = new TtlCache<any[]>(10_000);   // 10 s
+const marketsCache    = new TtlCache<any[]>(60_000);   // 60 s — matches price-updater interval
 const orderbookCache  = new TtlCache<any>(2_000);      //  2 s
 const tradesCache     = new TtlCache<any[]>(5_000);    //  5 s
 const tickerCache     = new TtlCache<any>(5_000);      //  5 s
+
+// ETag store for markets — maps cacheKey → weak ETag string
+const marketsETag = new Map<string, string>();
+function makeETag(data: any[]): string {
+  // Fast hash: XOR of length + spot-check a few records
+  let h = data.length * 2654435761;
+  for (let i = 0; i < Math.min(data.length, 20); i++) {
+    const p = Math.floor(i * data.length / 20);
+    h ^= (data[p].lastPrice * 1e6) | 0;
+    h = (h >>> 16) ^ (h * 0x45d9f3b | 0);
+  }
+  return `"m${(h >>> 0).toString(36)}"`;
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -71,8 +86,13 @@ function syntheticOrderBook(price: number, depth = 20, symbol = "") {
 
   for (let i = 0; i < depth; i++) {
     // Add small random jitter to price steps so levels aren't perfectly uniform.
-    const bidPx = parseFloat((price - halfSpread - i * tickStep - rng() * tickStep * 0.3).toFixed(8));
-    const askPx = parseFloat((price + halfSpread + i * tickStep + rng() * tickStep * 0.3).toFixed(8));
+    const pxFmt = (n: number) => {
+      if (n >= 1e-8) return parseFloat(n.toFixed(8));
+      const mag = -Math.floor(Math.log10(Math.max(n, 1e-18)));
+      return parseFloat(n.toFixed(Math.min(mag + 4, 18)));
+    };
+    const bidPx = pxFmt(price - halfSpread - i * tickStep - rng() * tickStep * 0.3);
+    const askPx = pxFmt(price + halfSpread + i * tickStep + rng() * tickStep * 0.3);
 
     // Exponential size decay: deep levels have less liquidity, with ±20% noise.
     const base = (rng() * 4 + 0.5) * Math.exp(-i * 0.10);
@@ -87,35 +107,143 @@ function syntheticOrderBook(price: number, depth = 20, symbol = "") {
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
+/**
+ * GET /markets
+ *
+ * Returns the stable, canonical list of markets.
+ * Only rows with enabled=true are returned — disabled markets are hidden from
+ * all public API responses. Pair list never fluctuates because:
+ *   - Internal (spot/futures) pairs are pinned=true and can never be auto-removed.
+ *   - LetsExchange pairs are seeded once and soft-disabled, never deleted.
+ *
+ * Query params:
+ *   ?type=spot,futures,letsexchange  — comma-separated type filter (default: all)
+ *   ?category=internal               — shortcut for type=spot,futures
+ *   ?category=external               — shortcut for type=letsexchange
+ *   ?category=all                    — all enabled markets (default)
+ */
 router.get("/markets", async (req, res) => {
-  const cached = marketsCache.get("all");
-  if (cached) { res.json(cached); return; }
+  // Build a cache key that reflects any filters
+  const rawType     = req.query.type     as string | undefined;
+  const rawCategory = req.query.category as string | undefined;
+
+  let types: string[] = [];
+  if (rawCategory === "internal") {
+    types = ["spot", "futures"];
+  } else if (rawCategory === "external") {
+    types = ["letsexchange"];
+  } else if (rawType) {
+    types = rawType.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
+  }
+
+  // Optional pagination — used by the staged-load on the frontend so the
+  // first paint shows the top ~1000 tradeable markets immediately while the
+  // remaining ~35 000 stream in afterwards. The full sorted list is built
+  // and cached once; ?limit / ?offset just slice it. Order is stable:
+  //   pinned DESC, hasPrice DESC, volume24h DESC.
+  const rawLimit  = req.query.limit  as string | undefined;
+  const rawOffset = req.query.offset as string | undefined;
+  const limit     = rawLimit  ? Math.max(1, Math.min(50_000, parseInt(rawLimit,  10) || 0)) : null;
+  const offset    = rawOffset ? Math.max(0,                  parseInt(rawOffset, 10) || 0)  : 0;
+
+  const baseKey  = types.length ? `filtered:${types.sort().join(",")}` : "all";
+  const cacheKey = baseKey; // we cache the full sorted list once and slice from it
+
+  const sliced = (full: any[]) =>
+    limit == null ? full : full.slice(offset, offset + limit);
+
+  const cached = marketsCache.get(cacheKey);
+  if (cached) {
+    const out  = sliced(cached);
+    const etag = (marketsETag.get(cacheKey) ?? "").replace(/"$/, `:${offset}:${limit ?? "*"}"`);
+    if (etag) {
+      res.setHeader("ETag", etag);
+      if (req.headers["if-none-match"] === etag) {
+        res.status(304).end();
+        return;
+      }
+    }
+    res.setHeader("X-Total-Count", String(cached.length));
+    res.json(out);
+    return;
+  }
+
   try {
-    const markets = await db.select().from(marketsTable);
+    // Always filter by enabled=true — this is the stability guarantee.
+    // Always exclude type='letsexchange': those 36K+ rows are served via
+    // /api/letsexchange/pairs and must never be JSON-serialized here (OOM risk).
+    const leExclude = ne(marketsTable.type, "letsexchange");
+    const conditions = types.length
+      ? and(eq(marketsTable.enabled, true), leExclude, inArray(marketsTable.type, types))
+      : and(eq(marketsTable.enabled, true), leExclude);
+
+    const markets = await db.select().from(marketsTable).where(conditions);
+
     const result = markets.map((m) => ({
-      symbol:               m.symbol,
-      baseAsset:            m.baseAsset,
-      quoteAsset:           m.quoteAsset,
-      lastPrice:            parseFloat(m.lastPrice),
-      priceChange24h:       parseFloat(m.priceChange24h),
-      priceChangePercent24h:parseFloat(m.priceChangePercent24h),
-      volume24h:            parseFloat(m.volume24h),
-      high24h:              parseFloat(m.high24h),
-      low24h:               parseFloat(m.low24h),
-      marketCap:            m.marketCap ? parseFloat(m.marketCap) : undefined,
-      status:               m.status,
-      type:                 m.type,
-      minOrderSize:         parseFloat(m.minOrderSize),
-      maxOrderSize:         parseFloat(m.maxOrderSize),
-      tickSize:             parseFloat(m.tickSize),
-      makerFee:             parseFloat(m.makerFee),
-      takerFee:             parseFloat(m.takerFee),
+      symbol:                m.symbol,
+      baseAsset:             m.baseAsset,
+      quoteAsset:            m.quoteAsset,
+      lastPrice:             parseFloat(m.lastPrice),
+      priceChange24h:        parseFloat(m.priceChange24h),
+      priceChangePercent24h: parseFloat(m.priceChangePercent24h),
+      volume24h:             parseFloat(m.volume24h),
+      high24h:               parseFloat(m.high24h),
+      low24h:                parseFloat(m.low24h),
+      marketCap:             m.marketCap ? parseFloat(m.marketCap) : undefined,
+      status:                m.status,
+      type:                  m.type,
+      enabled:               m.enabled,
+      pinned:                m.pinned,
+      minOrderSize:          parseFloat(m.minOrderSize),
+      maxOrderSize:          parseFloat(m.maxOrderSize),
+      tickSize:              parseFloat(m.tickSize),
+      makerFee:              parseFloat(m.makerFee),
+      takerFee:              parseFloat(m.takerFee),
     }));
-    marketsCache.set("all", result);
-    res.json(result);
+
+    // Stable priority sort: pinned first, then any market with a real price,
+    // then by 24h volume. Ensures the top ~1000 returned to a paginated
+    // request are the ones a user will actually see/trade.
+    result.sort((a, b) => {
+      const pa = a.pinned ? 1 : 0, pb = b.pinned ? 1 : 0;
+      if (pa !== pb) return pb - pa;
+      const ha = a.lastPrice > 0 ? 1 : 0, hb = b.lastPrice > 0 ? 1 : 0;
+      if (ha !== hb) return hb - ha;
+      return (b.volume24h || 0) - (a.volume24h || 0);
+    });
+
+    const etag = makeETag(result);
+    marketsCache.set(cacheKey, result);
+    marketsETag.set(cacheKey, etag);
+    const sliceEtag = etag.replace(/"$/, `:${offset}:${limit ?? "*"}"`);
+    res.setHeader("ETag", sliceEtag);
+    res.setHeader("X-Total-Count", String(result.length));
+    if (req.headers["if-none-match"] === sliceEtag) {
+      res.status(304).end();
+      return;
+    }
+    res.json(sliced(result));
   } catch (err) {
     req.log.error({ err }, "Failed to get markets");
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/** GET /markets/count — returns { count: N } quickly from the cache or DB */
+router.get("/markets/count", async (_req, res) => {
+  const cached = marketsCache.get("all");
+  if (cached) {
+    res.json({ count: cached.length });
+    return;
+  }
+  try {
+    const rows = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(marketsTable)
+      .where(eq(marketsTable.enabled, true));
+    res.json({ count: Number(rows[0]?.count ?? 0) });
+  } catch {
+    res.json({ count: 0 });
   }
 });
 
@@ -172,7 +300,15 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
     const symbol = normSymbol(req.params.symbol);
     const cached = tickerCache.get(symbol);
     if (cached) { res.json(cached); return; }
-    const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+
+    // Wrap DB lookup so a transient DB failure falls through to FALLBACK_PRICES
+    let market: (typeof marketsTable.$inferSelect) | undefined;
+    try {
+      [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
+      market = undefined;
+    }
 
     let lastPrice: number;
     let high24h: number;
@@ -215,15 +351,18 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
       sym           = market.symbol;
     }
 
-    const ticker = generateTicker({
-      symbol:               sym,
-      lastPrice,
-      high24h,
-      low24h,
-      volume24h,
-      priceChange24h,
-      priceChangePercent24h: pctChange,
-    });
+    const ticker = {
+      ...generateTicker({
+        symbol:               sym,
+        lastPrice,
+        high24h,
+        low24h,
+        volume24h,
+        priceChange24h,
+        priceChangePercent24h: pctChange,
+      }),
+      type: market?.type ?? "spot",
+    };
     tickerCache.set(symbol, ticker);
     res.json(ticker);
   } catch (err) {
@@ -236,13 +375,21 @@ router.get("/markets/:symbol/candles", async (req, res) => {
   try {
     const symbol   = normSymbol(req.params.symbol);
     const interval = (req.query.interval as string) || "1h";
-    const limit    = Math.min(parseInt(req.query.limit as string) || 200, 1000);
-    const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    const limit    = Math.min(parseInt(req.query.limit as string) || 200, 1500);
+
+    // Wrap DB lookup so a transient DB failure falls through to FALLBACK_PRICES
+    let market: (typeof marketsTable.$inferSelect) | undefined;
+    try {
+      [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
+      market = undefined;
+    }
 
     let price: number;
     let sym: string;
     if (!market) {
-      // Unknown pair — derive from fallback prices
+      // Unknown pair or DB unavailable — derive from fallback prices
       price = resolveCrossPrice(symbol, 0);
       sym   = symbol;
     } else {
@@ -274,8 +421,14 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
     const cached = orderbookCache.get(cacheKey);
     if (cached) { res.json(cached); return; }
 
-    // Fetch market price (fast single-row lookup)
-    const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    // Fetch market price (fast single-row lookup — fall through on DB failure)
+    let market: (typeof marketsTable.$inferSelect) | undefined;
+    try {
+      [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
+      market = undefined;
+    }
 
     // For unknown markets, attempt to build a synthetic book from fallback prices
     let lastPrice: number;
@@ -291,6 +444,8 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
       }
     } else {
       lastPrice = parseFloat(market.lastPrice);
+      // For markets with stale/zero DB price, fall back to cross-rate (same as candles/ticker)
+      if (!(lastPrice > 0)) lastPrice = resolveCrossPrice(market.symbol, 0);
     }
 
     // A market with no price yet can't produce meaningful synthetic depth
@@ -381,9 +536,16 @@ router.get("/markets/:symbol/trades", async (req, res) => {
     const cached = tradesCache.get(symbol);
     if (cached) { res.json(cached); return; }
 
-    const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    // Wrap DB lookup so a transient DB failure falls through to synthetic trades
+    let market: (typeof marketsTable.$inferSelect) | undefined;
+    try {
+      [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+    } catch (dbErr) {
+      logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
+      market = undefined;
+    }
 
-    // If market not in DB, derive price from FALLBACK_PRICES and return synthetic trades
+    // If market not in DB (or DB unavailable), derive price from FALLBACK_PRICES and return synthetic trades
     if (!market) {
       const [base, quote] = symbol.split("/");
       const baseUsd  = FALLBACK_PRICES[base]  ?? 0;
@@ -456,16 +618,25 @@ router.get("/markets/:symbol/trades", async (req, res) => {
   }
 });
 
-// ─── /api/prices — real Binance-sourced USD prices (never internal order book) ─
-const pricesCache = new TtlCache<Record<string, number>>(15_000); // 15 s
+// ─── /api/prices — live USD spot prices ──────────────────────────────────────
+// BTC/ETH/BSV come from Coinbase (with Binance fallback) via fetchKeyPrices();
+// every other tracked symbol falls back to FALLBACK_PRICES so the response stays
+// fully populated for callers that iterate the full coin list.
+const pricesCache = new TtlCache<Record<string, number>>(60_000); // 60 s
 
-router.get("/prices", (_req, res) => {
+router.get("/prices", async (_req, res) => {
   const cached = pricesCache.get("all");
   if (cached) { res.json(cached); return; }
   const out: Record<string, number> = {};
   for (const [sym, usd] of Object.entries(FALLBACK_PRICES)) {
     if (usd > 0) out[sym] = usd;
   }
+  try {
+    const live = await fetchKeyPrices();
+    for (const [sym, v] of Object.entries(live)) {
+      if (v && typeof v.usd === "number" && v.usd > 0) out[sym] = v.usd;
+    }
+  } catch { /* fall through to FALLBACK_PRICES already populated */ }
   pricesCache.set("all", out);
   res.json(out);
 });

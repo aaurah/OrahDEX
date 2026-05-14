@@ -6,38 +6,44 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { cn } from "@/lib/utils";
 
 const NETWORKS = [
-  { id: "evm-eth",  label: "Ethereum (ETH)",  symbol: "ETH",  color: "blue",   badge: "L1", type: "evm" },
-  { id: "evm-bsc",  label: "BNB Chain (BNB)",  symbol: "BNB",  color: "yellow", badge: "L1", type: "evm" },
-  { id: "evm-poly", label: "Polygon (MATIC)",  symbol: "MATIC",color: "violet", badge: "L2", type: "evm" },
-  { id: "evm-arb",  label: "Arbitrum One",     symbol: "ETH",  color: "blue",   badge: "L2", type: "evm" },
-  { id: "evm-op",   label: "Optimism",         symbol: "ETH",  color: "red",    badge: "L2", type: "evm" },
-  { id: "evm-base", label: "Base",             symbol: "ETH",  color: "blue",   badge: "L2", type: "evm" },
-  { id: "evm-zk",   label: "zkSync Era",       symbol: "ETH",  color: "violet", badge: "L3", type: "evm" },
-  { id: "bsv",      label: "Bitcoin SV (BSV)", symbol: "BSV",  color: "amber",  badge: "BSV", type: "bsv" },
+  { id: "evm-eth",     label: "Ethereum (ETH)",  symbol: "ETH",  color: "blue",   badge: "L1",      type: "evm" },
+  { id: "evm-bsc",     label: "BNB Chain (BNB)",  symbol: "BNB",  color: "yellow", badge: "L1",      type: "evm" },
+  { id: "evm-poly",    label: "Polygon (MATIC)",  symbol: "MATIC",color: "violet", badge: "L2",      type: "evm" },
+  { id: "evm-arb",     label: "Arbitrum One",     symbol: "ETH",  color: "blue",   badge: "L2",      type: "evm" },
+  { id: "evm-op",      label: "Optimism",         symbol: "ETH",  color: "red",    badge: "L2",      type: "evm" },
+  { id: "evm-base",    label: "Base",             symbol: "ETH",  color: "blue",   badge: "L2",      type: "evm" },
+  { id: "evm-zk",      label: "zkSync Era",       symbol: "ETH",  color: "violet", badge: "L3",      type: "evm" },
+  { id: "evm-sepolia", label: "Sepolia Testnet",  symbol: "ETH",  color: "violet", badge: "Testnet", type: "evm" },
+  { id: "bsv",         label: "Bitcoin SV (BSV)", symbol: "BSV",  color: "amber",  badge: "BSV",     type: "bsv" },
 ];
 
 const BADGE_COLOR: Record<string, string> = {
-  blue:   "bg-blue-500/10 text-blue-400 border-blue-500/30",
-  yellow: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
-  violet: "bg-violet-500/10 text-violet-400 border-violet-500/30",
-  red:    "bg-red-500/10 text-red-400 border-red-500/30",
-  amber:  "bg-green-500/10 text-green-400 border-green-500/30",
+  blue:    "bg-blue-500/10 text-blue-400 border-blue-500/30",
+  yellow:  "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
+  violet:  "bg-violet-500/10 text-violet-400 border-violet-500/30",
+  red:     "bg-red-500/10 text-red-400 border-red-500/30",
+  amber:   "bg-green-500/10 text-green-400 border-green-500/30",
+  testnet: "bg-purple-500/10 text-purple-400 border-purple-500/30",
 };
 
 function QRCodeImage({ address }: { address: string }) {
+  const [failed, setFailed] = useState(false);
   const url = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(address)}&size=180x180&bgcolor=0d1117&color=ffffff&margin=10&format=png`;
   return (
     <div className="w-44 h-44 rounded-2xl overflow-hidden border border-border bg-white flex items-center justify-center mx-auto">
-      <img
-        src={url}
-        alt="Wallet QR Code"
-        className="w-full h-full object-cover"
-        onError={(e) => {
-          (e.target as HTMLImageElement).style.display = "none";
-          (e.target as HTMLImageElement).parentElement!.innerHTML =
-            `<div class="flex flex-col items-center justify-center w-full h-full bg-card gap-2"><span class="text-3xl">📱</span><span class="text-xs text-muted-foreground text-center px-3">Scan in your wallet app</span></div>`;
-        }}
-      />
+      {failed ? (
+        <div className="flex flex-col items-center justify-center w-full h-full bg-card gap-2">
+          <span className="text-3xl">📱</span>
+          <span className="text-xs text-muted-foreground text-center px-3">Scan in your wallet app</span>
+        </div>
+      ) : (
+        <img
+          src={url}
+          alt="Wallet QR Code"
+          className="w-full h-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      )}
     </div>
   );
 }
@@ -116,7 +122,7 @@ export function ReceiveModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
 
               <div className="p-6 space-y-5">
                 <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 text-xs text-muted-foreground leading-relaxed">
-                  <span className="text-primary font-semibold">Non-custodial.</span> Funds sent to this address go directly to your wallet. Orah never holds your assets.
+                  <span className="text-primary font-semibold">Non-custodial.</span> Funds sent to this address go directly to your wallet. OrahDEX never holds your assets.
                 </div>
 
                 <div className="relative">

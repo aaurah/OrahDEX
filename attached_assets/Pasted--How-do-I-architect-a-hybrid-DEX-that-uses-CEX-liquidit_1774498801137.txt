@@ -8,7 +8,7 @@ Let’s design it like a real system, not a fantasy.
 1. High‑level architecture
 
 Layer	Role	What lives here	
-Frontend (Orah UI)	Ritual surface	Wallet connect, CEX connect, route selection, trade UX	
+Frontend (OrahDex UI)	Ritual surface	Wallet connect, CEX connect, route selection, trade UX	
 Hybrid Router Backend	Brain	Chooses CEX vs AMM vs Bridge, talks to CEX APIs, indexes chains	
 On‑chain AMM	DeFi engine	Pools, swaps, LP tokens, fees, Keeper logic	
 CEX Accounts	Deep liquidity	User‑owned accounts on Binance/Bybit/etc via API keys	

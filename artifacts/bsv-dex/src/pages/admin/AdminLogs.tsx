@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -6,16 +7,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
 function fetchLogs(level?: string) {
   const url = level && level !== "all"
-    ? `${BASE}/api/admin/logs?level=${level}&limit=200`
-    : `${BASE}/api/admin/logs?limit=200`;
-  return fetch(url).then(r => r.json());
+    ? `/api/admin/logs?level=${level}&limit=200`
+    : `/api/admin/logs?limit=200`;
+  return adminFetch(url).then(r => r.json());
 }
 function clearLogs() {
-  return fetch(`${BASE}/api/admin/logs`, { method: "DELETE" }).then(r => r.json());
+  return adminFetch(`/api/admin/logs`, { method: "DELETE" }).then(r => r.json());
 }
 
 type Level = "all" | "info" | "warn" | "error";
@@ -62,11 +61,12 @@ export function AdminLogsPage() {
   const [search, setSearch]           = useState("");
   const [cleared, setCleared]         = useState(false);
 
-  const { data: logs = [], isLoading, refetch } = useQuery({
+  const { data: rawLogs, isLoading, refetch } = useQuery({
     queryKey:        ["admin-logs", levelFilter],
     queryFn:         () => fetchLogs(levelFilter),
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });
+  const logs: any[] = Array.isArray(rawLogs) ? rawLogs : [];
 
   const clearMut = useMutation({
     mutationFn: clearLogs,

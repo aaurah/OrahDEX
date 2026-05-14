@@ -1,7 +1,7 @@
 /**
  * cmcFallback.ts — stubbed
  *
- * Orah now runs its own sovereign price engine (Binance public API +
+ * OrahDEX now runs its own sovereign price engine (Binance public API +
  * WhatsOnChain + own trades).  CoinMarketCap is no longer a data source.
  * All functions return null so existing call-sites degrade gracefully.
  */

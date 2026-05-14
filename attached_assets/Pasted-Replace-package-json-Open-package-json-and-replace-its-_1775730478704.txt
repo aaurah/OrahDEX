@@ -3,9 +3,9 @@ Replace `package.json`
 Open package.json and replace its contents with this:
 
 {
-  "name": "orah-landing",
+  "name": "orahdex-landing",
   "version": "1.0.0",
-  "description": "Sovereign Orah landing page shell",
+  "description": "Sovereign OrahDEX landing page shell",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -36,13 +36,13 @@ app.use(express.static(path.join(__dirname, "public")));
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    service: "orah-landing",
+    service: "orahdex-landing",
     timestamp: new Date().toISOString()
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`Orah landing running on port ${PORT}`);
+  console.log(`OrahDEX landing running on port ${PORT}`);
 });
 
 
@@ -59,7 +59,7 @@ app.listen(PORT, () => {
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Orah — Sovereign Trading Protocol</title>
+  <title>OrahDEX — Sovereign Trading Protocol</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     :root {
@@ -283,7 +283,7 @@ app.listen(PORT, () => {
         <div class="sigil">O</div>
         <div class="brand-text">
           <span>Sovereign Protocol</span>
-          <span>Orah</span>
+          <span>OrahDEX</span>
         </div>
       </div>
       <nav>
@@ -300,7 +300,7 @@ app.listen(PORT, () => {
           Trade as a <span>Keeper</span>, not a customer.
         </h1>
         <p class="hero-sub">
-          Orah is a sovereign, non‑custodial trading protocol. No accounts, no
+          OrahDEX is a sovereign, non‑custodial trading protocol. No accounts, no
           identity, no treasury—only cryptographic rules, BSV settlement, and
           deterministic execution.
         </p>
@@ -391,7 +391,7 @@ app.listen(PORT, () => {
     </section>
 
     <footer>
-      <span>Orah is not a company or custodian. It is a set of open‑source, cryptographically enforced rules.</span>
+      <span>OrahDEX is not a company or custodian. It is a set of open‑source, cryptographically enforced rules.</span>
       <span>v0.1 — Replit landing shell</span>
     </footer>
   </div>
@@ -405,4 +405,4 @@ app.listen(PORT, () => {
 
 • Click Run in Replit.
 • It should start the Express server and serve public/index.html.
-• Open the webview → you’ll see your new sovereign Orah landing shell.
+• Open the webview → you’ll see your new sovereign OrahDEX landing shell.

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { OrahDEXInline } from '@/components/BrandLogo';
+import { OrahInline } from '@/components/BrandLogo';
 import { useLocation } from 'wouter';
 import {
   Shield, Eye, EyeOff, Lock, Mail, Smartphone, Copy, Check,
@@ -45,7 +45,7 @@ export function AdminLogin() {
   // TOTP setup data
   const [totpQrUrl,  setTotpQrUrl]  = useState('');
   const [totpSecret, setTotpSecret] = useState('');
-  const [totpIssuer, setTotpIssuer] = useState('Orah');
+  const [totpIssuer, setTotpIssuer] = useState('OrahDEX');
 
   // Wallet connect modal (embedded on the login page)
   const { isOpen: walletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
@@ -594,7 +594,7 @@ export function AdminLogin() {
             <span className="text-sm font-bold text-muted-foreground group-hover:text-foreground transition-colors duration-200">
               Back to
             </span>
-            <OrahDEXInline className="text-sm font-black" />
+            <OrahInline className="text-sm font-black" />
             <span className="text-sm font-bold text-muted-foreground group-hover:text-foreground transition-colors duration-200">
               Exchange
             </span>

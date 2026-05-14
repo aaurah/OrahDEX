@@ -152,7 +152,7 @@ This prevents:
 
 ---
 
-🧠 HOW YOU SHOULD IMPLEMENT THIS IN ORAH
+🧠 HOW YOU SHOULD IMPLEMENT THIS IN ORAHDEX
 
 You need a Chain Registry:
 

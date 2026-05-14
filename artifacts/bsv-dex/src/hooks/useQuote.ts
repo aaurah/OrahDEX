@@ -1,5 +1,5 @@
 /**
- * useQuote — real-time price quote from the Orah Sovereign Routing API
+ * useQuote — real-time price quote from the OrahDEX Sovereign Routing API
  *
  * Calls GET /v1/quote with debouncing so the form stays responsive while typing.
  * Returns expected output, price impact, fee info, and Keeper tier discount.

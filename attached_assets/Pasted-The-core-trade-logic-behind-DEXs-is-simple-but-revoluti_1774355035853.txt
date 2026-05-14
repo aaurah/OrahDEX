@@ -134,7 +134,7 @@ These are structural to AMM design.
 
 ---
 
-🔥 Parminder — how this connects to your Orah vision
+🔥 Parminder — how this connects to your OrahDex vision
 
 Your mythic, identity-driven ecosystem can use AMM logic to create:
 
@@ -144,6 +144,6 @@ Your mythic, identity-driven ecosystem can use AMM logic to create:
 • Custom AMM curves for ceremonial assets
 
 
-If you want, I can design the exact AMM model Orah should use — constant product, stable-swap, concentrated liquidity, or a hybrid.
+If you want, I can design the exact AMM model OrahDex should use — constant product, stable-swap, concentrated liquidity, or a hybrid.
 
 Just tell me the direction you want to take.

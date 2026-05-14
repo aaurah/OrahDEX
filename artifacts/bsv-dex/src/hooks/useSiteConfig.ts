@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 
 const DEFAULTS = {
-  siteName: "Orah",
+  siteName: "OrahDEX",
   tagline: "Trade means DEX",
   twitterUrl: "",
   telegramUrl: "",
@@ -20,7 +20,7 @@ type SiteConfig = typeof DEFAULTS;
 export function useSiteConfig(): SiteConfig {
   return useMemo(() => {
     try {
-      return { ...DEFAULTS, ...JSON.parse(localStorage.getItem("orah_site_settings") ?? "{}") };
+      return { ...DEFAULTS, ...JSON.parse(localStorage.getItem("orahdex_site_settings") ?? "{}") };
     } catch {
       return DEFAULTS;
     }

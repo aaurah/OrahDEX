@@ -4,11 +4,11 @@
 
 1. Threat Model — Missing Explicit Definition
 
-Your white paper never defines the adversaries Orah is designed to resist.
+Your white paper never defines the adversaries OrahDEX is designed to resist.
 
 Required correction:
 
-Orah assumes adversaries may include:
+OrahDEX assumes adversaries may include:
 • nation‑state regulators
 • malicious relayers
 • malicious liquidity providers
@@ -37,13 +37,13 @@ Correct, but incomplete.
 Required additions:
 
 • BSV is PoW, so settlement is probabilistic.
-• Orah must define its own finality threshold.
+• OrahDEX must define its own finality threshold.
 • OP_RETURN proofs must be validated against chain reorganizations.
 
 
 Required correction:
 
-Orah treats 6 confirmations as final for settlement proofs.
+OrahDEX treats 6 confirmations as final for settlement proofs.
 Reorgs deeper than 6 blocks are considered economically infeasible.
 
 ---
@@ -109,7 +109,7 @@ This is a critical guarantee.
 
 You must explicitly state:
 
-Orah is non-custodial and off-chain order matching prevents on-chain mempool exposure.
+OrahDEX is non-custodial and off-chain order matching prevents on-chain mempool exposure.
 No transaction is broadcast until after the trade is matched and signed.
 
 This prevents:
@@ -248,7 +248,7 @@ No address substitution is possible.
 
 Add:
 
-Orah never requests seed phrases, private keys, or recovery words.
+OrahDEX never requests seed phrases, private keys, or recovery words.
 Any interface that asks for these is fraudulent.
 
 ---
@@ -280,7 +280,7 @@ Database compromise cannot alter trades because settlement proofs are on-chain a
 
 Add:
 
-If a BSV reorg invalidates a settlement proof, Orah automatically rebroadcasts the OP_RETURN transaction until confirmed.
+If a BSV reorg invalidates a settlement proof, OrahDEX automatically rebroadcasts the OP_RETURN transaction until confirmed.
 
 ---
 
@@ -288,7 +288,7 @@ If a BSV reorg invalidates a settlement proof, Orah automatically rebroadcasts t
 
 Add:
 
-Orah uses stateless servers and horizontal scaling; no single server is a point of failure.
+OrahDEX uses stateless servers and horizontal scaling; no single server is a point of failure.
 
 ---
 
@@ -296,7 +296,7 @@ Orah uses stateless servers and horizontal scaling; no single server is a point 
 
 Add:
 
-Orah cannot be seized because it holds no assets, no identity, no custody, and no admin keys.
+OrahDEX cannot be seized because it holds no assets, no identity, no custody, and no admin keys.
 The protocol is a set of open-source rules, not a company.
 
 This is the core thesis.

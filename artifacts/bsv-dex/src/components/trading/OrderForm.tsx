@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useSettingsStore } from "@/store/useSettingsStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { usePlaceOrder } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
@@ -19,10 +20,11 @@ import {
   Wallet, Shield, Zap, ArrowRightLeft, CheckCircle2,
   ExternalLink, Loader2, PenLine, Settings2, AlertTriangle,
   Lock, ShieldCheck, RefreshCw, Crown, TrendingDown, Flame,
-  XCircle, Info, Route, Timer, Smartphone, QrCode,
+  XCircle, Info, Route, Timer, Smartphone, QrCode, Sparkles,
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
+import { getViemAccountForAddress } from "@/lib/walletSigner";
 import {
   CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
   getAssetNativeChain, walletCanReceive,
@@ -95,7 +97,7 @@ function MobileConnectQR({ onConnected }: { onConnected: () => void }) {
     }
   };
 
-  const qrUri = token ? `orah://connect?token=${token}&expires=${expiresAt}` : "";
+  const qrUri = token ? `orahdex://connect?token=${token}&expires=${expiresAt}` : "";
   const mins = Math.floor(secondsLeft / 60);
   const secs = String(secondsLeft % 60).padStart(2, "0");
 
@@ -152,7 +154,7 @@ function MobileConnectQR({ onConnected }: { onConnected: () => void }) {
     <div className="w-full space-y-3">
       <div className="flex items-center gap-2">
         <QrCode className="w-3.5 h-3.5 text-primary" />
-        <span className="text-xs font-semibold text-foreground">Scan with Orah Mobile</span>
+        <span className="text-xs font-semibold text-foreground">Scan with OrahDEX Mobile</span>
         <span className={cn(
           "ml-auto text-[10px] font-mono font-bold tabular-nums",
           secondsLeft < 60 ? "text-red-400" : "text-muted-foreground",
@@ -172,7 +174,7 @@ function MobileConnectQR({ onConnected }: { onConnected: () => void }) {
         </div>
       </div>
       <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
-        Open the Orah mobile app → QR Scanner → Scan to Connect.<br />
+        Open the OrahDEX mobile app → QR Scanner → Scan to Connect.<br />
         Your wallet will link automatically.
       </p>
       <button
@@ -325,17 +327,18 @@ export interface OrderFormFill {
 }
 
 // ── Main OrderForm ─────────────────────────────────────────────────────────────
-export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlaced }: {
+export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlaced, onTradeFlash }: {
   symbol: string;
   currentPrice?: number;
   externalFill?: OrderFormFill | null;
   onOrderPlaced?: () => void;
+  onTradeFlash?: (fill: { price: number; side: "buy" | "sell" }) => void;
 }) {
   const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
-  const isOrahDEXWallet = provider === "orahdex-wallet";
+  const isOrahWallet = provider === "orah-wallet";
 
   // Wallet signing for external EVM wallets — used to authorise on-chain order placement.
   const { signMessageAsync } = useSignMessage();
@@ -348,17 +351,16 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   // Fetch real on-chain token balances for the connected EVM wallet
   const { balances: tokenBalances, loading: balancesLoading, refresh: refreshBalances } = useEvmBalances(
     isEvm ? address : null,
-    isEvm ? chainId : null
+    isEvm ? (chainId ?? 1) : null
   );
 
-  // External EVM wallet = MetaMask/WalletConnect that is NOT the OrahDEX-managed internal wallet.
+  // External EVM wallet = MetaMask/WalletConnect that is NOT the Orah-managed internal wallet.
   // Non-custodial model: external EVM wallets trade directly from their connected on-chain balance.
-  const isExternalEvm = isEvm && !isOrahDEXWallet;
+  const isExternalEvm = isEvm && !isOrahWallet;
 
-  // Only the OrahDEX internal wallet uses the API ledger balance.
-  // All external wallets (EVM, BSV, BTC, SOL) use their on-chain wallet balance directly —
-  // no deposit step required.
-  const usesApiBalance = isOrahDEXWallet;
+  // Non-custodial mode: any EVM wallet (including Orah self-custody) trades
+  // directly from its on-chain balance. Only non-EVM Orah chains use ledger.
+  const usesApiBalance = isOrahWallet && !isEvm;
 
   // ── API ledger balances (available + locked) ────────────────────────────────
   const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
@@ -425,9 +427,20 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   } | null>(null);
   // EVM HTLC session ID — set when a matched fill requires on-chain atomic lock
   const [evmHtlcSessionId, setEvmHtlcSessionId] = useState<string | null>(null);
-  const [slippage, setSlippage] = useState(0.5);
+  const slippageBpsStore = useSettingsStore((s) => s.slippageBps);
+  const setSlippageBpsStore = useSettingsStore((s) => s.setSlippageBps);
+  const [slippage, setSlippageLocal] = useState(() => +(slippageBpsStore / 100).toFixed(2));
+  const setSlippage = (v: number) => {
+    setSlippageLocal(v);
+    setSlippageBpsStore(Math.round(v * 100));
+  };
   const [slippageOpen, setSlippageOpen] = useState(false);
   const [customSlip, setCustomSlip] = useState("");
+  // Sync local slippage if store changes externally (e.g. user edits in Settings).
+  useEffect(() => {
+    const next = +(slippageBpsStore / 100).toFixed(2);
+    setSlippageLocal((cur) => (cur !== next ? next : cur));
+  }, [slippageBpsStore]);
 
   // ── Cross-chain receive address ──────────────────────────────────────────────
   const [receiveAddress, setReceiveAddress] = useState("");
@@ -436,6 +449,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const [precheckResult, setPrecheckResult] = useState<PrecheckResult | null>(null);
   const [precheckLoading, setPrecheckLoading] = useState(false);
   const precheckTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const precheckKeyRef = useRef<string>("");
 
   const parts = symbol.split("/");
   const [base, quote = "USDT"] = parts;
@@ -489,7 +503,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const walletQuote = quoteBalEntry?.amount ?? 0;
 
   // Non-custodial: EVM wallets trade directly from their on-chain wallet.
-  // OrahDEX Wallet users use the API ledger exclusively.
+  // Orah Wallet users use the API ledger exclusively.
   // External wallets: merge on-chain balance with internal exchange balance so
   // assets accumulated via exchange trades can also be sold / used.
   const internalBase  = apiBalances[base]  ?? 0;
@@ -509,11 +523,28 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     : 0;
 
   // ── Precheck runner (declared after balances so availableAmt is in scope) ──
+  const buildPrecheckKey = useCallback((amt: string, px: string) => {
+    return [
+      symbol,
+      side,
+      type,
+      amt,
+      px,
+      Math.round(slippage * 100),
+      availableAmt,
+      currentPrice,
+      network ?? "evm",
+      address ?? "",
+    ].join("|");
+  }, [symbol, side, type, slippage, availableAmt, currentPrice, network, address]);
+
   const runPrecheck = useCallback(async (amt: string, px: string) => {
     if (!address || !amt || parseFloat(amt) <= 0) {
       setPrecheckResult(null);
+      precheckKeyRef.current = "";
       return;
     }
+    const key = buildPrecheckKey(amt, px);
     setPrecheckLoading(true);
     try {
       const result = await precheck({
@@ -529,10 +560,11 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         address:          address ?? "",
       });
       setPrecheckResult(result);
+      precheckKeyRef.current = key;
     } finally {
       setPrecheckLoading(false);
     }
-  }, [address, symbol, side, type, slippage, availableAmt, currentPrice, network]);
+  }, [address, symbol, side, type, slippage, availableAmt, currentPrice, network, buildPrecheckKey]);
 
   // Debounce precheck 300 ms after amount/price changes
   useEffect(() => {
@@ -592,7 +624,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               ? `Your order matched! Lock ${receivedQty} ${receivedTok} in the HTLC contract below to complete the P2P atomic swap.`
               : isCrossChainFill
                 ? `+${receivedQty} ${receivedTok} settled on-chain. Provide your ${fillChainName} address to receive funds.`
-                : `+${receivedQty} ${receivedTok} credited to your Orah balance`,
+                : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance`,
           });
           addNotification({
             type: "order_filled",
@@ -601,7 +633,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               ? `Lock ${receivedQty} ${receivedTok} on-chain to complete atomic swap — see settlement card`
               : isCrossChainFill
                 ? `+${receivedQty} ${receivedTok} settled on-chain · provide ${fillChainName} address to receive`
-                : `+${receivedQty} ${receivedTok} credited to your Orah balance · withdraw anytime`,
+                : `+${receivedQty} ${receivedTok} credited to your OrahDEX balance · withdraw anytime`,
             pair: symbol,
             side: side as "buy" | "sell",
             txid: txid ?? undefined,
@@ -622,25 +654,43 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         }
         setAmount("");
         if (address) fetchApiBalances(base, quote, address);
+        refreshBalances();
+        useWalletStore.getState().triggerBalanceRefresh();
+        // Flash the order book at the fill price
+        onTradeFlash?.({ price: avgFillPrice, side: side as "buy" | "sell" });
         setTimeout(() => onOrderPlaced?.(), 500);
       },
       onError: (err: any) => {
-        const code        = err?.data?.code ?? err?.code;
-        const serverMsg   = err?.data?.error ?? err?.data?.message ?? err?.message;
-        const isInsufficient = code === "INSUFFICIENT_FUNDS" || serverMsg?.includes("Insufficient");
+        const errData     = err?.response?.data ?? err?.data ?? {};
+        const code        = errData?.code ?? err?.data?.code ?? err?.code;
+        const serverMsg   = errData?.error ?? errData?.message ?? err?.data?.error ?? err?.data?.message ?? err?.message;
+        const isInsufficient = code === "INSUFFICIENT_FUNDS" || serverMsg?.toLowerCase?.().includes("insufficient");
+        const isNoLiquidity  = code === "NO_LIQUIDITY";
 
         toast({
-          title:       isInsufficient ? "Insufficient Balance" : "Order Failed",
-          description: isInsufficient
-            ? "Insufficient balance. Deposit funds to your exchange balance to start trading."
+          title:       isNoLiquidity  ? "No Liquidity"
+                     : isInsufficient ? "Insufficient Balance"
+                     : "Order Failed",
+          description: isNoLiquidity
+            ? "No matching sellers found. Place a limit order to set your price instead."
+            : isInsufficient
+            ? (isEvm
+              ? "Not enough on-chain balance. Add funds to your wallet or use Bridge to swap."
+              : "Insufficient balance. Deposit funds to your exchange balance to start trading.")
             : `Could not place order${serverMsg ? `: ${serverMsg}` : ""}. Please try again.`,
           variant: "destructive",
         });
         addNotification({
           type: "error",
-          title: isInsufficient ? "Insufficient Balance" : "Order Failed",
-          body:  isInsufficient
-            ? "Order rejected — insufficient balance. Reduce the order size or deposit funds."
+          title: isNoLiquidity  ? "No Liquidity"
+               : isInsufficient ? "Insufficient Balance"
+               : "Order Failed",
+          body:  isNoLiquidity
+            ? "Market order rejected — no matching sellers. Use a limit order to join the book."
+            : isInsufficient
+            ? (isEvm
+              ? "Order rejected — insufficient on-chain balance. Reduce the order size or add funds to your wallet."
+              : "Order rejected — insufficient balance. Reduce the order size or deposit funds.")
             : "Could not place order — please check your balance and try again.",
           pair: symbol,
         });
@@ -673,34 +723,34 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
     // ── Synchronous balance guard (runs before precheck, no debounce lag) ─────
     // Block immediately if the balance is clearly too low.
-    if (availableAmt > 0) {
-      const required = parseFloat(amount);
-      const total    = price ? parseFloat(price) * required : 0;
-      // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
-      // never falsely blocked by floating-point arithmetic.
-      if (side === "sell" && required > availableAmt + 1e-9) {
-        toast({
-          title:       "Insufficient Balance",
-          description: `You only have ${availableAmt.toFixed(6)} ${availableSym}. Cannot sell ${amount} ${base}.`,
-          variant:     "destructive",
-        });
-        return;
-      }
-      if (side === "buy" && total > 0 && total > availableAmt + 1e-9) {
-        toast({
-          title:       "Insufficient Balance",
-          description: `You need ${total.toFixed(2)} ${quote} but only have ${availableAmt.toFixed(2)} ${quote}.`,
-          variant:     "destructive",
-        });
-        return;
-      }
+    const required     = parseFloat(amount);
+    const effectivePrice = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
+    const total        = effectivePrice > 0 ? effectivePrice * required : 0;
+    // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
+    // never falsely blocked by floating-point arithmetic.
+    if (side === "sell" && required > availableAmt + 1e-9) {
+      toast({
+        title:       "Insufficient Balance",
+        description: `You only have ${availableAmt.toFixed(6)} ${availableSym}. Cannot sell ${amount} ${base}.`,
+        variant:     "destructive",
+      });
+      return;
+    }
+    if (side === "buy" && total > 0 && total > availableAmt + 1e-9) {
+      toast({
+        title:       "Insufficient Balance",
+        description: `You need ${total.toFixed(2)} ${quote} but only have ${availableAmt.toFixed(2)} ${quote}.`,
+        variant:     "destructive",
+      });
+      return;
     }
 
     // ── Golden path: run precheck (or use cached result) before anything ──
     const timer = new TradeTimer();
     timer.mark("precheck");
+    const submitKey = buildPrecheckKey(amount, price);
     let check = precheckResult;
-    if (!check) {
+    if (!check || precheckKeyRef.current !== submitKey) {
       check = await precheck({
         symbol, side, type,
         amount:           parseFloat(amount),
@@ -712,6 +762,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         address:          address ?? "",
       });
       setPrecheckResult(check);
+      precheckKeyRef.current = submitKey;
     }
     timer.end("precheck");
 
@@ -738,25 +789,48 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     confirmRef.current = false; // Reset for next submission
 
     // ── Step 4: Wallet signature for external EVM wallets ─────────────────────
-    // Orah is a non-custodial DEX: external EVM wallets (MetaMask / WalletConnect)
+    // OrahDEX is a non-custodial DEX: external EVM wallets (MetaMask / WalletConnect)
     // must sign the order intent with personal_sign to prove authorization.
-    // The signature is stored on the order row (fundingRef: "evm-sig:…") and is
-    // required by the server before the order enters the matching engine.
-    // OrahDEX internal wallets use the API ledger and do not need a separate sign step.
+    // The signature is stored on the order row and is required by the server before
+    // the order enters the matching engine.
+    // IMPORTANT: the message format MUST match buildOrderAuthMessage on the server
+    // exactly — the server reconstructs the same string and recovers the signer.
     let evmSignature: string | undefined;
-    if (isExternalEvm) {
-      // Build a random nonce using crypto.getRandomValues to prevent signature replay.
+    let orderNonce:   string | undefined;
+    let orderExpiry:  string | undefined;
+    if (isEvm && address) {
+      // Generate a random nonce and a 5-minute expiry
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
-      const nonce = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
-      const orderMsg = `Orah order: ${side} ${amount} ${base} @ ${price || "market"} ${quote} · nonce:${nonce}`;
+      orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
+      orderExpiry = String(Math.floor(Date.now() / 1000) + 5 * 60);
+
+      // Canonical message — must mirror buildOrderAuthMessage() in walletAuth.ts
+      const orderMsg = [
+        "Authorize OrahDEX order",
+        `Wallet: ${address}`,
+        `Symbol: ${symbol}`,
+        `Side: ${side}`,
+        `Quantity: ${parseFloat(amount).toString()}`,
+        `Nonce: ${orderNonce}`,
+        `Expiry: ${orderExpiry}`,
+      ].join("\n");
+
       try {
         setSigningOrder(true);
-        evmSignature = await signMessageAsync({ message: orderMsg });
+        if (isOrahWallet) {
+          // Self-custody Orah wallet: sign with the in-app key (PIN/passkey unlock)
+          const account = await getViemAccountForAddress(address!, {
+            title:    "Authorize trade",
+            subtitle: `${side.toUpperCase()} ${amount} ${base} on ${symbol}`,
+          });
+          evmSignature = await account.signMessage!({ message: orderMsg });
+        } else {
+          evmSignature = await signMessageAsync({ message: orderMsg });
+        }
       } catch (signErr: any) {
         setSigningOrder(false);
         const msg: string = signErr?.message ?? "";
-        // User rejected the signature prompt
         if (msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel") || msg.includes("4001")) {
           toast({ title: "Signature rejected", description: "You must sign the order to proceed.", variant: "destructive" });
         } else {
@@ -780,85 +854,18 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
           quantity:       parseFloat(amount),
           networkType:    isEvm ? "evm" : network === 'bch' ? "bch" : network === 'btc' ? "btc" : network === 'sol' ? "sol" : "bsv",
-          walletSource:   isOrahDEXWallet ? "orahdex" : "external",
+          walletSource:   (isOrahWallet && !isEvm) ? "orah" : "external",
           reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,
           receiveAddress: receiveAddress.trim() || undefined,
           autoBorrow,
-          // EVM signature — authorises the order for on-chain settlement via HTLC
+          // EVM signature + matching nonce/expiry — server reconstructs the same
+          // canonical message and recovers the signer to verify ownership
           evmSignature,
+          nonce:  orderNonce,
+          expiry: orderExpiry,
           chainId: isEvm ? chainId : undefined,
         } as any,
       },
-      {
-        onSuccess: async (data: any) => {
-          const matched = data?.matched ?? false;
-          const txid    = data?.settlementTxid ?? data?.txid ?? null;
-          const url     = data?.explorerUrl ?? null;
-
-          if (matched && txid && !txid.startsWith("htlc-pending-")) {
-            const fallbackExplorer = txid.startsWith("0x")
-              ? `https://etherscan.io/tx/${txid}`
-              : `https://whatsonchain.com/tx/${txid}`;
-            addTx({
-              hash:                 txid,
-              chainId:              0,
-              label:                `Settlement · ${side.toUpperCase()} ${amount} ${base}`,
-              status:               "confirmed",
-              confirmations:        1,
-              requiredConfirmations: 1,
-              timestamp:            Date.now(),
-              explorerUrl:          url ?? fallbackExplorer,
-            });
-          }
-
-          if (matched) {
-            const filledQty    = data?.filledQuantity ?? parseFloat(amount || "0");
-            const avgFillPrice = data?.price ?? (data?.total && filledQty > 0 ? data.total / filledQty : parseFloat(price || "0"));
-            const fillFee      = data?.fee ?? 0;
-            const receivedQty  = side === "sell"
-              ? ((filledQty * avgFillPrice - fillFee) > 0 ? (filledQty * avgFillPrice - fillFee) : filledQty * avgFillPrice).toFixed(2)
-              : filledQty > 0 ? filledQty.toFixed(6) : "0";
-            const receivedTok  = side === "sell" ? quote : base;
-
-            toast({
-              title: "Order Filled ✓",
-              description: `+${receivedQty} ${receivedTok} credited to your Orah balance`,
-            });
-          } else {
-            toast({
-              title: "Order Open",
-              description: `${side.toUpperCase()} ${amount} ${base} @ $${price} · waiting for match`,
-            });
-          }
-          setAmount("");
-
-          if (address) {
-            fetchApiBalances(base, quote, address);
-          }
-          refreshBalances();
-          useWalletStore.getState().triggerBalanceRefresh();
-          setTimeout(() => onOrderPlaced?.(), 500);
-        },
-        onError: (err: any) => {
-          // Surface server rejection messages (e.g. INSUFFICIENT_FUNDS, bad signature)
-          const data = err?.response?.data ?? err?.data ?? {};
-          const serverMsg: string =
-            data?.message ??
-            data?.detail ??
-            data?.error ??
-            err?.message ??
-            "Order rejected by the server.";
-          const isInsufficient =
-            data?.error === "INSUFFICIENT_FUNDS" ||
-            data?.code  === "INSUFFICIENT_FUNDS" ||
-            serverMsg.toLowerCase().includes("insufficient");
-          toast({
-            title:       isInsufficient ? "Insufficient Balance" : "Order Failed",
-            description: serverMsg,
-            variant:     "destructive",
-          });
-        },
-      }
     );
   };
 
@@ -972,7 +979,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         {/* Balance row */}
         <div className="flex items-center justify-between text-xs px-0.5">
           <div className="flex items-center gap-1.5 text-muted-foreground">
-            {isExternalEvm ? (
+            {isEvm ? (
               <>
                 <Wallet className="w-3 h-3 text-emerald-400/70" />
                 Wallet Balance
@@ -995,11 +1002,23 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           </div>
         </div>
 
+        {/* Non-custodial mode disclosure */}
+        {isEvm && !!address && (
+          <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-primary/8 border border-primary/20">
+            <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" />
+            <span className="text-primary/80 font-medium">Non-custodial — your wallet settles on-chain. No deposit required.</span>
+          </div>
+        )}
+
         {/* Low balance hint */}
         {availableAmt <= 0 && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-amber-500/8 border border-amber-500/20">
             <span className="text-amber-400/80">
-              No {availableSym} in your connected wallet. Buy or bridge {availableSym} to start trading.
+              No {availableSym} in wallet — get it via{" "}
+              <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold hover:text-cyan-300">
+                Bridge
+              </a>
+              {" "}or swap for more.
             </span>
           </div>
         )}
@@ -1198,7 +1217,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[11px] text-emerald-300 font-semibold leading-snug">
-                    Sent to your Orah EVM wallet
+                    Sent to your OrahDEX EVM wallet
                   </p>
                   <p className="text-[10px] text-emerald-200/70 leading-relaxed mt-0.5">
                     One address works on <span className="text-emerald-300 font-medium">all EVM networks</span> — Ethereum, BSC, Polygon, Arbitrum, Base and more.
@@ -1227,7 +1246,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                 <ShieldCheck className="w-3.5 h-3.5 text-teal-400 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[11px] text-teal-300 font-semibold leading-snug">
-                    Sent to your Orah BSV wallet
+                    Sent to your OrahDEX BSV wallet
                   </p>
                   <p className="text-[10px] text-teal-200/70 leading-relaxed mt-0.5">
                     {hasSeparateBtcAddr
@@ -1266,7 +1285,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               <div className="flex items-start gap-2">
                 <ShieldCheck className="w-3.5 h-3.5 text-orange-400 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11px] text-orange-300 font-semibold leading-snug">Sent to your Orah BTC wallet</p>
+                  <p className="text-[11px] text-orange-300 font-semibold leading-snug">Sent to your OrahDEX BTC wallet</p>
                   <p className="text-[10px] text-orange-200/70 leading-relaxed mt-0.5">
                     Derived from your seed phrase at <span className="text-orange-300 font-medium">m/44'/0'/0'/0/0</span> — fully compatible with any BIP44 wallet.
                   </p>
@@ -1289,7 +1308,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               <div className="flex items-start gap-2">
                 <ShieldCheck className="w-3.5 h-3.5 text-violet-400 shrink-0 mt-0.5" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11px] text-violet-300 font-semibold leading-snug">Sent to your Orah Solana wallet</p>
+                  <p className="text-[11px] text-violet-300 font-semibold leading-snug">Sent to your OrahDEX Solana wallet</p>
                   <p className="text-[10px] text-violet-200/70 leading-relaxed mt-0.5">
                     Derived via <span className="text-violet-300 font-medium">SLIP-0010 ed25519 m/44'/501'/0'/0'</span> — Phantom-compatible. Import your seed phrase in Phantom to access it.
                   </p>
@@ -1528,7 +1547,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                 : <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>
             ) : type !== "market" ? (
               `Review ${side === "buy" ? "Buy" : "Sell"} Order`
-            ) : isExternalEvm ? (
+            ) : isEvm ? (
               `Sign & ${side === "buy" ? "Buy" : "Sell"} ${base}`
             ) : (
               `${side === "buy" ? "Buy" : "Sell"} ${base}`

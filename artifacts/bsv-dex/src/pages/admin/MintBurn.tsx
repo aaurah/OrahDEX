@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect } from "react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
@@ -56,7 +57,7 @@ export function AdminMintBurn() {
   const fetchLog = async () => {
     setLogLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/mint-burn-log`, { headers });
+      const r = await adminFetch(`/api/admin/mint-burn-log`, { headers });
       if (r.ok) setLog(await r.json());
     } finally {
       setLogLoading(false);
@@ -69,7 +70,7 @@ export function AdminMintBurn() {
     if (!walletAddress.trim()) return;
     setPreviewLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/user-exchange-balance/${encodeURIComponent(walletAddress.trim())}`, { headers });
+      const r = await adminFetch(`/api/admin/user-exchange-balance/${encodeURIComponent(walletAddress.trim())}`, { headers });
       if (r.ok) setPreviewBalances(await r.json());
       else setPreviewBalances([]);
     } finally {
@@ -82,7 +83,7 @@ export function AdminMintBurn() {
     setResult(null);
     setLoading(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/mint-burn`, {
+      const r = await adminFetch(`/api/admin/mint-burn`, {
         method: "POST",
         headers,
         body: JSON.stringify({ action, asset, amount, walletAddress: walletAddress.trim(), note: note.trim() || undefined }),
@@ -115,7 +116,7 @@ export function AdminMintBurn() {
             Stablecoin Mint & Burn
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Credit (mint) or debit (burn) stablecoin balances from a user's Orah Exchange account.
+            Credit (mint) or debit (burn) stablecoin balances from a user's OrahDEX Exchange account.
             Every operation is logged permanently.
           </p>
         </div>
@@ -271,7 +272,7 @@ export function AdminMintBurn() {
                     <p className="text-xs font-semibold text-foreground">Print (Mint)</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       Use when a user deposits real USD via bank transfer, crypto on-ramp, or P2P.
-                      Credits their Orah Exchange balance instantly.
+                      Credits their OrahDEX Exchange balance instantly.
                     </p>
                   </div>
                 </div>

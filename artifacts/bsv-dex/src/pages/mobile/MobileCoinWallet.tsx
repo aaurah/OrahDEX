@@ -168,12 +168,18 @@ function getSendNetworks(coin: string): SendNet[] {
 // ── Time range config ─────────────────────────────────────────────────────────
 
 const TIME_RANGES = [
-  { label: "1D", interval: "5m",  limit: 288 },
-  { label: "1W", interval: "1h",  limit: 168 },
-  { label: "1M", interval: "4h",  limit: 180 },
-  { label: "3M", interval: "1d",  limit: 90  },
-  { label: "6M", interval: "1d",  limit: 180 },
-  { label: "1Y", interval: "1d",  limit: 365 },
+  { label: "1h",  interval: "1m",  limit: 60  },
+  { label: "2h",  interval: "1m",  limit: 120 },
+  { label: "4h",  interval: "5m",  limit: 48  },
+  { label: "1D",  interval: "5m",  limit: 288 },
+  { label: "1W",  interval: "1h",  limit: 168 },
+  { label: "1M",  interval: "4h",  limit: 180 },
+  { label: "3M",  interval: "1d",  limit: 90  },
+  { label: "6M",  interval: "1d",  limit: 180 },
+  { label: "1Y",  interval: "1d",  limit: 365 },
+  { label: "2Y",  interval: "1w",  limit: 104 },
+  { label: "5Y",  interval: "1w",  limit: 261 },
+  { label: "10Y", interval: "1M",  limit: 120 },
 ];
 
 // ── Helper: format numbers ────────────────────────────────────────────────────
@@ -191,11 +197,14 @@ function fmtUsd(n: number) {
 }
 
 function fmtPrice(n: number) {
-  if (!n) return "$0.00";
+  if (!n || n <= 0) return "$0.00";
   if (n >= 1000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-  if (n >= 1) return `$${n.toFixed(4)}`;
+  if (n >= 1)    return `$${n.toFixed(4)}`;
   if (n >= 0.01) return `$${n.toFixed(6)}`;
-  return `$${n.toFixed(8)}`;
+  if (n >= 1e-8) return `$${n.toFixed(8)}`;
+  // Sub-satoshi-priced tokens: show 4 sig figs without scientific notation
+  const mag = -Math.floor(Math.log10(n));
+  return `$${n.toFixed(Math.min(mag + 3, 18)).replace(/\.?0+$/, "")}`;
 }
 
 // ── Custom tooltip for chart ──────────────────────────────────────────────────
@@ -226,7 +235,7 @@ export function MobileCoinWallet({ coin }: Props) {
 
   // ── tabs ────────────────────────────────────────────────────────────────────
   const [tab, setTab]           = useState<"chart" | "history" | "trade">("chart");
-  const [timeRange, setTimeRange] = useState(3); // default 3M
+  const [timeRange, setTimeRange] = useState(6); // default 3M (index 6 in TIME_RANGES)
   const [starred, setStarred]   = useState(false);
   const [copied, setCopied]     = useState(false);
 
@@ -620,7 +629,7 @@ export function MobileCoinWallet({ coin }: Props) {
 
             {/* Market info card */}
             <div className="bg-[#1a1a1a] rounded-2xl p-4">
-              <p className="text-sm font-bold mb-3">{coinUpper} on Orah</p>
+              <p className="text-sm font-bold mb-3">{coinUpper} on OrahDEX</p>
               <div className="space-y-2">
                 <div className="flex justify-between text-xs">
                   <span className="text-white/50">Network</span>
@@ -875,7 +884,7 @@ export function MobileCoinWallet({ coin }: Props) {
                 <div className="bg-[#1a3a5c] rounded-2xl p-4 flex gap-3">
                   <Info className="w-4 h-4 text-[#4A9EF5] shrink-0 mt-0.5" />
                   <p className="text-xs text-white/70 leading-relaxed">
-                    Orah will never ask you to send funds off the platform. If you have received communication that you're unsure of, please contact support which is available 24/7.
+                    OrahDEX will never ask you to send funds off the platform. If you have received communication that you're unsure of, please contact support which is available 24/7.
                   </p>
                 </div>
 

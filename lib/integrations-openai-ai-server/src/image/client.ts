@@ -2,26 +2,16 @@ import fs from "node:fs";
 import OpenAI, { toFile } from "openai";
 import { Buffer } from "node:buffer";
 
-if (!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL) {
-  throw new Error(
-    "AI_INTEGRATIONS_OPENAI_BASE_URL must be set. Did you forget to provision the OpenAI AI integration?",
-  );
-}
-
-if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
-  throw new Error(
-    "AI_INTEGRATIONS_OPENAI_API_KEY must be set. Did you forget to provision the OpenAI AI integration?",
-  );
-}
-
+// Instantiated without throwing — if env vars are absent the constructor
+// still succeeds; individual function calls will reject with auth errors.
 export const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY ?? "",
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
 export async function generateImageBuffer(
   prompt: string,
-  size: "1024x1024" | "512x512" | "256x256" = "1024x1024"
+  size: "1024x1024" | "1024x1536" | "1536x1024" | "auto" = "1024x1024"
 ): Promise<Buffer> {
   const response = await openai.images.generate({
     model: "gpt-image-1",

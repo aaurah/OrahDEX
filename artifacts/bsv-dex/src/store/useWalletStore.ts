@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type WalletNetwork = 'bsv' | 'bsv-test' | 'evm' | 'sol' | 'btc' | 'tron' | 'bch';
+export type WalletNetwork = 'bsv' | 'bsv-test' | 'evm' | 'sol' | 'btc' | 'tron' | 'bch' | 'xrp' | 'ltc' | 'doge';
 
 export interface ConnectedWallet {
   address: string;
@@ -45,6 +45,14 @@ interface WalletState {
   internalBtcAddress: string | null;
   /** SOL address for HD-wallet users (SLIP-0010 ed25519 m/44'/501'/0'/0' — Phantom-compatible). */
   internalSolAddress: string | null;
+  /** XRP address for HD-wallet users (m/44'/144'/0'/0/0 — secp256k1, XRP Base58 alphabet). */
+  internalXrpAddress: string | null;
+  /** LTC address for HD-wallet users (m/44'/2'/0'/0/0 — P2PKH version 0x30, starts with "L"). */
+  internalLtcAddress: string | null;
+  /** DOGE address for HD-wallet users (m/44'/3'/0'/0/0 — P2PKH version 0x1E, starts with "D"). */
+  internalDogeAddress: string | null;
+  /** TRON address for HD-wallet users (same secp256k1 key as EVM, Tron Base58Check 0x41 prefix → "T…"). */
+  internalTronAddress: string | null;
 
   connect: (wallet: ConnectedWallet) => void;
   disconnect: () => void;
@@ -55,6 +63,10 @@ interface WalletState {
   setInternalBchAddress: (addr: string | null) => void;
   setInternalBtcAddress: (addr: string | null) => void;
   setInternalSolAddress: (addr: string | null) => void;
+  setInternalXrpAddress: (addr: string | null) => void;
+  setInternalLtcAddress: (addr: string | null) => void;
+  setInternalDogeAddress: (addr: string | null) => void;
+  setInternalTronAddress: (addr: string | null) => void;
   /** Switch the active network for multi-chain wallets (HD/passkey). */
   switchNetworkType: (network: WalletNetwork) => void;
   /**
@@ -112,6 +124,10 @@ export const useWalletStore = create<WalletState>()(
       internalBchAddress: null,
       internalBtcAddress: null,
       internalSolAddress: null,
+      internalXrpAddress: null,
+      internalLtcAddress: null,
+      internalDogeAddress: null,
+      internalTronAddress: null,
       balanceRefreshKey: 0,
 
       connect: (wallet) =>
@@ -121,19 +137,25 @@ export const useWalletStore = create<WalletState>()(
           // don't fire again and overwrite them with new custodial keypairs.
           const sameProvider = s.provider === wallet.provider;
           const sameAddress  = s.address  === wallet.address;
+          const sameNetwork = s.network === wallet.network;
+          const isNetworkSwitchOnSameWallet = sameProvider && sameAddress && !sameNetwork;
           return {
             address:   wallet.address,
             provider:  wallet.provider,
             network:   wallet.network,
             chainId:   wallet.chainId ?? null,
-            balance:   wallet.balance ?? null,
+            balance:   isNetworkSwitchOnSameWallet ? null : (wallet.balance ?? null),
             isConnecting: false,
             // Preserve internals on same-provider reconnect (chain switch); reset on new wallet
-            internalEvmAddress: sameProvider && sameAddress ? s.internalEvmAddress : null,
-            internalBsvAddress: sameProvider && sameAddress ? s.internalBsvAddress : null,
-            internalBchAddress: sameProvider && sameAddress ? s.internalBchAddress : null,
-            internalBtcAddress: sameProvider && sameAddress ? s.internalBtcAddress : null,
-            internalSolAddress: sameProvider && sameAddress ? s.internalSolAddress : null,
+            internalEvmAddress:  sameProvider && sameAddress ? s.internalEvmAddress  : null,
+            internalBsvAddress:  sameProvider && sameAddress ? s.internalBsvAddress  : null,
+            internalBchAddress:  sameProvider && sameAddress ? s.internalBchAddress  : null,
+            internalBtcAddress:  sameProvider && sameAddress ? s.internalBtcAddress  : null,
+            internalSolAddress:  sameProvider && sameAddress ? s.internalSolAddress  : null,
+            internalXrpAddress:  sameProvider && sameAddress ? s.internalXrpAddress  : null,
+            internalLtcAddress:  sameProvider && sameAddress ? s.internalLtcAddress  : null,
+            internalDogeAddress: sameProvider && sameAddress ? s.internalDogeAddress : null,
+            internalTronAddress: sameProvider && sameAddress ? s.internalTronAddress : null,
           };
         }),
 
@@ -150,15 +172,23 @@ export const useWalletStore = create<WalletState>()(
           internalBchAddress: null,
           internalBtcAddress: null,
           internalSolAddress: null,
+          internalXrpAddress: null,
+          internalLtcAddress: null,
+          internalDogeAddress: null,
+          internalTronAddress: null,
         }),
 
       setConnecting: (isConnecting) => set({ isConnecting }),
       setBalance: (balance) => set({ balance }),
-      setInternalEvmAddress: (internalEvmAddress) => set({ internalEvmAddress }),
-      setInternalBsvAddress: (internalBsvAddress) => set({ internalBsvAddress }),
-      setInternalBchAddress: (internalBchAddress) => set({ internalBchAddress }),
-      setInternalBtcAddress: (internalBtcAddress) => set({ internalBtcAddress }),
-      setInternalSolAddress: (internalSolAddress) => set({ internalSolAddress }),
+      setInternalEvmAddress:  (internalEvmAddress)  => set({ internalEvmAddress }),
+      setInternalBsvAddress:  (internalBsvAddress)  => set({ internalBsvAddress }),
+      setInternalBchAddress:  (internalBchAddress)  => set({ internalBchAddress }),
+      setInternalBtcAddress:  (internalBtcAddress)  => set({ internalBtcAddress }),
+      setInternalSolAddress:  (internalSolAddress)  => set({ internalSolAddress }),
+      setInternalXrpAddress:  (internalXrpAddress)  => set({ internalXrpAddress }),
+      setInternalLtcAddress:  (internalLtcAddress)  => set({ internalLtcAddress }),
+      setInternalDogeAddress: (internalDogeAddress) => set({ internalDogeAddress }),
+      setInternalTronAddress: (internalTronAddress) => set({ internalTronAddress }),
 
       /**
        * switchChain — update ONLY the EVM chainId.
@@ -169,24 +199,50 @@ export const useWalletStore = create<WalletState>()(
 
       switchNetworkType: (network) =>
         set((s) => {
-          // Capture the current EVM address before leaving it so we can return later.
-          // If we're currently on EVM, the main address IS the EVM address.
-          const evmAddr = s.internalEvmAddress ?? (s.network === 'evm' ? s.address : null);
+          // For each network type, the "authoritative" address is either the
+          // stored internal address OR the current live address if that network
+          // is already active. This lets native wallets (SOL, BTC, BCH, XRP, LTC
+          // connected directly) round-trip through other networks and come back.
+          const evmAddr  = s.internalEvmAddress  ?? (s.network === 'evm'                               ? s.address : null);
+          const bsvAddr  = s.internalBsvAddress   ?? (s.network === 'bsv' || s.network === 'bsv-test'  ? s.address : null);
+          const solAddr  = s.internalSolAddress   ?? (s.network === 'sol'                               ? s.address : null);
+          const btcAddr  = s.internalBtcAddress   ?? (s.network === 'btc'                               ? s.address : null);
+          const bchAddr  = s.internalBchAddress   ?? (s.network === 'bch'                               ? s.address : null);
+          const xrpAddr  = s.internalXrpAddress   ?? (s.network === 'xrp'                               ? s.address : null);
+          const ltcAddr  = s.internalLtcAddress   ?? (s.network === 'ltc'                               ? s.address : null);
+          const dogeAddr = s.internalDogeAddress  ?? (s.network === 'doge'                              ? s.address : null);
+          const tronAddr = s.internalTronAddress  ?? (s.network === 'tron'                              ? s.address : null);
 
           let newAddress: string | null = null;
-          if (network === 'evm')  newAddress = evmAddr;
-          if (network === 'bsv')  newAddress = s.internalBsvAddress;
-          if (network === 'btc')  newAddress = s.internalBtcAddress;
-          if (network === 'sol')  newAddress = s.internalSolAddress;
-          if (network === 'bch')  newAddress = s.internalBchAddress;
+          if (network === 'evm')       newAddress = evmAddr;
+          if (network === 'bsv')       newAddress = bsvAddr;
+          if (network === 'bsv-test')  newAddress = bsvAddr; // same keypair, testnet params
+          if (network === 'btc')       newAddress = btcAddr;
+          if (network === 'sol')       newAddress = solAddr;
+          if (network === 'bch')       newAddress = bchAddr;
+          if (network === 'xrp')       newAddress = xrpAddr;
+          if (network === 'ltc')       newAddress = ltcAddr;
+          if (network === 'doge')      newAddress = dogeAddr;
+          if (network === 'tron')      newAddress = tronAddr;
           if (!newAddress) return {}; // no address available for this network — no-op
           return {
             network,
             address: newAddress,
             balance: null,
             chainId: null,
-            // Always persist the EVM address so we can switch back to it
-            internalEvmAddress: evmAddr,
+            // Explicitly carry provider forward so it is never dropped by any
+            // render-batching edge case — the NFT profile guard relies on it.
+            provider: s.provider,
+            // Persist all known addresses so round-trips always work
+            internalEvmAddress:  evmAddr,
+            internalBsvAddress:  bsvAddr,
+            internalSolAddress:  solAddr,
+            internalBtcAddress:  btcAddr,
+            internalBchAddress:  bchAddr,
+            internalXrpAddress:  xrpAddr,
+            internalLtcAddress:  ltcAddr,
+            internalDogeAddress: dogeAddr,
+            internalTronAddress: tronAddr,
           };
         }),
 
@@ -212,7 +268,7 @@ export const useWalletStore = create<WalletState>()(
         })),
     }),
     {
-      name: 'orahdex-wallet',
+      name: 'orah-wallet',
       // v1: strip the `balance` field from any previously-persisted state.
       // Before the non-custodial refactor the store held an internal-ledger balance
       // (e.g. 1,472 ETH) that must never be shown to users again.

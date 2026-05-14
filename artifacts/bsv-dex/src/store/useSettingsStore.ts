@@ -68,7 +68,7 @@ export const CRYPTO_QUOTE_CURRENCIES = [
   { code: "USDT", name: "Tether",       symbol: "₮", flag: "💵", rateToUsd: 1 },
   { code: "USDC", name: "USD Coin",     symbol: "$", flag: "💵", rateToUsd: 1 },
   { code: "BTC",  name: "Bitcoin",      symbol: "₿", flag: "🟠", rateToUsd: 1 / 83000 },
-  { code: "ETH",  name: "Ethereum",     symbol: "Ξ", flag: "🔷", rateToUsd: 1 / 1800 },
+  { code: "ETH",  name: "Ethereum",     symbol: "Ξ", flag: "🔷", rateToUsd: 1 / 2400 },
   { code: "BNB",  name: "BNB",          symbol: "B", flag: "🟡", rateToUsd: 1 / 580 },
   { code: "SOL",  name: "Solana",       symbol: "◎", flag: "🔵", rateToUsd: 1 / 130 },
   { code: "BSV",  name: "Bitcoin SV",   symbol: "Ƀ", flag: "🟡", rateToUsd: 1 / 55 },
@@ -79,6 +79,26 @@ export type QuoteCurrencyCode = string;
 interface SettingsState {
   quoteCurrency: QuoteCurrencyCode;
   setQuoteCurrency: (code: QuoteCurrencyCode) => void;
+  soundEnabled: boolean;
+  setSoundEnabled: (v: boolean) => void;
+  hapticsEnabled: boolean;
+  setHapticsEnabled: (v: boolean) => void;
+  // Browser/OS push notifications when tab is in background.
+  desktopEnabled: boolean;
+  setDesktopEnabled: (v: boolean) => void;
+  // Do Not Disturb: timestamp until which sound/vibration/desktop are silenced.
+  // null = off, Number.MAX_SAFE_INTEGER = indefinite.
+  dndUntil: number | null;
+  setDndUntil: (v: number | null) => void;
+  // Categories the user has muted (no FX, no desktop, still appear in feed).
+  mutedCategories: string[];
+  setMutedCategories: (v: string[]) => void;
+  // Slippage tolerance in basis points (50 = 0.5%). Capped at 5000 (50%).
+  slippageBps: number;
+  setSlippageBps: (v: number) => void;
+  // Default leverage multiplier used by Futures & Prediction (1–100).
+  defaultLeverage: number;
+  setDefaultLeverage: (v: number) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -86,8 +106,22 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       quoteCurrency: "USDT",
       setQuoteCurrency: (code) => set({ quoteCurrency: code }),
+      soundEnabled: true,
+      setSoundEnabled: (v) => set({ soundEnabled: v }),
+      hapticsEnabled: true,
+      setHapticsEnabled: (v) => set({ hapticsEnabled: v }),
+      desktopEnabled: false,
+      setDesktopEnabled: (v) => set({ desktopEnabled: v }),
+      dndUntil: null,
+      setDndUntil: (v) => set({ dndUntil: v }),
+      mutedCategories: [],
+      setMutedCategories: (v) => set({ mutedCategories: v }),
+      slippageBps: 50,
+      setSlippageBps: (v) => set({ slippageBps: Math.max(0, Math.min(5000, Math.floor(v))) }),
+      defaultLeverage: 10,
+      setDefaultLeverage: (v) => set({ defaultLeverage: Math.max(1, Math.min(100, Math.round(v))) }),
     }),
-    { name: "orah-settings-v1" }
+    { name: "orahdex-settings-v1" }
   )
 );
 

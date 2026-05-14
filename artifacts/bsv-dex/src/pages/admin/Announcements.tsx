@@ -28,12 +28,12 @@ const DEFAULT_BANNERS: SiteBanner[] = [
 ];
 
 const DEFAULT_NOTIFICATIONS: Notification[] = [
-  { id: "1", title: "Scheduled Maintenance", body: "Orah will undergo maintenance on Sunday 02:00–04:00 UTC. Deposits/withdrawals will be paused.", type: "warning", audience: "all", createdAt: new Date().toISOString(), active: true },
+  { id: "1", title: "Scheduled Maintenance", body: "OrahDEX will undergo maintenance on Sunday 02:00–04:00 UTC. Deposits/withdrawals will be paused.", type: "warning", audience: "all", createdAt: new Date().toISOString(), active: true },
 ];
 
 const DEFAULT_POPUP = {
   enabled: false,
-  title: "Welcome to Orah!",
+  title: "Welcome to OrahDEX!",
   body: "Trade spot, futures, and AMM pools with instant BSV on-chain settlement.",
   ctaText: "Start Trading",
   ctaLink: "/markets",
@@ -46,7 +46,7 @@ const DEFAULT_TICKER_MSGS = [
   { id: "1", text: "BSV — World's Fastest Settlement Chain", active: true },
   { id: "2", text: "Instant On-Chain Settlement · No Bridges · No L2s", active: true },
   { id: "3", text: "Every trade settled on BSV in seconds", active: true },
-  { id: "4", text: "Orah — Trade means DEX", active: true },
+  { id: "4", text: "OrahDEX — Trade means DEX", active: true },
 ];
 
 export function AdminAnnouncements() {
@@ -54,16 +54,16 @@ export function AdminAnnouncements() {
   const [tab, setTab] = useState<Tab>("site_banner");
   const [saving, setSaving] = useState(false);
   const [banners, setBanners] = useState<SiteBanner[]>(() => {
-    try { return JSON.parse(localStorage.getItem("orah_site_banners") ?? "null") ?? DEFAULT_BANNERS; }
+    try { return JSON.parse(localStorage.getItem("orahdex_site_banners") ?? "null") ?? DEFAULT_BANNERS; }
     catch { return DEFAULT_BANNERS; }
   });
   const [ticker, setTicker] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("orah_ticker") ?? "null") ?? DEFAULT_TICKER_MSGS; }
+    try { return JSON.parse(localStorage.getItem("orahdex_ticker") ?? "null") ?? DEFAULT_TICKER_MSGS; }
     catch { return DEFAULT_TICKER_MSGS; }
   });
   const [popup, setPopup] = useState({ ...DEFAULT_POPUP });
   const [notifications, setNotifications] = useState<Notification[]>(() => {
-    try { return JSON.parse(localStorage.getItem("orah_notifications") ?? "null") ?? DEFAULT_NOTIFICATIONS; }
+    try { return JSON.parse(localStorage.getItem("orahdex_notifications") ?? "null") ?? DEFAULT_NOTIFICATIONS; }
     catch { return DEFAULT_NOTIFICATIONS; }
   });
   const [newTicker, setNewTicker] = useState("");
@@ -73,9 +73,9 @@ export function AdminAnnouncements() {
   const save = async () => {
     setSaving(true);
     await new Promise(r => setTimeout(r, 400));
-    localStorage.setItem("orah_site_banners", JSON.stringify(banners));
-    localStorage.setItem("orah_ticker", JSON.stringify(ticker));
-    localStorage.setItem("orah_notifications", JSON.stringify(notifications));
+    localStorage.setItem("orahdex_site_banners", JSON.stringify(banners));
+    localStorage.setItem("orahdex_ticker", JSON.stringify(ticker));
+    localStorage.setItem("orahdex_notifications", JSON.stringify(notifications));
     setSaving(false);
     toast({ title: "Announcements saved", description: "All announcement settings have been updated." });
   };

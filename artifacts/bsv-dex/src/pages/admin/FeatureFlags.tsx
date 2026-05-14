@@ -1,7 +1,15 @@
-import { useState } from "react";
+import { adminFetch } from "@/lib/adminFetch";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Save, RefreshCw, Zap, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+const FEATURE_PREFIX = "feature_";
+
+const fetchSiteSettings = (): Promise<Record<string, string>> =>
+  adminFetch(`/api/admin/site-settings`).then(r => r.json()).catch(() => ({}));
 
 interface Flag { id: string; label: string; description: string; enabled?: boolean; beta?: boolean; danger?: boolean; }
 interface Group { title: string; icon: string; flags: Flag[]; }
@@ -52,7 +60,7 @@ const GROUPS: Group[] = [
     title: "DeFi & Earn", icon: "🏦",
     flags: [
       { id: "yield_farming",    label: "Yield Farming",         description: "LP token staking for additional rewards", beta: true },
-      { id: "staking",          label: "OrahDEXToken Staking",     description: "Stake ORAHDEX tokens for fee discounts and rewards", beta: true },
+      { id: "staking",          label: "OrahToken Staking",     description: "Stake ORAH tokens for fee discounts and rewards", beta: true },
       { id: "lending",          label: "Lending Protocol",      description: "Deposit assets to earn lending interest", beta: true },
       { id: "borrowing",        label: "Borrowing Protocol",    description: "Borrow against collateral", beta: true },
       { id: "nft_trading",      label: "NFT Trading",           description: "NFT marketplace integration", beta: true },
@@ -114,7 +122,7 @@ const GROUPS: Group[] = [
       { id: "push_notifications",   label: "Push Notifications",    description: "Browser push notifications for price alerts" },
       { id: "telegram_bot",         label: "Telegram Bot Alerts",   description: "Alert users via Telegram bot", beta: true },
       { id: "discord_bot",          label: "Discord Bot Alerts",    description: "Post trade alerts to Discord channels", beta: true },
-      { id: "native_chat",          label: "Native Orah Chat",   description: "Enable the built-in multi-channel chat system (Global, Pair, Support, Ora AI)" },
+      { id: "native_chat",          label: "Native OrahDEX Chat",   description: "Enable the built-in multi-channel chat system (Global, Pair, Support, Ora AI)" },
       { id: "global_chat_channel",  label: "Global Chat Channel",   description: "Show the Global channel in the chat widget — open to all connected wallets" },
       { id: "pair_chat_channel",    label: "Pair Chat Channels",    description: "Create per-pair chat channels auto-detected from the trading URL (e.g. #BTC-USDT)" },
       { id: "ai_chat_moderation",   label: "AI Moderation",         description: "Block phishing patterns, PII, scam links and seed-phrase leaks before messages are stored" },
@@ -144,22 +152,60 @@ const GROUPS: Group[] = [
 
 export function AdminFeatureFlags() {
   const { toast } = useToast();
-  const [flags, setFlags] = useState<Record<string, boolean>>(() => {
-    try { return { ...DEFAULT_FLAGS, ...JSON.parse(localStorage.getItem("orah_features") ?? "{}") }; }
-    catch { return DEFAULT_FLAGS; }
+  const qc = useQueryClient();
+
+  const { data: siteSettings, isLoading: settingsLoading } = useQuery({
+    queryKey: ["admin-site-settings"],
+    queryFn: fetchSiteSettings,
   });
-  const [saving, setSaving] = useState(false);
-  const [maintenanceMsg, setMaintenanceMsg] = useState("Orah is currently undergoing scheduled maintenance. We'll be back shortly.");
+
+  const [flags, setFlags] = useState<Record<string, boolean>>(DEFAULT_FLAGS);
+  const [maintenanceMsg, setMaintenanceMsg] = useState("OrahDEX is currently undergoing scheduled maintenance. We'll be back shortly.");
+
+  // Sync flags from DB once loaded
+  useEffect(() => {
+    if (!siteSettings) return;
+    const dbFlags: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(siteSettings)) {
+      if (k.startsWith(FEATURE_PREFIX)) {
+        dbFlags[k.slice(FEATURE_PREFIX.length)] = v === "true";
+      }
+    }
+    if (siteSettings["maintenance_message"]) {
+      setMaintenanceMsg(siteSettings["maintenance_message"]);
+    }
+    setFlags(f => ({ ...DEFAULT_FLAGS, ...f, ...dbFlags }));
+  }, [siteSettings]);
+
+  const mutation = useMutation({
+    mutationFn: async (payload: Record<string, string>) => {
+      const res = await adminFetch(`/api/admin/site-settings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-site-settings"] });
+      toast({ title: "Feature flags saved", description: `${Object.values(flags).filter(Boolean).length} features enabled — persisted to database.` });
+    },
+    onError: () => {
+      toast({ title: "Save failed", description: "Could not persist flags. Check API connectivity.", variant: "destructive" });
+    },
+  });
 
   const toggle = (id: string) => setFlags(f => ({ ...f, [id]: !f[id] }));
 
-  const save = async () => {
-    setSaving(true);
-    await new Promise(r => setTimeout(r, 400));
-    localStorage.setItem("orah_features", JSON.stringify(flags));
-    setSaving(false);
-    toast({ title: "Feature flags saved", description: `${Object.values(flags).filter(Boolean).length} features enabled.` });
+  const save = () => {
+    const payload: Record<string, string> = { maintenance_message: maintenanceMsg };
+    for (const [k, v] of Object.entries(flags)) {
+      payload[`${FEATURE_PREFIX}${k}`] = String(v);
+    }
+    mutation.mutate(payload);
   };
+
+  const saving = mutation.isPending;
 
   const enabledCount = Object.values(flags).filter(Boolean).length;
   const totalCount = Object.keys(DEFAULT_FLAGS).length;
@@ -169,9 +215,13 @@ export function AdminFeatureFlags() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Feature Flags</h1>
-          <p className="text-muted-foreground text-sm mt-1">{enabledCount}/{totalCount} features enabled · Toggle to instantly enable or disable platform features</p>
+          <p className="text-muted-foreground text-sm mt-1">
+            {settingsLoading ? "Loading from database…" : `${enabledCount}/${totalCount} features enabled`}
+            {" · "}
+            <span className="text-green-400/80">Saved to database — shared across all sessions</span>
+          </p>
         </div>
-        <button onClick={save} disabled={saving} className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-all disabled:opacity-50">
+        <button onClick={save} disabled={saving || settingsLoading} className="flex items-center gap-2 px-5 py-2 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:opacity-90 transition-all disabled:opacity-50">
           {saving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
           {saving ? "Saving…" : "Save Flags"}
         </button>
