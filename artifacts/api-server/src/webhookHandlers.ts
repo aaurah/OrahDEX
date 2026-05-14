@@ -45,7 +45,11 @@ ensureFulfillmentColumns();
 // LE_COIN_NETWORK is imported from lib/leCoinNetwork.ts (single source-of-truth)
 
 // ── Core fulfillment logic ─────────────────────────────────────────────────────
-export async function fulfillOrder(paymentIntentId: string, metadata: Record<string, string>): Promise<void> {
+export async function fulfillOrder(
+  paymentIntentId: string,
+  metadata:        Record<string, string>,
+  paidAmountCents: number,               // amount from Stripe event (authoritative)
+): Promise<void> {
   const { orderId, coinSymbol, walletAddress } = metadata;
   if (!orderId || !coinSymbol || !walletAddress) {
     logger.warn({ orderId, paymentIntentId }, "Fulfillment: missing metadata — cannot process");
@@ -59,6 +63,20 @@ export async function fulfillOrder(paymentIntentId: string, metadata: Record<str
     return;
   }
   const order = res.rows[0];
+
+  // ── Amount integrity check ────────────────────────────────────────────────
+  // Verify the Stripe event's charged amount matches what the DB recorded at
+  // order creation. A mismatch indicates metadata tampering or a race condition.
+  const expectedCents = Number(order.fiat_amount_cents ?? 0);
+  if (paidAmountCents !== expectedCents) {
+    const msg = `Amount mismatch: Stripe charged ${paidAmountCents}¢ but DB expects ${expectedCents}¢`;
+    logger.error({ orderId, paidAmountCents, expectedCents }, `Fulfillment: ${msg}`);
+    await pool.query(
+      `UPDATE crypto_orders SET status = 'failed', error_message = $1, updated_at = NOW() WHERE id = $2`,
+      [msg, orderId]
+    );
+    return;
+  }
 
   // Idempotency guard — don't re-process if already past pending
   if (order.status !== "pending") {
@@ -336,8 +354,9 @@ export class WebhookHandlers {
     if (event.type === "payment_intent.succeeded") {
       const pi       = event.data.object as Stripe.PaymentIntent;
       const metadata = pi.metadata as Record<string, string>;
-      // Fire-and-forget — webhook must respond quickly
-      void fulfillOrder(pi.id, metadata);
+      // Fire-and-forget — webhook must respond quickly.
+      // Pass pi.amount (authoritative cents from Stripe) for amount integrity check.
+      void fulfillOrder(pi.id, metadata, pi.amount);
     }
   }
 }

@@ -332,11 +332,13 @@ async function executeSwap(
   if (!isEthIn) {
     const currentAllowance = await checkAllowance(fromToken.address, userAddress, routerAddr, chainId);
     if (currentAllowance < amountIn) {
+      // Approve exact amount only — never grant unlimited (maxUint256) spend permission.
+      // This limits exposure if the router contract is ever exploited.
       await coreWriteContract(config!, {
         address: fromToken.address,
         abi: erc20Abi,
         functionName: "approve",
-        args: [routerAddr, maxUint256],
+        args: [routerAddr, amountIn],
         chainId,
       });
     }
