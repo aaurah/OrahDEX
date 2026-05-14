@@ -1,30 +1,51 @@
 import { Router, type IRouter } from "express";
-import rateLimit from "express-rate-limit";
 import { db, pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { pushNotification, getNotifications, clearNotifications } from "../lib/notifQueue.js";
+import { getCachedLEPrices, fetchLECoinPriceUSD } from "../lib/lePriceCache.js";
 
 const router: IRouter = Router();
-const socialWriteLimiter = rateLimit({
-  windowMs: 60_000,
-  limit: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many requests. Please try again shortly." },
-});
-const socialReadLimiter = rateLimit({
-  windowMs: 60_000,
-  limit: 120,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many requests. Please try again shortly." },
-});
+const ADDRESS_LIKE_RE = /^0x[0-9a-f]+$/i;
 
 function uid(): string { return crypto.randomUUID(); }
+
+/* ── Currency → USD price helpers ─────────────────────────────────────────── */
+const CURRENCY_NET: Record<string, string | null> = {
+  ETH: "ERC20", BSV: "BSV", BTC: "BTC", BNB: "BEP20",
+  SOL: "SOL", MATIC: "POL", BCH: "BCH", ARB: "ARBITRUM", OP: "OPTIMISM",
+};
+// Conservative fallbacks (updated Apr 2025)
+const FALLBACK_USD: Record<string, number> = {
+  ETH: 3100, BSV: 35, BTC: 95000, BNB: 580,
+  SOL: 140,  MATIC: 0.9, BCH: 400, ARB: 0.9, OP: 1.8,
+};
+
+async function getCurrencyUsdPrice(currency: string): Promise<number> {
+  const sym = currency.toUpperCase();
+  const le = getCachedLEPrices();
+  if (le[sym] && le[sym] > 0) return le[sym];
+  try {
+    const live = await fetchLECoinPriceUSD(sym, CURRENCY_NET[sym] ?? null, null);
+    if (live > 0) return live;
+  } catch { /* fall through */ }
+  return FALLBACK_USD[sym] ?? 1;
+}
+
+/* ── GET /social/prices — live USD prices for NFT currencies ─────────────── */
+router.get("/social/prices", async (_req, res) => {
+  const currencies = ["ETH","BSV","BTC","BNB","SOL","MATIC","BCH","ARB","OP"];
+  const le = getCachedLEPrices();
+  const prices: Record<string, number> = {};
+  for (const c of currencies) {
+    prices[c] = le[c] && le[c] > 0 ? le[c] : FALLBACK_USD[c] ?? 1;
+  }
+  res.json({ prices });
+});
 
 /* ── GET /social/feed ─────────────────────────────────────────────────────── */
 router.get("/social/feed", async (req, res) => {
   try {
-    const { category, q, sort = "hot", creator } = req.query as Record<string, string>;
+    const { category, q, sort = "hot", creator, chain } = req.query as Record<string, string>;
     const offset = parseInt((req.query.offset as string) ?? "0", 10);
     const limit  = Math.min(parseInt((req.query.limit  as string) ?? "20", 10), 50);
 
@@ -32,6 +53,7 @@ router.get("/social/feed", async (req, res) => {
     const params: any[] = [];
 
     if (category) { params.push(category); where += ` AND sp.category = $${params.length}`; }
+    if (chain)    { params.push(chain.toUpperCase()); where += ` AND sp.chain = $${params.length}`; }
     if (q)        { params.push(`%${q}%`);  where += ` AND (sp.title ILIKE $${params.length} OR sp.description ILIKE $${params.length})`; }
     if (creator)  { params.push(creator);   where += ` AND sp.creator = $${params.length}`; }
 
@@ -54,7 +76,7 @@ router.get("/social/feed", async (req, res) => {
 
     res.json({ posts: result.rows, total: result.rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -66,7 +88,23 @@ router.get("/social/posts/:id", async (req, res) => {
     if (!posts.length) { res.status(404).json({ error: "Post not found" }); return; }
 
     const { rows: comments } = await pool.query(
-      "SELECT * FROM post_comments WHERE post_id = $1 ORDER BY created_at DESC LIMIT 50", [req.params.id],
+      `SELECT
+         pc.id,
+         pc.post_id,
+         pc.wallet_address,
+         CASE
+           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~* '^0x[0-9a-f]+$' THEN cp.username
+           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~* '^0x[0-9a-f]+$' THEN pc.display_name
+           ELSE pc.wallet_address
+         END AS display_name,
+         pc.content,
+         pc.created_at
+       FROM post_comments pc
+       LEFT JOIN creator_profiles cp ON LOWER(cp.address) = LOWER(pc.wallet_address)
+       WHERE pc.post_id = $1
+       ORDER BY pc.created_at DESC
+       LIMIT 50`,
+      [req.params.id],
     );
     const { rows: mints } = await pool.query(
       "SELECT * FROM post_mints WHERE post_id = $1 ORDER BY created_at DESC LIMIT 20", [req.params.id],
@@ -74,30 +112,37 @@ router.get("/social/posts/:id", async (req, res) => {
 
     res.json({ post: posts[0], comments, mints });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-/* ── POST /social/posts — create post + mint as BSV inscription ───────────── */
+const SUPPORTED_CHAINS = new Set(["BSV","ETH","BASE","BNB","MATIC","ARB","OP","SOL","BTC","BCH"]);
+
+/* ── POST /social/posts — create post + mint as multichain inscription ──────── */
 router.post("/social/posts", async (req, res) => {
   try {
-    const { creator, creator_name, title, description, image_url, mint_price, mint_currency = "BSV", category = "art", max_supply, tags } = req.body as Record<string, any>;
+    const { creator, creator_name, title, description, image_url, mint_price, mint_currency = "BSV", category = "art", max_supply, tags, chain: reqChain } = req.body as Record<string, any>;
     if (!creator || !title) { res.status(400).json({ error: "creator and title are required" }); return; }
 
-    const priceUsd = (parseFloat(mint_price ?? "0") * 16).toFixed(2);
+    const chain = (typeof reqChain === "string" && SUPPORTED_CHAINS.has(reqChain.toUpperCase()))
+      ? reqChain.toUpperCase()
+      : "BSV";
+
+    const currencyUsdPrice = await getCurrencyUsdPrice(mint_currency || chain);
+    const priceUsd = (parseFloat(mint_price ?? "0") * currencyUsdPrice).toFixed(2);
     const inscriptionId = `${uid().replace(/-/g, "")}i0`;
 
     const id = `post-${uid().slice(0, 8)}`;
     await pool.query(
       `INSERT INTO social_posts (id, creator, creator_name, title, description, image_url, mint_price, mint_currency, mint_price_usd, max_supply, category, tags, inscription_id, chain)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'BSV')`,
-      [id, creator, creator_name ?? creator.slice(0, 8), title, description, image_url, mint_price ?? "0", mint_currency, priceUsd, max_supply ?? null, category, tags ? JSON.stringify(tags) : null, inscriptionId],
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+      [id, creator, creator_name ?? creator.slice(0, 8), title, description, image_url, mint_price ?? "0", mint_currency, priceUsd, max_supply ?? null, category, tags ? JSON.stringify(tags) : null, inscriptionId, chain],
     );
 
     const { rows } = await pool.query("SELECT * FROM social_posts WHERE id = $1", [id]);
     res.json({ success: true, post: rows[0], inscriptionId });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -125,9 +170,18 @@ router.post("/social/posts/:id/mint", async (req, res) => {
       [req.params.id],
     );
 
+    if (post.creator && minter && post.creator.toLowerCase() !== minter.toLowerCase()) {
+      pushNotification(post.creator, {
+        type: "mint",
+        title: "New Mint!",
+        body: `${minter.slice(0, 6)}…${minter.slice(-4)} minted "${post.title}"`,
+        txid: tx_hash ?? undefined,
+      });
+    }
+
     res.json({ success: true, mintCount: post.mint_count + 1, inscriptionId: post.inscription_id });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -149,36 +203,81 @@ router.post("/social/posts/:id/like", async (req, res) => {
     } else {
       await pool.query("INSERT INTO post_likes (id, post_id, wallet_address) VALUES ($1,$2,$3)", [uid(), req.params.id, wallet_address]);
       await pool.query("UPDATE social_posts SET like_count = like_count + 1 WHERE id = $1", [req.params.id]);
+      const { rows: likedPost } = await pool.query("SELECT creator, title FROM social_posts WHERE id = $1", [req.params.id]);
+      if (likedPost[0]?.creator && likedPost[0].creator.toLowerCase() !== wallet_address.toLowerCase()) {
+        pushNotification(likedPost[0].creator, {
+          type: "like",
+          title: "Someone liked your post",
+          body: `${wallet_address.slice(0, 6)}…${wallet_address.slice(-4)} liked "${likedPost[0].title}"`,
+        });
+      }
       res.json({ liked: true });
     }
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 /* ── POST /social/posts/:id/comment ──────────────────────────────────────── */
-router.post("/social/posts/:id/comment", socialWriteLimiter, async (req, res) => {
+router.post("/social/posts/:id/comment", async (req, res) => {
   try {
     const { wallet_address, display_name, content } = req.body as Record<string, string>;
     if (!wallet_address || !content) { res.status(400).json({ error: "wallet_address and content required" }); return; }
 
+    const { rows: creatorRows } = await pool.query(
+      "SELECT username FROM creator_profiles WHERE LOWER(address) = LOWER($1) LIMIT 1",
+      [wallet_address],
+    );
+    const profileUsername = creatorRows[0]?.username?.trim();
+    const submittedDisplayName = display_name?.trim();
+    const resolvedDisplayName = (profileUsername && !ADDRESS_LIKE_RE.test(profileUsername))
+      ? profileUsername
+      : (submittedDisplayName && !ADDRESS_LIKE_RE.test(submittedDisplayName)
+        ? submittedDisplayName
+        : wallet_address.slice(0, 8));
+
     await pool.query(
       "INSERT INTO post_comments (id, post_id, wallet_address, display_name, content) VALUES ($1,$2,$3,$4,$5)",
-      [uid(), req.params.id, wallet_address, display_name ?? wallet_address.slice(0, 8), content],
+      [uid(), req.params.id, wallet_address, resolvedDisplayName, content],
     );
     await pool.query("UPDATE social_posts SET comment_count = comment_count + 1 WHERE id = $1", [req.params.id]);
 
+    const { rows: commentedPost } = await pool.query("SELECT creator, title FROM social_posts WHERE id = $1", [req.params.id]);
+    if (commentedPost[0]?.creator && commentedPost[0].creator.toLowerCase() !== wallet_address.toLowerCase()) {
+      pushNotification(commentedPost[0].creator, {
+        type: "comment",
+        title: "New comment on your post",
+        body: `${resolvedDisplayName}: "${content.length > 60 ? content.slice(0, 60) + "…" : content}" on "${commentedPost[0].title}"`,
+      });
+    }
+
     const { rows } = await pool.query(
-      "SELECT * FROM post_comments WHERE post_id = $1 ORDER BY created_at DESC LIMIT 20", [req.params.id],
+      `SELECT
+         pc.id,
+         pc.post_id,
+         pc.wallet_address,
+         CASE
+           WHEN cp.username IS NOT NULL AND cp.username <> '' AND cp.username !~* '^0x[0-9a-f]+$' THEN cp.username
+           WHEN pc.display_name IS NOT NULL AND pc.display_name <> '' AND pc.display_name !~* '^0x[0-9a-f]+$' THEN pc.display_name
+           ELSE pc.wallet_address
+         END AS display_name,
+         pc.content,
+         pc.created_at
+       FROM post_comments pc
+       LEFT JOIN creator_profiles cp ON LOWER(cp.address) = LOWER(pc.wallet_address)
+       WHERE pc.post_id = $1
+       ORDER BY pc.created_at DESC
+       LIMIT 20`,
+      [req.params.id],
     );
     res.json({ success: true, comments: rows });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 /* ── GET /social/trending — top creators + posts ─────────────────────────── */
-router.get("/social/trending", socialReadLimiter, async (req, res) => {
+router.get("/social/trending", async (req, res) => {
 
   try {
     const { rows: topPosts } = await pool.query(
@@ -192,28 +291,28 @@ router.get("/social/trending", socialReadLimiter, async (req, res) => {
     );
     res.json({ topPosts, hotMints, newest });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 /* ── GET /social/profile/:address ────────────────────────────────────────── */
-router.get("/social/profile/:address", socialReadLimiter, async (req, res) => {
+router.get("/social/profile/:address", async (req, res) => {
 
   try {
-    const { address } = req.params;
+    const address = (req.params.address ?? "").toLowerCase();
     const { rows: posts } = await pool.query(
-      "SELECT * FROM social_posts WHERE creator = $1 ORDER BY created_at DESC", [address],
+      "SELECT * FROM social_posts WHERE LOWER(creator) = $1 ORDER BY created_at DESC", [address],
     );
     const { rows: mints } = await pool.query(
       `SELECT pm.*, sp.title, sp.image_url, sp.creator_name, sp.mint_currency
        FROM post_mints pm JOIN social_posts sp ON pm.post_id = sp.id
-       WHERE pm.minter = $1 ORDER BY pm.created_at DESC`, [address],
+       WHERE LOWER(pm.minter) = $1 ORDER BY pm.created_at DESC`, [address],
     );
     const totalLikes = posts.reduce((s: number, p: any) => s + (p.like_count ?? 0), 0);
     const totalMints = posts.reduce((s: number, p: any) => s + (p.mint_count ?? 0), 0);
     res.json({ posts, mints, stats: { totalLikes, totalMints, postCount: posts.length, collectCount: mints.length } });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -269,6 +368,22 @@ async function tryFetchLiveZora(): Promise<any[]> {
       .filter((n: any) => n.image_url && n.title);
   } catch { return []; }
 }
+
+/* ── GET /social/notifications ───────────────────────────────────────────── */
+router.get("/social/notifications", (req, res) => {
+  const { address, since } = req.query as Record<string, string>;
+  if (!address) { res.status(400).json({ error: "address required" }); return; }
+  const sinceTs = since ? parseInt(since, 10) : 0;
+  res.json({ notifications: getNotifications(address, sinceTs) });
+});
+
+/* ── DELETE /social/notifications ────────────────────────────────────────── */
+router.delete("/social/notifications", (req, res) => {
+  const { address } = req.query as Record<string, string>;
+  if (!address) { res.status(400).json({ error: "address required" }); return; }
+  clearNotifications(address);
+  res.json({ success: true });
+});
 
 router.get("/social/external/trending", async (_req, res) => {
   try {

@@ -1,5 +1,5 @@
 /**
- * BSV Settlement Wallet — Orah
+ * BSV Settlement Wallet — OrahDEX
  *
  * Manages the platform's on-chain BSV settlement address.
  * Private key is stored in platformSettingsTable (key: "bsv_settlement_wif").
@@ -103,15 +103,8 @@ export function isBsvAddress(addr: string): boolean {
 
 /** Check whether a string looks like a paymail address (user@domain.tld) */
 export function isPaymail(addr: string): boolean {
-  const value = addr.trim();
-  if (!value || value.includes(" ")) return false;
-  const at = value.indexOf("@");
-  if (at <= 0 || at !== value.lastIndexOf("@") || at === value.length - 1) return false;
-  const local = value.slice(0, at);
-  const domain = value.slice(at + 1);
-  if (!local || !domain || domain.length > 253) return false;
-  if (!domain.includes(".") || domain.startsWith(".") || domain.endsWith(".") || domain.includes("..")) return false;
-  return true;
+  // Use [^@\s.]+ in domain parts to avoid ReDoS via backtracking on inputs with no dot
+  return /^[^@\s]+@[^@\s.]+\.[^@\s.]+$/.test(addr);
 }
 
 /* ── Persistent key storage ─────────────────────────────────────────────── */

@@ -46,10 +46,13 @@ function SectionHeader({ title }: { title: string }) {
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { wallet, disconnect } = useWallet();
+  const {
+    wallet, disconnect,
+    pinEnabled, biometricsEnabled, hasBiometrics,
+    clearPin, toggleBiometrics, lock,
+  } = useWallet();
   const [notifications, setNotifications] = React.useState(true);
   const [haptics, setHaptics] = React.useState(true);
-  const [biometrics, setBiometrics] = React.useState(false);
 
   const handleDisconnect = () => {
     Alert.alert("Disconnect Wallet", "Are you sure you want to disconnect your wallet?", [
@@ -60,6 +63,20 @@ export default function SettingsScreen() {
         onPress: () => {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
           disconnect();
+        },
+      },
+    ]);
+  };
+
+  const handleRemovePin = () => {
+    Alert.alert("Remove PIN", "This will disable PIN protection for your wallet.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Remove",
+        style: "destructive",
+        onPress: () => {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          clearPin();
         },
       },
     ]);
@@ -106,6 +123,59 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Security — shown when wallet is connected */}
+        {wallet && (
+          <>
+            <SectionHeader title="Security" />
+            <View style={styles.card}>
+              <SettingRow
+                icon="lock"
+                label="PIN Lock"
+                value={pinEnabled ? "Enabled" : "Not set — set PIN via wallet screen"}
+                showChevron={false}
+                rightEl={
+                  pinEnabled ? (
+                    <TouchableOpacity
+                      onPress={handleRemovePin}
+                      style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, backgroundColor: C.sell + "18" }}
+                    >
+                      <Text style={{ fontFamily: "Inter_600SemiBold", fontSize: 12, color: C.sell }}>Remove</Text>
+                    </TouchableOpacity>
+                  ) : null
+                }
+              />
+              {pinEnabled && (
+                <>
+                  <View style={styles.separator} />
+                  <SettingRow
+                    icon="eye-off"
+                    label="Lock Now"
+                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); lock(); }}
+                  />
+                </>
+              )}
+              {hasBiometrics && pinEnabled && (
+                <>
+                  <View style={styles.separator} />
+                  <SettingRow
+                    icon="smile"
+                    label="Biometric Unlock"
+                    showChevron={false}
+                    rightEl={
+                      <Switch
+                        value={biometricsEnabled}
+                        onValueChange={(v) => { Haptics.selectionAsync(); toggleBiometrics(v); }}
+                        trackColor={{ false: C.surface, true: C.primary + "60" }}
+                        thumbColor={biometricsEnabled ? C.primary : C.textMuted}
+                      />
+                    }
+                  />
+                </>
+              )}
+            </View>
+          </>
+        )}
 
         {/* Trading Preferences */}
         <SectionHeader title="Trading" />
@@ -162,20 +232,6 @@ export default function SettingsScreen() {
               />
             }
           />
-          <View style={styles.separator} />
-          <SettingRow
-            icon="lock"
-            label="Biometric Lock"
-            showChevron={false}
-            rightEl={
-              <Switch
-                value={biometrics}
-                onValueChange={(v) => { Haptics.selectionAsync(); setBiometrics(v); }}
-                trackColor={{ false: C.surface, true: C.primary + "60" }}
-                thumbColor={biometrics ? C.primary : C.textMuted}
-              />
-            }
-          />
         </View>
 
         {/* Admin */}
@@ -212,7 +268,7 @@ export default function SettingsScreen() {
 
         {/* Branding */}
         <View style={styles.brandingSection}>
-          <Text style={styles.brandingTitle}>OrahDEX<Text style={{ color: C.primary }}>DEX</Text></Text>
+          <Text style={styles.brandingTitle}>Orah<Text style={{ color: C.primary }}>DEX</Text></Text>
           <Text style={styles.brandingSlogan}>✦ Trade means DEX</Text>
           <Text style={styles.brandingVersion}>Non-custodial · On-chain settlement · BSV</Text>
         </View>

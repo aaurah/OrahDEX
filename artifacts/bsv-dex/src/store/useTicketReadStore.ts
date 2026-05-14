@@ -34,7 +34,7 @@ export const useTicketReadStore = create<TicketReadState>()(
       setAdminUnreadCount: (n) => set({ adminUnreadCount: n }),
     }),
     {
-      name: "orah_ticket_read_v1",
+      name: "orahdex_ticket_read_v1",
       partialize: (s) => ({ readIds: s.readIds }),
     },
   ),

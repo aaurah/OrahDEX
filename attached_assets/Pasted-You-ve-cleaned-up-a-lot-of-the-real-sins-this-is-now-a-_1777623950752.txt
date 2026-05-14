@@ -1,0 +1,91 @@
+You’ve cleaned up a lot of the real sins—this is now a grown‑up router.
+Let’s do a second‑pass, sharper than before.
+
+1. VWAP + slippage routing — edge cases
+
+• Oracle dependency not described
+If oracle is stale, wrong, or missing, VWAP vs mid becomes meaningless.
+Add: explicit fallback when oracle is unavailable (e.g. “always route external” or “internal only below size X”).
+• Static thresholds (90% fill, 1.5% slippage)
+These are now explicit constants—good—but still global.
+Risk: tiny illiquid pairs vs deep majors behave very differently.
+Next step: make thresholds pair‑configurable (per market risk profile).
+• Partial fills not clearly defined
+You require ≥ 90% fill to route internal—what happens to the remaining 10%?• Do you reject the whole order?
+• Do you partially fill and drop the rest?
+• Do you consider split routing (internal + LE)?
+Clarify: explicitly define behavior in code + API contract.
+
+
+
+2. is_bot / is_synthetic flags
+
+• Backfill correctness assumption
+You set 139,800 orders to is_bot = true—that’s fine if you’re absolutely sure.
+Risk: any mis‑tagging here permanently corrupts your “real liquidity” stats.
+Next step: add a one‑off sanity query: compare old bot wallet IDs vs new flags and log mismatches.
+• is_synthetic semantics
+You added the column but didn’t describe how synthetic orders are created/used.
+Make it explicit:• is_bot = who placed it
+• is_synthetic = whether it represents real executable liquidity
+Routing should exclude is_synthetic = true from internal fills.
+
+
+
+3. /swap/route response & fee model
+
+• Effective rate vs user‑visible rate
+You now return effectiveRate and fees—good.
+Check: is the frontend actually using effectiveRate to display comparisons, or still showing raw quote? If not, you’ve done the work but not the UX.
+• LE fee modeling
+If LetsExchange fees are not fully modeled (including spread), your “effectiveRate” comparison may still favor internal or external incorrectly.
+Next step: document clearly how LE fees are estimated and where the assumptions live.
+
+
+4. forceSource guard
+
+• Single shared INTERNAL_API_TOKEN
+If this token leaks anywhere (logs, frontend, misconfigured env), users can force routing.
+Better:• Keep it server‑only (which you implied).
+• Rotate it periodically.
+• Consider per‑service identity instead of one global token later.
+
+• Silent ignore behavior
+You silently ignore invalid forceSource and log a warning.
+Good for security, but for internal callers a 4xx with reason might be more useful than silent override.
+Maybe:• Public callers → silent ignore
+• Internal services (identified by IP/VPN) → explicit error on bad token.
+
+
+
+5. Routing badge & UX
+
+• Copy is better, but still dense
+"Internal liquidity available on OrahDEX — trading via LetsExchange for cross-chain execution" is technically honest but cognitively heavy.
+Consider splitting:• Badge: Internal liquidity available
+• Subtext (tooltip or small text): This panel executes via LetsExchange; internal engine is available in advanced mode.
+
+• Routing unavailable state
+You added it—good.
+Check: does it clear correctly when network recovers, or can it get stuck? Make sure you reset routeError on every new request.
+
+
+6. Logging & observability
+
+• hybrid_route logs are great, but…• Ensure you’re not logging wallet addresses or PII in plain text.
+• Add a simple route_version field so you can evolve logic and still analyze historical behavior by version.
+
+
+
+---
+
+Net: you’ve moved from “clever hack” to “real routing engine”.
+The next layer of polish is:
+
+• per‑pair risk config
+• explicit partial‑fill semantics
+• oracle failure modes
+• making the UI reflect the truth simply, not just accurately.
+
+
+If you want, we can next design split routing (internal + LE in one user flow) or a per‑pair routing config table.

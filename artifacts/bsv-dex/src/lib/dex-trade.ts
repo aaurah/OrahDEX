@@ -1,11 +1,11 @@
 /**
- * Orah — On-chain Trade Execution
+ * OrahDEX — On-chain Trade Execution
  *
  * EVM  : Uniswap v2-compatible router swaps (swapExactTokensForTokens /
  *         swapExactETHForTokens / swapExactTokensForETH) via eth_sendTransaction.
  *         Uses viem's encodeFunctionData so no extra dependency is needed.
  *
- * BSV  : UTXO fetching via the Orah API proxy (WhatsonChain backend),
+ * BSV  : UTXO fetching via the OrahDEX API proxy (WhatsonChain backend),
  *         plus a broadcast endpoint for raw signed hex transactions.
  *         The DEX settlement tx is built and signed by the API server's
  *         settlement wallet (P2PKH using @noble/secp256k1).
@@ -19,15 +19,15 @@
 import { encodeFunctionData, decodeFunctionResult } from "viem";
 import { CHAIN_RPC_URLS } from "./reown";
 import { getChainRouter as _getChainRouter } from "./chainConfig";
-import { getOrahDEXAmm } from "./orahdexAmmAddresses";
+import { getOrahAmm } from "./orahAmmAddresses";
 
 /**
  * Return the correct DEX router for a chain.
- * Orah AMM chains (e.g. Sepolia) use OrahDEXRouter02 instead of the
+ * OrahDEX AMM chains (e.g. Sepolia) use OrahRouter02 instead of the
  * Uniswap v2 fallback stored in chainConfig.
  */
 function getChainRouter(chainId: number): string {
-  const amm = getOrahDEXAmm(chainId);
+  const amm = getOrahAmm(chainId);
   if (amm) return amm.router;
   return _getChainRouter(chainId);
 }
@@ -104,7 +104,7 @@ export const WRAPPED_NATIVE: Record<number, string> = {
   5000:     "0x78c1b0C915c4FAA5FffA6CAbf0219DA63d7f4cb8", // WMNT  (Mantle)
   324:      "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91", // WETH  (zkSync Era)
   534352:   "0x5300000000000000000000000000000000000004", // WETH  (Scroll)
-  11155111: "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9", // WETH  (Sepolia — Orah WETH)
+  11155111: "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9", // WETH  (Sepolia — OrahDEX WETH)
 };
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -401,7 +401,7 @@ export interface BsvUtxo {
 }
 
 /**
- * Connect to the BSV wallet currently stored in the Orah wallet store.
+ * Connect to the BSV wallet currently stored in the OrahDEX wallet store.
  * Mirrors connectBsvWallet() from the reference.
  *
  * signRawTx is a placeholder — for BSV, the settlement key lives server-side;
@@ -415,14 +415,14 @@ export function connectBsvWallet(address: string): {
     address,
     signRawTx: async (rawHex: string) => {
       // In production: forward to HandCash SDK or Sensilet wallet API.
-      // The Orah API server holds the settlement private key and builds the tx.
+      // The OrahDEX API server holds the settlement private key and builds the tx.
       return rawHex;
     },
   };
 }
 
 /**
- * Fetch unspent outputs for a BSV address via the Orah API proxy.
+ * Fetch unspent outputs for a BSV address via the OrahDEX API proxy.
  * Mirrors fetchBsvUtxos() from the reference.
  */
 export async function fetchBsvUtxos(address: string): Promise<BsvUtxo[]> {
@@ -438,7 +438,7 @@ export async function fetchBsvUtxos(address: string): Promise<BsvUtxo[]> {
 }
 
 /**
- * Broadcast a raw signed BSV transaction hex via the Orah API proxy.
+ * Broadcast a raw signed BSV transaction hex via the OrahDEX API proxy.
  * Mirrors signAndBroadcastBsvTx() from the reference.
  * Returns the txid string, or null on failure.
  */
@@ -468,7 +468,7 @@ export interface BsvTradeParams {
 }
 
 /**
- * Submit a BSV DEX trade via the Orah order engine.
+ * Submit a BSV DEX trade via the OrahDEX order engine.
  *
  * The API server:
  *   1. Receives the order

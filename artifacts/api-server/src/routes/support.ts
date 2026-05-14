@@ -6,19 +6,16 @@ import { logger } from "../lib/logger.js";
 import { sendMail } from "../lib/mailer.js";
 import { notifyNewTicket, sendTestNotification } from "../lib/notifier.js";
 
-const router = Router();
-
-function isValidEmailAddress(email: string): boolean {
-  const trimmed = email.trim();
-  if (!trimmed || trimmed.length > 254 || trimmed.includes(" ")) return false;
-  const at = trimmed.indexOf("@");
-  if (at <= 0 || at !== trimmed.lastIndexOf("@") || at === trimmed.length - 1) return false;
-  const local = trimmed.slice(0, at);
-  const domain = trimmed.slice(at + 1);
-  if (!local || !domain || local.length > 64 || !domain.includes(".")) return false;
-  if (domain.startsWith(".") || domain.endsWith(".") || domain.includes("..")) return false;
-  return true;
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
 }
+
+const router = Router();
 
 /* ── PUBLIC: Submit contact form ticket ────────────────────────────────────── */
 router.post("/support/contact", async (req, res) => {
@@ -28,7 +25,8 @@ router.post("/support/contact", async (req, res) => {
       res.status(400).json({ error: "name, email, subject and message are required" });
       return;
     }
-    if (!isValidEmailAddress(email)) {
+    const emailRx = /^[^\s@]+@[^\s@.]+\.[^\s@.]+$/;
+    if (!emailRx.test(email)) {
       res.status(400).json({ error: "Invalid email address" });
       return;
     }
@@ -45,7 +43,7 @@ router.post("/support/contact", async (req, res) => {
 
     const settings = await db.select().from(platformSettingsTable);
     const get = (k: string) => settings.find(r => r.key === k)?.value ?? "";
-    const supportEmail = get("support_email") || get("contact_email") || "support@orah.org";
+    const supportEmail = get("support_email") || get("contact_email") || "support@orahdex.org";
 
     try {
       await sendMail({
@@ -53,7 +51,7 @@ router.post("/support/contact", async (req, res) => {
         to: supportEmail,
         subject: `[Support Ticket #${ticket.id}] ${ticket.subject}`,
         text: `New support ticket from ${ticket.name} <${ticket.email}>\n\nCategory: ${ticket.category}\n\nMessage:\n${ticket.message}`,
-        html: `<h3>New Support Ticket #${ticket.id}</h3><p><strong>From:</strong> ${ticket.name} &lt;${ticket.email}&gt;</p><p><strong>Category:</strong> ${ticket.category}</p><p><strong>Subject:</strong> ${ticket.subject}</p><hr><p>${ticket.message.replace(/\n/g, "<br>")}</p>`,
+        html: `<h3>New Support Ticket #${ticket.id}</h3><p><strong>From:</strong> ${escapeHtml(ticket.name)} &lt;${escapeHtml(ticket.email)}&gt;</p><p><strong>Category:</strong> ${escapeHtml(ticket.category)}</p><p><strong>Subject:</strong> ${escapeHtml(ticket.subject)}</p><hr><p>${escapeHtml(ticket.message).replace(/\n/g, "<br>")}</p>`,
       });
     } catch (mailErr: any) {
       logger.warn({ err: mailErr?.message }, "Support ticket mail notification failed");
@@ -138,14 +136,14 @@ router.patch("/admin/support/tickets/:id", async (req, res) => {
     if (adminReply && ticket.email) {
       try {
         const settings = await db.select().from(platformSettingsTable);
-        const siteName = settings.find(r => r.key === "site_name")?.value || "Orah";
-        const supportEmail = settings.find(r => r.key === "support_email")?.value || "support@orah.org";
+        const siteName = settings.find(r => r.key === "site_name")?.value || "OrahDEX";
+        const supportEmail = settings.find(r => r.key === "support_email")?.value || "support@orahdex.org";
         await sendMail({
           from: supportEmail,
           to: ticket.email,
           subject: `Re: [Ticket #${ticket.id}] ${ticket.subject}`,
           text: `Hi ${ticket.name},\n\n${adminReply}\n\nBest regards,\n${siteName} Support Team\n${supportEmail}`,
-          html: `<p>Hi ${ticket.name},</p><p>${adminReply.replace(/\n/g, "<br>")}</p><p>Best regards,<br><strong>${siteName} Support Team</strong></p>`,
+          html: `<p>Hi ${escapeHtml(ticket.name)},</p><p>${escapeHtml(adminReply).replace(/\n/g, "<br>")}</p><p>Best regards,<br><strong>${escapeHtml(siteName)} Support Team</strong></p>`,
         });
       } catch (mailErr: any) {
         logger.warn({ err: mailErr?.message }, "Support reply mail failed");

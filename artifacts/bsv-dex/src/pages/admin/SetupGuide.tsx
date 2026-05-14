@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -7,7 +8,7 @@ import {
   DollarSign, Megaphone, Palette, ToggleLeft, Bot, Activity,
   Key, ShieldCheck, Rocket, AlertTriangle, ChevronDown,
   Save, Eye, EyeOff, ExternalLink, Mail, Lock, BellRing,
-  Layers, RefreshCw, Check,
+  Layers, RefreshCw, Check, Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -15,10 +16,10 @@ import { useToast } from "@/hooks/use-toast";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 const fetchIntegrations = () =>
-  fetch(`${BASE}/api/admin/integrations`).then(r => r.json()).catch(() => ({}));
+  adminFetch(`/api/admin/integrations`).then(r => r.json()).catch(() => ({}));
 
 const fetchSiteSettings = () =>
-  fetch(`${BASE}/api/admin/site-settings`).then(r => r.json()).catch(() => ({}));
+  adminFetch(`/api/admin/site-settings`).then(r => r.json()).catch(() => ({}));
 
 function useApiField(
   key: string,
@@ -65,7 +66,7 @@ const STEPS: Step[] = [
   {
     id: "price-apis",   step: 3,  label: "C",
     title: "Price Data — Sovereign Engine",
-    description: "Orah uses its own price engine (Binance public feed + WhatsOnChain + own order books). No API key required.",
+    description: "OrahDEX uses its own price engine (Binance public feed + WhatsOnChain + own order books). No API key required.",
     href: "/admin/integrations", icon: BarChart3, priority: "recommended",
     checkIntegrations: ["dexscreener_api_key", "geckoterm_api_key"],
   },
@@ -96,6 +97,13 @@ const STEPS: Step[] = [
     description: "Connect Sumsub or Onfido for automated identity verification. Required for regulated regions.",
     href: "/admin/integrations", icon: ShieldCheck, priority: "recommended",
     checkIntegrations: ["sumsub_api_key"],
+  },
+  {
+    id: "letsexchange",  step: 8, label: "H",
+    title: "Bridge — LetsExchange API Key",
+    description: "Powers the Bridge tab (cross-chain swaps). Users can exchange 340+ coins without holding the target asset. Add your LetsExchange API key in Integrations.",
+    href: "/admin/integrations", icon: Link2, priority: "recommended",
+    checkIntegrations: ["letsexchange_api_key"],
   },
   {
     id: "bsv-node",     step: 10, label: "J",
@@ -292,7 +300,7 @@ function StepCard({
     for (const k of keys) {
       if (draft[k] !== undefined) current[k] = draft[k];
     }
-    const res = await fetch(`${BASE}/api/admin/integrations`, {
+    const res = await adminFetch(`/api/admin/integrations`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(current),
@@ -305,7 +313,7 @@ function StepCard({
     for (const k of keys) {
       if (draft[k] !== undefined) updates[k] = draft[k];
     }
-    const res = await fetch(`${BASE}/api/admin/site-settings`, {
+    const res = await adminFetch(`/api/admin/site-settings`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
@@ -350,19 +358,19 @@ function StepCard({
         return (
           <InlineForm onSave={handleSave} loading={saving}>
             <ApiKeyField label="Platform Name" fieldKey="site_name" value={val("site_name", "site")}
-              onChange={setDraftKey("site_name")} placeholder="Orah" secret={false} />
+              onChange={setDraftKey("site_name")} placeholder="OrahDEX" secret={false} />
             <ApiKeyField label="Platform Domain" fieldKey="site_domain" value={val("site_domain", "site")}
-              onChange={setDraftKey("site_domain")} placeholder="orah.org" secret={false} />
+              onChange={setDraftKey("site_domain")} placeholder="orahdex.org" secret={false} />
             <ApiKeyField label="Support Email" fieldKey="contact_email" value={val("contact_email", "site")}
-              onChange={setDraftKey("contact_email")} placeholder="support@orah.org" secret={false} type="email" />
+              onChange={setDraftKey("contact_email")} placeholder="support@orahdex.org" secret={false} type="email" />
             <ApiKeyField label="Legal Email" fieldKey="legal_email" value={val("legal_email", "site")}
-              onChange={setDraftKey("legal_email")} placeholder="legal@orah.org" secret={false} type="email" />
+              onChange={setDraftKey("legal_email")} placeholder="legal@orahdex.org" secret={false} type="email" />
             <ApiKeyField label="Privacy Email" fieldKey="privacy_email" value={val("privacy_email", "site")}
-              onChange={setDraftKey("privacy_email")} placeholder="privacy@orah.org" secret={false} type="email" />
+              onChange={setDraftKey("privacy_email")} placeholder="privacy@orahdex.org" secret={false} type="email" />
             <ApiKeyField label="Company Name" fieldKey="company_name" value={val("company_name", "site")}
-              onChange={setDraftKey("company_name")} placeholder="Orah Ltd." secret={false} />
+              onChange={setDraftKey("company_name")} placeholder="OrahDEX Ltd." secret={false} />
             <ApiKeyField label="Canonical URL" fieldKey="canonical_url" value={val("canonical_url", "site")}
-              onChange={setDraftKey("canonical_url")} placeholder="https://orah.org" secret={false} />
+              onChange={setDraftKey("canonical_url")} placeholder="https://orahdex.org" secret={false} />
           </InlineForm>
         );
       case "price-apis":
@@ -370,7 +378,7 @@ function StepCard({
           <InlineForm onSave={handleSave} loading={saving}>
             <div className="col-span-full rounded-xl bg-secondary/40 border border-border p-4 text-sm text-muted-foreground space-y-1">
               <p className="font-semibold text-foreground">Sovereign Price Engine — Active</p>
-              <p>Orah sources all prices from its own engine: Binance public ticker + WhatsOnChain BSV rate + own order-book trades. No API key required for core price data.</p>
+              <p>OrahDEX sources all prices from its own engine: Binance public ticker + WhatsOnChain BSV rate + own order-book trades. No API key required for core price data.</p>
             </div>
             <ApiKeyField label="DexScreener API Key (optional)" fieldKey="dexscreener_api_key" value={val("dexscreener_api_key", "int")}
               onChange={setDraftKey("dexscreener_api_key")} placeholder="Leave empty for public tier" description="Enhances token discovery for Base chain and DEX pairs." />
@@ -390,7 +398,7 @@ function StepCard({
             <ApiKeyField label="SMTP Password / API Key" fieldKey="smtp_pass" value={val("smtp_pass", "int")}
               onChange={setDraftKey("smtp_pass")} placeholder="Your SMTP password or SendGrid API key" />
             <ApiKeyField label="From Address" fieldKey="smtp_from" value={val("smtp_from", "int")}
-              onChange={setDraftKey("smtp_from")} placeholder="no-reply@orah.org" secret={false} type="email" />
+              onChange={setDraftKey("smtp_from")} placeholder="no-reply@orahdex.org" secret={false} type="email" />
           </InlineForm>
         );
       case "fees":
@@ -642,7 +650,7 @@ export function AdminSetupGuide() {
   const handleAutoFill = async () => {
     setAutoFilling(true);
     try {
-      const res = await fetch(`${BASE}/api/admin/auto-setup`, { method: "POST" });
+      const res = await adminFetch(`/api/admin/auto-setup`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Auto-setup failed");
       refresh();

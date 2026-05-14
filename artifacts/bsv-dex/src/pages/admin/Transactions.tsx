@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -72,9 +73,11 @@ const TYPES: TxType[] = ["deposit", "withdrawal", "settlement", "contract"];
 
 // ─── Small helpers ────────────────────────────────────────────────────────────
 function shortHash(h: string) {
+  if (!h || h.length < 18) return h ?? "—";
   return h.slice(0, 10) + "..." + h.slice(-8);
 }
 function shortAddr(a: string) {
+  if (!a || a.length < 14) return a ?? "—";
   return a.slice(0, 8) + "..." + a.slice(-6);
 }
 function timeAgo(iso: string) {
@@ -230,7 +233,7 @@ export function AdminTransactions() {
         ...(statusFilter !== "all" && { status: statusFilter }),
         ...(search && { search }),
       });
-      const r = await fetch(`${BASE}/api/admin/transactions?${params}`);
+      const r = await adminFetch(`/api/admin/transactions?${params}`);
       return r.ok ? r.json() : { transactions: [], total: 0 };
     },
     refetchInterval: 30_000,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
   Heart, MessageCircle, Share2, Zap, BadgeCheck, Search,
@@ -6,15 +6,40 @@ import {
   Flame, Clock, Star, Lock, Layers, Copy, Send, Globe,
   AtSign, Camera, ArrowUpRight, ArrowDownRight,
   UserPlus, UserCheck, BarChart2, Grid3X3, Activity,
-  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon, Trash2, AlertCircle,
+  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Link, ImageIcon, Trash2, AlertCircle, MessagesSquare, Bell, Tag, Send as SendIcon,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useLocation } from "wouter";
-import { disconnectReown } from "@/lib/reown";
+import { disconnectReown, sendEvmTransfer } from "@/lib/reown";
+import { resolveNftSpendBalance } from "@/lib/nftBalance";
+import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
+import { useHybridBalance } from "@/hooks/useHybridBalance";
+import { signTradeIfNeeded } from "@/lib/tradeSig";
+import { MediaCapture } from "@/components/MediaCapture";
 
-const API = "/api";
+const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
+
+/** Compress a base64 data-URL to ≤ 1200 px on the longest side at 85% JPEG quality.
+ *  Keeps the original unchanged if it's already a remote URL (https://…). */
+async function compressProfileImage(dataUrl: string, maxDim = 1200, quality = 0.85): Promise<string> {
+  if (!dataUrl.startsWith("data:")) return dataUrl;
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const { width: w, height: h } = img;
+      const scale = Math.min(1, maxDim / Math.max(w, h, 1));
+      const cw = Math.round(w * scale), ch = Math.round(h * scale);
+      const canvas = document.createElement("canvas");
+      canvas.width = cw; canvas.height = ch;
+      canvas.getContext("2d")?.drawImage(img, 0, 0, cw, ch);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
 
 const MODAL_ROOT_STYLE: React.CSSProperties = {
   position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
@@ -37,6 +62,19 @@ function Portal({ children }: { children: React.ReactNode }) {
 }
 
 /* ─── types ─────────────────────────────────────────────────────────────────── */
+
+/** Only allow http/https URLs or raster-format data URIs for image src attributes.
+ *  SVG is excluded because it can contain embedded JavaScript. */
+function sanitizeImageUrl(url: string): string {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    if (u.protocol === "https:" || u.protocol === "http:") return u.href;
+    if (u.protocol === "data:" && /^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(url)) return url;
+  } catch { /* invalid URL */ }
+  return "";
+}
+
 interface Post {
   id: string; creator: string; creator_name: string; creator_avatar: string;
   title: string; description: string; image_url: string; category: string;
@@ -55,7 +93,8 @@ interface Creator {
   is_verified: boolean; follower_count: number; following_count: number;
   post_count: number; symbol: string; coin_name: string;
   price_usd: number; market_cap_usd: number; ath_usd: number;
-  volume_24h_usd: number; holder_count: number; circulating_supply: number;
+  volume_24h_usd: number; holder_count: number; holding_count?: number;
+  circulating_supply: number;
   total_supply: number; virtual_bsv: number; virtual_tokens: number;
   price_bsv: number; trade_count: number;
 }
@@ -63,6 +102,28 @@ interface Holding { coin_creator: string; holder: string; amount: number; userna
 
 /* ─── helpers ────────────────────────────────────────────────────────────────── */
 function shortAddr(a: string) { return a?.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : (a ?? "—"); }
+// Auto-generated coin symbols are the last few uppercase hex chars of the
+// creator's wallet address (e.g. "67C7F"). Treat those as addresses so we hide
+// them whenever a real handle is present — trading is keyed off the handle, the
+// raw address never needs to be visible to traders.
+function isAddrLikeSymbol(s?: string) {
+  if (!s) return true;
+  const t = s.trim();
+  return t.length === 0 || /^[0-9A-F]{4,8}$/.test(t);
+}
+const MIN_ADDRESS_LIKE_LENGTH = 24;
+function isAddressLike(value: string) {
+  const v = value.trim();
+  if (!v) return false;
+  if (v.includes("…")) return true;
+  if (v.startsWith("0x")) return true;
+  return new RegExp(`^[A-Za-z0-9]{${MIN_ADDRESS_LIKE_LENGTH},}$`).test(v);
+}
+function commentHandle(comment: Comment) {
+  const displayName = comment.display_name?.trim();
+  if (displayName && !isAddressLike(displayName)) return displayName;
+  return "user";
+}
 function fmtNum(raw: unknown) {
   const n = Number(raw);
   if (!n || !isFinite(n)) return "0";
@@ -80,14 +141,20 @@ function fmtUsd(raw: unknown) {
   if (n < 1) return `$${n.toFixed(4)}`;
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
-function safePrice(v: unknown, decimals = 4) {
+function safePrice(v: unknown, decimals?: number) {
   const n = Number(v);
-  return isFinite(n) ? n.toFixed(decimals) : "0.0000";
+  if (!isFinite(n)) return "0.0000";
+  if (decimals !== undefined) return n.toFixed(decimals);
+  // Auto-scale: show enough decimals to represent micro amounts
+  if (n === 0) return "0";
+  if (n >= 1) return n.toFixed(4);
+  const d = Math.ceil(-Math.log10(Math.abs(n))) + 2;
+  return n.toFixed(Math.max(4, Math.min(d, 8)));
 }
 function getNftProfileAddress({
   address,
-  provider,
-  network,
+  provider: _provider,
+  network: _network,
   internalEvmAddress,
 }: {
   address: string | null;
@@ -95,8 +162,14 @@ function getNftProfileAddress({
   network: string | null;
   internalEvmAddress: string | null;
 }) {
+  // If the user has a fixed, internally-derived EVM address (seed phrase, passkey,
+  // or server-side provisioning), ALWAYS use it as their NFT profile identity.
+  // internalEvmAddress is explicitly preserved by every chain-switch path and is
+  // only cleared when a genuinely different wallet connects — so this is the
+  // most robust signal for "one seed, one profile".
+  if (internalEvmAddress) return internalEvmAddress;
+  // For external-only wallets (MetaMask, WalletConnect, etc.) use the connected address.
   if (!address) return null;
-  if (provider === "orahdex-wallet" && network !== "evm" && internalEvmAddress) return internalEvmAddress;
   return address;
 }
 
@@ -111,8 +184,22 @@ const CAT_ICONS: Record<string, string> = {
   all: "🌐", art: "🎨", generative: "⚡", relics: "🏛️",
   utility: "🔧", governance: "🗳️", bridge: "🌉", ai: "🤖",
 };
-const CHAINS = ["BSV", "ETH", "BNB", "SOL", "MATIC"];
-const CHAIN_COLOR: Record<string, string> = { BSV: "#00ff88", ETH: "#7b68ee", BNB: "#f3ba2f", SOL: "#9945ff", MATIC: "#8247e5" };
+const CHAINS = ["BSV","ETH","BASE","BNB","MATIC","ARB","OP","SOL","BTC","BCH"];
+const CHAIN_COLOR: Record<string, string> = {
+  BSV: "#00ff88", ETH: "#627eea", BASE: "#0052ff", BNB: "#f3ba2f",
+  MATIC: "#8247e5", ARB: "#12aaff", OP: "#ff0420", SOL: "#9945ff",
+  BTC: "#f7931a", BCH: "#4caf50",
+};
+const CHAIN_CURRENCY: Record<string, string> = {
+  BSV: "BSV", ETH: "ETH", BASE: "ETH", BNB: "BNB",
+  MATIC: "MATIC", ARB: "ETH", OP: "ETH", SOL: "SOL",
+  BTC: "BTC", BCH: "BCH",
+};
+const CHAIN_LABEL: Record<string, string> = {
+  BSV: "BSV", ETH: "Ethereum", BASE: "Base", BNB: "BNB Chain",
+  MATIC: "Polygon", ARB: "Arbitrum", OP: "Optimism", SOL: "Solana",
+  BTC: "Bitcoin", BCH: "Bitcoin Cash",
+};
 
 /* ─── tiny UI ────────────────────────────────────────────────────────────────── */
 function Avatar({ src, name, size = 36, ring }: { src?: string; name?: string; size?: number; ring?: boolean }) {
@@ -168,22 +255,23 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
-  const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const { address, network, chainId, balance: storeBalance, provider } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
-  const isOrahDEXWallet = provider === "orahdex-wallet";
+  const isOrahWallet = provider === "orah-wallet";
 
   useBsvBalance();
-  const { balances: evmBalances } = useEvmBalances(isEvm ? (address ?? null) : null, null);
+  const { balances: evmBalances } = useEvmBalances(isEvm ? address : null, chainId ?? null);
 
   const nativeEvmBalance = evmBalances?.find(b => b.isNative);
-  const availableBsvNum = isEvm && !isOrahDEXWallet
-    ? (nativeEvmBalance ? nativeEvmBalance.amount || 0 : 0)
+  const availableBsvNum = isEvm && !isOrahWallet
+    ? (nativeEvmBalance ? Number(nativeEvmBalance.amount) || 0 : 0)
     : parseFloat(String(storeBalance ?? "0")) || 0;
-  const hasLoadedBalance = isEvm && !isOrahDEXWallet
+  const hasLoadedBalance = isEvm && !isOrahWallet
     ? (evmBalances != null && evmBalances.length > 0)
     : storeBalance != null;
-  const availableLabel = isEvm && !isOrahDEXWallet
-    ? (nativeEvmBalance ? `${nativeEvmBalance.amount.toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
+  const nativeSymbol = isEvm && !isOrahWallet ? (nativeEvmBalance?.symbol ?? "ETH") : "BSV";
+  const availableLabel = isEvm && !isOrahWallet
+    ? (nativeEvmBalance ? `${Number(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
 
   const [holdingAmount, setHoldingAmount] = useState<number | null>(null);
@@ -206,9 +294,9 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   useEffect(() => {
     const t = setTimeout(async () => {
       try {
-        const params = mode === "buy"
+        const params = (mode === "buy"
           ? `type=buy&bsv_amount=${bsvAmount}`
-          : `type=sell&token_amount=${tokenAmount}`;
+          : `type=sell&token_amount=${tokenAmount}`) + `&payment_asset=${nativeSymbol}`;
         const r = await fetch(`${API}/social/quote/${creator.address}?${params}`);
         if (r.ok) setQuote(await r.json());
       } catch {}
@@ -221,6 +309,13 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
     if (!canTrade) return;
     setLoading(true); setError("");
     try {
+      const amountStr = mode === "buy"
+        ? String(parseFloat(bsvAmount))
+        : String(parseFloat(tokenAmount));
+      const sig = await signTradeIfNeeded({
+        walletAddress: address, network, isOrahWallet,
+        creator: creator.address, side: mode, amount: amountStr, asset: nativeSymbol,
+      });
       const res = await fetch(`${API}/social/creators/${creator.address}/trade`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -228,6 +323,8 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
           trader: address, trade_type: mode,
           bsv_amount: mode === "buy" ? parseFloat(bsvAmount) : undefined,
           token_amount: mode === "sell" ? parseFloat(tokenAmount) : undefined,
+          payment_asset: nativeSymbol,
+          ...(sig.nonce && sig.signature ? { nonce: sig.nonce, signature: sig.signature } : {}),
         }),
       });
       const d = await res.json();
@@ -249,8 +346,8 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             </h3>
             <p className="text-sm mb-4" style={{ color: "var(--color-text-secondary)" }}>
               {mode === "buy"
-                ? `${fmtNum(success.tokensExchanged)} ${creator.symbol} for ${success.bsvExchanged} BSV`
-                : `${fmtNum(success.tokensExchanged)} ${creator.symbol} → ${success.bsvExchanged} BSV`}
+                ? `${fmtNum(success.tokensExchanged)} ${isAddrLikeSymbol(creator.symbol) ? (creator.username || "tokens") : creator.symbol} for ${success.bsvExchanged} ${nativeSymbol}`
+                : `${fmtNum(success.tokensExchanged)} ${isAddrLikeSymbol(creator.symbol) ? (creator.username || "tokens") : creator.symbol} → ${success.bsvExchanged} ${nativeSymbol}`}
             </p>
             <div className="rounded-xl p-3 mb-4" style={{ background: "var(--color-surface)" }}>
               <div className="text-xs" style={{ color: "var(--color-text-secondary)" }}>New market cap</div>
@@ -267,7 +364,9 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
                   <span className="font-bold" style={{ color: "var(--color-text)" }}>{creator.username}</span>
                   {creator.is_verified && <BadgeCheck size={14} style={{ color: "var(--color-accent)" }} />}
                 </div>
-                <div className="text-xs font-mono" style={{ color: "var(--color-accent)" }}>{creator.symbol}</div>
+                {!isAddrLikeSymbol(creator.symbol) && (
+                  <div className="text-xs font-mono" style={{ color: "var(--color-accent)" }}>${creator.symbol}</div>
+                )}
               </div>
               <button onClick={onClose}><X size={20} style={{ color: "var(--color-text-secondary)" }} /></button>
             </div>
@@ -309,7 +408,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             {mode === "buy" ? (
               <div className="mb-3">
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>BSV to spend</label>
+                  <label className="text-xs font-medium" style={{ color: "var(--color-text-secondary)" }}>{nativeSymbol} to spend</label>
                   {availableLabel && (
                     <span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
                       Available: <span className="font-mono font-medium" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-text)" }}>{availableLabel}</span>
@@ -319,7 +418,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: `1px solid ${insufficientFunds ? "rgba(255,68,68,0.6)" : "var(--color-border)"}` }}>
                   <input className="flex-1 bg-transparent text-sm font-medium outline-none" style={{ color: "var(--color-text)" }}
                     type="number" min="0.001" step="0.001" value={bsvAmount} onChange={e => setBsvAmount(e.target.value)} />
-                  <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>BSV</span>
+                  <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{nativeSymbol}</span>
                 </div>
                 {insufficientFunds && <p className="text-xs mt-1" style={{ color: "#ff4444" }}>Insufficient balance</p>}
                 <div className="flex gap-1.5 mt-1.5">
@@ -330,7 +429,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
                     </button>
                   ))}
                 </div>
-                {quote && <p className="text-xs mt-2 text-center" style={{ color: "var(--color-text-secondary)" }}>≈ {fmtNum(quote.tokensOut)} {creator.symbol} · impact {quote.priceImpact}%</p>}
+                {quote && <p className="text-xs mt-2 text-center" style={{ color: "var(--color-text-secondary)" }}>≈ {fmtNum(quote.tokensOut)} {isAddrLikeSymbol(creator.symbol) ? "tokens" : creator.symbol} · impact {quote.priceImpact}%</p>}
               </div>
             ) : (
               <div className="mb-3">
@@ -345,10 +444,10 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: `1px solid ${insufficientTokens ? "rgba(255,68,68,0.6)" : "var(--color-border)"}` }}>
                   <input className="flex-1 bg-transparent text-sm font-medium outline-none" style={{ color: "var(--color-text)" }}
                     type="number" min="1" step="1000" value={tokenAmount} onChange={e => setTokenAmount(e.target.value)} />
-                  <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{creator.symbol}</span>
+                  <span className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{isAddrLikeSymbol(creator.symbol) ? (creator.username || "TOKENS") : creator.symbol}</span>
                 </div>
                 {insufficientTokens && <p className="text-xs mt-1" style={{ color: "#ff4444" }}>Insufficient token balance</p>}
-                {quote && <p className="text-xs mt-2 text-center" style={{ color: "var(--color-text-secondary)" }}>≈ {quote.bsvOut} BSV · impact {quote.priceImpact}%</p>}
+                {quote && <p className="text-xs mt-2 text-center" style={{ color: "var(--color-text-secondary)" }}>≈ {quote.bsvOut} {nativeSymbol} · impact {quote.priceImpact}%</p>}
               </div>
             )}
 
@@ -378,52 +477,227 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
 }
 
 /* ─── CREATOR PROFILE SHEET ──────────────────────────────────────────────────── */
+/* ── Module-level profile cache — survives tab switches, cleared on logout ── */
+const _profileDataCache: Record<string, { profile: Creator; posts: Post[]; topHolders: any[] }> = {};
+const _profileMintsCache: Record<string, any[]> = {};
+const _profileHoldingsCache: Record<string, any[]> = {};
+
 function CreatorProfileSheet({
-  creatorAddress, currentUserAddress, onClose, onOpenPost,
+  creatorAddress, currentUserAddress, onClose, onOpenPost, onOpenCreator,
 }: {
   creatorAddress: string;
   currentUserAddress?: string;
   onClose: () => void;
   onOpenPost: (p: Post) => void;
+  onOpenCreator?: (a: string) => void;
 }) {
-  const [data, setData] = useState<{ profile: Creator; posts: Post[]; topHolders: any[] } | null>(null);
-  const [mints, setMints] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const cached = _profileDataCache[creatorAddress] ?? null;
+  const [data, setData] = useState<{ profile: Creator; posts: Post[]; topHolders: any[] } | null>(cached);
+  const [mints, setMints] = useState<any[]>(_profileMintsCache[creatorAddress] ?? []);
+  const [loading, setLoading] = useState(!cached);
   const [gridTab, setGridTab] = useState<"posts" | "collected" | "activity">("posts");
   const [isFollowing, setIsFollowing] = useState(false);
   const [showTrade, setShowTrade] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [dmPeer, setDmPeer] = useState<{ address: string; name: string; avatar?: string } | null>(null);
+  const [myFollowingSet, setMyFollowingSet] = useState<Set<string>>(new Set());
+  const [followBusy, setFollowBusy] = useState<Set<string>>(new Set());
   const [imgErr, setImgErr] = useState(false);
+  const [photoUploading, setPhotoUploading] = useState<"cover" | "avatar" | null>(null);
+  const coverFileRef = useRef<HTMLInputElement>(null);
+  const avatarFileRef = useRef<HTMLInputElement>(null);
   const [followList, setFollowList] = useState<{ type: "followers" | "following"; items: any[] } | null>(null);
   const [statSheet, setStatSheet] = useState<{ type: "holders" | "holding"; items: any[] } | null>(null);
+  const [holdingItems, setHoldingItems] = useState<any[]>(_profileHoldingsCache[creatorAddress] ?? []);
+  const [, navigate] = useLocation();
+  const hybrid = useHybridBalance(60_000);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const isSelf = currentUserAddress && currentUserAddress === creatorAddress;
+    if (!isSelf) { setUnreadCount(0); return; }
+    const LAST_SEEN_KEY = `nft_notif_seen_${currentUserAddress}`;
+    function poll() {
+      const lastSeen = parseInt(localStorage.getItem(LAST_SEEN_KEY) ?? "0", 10);
+      fetch(`${API}/social/notifications?address=${encodeURIComponent(currentUserAddress!)}&since=${lastSeen}`)
+        .then(r => r.ok ? r.json() : { notifications: [] })
+        .then(d => setUnreadCount((d.notifications ?? []).length))
+        .catch(() => {});
+    }
+    poll();
+    const id = setInterval(poll, 30_000);
+    return () => clearInterval(id);
+  }, [currentUserAddress, creatorAddress]);
 
   useEffect(() => {
     fetch(`${API}/social/creators/${creatorAddress}`)
       .then(r => r.json())
-      .then(setData)
+      .then(d => {
+        _profileDataCache[creatorAddress] = d;
+        setData(d);
+        if (Array.isArray(d?.holdings)) {
+          _profileHoldingsCache[creatorAddress] = d.holdings;
+          setHoldingItems(d.holdings);
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
     fetch(`${API}/social/profile/${creatorAddress}`)
       .then(r => r.json())
-      .then(d => setMints(d.mints ?? []))
+      .then(d => { const m = d.mints ?? []; _profileMintsCache[creatorAddress] = m; setMints(m); })
       .catch(() => {});
+    fetch(`${API}/social/holdings/${creatorAddress}`)
+      .then(r => r.ok ? r.json() : {})
+      .then(d => { const data = d as { holdings?: any[] }; const h = Array.isArray(data.holdings) ? data.holdings : []; _profileHoldingsCache[creatorAddress] = h; setHoldingItems(h); })
+      .catch(() => setHoldingItems([]));
   }, [creatorAddress]);
 
+  // Hydrate "are we following this creator?" so the header button label is correct.
+  useEffect(() => {
+    if (!currentUserAddress || currentUserAddress.toLowerCase() === creatorAddress.toLowerCase()) {
+      setIsFollowing(false);
+      return;
+    }
+    let cancelled = false;
+    fetch(`${API}/social/creators/${currentUserAddress}/following`)
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: any[]) => {
+        if (cancelled) return;
+        const target = creatorAddress.toLowerCase();
+        setIsFollowing(rows.some(u => String(u.address ?? "").toLowerCase() === target));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [currentUserAddress, creatorAddress]);
+
+  const followInFlight = useRef(false);
   async function toggleFollow() {
-    if (!currentUserAddress) return;
+    if (!currentUserAddress || isSelf) return;
+    if (followInFlight.current) return; // guard against rapid double-taps
+    followInFlight.current = true;
     const prev = isFollowing;
-    setIsFollowing(!prev);
-    await fetch(`${API}/social/follow`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ follower: currentUserAddress, following: creatorAddress }),
-    }).catch(() => setIsFollowing(prev));
+    setIsFollowing(!prev); // optimistic
+    try {
+      const r = await fetch(`${API}/social/follow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ follower: currentUserAddress, following: creatorAddress }),
+      });
+      const d = await r.json().catch(() => ({}));
+      // Trust the server's authoritative state (backend toggles).
+      if (typeof d?.following === "boolean") setIsFollowing(d.following);
+      // Also keep the row-list set in sync so the followers/following sheet
+      // shows the right Follow / Following label after toggling from the header.
+      const key = creatorAddress.toLowerCase();
+      setMyFollowingSet(prevSet => {
+        const n = new Set(prevSet);
+        if (d?.following) n.add(key); else n.delete(key);
+        return n;
+      });
+    } catch {
+      setIsFollowing(prev);
+    } finally {
+      followInFlight.current = false;
+    }
+  }
+
+  function handleQuickFile(field: "cover_url" | "avatar_url") {
+    return (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        const raw = ev.target?.result as string;
+        compressProfileImage(raw).then(compressed => quickSavePhoto(field, compressed));
+      };
+      reader.readAsDataURL(file);
+      e.target.value = "";
+    };
+  }
+
+  const [quickCaptureField, setQuickCaptureField] = useState<null | "cover_url" | "avatar_url">(null);
+  const [photoSaveError, setPhotoSaveError] = useState("");
+
+  async function quickSavePhoto(field: "cover_url" | "avatar_url", dataUrl: string) {
+    setPhotoUploading(field === "cover_url" ? "cover" : "avatar");
+    setPhotoSaveError("");
+    try {
+      const compressed = await compressProfileImage(dataUrl);
+      const res = await fetch(`${API}/social/creators/${creatorAddress}/update`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: compressed }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as any)?.error ?? `Save failed (${res.status})`);
+      }
+      if (data) {
+        const updated = { ...data, profile: { ...data.profile, [field]: compressed } };
+        _profileDataCache[creatorAddress] = updated;
+        setData(updated);
+      }
+      if (field === "cover_url") setImgErr(false);
+    } catch (e: any) {
+      setPhotoSaveError(e?.message ?? "Failed to save image — please try again");
+    } finally {
+      setPhotoUploading(null);
+    }
   }
 
   async function openFollowList(type: "followers" | "following") {
     const res = await fetch(`${API}/social/creators/${creatorAddress}/${type}`).catch(() => null);
     const items = res?.ok ? await res.json() : [];
     setFollowList({ type, items });
+    // Hydrate which of these the current user already follows so we can show
+    // the right Follow / Following label on each row.
+    if (currentUserAddress) {
+      const r = await fetch(`${API}/social/creators/${currentUserAddress}/following`).catch(() => null);
+      const myFollowing: any[] = r?.ok ? await r.json() : [];
+      setMyFollowingSet(new Set(myFollowing.map(u => String(u.address).toLowerCase())));
+    }
+  }
+
+  async function toggleFollowAddr(addr: string) {
+    if (!currentUserAddress || addr.toLowerCase() === currentUserAddress.toLowerCase()) return;
+    const key = addr.toLowerCase();
+    if (followBusy.has(key)) return;
+    setFollowBusy(prev => { const n = new Set(prev); n.add(key); return n; });
+    const wasFollowing = myFollowingSet.has(key);
+    // Optimistic
+    setMyFollowingSet(prev => {
+      const n = new Set(prev);
+      if (wasFollowing) n.delete(key); else n.add(key);
+      return n;
+    });
+    try {
+      const r = await fetch(`${API}/social/follow`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ follower: currentUserAddress, following: addr }),
+      });
+      const d = await r.json().catch(() => ({}));
+      // Reconcile with the server's authoritative state.
+      if (typeof d?.following === "boolean") {
+        setMyFollowingSet(prev => {
+          const n = new Set(prev);
+          if (d.following) n.add(key); else n.delete(key);
+          return n;
+        });
+        // If the row matches the currently viewed creator, sync the header too.
+        if (addr.toLowerCase() === creatorAddress.toLowerCase()) setIsFollowing(d.following);
+      }
+    } catch {
+      // Revert on failure
+      setMyFollowingSet(prev => {
+        const n = new Set(prev);
+        if (wasFollowing) n.add(key); else n.delete(key);
+        return n;
+      });
+    } finally {
+      setFollowBusy(prev => { const n = new Set(prev); n.delete(key); return n; });
+    }
   }
 
   async function openStatSheet(type: "holders" | "holding") {
@@ -432,7 +706,9 @@ function CreatorProfileSheet({
     } else {
       const res = await fetch(`${API}/social/holdings/${creatorAddress}`).catch(() => null);
       const d = res?.ok ? await res.json() : {};
-      setStatSheet({ type, items: d.holdings ?? [] });
+      const holdings = Array.isArray(d.holdings) ? d.holdings : [];
+      setHoldingItems(holdings);
+      setStatSheet({ type, items: holdings });
     }
   }
 
@@ -440,10 +716,12 @@ function CreatorProfileSheet({
   const posts = data?.posts ?? [];
   const topHolders = data?.topHolders ?? [];
 
-  if (loading) return (
+  // Only block with full-screen loader if we have ZERO cached data
+  if (loading && !data) return (
     <Portal>
-      <div className="w-full h-full flex items-center justify-center" style={{ background: "hsl(var(--background))" }}>
+      <div className="w-full h-full flex flex-col items-center justify-center gap-3" style={{ background: "hsl(var(--background))" }}>
         <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} />
+        <p className="text-xs" style={{ color: "var(--color-text-secondary)" }}>Loading profile…</p>
       </div>
     </Portal>
   );
@@ -462,13 +740,33 @@ function CreatorProfileSheet({
         <button onClick={onClose} className="w-9 h-9 rounded-full flex items-center justify-center active:opacity-60" style={{ background: "var(--color-surface)" }}>
           <ChevronLeft size={18} style={{ color: "var(--color-text)" }} />
         </button>
-        <span className="text-sm font-bold" style={{ color: "var(--color-text)" }}>
+        <span className="flex items-center gap-1.5 text-sm font-bold" style={{ color: "var(--color-text)" }}>
           {profile.username || shortAddr(creatorAddress)}
+          {loading && <span className="w-1.5 h-1.5 rounded-full animate-pulse shrink-0" style={{ background: "var(--color-accent)" }} />}
         </span>
         <div className="flex gap-2">
           <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}>
             <Share2 size={14} style={{ color: "var(--color-text)" }} />
           </button>
+          {isSelf && (
+            <button
+              onClick={() => {
+                setUnreadCount(0);
+                localStorage.setItem(`nft_notif_seen_${currentUserAddress}`, String(Date.now()));
+                setNotifOpen(true);
+              }}
+              className="relative w-9 h-9 rounded-full flex items-center justify-center"
+              style={{ background: "var(--color-surface)" }}
+            >
+              <Bell size={14} style={{ color: "var(--color-text)" }} />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] flex items-center justify-center rounded-full text-[9px] font-black px-0.5"
+                  style={{ background: "var(--color-accent)", color: "#000" }}>
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </button>
+          )}
           {isSelf && (
             <button onClick={() => setShowEdit(true)} className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}>
               <Settings size={14} style={{ color: "var(--color-text)" }} />
@@ -480,17 +778,72 @@ function CreatorProfileSheet({
       <div className="flex-1 overflow-y-auto">
 
         {/* ── Cover image ── */}
-        <div className="relative h-28 shrink-0" style={{ background: "linear-gradient(135deg,#001a0f 0%,#002244 50%,#1a0033 100%)" }}>
+        <div className="relative h-32 shrink-0" style={{ background: "linear-gradient(180deg,#0a0a0a 0%,#1a1a1a 100%)" }}>
           {!imgErr && profile.cover_url && (
-            <img src={profile.cover_url} alt="" className="w-full h-full object-cover" style={{ opacity: 0.7 }} onError={() => setImgErr(true)} />
+            <img src={profile.cover_url} alt="" className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           )}
+          {isSelf && (
+            <>
+              <button
+                onClick={() => setQuickCaptureField("cover_url")}
+                aria-label="Change cover photo"
+                className="absolute inset-0 w-full h-full"
+                style={{ background: photoUploading === "cover" ? "rgba(0,0,0,0.55)" : "transparent" }}
+              />
+              {photoUploading === "cover" ? (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                </div>
+              ) : (
+                <button
+                  onClick={() => setQuickCaptureField("cover_url")}
+                  className="absolute bottom-2 right-2 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold active:scale-95 transition-transform"
+                  style={{ background: "rgba(0,0,0,0.7)", color: "#fff", backdropFilter: "blur(8px)" }}
+                >
+                  <Camera size={12} /> {profile.cover_url ? "Change cover" : "Add cover"}
+                </button>
+              )}
+              {photoSaveError && (
+                <div
+                  className="absolute bottom-2 left-2 right-2 text-center text-[11px] font-medium px-2 py-1 rounded-lg"
+                  style={{ background: "rgba(220,38,38,0.85)", color: "#fff", backdropFilter: "blur(4px)" }}
+                >
+                  {photoSaveError}
+                </div>
+              )}
+            </>
+          )}
+          <input ref={coverFileRef} type="file" accept="image/*" className="hidden" onChange={handleQuickFile("cover_url")} />
         </div>
 
         <div className="px-4 pt-3 pb-4">
 
           {/* ── Avatar + Stats row (Instagram-style) ── */}
           <div className="flex items-center gap-4 mb-3">
-            <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
+            {isSelf ? (
+              <div className="relative shrink-0" style={{ width: 80, height: 80 }}>
+                <input ref={avatarFileRef} type="file" accept="image/*" className="hidden" onChange={handleQuickFile("avatar_url")} />
+                <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
+                <button
+                  onClick={() => setQuickCaptureField("avatar_url")}
+                  aria-label="Change profile picture"
+                  className="absolute inset-0 rounded-full flex items-center justify-center"
+                  style={{ background: photoUploading === "avatar" ? "rgba(0,0,0,0.55)" : "transparent" }}
+                >
+                  {photoUploading === "avatar" && (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  )}
+                </button>
+                {photoUploading !== "avatar" && (
+                  <div className="absolute -bottom-0.5 -right-0.5 w-7 h-7 rounded-full flex items-center justify-center pointer-events-none"
+                       style={{ background: "var(--color-accent)", border: "2px solid var(--color-bg)" }}>
+                    <Camera size={12} color="#000" />
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Avatar src={profile.avatar_url} name={profile.username} size={80} ring />
+            )}
             <div className="flex-1 grid grid-cols-3 text-center">
               <button className="active:opacity-60" onClick={() => setGridTab("posts")}>
                 <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(Math.max(profile.post_count, posts.length))}</div>
@@ -501,7 +854,7 @@ function CreatorProfileSheet({
                 <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Holders</div>
               </button>
               <button className="active:opacity-60" onClick={() => openStatSheet("holding")}>
-                <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(profile.trade_count ?? 0)}</div>
+                <div className="text-base font-black" style={{ color: "var(--color-text)" }}>{fmtNum(Math.max(profile.holding_count ?? 0, holdingItems.length))}</div>
                 <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>Holding</div>
               </button>
             </div>
@@ -587,28 +940,57 @@ function CreatorProfileSheet({
               </div>
             </div>
 
-            {/* Trade + Edit Profile / Follow buttons — always visible */}
+            {/* Trade + Follow buttons — always visible (Edit profile lives in the Settings gear) */}
             <div className="flex gap-2">
               <button onClick={() => setShowTrade(true)}
                 className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5"
                 style={{ background: "var(--color-accent)", color: "#000" }}>
                 <BarChart2 size={14} /> Trade
               </button>
-              {isSelf ? (
-                <button onClick={() => setShowEdit(true)}
-                  className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5"
-                  style={{ background: "var(--color-surface-2,var(--color-surface))", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
-                  <Edit3 size={14} /> Edit profile
-                </button>
-              ) : (
-                <button onClick={toggleFollow}
-                  className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-all"
-                  style={{ background: isFollowing ? "var(--color-surface-2,var(--color-surface))" : "transparent", color: isFollowing ? "var(--color-text)" : "var(--color-text)", border: "1px solid var(--color-border)" }}>
-                  {isFollowing ? <><UserCheck size={14} />Following</> : <><UserPlus size={14} />Follow</>}
-                </button>
+              {!isSelf && (
+                <>
+                  <button onClick={toggleFollow}
+                    className="flex-1 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-1.5 transition-all"
+                    style={{ background: isFollowing ? "var(--color-surface-2,var(--color-surface))" : "transparent", color: isFollowing ? "var(--color-text)" : "var(--color-text)", border: "1px solid var(--color-border)" }}>
+                    {isFollowing ? <><UserCheck size={14} />Following</> : <><UserPlus size={14} />Follow</>}
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); setDmPeer({ address: creatorAddress, name: profile.username || shortAddr(creatorAddress), avatar: profile.avatar_url }); }}
+                    aria-label="Message"
+                    className="px-3 py-3 rounded-xl font-bold text-sm flex items-center justify-center"
+                    style={{ background: "var(--color-surface-2,var(--color-surface))", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
+                    <MessageCircle size={14} />
+                  </button>
+                </>
               )}
             </div>
           </div>
+
+          {/* ── Hybrid wallet balance (only on own profile) ── */}
+          {isSelf && (
+            <div className="rounded-2xl p-3.5 mb-3" style={{ background: "var(--color-surface)" }}>
+              <div className="flex items-center justify-between mb-2.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "var(--color-text-secondary)" }}>Total Portfolio</span>
+                {hybrid.loading && <RefreshCw size={10} className="animate-spin" style={{ color: "var(--color-text-secondary)" }} />}
+              </div>
+              <div className="text-2xl font-black mb-2.5" style={{ color: "var(--color-accent)" }}>
+                {hybrid.loading && hybrid.chains.length === 0
+                  ? "—"
+                  : `$${hybrid.totalUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+              </div>
+              {hybrid.chains.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {hybrid.chains.filter(c => c.native > 0).map(c => (
+                    <div key={c.chain} className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-semibold" style={{ background: "rgba(255,255,255,0.06)" }}>
+                      <span style={{ color: CHAIN_COLOR[c.chain] ?? "var(--color-text-secondary)" }}>{c.chain}</span>
+                      <span style={{ color: "var(--color-text)" }}>{c.native < 0.0001 ? c.native.toExponential(2) : c.native.toLocaleString("en-US", { maximumFractionDigits: 6 })}</span>
+                      <span style={{ color: "var(--color-text-secondary)" }}>·</span>
+                      <span style={{ color: "var(--color-accent)" }}>${c.usd.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* ── Chain badges ── */}
           <div className="flex gap-1.5 flex-wrap mb-4">
@@ -703,17 +1085,38 @@ function CreatorProfileSheet({
       </div>
 
       {showTrade && <TradeSheet creator={profile} onClose={() => setShowTrade(false)} />}
+      {dmPeer && currentUserAddress && (
+        <DmSheet
+          me={currentUserAddress}
+          peer={dmPeer.address}
+          peerName={dmPeer.name}
+          peerAvatar={dmPeer.avatar}
+          onClose={() => setDmPeer(null)}
+        />
+      )}
       {showEdit && (
         <EditProfileSheet
           address={creatorAddress}
           profile={profile}
           onClose={() => setShowEdit(false)}
           onSave={(updated) => {
-            setData(d => d ? { ...d, profile: { ...d.profile, ...updated } } : d);
+            setData(d => {
+              if (!d) return d;
+              const merged = { ...d, profile: { ...d.profile, ...updated } };
+              _profileDataCache[creatorAddress] = merged;
+              return merged;
+            });
             setShowEdit(false);
           }}
         />
       )}
+      <MediaCapture
+        open={!!quickCaptureField}
+        onClose={() => setQuickCaptureField(null)}
+        onSelect={(dataUrl) => { if (quickCaptureField) quickSavePhoto(quickCaptureField, dataUrl); }}
+        accept="image/*"
+        initialTab="camera"
+      />
       {followList && (
         <Portal>
           <div className="w-full h-full flex items-end" style={{ background: "rgba(0,0,0,0.6)" }} onClick={() => setFollowList(null)}>
@@ -725,16 +1128,65 @@ function CreatorProfileSheet({
               <div className="flex-1 overflow-y-auto p-3 space-y-2">
                 {followList.items.length === 0 ? (
                   <div className="text-center py-10 text-sm" style={{ color: "var(--color-text-secondary)" }}>No {followList.type} yet</div>
-                ) : followList.items.map((u: any) => (
-                  <div key={u.address} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
-                    <Avatar src={u.avatar_url} name={u.username ?? u.address} size={36} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{u.username ?? shortAddr(u.address)}</p>
-                      <p className="text-[11px] font-mono truncate" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(u.address)}</p>
+                ) : followList.items.map((u: any) => {
+                  const addr = String(u.address ?? "");
+                  if (!addr) return null;
+                  const key = addr.toLowerCase();
+                  const isMe = currentUserAddress && key === currentUserAddress.toLowerCase();
+                  const followingThem = myFollowingSet.has(key);
+                  const busy = followBusy.has(key);
+                  const displayName = u.username ?? shortAddr(addr);
+                  return (
+                    <div key={addr} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
+                      <button
+                        onClick={() => {
+                          setFollowList(null);
+                          if (onOpenCreator) onOpenCreator(addr);
+                        }}
+                        className="flex items-center gap-3 flex-1 min-w-0 text-left active:opacity-60"
+                      >
+                        <Avatar src={u.avatar_url} name={displayName} size={36} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1">
+                            <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{displayName}</p>
+                            {u.is_verified && <BadgeCheck size={14} style={{ color: "var(--color-accent)" }} />}
+                          </div>
+                          {!u.username && (
+                            <p className="text-[11px] truncate" style={{ color: "var(--color-text-secondary)" }}>no handle yet</p>
+                          )}
+                        </div>
+                      </button>
+                      {!isMe && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFollowList(null);
+                              setTimeout(() => setDmPeer({ address: addr, name: displayName, avatar: u.avatar_url }), 0);
+                            }}
+                            aria-label="Message"
+                            className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-60"
+                            style={{ background: "var(--color-surface-2,rgba(255,255,255,0.06))", color: "var(--color-text)", border: "1px solid var(--color-border)" }}
+                          >
+                            <MessageCircle size={13} />
+                          </button>
+                          <button
+                            onClick={() => toggleFollowAddr(addr)}
+                            disabled={busy || !currentUserAddress}
+                            className="px-3 h-8 rounded-full text-[11px] font-bold flex items-center gap-1 disabled:opacity-50"
+                            style={{
+                              background: followingThem ? "transparent" : "var(--color-accent)",
+                              color: followingThem ? "var(--color-text)" : "#000",
+                              border: followingThem ? "1px solid var(--color-border)" : "none",
+                            }}
+                          >
+                            {followingThem ? <><UserCheck size={11} />Following</> : <><UserPlus size={11} />Follow</>}
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    {u.is_verified && <BadgeCheck size={14} style={{ color: "var(--color-accent)" }} />}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -752,29 +1204,40 @@ function CreatorProfileSheet({
                 {statSheet.items.length === 0 ? (
                   <div className="text-center py-10 text-sm" style={{ color: "var(--color-text-secondary)" }}>No {statSheet.type === "holders" ? "holders" : "holdings"} yet</div>
                 ) : statSheet.type === "holders" ? statSheet.items.map((h: any, i: number) => (
-                  <div key={h.holder ?? i} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
+                  <button
+                    key={h.holder ?? i}
+                    onClick={() => { if (h.holder) { setStatSheet(null); navigate(`/nft/${h.holder}`); } }}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-xl active:opacity-60 text-left"
+                    style={{ background: "var(--color-surface)" }}>
                     <div className="w-6 text-center text-xs font-bold" style={{ color: "var(--color-text-secondary)" }}>#{i + 1}</div>
-                    <Avatar src={undefined} name={h.username ?? h.holder} size={32} />
+                    <Avatar src={h.avatar_url} name={h.username ?? h.holder} size={32} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? shortAddr(h.holder)}</p>
-                      <p className="text-[11px] font-mono truncate" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(h.holder)}</p>
+                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? "Anon holder"}</p>
+                      <p className="text-[10px] font-mono truncate" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(h.holder)}</p>
                     </div>
                     <span className="text-xs font-bold font-mono shrink-0" style={{ color: "var(--color-accent)" }}>{fmtNum(h.amount)}</span>
-                  </div>
+                  </button>
                 )) : statSheet.items.map((h: any, i: number) => (
-                  <div key={h.coin_creator ?? i} className="flex items-center gap-3 p-2.5 rounded-xl" style={{ background: "var(--color-surface)" }}>
+                  <button
+                    key={h.coin_creator ?? i}
+                    onClick={() => { if (h.coin_creator) { setStatSheet(null); navigate(`/nft/${h.coin_creator}`); } }}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-xl active:opacity-60 text-left"
+                    style={{ background: "var(--color-surface)" }}>
                     <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0" style={{ background: "var(--color-accent)", color: "#000" }}>{h.symbol?.slice(0, 3)}</div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? shortAddr(h.coin_creator)}</p>
-                      <p className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>{h.symbol} · ${parseFloat(h.price_usd || "0").toFixed(4)}</p>
+                      <p className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{h.username ?? "Anon"}</p>
+                      <p className="text-[11px]" style={{ color: "var(--color-text-secondary)" }}>{isAddrLikeSymbol(h.symbol) ? "" : `${h.symbol} · `}{`$${parseFloat(h.price_usd || "0").toFixed(4)}`}</p>
                     </div>
                     <span className="text-xs font-bold font-mono shrink-0" style={{ color: "var(--color-accent)" }}>{fmtNum(h.amount)}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
           </div>
         </Portal>
+      )}
+      {notifOpen && currentUserAddress && (
+        <NotificationPanel address={currentUserAddress} onClose={() => setNotifOpen(false)} />
       )}
     </div>
     </Portal>
@@ -801,8 +1264,20 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
   });
   const [avatarMode, setAvatarMode] = useState<"url" | "file">("url");
   const [coverMode, setCoverMode] = useState<"url" | "file">("url");
-  const [avatarPreview, setAvatarPreview] = useState(profile.avatar_url || "");
-  const [coverPreview, setCoverPreview] = useState(profile.cover_url || "");
+  const [avatarPreview, setAvatarPreview] = useState(sanitizeImageUrl(profile.avatar_url || ""));
+  const [coverPreview, setCoverPreview] = useState(sanitizeImageUrl(profile.cover_url || ""));
+  const [captureField, setCaptureField] = useState<null | "avatar" | "cover">(null);
+
+  function applyCapture(dataUrl: string) {
+    const safeUrl = sanitizeImageUrl(dataUrl);
+    if (captureField === "avatar") {
+      setAvatarPreview(safeUrl);
+      setForm(f => ({ ...f, avatar_url: safeUrl }));
+    } else if (captureField === "cover") {
+      setCoverPreview(safeUrl);
+      setForm(f => ({ ...f, cover_url: safeUrl }));
+    }
+  }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -819,14 +1294,17 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = ev => {
-        const dataUrl = ev.target?.result as string;
-        if (field === "avatar") {
-          setAvatarPreview(dataUrl);
-          setForm(f => ({ ...f, avatar_url: dataUrl }));
-        } else {
-          setCoverPreview(dataUrl);
-          setForm(f => ({ ...f, cover_url: dataUrl }));
-        }
+        const raw = ev.target?.result as string;
+        compressProfileImage(raw).then(dataUrl => {
+          const safeDataUrl = sanitizeImageUrl(dataUrl);
+          if (field === "avatar") {
+            setAvatarPreview(safeDataUrl);
+            setForm(f => ({ ...f, avatar_url: safeDataUrl }));
+          } else {
+            setCoverPreview(safeDataUrl);
+            setForm(f => ({ ...f, cover_url: safeDataUrl }));
+          }
+        });
       };
       reader.readAsDataURL(file);
     };
@@ -840,7 +1318,10 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-      if (!res.ok) throw new Error("Failed to save profile");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as any)?.error ?? `Failed to save profile (${res.status})`);
+      }
       onSave(form as any);
     } catch (err: any) {
       setError(err.message);
@@ -908,16 +1389,25 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           <label className="text-xs font-bold block mb-2" style={{ color: "var(--color-text-secondary)" }}>COVER PHOTO</label>
           {coverPreview && (
             <div className="rounded-2xl overflow-hidden mb-3" style={{ height: 120 }}>
-              <img src={coverPreview} alt="" className="w-full h-full object-cover" onError={() => setCoverPreview("")} />
+              <img src={sanitizeImageUrl(coverPreview)} alt="" className="w-full h-full object-cover" onError={() => setCoverPreview("")} />
             </div>
           )}
+          <button type="button" onClick={() => setCaptureField("cover")}
+            className="w-full mb-2 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
+            style={{ background: "var(--color-accent)", color: "#000" }}>
+            <Camera size={12} /> Camera
+            <span style={{ opacity: 0.5 }}>•</span>
+            <Sparkles size={12} /> AI
+            <span style={{ opacity: 0.5 }}>•</span>
+            <Upload size={12} /> Upload
+          </button>
           <div className="flex mb-2 p-1 rounded-xl gap-1" style={{ background: "var(--color-surface)" }}>
             <button style={tabBtn(coverMode === "url")} onClick={() => setCoverMode("url")}><Link size={11} className="inline mr-1" />URL</button>
-            <button style={tabBtn(coverMode === "file")} onClick={() => setCoverMode("file")}><Upload size={11} className="inline mr-1" />Upload</button>
+            <button style={tabBtn(coverMode === "file")} onClick={() => setCoverMode("file")}><Upload size={11} className="inline mr-1" />File</button>
           </div>
           {coverMode === "url" ? (
             <input style={inp} placeholder="https://… cover image URL" value={form.cover_url}
-              onChange={e => { set("cover_url")(e); setCoverPreview(e.target.value); }} />
+              onChange={e => { set("cover_url")(e); setCoverPreview(sanitizeImageUrl(e.target.value)); }} />
           ) : (
             <label className="flex flex-col items-center justify-center gap-2 rounded-xl cursor-pointer"
               style={{ background: "var(--color-surface)", border: "2px dashed var(--color-border)", padding: "20px 0" }}>
@@ -934,17 +1424,26 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           {avatarPreview && (
             <div className="mb-3 flex justify-center">
               <div className="w-20 h-20 rounded-full overflow-hidden" style={{ border: "3px solid var(--color-accent)" }}>
-                <img src={avatarPreview} alt="" className="w-full h-full object-cover" onError={() => setAvatarPreview("")} />
+                <img src={sanitizeImageUrl(avatarPreview)} alt="" className="w-full h-full object-cover" onError={() => setAvatarPreview("")} />
               </div>
             </div>
           )}
+          <button type="button" onClick={() => setCaptureField("avatar")}
+            className="w-full mb-2 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
+            style={{ background: "var(--color-accent)", color: "#000" }}>
+            <Camera size={12} /> Camera
+            <span style={{ opacity: 0.5 }}>•</span>
+            <Sparkles size={12} /> AI
+            <span style={{ opacity: 0.5 }}>•</span>
+            <Upload size={12} /> Upload
+          </button>
           <div className="flex mb-2 p-1 rounded-xl gap-1" style={{ background: "var(--color-surface)" }}>
             <button style={tabBtn(avatarMode === "url")} onClick={() => setAvatarMode("url")}><Link size={11} className="inline mr-1" />URL</button>
-            <button style={tabBtn(avatarMode === "file")} onClick={() => setAvatarMode("file")}><Upload size={11} className="inline mr-1" />Upload</button>
+            <button style={tabBtn(avatarMode === "file")} onClick={() => setAvatarMode("file")}><Upload size={11} className="inline mr-1" />File</button>
           </div>
           {avatarMode === "url" ? (
             <input style={inp} placeholder="https://… avatar URL" value={form.avatar_url}
-              onChange={e => { set("avatar_url")(e); setAvatarPreview(e.target.value); }} />
+              onChange={e => { set("avatar_url")(e); setAvatarPreview(sanitizeImageUrl(e.target.value)); }} />
           ) : (
             <label className="flex flex-col items-center justify-center gap-2 rounded-xl cursor-pointer"
               style={{ background: "var(--color-surface)", border: "2px dashed var(--color-border)", padding: "20px 0" }}>
@@ -1062,6 +1561,13 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
           </div>
         </div>
       )}
+      <MediaCapture
+        open={!!captureField}
+        onClose={() => setCaptureField(null)}
+        onSelect={applyCapture}
+        accept="image/*"
+        initialTab="camera"
+      />
     </div>
     </Portal>
   );
@@ -1088,12 +1594,12 @@ function PostCard({ post, likedIds, onLike, onMint, onOpen, onCreator }: {
             <span className="font-semibold text-sm truncate" style={{ color: "var(--color-text)" }}>{post.creator_name}</span>
             {post.is_verified && <BadgeCheck size={12} style={{ color: "var(--color-accent)" }} />}
           </button>
-          <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(post.creator)} · {timeAgo(post.created_at)}</div>
+          <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{timeAgo(post.created_at)}</div>
         </div>
         <div className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: "rgba(0,255,136,0.12)", color: "var(--color-accent)" }}>BSV</div>
       </div>
 
-      <div className="relative cursor-pointer" style={{ aspectRatio: "1/1", background: "#000" }} onClick={() => onCreator(post.creator)}>
+      <div className="relative cursor-pointer" style={{ aspectRatio: "1/1", background: "#000" }} onClick={() => onOpen(post)}>
         {!imgErr
           ? <img src={post.image_url} alt="" className="w-full h-full object-cover" onError={() => setImgErr(true)} />
           : <div className="w-full h-full flex items-center justify-center text-5xl">🖼️</div>
@@ -1154,7 +1660,8 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
   const [commentText, setCommentText] = useState("");
   const [loadingC, setLoadingC] = useState(true);
   const [imgErr, setImgErr] = useState(false);
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const soldOut = post.max_supply !== null && post.mint_count >= post.max_supply;
 
   useEffect(() => {
@@ -1162,9 +1669,9 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
   }, [post.id]);
 
   async function submitComment() {
-    if (!commentText.trim() || !address) return;
+    if (!commentText.trim() || !actorAddress) return;
     const txt = commentText; setCommentText("");
-    await fetch(`${API}/social/posts/${post.id}/comment`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: address, content: txt, display_name: shortAddr(address) }) }).catch(() => {});
+    await fetch(`${API}/social/posts/${post.id}/comment`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: actorAddress, content: txt }) }).catch(() => {});
     const d = await fetch(`${API}/social/posts/${post.id}`).then(r => r.json()).catch(() => ({}));
     setComments(d.comments ?? []);
   }
@@ -1219,8 +1726,8 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
             : comments.length === 0 ? <div className="text-center py-6 text-xs" style={{ color: "var(--color-text-secondary)" }}>Be the first to comment</div>
             : comments.map(c => (
               <div key={c.id} className="flex gap-2.5 mb-3">
-                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>{c.display_name?.[0]?.toUpperCase() ?? "?"}</div>
-                <div><div className="flex items-center gap-1.5"><span className="text-xs font-semibold" style={{ color: "var(--color-text)" }}>{c.display_name}</span><span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{timeAgo(c.created_at)}</span></div>
+                <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>{commentHandle(c)[0]?.toUpperCase() ?? "?"}</div>
+                <div><div className="flex items-center gap-1.5"><span className="text-xs font-semibold" style={{ color: "var(--color-text)" }}>{commentHandle(c)}</span><span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{timeAgo(c.created_at)}</span></div>
                   <p className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>{c.content}</p></div>
               </div>
             ))}
@@ -1271,33 +1778,76 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [listPrice, setListPrice] = useState("");
-  const { address, network, balance: storeBalance, provider } = useWalletStore();
+  const floorPrice = parseFloat(String(post.mint_price)) || 0;
+  const [listPrice, setListPrice] = useState(() => floorPrice > 0 ? safePrice(floorPrice) : "");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [livePrices, setLivePrices] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    fetch(`${API}/social/prices`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.prices) setLivePrices(d.prices); })
+      .catch(() => {});
+  }, []);
+  const { address, network, chainId, balance: storeBalance, provider, internalEvmAddress } = useWalletStore();
+  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
-  const isOrahDEXWallet = provider === "orahdex-wallet";
+  const isOrahWallet = provider === "orah-wallet";
   useBsvBalance();
-  const { balances: evmBalances } = useEvmBalances(isEvm ? (address ?? null) : null, null);
-  const nativeEvmBalance = evmBalances?.find(b => b.isNative);
-  const availableNum = isEvm && !isOrahDEXWallet
-    ? (nativeEvmBalance ? nativeEvmBalance.amount || 0 : 0)
-    : parseFloat(String(storeBalance ?? "0")) || 0;
-  const hasLoadedBalance = isEvm && !isOrahDEXWallet ? evmBalances != null : storeBalance != null;
-  const availableLabel = isEvm && !isOrahDEXWallet
-    ? (nativeEvmBalance ? `${nativeEvmBalance.amount.toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
-    : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
+  const { balances: evmBalances, loading: evmBalancesLoading } = useEvmBalances(isEvm ? address : null, chainId ?? null);
+  const { availableAmount: availableNum, hasLoadedBalance, availableLabel } = resolveNftSpendBalance({
+    isEvm,
+    isOrahWallet,
+    storeBalance,
+    evmBalances,
+    evmBalancesLoading,
+    mintCurrency: post.mint_currency,
+  });
   const mintPrice = parseFloat(String(post.mint_price)) || 0;
-  const isBsvMint = !isEvm || post.mint_currency === "BSV";
-  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && isBsvMint && mintPrice > 0 && availableNum < mintPrice;
+  const [qty, setQty] = useState(1);
+  const liveUsdRate = livePrices[post.mint_currency?.toUpperCase() ?? ""] ?? 0;
+  const liveUsdPerUnit = liveUsdRate > 0 ? mintPrice * liveUsdRate : null;
+
+  const remainingSupply = post.max_supply ? Math.max(0, post.max_supply - post.mint_count) : null;
+  const maxAffordable = mintPrice > 0 && availableNum > 0 ? Math.floor(availableNum / mintPrice) : 99;
+  const maxQty = remainingSupply !== null
+    ? Math.max(1, Math.min(remainingSupply, maxAffordable, 100))
+    : Math.max(1, Math.min(maxAffordable, 100));
+
+  const totalPrice = mintPrice * qty;
+  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && totalPrice > 0 && availableNum < totalPrice;
   const [, navigate] = useLocation();
+
+  // Chain name → EVM chainId (for on-chain payment)
+  const EVM_CHAIN_IDS: Record<string, number> = {
+    ETH: 1, OP: 10, BASE: 8453, ARB: 42161, BNB: 56, MATIC: 137,
+  };
 
   async function doMint() {
     if (!address) { navigate("/settings"); return; }
+    if (!actorAddress) return;
     if (insufficientFunds) return;
     setLoading(true); setError("");
     try {
-      const res = await fetch(`${API}/social/posts/${post.id}/mint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minter: address }) });
-      const d = await res.json();
-      if (!res.ok) throw new Error(d.error ?? "Mint failed");
+      // ── On-chain payment for EVM posts ──────────────────────────────────
+      const postChain = post.chain ?? "BSV";
+      const targetChainId = EVM_CHAIN_IDS[postChain];
+      if (targetChainId && mintPrice > 0 && post.creator) {
+        const valueWei = BigInt(Math.round(mintPrice * qty * 1e18));
+        await sendEvmTransfer({
+          from: address,
+          to: post.creator,
+          valueWei,
+          targetChainId,
+        });
+      }
+
+      // ── Record in backend ───────────────────────────────────────────────
+      for (let i = 0; i < qty; i++) {
+        const res = await fetch(`${API}/social/posts/${post.id}/mint`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ minter: actorAddress }) });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error ?? "Mint failed");
+      }
       setDone(true);
     } catch (err: any) { setError(err.message); }
     finally { setLoading(false); }
@@ -1309,7 +1859,18 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
     if (!price || price <= 0) { setError("Enter a valid price"); return; }
     setLoading(true); setError("");
     try {
-      const res = await fetch(`${API}/nft/listings`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ post_id: post.id, seller: address, price_bsv: price }) });
+      const res = await fetch(`${API}/nft/listings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nftId: post.id,
+          collectionId: "social-posts",
+          seller: address,
+          chain: post.chain,
+          price: String(price),
+          currency: post.mint_currency || "BSV",
+        }),
+      });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Failed to list");
       setDone(true);
@@ -1325,7 +1886,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
           <div className="text-center py-8">
             <div className="text-5xl mb-3">{mode === "buy" ? "🎉" : "🏷️"}</div>
             <h3 className="text-xl font-bold mb-1" style={{ color: "var(--color-text)" }}>{mode === "buy" ? "Collected!" : "Listed!"}</h3>
-            <p className="text-sm mb-3" style={{ color: "var(--color-text-secondary)" }}>{mode === "buy" ? `${post.title} is permanently on BSV.` : `${post.title} is now listed for sale.`}</p>
+            <p className="text-sm mb-3" style={{ color: "var(--color-text-secondary)" }}>{mode === "buy" ? `${qty > 1 ? `${qty}× ` : ""}${post.title} permanently on ${post.chain ?? "BSV"}.` : `${post.title} is now listed for sale.`}</p>
             {mode === "buy" && <div className="text-xs font-mono px-3 py-1.5 rounded-xl inline-block mb-4" style={{ background: "var(--color-surface)", color: "var(--color-accent)" }}>{post.inscription_id.slice(0, 24)}…</div>}
             <button onClick={onClose} className="w-full py-3 rounded-xl font-bold text-sm" style={{ background: "var(--color-surface)", color: "var(--color-text)" }}>Done</button>
           </div>
@@ -1352,52 +1913,213 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
 
             {mode === "buy" ? (
               <>
-                {[["Chain", "BSV (on-chain inscription)"], ["Price", `${safePrice(post.mint_price)} ${post.mint_currency} ≈ $${post.mint_price_usd}`], ["Minted", `${fmtNum(post.mint_count)}${post.max_supply ? ` / ${fmtNum(post.max_supply)}` : " (open edition)"}`], ["Inscription", `${post.inscription_id.slice(0, 20)}…`]].map(([l, v]) => (
+                {/* Price + Balance comparison card */}
+                <div className="rounded-2xl p-4 mb-3" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "var(--color-text-secondary)" }}>Price per item</div>
+                      <div className="text-xl font-black" style={{ color: "var(--color-text)" }}>
+                        {safePrice(post.mint_price)}{" "}
+                        <span className="font-bold" style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>{post.mint_currency}</span>
+                      </div>
+                      <div className="text-xs mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
+                        {liveUsdPerUnit !== null
+                          ? `≈ $${liveUsdPerUnit < 1 ? liveUsdPerUnit.toFixed(4) : liveUsdPerUnit.toFixed(2)} each`
+                          : `≈ $${post.mint_price_usd} each`}
+                      </div>
+                    </div>
+                    {availableLabel && (
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-widest mb-1" style={{ color: "var(--color-text-secondary)" }}>Your Balance</div>
+                        <div className="text-xl font-black font-mono" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-accent)" }}>{availableLabel}</div>
+                        {insufficientFunds
+                          ? <div className="text-[10px] mt-0.5 font-bold" style={{ color: "#ff4444" }}>Need {safePrice(totalPrice - availableNum)} more</div>
+                          : address && hasLoadedBalance
+                            ? <div className="text-[10px] mt-0.5 font-bold" style={{ color: "var(--color-accent)" }}>Enough ✓</div>
+                            : null}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Quantity slider */}
+                  {maxQty > 1 && mintPrice > 0 && (
+                    <div className="mb-3">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] uppercase tracking-widest" style={{ color: "var(--color-text-secondary)" }}>Quantity</span>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setQty(q => Math.max(1, q - 1))}
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-black"
+                            style={{ background: "var(--color-border)", color: "var(--color-text)" }}>−</button>
+                          <span className="text-base font-black w-8 text-center" style={{ color: "var(--color-text)" }}>{qty}</span>
+                          <button onClick={() => setQty(q => Math.min(maxQty, q + 1))}
+                            className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-black"
+                            style={{ background: "var(--color-accent)", color: "#000" }}>+</button>
+                        </div>
+                      </div>
+                      <input type="range" min={1} max={maxQty} value={qty}
+                        onChange={e => setQty(parseInt(e.target.value, 10))}
+                        className="w-full" style={{ accentColor: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }} />
+                      <div className="flex justify-between text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
+                        <span>1</span>
+                        <span>Max {maxQty}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Total price row */}
+                  {qty > 1 && (
+                    <div className="flex items-center justify-between py-2 rounded-xl px-3 mb-3"
+                      style={{ background: insufficientFunds ? "rgba(255,60,60,0.1)" : "rgba(0,255,136,0.07)", border: `1px solid ${insufficientFunds ? "rgba(255,60,60,0.25)" : "rgba(0,255,136,0.2)"}` }}>
+                      <div>
+                        <span className="text-xs font-bold" style={{ color: "var(--color-text-secondary)" }}>Total ({qty}×)</span>
+                        {liveUsdPerUnit !== null && (
+                          <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
+                            ≈ ${(liveUsdPerUnit * qty).toFixed(2)}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-base font-black" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-text)" }}>
+                        {safePrice(totalPrice)} <span style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>{post.mint_currency}</span>
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Progress bar: total price vs balance */}
+                  {availableLabel && totalPrice > 0 && availableNum > 0 && (
+                    <div className="rounded-full overflow-hidden" style={{ height: 3, background: "rgba(255,255,255,0.08)" }}>
+                      <div className="h-full rounded-full transition-all"
+                        style={{ width: `${Math.min(100, (totalPrice / availableNum) * 100)}%`, background: insufficientFunds ? "#ff4444" : CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Remaining details */}
+                {[["Chain", `${post.chain ?? "BSV"} (on-chain inscription)`], ["Minted", `${fmtNum(post.mint_count)}${post.max_supply ? ` / ${fmtNum(post.max_supply)}` : " (open edition)"}`], ["Inscription", `${post.inscription_id.slice(0, 20)}…`]].map(([l, v]) => (
                   <div key={l} className="flex justify-between py-2.5 border-b" style={{ borderColor: "var(--color-border)" }}>
                     <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>{l}</span>
                     <span className="text-sm font-medium" style={{ color: "var(--color-text)" }}>{v}</span>
                   </div>
                 ))}
-                {availableLabel && (
-                  <div className="flex justify-between py-2.5 border-b" style={{ borderColor: "var(--color-border)" }}>
-                    <span className="text-sm" style={{ color: "var(--color-text-secondary)" }}>Your balance</span>
-                    <span className="text-sm font-mono font-medium" style={{ color: insufficientFunds ? "#ff4444" : "var(--color-text)" }}>{availableLabel}</span>
-                  </div>
-                )}
                 <div className="mt-3"><SupplyBar minted={post.mint_count} max={post.max_supply} /></div>
                 {!address && <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to collect</span></div>}
-                {insufficientFunds && <div className="mt-4 p-3 rounded-xl text-xs flex items-center gap-2" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}><span>Insufficient balance — you need at least {safePrice(post.mint_price)} {post.mint_currency}</span></div>}
+                {insufficientFunds && <div className="mt-4 p-3 rounded-xl text-xs flex items-center gap-2" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}><span>Insufficient — need {safePrice(totalPrice)} {post.mint_currency} for {qty}×, you have {safePrice(availableNum)}</span></div>}
                 {error && <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
+                <div className="mt-4 rounded-xl overflow-hidden" style={{ border: "1px solid var(--color-border)" }}>
+                  <button
+                    onClick={() => setShowAdvanced(v => !v)}
+                    className="w-full px-3 py-2.5 text-xs font-bold flex items-center justify-between"
+                    style={{ background: "var(--color-surface)", color: "var(--color-text)" }}
+                  >
+                    <span>Advanced NFT Details</span>
+                    <ChevronRight size={14} style={{ transform: showAdvanced ? "rotate(90deg)" : undefined, transition: "transform 0.2s ease" }} />
+                  </button>
+                  {showAdvanced && (
+                    <div className="px-3 py-2.5 text-[11px] space-y-1.5" style={{ background: "rgba(255,255,255,0.02)", color: "var(--color-text-secondary)" }}>
+                      <div className="flex justify-between gap-2"><span>Post ID</span><span className="font-mono truncate" style={{ color: "var(--color-text)" }}>{post.id}</span></div>
+                      <div className="flex justify-between gap-2"><span>Creator</span><span className="font-mono truncate" style={{ color: "var(--color-text)" }}>{post.creator}</span></div>
+                      <div className="flex justify-between gap-2"><span>Chain</span><span style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-text)" }}>{post.chain}</span></div>
+                      <div className="flex justify-between gap-2"><span>Currency</span><span style={{ color: "var(--color-text)" }}>{post.mint_currency}</span></div>
+                    </div>
+                  )}
+                </div>
                 <button onClick={doMint} disabled={loading || insufficientFunds}
                   className="w-full py-3.5 rounded-xl font-bold text-sm mt-5 flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
                   style={{ background: insufficientFunds ? "#555" : "linear-gradient(135deg,var(--color-accent),#00aaff)", color: insufficientFunds ? "#fff" : "#000" }}>
                   {loading ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" /> :
                     insufficientFunds ? "Insufficient Balance" :
-                    <><Zap size={16} />{address ? `Buy for ${safePrice(post.mint_price)} ${post.mint_currency}` : "Connect Wallet"}</>}
+                    <><Zap size={16} />{address
+                      ? qty > 1
+                        ? `Buy ${qty}× for ${safePrice(totalPrice)} ${post.mint_currency}`
+                        : `Buy for ${safePrice(mintPrice)} ${post.mint_currency}`
+                      : "Connect Wallet"
+                    }</>}
                 </button>
               </>
             ) : (
-              <>
-                <div className="py-3 border-b" style={{ borderColor: "var(--color-border)" }}>
-                  <p className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>Set a price to list your copy of this NFT on the Orah marketplace. Buyers pay you directly.</p>
-                  <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
-                    <input type="number" min="0" step="0.0001" placeholder="0.0000"
-                      className="flex-1 bg-transparent text-sm font-mono outline-none"
-                      style={{ color: "var(--color-text)" }}
-                      value={listPrice} onChange={e => setListPrice(e.target.value)} />
-                    <span className="text-xs font-bold shrink-0" style={{ color: "var(--color-text-secondary)" }}>{post.mint_currency}</span>
+              (() => {
+                const parsedListPrice = parseFloat(listPrice) || 0;
+                const sliderMin = 0;
+                const sliderMax = floorPrice > 0 ? floorPrice * 20 : 0.001;
+                const sliderStep = floorPrice > 0 ? floorPrice / 100 : 0.000001;
+                const isBelowFloor = floorPrice > 0 && parsedListPrice > 0 && parsedListPrice < floorPrice;
+                const liveListUsd = liveUsdRate > 0 && parsedListPrice > 0 ? parsedListPrice * liveUsdRate : null;
+                return (
+                <>
+                  {/* Price card */}
+                  <div className="rounded-2xl p-4 mb-3" style={{ background: "var(--color-surface)", border: `1px solid ${isBelowFloor ? "rgba(255,60,60,0.4)" : "var(--color-border)"}` }}>
+                    <div className="text-[10px] uppercase tracking-widest mb-2" style={{ color: "var(--color-text-secondary)" }}>Your Listing Price</div>
+
+                    {/* Price input */}
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl mb-2" style={{ background: "rgba(255,255,255,0.04)", border: `1px solid ${isBelowFloor ? "rgba(255,60,60,0.4)" : "var(--color-border)"}` }}>
+                      <input type="number" min={0} step="any" placeholder={safePrice(floorPrice)}
+                        className="flex-1 bg-transparent text-xl font-black outline-none"
+                        style={{ color: "var(--color-text)" }}
+                        value={listPrice} onChange={e => setListPrice(e.target.value)} />
+                      <span className="text-sm font-bold shrink-0" style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>{post.mint_currency}</span>
+                    </div>
+                    {liveListUsd !== null && (
+                      <div className="text-xs mb-3" style={{ color: "var(--color-text-secondary)" }}>≈ ${liveListUsd < 1 ? liveListUsd.toFixed(4) : liveListUsd.toFixed(2)} USD</div>
+                    )}
+
+                    {/* Min / Max slider */}
+                    {floorPrice > 0 && (
+                      <div className="mb-1">
+                        <input type="range"
+                          min={sliderMin} max={sliderMax} step={sliderStep}
+                          value={parsedListPrice || floorPrice}
+                          onChange={e => setListPrice(safePrice(parseFloat(e.target.value)))}
+                          className="w-full" style={{ accentColor: isBelowFloor ? "#ff4444" : (CHAIN_COLOR[post.chain] ?? "var(--color-accent)") }} />
+                        <div className="flex justify-between text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>
+                          <span>Min 0</span>
+                          <span className="font-bold" style={{ color: CHAIN_COLOR[post.chain] ?? "var(--color-accent)" }}>
+                            Floor {safePrice(floorPrice)}
+                          </span>
+                          <span>Max {safePrice(sliderMax)}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Quick-pick buttons */}
+                    {floorPrice > 0 && (
+                      <div className="flex gap-2 mt-3">
+                        {[["Floor", floorPrice], ["2×", floorPrice * 2], ["5×", floorPrice * 5], ["10×", floorPrice * 10]].map(([label, val]) => (
+                          <button key={label as string}
+                            onClick={() => setListPrice(safePrice(val as number))}
+                            className="flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all"
+                            style={{
+                              background: Math.abs(parsedListPrice - (val as number)) < sliderStep * 2 ? (CHAIN_COLOR[post.chain] ?? "var(--color-accent)") + "33" : "rgba(255,255,255,0.05)",
+                              color: Math.abs(parsedListPrice - (val as number)) < sliderStep * 2 ? (CHAIN_COLOR[post.chain] ?? "var(--color-accent)") : "var(--color-text-secondary)",
+                              border: `1px solid ${Math.abs(parsedListPrice - (val as number)) < sliderStep * 2 ? (CHAIN_COLOR[post.chain] ?? "var(--color-accent)") + "55" : "var(--color-border)"}`,
+                            }}>
+                            {label as string}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <p className="text-[11px] mt-1.5" style={{ color: "var(--color-text-secondary)" }}>Current floor: {safePrice(post.mint_price)} {post.mint_currency}</p>
-                </div>
-                {!address && <div className="mt-4 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to list</span></div>}
-                {error && <div className="mt-4 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
-                <button onClick={doList} disabled={loading || !listPrice}
-                  className="w-full py-3.5 rounded-xl font-bold text-sm mt-5 flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
-                  style={{ background: loading || !listPrice ? "#555" : "#ff4444", color: "#fff" }}>
-                  {loading ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> :
-                    <>{address ? `List for ${listPrice || "…"} ${post.mint_currency}` : "Connect Wallet"}</>}
-                </button>
-              </>
+
+                  {/* Below-floor warning */}
+                  {isBelowFloor && (
+                    <div className="mb-3 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,60,60,0.1)", border: "1px solid rgba(255,60,60,0.25)" }}>
+                      <span className="text-[11px]" style={{ color: "#ff6666" }}>⚠ Price is below the floor ({safePrice(floorPrice)} {post.mint_currency}). Buyers are unlikely to purchase below floor.</span>
+                    </div>
+                  )}
+
+                  {!address && <div className="mb-3 p-3 rounded-xl flex items-center gap-2" style={{ background: "rgba(255,170,0,0.12)" }}><Lock size={14} style={{ color: "#ffaa00" }} /><span className="text-xs" style={{ color: "#ffaa00" }}>Connect wallet to list</span></div>}
+                  {error && <div className="mb-3 p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
+
+                  <button onClick={doList} disabled={loading || !listPrice || parsedListPrice <= 0}
+                    className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-50"
+                    style={{ background: loading || !listPrice || parsedListPrice <= 0 ? "#555" : "#ff4444", color: "#fff" }}>
+                    {loading
+                      ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                      : address
+                        ? <><Tag size={15} />{`List for ${listPrice || "…"} ${post.mint_currency}`}</>
+                        : "Connect Wallet"}
+                  </button>
+                </>
+                );
+              })()
             )}
           </>
         )}
@@ -1409,10 +2131,16 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
 
 /* ─── SEARCH TAB ─────────────────────────────────────────────────────────────── */
 const CHAIN_BADGE: Record<string, { bg: string; label: string }> = {
-  BSV:   { bg: "#f7931a", label: "BSV" },
+  BSV:   { bg: "#00ff88", label: "BSV" },
   ETH:   { bg: "#627eea", label: "ETH" },
   BASE:  { bg: "#0052ff", label: "BASE" },
+  BNB:   { bg: "#f3ba2f", label: "BNB" },
+  MATIC: { bg: "#8247e5", label: "MATIC" },
+  ARB:   { bg: "#12aaff", label: "ARB" },
+  OP:    { bg: "#ff0420", label: "OP" },
   SOL:   { bg: "#9945ff", label: "SOL" },
+  BTC:   { bg: "#f7931a", label: "BTC" },
+  BCH:   { bg: "#4caf50", label: "BCH" },
   ZORA:  { bg: "#00aaff", label: "ZORA" },
 };
 
@@ -1425,45 +2153,14 @@ function ChainBadge({ chain }: { chain: string }) {
   );
 }
 
-function ExternalNFTCard({ item, onLink }: { item: any; onLink: (url: string) => void }) {
-  const [imgErr, setImgErr] = useState(false);
-  const price = typeof item.mint_price === "number" ? item.mint_price : parseFloat(item.mint_price ?? "0");
-  return (
-    <button onClick={() => onLink(item.external_url)} className="flex items-center gap-3 p-3 rounded-xl w-full text-left active:opacity-75 transition-all"
-      style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
-      <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0" style={{ background: "var(--color-surface-2, #1a1a2e)" }}>
-        {!imgErr ? <img src={item.image_url} alt="" className="w-full h-full object-cover" onError={() => setImgErr(true)} />
-          : <div className="w-full h-full flex items-center justify-center text-2xl">🖼️</div>}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 mb-0.5">
-          <span className="text-sm font-semibold truncate" style={{ color: "var(--color-text)" }}>{item.title}</span>
-          <ChainBadge chain={item.chain} />
-        </div>
-        <div className="text-xs truncate" style={{ color: "var(--color-text-secondary)" }}>{item.creator_name}</div>
-        <div className="text-[10px] mt-0.5" style={{ color: "#aaa" }}>{item.marketplace}</div>
-      </div>
-      <div className="text-right shrink-0">
-        {price > 0 && <div className="text-xs font-bold" style={{ color: "var(--color-accent)" }}>{price < 0.001 ? price.toExponential(2) : price.toFixed(4)}</div>}
-        {price > 0 && <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{item.mint_currency}</div>}
-        <ExternalLink size={11} className="mt-1 ml-auto" style={{ color: "var(--color-text-secondary)" }} />
-      </div>
-    </button>
-  );
-}
-
 function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; onOpenPost: (p: Post) => void }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<{ creators: any[]; posts: Post[] } | null>(null);
   const [coins, setCoins] = useState<any[]>([]);
   const [loadingCoins, setLoadingCoins] = useState(true);
-  const [external, setExternal] = useState<{ zora: any[]; magicEden: any[] } | null>(null);
-  const [loadingExt, setLoadingExt] = useState(true);
-  const [exploreSection, setExploreSection] = useState<"coins" | "zora" | "sol">("coins");
 
   useEffect(() => {
     fetch(`${API}/social/trending-coins`).then(r => r.json()).then(d => setCoins(d.coins ?? [])).catch(() => {}).finally(() => setLoadingCoins(false));
-    fetch(`${API}/social/external/trending`).then(r => r.json()).then(d => setExternal({ zora: d.zora ?? [], magicEden: d.magicEden ?? [] })).catch(() => setExternal({ zora: [], magicEden: [] })).finally(() => setLoadingExt(false));
   }, []);
 
   useEffect(() => {
@@ -1474,9 +2171,6 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
     return () => clearTimeout(t);
   }, [q]);
 
-  function openExternal(url: string) {
-    window.open(url, "_blank", "noopener");
-  }
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -1491,21 +2185,8 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
 
       <div className="flex-1 overflow-y-auto px-3 pb-28">
         {!q && (
-          <>
-            {/* Section toggle pills */}
-            <div className="flex gap-2 mb-3 mt-1">
-              {([["coins", "🔥 BSV Creator Coins"], ["zora", "⚡ Zora · Base · ETH"], ["sol", "🌊 Magic Eden · SOL"]] as const).map(([key, label]) => (
-                <button key={key} onClick={() => setExploreSection(key)}
-                  className="flex-1 py-1.5 rounded-xl text-[11px] font-bold transition-all"
-                  style={{ background: exploreSection === key ? "var(--color-accent)" : "var(--color-surface)", color: exploreSection === key ? "#000" : "var(--color-text-secondary)" }}>
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {exploreSection === "coins" && (
-              <>
-                {loadingCoins ? (
+          <div className="mt-1">
+            {loadingCoins ? (
                   <div className="flex items-center justify-center h-24"><div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} /></div>
                 ) : coins.length === 0 ? (
                   <div className="text-center py-8 text-sm" style={{ color: "var(--color-text-secondary)" }}>No creator coins yet</div>
@@ -1517,12 +2198,16 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
                     <Avatar src={c.avatar_url} name={c.username} size={38} ring />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1">
-                        <span className="font-semibold text-sm truncate" style={{ color: "var(--color-text)" }}>{c.username}</span>
+                        <span className="font-semibold text-sm truncate" style={{ color: "var(--color-text)" }}>
+                          {c.username && !/^0x[0-9a-f]+$/i.test(c.username) && !/^[13][a-km-zA-HJ-NP-Z1-9]{8,}$/.test(c.username) ? c.username : "Anon creator"}
+                        </span>
                         {c.is_verified && <BadgeCheck size={11} style={{ color: "var(--color-accent)" }} />}
                       </div>
                       <div className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>
-                        <span className="font-mono font-bold" style={{ color: "var(--color-accent)" }}>{c.symbol}</span>
-                        {" "}· {fmtNum(c.holder_count ?? 0)} holders · <ChainBadge chain="BSV" />
+                        {!isAddrLikeSymbol(c.symbol) && (
+                          <><span className="font-mono font-bold" style={{ color: "var(--color-accent)" }}>{c.symbol}</span>{" · "}</>
+                        )}
+                        {fmtNum(c.holder_count ?? 0)} holders · <ChainBadge chain="BSV" />
                       </div>
                     </div>
                     <div className="text-right shrink-0">
@@ -1532,39 +2217,7 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
                     <ChevronRight size={14} style={{ color: "var(--color-text-secondary)" }} />
                   </button>
                 ))}
-              </>
-            )}
-
-            {exploreSection === "zora" && (
-              <>
-                <div className="text-xs mb-2" style={{ color: "var(--color-text-secondary)" }}>Live trending mints from Zora, Base & Ethereum</div>
-                {loadingExt ? (
-                  <div className="flex items-center justify-center h-32"><div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "#0052ff" }} /></div>
-                ) : (external?.zora ?? []).length === 0 ? (
-                  <div className="text-center py-8 text-sm" style={{ color: "var(--color-text-secondary)" }}>Couldn't reach Zora — try again</div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {(external?.zora ?? []).map((item: any) => <ExternalNFTCard key={item.id} item={item} onLink={openExternal} />)}
-                  </div>
-                )}
-              </>
-            )}
-
-            {exploreSection === "sol" && (
-              <>
-                <div className="text-xs mb-2" style={{ color: "var(--color-text-secondary)" }}>Top 24h collections from Magic Eden · Solana</div>
-                {loadingExt ? (
-                  <div className="flex items-center justify-center h-32"><div className="w-5 h-5 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "#9945ff" }} /></div>
-                ) : (external?.magicEden ?? []).length === 0 ? (
-                  <div className="text-center py-8 text-sm" style={{ color: "var(--color-text-secondary)" }}>Couldn't reach Magic Eden — try again</div>
-                ) : (
-                  <div className="flex flex-col gap-2">
-                    {(external?.magicEden ?? []).map((item: any) => <ExternalNFTCard key={item.id} item={item} onLink={openExternal} />)}
-                  </div>
-                )}
-              </>
-            )}
-          </>
+          </div>
         )}
 
         {results && (
@@ -1618,10 +2271,11 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
 
 /* ─── CREATE TAB ─────────────────────────────────────────────────────────────── */
 function CreateTab({ onSuccess }: { onSuccess: () => void }) {
-  const { address } = useWalletStore();
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [form, setForm] = useState({
     title: "", description: "", imageUrl: "", ticker: "",
-    mintPrice: "0.01", mintCurrency: "BSV", category: "art", maxSupply: "",
+    mintPrice: "0.001", mintCurrency: "BSV", category: "art", maxSupply: "", chain: "BSV",
   });
   const [mediaMode, setMediaMode] = useState<"url" | "file">("url");
   const [filePreview, setFilePreview] = useState("");
@@ -1629,9 +2283,20 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureTab, setCaptureTab] = useState<"camera" | "ai" | "photos">("camera");
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const CHAIN_DEFAULT_PRICE: Record<string, string> = {
+    BSV: "0.001", ETH: "0.0001", BASE: "0.0001", OP: "0.0001", ARB: "0.0001",
+    BNB: "0.0005", MATIC: "0.01", SOL: "0.001", BTC: "0.00001", BCH: "0.001",
+  };
+
+  function selectChain(c: string) {
+    setForm(f => ({ ...f, chain: c, mintCurrency: CHAIN_CURRENCY[c] ?? c, mintPrice: CHAIN_DEFAULT_PRICE[c] ?? "0.001" }));
+  }
 
   const inp: React.CSSProperties = {
     background: "var(--color-surface)", color: "var(--color-text)",
@@ -1660,36 +2325,39 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
     reader.readAsDataURL(file);
   }
 
-  const effectiveImage = mediaMode === "file" ? (filePreview || fileData) : form.imageUrl;
+  const rawImage = mediaMode === "file" ? (filePreview || fileData) : form.imageUrl;
+  const effectiveImage = sanitizeImageUrl(rawImage);
   const canSubmit = form.title && (mediaMode === "url" ? !!form.imageUrl : !!fileData);
 
   async function submit() {
     if (!address) { setError("Connect your wallet first"); return; }
     if (!canSubmit) { setError("Title and media are required"); return; }
+    const creatorAddress = actorAddress ?? address;
     setLoading(true); setError("");
     try {
       const image_url = mediaMode === "url" ? form.imageUrl : fileData;
-      const profileRes = await fetch(`${API}/social/creators/${address}`).catch(() => null);
+      const profileRes = await fetch(`${API}/social/creators/${creatorAddress}`).catch(() => null);
       const profileData = profileRes?.ok ? await profileRes.json() : null;
-      const creatorName = profileData?.profile?.username || profileData?.username || shortAddr(address);
+      const creatorName = profileData?.profile?.username || profileData?.username || shortAddr(creatorAddress);
       const res = await fetch(`${API}/social/posts`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          creator: address,
+          creator: creatorAddress,
           creator_name: creatorName,
           title: form.title,
           description: form.description,
           image_url,
           ticker: form.ticker || undefined,
-          mint_price: parseFloat(form.mintPrice) || 0.01,
+          mint_price: parseFloat(form.mintPrice) || 0,
           mint_currency: form.mintCurrency,
           category: form.category,
           max_supply: form.maxSupply ? parseInt(form.maxSupply, 10) : null,
+          chain: form.chain,
         }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Failed");
-      await fetch(`${API}/social/creators/${address}`).catch(() => {});
+      await fetch(`${API}/social/creators/${creatorAddress}`).catch(() => {});
       setSuccess(true);
       setTimeout(() => { setSuccess(false); onSuccess(); }, 2200);
     } catch (err: any) { setError(err.message); }
@@ -1699,9 +2367,9 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
   if (success) return (
     <div className="flex flex-col items-center justify-center h-full py-20">
       <div className="text-6xl mb-4">✨</div>
-      <h3 className="text-xl font-bold mb-2" style={{ color: "var(--color-text)" }}>Inscribed on BSV!</h3>
+      <h3 className="text-xl font-bold mb-2" style={{ color: "var(--color-text)" }}>Posted on {CHAIN_LABEL[form.chain] ?? form.chain}!</h3>
       <p className="text-sm text-center px-6" style={{ color: "var(--color-text-secondary)" }}>
-        Your post is permanently on the BSV blockchain. Your creator coin was auto-created.
+        Your post is permanently inscribed on {form.chain}. Your creator coin was auto-created.
       </p>
     </div>
   );
@@ -1710,13 +2378,13 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
     <div className="p-4 pb-32 overflow-y-auto h-full">
       <h2 className="text-lg font-bold mb-1" style={{ color: "var(--color-text)" }}>Create Post</h2>
       <p className="text-xs mb-4" style={{ color: "var(--color-text-secondary)" }}>
-        Every post = NFT inscription on BSV + tradeable creator coin. Multichain via OrahDEXBridge.
+        Every post = NFT inscription + tradeable creator coin. Choose your chain below.
       </p>
 
       {/* Media preview */}
       {effectiveImage ? (
         <div className="rounded-2xl overflow-hidden mb-3 relative group" style={{ aspectRatio: "1/1" }}>
-          <img src={effectiveImage} alt="" className="w-full h-full object-cover" onError={() => { setFilePreview(""); setFileData(""); setForm(f => ({ ...f, imageUrl: "" })); }} />
+          <img src={sanitizeImageUrl(effectiveImage)} alt="" className="w-full h-full object-cover" onError={() => { setFilePreview(""); setFileData(""); setForm(f => ({ ...f, imageUrl: "" })); }} />
           <button onClick={() => { setFilePreview(""); setFileData(""); setForm(f => ({ ...f, imageUrl: "" })); }}
             className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
             style={{ background: "rgba(0,0,0,0.6)" }}>
@@ -1736,6 +2404,28 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           )}
         </div>
       )}
+
+      {/* Camera + AI quick action */}
+      <div className="flex gap-2 mb-3">
+        <button onClick={() => { setCaptureTab("camera"); setCaptureOpen(true); }}
+          className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+          style={{ background: "var(--color-surface)", color: "var(--color-text)", border: "1px solid var(--color-border)" }}>
+          <Camera size={14} /> Camera
+        </button>
+        <button onClick={() => { setCaptureTab("ai"); setCaptureOpen(true); }}
+          className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
+          style={{ background: "var(--color-accent)", color: "#000" }}>
+          <Sparkles size={14} /> AI Generate
+        </button>
+      </div>
+
+      <MediaCapture open={captureOpen} onClose={() => setCaptureOpen(false)}
+        onSelect={(dataUrl) => {
+          setFileData(dataUrl); setFilePreview(dataUrl);
+          setForm(f => ({ ...f, imageUrl: "" }));
+          setMediaMode("file");
+        }}
+        accept="image/*" initialTab={captureTab} />
 
       {/* Media mode toggle */}
       <div className="flex mb-4 p-1 rounded-xl gap-1" style={{ background: "var(--color-surface)" }}>
@@ -1777,7 +2467,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
           <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Ticker / Symbol <span style={{ opacity: 0.5 }}>(optional)</span></label>
           <input style={inp} placeholder="e.g. ORDI, ART, MUSIC — auto-generated if blank" value={form.ticker}
             onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) }))} maxLength={8} />
-          <div className="text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>This becomes your creator coin ticker on BSV</div>
+          <div className="text-[10px] mt-0.5" style={{ color: "var(--color-text-secondary)" }}>Creator coin ticker — auto-generated if blank</div>
         </div>
 
         <div>
@@ -1786,16 +2476,49 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
             placeholder="Tell collectors about this work…" value={form.description} onChange={set("description")} maxLength={500} />
         </div>
 
+        {/* Chain selector */}
+        <div>
+          <label className="text-xs font-medium block mb-2" style={{ color: "var(--color-text-secondary)" }}>Chain</label>
+          <div className="flex flex-wrap gap-1.5">
+            {CHAINS.map(c => {
+              const active = form.chain === c;
+              const col = CHAIN_COLOR[c] ?? "#888";
+              return (
+                <button key={c} onClick={() => selectChain(c)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all"
+                  style={{
+                    background: active ? `${col}28` : "var(--color-surface)",
+                    color: active ? col : "var(--color-text-secondary)",
+                    border: active ? `1.5px solid ${col}80` : "1.5px solid transparent",
+                  }}>
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ background: col }} />
+                  {c}
+                </button>
+              );
+            })}
+          </div>
+          {form.chain && (
+            <p className="text-[10px] mt-1.5" style={{ color: "var(--color-text-secondary)" }}>
+              Posting on <span style={{ color: CHAIN_COLOR[form.chain] ?? "inherit", fontWeight: 700 }}>{CHAIN_LABEL[form.chain] ?? form.chain}</span> · mint currency: <span style={{ fontWeight: 700, color: "var(--color-text)" }}>{form.mintCurrency}</span>
+            </p>
+          )}
+        </div>
+
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Mint Price</label>
-            <input style={inp} type="number" min="0" step="0.001" value={form.mintPrice} onChange={set("mintPrice")} />
+            <input style={inp} type="number" min="0" step="any" inputMode="decimal"
+              placeholder={CHAIN_DEFAULT_PRICE[form.chain] ?? "0.001"}
+              value={form.mintPrice} onChange={set("mintPrice")} />
+            <div className="text-[10px] mt-1" style={{ color: "var(--color-text-secondary)" }}>
+              Micro: {CHAIN_DEFAULT_PRICE[form.chain] ?? "0.001"} · any amount OK
+            </div>
           </div>
           <div>
             <label className="text-xs font-medium block mb-1" style={{ color: "var(--color-text-secondary)" }}>Currency</label>
-            <select style={inp} value={form.mintCurrency} onChange={set("mintCurrency")}>
-              {CHAINS.map(c => <option key={c}>{c}</option>)}
-            </select>
+            <div style={{ ...inp, display: "flex", alignItems: "center", fontWeight: 700, color: CHAIN_COLOR[form.chain] ?? "var(--color-text)" }}>
+              {form.mintCurrency}
+            </div>
           </div>
         </div>
 
@@ -1814,23 +2537,33 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
 
         {/* Multichain info */}
         <div className="rounded-xl p-3" style={{ background: "rgba(0,255,136,0.06)", border: "1px solid rgba(0,255,136,0.15)" }}>
-          <div className="text-xs font-bold mb-2" style={{ color: "var(--color-accent)" }}>🌐 Multichain NFT + Coin</div>
+          <div className="text-xs font-bold mb-2" style={{ color: "var(--color-accent)" }}>🌐 Supported Chains</div>
           <div className="flex flex-wrap gap-1.5">
             {CHAINS.map(c => <span key={c} className="text-[10px] px-2 py-0.5 rounded-full font-bold" style={{ background: `${CHAIN_COLOR[c]}20`, color: CHAIN_COLOR[c] }}>{c}</span>)}
           </div>
           <p className="text-[11px] mt-2" style={{ color: "var(--color-text-secondary)" }}>
-            Inscribed on BSV · Bridgeable to ETH, BNB, SOL via OrahDEXBridge · Creator coin auto-created on first post
+            Inscribed on BSV · Bridgeable to ETH, BNB, SOL via OrahBridge · Creator coin auto-created on first post
           </p>
         </div>
 
         {error && <div className="p-3 rounded-xl text-xs" style={{ background: "rgba(255,60,60,0.12)", color: "#ff4444" }}>{error}</div>}
+
+        {!address && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
+               style={{ background: "rgba(255,170,0,0.12)", color: "#ffaa00" }}>
+            <Lock size={13} />
+            <span>Connect a wallet to publish — you can still generate AI images now.</span>
+          </div>
+        )}
 
         <button onClick={submit} disabled={loading || !canSubmit}
           className="w-full py-3.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 active:opacity-80 disabled:opacity-40"
           style={{ background: "linear-gradient(135deg,var(--color-accent),#00aaff)", color: "#000" }}>
           {loading
             ? <div className="w-4 h-4 border-2 border-black/40 border-t-black rounded-full animate-spin" />
-            : <><Zap size={15} /> Inscribe on BSV</>
+            : !address
+              ? <><Lock size={15} /> Connect Wallet to Publish</>
+              : <><Zap size={15} /> Inscribe on BSV</>
           }
         </button>
       </div>
@@ -1843,11 +2576,21 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
   const { address, provider, network, internalEvmAddress } = useWalletStore();
   const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [, navigate] = useLocation();
-  if (!profileAddress) return (
+
+  // Truly disconnected — no wallet at all
+  if (!address) return (
     <div className="flex flex-col items-center justify-center gap-4 py-20 px-8">
       <div className="w-16 h-16 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}><User size={28} style={{ color: "var(--color-text-secondary)" }} /></div>
       <p className="text-sm text-center" style={{ color: "var(--color-text-secondary)" }}>Connect your wallet to see your profile and creator coin</p>
       <button onClick={() => navigate("/settings")} className="px-6 py-2.5 rounded-xl font-bold text-sm" style={{ background: "var(--color-accent)", color: "#000" }}>Connect Wallet</button>
+    </div>
+  );
+
+  // Wallet connected but internal EVM identity not yet ready (e.g. just switched chain)
+  if (!profileAddress) return (
+    <div className="flex flex-col items-center justify-center gap-4 py-20 px-8">
+      <div className="w-8 h-8 border-2 rounded-full animate-spin" style={{ borderColor: "var(--color-border)", borderTopColor: "var(--color-accent)" }} />
+      <p className="text-sm text-center" style={{ color: "var(--color-text-secondary)" }}>Setting up your NFT identity…</p>
     </div>
   );
   // Redirect to full creator profile view
@@ -1865,14 +2608,29 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<"hot" | "new" | "top">("hot");
   const [category, setCategory] = useState("all");
+  const [feedChain, setFeedChain] = useState("all");
+  const switchChain = useWalletStore(s => s.switchChain);
+
+  // Smart chain switch: picking an EVM chain in the filter also flips the
+  // connected wallet so trading/minting on what you see hits the right network.
+  // Non-EVM chains just filter the feed.
+  const EVM_CHAIN_IDS_FEED: Record<string, number> = {
+    ETH: 1, OP: 10, BASE: 8453, ARB: 42161, BNB: 56, MATIC: 137,
+  };
+  function pickChain(c: string) {
+    setFeedChain(c);
+    const id = EVM_CHAIN_IDS_FEED[c];
+    if (id) switchChain(id);
+  }
 
   const load = useCallback(() => {
     setLoading(true);
     const params = new URLSearchParams({ sort, limit: "20" });
     if (category !== "all") params.set("category", category);
+    if (feedChain !== "all") params.set("chain", feedChain);
     if (search) params.set("q", search);
     fetch(`${API}/social/feed?${params}`).then(r => r.json()).then(d => setPosts(d.posts ?? [])).catch(() => {}).finally(() => setLoading(false));
-  }, [sort, category, search]);
+  }, [sort, category, feedChain, search]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1893,11 +2651,25 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
             </button>
           ))}
         </div>
-        <div className="flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5 mb-1.5" style={{ scrollbarWidth: "none" }}>
           {CATEGORIES.map(c => (
             <button key={c} onClick={() => setCategory(c)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 transition-all"
               style={{ background: category === c ? "rgba(0,255,136,0.15)" : "var(--color-surface)", color: category === c ? "var(--color-accent)" : "var(--color-text-secondary)", border: category === c ? "1px solid rgba(0,255,136,0.3)" : "1px solid transparent" }}>
               {CAT_ICONS[c]} {c}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+          {[{key:"all",label:"All Chains",color:"#888"}, ...CHAINS.map(c => ({ key: c, label: c, color: CHAIN_COLOR[c] ?? "#888" }))].map(({ key, label, color }) => (
+            <button key={key} onClick={() => pickChain(key)}
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold whitespace-nowrap shrink-0 transition-all"
+              style={{
+                background: feedChain === key ? `${color}22` : "var(--color-surface)",
+                color: feedChain === key ? color : "var(--color-text-secondary)",
+                border: feedChain === key ? `1.5px solid ${color}60` : "1.5px solid transparent",
+              }}>
+              {key !== "all" && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />}
+              {label}
             </button>
           ))}
         </div>
@@ -1915,9 +2687,491 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
   );
 }
 
-/* ─── ROOT ───────────────────────────────────────────────────────────────────── */
+/* ─── DIRECT MESSAGE SHEET ─────────────────────────────────────────────────── */
+function dmChannelFor(a: string, b: string): string {
+  return `dm:${[a.toLowerCase(), b.toLowerCase()].sort().join(":")}`;
+}
+
+function DmSheet({ me, peer, peerName, peerAvatar, onClose }: {
+  me: string; peer: string; peerName: string; peerAvatar?: string; onClose: () => void;
+}) {
+  const channel = useMemo(() => dmChannelFor(me, peer), [me, peer]);
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [decrypted, setDecrypted] = useState<Record<string, string>>({});
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [online, setOnline] = useState(false);
+  const [cryptoReady, setCryptoReady] = useState(false);
+  const [error, setError] = useState("");
+  const cryptoKeyRef = useRef<CryptoKey | null>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    deriveChannelKey(channel).then(k => { cryptoKeyRef.current = k; setCryptoReady(true); });
+  }, [channel]);
+
+  useEffect(() => {
+    if (!cryptoReady) return;
+    const src = new EventSource(`${API}/chat/channels/${encodeURIComponent(channel)}/stream`);
+    src.onopen = () => setOnline(true);
+    src.onerror = () => setOnline(false);
+    src.onmessage = async (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === "backfill") {
+          const msgs: ChatMsg[] = data.messages ?? [];
+          setMessages(msgs);
+          const entries = await Promise.all(
+            msgs.map(async m => [m.id, await decryptMessage(cryptoKeyRef.current!, m.text)] as const)
+          );
+          setDecrypted(prev => ({ ...prev, ...Object.fromEntries(entries) }));
+        } else if (data.id) {
+          setMessages(prev => prev.find(m => m.id === data.id) ? prev : [...prev, data]);
+          const plain = await decryptMessage(cryptoKeyRef.current!, data.text);
+          setDecrypted(prev => ({ ...prev, [data.id]: plain }));
+        }
+      } catch {}
+    };
+    return () => src.close();
+  }, [cryptoReady, channel]);
+
+  useEffect(() => {
+    if (messages.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  async function send() {
+    const txt = input.trim();
+    if (!txt || sending || !cryptoKeyRef.current) return;
+    setInput("");
+    setSending(true);
+    setError("");
+    try {
+      const displayName = `${me.slice(0, 6)}…${me.slice(-4)}`;
+      const encrypted = await encryptMessage(cryptoKeyRef.current, txt);
+      const res = await fetch(`${API}/chat/channels/${encodeURIComponent(channel)}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: encrypted, wallet: me, displayName, role: "trader" }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) setError(d.error ?? "Failed to send");
+    } catch { setError("Network error"); }
+    finally { setSending(false); inputRef.current?.focus(); }
+  }
+
+  function fmtTime(ts: number) {
+    return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[300] flex flex-col" style={{ background: "hsl(var(--background))" }}>
+      {/* Header */}
+      <div className="flex items-center gap-3 px-3 py-3 shrink-0 border-b" style={{ borderColor: "var(--color-border)" }}>
+        <button onClick={onClose} className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: "var(--color-surface)" }}>
+          <ChevronLeft size={18} style={{ color: "var(--color-text)" }} />
+        </button>
+        <Avatar src={peerAvatar} name={peerName} size={36} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-sm truncate" style={{ color: "var(--color-text)" }}>{peerName}</span>
+            <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono shrink-0" style={{ background: "rgba(0,255,136,0.12)", color: "var(--color-accent)" }}>🔒 E2E</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-1.5 h-1.5 rounded-full" style={{ background: online ? "var(--color-accent)" : "#666" }} />
+            <span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>{online ? "live" : "connecting…"}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+        {!cryptoReady && (
+          <div className="text-center text-[10px] py-4" style={{ color: "var(--color-text-secondary)" }}>🔒 Initialising encryption…</div>
+        )}
+        {cryptoReady && messages.length === 0 && (
+          <div className="text-center py-16">
+            <MessageCircle size={36} style={{ color: "var(--color-text-secondary)", margin: "0 auto 10px" }} />
+            <p className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>Say hi to {peerName}</p>
+            <p className="text-[11px] mt-1" style={{ color: "var(--color-text-secondary)" }}>Messages are end-to-end encrypted.</p>
+          </div>
+        )}
+        {messages.map(msg => {
+          const isMe = msg.wallet.toLowerCase() === me.toLowerCase();
+          const plain = decrypted[msg.id] ?? (msg.text.startsWith("enc:") ? "🔒…" : msg.text);
+          return (
+            <div key={msg.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+              <div className="max-w-[78%]">
+                <div className="px-3 py-2 rounded-2xl text-[13px] leading-snug break-words"
+                  style={{
+                    background: isMe ? "var(--color-accent)" : "var(--color-surface)",
+                    color: isMe ? "#000" : "var(--color-text)",
+                    borderBottomRightRadius: isMe ? 4 : undefined,
+                    borderBottomLeftRadius: !isMe ? 4 : undefined,
+                  }}>
+                  {plain}
+                </div>
+                <div className={`text-[9px] mt-0.5 ${isMe ? "text-right" : "text-left"}`} style={{ color: "var(--color-text-secondary)" }}>
+                  {fmtTime(msg.ts)}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Composer */}
+      {error && (
+        <div className="px-3 py-1.5 text-[10px] text-center" style={{ background: "rgba(255,80,80,0.12)", color: "#ff5555" }}>{error}</div>
+      )}
+      <div className="flex items-center gap-2 px-3 py-2.5 shrink-0 border-t" style={{ borderColor: "var(--color-border)", paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}>
+        <input ref={inputRef} value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          placeholder={cryptoReady ? `Message ${peerName}…` : "Initialising…"}
+          disabled={!cryptoReady || sending}
+          className="flex-1 px-3 py-2.5 rounded-full text-[13px] outline-none border"
+          style={{ background: "var(--color-surface)", color: "var(--color-text)", borderColor: "var(--color-border)" }} />
+        <button onClick={send} disabled={!input.trim() || sending || !cryptoReady}
+          className="w-10 h-10 rounded-full flex items-center justify-center disabled:opacity-40"
+          style={{ background: "var(--color-accent)", color: "#000" }}>
+          <SendIcon size={16} />
+        </button>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/* ─── NFT CHAT TAB ──────────────────────────────────────────────────────────── */
+interface ChatMsg {
+  id: string; channel: string; wallet: string; displayName: string;
+  role: string; text: string; ts: number; txid?: string; replyTo?: string;
+}
+
+function NftChatTab() {
+  const { address, provider, network, internalEvmAddress } = useWalletStore();
+  const actor = getNftProfileAddress({ address, provider, network, internalEvmAddress });
+
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
+  const [decrypted, setDecrypted] = useState<Record<string, string>>({});
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [online, setOnline] = useState(false);
+  const [cryptoReady, setCryptoReady] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const cryptoKeyRef = useRef<CryptoKey | null>(null);
+
+  const CHANNEL = "nft";
+
+  useEffect(() => {
+    deriveChannelKey(CHANNEL).then(k => { cryptoKeyRef.current = k; setCryptoReady(true); });
+  }, []);
+
+  async function decryptBatch(msgs: ChatMsg[]) {
+    if (!cryptoKeyRef.current) return;
+    const entries = await Promise.all(
+      msgs.map(async m => [m.id, await decryptMessage(cryptoKeyRef.current!, m.text)] as const)
+    );
+    setDecrypted(prev => ({ ...prev, ...Object.fromEntries(entries) }));
+  }
+
+  useEffect(() => {
+    if (!cryptoReady) return;
+    const src = new EventSource(`${API}/chat/channels/${CHANNEL}/stream`);
+    src.onopen = () => setOnline(true);
+    src.onerror = () => setOnline(false);
+    src.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === "backfill") {
+          const msgs: ChatMsg[] = data.messages ?? [];
+          setMessages(msgs);
+          decryptBatch(msgs);
+        } else if (data.id) {
+          setMessages(prev => {
+            if (prev.find(m => m.id === data.id)) return prev;
+            return [...prev, data];
+          });
+          decryptMessage(cryptoKeyRef.current!, data.text).then(plain =>
+            setDecrypted(prev => ({ ...prev, [data.id]: plain }))
+          );
+        }
+      } catch {}
+    };
+    return () => src.close();
+  }, [cryptoReady]);
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
+
+  async function sendMsg() {
+    const txt = input.trim();
+    if (!txt || sending || !cryptoKeyRef.current) return;
+    setInput("");
+    setSending(true);
+    setError("");
+    try {
+      const displayName = actor ? `${actor.slice(0, 6)}…${actor.slice(-4)}` : "anon";
+      const encrypted = await encryptMessage(cryptoKeyRef.current, txt);
+      const res = await fetch(`${API}/chat/channels/${CHANNEL}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: encrypted, wallet: actor ?? "anonymous", displayName, role: "trader" }),
+      });
+      const d = await res.json();
+      if (!res.ok) setError(d.error ?? "Failed to send");
+    } catch { setError("Network error"); }
+    finally { setSending(false); inputRef.current?.focus(); }
+  }
+
+  function fmtTime(ts: number) {
+    const d = new Date(ts);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  const roleColor: Record<string, string> = {
+    trader: "var(--color-text-secondary)",
+    leader: "#00ff88",
+    support: "#ffaa00",
+    system: "#7b68ee",
+    ora: "#00aaff",
+  };
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: "hsl(var(--background))" }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2.5 shrink-0 border-b" style={{ borderColor: "var(--color-border)" }}>
+        <div className="flex items-center gap-2">
+          <MessagesSquare size={16} style={{ color: "var(--color-accent)" }} />
+          <span className="font-bold text-sm" style={{ color: "var(--color-text)" }}>NFT Community Chat</span>
+          <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono" style={{ background: "rgba(0,255,136,0.12)", color: "var(--color-accent)" }}>🔒 E2E</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background: online ? "var(--color-accent)" : "#666", boxShadow: online ? "0 0 6px var(--color-accent)" : "none" }} />
+          <span className="text-[10px]" style={{ color: online ? "var(--color-accent)" : "var(--color-text-secondary)" }}>
+            {online ? "live" : "connecting…"}
+          </span>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+        {messages.length === 0 && (
+          <div className="text-center py-16">
+            <MessagesSquare size={40} style={{ color: "var(--color-text-secondary)", margin: "0 auto 12px" }} />
+            <p className="text-sm font-semibold" style={{ color: "var(--color-text)" }}>NFT Community Chat</p>
+            <p className="text-xs mt-1" style={{ color: "var(--color-text-secondary)" }}>
+              Discuss NFTs, drops, and creators with the community.
+            </p>
+          </div>
+        )}
+        {!cryptoReady && (
+          <div className="flex justify-center py-4">
+            <span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>🔒 Initialising encryption…</span>
+          </div>
+        )}
+        {messages.map(msg => {
+          const isMe = actor && msg.wallet === actor;
+          const isSystem = msg.role === "system" || msg.role === "ora";
+          const plainText = decrypted[msg.id] ?? msg.text;
+          if (isSystem) {
+            return (
+              <div key={msg.id} className="flex justify-center">
+                <div className="text-[10px] px-3 py-1 rounded-full" style={{ background: "rgba(123,104,238,0.12)", color: "#7b68ee" }}>
+                  {plainText}
+                </div>
+              </div>
+            );
+          }
+          return (
+            <div key={msg.id} className={`flex gap-2 ${isMe ? "flex-row-reverse" : ""}`}>
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                style={{ background: isMe ? "rgba(0,255,136,0.2)" : "var(--color-surface)", color: isMe ? "var(--color-accent)" : "var(--color-text-secondary)" }}>
+                {(msg.displayName?.[0] ?? "?").toUpperCase()}
+              </div>
+              <div className={`flex flex-col max-w-[75%] ${isMe ? "items-end" : "items-start"}`}>
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  {!isMe && (
+                    <span className="text-[10px] font-semibold" style={{ color: roleColor[msg.role] ?? "var(--color-text-secondary)" }}>
+                      {msg.displayName}
+                    </span>
+                  )}
+                  <span className="text-[9px]" style={{ color: "var(--color-text-secondary)" }}>{fmtTime(msg.ts)}</span>
+                </div>
+                <div className="px-3 py-2 rounded-2xl text-xs break-words"
+                  style={{
+                    background: isMe ? "var(--color-accent)" : "var(--color-surface)",
+                    color: isMe ? "#000" : "var(--color-text)",
+                    borderBottomRightRadius: isMe ? 4 : undefined,
+                    borderBottomLeftRadius: !isMe ? 4 : undefined,
+                  }}>
+                  {plainText}
+                  {msg.txid && (
+                    <div className="mt-1 text-[9px] font-mono opacity-70 truncate"
+                      style={{ maxWidth: 180, color: isMe ? "#000" : "var(--color-accent)" }}>
+                      txid: {msg.txid.slice(0, 12)}…
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
+
+      {error && (
+        <div className="px-3 py-1 text-[10px] shrink-0" style={{ color: "#ff4444", background: "rgba(255,68,68,0.08)" }}>
+          {error}
+        </div>
+      )}
+
+      {/* Input bar */}
+      <div className="shrink-0 px-3 pt-2 border-t" style={{ borderColor: "var(--color-border)", paddingBottom: "calc(10px + env(safe-area-inset-bottom, 0px))", background: "var(--color-bg)" }}>
+        {!actor ? (
+          <div className="py-2.5 text-center text-xs rounded-xl" style={{ background: "var(--color-surface)", color: "var(--color-text-secondary)" }}>
+            Connect a wallet to chat
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-2xl px-3 py-2" style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)" }}>
+            <input
+              ref={inputRef}
+              className="flex-1 bg-transparent text-xs outline-none min-w-0"
+              style={{ color: "var(--color-text)" }}
+              placeholder="Message the NFT community…"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendMsg())}
+              maxLength={500}
+              disabled={sending}
+            />
+            <button
+              onClick={sendMsg}
+              disabled={!input.trim() || sending}
+              className="flex items-center justify-center w-7 h-7 rounded-xl shrink-0 transition-all active:scale-90 disabled:opacity-40"
+              style={{ background: input.trim() ? "var(--color-accent)" : "rgba(255,255,255,0.06)", color: input.trim() ? "#000" : "var(--color-text-secondary)" }}>
+              <Send size={13} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Notification types ─────────────────────────────────────────────────── */
+interface SocialNotif {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  timestamp: number;
+  txid?: string;
+}
+
+const NOTIF_ICONS: Record<string, React.ReactNode> = {
+  like:    <Heart size={14} className="text-rose-400" />,
+  mint:    <Zap size={14} className="text-yellow-400" />,
+  comment: <MessageCircle size={14} className="text-sky-400" />,
+};
+
+function timeAgoShort(ts: number): string {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
+function NotificationPanel({ address, onClose }: { address: string; onClose: () => void }) {
+  const [notifs, setNotifs] = useState<SocialNotif[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${API}/social/notifications?address=${encodeURIComponent(address)}`)
+      .then(r => r.ok ? r.json() : { notifications: [] })
+      .then(d => { setNotifs(d.notifications ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [address]);
+
+  function clearAll() {
+    fetch(`${API}/social/notifications?address=${encodeURIComponent(address)}`, { method: "DELETE" }).catch(() => {});
+    setNotifs([]);
+  }
+
+  return (
+    <Portal>
+      <div
+        className="absolute inset-0 z-50 flex flex-col"
+        style={{ background: "rgba(0,0,0,0.55)" }}
+        onClick={onClose}
+      >
+        <div className="flex-1" />
+        <div
+          className="rounded-t-2xl flex flex-col"
+          style={{ background: "hsl(var(--card))", maxHeight: "75vh" }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
+            <div className="flex items-center gap-2">
+              <Bell size={16} className="text-primary" />
+              <span className="font-bold text-sm text-foreground">Notifications</span>
+              {notifs.length > 0 && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-primary/15 text-primary font-bold">{notifs.length}</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {notifs.length > 0 && (
+                <button onClick={clearAll} className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">Clear all</button>
+              )}
+              <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-xl bg-secondary/60">
+                <X size={14} className="text-foreground/70" />
+              </button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-2 space-y-1.5" style={{ minHeight: 120 }}>
+            {loading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw size={16} className="animate-spin text-muted-foreground" />
+              </div>
+            ) : notifs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
+                <Bell size={28} strokeWidth={1.5} />
+                <span className="text-sm">No notifications yet</span>
+                <span className="text-[11px] text-center text-muted-foreground/60">You'll see likes, mints, and comments on your posts here</span>
+              </div>
+            ) : (
+              notifs.map(n => (
+                <div key={n.id} className="flex items-start gap-2.5 p-2.5 rounded-xl border border-border/30 bg-secondary/20">
+                  <div className="w-7 h-7 rounded-full bg-secondary/60 flex items-center justify-center shrink-0 mt-0.5">
+                    {NOTIF_ICONS[n.type] ?? <Bell size={13} className="text-muted-foreground" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[12px] font-semibold text-foreground leading-tight">{n.title}</p>
+                    <p className="text-[11px] text-muted-foreground leading-snug mt-0.5 line-clamp-2">{n.body}</p>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground/60 shrink-0 mt-0.5">{timeAgoShort(n.timestamp)}</span>
+                </div>
+              ))
+            )}
+          </div>
+          <div style={{ height: "env(safe-area-inset-bottom, 12px)", minHeight: 12 }} />
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
 export function MobileNFT() {
-  const [activeTab, setActiveTab] = useState<"feed" | "search" | "create" | "profile">("feed");
+  const [activeTab, setActiveTab] = useState<"feed" | "search" | "create" | "chat" | "profile">("feed");
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [mintPost, setMintPost] = useState<{ post: Post; mode: "buy" | "sell" } | null>(null);
   const [detailPost, setDetailPost] = useState<Post | null>(null);
@@ -1925,9 +3179,23 @@ export function MobileNFT() {
   const { address, provider, network, internalEvmAddress } = useWalletStore();
   const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
 
+  useEffect(() => {
+    setCreatorAddress(null);
+    if (!profileAddress) {
+      setActiveTab((tab) => (tab === "profile" ? "feed" : tab));
+    }
+  }, [profileAddress]);
+
+  // Auto-restore profile overlay when profile tab is active but all other overlays have closed
+  useEffect(() => {
+    if (activeTab === "profile" && profileAddress && !creatorAddress && !detailPost && !mintPost) {
+      setCreatorAddress(profileAddress);
+    }
+  }, [activeTab, profileAddress, creatorAddress, detailPost, mintPost]);
+
   function handleLike(id: string) {
     setLikedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-    if (address) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: address }) }).catch(() => {});
+    if (profileAddress) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: profileAddress }) }).catch(() => {});
   }
 
   const openCreator = useCallback((addr: string) => setCreatorAddress(addr), []);
@@ -1937,32 +3205,20 @@ export function MobileNFT() {
     { key: "feed"    as const, label: "Feed",    Icon: Layers },
     { key: "search"  as const, label: "Search",  Icon: Search },
     { key: "create"  as const, label: "Create",  Icon: PlusSquare },
+    { key: "chat"    as const, label: "Chat",    Icon: MessagesSquare },
     { key: "profile" as const, label: "Profile", Icon: User },
   ];
 
   return (
     <div className="flex flex-col h-full" style={{ background: "hsl(var(--background))" }}>
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 shrink-0" style={{ borderBottom: "1px solid var(--color-border)" }}>
-        <div>
-          <h1 className="text-lg font-black tracking-tight" style={{ color: "var(--color-text)" }}>OrahDEX<span style={{ color: "var(--color-accent)" }}>NFT</span></h1>
-          <div className="text-[10px] font-mono" style={{ color: "var(--color-text-secondary)" }}>BSV · Multichain · Creator Coins</div>
-        </div>
-        <div className="flex items-center gap-2">
-          {address && (
-            <button onClick={() => profileAddress && openCreator(profileAddress)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl active:opacity-70" style={{ background: "var(--color-surface)" }}>
-              <Avatar src={undefined} name={address} size={18} />
-              <span className="text-[10px] font-mono" style={{ color: "var(--color-text-secondary)" }}>{shortAddr(address)}</span>
-            </button>
-          )}
-          <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full animate-pulse" style={{ background: "var(--color-accent)" }} /><span className="text-[10px]" style={{ color: "var(--color-text-secondary)" }}>live</span></div>
-        </div>
-      </div>
-
       {/* Inner nav */}
-      <div className="flex shrink-0 px-3 pt-2 pb-1 gap-1" style={{ borderBottom: "1px solid var(--color-border)" }}>
+      <div className="flex items-center shrink-0 px-3 pt-2 pb-1 gap-1" style={{ borderBottom: "1px solid var(--color-border)" }}>
         {INNER_TABS.map(({ key, label, Icon }) => (
-          <button key={key} onClick={() => setActiveTab(key)}
+          <button key={key} onClick={() => {
+            setActiveTab(key);
+            // Open profile overlay immediately (same batch = no spinner flash)
+            if (key === "profile" && profileAddress) setCreatorAddress(profileAddress);
+          }}
             className="flex-1 flex flex-col items-center gap-0.5 py-1.5 rounded-xl transition-all"
             style={{ background: activeTab === key ? "rgba(0,255,136,0.1)" : "transparent", color: activeTab === key ? "var(--color-accent)" : "var(--color-text-secondary)" }}>
             <Icon size={18} /><span className="text-[9px] font-semibold">{label}</span>
@@ -1975,6 +3231,7 @@ export function MobileNFT() {
         {activeTab === "feed"    && <FeedTab    likedIds={likedIds} onLike={handleLike} onMint={p => setMintPost({ post: p, mode: "buy" })} onOpen={openPost} onCreator={openCreator} />}
         {activeTab === "search"  && <SearchTab  onCreator={openCreator} onOpenPost={openPost} />}
         {activeTab === "create"  && <CreateTab  onSuccess={() => setActiveTab("feed")} />}
+        {activeTab === "chat"    && <NftChatTab />}
         {activeTab === "profile" && <MyProfileTab onOpenCreator={openCreator} onOpenPost={openPost} />}
       </div>
 
@@ -1990,6 +3247,7 @@ export function MobileNFT() {
             if (activeTab === "profile") setActiveTab("feed");
           }}
           onOpenPost={p => { setCreatorAddress(null); openPost(p); }}
+          onOpenCreator={openCreator}
         />
       )}
       {detailPost && (

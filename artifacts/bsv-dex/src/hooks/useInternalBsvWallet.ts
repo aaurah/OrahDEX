@@ -100,7 +100,7 @@ export function useInternalBsvWallet() {
           try {
             await persistToServer(address, phantomBtcAddr);
           } catch (err) {
-            console.warn("[Orah] Failed to persist Phantom BTC address:", err);
+            console.warn("[OrahDEX] Failed to persist Phantom BTC address:", err);
           }
           if (cancelled) return;
           setInternalBtc(phantomBtcAddr);
@@ -120,7 +120,7 @@ export function useInternalBsvWallet() {
         setInternalBtc(data.btcAddress);
         setInternalBch(data.bchAddress);
       } catch (err) {
-        console.warn("[Orah] Could not provision internal BSV/BTC/BCH wallet:", err);
+        console.warn("[OrahDEX] Could not provision internal BSV/BTC/BCH wallet:", err);
         provisionedFor.current = null;
       }
     })();

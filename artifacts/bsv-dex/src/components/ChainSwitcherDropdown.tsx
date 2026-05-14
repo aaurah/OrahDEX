@@ -10,7 +10,7 @@ interface ChainDef {
   key: string;
   name: string;
   symbol: string;
-  badge: "L1" | "L2" | "L3";
+  badge: "L1" | "L2" | "L3" | "TEST";
   icon: string;
   color: string;
   rpcUrl: string;
@@ -311,34 +311,60 @@ const EVM_CHAINS: ChainDef[] = [
     nativeName: "Sonic",
     nativeDecimals: 18,
   },
+  /* ─── Testnets ─────────────────────────────────────────────── */
+  {
+    id: 11155111,
+    key: "sepolia",
+    name: "Sepolia (Testnet)",
+    symbol: "ETH",
+    badge: "TEST",
+    icon: "⟠",
+    color: "text-emerald-400",
+    rpcUrl: "https://ethereum-sepolia-rpc.publicnode.com",
+    blockExplorerUrl: "https://sepolia.etherscan.io",
+    nativeName: "Sepolia Ether",
+    nativeDecimals: 18,
+  },
 ];
 
-const OTHER_CHAINS = [
-  { key: "bsv",      name: "Bitcoin SV",         symbol: "BSV", icon: "₿",  color: "text-green-400",  network: "bsv"      as const },
-  { key: "bsv-test", name: "Bitcoin SV Testnet", symbol: "BSV", icon: "₿",  color: "text-yellow-400", network: "bsv-test" as const },
-  { key: "sol",      name: "Solana",              symbol: "SOL", icon: "◎",  color: "text-purple-400", network: "sol"      as const },
-  { key: "btc",      name: "Bitcoin",             symbol: "BTC", icon: "₿",  color: "text-orange-400", network: "btc"      as const },
-  { key: "bch",      name: "Bitcoin Cash",        symbol: "BCH", icon: "฿", color: "text-emerald-400", network: "bch"      as const },
+const OTHER_CHAINS_TESTNET = [
+  { key: "bsv-test", name: "Bitcoin SV Testnet", symbol: "BSV", icon: "₿", color: "text-yellow-400", network: "bsv-test" as const },
+];
+
+const OTHER_CHAINS_MAINNET = [
+  { key: "bsv",  name: "Bitcoin SV",   symbol: "BSV",  icon: "₿",  color: "text-green-400",  network: "bsv"  as const },
+  { key: "sol",  name: "Solana",       symbol: "SOL",  icon: "◎",  color: "text-purple-400", network: "sol"  as const },
+  { key: "btc",  name: "Bitcoin",      symbol: "BTC",  icon: "₿",  color: "text-orange-400", network: "btc"  as const },
+  { key: "bch",  name: "Bitcoin Cash", symbol: "BCH",  icon: "฿",  color: "text-emerald-400",network: "bch"  as const },
+  { key: "tron", name: "TRON",         symbol: "TRX",  icon: "⊕",  color: "text-red-400",    network: "tron" as const },
+  { key: "xrp",  name: "XRP Ledger",   symbol: "XRP",  icon: "✕",  color: "text-cyan-400",   network: "xrp"  as const },
+  { key: "ltc",  name: "Litecoin",     symbol: "LTC",  icon: "Ł",  color: "text-slate-300",  network: "ltc"  as const },
+  { key: "doge", name: "Dogecoin",     symbol: "DOGE", icon: "Ð",  color: "text-yellow-500", network: "doge" as const },
 ];
 
 const BADGE_COLORS: Record<string, string> = {
   L1: "bg-blue-500/15 text-blue-400 border-blue-500/30",
   L2: "bg-violet-500/15 text-violet-400 border-violet-500/30",
   L3: "bg-orange-500/15 text-orange-400 border-orange-500/30",
+  TEST: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
 };
 
 interface Props {
   inline?: boolean;
+  /** When inline=true, start the accordion pre-expanded */
+  startOpen?: boolean;
+  /** When inline=true, called after a chain is successfully switched */
+  onChainSelected?: () => void;
 }
 
-export function ChainSwitcherDropdown({ inline = false }: Props) {
+export function ChainSwitcherDropdown({ inline = false, startOpen = false, onChainSelected }: Props) {
   const { chainId, network, address, connect, provider, switchNetworkType, switchChain } = useWalletStore();
   const { toast } = useToast();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   const [switching, setSwitching] = useState<number | null>(null);
 
   const currentEvmChain = EVM_CHAINS.find(c => c.id === chainId);
-  const currentOther    = OTHER_CHAINS.find(c => c.network === network);
+  const currentOther    = [...OTHER_CHAINS_MAINNET, ...OTHER_CHAINS_TESTNET].find(c => c.network === network);
 
   const switchEvmChain = async (chain: ChainDef) => {
     if (chain.id === chainId) { setOpen(false); return; }
@@ -354,7 +380,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
         const bal = await fetchEvmBalance(address!, chain.id);
         if (bal !== null) useWalletStore.getState().setBalance(bal);
         toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
-        setOpen(false);
+        setOpen(false); onChainSelected?.();
       } catch (err: any) {
         if (err?.code === 4001 || err?.message?.toLowerCase().includes("reject")) {
           toast({ title: "Cancelled", description: "You rejected the chain switch.", variant: "destructive" });
@@ -371,11 +397,11 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
       return;
     }
 
-    /* ── Orah software wallet (seed phrase / passkey) ─────────────────
+    /* ── OrahDEX software wallet (seed phrase / passkey) ─────────────────
        No browser extension needed — we own the key, so just update the
        chainId and fetch the balance via the target chain's public RPC.
        Use switchChain() NOT connect() so internal addresses are preserved. */
-    if (provider === "orahdex-wallet") {
+    if (provider === "orah-wallet") {
       try {
         // Only update the chainId — address stays the same, internals untouched
         switchChain(chain.id);
@@ -393,7 +419,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
         } catch { /* balance unavailable — non-fatal */ }
         if (bal !== null) useWalletStore.getState().setBalance(bal);
         toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
-        setOpen(false);
+        setOpen(false); onChainSelected?.();
       } catch (err: any) {
         toast({ title: "Switch failed", description: err?.message || "Could not switch chain.", variant: "destructive" });
       } finally {
@@ -422,7 +448,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
       const bal = await fetchEvmBalance(address!, chain.id);
       if (bal !== null) useWalletStore.getState().setBalance(bal);
       toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
-      setOpen(false);
+      setOpen(false); onChainSelected?.();
     } catch (err: any) {
       if (err?.code === 4902 || err?.code === -32603) {
         /* Chain not in wallet — add it first */
@@ -442,7 +468,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
           const bal = await fetchEvmBalance(address!, chain.id);
           if (bal !== null) useWalletStore.getState().setBalance(bal);
           toast({ title: `${chain.name} added & connected`, description: `${chain.badge} · ${chain.symbol} · Added to your wallet` });
-          setOpen(false);
+          setOpen(false); onChainSelected?.();
         } catch (addErr: any) {
           if (addErr?.code !== 4001) {
             toast({ title: `Failed to add ${chain.name}`, description: addErr?.message || "Could not add network.", variant: "destructive" });
@@ -469,6 +495,7 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
     "L1 — Base Chains": EVM_CHAINS.filter(c => c.badge === "L1"),
     "L2 — Rollups & Sidechains": EVM_CHAINS.filter(c => c.badge === "L2"),
     "L3 — App Chains": EVM_CHAINS.filter(c => c.badge === "L3"),
+    "Testnets": EVM_CHAINS.filter(c => c.badge === "TEST"),
   };
 
   function ChainRow({ chain, compact = false }: { chain: ChainDef; compact?: boolean }) {
@@ -535,35 +562,62 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
         {open && (
           <div className="mt-2 rounded-xl border border-border bg-background/60 overflow-hidden">
             <div className="max-h-[360px] overflow-y-auto">
-            {Object.entries(chainsByLayer).map(([groupLabel, chains]) => (
-              <div key={groupLabel}>
-                <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-3 pt-2.5 pb-1">
-                  {groupLabel.split(" — ")[0]}
-                </p>
-                <div className="px-1.5 pb-1.5 space-y-0.5">
-                  {chains.map(chain => (
-                    <ChainRow key={chain.id} chain={chain} compact />
-                  ))}
+            {/* EVM L1/L2/L3 chains */}
+            {Object.entries(chainsByLayer)
+              .filter(([g]) => g !== "Testnets")
+              .map(([groupLabel, chains]) => (
+                <div key={groupLabel}>
+                  <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-3 pt-2.5 pb-1">
+                    {groupLabel.split(" — ")[0]}
+                  </p>
+                  <div className="px-1.5 pb-1.5 space-y-0.5">
+                    {chains.map(chain => (
+                      <ChainRow key={chain.id} chain={chain} compact />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
 
+            {/* Testnets — Sepolia + BSV Testnet together */}
+            <div className="border-t border-border">
+              <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-3 pt-2 pb-1">
+                Testnets
+              </p>
+              <div className="px-1.5 pb-1.5 space-y-0.5">
+                {chainsByLayer["Testnets"]?.map(chain => (
+                  <ChainRow key={chain.id} chain={chain} compact />
+                ))}
+                {OTHER_CHAINS_TESTNET.map(chain => {
+                  const active = network === chain.network;
+                  return (
+                    <button key={chain.key} disabled={active}
+                      onClick={() => { if (!active) switchNetworkType(chain.network); setOpen(false); }}
+                      className={cn("w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left",
+                        active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
+                    >
+                      <span className={cn("text-sm leading-none font-bold w-5 text-center", chain.color)}>{chain.icon}</span>
+                      <span className="flex-1">{chain.name}</span>
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded border bg-emerald-500/15 text-emerald-400 border-emerald-500/30 shrink-0">TEST</span>
+                      {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Other Networks — mainnet non-EVM */}
             <div className="border-t border-border">
               <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-3 pt-2 pb-1">
                 Other Networks
               </p>
               <div className="px-1.5 pb-1.5 space-y-0.5">
-                {OTHER_CHAINS.map(chain => {
+                {OTHER_CHAINS_MAINNET.map(chain => {
                   const active = network === chain.network;
                   return (
-                    <button
-                      key={chain.key}
-                      disabled={active}
-                      onClick={() => { if (!active) { switchNetworkType(chain.network); } setOpen(false); }}
-                      className={cn(
-                        "w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left",
-                        active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground"
-                      )}
+                    <button key={chain.key} disabled={active}
+                      onClick={() => { if (!active) switchNetworkType(chain.network); setOpen(false); }}
+                      className={cn("w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left",
+                        active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
                     >
                       <span className={cn("text-sm leading-none font-bold w-5 text-center", chain.color)}>{chain.icon}</span>
                       <span className="flex-1">{chain.name}</span>
@@ -602,35 +656,62 @@ export function ChainSwitcherDropdown({ inline = false }: Props) {
             </div>
 
             <div className="p-2 max-h-[520px] overflow-y-auto">
-              {Object.entries(chainsByLayer).map(([groupLabel, chains]) => (
-                <div key={groupLabel} className="mb-3">
-                  <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-2 py-1.5">
-                    {groupLabel}
-                  </p>
-                  <div className="space-y-0.5">
-                    {chains.map(chain => (
-                      <ChainRow key={chain.id} chain={chain} />
-                    ))}
+              {/* EVM L1/L2/L3 */}
+              {Object.entries(chainsByLayer)
+                .filter(([g]) => g !== "Testnets")
+                .map(([groupLabel, chains]) => (
+                  <div key={groupLabel} className="mb-3">
+                    <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-2 py-1.5">
+                      {groupLabel}
+                    </p>
+                    <div className="space-y-0.5">
+                      {chains.map(chain => (
+                        <ChainRow key={chain.id} chain={chain} />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
 
+              {/* Testnets — Sepolia + BSV Testnet */}
+              <div className="border-t border-border pt-2 mt-1 mb-3">
+                <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-2 py-1.5">
+                  Testnets
+                </p>
+                <div className="space-y-0.5">
+                  {chainsByLayer["Testnets"]?.map(chain => (
+                    <ChainRow key={chain.id} chain={chain} />
+                  ))}
+                  {OTHER_CHAINS_TESTNET.map(chain => {
+                    const active = network === chain.network;
+                    return (
+                      <button key={chain.key} disabled={active}
+                        onClick={() => { if (!active) switchNetworkType(chain.network); setOpen(false); }}
+                        className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                          active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
+                      >
+                        <span className={cn("text-base leading-none font-bold w-6", chain.color)}>{chain.icon}</span>
+                        <span className="flex-1">{chain.name}</span>
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded border bg-emerald-500/15 text-emerald-400 border-emerald-500/30 shrink-0">TEST</span>
+                        {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Other Networks — all mainnet non-EVM */}
               <div className="border-t border-border pt-2 mt-1">
                 <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-2 py-1.5">
                   Other Networks
                 </p>
                 <div className="space-y-0.5">
-                  {OTHER_CHAINS.map(chain => {
+                  {OTHER_CHAINS_MAINNET.map(chain => {
                     const active = network === chain.network;
                     return (
-                      <button
-                        key={chain.key}
-                        disabled={active}
-                        onClick={() => { if (!active) { switchNetworkType(chain.network); } setOpen(false); }}
-                        className={cn(
-                          "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
-                          active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground"
-                        )}
+                      <button key={chain.key} disabled={active}
+                        onClick={() => { if (!active) switchNetworkType(chain.network); setOpen(false); }}
+                        className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                          active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
                       >
                         <span className={cn("text-base leading-none font-bold w-6", chain.color)}>{chain.icon}</span>
                         <span className="flex-1">{chain.name}</span>

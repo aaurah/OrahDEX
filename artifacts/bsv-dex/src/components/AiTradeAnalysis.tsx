@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Bot, Sparkles, TrendingUp, TrendingDown, Minus, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import DOMPurify from "dompurify";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -120,7 +121,7 @@ export function AiTradeAnalysis({ symbol, baseAsset }: Props) {
               {/* Full analysis */}
               <div
                 className="text-xs text-gray-400 leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: parseMarkdown(data.analysis) }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(parseMarkdown(data.analysis)) }}
               />
 
               {/* Footer */}

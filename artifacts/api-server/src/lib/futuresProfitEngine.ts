@@ -1,11 +1,11 @@
 /**
- * Futures Profit Engine — Orah
+ * Futures Profit Engine — OrahDEX
  *
  * Two independent income streams from futures markets:
  *
  *  1. FUNDING RATE INCOME  (runs every 8 hours)
  *     Real open positions pay funding fees to counterparties every 8 h.
- *     Orah retains 10 % of every funding payment as platform income.
+ *     OrahDEX retains 10 % of every funding payment as platform income.
  *
  *  2. LIQUIDATION INCOME  (runs every 60 seconds)
  *     Positions whose mark-price crosses their liquidation price are closed
@@ -16,6 +16,7 @@ import { pool, db } from "@workspace/db";
 import { futuresPositionsTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { guardedInterval } from "./selfHealing.js";
 import { liquidateFuturesPosition } from "./futuresSettlement.js";
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
@@ -58,23 +59,86 @@ const OI_TO_VOL_RATIO = 0.15;   // estimated open-interest / 24h-volume ratio
 
 async function runFundingCycle(): Promise<void> {
   try {
-    const markets   = await db.select().from(marketsTable);
     const positions = await db.select().from(futuresPositionsTable)
       .where(eq(futuresPositionsTable.status, "open"));
 
-    /* --- income from real user positions --- */
-    let realIncome = 0;
+    let cycleIncome    = 0;   // total platform revenue this cycle
+    let appliedCount   = 0;   // positions that actually paid
+    let underfundedCnt = 0;   // positions whose locked margin couldn't cover full payment
+
+    /* For each open position, debit the funding payment from the user's
+     * locked margin and record it on the position's fundingFee field.
+     * Positive funding rate = longs pay; negative = shorts pay. The full
+     * payment is collected by the platform (counterparty / insurance fund). */
     for (const pos of positions) {
-      const rate = FUNDING_MAP[pos.symbol] ?? DEFAULT_FUNDING;
+      const rate  = FUNDING_MAP[pos.symbol] ?? DEFAULT_FUNDING;
       const markP = parseFloat(pos.markPrice)  || parseFloat(pos.entryPrice) || 0;
       const qty   = parseFloat(pos.quantity)   || 0;
-      const payment = qty * markP * rate;
-      realIncome += payment * PLATFORM_CUT;
+      if (markP <= 0 || qty <= 0 || rate === 0) continue;
+
+      // Sign convention: positive payment means the user pays the platform.
+      const sideMul = pos.side === "long" ? 1 : -1;
+      const payment = qty * markP * rate * sideMul;
+      if (payment <= 0) {
+        // User would be a receiver — skip in this simplified single-sided
+        // model (platform never pays funding). Still credit the position's
+        // fundingFee field so the UI shows the rebate accrual.
+        const credit = Math.abs(payment);
+        if (credit > 0) {
+          await pool.query(
+            `UPDATE futures_positions
+             SET funding_fee = (COALESCE(funding_fee::numeric, 0) - $1)::text
+             WHERE id = $2 AND status = 'open'`,
+            [credit.toFixed(8), pos.id],
+          );
+        }
+        continue;
+      }
+
+      // Atomically debit from locked margin (capped to what's available so a
+      // funding payment can never push margin below zero — that would be the
+      // job of the liquidation engine on the next tick).
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+
+        const { rows } = await client.query<{ locked: string }>(
+          `SELECT locked FROM futures_margin_accounts
+           WHERE wallet_address = $1 AND asset = 'USDT' FOR UPDATE`,
+          [pos.walletAddress],
+        );
+        const locked    = parseFloat(rows[0]?.locked ?? "0");
+        const charged   = Math.min(payment, locked);
+        if (charged < payment) underfundedCnt++;
+
+        if (charged > 0) {
+          await client.query(
+            `UPDATE futures_margin_accounts
+             SET locked = locked - $1, updated_at = now()
+             WHERE wallet_address = $2 AND asset = 'USDT'`,
+            [charged.toFixed(8), pos.walletAddress],
+          );
+          await client.query(
+            `UPDATE futures_positions
+             SET funding_fee = (COALESCE(funding_fee::numeric, 0) + $1)::text,
+                 margin      = GREATEST((margin::numeric - $1), 0)::text
+             WHERE id = $2 AND status = 'open'`,
+            [charged.toFixed(8), pos.id],
+          );
+          cycleIncome += charged;
+          appliedCount++;
+        }
+
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK");
+        logger.warn({ err, positionId: pos.id }, "Funding charge failed for position");
+      } finally {
+        client.release();
+      }
     }
 
-    const cycleIncome = realIncome;
-
-    const prev    = parseFloat((await getSetting("bot_funding_profit")) ?? "0") || 0;
+    const prev     = parseFloat((await getSetting("bot_funding_profit")) ?? "0") || 0;
     const newTotal = prev + cycleIncome;
 
     await setSetting("bot_funding_profit",     newTotal.toFixed(6));
@@ -83,7 +147,8 @@ async function runFundingCycle(): Promise<void> {
     await rebuildTotal();
 
     logger.info(
-      { positions: positions.length, cycleIncome: cycleIncome.toFixed(4), cumulative: newTotal.toFixed(4) },
+      { positions: positions.length, applied: appliedCount, underfunded: underfundedCnt,
+        cycleIncome: cycleIncome.toFixed(4), cumulative: newTotal.toFixed(4) },
       "Futures profit engine: funding cycle complete",
     );
   } catch (err) {
@@ -156,26 +221,11 @@ const ONE_MINUTE  = 60 * 1000;
 export function startFuturesProfitEngine(): void {
   logger.info("Futures profit engine starting — funding rates & liquidations active");
 
-  let _fundingBusy = false;
-  let _liqBusy = false;
-
   /* funding: run immediately then every 8 h */
-  runFundingCycle();
-  setInterval(async () => {
-    if (_fundingBusy) { logger.warn("Futures: funding cycle still running, skipping"); return; }
-    _fundingBusy = true;
-    try { await runFundingCycle(); }
-    catch (err) { logger.warn({ err }, "Futures funding cycle error"); }
-    finally { _fundingBusy = false; }
-  }, EIGHT_HOURS);
+  runFundingCycle().catch(err => logger.warn({ err }, "Futures: initial funding cycle failed"));
+  guardedInterval("futures-funding", runFundingCycle, EIGHT_HOURS, { timeoutMs: EIGHT_HOURS - 60_000 });
 
   /* liquidations: run immediately then every 60 s */
-  runLiquidationCycle();
-  setInterval(async () => {
-    if (_liqBusy) { logger.warn("Futures: liquidation cycle still running, skipping"); return; }
-    _liqBusy = true;
-    try { await runLiquidationCycle(); }
-    catch (err) { logger.warn({ err }, "Futures liquidation cycle error"); }
-    finally { _liqBusy = false; }
-  }, ONE_MINUTE);
+  runLiquidationCycle().catch(err => logger.warn({ err }, "Futures: initial liquidation cycle failed"));
+  guardedInterval("futures-liquidation", runLiquidationCycle, ONE_MINUTE, { timeoutMs: 55_000 });
 }

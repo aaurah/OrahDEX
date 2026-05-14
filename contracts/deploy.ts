@@ -1,7 +1,7 @@
 /**
- * OrahHTLC Deployment Script
+ * OrahDEXHTLC Deployment Script
  *
- * Deploys the Orah HTLC contract to an EVM chain using viem.
+ * Deploys the OrahDEX HTLC contract to an EVM chain using viem.
  *
  * Usage:
  *   pnpm tsx contracts/deploy.ts
@@ -18,7 +18,7 @@
  *
  * Verify on Etherscan/Polygonscan/BscScan with:
  *   npx hardhat verify --network mainnet <address>
- *   (contract is simple; flatten OrahHTLC.sol and paste into explorer)
+ *   (contract is simple; flatten OrahDEXHTLC.sol and paste into explorer)
  */
 
 import { createWalletClient, http, publicActions, defineChain } from "viem";
@@ -52,23 +52,23 @@ const chain = defineChain({
 });
 
 // ── Contract bytecode ──────────────────────────────────────────────────────────
-// Compile with: solc --optimize --optimize-runs=200 --abi --bin contracts/OrahHTLC.sol
+// Compile with: solc --optimize --optimize-runs=200 --abi --bin contracts/OrahDEXHTLC.sol
 
 async function getCompiled(): Promise<{ abi: object[]; bytecode: `0x${string}` }> {
-  const abiPath = path.join(__dirname, "OrahHTLC.abi.json");
-  const binPath = path.join(__dirname, "OrahHTLC.bin");
+  const abiPath = path.join(__dirname, "OrahDEXHTLC.abi.json");
+  const binPath = path.join(__dirname, "OrahDEXHTLC.bin");
 
-  const [abiExists, binExists] = await Promise.all([
-    fs.access(abiPath).then(() => true).catch(() => false),
-    fs.access(binPath).then(() => true).catch(() => false),
-  ]);
-
-  if (abiExists && binExists) {
+  // Read the compiled artifacts directly with try/catch instead of checking
+  // for file existence first (fs.access → fs.readFile is a TOCTOU race:
+  // a file could be removed between the check and the read).
+  try {
     const [abi, bin] = await Promise.all([
       fs.readFile(abiPath, "utf8").then(JSON.parse),
       fs.readFile(binPath, "utf8"),
     ]);
     return { abi, bytecode: ("0x" + bin.trim()) as `0x${string}` };
+  } catch {
+    // Compiled artifacts not found — fall through to solc compilation.
   }
 
   console.log("📦 Compiled artifacts not found — attempting to compile with solc…");
@@ -76,7 +76,7 @@ async function getCompiled(): Promise<{ abi: object[]; bytecode: `0x${string}` }
     execSync(
       `solc --optimize --optimize-runs=200 --abi --bin ` +
       `--output-dir ${path.join(__dirname)} ` +
-      `${path.join(__dirname, "OrahHTLC.sol")}`,
+      `${path.join(__dirname, "OrahDEXHTLC.sol")}`,
       { stdio: "inherit" }
     );
   } catch {
@@ -86,15 +86,15 @@ async function getCompiled(): Promise<{ abi: object[]; bytecode: `0x${string}` }
       "    npm i -g solc                   (any platform)\n" +
       "    pip install py-solc-x           (Python users)\n\n" +
       "    Alternatively, compile at https://remix.ethereum.org and paste\n" +
-      "    the ABI into contracts/OrahHTLC.abi.json and\n" +
-      "    the bytecode into contracts/OrahHTLC.bin"
+      "    the ABI into contracts/OrahDEXHTLC.abi.json and\n" +
+      "    the bytecode into contracts/OrahDEXHTLC.bin"
     );
     process.exit(1);
   }
 
   const [abi, bin] = await Promise.all([
-    fs.readFile(path.join(__dirname, "OrahHTLC.abi"), "utf8").then(JSON.parse),
-    fs.readFile(path.join(__dirname, "OrahHTLC.bin"), "utf8"),
+    fs.readFile(path.join(__dirname, "OrahDEXHTLC.abi"), "utf8").then(JSON.parse),
+    fs.readFile(path.join(__dirname, "OrahDEXHTLC.bin"), "utf8"),
   ]);
   return { abi, bytecode: ("0x" + bin.trim()) as `0x${string}` };
 }
@@ -102,7 +102,7 @@ async function getCompiled(): Promise<{ abi: object[]; bytecode: `0x${string}` }
 // ── Deploy ─────────────────────────────────────────────────────────────────────
 
 async function deploy() {
-  console.log(`\n🔗 Orah HTLC Deployer`);
+  console.log(`\n🔗 OrahDEX HTLC Deployer`);
   console.log(`   Chain:   ${chain.name} (${CHAIN_ID})`);
   console.log(`   RPC:     ${RPC_URL}`);
 
@@ -125,7 +125,7 @@ async function deploy() {
   const { abi, bytecode } = await getCompiled();
   console.log(`📦 Contract compiled.  Bytecode: ${bytecode.length / 2 - 1} bytes`);
 
-  console.log(`🚀 Deploying OrahHTLC…`);
+  console.log(`🚀 Deploying OrahDEXHTLC…`);
   const hash = await client.deployContract({
     abi,
     bytecode,
@@ -143,7 +143,7 @@ async function deploy() {
   }
 
   const address = receipt.contractAddress;
-  console.log(`\n✅  OrahHTLC deployed!`);
+  console.log(`\n✅  OrahDEXHTLC deployed!`);
   console.log(`   Contract: ${address}`);
   console.log(`   Block:    ${receipt.blockNumber}`);
   console.log(`   Gas used: ${receipt.gasUsed}`);

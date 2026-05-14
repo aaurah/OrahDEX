@@ -2,9 +2,9 @@ import { useEffect, ReactNode, lazy, Suspense, Component } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
+import { PinPromptModal } from "@/components/PinPromptModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-import { Layout } from "@/components/Layout";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -14,17 +14,17 @@ import { useTxTracker } from "@/hooks/useTxTracker";
 import { useInternalEvmWallet } from "@/hooks/useInternalEvmWallet";
 import { useInternalBsvWallet } from "@/hooks/useInternalBsvWallet";
 
-import { LandingPage } from "@/pages/Landing";
-import { MobileMarkets } from "@/pages/mobile/MobileMarkets";
-import { MobileLayout } from "@/components/mobile/MobileLayout";
-
 const AdminLayout  = lazy(() => import("@/components/AdminLayout").then(m => ({ default: m.AdminLayout })));
+const MobileLayout = lazy(() => import("@/components/mobile/MobileLayout").then(m => ({ default: m.MobileLayout })));
+const Layout = lazy(() => import("@/components/Layout").then(m => ({ default: m.Layout })));
 
 /* ─── Lazy page imports — each becomes its own JS chunk ─── */
+const LandingPage  = lazy(() => import("@/pages/Landing").then(m => ({ default: m.LandingPage })));
 const Markets      = lazy(() => import("@/pages/Markets").then(m => ({ default: m.Markets })));
 const SpotTrading  = lazy(() => import("@/pages/Spot").then(m => ({ default: m.SpotTrading })));
 const FuturesTrading = lazy(() => import("@/pages/Futures").then(m => ({ default: m.FuturesTrading })));
 const Portfolio    = lazy(() => import("@/pages/Portfolio").then(m => ({ default: m.Portfolio })));
+const WalletPage   = lazy(() => import("@/pages/Wallet"));
 const DexHub       = lazy(() => import("@/pages/DexHub").then(m => ({ default: m.DexHub })));
 const SwapPage     = lazy(() => import("@/pages/Swap").then(m => ({ default: m.Swap })));
 const P2P          = lazy(() => import("@/pages/P2P").then(m => ({ default: m.P2P })));
@@ -42,9 +42,11 @@ const WhitePaper      = lazy(() => import("@/pages/WhitePaper").then(m => ({ def
 const SupportPage     = lazy(() => import("@/pages/Support").then(m => ({ default: m.SupportPage })));
 const WebSettings     = lazy(() => import("@/pages/Settings").then(m => ({ default: m.WebSettings })));
 
-/* Mobile — MobileMarkets is eager because it's the mobile default (catch-all) route */
-const MobilePortfolio  = lazy(() => import("@/pages/mobile/MobilePortfolio").then(m => ({ default: m.MobilePortfolio })));
-const MobileCoinWallet = lazy(() => import("@/pages/mobile/MobileCoinWallet").then(m => ({ default: m.MobileCoinWallet })));
+/* Mobile */
+const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
+const MobilePortfolio      = lazy(() => import("@/pages/mobile/MobilePortfolio").then(m => ({ default: m.MobilePortfolio })));
+const MobileCoinWallet     = lazy(() => import("@/pages/mobile/MobileCoinWallet").then(m => ({ default: m.MobileCoinWallet })));
+const MobileWalletPortfolio = lazy(() => import("@/pages/mobile/MobileWalletPortfolio").then(m => ({ default: m.MobileWalletPortfolio })));
 const MobileSettings  = lazy(() => import("@/pages/mobile/MobileSettings").then(m => ({ default: m.MobileSettings })));
 const UserApiKeys     = lazy(() => import("@/pages/UserApiKeys").then(m => ({ default: m.UserApiKeys })));
 const MobileTrade     = lazy(() => import("@/pages/mobile/MobileTrade").then(m => ({ default: m.MobileTrade })));
@@ -55,6 +57,7 @@ const KeeperProfile    = lazy(() => import("@/pages/KeeperProfile").then(m => ({
 const MobileHandCashBridge = lazy(() => import("@/pages/mobile/MobileHandCashBridge").then(m => ({ default: m.MobileHandCashBridge })));
 const MobileQRScanner  = lazy(() => import("@/pages/mobile/MobileQRScanner").then(m => ({ default: m.MobileQRScanner })));
 const MobileNFT        = lazy(() => import("@/pages/mobile/MobileNFT").then(m => ({ default: m.MobileNFT })));
+const MobileStaking    = lazy(() => import("@/pages/mobile/MobileStaking").then(m => ({ default: m.MobileStaking })));
 const NFTPage          = lazy(() => import("@/pages/NFT").then(m => ({ default: m.NFTPage })));
 const PredictionTrading = lazy(() => import("@/pages/Prediction").then(m => ({ default: m.PredictionTrading })));
 
@@ -69,6 +72,7 @@ const AdminApiSettings    = lazy(() => import("@/pages/admin/ApiSettings").then(
 const AdminContractBuilder = lazy(() => import("@/pages/admin/ContractBuilder").then(m => ({ default: m.AdminContractBuilder })));
 const AdminThemes         = lazy(() => import("@/pages/admin/Themes").then(m => ({ default: m.AdminThemes })));
 const AdminTransactions   = lazy(() => import("@/pages/admin/Transactions").then(m => ({ default: m.AdminTransactions })));
+const AdminStripeOrders   = lazy(() => import("@/pages/admin/StripeOrders").then(m => ({ default: m.AdminStripeOrders })));
 const AdminFeeWallet      = lazy(() => import("@/pages/admin/FeeWallet").then(m => ({ default: m.AdminFeeWallet })));
 const AdminBotProfit      = lazy(() => import("@/pages/admin/BotProfit").then(m => ({ default: m.AdminBotProfit })));
 const AdminArbBot         = lazy(() => import("@/pages/admin/ArbBot").then(m => ({ default: m.AdminArbBot })));
@@ -88,6 +92,7 @@ const AdminCopyVault      = lazy(() => import("@/pages/admin/CopyVaultAdmin").th
 const AdminPrediction     = lazy(() => import("@/pages/admin/PredictionAdmin"));
 const AdminTradingView    = lazy(() => import("@/pages/admin/TradingViewAdmin").then(m => ({ default: m.AdminTradingView })));
 const AdminLogsPage          = lazy(() => import("@/pages/admin/AdminLogs").then(m => ({ default: m.AdminLogsPage })));
+const AdminLEIncome          = lazy(() => import("@/pages/admin/LEIncome").then(m => ({ default: m.AdminLEIncome })));
 const AdminSupportSettings   = lazy(() => import("@/pages/admin/SupportSettings").then(m => ({ default: m.AdminSupportSettings })));
 const AdminSupportInbox      = lazy(() => import("@/pages/admin/SupportInbox").then(m => ({ default: m.AdminSupportInbox })));
 const SupportThreadPage      = lazy(() => import("@/pages/SupportThread").then(m => ({ default: m.SupportThread })));
@@ -98,6 +103,8 @@ const AdminIntegrations      = lazy(() => import("@/pages/admin/Integrations").t
 const AdminMintBurn          = lazy(() => import("@/pages/admin/MintBurn").then(m => ({ default: m.AdminMintBurn })));
 const AdminLedgerManager     = lazy(() => import("@/pages/admin/LedgerManager").then(m => ({ default: m.AdminLedgerManager })));
 const AdminDbSync            = lazy(() => import("@/pages/admin/DbSync").then(m => ({ default: m.AdminDbSync })));
+const AdminCexConnections    = lazy(() => import("@/pages/admin/CexConnections").then(m => ({ default: m.AdminCexConnections })));
+const AdminDiagnostics       = lazy(() => import("@/pages/admin/Diagnostics"));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -112,23 +119,23 @@ class AppErrorBoundary extends Component<
     return { hasError: true, error };
   }
   componentDidCatch(error: Error, info: { componentStack: string }) {
-    console.error("[Orah] Render error:", error, info.componentStack);
+    console.error("[OrahDEX] Render error:", error, info.componentStack);
   }
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#0b0f0d", color:"#e2e8f0", padding:"2rem", fontFamily:"sans-serif" }}>
-          <div style={{ textAlign:"center", maxWidth:"28rem" }}>
-            <div style={{ width:"4rem", height:"4rem", borderRadius:"50%", background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 1rem" }}>
-              <span style={{ fontSize:"1.5rem" }}>⚠️</span>
+        <div className="min-h-screen flex items-center justify-center bg-background text-foreground p-8">
+          <div className="text-center max-w-md">
+            <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center mx-auto mb-4">
+              <span className="text-2xl">⚠️</span>
             </div>
-            <h1 style={{ fontSize:"1.2rem", fontWeight:700, marginBottom:"0.5rem" }}>Something went wrong</h1>
-            <p style={{ color:"#94a3b8", fontSize:"0.875rem", marginBottom:"1.5rem" }}>
+            <h1 className="text-xl font-bold mb-2">Something went wrong</h1>
+            <p className="text-muted-foreground text-sm mb-6">
               {this.state.error?.message ?? "An unexpected error occurred."}
             </p>
             <button
               onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
-              style={{ padding:"0.625rem 1.25rem", background:"#22c55e", color:"#000", border:"none", borderRadius:"0.5rem", fontWeight:600, fontSize:"0.875rem", cursor:"pointer" }}
+              className="px-5 py-2.5 bg-primary text-primary-foreground rounded-lg font-semibold text-sm hover:brightness-110 transition-all"
             >
               Reload Page
             </button>
@@ -216,7 +223,11 @@ function Router() {
     const eth = (window as any).ethereum;
 
     const { network, address, disconnect, provider: storedProvider } = useWalletStore.getState();
-    if (network === "evm" && storedProvider !== "reown") {
+    // Skip the injected-wallet liveness check for:
+    //   • reown      → handled by its own subscription below
+    //   • orah-wallet → in-app self-custodial wallet, address derived locally
+    //                   from the PIN/passkey secret — never depends on window.ethereum
+    if (network === "evm" && storedProvider !== "reown" && storedProvider !== "orah-wallet") {
       if (!eth) {
         disconnect();
       } else {
@@ -240,6 +251,9 @@ function Router() {
     const onAccountsChanged = async (accounts: string[]) => {
       const { provider: p } = useWalletStore.getState();
       if (p === "reown") return;
+      // Orah Wallet is self-custodial and independent of window.ethereum —
+      // ignore injected wallet account events for it.
+      if (p === "orah-wallet") return;
       if (!accounts.length) {
         useWalletStore.getState().disconnect();
       } else {
@@ -328,6 +342,7 @@ function Router() {
       <Route path="/admin/contracts"><AdminRoute><AdminContractBuilder /></AdminRoute></Route>
       <Route path="/admin/themes">  <AdminRoute><AdminThemes /></AdminRoute></Route>
       <Route path="/admin/transactions"><AdminRoute><AdminTransactions /></AdminRoute></Route>
+      <Route path="/admin/stripe-orders"><AdminRoute><AdminStripeOrders /></AdminRoute></Route>
       <Route path="/admin/withdrawals"><AdminRoute><AdminWithdrawals /></AdminRoute></Route>
       <Route path="/admin/ledger">    <AdminRoute><AdminLedgerManager /></AdminRoute></Route>
       <Route path="/admin/db-sync">   <AdminRoute><AdminDbSync /></AdminRoute></Route>
@@ -356,6 +371,9 @@ function Router() {
       <Route path="/admin/support/inbox">  <AdminRoute><AdminSupportInbox /></AdminRoute></Route>
       <Route path="/admin/api-monitor"><AdminRoute><AdminApiMonitor /></AdminRoute></Route>
       <Route path="/admin/trade-analytics"><AdminRoute><AdminTradeAnalytics /></AdminRoute></Route>
+      <Route path="/admin/le-income">     <AdminRoute><AdminLEIncome /></AdminRoute></Route>
+      <Route path="/admin/cex-connections"><AdminRoute><AdminCexConnections /></AdminRoute></Route>
+      <Route path="/admin/diagnostics">   <AdminRoute><AdminDiagnostics /></AdminRoute></Route>
 
       {/* ── Landing page ── */}
       <Route path="/home">
@@ -416,13 +434,15 @@ function Router() {
                 <Route path="/copy"       component={CopyTrading} />
                 <Route path="/fees"       component={RevenuePage} />
                 <Route path="/keeper"     component={KeeperProfile} />
-                <Route path="/portfolio"  component={MobilePortfolio} />
+                <Route path="/wallet">{() => <MobileWalletPortfolio />}</Route>
+                <Route path="/portfolio">{() => <MobileWalletPortfolio />}</Route>
                 <Route path="/portfolio/:coin">
                   {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
                 </Route>
                 <Route path="/settings"           component={MobileSettings} />
                 <Route path="/settings/api-keys" component={UserApiKeys} />
                 <Route path="/deposit-bsv" component={MobileHandCashBridge} />
+                <Route path="/staking"    component={MobileStaking} />
                 <Route path="/nft"        component={MobileNFT} />
                 <Route path="/prediction" component={PredictionTrading} />
                 <Route path="/sovereign"  component={SovereignOverviewPage} />
@@ -438,34 +458,38 @@ function Router() {
       {/* ── Desktop layout ── */}
       {!isMobile && (
         <Route>
-          <Layout>
-            <Suspense fallback={<PageSkeleton />}>
-              <Switch>
-                <Route path="/markets"        component={Markets} />
-                <Route path="/trade/:symbol"  component={SpotTrading} />
-                <Route path="/futures/:symbol" component={FuturesTrading} />
-                <Route path="/dex"            component={DexHub} />
-                <Route path="/swap"           component={SwapPage} />
-                <Route path="/liquidity"      component={Liquidity} />
-                <Route path="/genesis"        component={GenesisLiquidity} />
-                <Route path="/p2p"            component={P2P} />
-                <Route path="/bridge"         component={BridgePage} />
-                <Route path="/copy"           component={CopyTrading} />
-                <Route path="/fees"           component={RevenuePage} />
-                <Route path="/keeper"         component={KeeperProfile} />
-                <Route path="/portfolio"      component={Portfolio} />
-                <Route path="/portfolio/:coin">
-                  {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
-                </Route>
-                <Route path="/nft"            component={NFTPage} />
-                <Route path="/prediction"     component={PredictionTrading} />
-                <Route path="/sovereign"      component={SovereignOverviewPage} />
-                <Route path="/settings"           component={WebSettings} />
-                <Route path="/settings/api-keys" component={UserApiKeys} />
-                <Route component={NotFound} />
-              </Switch>
-            </Suspense>
-          </Layout>
+          <Suspense fallback={<PageSkeleton />}>
+            <Layout>
+              <Suspense fallback={<PageSkeleton />}>
+                <Switch>
+                  <Route path="/markets"        component={Markets} />
+                  <Route path="/trade/:symbol"  component={SpotTrading} />
+                  <Route path="/futures/:symbol" component={FuturesTrading} />
+                  <Route path="/dex"            component={DexHub} />
+                  <Route path="/swap"           component={SwapPage} />
+                  <Route path="/liquidity"      component={Liquidity} />
+                  <Route path="/genesis"        component={GenesisLiquidity} />
+                  <Route path="/p2p"            component={P2P} />
+                  <Route path="/bridge"         component={BridgePage} />
+                  <Route path="/copy"           component={CopyTrading} />
+                  <Route path="/fees"           component={RevenuePage} />
+                  <Route path="/keeper"         component={KeeperProfile} />
+                  <Route path="/wallet">{() => <WalletPage />}</Route>
+                  <Route path="/portfolio"      component={Portfolio} />
+                  <Route path="/portfolio/:coin">
+                    {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
+                  </Route>
+                  <Route path="/staking"        component={MobileStaking} />
+                  <Route path="/nft"            component={NFTPage} />
+                  <Route path="/prediction"     component={PredictionTrading} />
+                  <Route path="/sovereign"      component={SovereignOverviewPage} />
+                  <Route path="/settings"           component={WebSettings} />
+                  <Route path="/settings/api-keys" component={UserApiKeys} />
+                  <Route component={NotFound} />
+                </Switch>
+              </Suspense>
+            </Layout>
+          </Suspense>
         </Route>
       )}
     </Switch>
@@ -482,6 +506,7 @@ function AppContent() {
         <Router />
       </WouterRouter>
       <Toaster />
+      <PinPromptModal />
     </>
   );
 }

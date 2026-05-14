@@ -47,7 +47,7 @@ function createTransporter(cfg: SmtpConfig): Transporter {
     port: cfg.port,
     secure: cfg.secure,
     auth: { user: cfg.user, pass: cfg.pass },
-    tls: { rejectUnauthorized: false },
+    tls: { rejectUnauthorized: true },
     connectionTimeout: 10_000,
     greetingTimeout: 10_000,
   });
@@ -69,7 +69,7 @@ export async function sendMail(opts: {
     const transporter = createTransporter(cfg);
 
     const mailOptions: SendMailOptions = {
-      from: `"Orah" <${opts.from || cfg.from}>`,
+      from: `"OrahDEX" <${opts.from || cfg.from}>`,
       to: opts.to,
       subject: opts.subject,
       text: opts.text,

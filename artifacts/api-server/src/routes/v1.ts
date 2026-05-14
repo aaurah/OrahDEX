@@ -1,5 +1,5 @@
 /**
- * Orah v1 Sovereign Routing API
+ * OrahDEX v1 Sovereign Routing API
  *
  * Three-layer architecture:
  *   Layer 1 — Off-chain Sovereign Routing Engine (quote, build, simulate, broadcast)
@@ -10,7 +10,6 @@
  */
 
 import { Router } from "express";
-import rateLimit from "express-rate-limit";
 import { db } from "@workspace/db";
 import { marketsTable, htlcLocksTable, ordersTable, keepersTable } from "@workspace/db/schema";
 import { eq, ilike, and, sum, sql as drizzleSql } from "drizzle-orm";
@@ -21,13 +20,6 @@ import { buildHtlc, verifySecret } from "../lib/htlc.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
 const router = Router();
-const bridgeRevealLimiter = rateLimit({
-  windowMs: 60_000,
-  limit: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "Too many requests. Please try again shortly." },
-});
 
 // ── Chain → Router contract address (Uniswap v2-compatible) ─────────────────
 const CHAIN_ROUTERS: Record<number, string> = {
@@ -67,7 +59,7 @@ const WRAPPED_NATIVE: Record<number, string> = {
 //
 // Identity-aware routing: higher-tier Keepers get fee discounts, priority routes,
 // and access to exclusive pools. Tier is determined by on-chain activity metrics
-// that the Orah protocol tracks (volume, LP commitment, tenure).
+// that the OrahDEX protocol tracks (volume, LP commitment, tenure).
 //
 //   Tier 0 — Standard   : 0.30% fee (public, anyone)
 //   Tier 1 — Guardian   : 0.25% fee (5+ BSV volume or LP provider)
@@ -75,7 +67,7 @@ const WRAPPED_NATIVE: Record<number, string> = {
 //   Tier 3 — Archon     : 0.15% fee (500+ BSV volume, Keeper NFT holder)
 //
 // In Phase 2 the tier will be resolved from the on-chain Keeper Registry contract.
-// For Phase 1, it is determined from trading history in the Orah database.
+// For Phase 1, it is determined from trading history in the OrahDEX database.
 
 interface KeeperInfo {
   address: string;
@@ -370,7 +362,7 @@ router.get("/quote", async (req, res) => {
 
     // Build the route breakdown
     const route = [
-      { pool: `Orah-${symIn}-${symOut}`, protocol: "Orah AMM", feeBps: 0 },
+      { pool: `OrahDEX-${symIn}-${symOut}`, protocol: "OrahDEX AMM", feeBps: 0 },
       { pool: `BSV-Settlement`, protocol: "BSV Layer 1", feeBps: feeBps },
     ];
 
@@ -507,7 +499,7 @@ router.post("/swap/build", async (req, res) => {
         discountPct: keeper.discountPct,
         applied:     keeper.tier > 0,
       },
-      settlementNote: "All trades settle on BSV L1 via Orah protocol after EVM execution.",
+      settlementNote: "All trades settle on BSV L1 via OrahDEX protocol after EVM execution.",
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "POST /v1/swap/build failed");
@@ -601,7 +593,7 @@ router.post("/tx/broadcast", async (req, res) => {
       const timer = setTimeout(() => ctrl.abort(), 15_000);
       const wocRes = await fetch(BSV_NET.wocBroadcast, {
         method:  "POST",
-        headers: { "Content-Type": "application/json", "User-Agent": "Orah/1.0" },
+        headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
         body:    JSON.stringify({ txhex: rawTx }),
         signal:  ctrl.signal,
       });
@@ -653,7 +645,7 @@ async function getBsvBlockHeight(): Promise<number> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 4000);
     const r = await fetch(`${BSV_NET.wocBase}/chain/info`, {
-      signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" },
+      signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" },
     });
     clearTimeout(timer);
     if (r.ok) {
@@ -731,7 +723,7 @@ router.post("/bridge/lock", async (req, res) => {
 });
 
 // POST /v1/bridge/reveal — relayer reveals the preimage to claim BSV
-router.post("/bridge/reveal", bridgeRevealLimiter, async (req, res) => {
+router.post("/bridge/reveal", async (req, res) => {
   try {
     const { lockId, secret } = req.body as { lockId?: string; secret?: string };
 
@@ -747,6 +739,15 @@ router.post("/bridge/reveal", bridgeRevealLimiter, async (req, res) => {
     }
 
     const lock = rows[0];
+
+    // Validate the user-supplied secret before passing it to verifySecret.
+    // A valid HTLC preimage is a hex-encoded 32-byte value (64 hex chars).
+    // Rejecting malformed values early prevents unexpected input from reaching
+    // the cryptographic comparison and keeps error messages unambiguous.
+    if (typeof secret !== "string" || !/^[0-9a-fA-F]{1,128}$/.test(secret)) {
+      res.status(400).json({ error: "secret must be a hex string (HTLC preimage)" });
+      return;
+    }
     const valid = verifySecret(secret, lock.secretHash);
 
     if (!valid) {

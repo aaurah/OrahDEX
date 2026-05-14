@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { CoinLogo } from "@/components/CoinLogo";
-import { useGetMarkets } from "@workspace/api-client-react";
+import { useStagedMarkets as useGetMarkets } from "@/hooks/useStagedMarkets";
 import { useSEO } from "@/hooks/useSEO";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
@@ -16,15 +16,34 @@ import {
 import { formatPrice, formatVolume, cn } from "@/lib/utils";
 import { hasCategory } from "@/lib/market-categories";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
-import { Search, Star, ArrowRightLeft, Zap, TrendingUp, Wallet, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Star, ArrowRightLeft, Zap, TrendingUp, Wallet, X, ChevronLeft, ChevronRight, BarChart2, ExternalLink, Info, Globe } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { getWalletMarketTab } from "@/lib/walletMarket";
 import { AiInsightsBar } from "@/components/AiInsightsBar";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } from "@/store/useSettingsStore";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
+import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+/** Normalised market row — all fields present after `normalise()` */
+interface MarketRow {
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+  lastPrice: string | number;
+  priceChangePercent24h: string | number;
+  high24h?: string | number;
+  low24h?: string | number;
+  volume24h?: string | number;
+  marketCap?: string | number;
+  type?: string;
+  name?: string;
+  contractAddresses?: Record<string, string>;
+  [key: string]: unknown;
+}
 
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
 type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "uniswap" | "pancake" | "futures" | "l1" | "l2" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20";
@@ -64,8 +83,8 @@ const TAB_META: TabMeta[] = [
   { id: "depin",     label: "DePIN",        color: "text-teal-400",    desc: "Decentralized Physical Infrastructure · compute, storage, wireless" },
   { id: "meme",      label: "MEME",         color: "text-pink-400",    desc: "Meme tokens" },
   { id: "defi",      label: "DEFI",         color: "text-emerald-400", desc: "DeFi protocols · DEXs, lending, yield" },
-  { id: "uniswap",   label: "UNISWAP",      color: "text-pink-400",    desc: "Uniswap v2 & v3 pools · Ethereum + multi-chain" },
-  { id: "pancake",   label: "PANCAKE",      color: "text-yellow-400",  desc: "PancakeSwap v2 & v3 · BNB Smart Chain + multi-chain" },
+  { id: "uniswap",   label: "AMM V3",       color: "text-pink-400",    desc: "Concentrated liquidity AMM pools · Ethereum + multi-chain" },
+  { id: "pancake",   label: "BNB DEX",      color: "text-yellow-400",  desc: "BNB Smart Chain DEX pools + multi-chain" },
   { id: "gaming",    label: "GAMING",       color: "text-violet-400",  desc: "Gaming & Metaverse · P2E, NFT games, virtual worlds" },
   { id: "cosmos",    label: "COSMOS",       color: "text-purple-400",  desc: "Cosmos IBC ecosystem · app-chains, DEXs, data availability" },
   { id: "l1",        label: "LAYER 1",      color: "text-amber-400",   desc: "Layer 1 blockchains · all major base chains" },
@@ -105,15 +124,15 @@ const ALL_MOCK = () => [
 export function Markets() {
   useSEO({
     title: "Crypto Markets — 500+ Trading Pairs · Every Coin",
-    description: "Trade every cryptocurrency on Orah — 500+ spot pairs across BTC, ETH, SOL, all Layer 1s, Layer 2s, DeFi, Gaming, Cosmos, AI/DePIN, Meme, RWA, BRC-20 & more. Live prices from CoinGecko.",
-    keywords: "crypto markets, bitcoin price, ethereum price, BSV price, live crypto prices, spot trading pairs, Orah markets",
+    description: "Trade every cryptocurrency on OrahDEX — 500+ spot pairs across BTC, ETH, SOL, all Layer 1s, Layer 2s, DeFi, Gaming, Cosmos, AI/DePIN, Meme, RWA, BRC-20 & more. Live prices from CoinGecko.",
+    keywords: "crypto markets, bitcoin price, ethereum price, BSV price, live crypto prices, spot trading pairs, OrahDEX markets",
     url: "/",
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "ItemList",
-      "name": "Orah Cryptocurrency Markets",
-      "description": "Live cryptocurrency trading pairs on Orah",
-      "url": "https://orah.replit.app/"
+      "name": "OrahDEX Cryptocurrency Markets",
+      "description": "Live cryptocurrency trading pairs on OrahDEX",
+      "url": "https://orahdex.replit.app/"
     }
   });
 
@@ -123,6 +142,7 @@ export function Markets() {
   const [search, setSearch] = useState("");
   const [stars, setStars] = useState<Set<string>>(new Set());
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
+  const [selectedCoin, setSelectedCoin] = useState<MarketRow | null>(null);
   const prevAddressRef = useRef<string | null>(null);
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const [tabCanScrollLeft, setTabCanScrollLeft] = useState(false);
@@ -177,8 +197,53 @@ export function Markets() {
     navigate(href);
   };
 
-  const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 15_000 } });
-  const raw = ((apiMarkets && apiMarkets.length > 0 ? apiMarkets : []) as any[]).map(normalise);
+  const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } });
+  const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
+
+  // LetsExchange all quoted pairs — complete external pair universe
+  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true });
+  const leAllPairs = useMemo(
+    () => (rawLeAllPairs ?? []).map(p => normalise({
+      symbol:               p.symbol,
+      baseAsset:            p.baseAsset,
+      quoteAsset:           p.quoteAsset,
+      lastPrice:            p.lastPrice,
+      priceChangePercent24h: p.priceChangePercent24h,
+      volume24h:            p.volume,
+      type:                 "spot",
+    })).filter(m => m.lastPrice > 0),
+    [rawLeAllPairs],
+  );
+
+  // LetsExchange BSV-quoted pairs — all 800+ coins tradeable vs BSV
+  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
+  const leBsvPairs = useMemo(
+    () => (rawLePairs ?? []).map(p => normalise({
+      symbol:               p.symbol,
+      baseAsset:            p.baseAsset,
+      quoteAsset:           p.quoteAsset,
+      lastPrice:            p.lastPrice,
+      priceChangePercent24h: p.priceChangePercent24h,
+      volume24h:            p.volume,
+      type:                 "spot",
+    })).filter(m => m.lastPrice > 0),
+    [rawLePairs],
+  );
+
+  // LetsExchange BTC-quoted pairs — all 800+ coins tradeable vs BTC
+  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC" });
+  const leBtcPairs = useMemo(
+    () => (rawLeBtcPairs ?? []).map(p => normalise({
+      symbol:               p.symbol,
+      baseAsset:            p.baseAsset,
+      quoteAsset:           p.quoteAsset,
+      lastPrice:            p.lastPrice,
+      priceChangePercent24h: p.priceChangePercent24h,
+      volume24h:            p.volume,
+      type:                 "spot",
+    })).filter(m => m.lastPrice > 0),
+    [rawLeBtcPairs],
+  );
 
   /**
    * Build a symbol → live-price map from the API response.
@@ -215,47 +280,24 @@ export function Markets() {
   const tradeable = (arr: any[]) =>
     arr.filter(m => parseFloat(m.lastPrice || "0") > 0);
 
-  /** Get all live pairs for a quote asset, falling back to enriched mock data */
-  const dbByQuote = (quote: string) => {
-    const live = tradeable(raw.filter(m => m.quoteAsset === quote && m.type !== "futures"));
-    if (live.length > 0) return live;
-    // Fallback: show enriched mock pairs for this quote so the page is never blank
-    const mockMap: Record<string, any[]> = {
-      USDT: STABLE_MOCK[usdSub === "USDT" ? "USDT" : usdSub],
-      USDC: STABLE_MOCK.USDC, TUSD: STABLE_MOCK.TUSD, USDD: STABLE_MOCK.USDD,
-      BSV: BSV_MARKETS, BTC: BTC_MARKETS, ETH: ETH_MARKETS, BCH: BCH_MARKETS,
-      BNB: BNB_MARKETS, MATIC: MATIC_MARKETS, AVAX: AVAX_MARKETS,
-      ARB: ARB_MARKETS, OP: OP_MARKETS, FTM: FTM_MARKETS, CRO: CRO_MARKETS,
-      BASE: BASE_MARKETS, LINEA: LINEA_MARKETS, ZK: ZK_MARKETS,
-      SCR: SCR_MARKETS, MNT: MNT_MARKETS,
-    };
-    const fallback = mockMap[quote];
-    return fallback ? tradeable(enrich(fallback.map(normalise))) : [];
-  };
+  /** Get all live pairs for a quote asset — DB-only, no mock fallback */
+  const dbByQuote = (quote: string) =>
+    tradeable(raw.filter(m => m.quoteAsset === quote && m.type !== "futures"));
 
-  /** For protocol tabs: cross-reference mock list with DB pairs; fall back to enriched mock */
+  /** For protocol tabs: cross-reference mock list with DB pairs so only real DB pairs show */
   const dbBySymbols = (mockList: any[]) => {
     const symbols = new Set(mockList.map((m: any) => m.symbol ?? `${m.baseAsset}/${m.quoteAsset}`));
-    const live = tradeable(raw.filter(m => symbols.has(m.symbol)));
-    if (live.length > 0) return live;
-    return tradeable(enrich(mockList));
+    return tradeable(raw.filter(m => symbols.has(m.symbol)));
   };
 
   /**
    * For themed category tabs: use the live category map so every DB pair
    * whose base asset belongs to `tag` is shown automatically.
    * Prefer USDT pairs; if a base asset only has other quotes those show too.
-   * Falls back to enriched mock data when the API is down.
    */
-  const dbByCategory = (tag: string, fallbackMock?: any[]) => {
+  const dbByCategory = (tag: string) => {
     const inCategory = raw.filter(m => m.type !== "futures" && hasCategory(m.baseAsset, tag));
-    if (inCategory.length === 0) {
-      // API is down or no live data — show enriched mock data for this category
-      if (fallbackMock && fallbackMock.length > 0) {
-        return tradeable(enrich(fallbackMock.map(normalise)));
-      }
-      return [];
-    }
+    if (inCategory.length === 0) return [];
     // Group by base asset and pick the best quote in priority order
     const priority = ["USDT","USDC","TUSD","USDD","BTC","ETH","BSV","BNB"];
     const byBase = new Map<string, any>();
@@ -276,12 +318,24 @@ export function Markets() {
       case "favorites":
         return tradeable(raw.filter(m => stars.has(m.symbol)));
       case "new":
-        // NEW_MARKETS defines symbols; cross-reference with live DB data, fall back to enriched mock
+        // NEW_MARKETS defines symbols; cross-reference with live DB data
         return dbBySymbols(NEW_MARKETS.map(normalise));
       case "usd":
         return dbByQuote(usdSub);
-      case "bsv":     return dbByQuote("BSV");
-      case "btc":     return dbByQuote("BTC");
+      case "bsv": {
+        const dbBsv = dbByQuote("BSV");
+        const dbSymbols = new Set(dbBsv.map((m: any) => m.symbol));
+        const dbBases = new Set(dbBsv.map((m: any) => m.baseAsset));
+        const leOnly = leBsvPairs.filter(m => !dbSymbols.has(m.symbol) && !dbBases.has(m.baseAsset));
+        return [...dbBsv, ...leOnly];
+      }
+      case "btc": {
+        const dbBtc = dbByQuote("BTC");
+        const dbBtcSymbols = new Set(dbBtc.map((m: any) => m.symbol));
+        const dbBtcBases = new Set(dbBtc.map((m: any) => m.baseAsset));
+        const leOnlyBtc = leBtcPairs.filter(m => !dbBtcSymbols.has(m.symbol) && !dbBtcBases.has(m.baseAsset));
+        return [...dbBtc, ...leOnlyBtc];
+      }
       case "eth":     return dbByQuote("ETH");
       case "bnb":     return dbByQuote("BNB");
       case "matic":   return dbByQuote("MATIC");
@@ -297,37 +351,42 @@ export function Markets() {
       case "mnt":     return dbByQuote("MNT");
       case "bch":     return dbByQuote("BCH");
       case "zora":    return dbBySymbols(ZORA_MARKETS.map(normalise));
-      case "sol":     return dbByCategory("sol_eco", SOL_MARKETS);
-      case "ai":      return dbByCategory("ai", AI_MARKETS);
-      case "depin":   return dbByCategory("depin", DEPIN_MARKETS);
-      case "meme":    return dbByCategory("meme", MEME_MARKETS);
-      case "defi":    return dbByCategory("defi", DEFI_MARKETS);
+      case "sol":     return dbByCategory("sol_eco");
+      case "ai":      return dbByCategory("ai");
+      case "depin":   return dbByCategory("depin");
+      case "meme":    return dbByCategory("meme");
+      case "defi":    return dbByCategory("defi");
       case "uniswap": return dbBySymbols(UNISWAP_MARKETS.map(normalise));
       case "pancake": return dbBySymbols(PANCAKE_MARKETS.map(normalise));
-      case "gaming":  return dbByCategory("gaming", GAMING_MARKETS);
-      case "cosmos":  return dbByCategory("cosmos", COSMOS_MARKETS);
-      case "l1":      return dbByCategory("l1", L1_MARKETS);
-      case "l2":      return dbByCategory("l2", L2_MARKETS);
-      case "rwa":     return dbByCategory("rwa", RWA_MARKETS);
-      case "exchange":return dbByCategory("exchange", EXCHANGE_MARKETS);
-      case "brc20":   return dbByCategory("brc20", BRC20_MARKETS);
-      case "futures": {
-        const live = tradeable(raw.filter(m => m.type === "futures"));
-        return live.length > 0 ? live : tradeable(enrich(FUTURES_MARKETS.map(normalise)));
-      }
+      case "gaming":  return dbByCategory("gaming");
+      case "cosmos":  return dbByCategory("cosmos");
+      case "l1":      return dbByCategory("l1");
+      case "l2":      return dbByCategory("l2");
+      case "rwa":     return dbByCategory("rwa");
+      case "exchange":return dbByCategory("exchange");
+      case "brc20":   return dbByCategory("brc20");
+      case "futures": return tradeable(raw.filter(m => m.type === "futures"));
       default:        return [];
     }
   }
 
   function tabCount(t: Tab): number {
-    const dbQ  = (q: string) => dbByQuote(q).length;
+    const dbQ  = (q: string) => tradeable(raw.filter(m => m.quoteAsset === q && m.type !== "futures")).length;
     const dbS  = (list: any[]) => dbBySymbols(list.map(normalise)).length;
     switch (t) {
       case "favorites": return tradeable(raw.filter(m => stars.has(m.symbol))).length;
       case "new":       return dbBySymbols(NEW_MARKETS.map(normalise)).length;
       case "usd":       return dbQ(usdSub);
-      case "bsv":       return dbQ("BSV");
-      case "btc":       return dbQ("BTC");
+      case "bsv": {
+        const c = dbQ("BSV");
+        const dbBases = new Set(tradeable(raw.filter((m:any)=>m.quoteAsset==="BSV")).map((m:any)=>m.baseAsset));
+        return c + leBsvPairs.filter(m => !dbBases.has(m.baseAsset)).length;
+      }
+      case "btc": {
+        const c = dbQ("BTC");
+        const dbBtcBases = new Set(tradeable(raw.filter((m:any)=>m.quoteAsset==="BTC")).map((m:any)=>m.baseAsset));
+        return c + leBtcPairs.filter(m => !dbBtcBases.has(m.baseAsset)).length;
+      }
       case "eth":       return dbQ("ETH");
       case "bnb":       return dbQ("BNB");
       case "matic":     return dbQ("MATIC");
@@ -343,27 +402,29 @@ export function Markets() {
       case "mnt":       return dbQ("MNT");
       case "bch":       return dbQ("BCH");
       case "zora":      return dbS(ZORA_MARKETS);
-      case "sol":       return dbByCategory("sol_eco", SOL_MARKETS).length;
-      case "ai":        return dbByCategory("ai", AI_MARKETS).length;
-      case "depin":     return dbByCategory("depin", DEPIN_MARKETS).length;
-      case "meme":      return dbByCategory("meme", MEME_MARKETS).length;
-      case "defi":      return dbByCategory("defi", DEFI_MARKETS).length;
+      case "sol":       return dbByCategory("sol_eco").length;
+      case "ai":        return dbByCategory("ai").length;
+      case "depin":     return dbByCategory("depin").length;
+      case "meme":      return dbByCategory("meme").length;
+      case "defi":      return dbByCategory("defi").length;
       case "uniswap":   return dbS(UNISWAP_MARKETS);
       case "pancake":   return dbS(PANCAKE_MARKETS);
-      case "gaming":    return dbByCategory("gaming", GAMING_MARKETS).length;
-      case "cosmos":    return dbByCategory("cosmos", COSMOS_MARKETS).length;
-      case "l1":        return dbByCategory("l1", L1_MARKETS).length;
-      case "l2":        return dbByCategory("l2", L2_MARKETS).length;
-      case "rwa":       return dbByCategory("rwa", RWA_MARKETS).length;
-      case "exchange":  return dbByCategory("exchange", EXCHANGE_MARKETS).length;
-      case "brc20":     return dbByCategory("brc20", BRC20_MARKETS).length;
-      case "futures":   return tradeable(raw.filter(m => m.type === "futures")).length || FUTURES_MARKETS.length;
+      case "gaming":    return dbByCategory("gaming").length;
+      case "cosmos":    return dbByCategory("cosmos").length;
+      case "l1":        return dbByCategory("l1").length;
+      case "l2":        return dbByCategory("l2").length;
+      case "rwa":       return dbByCategory("rwa").length;
+      case "exchange":  return dbByCategory("exchange").length;
+      case "brc20":     return dbByCategory("brc20").length;
+      case "futures":   return tradeable(raw.filter(m => m.type === "futures")).length;
       default:          return 0;
     }
   }
 
   const markets  = getMarkets();
-  const searchPool = search ? tradeable(raw) : markets;
+  const searchPool = search
+    ? [...tradeable(raw), ...leAllPairs.filter(m => !raw.some((r: any) => r.symbol === m.symbol))]
+    : markets;
   const filtered = searchPool.filter(m =>
     m.symbol.toLowerCase().includes(search.toLowerCase()) ||
     (m.baseAsset ?? "").toLowerCase().includes(search.toLowerCase())
@@ -380,7 +441,7 @@ export function Markets() {
   const { prices: liveCrossRates } = useWalletPrices();
   const BTC_USD = liveCrossRates.BTC.usd || 83000;
   const BSV_USD = liveCrossRates.BSV.usd || 14;
-  const ETH_USD = liveCrossRates.ETH.usd || 1800;
+  const ETH_USD = liveCrossRates.ETH.usd || 2400;
 
   const QUOTE_USD: Record<string, number> = {
     USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
@@ -521,6 +582,7 @@ export function Markets() {
                 placeholder={`Search ${tab === "usd" ? usdSub : meta.label} pairs…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
                 className="w-44 bg-background border border-border rounded-lg pl-8 pr-3 py-1 text-xs focus:outline-none focus:border-primary focus:w-56 transition-all"
               />
             </div>
@@ -560,6 +622,7 @@ export function Markets() {
                 placeholder="Search…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
                 className="w-36 bg-background border border-border rounded-lg pl-8 pr-3 py-1 text-xs focus:outline-none focus:border-primary transition-all"
               />
             </div>
@@ -652,7 +715,13 @@ export function Markets() {
                       </td>
                       <td className="px-3 py-2.5 text-xs text-muted-foreground/50 tabular-nums">{idx + 1}</td>
                       <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-2">
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setSelectedCoin(m)}
+                          onKeyDown={e => e.key === "Enter" && setSelectedCoin(m)}
+                          className="flex items-center gap-2 text-left hover:opacity-80 transition-opacity cursor-pointer"
+                        >
                           <CoinLogo symbol={base} size={32} />
                           <div className="flex flex-col gap-0.5">
                             <div className="flex items-center gap-1.5">
@@ -665,11 +734,25 @@ export function Markets() {
                                 <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">NEW</span>
                               )}
                             </div>
-                            <ContractAddressBadge
-                              baseAsset={base}
-                              dbAddresses={(m as any).contractAddresses}
-                              variant="full"
-                            />
+                            {(() => {
+                              const info = getCoinInfo(base);
+                              return info ? (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] text-muted-foreground/70 leading-tight max-w-[180px] truncate">{info.description}</span>
+                                  {info.tags.slice(0, 2).map(tag => (
+                                    <span key={tag} className={cn("text-[9px] font-semibold px-1 py-px rounded border leading-none", getTagColor(tag))}>
+                                      {tag}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <ContractAddressBadge
+                                  baseAsset={base}
+                                  dbAddresses={(m as MarketRow).contractAddresses}
+                                  variant="full"
+                                />
+                              );
+                            })()}
                           </div>
                         </div>
                       </td>
@@ -710,6 +793,13 @@ export function Markets() {
                       <td className="px-3 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
+                            onClick={() => setSelectedCoin(m)}
+                            className="inline-flex items-center gap-1 border border-border text-muted-foreground px-2 py-1 rounded-md font-bold text-[11px] hover:border-primary/40 hover:text-foreground transition-all active:scale-95"
+                            title="View coin details"
+                          >
+                            <Info className="w-3 h-3" />
+                          </button>
+                          <button
                             onClick={() => handleTrade(tradeHref)}
                             className="inline-flex items-center gap-1 bg-primary text-primary-foreground px-3 py-1 rounded-md font-bold text-[11px] hover:brightness-110 transition-all active:scale-95"
                           >
@@ -736,6 +826,238 @@ export function Markets() {
         </div>
       </div>
 
+      {/* ── Coin detail panel (slide-over) ── */}
+      {selectedCoin && (
+        <CoinDetailPanel
+          coin={selectedCoin}
+          onClose={() => setSelectedCoin(null)}
+          onTrade={(href) => { setSelectedCoin(null); handleTrade(href); }}
+          toUSD={toUSD}
+          fmtBTC={fmtBTC}
+          fmtBSV={fmtBSV}
+          qPrice={qPrice}
+          qSym={qSym}
+          applyQConversion={applyQConversion}
+          isCrossQuote={isCrossQuote}
+          tab={tab}
+          isStarred={stars.has(selectedCoin.symbol)}
+          onToggleStar={() => toggleStar(selectedCoin.symbol)}
+        />
+      )}
+
     </div>
+  );
+}
+
+/* ── Coin detail slide-over panel ── */
+function CoinDetailPanel({
+  coin, onClose, onTrade, toUSD, fmtBTC, fmtBSV, qPrice, qSym,
+  applyQConversion, isCrossQuote, tab, isStarred, onToggleStar,
+}: {
+  coin: MarketRow;
+  onClose: () => void;
+  onTrade: (href: string) => void;
+  toUSD: (price: number, quote: string) => number;
+  fmtBTC: (usd: number) => string;
+  fmtBSV: (usd: number) => string;
+  qPrice: (p: number) => string;
+  qSym: string;
+  applyQConversion: boolean;
+  isCrossQuote: boolean;
+  tab: string;
+  isStarred: boolean;
+  onToggleStar: () => void;
+}) {
+  const base  = coin.baseAsset ?? coin.symbol.split(/[-/]/)[0];
+  const quote = coin.quoteAsset ?? coin.symbol.split(/[-/]/)[1];
+  const price = parseFloat(String(coin.lastPrice)) || 0;
+  const chg   = parseFloat(String(coin.priceChangePercent24h)) || 0;
+  const isUp  = chg >= 0;
+  const priceUSD = toUSD(price, quote);
+  const isFutures = tab === "futures";
+  const tradeHref = isFutures
+    ? `/futures/${coin.symbol.replace(/\//g, "-")}`
+    : `/trade/${coin.symbol.replace(/\//g, "-")}`;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div className="fixed right-0 top-0 bottom-0 z-50 w-80 bg-card border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+          <div className="flex items-center gap-3">
+            <CoinLogo symbol={base} size={36} />
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-base text-foreground">{base}</span>
+                <span className="text-muted-foreground text-sm">/{quote}</span>
+                {isFutures && (
+                  <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">PERP</span>
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5">{coin.name ?? base} · {isFutures ? "Perpetual" : "Spot"}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={onToggleStar}
+              className={cn("p-1.5 rounded-lg transition-colors", isStarred ? "text-green-400" : "text-muted-foreground hover:text-green-400")}
+              title={isStarred ? "Remove from favorites" : "Add to favorites"}
+            >
+              <Star className={cn("w-4 h-4", isStarred && "fill-green-400")} />
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Price section */}
+        <div className="px-4 py-4 border-b border-border shrink-0">
+          <div className="flex items-end justify-between">
+            <div>
+              <div className="flex items-baseline gap-1.5">
+                {applyQConversion && <span className="text-muted-foreground/60 text-xs">{qSym}</span>}
+                <span className={cn("text-2xl font-bold font-mono", isUp ? "text-green-400" : "text-red-400")}>
+                  {qPrice(price)}
+                </span>
+                {isCrossQuote && !applyQConversion && (
+                  <span className="text-sm text-muted-foreground font-mono">{quote}</span>
+                )}
+              </div>
+              {!isCrossQuote && <p className="text-xs text-muted-foreground font-mono mt-0.5">≈${formatPrice(priceUSD)} USD</p>}
+              {isCrossQuote && priceUSD > 0 && (
+                <p className="text-xs text-muted-foreground font-mono mt-0.5">≈${formatPrice(priceUSD)} USD</p>
+              )}
+            </div>
+            <div className={cn(
+              "flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold text-sm",
+              isUp ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"
+            )}>
+              {isUp ? "▲" : "▼"} {isUp ? "+" : ""}{chg.toFixed(2)}%
+            </div>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+          {/* About / description */}
+          {(() => {
+            const info = getCoinInfo(base);
+            if (!info) return null;
+            return (
+              <div className="bg-secondary/40 rounded-xl p-3 space-y-2">
+                <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                  <Info className="w-3 h-3" /> About {info.name}
+                </p>
+                <p className="text-xs text-muted-foreground leading-relaxed">{info.description}</p>
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {info.tags.map(tag => (
+                    <span key={tag} className={cn("text-[9px] font-semibold px-1.5 py-0.5 rounded border leading-none", getTagColor(tag))}>
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+                {info.website && (
+                  <a
+                    href={info.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline mt-1"
+                  >
+                    <Globe className="w-3 h-3" /> {info.website.replace(/^https?:\/\//, "")}
+                  </a>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* 24h stats */}
+          <div className="bg-secondary/40 rounded-xl p-3 space-y-2">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+              <BarChart2 className="w-3 h-3" /> 24h Statistics
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: "High", value: qPrice(parseFloat(String(coin.high24h ?? 0)) || 0), color: "text-green-400" },
+                { label: "Low",  value: qPrice(parseFloat(String(coin.low24h ?? 0)) || 0),  color: "text-red-400" },
+                { label: "Volume", value: formatVolume(parseFloat(String(coin.volume24h ?? 0)) || 0), color: "text-foreground" },
+                { label: "Market Cap", value: coin.marketCap ? formatVolume(parseFloat(String(coin.marketCap)) || 0) : "—", color: "text-foreground" },
+              ].map(s => (
+                <div key={s.label} className="bg-background/50 rounded-lg p-2">
+                  <p className="text-[10px] text-muted-foreground">{s.label}</p>
+                  <p className={cn("text-xs font-semibold font-mono mt-0.5", s.color)}>{s.value || "—"}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Cross-rate pricing */}
+          {priceUSD > 0 && (
+            <div className="bg-secondary/40 rounded-xl p-3 space-y-2">
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                <ArrowRightLeft className="w-3 h-3" /> Cross Rates
+              </p>
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-orange-400 inline-block" /> BTC Price
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-orange-400 tabular-nums">
+                    {base === "BTC" ? "1 BTC" : fmtBTC(priceUSD)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> BSV Price
+                  </span>
+                  <span className="text-xs font-mono font-semibold text-yellow-400 tabular-nums">
+                    {base === "BSV" ? "1 BSV" : fmtBSV(priceUSD)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Contract addresses */}
+          <div className="bg-secondary/40 rounded-xl p-3">
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-1.5 mb-2">
+              <Zap className="w-3 h-3" /> Contract / Chain Info
+            </p>
+            <ContractAddressBadge
+              baseAsset={base}
+              dbAddresses={coin.contractAddresses}
+              variant="full"
+            />
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="px-4 py-3 border-t border-border space-y-2 shrink-0">
+          <button
+            onClick={() => onTrade(tradeHref)}
+            className="w-full flex items-center justify-center gap-2 bg-primary text-primary-foreground py-2.5 rounded-xl font-bold text-sm hover:brightness-110 transition-all active:scale-95"
+          >
+            <TrendingUp className="w-4 h-4" />
+            {isFutures ? "Trade Perpetual" : "Trade Spot"}
+          </button>
+          {!isFutures && (
+            <a
+              href={`https://www.coingecko.com/en/coins/${base.toLowerCase()}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center justify-center gap-2 border border-border text-muted-foreground py-2 rounded-xl font-semibold text-xs hover:border-primary/40 hover:text-foreground transition-all"
+            >
+              <ExternalLink className="w-3.5 h-3.5" /> View on CoinGecko
+            </a>
+          )}
+        </div>
+      </div>
+    </>
   );
 }

@@ -1,9 +1,9 @@
 /**
  * depositAddresses.ts
  *
- * Manages per-user Orah deposit addresses for external EVM wallets.
+ * Manages per-user OrahDEX deposit addresses for external EVM wallets.
  * Each user wallet gets a unique custodial EVM address they can send funds to.
- * Orah controls the private key; the address is only used to receive deposits.
+ * OrahDEX controls the private key; the address is only used to receive deposits.
  *
  * Deposit flow:
  *   1. User calls GET /deposit/address → receives their dedicated deposit address
@@ -20,12 +20,14 @@ import {
   scryptSync,
 } from "node:crypto";
 import { pool } from "@workspace/db";
-
-const WALLET_SECRET =
-  process.env.EVM_WALLET_SECRET ?? "orah-internal-evm-fallback-key-32bytes!";
+import { getRequiredEnv } from "./requiredEnv.js";
 
 function deriveKey(): Buffer {
-  return scryptSync(WALLET_SECRET, "orah-deposit-addr-salt-v1", 32) as Buffer;
+  return scryptSync(
+    getRequiredEnv("EVM_WALLET_SECRET", "[FATAL] EVM_WALLET_SECRET is not set. Refusing to derive deposit wallet keys."),
+    "orahdex-deposit-addr-salt-v1",
+    32,
+  ) as Buffer;
 }
 
 function encrypt(plaintext: string): string {

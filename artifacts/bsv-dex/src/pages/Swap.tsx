@@ -7,16 +7,17 @@
  *   - Chains: Ethereum, Base, BSC, Arbitrum, Optimism, Polygon, Avalanche
  *
  * MODE 2: "Exchange" — custodial internal order matching (existing system).
- *   - Fast, no gas, uses Orah internal ledger balances
+ *   - Fast, no gas, uses OrahDEX internal ledger balances
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useLocation } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowUpDown, Settings2, ChevronDown, Loader2,
   Zap, ExternalLink, AlertTriangle, CheckCircle2,
   RefreshCw, ArrowRight, Info, Wallet, X, Link2,
+  ShoppingCart, Copy, QrCode, CreditCard, Building2, Smartphone,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -27,29 +28,35 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { CoinLogo } from "@/components/CoinLogo";
 import { ALL_SPOT_MOCK } from "@/lib/mock-data";
-import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData, erc20Abi, maxUint256 } from "viem";
+import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData, erc20Abi } from "viem";
 import type { Account } from "viem";
-import { writeContract as coreWriteContract } from "@wagmi/core";
+import { writeContract as coreWriteContract, signMessage } from "@wagmi/core";
 import { getWagmiConfig, CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS } from "@/lib/reown";
 import { checkAllowance, pollTxReceipt } from "@/lib/reown";
-import { getViemAccountForOrahDEXWallet } from "@/lib/passkeyWallet";
+import { getViemAccountForAddress } from "@/lib/walletSigner";
 import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
+import { LetsExchangePanel } from "@/components/LetsExchangePanel";
+import { BuyCryptoModal } from "@/components/BuyCryptoModal";
+import { DirectBuyModal } from "@/components/DirectBuyModal";
+import { KycModal } from "@/components/KycModal";
+type FiatPayMethod = "apple" | "google" | "card" | "bank";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
 
 const DEX_CHAINS = [
-  { id: 1,     name: "Ethereum", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://etherscan.io/tx/",         color: "#627EEA" },
-  { id: 8453,  name: "Base",     nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://basescan.org/tx/",         color: "#0052FF" },
-  { id: 56,    name: "BSC",      nativeSymbol: "BNB",  logo: "BNB",   explorer: "https://bscscan.com/tx/",          color: "#F0B90B" },
-  { id: 42161, name: "Arbitrum", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://arbiscan.io/tx/",          color: "#28A0F0" },
-  { id: 10,    name: "Optimism", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://optimistic.etherscan.io/tx/", color: "#FF0420" },
-  { id: 137,   name: "Polygon",  nativeSymbol: "POL",  logo: "MATIC", explorer: "https://polygonscan.com/tx/",      color: "#8247E5" },
-  { id: 43114, name: "Avalanche",nativeSymbol: "AVAX", logo: "AVAX",  explorer: "https://snowtrace.io/tx/",         color: "#E84142" },
+  { id: 1,        name: "Ethereum", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://etherscan.io/tx/",            color: "#627EEA", testnet: false },
+  { id: 8453,     name: "Base",     nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://basescan.org/tx/",            color: "#0052FF", testnet: false },
+  { id: 56,       name: "BSC",      nativeSymbol: "BNB",  logo: "BNB",   explorer: "https://bscscan.com/tx/",             color: "#F0B90B", testnet: false },
+  { id: 42161,    name: "Arbitrum", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://arbiscan.io/tx/",             color: "#28A0F0", testnet: false },
+  { id: 10,       name: "Optimism", nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://optimistic.etherscan.io/tx/", color: "#FF0420", testnet: false },
+  { id: 137,      name: "Polygon",  nativeSymbol: "POL",  logo: "MATIC", explorer: "https://polygonscan.com/tx/",         color: "#8247E5", testnet: false },
+  { id: 43114,    name: "Avalanche",nativeSymbol: "AVAX", logo: "AVAX",  explorer: "https://snowtrace.io/tx/",            color: "#E84142", testnet: false },
+  { id: 11155111, name: "Sepolia",  nativeSymbol: "ETH",  logo: "ETH",   explorer: "https://sepolia.etherscan.io/tx/",    color: "#8A92B2", testnet: true  },
 ] as const;
 
-type SupportedChainId = 1 | 8453 | 56 | 42161 | 10 | 137 | 43114;
+type SupportedChainId = 1 | 8453 | 56 | 42161 | 10 | 137 | 43114 | 11155111;
 
 // ─── Token list ───────────────────────────────────────────────────────────────
 
@@ -138,38 +145,50 @@ const TOKENS: Record<SupportedChainId, Token[]> = {
     { symbol: "QI",   name: "BENQI",           decimals: 18, address: "0x8729438EB15e2C8B576fCc6AeCdA6A148776C0F5" },
     { symbol: "GMX",  name: "GMX",             decimals: 18, address: "0x62edc0692BD897D2295872a9FFCac5425011c661" },
   ],
+  // ── Sepolia testnet ──────────────────────────────────────────────────────
+  // Faucet-funded test tokens. Liquidity is thin — quotes may fail on most pairs.
+  11155111: [
+    { symbol: "ETH",  name: "Sepolia Ether",   decimals: 18, address: NATIVE_PLACEHOLDER,                          isNative: true },
+    { symbol: "WETH", name: "Wrapped Ether",   decimals: 18, address: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14" },
+    { symbol: "USDC", name: "USD Coin (Circle)", decimals: 6, address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" },
+    { symbol: "LINK", name: "Chainlink",       decimals: 18, address: "0x779877A7B0D9E8603169DdbD7836e478b4624789" },
+    { symbol: "UNI",  name: "Uniswap",         decimals: 18, address: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984" },
+  ],
 };
 
 // ─── Contract addresses ───────────────────────────────────────────────────────
 
 const QUOTER_V2: Record<SupportedChainId, `0x${string}`> = {
-  1:     "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-  8453:  "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
-  56:    "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
-  42161: "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-  10:    "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-  137:   "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
-  43114: "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F",
+  1:        "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  8453:     "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
+  56:       "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+  42161:    "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  10:       "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  137:      "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+  43114:    "0xbe0F5544EC67e9B3b2D979aaA43f18Fd87E6257F",
+  11155111: "0xEd1f6473345F45b75F8179591dd5bA1888cf2FB3",  // Uniswap V3 QuoterV2 on Sepolia
 };
 
 const SWAP_ROUTER: Record<SupportedChainId, `0x${string}`> = {
-  1:     "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-  8453:  "0x2626664c2603336E57B271c5C0b26F421741e481",
-  56:    "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
-  42161: "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-  10:    "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-  137:   "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
-  43114: "0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE",
+  1:        "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  8453:     "0x2626664c2603336E57B271c5C0b26F421741e481",
+  56:       "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+  42161:    "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  10:       "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  137:      "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+  43114:    "0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE",
+  11155111: "0x3bFA4769FB09eefC5a80d6E87c3B9C650f7Ae48E",  // Uniswap V3 SwapRouter02 on Sepolia
 };
 
 const WETH: Record<SupportedChainId, `0x${string}`> = {
-  1:     "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-  8453:  "0x4200000000000000000000000000000000000006",
-  56:    "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
-  42161: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-  10:    "0x4200000000000000000000000000000000000006",
-  137:   "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
-  43114: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
+  1:        "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+  8453:     "0x4200000000000000000000000000000000000006",
+  56:       "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+  42161:    "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+  10:       "0x4200000000000000000000000000000000000006",
+  137:      "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+  43114:    "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
+  11155111: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14",  // Sepolia WETH9
 };
 
 const FEE_TIERS = [100, 500, 3000, 10000];
@@ -256,8 +275,8 @@ async function tryQuoteOnRpc(
         functionName: "quoteExactInputSingle",
         args: [{ tokenIn, tokenOut, amountIn, fee: fee as 100|500|3000|10000, sqrtPriceLimitX96: 0n }],
       });
-      if (result[0] > 0n) {
-        return { amountOut: result[0], gasEstimate: result[3], fee };
+      if ((result as unknown as bigint[])[0] > 0n) {
+        return { amountOut: (result as unknown as bigint[])[0], gasEstimate: (result as unknown as bigint[])[3], fee };
       }
     } catch {}
   }
@@ -305,7 +324,6 @@ async function executeSwap(
   const routerAddr = SWAP_ROUTER[chainId];
   const weth       = WETH[chainId];
   const config     = getWagmiConfig();
-  if (!config) throw new Error("Wagmi config not initialized");
   const tokenIn    = fromToken.isNative ? weth : fromToken.address;
   const tokenOut   = toToken.isNative   ? weth : toToken.address;
   const isEthIn    = fromToken.isNative;
@@ -314,11 +332,13 @@ async function executeSwap(
   if (!isEthIn) {
     const currentAllowance = await checkAllowance(fromToken.address, userAddress, routerAddr, chainId);
     if (currentAllowance < amountIn) {
-      await coreWriteContract(config, {
+      // Approve exact amount only — never grant unlimited (maxUint256) spend permission.
+      // This limits exposure if the router contract is ever exploited.
+      await coreWriteContract(config!, {
         address: fromToken.address,
         abi: erc20Abi,
         functionName: "approve",
-        args: [routerAddr, maxUint256],
+        args: [routerAddr, amountIn],
         chainId,
       });
     }
@@ -335,7 +355,7 @@ async function executeSwap(
       functionName: "unwrapWETH9",
       args: [amountOutMin, userAddress],
     });
-    return await coreWriteContract(config, {
+    return await coreWriteContract(config!, {
       address: routerAddr,
       abi: SWAP_ROUTER_ABI,
       functionName: "multicall",
@@ -345,7 +365,7 @@ async function executeSwap(
     });
   }
 
-  return await coreWriteContract(config, {
+  return await coreWriteContract(config!, {
     address: routerAddr,
     abi: SWAP_ROUTER_ABI,
     functionName: "exactInputSingle",
@@ -355,7 +375,7 @@ async function executeSwap(
   });
 }
 
-// ─── Swap executor (OrahDEX passkey wallet — uses local viem walletClient) ───────
+// ─── Swap executor (Orah passkey wallet — uses local viem walletClient) ───────
 
 async function executeSwapWithLocalAccount(
   chainId: SupportedChainId,
@@ -399,7 +419,7 @@ async function executeSwapWithLocalAccount(
         address: fromToken.address,
         abi: erc20Abi,
         functionName: "approve",
-        args: [routerAddr, maxUint256],
+        args: [routerAddr, amountIn], // exact amount — never grant unlimited allowance
         chain: chain as Parameters<typeof createWalletClient>[0]["chain"],
       });
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
@@ -507,14 +527,14 @@ function TokenPicker({
 const GAS_PRESETS_USD = [2, 5, 10, 20];
 
 function GasTopUpPanel({
-  chainId, chainName, nativeSymbol, gasBalance, address, isOrahDEXWallet, onSuccess, tokens,
+  chainId, chainName, nativeSymbol, gasBalance, address, isOrahWallet, onSuccess, tokens,
 }: {
   chainId: SupportedChainId;
   chainName: string;
   nativeSymbol: string;
   gasBalance: number | null;
   address: string | null;
-  isOrahDEXWallet: boolean;
+  isOrahWallet: boolean;
   onSuccess: () => void;
   tokens: Token[];
 }) {
@@ -573,9 +593,11 @@ function GasTopUpPanel({
       const amtIn     = parseUnits(presetUSD.toString(), stablecoin.decimals);
       const amtOutMin = gasQuote.amountOut * 95n / 100n;
       let hash: `0x${string}`;
-      if (isOrahDEXWallet) {
-        toast({ title: "Biometric authentication", description: "Authenticate with your passkey to top up gas…" });
-        const account = await getViemAccountForOrahDEXWallet(address as `0x${string}`);
+      if (isOrahWallet) {
+        const account = await getViemAccountForAddress(address as `0x${string}`, {
+          title: "Authorize gas top-up",
+          subtitle: "Unlock your imported OrahDEX wallet to sign the gas top-up swap.",
+        });
         hash = await executeSwapWithLocalAccount(chainId, stablecoin, nativeToken, amtIn, amtOutMin, gasQuote.fee, address as `0x${string}`, account, chainName, nativeSymbol);
       } else {
         hash = await executeSwap(chainId, stablecoin, nativeToken, amtIn, amtOutMin, gasQuote.fee, address as `0x${string}`);
@@ -642,11 +664,6 @@ function GasTopUpPanel({
         {gasLevel !== "good" && gasLevel !== "empty" && (
           <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-amber-500/20 text-amber-300 ml-0.5 uppercase tracking-wide">
             {gasLabels[gasLevel]}
-          </span>
-        )}
-        {gasLevel === "empty" && (
-          <span className="px-1 py-0.5 rounded text-[9px] font-bold bg-red-500/20 text-red-400 ml-0.5 uppercase tracking-wide">
-            No Gas
           </span>
         )}
       </button>
@@ -805,7 +822,7 @@ function GasTopUpPanel({
           )}
 
           <p className="text-[11px] text-muted-foreground/50 text-center">
-            Swaps {stablecoin?.symbol ?? "USDC"} → {nativeSymbol} via {dexName} V3 on {chainName}
+            Swaps {stablecoin?.symbol ?? "USDC"} → {nativeSymbol} on-chain on {chainName}
           </p>
         </div>
       )}
@@ -1065,7 +1082,7 @@ function ExchangeSwapPanel({
 }) {
   const { toast } = useToast();
   // Use the wallet's actual connected chainId (not the on-chain DEX chain picker)
-  const { chainId: walletChainId } = useWalletStore();
+  const { chainId: walletChainId, provider } = useWalletStore();
   const [fromAsset, setFromAsset] = useState("ETH");
   const [toAsset,   setToAsset]   = useState("USDT");
   const [amount,    setAmount]    = useState("");
@@ -1125,8 +1142,14 @@ function ExchangeSwapPanel({
         body: JSON.stringify({ assetIn: fromAsset, assetOut: toAsset, amountIn: val }),
       });
       const data = await r.json();
-      if (!r.ok) { setQuoteErr(data.error ?? "No price found"); setQuote(null); }
-      else setQuote(data);
+      if (!r.ok) {
+        if (data.code === "NO_PRICE_DATA") {
+          setQuoteErr((data.hint as string) ?? data.error ?? "No price found");
+        } else {
+          setQuoteErr(data.error ?? "No price found");
+        }
+        setQuote(null);
+      } else setQuote(data);
     } catch { setQuoteErr("Quote failed"); setQuote(null); }
     setQuoting(false);
   }, [fromAsset, toAsset]);
@@ -1146,11 +1169,67 @@ function ExchangeSwapPanel({
     if (!address || !amount || !quote || swapping) return;
     setSwapping(true); setSwapErr(null); setResult(null);
     try {
+      let nonce: string | undefined;
+      let signature: string | undefined;
+      if (/^0x[0-9a-fA-F]{40}$/.test(address)) {
+        let challengeRes: Response;
+        try {
+          challengeRes = await fetch(`${API_BASE}/swap/challenge`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              walletAddress: address,
+              assetIn: fromAsset,
+              assetOut: toAsset,
+              amountIn: amount,
+            }),
+          });
+        } catch (err: any) {
+          const reason = err?.message ? `: ${err.message}` : "";
+          throw new Error(`Network error while requesting swap signature challenge${reason}`);
+        }
+        const challengeData = await challengeRes.json();
+        if (!challengeRes.ok || !challengeData?.nonce || !challengeData?.message) {
+          throw new Error(challengeData?.error ?? "Failed to obtain swap signature challenge");
+        }
+        nonce = String(challengeData.nonce);
+        const message = String(challengeData.message);
+        if (provider === "orah-wallet") {
+          const account = await getViemAccountForAddress(address, {
+            title: "Authorize exchange swap",
+            subtitle: `Sign to swap ${amount} ${fromAsset} → ${toAsset} on OrahDEX.`,
+          });
+          const walletClient = createWalletClient({
+            account,
+            transport: http(
+              CHAIN_RPC_URLS[walletChainId as keyof typeof CHAIN_RPC_URLS]
+              ?? CHAIN_RPC_FALLBACKS[walletChainId as keyof typeof CHAIN_RPC_FALLBACKS]
+              ?? undefined,
+            ),
+          });
+          signature = await walletClient.signMessage({ account, message });
+        } else {
+          const cfg = getWagmiConfig();
+          if (!cfg) throw new Error("Wallet not initialized. Please reconnect and try again.");
+          signature = await signMessage(cfg, {
+            account: address as `0x${string}`,
+            message,
+          });
+        }
+      }
+
       const minOut = (parseFloat(quote.amountOut) * 0.995).toFixed(8);
       const r = await fetch(`${API_BASE}/swap`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address, assetIn: fromAsset, assetOut: toAsset, amountIn: amount, minAmountOut: minOut }),
+        body: JSON.stringify({
+          walletAddress: address,
+          assetIn: fromAsset,
+          assetOut: toAsset,
+          amountIn: amount,
+          minAmountOut: minOut,
+          ...(nonce && signature ? { nonce, signature } : {}),
+        }),
       });
       const data = await r.json();
       if (!r.ok) {
@@ -1171,15 +1250,17 @@ function ExchangeSwapPanel({
 
   const fromBal = balFor(fromAsset);
   const isNewUser = balances.length === 0;
+  // Non-EVM assets need an explicit OrahDEX deposit before they can be traded
+  const NON_EVM_ASSETS = new Set(["BTC","BSV","SOL","XRP","ADA","DOGE","DOT","LTC","TRX","BCH","ATOM","ALGO","XLM","NEAR"]);
+  const isEvm = !NON_EVM_ASSETS.has(fromAsset.toUpperCase());
 
   return (
     <div className="rounded-2xl border border-border bg-card shadow-lg space-y-3 p-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm font-bold">
           <RefreshCw className="w-4 h-4 text-primary" />
-          Orah Exchange
+          OrahDEX Exchange
         </div>
-        <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/15 text-green-400 font-semibold">No Gas</span>
       </div>
 
       {/* Quick pair selector */}
@@ -1209,7 +1290,7 @@ function ExchangeSwapPanel({
                     {wb < 0.0001 && wb > 0 ? wb.toFixed(8) : wb.toFixed(4)}
                   </span>{" "}
                   {fromAsset}
-                  {fromBal === 0 && wb > 0 && (
+                  {fromBal === 0 && wb > 0 && !isEvm && (
                     <span className="ml-1 text-amber-400 font-medium">(deposit to trade)</span>
                   )}
                 </span>
@@ -1351,7 +1432,563 @@ function ExchangeSwapPanel({
       )}
 
       <p className="text-[11px] text-muted-foreground/60 text-center">
-        Instant · No gas · 0.3% fee · Uses Orah internal balance
+        Instant · 0.3% fee · Uses OrahDEX internal balance
+      </p>
+    </div>
+  );
+}
+
+// ─── Buy Crypto Panel ─────────────────────────────────────────────────────────
+
+interface BuyQuote {
+  route: "native" | "letsexchange";
+  coinToSpend: string;
+  coinToBuy: string;
+  amountToSpend: string;
+  estimatedAmountOut: string | null;
+  fee?: string;
+  feePct?: number;
+  rate?: string | null;
+  minAmount?: string | null;
+  maxAmount?: string | null;
+  rate_id?: string | null;
+  networkFrom?: string;
+  networkTo?: string;
+}
+
+interface BuyResult {
+  route: "native" | "letsexchange";
+  // native
+  amountSpent?: string;
+  amountReceived?: string;
+  fee?: string;
+  // letsexchange
+  deposit?: string;
+  deposit_extra_id?: string;
+  withdrawal_amount?: string;
+  transaction_id?: string;
+  expiration_time?: string;
+}
+
+function BuyCryptoPanel({
+  address,
+  onOpenWallet,
+}: {
+  address: string | null;
+  onOpenWallet: () => void;
+}) {
+  const { toast } = useToast();
+
+  const [coinToBuy,   setCoinToBuy]   = useState("BSV");
+  const [coinToSpend, setCoinToSpend] = useState("USDT");
+  const [amount,      setAmount]      = useState("");
+
+  const [quote,     setQuote]     = useState<BuyQuote | null>(null);
+  const [quoting,   setQuoting]   = useState(false);
+  const [quoteErr,  setQuoteErr]  = useState<string | null>(null);
+
+  // LE-specific fields shown after a LE quote
+  const [withdrawal,   setWithdrawal]   = useState("");
+  const [networkFrom,  setNetworkFrom]  = useState("");
+  const [networkTo,    setNetworkTo]    = useState("");
+
+  const [executing, setExecuting] = useState(false);
+  const [result,    setResult]    = useState<BuyResult | null>(null);
+  const [execErr,   setExecErr]   = useState<string | null>(null);
+
+  const [copied, setCopied] = useState(false);
+
+  // OrahDEX internal (custodial) balance for the spend coin
+  const [internalBal,       setInternalBal]       = useState<number | null>(null);
+  const [internalBalLoaded, setInternalBalLoaded] = useState(false);
+
+  const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Fetch OrahDEX ledger balance whenever wallet or spend coin changes
+  const fetchInternalBal = useCallback(async () => {
+    if (!address) { setInternalBal(null); setInternalBalLoaded(false); return; }
+    try {
+      const r = await fetch(`${API_BASE}/balances?walletAddress=${address}`);
+      if (r.ok) {
+        const data = await r.json();
+        const rows: { asset: string; available: string }[] = Array.isArray(data) ? data : (data.balances ?? []);
+        const row = rows.find(b => b.asset.toUpperCase() === coinToSpend.toUpperCase());
+        setInternalBal(row ? parseFloat(row.available) : 0);
+        setInternalBalLoaded(true);
+      }
+    } catch { /* ignore */ }
+  }, [address, coinToSpend]);
+
+  useEffect(() => {
+    setInternalBal(null); setInternalBalLoaded(false);
+    fetchInternalBal();
+  }, [fetchInternalBal]);
+
+  // Reset result/error on pair change
+  useEffect(() => {
+    setQuote(null); setQuoteErr(null); setResult(null); setExecErr(null);
+    setNetworkFrom(coinToSpend);
+    setNetworkTo(coinToBuy);
+  }, [coinToBuy, coinToSpend]);
+
+  const fetchQuote = useCallback(async (val: string) => {
+    if (!val || parseFloat(val) <= 0 || coinToBuy === coinToSpend) {
+      setQuote(null); setQuoteErr(null); return;
+    }
+    setQuoting(true); setQuoteErr(null); setQuote(null); setResult(null); setExecErr(null);
+
+    const nf = networkFrom || coinToSpend;
+    const nt = networkTo   || coinToBuy;
+
+    try {
+      const r = await fetch(`${API_BASE}/buy/quote`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          coinToSpend,
+          coinToBuy,
+          amountToSpend: parseFloat(val),
+          networkFrom: nf,
+          networkTo:   nt,
+        }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        if (data.code === "LE_KEY_NOT_CONFIGURED") {
+          setQuoteErr("Cross-chain exchange is not yet configured on this server. The administrator needs to set the LETSEXCHANGE_API_KEY secret.");
+          setQuote(null);
+        } else if (data.route === "letsexchange") {
+          // 422 with route:"letsexchange" means LE but network fields needed
+          setQuoteErr(`Cross-chain pair — enter networks and destination address below to get a quote.`);
+          setQuote({ route: "letsexchange", coinToSpend, coinToBuy, amountToSpend: val, estimatedAmountOut: null });
+        } else {
+          setQuoteErr(data.error ?? "Quote failed");
+        }
+      } else {
+        setQuote(data);
+        if (data.route === "letsexchange") {
+          if (!networkFrom) setNetworkFrom(data.networkFrom ?? coinToSpend);
+          if (!networkTo)   setNetworkTo(data.networkTo   ?? coinToBuy);
+        }
+      }
+    } catch {
+      setQuoteErr("Network error — could not fetch quote");
+    }
+    setQuoting(false);
+  }, [coinToBuy, coinToSpend, networkFrom, networkTo]);
+
+  const handleAmountChange = (val: string) => {
+    setAmount(val); setResult(null); setExecErr(null);
+    if (debRef.current) clearTimeout(debRef.current);
+    debRef.current = setTimeout(() => fetchQuote(val), 500);
+  };
+
+  const handleBuy = async () => {
+    if (!amount || !quote || executing) return;
+
+    // Native route requires logged-in wallet address
+    if (quote.route === "native" && !address) { onOpenWallet(); return; }
+    // LE route requires withdrawal address
+    if (quote.route === "letsexchange" && !withdrawal.trim()) {
+      setExecErr("Enter your destination address to receive " + coinToBuy); return;
+    }
+
+    setExecuting(true); setExecErr(null); setResult(null);
+
+    const minOut = quote.estimatedAmountOut
+      ? (parseFloat(quote.estimatedAmountOut) * 0.995).toFixed(8)
+      : undefined;
+
+    const body: Record<string, unknown> = {
+      coinToSpend,
+      coinToBuy,
+      amountToSpend: parseFloat(amount),
+    };
+
+    if (quote.route === "native") {
+      body.walletAddress = address;
+      if (minOut) body.minAmountOut = minOut;
+    } else {
+      body.withdrawal  = withdrawal.trim();
+      body.networkFrom = networkFrom || coinToSpend;
+      body.networkTo   = networkTo   || coinToBuy;
+      if (quote.rate_id) body.rate_id = quote.rate_id;
+    }
+
+    try {
+      const r = await fetch(`${API_BASE}/buy/execute`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        let msg = data.error ?? "Buy failed";
+        // Give a clear actionable message for insufficient OrahDEX balance
+        if (data.error === "Insufficient balance" || r.status === 422) {
+          const asset = data.asset ?? coinToSpend;
+          msg = `Insufficient OrahDEX balance — you need to deposit ${asset} into your OrahDEX account first. Your on-chain wallet balance is separate from your exchange balance.`;
+        }
+        setExecErr(msg);
+        toast({ title: "Insufficient balance", description: `Deposit ${data.asset ?? coinToSpend} to your OrahDEX account to use the Buy feature.`, variant: "destructive" });
+      } else {
+        setResult(data);
+        setAmount(""); setQuote(null);
+        fetchInternalBal();
+        if (data.route === "native") {
+          toast({
+            title: "Purchase complete!",
+            description: `Bought ${parseFloat(data.amountReceived ?? "0").toFixed(6)} ${coinToBuy} for ${parseFloat(data.amountSpent ?? amount).toFixed(6)} ${coinToSpend}`,
+          });
+        } else {
+          toast({ title: "Order created!", description: "Send funds to the deposit address below." });
+        }
+      }
+    } catch {
+      setExecErr("Network error — please try again");
+    }
+    setExecuting(false);
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const isLE     = quote?.route === "letsexchange";
+  const canBuy   = !!amount && parseFloat(amount) > 0 && !!quote && !executing;
+  const leReady  = isLE && withdrawal.trim().length >= 10;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card shadow-lg space-y-3 p-4">
+
+      {/* Header */}
+      <div className="flex items-center gap-2 text-sm font-bold">
+        <ShoppingCart className="w-4 h-4 text-emerald-400" />
+        Buy Crypto
+      </div>
+
+      {/* ─ Coin to BUY ─ */}
+      <div className="rounded-xl bg-muted/40 p-3 space-y-2">
+        <span className="text-xs text-muted-foreground font-medium">I want to buy</span>
+        <div className="flex items-center gap-2">
+          <ExchangeAssetPicker
+            value={coinToBuy}
+            onChange={v => { setCoinToBuy(v); setQuote(null); setAmount(""); }}
+            exclude={coinToSpend}
+            label="Buy"
+          />
+          <div className="flex-1 text-2xl font-bold text-right">
+            {quoting ? (
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground ml-auto" />
+            ) : (
+              <span className={quote?.estimatedAmountOut ? "text-emerald-400" : "text-muted-foreground/40"}>
+                {quote?.estimatedAmountOut ? parseFloat(quote.estimatedAmountOut).toFixed(6) : "0.0"}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Flip arrow */}
+      <div className="flex justify-center -my-1">
+        <button
+          onClick={() => {
+            const tmp = coinToBuy;
+            setCoinToBuy(coinToSpend);
+            setCoinToSpend(tmp);
+            setQuote(null); setAmount(""); setResult(null);
+          }}
+          className="p-2 rounded-full border border-border bg-card hover:bg-muted/60 transition-colors"
+        >
+          <ArrowUpDown className="w-4 h-4 text-muted-foreground" />
+        </button>
+      </div>
+
+      {/* ─ Coin to SPEND ─ */}
+      <div className="rounded-xl bg-muted/40 p-3 space-y-2">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-muted-foreground font-medium">I will pay with</span>
+          {address && internalBalLoaded && (
+            <span className="text-muted-foreground/70">
+              OrahDEX balance:{" "}
+              <span className={cn(
+                "font-mono font-semibold",
+                internalBal != null && internalBal > 0 ? "text-emerald-400" : "text-muted-foreground",
+              )}>
+                {internalBal != null ? (internalBal < 0.0001 && internalBal > 0 ? internalBal.toFixed(8) : internalBal.toFixed(4)) : "0.0000"}
+              </span>{" "}
+              {coinToSpend}
+              {internalBal != null && internalBal <= 0 && (
+                <a href="/deposit" className="ml-1.5 text-primary font-semibold hover:underline">Deposit →</a>
+              )}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <ExchangeAssetPicker
+            value={coinToSpend}
+            onChange={v => { setCoinToSpend(v); setQuote(null); setAmount(""); }}
+            exclude={coinToBuy}
+            label="Spend"
+          />
+          <input
+            type="number" min="0" placeholder="0.0" value={amount}
+            onChange={e => handleAmountChange(e.target.value)}
+            className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
+          />
+        </div>
+        {/* MAX button — only when there's a positive OrahDEX balance */}
+        {address && internalBal != null && internalBal > 0 && (
+          <div className="flex justify-end">
+            <button
+              onClick={() => {
+                const val = internalBal.toFixed(8).replace(/\.?0+$/, "") || "0";
+                handleAmountChange(val);
+              }}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-primary/15 border border-primary/40 text-primary hover:bg-primary/25 active:bg-primary/30 transition-colors"
+            >
+              MAX
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ─ Quote details ─ */}
+      {quote && quote.estimatedAmountOut && (
+        <div className="rounded-xl bg-muted/30 px-3 py-2.5 space-y-1.5 text-xs">
+          <div className="flex justify-between text-muted-foreground">
+            <span>You spend</span>
+            <span className="font-mono font-semibold text-foreground">{amount} {coinToSpend}</span>
+          </div>
+          <div className="flex justify-between text-muted-foreground">
+            <span>You receive (est.)</span>
+            <span className="font-mono font-semibold text-emerald-400">
+              ≈ {parseFloat(quote.estimatedAmountOut).toFixed(6)} {coinToBuy}
+            </span>
+          </div>
+          {quote.rate && (
+            <div className="flex justify-between text-muted-foreground border-t border-border/30 pt-1.5">
+              <span>Rate</span>
+              <span className="font-mono">1 {coinToSpend} ≈ {parseFloat(quote.rate).toFixed(6)} {coinToBuy}</span>
+            </div>
+          )}
+          {quote.route === "native" && quote.fee && (
+            <div className="flex justify-between text-muted-foreground">
+              <span>Platform fee ({quote.feePct}%)</span>
+              <span className="font-mono">{parseFloat(quote.fee).toFixed(6)} {coinToBuy}</span>
+            </div>
+          )}
+          {quote.route === "letsexchange" && (
+            <div className="flex items-center gap-1 mt-0.5 pt-1.5 border-t border-border/30">
+              <span className="text-muted-foreground/60">Route:</span>
+              <span className="text-blue-400 font-medium">LetsExchange (cross-chain)</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─ Quote error ─ */}
+      {quoteErr && (
+        <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-400">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />{quoteErr}
+        </div>
+      )}
+
+      {/* ─ LE extra fields (shown when route is letsexchange) ─ */}
+      {isLE && (
+        <div className="space-y-2.5">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground font-medium">
+              Destination address <span className="text-foreground">({coinToBuy})</span>
+            </label>
+            <input
+              type="text"
+              placeholder={`Your ${coinToBuy} wallet address`}
+              value={withdrawal}
+              onChange={e => setWithdrawal(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-border/50 bg-muted/30 text-sm outline-none placeholder:text-muted-foreground/40 focus:border-primary/50"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground font-medium">Network (from)</label>
+              <input
+                type="text"
+                placeholder={coinToSpend}
+                value={networkFrom}
+                onChange={e => { setNetworkFrom(e.target.value); setQuote(null); }}
+                className="w-full px-3 py-2 rounded-xl border border-border/50 bg-muted/30 text-xs outline-none placeholder:text-muted-foreground/40 focus:border-primary/50"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground font-medium">Network (to)</label>
+              <input
+                type="text"
+                placeholder={coinToBuy}
+                value={networkTo}
+                onChange={e => { setNetworkTo(e.target.value); setQuote(null); }}
+                className="w-full px-3 py-2 rounded-xl border border-border/50 bg-muted/30 text-xs outline-none placeholder:text-muted-foreground/40 focus:border-primary/50"
+              />
+            </div>
+          </div>
+
+          {quote && !quote.estimatedAmountOut && networkFrom && networkTo && (
+            <button
+              onClick={() => fetchQuote(amount)}
+              disabled={quoting || !amount}
+              className="w-full py-2 rounded-xl text-xs font-semibold border border-primary/40 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+            >
+              {quoting ? <><Loader2 className="w-3 h-3 animate-spin inline mr-1" />Getting quote…</> : "Refresh Quote"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ─ Exec error ─ */}
+      {execErr && (
+        <div className="rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 p-3 space-y-2">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>{execErr}</span>
+          </div>
+          {execErr.includes("OrahDEX balance") && (
+            <a
+              href="/deposit"
+              className="flex items-center justify-center gap-1.5 w-full py-2 rounded-lg bg-primary/10 border border-primary/30 text-primary font-semibold hover:bg-primary/20 transition-colors"
+            >
+              Deposit {coinToSpend} to OrahDEX <ArrowRight className="w-3 h-3" />
+            </a>
+          )}
+        </div>
+      )}
+
+      {/* ─ Native success ─ */}
+      {result && result.route === "native" && (
+        <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 p-4 space-y-2">
+          <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+            <CheckCircle2 className="w-4 h-4" /> Purchase Complete
+          </div>
+          <div className="space-y-1 text-xs">
+            <div className="flex justify-between text-muted-foreground">
+              <span>Spent</span>
+              <span className="font-mono font-semibold text-foreground">{parseFloat(result.amountSpent ?? "0").toFixed(6)} {coinToSpend}</span>
+            </div>
+            <div className="flex justify-between text-muted-foreground">
+              <span>Received</span>
+              <span className="font-mono font-semibold text-emerald-400">{parseFloat(result.amountReceived ?? "0").toFixed(6)} {coinToBuy}</span>
+            </div>
+            {result.fee && (
+              <div className="flex justify-between text-muted-foreground">
+                <span>Fee</span>
+                <span className="font-mono">{parseFloat(result.fee).toFixed(6)} {coinToBuy}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ─ LE success: deposit address card ─ */}
+      {result && result.route === "letsexchange" && result.deposit && (
+        <div className="rounded-xl border border-blue-500/25 bg-blue-500/5 p-4 space-y-3">
+          <div className="flex items-center gap-2 text-blue-400 font-bold text-sm">
+            <QrCode className="w-4 h-4" /> Send Funds to Complete
+          </div>
+          <div className="space-y-2 text-xs">
+            <p className="text-muted-foreground">
+              Send exactly <span className="font-mono font-bold text-foreground">{amount} {coinToSpend}</span> to this deposit address:
+            </p>
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-muted/50 border border-border/60">
+              <span className="flex-1 font-mono text-[11px] break-all text-foreground">{result.deposit}</span>
+              <button
+                onClick={() => copyToClipboard(result.deposit!)}
+                className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {copied ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+            {result.deposit_extra_id && (
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                <span className="text-amber-400 font-medium shrink-0">Memo / Tag:</span>
+                <span className="flex-1 font-mono text-[11px] break-all text-foreground">{result.deposit_extra_id}</span>
+                <button onClick={() => copyToClipboard(result.deposit_extra_id!)} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+            {result.withdrawal_amount && (
+              <div className="flex justify-between text-muted-foreground pt-1 border-t border-border/30">
+                <span>You will receive (est.)</span>
+                <span className="font-mono font-semibold text-emerald-400">{parseFloat(result.withdrawal_amount).toFixed(6)} {coinToBuy}</span>
+              </div>
+            )}
+            {result.transaction_id && (
+              <p className="text-muted-foreground/50 pt-0.5">TX ID: <span className="font-mono">{result.transaction_id}</span></p>
+            )}
+          </div>
+          <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-500/8 border border-amber-500/20 text-xs text-amber-400">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            Send only <strong>{coinToSpend}</strong> on the correct network. Wrong asset or network = lost funds.
+          </div>
+        </div>
+      )}
+
+      {/* ─ CTA button ─ */}
+      {!result && (
+        <>
+          {coinToBuy === coinToSpend ? (
+            <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed">
+              Select different coins
+            </button>
+          ) : !amount || parseFloat(amount) <= 0 ? (
+            <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed">
+              Enter an amount
+            </button>
+          ) : quoting ? (
+            <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed flex items-center justify-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" /> Getting quote…
+            </button>
+          ) : !quote ? (
+            <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed">
+              No route found for this pair
+            </button>
+          ) : isLE && !leReady ? (
+            <button disabled className="w-full py-3.5 rounded-xl font-bold text-sm bg-muted text-muted-foreground cursor-not-allowed">
+              Enter destination address to continue
+            </button>
+          ) : !address && quote.route === "native" ? (
+            <button onClick={onOpenWallet}
+              className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow hover:shadow-lg hover:-translate-y-0.5 transition-all">
+              Connect Wallet to Buy
+            </button>
+          ) : (
+            <button
+              onClick={handleBuy}
+              disabled={executing || !canBuy || (isLE && !leReady)}
+              className="w-full py-3.5 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-green-600 text-white shadow hover:shadow-lg hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {executing
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Processing…</>
+                : <><ShoppingCart className="w-4 h-4" /> Buy {coinToBuy}</>}
+            </button>
+          )}
+        </>
+      )}
+
+      {result && (
+        <button
+          onClick={() => { setResult(null); setQuote(null); setAmount(""); setWithdrawal(""); }}
+          className="w-full py-2.5 rounded-xl text-xs font-semibold border border-border/50 text-muted-foreground hover:border-border hover:text-foreground transition-colors"
+        >
+          New Purchase
+        </button>
+      )}
+
+      <p className="text-[11px] text-muted-foreground/50 text-center">
+        {isLE ? "Cross-chain via LetsExchange · Non-custodial" : "Instant settlement · 0.3% fee · Uses OrahDEX balance"}
       </p>
     </div>
   );
@@ -1360,17 +1997,74 @@ function ExchangeSwapPanel({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function Swap() {
-  useSEO({ title: "Swap — Orah", description: "Swap tokens on-chain via Uniswap V3 and PancakeSwap V3" });
+  useSEO({ title: "Exchange — OrahDEX", description: "Buy, swap & bridge crypto in one place — OrahDEX Exchange" });
   const [, setLocation] = useLocation();
+  const searchStr = useSearch();
+  const searchParams = new URLSearchParams(searchStr);
+  const leFrom = searchParams.get("from") ?? undefined;
+  const leTo   = searchParams.get("to")   ?? undefined;
   const isMobile = useIsMobile();
 
-  const { address, chainId: walletChainId, provider } = useWalletStore();
-  const isOrahDEXWallet = provider === "orahdex-wallet";
+  const { address, chainId: walletChainId, network: walletNetwork, provider } = useWalletStore();
+  const isOrahWallet = provider === "orah-wallet";
+  const isEvm = walletNetwork === "evm" || (!walletNetwork && !!walletChainId);
   const { open: openWalletModal } = useWalletModalStore();
   const { toast } = useToast();
 
+  const [activeTab, setActiveTab] = useState<"buy" | "swap" | "bridge">("buy");
+
+  const [fiatModalOpen, setFiatModalOpen]           = useState(false);
+  const [fiatModalMethod, setFiatModalMethod]       = useState<FiatPayMethod>("card");
+  const [buyCryptoOpen, setBuyCryptoOpen]           = useState(false);
+
+  const [kycModalOpen,  setKycModalOpen]            = useState(false);
+  const SESSION_KYC_KEY = "orahdex_kyc_verified";
+  const [kycVerified,   setKycVerified]             = useState<boolean>(() =>
+    sessionStorage.getItem(SESSION_KYC_KEY) === "true"
+  );
+  const [kycPending,    setKycPending]              = useState<FiatPayMethod | null>(null);
+
+  // Check KYC status whenever a wallet is connected; session flag short-circuits the fetch
+  useEffect(() => {
+    if (sessionStorage.getItem(SESSION_KYC_KEY) === "true") {
+      setKycVerified(true);
+      return;
+    }
+    if (!address) return;
+    fetch(`${API_BASE}/kyc/status?walletAddress=${encodeURIComponent(address)}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.verified) {
+          sessionStorage.setItem(SESSION_KYC_KEY, "true");
+          setKycVerified(true);
+        }
+      })
+      .catch(() => {});
+  }, [address]);
+
+  function openFiatModal(method: FiatPayMethod) {
+    if (!kycVerified) {
+      // Gate: require KYC before first purchase
+      setKycPending(method);
+      setKycModalOpen(true);
+    } else {
+      setFiatModalMethod(method);
+      setFiatModalOpen(true);
+    }
+  }
+
+  function handleKycVerified() {
+    sessionStorage.setItem(SESSION_KYC_KEY, "true");
+    setKycVerified(true);
+    if (kycPending) {
+      setFiatModalMethod(kycPending);
+      setKycPending(null);
+      setFiatModalOpen(true);
+    }
+  }
+
   // Default: all wallets start in on-chain DEX mode (Uniswap V3).
-  // OrahDEX passkey wallets sign transactions via biometric auth — no seed phrase stored.
+  // Orah passkey wallets sign transactions via biometric auth — no seed phrase stored.
   const [chainId,   setChainId]   = useState<SupportedChainId>(1);
   const tokens = TOKENS[chainId];
 
@@ -1496,12 +2190,14 @@ export function Swap() {
 
       let hash: `0x${string}`;
 
-      if (isOrahDEXWallet) {
-        // Passkey wallet: biometric auth decrypts private key in-memory → signs Uniswap tx
-        toast({ title: "Biometric authentication", description: "Authenticate with your passkey to sign the swap…" });
+      if (isOrahWallet) {
+        // Imported / passkey wallet → unified signer (PIN modal or biometric assertion)
         let account: Account;
         try {
-          account = await getViemAccountForOrahDEXWallet(address);
+          account = await getViemAccountForAddress(address, {
+            title: "Authorize swap",
+            subtitle: "Unlock your imported OrahDEX wallet to sign this on-chain swap.",
+          });
         } catch (authErr: any) {
           const msg: string = authErr?.message ?? "";
           if (msg.startsWith("NO_PASSKEY_WALLET")) {
@@ -1561,21 +2257,218 @@ export function Swap() {
     <div className="min-h-screen bg-background flex flex-col items-center py-8 px-4">
       <div className="w-full max-w-md space-y-4">
 
-        {/* Swap / Bridge tab selector */}
-        <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-xl border border-border/40">
-          <button
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold bg-background border border-border/60 shadow-sm text-foreground"
-          >
-            <ArrowUpDown className="w-3.5 h-3.5" />
-            Swap
-          </button>
-          <button
-            onClick={() => setLocation(isMobile ? "/deposit-bsv" : "/bridge")}
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
-          >
-            <Link2 className="w-3.5 h-3.5" />
-            Bridge
-          </button>
+        {/* Tab selector — Buy · Swap · Bridge */}
+        <div className="flex items-center gap-1 p-1 bg-muted/40 rounded-2xl border border-border/40 backdrop-blur-sm">
+          {([ 
+            { key: "buy",    label: "Buy",    icon: <ShoppingCart className="w-3.5 h-3.5" />,  gradient: "from-blue-500 to-violet-600" },
+            { key: "swap",   label: "Swap",   icon: <ArrowUpDown className="w-3.5 h-3.5" />,   gradient: "from-violet-500 to-fuchsia-600" },
+            { key: "bridge", label: "Bridge", icon: <Link2 className="w-3.5 h-3.5" />,         gradient: "from-emerald-500 to-teal-500" },
+          ] as const).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200",
+                activeTab === tab.key
+                  ? `bg-gradient-to-r ${tab.gradient} text-white shadow-lg shadow-primary/20`
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/60",
+              )}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ═══════════════ BUY TAB ═══════════════ */}
+        {activeTab === "buy" && (
+          <>
+            {/* Hero card */}
+            <div className="relative rounded-3xl overflow-hidden border border-blue-500/20 shadow-2xl">
+              {/* Background gradient */}
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-violet-600/15 to-fuchsia-600/10" />
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-500/10 via-transparent to-transparent" />
+
+              <div className="relative p-5 space-y-4">
+                {/* Title row */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-black tracking-tight">Buy Crypto</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">Instant purchase · Best rates · 150+ countries</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[10px] font-bold text-emerald-400">Live rates</span>
+                  </div>
+                </div>
+
+                {/* Trust strips */}
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { icon: "⚡", label: "Instant" },
+                    { icon: "🔒", label: "Secure" },
+                    { icon: "💳", label: "No fees*" },
+                  ].map(t => (
+                    <div key={t.label} className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-white/5 border border-white/10 text-[11px] font-semibold text-muted-foreground">
+                      <span>{t.icon}</span> {t.label}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Payment method cards — 2×2 */}
+                <div className="grid grid-cols-2 gap-2.5">
+
+                  {/* Credit Card — featured */}
+                  <button
+                    onClick={() => openFiatModal("card")}
+                    className="group relative col-span-2 flex items-center gap-4 p-4 rounded-2xl border border-blue-500/40 bg-gradient-to-r from-blue-600/25 to-violet-600/20 hover:from-blue-600/35 hover:to-violet-600/30 hover:border-blue-400/60 transition-all active:scale-[0.99] shadow-lg"
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center shadow-lg shrink-0">
+                      <CreditCard className="w-6 h-6 text-white" />
+                    </div>
+                    <div className="text-left flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black">Credit / Debit Card</span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">RECOMMENDED</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Visa · Mastercard · Amex · Instant</p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all shrink-0" />
+                  </button>
+
+                  {/* Apple Pay */}
+                  <button
+                    onClick={() => openFiatModal("apple")}
+                    className="group flex flex-col items-center gap-2.5 p-4 rounded-2xl border border-border/60 bg-gradient-to-br from-zinc-900/80 to-zinc-800/60 hover:border-white/25 hover:from-zinc-800/90 hover:to-zinc-700/70 transition-all active:scale-95 shadow"
+                  >
+                    <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shadow-md">
+                      <svg viewBox="0 0 24 24" className="w-6 h-6 fill-black"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-bold text-white">Apple Pay</p>
+                      <p className="text-[9px] text-muted-foreground">Touch ID · Face ID</p>
+                    </div>
+                  </button>
+
+                  {/* Google Pay */}
+                  <button
+                    onClick={() => openFiatModal("google")}
+                    className="group flex flex-col items-center gap-2.5 p-4 rounded-2xl border border-border/60 bg-gradient-to-br from-slate-900/80 to-slate-800/60 hover:border-blue-400/30 hover:from-slate-800/90 hover:to-slate-700/70 transition-all active:scale-95 shadow"
+                  >
+                    <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shadow-md">
+                      <svg viewBox="0 0 24 24" className="w-6 h-6">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                      </svg>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs font-bold">Google Pay</p>
+                      <p className="text-[9px] text-muted-foreground">1-tap · Secure</p>
+                    </div>
+                  </button>
+
+                  {/* Bank Transfer */}
+                  <button
+                    onClick={() => openFiatModal("bank")}
+                    className="group col-span-2 flex items-center gap-4 p-4 rounded-2xl border border-border/60 bg-gradient-to-r from-emerald-950/40 to-teal-950/30 hover:border-emerald-500/30 hover:from-emerald-950/60 hover:to-teal-950/50 transition-all active:scale-[0.99] shadow"
+                  >
+                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow shrink-0">
+                      <Building2 className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="text-left flex-1">
+                      <p className="text-sm font-bold">Bank Transfer</p>
+                      <p className="text-[11px] text-muted-foreground">SEPA · ACH · Wire · 1–3 days</p>
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all shrink-0" />
+                  </button>
+                </div>
+
+                <p className="text-[10px] text-muted-foreground/50 text-center pb-1">
+                  *Network fees apply · Powered by Stripe · Best rate guarantee
+                </p>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-border/30" />
+              <span className="text-[11px] text-muted-foreground/50 font-medium px-1">or buy with crypto</span>
+              <div className="flex-1 h-px bg-border/30" />
+            </div>
+
+            {/* Crypto-to-crypto buy panel */}
+            <BuyCryptoPanel address={address} onOpenWallet={openWalletModal} />
+
+            {/* Purchase history is shown on the Portfolio tab. */}
+
+            {/* KYC gate */}
+            <KycModal
+              open={kycModalOpen}
+              walletAddress={address ?? ""}
+              onClose={() => { setKycModalOpen(false); setKycPending(null); }}
+              onVerified={handleKycVerified}
+            />
+
+            {/* Direct buy modal (Stripe + LetsExchange — $120 min) */}
+            <DirectBuyModal
+              open={fiatModalOpen}
+              onClose={() => setFiatModalOpen(false)}
+              defaultPayMethod={fiatModalMethod}
+              onSwitchToProviders={() => setBuyCryptoOpen(true)}
+            />
+
+            {/* Partner-provider modal (Ramp/Transak/MoonPay/etc — from $5) */}
+            <BuyCryptoModal
+              open={buyCryptoOpen}
+              onClose={() => setBuyCryptoOpen(false)}
+              defaultPayMethod={fiatModalMethod}
+            />
+          </>
+        )}
+
+        {/* ═══════════════ BRIDGE TAB ═══════════════ */}
+        {activeTab === "bridge" && (
+          <div className="space-y-4">
+            {/* Bridge hero */}
+            <div className="relative rounded-3xl overflow-hidden border border-emerald-500/20 shadow-2xl">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-600/15 via-teal-600/10 to-cyan-600/5" />
+              <div className="relative p-5 pb-3 space-y-1">
+                <h2 className="text-xl font-black tracking-tight">Cross-Chain Bridge</h2>
+                <p className="text-xs text-muted-foreground">6,000+ coins · Non-custodial · Best rates across chains</p>
+                <div className="flex items-center gap-4 pt-2 pb-1">
+                  {[["🌐","Multi-chain"],["⚡","Fast swaps"],["🔐","Non-custodial"]].map(([icon,label]) => (
+                    <div key={label as string} className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
+                      <span>{icon}</span>{label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div id="lets-exchange-panel">
+              <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════ SWAP TAB ═══════════════ */}
+        {activeTab === "swap" && (<>
+
+        {/* Swap hero label */}
+        <div className="relative rounded-3xl overflow-hidden border border-violet-500/20 shadow-xl">
+          <div className="absolute inset-0 bg-gradient-to-br from-violet-600/15 via-fuchsia-600/10 to-pink-600/5" />
+          <div className="relative p-5 pb-3 space-y-1">
+            <h2 className="text-xl font-black tracking-tight">On-Chain Swap</h2>
+            <p className="text-xs text-muted-foreground">DEX swap · Best price routing · Your keys, your crypto</p>
+            <div className="flex items-center gap-4 pt-2 pb-1">
+              {[["⚡","Uniswap V3"],["🛡️","Non-custodial"],["🔄","Best route"]].map(([icon,label]) => (
+                <div key={label as string} className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
+                  <span>{icon}</span>{label}
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <>
@@ -1595,6 +2488,11 @@ export function Swap() {
                   >
                     <CoinLogo symbol={c.logo} size={14} />
                     {c.name}
+                    {c.testnet && (
+                      <span className="ml-0.5 px-1 py-px rounded bg-amber-500/15 text-amber-400 text-[9px] font-bold tracking-wide uppercase">
+                        Test
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -1622,7 +2520,7 @@ export function Swap() {
                   )}
                 </div>
                 {/* Token + amount row */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   <TokenPicker
                     tokens={tokens}
                     selected={fromToken}
@@ -1635,7 +2533,7 @@ export function Swap() {
                     placeholder="0.0"
                     value={amountIn}
                     onChange={e => handleAmountChange(e.target.value)}
-                    className="flex-1 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
+                    className="flex-1 min-w-0 bg-transparent text-2xl font-bold outline-none placeholder:text-muted-foreground/40 text-right"
                   />
                 </div>
                 {/* Percentage quick-fill (only when balance is known) */}
@@ -1692,18 +2590,18 @@ export function Swap() {
                   )}
                 </div>
                 {/* Token + amount row */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0">
                   <TokenPicker
                     tokens={tokens}
                     selected={toToken}
                     onChange={t => { setToToken(t); setQuote(null); setAmountIn(""); }}
                     label=""
                   />
-                  <div className="flex-1 text-right">
+                  <div className="flex-1 min-w-0 text-right overflow-hidden">
                     {quoting ? (
                       <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />
                     ) : (
-                      <span className={cn("text-2xl font-bold", amountOut ? "" : "text-muted-foreground/40")}>
+                      <span className={cn("block truncate text-2xl font-bold", amountOut ? "" : "text-muted-foreground/40")}>
                         {amountOut ? parseFloat(amountOut).toFixed(6) : "0.0"}
                       </span>
                     )}
@@ -1779,7 +2677,7 @@ export function Swap() {
                 </button>
               ) : (
                 <>
-                  {isOrahDEXWallet && (
+                  {isOrahWallet && (
                     <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-violet-500/10 border border-violet-500/20 text-xs text-violet-400">
                       <Fingerprint className="w-3.5 h-3.5 shrink-0" />
                       <span>Your passkey will authenticate this swap — no seed phrase needed.</span>
@@ -1792,7 +2690,7 @@ export function Swap() {
                   >
                     {swapping
                       ? <><Loader2 className="w-4 h-4 animate-spin" /> Swapping…</>
-                      : isOrahDEXWallet
+                      : isOrahWallet
                         ? <><Fingerprint className="w-4 h-4" /> Swap {fromToken.symbol} → {toToken.symbol}</>
                         : <><Zap className="w-4 h-4" /> Swap {fromToken.symbol} → {toToken.symbol}</>}
                   </button>
@@ -1804,21 +2702,10 @@ export function Swap() {
             <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl border border-border/40 bg-muted/20 text-xs text-muted-foreground">
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
-                <b className="text-foreground">On-Chain DEX:</b> Swaps execute on {chainConfig.name} via
-                {chainId === 56 ? " PancakeSwap V3" : " Uniswap V3"}.{isOrahDEXWallet ? " Your passkey signs the transaction — Orah never holds your funds or keys." : " Your wallet signs the transaction directly — Orah never holds your funds."}
+                <b className="text-foreground">On-Chain DEX:</b> Swaps execute on {chainConfig.name}.{isOrahWallet ? " Your passkey signs the transaction — OrahDEX never holds your funds or keys." : " Your wallet signs the transaction directly — OrahDEX never holds your funds."}
               </span>
             </div>
           </>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3">
-          <div className="flex-1 h-px bg-border/40" />
-          <span className="text-[11px] text-muted-foreground/60 font-medium">or swap via Orah Exchange</span>
-          <div className="flex-1 h-px bg-border/40" />
-        </div>
-
-        {/* Exchange Swap Panel (custodial, 223 assets, no gas) */}
-        <ExchangeSwapPanel address={address} onOpenWallet={openWalletModal} />
 
         {/* Liquidity CTA */}
         <div className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-border/30 bg-muted/10 text-xs">
@@ -1827,6 +2714,8 @@ export function Swap() {
             Pools <ArrowRight className="w-3 h-3" />
           </a>
         </div>
+
+        </>)}
       </div>
     </div>
   );

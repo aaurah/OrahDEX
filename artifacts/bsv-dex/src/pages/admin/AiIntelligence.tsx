@@ -1,3 +1,4 @@
+import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -135,7 +136,7 @@ function AiTradeSignalsCard() {
   const fetchSignal = async (sym: string) => {
     setSignals(s => ({ ...s, [sym]: { ...s[sym], loading: true } }));
     try {
-      const r = await fetch(`${BASE}/api/ai/trade-signal?symbol=${sym.replace("/", "%2F")}`);
+      const r = await fetch(`${BASE}/api/ai/trade-signal?symbol=${encodeURIComponent(sym)}`);
       const d = await r.json();
       setSignals(s => ({ ...s, [sym]: { signal: d.signal, sentiment: d.sentiment, loading: false } }));
     } catch {
@@ -220,7 +221,7 @@ function AiTestTradeRunner() {
         const start = Date.now();
 
         // 1. Fetch AI signal for this pair
-        const sigResp = await fetch(`${BASE}/api/ai/trade-signal?symbol=${pair.replace("/", "%2F")}`);
+        const sigResp = await fetch(`${BASE}/api/ai/trade-signal?symbol=${encodeURIComponent(pair)}`);
         const sigData = await sigResp.json();
         const side: "buy" | "sell" = sigData.sentiment === "bearish" ? "sell" : "buy";
 
@@ -374,7 +375,7 @@ function AiModelSettings() {
   const [enabled, setEnabled] = useState(true);
   const [showPrompt, setShowPrompt] = useState(false);
 
-  const SYSTEM_PREVIEW = `You are Ora — the AI Trading Intelligence of Orah, a sovereign decentralized exchange where every coin is listed and every trade settles on BSV (Bitcoin SV) blockchain.
+  const SYSTEM_PREVIEW = `You are Ora — the AI Trading Intelligence of OrahDEX, a sovereign decentralized exchange where every coin is listed and every trade settles on BSV (Bitcoin SV) blockchain.
 
 Your personality: Calm, knowledgeable, and direct. You speak like an experienced market analyst.
 
@@ -456,7 +457,7 @@ function ConversationStats() {
   const { data } = useQuery({
     queryKey: ["admin-ai-conv-stats"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/admin/stats`);
+      const r = await adminFetch(`/api/admin/stats`);
       return r.json();
     },
     refetchInterval: 30000,

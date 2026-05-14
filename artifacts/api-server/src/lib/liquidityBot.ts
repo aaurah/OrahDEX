@@ -1,5 +1,5 @@
 /**
- * Liquidity Bot — Orah
+ * Liquidity Bot — OrahDEX
  *
  * Runs every 30 s. For every active market it:
  *  1. Wipes its own stale open orders
@@ -12,9 +12,10 @@
 
 import { db } from "@workspace/db";
 import { ordersTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, notInArray } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
+import { guardedInterval } from "./selfHealing.js";
 import { FALLBACK_PRICES, seedMarketsIfNeeded } from "./priceUpdater.js";
 
 /** Stablecoin quote assets — treated as 1:1 with USD for cross-price math */
@@ -80,11 +81,38 @@ const LEVELS = [
   [0.0280, 0.8],
 ] as const;
 
+/**
+ * Estimate a realistic 24h quote-volume for a market when the DB has no real
+ * volume data yet.  The `usdValue` is the mid-price expressed in USD
+ * (base-asset USD price, not the cross price).  Tiers are intentionally
+ * conservative so the synthetic depth matches real-world liquidity.
+ */
+function syntheticUsdVolume(baseUsdPrice: number): number {
+  if (baseUsdPrice >= 50_000) return 2_000_000_000;   // BTC-tier
+  if (baseUsdPrice >=  1_000) return   200_000_000;   // ETH / BNB-tier
+  if (baseUsdPrice >=    100) return    50_000_000;   // SOL / AVAX-tier
+  if (baseUsdPrice >=     10) return    10_000_000;   // LINK / DOT-tier
+  if (baseUsdPrice >=      1) return     2_000_000;   // mid-cap alts
+  if (baseUsdPrice >=   0.01) return       300_000;   // micro-cap / memes
+  return                                    50_000;   // nano-cap
+}
+
 /* ── Compute sane base order size from 24-h volume ──────────────────────── */
-function baseSize(volume24h: number, midPrice: number): number {
+function baseSize(
+  volume24h: number,
+  midPrice: number,
+  baseUsdPrice: number,   // base-asset USD value (for synthetic vol fallback)
+): number {
   if (!midPrice || midPrice <= 0) return 0.001;
+
+  // If no real volume recorded yet, synthesise from the asset's USD price tier.
+  // This ensures every pair gets meaningful order-book depth from day one.
+  const effectiveQuoteVol = volume24h > 0
+    ? volume24h
+    : syntheticUsdVolume(baseUsdPrice);   // treat as USD-equivalent quote vol
+
   // target: ~0.03% of 24h volume per level in quote terms
-  const quotePerLevel = volume24h * 0.0003;
+  const quotePerLevel = effectiveQuoteVol * 0.0003;
   // Dynamic floor: at least worth 5 base units at current price (avoids insane qty)
   const quoteFloor = midPrice * 5;
   const base = Math.max(quotePerLevel, quoteFloor) / midPrice;
@@ -110,12 +138,17 @@ function buildLadder(
     const px   = midPrice * (1 + sign * spread);
     const qty  = bSize * sizeMulti;
 
-    // Format price with appropriate precision
+    // Format price with appropriate precision (handles sub-satoshi like 1e-11)
     let priceStr: string;
     if (px >= 1000)       priceStr = px.toFixed(2);
     else if (px >= 1)     priceStr = px.toFixed(4);
     else if (px >= 0.001) priceStr = px.toFixed(6);
-    else                  priceStr = px.toFixed(10).replace(/0+$/, "").replace(/\.$/, "0");
+    else if (px >= 1e-8)  priceStr = px.toFixed(10);
+    else {
+      // Sub-satoshi: enough decimals to show 4+ significant figures
+      const mag = -Math.floor(Math.log10(px));
+      priceStr = px.toFixed(Math.min(mag + 4, 18)).replace(/0+$/, "").replace(/\.$/, "0");
+    }
 
     const qtyStr   = qty >= 1 ? qty.toFixed(4) : qty.toFixed(8);
     const totalStr = (px * qty).toFixed(6);
@@ -130,6 +163,7 @@ async function refreshMarket(
   quoteAsset: string,
   midPrice: number,
   volume24h: number,
+  baseUsdPrice: number,   // base-asset USD price for synthetic volume fallback
 ): Promise<void> {
   // If the live price is missing, try the static fallback map
   if (!midPrice || midPrice <= 0) {
@@ -138,7 +172,7 @@ async function refreshMarket(
   }
   if (!midPrice || midPrice <= 0) return; // truly unknown — skip
 
-  const bSize = baseSize(volume24h, midPrice);
+  const bSize = baseSize(volume24h, midPrice, baseUsdPrice);
   const orders: LevelOrder[] = [
     ...buildLadder("buy",  midPrice, bSize),
     ...buildLadder("sell", midPrice, bSize),
@@ -175,6 +209,8 @@ async function refreshMarket(
       txid:              null as string | null,
       signedTx:          null as string | null,
       matchedOrderId:    null as string | null,
+      isBot:             true,
+      isSynthetic:       false,
     })),
   );
 }
@@ -182,7 +218,8 @@ async function refreshMarket(
 /* ── Full cycle: iterate all active markets ─────────────────────────────── */
 async function runCycle(): Promise<void> {
   try {
-    const markets = await db.select().from(marketsTable);
+    const markets = await db.select().from(marketsTable)
+      .where(notInArray(marketsTable.type, ["letsexchange"]));
     const active  = markets.filter(m => m.status === "active");
 
     // ── Step 1: Build the master USD price map from live USDT spot markets ──
@@ -206,7 +243,10 @@ async function runCycle(): Promise<void> {
     // ── Step 2: Recompute & persist cross-pair DB prices from USD map ───────
     // This keeps every ticker mathematically consistent with the order book.
     // ETH/BTC price = ETH_USD / BTC_USD — same snapshot, no drift window.
-    const crossUpdates: Promise<unknown>[] = [];
+    // Process in batches of 50 to avoid overwhelming the DB connection pool
+    // (firing hundreds of concurrent UPDATE queries causes latency spikes and
+    // can exhaust connections on constrained Replit PostgreSQL instances).
+    const crossUpdates: { symbol: string; price: string }[] = [];
     for (const m of active) {
       // Skip stablecoin-quoted and futures markets (their prices come from external APIs)
       if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") continue;
@@ -215,42 +255,63 @@ async function runCycle(): Promise<void> {
       if (!baseUSD || !quoteUSD || quoteUSD <= 0) continue;
       const crossPrice = baseUSD / quoteUSD;
       if (!Number.isFinite(crossPrice) || crossPrice <= 0) continue;
+      crossUpdates.push({ symbol: m.symbol, price: crossPrice.toFixed(8) });
+    }
 
-      crossUpdates.push(
-        db.update(marketsTable)
-          .set({ lastPrice: crossPrice.toFixed(8) })
-          .where(eq(marketsTable.symbol, m.symbol))
-          .catch(() => {}),
+    const CROSS_BATCH = 50;
+    for (let ci = 0; ci < crossUpdates.length; ci += CROSS_BATCH) {
+      const batch = crossUpdates.slice(ci, ci + CROSS_BATCH);
+      await Promise.all(
+        batch.map(({ symbol, price }) =>
+          db.update(marketsTable)
+            .set({ lastPrice: price })
+            .where(eq(marketsTable.symbol, symbol))
+            .catch(err => logger.warn({ err, symbol }, "Bot: failed to update cross-price")),
+        ),
       );
     }
-    await Promise.all(crossUpdates);
 
     // ── Step 3: Seed order books using the now-consistent prices ────────────
     // Process in batches of 20 to avoid overwhelming the DB connection pool.
     const BATCH_SIZE = 20;
     const marketJobs = active.map(m => {
+      const baseUSD  = usdMap.get(m.baseAsset)  ?? FALLBACK_PRICES[m.baseAsset]  ?? 0;
+      const quoteUSD = usdMap.get(m.quoteAsset) ?? FALLBACK_PRICES[m.quoteAsset] ?? 1;
+
       let midPrice: number;
       if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") {
         midPrice = parseFloat(m.lastPrice as string) || 0;
       } else {
-        const baseUSD  = usdMap.get(m.baseAsset);
-        const quoteUSD = usdMap.get(m.quoteAsset);
-        midPrice = (baseUSD && quoteUSD && quoteUSD > 0)
+        midPrice = (baseUSD > 0 && quoteUSD > 0)
           ? baseUSD / quoteUSD
           : parseFloat(m.lastPrice as string) || 0;
       }
-      return { m, midPrice };
+
+      // Volume: use DB value when available; otherwise derive from base-asset's
+      // USDT volume scaled to this quote currency.
+      let vol = parseFloat(m.volume24h as string) || 0;
+      if (vol <= 0 && baseUSD > 0 && quoteUSD > 0) {
+        // Find the USDT volume for the base asset as a proxy
+        const usdtMarket = active.find(
+          x => x.baseAsset === m.baseAsset && x.quoteAsset === "USDT" && x.type === "spot"
+        );
+        const usdtVol = parseFloat(usdtMarket?.volume24h as string) || 0;
+        if (usdtVol > 0) vol = usdtVol / quoteUSD;
+      }
+
+      return { m, midPrice, baseUsdPrice: baseUSD, vol };
     });
 
     for (let i = 0; i < marketJobs.length; i += BATCH_SIZE) {
       const batch = marketJobs.slice(i, i + BATCH_SIZE);
       await Promise.all(
-        batch.map(({ m, midPrice }) =>
+        batch.map(({ m, midPrice, baseUsdPrice, vol }) =>
           refreshMarket(
             m.symbol,
             m.quoteAsset,
             midPrice,
-            parseFloat(m.volume24h as string) || 0,
+            vol,
+            baseUsdPrice,
           ).catch(err =>
             logger.warn({ err, symbol: m.symbol }, "Bot: skipped market"),
           )
@@ -277,11 +338,5 @@ export function startLiquidityBot(): void {
     .then(() => runCycle())
     .catch(err => logger.warn({ err }, "Liquidity bot: seed-then-first-cycle failed"));
 
-  setInterval(async () => {
-    if (_busy) { logger.warn("Liquidity bot: previous cycle still running, skipping"); return; }
-    _busy = true;
-    try { await runCycle(); }
-    catch (err) { logger.warn({ err }, "Liquidity bot cycle error"); }
-    finally { _busy = false; }
-  }, 120_000);
+  guardedInterval("liquidity-bot", runCycle, 120_000, { timeoutMs: 110_000 });
 }

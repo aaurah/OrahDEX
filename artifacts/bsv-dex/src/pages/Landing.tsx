@@ -1,20 +1,60 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity, Moon, Sun, Smartphone } from "lucide-react";
 import { useThemeStore } from "@/store/useThemeStore";
 import { SocialBar } from "@/components/SocialBar";
+import { API_BASE } from "@/lib/api";
 
 /* ── Theme cycle helpers ─────────────────────────────────────────────────── */
 const LAND_THEME_CYCLE = ["amoled", "dark", "light"] as const;
 type LandTheme = typeof LAND_THEME_CYCLE[number];
 const LAND_THEME_ICONS: Record<LandTheme, typeof Moon> = { amoled: Smartphone, dark: Moon, light: Sun };
 const LAND_THEME_LABELS: Record<LandTheme, string> = { amoled: "AMOLED", dark: "Dark", light: "Light" };
+const LANDING_LOW_MOTION_BREAKPOINT_PX = 767;
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+function shouldUseLowMotionLandingMode() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return (
+    window.matchMedia(`(max-width: ${LANDING_LOW_MOTION_BREAKPOINT_PX}px), (pointer: coarse)`).matches ||
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
 
-/* ── Animated OrahDEXO sigil — large sovereign version ───────────────────── */
-function SovereignSigil({ size = 160 }: { size?: number }) {
+function subscribeToMediaQuery(query: MediaQueryList, onChange: () => void) {
+  if (typeof query.addEventListener === "function") {
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }
+  query.addListener(onChange);
+  return () => query.removeListener(onChange);
+}
+
+function useLowMotionLandingMode() {
+  const [enabled, setEnabled] = useState(() => shouldUseLowMotionLandingMode());
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    // Treat coarse-pointer tablets like mobile here because the Safari/WebKit crash report
+    // is device-class specific rather than strictly width specific.
+    const mobileQuery = window.matchMedia(`(max-width: ${LANDING_LOW_MOTION_BREAKPOINT_PX}px), (pointer: coarse)`);
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setEnabled(mobileQuery.matches || reducedMotionQuery.matches);
+
+    update();
+    const unbindMobile = subscribeToMediaQuery(mobileQuery, update);
+    const unbindReducedMotion = subscribeToMediaQuery(reducedMotionQuery, update);
+    return () => {
+      unbindMobile();
+      unbindReducedMotion();
+    };
+  }, []);
+
+  return enabled;
+}
+
+/* ── Animated OrahO sigil — large sovereign version ───────────────────── */
+function SovereignSigil({ size = 160, animated = true }: { size?: number; animated?: boolean }) {
   return (
     <svg
       viewBox="0 0 200 200"
@@ -22,7 +62,7 @@ function SovereignSigil({ size = 160 }: { size?: number }) {
       height={size}
       fill="none"
       aria-hidden
-      className="drop-shadow-[0_0_40px_rgba(74,222,128,0.35)]"
+      className={animated ? "drop-shadow-[0_0_40px_rgba(74,222,128,0.35)]" : undefined}
     >
       {/* Outer ring */}
       <circle cx="100" cy="100" r="88" stroke="#4ade80" strokeWidth="6" opacity="0.25" />
@@ -30,16 +70,25 @@ function SovereignSigil({ size = 160 }: { size?: number }) {
       <circle cx="100" cy="100" r="72" stroke="#4ade80" strokeWidth="10" />
       {/* Gold accent ring */}
       <circle cx="100" cy="100" r="52" stroke="#F5A623" strokeWidth="2" opacity="0.5" />
-      {/* Inner pulsing dot — ring 1 */}
-      <circle cx="100" cy="100" r="22" fill="#4ade80" opacity="0.15">
-        <animate attributeName="r"       from="22" to="60" dur="2.4s" repeatCount="indefinite" />
-        <animate attributeName="opacity" from="0.15" to="0"  dur="2.4s" repeatCount="indefinite" />
-      </circle>
-      {/* Inner pulsing dot — ring 2 (offset) */}
-      <circle cx="100" cy="100" r="22" fill="#4ade80" opacity="0.12">
-        <animate attributeName="r"       from="22" to="60" dur="2.4s" begin="1.2s" repeatCount="indefinite" />
-        <animate attributeName="opacity" from="0.12" to="0"  dur="2.4s" begin="1.2s" repeatCount="indefinite" />
-      </circle>
+      {animated ? (
+        <>
+          {/* Inner pulsing dot — ring 1 */}
+          <circle cx="100" cy="100" r="22" fill="#4ade80" opacity="0.15">
+            <animate attributeName="r" from="22" to="60" dur="2.4s" repeatCount="indefinite" />
+            <animate attributeName="opacity" from="0.15" to="0" dur="2.4s" repeatCount="indefinite" />
+          </circle>
+          {/* Inner pulsing dot — ring 2 (offset) */}
+          <circle cx="100" cy="100" r="22" fill="#4ade80" opacity="0.12">
+            <animate attributeName="r" from="22" to="60" dur="2.4s" begin="1.2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" from="0.12" to="0" dur="2.4s" begin="1.2s" repeatCount="indefinite" />
+          </circle>
+        </>
+      ) : (
+        <>
+          <circle cx="100" cy="100" r="34" fill="#4ade80" opacity="0.1" />
+          <circle cx="100" cy="100" r="48" fill="#4ade80" opacity="0.06" />
+        </>
+      )}
       {/* Core */}
       <circle cx="100" cy="100" r="20" fill="#4ade80" />
       {/* Gold crosshair marks */}
@@ -176,9 +225,9 @@ function OraAiSection() {
 
   // Static fallback shown immediately if the AI call takes too long or fails
   const FALLBACK_INSIGHTS = [
-    { id: 1, content: "BSV settlement gives Orah sub-cent fees — ideal for high-frequency strategies that bleed out on Ethereum gas.", sentiment: "bullish" },
+    { id: 1, content: "BSV settlement gives OrahDEX sub-cent fees — ideal for high-frequency strategies that bleed out on Ethereum gas.", sentiment: "bullish" },
     { id: 2, content: "Layer-2 volumes continue rising as users chase cheaper execution; watch ARB and BASE for breakout pairs this month.", sentiment: "neutral" },
-    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across 950+ Orah pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
+    { id: 3, content: "DeFi liquidity fragmentation is creating arbitrage windows across OrahDEX pairs — algo traders watch BSV/USDT spread.", sentiment: "bullish" },
   ];
 
   useEffect(() => {
@@ -190,7 +239,7 @@ function OraAiSection() {
     }, 8000);
 
     const controller = new AbortController();
-    fetch(`${BASE}/api/ai/insights`, { signal: controller.signal })
+    fetch(`${API_BASE}/ai/insights`, { signal: controller.signal })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (cancelled) return;
@@ -244,7 +293,7 @@ function OraAiSection() {
             Meet <span className="text-green-400">Ora</span>
           </h2>
           <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-            Your AI co-pilot for every trade. Ora monitors 950+ markets in real-time,
+            Your AI co-pilot for every trade. Ora monitors markets in real-time,
             generates trade signals, spots emerging patterns, and answers your questions
             instantly — all powered by sovereign intelligence.
           </p>
@@ -323,11 +372,251 @@ function OraAiSection() {
   );
 }
 
+/* ── Coin colour map ─────────────────────────────────────────────────────── */
+const COIN_COLORS: Record<string, string> = {
+  BTC:"#F7931A",ETH:"#627EEA",BSV:"#EAB305",USDT:"#26A17B",BNB:"#F0B90B",
+  SOL:"#9945FF",XRP:"#346AA9",ADA:"#0033AD",DOGE:"#C2A633",DOT:"#E6007A",
+  AVAX:"#E84142",MATIC:"#8247E5",LINK:"#2A5ADA",UNI:"#FF007A",ATOM:"#2E3148",
+  LTC:"#BFBBBB",BCH:"#8DC351",TRX:"#EB0029",NEAR:"#00C08B",ICP:"#29ABE2",
+  ARB:"#12AAFF",OP:"#FF0420",SUI:"#4DA2FF",INJ:"#00B2FF",PEPE:"#479A3A",
+  SHIB:"#FFA409",MKR:"#6ACCB2",AAVE:"#B6509E",CRV:"#FF0000",ENS:"#5284FF",
+  LDO:"#F68819",SUSHI:"#FA52A0",COMP:"#00D395",GRT:"#6F4CBA",SNX:"#00D1FF",
+  YFI:"#006AE3",GMX:"#03D1CF",DYDX:"#6966FF",FTM:"#1969FF",ALGO:"#6EC1E4",
+  XLM:"#14B6E7",HBAR:"#00ACBF",TON:"#0098EA",KAS:"#49EACB",SEI:"#9B1FE8",
+  TIA:"#7B2FBE",BASE:"#0052FF",IMX:"#17B5CB",CAKE:"#D1884F",RAY:"#C54CE0",
+  JUP:"#E86334",PYTH:"#E6DAFE",FET:"#1D6AFF",RNDR:"#AE4ABC",TAO:"#88888A",
+  WLD:"#676767",HNT:"#474DFF",AXS:"#0055D5",SAND:"#04ADEF",MANA:"#FF2D55",
+  APT:"#30B7E8",BONK:"#F5931D",WIF:"#C9B037",PENDLE:"#3BCCB0",CVX:"#3A3A6C",
+  GMX2:"#03D1CF",FXS:"#000000",SPELL:"#8B5CF6",PERP:"#00CFBE",INJ2:"#00B2FF",
+};
+function coinColor(sym: string) { return COIN_COLORS[sym.toUpperCase()] ?? "#6b7280"; }
+
+/* ── Coin avatar ─────────────────────────────────────────────────────────── */
+function CoinAvatar({ symbol, size = 26 }: { symbol: string; size?: number }) {
+  const [err, setErr] = useState(false);
+  const sym = symbol.toUpperCase();
+  const color = coinColor(sym);
+  return (
+    <div
+      className="rounded-full shrink-0 overflow-hidden flex items-center justify-center"
+      style={{ width: size, height: size, background: `${color}22`, border: `1px solid ${color}44` }}
+    >
+      {!err ? (
+        <img
+          src={`https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/32/color/${sym.toLowerCase()}.png`}
+          alt={sym}
+          width={size}
+          height={size}
+          loading="lazy"
+          decoding="async"
+          style={{ width: size, height: size, objectFit: "contain" }}
+          onError={() => setErr(true)}
+        />
+      ) : (
+        <span style={{ fontSize: size * 0.36, color, fontWeight: 900, lineHeight: 1 }}>{sym.slice(0, 2)}</span>
+      )}
+    </div>
+  );
+}
+
+/* ── Scrolling price ticker ───────────────────────────────────────────────── */
+function TickerStrip({ markets, animated = true }: { markets: any[]; animated?: boolean }) {
+  const items = useMemo(() => {
+    const usdt = markets
+      .filter(m => m.quoteAsset === "USDT" && m.status === "active")
+      .sort((a, b) => b.volume24h - a.volume24h)
+      .slice(0, 35);
+    const btc = markets
+      .filter(m => m.quoteAsset === "BTC" && m.status === "active")
+      .sort((a, b) => b.volume24h - a.volume24h)
+      .slice(0, 8);
+    const seen = new Set<string>();
+    return [...usdt, ...btc].filter(m => { if (seen.has(m.symbol)) return false; seen.add(m.symbol); return true; });
+  }, [markets]);
+
+  if (items.length === 0) return null;
+
+  const fp = (p: number) =>
+    p >= 10000 ? "$" + p.toLocaleString("en-US", { maximumFractionDigits: 0 })
+    : p >= 1   ? "$" + p.toFixed(2)
+    : p >= 0.001 ? "$" + p.toPrecision(3)
+    : "$" + p.toExponential(2);
+
+  const handleTickerKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (animated) return;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.currentTarget.scrollBy({
+      left: event.key === "ArrowRight" ? 160 : -160,
+      behavior: "smooth",
+    });
+  };
+
+  return (
+    <div
+      className={`w-full border-b border-border/30 bg-card/40 ${animated ? "overflow-hidden backdrop-blur-sm" : "overflow-x-auto"}`}
+      role="region"
+      aria-label="Live market ticker"
+      tabIndex={0}
+      onKeyDown={handleTickerKeyDown}
+      style={{ height: 38 }}
+    >
+      {animated && <style>{`@keyframes orah-ticker{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}`}</style>}
+      <div
+        className="flex items-center h-full"
+        style={{ animation: animated ? "orah-ticker 80s linear infinite" : undefined, width: "max-content" }}
+      >
+        {(animated ? [...items, ...items] : items).map((m, i) => {
+          const up = m.priceChangePercent24h >= 0;
+          return (
+            <Link
+              key={i}
+              href={`/trade/${m.symbol.replace("/", "-")}`}
+              className="flex items-center gap-1.5 px-3.5 h-full border-r border-border/20 hover:bg-foreground/4 transition-colors shrink-0 cursor-pointer"
+            >
+              <CoinAvatar symbol={m.baseAsset} size={16} />
+              <span className="text-[11px] font-bold text-foreground/80 whitespace-nowrap">{m.symbol}</span>
+              <span className="text-[11px] font-mono text-foreground/55 whitespace-nowrap">{fp(m.lastPrice)}</span>
+              <span className={`text-[10px] font-bold whitespace-nowrap ${up ? "text-green-400" : "text-red-400"}`}>
+                {up ? "▲" : "▼"}{Math.abs(m.priceChangePercent24h).toFixed(2)}%
+              </span>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Featured markets section ────────────────────────────────────────────── */
+type MktTab = "ALL" | "USDT" | "BTC" | "ETH" | "BSV";
+const MKT_TABS: { id: MktTab; label: string }[] = [
+  { id: "ALL",  label: "All" },
+  { id: "USDT", label: "USDT" },
+  { id: "BTC",  label: "BTC" },
+  { id: "ETH",  label: "ETH" },
+  { id: "BSV",  label: "BSV" },
+];
+
+function FeaturedMarkets({ markets }: { markets: any[] }) {
+  const [tab, setTab] = useState<MktTab>("ALL");
+
+  const filtered = useMemo(() => {
+    let list = markets.filter(m => m.status === "active");
+    if (tab === "BSV") {
+      list = list.filter(m => m.baseAsset === "BSV" || m.quoteAsset === "BSV");
+    } else if (tab !== "ALL") {
+      list = list.filter(m => m.quoteAsset === tab);
+    }
+    return list.sort((a, b) => b.volume24h - a.volume24h).slice(0, 24);
+  }, [markets, tab]);
+
+  const fmtPrice = (p: number) => {
+    if (p >= 10000) return "$" + p.toLocaleString("en-US", { maximumFractionDigits: 0 });
+    if (p >= 1)     return "$" + p.toFixed(2);
+    if (p >= 0.0001) return "$" + p.toPrecision(4);
+    return "$" + p.toExponential(2);
+  };
+
+  const fmtVol = (v: number) => {
+    if (v >= 1e9) return "$" + (v / 1e9).toFixed(1) + "B";
+    if (v >= 1e6) return "$" + (v / 1e6).toFixed(1) + "M";
+    if (v >= 1e3) return "$" + (v / 1e3).toFixed(1) + "K";
+    return "$" + v.toFixed(0);
+  };
+
+  return (
+    <section className="relative px-6 lg:px-10 py-16">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="flex items-start sm:items-center justify-between gap-4 mb-8 flex-col sm:flex-row">
+          <div>
+            <span className="text-xs font-black text-green-400 uppercase tracking-[0.3em] mb-1.5 block">Live Markets</span>
+            <h2 className="text-2xl sm:text-3xl font-black text-foreground">
+              Top Trading Pairs
+              <span className="ml-3 text-sm font-bold text-muted-foreground/50 align-middle">
+                {markets.length.toLocaleString()}+ total
+              </span>
+            </h2>
+          </div>
+          <Link
+            href="/markets"
+            className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition-colors border border-border px-3 py-1.5 rounded-lg hover:bg-card shrink-0"
+          >
+            All Markets <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
+
+        {/* Tab bar */}
+        <div className="flex items-center gap-1.5 mb-6 overflow-x-auto pb-1 scrollbar-none">
+          {MKT_TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap border ${
+                tab === t.id
+                  ? "bg-green-500 text-black border-green-500"
+                  : "text-muted-foreground border-border hover:border-green-500/30 hover:text-foreground bg-transparent"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Cards grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+          {filtered.map(m => {
+            const up = m.priceChangePercent24h >= 0;
+            return (
+              <Link
+                key={m.symbol}
+                href={`/trade/${m.symbol.replace("/", "-")}`}
+                className="group flex flex-col gap-2.5 p-3.5 rounded-2xl border border-border bg-card/40 hover:bg-card hover:border-green-500/25 transition-all hover:scale-[1.02] hover:-translate-y-0.5 active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-2">
+                  <CoinAvatar symbol={m.baseAsset} size={28} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-black text-foreground leading-tight truncate">{m.baseAsset}</p>
+                    <p className="text-[9px] text-muted-foreground/40 leading-tight truncate">/{m.quoteAsset}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-black text-foreground font-mono leading-tight">{fmtPrice(m.lastPrice)}</p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-[9px] text-muted-foreground/40">Vol {fmtVol(m.volume24h)}</p>
+                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+                      up ? "bg-green-500/12 text-green-400" : "bg-red-500/12 text-red-400"
+                    }`}>
+                      {up ? "+" : ""}{m.priceChangePercent24h.toFixed(2)}%
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* Bottom CTA */}
+        <div className="flex justify-center mt-10">
+          <Link
+            href="/markets"
+            className="flex items-center gap-2 px-8 py-3.5 rounded-2xl font-black text-sm border border-green-500/30 text-green-400 hover:bg-green-500/8 hover:border-green-500/60 transition-all"
+          >
+            View All {markets.length.toLocaleString()}+ Markets <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── Main landing page ───────────────────────────────────────────────────── */
 export function LandingPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [entered, setEntered] = useState(false);
   const { theme, setTheme } = useThemeStore();
+  const lowMotionMode = useLowMotionLandingMode();
+  const MARKET_COUNT_PLACEHOLDER = 1000; // startup placeholder until live total is fetched
+  const MARKETS_PREVIEW_LIMIT = 50;
 
   const safeTheme: LandTheme = (LAND_THEME_CYCLE as readonly string[]).includes(theme)
     ? (theme as LandTheme)
@@ -340,31 +629,42 @@ export function LandingPage() {
 
   const ThemeIcon = LAND_THEME_ICONS[safeTheme];
 
-  useEffect(() => {
-    const t = setTimeout(() => setEntered(true), 80);
-    return () => clearTimeout(t);
-  }, []);
-
   const { data: bsvStatus } = useQuery({
     queryKey: ["bsv-status"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/bsv-status`);
+      const r = await fetch(`${API_BASE}/bsv-status`, { cache: "no-store" });
       return r.ok ? r.json() : { online: false, blockHeight: 0 };
     },
     refetchInterval: 30_000,
   });
 
-  const { data: markets } = useQuery({
-    queryKey: ["market-count"],
+  const { data: marketsData } = useQuery({
+    queryKey: ["market-count-v2"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/markets`);
-      if (!r.ok) return [];
-      return r.json();
+      const [leCountRes, countRes, marketsRes] = await Promise.allSettled([
+        fetch(`${API_BASE}/letsexchange/pairs/count?all=true`, { cache: "no-store" }),
+        fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
+        fetch(`${API_BASE}/markets?limit=${MARKETS_PREVIEW_LIMIT}`, { cache: "no-store" }),
+      ]);
+      if (leCountRes.status !== "fulfilled") console.warn("Landing market count fetch: LetsExchange count failed", leCountRes.reason);
+      if (countRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets count failed", countRes.reason);
+      if (marketsRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets preview failed", marketsRes.reason);
+      const leCountPayload = leCountRes.status === "fulfilled" && leCountRes.value.ok ? await leCountRes.value.json() : {};
+      const countPayload = countRes.status === "fulfilled" && countRes.value.ok ? await countRes.value.json() : {};
+      const arr = marketsRes.status === "fulfilled" && marketsRes.value.ok ? await marketsRes.value.json() : [];
+      const leCount = Number((leCountPayload as any)?.count ?? 0);
+      const marketCount = Number((countPayload as any)?.count ?? 0);
+      // /letsexchange/pairs/count already returns merged external+native symbol count.
+      // Fall back to /markets/count only when that endpoint is unavailable.
+      const totalCount = leCount > 0 ? leCount : marketCount;
+      return { count: totalCount, markets: Array.isArray(arr) ? arr : [] };
     },
     staleTime: 60_000,
+    placeholderData: { count: MARKET_COUNT_PLACEHOLDER, markets: [] as any[] },
   });
 
-  const marketCount = markets?.length ?? 950;
+  const marketCount = (marketsData?.count && marketsData.count > 0) ? marketsData.count : MARKET_COUNT_PLACEHOLDER;
+  const markets     = marketsData?.markets ?? [];
   const bsvBlock     = bsvStatus?.blockHeight ?? 0;
   const bsvBlockHash = bsvStatus?.bestBlockHash as string | undefined;
 
@@ -384,22 +684,34 @@ export function LandingPage() {
             <svg viewBox="0 0 100 100" className="w-7 h-7 overflow-visible" fill="none">
               {/* Outer O ring — white, no glow */}
               <circle cx="50" cy="50" r="40" stroke="white" strokeWidth="12" fill="none" />
-              {/* Pulsing glow around dot */}
-              <circle cx="50" cy="50" r="13" fill="#4ade80" opacity="0.7"
-                style={{ filter: "blur(2px) drop-shadow(0 0 6px rgba(74,222,128,0.8))" }}>
-                <animate attributeName="r"       from="13" to="34" dur="1.2s" repeatCount="indefinite" />
-                <animate attributeName="opacity" from="0.7" to="0"  dur="1.2s" repeatCount="indefinite" />
-              </circle>
+              {!lowMotionMode && (
+                <circle
+                  cx="50"
+                  cy="50"
+                  r="13"
+                  fill="#4ade80"
+                  opacity="0.7"
+                  style={{ filter: "blur(2px) drop-shadow(0 0 6px rgba(74,222,128,0.8))" }}
+                >
+                  <animate attributeName="r" from="13" to="34" dur="1.2s" repeatCount="indefinite" />
+                  <animate attributeName="opacity" from="0.7" to="0" dur="1.2s" repeatCount="indefinite" />
+                </circle>
+              )}
               {/* Center dot with glow */}
-              <circle cx="50" cy="50" r="13" fill="#4ade80"
-                style={{ filter: "drop-shadow(0 0 5px rgba(74,222,128,0.8)) drop-shadow(0 0 2px rgba(74,222,128,0.8))" }} />
+              <circle
+                cx="50"
+                cy="50"
+                r="13"
+                fill="#4ade80"
+                style={lowMotionMode ? undefined : { filter: "drop-shadow(0 0 5px rgba(74,222,128,0.8)) drop-shadow(0 0 2px rgba(74,222,128,0.8))" }}
+              />
             </svg>
-            <span><span className="text-foreground">OrahDEX</span><span className="text-green-400">DEX</span></span>
+            <span><span className="text-foreground">Orah</span><span className="text-green-400">DEX</span></span>
           </div>
           <div className="flex items-center gap-2.5">
             {bsvBlock > 0 && (
               <span className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-green-400 border border-green-500/30 px-2.5 py-1 rounded-full bg-green-500/8 uppercase tracking-widest">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                <span className={`w-1.5 h-1.5 rounded-full bg-green-400 ${lowMotionMode ? "" : "animate-pulse"}`} />
                 BSV #{bsvBlock.toLocaleString()}
               </span>
             )}
@@ -424,24 +736,21 @@ export function LandingPage() {
         {/* Hero content */}
         <div className="relative z-10 flex flex-col items-center text-center max-w-4xl mx-auto gap-8">
           {/* Sigil */}
-          <div className={`transition-all duration-1000 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "100ms" }}>
-            <SovereignSigil size={140} />
+          <div>
+            <SovereignSigil size={140} animated={!lowMotionMode} />
           </div>
 
           {/* Identity badge */}
-          <div className={`transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "200ms" }}>
+          <div>
             <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-[0.2em] border"
               style={{ borderColor: "#F5A623cc", color: "#F5A623", background: "rgba(245,166,35,0.08)" }}>
-              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: "#F5A623" }} />
+              <span className={`w-1.5 h-1.5 rounded-full ${lowMotionMode ? "" : "animate-pulse"}`} style={{ background: "#F5A623" }} />
               Sovereign Decentralized Exchange
             </span>
           </div>
 
           {/* Headline */}
-          <div className={`transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "300ms" }}>
+          <div>
             <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black leading-[1.05] tracking-tight">
               <span className="text-foreground">Trade means</span>
               <br />
@@ -453,8 +762,7 @@ export function LandingPage() {
           </div>
 
           {/* Ritual taglines */}
-          <div className={`transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "400ms" }}>
+          <div>
             <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-0 text-sm font-semibold">
               {["Identity is the engine.", "Execution is a ritual.", "Every trade is a declaration."].map((s, i) => (
                 <span key={i} className="flex items-center text-muted-foreground">
@@ -466,8 +774,7 @@ export function LandingPage() {
           </div>
 
           {/* CTAs */}
-          <div className={`flex flex-col sm:flex-row items-center gap-4 transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "500ms" }}>
+          <div className="flex flex-col sm:flex-row items-center gap-4">
             <Link
               href="/trade/BSV-USDT"
               className="group flex items-center gap-3 px-8 py-4 rounded-2xl font-black text-base text-black transition-all hover:scale-[1.03] hover:shadow-2xl w-full sm:w-auto justify-center"
@@ -485,8 +792,7 @@ export function LandingPage() {
           </div>
 
           {/* Live stats bar */}
-          <div className={`grid grid-cols-2 sm:flex sm:flex-wrap justify-center gap-3 transition-all duration-700 ${entered ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"}`}
-            style={{ transitionDelay: "600ms" }}>
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap justify-center gap-3">
             <StatPill label="Markets" value={marketCount.toLocaleString()} />
             <StatPill label="Chains" value="20+" color="text-amber-400" />
             <StatPill label="Settlement" value="BSV" color="text-blue-400" />
@@ -496,15 +802,20 @@ export function LandingPage() {
         </div>
       </section>
 
+      {/* ── LIVE TICKER STRIP ─────────────────────────────────────────────── */}
+      <div className="relative z-0">
+        <TickerStrip markets={markets ?? []} animated={!lowMotionMode} />
+      </div>
+
       {/* ── PROTOCOL SNAPSHOT ─────────────────────────────────────────────── */}
-      <section className="relative px-6 lg:px-10 pb-6 -mt-4">
+      <section className="relative z-10 px-6 lg:px-10 pb-6 -mt-[10px]">
         <div className="max-w-6xl mx-auto">
           <div className="rounded-2xl border border-border/60 overflow-hidden"
             style={{ background: "radial-gradient(circle at top left, rgba(24,27,43,0.9) 0%, rgba(5,6,10,0.95) 60%)" }}>
             <div className="flex items-center justify-between px-5 py-3 border-b border-border/50">
               <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Protocol Snapshot</span>
               <div className="flex items-center gap-1.5 text-[10px] font-black text-green-400 uppercase tracking-widest">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                <span className={`w-1.5 h-1.5 rounded-full bg-green-400 ${lowMotionMode ? "" : "animate-pulse"}`} />
                 Online
               </div>
             </div>
@@ -513,7 +824,7 @@ export function LandingPage() {
                 { label: "Settlement", value: "BSV + OP_RETURN" },
                 { label: "Liquidity", value: "AMM + VAMM + OB" },
                 { label: "Bridge", value: "HTLC, no custody" },
-                { label: "NFT + Creator Coins", value: "OrahDEXNFT × BSV" },
+                { label: "NFT + Creator Coins", value: "OrahNFT × BSV" },
                 { label: "Copy trading", value: "CopyVault ERC4626" },
                 { label: "Fiat on-ramp", value: "6 providers" },
               ].map(({ label, value }) => (
@@ -526,6 +837,9 @@ export function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* ── FEATURED MARKETS ──────────────────────────────────────────────── */}
+      <FeaturedMarkets markets={markets ?? []} />
 
       {/* ── FEATURE STRIP ─────────────────────────────────────────────────── */}
       <section className="relative px-6 lg:px-10 py-12">
@@ -544,7 +858,7 @@ export function LandingPage() {
               desc: "A hybrid of constant-product AMM, virtual AMM, and orderbook routing ensures every listed asset is tradeable — even with few users and no external market makers.",
             },
             {
-              label: "OrahDEXNFT",
+              label: "OrahNFT",
               pill: "Creator coins",
               pillColor: "#f472b6",
               desc: "A social NFT marketplace where every post is a BSV inscription and a tradeable creator coin. Mint, collect, and trade creator tokens on bonding curves — all inside the exchange.",
@@ -589,7 +903,7 @@ export function LandingPage() {
               The Keeper Protocol
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-              Orah runs on identity-aware execution. Keepers are sovereign participants
+              OrahDEX runs on identity-aware execution. Keepers are sovereign participants
               who gain privileges, reduced fees, and priority routing in exchange for
               staking and contribution. Your identity is your engine.
             </p>
@@ -648,7 +962,7 @@ export function LandingPage() {
               Every Coin. Always Tradeable.
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-              Orah's Virtual AMM (VAMM) ensures no asset ever has zero liquidity.
+              OrahDEX's Virtual AMM (VAMM) ensures no asset ever has zero liquidity.
               A linear bonding curve provides instant price discovery and trade execution
               for 56+ major assets — embedded directly in the Market Hub.
             </p>
@@ -736,7 +1050,7 @@ export function LandingPage() {
               Three Phases of Sovereignty
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto leading-relaxed">
-              Orah is not a simple DEX. It is a progressive architecture — 
+              OrahDEX is not a simple DEX. It is a progressive architecture — 
               starting with deep CEX-backed liquidity and Virtual AMM price discovery,
               evolving to full on-chain AMM pools, and culminating in a sovereign BSV↔EVM bridge.
             </p>
@@ -773,7 +1087,7 @@ export function LandingPage() {
               {[
                 { label: "Your Wallet", sub: "EVM · TRON · BSV", color: "#4ade80" },
                 null,
-                { label: "Orah Engine", sub: "Keeper routing + VAMM", color: "#F5A623" },
+                { label: "OrahDEX Engine", sub: "Keeper routing + VAMM", color: "#F5A623" },
                 null,
                 { label: "CEX Venues", sub: "Binance / OKX / Bybit", color: "#60a5fa" },
                 null,
@@ -803,7 +1117,7 @@ export function LandingPage() {
         <div className="relative z-10 max-w-4xl mx-auto text-center flex flex-col items-center gap-8">
           <div className="w-20 h-20 rounded-full flex items-center justify-center"
             style={{ background: "linear-gradient(135deg, rgba(74,222,128,0.15), rgba(245,166,35,0.1))", border: "1px solid rgba(74,222,128,0.2)" }}>
-            <SovereignSigil size={50} />
+            <SovereignSigil size={50} animated={!lowMotionMode} />
           </div>
 
           <div className="flex flex-col gap-3">
@@ -813,7 +1127,7 @@ export function LandingPage() {
               <span className="text-green-400">We build thresholds.</span>"
             </blockquote>
             <p className="text-muted-foreground max-w-lg mx-auto leading-relaxed mt-2">
-              Orah is a sovereign exchange where every participant is a Keeper,
+              OrahDEX is a sovereign exchange where every participant is a Keeper,
               every trade is an act of financial sovereignty, and settlement lives
               permanently on Bitcoin SV.
             </p>
@@ -837,17 +1151,16 @@ export function LandingPage() {
             <span>·</span>
             <Link href="/p2p" className="hover:text-muted-foreground transition-colors">P2P</Link>
             <span>·</span>
-            <Link href="/bridge" className="hover:text-muted-foreground transition-colors">Bridge</Link>
+            <Link href="/swap" className="hover:text-muted-foreground transition-colors">Bridge</Link>
             <span>·</span>
             <Link href="/terms" className="hover:text-muted-foreground transition-colors">Terms</Link>
           </div>
           <SocialBar iconSize="sm" variant="landing" className="max-w-sm" />
           <p className="text-[11px] text-muted-foreground/30">
-            © {new Date().getFullYear()} Orah · orah.org · Trade means DEX
+            © {new Date().getFullYear()} OrahDEX · orahdex.org · Trade means DEX
           </p>
         </div>
       </section>
     </div>
   );
 }
-

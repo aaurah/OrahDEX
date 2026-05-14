@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { OrahDEXInline } from "@/components/BrandLogo";
+import { createPortal } from "react-dom";
+import { OrahInline } from "@/components/BrandLogo";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X, Shield, ChevronRight, CheckCircle2,
@@ -21,6 +22,18 @@ import {
   listPasskeyWallets,
   generateTransferCode,
 } from "@/lib/passkeyWallet";
+import {
+  hasPin,
+  setPin as setPinSecure,
+  verifyPin,
+  validatePin,
+  storeWithPin,
+  storeWithPasskey,
+  saveDerivedAddresses,
+  createImportPasskey,
+  PIN_MIN_LEN,
+  PIN_MAX_LEN,
+} from "@/lib/walletPin";
 import { QRCodeSVG, QRCodeCanvas } from "qrcode.react";
 import { ReownConnectPanel } from "@/components/ReownConnectButton";
 import { LedgerConnectPanel } from "@/components/LedgerConnectPanel";
@@ -37,6 +50,7 @@ interface WalletDef {
 
 const EVM_WALLETS: WalletDef[] = [
   { id: "metamask",  name: "MetaMask",       icon: "🦊", description: "Most popular Ethereum wallet — all EVM chains",         popular: true,  installUrl: "https://metamask.io/download/" },
+  { id: "rabby",     name: "Rabby",           icon: "🐰", description: "Multi-chain EVM wallet by DeBank — power users",        popular: true,  installUrl: "https://rabby.io/" },
   { id: "coinbase",  name: "Coinbase Wallet", icon: "🔵", description: "Self-custody by Coinbase — all EVM chains",             popular: true,  installUrl: "https://www.coinbase.com/wallet/downloads" },
   { id: "trust",     name: "Trust Wallet",    icon: "🛡️", description: "Multi-chain mobile — EVM + BSV + 100+ coins",          popular: true,  installUrl: "https://trustwallet.com/download" },
   { id: "okx",       name: "OKX Wallet",      icon: "⭕", description: "Web3 gateway by OKX — all EVM networks",               popular: false, installUrl: "https://www.okx.com/web3" },
@@ -46,7 +60,11 @@ const EVM_WALLETS: WalletDef[] = [
   { id: "imtoken",   name: "imToken",         icon: "🪙", description: "L1 / L2 / L3 multi-chain — ETH, BNB, MATIC, ARB…",   popular: false, installUrl: "https://token.im/download" },
   { id: "guarda",    name: "Guarda Wallet",   icon: "🟢", description: "EVM + BSV + 400k+ assets supported",                   popular: false, installUrl: "https://guarda.com/desktop/" },
   { id: "atomic",    name: "Atomic Wallet",   icon: "⚛️", description: "500+ coins — EVM all layers + BSV + more",             popular: false, installUrl: "https://atomicwallet.io/downloads" },
-  { id: "ledger",    name: "Ledger",          icon: "🔒", description: "Hardware wallet — cold storage",                        popular: false, installUrl: "https://www.ledger.com/ledger-live" },
+  { id: "ledger",    name: "Ledger",          icon: "🔒", description: "Cold wallet — Nano S Plus / Nano X / Stax via USB",     popular: true,  installUrl: "https://www.ledger.com/ledger-live" },
+  { id: "trezor",    name: "Trezor",          icon: "🛡️", description: "Cold wallet — Model One / Model T / Safe via Trezor Suite", popular: false, installUrl: "https://trezor.io/start" },
+  { id: "keystone",  name: "Keystone",        icon: "🧊", description: "Air-gapped cold wallet — QR-code signing, no USB",       popular: false, installUrl: "https://keyst.one/" },
+  { id: "gridplus",  name: "GridPlus Lattice1", icon: "🟦", description: "Pro-grade cold wallet — multi-account hardware vault",  popular: false, installUrl: "https://gridplus.io/products/grid-lattice1" },
+  { id: "walletconnect", name: "WalletConnect", icon: "🔗", description: "Scan a QR — connect any of 300+ mobile wallets",       popular: false },
 ];
 
 const BSV_WALLETS: WalletDef[] = [
@@ -174,7 +192,8 @@ function getEvmProvider(walletId: string): any {
   const eth = (window as any).ethereum;
   if (!eth) return null;
   if (Array.isArray(eth.providers) && eth.providers.length > 0) {
-    if (walletId === "metamask") return eth.providers.find((p: any) => p.isMetaMask) ?? eth.providers[0];
+    if (walletId === "rabby")    return eth.providers.find((p: any) => p.isRabby) ?? null;
+    if (walletId === "metamask") return eth.providers.find((p: any) => p.isMetaMask && !p.isRabby) ?? eth.providers[0];
     if (walletId === "coinbase") return eth.providers.find((p: any) => p.isCoinbaseWallet) ?? null;
     if (walletId === "trust") return eth.providers.find((p: any) => p.isTrust) ?? null;
     return eth.providers[0];
@@ -189,7 +208,7 @@ function getEvmProvider(walletId: string): any {
 type View = "landing" | "create" | "import" | "connect" | "prep" | "passkey" | "mobileqr";
 type ConnectTab = "reown" | "bsv" | "tron" | "ledger";
 type CreateStep = "generate" | "done";
-type ImportStep = "enter" | "done";
+type ImportStep = "enter" | "secure" | "done";
 
 const CONNECT_TABS: { id: ConnectTab; label: string; emoji?: string }[] = [
   { id: "reown",  label: "EVM Wallets" },
@@ -202,16 +221,34 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const connect = useWalletStore((s) => s.connect);
   const setBalance = useWalletStore((s) => s.setBalance);
   const setInternalEvmAddress = useWalletStore((s) => s.setInternalEvmAddress);
-  const setInternalBsvAddress = useWalletStore((s) => s.setInternalBsvAddress);
-  const setInternalBchAddress = useWalletStore((s) => s.setInternalBchAddress);
-  const setInternalBtcAddress = useWalletStore((s) => s.setInternalBtcAddress);
-  const setInternalSolAddress = useWalletStore((s) => s.setInternalSolAddress);
+  const setInternalBsvAddress  = useWalletStore((s) => s.setInternalBsvAddress);
+  const setInternalBchAddress  = useWalletStore((s) => s.setInternalBchAddress);
+  const setInternalBtcAddress  = useWalletStore((s) => s.setInternalBtcAddress);
+  const setInternalSolAddress  = useWalletStore((s) => s.setInternalSolAddress);
+  const setInternalXrpAddress  = useWalletStore((s) => s.setInternalXrpAddress);
+  const setInternalLtcAddress  = useWalletStore((s) => s.setInternalLtcAddress);
+  const setInternalDogeAddress = useWalletStore((s) => s.setInternalDogeAddress);
+  const setInternalTronAddress = useWalletStore((s) => s.setInternalTronAddress);
   const walletState = useWalletStore();
 
   useEffect(() => {
     if (isOpen) {
       setView("landing");
     }
+  }, [isOpen]);
+
+  // Lock body scroll while modal is open (prevents page bleed-through on mobile)
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.paddingRight = prevPaddingRight;
+    };
   }, [isOpen]);
 
   const [view, setView] = useState<View>("landing");
@@ -253,6 +290,20 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [importMode, setImportMode] = useState<"seed" | "privatekey">("seed");
   const [importPrivKey, setImportPrivKey] = useState("");
 
+  /* secure-import (PIN/passkey) state */
+  const [pendingImport, setPendingImport] = useState<{
+    secret:     string;
+    keyKind: "mnemonic" | "privatekey";
+    address:    string;
+    addrs:      HdWalletAddresses | null;
+  } | null>(null);
+  const [secureMode, setSecureMode] = useState<"pin" | "passkey">("pin");
+  const [pinHasExisting, setPinHasExisting] = useState(false);
+  const [pinValue, setPinValue] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinBusy, setPinBusy] = useState(false);
+
   /* evm extras */
   const [evmChain, setEvmChain] = useState("eth");
   const [accountIndex, setAccountIndex] = useState(0);
@@ -274,7 +325,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   const [passkeyStep, setPasskeyStep] = useState<"idle"|"registering"|"logging_in"|"done"|"error">("idle");
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const [passkeyResult, setPasskeyResult] = useState<{ address: string; label: string; chains?: { evm: string; sol?: string; btc?: string; bch?: string; bsv?: string } } | null>(null);
-  const [passkeyLabel, setPasskeyLabel] = useState("My OrahDEX Wallet");
+  const [passkeyLabel, setPasskeyLabel] = useState("My Orah Wallet");
   const [passkeySupported] = useState(() => isPasskeySupported());
   const [storedPasskeys, setStoredPasskeys] = useState(() => listPasskeyWallets());
   const [restoredFromBackup, setRestoredFromBackup] = useState(false);
@@ -332,16 +383,20 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     setPasskeyStep("registering");
     setPasskeyError(null);
     try {
-      const result = await registerPasskeyWallet(passkeyLabel || "My OrahDEX Wallet");
+      const result = await registerPasskeyWallet(passkeyLabel || "My Orah Wallet");
       setPasskeyResult({ address: result.address, label: result.label, chains: result.chains });
       setStoredPasskeys(listPasskeyWallets());
       setPasskeyStep("done");
-      connect({ address: result.address, provider: "orahdex-wallet", network: "evm", chainId: 1 });
+      connect({ address: result.address, provider: "orah-wallet", network: "evm", chainId: 1 });
       setInternalEvmAddress(result.address);
-      if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
-      if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
-      if (result.chains?.btc) setInternalBtcAddress(result.chains.btc);
-      if (result.chains?.sol) setInternalSolAddress(result.chains.sol);
+      if (result.chains?.bsv)  setInternalBsvAddress(result.chains.bsv);
+      if (result.chains?.bch)  setInternalBchAddress(result.chains.bch);
+      if (result.chains?.btc)  setInternalBtcAddress(result.chains.btc);
+      if (result.chains?.sol)  setInternalSolAddress(result.chains.sol);
+      if (result.chains?.tron) setInternalTronAddress(result.chains.tron);
+      if (result.chains?.xrp)  setInternalXrpAddress(result.chains.xrp);
+      if (result.chains?.ltc)  setInternalLtcAddress(result.chains.ltc);
+      if (result.chains?.doge) setInternalDogeAddress(result.chains.doge);
       setTimeout(() => goToPrep(result.address, "evm", "passkey"), 1200);
     } catch (e: any) {
       setPasskeyError(e?.message ?? "Passkey creation failed");
@@ -359,12 +414,16 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setRestoredFromBackup(result.restoredFromBackup ?? false);
       setStoredPasskeys(listPasskeyWallets());
       setPasskeyStep("done");
-      connect({ address: result.address, provider: "orahdex-wallet", network: "evm", chainId: 1 });
+      connect({ address: result.address, provider: "orah-wallet", network: "evm", chainId: 1 });
       setInternalEvmAddress(result.address);
-      if (result.chains?.bsv) setInternalBsvAddress(result.chains.bsv);
-      if (result.chains?.bch) setInternalBchAddress(result.chains.bch);
-      if (result.chains?.btc) setInternalBtcAddress(result.chains.btc);
-      if (result.chains?.sol) setInternalSolAddress(result.chains.sol);
+      if (result.chains?.bsv)  setInternalBsvAddress(result.chains.bsv);
+      if (result.chains?.bch)  setInternalBchAddress(result.chains.bch);
+      if (result.chains?.btc)  setInternalBtcAddress(result.chains.btc);
+      if (result.chains?.sol)  setInternalSolAddress(result.chains.sol);
+      if (result.chains?.tron) setInternalTronAddress(result.chains.tron);
+      if (result.chains?.xrp)  setInternalXrpAddress(result.chains.xrp);
+      if (result.chains?.ltc)  setInternalLtcAddress(result.chains.ltc);
+      if (result.chains?.doge) setInternalDogeAddress(result.chains.doge);
       setTimeout(() => goToPrep(result.address, "evm", "passkey"), result.restoredFromBackup ? 2000 : 1200);
     } catch (e: any) {
       const msg: string = e?.message ?? "Passkey authentication failed";
@@ -411,6 +470,11 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
         setImportError(null);
         setImportMode("seed");
         setImportPrivKey("");
+        setPendingImport(null);
+        setPinValue("");
+        setPinConfirm("");
+        setPinError(null);
+        setSecureMode("pin");
         setConnecting(null);
         setConnected(null);
         setConnectError(null);
@@ -449,6 +513,11 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       setImportError(null);
       setImportMode("seed");
       setImportPrivKey("");
+      setPendingImport(null);
+      setPinValue("");
+      setPinConfirm("");
+      setPinError(null);
+      setSecureMode("pin");
       setConnecting(null);
       setConnected(null);
       setConnectError(null);
@@ -741,7 +810,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       if (relay) {
         setConnecting("relayx");
         try {
-          const res = await relay.authWithOpts({ reason: "Orah sign-in" });
+          const res = await relay.authWithOpts({ reason: "OrahDEX sign-in" });
           const addr: string = res?.paymail ?? res?.address ?? "";
           if (!addr) throw new Error("RelayX returned no address. Try signing in to RelayX first.");
           connect({ address: addr, provider: "relayx", network: "bsv" });
@@ -985,20 +1054,42 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     try {
       const addrs = await deriveAllAddresses(mnemonic);
       setHdAddresses(addrs);
-      connect({ address: addrs.evm, provider: "orahdex-wallet", network: "evm", chainId: 1 });
+      saveDerivedAddresses(addrs.evm, {
+        evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+        xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+      });
+      connect({ address: addrs.evm, provider: "orah-wallet", network: "evm", chainId: 1 });
       setInternalEvmAddress(addrs.evm);
       setInternalBsvAddress(addrs.bsv);
       setInternalBchAddress(addrs.bch);
       setInternalBtcAddress(addrs.btc);
       setInternalSolAddress(addrs.sol);
+      setInternalTronAddress(addrs.tron);
+      setInternalXrpAddress(addrs.xrp);
+      setInternalLtcAddress(addrs.ltc);
+      setInternalDogeAddress(addrs.doge);
       setCreateStep("done");
-      setTimeout(() => goToPrep(addrs.evm, "evm", "orahdex-wallet"), 2500);
+      setTimeout(() => goToPrep(addrs.evm, "evm", "orah-wallet"), 2500);
     } finally {
       setHdDeriving(false);
     }
   };
 
-  /* ── Import wallet — seed phrase ──────────────────────────────────────────── */
+  /* ── Begin secure-import flow (PIN/passkey gate) ─────────────────────────── */
+  const beginSecureImport = (args: {
+    secret: string; keyKind: "mnemonic"|"privatekey";
+    address: string; addrs: HdWalletAddresses | null;
+  }) => {
+    setPendingImport(args);
+    setPinValue("");
+    setPinConfirm("");
+    setPinError(null);
+    setPinHasExisting(hasPin());
+    setSecureMode("pin");
+    setImportStep("secure");
+  };
+
+  /* ── Import wallet — seed phrase (stage for PIN/passkey gate) ────────────── */
   const handleImport = async () => {
     const result = validateMnemonic(importInput);
     if (!result.valid) { setImportError(result.error ?? "Invalid phrase"); return; }
@@ -1008,20 +1099,18 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       const addrs = await deriveAllAddresses(result.words);
       setHdAddresses(addrs);
       setImportAddress(addrs.evm);
-      connect({ address: addrs.evm, provider: "orahdex-wallet", network: "evm", chainId: 1 });
-      setInternalEvmAddress(addrs.evm);
-      setInternalBsvAddress(addrs.bsv);
-      setInternalBchAddress(addrs.bch);
-      setInternalBtcAddress(addrs.btc);
-      setInternalSolAddress(addrs.sol);
-      setImportStep("done");
-      setTimeout(() => goToPrep(addrs.evm, "evm", "orahdex-wallet"), 2500);
+      beginSecureImport({
+        secret: result.words.join(" "),
+        keyKind: "mnemonic",
+        address: addrs.evm,
+        addrs,
+      });
     } finally {
       setHdDeriving(false);
     }
   };
 
-  /* ── Import wallet — EVM private key ─────────────────────────────────────── */
+  /* ── Import wallet — EVM private key (stage for PIN/passkey gate) ────────── */
   const handleImportPrivateKey = async () => {
     const raw = importPrivKey.trim();
     const pk = raw.startsWith("0x") ? raw : `0x${raw}`;
@@ -1039,25 +1128,106 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
       return;
     }
     setImportAddress(addr);
-    connect({ address: addr, provider: "orahdex-wallet", network: "evm", chainId: 1 });
+    beginSecureImport({
+      secret: pk,
+      keyKind: "privatekey",
+      address: addr,
+      addrs: null,
+    });
+  };
+
+  /* ── Finalize import after PIN/passkey is set ────────────────────────────── */
+  const finalizeImport = () => {
+    if (!pendingImport) return;
+    const { address, addrs, keyKind } = pendingImport;
+    connect({ address, provider: "orah-wallet", network: "evm", chainId: 1 });
+    setInternalEvmAddress(address);
+    if (addrs) {
+      setInternalBsvAddress(addrs.bsv);
+      setInternalBchAddress(addrs.bch);
+      setInternalBtcAddress(addrs.btc);
+      setInternalSolAddress(addrs.sol);
+      setInternalTronAddress(addrs.tron);
+      setInternalXrpAddress(addrs.xrp);
+      setInternalLtcAddress(addrs.ltc);
+      setInternalDogeAddress(addrs.doge);
+      saveDerivedAddresses(address, {
+        evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+        tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+      });
+    }
     setImportStep("done");
-    setTimeout(() => goToPrep(addr, "evm", "orahdex-wallet"), 1500);
+    const delay = keyKind === "mnemonic" ? 2500 : 1500;
+    setTimeout(() => goToPrep(address, "evm", "orah-wallet"), delay);
+  };
+
+  const handleConfirmPin = async () => {
+    if (!pendingImport) return;
+    setPinError(null);
+    setPinBusy(true);
+    try {
+      if (pinHasExisting) {
+        if (!(await verifyPin(pinValue))) {
+          setPinError("Incorrect PIN");
+          return;
+        }
+      } else {
+        const v = validatePin(pinValue);
+        if (!v.valid) { setPinError(v.error ?? "Invalid PIN"); return; }
+        if (pinValue !== pinConfirm) { setPinError("PINs do not match"); return; }
+        await setPinSecure(pinValue);
+      }
+      await storeWithPin({
+        address:    pendingImport.address,
+        secret:     pendingImport.secret,
+        keyKind: pendingImport.keyKind,
+        pin:        pinValue,
+        label:      "Imported Orah Wallet",
+      });
+      finalizeImport();
+    } catch (err: any) {
+      setPinError(err?.message ?? "Failed to secure wallet");
+    } finally {
+      setPinBusy(false);
+    }
+  };
+
+  const handleConfirmPasskey = async () => {
+    if (!pendingImport) return;
+    setPinError(null);
+    setPinBusy(true);
+    try {
+      const { credentialId, prfSecret } = await createImportPasskey("Orah Imported Wallet");
+      await storeWithPasskey({
+        address:    pendingImport.address,
+        secret:     pendingImport.secret,
+        keyKind: pendingImport.keyKind,
+        prfSecret,
+        passkeyId:  credentialId,
+        label:      "Imported Orah Wallet",
+      });
+      finalizeImport();
+    } catch (err: any) {
+      setPinError(err?.message ?? "Passkey setup cancelled");
+    } finally {
+      setPinBusy(false);
+    }
   };
 
   const currentWallets = connectTab === "tron" ? TRON_WALLETS : BSV_WALLETS;
 
-  return (
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
         <>
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={handleClose} className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm" />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            onClick={handleClose} className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm" />
+          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center sm:p-4 pointer-events-none">
             <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              className="w-full max-w-lg bg-card border border-border rounded-2xl shadow-2xl pointer-events-auto overflow-hidden flex flex-col max-h-[90vh]"
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="w-full sm:max-w-lg bg-card border border-border rounded-t-2xl sm:rounded-2xl shadow-2xl pointer-events-auto overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[90dvh] pb-[env(safe-area-inset-bottom)]"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border shrink-0">
@@ -1070,7 +1240,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                   )}
                   <div>
                     <h2 className="text-xl font-bold text-foreground">
-                      {view === "landing" && <span className="flex items-center gap-2">Connect to <OrahDEXInline className="text-xl" /></span>}
+                      {view === "landing" && <span className="flex items-center gap-2">Connect to <OrahInline className="text-xl" /></span>}
                       {view === "create" && "Create New Wallet"}
                       {view === "import" && "Import Wallet"}
                       {view === "connect" && "Connect Wallet"}
@@ -1157,8 +1327,8 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         )}
                       </div>
 
-                      {/* ① Orah Native Wallet — all-chains HD wallet */}
-                      {/* ① OrahDEX Wallet + Bitcoin SV — unified multi-chain wallet */}
+                      {/* ① OrahDEX Native Wallet — all-chains HD wallet */}
+                      {/* ① Orah Wallet + Bitcoin SV — unified multi-chain wallet */}
                       <div className="rounded-2xl border border-primary/40 bg-gradient-to-br from-primary/10 via-green-500/5 to-transparent p-4">
                         {/* Header */}
                         <div className="flex items-center gap-3 mb-3">
@@ -1167,7 +1337,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <h3 className="font-black text-[15px] text-foreground leading-tight">OrahDEX Wallet</h3>
+                              <h3 className="font-black text-[15px] text-foreground leading-tight">Orah Wallet</h3>
                               <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 tracking-wider uppercase">All Chains</span>
                               <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30 tracking-wider uppercase">⚡ BSV Settlement</span>
                             </div>
@@ -1287,7 +1457,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         <Shield className="w-4 h-4 shrink-0 mt-0.5" />
                         <p className="text-xs leading-relaxed">
                           <span className="font-semibold">Non-custodial.</span>{" "}
-                          Orah never holds your keys. Trades settle on-chain via BSV — the fastest settlement layer.
+                          OrahDEX never holds your keys. Trades settle on-chain via BSV — the fastest settlement layer.
                         </p>
                       </div>
 
@@ -1309,7 +1479,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               <Layers className="w-5 h-5 text-primary" />
                             </div>
                             <div>
-                              <p className="text-sm font-bold text-foreground leading-tight">Orah All-Chain Wallet</p>
+                              <p className="text-sm font-bold text-foreground leading-tight">OrahDEX All-Chain Wallet</p>
                               <p className="text-[10px] text-muted-foreground mt-0.5">One phrase → EVM · SOL · BTC · BCH · BSV</p>
                             </div>
                             <Check className="w-4 h-4 text-primary ml-auto shrink-0" />
@@ -1456,7 +1626,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               <Layers className="w-5 h-5 text-primary" />
                             </div>
                             <div className="flex-1">
-                              <p className="text-sm font-bold text-foreground leading-tight">Orah All-Chain Wallet</p>
+                              <p className="text-sm font-bold text-foreground leading-tight">OrahDEX All-Chain Wallet</p>
                               <p className="text-[10px] text-muted-foreground mt-0.5">Derives EVM · SOL · BTC · BCH · BSV from one phrase</p>
                             </div>
                           </div>
@@ -1512,7 +1682,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               <div className="flex items-start gap-3 p-3.5 bg-amber-500/8 border border-amber-500/20 rounded-xl mt-3">
                                 <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                                 <p className="text-xs text-amber-300/80 leading-relaxed">
-                                  Your private key never leaves your device. Orah processes it locally only to derive your address — it is never stored or sent.
+                                  Your private key never leaves your device. OrahDEX will encrypt it on this device with your PIN or passkey before saving — it is never sent anywhere.
                                 </p>
                               </div>
                               <button
@@ -1558,7 +1728,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               <div className="flex items-start gap-3 p-3.5 bg-amber-500/8 border border-amber-500/20 rounded-xl mt-3">
                                 <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                                 <p className="text-xs text-amber-300/80 leading-relaxed">
-                                  Never enter your seed phrase on untrusted sites. Orah never stores or transmits your phrase — all derivation is local.
+                                  Never enter your seed phrase on untrusted sites. OrahDEX never stores or transmits your phrase — all derivation is local.
                                 </p>
                               </div>
                               <button
@@ -1570,11 +1740,161 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                     : "bg-white/5 text-muted-foreground cursor-not-allowed"
                                 )}
                               >
-                                {hdDeriving ? <><Loader2 className="w-4 h-4 animate-spin" /> Deriving Addresses…</> : "Import OrahDEX Wallet"}
+                                {hdDeriving ? <><Loader2 className="w-4 h-4 animate-spin" /> Deriving Addresses…</> : "Import Orah Wallet"}
                               </button>
                             </div>
                           )}
                         </>
+                      )}
+
+                      {importStep === "secure" && pendingImport && (
+                        <div className="space-y-4">
+                          <div className="flex items-start gap-3 p-3.5 bg-primary/8 border border-primary/20 rounded-xl">
+                            <Shield className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                            <div className="text-xs text-foreground/90 leading-relaxed">
+                              <p className="font-bold text-primary mb-0.5">Secure your imported wallet</p>
+                              <p className="text-muted-foreground">
+                                {pinHasExisting
+                                  ? "Enter your OrahDEX PIN to encrypt and save this wallet on this device."
+                                  : `Set a ${PIN_MIN_LEN}–${PIN_MAX_LEN} digit PIN (or use your device passkey) to encrypt this wallet on this device. You'll need it for future signing.`}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Mode toggle — show passkey option only on supported devices and only when no PIN exists yet */}
+                          {!pinHasExisting && passkeySupported && (
+                            <div className="flex gap-1 p-1 bg-white/5 rounded-xl border border-border">
+                              <button
+                                onClick={() => { setSecureMode("pin"); setPinError(null); }}
+                                className={cn(
+                                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
+                                  secureMode === "pin" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+                                )}
+                              >
+                                <Key className="w-3.5 h-3.5" /> PIN
+                              </button>
+                              <button
+                                onClick={() => { setSecureMode("passkey"); setPinError(null); }}
+                                className={cn(
+                                  "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
+                                  secureMode === "passkey" ? "bg-primary text-primary-foreground shadow" : "text-muted-foreground hover:text-foreground"
+                                )}
+                              >
+                                <Fingerprint className="w-3.5 h-3.5" /> Passkey
+                              </button>
+                            </div>
+                          )}
+
+                          {secureMode === "pin" ? (
+                            <div className="space-y-3">
+                              <div>
+                                <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-1.5">
+                                  {pinHasExisting ? "OrahDEX PIN" : "Choose a PIN"}
+                                </p>
+                                <input
+                                  type="password"
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  maxLength={PIN_MAX_LEN}
+                                  autoFocus
+                                  value={pinValue}
+                                  onChange={e => { setPinValue(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+                                  placeholder="••••"
+                                  className={cn(
+                                    "w-full bg-white/3 border rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] font-mono text-foreground focus:outline-none transition-all",
+                                    pinError ? "border-red-500/60 focus:border-red-500" : "border-border focus:border-primary/60"
+                                  )}
+                                />
+                              </div>
+                              {!pinHasExisting && (
+                                <div>
+                                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-1.5">Confirm PIN</p>
+                                  <input
+                                    type="password"
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
+                                    maxLength={PIN_MAX_LEN}
+                                    value={pinConfirm}
+                                    onChange={e => { setPinConfirm(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+                                    placeholder="••••"
+                                    className={cn(
+                                      "w-full bg-white/3 border rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] font-mono text-foreground focus:outline-none transition-all",
+                                      pinError ? "border-red-500/60 focus:border-red-500" : "border-border focus:border-primary/60"
+                                    )}
+                                  />
+                                </div>
+                              )}
+                              {pinError && (
+                                <p className="text-xs text-red-400 flex items-center gap-1.5">
+                                  <AlertTriangle className="w-3 h-3" /> {pinError}
+                                </p>
+                              )}
+                              <button
+                                onClick={handleConfirmPin}
+                                disabled={pinBusy || pinValue.length < PIN_MIN_LEN || (!pinHasExisting && pinConfirm.length < PIN_MIN_LEN)}
+                                className={cn(
+                                  "w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2",
+                                  !pinBusy && pinValue.length >= PIN_MIN_LEN && (pinHasExisting || pinConfirm.length >= PIN_MIN_LEN)
+                                    ? "bg-primary text-primary-foreground hover:opacity-90 shadow-lg shadow-primary/20"
+                                    : "bg-white/5 text-muted-foreground cursor-not-allowed"
+                                )}
+                              >
+                                {pinBusy ? <><Loader2 className="w-4 h-4 animate-spin" /> Securing…</> : (pinHasExisting ? "Unlock & Import" : "Set PIN & Import")}
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <div className="flex flex-col items-center gap-3 py-4">
+                                <div className="w-16 h-16 rounded-full bg-primary/15 flex items-center justify-center">
+                                  <Fingerprint className="w-8 h-8 text-primary" />
+                                </div>
+                                <p className="text-sm text-center text-muted-foreground max-w-xs leading-relaxed">
+                                  Use Face ID, Touch ID, Windows Hello, or your device's biometric to encrypt and protect this wallet.
+                                </p>
+                              </div>
+                              {pinError && (
+                                <p className="text-xs text-red-400 flex items-center gap-1.5 justify-center">
+                                  <AlertTriangle className="w-3 h-3" /> {pinError}
+                                </p>
+                              )}
+                              <button
+                                onClick={handleConfirmPasskey}
+                                disabled={pinBusy}
+                                className={cn(
+                                  "w-full py-3.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2",
+                                  !pinBusy
+                                    ? "bg-primary text-primary-foreground hover:opacity-90 shadow-lg shadow-primary/20"
+                                    : "bg-white/5 text-muted-foreground cursor-not-allowed"
+                                )}
+                              >
+                                {pinBusy ? <><Loader2 className="w-4 h-4 animate-spin" /> Waiting for Passkey…</> : "Continue with Passkey"}
+                              </button>
+                            </div>
+                          )}
+
+                          <button
+                            onClick={() => { setImportStep("enter"); setPendingImport(null); setPinValue(""); setPinConfirm(""); setPinError(null); }}
+                            className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            ← Back
+                          </button>
+                        </div>
+                      )}
+
+                      {importStep === "done" && !hdAddresses && pendingImport && (
+                        <div className="py-6 flex flex-col items-center gap-4">
+                          <div className="w-16 h-16 rounded-full bg-primary/15 flex items-center justify-center">
+                            <CheckCircle2 className="w-8 h-8 text-primary" />
+                          </div>
+                          <div className="text-center">
+                            <h3 className="text-xl font-bold">Wallet Imported & Secured!</h3>
+                            <p className="text-xs text-muted-foreground mt-1">EVM address active</p>
+                          </div>
+                          <div className="w-full p-3 rounded-xl bg-blue-500/8 border border-blue-500/20">
+                            <p className="text-[10px] text-muted-foreground mb-0.5">EVM</p>
+                            <p className="text-xs font-mono text-foreground truncate">{pendingImport.address}</p>
+                          </div>
+                        </div>
                       )}
 
                       {importStep === "done" && hdAddresses && (
@@ -1776,7 +2096,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               )}
 
                               <p className="text-[10px] text-muted-foreground/60 text-center leading-relaxed">
-                                Your BSV paymail is <span className="font-mono">{bsvHandle || "handle"}@handcash.io</span> — Orah never stores your keys.
+                                Your BSV paymail is <span className="font-mono">{bsvHandle || "handle"}@handcash.io</span> — OrahDEX never stores your keys.
                               </p>
                             </>
                           )}
@@ -1912,7 +2232,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                               </div>
                               <div className="p-3.5 bg-blue-500/8 border border-blue-500/20 rounded-xl">
                                 <p className="text-xs text-blue-300/80 leading-relaxed">
-                                  Open {bsvManualWallet}, copy your Bitcoin SV receiving address, and paste it below. Orah uses it for settlement only — your keys stay in your wallet.
+                                  Open {bsvManualWallet}, copy your Bitcoin SV receiving address, and paste it below. OrahDEX uses it for settlement only — your keys stay in your wallet.
                                 </p>
                               </div>
                               <div>
@@ -1958,7 +2278,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           {connectTab === "bsv" && (
                           <div className="px-6 pt-3 pb-1">
                             <p className="text-[11px] text-muted-foreground leading-relaxed">
-                              Connect your Bitcoin SV wallet. BSV is the primary settlement layer for all Orah trades — instant, on-chain, sub-cent fees.
+                              Connect your Bitcoin SV wallet. BSV is the primary settlement layer for all OrahDEX trades — instant, on-chain, sub-cent fees.
                             </p>
                           </div>
                           )}
@@ -2016,7 +2336,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         <div className="mx-6 mb-4 flex items-start gap-2.5 p-3 bg-primary/8 border border-primary/20 rounded-xl">
                           <Shield className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
                           <p className="text-[11px] text-primary/80">
-                            BSV (Bitcoin SV) is Orah's primary settlement currency — sub-cent fees, instant confirmation, unlimited scale.
+                            BSV (Bitcoin SV) is OrahDEX's primary settlement currency — sub-cent fees, instant confirmation, unlimited scale.
                           </p>
                         </div>
                       )}
@@ -2056,7 +2376,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             ? "Solana wallet ready — trades settle via BSV bridge"
                             : prepNetwork === "tron"
                             ? "TRON wallet ready — TRX, USDT-TRC20, BTT & more"
-                            : "Bitcoin wallet ready — connected to Orah"}
+                            : "Bitcoin wallet ready — connected to OrahDEX"}
                         </p>
                       </div>
 
@@ -2089,7 +2409,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </span>
                         {prepProvider && (
                           <span className="text-[10px] font-semibold text-muted-foreground capitalize bg-white/5 border border-border px-2 py-0.5 rounded-full">
-                            {prepProvider === "orahdex-wallet" || prepProvider === "passkey" ? "OrahDEX Wallet" : prepProvider}
+                            {prepProvider === "orah-wallet" || prepProvider === "passkey" ? "Orah Wallet" : prepProvider}
                           </span>
                         )}
                       </div>
@@ -2118,7 +2438,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           ) : prepEvmBalances.length === 0 ? (
                             <div className="text-center py-3 bg-white/3 rounded-xl border border-border/50">
                               <p className="text-[11px] text-muted-foreground">No tokens found on this network</p>
-                              <p className="text-[10px] text-muted-foreground/60 mt-0.5">Deposit funds to start trading</p>
+                              <p className="text-[10px] text-muted-foreground/60 mt-0.5">Your on-chain balance is your trading balance — no deposit required</p>
                             </div>
                           ) : (
                             <div className="space-y-1.5">
@@ -2156,14 +2476,20 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         Start Trading →
                       </button>
 
-                      {/* Deposit hint */}
-                      <p className="text-[11px] text-muted-foreground leading-relaxed max-w-xs">
-                        Deposit{" "}
-                        <span className="text-foreground font-medium">
-                          {prepNetwork === "bsv" ? "BSV" : prepNetwork === "evm" ? "ETH / tokens" : prepNetwork === "sol" ? "SOL" : "BTC"}
-                        </span>{" "}
-                        to your address above to fund trades. All trades settle permanently on the BSV blockchain.
-                      </p>
+                      {/* Funding hint — EVM is non-custodial, other chains need on-chain deposit */}
+                      {prepNetwork === "evm" ? (
+                        <p className="text-[11px] text-blue-300/80 leading-relaxed max-w-xs">
+                          Non-custodial — your wallet balance is your trading balance. Funds never leave your wallet until on-chain settlement.
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground leading-relaxed max-w-xs">
+                          Deposit{" "}
+                          <span className="text-foreground font-medium">
+                            {prepNetwork === "bsv" ? "BSV" : prepNetwork === "sol" ? "SOL" : "BTC"}
+                          </span>{" "}
+                          to your address above to fund trades. All trades settle permanently on the BSV blockchain.
+                        </p>
+                      )}
 
                     </motion.div>
                   )}
@@ -2224,7 +2550,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                             <p className="text-sm text-muted-foreground mb-3">
                               {restoredFromBackup
                                 ? "Your wallet was recovered from cloud backup and saved to this device."
-                                : "Connecting to Orah…"}
+                                : "Connecting to OrahDEX…"}
                             </p>
                             {passkeyResult.chains && (
                               <div className="w-full space-y-1.5">
@@ -2258,7 +2584,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-2.5 space-y-1">
                                   <p className="text-[11px] text-amber-300 font-bold">Steps on your original browser/device:</p>
                                   <ol className="text-[11px] text-muted-foreground space-y-1 list-decimal list-inside">
-                                    <li>Open Orah on the browser where you <span className="text-foreground font-semibold">first created this wallet</span></li>
+                                    <li>Open OrahDEX on the browser where you <span className="text-foreground font-semibold">first created this wallet</span></li>
                                     <li>Tap <span className="text-foreground font-semibold">Connect</span> → <span className="text-foreground font-semibold">Passkey</span> tab</li>
                                     <li>Tap the <span className="text-amber-400 font-bold">Transfer</span> button next to your wallet</li>
                                     <li>Copy the 8-character code that appears</li>
@@ -2402,7 +2728,8 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                                           setPasskeyResult({ address: wallet.address, label: wallet.label ?? "Passkey Wallet" });
                                           setRestoredFromBackup(true);
                                           setPasskeyStep("done");
-                                          connect({ address: wallet.address, provider: "orahdex-wallet", network: "evm", chainId: 1 });
+                                          connect({ address: wallet.address, provider: "orah-wallet", network: "evm", chainId: 1 });
+                                          setInternalEvmAddress(wallet.address);
                                           setTimeout(() => goToPrep(wallet.address, "evm", "passkey"), 2000);
                                         } catch (err: any) {
                                           setTransferCodeError(err?.message ?? "Transfer failed");
@@ -2477,7 +2804,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <div className="text-[11px] text-muted-foreground leading-relaxed">
                             <span className="text-green-400 font-semibold">Non-custodial with cloud recovery.</span>{" "}
                             Your private key is encrypted with AES-256 and only decryptable with your biometrics.
-                            A secure backup is kept on our server for cross-device recovery. Orah can never see your key.
+                            A secure backup is kept on our server for cross-device recovery. OrahDEX can never see your key.
                           </div>
                         </div>
                       )}
@@ -2527,7 +2854,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           <>
                             <h3 className="text-xl font-bold mb-1">Scan with your phone</h3>
                             <p className="text-sm text-muted-foreground leading-relaxed">
-                              Open Orah on mobile → tap the QR icon → point your camera here.
+                              Open OrahDEX on mobile → tap the QR icon → point your camera here.
                             </p>
                           </>
                         )}
@@ -2538,7 +2865,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         <div className="flex flex-col items-center gap-3 w-full">
                           <div className="p-4 bg-white rounded-2xl shadow-lg" style={{ colorScheme: "light" }}>
                             <QRCodeCanvas
-                              value={`orah://connect?token=${mqrToken}&expires=${mqrExpires}`}
+                              value={`orahdex://connect?token=${mqrToken}&expires=${mqrExpires}`}
                               size={200}
                               bgColor="#ffffff"
                               fgColor="#000000"
@@ -2573,7 +2900,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         <div className="w-full rounded-2xl border border-white/10 bg-white/3 p-4 space-y-3">
                           <p className="text-[11px] uppercase tracking-widest text-muted-foreground font-bold">How to connect</p>
                           {[
-                            { n: "1", text: "Open Orah on your mobile device" },
+                            { n: "1", text: "Open OrahDEX on your mobile device" },
                             { n: "2", text: "Tap the QR icon in the top bar" },
                             { n: "3", text: "Point your camera at this QR code" },
                             { n: "4", text: "Tap \"Connect Wallet\" on your phone" },
@@ -2605,6 +2932,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
           </div>
         </>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

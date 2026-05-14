@@ -1,6 +1,6 @@
 // TOTP implementation using Web Crypto API (RFC 6238)
 // Secrets are never stored in source code — they are loaded from the server.
-export const TOTP_ISSUER = 'Orah';
+export const TOTP_ISSUER = 'OrahDEX';
 
 function base32Decode(input: string): ArrayBuffer {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

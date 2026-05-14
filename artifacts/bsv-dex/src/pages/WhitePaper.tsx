@@ -1,18 +1,18 @@
 import { useState } from "react";
 import { ArrowLeft, FileText, Download, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
 import { useLocation } from "wouter";
-import { OrahDEXInline, BrandLogo } from "@/components/BrandLogo";
+import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-const VERSION = "4.5.0";
-const PUBLISH_DATE = "17 April 2026";
+const VERSION = "4.7.0";
+const PUBLISH_DATE = "6 May 2026";
 const FOUNDER = "Parminder Singh";
-const FOUNDER_ALIASES = "Aura · OrahDEX · Aaurah";
+const FOUNDER_ALIASES = "Aura · Orah · Aaurah";
 
 const TOC = [
   { id: "abstract",         label: "Abstract" },
   { id: "problem",          label: "1. Problem Statement" },
-  { id: "solution",         label: "2. The Orah Solution" },
+  { id: "solution",         label: "2. The OrahDEX Solution" },
   { id: "architecture",     label: "3. Technical Architecture" },
   { id: "principles",       label: "  ↳ 3.0 Design Principles" },
   { id: "bsv-settlement",   label: "4. Settlement Layer (BSV)" },
@@ -21,7 +21,7 @@ const TOC = [
   { id: "cross-chain",      label: "6. Bridge Layer" },
   { id: "trading",          label: "7. Trading Layer" },
   { id: "copy-vault",       label: "8. CopyVault Layer" },
-  { id: "nft-layer",        label: "9. OrahDEXNFT — Creator Economy" },
+  { id: "nft-layer",        label: "9. OrahNFT — Creator Economy" },
   { id: "prediction",       label: "10. Prediction Trading" },
   { id: "ora-ai",           label: "11. Ora AI Layer" },
   { id: "tokenomics",       label: "12. Economic Model" },
@@ -190,7 +190,7 @@ export function WhitePaper() {
                 <BrandLogo textSize="text-4xl" />
               </div>
               <div>
-                <h1 className="text-3xl font-black tracking-tight">Orah White Paper</h1>
+                <h1 className="text-3xl font-black tracking-tight">OrahDEX White Paper</h1>
                 <p className="text-primary font-semibold mt-1 text-lg">Trade means DEX</p>
                 <p className="text-sm text-muted-foreground mt-2">
                   By <span className="text-foreground font-semibold">{FOUNDER}</span>
@@ -208,12 +208,12 @@ export function WhitePaper() {
                 <span>·</span>
                 <span className="font-semibold text-foreground/70">{FOUNDER}</span>
                 <span>·</span>
-                <a href="https://orah.org" className="text-primary hover:underline flex items-center gap-1">orah.org <ExternalLink className="w-2.5 h-2.5" /></a>
+                <a href="https://orahdex.org" className="text-primary hover:underline flex items-center gap-1">orahdex.org <ExternalLink className="w-2.5 h-2.5" /></a>
                 <span>·</span>
-                <a href="https://orah.com" className="text-primary hover:underline flex items-center gap-1">orah.com <ExternalLink className="w-2.5 h-2.5" /></a>
+                <a href="https://orahdex.com" className="text-primary hover:underline flex items-center gap-1">orahdex.com <ExternalLink className="w-2.5 h-2.5" /></a>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mx-4 sm:mx-8 pt-2">
-                <Metric value="950+" label="Trading Pairs" sub="Spot · Futures · VAMM" />
+                <Metric value="36,000+" label="Trading Pairs" sub="Spot · Futures · VAMM · Cross-Chain" />
                 <Metric value="200+" label="Networks" sub="EVM · TRON · BSV oracle" />
                 <Metric value="56+" label="VAMM Markets" sub="Genesis Liquidity Engine" />
                 <Metric value="$0 PII" label="Identity Model" sub="Cryptographic-only, no KYC" />
@@ -223,30 +223,30 @@ export function WhitePaper() {
             {/* ── ABSTRACT ── */}
             <Section id="abstract" title="Abstract" accent>
               <p>
-                Orah is a <span className="text-foreground font-medium">sovereign, permissionless trading protocol</span> — not a company, not a product, not a financial intermediary. It is a set of cryptographic rules, smart contracts, and open-source mathematics that connect willing counterparties directly on-chain, with no intermediary, no custody, and no personally identifiable information collected at any layer of the system.
+                OrahDEX is a <span className="text-foreground font-medium">sovereign, permissionless trading protocol</span> — not a company, not a product, not a financial intermediary. It is a set of cryptographic rules, smart contracts, and open-source mathematics that connect willing counterparties directly on-chain, with no intermediary, no custody, and no personally identifiable information collected at any layer of the system.
               </p>
               <p>
-                The protocol unifies spot trading, perpetual futures, Virtual AMM (Genesis Liquidity Engine), automated market making (AMM), peer-to-peer (P2P) settlement, cross-chain atomic bridging, on-chain copy trading (CopyVault), an NFT marketplace with creator coins (OrahDEXNFT), fiat on-ramp (6 providers), and AI-powered market intelligence (Ora) — across 200+ blockchain networks, 950+ trading pairs, and every major wallet type — within a single sovereign interface that any human on earth with internet access can use without asking permission from anyone.
+                The protocol unifies spot trading, perpetual futures, Virtual AMM (Genesis Liquidity Engine), automated market making (AMM), peer-to-peer (P2P) settlement, cross-chain atomic bridging, on-chain copy trading (CopyVault), an NFT marketplace with creator coins (OrahNFT), fiat on-ramp (6 providers), and AI-powered market intelligence (Ora) — across 200+ blockchain networks, 36,000+ trading pairs, and every major wallet type — within a single sovereign interface that any human on earth with internet access can use without asking permission from anyone.
               </p>
               <p>
-                At its core, Orah leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its immutable settlement layer. BSV's UTXO-based architecture, unbounded block size, and sub-cent fee structure make it the only public blockchain capable of recording every trade as an on-chain OP_RETURN proof without economic friction. Hash Time-Locked Contract (HTLC) atomic swaps execute cross-chain settlements without trusting any third party. Ten EVM chains are natively supported with live on-chain balance tracking — <span className="text-foreground font-medium">Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, Linea, Scroll, and Mantle</span> — via Reown/WalletConnect, with a 43-token ERC-20 registry that calls <code className="text-green-400 text-[10px]">balanceOf()</code> directly on-chain, requiring no backend price oracle or API key. TRON (TRX and TRC-20 USDT) is natively supported giving hundreds of millions of TRON-ecosystem users full access to Orah without wrapping, bridging, or converting.
+                At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its immutable settlement layer. BSV's UTXO-based architecture, unbounded block size, and sub-cent fee structure make it the only public blockchain capable of recording every trade as an on-chain OP_RETURN proof without economic friction. Hash Time-Locked Contract (HTLC) atomic swaps execute cross-chain settlements without trusting any third party. Ten EVM chains are natively supported with live on-chain balance tracking — <span className="text-foreground font-medium">Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, Linea, Scroll, and Mantle</span> — via Reown/WalletConnect, with a 43-token ERC-20 registry that calls <code className="text-green-400 text-[10px]">balanceOf()</code> directly on-chain, requiring no backend price oracle or API key. TRON (TRX and TRC-20 USDT) is natively supported giving hundreds of millions of TRON-ecosystem users full access to OrahDEX without wrapping, bridging, or converting.
               </p>
               <p>
-                The <span className="text-foreground font-medium">Genesis Liquidity Engine</span> is Orah's proprietary Virtual AMM — a linear bonding curve mechanism that guarantees every listed asset is instantly tradeable before real liquidity exists, eliminating the cold-start problem that has plagued every new DEX in history.
+                The <span className="text-foreground font-medium">Genesis Liquidity Engine</span> is OrahDEX's proprietary Virtual AMM — a linear bonding curve mechanism that guarantees every listed asset is instantly tradeable before real liquidity exists, eliminating the cold-start problem that has plagued every new DEX in history.
               </p>
               <p>
                 The <span className="text-foreground font-medium">CopyVault system</span> is an on-chain copy trading protocol — followers deposit USDT into leader-managed vaults, automatically mirror proportional trades, and receive BSV OP_RETURN proofs for every mirrored execution — immutable, publicly auditable, trustless.
               </p>
               <p>
-                <span className="text-foreground font-medium">OrahDEXNFT</span> is a social NFT marketplace inspired by Zora and Instagram, where every post is simultaneously a BSV inscription and a tradeable creator coin. Creators publish visual content — art, photography, generative media — and collectors mint, trade, and hold creator-specific tokens on a bonding curve. The creator economy is embedded directly into the exchange, not bolted on — creator coins are priced by the same VAMM engine that powers spot markets, ensuring always-on liquidity and instant price discovery for every creator.
+                <span className="text-foreground font-medium">OrahNFT</span> is a social NFT marketplace inspired by Zora and Instagram, where every post is simultaneously a BSV inscription and a tradeable creator coin. Creators publish visual content — art, photography, generative media — and collectors mint, trade, and hold creator-specific tokens on a bonding curve. The creator economy is embedded directly into the exchange, not bolted on — creator coins are priced by the same VAMM engine that powers spot markets, ensuring always-on liquidity and instant price discovery for every creator.
               </p>
               <p>
-                This document presents the technical architecture, economic model, cryptographic foundations, security design, disruption analysis, adversarial resilience model, and strategic roadmap of Orah as of version {VERSION}. It is written for regulators, engineers, institutional participants, and sovereign individuals equally — because the protocol is permissionless and globally accessible to all of them.
+                This document presents the technical architecture, economic model, cryptographic foundations, security design, disruption analysis, adversarial resilience model, and strategic roadmap of OrahDEX as of version {VERSION}. It is written for regulators, engineers, institutional participants, and sovereign individuals equally — because the protocol is permissionless and globally accessible to all of them.
               </p>
               <div className="p-5 rounded-2xl bg-gradient-to-br from-primary/10 to-violet-400/5 border border-primary/20 space-y-2">
                 <p className="text-sm font-black text-foreground">Core Thesis</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Centralised exchanges extract over $100 billion per year from traders through custody fees, spread capture, withdrawal friction, and information asymmetry — all of which require users to surrender control of their assets. Orah makes every one of these extraction mechanisms technically impossible. The protocol is not disruptive in the startup sense. It is disruptive in the same way that email was disruptive to postal monopolies, or that Bitcoin was disruptive to correspondent banking — structurally, permanently, and without asking permission.
+                  Centralised exchanges extract over $100 billion per year from traders through custody fees, spread capture, withdrawal friction, and information asymmetry — all of which require users to surrender control of their assets. OrahDEX makes every one of these extraction mechanisms technically impossible. The protocol is not disruptive in the startup sense. It is disruptive in the same way that email was disruptive to postal monopolies, or that Bitcoin was disruptive to correspondent banking — structurally, permanently, and without asking permission.
                 </p>
               </div>
             </Section>
@@ -277,22 +277,22 @@ export function WhitePaper() {
                 ))}
               </div>
               <InfoBox title="The Structural Problem" color="amber">
-                <p>Every one of these failure modes shares a common root: <strong>intermediation</strong>. When a third party stands between a user and their assets, all forms of custody risk, identity extraction, and regulatory seizure become structurally possible. Orah eliminates the intermediary. Not as a policy choice — as a mathematical constraint. The protocol cannot hold user funds because no contract or server possesses custody capability. It cannot collect identity because the architecture requests none. It cannot act as a regulatory choke point because no administrative key controls the deployed contracts.</p>
+                <p>Every one of these failure modes shares a common root: <strong>intermediation</strong>. When a third party stands between a user and their assets, all forms of custody risk, identity extraction, and regulatory seizure become structurally possible. OrahDEX eliminates the intermediary. Not as a policy choice — as a mathematical constraint. The protocol cannot hold user funds because no contract or server possesses custody capability. It cannot collect identity because the architecture requests none. It cannot act as a regulatory choke point because no administrative key controls the deployed contracts.</p>
               </InfoBox>
             </Section>
 
             {/* ── 2. SOLUTION ── */}
-            <Section id="solution" title="2. The Orah Solution">
-              <p>Orah is designed around a single architectural constraint: <span className="text-foreground font-medium">no user asset or identity should ever pass through Orah control</span>. Every feature, every design decision, and every cryptographic mechanism flows from this constraint.</p>
+            <Section id="solution" title="2. The OrahDEX Solution">
+              <p>OrahDEX is designed around a single architectural constraint: <span className="text-foreground font-medium">no user asset or identity should ever pass through OrahDEX control</span>. Every feature, every design decision, and every cryptographic mechanism flows from this constraint.</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
-                  { title: "Non-Custodial by Architecture", icon: "🔐", desc: "Users retain full control of their private keys and assets at all times. Orah cannot hold, freeze, seize, or reverse user funds — not because of policy, but because the system is designed to make it mathematically impossible." },
+                  { title: "Non-Custodial by Architecture", icon: "🔐", desc: "Users retain full control of their private keys and assets at all times. OrahDEX cannot hold, freeze, seize, or reverse user funds — not because of policy, but because the system is designed to make it mathematically impossible." },
                   { title: "Multi-Chain Native", icon: "🌐", desc: "Native support for BSV (settlement), Ethereum + 12 EVM chains (Reown/WalletConnect), and TRON (TRX/TRC-20 USDT). One sovereign interface — every major chain." },
                   { title: "Always-On Liquidity", icon: "⚡", desc: "Genesis Liquidity Engine (VAMM) provides permanent, simulation-based liquidity for all listed assets via a linear bonding curve. The cold-start liquidity problem is eliminated: every asset is tradeable from the moment it is listed, independent of real LP participation." },
                   { title: "Full Trading Spectrum", icon: "📊", desc: "Spot, futures (100x), VAMM, AMM, P2P, bridge, CopyVault, NFT marketplace, fiat on-ramp (6 providers) — every instrument in one interface with BSV settlement proofs across all." },
-                  { title: "OrahDEXNFT — Creator Economy", icon: "🎨", desc: "A Zora×Instagram-style social NFT marketplace where every post is a BSV inscription and a tradeable creator coin. Creators publish, collectors mint, and bonding curves ensure instant liquidity for every creator token." },
+                  { title: "OrahNFT — Creator Economy", icon: "🎨", desc: "A Zora×Instagram-style social NFT marketplace where every post is a BSV inscription and a tradeable creator coin. Creators publish, collectors mint, and bonding curves ensure instant liquidity for every creator token." },
                   { title: "AI Intelligence Layer", icon: "🧠", desc: "Ora AI provides real-time market analysis, portfolio coaching, risk assessment, and trading education — embedded directly in the interface, democratising institutional-grade intelligence." },
-                  { title: "Zero Identity Collection", icon: "🛡️", desc: "No name. No email. No government ID. No IP address stored. User identity on Orah is a cryptographic wallet address — generated by the user, controlled by the user, known only to the user." },
+                  { title: "Zero Identity Collection", icon: "🛡️", desc: "No name. No email. No government ID. No IP address stored. User identity on OrahDEX is a cryptographic wallet address — generated by the user, controlled by the user, known only to the user." },
                 ].map(({ title, icon, desc }) => (
                   <div key={title} className="p-4 bg-primary/5 border border-primary/15 rounded-2xl space-y-2">
                     <div className="text-2xl">{icon}</div>
@@ -308,12 +308,12 @@ export function WhitePaper() {
 
             {/* ── 3.0 DESIGN PRINCIPLES ── */}
             <Section id="principles" title="3.0 Design Principles">
-              <p>This section declares the eight immutable design axioms from which every Orah architectural decision derives. These are not aspirations — they are structural constraints enforced at the cryptographic and protocol level.</p>
+              <p>This section declares the eight immutable design axioms from which every OrahDEX architectural decision derives. These are not aspirations — they are structural constraints enforced at the cryptographic and protocol level.</p>
               <div className="space-y-2">
                 {[
-                  { n: "I",    title: "Sovereignty",               body: "No user asset, identity, or decision passes through Orah control at any point. The protocol is a set of open-source cryptographic rules, not a custodian." },
-                  { n: "II",   title: "Non-Custodial Architecture", body: "Orah cannot hold, freeze, seize, or reverse user funds. This is not a policy — it is a mathematical constraint baked into the HTLC scripts at Layer 1." },
-                  { n: "III",  title: "Zero Identity",              body: "No name. No email. No government ID. No IP stored. User identity on Orah is a cryptographic wallet address — generated by the user, controlled by the user, known only to the user." },
+                  { n: "I",    title: "Sovereignty",               body: "No user asset, identity, or decision passes through OrahDEX control at any point. The protocol is a set of open-source cryptographic rules, not a custodian." },
+                  { n: "II",   title: "Non-Custodial Architecture", body: "OrahDEX cannot hold, freeze, seize, or reverse user funds. This is not a policy — it is a mathematical constraint baked into the HTLC scripts at Layer 1." },
+                  { n: "III",  title: "Zero Identity",              body: "No name. No email. No government ID. No IP stored. User identity on OrahDEX is a cryptographic wallet address — generated by the user, controlled by the user, known only to the user." },
                   { n: "IV",   title: "Zero Admin Keys",            body: "No administrator, founder, employee, or third party holds keys capable of altering, pausing, or redirecting protocol contracts. Deployed contracts are immutable." },
                   { n: "V",    title: "Cryptographic Enforcement",  body: "All guarantees — settlement finality, fund safety, atomic swap atomicity, performance fee limits — are enforced by cryptographic primitives, not by trust, reputation, or legal contracts." },
                   { n: "VI",   title: "Deterministic Execution",    body: "Given the same inputs, the protocol always produces the same outputs. No randomness, no discretion, no human judgement enters the settlement path." },
@@ -335,18 +335,18 @@ export function WhitePaper() {
             {/* ── 3. ARCHITECTURE ── */}
             <Section id="architecture" title="3. Technical Architecture">
               <InfoBox title="Protocol Naming Convention" color="amber">
-                <p><strong>Orah</strong> — the trading protocol, DEX, and all on-chain components described in this paper.</p>
+                <p><strong>OrahDEX</strong> — the trading protocol, DEX, and all on-chain components described in this paper.</p>
                 <p><strong>Ora</strong> — the embedded AI trading intelligence layer (Section 10).</p>
                 <p><strong>Aura · Aaurah</strong> — creative aliases of the founder Parminder Singh; they are personal pen names, not protocol components or product names.</p>
               </InfoBox>
-              <p>Orah is composed of five primary layers, each independently operable and cryptographically verifiable:</p>
+              <p>OrahDEX is composed of five primary layers, each independently operable and cryptographically verifiable:</p>
               <div className="space-y-3">
                 {[
                   {
                     layer: "Layer 1 — Settlement (Bitcoin SV)",
                     color: "text-green-400",
                     bg: "bg-green-400/5 border-green-400/15",
-                    desc: "Bitcoin SV blockchain: UTXO-based, unbounded block size, 1 sat/byte fees. Provides HTLC atomic swap scripts and OP_RETURN settlement proofs for every matched trade. Immutable, publicly verifiable, permanent. The settlement layer cannot be altered, paused, or seized by any party — including Orah itself. Strict boundary: HTLC scripts · OP_RETURN Settlement Proofs · UTXO validation · final settlement. Nothing else enters this layer.",
+                    desc: "Bitcoin SV blockchain: UTXO-based, unbounded block size, 1 sat/byte fees. Provides HTLC atomic swap scripts and OP_RETURN settlement proofs for every matched trade. Immutable, publicly verifiable, permanent. The settlement layer cannot be altered, paused, or seized by any party — including OrahDEX itself. Strict boundary: HTLC scripts · OP_RETURN Settlement Proofs · UTXO validation · final settlement. Nothing else enters this layer.",
                   },
                   {
                     layer: "Layer 2 — Protocol Contracts (EVM + BSV Script)",
@@ -364,13 +364,13 @@ export function WhitePaper() {
                     layer: "Layer 4 — Intelligence (Ora AI)",
                     color: "text-amber-400",
                     bg: "bg-amber-400/5 border-amber-400/15",
-                    desc: "OpenAI-compatible large language model with streaming Server-Sent Events. Context-aware of current pair, user position, order book state, and platform history. 682+ market insights cached. Persistent conversation history per-user. Max 8,192 output tokens per response. Zero trading decisions are made by Ora without explicit user confirmation.",
+                    desc: "OpenAI-compatible large language model with streaming Server-Sent Events. Context-aware of current pair, user position, order book state, and platform history. 800+ market insights cached. Persistent conversation history per-user. Max 8,192 output tokens per response. Zero trading decisions are made by Ora without explicit user confirmation.",
                   },
                   {
                     layer: "Layer 5 — Sovereign Interface (React + Vite)",
                     color: "text-primary",
                     bg: "bg-primary/5 border-primary/15",
-                    desc: "React 19 + Vite 7 progressive web application. Fully responsive mobile + desktop. Dark/Light/AMOLED themes. Reown AppKit — 10 EVM chains natively supported (Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Scroll, Mantle) with 43-token live on-chain ERC-20 registry. Native TRONLink, TokenPocket, OKX, Bitget, Trust, imToken wallet support. BSV native integration. Passkey wallet. 7-tab mobile navigation. OrahDEXChart cross-pair visualisation with adaptive decimal precision up to 10dp. Portfolio virtual AMM accounting — LP positions are synthetic exposure, wallet ETH never leaves the user's custody. Strict boundary: wallet connection · local signing (ECDSA/EdDSA) · UI rendering · charting · trade forms. No price computation and no business logic lives in this layer. Private keys never leave the user's device; Orah servers see only signed messages.",
+                    desc: "React 19 + Vite 7 progressive web application. Fully responsive mobile + desktop. Dark/Light/AMOLED themes. Reown AppKit — 10 EVM chains natively supported (Ethereum, Base, Arbitrum, Optimism, Polygon, BSC, Avalanche, Linea, Scroll, Mantle) with 43-token live on-chain ERC-20 registry. Native TRONLink, TokenPocket, OKX, Bitget, Trust, imToken wallet support. BSV native integration. Passkey wallet. 7-tab mobile navigation. OrahChart cross-pair visualisation with adaptive decimal precision up to 10dp. Portfolio virtual AMM accounting — LP positions are synthetic exposure, wallet ETH never leaves the user's custody. Strict boundary: wallet connection · local signing (ECDSA/EdDSA) · UI rendering · charting · trade forms. No price computation and no business logic lives in this layer. Private keys never leave the user's device; OrahDEX servers see only signed messages.",
                   },
                 ].map(({ layer, color, bg, desc }) => (
                   <div key={layer} className={cn("p-4 rounded-xl border", bg)}>
@@ -387,7 +387,7 @@ export function WhitePaper() {
                 <p><strong>TRON:</strong> TronWeb 6 + multi-adapter wallet support (6 wallets)</p>
                 <p><strong>BSV:</strong> WhatsOnChain API + native UTXO/OP_RETURN construction + HTLC Script</p>
                 <p><strong>AI:</strong> OpenAI-compatible LLM · streaming SSE · 8,192 max tokens</p>
-                <p><strong>Charts:</strong> Lightweight-charts v5 + OrahDEXChart cross-pair renderer</p>
+                <p><strong>Charts:</strong> Lightweight-charts v5 + OrahChart cross-pair renderer</p>
                 <p><strong>VAMM:</strong> Genesis Liquidity Engine — linear bonding curve, 56 assets, virtual treasury</p>
                 <p><strong>Keeper Engine:</strong> On-chain reputation scoring · tier-based fee schedule · autonomous settlement monitoring</p>
               </InfoBox>
@@ -396,12 +396,12 @@ export function WhitePaper() {
             {/* ── 4. BSV SETTLEMENT ── */}
             <Section id="bsv-settlement" title="4. BSV On-Chain Settlement via HTLC & OP_RETURN">
               <p>
-                Orah uses two distinct BSV mechanisms for cryptographic trade settlement: <span className="text-foreground font-medium">Hash Time-Locked Contracts (HTLCs)</span> for trustless cross-chain atomic swaps, and <span className="text-foreground font-medium">OP_RETURN transactions</span> for permanent, tamper-evident on-chain trade audit records.
+                OrahDEX uses two distinct BSV mechanisms for cryptographic trade settlement: <span className="text-foreground font-medium">Hash Time-Locked Contracts (HTLCs)</span> for trustless cross-chain atomic swaps, and <span className="text-foreground font-medium">OP_RETURN transactions</span> for permanent, tamper-evident on-chain trade audit records.
               </p>
 
               <Sub title="4.1 Why Bitcoin SV for Settlement">
                 <p>
-                  Settlement layer selection is the most consequential architectural decision in any trading protocol. Orah chose BSV for five precise technical reasons:
+                  Settlement layer selection is the most consequential architectural decision in any trading protocol. OrahDEX chose BSV for five precise technical reasons:
                 </p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs border-collapse">
@@ -420,7 +420,7 @@ export function WhitePaper() {
                         ["Avg. tx fee", "$0.0001–0.001", "$1–200 (varies)", "$0.00025"],
                         ["Tx throughput", ">50,000 TPS (stress-test peak)", "~15 TPS", "~3,000 TPS (with degradation)"],
                         ["UTXO model", "Yes — parallel, stateless", "No — account-based", "No — account-based"],
-                        ["Finality", "~10 min (probabilistic) · Orah treats 6 confirmations as final for settlement proofs", "~12s (PoS)", "~0.4s (single-slot)"],
+                        ["Finality", "~10 min (probabilistic) · OrahDEX treats 6 confirmations as final for settlement proofs", "~12s (PoS)", "~0.4s (single-slot)"],
                         ["Script programmability", "Full Bitcoin Script", "EVM (Turing-complete)", "Programs (LLVM)"],
                         ["Immutability guarantee", "SHA-256d PoW anchored", "PoS (can be forked)", "PoS (validator dependent)"],
                       ].map(([prop, bsv, eth, sol]) => (
@@ -435,7 +435,7 @@ export function WhitePaper() {
                   </table>
                 </div>
                 <p className="text-xs text-muted-foreground pt-1">
-                  The UTXO model is specifically superior for settlement: each trade produces an independent, parallel transaction that does not require sequential account state. At scale, Orah can settle millions of trades per day without any BSV block capacity constraint or fee spike.
+                  The UTXO model is specifically superior for settlement: each trade produces an independent, parallel transaction that does not require sequential account state. At scale, OrahDEX can settle millions of trades per day without any BSV block capacity constraint or fee spike.
                 </p>
               </Sub>
 
@@ -494,15 +494,15 @@ function refund() external {
               <Sub title="4.3 OP_RETURN Settlement Proofs">
                 <p>Every matched trade — including copy-traded vault orders — produces a BSV OP_RETURN transaction. The payload is pipe-delimited and permanently recorded on-chain:</p>
                 <Code>{`OP_RETURN payload format:
-ORAHDEX|v1|<tradeId>|<pair>|<buyerAddr>|<sellerAddr>|<amount>|<price>|<timestamp>[|<hash>]
+ORAH|v1|<tradeId>|<pair>|<buyerAddr>|<sellerAddr>|<amount>|<price>|<timestamp>[|<hash>]
   (tradeId is globally unique per trade — prevents replay attacks)
 
 Example (base):
-ORAHDEX|v1|a3b9c1d2e4|BSV-USDT|0x1234…abcd|0x5678…ef01|1.5|55.42|1743388800000
+ORAH|v1|a3b9c1d2e4|BSV-USDT|0x1234…abcd|0x5678…ef01|1.5|55.42|1743388800000
   (Typical OP_RETURN payload size: 80–200 bytes — within both protocol and practical miner limits)
 
 Optional hash commitment (tamper-evident audit):
-ORAHDEX|v1|a3b9c1d2e4|BSV-USDT|0x1234…abcd|0x5678…ef01|1.5|55.42|1743388800000|SHA256(full_trade_JSON)
+ORAH|v1|a3b9c1d2e4|BSV-USDT|0x1234…abcd|0x5678…ef01|1.5|55.42|1743388800000|SHA256(full_trade_JSON)
   Including SHA256(full_trade_JSON) allows off-chain metadata to be verified against the on-chain
   commitment without bloating the payload — zero-bloat auditability.
 
@@ -530,7 +530,7 @@ Properties:
               <Sub title="4.4 Live BSV Chain Statistics">
                 <div className="grid grid-cols-3 gap-3">
                   <Metric value="< $0.001" label="BSV Tx Fee" sub="Per settlement proof" />
-                  <Metric value="943,372" label="Current Block" sub="WhatsOnChain live data" />
+                  <Metric value="947,877" label="Current Block" sub="WhatsOnChain live data" />
                   <Metric value="260 PH/s" label="Network Hashrate" sub="SHA-256d Proof-of-Work" />
                 </div>
               </Sub>
@@ -539,7 +539,7 @@ Properties:
             {/* ── 5. AMM ── */}
             <Section id="amm" title="5. AMM & Liquidity Pools">
               <p>
-                Orah's on-chain liquidity runs on a <span className="text-foreground font-medium">constant product AMM</span> (x·y = k) for standard pools, and the proprietary <span className="text-foreground font-medium">Genesis Liquidity Engine</span> (linear bonding curve VAMM) as a universal cold-start backstop for every listed asset.
+                OrahDEX's on-chain liquidity runs on a <span className="text-foreground font-medium">constant product AMM</span> (x·y = k) for standard pools, and the proprietary <span className="text-foreground font-medium">Genesis Liquidity Engine</span> (linear bonding curve VAMM) as a universal cold-start backstop for every listed asset.
               </p>
               <Sub title="5.1 Constant Product Invariant (x · y = k)">
                 <Code>{`Core invariant:    x · y = k
@@ -581,10 +581,10 @@ Concentrated liquidity (Uniswap V3 model):
   Capital efficiency: up to 4000× vs v2 for tight ranges`}</Code>
               </Sub>
               <Sub title="5.2 Fee Distribution">
-                <p>Orah AMM pools apply a 0.30% swap fee distributed across three destinations:</p>
+                <p>OrahDEX AMM pools apply a 0.30% swap fee distributed across three destinations:</p>
                 <InfoBox title="AMM Fee Split" color="green">
                   <p>5/6 (≈ 83.3%) → Liquidity Providers (proportional to pool share at time of swap)</p>
-                  <p>1/6 (≈ 16.7%) → Orah Protocol Treasury</p>
+                  <p>1/6 (≈ 16.7%) → OrahDEX Protocol Treasury</p>
                   <p>Additional 0.05% → Impermanent Loss Insurance Fund (accumulated per pool)</p>
                   <p className="mt-2 font-mono text-xs text-muted-foreground">
                     fee_LP &nbsp;&nbsp;= 0.30% × 5/6 = 0.25% of swap amount (LP routing)<br/>
@@ -595,7 +595,7 @@ Concentrated liquidity (Uniswap V3 model):
                 </InfoBox>
               </Sub>
               <Sub title="5.3 AMM Swap Simulator">
-                <p>Orah includes a built-in AMM simulator showing real-time price impact, slippage vs spot, fee breakdown, k constant, and effective exchange rate before any swap commitment. LP share is 5/6 of fee; Protocol share is 1/6. Available on both desktop and mobile at <code className="text-green-400 text-[10px]">/liquidity</code>.</p>
+                <p>OrahDEX includes a built-in AMM simulator showing real-time price impact, slippage vs spot, fee breakdown, k constant, and effective exchange rate before any swap commitment. LP share is 5/6 of fee; Protocol share is 1/6. Available on both desktop and mobile at <code className="text-green-400 text-[10px]">/liquidity</code>.</p>
                 <Code>{`Simulator key values displayed:
   k &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= x · y &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[before swap]
   k_new &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;= x_new · y_new &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;[after swap — verified ≥ k]
@@ -606,11 +606,11 @@ Concentrated liquidity (Uniswap V3 model):
               </Sub>
               <Sub title="5.3.1 Virtual AMM Portfolio Accounting">
                 <p>
-                  Orah's Genesis Liquidity Engine is a <span className="text-foreground font-medium">Virtual AMM (vAMM)</span> — a synthetic liquidity layer that does not require users to lock or transfer tokens. When a user "adds liquidity," they are opening a <em>synthetic LP position</em>. Their wallet assets remain on-chain, unencumbered, and fully self-custodied at all times.
+                  OrahDEX's Genesis Liquidity Engine is a <span className="text-foreground font-medium">Virtual AMM (vAMM)</span> — a synthetic liquidity layer that does not require users to lock or transfer tokens. When a user "adds liquidity," they are opening a <em>synthetic LP position</em>. Their wallet assets remain on-chain, unencumbered, and fully self-custodied at all times.
                 </p>
                 <InfoBox title="Virtual vs Real AMM — Key Distinction" color="blue">
                   <p><strong>Real AMM (Uniswap, Sushi, Pancake):</strong> ETH leaves wallet → LP tokens enter wallet → wallet ETH balance decreases → LP tokens represent pool share.</p>
-                  <p><strong>Orah vAMM (Genesis Engine):</strong> Wallet ETH stays untouched → LP position is synthetic exposure → wallet balance unchanged → LP value = separate, virtual earning position.</p>
+                  <p><strong>OrahDEX vAMM (Genesis Engine):</strong> Wallet ETH stays untouched → LP position is synthetic exposure → wallet balance unchanged → LP value = separate, virtual earning position.</p>
                 </InfoBox>
                 <div className="overflow-x-auto mt-3">
                   <table className="w-full text-xs border-collapse">
@@ -644,7 +644,7 @@ Concentrated liquidity (Uniswap V3 model):
                   This design mirrors leading VAMM and Perpetual Futures protocols — GMX v2, Drift Protocol, Hyperliquid, dYdX v4 — where the underlying asset stays in the user's self-custodied wallet while the protocol tracks synthetic position size, fees earned, and mark-to-market value.
                 </p>
                 <p>
-                  The Orah Portfolio page reflects this correctly: the <strong>Total Balance</strong> shows only on-chain wallet value (ETH, ERC-20s, native tokens). LP positions appear in the <strong>DeFi tab</strong> as a separate synthetic allocation — shown as "<em>$X.XX allocated</em>" to make clear the amount is already within the wallet balance, not additive to it. Double-counting is architecturally prevented.
+                  The OrahDEX Portfolio page reflects this correctly: the <strong>Total Balance</strong> shows only on-chain wallet value (ETH, ERC-20s, native tokens). LP positions appear in the <strong>DeFi tab</strong> as a separate synthetic allocation — shown as "<em>$X.XX allocated</em>" to make clear the amount is already within the wallet balance, not additive to it. Double-counting is architecturally prevented.
                 </p>
                 <Code>{`Portfolio accounting model (v4.2.0):
 
@@ -673,7 +673,7 @@ Unified balance classification:
                 The <span className="text-foreground font-medium">Genesis Liquidity Engine</span> solves the cold-start liquidity problem permanently: every newly listed asset is instantly tradeable via a linear bonding curve, even before any real liquidity provider participates. The VAMM is not a temporary scaffold — it is a permanent sovereign liquidity layer that operates in parallel with real AMM pools.
               </p>
               <InfoBox title="Design Mandate" color="amber">
-                <p>No asset on Orah should ever display "No liquidity available." The Genesis Liquidity Engine acts as a sovereign liquidity backstop — always present, always priceable, always executable — for all 56+ listed VAMM assets.</p>
+                <p>No asset on OrahDEX should ever display "No liquidity available." The Genesis Liquidity Engine acts as a sovereign liquidity backstop — always present, always priceable, always executable — for all 56+ listed VAMM assets.</p>
               </InfoBox>
 
               <Sub title="5.4.1 Linear Bonding Curve Mathematics">
@@ -762,11 +762,11 @@ Note: The VAMM does NOT maintain a constant product invariant (x·y = k).
             {/* ── 6. BRIDGE ── */}
             <Section id="cross-chain" title="6. Cross-Chain Bridge — Trustless HTLC">
               <p>
-                The Orah Bridge executes cross-chain asset transfers using HTLC atomic swaps — eliminating the custodial risk that is structurally responsible for every major bridge hack in DeFi history. There are no wrapped tokens. There is no bridge treasury to steal.
+                The OrahDEX Bridge executes cross-chain asset transfers using HTLC atomic swaps — eliminating the custodial risk that is structurally responsible for every major bridge hack in DeFi history. There are no wrapped tokens. There is no bridge treasury to steal.
               </p>
               <Sub title="6.1 Architecture & Security Model">
                 <ul className="list-disc list-inside space-y-1.5 ml-1">
-                  <li><span className="font-medium text-foreground">No Wrapped Tokens:</span> Orah moves native assets atomically — no de-peg risk, no synthetic counterparty exposure. All supported bridge pairs use native assets only; unsupported assets cannot be bridged.</li>
+                  <li><span className="font-medium text-foreground">No Wrapped Tokens:</span> OrahDEX moves native assets atomically — no de-peg risk, no synthetic counterparty exposure. All supported bridge pairs use native assets only; unsupported assets cannot be bridged.</li>
                   <li><span className="font-medium text-foreground">Decentralised Relayer Network:</span> Relayers coordinate HTLC creation and claim propagation — they monitor both chains for the preimage reveal and route it to the other leg. Relayers earn fees proportional to bridge volume; malicious relayers cannot steal funds — the HTLC simply refunds automatically after time-lock expiry. No staked collateral is required; the cryptographic time-lock is the enforcement mechanism. Neither relayers nor watchtowers ever hold user funds.</li>
                   <li><span className="font-medium text-foreground">Time-Lock Safety:</span> All HTLCs have configurable time locks (minimum 24h for large amounts). No action by any party within the time lock results in automatic on-chain refund — no human intervention required.</li>
                   <li><span className="font-medium text-foreground">Watchtower Monitoring:</span> Watchtowers monitor for stalled HTLCs and broadcast refunds when no claim is detected before T₂ − safetyMargin. Watchtowers act on behalf of users but hold zero funds — they can only trigger a refund transaction already authorised by the HTLC script. The cryptographic time-lock is the enforcement mechanism; watchtowers merely accelerate the process.</li>
@@ -774,7 +774,7 @@ Note: The VAMM does NOT maintain a constant product invariant (x·y = k).
                 </ul>
               </Sub>
               <Sub title="6.2 Why Traditional Bridges Fail">
-                <p>Every major bridge exploit — Ronin ($625M), Wormhole ($320M), Nomad ($190M), Horizon ($100M) — shared a common failure mode: a <strong>trusted custodial treasury</strong> that could be compromised by stealing keys, exploiting contracts, or corrupting validators. Orah's HTLC bridge has no treasury to steal. The only funds locked at any moment are the specific assets involved in a single in-flight trade — and they are time-locked to refund automatically if anything goes wrong.</p>
+                <p>Every major bridge exploit — Ronin ($625M), Wormhole ($320M), Nomad ($190M), Horizon ($100M) — shared a common failure mode: a <strong>trusted custodial treasury</strong> that could be compromised by stealing keys, exploiting contracts, or corrupting validators. OrahDEX's HTLC bridge has no treasury to steal. The only funds locked at any moment are the specific assets involved in a single in-flight trade — and they are time-locked to refund automatically if anything goes wrong.</p>
               </Sub>
               <InfoBox title="Supported Bridge Pairs — Phase 1" color="blue">
                 <p>BSV ↔ ETH · BSV ↔ BNB · BSV ↔ MATIC · BSV ↔ USDT (BSV native) ↔ USDT (ERC-20/TRC-20)</p>
@@ -785,16 +785,19 @@ Note: The VAMM does NOT maintain a constant product invariant (x·y = k).
 
             {/* ── 7. TRADING ── */}
             <Section id="trading" title="7. Trading Engine">
-              <Sub title="7.1 Spot Trading — 950+ Pairs">
+              <Sub title="7.1 Spot Trading — 36,000+ Pairs">
                 <p>
-                  Market orders are routed through Orah's smart order router using strict priority routing: (1) on-chain order book — matched first if matching liquidity exists; (2) AMM pool — used if pool depth is sufficient for the order size; (3) VAMM (Genesis Engine) — sovereign fallback, always available. This priority is deterministic and ensures best execution. Limit orders are signed by the user (ECDSA personal_sign) and held in the Orah order book until matched. Every fill produces a BSV OP_RETURN settlement proof.
+                  Market orders are routed through OrahDEX's smart order router using strict priority routing: (1) on-chain order book — matched first if matching liquidity exists; (2) AMM pool — used if pool depth is sufficient for the order size; (3) VAMM (Genesis Engine) — sovereign fallback, always available. This priority is deterministic and ensures best execution. Limit orders are signed by the user (ECDSA personal_sign) and held in the OrahDEX order book until matched. Every fill produces a BSV OP_RETURN settlement proof.
                 </p>
                 <p>
-                  OrahDEXChart renders cross-pair charts (ATOM/ETH, LINK/BTC, SOL/BNB, etc.) with adaptive decimal precision up to 10dp for micro-priced assets. Decimal places are computed as: <code className="text-green-400 text-[10px]">precision = max(2, ⌊log₁₀(price)⌋ × −1)</code> — so a price of $0.00042 renders to 5dp, $71,000 to 2dp. Six order types: Market, Limit, Stop-Limit, Stop-Market, Trailing Stop, Post-Only.
+                  OrahChart renders cross-pair charts (ATOM/ETH, LINK/BTC, SOL/BNB, etc.) with adaptive decimal precision up to 10dp for micro-priced assets. Decimal places are computed as: <code className="text-green-400 text-[10px]">precision = max(2, ⌊log₁₀(price)⌋ × −1)</code> — so a price of $0.00042 renders to 5dp, $71,000 to 2dp. Six order types: Market, Limit, Stop-Limit, Stop-Market, Trailing Stop, Post-Only.
+                </p>
+                <p>
+                  <strong>Per-market dynamic fees (v4.6):</strong> Order placement now reads <code className="text-green-400 text-[10px]">takerFee</code> from the <code className="text-green-400 text-[10px]">markets</code> table for the relevant symbol (with a 0.1% fallback when the column is unset), so the fee written onto the order row matches what the matching engine and ledger actually deduct on settlement. Admin-tuned market fees take effect immediately, with no client-side or server-side redeploy.
                 </p>
               </Sub>
               <Sub title="7.2 Perpetual Futures — Up to 100x Leverage">
-                <p>Orah perpetual futures are settled against mark prices computed from the Sovereign Price Engine:</p>
+                <p>OrahDEX perpetual futures are settled against mark prices computed from the Sovereign Price Engine:</p>
                 <Code>{`Price oracle definitions:
   VWAP  = Σ(price_i × volume_i) / Σ(volume_i)
           (Volume-Weighted Average Price across all order-book fills in the sampling window)
@@ -811,7 +814,7 @@ Stale source rule:
   If only one source is live: mark price = that source (with stale-data warning flag).
   If zero sources are live: mark price is frozen at last known value; new positions blocked.
 
-Mark Price  = median(Orah Order Book VWAP, Orah TWAP, BSV On-Chain Feed)
+Mark Price  = median(OrahDEX Order Book VWAP, OrahDEX TWAP, BSV On-Chain Feed)
 
 Funding Rate = (Perpetual Price − Index Price) / Index Price × (1/3)
              paid every 8 hours (3 periods per day), longs pay shorts when perpetual > index
@@ -819,11 +822,15 @@ Funding Rate = (Perpetual Price − Index Price) / Index Price × (1/3)
 Position PnL  = (Exit Price − Entry Price) × Size × Direction
               (Direction: +1 for long, -1 for short)
 
-Liquidation Price (long):          [MaintenanceMargin = 0.005 = 0.5% of notional, default]
-  L_price = Entry Price × (1 − 1/Leverage + MaintenanceMargin)
+Liquidation Price (long):          [MaintenanceMargin (mmr) = 0.005 = 0.5% of notional, default]
+  L_price = Entry Price × (1 − (1 − mmr) / Leverage)
 
-Liquidation Price (short):         [MaintenanceMargin = 0.005 = 0.5% of notional, default]
-  L_price = Entry Price × (1 + 1/Leverage − MaintenanceMargin)
+Liquidation Price (short):         [MaintenanceMargin (mmr) = 0.005 = 0.5% of notional, default]
+  L_price = Entry Price × (1 + (1 − mmr) / Leverage)
+
+  (Standard isolated-margin formula: liquidation occurs when the position's
+   loss equals (1 − mmr) of the posted margin, leaving the maintenance buffer
+   for the protocol to safely unwind. Equivalent price move = (1 − mmr) / Leverage.)
 
 Liquidation pipeline:
   1. Application server monitors mark price every 1 second for all open positions.
@@ -836,12 +843,14 @@ Liquidation Penalty:
   penalty = positionSize × penaltyRate   (penaltyRate = 0.50% of notional, default)
   Penalty is paid to the liquidation executor (Keeper), incentivising timely execution.`}</Code>
                 <p className="text-xs text-muted-foreground mt-2"><strong>Funding rate — economic rationale:</strong> The funding rate mechanism ensures perpetual futures prices converge to the underlying index price. When the perpetual price trades above index, longs pay shorts — incentivising shorts and disincentivising longs until prices revert. When perpetual trades below index, shorts pay longs — the reverse. The rate (1/3 coefficient, paid every 8 hours) is sized to create real economic pressure without being punitive to directional traders.</p>
+                <p className="text-xs text-muted-foreground mt-2"><strong>Funding-rate settlement (v4.6):</strong> Each 8-hour cycle the funding engine atomically debits each open position's locked margin by <code className="text-green-400 text-[10px]">qty × markPrice × fundingRate</code> (under <code className="text-green-400 text-[10px]">SELECT … FOR UPDATE</code> on the per-wallet margin row), records the charge on the position's <code className="text-green-400 text-[10px]">fundingFee</code> field, and reduces the position's <code className="text-green-400 text-[10px]">margin</code> accordingly. Underfunded positions are charged what's available and surfaced for the next liquidation tick. Funding is now real — not an internal accounting counter.</p>
+                <p className="text-xs text-muted-foreground mt-2"><strong>Dynamic taker fees (v4.6):</strong> Open and close fees on perpetuals read the per-market <code className="text-green-400 text-[10px]">takerFee</code> column from the markets table on every fill (with a 0.05% safety fallback), so any adjustment in the admin panel propagates to live execution without a redeploy.</p>
               </Sub>
               <Sub title="7.3 P2P Trading — Fiat ↔ Crypto with HTLC Escrow">
-                <p>Direct peer-to-peer trading with custom payment methods (bank transfer, mobile money, local fiat). Trades are secured by BSV HTLC escrow: funds are locked on-chain before the seller releases, and the HTLC self-refunds if the buyer fails to confirm within the time lock. Orah's decentralised arbitration panel resolves disputes based on on-chain evidence.</p>
+                <p>Direct peer-to-peer trading with custom payment methods (bank transfer, mobile money, local fiat). Trades are secured by BSV HTLC escrow: funds are locked on-chain before the seller releases, and the HTLC self-refunds if the buyer fails to confirm within the time lock. OrahDEX's decentralised arbitration panel resolves disputes based on on-chain evidence.</p>
               </Sub>
               <Sub title="7.4 Fiat On-Ramp — 6 Providers, 100+ Countries">
-                <p>MoonPay, Transak, Banxa, Simplex, Ramp Network, and Mercuryo — embedded directly in the Orah interface. Apple Pay, Google Pay, card payments, bank transfers, and local payment methods. No separate account required.</p>
+                <p>MoonPay, Transak, Banxa, Simplex, Ramp Network, and Mercuryo — embedded directly in the OrahDEX interface. Apple Pay, Google Pay, card payments, bank transfers, and local payment methods. No separate account required.</p>
               </Sub>
               <Sub title="7.5 Keeper Tier Fee Schedule">
                 <div className="overflow-x-auto">
@@ -913,7 +922,7 @@ High-Water Mark:
 
               <Sub title="8.2 BSV Proof Chain for Every Mirror Trade">
                 <p>CopyVault responsibility is split across three layers: <strong>Layer 2</strong> handles vault share accounting (ERC4626 maths, deposit/withdraw); <strong>Layer 3</strong> (application server) computes mirror allocations and triggers BSV settlement relay; <strong>Layer 1</strong> (BSV blockchain) stores the immutable OP_RETURN records. No layer's boundary is crossed: accounting logic lives on-chain, orchestration logic lives server-side, and proof records live on BSV — permanently.</p>
-                <p>For every trade the leader executes, Orah's orchestrator computes and records:</p>
+                <p>For every trade the leader executes, OrahDEX's orchestrator computes and records:</p>
                 <ol className="list-decimal list-inside space-y-1.5 ml-1">
                   <li>Leader trade recorded in <code className="text-green-400 text-[10px]">orders</code> table with BSV txid</li>
                   <li>Mirror allocation computed per vault: <code className="text-green-400 text-[10px]">copyQty = leaderQty × (vaultTVL/leaderPortfolio)</code></li>
@@ -940,14 +949,14 @@ High-Water Mark:
               </div>
             </Section>
 
-            {/* ── 9. ORAHDEXNFT ── */}
-            <Section id="nft-layer" title="9. OrahDEXNFT — Creator Economy Layer">
+            {/* ── 9. ORAHNFT ── */}
+            <Section id="nft-layer" title="9. OrahNFT — Creator Economy Layer">
               <p>
-                <span className="text-foreground font-medium">OrahDEXNFT</span> is a social NFT marketplace that merges Instagram-style content creation with Zora-inspired permissionless minting and tradeable creator coins. Every post published on OrahDEXNFT is simultaneously a <span className="text-foreground font-medium">BSV inscription</span> (immutable content anchored on-chain) and a <span className="text-foreground font-medium">creator coin</span> (a fungible token priced on a bonding curve) — unifying content creation, curation, and financial speculation in a single primitive.
+                <span className="text-foreground font-medium">OrahNFT</span> is a social NFT marketplace that merges Instagram-style content creation with Zora-inspired permissionless minting and tradeable creator coins. Every post published on OrahNFT is simultaneously a <span className="text-foreground font-medium">BSV inscription</span> (immutable content anchored on-chain) and a <span className="text-foreground font-medium">creator coin</span> (a fungible token priced on a bonding curve) — unifying content creation, curation, and financial speculation in a single primitive.
               </p>
               <Sub title="9.1 Architecture">
                 <p>
-                  The OrahDEXNFT layer consists of four integrated subsystems: a content feed, a creator profile system, a minting engine, and a creator coin market. Creators register a profile (username, avatar, bio, social links), then publish visual posts — art, photography, generative media, or any image. Each post is categorised by type (art, generative, relics, utility) and tagged with a BSV inscription ID linking the content permanently to the settlement layer.
+                  The OrahNFT layer consists of four integrated subsystems: a content feed, a creator profile system, a minting engine, and a creator coin market. Creators register a profile (username, avatar, bio, social links), then publish visual posts — art, photography, generative media, or any image. Each post is categorised by type (art, generative, relics, utility) and tagged with a BSV inscription ID linking the content permanently to the settlement layer.
                 </p>
                 <p>
                   When a collector mints (collects) a post, the minting price is denominated in BSV and recorded as an on-chain settlement proof. The creator's associated coin supply increases, and the bonding curve price adjusts automatically — providing real-time price discovery for creator reputation and demand.
@@ -955,7 +964,7 @@ High-Water Mark:
               </Sub>
               <Sub title="9.2 Creator Coins — Bonding Curve Pricing">
                 <p>
-                  Every creator on OrahDEXNFT has a unique creator coin. The coin is priced by the same linear bonding curve engine that powers the Genesis Liquidity Engine (VAMM) — ensuring always-on liquidity and eliminating the need for external market makers. Creator coins can be bought, sold, and held like any other asset on the exchange. The creator's market cap, all-time high, holder count, and trade volume are tracked in real time.
+                  Every creator on OrahNFT has a unique creator coin. The coin is priced by the same linear bonding curve engine that powers the Genesis Liquidity Engine (VAMM) — ensuring always-on liquidity and eliminating the need for external market makers. Creator coins can be bought, sold, and held like any other asset on the exchange. The creator's market cap, all-time high, holder count, and trade volume are tracked in real time.
                 </p>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   <Metric value="Bonding Curve" label="Pricing Engine" sub="Same VAMM as spot markets" />
@@ -974,7 +983,7 @@ High-Water Mark:
               </Sub>
               <Sub title="9.4 Fiat On-Ramp Integration">
                 <p>
-                  Orah provides 6 integrated fiat on-ramp providers — <span className="text-foreground font-medium">MoonPay, Transak, Ramp Network, Banxa, Simplex, and Mercuryo</span> — supporting Apple Pay, Google Pay, credit/debit card, and bank transfer. Users can purchase crypto directly from the Portfolio page using fiat currency, with instant delivery to their connected wallet. The on-ramp is a convenience layer, not a protocol dependency — its restriction does not affect the core trading, NFT, or settlement infrastructure.
+                  OrahDEX provides 6 integrated fiat on-ramp providers — <span className="text-foreground font-medium">MoonPay, Transak, Ramp Network, Banxa, Simplex, and Mercuryo</span> — supporting Apple Pay, Google Pay, credit/debit card, and bank transfer. Users can purchase crypto directly from the Portfolio page using fiat currency, with instant delivery to their connected wallet. The on-ramp is a convenience layer, not a protocol dependency — its restriction does not affect the core trading, NFT, or settlement infrastructure.
                 </p>
               </Sub>
             </Section>
@@ -982,7 +991,7 @@ High-Water Mark:
             {/* ── 10. PREDICTION TRADING ── */}
             <Section id="prediction" title="10. Prediction Trading — On-Chain Binary Options">
               <p>
-                Orah Prediction Trading is a pool-based binary options system where users predict whether an asset's price will go <span className="text-green-400 font-medium">UP</span> or <span className="text-red-400 font-medium">DOWN</span> within fixed-duration rounds. It merges the simplicity of binary prediction markets with the transparency of on-chain settlement proofs and the capital efficiency of leveraged positions — creating an accessible, high-frequency trading instrument for both novice and experienced traders.
+                OrahDEX Prediction Trading is a pool-based binary options system where users predict whether an asset's price will go <span className="text-green-400 font-medium">UP</span> or <span className="text-red-400 font-medium">DOWN</span> within fixed-duration rounds. It merges the simplicity of binary prediction markets with the transparency of on-chain settlement proofs and the capital efficiency of leveraged positions — creating an accessible, high-frequency trading instrument for both novice and experienced traders.
               </p>
               <Sub title="10.1 Round Architecture">
                 <p>
@@ -999,26 +1008,43 @@ High-Water Mark:
               </Sub>
               <Sub title="10.2 Payout Mechanism">
                 <p>
-                  Payouts follow a parimutuel (pool-based) model where the total pool is distributed among winners:
+                  Payouts follow a strict proportional pool distribution where every winning bet receives a leverage-weighted share of the round's total pool. The mathematics guarantee that the sum of all payouts equals the pool exactly — no winner can ever drain it ahead of others, and no funds can be created from thin air:
                 </p>
-                <pre className="bg-black/30 border border-border/30 rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre">{`payout = (effectiveStake / winningPool) × totalPool
-effectiveStake = baseAmount × leverage
+                <pre className="bg-black/30 border border-border/30 rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre">{`weight(bet)        = baseAmount × (1 + leverageBonus)
+                     leverageBonus = min((leverage − 1) × 0.05, 5)
+                     (1×→0,  100×→4.95)
+
+totalWeight        = Σ weight(bet) over all winning bets in the round
+payout(bet)        = weight(bet) / totalWeight × totalPool
+
+Σ payout(bet)      = totalPool        (guaranteed by construction)
+
+Refund-only round (winner = null, e.g. close == lock):
+  payout(bet)      = baseAmount       (original stake returned)
 
 Example:
-  Total Pool = $10,000
-  Bull Pool  = $4,000 (40%) → Bull Payout = 2.50x
-  Bear Pool  = $6,000 (60%) → Bear Payout = 1.67x
+  Total Pool   = $10,000
+  Winning side = Bull, with three bets:
+    A: $100 @  10× → weight = 100 × (1 + 0.45)  = 145
+    B: $200 @ 100× → weight = 200 × (1 + 4.95)  = 1,190
+    C: $400 @   1× → weight = 400 × (1 + 0)     = 400
+  totalWeight = 1,735
 
-  User bets $100 UP @ 10x leverage
-  effectiveStake = $1,000
-  If UP wins: payout = ($1,000 / $4,000) × $10,000 = $2,500`}</pre>
+  Payouts:
+    A → 145   / 1,735 × $10,000 ≈ $835.73
+    B → 1,190 / 1,735 × $10,000 ≈ $6,858.79
+    C → 400   / 1,735 × $10,000 ≈ $2,305.48
+  Σ                              = $10,000.00`}</pre>
                 <p>
-                  The leverage multiplier amplifies both the effective stake contribution and the proportional payout claim — but the maximum loss is always capped at the base bet amount, making leveraged prediction trading a bounded-risk instrument.
+                  The leverage bonus amplifies a winning bet's share of the pool but is mathematically bounded so the pool is never overdrawn; losing bets contribute their full stake to the winners' pool. Maximum loss is always capped at the base bet amount, making leveraged prediction trading a bounded-risk instrument.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  <strong>v4.6 fairness upgrade:</strong> Earlier versions computed each winner's payout independently and capped only the per-bet payout, which allowed the first claimer to drain the pool while later winners received nothing. The new proportional model distributes the pool atomically across all winning bets.
                 </p>
               </Sub>
               <Sub title="10.3 Technical Integration">
                 <p>
-                  Prediction Trading integrates with the existing Orah balance system (<code className="text-primary">user_balances</code> ledger), the sovereign price engine (Binance aggregation + own-trade data), and the TradingView-style charting layer (lightweight-charts with full technical indicators). Users analyse price action using the same professional chart tools available on the Spot and Futures pages — including RSI, MACD, Bollinger Bands, EMA, and drawing tools — before placing predictions.
+                  Prediction Trading integrates with the existing OrahDEX balance system (<code className="text-primary">user_balances</code> ledger), the sovereign price engine (Binance aggregation + own-trade data), and the TradingView-style charting layer (lightweight-charts with full technical indicators). Users analyse price action using the same professional chart tools available on the Spot and Futures pages — including RSI, MACD, Bollinger Bands, EMA, and drawing tools — before placing predictions.
                 </p>
                 <p>
                   Settlement proofs for prediction trades follow the same BSV OP_RETURN pattern as spot and futures trades — ensuring every prediction outcome is permanently recorded on-chain and publicly auditable.
@@ -1040,12 +1066,12 @@ Example:
             {/* ── 11. ORA AI ── */}
             <Section id="ora-ai" title="11. Ora — Integrated AI Trading Intelligence">
               <p>
-                <span className="text-foreground font-medium">Ora</span> is Orah's embedded AI market intelligence layer — the first AI trading assistant to be natively integrated into a sovereign, non-custodial DEX. Ora contextually understands the user's active pair, position state, order book depth, and full Orah product suite without any manual configuration.
+                <span className="text-foreground font-medium">Ora</span> is OrahDEX's embedded AI market intelligence layer — the first AI trading assistant to be natively integrated into a sovereign, non-custodial DEX. Ora contextually understands the user's active pair, position state, order book depth, and full OrahDEX product suite without any manual configuration.
               </p>
               <Sub title="11.1 Capability Matrix">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
-                    { title: "Live Market Analysis", desc: "Price action commentary, trend identification, support/resistance analysis, and volume anomaly detection — for any of 950+ pairs, updated in real time." },
+                    { title: "Live Market Analysis", desc: "Price action commentary, trend identification, support/resistance analysis, and volume anomaly detection — for any of 36,000+ pairs, updated in real time." },
                     { title: "Trade Structuring", desc: "Order sizing, leverage selection, stop-loss placement, take-profit levels, risk/reward computation, and position sizing relative to portfolio." },
                     { title: "CopyVault Intelligence", desc: "Leader performance decomposition, drawdown analysis, risk-adjusted return comparison (Sharpe, Sortino), and follower-profile matching across all active vaults." },
                     { title: "Portfolio Risk Management", desc: "Correlation analysis, concentration risk flags, Greeks estimation for futures positions, and rebalancing strategy generation." },
@@ -1064,7 +1090,7 @@ Example:
                   <p><strong>Model:</strong> OpenAI-compatible LLM · max_completion_tokens: 8,192 · Streaming: Server-Sent Events</p>
                   <p><strong>Context:</strong> Platform state + active pair + wallet + order book + recent conversation history</p>
                   <p><strong>Storage:</strong> Persistent per-user conversation history in PostgreSQL (conversations + messages tables)</p>
-                  <p><strong>Insights Cache:</strong> 682+ market insights pre-computed and served via <code className="text-amber-300">/api/ai/insights</code></p>
+                  <p><strong>Insights Cache:</strong> 800+ market insights pre-computed and served via <code className="text-amber-300">/api/ai/insights</code></p>
                   <p><strong>Sovereignty:</strong> Ora makes zero autonomous trades. All execution requires explicit user confirmation.</p>
                 </InfoBox>
               </Sub>
@@ -1072,7 +1098,7 @@ Example:
 
             {/* ── 11. FEE MODEL ── */}
             <Section id="tokenomics" title="12. Fee Model & Revenue">
-              <p>Orah operates on a transparent, performance-based fee model. No platform token exists. No token is required to access any functionality. Every fee rate is published in this document and verifiable in the open-source protocol code.</p>
+              <p>OrahDEX operates on a transparent, performance-based fee model. No platform token exists. No token is required to access any functionality. Every fee rate is published in this document and verifiable in the open-source protocol code.</p>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs border-collapse">
                   <thead>
@@ -1095,7 +1121,7 @@ Example:
                       ["Bridge Transfer",             "0.20%",    "70% relayer network · 30% treasury"],
                       ["P2P Trade",                   "0.50%",    "Protocol treasury + arbitrators"],
                       ["CopyVault Performance",       "5–15%",    "On realised profit at withdrawal only, never on TVL"],
-                      ["BSV Settlement Tx",           "< $0.001", "Miner fees (pass-through, no Orah markup)"],
+                      ["BSV Settlement Tx",           "< $0.001", "Miner fees (pass-through, no OrahDEX markup)"],
                     ].map(([a, f, d]) => (
                       <tr key={a as string} className="border-b border-border/50">
                         <td className="py-2 pr-4 text-muted-foreground">{a}</td>
@@ -1135,7 +1161,7 @@ BSV Settlement:
   fee_BSV = bytes × satoshiPerByte
     bytes          ≈ 150  (standard OP_RETURN settlement proof)
     satoshiPerByte = 1
-    fee_BSV        ≈ 150 satoshis ≈ $0.0001  (pass-through; no Orah markup)
+    fee_BSV        ≈ 150 satoshis ≈ $0.0001  (pass-through; no OrahDEX markup)
 
 Futures Liquidation Penalty:
   penalty = positionSize × 0.005           (0.50% of notional)
@@ -1187,8 +1213,8 @@ Futures Liquidation Penalty:
               </Sub>
 
               <Sub title="12.7 Protocol Sustainability &amp; No-Token Design">
-                <InfoBox title="Orah Is Economically Self-Sustaining Without a Token" color="amber">
-                  <p>Orah does not issue a governance token, utility token, or any platform token — because tokens introduce custodial risk, regulatory exposure, and misaligned incentives (short-term speculation vs long-term protocol health).</p>
+                <InfoBox title="OrahDEX Is Economically Self-Sustaining Without a Token" color="amber">
+                  <p>OrahDEX does not issue a governance token, utility token, or any platform token — because tokens introduce custodial risk, regulatory exposure, and misaligned incentives (short-term speculation vs long-term protocol health).</p>
                   <p className="mt-2">The protocol is economically self-sustaining through transaction fees alone — no token issuance, no inflation, no governance token required. Every dollar of treasury revenue is generated by real trading activity. The protocol earns by providing genuine value, not by minting new supply.</p>
                   <p className="mt-2">This is a deliberate design choice, not a roadmap gap. It is a major differentiator from every DeFi protocol that bootstrapped liquidity through token incentives and subsequently faced token inflation, regulatory action, or incentive collapse.</p>
                 </InfoBox>
@@ -1197,7 +1223,7 @@ Futures Liquidation Penalty:
 
             {/* ── 12. SECURITY ── */}
             <Section id="security" title="13. Security Model">
-              <InfoBox title="Threat Model — Adversaries Orah Is Designed to Resist" color="red">
+              <InfoBox title="Threat Model — Adversaries OrahDEX Is Designed to Resist" color="red">
                 <p className="text-xs text-muted-foreground">The protocol assumes all of the following adversaries may be active simultaneously:</p>
                 <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1 text-xs text-muted-foreground">
                   {["Nation-state regulators seeking seizure", "Malicious relayers on bridge legs", "Malicious liquidity providers (AMM wash)", "Oracle price manipulators", "MEV bots (sandwich / front-run / back-run)", "Compromised user wallets", "Malicious CopyVault leaders", "Abusive futures traders targeting liquidations", "Network-level attackers (DDoS, BGP hijack)", "UI spoofers and phishing actors", "Chain reorganisation attacks on BSV", "Malicious watchtower operators"].map(a => (
@@ -1207,7 +1233,7 @@ Futures Liquidation Penalty:
                 <p className="mt-2 text-xs">The protocol is designed to remain sovereign, non-custodial, and operational under all of the above conditions simultaneously.</p>
               </InfoBox>
               <Sub title="13.1 Threat Surface Analysis">
-                <p>Orah's non-custodial architecture eliminates the most dangerous class of attacks — those targeting a centralised fund custodian. The residual threat surface is:</p>
+                <p>OrahDEX's non-custodial architecture eliminates the most dangerous class of attacks — those targeting a centralised fund custodian. The residual threat surface is:</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
                     { threat: "Smart Contract Exploits", mitigation: "Independent audits by top-3 security firms. Formal verification of HTLC scripts. Immutable time-lock refund mechanisms ensure worst-case is fund delay, not loss." },
@@ -1219,7 +1245,7 @@ Futures Liquidation Penalty:
                     { threat: "Malicious CopyVault Leader", mitigation: "Leader opens extremely large positions to force followers into liquidation. Mitigation: allocationRatio = min(1, vaultTVL / leaderTradeNotional) prevents overexposure. Vault capacity limits prevent concentration. High-water mark prevents fee extraction during drawdowns. Leaders cannot force followers into disproportionate risk." },
                     { threat: "CopyVault Withdrawal Timing", mitigation: "Follower withdraws immediately after profitable trade. This is permitted — it is not an attack. Vault share accounting (ERC4626) is resistant to withdrawal timing games by design; all share values and TVL are updated atomically per trade." },
                     { threat: "Sybil Attack (P2P)", mitigation: "BSV wallet staking requirement for P2P liquidity providers. On-chain reputation score based on settlement history. Arbitration panel with supermajority threshold." },
-                    { threat: "UI Spoofing / Phishing", mitigation: "Wallet addresses are displayed directly from the connected wallet provider — no address substitution is possible at the Orah layer. Orah never requests seed phrases, private keys, or recovery words. Any interface that asks for these is fraudulent." },
+                    { threat: "UI Spoofing / Phishing", mitigation: "Wallet addresses are displayed directly from the connected wallet provider — no address substitution is possible at the OrahDEX layer. OrahDEX never requests seed phrases, private keys, or recovery words. Any interface that asks for these is fraudulent." },
                     { threat: "API Server Compromise", mitigation: "A compromised server cannot steal funds: (1) all trades require user signatures; (2) server holds no private keys; (3) server holds no user assets; (4) server holds no identity; (5) settlement occurs on BSV, not the server. Compromise affects order book state only — state is fully reconstructible from BSV chain." },
                     { threat: "Database Compromise", mitigation: "Database compromise cannot alter or fabricate trade records because settlement proofs are stored on-chain (BSV OP_RETURN) and are immutable. The on-chain record is the authoritative truth; the database is an indexed cache." },
                     { threat: "Bridge Censorship", mitigation: "No relayer can censor settlement because users can broadcast claim and refund transactions directly to both chains — no relayer coordination is required for the on-chain enforcement path. Censorship by relayers delays, but cannot block, fund recovery." },
@@ -1233,18 +1259,18 @@ Futures Liquidation Penalty:
                 </div>
               </Sub>
               <Sub title="13.2 Key Management — User Sovereignty">
-                <p>Orah never requests, stores, or transmits user private keys. The signing flow is:</p>
-                <Code>{`User Intent → Orah Interface → User Wallet (local)
+                <p>OrahDEX never requests, stores, or transmits user private keys. The signing flow is:</p>
+                <Code>{`User Intent → OrahDEX Interface → User Wallet (local)
                               ↓ (never leaves device)
                         Private Key Signs Message
                               ↓
-                        Signed Payload → Orah API (public signature only)
+                        Signed Payload → OrahDEX API (public signature only)
                               ↓
                         On-chain settlement via BSV broadcast
 
 Private keys: generated by user, stored by user, known only to user.
-Orah sees: wallet address, signed messages, public transactions.
-Orah never sees: private key, seed phrase, or decryption key.`}</Code>
+OrahDEX sees: wallet address, signed messages, public transactions.
+OrahDEX never sees: private key, seed phrase, or decryption key.`}</Code>
               </Sub>
               <Sub title="13.3 Audit & Verification Programme">
                 <ul className="list-disc list-inside space-y-1.5 ml-1">
@@ -1255,24 +1281,36 @@ Orah never sees: private key, seed phrase, or decryption key.`}</Code>
                   <li>Open-source protocol code — no security through obscurity</li>
                 </ul>
               </Sub>
-              <Sub title="13.4 Protocol-Level Attack Mitigations">
+              <Sub title="13.4 Money-Handling Integrity (v4.6)">
+                <p>Four independent ledger-level guarantees were strengthened in this release. Each addresses a real-money correctness bug surfaced by an end-to-end audit:</p>
+                <ul className="list-disc list-inside space-y-1.5 ml-1">
+                  <li><strong>Withdrawal auto-refund.</strong> If on-chain processing throws after the user's balance has already been debited, the request is now atomically refunded and marked <code className="text-green-400 text-[10px]">failed</code> under a <code className="text-green-400 text-[10px]">SELECT … FOR UPDATE</code> guard — no withdrawal can remain stuck in <code className="text-green-400 text-[10px]">pending</code> with debited funds.</li>
+                  <li><strong>Default swap slippage cap.</strong> When a client omits <code className="text-green-400 text-[10px]">minAmountOut</code>, the swap engine enforces a server-side 5% maximum slippage from the quoted output, so a malformed or malicious request can no longer be filled at any arbitrarily bad rate.</li>
+                  <li><strong>Atomic ledger unlock.</strong> The <code className="text-green-400 text-[10px]">unlockFunds</code> primitive (used on order cancel and refund paths) is now a single transaction that locks the row, reads the locked value, and moves the smaller of (requested, locked) from <code className="text-green-400 text-[10px]">locked → available</code>. Funds can no longer be stranded between two separate updates.</li>
+                  <li><strong>Proportional prediction payouts.</strong> Prediction round payouts are distributed as a leverage-weighted share of the total pool such that <code className="text-green-400 text-[10px]">Σ payouts ≡ pool</code> by construction — no claimer can drain ahead of others, no money is created.</li>
+                </ul>
+              </Sub>
+              <Sub title="13.5 Protocol-Level Attack Mitigations">
                 <p className="font-semibold text-sm mb-2">Futures Liquidation — 3-Sample Confirmation Window</p>
                 <p>The liquidation engine uses a 3-sample confirmation window to prevent single-tick mark-price manipulation from triggering liquidations. A position is only liquidated when the mark price crosses the liquidation threshold for three consecutive 1-second samples. A single manipulated tick cannot trigger liquidation.</p>
 
                 <p className="font-semibold text-sm mt-4 mb-2">Chain Reorganisation — Automatic Rebroadcast</p>
-                <p>Orah monitors BSV confirmation depth for all active settlement proofs. If a BSV reorg invalidates a settlement proof (depth falls below 6 confirmations), the system automatically rebroadcasts the OP_RETURN transaction until the required 6-confirmation finality is re-achieved. Reorgs deeper than 6 blocks are treated as economically infeasible under normal network conditions.</p>
+                <p>OrahDEX monitors BSV confirmation depth for all active settlement proofs. If a BSV reorg invalidates a settlement proof (depth falls below 6 confirmations), the system automatically rebroadcasts the OP_RETURN transaction until the required 6-confirmation finality is re-achieved. Reorgs deeper than 6 blocks are treated as economically infeasible under normal network conditions.</p>
 
                 <p className="font-semibold text-sm mt-4 mb-2">Denial-of-Service Resilience</p>
-                <p>Orah application servers are stateless and horizontally scalable — no single server is a point of failure. The BSV settlement layer operates independently of the application layer; even total application-layer outage does not affect on-chain settlement, HTLC time-locks, or fund safety.</p>
+                <p>OrahDEX application servers are stateless and horizontally scalable — no single server is a point of failure. The BSV settlement layer operates independently of the application layer; even total application-layer outage does not affect on-chain settlement, HTLC time-locks, or fund safety.</p>
+
+                <p className="font-semibold text-sm mt-4 mb-2">Self-Healing Worker Engine (v4.7)</p>
+                <p>All background workers — price updater (60 s), liquidity bot (120 s), BSV/EVM deposit watchers, futures funding (8 h) and liquidation engine (60 s) — run under <code className="text-green-400 text-[10px]">guardedInterval</code>, a timeout-aware replacement for the raw <code className="text-green-400 text-[10px]">setInterval + _busy</code> pattern. Key properties: (1) if a worker hangs beyond its configured timeout (typically 90–95% of interval), the lock is force-released and the next tick proceeds; (2) consecutive failures trigger exponential skip-backoff (up to 8 intervals skipped), preventing a persistently failing worker from hammering a degraded dependency; (3) each service is registered in a central health registry that feeds the <code className="text-green-400 text-[10px]">/api/health</code> endpoint with per-service <span className="text-foreground">healthy / degraded / stuck / dead</span> status — the endpoint returns HTTP 503 when any service is dead, enabling external monitors to auto-alert or auto-restart. An order reconciler runs every 5 minutes and auto-cancels any user order stuck <code className="text-green-400 text-[10px]">open</code> for more than 30 minutes, preventing indefinite capital lock-up. A withRetry utility wraps critical DB/network calls with exponential backoff and jitter. Together these mechanisms mean the exchange auto-recovers from worker hangs, transient DB outages, and network failures without manual restart.</p>
 
                 <InfoBox title="Regulatory Seizure Immunity" color="green">
-                  <p>Orah cannot be seized because it holds:</p>
+                  <p>OrahDEX cannot be seized because it holds:</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1 text-xs text-muted-foreground">
                     {["No user assets (non-custodial)", "No private keys", "No user identity (zero PII)", "No admin keys over protocol", "No custody of any funds", "No single point of shutdown"].map(p => (
                       <p key={p} className="flex items-start gap-1"><span className="text-green-400 shrink-0">✓</span>{p}</p>
                     ))}
                   </div>
-                  <p className="mt-2 text-xs">The protocol is a set of open-source cryptographic rules deployed on a public blockchain, not a company with seizable assets. A seizure order against Orah is structurally equivalent to a seizure order against the rules of mathematics.</p>
+                  <p className="mt-2 text-xs">The protocol is a set of open-source cryptographic rules deployed on a public blockchain, not a company with seizable assets. A seizure order against OrahDEX is structurally equivalent to a seizure order against the rules of mathematics.</p>
                 </InfoBox>
               </Sub>
             </Section>
@@ -1280,7 +1318,7 @@ Orah never sees: private key, seed phrase, or decryption key.`}</Code>
             {/* ── 13. CRYPTOGRAPHIC FOUNDATIONS ── */}
             <Section id="crypto-foundation" title="14. Cryptographic Foundations">
               <p>
-                Orah's security model is not based on trust, reputation, or legal contracts. It is based entirely on the mathematical properties of the cryptographic primitives described in this section. These properties have been independently verified by thousands of researchers across decades and are considered computationally intractable to break with any foreseeable computing technology, including quantum computers for the symmetric primitives.
+                OrahDEX's security model is not based on trust, reputation, or legal contracts. It is based entirely on the mathematical properties of the cryptographic primitives described in this section. These properties have been independently verified by thousands of researchers across decades and are considered computationally intractable to break with any foreseeable computing technology, including quantum computers for the symmetric primitives.
               </p>
 
               <Sub title="14.1 ECDSA — Digital Signature Scheme">
@@ -1297,7 +1335,7 @@ Signing (for trade order authentication):
   s = r⁻¹ × (hash(msg) + k × r_x) mod n
   Signature: (r_x, s)
 
-Verification (Orah API validates without private key):
+Verification (OrahDEX API validates without private key):
   w = s⁻¹ mod n
   u₁ = hash(msg)×w mod n,  u₂ = r_x×w mod n
   Point = u₁×G + u₂×K
@@ -1353,7 +1391,7 @@ Time-lock safety:
 
               <Sub title="14.4 Zero-Knowledge Identity (Phase 3)">
                 <p>
-                  Orah's roadmap includes ZK-proof identity attestation — allowing users to prove membership in a jurisdiction-approved set (e.g., "not a sanctioned entity") without revealing any personal information. The cryptographic mechanism:
+                  OrahDEX's roadmap includes ZK-proof identity attestation — allowing users to prove membership in a jurisdiction-approved set (e.g., "not a sanctioned entity") without revealing any personal information. The cryptographic mechanism:
                 </p>
                 <Code>{`ZK-SNARK identity proof (planned):
   Circuit: "I know a preimage x such that H(x) ∈ approved_set"
@@ -1363,7 +1401,7 @@ Time-lock safety:
 User reveals: only π (a ~200-byte proof)
 User proves:  membership in approved set
 User hides:   their actual identity x
-Orah sees: true/false — no PII collected, no PII stored.
+OrahDEX sees: true/false — no PII collected, no PII stored.
 
 This satisfies even the strictest "travel rule" interpretation
 without creating any data collection liability for the protocol.`}</Code>
@@ -1373,21 +1411,21 @@ without creating any data collection liability for the protocol.`}</Code>
             {/* ── 14. INDESTRUCTIBILITY ── */}
             <Section id="indestructibility" title="15. Protocol Indestructibility">
               <p>
-                This section addresses a question that every serious participant in the cryptocurrency ecosystem eventually asks: <em>what happens if powerful incumbents attempt to stop Orah?</em> The answer is grounded in the same mathematical and architectural principles that protect Bitcoin, TCP/IP, and every other open protocol that has survived decades of attempted suppression.
+                This section addresses a question that every serious participant in the cryptocurrency ecosystem eventually asks: <em>what happens if powerful incumbents attempt to stop OrahDEX?</em> The answer is grounded in the same mathematical and architectural principles that protect Bitcoin, TCP/IP, and every other open protocol that has survived decades of attempted suppression.
               </p>
 
               <Sub title="15.1 What Cannot Be Shut Down">
                 <p>
-                  To shut down a system, there must be something to shut down — a company, a server, an account, a chokepoint. Orah is architecturally designed to eliminate every chokepoint that could serve as a shutdown target:
+                  To shut down a system, there must be something to shut down — a company, a server, an account, a chokepoint. OrahDEX is architecturally designed to eliminate every chokepoint that could serve as a shutdown target:
                 </p>
                 <div className="space-y-3">
                   {[
-                    { target: "The Company", status: "Not a chokepoint", detail: "Orah is a protocol, not a company. Protocol mathematics cannot be injuncted, raided, or de-banked. The Bitcoin protocol continued to exist through multiple 'Bitcoin is dead' regulatory announcements — because the protocol is the code, and the code runs wherever a node runs." },
-                    { target: "The Servers", status: "Not a chokepoint", detail: "The BSV settlement layer runs on thousands of independent nodes across every jurisdiction on earth. The Orah application server holds zero funds and zero keys. Its compromise affects UI convenience only — the on-chain settlement layer continues operating independently." },
-                    { target: "The Domain", status: "Not a chokepoint", detail: "orah.org and orah.com are convenient access points, not the protocol. The protocol is accessible via any IPFS gateway, any self-hosted node, or any direct contract interaction — no domain required. DNS seizure removes convenience, not capability." },
+                    { target: "The Company", status: "Not a chokepoint", detail: "OrahDEX is a protocol, not a company. Protocol mathematics cannot be injuncted, raided, or de-banked. The Bitcoin protocol continued to exist through multiple 'Bitcoin is dead' regulatory announcements — because the protocol is the code, and the code runs wherever a node runs." },
+                    { target: "The Servers", status: "Not a chokepoint", detail: "The BSV settlement layer runs on thousands of independent nodes across every jurisdiction on earth. The OrahDEX application server holds zero funds and zero keys. Its compromise affects UI convenience only — the on-chain settlement layer continues operating independently." },
+                    { target: "The Domain", status: "Not a chokepoint", detail: "orahdex.org and orahdex.com are convenient access points, not the protocol. The protocol is accessible via any IPFS gateway, any self-hosted node, or any direct contract interaction — no domain required. DNS seizure removes convenience, not capability." },
                     { target: "The Founder", status: "Not a chokepoint", detail: "The HTLC scripts, AMM contracts, and OP_RETURN settlement logic are deployed on-chain and run autonomously. No founder action is required for any trade to settle. The protocol operates 24/7/365 with no human input once deployed." },
-                    { target: "The Banking Relationship", status: "Not a chokepoint", detail: "Orah has no fiat banking relationship at the protocol layer. There is no bank account to freeze. Fiat on-ramp is provided by third-party providers (MoonPay, Transak) — their restriction affects one feature, not the core protocol." },
-                    { target: "User Accounts", status: "Not a chokepoint", detail: "Orah has no user accounts. There are only wallet addresses. A wallet address cannot be 'banned' — the blockchain accepts any valid transaction from any valid key." },
+                    { target: "The Banking Relationship", status: "Not a chokepoint", detail: "OrahDEX has no fiat banking relationship at the protocol layer. There is no bank account to freeze. Fiat on-ramp is provided by third-party providers (MoonPay, Transak) — their restriction affects one feature, not the core protocol." },
+                    { target: "User Accounts", status: "Not a chokepoint", detail: "OrahDEX has no user accounts. There are only wallet addresses. A wallet address cannot be 'banned' — the blockchain accepts any valid transaction from any valid key." },
                   ].map(({ target, status, detail }) => (
                     <div key={target} className="p-4 bg-card border border-border rounded-xl space-y-1.5">
                       <div className="flex items-center justify-between">
@@ -1406,7 +1444,7 @@ without creating any data collection liability for the protocol.`}</Code>
                     { name: "Bitcoin", year: "2009–present", detail: "Declared dead 430+ times by media and regulators. China banned Bitcoin mining twice. Every ban resulted in zero change to the protocol's continued operation." },
                     { name: "BitTorrent", year: "2001–present", detail: "Major record labels, studios, and governments spent billions attempting to stop BitTorrent. The protocol operates unchanged today, processing more traffic than Netflix." },
                     { name: "Uniswap Protocol", year: "2020–present", detail: "The SEC investigated Uniswap Labs. The Uniswap frontend was temporarily restricted for certain tokens. The protocol contracts on Ethereum continued executing every trade without interruption." },
-                    { name: "TCP/IP", year: "1969–present", detail: "No government has been able to license TCP/IP. The internet expanded to 5 billion users without asking any regulatory body for permission. Orah uses the same architectural principle." },
+                    { name: "TCP/IP", year: "1969–present", detail: "No government has been able to license TCP/IP. The internet expanded to 5 billion users without asking any regulatory body for permission. OrahDEX uses the same architectural principle." },
                   ].map(({ name, year, detail }) => (
                     <div key={name} className="p-3 bg-primary/5 border border-primary/15 rounded-xl space-y-1">
                       <div className="flex items-center justify-between">
@@ -1421,9 +1459,9 @@ without creating any data collection liability for the protocol.`}</Code>
 
               <Sub title="15.3 The Minimum Viable Protocol Principle">
                 <p>
-                  Orah is designed so that even if every piece of user-facing infrastructure were destroyed simultaneously, the core protocol functions continue operating through the following minimum viable path:
+                  OrahDEX is designed so that even if every piece of user-facing infrastructure were destroyed simultaneously, the core protocol functions continue operating through the following minimum viable path:
                 </p>
-                <Code>{`Minimum Viable Orah:
+                <Code>{`Minimum Viable OrahDEX:
   1. BSV HTLC script (on-chain, permanent, autonomous)
   2. Any BSV-compatible wallet (HandCash, RelayX, Centbee)
   3. Any EVM-compatible wallet (MetaMask, hardware wallet)
@@ -1431,8 +1469,8 @@ without creating any data collection liability for the protocol.`}</Code>
 A user with only these three elements can:
   • Execute an atomic swap between BSV and EVM assets
   • Verify the settlement proof on any BSV block explorer
-  • Do this without touching Orah.com, the app server,
-    or any Orah-controlled infrastructure
+  • Do this without touching OrahDEX.com, the app server,
+    or any OrahDEX-controlled infrastructure
 
 The protocol cannot be destroyed because it requires no infrastructure.
 It requires only: the Bitcoin SV blockchain + any EVM chain + mathematics.`}</Code>
@@ -1441,7 +1479,7 @@ It requires only: the Bitcoin SV blockchain + any EVM chain + mathematics.`}</Co
               <div className="p-5 rounded-2xl bg-gradient-to-br from-green-400/10 to-primary/5 border border-green-400/20 space-y-2">
                 <p className="text-sm font-black text-foreground">The Indestructibility Principle</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  The SHA-256 algorithm cannot be raided. The secp256k1 curve cannot be injuncted. The constant product formula (x·y=k) cannot be de-banked. Orah is composed entirely of these mathematical objects. To destroy Orah would require destroying mathematics itself — which is not within the jurisdiction of any court, any regulator, or any incumbent with a financial interest in its failure.
+                  The SHA-256 algorithm cannot be raided. The secp256k1 curve cannot be injuncted. The constant product formula (x·y=k) cannot be de-banked. OrahDEX is composed entirely of these mathematical objects. To destroy OrahDEX would require destroying mathematics itself — which is not within the jurisdiction of any court, any regulator, or any incumbent with a financial interest in its failure.
                 </p>
               </div>
             </Section>
@@ -1461,16 +1499,16 @@ It requires only: the Bitcoin SV blockchain + any EVM chain + mathematics.`}</Co
                         <th className="text-left py-2 pr-4 font-semibold text-foreground">Revenue Source</th>
                         <th className="text-left py-2 pr-4 font-semibold text-foreground">Mechanism</th>
                         <th className="text-left py-2 pr-4 font-semibold text-foreground">Est. Annual (Industry)</th>
-                        <th className="text-left py-2 font-semibold text-foreground">Orah Impact</th>
+                        <th className="text-left py-2 font-semibold text-foreground">OrahDEX Impact</th>
                       </tr>
                     </thead>
                     <tbody>
                       {[
-                        ["Trading Fees",        "Maker/taker spread on every trade",                 "$30–45B",  "Direct competition: Orah 0.00–0.20% vs CEX avg 0.20–0.50%"],
+                        ["Trading Fees",        "Maker/taker spread on every trade",                 "$30–45B",  "Direct competition: OrahDEX 0.00–0.20% vs CEX avg 0.20–0.50%"],
                         ["Withdrawal Fees",     "Flat fee on every withdrawal, often $5–25",         "$8–12B",   "Eliminated: BSV settlement costs $0.0001 per tx"],
                         ["Interest on Custody", "CEX earns yield on user deposits they control",     "$15–25B",  "Eliminated: users hold their own keys, earn their own yield"],
                         ["Spread Capture",      "Market making on own platform with information edge","$20–40B",  "Eliminated: Sovereign Price Engine removes CEX information advantage"],
-                        ["Data Monetisation",   "Selling user PII, trading patterns, order flow",    "$3–8B",    "Eliminated: Orah collects zero PII and zero order flow"],
+                        ["Data Monetisation",   "Selling user PII, trading patterns, order flow",    "$3–8B",    "Eliminated: OrahDEX collects zero PII and zero order flow"],
                       ].map(([source, mechanism, est, impact]) => (
                         <tr key={source as string} className="border-b border-border/40">
                           <td className="py-2 pr-4 font-semibold text-foreground">{source}</td>
@@ -1506,10 +1544,10 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
 
               <Sub title="16.3 The Information Asymmetry Elimination">
                 <p>
-                  CEXs maintain a structural information advantage through two mechanisms: (1) they see every user's order before it hits the market (order flow data), and (2) they aggregate user trading patterns to front-run positions. Orah's Sovereign Price Engine and on-chain settlement eliminate both:
+                  CEXs maintain a structural information advantage through two mechanisms: (1) they see every user's order before it hits the market (order flow data), and (2) they aggregate user trading patterns to front-run positions. OrahDEX's Sovereign Price Engine and on-chain settlement eliminate both:
                 </p>
                 <ul className="list-disc list-inside space-y-1.5 ml-1">
-                  <li><span className="font-medium text-foreground">No centrally visible order flow:</span> Limit orders are signed locally and broadcast directly. The Orah API server sees signed messages, not private order intent before signing.</li>
+                  <li><span className="font-medium text-foreground">No centrally visible order flow:</span> Limit orders are signed locally and broadcast directly. The OrahDEX API server sees signed messages, not private order intent before signing.</li>
                   <li><span className="font-medium text-foreground">No user pattern aggregation:</span> Zero PII collection means zero trading pattern linkage to real identity. Order history is linked only to a wallet address chosen by the user.</li>
                   <li><span className="font-medium text-foreground">On-chain price discovery:</span> The Sovereign Price Engine cannot be privately manipulated — it is derived from on-chain transactions that are publicly visible to every participant simultaneously.</li>
                 </ul>
@@ -1525,14 +1563,14 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
             {/* ── 16. ADVERSARIAL RESILIENCE ── */}
             <Section id="adversarial" title="17. Adversarial Resilience Analysis">
               <p>
-                This section systematically addresses every adversarial scenario that a well-resourced incumbent — a major CEX, a government agency, or a coordinated industry group — could plausibly attempt against Orah. Each scenario is analysed for attack vector, attack cost, and protocol response.
+                This section systematically addresses every adversarial scenario that a well-resourced incumbent — a major CEX, a government agency, or a coordinated industry group — could plausibly attempt against OrahDEX. Each scenario is analysed for attack vector, attack cost, and protocol response.
               </p>
 
               <Sub title="17.1 Scenario Matrix">
                 <div className="space-y-3">
                   {[
                     {
-                      scenario: "Regulatory Injunction Against Orah Entity",
+                      scenario: "Regulatory Injunction Against OrahDEX Entity",
                       cost: "Low (legal fees)",
                       impact: "Low",
                       response: "An injunction against a corporate entity does not stop the BSV blockchain, the HTLC scripts, or the AMM contracts. The Uniswap Labs injunction attempt did not stop a single Uniswap trade. Protocol contracts are immutable and jurisdiction-agnostic.",
@@ -1540,7 +1578,7 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
                       bg: "bg-green-400/5 border-green-400/10",
                     },
                     {
-                      scenario: "Domain Seizure (orah.org / orah.com)",
+                      scenario: "Domain Seizure (orahdex.org / orahdex.com)",
                       cost: "Low (ICANN process)",
                       impact: "Low",
                       response: "Protocol remains accessible via IPFS-hosted interface, alternative domains, self-hosted nodes, and direct contract interaction. Domain seizure removes one of many access points. Protocol functionality is unaffected.",
@@ -1551,7 +1589,7 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
                       scenario: "App Store Removal (iOS / Android)",
                       cost: "Low (platform policy)",
                       impact: "Low",
-                      response: "Orah is a Progressive Web App (PWA) — installable from any browser without an app store. Mobile web access requires no app store approval or distribution agreement. Offline behaviour: the interface caches static assets and last-known market data for offline viewing; no trades can be executed offline — all order submission, signing, and settlement require a live connection.",
+                      response: "OrahDEX is a Progressive Web App (PWA) — installable from any browser without an app store. Mobile web access requires no app store approval or distribution agreement. Offline behaviour: the interface caches static assets and last-known market data for offline viewing; no trades can be executed offline — all order submission, signing, and settlement require a live connection.",
                       color: "text-green-400",
                       bg: "bg-green-400/5 border-green-400/10",
                     },
@@ -1567,7 +1605,7 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
                       scenario: "Competitive Liquidity War (CEX subsidises trading)",
                       cost: "Very High (billions/year)",
                       impact: "Medium",
-                      response: "A subsidised CEX still requires custody. Every user who prefers self-custody has a reason to use Orah regardless of fee differential. The CopyVault on-chain proof model cannot be replicated without a non-custodial settlement layer.",
+                      response: "A subsidised CEX still requires custody. Every user who prefers self-custody has a reason to use OrahDEX regardless of fee differential. The CopyVault on-chain proof model cannot be replicated without a non-custodial settlement layer.",
                       color: "text-amber-400",
                       bg: "bg-amber-400/5 border-amber-400/10",
                     },
@@ -1575,7 +1613,7 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
                       scenario: "51% Attack on BSV Settlement Layer",
                       cost: "Extremely High (~$50M+ equipment)",
                       impact: "Temporary",
-                      response: "A BSV 51% attack could reorg recent blocks — not steal HTLC funds (time locks enforce refund paths). Affected trades have BSV time-lock refund safety. Long-running HTLCs (>24h) are not vulnerable to short-duration reorgs. Orah can switch to a longer confirmation threshold during attack.",
+                      response: "A BSV 51% attack could reorg recent blocks — not steal HTLC funds (time locks enforce refund paths). Affected trades have BSV time-lock refund safety. Long-running HTLCs (>24h) are not vulnerable to short-duration reorgs. OrahDEX can switch to a longer confirmation threshold during attack.",
                       color: "text-amber-400",
                       bg: "bg-amber-400/5 border-amber-400/10",
                     },
@@ -1591,7 +1629,7 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
                       scenario: "Mass Media Reputation Attack",
                       cost: "Low (PR campaign)",
                       impact: "Short-term only",
-                      response: "Every trade settled on BSV is publicly verifiable. Every vault trade has an on-chain proof. Orah's zero-PII model means user identities cannot be leaked or weaponised. On-chain transparency provides the ultimate defence: the record speaks for itself.",
+                      response: "Every trade settled on BSV is publicly verifiable. Every vault trade has an on-chain proof. OrahDEX's zero-PII model means user identities cannot be leaked or weaponised. On-chain transparency provides the ultimate defence: the record speaks for itself.",
                       color: "text-green-400",
                       bg: "bg-green-400/5 border-green-400/10",
                     },
@@ -1612,7 +1650,7 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
 
               <Sub title="17.2 The Asymmetric Defence Principle">
                 <p>
-                  Every adversarial attack on Orah is structurally asymmetric: the attacker bears significant cost (legal, financial, reputational, or technical), while the protocol's response cost is near zero. A domain seizure costs the attacker legal fees and public attention; it costs Orah the price of one DNS update. A regulatory injunction costs the attacker years of litigation; it costs the protocol zero — because the injunction cannot reach the BSV blockchain. This asymmetry compounds over time, making sustained attack economically irrational for any adversary.
+                  Every adversarial attack on OrahDEX is structurally asymmetric: the attacker bears significant cost (legal, financial, reputational, or technical), while the protocol's response cost is near zero. A domain seizure costs the attacker legal fees and public attention; it costs OrahDEX the price of one DNS update. A regulatory injunction costs the attacker years of litigation; it costs the protocol zero — because the injunction cannot reach the BSV blockchain. This asymmetry compounds over time, making sustained attack economically irrational for any adversary.
                 </p>
               </Sub>
             </Section>
@@ -1647,7 +1685,7 @@ Analysis:
 Nash Equilibrium: All rational traders choose self-custody (S)
 once the DEX achieves feature parity and cost parity with CEXs.
 
-Orah achieves both:
+OrahDEX achieves both:
   Feature parity: spot, futures, copy trading, bridge, P2P, AI
   Cost parity: 0.00–0.20% fees, < $0.001 settlement`}</Code>
               </Sub>
@@ -1682,7 +1720,7 @@ Real-world evidence:
 
               <Sub title="18.3 Keeper Incentive Alignment">
                 <p>
-                  Orah's Keeper system creates long-term protocol alignment through a well-structured incentive gradient: Keepers who provide liquidity, maintain uptime, and execute settlements earn progressive fee discounts that compound over time. The Keeper at Sovereign tier (0% maker fee) has a stronger economic incentive to keep the protocol healthy than any employee or shareholder of a CEX, because their income directly derives from protocol health rather than corporate profit extraction.
+                  OrahDEX's Keeper system creates long-term protocol alignment through a well-structured incentive gradient: Keepers who provide liquidity, maintain uptime, and execute settlements earn progressive fee discounts that compound over time. The Keeper at Sovereign tier (0% maker fee) has a stronger economic incentive to keep the protocol healthy than any employee or shareholder of a CEX, because their income directly derives from protocol health rather than corporate profit extraction.
                 </p>
               </Sub>
             </Section>
@@ -1690,7 +1728,7 @@ Real-world evidence:
             {/* ── 18. NETWORK EFFECT ── */}
             <Section id="network-effect" title="19. Network Effect Mechanics">
               <p>
-                Liquidity networks exhibit superlinear growth dynamics — the value to each participant grows faster than linear in the number of participants. Understanding these mechanics is essential to Orah's competitive moat analysis.
+                Liquidity networks exhibit superlinear growth dynamics — the value to each participant grows faster than linear in the number of participants. Understanding these mechanics is essential to OrahDEX's competitive moat analysis.
               </p>
 
               <Sub title="19.1 Metcalfe's Law Applied to DEX Liquidity">
@@ -1705,7 +1743,7 @@ Liquidity depth at price distance δ from mid:
 
 Key insight: as n increases by 2×, liquidity depth increases by 4×
 (Metcalfe), but slippage for any given trade decreases by 4× —
-making Orah more attractive to larger traders, attracting more
+making OrahDEX more attractive to larger traders, attracting more
 LPs, further reducing slippage → self-reinforcing flywheel.
 
 CopyVault network effect (additional layer):
@@ -1715,12 +1753,12 @@ CopyVault network effect (additional layer):
   → V_CopyVault(n) grows as n² × leader_quality(n)`}</Code>
               </Sub>
 
-              <Sub title="19.2 Orah's Four Compounding Flywheels">
+              <Sub title="19.2 OrahDEX's Four Compounding Flywheels">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
                     { name: "Liquidity Flywheel", desc: "More LPs → deeper books → lower slippage → more traders → more fees → more LP incentive → more LPs. This flywheel accelerates once the platform crosses the liquidity threshold where slippage is competitive with CEX spread." },
                     { name: "CopyVault Flywheel", desc: "More followers → more leader capital → better execution → higher PnL → more followers. Every successful vault is a growth engine that recruits its own new users via performance." },
-                    { name: "Pair Coverage Flywheel", desc: "More trading pairs → more market opportunities → more traders → more fee revenue → ability to VAMM-seed more pairs → more pairs. Orah already seeds 950+ pairs; each new pair is free marginal distribution." },
+                    { name: "Pair Coverage Flywheel", desc: "More trading pairs → more market opportunities → more traders → more fee revenue → ability to VAMM-seed more pairs → more pairs. OrahDEX already operates 36,000+ pairs; each new pair is free marginal distribution." },
                     { name: "Data Sovereignty Flywheel", desc: "More trades → richer Sovereign Price Engine data → better price discovery → more accurate mark prices → more fair futures settlement → more institutional traders → more trades." },
                   ].map(({ name, desc }) => (
                     <div key={name} className="p-4 bg-primary/5 border border-primary/15 rounded-2xl space-y-2">
@@ -1733,7 +1771,7 @@ CopyVault network effect (additional layer):
 
               <Sub title="19.3 BSV Settlement as Network Effect Amplifier">
                 <p>
-                  Every trade settled on BSV creates a permanent, publicly verifiable on-chain record. As Orah's BSV settlement volume grows, the on-chain audit trail becomes an increasingly powerful reputation signal — one that no CEX can replicate, because CEXs settle off-chain in private databases. The on-chain proof network is additive and permanent: historical settlement density builds trust that compounds over the protocol's lifetime.
+                  Every trade settled on BSV creates a permanent, publicly verifiable on-chain record. As OrahDEX's BSV settlement volume grows, the on-chain audit trail becomes an increasingly powerful reputation signal — one that no CEX can replicate, because CEXs settle off-chain in private databases. The on-chain proof network is additive and permanent: historical settlement density builds trust that compounds over the protocol's lifetime.
                 </p>
               </Sub>
             </Section>
@@ -1741,7 +1779,7 @@ CopyVault network effect (additional layer):
             {/* ── 18. SOVEREIGN STATUS ── */}
             <Section id="compliance" title="20. Sovereign Status & Permissionless Design">
               <p>
-                Orah's legal posture is not a compliance strategy — it is an architectural fact. This section documents the legal analysis of Orah's regulatory status across eight major jurisdictions and explains why that status flows from the protocol's technical design, not from legal argumentation.
+                OrahDEX's legal posture is not a compliance strategy — it is an architectural fact. This section documents the legal analysis of OrahDEX's regulatory status across eight major jurisdictions and explains why that status flows from the protocol's technical design, not from legal argumentation.
               </p>
 
               <Sub title="20.1 The Protocol Doctrine — Why No License Is Required">
@@ -1749,7 +1787,7 @@ CopyVault network effect (additional layer):
                   Financial regulation was designed to govern <em>intermediaries</em> — entities that stand between users and their money. The legal theory is straightforward: if you hold other people's assets, you bear fiduciary responsibility and require regulatory oversight to protect those assets. This theory applies correctly to banks, brokers, custodians, and centralised exchanges.
                 </p>
                 <p>
-                  Orah is not an intermediary. It does not hold any user asset at any point in any jurisdiction. It is a <em>protocol</em> — the same category as TCP/IP, SMTP, HTTP, and Bitcoin. No government licenses TCP/IP. No certificate is required to build a website on HTTP. No authority regulates the Bitcoin protocol itself. The legal principle is identical: a protocol that routes value between willing counterparties without intermediating custody is not a financial intermediary, regardless of the value amounts involved.
+                  OrahDEX is not an intermediary. It does not hold any user asset at any point in any jurisdiction. It is a <em>protocol</em> — the same category as TCP/IP, SMTP, HTTP, and Bitcoin. No government licenses TCP/IP. No certificate is required to build a website on HTTP. No authority regulates the Bitcoin protocol itself. The legal principle is identical: a protocol that routes value between willing counterparties without intermediating custody is not a financial intermediary, regardless of the value amounts involved.
                 </p>
                 <InfoBox title="Protocol Doctrine Legal Basis" color="blue">
                   <p><strong>US (CFTC/SEC):</strong> Uniswap Labs (2023) — SEC investigation found no basis for action against the protocol. Protocol contracts immutable, not operated by any person once deployed.</p>
@@ -1795,19 +1833,19 @@ CopyVault network effect (additional layer):
 
               <Sub id="identity" title="20.3 Identity Sovereignty — Zero PII Architecture">
                 <p>
-                  Orah collects <strong>zero personally identifiable information</strong>. This is not a privacy policy — it is an architectural constraint. The system has no mechanism to collect, store, or transmit PII because no field in any database table accepts or persists PII:
+                  OrahDEX collects <strong>zero personally identifiable information</strong>. This is not a privacy policy — it is an architectural constraint. The system has no mechanism to collect, store, or transmit PII because no field in any database table accepts or persists PII:
                 </p>
-                <Code>{`Orah Identity Model:
+                <Code>{`OrahDEX Identity Model:
 
 Unique identifier: wallet_address (public key hash)
                    — generated by user
                    — controlled by user
-                   — known to blockchain, not to Orah
+                   — known to blockchain, not to OrahDEX
 
-What Orah stores:    wallet address, signed messages, trade history
-What Orah stores:    linked to wallet only — not to any person
+What OrahDEX stores:    wallet address, signed messages, trade history
+What OrahDEX stores:    linked to wallet only — not to any person
 
-What Orah NEVER stores or requests:
+What OrahDEX NEVER stores or requests:
   ✗ Legal name                ✗ Email address
   ✗ Phone number              ✗ Government ID number
   ✗ Passport / driving licence✗ Date of birth
@@ -1815,14 +1853,14 @@ What Orah NEVER stores or requests:
   ✗ Facial biometrics         ✗ Browser fingerprint (not stored)
 
 If any authority requests user identity data:
-  Orah's truthful response: "No such data exists."
+  OrahDEX's truthful response: "No such data exists."
   This is not legal evasion. It is an architectural fact.`}</Code>
               </Sub>
 
-              <Sub title="20.4 What Orah Is and Is NOT">
+              <Sub title="20.4 What OrahDEX Is and Is NOT">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <p className="text-xs font-bold text-green-400 uppercase tracking-wider mb-1">Orah IS</p>
+                    <p className="text-xs font-bold text-green-400 uppercase tracking-wider mb-1">OrahDEX IS</p>
                     {[
                       "A non-custodial on-chain trading protocol",
                       "A Keeper-driven settlement execution network",
@@ -1839,7 +1877,7 @@ If any authority requests user identity data:
                     ))}
                   </div>
                   <div className="space-y-2">
-                    <p className="text-xs font-bold text-red-400 uppercase tracking-wider mb-1">Orah is NOT</p>
+                    <p className="text-xs font-bold text-red-400 uppercase tracking-wider mb-1">OrahDEX is NOT</p>
                     {[
                       "A centralised exchange or custodian",
                       "A bank, broker, or financial adviser",
@@ -1864,7 +1902,7 @@ If any authority requests user identity data:
                     <thead>
                       <tr className="border-b border-border">
                         <th className="text-left py-2 pr-4 font-semibold text-foreground">Layer</th>
-                        <th className="text-left py-2 pr-4 font-semibold text-foreground">Orah Status</th>
+                        <th className="text-left py-2 pr-4 font-semibold text-foreground">OrahDEX Status</th>
                         <th className="text-left py-2 font-semibold text-foreground">Verdict</th>
                       </tr>
                     </thead>
@@ -1899,30 +1937,53 @@ If any authority requests user identity data:
               <div className="p-5 rounded-2xl bg-gradient-to-br from-violet-400/10 to-primary/5 border border-violet-400/20 space-y-3">
                 <p className="text-sm font-black text-foreground">The Principle: Protocols Are Not Institutions. Mathematics Is Not a Legal Entity.</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  No government licenses SHA-256. No certificate is required to use secp256k1. No authority regulates the constant product formula x·y=k. No court order can compel a Bitcoin HTLC to unlock before its time-lock expires. Orah is composed entirely of these mathematical objects. Financial regulation was designed to govern institutions that intermediate other people's money — banks, brokers, custodians, centralised exchanges. Orah is none of these. It is a cryptographic protocol: a set of mathematical rules, smart contracts, and open-source software that connects willing counterparties directly on-chain, with no intermediary standing between them and their assets.
+                  No government licenses SHA-256. No certificate is required to use secp256k1. No authority regulates the constant product formula x·y=k. No court order can compel a Bitcoin HTLC to unlock before its time-lock expires. OrahDEX is composed entirely of these mathematical objects. Financial regulation was designed to govern institutions that intermediate other people's money — banks, brokers, custodians, centralised exchanges. OrahDEX is none of these. It is a cryptographic protocol: a set of mathematical rules, smart contracts, and open-source software that connects willing counterparties directly on-chain, with no intermediary standing between them and their assets.
                 </p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   The protocol cannot be licensed because there is nothing to license. There is no company holding funds. No server processing payments on behalf of users. No account to regulate. No founder who controls the HTLC scripts after deployment. Just mathematics, code, and cryptographic certainty operating across thousands of independent nodes in every jurisdiction simultaneously.
                 </p>
-                <p className="text-xs font-semibold text-violet-300 border-t border-violet-400/20 pt-3">Your private key is your sovereignty. Orah is the protocol that honours it.</p>
+                <p className="text-xs font-semibold text-violet-300 border-t border-violet-400/20 pt-3">Your private key is your sovereignty. OrahDEX is the protocol that honours it.</p>
               </div>
             </Section>
 
             {/* ── 20. ROADMAP ── */}
             <Section id="roadmap" title="21. Roadmap">
 
-              {/* v4.5.0 Changelog */}
+              {/* v4.7.0 Changelog */}
               <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3 mb-2">
-                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.5.0 · 17 April 2026</p>
+                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.7.0 · 6 May 2026</p>
                 <ul className="space-y-1.5 text-xs text-muted-foreground">
                   {[
-                    "Outbound email system live — SMTP via Brevo (smtp-relay.brevo.com:587) fully configured and verified. All platform emails sent from support@orah.org.",
-                    "Sitewide domain rebrand — all contact addresses, support links, and API fallbacks updated from .com to orah.org (support@orah.org, legal@orah.org).",
-                    "Inbound email routing — ImprovMX MX records added to orah.org DNS (mx1/mx2.improvmx.com). Inbound mail to support@, legal@, and admin@ forwarded externally.",
+                    "Self-Healing Worker Engine — all background services (price-updater, liquidity-bot, futures funding/liquidation, BSV/EVM deposit watchers) migrated from raw setInterval+_busy pattern to guardedInterval: force-releases locks stuck beyond per-service timeout, tracks consecutive failures with exponential skip-backoff, registers every service in a central health registry.",
+                    "Enhanced /api/health endpoint — now returns per-service status (healthy / degraded / stuck / dead), last-run and last-success timestamps, consecutive failure counts, average tick duration, stale-since ms, and a human-readable alerts list. Returns HTTP 503 (not just 200) when any service is dead — enables monitoring systems to trigger auto-restart.",
+                    "Order Reconciler — automatic background task (every 5 min) that detects and auto-cancels user orders stuck open for more than 30 minutes. Prevents indefinite capital lock-up without operator intervention.",
+                    "withRetry utility — exponential-backoff + jitter wrapper for DB/network calls. Protects price updates, deposit scans, and balance queries from transient failures.",
+                    "Trading pairs updated — live liquidity bot confirms 36,000+ active markets (native spot + 35,000+ LetsExchange cross-chain pairs). All whitepaper references updated from 950+ to 36,000+.",
+                    "Staking Hub documented in Phase 1 — 43 PoS coins, 10 external staking providers, OrahDEX-native fixed-APY staking with lock-period bonus rates (30/60/90/180 days) backed by on-chain DB records.",
+                    "Ora AI insights cache updated — 800+ pre-computed market insights (up from 682+).",
+                    "BSV block height updated to 947,877 (live as of publish date).",
+                    "WhitePaper v4.7.0 — version, date, trading pair counts, block height, and architecture documentation updated to reflect self-healing engine and current platform scale.",
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="shrink-0 text-primary font-bold mt-0.5">→</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* v4.5.0 Changelog */}
+              <div className="p-4 rounded-xl border border-border/40 bg-muted/20 space-y-3 mb-2">
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">v4.5.0 · 17 April 2026</p>
+                <ul className="space-y-1.5 text-xs text-muted-foreground">
+                  {[
+                    "Outbound email system live — SMTP via Brevo (smtp-relay.brevo.com:587) fully configured and verified. All platform emails sent from support@orahdex.org.",
+                    "Sitewide domain rebrand — all contact addresses, support links, and API fallbacks updated from .com to orahdex.org (support@orahdex.org, legal@orahdex.org).",
+                    "Inbound email routing — ImprovMX MX records added to orahdex.org DNS (mx1/mx2.improvmx.com). Inbound mail to support@, legal@, and admin@ forwarded externally.",
                     "Admin Integrations page wired into navigation — accessible via Plug icon in the admin sidebar. Covers SMTP configuration, connection tests, and third-party service management.",
                     "Admin Email Inbox enhanced — SMTP status badge shows live connection state and test-account warning; send results display real delivery confirmation or SMTP error detail.",
-                    "Internal wallet balance display fixed — OrahDEX wallet users now always read balance from the Orah internal ledger rather than on-chain RPC. Balance correctly deducts after every trade without requiring a page refresh.",
-                    "Prediction Trading added to Landing page feature strip — live binary markets now featured alongside Settlement, Liquidity, OrahDEXNFT, and CopyVault.",
+                    "Internal wallet balance display fixed — Orah wallet users now always read balance from the OrahDEX internal ledger rather than on-chain RPC. Balance correctly deducts after every trade without requiring a page refresh.",
+                    "Prediction Trading added to Landing page feature strip — live binary markets now featured alongside Settlement, Liquidity, OrahNFT, and CopyVault.",
                     "WhitePaper v4.5.0 — version, publish date, and roadmap changelog updated to reflect infrastructure, email, and balance display improvements.",
                   ].map(item => (
                     <li key={item} className="flex items-start gap-2">
@@ -1957,14 +2018,14 @@ If any authority requests user identity data:
                 <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">v4.3.0 · 10 April 2026</p>
                 <ul className="space-y-1.5 text-xs text-muted-foreground">
                   {[
-                    "OrahDEXNFT social marketplace launched — Instagram×Zora-style feed with BSV inscriptions, creator coins on bonding curves, creator profiles with market cap/ATH/holder tracking.",
+                    "OrahNFT social marketplace launched — Instagram×Zora-style feed with BSV inscriptions, creator coins on bonding curves, creator profiles with market cap/ATH/holder tracking.",
                     "NFT tab defaults to Feed view — social content discovery is the primary experience; Profile accessible via tab navigation.",
                     "Fiat on-ramp expanded to 6 providers — Mercuryo added alongside MoonPay, Transak, Banxa, Simplex, Ramp Network. Supports Apple Pay, Google Pay, Card, and Bank Transfer.",
                     "Buy Crypto button added to Portfolio — desktop and mobile. Full fiat deposit flow accessible from action bar and CTA cards.",
                     "Liquidity balance validation — both desktop and mobile now verify on-chain token balances before allowing LP deposits. Insufficient balance shows inline warnings and disables the button.",
-                    "Provider-aware liquidity mode — internal wallets (orahdex-wallet, passkey, mobile-qr) fall back to simulated mode, preventing wagmi connector errors.",
+                    "Provider-aware liquidity mode — internal wallets (orah-wallet, passkey, mobile-qr) fall back to simulated mode, preventing wagmi connector errors.",
                     "Construction banner removed — app is in production quality.",
-                    "WhitePaper v4.3.0 — OrahDEXNFT section added (Section 9), TOC renumbered, abstract/solution/roadmap updated to reflect creator economy, fiat on-ramp, and NFT features.",
+                    "WhitePaper v4.3.0 — OrahNFT section added (Section 9), TOC renumbered, abstract/solution/roadmap updated to reflect creator economy, fiat on-ramp, and NFT features.",
                   ].map(item => (
                     <li key={item} className="flex items-start gap-2">
                       <span className="shrink-0 text-primary font-bold mt-0.5">→</span>
@@ -2008,7 +2069,7 @@ If any authority requests user identity data:
                     "Balance display precision fixed — pool share helper auto-scales to 7 decimal places for tiny stakes; ultra-small positions show '< 0.0000005%' instead of 0.0000% truncation.",
                     "Impossible SELL order guard hardened — conservative backend default (missing reportedBalance → 0 for SELL), client-side guard in OrderForm, and 1e-9 float tolerance for dust.",
                     "Locked balance UI — open orders for current market are deducted from displayed Available balance every 5 s; gross on-chain balance preserved separately for backend validation.",
-                    "Founder attribution — Parminder Singh (Aura · OrahDEX · Aaurah) credited on cover, metadata row, conclusion signature, and copyright footer.",
+                    "Founder attribution — Parminder Singh (Aura · Orah · Aaurah) credited on cover, metadata row, conclusion signature, and copyright footer.",
                   ].map(item => (
                     <li key={item} className="flex items-start gap-2">
                       <span className="shrink-0 text-primary font-bold mt-0.5">→</span>
@@ -2025,22 +2086,24 @@ If any authority requests user identity data:
                     color: "text-green-400",
                     bg: "bg-green-400/5 border-green-400/15",
                     items: [
-                      "950+ spot trading pairs with Sovereign Price Engine pricing",
+                      "36,000+ trading pairs — native spot order book plus 35,000+ cross-chain pairs via LetsExchange integration",
                       "BSV OP_RETURN settlement proof on every matched trade",
                       "HTLC atomic swap bridge (BSV ↔ EVM + TRON)",
                       "Genesis Liquidity Engine (56 VAMM assets, linear bonding curve)",
                       "CopyVault on-chain copy trading (ERC4626, BSV proof chain)",
-                      "Ora AI integration (682+ market insights, streaming context)",
+                      "Ora AI integration (800+ market insights, streaming context)",
                       "Perpetual futures up to 100x leverage with 8h funding",
                       "P2P marketplace with BSV HTLC escrow",
                       "6 fiat on-ramp providers (MoonPay, Transak, Banxa, Simplex, Ramp, Mercuryo) — Apple Pay, Google Pay, Card, Bank Transfer",
-                      "OrahDEXNFT social marketplace — Instagram×Zora-style feed, BSV inscriptions, creator coins with bonding curve pricing",
+                      "OrahNFT social marketplace — Instagram×Zora-style feed, BSV inscriptions, creator coins with bonding curve pricing",
                       "Creator profiles with market cap, holder counts, ATH tracking, and permissionless post publishing",
                       "Passkey wallet (biometric login, no seed phrase)",
                       "8-tab mobile navigation (Markets, Trade, Mkt Hub, NFT, Bridge, Portfolio, Settings)",
                       "TRON native support (TRX + TRC-20 USDT, 6 TRON wallets)",
                       "Keeper tier system (Initiate → Sentinel → Archon → Sovereign)",
                       "10-chain EVM token registry: 43 ERC-20 tokens, live on-chain balanceOf() reads, no API key required",
+                      "Staking Hub — 43 PoS coins, 10 external providers (Lido, Everstake, Ankr, Chorus One, Rocket Pool, Marinade, Figment, Stakefish, Validatrium, P2P.org) plus OrahDEX-native fixed-APY staking with 30/60/90/180-day lock periods",
+                      "Self-Healing Worker Engine — guardedInterval timeout-aware recovery, per-service health registry, auto-recovery from stuck workers, stuck-order reconciler (auto-cancels orders stale >30 min), exponential backoff on failures",
                     ],
                   },
                   {
@@ -2055,7 +2118,7 @@ If any authority requests user identity data:
                       "ZK identity proofs (prove compliance without revealing identity)",
                       "Institutional API (FIX protocol, co-location, dedicated order routing)",
                       "Decentralised relayer network for bridge (permissionless relayer onboarding)",
-                      "OrahDEXChart advanced mode (multi-timeframe, custom indicators, strategy backtesting)",
+                      "OrahChart advanced mode (multi-timeframe, custom indicators, strategy backtesting)",
                     ],
                   },
                   {
@@ -2064,11 +2127,11 @@ If any authority requests user identity data:
                     bg: "bg-violet-400/5 border-violet-400/15",
                     items: [
                       "Full on-chain governance (Keeper-weighted voting, time-locked execution)",
-                      "Orah DAO treasury management (on-chain multi-sig, community grants)",
+                      "OrahDEX DAO treasury management (on-chain multi-sig, community grants)",
                       "Cross-chain Perpetual Futures (settle on any chain, BSV OP_RETURN proof)",
                       "Watchtower network decentralisation (community-operated HTLC monitoring)",
                       "AUSTRAC maintenance automation (where jurisdictionally required)",
-                      "Orah Protocol SDK (open-source, permissive licence, third-party integrations)",
+                      "OrahDEX Protocol SDK (open-source, permissive licence, third-party integrations)",
                       "Mobile native app (iOS + Android) via PWA-to-native bridge",
                     ],
                   },
@@ -2080,9 +2143,9 @@ If any authority requests user identity data:
                       "Full BSV Layer-2 scalability integration (channel-based micro-settlement)",
                       "AI Keeper agents (autonomous on-chain market making, self-adjusting parameters)",
                       "Decentralised AI inference (Ora runs on distributed compute, no central server)",
-                      "Cross-protocol CopyVault (copy leaders across Uniswap, dYdX, Orah simultaneously)",
+                      "Cross-protocol CopyVault (copy leaders across Uniswap, dYdX, OrahDEX simultaneously)",
                       "Physical delivery settlement (commodity-backed tokens with BSV notarisation)",
-                      "Orah as settlement layer for third-party DEXs (white-label HTLC settlement)",
+                      "OrahDEX as settlement layer for third-party DEXs (white-label HTLC settlement)",
                     ],
                   },
                 ].map(({ phase, color, bg, items }) => (
@@ -2102,31 +2165,31 @@ If any authority requests user identity data:
 
             {/* ── GLOSSARY ── */}
             <Section id="glossary" title="Appendix — Glossary">
-              <p>This section defines the technical terms used throughout this document. All definitions are protocol-specific — they describe how Orah uses each concept, not general-purpose definitions.</p>
+              <p>This section defines the technical terms used throughout this document. All definitions are protocol-specific — they describe how OrahDEX uses each concept, not general-purpose definitions.</p>
               <div className="space-y-2">
                 {([
-                  ["AMM — Automated Market Maker", "A protocol that prices assets algorithmically using a mathematical invariant (x · y = k for constant-product AMMs) rather than a traditional order book. In Orah, AMM pools hold real ERC-20 tokens locked in smart contracts."],
-                  ["VAMM — Virtual AMM (Genesis Liquidity Engine)", "A synthetic liquidity mechanism that simulates AMM pricing without requiring users to lock tokens. Orah's VAMM uses a linear bonding curve. Wallet balances are unchanged by VAMM activity; fees and positions are synthetic."],
+                  ["AMM — Automated Market Maker", "A protocol that prices assets algorithmically using a mathematical invariant (x · y = k for constant-product AMMs) rather than a traditional order book. In OrahDEX, AMM pools hold real ERC-20 tokens locked in smart contracts."],
+                  ["VAMM — Virtual AMM (Genesis Liquidity Engine)", "A synthetic liquidity mechanism that simulates AMM pricing without requiring users to lock tokens. OrahDEX's VAMM uses a linear bonding curve. Wallet balances are unchanged by VAMM activity; fees and positions are synthetic."],
                   ["HTLC — Hash Time-Locked Contract", "A Bitcoin Script / Solidity construct that locks funds conditionally: funds are released only to the party who can reveal a secret preimage R such that SHA-256(R) = H, within a defined time window. If unclaimed, funds refund automatically."],
-                  ["OP_RETURN", "A Bitcoin Script opcode that marks a transaction output as unspendable and embeds up to 100KB of arbitrary data on-chain. Orah uses OP_RETURN outputs to store immutable OP_RETURN Settlement Proofs for every matched trade."],
-                  ["OP_RETURN Settlement Proof", "An on-chain record (BSV OP_RETURN output) containing the trade ID, pair, side, quantity, price, timestamp, and HTLC hash for every Orah trade. Publicly verifiable on WhatsOnChain; immutable once confirmed."],
+                  ["OP_RETURN", "A Bitcoin Script opcode that marks a transaction output as unspendable and embeds up to 100KB of arbitrary data on-chain. OrahDEX uses OP_RETURN outputs to store immutable OP_RETURN Settlement Proofs for every matched trade."],
+                  ["OP_RETURN Settlement Proof", "An on-chain record (BSV OP_RETURN output) containing the trade ID, pair, side, quantity, price, timestamp, and HTLC hash for every OrahDEX trade. Publicly verifiable on WhatsOnChain; immutable once confirmed."],
                   ["UTXO — Unspent Transaction Output", "The fundamental accounting unit of the Bitcoin/BSV model. Unlike account-based models (EVM), UTXOs are discrete 'coins' that are fully spent and recreated in each transaction — enabling parallel processing and eliminating replay risk."],
-                  ["ERC4626 — Tokenised Vault Standard", "An Ethereum standard for yield-bearing vault tokens. Orah CopyVault uses the ERC4626 accounting model: shares are issued on deposit, share price rises with profit, falls with loss, and performance fees are charged only on net profit above the high-water mark."],
-                  ["VWAP — Volume-Weighted Average Price", "VWAP = Σ(price_i × volume_i) / Σ(volume_i). Computed across all order-book fills in the sampling window. Used as one of three inputs to the Orah Sovereign Price Engine."],
+                  ["ERC4626 — Tokenised Vault Standard", "An Ethereum standard for yield-bearing vault tokens. OrahDEX CopyVault uses the ERC4626 accounting model: shares are issued on deposit, share price rises with profit, falls with loss, and performance fees are charged only on net profit above the high-water mark."],
+                  ["VWAP — Volume-Weighted Average Price", "VWAP = Σ(price_i × volume_i) / Σ(volume_i). Computed across all order-book fills in the sampling window. Used as one of three inputs to the OrahDEX Sovereign Price Engine."],
                   ["TWAP — Time-Weighted Average Price", "TWAP = Σ(price_i × Δt_i) / Σ(Δt_i). The time-averaged mid-price derived from on-chain transaction history. Smooths short-term manipulation. Used as one of three inputs to the Sovereign Price Engine."],
                   ["Mark Price", "The reference price used for futures PnL, liquidation, and funding rate computation. Mark Price = median(VWAP, TWAP, BSV On-Chain Feed). No single source can move the mark price unilaterally."],
                   ["Liquidation Price", "The price at which a leveraged futures position is forcibly closed to prevent negative equity. Long: L = Entry × (1 − 1/Leverage + MaintenanceMargin). Short: L = Entry × (1 + 1/Leverage − MaintenanceMargin)."],
                   ["High-Water Mark", "A per-follower reference price (depositSharePrice_follower) below which no CopyVault performance fee is charged. The leader earns fees only on profit above the follower's personal entry share price."],
                   ["Funding Rate", "A periodic payment (every 8h) between perpetual futures longs and shorts that anchors the perpetual price to the index. Rate = (Perpetual − Index) / Index × (1/3). Longs pay shorts when perpetual > index; shorts pay longs otherwise."],
                   ["Keeper", "A protocol participant who monitors on-chain state and executes time-sensitive protocol actions: liquidations, settlement relays, HTLC refund broadcasts. Keepers are tiered (Initiate → Sentinel → Archon → Sovereign) by 30-day volume, with progressively lower fees."],
-                  ["Genesis Liquidity Engine", "Orah's proprietary Virtual AMM (VAMM) — a linear bonding curve mechanism providing instant liquidity for all 56+ listed assets, independent of real LP participation. Acts as a permanent sovereign liquidity backstop."],
-                  ["Sovereign Price Engine", "Orah's proprietary price aggregation system: median of (1) own order-book VWAP, (2) own on-chain TWAP, (3) BSV on-chain feed. No external oracle dependency. No single source can influence mark price without corrupting two of three inputs simultaneously."],
-                  ["CopyVault", "Orah's on-chain copy trading protocol. Followers deposit into leader-managed vaults using ERC4626 share accounting. Every mirror trade generates a BSV OP_RETURN Settlement Proof. Performance fees are charged only on realised profit above the follower's high-water mark."],
+                  ["Genesis Liquidity Engine", "OrahDEX's proprietary Virtual AMM (VAMM) — a linear bonding curve mechanism providing instant liquidity for all 56+ listed assets, independent of real LP participation. Acts as a permanent sovereign liquidity backstop."],
+                  ["Sovereign Price Engine", "OrahDEX's proprietary price aggregation system: median of (1) own order-book VWAP, (2) own on-chain TWAP, (3) BSV on-chain feed. No external oracle dependency. No single source can influence mark price without corrupting two of three inputs simultaneously."],
+                  ["CopyVault", "OrahDEX's on-chain copy trading protocol. Followers deposit into leader-managed vaults using ERC4626 share accounting. Every mirror trade generates a BSV OP_RETURN Settlement Proof. Performance fees are charged only on realised profit above the follower's high-water mark."],
                   ["Preimage (R)", "The secret value R such that SHA-256(R) = H (the hashlock). The HTLC maker possesses R and keeps it secret until the taker's reciprocal HTLC is confirmed. Revealing R on one chain atomically enables the claim on the other chain."],
                   ["Relayer", "A network participant that monitors both chains in an HTLC atomic swap for the preimage reveal (R) and propagates it to the other chain's claim transaction. Relayers earn 70% of bridge fees proportional to volume. They cannot steal funds."],
                   ["Watchtower", "A network participant that monitors for stalled HTLCs and broadcasts the time-lock refund transaction before expiry. Earns 0.01% of HTLC amount per successful refund broadcast. Holds zero funds."],
                   ["SHA-256d", "SHA-256d(data) = SHA-256(SHA-256(data)). Double-SHA-256. Used for BSV/Bitcoin transaction ID computation and Merkle tree hashing, providing 256-bit security against preimage and collision attacks."],
-                  ["PWA — Progressive Web App", "A web application installable directly from a browser — no app store required. Orah is a PWA: full offline asset caching, home-screen installation, native-like UX. No trades execute offline; all settlement requires a live connection."],
+                  ["PWA — Progressive Web App", "A web application installable directly from a browser — no app store required. OrahDEX is a PWA: full offline asset caching, home-screen installation, native-like UX. No trades execute offline; all settlement requires a live connection."],
                 ] as [string, string][]).map(([term, def]) => (
                   <div key={term} className="p-3 bg-secondary/30 border border-border rounded-xl">
                     <p className="text-xs font-bold text-foreground">{term}</p>
@@ -2139,13 +2202,13 @@ If any authority requests user identity data:
             {/* ── CONCLUSION ── */}
             <Section id="conclusion" title="Conclusion" accent>
               <p>
-                Orah is not an iteration on the DEX paradigm. It is the realisation of a thesis that has been building since Satoshi Nakamoto published the Bitcoin white paper in 2008: that cryptographic mathematics can replace trusted intermediaries in financial settlement, permanently and without compromise.
+                OrahDEX is not an iteration on the DEX paradigm. It is the realisation of a thesis that has been building since Satoshi Nakamoto published the Bitcoin white paper in 2008: that cryptographic mathematics can replace trusted intermediaries in financial settlement, permanently and without compromise.
               </p>
               <p>
-                The centralised exchange industry extracts an estimated $76–130 billion per year from traders through custody, spread capture, withdrawal friction, identity extraction, and information asymmetry. Every one of these extraction mechanisms depends on a single structural prerequisite: user custody. Orah makes user custody architecturally impossible. Not as a policy decision — as a mathematical constraint baked into the protocol at the HTLC script level.
+                The centralised exchange industry extracts an estimated $76–130 billion per year from traders through custody, spread capture, withdrawal friction, identity extraction, and information asymmetry. Every one of these extraction mechanisms depends on a single structural prerequisite: user custody. OrahDEX makes user custody architecturally impossible. Not as a policy decision — as a mathematical constraint baked into the protocol at the HTLC script level.
               </p>
               <p>
-                With <strong>950+ trading pairs</strong> across <strong>200+ blockchain networks</strong>, <strong>56 VAMM-guaranteed liquidity markets</strong>, <strong>10 EVM chains</strong> with live on-chain balance tracking across a <strong>43-token ERC-20 registry</strong>, BSV on-chain settlement at <strong>{"< $0.001"} per trade</strong>, an <strong>on-chain copy trading protocol</strong> with cryptographic proof chains, institutional-grade <strong>Perpetual Futures</strong>, <strong>zero PII collection</strong> by architectural constraint, and an embedded AI intelligence layer (Ora) that democratises institutional-grade market intelligence — Orah has achieved feature parity with centralised exchanges while maintaining full non-custodial sovereignty.
+                With <strong>36,000+ trading pairs</strong> across <strong>200+ blockchain networks</strong>, <strong>56 VAMM-guaranteed liquidity markets</strong>, <strong>10 EVM chains</strong> with live on-chain balance tracking across a <strong>43-token ERC-20 registry</strong>, BSV on-chain settlement at <strong>{"< $0.001"} per trade</strong>, an <strong>on-chain copy trading protocol</strong> with cryptographic proof chains, institutional-grade <strong>Perpetual Futures</strong>, <strong>zero PII collection</strong> by architectural constraint, and an embedded AI intelligence layer (Ora) that democratises institutional-grade market intelligence — OrahDEX has achieved feature parity with centralised exchanges while maintaining full non-custodial sovereignty.
               </p>
               <p>
                 The protocol is indestructible by design. Every adversarial scenario — regulatory, competitive, technical — resolves in the protocol's favour through the asymmetric resilience documented in Section 15. The game theory is unambiguous: for rational agents with access to transparent information, self-custody with DEX access is the dominant strategy. The network effects compound. The flywheels spin faster with every trade.
@@ -2154,15 +2217,15 @@ If any authority requests user identity data:
                 The question is no longer whether permissionless, non-custodial trading protocols will replace custodial exchanges. That transition is mathematically inevitable — as inevitable as TCP/IP replacing postal mail, or Bitcoin demonstrating that mathematical consensus can replace institutional trust. The question is who builds the best protocol, and when.
               </p>
               <p>
-                Orah is that protocol. This is its technical foundation. The rest is mathematics, code, and time.
+                OrahDEX is that protocol. This is its technical foundation. The rest is mathematics, code, and time.
               </p>
               <div className="mt-4 p-5 rounded-2xl bg-primary/5 border border-primary/20 space-y-1 text-center">
-                <p className="text-sm font-bold text-foreground">Orah is not a company.</p>
-                <p className="text-sm font-bold text-foreground">Orah is not an intermediary.</p>
-                <p className="text-sm text-muted-foreground mt-2">Orah is a set of open-source, cryptographically enforced rules that enable sovereign, permissionless, non-custodial trading for every participant on earth — regardless of jurisdiction, identity, or capital size.</p>
+                <p className="text-sm font-bold text-foreground">OrahDEX is not a company.</p>
+                <p className="text-sm font-bold text-foreground">OrahDEX is not an intermediary.</p>
+                <p className="text-sm text-muted-foreground mt-2">OrahDEX is a set of open-source, cryptographically enforced rules that enable sovereign, permissionless, non-custodial trading for every participant on earth — regardless of jurisdiction, identity, or capital size.</p>
               </div>
               <div className="flex items-center justify-center pt-4">
-                <OrahDEXInline className="text-xl justify-center" />
+                <OrahInline className="text-xl justify-center" />
               </div>
               <p className="text-center text-primary font-semibold">Trade means DEX.</p>
               <p className="text-center text-xs text-muted-foreground">Mathematics does not negotiate. It computes.</p>
@@ -2185,40 +2248,40 @@ If any authority requests user identity data:
                 <div className="space-y-1">
                   <p className="font-semibold text-amber-300">Protocol Nature — No Intermediary</p>
                   <p>
-                    Orah is a non-custodial, on-chain trading protocol. It is not a broker, custodian, bank, money transmitter, financial product issuer, or centralised exchange. Orah does not hold, control, transmit, freeze, or take custody of user funds at any point in any jurisdiction. Users retain complete and sole custody of their private keys and assets at all times. The Orah protocol cannot access, reverse, or move user funds under any circumstance. This is not a contractual promise — it is a mathematical and architectural fact enforced by the protocol's design.
+                    OrahDEX is a non-custodial, on-chain trading protocol. It is not a broker, custodian, bank, money transmitter, financial product issuer, or centralised exchange. OrahDEX does not hold, control, transmit, freeze, or take custody of user funds at any point in any jurisdiction. Users retain complete and sole custody of their private keys and assets at all times. The OrahDEX protocol cannot access, reverse, or move user funds under any circumstance. This is not a contractual promise — it is a mathematical and architectural fact enforced by the protocol's design.
                   </p>
                 </div>
 
                 <div className="space-y-1">
                   <p className="font-semibold text-amber-300">No License Required — Protocol Doctrine</p>
                   <p>
-                    Orah operates as a non-custodial protocol. Financial licensing frameworks — including exchange licences, custodian licences, MSB registrations, broker-dealer authorisations, and equivalent instruments in all jurisdictions analysed in Section 18 — apply to financial intermediaries that hold or transmit other people's assets. Orah holds no assets and acts as no intermediary. The same legal principle that protects the Bitcoin network, the Uniswap protocol, the HTTP standard, and the TCP/IP internet stack from exchange licensing requirements applies to Orah. No licence, certificate, or permission from any financial regulator is required for, or obtained by, Orah to operate as a permissionless protocol.
+                    OrahDEX operates as a non-custodial protocol. Financial licensing frameworks — including exchange licences, custodian licences, MSB registrations, broker-dealer authorisations, and equivalent instruments in all jurisdictions analysed in Section 18 — apply to financial intermediaries that hold or transmit other people's assets. OrahDEX holds no assets and acts as no intermediary. The same legal principle that protects the Bitcoin network, the Uniswap protocol, the HTTP standard, and the TCP/IP internet stack from exchange licensing requirements applies to OrahDEX. No licence, certificate, or permission from any financial regulator is required for, or obtained by, OrahDEX to operate as a permissionless protocol.
                   </p>
                 </div>
 
                 <div className="space-y-1">
                   <p className="font-semibold text-amber-300">Identity Protection — Zero PII Collection</p>
                   <p>
-                    Orah does not collect, store, process, or share any personally identifiable information (PII). No name, email address, phone number, government-issued identification document, date of birth, residential address, IP address (not logged), or biometric data is requested or retained by the Orah protocol or its infrastructure at any layer. User identity on Orah is cryptographic — defined entirely by the user's self-custodied wallet address and private key. No third party, regulator, or authority can compel Orah to produce user identity information because no such information exists within the system. This is an architectural constraint, not a policy choice.
+                    OrahDEX does not collect, store, process, or share any personally identifiable information (PII). No name, email address, phone number, government-issued identification document, date of birth, residential address, IP address (not logged), or biometric data is requested or retained by the OrahDEX protocol or its infrastructure at any layer. User identity on OrahDEX is cryptographic — defined entirely by the user's self-custodied wallet address and private key. No third party, regulator, or authority can compel OrahDEX to produce user identity information because no such information exists within the system. This is an architectural constraint, not a policy choice.
                   </p>
                 </div>
 
                 <div className="space-y-1">
                   <p className="font-semibold text-amber-300">Risk Warning</p>
                   <p>
-                    Cryptocurrency trading involves substantial risk of loss, including the potential loss of all invested capital. Markets are highly volatile and may move against your position at any time. Past performance of any trading pair, VAMM asset, futures contract, or CopyVault is not indicative of future results. CopyVault leaderboard returns are historical and do not guarantee future performance. Copy trading involves the risk of capital loss even when following leaders with strong historical records. All participants are responsible for independently assessing their own risk tolerance, financial situation, and investment objectives before trading. Orah provides tools, not advice. All trading decisions are made solely by the user.
+                    Cryptocurrency trading involves substantial risk of loss, including the potential loss of all invested capital. Markets are highly volatile and may move against your position at any time. Past performance of any trading pair, VAMM asset, futures contract, or CopyVault is not indicative of future results. CopyVault leaderboard returns are historical and do not guarantee future performance. Copy trading involves the risk of capital loss even when following leaders with strong historical records. All participants are responsible for independently assessing their own risk tolerance, financial situation, and investment objectives before trading. OrahDEX provides tools, not advice. All trading decisions are made solely by the user.
                   </p>
                 </div>
 
                 <div className="space-y-1">
                   <p className="font-semibold text-amber-300">Accuracy & Forward-Looking Statements</p>
                   <p>
-                    The information in this document reflects the current state and plans of Orah as of version {VERSION} ({PUBLISH_DATE}) and is subject to change without notice. Roadmap items, timelines, and feature descriptions are aspirational and subject to change based on technical, regulatory, and market conditions. Statistics (pair counts, VAMM asset counts, block heights, fee rates) reflect live protocol state as of publication and will change as the protocol evolves. Orah makes no guarantee of the accuracy or completeness of any information contained herein.
+                    The information in this document reflects the current state and plans of OrahDEX as of version {VERSION} ({PUBLISH_DATE}) and is subject to change without notice. Roadmap items, timelines, and feature descriptions are aspirational and subject to change based on technical, regulatory, and market conditions. Statistics (pair counts, VAMM asset counts, block heights, fee rates) reflect live protocol state as of publication and will change as the protocol evolves. OrahDEX makes no guarantee of the accuracy or completeness of any information contained herein.
                   </p>
                 </div>
 
                 <p className="font-semibold text-amber-300 border-t border-amber-400/20 pt-3">
-                  © {new Date().getFullYear()} Orah · {FOUNDER} ({FOUNDER_ALIASES}). All rights reserved. Version {VERSION} · {PUBLISH_DATE} · <a href="https://orah.org" className="underline">orah.org</a> · <a href="https://orah.com" className="underline">orah.com</a>
+                  © {new Date().getFullYear()} OrahDEX · {FOUNDER} ({FOUNDER_ALIASES}). All rights reserved. Version {VERSION} · {PUBLISH_DATE} · <a href="https://orahdex.org" className="underline">orahdex.org</a> · <a href="https://orahdex.com" className="underline">orahdex.com</a>
                 </p>
               </div>
             </Section>

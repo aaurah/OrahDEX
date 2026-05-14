@@ -4,6 +4,7 @@ import {
   Search, ArrowDownToLine, ArrowUpFromLine, RefreshCw, Copy, CheckCheck,
   Wallet, Clock, Check, X, Loader2, ChevronDown, ChevronUp, AlertTriangle,
   Database, ArrowRightLeft, Activity, Plus, Minus, Trash2, Users, ShieldAlert,
+  RotateCw, Flame,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { adminFetch } from "@/lib/adminFetch";
@@ -81,10 +82,26 @@ export function AdminLedgerManager() {
     staleTime: 30_000,
   });
 
+  // Include cancelled + failed so admin can retry the rows that auto-processing
+  // marked as cancelled when the hot wallet was empty.
   const { data: pendingWithdrawals = [], refetch: refetchWd } = useQuery<Withdrawal[]>({
     queryKey: ["admin-withdrawals-pending"],
-    queryFn:  () => adminFetch(`${API}/api/admin/withdrawals?status=pending`).then(r => r.json()),
-    refetchInterval: 15_000,
+    queryFn:  () => adminFetch(`${API}/api/admin/withdrawals?status=pending,cancelled,failed`).then(r => r.json()),
+    refetchInterval: 30_000,
+  });
+
+  // Hot wallet status — addresses + on-chain native balance per chain.
+  // Lets the operator see at a glance which hot wallet is actually funded.
+  const { data: hotWallet, refetch: refetchHot, isFetching: hotFetching } = useQuery<{
+    evmAddress: string;
+    testnetMode: boolean;
+    chains: { key: string; id: number; name: string; symbol: string; balance: number; error: string | null }[];
+    bsv: { address: string; balance: number; error: string | null };
+  }>({
+    queryKey: ["admin-hot-wallet-status"],
+    queryFn:  () => adminFetch(`${API}/api/admin/hot-wallet-status`).then(r => r.json()),
+    staleTime: 60_000,
+    refetchInterval: 120_000,
   });
 
   const { data: auditLog = [], refetch: refetchAudit } = useQuery<AuditRow[]>({
@@ -111,6 +128,26 @@ export function AdminLedgerManager() {
     mutationFn: ({ id, status, note, txid }: { id: string; status: string; note?: string; txid?: string }) =>
       adminFetch(`${API}/api/admin/withdrawals/${id}/status`, { method: "PATCH", body: JSON.stringify({ status, note, txid }) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-withdrawals-pending"] }),
+  });
+
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+  const retryMut = useMutation({
+    mutationFn: async (id: string) => {
+      setRetryingId(id);
+      const r = await adminFetch(`${API}/api/admin/withdrawals/${id}/retry`, { method: "POST" });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json?.error ?? "Retry failed");
+      return json;
+    },
+    onSettled: () => {
+      setRetryingId(null);
+      // Refresh both the queue and hot-wallet balances so changes show immediately.
+      setTimeout(() => {
+        qc.invalidateQueries({ queryKey: ["admin-withdrawals-pending"] });
+        qc.invalidateQueries({ queryKey: ["admin-hot-wallet-status"] });
+      }, 1500);
+    },
+    onError: (err: any) => alert(err?.message ?? "Retry failed"),
   });
 
   // ── handlers ───────────────────────────────────────────────────────────────
@@ -145,7 +182,7 @@ export function AdminLedgerManager() {
           </p>
         </div>
         <button
-          onClick={() => { refetchBal(); refetchWallets(); refetchWd(); refetchAudit(); }}
+          onClick={() => { refetchBal(); refetchWallets(); refetchWd(); refetchAudit(); refetchHot(); }}
           className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-sm hover:bg-muted transition-colors"
         >
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
@@ -431,11 +468,96 @@ export function AdminLedgerManager() {
       {/* ── TAB: Pending Withdrawals ───────────────────────────────────────── */}
       {tab === "withdrawals" && (
         <div className="space-y-4">
+          {/* Hot wallet status — fund these addresses to enable auto-payouts. */}
+          <div className="border border-border rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 bg-muted/30 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Flame className="w-4 h-4 text-orange-400" />
+                <span className="text-sm font-semibold">Hot Wallet Status</span>
+                {hotWallet?.testnetMode && (
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold uppercase bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded">testnet mode</span>
+                )}
+              </div>
+              <button
+                onClick={() => refetchHot()}
+                disabled={hotFetching}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs border border-border rounded-lg hover:bg-muted transition-colors disabled:opacity-50"
+              >
+                {hotFetching ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                Refresh
+              </button>
+            </div>
+            <div className="px-4 py-3 space-y-3">
+              <p className="text-xs text-muted-foreground">
+                These are the system wallets that physically send your users' withdrawals on-chain.
+                A balance of <span className="font-mono text-red-400">0</span> on a chain means
+                withdrawals on that chain will fail until you send funds to the address.
+                Set <code className="text-foreground">EVM_USE_TESTNET=1</code> to route ETH-family
+                withdrawals to Sepolia/Base-Sepolia/Arb-Sepolia (where your testnet balance lives).
+              </p>
+
+              {/* EVM hot wallet (one address, many chains) */}
+              {hotWallet?.evmAddress && (
+                <div className="rounded-lg border border-border bg-muted/10 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-semibold text-muted-foreground">EVM Hot Wallet</span>
+                    <span className="font-mono text-xs">{hotWallet.evmAddress}</span>
+                    <CopyBtn text={hotWallet.evmAddress} />
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {hotWallet.chains.map(c => {
+                      const ok = c.balance > 0 && !c.error;
+                      return (
+                        <div key={c.key} className={cn(
+                          "rounded border px-2.5 py-1.5 text-xs",
+                          c.error
+                            ? "border-zinc-700 bg-zinc-900/40 text-zinc-500"
+                            : ok
+                              ? "border-green-500/30 bg-green-500/5"
+                              : "border-red-500/30 bg-red-500/5",
+                        )}>
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{c.name}</span>
+                            {ok ? <Check className="w-3 h-3 text-green-400" /> : c.error ? null : <X className="w-3 h-3 text-red-400" />}
+                          </div>
+                          <div className={cn("font-mono mt-0.5", ok ? "text-green-400" : c.error ? "text-zinc-500" : "text-red-400")}>
+                            {c.error ? "RPC error" : `${fmt(c.balance, 6)} ${c.symbol}`}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* BSV hot wallet */}
+              {hotWallet?.bsv?.address && (
+                <div className="rounded-lg border border-border bg-muted/10 p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-xs font-semibold text-muted-foreground">BSV Hot Wallet</span>
+                    <span className="font-mono text-xs">{hotWallet.bsv.address}</span>
+                    <CopyBtn text={hotWallet.bsv.address} />
+                  </div>
+                  <div className={cn(
+                    "inline-block rounded border px-2.5 py-1 text-xs font-mono",
+                    hotWallet.bsv.error
+                      ? "border-zinc-700 bg-zinc-900/40 text-zinc-500"
+                      : hotWallet.bsv.balance > 0
+                        ? "border-green-500/30 bg-green-500/5 text-green-400"
+                        : "border-red-500/30 bg-red-500/5 text-red-400",
+                  )}>
+                    {hotWallet.bsv.error ?? `${fmt(hotWallet.bsv.balance, 8)} BSV`}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
               {pendingWithdrawals.length === 0
-                ? "No pending withdrawals."
-                : `${pendingWithdrawals.length} pending withdrawal${pendingWithdrawals.length > 1 ? "s" : ""}`}
+                ? "No pending or cancelled withdrawals."
+                : `${pendingWithdrawals.length} withdrawal${pendingWithdrawals.length > 1 ? "s" : ""} needing attention (pending + cancelled)`}
             </p>
           </div>
           <div className="space-y-3">
@@ -475,26 +597,45 @@ export function AdminLedgerManager() {
                       </div>
                     )}
                   </div>
-                  {wd.status === "pending" && (
-                    <div className="flex gap-2 px-4 py-3 border-t border-border bg-muted/10">
+                  {wd.status !== "completed" && (
+                    <div className="flex flex-wrap gap-2 px-4 py-3 border-t border-border bg-muted/10">
+                      {/* Retry — works for both pending (e.g. after funding the hot wallet)
+                          and cancelled (re-debits balance and re-attempts). */}
                       <button
-                        onClick={() => {
-                          const txid = prompt("Enter transaction ID (optional):");
-                          wdStatusMut.mutate({ id: wd.id, status: "completed", txid: txid ?? undefined });
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                        onClick={() => retryMut.mutate(wd.id)}
+                        disabled={retryingId === wd.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors"
+                        title={wd.status === "cancelled"
+                          ? "Re-debits the user's balance and re-attempts on-chain payout"
+                          : "Re-attempts on-chain payout"}
                       >
-                        <Check className="w-3.5 h-3.5" /> Mark Completed
+                        {retryingId === wd.id
+                          ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          : <RotateCw className="w-3.5 h-3.5" />}
+                        Retry now
                       </button>
-                      <button
-                        onClick={() => {
-                          const note = prompt("Cancellation reason:");
-                          wdStatusMut.mutate({ id: wd.id, status: "cancelled", note: note ?? undefined });
-                        }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" /> Cancel &amp; Refund
-                      </button>
+                      {wd.status === "pending" && (
+                        <>
+                          <button
+                            onClick={() => {
+                              const txid = prompt("Enter transaction ID (optional):");
+                              wdStatusMut.mutate({ id: wd.id, status: "completed", txid: txid ?? undefined });
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                          >
+                            <Check className="w-3.5 h-3.5" /> Mark Completed
+                          </button>
+                          <button
+                            onClick={() => {
+                              const note = prompt("Cancellation reason:");
+                              wdStatusMut.mutate({ id: wd.id, status: "cancelled", note: note ?? undefined });
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors"
+                          >
+                            <X className="w-3.5 h-3.5" /> Cancel &amp; Refund
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

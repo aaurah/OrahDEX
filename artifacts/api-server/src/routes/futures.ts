@@ -14,6 +14,20 @@ import { verifyAndLockFunding } from "../lib/fundingVerifier.js";
 
 const router: IRouter = Router();
 
+// Only block requests that are actually for futures endpoints.
+// A blanket router.use() without a path prefix intercepts ALL requests that
+// reach this router (including /health, /dex/prices, etc.) because Express
+// tries every sub-router in registration order.  Scoping to /futures/* here
+// ensures only actual futures paths are blocked when the feature is disabled.
+router.use((req, res, next) => {
+  if (process.env.FUTURES_ENABLED !== "true" && req.path.startsWith("/futures")) {
+    return res.status(503).json({
+      error: "Perpetual futures are not yet available. Coming soon.",
+    });
+  }
+  return next();
+});
+
 const FUNDING_RATES = [
   { symbol: "BSV/USDT", fundingRate: 0.0001, interval: "8h" },
   { symbol: "BTC/USDT", fundingRate: 0.00015, interval: "8h" },
@@ -23,29 +37,6 @@ const FUNDING_RATES = [
   { symbol: "BNB/USDT", fundingRate: 0.00010, interval: "8h" },
   { symbol: "ADA/USDT", fundingRate: 0.00004, interval: "8h" },
 ];
-
-// ── GET /futures/markets — list perpetual futures markets ─────────────────────
-router.get("/futures/markets", async (_req, res) => {
-  try {
-    const markets = await db.select().from(marketsTable)
-      .where(eq(marketsTable.type, "futures"));
-    res.json(markets.map(m => ({
-      symbol:           m.symbol,
-      baseAsset:        m.baseAsset,
-      quoteAsset:       m.quoteAsset,
-      lastPrice:        parseFloat(m.lastPrice),
-      priceChange24h:   parseFloat(m.priceChange24h),
-      priceChangePercent24h: parseFloat(m.priceChangePercent24h),
-      volume24h:        parseFloat(m.volume24h),
-      high24h:          parseFloat(m.high24h),
-      low24h:           parseFloat(m.low24h),
-      status:           m.status,
-      type:             m.type,
-    })));
-  } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to fetch futures markets" });
-  }
-});
 
 router.get("/futures/funding-rates", (_req, res) => {
   const now = new Date();
@@ -132,7 +123,7 @@ router.post("/futures/positions", async (req, res) => {
     const margin    = (entryPrice * quantity) / leverage;
 
     const walletSource = body.walletSource === "external" ? "external"
-      : body.walletSource === "orahdex" ? "orahdex" : "orahdex";
+      : body.walletSource === "orah" ? "orah" : "orah";
 
     const fundingVerif = await verifyAndLockFunding({
       walletAddress: body.walletAddress,

@@ -52,7 +52,7 @@ This is the structure used by:
 • Bitcoin white paper
 
 
-Corrected Orah White Paper Structure (v4.1.0)
+Corrected OrahDEX White Paper Structure (v4.1.0)
 
 ---
 
@@ -76,7 +76,7 @@ Short, sovereign, protocol‑first.
 
 2. Core Thesis
 
-Why Orah exists.
+Why OrahDEX exists.
 Why intermediation is the root problem.
 Why cryptographic architecture is the solution.
 
@@ -88,7 +88,7 @@ The 8 structural failures of CEXs + DeFi.
 
 ---
 
-4. Orah Overview
+4. OrahDEX Overview
 
 A high‑level description of the protocol.
 

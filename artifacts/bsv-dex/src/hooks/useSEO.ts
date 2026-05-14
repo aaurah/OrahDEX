@@ -1,8 +1,8 @@
 import { useEffect } from "react";
 
-const BASE_URL = "https://orah.replit.app";
+const BASE_URL = "https://orahdex.replit.app";
 const DEFAULT_IMAGE = `${BASE_URL}/opengraph.jpg`;
-const SITE_NAME = "Orah";
+const SITE_NAME = "OrahDEX";
 
 interface SEOOptions {
   title: string;

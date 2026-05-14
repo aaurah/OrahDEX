@@ -92,7 +92,7 @@ export function SupportThread({ ticketId }: Props) {
             <ArrowLeft className="w-4 h-4" />
             Back to Support
           </Link>
-          <BrandLogo textSize="text-sm" />
+          <BrandLogo />
         </div>
       </header>
 
@@ -174,7 +174,7 @@ export function SupportThread({ ticketId }: Props) {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-end gap-2 mb-1.5">
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 uppercase tracking-wide">Orah Support</span>
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-400/10 text-emerald-400 border border-emerald-400/20 uppercase tracking-wide">OrahDEX Support</span>
                       {ticket.repliedAt && (
                         <span className="text-[10px] text-muted-foreground">{relTime(ticket.repliedAt)}</span>
                       )}

@@ -220,7 +220,7 @@ This is the entire system.
 
 ---
 
-🧠 How You Should Build It for Orah
+🧠 How You Should Build It for OrahDex
 
 You need three layers:
 

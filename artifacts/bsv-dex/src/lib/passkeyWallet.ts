@@ -1,5 +1,5 @@
 /**
- * Orah Passkey Wallet
+ * OrahDEX Passkey Wallet
  *
  * Non-custodial EVM wallet backed by a WebAuthn passkey (Face ID, Touch ID,
  * Windows Hello, Android biometric, hardware security key, etc.).
@@ -21,10 +21,11 @@
  */
 
 import { generateMnemonic, deriveAllAddresses } from "./seedPhrase";
+import { saveDerivedAddresses } from "./walletPin";
 
-const STORAGE_KEY  = "orah_passkey_wallets_v1";
-const RP_NAME      = "Orah";
-const PBKDF2_SALT  = new TextEncoder().encode("Orah-passkey-wallet-v1");
+const STORAGE_KEY  = "orahdex_passkey_wallets_v1";
+const RP_NAME      = "OrahDEX";
+const PBKDF2_SALT  = new TextEncoder().encode("OrahDEX-passkey-wallet-v1");
 const PBKDF2_ITER  = 100_000;
 
 const API_BASE = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
@@ -211,6 +212,10 @@ export interface PasskeyChainAddresses {
   btc?: string;
   bch?: string;
   bsv?: string;
+  tron?: string;
+  xrp?: string;
+  ltc?: string;
+  doge?: string;
 }
 
 export interface RegisterResult {
@@ -277,6 +282,10 @@ export async function registerPasskeyWallet(
   };
 
   saveWallet(wallet);
+  saveDerivedAddresses(addrs.evm, {
+    evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+    tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+  });
 
   // Silently back up to server (encrypted — safe to store remotely)
   pushBackupToServer(wallet);
@@ -285,7 +294,10 @@ export async function registerPasskeyWallet(
     address: addrs.evm,
     credentialId,
     label,
-    chains: { evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv },
+    chains: {
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv,
+      tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+    },
   };
 }
 
@@ -366,7 +378,14 @@ export async function loginWithPasskey(): Promise<LoginResult> {
     // New format: derive all 5 chain addresses from the BIP39 mnemonic
     const addrs = await deriveAllAddresses(secret.trim().split(/\s+/));
     address = addrs.evm;
-    chains  = { evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv };
+    chains  = {
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv,
+      tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+    };
+    saveDerivedAddresses(addrs.evm, {
+      evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+      tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+    });
   } else {
     // Legacy format: raw EVM private key (0x...)
     const { privateKeyToAccount } = await import("viem/accounts");
@@ -389,6 +408,32 @@ export async function loginWithPasskey(): Promise<LoginResult> {
  * The code is valid for 10 minutes and can be used ONCE on the new device.
  * Use this when automatic cloud backup doesn't apply (e.g. iPhone → Android).
  */
+/**
+ * Reveal the underlying secret (BIP39 mnemonic or 0x private key) of a
+ * passkey-protected wallet. Triggers a fresh WebAuthn assertion — userVerification
+ * is required, and decryption happens only on this device.
+ *
+ * Used by RevealSecretSheet so passkey-only wallets can also export their seed.
+ */
+export async function revealPasskeyWalletSecret(address: string): Promise<string> {
+  const wallets = listPasskeyWallets();
+  const wallet  = wallets.find(w => w.address.toLowerCase() === address.toLowerCase());
+  if (!wallet) throw new Error("Passkey wallet not found on this device");
+
+  const challenge = crypto.getRandomValues(new Uint8Array(32));
+  const assertion = await navigator.credentials.get({
+    publicKey: {
+      challenge,
+      allowCredentials: [{ id: b642buf(url2b64(wallet.credentialId)), type: "public-key" }],
+      userVerification: "required",
+      timeout:          60_000,
+    },
+  }) as PublicKeyCredential | null;
+  if (!assertion) throw new Error("Passkey authentication cancelled");
+
+  return decryptPrivateKey(wallet.encryptedKey, wallet.iv, assertion.rawId);
+}
+
 export async function generateTransferCode(credentialId: string): Promise<string> {
   const wallets = listPasskeyWallets();
   const wallet  = wallets.find(w => w.credentialId === credentialId);
@@ -450,7 +495,7 @@ export async function restoreFromTransferCode(
 // ─── On-chain transaction signing ─────────────────────────────────────────────
 
 /**
- * Authenticate with the OrahDEX passkey wallet for the given EVM address and
+ * Authenticate with the Orah passkey wallet for the given EVM address and
  * return a viem LocalAccount that can sign and send real on-chain transactions.
  *
  * Flow: passkey biometric auth → decrypt private key in-memory → viem account.
@@ -460,7 +505,7 @@ export async function restoreFromTransferCode(
  *   - No passkey wallet is found for the given address (seed-phrase-only wallets)
  *   - User cancels biometric auth
  */
-export async function getViemAccountForOrahDEXWallet(address: string): Promise<import("viem").Account> {
+export async function getViemAccountForOrahWallet(address: string): Promise<import("viem").Account> {
   if (!isPasskeySupported()) throw new Error("Passkeys not supported in this browser");
 
   const wallets = listPasskeyWallets();

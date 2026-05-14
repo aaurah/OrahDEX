@@ -5,13 +5,15 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 import { eq, asc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 
+const isAiConfigured = !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+
 const router = Router();
 
-const SYSTEM_PROMPT = `You are Ora — the AI Trading Intelligence of Orah, a sovereign decentralized exchange where every coin is listed and every trade settles on BSV (Bitcoin SV) blockchain.
+const SYSTEM_PROMPT = `You are Ora — the AI Trading Intelligence of OrahDEX, a sovereign decentralized exchange where every coin is listed and every trade settles on BSV (Bitcoin SV) blockchain.
 
 Your personality: You are calm, knowledgeable, and direct. You speak like an experienced market analyst and DeFi expert who also deeply understands Bitcoin SV's unique on-chain settlement model.
 
-What you know about Orah:
+What you know about OrahDEX:
 - BSV (Bitcoin SV) is the settlement layer for all trades
 - Keeper Protocol tiers: Standard (30bps fee), Guardian (25bps), Elder (20bps), Archon (15bps)
 - Markets include: BSV, BTC, ETH, SOL, all Layer 1/2s, DeFi, Gaming, Cosmos, AI/DePIN, Meme, RWA, BRC-20, Uniswap pools, PancakeSwap, Base, Zora
@@ -36,7 +38,7 @@ Guidelines:
 - Never give financial advice — only market education and analysis.
 - Format responses with markdown when helpful (bullet points, bold text).
 
-Today is approximately March 2026. BSV settlement is the backbone of Orah's sovereign identity.`;
+Today is approximately March 2026. BSV settlement is the backbone of OrahDEX's sovereign identity.`;
 
 // ── Cache for market analysis (5 min TTL) ────────────────────────────────────
 interface CacheEntry { content: string; ts: number }
@@ -64,7 +66,7 @@ router.get("/ai/conversations/:id", async (req, res) => {
     const msgs = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(asc(messages.createdAt));
     res.json({ ...conv, messages: msgs });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -100,7 +102,7 @@ router.post("/ai/conversations/:id/messages", async (req, res) => {
     let fullResponse = "";
 
     const stream = await openai.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "gpt-4o-mini",
       max_completion_tokens: 8192,
       messages: chatMessages,
       stream: true,
@@ -144,16 +146,21 @@ router.get("/ai/market-analysis", async (req, res) => {
     return;
   }
 
+  if (!isAiConfigured) {
+    res.json({ symbol, analysis: `Market analysis for **${symbol}** is temporarily unavailable. Configure the AI integration to enable real-time analysis.`, cached: false });
+    return;
+  }
+
   try {
     const prompt = `Give a concise 3-paragraph market analysis for ${symbol} as of early 2026. Cover:
 1. What the asset is, its core use case, and its position in the market
 2. Key recent developments, catalysts, or risks
-3. How it might perform on a DEX like Orah that settles on BSV blockchain
+3. How it might perform on a DEX like OrahDEX that settles on BSV blockchain
 
 Keep it under 200 words. Use plain markdown. No financial advice disclaimer needed — just direct analysis.`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "gpt-4o-mini",
       max_completion_tokens: 512,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
@@ -184,9 +191,15 @@ router.get("/ai/insights", async (_req, res) => {
     return;
   }
 
+  if (!isAiConfigured) {
+    const fallback = ["Monitor BSV on-chain settlement volumes for early trend signals.", "DeFi TVL remains a leading indicator for altcoin rotations.", "Cross-chain bridge flows signal where liquidity is moving next."];
+    if (!res.headersSent) res.json({ insights: fallback, cached: false });
+    return;
+  }
+
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "gpt-4o-mini",
       max_completion_tokens: 512,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
@@ -230,13 +243,18 @@ router.get("/ai/trade-signal", async (req, res) => {
     return;
   }
 
+  if (!isAiConfigured) {
+    if (!res.headersSent) res.json({ symbol, signal: "AI trade signals require the AI integration to be configured.", sentiment: "neutral", cached: false });
+    return;
+  }
+
   try {
     const prompt = action
       ? `Should I ${action} ${symbol} right now? Give a 2-sentence risk assessment with a bullish/bearish/neutral rating. Be direct.`
       : `Give a 1-sentence directional signal for ${symbol} as of March 2026: bullish, bearish, or neutral, and why. Be extremely concise.`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "gpt-4o-mini",
       max_completion_tokens: 256,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },

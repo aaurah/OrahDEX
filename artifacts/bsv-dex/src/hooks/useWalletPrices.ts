@@ -22,6 +22,31 @@ const FALLBACK: WalletPrices = {
   USDT: { usd: 1,     change24h: 0 },
 };
 
+function normalizePrices(data: unknown): WalletPrices {
+  const merged: WalletPrices = { ...FALLBACK };
+  if (!data || typeof data !== "object") return merged;
+
+  for (const [symbol, value] of Object.entries(data as Record<string, unknown>)) {
+    if (typeof value === "number") {
+      if (Number.isFinite(value) && value > 0) {
+        merged[symbol] = { usd: value, change24h: 0 };
+      }
+      continue;
+    }
+
+    if (value && typeof value === "object") {
+      const v = value as { usd?: unknown; change24h?: unknown };
+      const usd = typeof v.usd === "number" ? v.usd : NaN;
+      if (!Number.isFinite(usd) || usd <= 0) continue;
+      const change24h = typeof v.change24h === "number" && Number.isFinite(v.change24h) ? v.change24h : 0;
+      merged[symbol] = { usd, change24h };
+    }
+  }
+
+  merged.USDT = { usd: 1, change24h: 0 };
+  return merged;
+}
+
 export function useWalletPrices(refreshMs = 60_000) {
   const [prices, setPrices] = useState<WalletPrices>(FALLBACK);
   const [loading, setLoading] = useState(true);
@@ -35,12 +60,7 @@ export function useWalletPrices(refreshMs = 60_000) {
         if (!res.ok) throw new Error("price fetch failed");
         const data = await res.json();
         if (alive) {
-          setPrices({
-            BTC:  { usd: data.BTC?.usd  ?? FALLBACK.BTC.usd,  change24h: data.BTC?.change24h  ?? 0 },
-            ETH:  { usd: data.ETH?.usd  ?? FALLBACK.ETH.usd,  change24h: data.ETH?.change24h  ?? 0 },
-            BSV:  { usd: data.BSV?.usd  ?? FALLBACK.BSV.usd,  change24h: data.BSV?.change24h  ?? 0 },
-            USDT: { usd: 1, change24h: 0 },
-          });
+          setPrices(normalizePrices(data));
           setLoading(false);
         }
       } catch {

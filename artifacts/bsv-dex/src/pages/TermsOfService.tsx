@@ -1,11 +1,11 @@
 import { ArrowLeft, FileText, AlertTriangle, Shield, Scale, Globe, Ban, RefreshCw } from "lucide-react";
 import { useLocation } from "wouter";
-import { OrahDEXInline } from "@/components/BrandLogo";
+import { OrahInline } from "@/components/BrandLogo";
 
 const EFFECTIVE_DATE = "25 March 2026";
-const COMPANY = "Orah";
-const DOMAIN = "orah.org";
-const CONTACT = "legal@orah.org";
+const COMPANY = "OrahDEX";
+const DOMAIN = "orahdex.org";
+const CONTACT = "legal@orahdex.org";
 
 function Section({ title, icon: Icon, children }: { title: string; icon?: any; children: React.ReactNode }) {
   return (
@@ -53,7 +53,7 @@ export function TermsOfService() {
       <div className="max-w-3xl mx-auto px-4 py-8 pb-24 space-y-8">
         {/* Hero */}
         <div className="text-center space-y-3 pb-4 border-b border-border">
-          <OrahDEXInline className="text-2xl justify-center" />
+          <OrahInline className="text-2xl justify-center" />
           <h1 className="text-2xl font-black">Terms of Service</h1>
           <p className="text-sm text-muted-foreground max-w-xl mx-auto leading-relaxed">
             These Terms of Service govern your access to and use of the {COMPANY} decentralised exchange platform at <span className="text-primary font-mono">{DOMAIN}</span>.

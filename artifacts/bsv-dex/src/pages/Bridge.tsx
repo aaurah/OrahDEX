@@ -10,7 +10,7 @@ import {
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { cn } from "@/lib/utils";
-import { useGetMarkets } from "@workspace/api-client-react";
+import { useStagedMarkets as useGetMarkets } from "@/hooks/useStagedMarkets";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useToast } from "@/hooks/use-toast";
 
@@ -88,7 +88,7 @@ const CHAINS: Chain[] = [
 ];
 
 const SPOT_PRICES: Record<string, number> = {
-  BSV: 16, BTC: 83000, ETH: 1800, SOL: 130, USDT: 1, USDC: 1, cUSD: 1, xDAI: 1, USDB: 1,
+  BSV: 16, BTC: 83000, ETH: 2400, SOL: 130, USDT: 1, USDC: 1, cUSD: 1, xDAI: 1, USDB: 1,
   ARB: 0.42, OP: 0.70, POL: 0.23, MATIC: 0.32, cbBTC: 83000, WBTC: 83000, BONK: 0.000017,
   BNB: 580, AVAX: 18, TRX: 0.07, DOT: 4.2,
   ZK: 0.065, MNT: 0.70, BLAST: 0.008, MODE: 0.022, BOBA: 0.14, METIS: 28, TAIKO: 1.1,
@@ -121,27 +121,27 @@ const CANONICAL_ASSETS: Record<string, CanonicalAsset> = {
   BSV: {
     l1: { chainId: "bsv", chain: "BSV", symbol: "BSV", color: "text-green-400", icon: "₿" },
     l2: [
-      { chainId: "eth",      chain: "Ethereum",   symbol: "wBSV", label: "wBSV (ERC-20)",        type: "wrapped",   bridge: "Orah HTLC",          time: "~5 min",  color: "text-violet-400",  bg: "bg-violet-500/10 border-violet-500/30" },
-      { chainId: "base",     chain: "Base",        symbol: "wBSV", label: "wBSV on Base",         type: "wrapped",   bridge: "Orah HTLC + Relay",  time: "~5 min",  color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/30" },
-      { chainId: "arb",      chain: "Arbitrum",    symbol: "wBSV", label: "wBSV on Arbitrum",     type: "wrapped",   bridge: "Orah HTLC + Relay",  time: "~5 min",  color: "text-sky-400",     bg: "bg-sky-500/10 border-sky-500/30" },
-      { chainId: "op",       chain: "Optimism",    symbol: "wBSV", label: "wBSV on Optimism",     type: "wrapped",   bridge: "Orah HTLC + Relay",  time: "~5 min",  color: "text-red-400",     bg: "bg-red-500/10 border-red-500/30" },
-      { chainId: "bnb",      chain: "BNB Chain",   symbol: "wBSV", label: "wBSV (BEP-20)",        type: "wrapped",   bridge: "Orah Relay",         time: "~3 min",  color: "text-yellow-400",  bg: "bg-yellow-500/10 border-yellow-500/30" },
-      { chainId: "poly",     chain: "Polygon",     symbol: "wBSV", label: "wBSV on Polygon",      type: "wrapped",   bridge: "Orah Relay",         time: "~7 min",  color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/30" },
-      { chainId: "avax",     chain: "Avalanche",   symbol: "wBSV", label: "wBSV on Avalanche",    type: "wrapped",   bridge: "Orah Relay",         time: "~5 min",  color: "text-red-400",     bg: "bg-red-500/10 border-red-500/30" },
-      { chainId: "zksync",   chain: "zkSync Era",  symbol: "wBSV", label: "wBSV on zkSync",       type: "wrapped",   bridge: "Orah Relay + ZK",    time: "~8 min",  color: "text-indigo-400",  bg: "bg-indigo-500/10 border-indigo-500/30" },
-      { chainId: "linea",    chain: "Linea",       symbol: "wBSV", label: "wBSV on Linea",        type: "wrapped",   bridge: "Orah Relay",         time: "~6 min",  color: "text-lime-400",    bg: "bg-lime-500/10 border-lime-500/30" },
-      { chainId: "scroll",   chain: "Scroll",      symbol: "wBSV", label: "wBSV on Scroll",       type: "wrapped",   bridge: "Orah Relay",         time: "~6 min",  color: "text-amber-400",   bg: "bg-amber-500/10 border-amber-500/30" },
-      { chainId: "mantle",   chain: "Mantle",      symbol: "wBSV", label: "wBSV on Mantle",       type: "wrapped",   bridge: "Orah Relay",         time: "~4 min",  color: "text-teal-400",    bg: "bg-teal-500/10 border-teal-500/30" },
-      { chainId: "blast",    chain: "Blast",       symbol: "wBSV", label: "wBSV on Blast",        type: "wrapped",   bridge: "Orah Relay",         time: "~4 min",  color: "text-yellow-300",  bg: "bg-yellow-500/10 border-yellow-500/30" },
-      { chainId: "mode",     chain: "Mode",        symbol: "wBSV", label: "wBSV on Mode",         type: "wrapped",   bridge: "Orah Relay",         time: "~4 min",  color: "text-green-300",   bg: "bg-green-500/10 border-green-500/30" },
-      { chainId: "gnosis",   chain: "Gnosis",      symbol: "wBSV", label: "wBSV on Gnosis",       type: "wrapped",   bridge: "Orah Relay",         time: "~4 min",  color: "text-teal-300",    bg: "bg-teal-500/10 border-teal-500/30" },
-      { chainId: "celo",     chain: "Celo",        symbol: "wBSV", label: "wBSV on Celo",         type: "wrapped",   bridge: "Orah Relay",         time: "~3 min",  color: "text-lime-300",    bg: "bg-lime-500/10 border-lime-500/30" },
-      { chainId: "sonic",    chain: "Sonic",       symbol: "wBSV", label: "wBSV on Sonic",        type: "wrapped",   bridge: "Orah Relay",         time: "~3 min",  color: "text-orange-300",  bg: "bg-orange-500/10 border-orange-500/30" },
+      { chainId: "eth",      chain: "Ethereum",   symbol: "wBSV", label: "wBSV (ERC-20)",        type: "wrapped",   bridge: "OrahDEX HTLC",          time: "~5 min",  color: "text-violet-400",  bg: "bg-violet-500/10 border-violet-500/30" },
+      { chainId: "base",     chain: "Base",        symbol: "wBSV", label: "wBSV on Base",         type: "wrapped",   bridge: "OrahDEX HTLC + Relay",  time: "~5 min",  color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/30" },
+      { chainId: "arb",      chain: "Arbitrum",    symbol: "wBSV", label: "wBSV on Arbitrum",     type: "wrapped",   bridge: "OrahDEX HTLC + Relay",  time: "~5 min",  color: "text-sky-400",     bg: "bg-sky-500/10 border-sky-500/30" },
+      { chainId: "op",       chain: "Optimism",    symbol: "wBSV", label: "wBSV on Optimism",     type: "wrapped",   bridge: "OrahDEX HTLC + Relay",  time: "~5 min",  color: "text-red-400",     bg: "bg-red-500/10 border-red-500/30" },
+      { chainId: "bnb",      chain: "BNB Chain",   symbol: "wBSV", label: "wBSV (BEP-20)",        type: "wrapped",   bridge: "OrahDEX Relay",         time: "~3 min",  color: "text-yellow-400",  bg: "bg-yellow-500/10 border-yellow-500/30" },
+      { chainId: "poly",     chain: "Polygon",     symbol: "wBSV", label: "wBSV on Polygon",      type: "wrapped",   bridge: "OrahDEX Relay",         time: "~7 min",  color: "text-purple-400",  bg: "bg-purple-500/10 border-purple-500/30" },
+      { chainId: "avax",     chain: "Avalanche",   symbol: "wBSV", label: "wBSV on Avalanche",    type: "wrapped",   bridge: "OrahDEX Relay",         time: "~5 min",  color: "text-red-400",     bg: "bg-red-500/10 border-red-500/30" },
+      { chainId: "zksync",   chain: "zkSync Era",  symbol: "wBSV", label: "wBSV on zkSync",       type: "wrapped",   bridge: "OrahDEX Relay + ZK",    time: "~8 min",  color: "text-indigo-400",  bg: "bg-indigo-500/10 border-indigo-500/30" },
+      { chainId: "linea",    chain: "Linea",       symbol: "wBSV", label: "wBSV on Linea",        type: "wrapped",   bridge: "OrahDEX Relay",         time: "~6 min",  color: "text-lime-400",    bg: "bg-lime-500/10 border-lime-500/30" },
+      { chainId: "scroll",   chain: "Scroll",      symbol: "wBSV", label: "wBSV on Scroll",       type: "wrapped",   bridge: "OrahDEX Relay",         time: "~6 min",  color: "text-amber-400",   bg: "bg-amber-500/10 border-amber-500/30" },
+      { chainId: "mantle",   chain: "Mantle",      symbol: "wBSV", label: "wBSV on Mantle",       type: "wrapped",   bridge: "OrahDEX Relay",         time: "~4 min",  color: "text-teal-400",    bg: "bg-teal-500/10 border-teal-500/30" },
+      { chainId: "blast",    chain: "Blast",       symbol: "wBSV", label: "wBSV on Blast",        type: "wrapped",   bridge: "OrahDEX Relay",         time: "~4 min",  color: "text-yellow-300",  bg: "bg-yellow-500/10 border-yellow-500/30" },
+      { chainId: "mode",     chain: "Mode",        symbol: "wBSV", label: "wBSV on Mode",         type: "wrapped",   bridge: "OrahDEX Relay",         time: "~4 min",  color: "text-green-300",   bg: "bg-green-500/10 border-green-500/30" },
+      { chainId: "gnosis",   chain: "Gnosis",      symbol: "wBSV", label: "wBSV on Gnosis",       type: "wrapped",   bridge: "OrahDEX Relay",         time: "~4 min",  color: "text-teal-300",    bg: "bg-teal-500/10 border-teal-500/30" },
+      { chainId: "celo",     chain: "Celo",        symbol: "wBSV", label: "wBSV on Celo",         type: "wrapped",   bridge: "OrahDEX Relay",         time: "~3 min",  color: "text-lime-300",    bg: "bg-lime-500/10 border-lime-500/30" },
+      { chainId: "sonic",    chain: "Sonic",       symbol: "wBSV", label: "wBSV on Sonic",        type: "wrapped",   bridge: "OrahDEX Relay",         time: "~3 min",  color: "text-orange-300",  bg: "bg-orange-500/10 border-orange-500/30" },
       // L3 destinations
-      { chainId: "degen",    chain: "Degen Chain", symbol: "wBSV", label: "wBSV on Degen (L3)",   type: "wrapped",   bridge: "Orah Base→Degen",    time: "~8 min",  color: "text-fuchsia-400", bg: "bg-fuchsia-500/10 border-fuchsia-500/30" },
-      { chainId: "xai",      chain: "Xai",         symbol: "wBSV", label: "wBSV on Xai (L3)",     type: "wrapped",   bridge: "Orah Arb→Xai",       time: "~8 min",  color: "text-red-300",     bg: "bg-red-500/10 border-red-500/30" },
-      { chainId: "apechain", chain: "ApeChain",    symbol: "wBSV", label: "wBSV on ApeChain (L3)",type: "wrapped",   bridge: "Orah Arb→Ape",       time: "~9 min",  color: "text-blue-300",    bg: "bg-blue-500/10 border-blue-500/30" },
-      { chainId: "zora",     chain: "Zora",        symbol: "wBSV", label: "wBSV on Zora (L3)",    type: "wrapped",   bridge: "Orah Base→Zora",     time: "~8 min",  color: "text-purple-300",  bg: "bg-purple-500/10 border-purple-500/30" },
+      { chainId: "degen",    chain: "Degen Chain", symbol: "wBSV", label: "wBSV on Degen (L3)",   type: "wrapped",   bridge: "OrahDEX Base→Degen",    time: "~8 min",  color: "text-fuchsia-400", bg: "bg-fuchsia-500/10 border-fuchsia-500/30" },
+      { chainId: "xai",      chain: "Xai",         symbol: "wBSV", label: "wBSV on Xai (L3)",     type: "wrapped",   bridge: "OrahDEX Arb→Xai",       time: "~8 min",  color: "text-red-300",     bg: "bg-red-500/10 border-red-500/30" },
+      { chainId: "apechain", chain: "ApeChain",    symbol: "wBSV", label: "wBSV on ApeChain (L3)",type: "wrapped",   bridge: "OrahDEX Arb→Ape",       time: "~9 min",  color: "text-blue-300",    bg: "bg-blue-500/10 border-blue-500/30" },
+      { chainId: "zora",     chain: "Zora",        symbol: "wBSV", label: "wBSV on Zora (L3)",    type: "wrapped",   bridge: "OrahDEX Base→Zora",     time: "~8 min",  color: "text-purple-300",  bg: "bg-purple-500/10 border-purple-500/30" },
     ],
   },
   BTC: {
@@ -235,7 +235,7 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         { icon: <Lock className="w-4 h-4" />,        label: `Lock ${coin} on ${asset.l1.chain}`,  detail: `Send ${coin} to the canonical bridge contract — funds locked as collateral` },
         { icon: <Shield className="w-4 h-4" />,      label: "Bridge verifies deposit",             detail: `${l2.bridge} detects your L1 ${coin} within 1 confirmation` },
         { icon: <Coins className="w-4 h-4" />,       label: `Mint ${l2.symbol} on ${l2.chain}`,   detail: `1:1 ${l2.label} minted to your address — ready for trading` },
-        { icon: <Zap className="w-4 h-4" />,         label: "Trade on Orah",                   detail: `${l2.symbol} trades as ${coin} — same price, instant L2 settlement` },
+        { icon: <Zap className="w-4 h-4" />,         label: "Trade on OrahDEX",                   detail: `${l2.symbol} trades as ${coin} — same price, instant L2 settlement` },
       ]
     : [
         { icon: <Flame className="w-4 h-4" />,       label: `Burn ${l2.symbol} on ${l2.chain}`,   detail: `Your ${l2.symbol} is burned — supply reduced, proof submitted to L1` },
@@ -347,7 +347,6 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
         return;
       }
 
-      // nextStatus !== "completed" is guaranteed here by the early return above
       if (isMountedRef.current) {
         cctpPollRef.current = setInterval(() => {
           void pollCctpStatus(intentId);
@@ -696,7 +695,7 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
           <div className="mt-3 flex items-start gap-2 p-2.5 rounded-lg bg-secondary/50 border border-border/50">
             <Zap className="w-3.5 h-3.5 text-primary shrink-0 mt-0.5" />
             <p className="text-[10px] text-muted-foreground leading-relaxed">
-              Trades on Orah use <span className="font-bold text-foreground">{l2.symbol}</span> — priced 1:1 with <span className="font-bold text-foreground">{coin}</span>. Arbitrage bots enforce the peg. You always see "{coin}" in the UI.
+              Trades on OrahDEX use <span className="font-bold text-foreground">{l2.symbol}</span> — priced 1:1 with <span className="font-bold text-foreground">{coin}</span>. Arbitrage bots enforce the peg. You always see "{coin}" in the UI.
             </p>
           </div>
         </div>
@@ -1145,7 +1144,7 @@ interface QuickCoin {
 
 const QUICK_COINS: QuickCoin[] = [
   { symbol:"BTC",   name:"Bitcoin",          chain:"Bitcoin",        chainLabel:"BTC",           icon:"₿", color:"#f7931a", usdPrice:83000,  minBsv:0.01,  maxBsv:50000 },
-  { symbol:"ETH",   name:"Ethereum",         chain:"Ethereum",       chainLabel:"ETH",           icon:"⬡", color:"#627eea", usdPrice:1800,   minBsv:0.05,  maxBsv:50000 },
+  { symbol:"ETH",   name:"Ethereum",         chain:"Ethereum",       chainLabel:"ETH",           icon:"⬡", color:"#627eea", usdPrice:2400,   minBsv:0.05,  maxBsv:50000 },
   { symbol:"SOL",   name:"Solana",           chain:"Solana",         chainLabel:"SOL",           icon:"◎", color:"#9945ff", usdPrice:130,    minBsv:0.1,   maxBsv:50000 },
   { symbol:"BNB",   name:"BNB",              chain:"BNB Smart Chain",chainLabel:"BSC (BEP20)",   icon:"⬡", color:"#f0b90b", usdPrice:580,    minBsv:0.1,   maxBsv:50000 },
   { symbol:"XRP",   name:"XRP",              chain:"Ripple",         chainLabel:"XRP Ledger",    icon:"✕", color:"#00aae4", usdPrice:2.1,    minBsv:10,    maxBsv:50000 },
@@ -1176,7 +1175,7 @@ const QUICK_COINS: QuickCoin[] = [
   { symbol:"VET",   name:"VeChain",          chain:"VeChain",        chainLabel:"VET",           icon:"⬡", color:"#15bdff", usdPrice:0.022,  minBsv:20,    maxBsv:50000 },
 ];
 
-const SWAP_HISTORY_KEY = "orahdex_swap_history";
+const SWAP_HISTORY_KEY = "orah_swap_history";
 
 interface SwapHistoryItem {
   id: string;
@@ -1344,7 +1343,7 @@ function BsvQuickSwap({ onSwapDone }: { onSwapDone?: () => void }) {
           </div>
           <div>
             <div className="font-bold text-sm">BSV Quick Swap</div>
-            <div className="text-[11px] text-muted-foreground">Powered by Orah Routing</div>
+            <div className="text-[11px] text-muted-foreground">Powered by OrahDEX Routing</div>
           </div>
           <div className="ml-auto flex items-center gap-1.5 text-[10px] text-green-400/70 font-mono">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
@@ -1602,7 +1601,7 @@ function BsvQuickSwap({ onSwapDone }: { onSwapDone?: () => void }) {
             <div className="flex items-start gap-2 text-[11px] text-muted-foreground px-1">
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
-                BSV Quick Swap uses Orah's cross-chain routing — atomic HTLC locks ensure your BSV is only released when the destination coin is confirmed.
+                BSV Quick Swap uses OrahDEX's cross-chain routing — atomic HTLC locks ensure your BSV is only released when the destination coin is confirmed.
                 BSV settlement on-chain.
               </span>
             </div>
@@ -1613,7 +1612,7 @@ function BsvQuickSwap({ onSwapDone }: { onSwapDone?: () => void }) {
 
       {/* Powered by note */}
       <div className="mt-4 text-center text-[11px] text-muted-foreground">
-        Inspired by HandCash's cross-chain bridge model · Powered by Orah HTLC routing
+        Inspired by HandCash's cross-chain bridge model · Powered by OrahDEX HTLC routing
       </div>
     </div>
   );
@@ -1625,7 +1624,7 @@ export function BridgePage() {
   useSEO({
     title: "Cross-Chain Bridge — Swap BSV, BTC, ETH, SOL across L1 & L2",
     description: "Cross-chain swap between BSV, BTC, Ethereum, Solana and L2 networks. Atomic HTLC swaps and wrapped asset bridging with BSV on-chain settlement.",
-    keywords: "cross-chain bridge, atomic swap, HTLC, BSV bridge, BTC ETH swap, L1 L2 bridge, Orah bridge",
+    keywords: "cross-chain bridge, atomic swap, HTLC, BSV bridge, BTC ETH swap, L1 L2 bridge, OrahDEX bridge",
     url: "/bridge",
   });
 
@@ -1699,7 +1698,7 @@ export function BridgePage() {
     return [
       { icon: <Lock className="w-3.5 h-3.5" />,   label: `Lock ${fromToken} on ${fromChain.name}`, detail: `Custodial bridge or multi-sig vault secures original asset` },
       { icon: <Layers className="w-3.5 h-3.5" />, label: `Mint wrapped ${fromToken} on EVM`, detail: `1:1 representation minted on Ethereum/L2` },
-      { icon: <ArrowLeftRight className="w-3.5 h-3.5" />, label: `Swap w${fromToken} → ${toToken} on AMM`, detail: `Orah AMM pools with 0.3% fee` },
+      { icon: <ArrowLeftRight className="w-3.5 h-3.5" />, label: `Swap w${fromToken} → ${toToken} on AMM`, detail: `OrahDEX AMM pools with 0.3% fee` },
       { icon: <Globe className="w-3.5 h-3.5" />,  label: `Redeem ${toToken} on ${toChain.name}`, detail: `Burn wrapped token → release native asset` },
     ];
   }, [mode, fromChain, toChain, fromToken, toToken]);
@@ -2305,7 +2304,7 @@ export function BridgePage() {
                 </div>
                 <ul className="space-y-2">
                   {[
-                    { label: "Non-custodial HTLC", detail: "Funds locked by script — not by Orah" },
+                    { label: "Non-custodial HTLC", detail: "Funds locked by script — not by OrahDEX" },
                     { label: "HTLC timeouts", detail: "144-block refund window prevents stuck funds" },
                     { label: "Slippage protection", detail: "Min received guaranteed; tx reverts if breached" },
                     { label: "On-chain verifiable", detail: "Redeem script and secret hash are public" },

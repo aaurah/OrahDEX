@@ -42,7 +42,7 @@ async function fetchDexScreener(query: string): Promise<DexPair[]> {
   try {
     const r = await fetch(url, {
       signal: ctrl.signal,
-      headers: { "User-Agent": "Orah/1.0", Accept: "application/json" },
+      headers: { "User-Agent": "OrahDEX/1.0", Accept: "application/json" },
     });
     clearTimeout(timer);
     if (!r.ok) return [];
@@ -67,7 +67,7 @@ async function fetchDexScreenerByAddresses(addresses: string): Promise<DexPair[]
   try {
     const r = await fetch(url, {
       signal: ctrl.signal,
-      headers: { "User-Agent": "Orah/1.0", Accept: "application/json" },
+      headers: { "User-Agent": "OrahDEX/1.0", Accept: "application/json" },
     });
     clearTimeout(timer);
     if (!r.ok) return [];

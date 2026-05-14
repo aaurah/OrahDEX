@@ -1,5 +1,5 @@
 /**
- * BSV Chain Monitor — Orah
+ * BSV Chain Monitor — OrahDEX
  *
  * Polls the WhatsOnChain public API every 60 s to retrieve the live
  * BSV block height, hash, difficulty, mempool stats and fee rates.
@@ -20,7 +20,6 @@ import { BSV_NET } from "./bsvNetworkConfig.js";
 const WOC_BASE       = BSV_NET.wocBase;
 const WOC_CHAIN_INFO = `${WOC_BASE}/chain/info`;
 const WOC_MEMPOOL    = `${WOC_BASE}/mempool/info`;
-const WOC_ORIGIN     = new URL(WOC_BASE).origin;
 const TIMEOUT_MS     = 10_000;
 
 export interface BsvChainStatus {
@@ -60,12 +59,9 @@ async function getSetting(key: string): Promise<string | null> {
 
 async function safeFetch(url: string): Promise<Record<string, unknown> | null> {
   try {
-    const parsed = new URL(url);
-    if (parsed.origin !== WOC_ORIGIN || parsed.protocol !== "https:") return null;
-
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    const res = await fetch(parsed, { signal: controller.signal, headers: { "User-Agent": "Orah/1.0" } });
+    const res = await fetch(url, { signal: controller.signal, headers: { "User-Agent": "OrahDEX/1.0" } });
     clearTimeout(timeout);
     if (!res.ok) return null;
     return await res.json() as Record<string, unknown>;
@@ -204,10 +200,16 @@ export async function queryHtlcStatus(
 ): Promise<HtlcStatusResult> {
   const checkedAt    = new Date().toISOString();
   const blockHeight  = parseInt((await getSetting("bsv_block_height")) ?? "0") || 0;
+  const encodedAddress = encodeURIComponent(htlcAddress);
+
+  // Validate that htlcAddress is a legitimate BSV P2SH/P2PKH address to prevent SSRF
+  if (!/^[1-9A-HJ-NP-Za-km-z]{26,35}$/.test(htlcAddress)) {
+    return { status: "UNKNOWN", blockHeight, checkedAt };
+  }
 
   try {
     // Check unspent UTXOs at the P2SH address
-    const utxoData = await safeFetch(`${WOC_BASE}/address/${encodeURIComponent(htlcAddress)}/unspent`);
+    const utxoData = await safeFetch(`${WOC_BASE}/address/${encodedAddress}/unspent`);
     const hasUtxos = Array.isArray(utxoData) && utxoData.length > 0;
 
     if (hasUtxos) {
@@ -219,7 +221,7 @@ export async function queryHtlcStatus(
     }
 
     // No UTXOs — check transaction history to detect claim vs refund
-    const histData = await safeFetch(`${WOC_BASE}/address/${encodeURIComponent(htlcAddress)}/history`);
+    const histData = await safeFetch(`${WOC_BASE}/address/${encodedAddress}/history`);
     if (!Array.isArray(histData) || histData.length === 0) {
       return { status: "UNKNOWN", blockHeight, checkedAt };
     }
