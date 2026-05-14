@@ -522,7 +522,7 @@ export function WalletChooserDialog() {
                   onClick={handleEvmClick}
                   iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
                   icon={<span className="text-xl leading-none text-blue-400">⟠</span>}
-                  title="Reown Connect"
+                  title="EVM Wallets"
                   sub="MetaMask · WalletConnect · Coinbase · Injected"
                   badge={
                     <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 tracking-wider">
