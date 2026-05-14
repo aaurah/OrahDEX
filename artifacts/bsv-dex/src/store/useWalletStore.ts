@@ -58,6 +58,9 @@ interface WalletState {
   disconnect: () => void;
   setConnecting: (connecting: boolean) => void;
   setBalance: (balance: string | null) => void;
+  /** Unconfirmed (mempool) BSV in BSV units — set by useBsvBalance, 0 when none. */
+  bsvUnconfirmed: number;
+  setBsvUnconfirmed: (v: number) => void;
   setInternalEvmAddress: (addr: string | null) => void;
   setInternalBsvAddress: (addr: string | null) => void;
   setInternalBchAddress: (addr: string | null) => void;
@@ -129,6 +132,7 @@ export const useWalletStore = create<WalletState>()(
       internalDogeAddress: null,
       internalTronAddress: null,
       balanceRefreshKey: 0,
+      bsvUnconfirmed: 0,
 
       connect: (wallet) =>
         set((s) => {
@@ -180,6 +184,7 @@ export const useWalletStore = create<WalletState>()(
 
       setConnecting: (isConnecting) => set({ isConnecting }),
       setBalance: (balance) => set({ balance }),
+      setBsvUnconfirmed: (bsvUnconfirmed) => set({ bsvUnconfirmed }),
       setInternalEvmAddress:  (internalEvmAddress)  => set({ internalEvmAddress }),
       setInternalBsvAddress:  (internalBsvAddress)  => set({ internalBsvAddress }),
       setInternalBchAddress:  (internalBchAddress)  => set({ internalBchAddress }),
