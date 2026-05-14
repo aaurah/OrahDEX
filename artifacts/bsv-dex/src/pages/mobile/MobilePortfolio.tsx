@@ -3,7 +3,7 @@ import {
   ArrowDownToLine,
   Copy, Check, RefreshCw, Info,
   LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
-  ArrowDownLeft, ArrowUpRight, History, Upload, ChevronDown, X,
+  ArrowDownLeft, ArrowUpRight, History, Upload, ChevronDown, X, Search, Loader2,
 } from "lucide-react";
 
 import { useOnChainTxHistory } from "@/hooks/useOnChainTxHistory";
@@ -11,7 +11,7 @@ import type { OnChainTx } from "@/hooks/useOnChainTxHistory";
 import { useWalletStore } from "@/store/useWalletStore";
 import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReceiveModal } from "@/components/ReceiveModal";
@@ -263,38 +263,84 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   });
   const [liveLeStatuses, setLiveLeStatuses] = useState<Record<string, any>>({});
 
-  // Poll status for pending bridge entries whenever the Bridge tab is open
+  // ── Transaction lookup tool ──────────────────────────────────────────────
+  const [lookupId,     setLookupId]     = useState("");
+  const [lookupResult, setLookupResult] = useState<any | null>(null);
+  const [lookupError,  setLookupError]  = useState<string | null>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+
+  const doLookup = useCallback(async () => {
+    const id = lookupId.trim();
+    if (!id) return;
+    setLookupLoading(true);
+    setLookupResult(null);
+    setLookupError(null);
+    try {
+      const r = await fetch(`${BASE}/api/letsexchange/status/${encodeURIComponent(id)}`);
+      const d = await r.json();
+      if (r.ok && d.transaction_id) {
+        setLookupResult(d);
+      } else {
+        setLookupError(d.error ?? "Exchange not found. Check the ID and try again.");
+      }
+    } catch {
+      setLookupError("Network error — please try again.");
+    } finally {
+      setLookupLoading(false);
+    }
+  }, [lookupId]);
+
+  // ── Venue-aware polling for pending bridge entries ───────────────────────
+  const bridgeHistoryRef   = useRef(bridgeHistory);
+  const liveLeStatusesRef  = useRef(liveLeStatuses);
+  bridgeHistoryRef.current  = bridgeHistory;
+  liveLeStatusesRef.current = liveLeStatuses;
+
+  const BRIDGE_DONE = new Set(["finished", "failed", "refunded", "overdue"]);
+
   useEffect(() => {
     if (historySubTab !== "bridge") return;
-    const pending = bridgeHistory.filter(
-      e => !["finished", "failed", "refunded"].includes(e.status ?? "")
-    );
-    if (pending.length === 0) return;
 
     const fetchAll = async () => {
-      for (const e of pending) {
+      const pending = bridgeHistoryRef.current.filter(
+        e => !BRIDGE_DONE.has((liveLeStatusesRef.current[e.transaction_id]?.status ?? e.status ?? "wait").toLowerCase())
+      );
+      if (pending.length === 0) return;
+
+      await Promise.all(pending.map(async (e: any) => {
         try {
-          const r = await fetch(`${BASE}/api/letsexchange/status/${e.transaction_id}`);
-          if (!r.ok) continue;
+          // Use stored venue so we hit the correct provider directly
+          const venueSuffix = e.venue && e.venue !== "letsexchange"
+            ? `?venue=${encodeURIComponent(e.venue)}`
+            : "";
+          const r = await fetch(`${BASE}/api/letsexchange/status/${encodeURIComponent(e.transaction_id)}${venueSuffix}`);
+          if (!r.ok) return;
           const d = await r.json();
-          if (!d.transaction_id) continue;
+          if (!d.transaction_id) return;
           setLiveLeStatuses(prev => ({ ...prev, [e.transaction_id]: d }));
-          // Persist updated status back to localStorage
-          if (d.status) {
-            setBridgeHistory(prev => {
-              const updated = prev.map(x =>
-                x.transaction_id === e.transaction_id ? { ...x, status: d.status } : x
-              );
-              try { localStorage.setItem("le_swap_history", JSON.stringify(updated)); } catch {}
-              return updated;
+          // Persist updated status + rescued venue back to localStorage
+          setBridgeHistory(prev => {
+            let changed = false;
+            const updated = prev.map((x: any) => {
+              if (x.transaction_id !== e.transaction_id) return x;
+              let next = x;
+              if (d.status && d.status !== x.status)                           { next = { ...next, status: d.status };        changed = true; }
+              if (d.venue_rescued && d.best_venue && d.best_venue !== x.venue) { next = { ...next, venue: d.best_venue };     changed = true; }
+              return next;
             });
-          }
+            if (changed) try { localStorage.setItem("le_swap_history", JSON.stringify(updated)); } catch {}
+            return changed ? updated : prev;
+          });
         } catch {}
-      }
+      }));
     };
 
     fetchAll();
-    const iv = setInterval(fetchAll, 30_000);
+    const hasPending = bridgeHistory.some(
+      (e: any) => !BRIDGE_DONE.has((liveLeStatuses[e.transaction_id]?.status ?? e.status ?? "wait").toLowerCase())
+    );
+    if (!hasPending) return;
+    const iv = setInterval(fetchAll, 15_000);
     return () => clearInterval(iv);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [historySubTab, bridgeHistory.length]);
@@ -1548,7 +1594,87 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
 
               {/* ── BRIDGE (LetsExchange cross-chain) ──────────────────── */}
               {historySubTab === "bridge" && (
-                bridgeHistory.length === 0 ? (
+                <>
+                {/* ── Transaction lookup ──────────────────────────────── */}
+                <div className="bg-card border border-border rounded-2xl p-3.5 mb-3">
+                  <p className="text-[11px] font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <Search size={11} /> Look up any exchange by ID
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      value={lookupId}
+                      onChange={e => { setLookupId(e.target.value); setLookupResult(null); setLookupError(null); }}
+                      onKeyDown={e => e.key === "Enter" && doLookup()}
+                      placeholder="Paste exchange ID…"
+                      className="flex-1 min-w-0 bg-background border border-border rounded-xl px-3 py-2 text-xs font-mono placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50"
+                    />
+                    <button
+                      onClick={doLookup}
+                      disabled={!lookupId.trim() || lookupLoading}
+                      className="shrink-0 px-3 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold disabled:opacity-40 flex items-center gap-1.5"
+                    >
+                      {lookupLoading ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+                      Check
+                    </button>
+                  </div>
+
+                  {/* Lookup result */}
+                  {lookupResult && (() => {
+                    const s = lookupResult.status ?? "wait";
+                    const isOk  = s === "finished";
+                    const isBad = s === "failed" || s === "refunded" || s === "overdue";
+                    const label = s === "wait" ? "Awaiting deposit"
+                      : s === "confirming" || s === "confirmation" ? "Confirming"
+                      : s === "exchanging" ? "Exchanging"
+                      : s === "sending"    ? "Sending"
+                      : s === "finished"   ? "Completed"
+                      : s === "refunded"   ? "Refunded"
+                      : s === "overdue"    ? "Overdue"
+                      : s === "failed"     ? "Failed"
+                      : s;
+                    const color = isOk ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                      : isBad ? "text-red-400 bg-red-500/10 border-red-500/20"
+                      : "text-amber-400 bg-amber-500/10 border-amber-500/20";
+                    return (
+                      <div className="mt-3 rounded-xl border border-border bg-background/50 p-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs text-muted-foreground font-mono truncate">{lookupResult.transaction_id}</span>
+                          <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full border", color)}>{label}</span>
+                        </div>
+                        {lookupResult.hash_out && (
+                          <div className="flex items-center gap-2 text-[11px]">
+                            <span className="text-muted-foreground/60 shrink-0">Outbound TX</span>
+                            <span className="font-mono text-foreground/70 truncate flex-1">{lookupResult.hash_out}</span>
+                          </div>
+                        )}
+                        {isOk && (
+                          <p className="text-[11px] text-emerald-400">Exchange completed — funds were sent to your destination address.</p>
+                        )}
+                        {s === "wait" && (
+                          <p className="text-[11px] text-amber-400/80">Waiting for your deposit to arrive. BSV confirmations can take a few minutes.</p>
+                        )}
+                        {(s === "confirming" || s === "confirmation") && (
+                          <p className="text-[11px] text-amber-400/80">Deposit received and confirming on-chain. Exchange will begin shortly.</p>
+                        )}
+                        {s === "exchanging" && (
+                          <p className="text-[11px] text-amber-400/80">Deposit confirmed. Exchange is in progress.</p>
+                        )}
+                        {s === "sending" && (
+                          <p className="text-[11px] text-amber-400/80">Exchange done — sending funds to your address now.</p>
+                        )}
+                        {isBad && (
+                          <p className="text-[11px] text-red-400">Exchange {label.toLowerCase()}. Contact OrahDEX support at support@orahdex.org with this ID.</p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {lookupError && (
+                    <p className="mt-2.5 text-[11px] text-red-400">{lookupError}</p>
+                  )}
+                </div>
+
+                {bridgeHistory.length === 0 ? (
                   <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
                     <ArrowLeftRight size={28} className="opacity-20 mb-1" />
                     <p className="text-sm font-medium">No bridge history yet</p>
@@ -1678,7 +1804,8 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                       );
                     })}
                   </div>
-                )
+                )}
+                </>
               )}
 
               {/* ── COIN TRAVEL (on-chain DEX swaps) ───────────────────── */}
