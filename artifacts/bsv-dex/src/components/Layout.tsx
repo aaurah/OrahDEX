@@ -19,7 +19,6 @@ import { CATEGORY_OF, ALL_CATEGORIES, CATEGORY_META, type NotifCategory } from "
 
 /* ── Heavy modals — loaded only when first opened ── */
 const AiAssistant = lazy(() => import("./AiAssistant").then(m => ({ default: m.AiAssistant })));
-const WalletChooserDialog = lazy(() => import("./WalletChooserDialog").then(m => ({ default: m.WalletChooserDialog })));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -956,10 +955,6 @@ export function Layout({ children }: { children: ReactNode }) {
         <Suspense fallback={null}><AiAssistant /></Suspense>
       )}
 
-      {/* Unified wallet chooser dialog (EVM + OrahDEX passkey) */}
-      <Suspense fallback={null}>
-        <WalletChooserDialog />
-      </Suspense>
 
     </div>
   );

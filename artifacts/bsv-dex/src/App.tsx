@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { PinPromptModal } from "@/components/PinPromptModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { WalletChooserDialog } from "@/components/WalletChooserDialog";
 
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme } from "@/store/useThemeStore";
@@ -467,6 +468,8 @@ function AppContent() {
       </WouterRouter>
       <Toaster />
       <PinPromptModal />
+      {/* Wallet chooser — always mounted so it works across all layouts */}
+      <WalletChooserDialog />
     </>
   );
 }
