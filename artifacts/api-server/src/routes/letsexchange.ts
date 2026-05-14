@@ -29,6 +29,10 @@ import {
 } from "../lib/lePriceCache.js";
 import { getCoinChangeMap } from "../lib/priceUpdater.js";
 import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
+import { getBestExternalQuote } from "../lib/metaRouter.js";
+import { createCNExchange, getCNExchange } from "../lib/changenow.js";
+import { createSXExchange, getSXExchange } from "../lib/stealthex.js";
+import { createSsExchangePair, getSsExchange } from "../lib/simpleswap.js";
 
 const router: IRouter = Router();
 
@@ -555,9 +559,9 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
 });
 
 // ── POST /api/letsexchange/estimate ──────────────────────────────────────────
-// Real endpoint: POST /api/v1/info
-// Required: from, to, network_from, network_to, amount, affiliate_id
-// Response:  min_amount, max_amount, amount (output), rate, rate_id, rate_id_expired_at, withdrawal_fee
+// Hybrid: queries ALL configured venues (LetsExchange, ChangeNOW, StealthEX,
+// SimpleSwap) in parallel and returns the best rate.  Response includes
+// best_venue so the frontend can route exchange creation to the winner.
 router.post("/letsexchange/estimate", async (req, res) => {
   const body = req.body ?? {};
   const normalizeUpper = (v: unknown): string =>
@@ -580,59 +584,68 @@ router.post("/letsexchange/estimate", async (req, res) => {
   const amt = parseFloat(String(amount));
   if (!isFinite(amt) || amt <= 0) { res.status(400).json({ error: "amount must be positive" }); return; }
 
-  if (!process.env.LETSEXCHANGE_API_KEY) {
-    res.status(503).json({
-      error: "LetsExchange is not configured — set the LETSEXCHANGE_API_KEY secret to enable cross-chain rates.",
-      code: "LE_KEY_NOT_CONFIGURED",
-    });
-    return;
-  }
-
   try {
-    const body: Record<string,unknown> = {
-      from,
-      to,
-      network_from,
-      network_to,
-      amount:       amt,
-      affiliate_id: AFFILIATE_ID,
-      float:        isFloat ?? false,
-    };
+    // Query all configured venues in parallel via the meta-router
+    const lePrices = getCachedLEPrices();
+    const inUsd  = lePrices[from]  ?? 1;
+    const outUsd = lePrices[to]    ?? 1;
 
-    const { ok, data, status } = await leRequest("/v1/info", "POST", body);
+    const { best, errors } = await getBestExternalQuote(from, to, amt, inUsd, outUsd);
+    if (!best) {
+      const errDetails = Object.entries(errors)
+        .filter(([, v]) => v !== null)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join("; ");
+      res.status(404).json({ error: `No rate available for ${from}→${to}`, detail: errDetails }); return;
+    }
 
-    if (status === 403) {
-      res.status(403).json({ error: "Invalid API key", detail: data }); return;
+    // For LetsExchange winner: fetch rate_id for optional fixed-rate locking
+    let rate_id: string | null = null;
+    let rate_id_expired_at: string | null = null;
+    if (best.venue === "letsexchange" && process.env.LETSEXCHANGE_API_KEY) {
+      try {
+        const leBody: Record<string, unknown> = {
+          from, to, network_from, network_to, amount: amt,
+          affiliate_id: AFFILIATE_ID, float: isFloat ?? false,
+        };
+        const { ok: leOk, data: leData } = await leRequest("/v1/info", "POST", leBody);
+        if (leOk && leData && typeof leData === "object") {
+          const d = leData as Record<string, unknown>;
+          rate_id = d.rate_id ? String(d.rate_id) : null;
+          rate_id_expired_at = d.rate_id_expired_at ? String(d.rate_id_expired_at) : null;
+        }
+      } catch { /* non-fatal — proceed with floating rate */ }
     }
-    if (status === 404) {
-      // 404 from /v1/info means "Rate is not available for this pair" — valid business response
-      const d = data as Record<string,unknown>|null;
-      const msg = (d?.error as string) ?? "Rate is not available for this pair";
-      res.status(404).json({ error: msg, detail: data }); return;
-    }
-    if (status === 422) {
-      res.status(422).json({ error: "Validation error", detail: data }); return;
-    }
-    if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
-    res.json(data);
+
+    const estimatedOutput = best.expectedOutput;
+    const rate = amt > 0 ? estimatedOutput / amt : 0;
+    res.json({
+      amount:             String(estimatedOutput),
+      rate:               String(rate),
+      min_amount:         best.minAmount != null ? String(best.minAmount) : "0",
+      max_amount:         best.maxAmount != null ? String(best.maxAmount) : "",
+      rate_id,
+      rate_id_expired_at,
+      withdrawal_fee:     "0",
+      best_venue:         best.venue,
+    });
   } catch (err: any) {
     logger.error({ err }, "letsexchange /estimate failed");
-    res.status(502).json({ error: "Failed to reach LetsExchange" });
+    res.status(502).json({ error: "Failed to reach exchange providers" });
   }
 });
 
 // ── POST /api/letsexchange/exchange ──────────────────────────────────────────
-// Real endpoint: POST /api/v1/transaction
-// Required: float, coin_from, coin_to, network_from, network_to, deposit_amount,
-//           withdrawal (address), withdrawal_extra_id (send "" if none), affiliate_id
-// Optional: return (refund address), return_extra_id, rate_id, email
-// Response: transaction_id, status, deposit, deposit_extra_id, withdrawal_amount, ...
+// Hybrid: routes to the winning venue from /estimate (passed as best_venue).
+// Falls back to LetsExchange when best_venue is omitted or "letsexchange".
+// Response is normalised to the same OrderResult shape regardless of venue.
 router.post("/letsexchange/exchange", async (req, res) => {
   const {
     coin_from, coin_to, network_from, network_to,
     deposit_amount, withdrawal, withdrawal_extra_id,
     return: refund, return_extra_id,
     rate_id, float: isFloat, email,
+    best_venue: rawBestVenue,
   } = req.body ?? {};
 
   if (!coin_from || !coin_to || !network_from || !network_to || !deposit_amount || !withdrawal) {
@@ -640,55 +653,142 @@ router.post("/letsexchange/exchange", async (req, res) => {
   }
   const amt = parseFloat(String(deposit_amount));
   if (!isFinite(amt) || amt <= 0) { res.status(400).json({ error: "deposit_amount must be positive" }); return; }
-  // Withdrawal address sanity: must be at least 10 chars and not suspiciously long
   const withdrawalStr = String(withdrawal).trim();
   if (withdrawalStr.length < 10 || withdrawalStr.length > 200) {
     res.status(400).json({ error: "Invalid withdrawal address" }); return;
   }
 
-  if (!process.env.LETSEXCHANGE_API_KEY) {
-    res.status(503).json({
-      error: "LetsExchange is not configured — set the LETSEXCHANGE_API_KEY secret to enable cross-chain exchange.",
-      code: "LE_KEY_NOT_CONFIGURED",
-    });
-    return;
-  }
+  const bestVenue: string = typeof rawBestVenue === "string" ? rawBestVenue : "letsexchange";
+  const fromU       = String(coin_from).toUpperCase();
+  const toU         = String(coin_to).toUpperCase();
+  const fromNetwork = String(network_from).trim().toUpperCase();
+  const toNetwork   = String(network_to).trim().toUpperCase();
 
   try {
-    const fromNetwork = String(network_from).trim().toUpperCase();
-    const toNetwork = String(network_to).trim().toUpperCase();
-    const body: Record<string,unknown> = {
-      float:                isFloat ?? false,
-      coin_from:            String(coin_from).toUpperCase(),
-      coin_to:              String(coin_to).toUpperCase(),
-      network_from:         fromNetwork,
-      network_to:           toNetwork,
-      deposit_amount:       amt,
-      withdrawal:           withdrawalStr,
-      withdrawal_extra_id:  withdrawal_extra_id != null ? String(withdrawal_extra_id) : "",
-      affiliate_id:         AFFILIATE_ID,
+    // ── ChangeNOW ─────────────────────────────────────────────────────────────
+    if (bestVenue === "changenow") {
+      const result = await createCNExchange({
+        from:          fromU,
+        to:            toU,
+        amount:        amt,
+        address:       withdrawalStr,
+        extraId:       withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+        refundAddress: refund ? String(refund) : undefined,
+      });
+      if (!result.ok) { res.status(422).json({ error: result.error, venue: "changenow" }); return; }
+      const ex = result.exchange;
+      res.json({
+        transaction_id:    ex.id,
+        status:            "wait",
+        deposit:           ex.depositAddress,
+        deposit_extra_id:  ex.depositExtraId ?? null,
+        deposit_amount:    String(amt),
+        withdrawal_amount: ex.estimatedAmount ?? "0",
+        withdrawal:        withdrawalStr,
+        coin_from:         fromU,
+        coin_to:           toU,
+        coin_from_network: fromNetwork,
+        coin_to_network:   toNetwork,
+        best_venue:        "changenow",
+      });
+      return;
+    }
+
+    // ── StealthEX ─────────────────────────────────────────────────────────────
+    if (bestVenue === "stealthex") {
+      const result = await createSXExchange({
+        from:    fromU,
+        to:      toU,
+        amount:  amt,
+        address: withdrawalStr,
+        extraId: withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+      });
+      if (!result.ok) { res.status(422).json({ error: result.error, venue: "stealthex" }); return; }
+      const ex = result.exchange;
+      res.json({
+        transaction_id:    ex.id,
+        status:            "wait",
+        deposit:           ex.depositAddress,
+        deposit_extra_id:  ex.depositExtraId ?? null,
+        deposit_amount:    String(amt),
+        withdrawal_amount: ex.estimatedAmount ?? "0",
+        withdrawal:        withdrawalStr,
+        coin_from:         fromU,
+        coin_to:           toU,
+        coin_from_network: fromNetwork,
+        coin_to_network:   toNetwork,
+        best_venue:        "stealthex",
+      });
+      return;
+    }
+
+    // ── SimpleSwap ────────────────────────────────────────────────────────────
+    if (bestVenue === "simpleswap") {
+      const result = await createSsExchangePair({
+        from:    fromU,
+        to:      toU,
+        amount:  amt,
+        address: withdrawalStr,
+        extraId: withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+      });
+      if (!result.ok) { res.status(422).json({ error: result.error, venue: "simpleswap" }); return; }
+      const ex = result.exchange;
+      res.json({
+        transaction_id:    ex.id,
+        status:            "wait",
+        deposit:           ex.depositAddress,
+        deposit_extra_id:  ex.depositExtraId ?? null,
+        deposit_amount:    String(amt),
+        withdrawal_amount: ex.withdrawalAmount ?? "0",
+        withdrawal:        withdrawalStr,
+        coin_from:         fromU,
+        coin_to:           toU,
+        coin_from_network: fromNetwork,
+        coin_to_network:   toNetwork,
+        best_venue:        "simpleswap",
+      });
+      return;
+    }
+
+    // ── LetsExchange (default) ────────────────────────────────────────────────
+    if (!process.env.LETSEXCHANGE_API_KEY) {
+      res.status(503).json({
+        error: "No exchange provider available — please contact support.",
+        code: "NO_PROVIDER",
+      });
+      return;
+    }
+
+    const leBody: Record<string, unknown> = {
+      float:               isFloat ?? false,
+      coin_from:           fromU,
+      coin_to:             toU,
+      network_from:        fromNetwork,
+      network_to:          toNetwork,
+      deposit_amount:      amt,
+      withdrawal:          withdrawalStr,
+      withdrawal_extra_id: withdrawal_extra_id != null ? String(withdrawal_extra_id) : "",
+      affiliate_id:        AFFILIATE_ID,
     };
-    if (refund)          body["return"]          = String(refund);
-    if (return_extra_id) body["return_extra_id"] = String(return_extra_id);
-    if (rate_id)         body["rate_id"]         = String(rate_id);
-    if (email)           body["email"]           = String(email);
+    if (refund)          leBody["return"]          = String(refund);
+    if (return_extra_id) leBody["return_extra_id"] = String(return_extra_id);
+    if (rate_id)         leBody["rate_id"]         = String(rate_id);
+    if (email)           leBody["email"]           = String(email);
 
-    const { ok, data, status } = await leRequest("/v1/transaction", "POST", body);
-
+    const { ok, data, status } = await leRequest("/v1/transaction", "POST", leBody);
     if (status === 403) { res.status(403).json({ error: "Invalid API key", detail: data }); return; }
     if (status === 422) { res.status(422).json({ error: "Validation error", detail: data }); return; }
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
 
-    // Persist the swap record so we can track exchange income
     const d = data as Record<string, unknown>;
     if (d?.transaction_id) {
       const leUsd = getCachedLEPrices();
-      const fromUsd = leUsd[String(coin_from).toUpperCase()] ?? 0;
+      const fromUsd = leUsd[fromU] ?? 0;
       const depositUsd = fromUsd > 0 ? (amt * fromUsd).toFixed(4) : null;
       db.insert(leSwapsTable).values({
         id:               String(d.transaction_id),
-        coinFrom:         String(coin_from).toUpperCase(),
-        coinTo:           String(coin_to).toUpperCase(),
+        coinFrom:         fromU,
+        coinTo:           toU,
         networkFrom:      fromNetwork,
         networkTo:        toNetwork,
         depositAmount:    String(amt),
@@ -699,26 +799,65 @@ router.post("/letsexchange/exchange", async (req, res) => {
       }).onConflictDoNothing().catch(e => logger.warn({ err: e }, "le_swaps insert failed"));
     }
 
-    res.json(data);
+    res.json({ ...d, best_venue: "letsexchange" });
   } catch (err: any) {
     logger.error({ err }, "letsexchange /exchange failed");
-    res.status(502).json({ error: "Failed to reach LetsExchange" });
+    res.status(502).json({ error: "Failed to reach exchange provider" });
   }
 });
 
 // ── GET /api/letsexchange/status/:id ─────────────────────────────────────────
-// Real endpoint: GET /api/v1/transaction/{id}
-// Returns full transaction object including status, deposit, withdrawal_amount, hashes, etc.
+// Hybrid: routes to the correct venue via ?venue=changenow|stealthex|simpleswap.
+// Defaults to LetsExchange. Normalises all responses to a common StatusResult shape.
 router.get("/letsexchange/status/:id", async (req, res) => {
   const { id } = req.params;
+  const venue = typeof req.query.venue === "string" ? req.query.venue : "letsexchange";
   if (!id) { res.status(400).json({ error: "id is required" }); return; }
+
+  // Map venue-specific status strings to the LE vocabulary used by the frontend
+  const normalizeStatus = (raw: string): string => {
+    const map: Record<string, string> = {
+      new: "wait", waiting: "wait",
+      confirming: "confirmation", verifying: "confirmation",
+      exchanging: "exchanging", sending: "sending",
+      finished: "finished", failed: "failed",
+      refunded: "refunded", overdue: "overdue",
+      emergency: "failed",
+    };
+    return map[raw.toLowerCase()] ?? raw;
+  };
+
   try {
+    // ── ChangeNOW ─────────────────────────────────────────────────────────────
+    if (venue === "changenow") {
+      const result = await getCNExchange(id);
+      if (!result) { res.status(404).json({ error: "Exchange not found" }); return; }
+      res.json({ transaction_id: id, status: normalizeStatus(result.status), hash_out: result.txTo });
+      return;
+    }
+
+    // ── StealthEX ─────────────────────────────────────────────────────────────
+    if (venue === "stealthex") {
+      const result = await getSXExchange(id);
+      if (!result) { res.status(404).json({ error: "Exchange not found" }); return; }
+      res.json({ transaction_id: id, status: normalizeStatus(result.status), hash_out: result.txTo });
+      return;
+    }
+
+    // ── SimpleSwap ────────────────────────────────────────────────────────────
+    if (venue === "simpleswap") {
+      const result = await getSsExchange(id);
+      if (!result) { res.status(404).json({ error: "Exchange not found" }); return; }
+      res.json({ transaction_id: id, status: normalizeStatus(result.status), hash_out: result.txTo });
+      return;
+    }
+
+    // ── LetsExchange (default) ────────────────────────────────────────────────
     const { ok, data, status } = await leRequest(`/v1/transaction/${encodeURIComponent(id)}`);
     if (status === 403) { res.status(403).json({ error: "Invalid API key", detail: data }); return; }
     if (status === 404) { res.status(404).json({ error: "Transaction not found", detail: data }); return; }
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
 
-    // Sync status + withdrawal amount back to our DB record
     const d = data as Record<string, unknown>;
     if (d?.transaction_id && d?.status) {
       const isFinished = ["finished", "refunded", "overdue", "emergency"].includes(String(d.status));
@@ -733,7 +872,7 @@ router.get("/letsexchange/status/:id", async (req, res) => {
     res.json(data);
   } catch (err: any) {
     logger.error({ err }, "letsexchange /status failed");
-    res.status(502).json({ error: "Failed to reach LetsExchange" });
+    res.status(502).json({ error: "Failed to reach exchange provider" });
   }
 });
 
