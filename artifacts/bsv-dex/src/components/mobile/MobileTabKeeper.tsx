@@ -27,6 +27,7 @@ const MobileHandCashBridge  = lazy(() => import("@/pages/mobile/MobileHandCashBr
 const MobileCoinWallet      = lazy(() => import("@/pages/mobile/MobileCoinWallet").then(m => ({ default: m.MobileCoinWallet })));
 const UserApiKeys           = lazy(() => import("@/pages/UserApiKeys").then(m => ({ default: m.UserApiKeys })));
 const SwapPage              = lazy(() => import("@/pages/Swap").then(m => ({ default: m.Swap })));
+const ExchangePage          = lazy(() => import("@/pages/Exchange").then(m => ({ default: m.ExchangePage })));
 const DexHub                = lazy(() => import("@/pages/DexHub").then(m => ({ default: m.DexHub })));
 const P2P                   = lazy(() => import("@/pages/P2P").then(m => ({ default: m.P2P })));
 const BridgePage            = lazy(() => import("@/pages/Bridge").then(m => ({ default: m.BridgePage })));
@@ -38,7 +39,7 @@ const SovereignOverviewPage = lazy(() => import("@/pages/SovereignOverview").the
 
 /* ── Tab key type ────────────────────────────────────────────────────────── */
 type TabKey =
-  | "markets" | "swap" | "trade" | "futures" | "wallet"
+  | "markets" | "swap" | "exchange" | "trade" | "futures" | "wallet"
   | "settings" | "staking" | "nft" | "liquidity" | "genesis"
   | "dex" | "p2p" | "bridge" | "copy" | "fees" | "keeper"
   | "prediction" | "sovereign";
@@ -58,6 +59,7 @@ function isPassthrough(location: string) {
 function getTabKey(location: string): TabKey | null {
   if (location === "/" || location.startsWith("/markets"))   return "markets";
   if (location.startsWith("/swap"))                          return "swap";
+  if (location.startsWith("/exchange"))                      return "exchange";
   if (location.startsWith("/trade"))                         return "trade";
   if (location.startsWith("/futures"))                       return "futures";
   if (location === "/wallet" || location === "/portfolio")   return "wallet";
@@ -156,6 +158,7 @@ export function MobileTabKeeper() {
     <>
       {vis("markets")    && <Tab active={act("markets")}>    <Suspense fallback={<Skeleton />}><MobileMarkets /></Suspense></Tab>}
       {vis("swap")       && <Tab active={act("swap")}>       <Suspense fallback={<Skeleton />}><SwapPage /></Suspense></Tab>}
+      {vis("exchange")   && <Tab active={act("exchange")}>   <Suspense fallback={<Skeleton />}><ExchangePage /></Suspense></Tab>}
       {vis("trade")      && <Tab active={act("trade")}>      <Suspense fallback={<Skeleton />}><MobileTrade symbol={tradeSymbol} /></Suspense></Tab>}
       {vis("futures")    && <Tab active={act("futures")}>    <Suspense fallback={<Skeleton />}><MobileTrade symbol={futuresSymbol} /></Suspense></Tab>}
       {vis("wallet")     && <Tab active={act("wallet")}>     <Suspense fallback={<Skeleton />}><MobileWalletPortfolio /></Suspense></Tab>}

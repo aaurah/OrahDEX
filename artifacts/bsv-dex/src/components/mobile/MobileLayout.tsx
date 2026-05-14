@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, Target, TrendingUp, Copy, Repeat, Waves, Users, Wallet, Flame } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, Target, TrendingUp, Copy, Repeat2, Waves, Users, Wallet, Flame } from "lucide-react";
 
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -11,6 +11,7 @@ import { ChatWidget } from "@/components/ChatWidget";
 
 const NAV_TABS = [
   { path: "/swap",                       matchPrefix: "/swap",       label: "Exchange",   Icon: Waves },
+  { path: "/exchange",                   matchPrefix: "/exchange",   label: "X-Chain",    Icon: Repeat2 },
   { path: "/trade/BSV-USDT",             matchPrefix: "/trade",      label: "Trade",      Icon: ArrowRightLeft },
   { path: "/futures/BSV-USDT-PERP",      matchPrefix: "/futures",    label: "Futures",    Icon: TrendingUp },
   { path: "/markets",                    matchPrefix: "/markets",    label: "Markets",    Icon: BarChart2 },
