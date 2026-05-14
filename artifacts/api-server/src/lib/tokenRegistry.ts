@@ -66,6 +66,13 @@ export const TOKEN_REGISTRY: Record<number, Record<string, TokenInfo>> = {
     USDC:  { address: "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e", decimals: 6  },
     WETH:  { address: "0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab", decimals: 18 },
   },
+  11155111: { // Ethereum Sepolia (testnet)
+    WETH:  { address: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14", decimals: 18 },
+    USDC:  { address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", decimals: 6  },
+    USDT:  { address: "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0", decimals: 6  },
+    LINK:  { address: "0x779877A7B0D9E8603169DdbD7836e478b4624789", decimals: 18 },
+    UNI:   { address: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", decimals: 18 },
+  },
 };
 
 /**
@@ -74,13 +81,14 @@ export const TOKEN_REGISTRY: Record<number, Record<string, TokenInfo>> = {
  * Otherwise look up the ERC-20 address in TOKEN_REGISTRY.
  */
 export const NATIVE_SYMBOLS: Record<number, string> = {
-  1:      "ETH",
-  56:     "BNB",
-  137:    "MATIC",
-  8453:   "ETH",
-  42161:  "ETH",
-  10:     "ETH",
-  43114:  "AVAX",
+  1:        "ETH",
+  56:       "BNB",
+  137:      "MATIC",
+  8453:     "ETH",
+  42161:    "ETH",
+  10:       "ETH",
+  43114:    "AVAX",
+  11155111: "ETH",  // Sepolia testnet
 };
 
 /**
