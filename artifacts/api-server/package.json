@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "export NODE_ENV=development && fuser -k ${PORT:-8090}/tcp 2>/dev/null; sleep 3; node ./build.mjs && node --max-old-space-size=2048 ./dist/index.mjs",
+    "dev": "export NODE_ENV=development && fuser -k ${PORT:-8080}/tcp 2>/dev/null; sleep 3; node ./build.mjs && node --max-old-space-size=2048 ./dist/index.mjs",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps --max-old-space-size=2048 ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
