@@ -14,6 +14,28 @@ import { tradesTable } from "@workspace/db/schema";
 import { gte, and, eq } from "drizzle-orm";
 import { logger } from "./logger.js";
 
+/* ── Asset inception timestamps (Unix seconds) ─────────────────────────────
+   Synthetic candle series will not extend before the asset existed.         */
+const ASSET_INCEPTION: Record<string, number> = {
+  "BTC":  1231006505, "LTC":  1317513600, "XRP":  1356998400,
+  "DOGE": 1388534400, "ETH":  1438300800, "ETC":  1469404800,
+  "ZEC":  1477929600, "BNB":  1503014400, "BCH":  1501545600,
+  "ADA":  1506643200, "XLM":  1404172800, "TRX":  1504224000,
+  "VET":  1533081600, "BSV":  1542240000, "LINK": 1503619200,
+  "ATOM": 1552953600, "MATIC":1557273600, "SOL":  1568502000,
+  "DOT":  1594684800, "AVAX": 1597622400, "UNI":  1600473600,
+  "AAVE": 1601856000, "SHIB": 1619222400, "MANA": 1511136000,
+  "SAND": 1575504000, "APE":  1645574400, "ARB":  1678924800,
+  "OP":   1655251200, "SUI":  1683072000, "PEPE": 1681948800,
+  "WIF":  1702944000, "BONK": 1672531200,
+};
+const CRYPTO_FLOOR_TS = 1483228800; // Jan 1 2017 — safe floor for unknown assets
+
+function getInceptionTs(symbol: string): number {
+  const base = symbol.split(/[-_/]/)[0]?.toUpperCase() ?? "";
+  return ASSET_INCEPTION[base] ?? CRYPTO_FLOOR_TS;
+}
+
 const BINANCE_USDT_PAIRS = new Set([
   "BTC","ETH","SOL","XRP","BNB","ADA","DOGE","DOT","AVAX","MATIC",
   "LINK","UNI","ATOM","LTC","BCH","TRX","ETC","NEAR","ICP","VET",
@@ -161,47 +183,46 @@ function intervalVol(sec: number): number {
   return annualVol * Math.sqrt(sec / secsPerYear);
 }
 
-function generateFallbackCandles(lastPrice: number, interval: string, limit: number): Candle[] {
+function generateFallbackCandles(lastPrice: number, interval: string, limit: number, inceptionTs: number = CRYPTO_FLOOR_TS): Candle[] {
   const sec   = INTERVAL_SECONDS[interval] || 3600;
   const now   = Math.floor(Date.now() / 1000);
-  const vol = intervalVol(sec);
+  const vol   = intervalVol(sec);
+
+  // Clamp limit so candles never extend before the asset's inception date.
+  const maxCandles  = Math.max(1, Math.floor((now - inceptionTs) / sec));
+  const actualLimit = Math.min(limit, maxCandles);
 
   // Use a seeded RNG so repeated calls within the same 60s window return the same series.
-  // Seed = floor(now / 60) so it rotates each minute — "live" feel without chaos.
   const timeBucket = Math.floor(now / 60);
   const rng = makeRng(timeBucket ^ (lastPrice * 1000 | 0));
 
-  // Walk BACKWARD from lastPrice using pure GBM (no drift) — each backward step
-  // is just +/-noise in log-space.  The most-recent candle always closes at lastPrice
-  // with no snap, and the series looks like a genuine market without artificial trends.
-  const logCloses = new Array<number>(limit);
-  logCloses[limit - 1] = Math.log(Math.max(lastPrice, 1e-12));
+  // Walk BACKWARD from lastPrice using pure GBM (no drift).
+  const logCloses = new Array<number>(actualLimit);
+  logCloses[actualLimit - 1] = Math.log(Math.max(lastPrice, 1e-12));
 
-  for (let i = limit - 2; i >= 0; i--) {
-    const shock   = (rng() * 2 - 1) * vol; // uniform approximation of normal shock
-    logCloses[i]  = logCloses[i + 1] + shock; // go backward: add rather than subtract
+  for (let i = actualLimit - 2; i >= 0; i--) {
+    const shock  = (rng() * 2 - 1) * vol;
+    logCloses[i] = logCloses[i + 1] + shock;
   }
 
   const candles: Candle[] = [];
-  for (let i = 0; i < limit; i++) {
+  for (let i = 0; i < actualLimit; i++) {
     const close = Math.exp(logCloses[i]);
     const open  = i === 0
       ? close * Math.exp((rng() - 0.5) * vol * 0.5)
       : Math.exp(logCloses[i - 1]);
 
     const body    = Math.abs(close - open);
-    const minWick = close * 0.0008; // at least 0.08% of price — always visible
+    const minWick = close * 0.0008;
     const hiWick  = Math.max(body * (0.4 + rng() * 1.2), minWick);
     const loWick  = Math.max(body * (0.4 + rng() * 1.2), minWick);
     const high    = Math.max(open, close) + hiWick;
     const low     = Math.min(open, close) - loWick;
 
-    // Log-normal volume: median scales linearly with interval so a 1d candle has
-    // ~24× the volume of a 1h candle, with ±60% spread.
     const medianVol = 500 * (sec / 3600);
     const volume    = Math.exp(Math.log(medianVol) + (rng() - 0.5) * 1.2);
 
-    candles.push({ time: now - sec * (limit - i), open, high, low, close, volume });
+    candles.push({ time: now - sec * (actualLimit - i), open, high, low, close, volume });
   }
   return candles;
 }
@@ -261,7 +282,8 @@ export async function fetchRealCandles(
   }
 
   // ── 3. Synthetic fallback ───────────────────────────────────────────────────
-  const candles = generateFallbackCandles(lastPrice, interval, limit);
+  const inception = getInceptionTs(symbol);
+  const candles = generateFallbackCandles(lastPrice, interval, limit, inception);
   setCached(cacheKey, candles);
   return pinLastCandle(candles, lastPrice);
 }
