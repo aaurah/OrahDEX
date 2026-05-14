@@ -1247,6 +1247,12 @@ export async function updateMarketPrices() {
     const markets = await db.select().from(marketsTable)
       .where(notInArray(marketsTable.type, ["letsexchange"]));
 
+    const pendingUpdates: Array<{
+      symbol: string; lastPrice: string; priceChange24h: string;
+      priceChangePercent24h: string; volume24h: string;
+      high24h: string; low24h: string; marketCap: string | null;
+    }> = [];
+
     for (const market of markets) {
       // Look up by base-asset symbol directly — no CoinGecko ID needed
       const data = prices[market.baseAsset];
@@ -1352,7 +1358,8 @@ export async function updateMarketPrices() {
         continue;
       }
 
-      await db.update(marketsTable).set({
+      pendingUpdates.push({
+        symbol:               market.symbol,
         lastPrice:            fmtPrice(lastPrice),
         priceChange24h:       fmtPrice(Math.abs(change)) === "0" ? "0" : change.toFixed(18).replace(/0+$/, "").replace(/\.$/, "0"),
         priceChangePercent24h: changePercent.toFixed(4),
@@ -1360,8 +1367,28 @@ export async function updateMarketPrices() {
         high24h:              fmtPrice(safePrice(high24h) ? high24h : lastPrice * 1.01),
         low24h:               fmtPrice(safePrice(low24h)  ? low24h  : lastPrice * 0.99),
         marketCap:            data?.usd_market_cap ? data.usd_market_cap.toFixed(2) : null,
-      }).where(eq(marketsTable.symbol, market.symbol));
+      });
     }
+
+    // Flush all price updates in parallel batches of 50 — avoids holding
+    // the full markets array in memory across thousands of sequential awaits.
+    const BATCH = 50;
+    for (let i = 0; i < pendingUpdates.length; i += BATCH) {
+      await Promise.all(
+        pendingUpdates.slice(i, i + BATCH).map(u =>
+          db.update(marketsTable).set({
+            lastPrice:             u.lastPrice,
+            priceChange24h:        u.priceChange24h,
+            priceChangePercent24h: u.priceChangePercent24h,
+            volume24h:             u.volume24h,
+            high24h:               u.high24h,
+            low24h:                u.low24h,
+            marketCap:             u.marketCap,
+          }).where(eq(marketsTable.symbol, u.symbol))
+        )
+      );
+    }
+    pendingUpdates.length = 0;
 
     // Push live USD prices into Genesis VAMM so it tracks the real market
     for (const [sym, data] of Object.entries(prices)) {
