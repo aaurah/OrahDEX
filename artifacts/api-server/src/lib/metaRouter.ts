@@ -26,7 +26,7 @@
 
 import { logger } from "./logger.js";
 import { leRequest, AFFILIATE_ID } from "./lePriceCache.js";
-import { quoteFromSS, isSimpleSwapConfigured, SS_COIN_TICKER } from "./simpleswap.js";
+import { quoteFromSSPair, isSimpleSwapConfigured } from "./simpleswap.js";
 import { quoteFromCN, isChangeNowConfigured }                  from "./changenow.js";
 import { quoteFromSX, isStealthExConfigured }                  from "./stealthex.js";
 import { quoteFromChangelly, isChangellyConfigured }           from "./changelly.js";
@@ -173,19 +173,13 @@ async function quoteSimpleSwap(
     return { quote: null, error: "SIMPLESWAP_API_KEY not configured" };
   }
 
-  // SimpleSwap only handles USDT→coin buys via quoteFromSS (amount in USDT)
-  // For general from→to pairs we skip unless from=USDT
-  const fromUpper = from.toUpperCase();
-  if (fromUpper !== "USDT") {
-    return { quote: null, error: "SimpleSwap adapter only handles USDT-in pairs" };
-  }
-  if (!SS_COIN_TICKER[to.toUpperCase()]) {
-    return { quote: null, error: `SimpleSwap has no ticker for ${to}` };
-  }
-
   try {
-    const result = await quoteFromSS(to.toUpperCase(), amount);
+    const result = await quoteFromSSPair(from, to, amount);
     if (!result) return { quote: null, error: "SimpleSwap returned no result" };
+
+    const canExecute =
+      (result.minAmount == null || amount >= result.minAmount) &&
+      (result.maxAmount == null || amount <= result.maxAmount);
 
     const feeRatio = VENUE_FEE_RATIOS.simpleswap;
     const quote: RouteQuote = {
@@ -193,14 +187,14 @@ async function quoteSimpleSwap(
       inputToken:     from,
       outputToken:    to,
       inputAmount:    amount,
-      expectedOutput: result.coinAmount,
+      expectedOutput: result.estimatedAmount,
       networkFeeUsd:  0,
       venueFeeUsd:    amount * feeRatio,
       venueFeeRatio:  feeRatio,
       slippageBps:    0,
-      minAmount:      null,
-      maxAmount:      null,
-      canExecute:     true,
+      minAmount:      result.minAmount,
+      maxAmount:      result.maxAmount,
+      canExecute,
       score:          0,
       raw:            result,
     };
