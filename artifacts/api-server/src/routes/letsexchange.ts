@@ -22,7 +22,7 @@ import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db } from "@workspace/db";
 import { marketsTable, leSwapsTable } from "@workspace/db/schema";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, ne, inArray, sql } from "drizzle-orm";
 import {
   leRequest, fetchLEPricesUSD, getCachedLEPrices, AFFILIATE_ID,
   type NormalisedCoin,
@@ -458,13 +458,29 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
   const filterQuote = typeof req.query.quote === "string" ? req.query.quote.toUpperCase() : null;
   const returnAll   = req.query.all === "true" || req.query.all === "1";
 
-  // Fast path: when ?all=true, return total DB market count directly
+  // Fast path: when ?all=true, return native market count + LE API pair estimate.
+  // We deliberately exclude type='letsexchange' rows from the DB count — those are
+  // synthetic rows seeded only in dev, so counting them would produce wildly different
+  // totals between dev (1.17 M rows) and production (0 rows).  Instead we derive the
+  // LE pair count from the live LE API coin list (same in every environment).
   if (returnAll && !filterQuote) {
     try {
-      const rows = await db.select({ count: sql<number>`count(*)` })
+      const [nativeRows] = await db
+        .select({ count: sql<number>`count(*)` })
         .from(marketsTable)
-        .where(eq(marketsTable.enabled, true));
-      const total = Number(rows[0]?.count ?? 0);
+        .where(and(eq(marketsTable.enabled, true), ne(marketsTable.type, "letsexchange")));
+      const nativeCount = Number(nativeRows?.count ?? 0);
+
+      // Use cached LE coin list if available, otherwise fall back to built-in catalog.
+      let leCoins: NormalisedCoin[] | null = cached("currencies") as NormalisedCoin[] | null;
+      if (!leCoins || leCoins.length < 10) {
+        try { leCoins = await fetchAndCacheCurrencies(); } catch { /* non-fatal */ }
+      }
+      const leCoinCount = (leCoins && leCoins.length > 0) ? leCoins.length : builtInCoinsAsFallback().length;
+      // All-to-all LE pairs (directional: A→B and B→A are both valid swaps)
+      const leEstimate = leCoinCount * leCoinCount;
+
+      const total = nativeCount + leEstimate;
       res.set("Cache-Control", `public, max-age=${COUNT_CACHE_MAX_AGE_SECONDS}`);
       res.json({ count: total });
       return;
