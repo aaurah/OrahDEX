@@ -222,11 +222,13 @@ function Router() {
   useEffect(() => {
     applyStoredTheme();
 
-    // Keep Reown modal colours in sync with app theme
-    const syncTheme = (theme: string) =>
-      import("@/lib/reown").then(({ syncReownTheme }) => syncReownTheme(theme));
-    syncTheme(useThemeStore.getState().theme);
-    const unsubTheme = useThemeStore.subscribe(s => syncTheme(s.theme));
+    // Apply app theme to Reown modal once after it finishes initialising
+    const themeTimer = setTimeout(() => {
+      import("@/lib/reown").then(({ syncReownTheme }) =>
+        syncReownTheme(useThemeStore.getState().theme)
+      );
+    }, 1500);
+    const unsubTheme = () => clearTimeout(themeTimer);
 
     const eth = (window as any).ethereum;
 
