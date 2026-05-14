@@ -361,13 +361,11 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   useEffect(() => { setStoredDerived(getDerivedAddresses(derivedKey)); }, [derivedKey]);
 
   const derived = useMemo<DerivedAddresses | null>(() => {
-    const btcStore = internalBtcAddress?.startsWith("bc1")           ? internalBtcAddress : undefined;
-    const bchStore = internalBchAddress?.startsWith("bitcoincash:q") ? internalBchAddress : undefined;
     const storeAddrs: DerivedAddresses = {
-      evm:  evmAddress         ?? undefined,
-      bsv:  internalBsvAddress ?? undefined,
-      btc:  btcStore,
-      bch:  bchStore,
+      evm:  evmAddress          ?? undefined,
+      bsv:  internalBsvAddress  ?? undefined,
+      btc:  internalBtcAddress  ?? undefined,
+      bch:  internalBchAddress  ?? undefined,
       sol:  internalSolAddress  ?? undefined,
       tron: internalTronAddress ?? undefined,
       xrp:  internalXrpAddress  ?? undefined,
