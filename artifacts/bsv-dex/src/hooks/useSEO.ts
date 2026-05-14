@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 
-const BASE_URL = "https://orahdex.replit.app";
-const DEFAULT_IMAGE = `${BASE_URL}/opengraph.jpg`;
+const FALLBACK_SITE_URL = "https://orahdex.org";
+const CONFIGURED_SITE_URL = (import.meta.env.VITE_SITE_URL ?? FALLBACK_SITE_URL).replace(/\/$/, "");
+const DEFAULT_IMAGE = `${CONFIGURED_SITE_URL}/opengraph.jpg`;
 const SITE_NAME = "OrahDEX";
 
 interface SEOOptions {
@@ -56,7 +57,12 @@ export function useSEO({
 }: SEOOptions) {
   useEffect(() => {
     const fullTitle = `${title} | ${SITE_NAME}`;
-    const fullUrl = url ? `${BASE_URL}${url}` : BASE_URL;
+    const runtimeSiteUrl =
+      typeof window !== "undefined" ? window.location.origin.replace(/\/$/, "") : CONFIGURED_SITE_URL;
+    const resolvedUrl = url ?? (typeof window !== "undefined" ? `${window.location.pathname}${window.location.search}` : "/");
+    const fullUrl = /^https?:\/\//.test(resolvedUrl)
+      ? resolvedUrl
+      : `${runtimeSiteUrl}${resolvedUrl.startsWith("/") ? resolvedUrl : `/${resolvedUrl}`}`;
 
     document.title = fullTitle;
 

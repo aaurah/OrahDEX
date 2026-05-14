@@ -132,7 +132,7 @@ export function Markets() {
       "@type": "ItemList",
       "name": "OrahDEX Cryptocurrency Markets",
       "description": "Live cryptocurrency trading pairs on OrahDEX",
-      "url": "https://orahdex.replit.app/"
+      "url": "https://orahdex.org/"
     }
   });
 

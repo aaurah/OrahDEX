@@ -277,7 +277,7 @@ export function SpotTrading() {
     "@type": "WebPage",
     "name": `${base}/${quote} Spot Trading on OrahDEX`,
     "description": `Live ${base}/${quote} spot trading with real-time charts and order book`,
-    "url": `https://orahdex.replit.app/trade/${rawSymbol}`
+    "url": `https://orahdex.org/trade/${rawSymbol}`
   }), [base, quote, rawSymbol]);
 
   const priceSign = ticker.priceChangePercent >= 0 ? "▲" : "▼";
