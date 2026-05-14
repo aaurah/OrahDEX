@@ -272,50 +272,44 @@ async function runCycle(): Promise<void> {
     }
 
     // ── Step 3: Seed order books using the now-consistent prices ────────────
-    // Process in batches of 20 to avoid overwhelming the DB connection pool.
+    // Pre-build USDT volume map for O(1) lookups (avoids O(n²) active.find()).
+    const usdtVolByBase = new Map<string, number>();
+    for (const m of active) {
+      if (m.quoteAsset === "USDT" && m.type === "spot") {
+        const v = parseFloat(m.volume24h as string) || 0;
+        if (v > 0) usdtVolByBase.set(m.baseAsset, v);
+      }
+    }
+
+    // Process in batches of 20 directly — no intermediate marketJobs array
+    // so the full 4003-element list is never held alongside the batch closures.
     const BATCH_SIZE = 20;
-    const marketJobs = active.map(m => {
-      const baseUSD  = usdMap.get(m.baseAsset)  ?? FALLBACK_PRICES[m.baseAsset]  ?? 0;
-      const quoteUSD = usdMap.get(m.quoteAsset) ?? FALLBACK_PRICES[m.quoteAsset] ?? 1;
-
-      let midPrice: number;
-      if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") {
-        midPrice = parseFloat(m.lastPrice as string) || 0;
-      } else {
-        midPrice = (baseUSD > 0 && quoteUSD > 0)
-          ? baseUSD / quoteUSD
-          : parseFloat(m.lastPrice as string) || 0;
-      }
-
-      // Volume: use DB value when available; otherwise derive from base-asset's
-      // USDT volume scaled to this quote currency.
-      let vol = parseFloat(m.volume24h as string) || 0;
-      if (vol <= 0 && baseUSD > 0 && quoteUSD > 0) {
-        // Find the USDT volume for the base asset as a proxy
-        const usdtMarket = active.find(
-          x => x.baseAsset === m.baseAsset && x.quoteAsset === "USDT" && x.type === "spot"
-        );
-        const usdtVol = parseFloat(usdtMarket?.volume24h as string) || 0;
-        if (usdtVol > 0) vol = usdtVol / quoteUSD;
-      }
-
-      return { m, midPrice, baseUsdPrice: baseUSD, vol };
-    });
-
-    for (let i = 0; i < marketJobs.length; i += BATCH_SIZE) {
-      const batch = marketJobs.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < active.length; i += BATCH_SIZE) {
+      const batch = active.slice(i, i + BATCH_SIZE);
       await Promise.all(
-        batch.map(({ m, midPrice, baseUsdPrice, vol }) =>
-          refreshMarket(
-            m.symbol,
-            m.quoteAsset,
-            midPrice,
-            vol,
-            baseUsdPrice,
-          ).catch(err =>
-            logger.warn({ err, symbol: m.symbol }, "Bot: skipped market"),
-          )
-        ),
+        batch.map(m => {
+          const baseUSD  = usdMap.get(m.baseAsset)  ?? FALLBACK_PRICES[m.baseAsset]  ?? 0;
+          const quoteUSD = usdMap.get(m.quoteAsset) ?? FALLBACK_PRICES[m.quoteAsset] ?? 1;
+
+          let midPrice: number;
+          if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") {
+            midPrice = parseFloat(m.lastPrice as string) || 0;
+          } else {
+            midPrice = (baseUSD > 0 && quoteUSD > 0)
+              ? baseUSD / quoteUSD
+              : parseFloat(m.lastPrice as string) || 0;
+          }
+
+          // Volume: DB value or derive via O(1) Map lookup (not O(n) find).
+          let vol = parseFloat(m.volume24h as string) || 0;
+          if (vol <= 0 && baseUSD > 0 && quoteUSD > 0) {
+            const usdtVol = usdtVolByBase.get(m.baseAsset) ?? 0;
+            if (usdtVol > 0) vol = usdtVol / quoteUSD;
+          }
+
+          return refreshMarket(m.symbol, m.quoteAsset, midPrice, vol, baseUSD)
+            .catch(err => logger.warn({ err, symbol: m.symbol }, "Bot: skipped market"));
+        }),
       );
     }
 

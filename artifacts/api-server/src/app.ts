@@ -315,9 +315,13 @@ if (process.env.NODE_ENV === "production") {
       maxAge: "1y",
       immutable: true,
       index: false,
+      setHeaders(res) {
+        res.setHeader("X-Robots-Tag", "index, follow");
+      },
     }));
     // SPA catch-all: any path not matched by /api or /v1 serves index.html
     app.get(/^(?!\/api|\/v1).*$/, (_req: Request, res: Response) => {
+      res.setHeader("X-Robots-Tag", "index, follow");
       res.sendFile(path.join(frontendDist, "index.html"));
     });
   } else {
