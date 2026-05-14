@@ -177,13 +177,14 @@ async function verifySpotFunding(
     }
 
     const RPC_URLS: Record<number, string> = {
-      1:      process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
-      56:     process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
-      137:    process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",
-      8453:   process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
-      42161:  process.env.ARB_RPC_URL      ?? "https://arb1.arbitrum.io/rpc",
-      10:     process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",
-      43114:  process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
+      1:        process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
+      56:       process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
+      137:      process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",
+      8453:     process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
+      42161:    process.env.ARB_RPC_URL      ?? "https://arb1.arbitrum.io/rpc",
+      10:       process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",
+      43114:    process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
+      11155111: process.env.SEPOLIA_RPC_URL  ?? "https://ethereum-sepolia-rpc.publicnode.com",
     };
     const rpcUrl = RPC_URLS[chainId];
     if (!rpcUrl) {
