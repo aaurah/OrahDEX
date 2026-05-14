@@ -17,6 +17,7 @@ import crypto from "node:crypto";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
 import { FALLBACK_PRICES, seedMarketsIfNeeded } from "./priceUpdater.js";
+import { serviceState } from "../routes/admin.js";
 
 /** Stablecoin quote assets — treated as 1:1 with USD for cross-price math */
 const STABLECOINS = new Set(["USDT","USDC","TUSD","USDD","BUSD","DAI"]);
@@ -314,6 +315,8 @@ async function runCycle(): Promise<void> {
     }
 
     await accumulateCycleProfit(active);
+    serviceState.botLastCycleAt = Date.now();
+    serviceState.botCycles++;
     logger.info({ markets: active.length }, "Liquidity bot cycle complete");
   } catch (err) {
     logger.error({ err }, "Liquidity bot cycle failed");
