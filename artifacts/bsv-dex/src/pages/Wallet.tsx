@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Wallet as WalletIcon, Download, ArrowDownUp, Copy, Check,
   ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles,
-  RefreshCw, Link2, Link2Off, Send, TrendingUp, Cpu,
+  RefreshCw, Link2, Link2Off, Send, TrendingUp,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -18,7 +18,6 @@ import { ReceiveModal } from "@/components/ReceiveModal";
 import { RevealSecretSheet } from "@/components/wallet/RevealSecretSheet";
 import { ChainReceiveSheet } from "@/components/wallet/ChainReceiveSheet";
 import { ManualImportSheet, type ImportChain } from "@/components/wallet/ManualImportSheet";
-import { HardwareWalletSheet, type HWAddresses } from "@/components/wallet/HardwareWalletSheet";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -109,23 +108,21 @@ function ChainRowShell({
   onReceive: () => void;
   onImport: () => void;
 }) {
-  const hasAddr    = !!chainAddr;
+  const hasAddr   = !!chainAddr;
   const canReceive = hasAddr && chain.live;
-  const needsLink  = !hasAddr && chain.live && chain.family !== "evm";
+
+  const addrLabel = hasAddr
+    ? `${chainAddr.slice(0, 8)}…${chainAddr.slice(-5)}`
+    : chain.live
+      ? "No address linked"
+      : "Coming soon";
 
   return (
-    <div
-      className={cn(
-        "flex items-center gap-3 px-4 py-3.5 transition-colors group",
-        needsLink
-          ? "hover:bg-amber-500/5 border-l-2 border-l-amber-500/40"
-          : "hover:bg-secondary/30 border-l-2 border-l-transparent",
-      )}
-    >
+    <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/30 transition-colors group">
       {/* Chain icon */}
       <div
         className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm"
-        style={{ backgroundColor: chain.color, opacity: needsLink ? 0.6 : 1 }}
+        style={{ backgroundColor: chain.color }}
       >
         {chain.symbol.slice(0, 3)}
       </div>
@@ -133,14 +130,13 @@ function ChainRowShell({
       {/* Name + address */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <p className={cn("text-sm font-semibold truncate", needsLink ? "text-muted-foreground" : "text-foreground")}>
-            {chain.name}
-          </p>
+          <p className="text-sm font-semibold text-foreground truncate">{chain.name}</p>
           {chain.badge && (
             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/15 text-primary uppercase tracking-wider shrink-0">
               {chain.badge}
             </span>
           )}
+          {/* Watch-mode indicator */}
           {hasAddr && chain.family !== "evm" && (
             <span className="hidden group-hover:inline-flex items-center gap-0.5 text-[9px] font-semibold text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded-full uppercase tracking-wide shrink-0">
               <Link2 size={8} /> Linked
@@ -149,20 +145,19 @@ function ChainRowShell({
         </div>
 
         {hasAddr ? (
-          <p className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate">
-            {chainAddr.slice(0, 8)}…{chainAddr.slice(-5)}
-          </p>
-        ) : chain.live ? (
-          /* ── Prominent "Add address" CTA when nothing is linked ── */
-          <button
-            onClick={onImport}
-            className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-500 hover:text-amber-400 transition-colors"
-          >
-            <Plus size={11} className="shrink-0" />
-            Add your {chain.symbol} address
-          </button>
+          <p className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate">{addrLabel}</p>
         ) : (
-          <p className="text-[11px] text-muted-foreground mt-0.5">Coming soon</p>
+          chain.live ? (
+            <button
+              onClick={onImport}
+              className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-primary/80 hover:text-primary transition-colors"
+            >
+              <Plus size={10} />
+              Link address or import key
+            </button>
+          ) : (
+            <p className="text-[11px] text-muted-foreground mt-0.5">{addrLabel}</p>
+          )
         )}
       </div>
 
@@ -171,21 +166,23 @@ function ChainRowShell({
 
       {/* Action buttons */}
       <div className="flex items-center gap-1.5 shrink-0">
+        {/* Import / link button (always visible for non-EVM chains) */}
         {chain.family !== "evm" && chain.live && (
           <button
             onClick={onImport}
-            title={hasAddr ? "Manage linked address" : `Add your ${chain.symbol} address`}
+            title={hasAddr ? "Manage linked address" : "Link address or import key"}
             className={cn(
-              "w-8 h-8 rounded-lg flex items-center justify-center transition-all shrink-0",
+              "w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0",
               hasAddr
                 ? "bg-primary/10 hover:bg-primary/20 text-primary"
-                : "bg-amber-500/15 hover:bg-amber-500/25 text-amber-500 ring-1 ring-amber-500/30",
+                : "bg-secondary/60 hover:bg-primary/15 text-muted-foreground hover:text-primary",
             )}
           >
-            {hasAddr ? <Link2 size={13} /> : <Plus size={13} />}
+            {hasAddr ? <Link2 size={13} /> : <Link2Off size={13} />}
           </button>
         )}
 
+        {/* Receive button */}
         <button
           onClick={onReceive}
           disabled={!canReceive}
@@ -364,11 +361,13 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   useEffect(() => { setStoredDerived(getDerivedAddresses(derivedKey)); }, [derivedKey]);
 
   const derived = useMemo<DerivedAddresses | null>(() => {
+    const btcStore = internalBtcAddress?.startsWith("bc1")           ? internalBtcAddress : undefined;
+    const bchStore = internalBchAddress?.startsWith("bitcoincash:q") ? internalBchAddress : undefined;
     const storeAddrs: DerivedAddresses = {
-      evm:  evmAddress          ?? undefined,
-      bsv:  internalBsvAddress  ?? undefined,
-      btc:  internalBtcAddress  ?? undefined,
-      bch:  internalBchAddress  ?? undefined,
+      evm:  evmAddress         ?? undefined,
+      bsv:  internalBsvAddress ?? undefined,
+      btc:  btcStore,
+      bch:  bchStore,
       sol:  internalSolAddress  ?? undefined,
       tron: internalTronAddress ?? undefined,
       xrp:  internalXrpAddress  ?? undefined,
@@ -398,7 +397,6 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const [copied, setCopied]             = useState(false);
   const [refreshing, setRefreshing]     = useState(false);
   const [importChain, setImportChain]   = useState<ChainRow | null>(null);
-  const [hwSheetOpen, setHwSheetOpen]   = useState(false);
 
   const hasMissingChains = canBackup && (!derived?.btc || !derived?.bch || !derived?.tron || !derived?.xrp || !derived?.ltc || !derived?.doge);
 
@@ -495,43 +493,6 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
     toast({ title: "Address copied" });
   };
 
-  // ── Hardware wallet: save all chain addresses at once ─────────────────────
-  const handleHWSave = (addrs: HWAddresses) => {
-    if (!derivedKey) return;
-    const map: Partial<Record<string, string>> = {
-      evm:  addrs.evm,
-      btc:  addrs.btc,
-      bch:  addrs.bch,
-      bsv:  addrs.bsv,
-      sol:  addrs.sol,
-      tron: addrs.tron,
-      xrp:  addrs.xrp,
-      ltc:  addrs.ltc,
-      doge: addrs.doge,
-    };
-    // Persist each present address
-    const toSave: DerivedAddresses = {};
-    for (const [k, v] of Object.entries(map)) {
-      if (v) (toSave as any)[k] = v;
-    }
-    saveDerivedAddresses(derivedKey, toSave);
-    setStoredDerived(getDerivedAddresses(derivedKey));
-
-    // Mirror to store for immediate UI update
-    if (addrs.bsv)  setInternalBsvAddress(addrs.bsv);
-    if (addrs.btc)  setInternalBtcAddress(addrs.btc);
-    if (addrs.bch)  setInternalBchAddress(addrs.bch);
-    if (addrs.sol)  setInternalSolAddress(addrs.sol);
-    if (addrs.tron) setInternalTronAddress(addrs.tron);
-    if (addrs.xrp)  setInternalXrpAddress(addrs.xrp);
-    if (addrs.ltc)  setInternalLtcAddress(addrs.ltc);
-    if (addrs.doge) setInternalDogeAddress(addrs.doge);
-
-    const count = Object.values(addrs).filter(Boolean).length;
-    toast({ title: `${count} chain address${count > 1 ? "es" : ""} linked from hardware wallet` });
-    setHwSheetOpen(false);
-  };
-
   if (!address) {
     return (
       <div className="min-h-full flex flex-col items-center justify-center px-6 py-20">
@@ -611,23 +572,6 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       </div>
 
       {afterActions}
-
-      {/* ── Hardware wallet CTA ── */}
-      <button
-        onClick={() => setHwSheetOpen(true)}
-        className="w-full mb-4 rounded-2xl border border-primary/25 bg-primary/8 p-4 flex items-center gap-3 hover:bg-primary/12 active:scale-[0.99] transition-all text-left"
-      >
-        <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
-          <Cpu size={18} className="text-primary" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground">Connect hardware wallet</p>
-          <p className="text-[11px] text-muted-foreground">
-            Ledger · Trezor · ELLIPAL · SafePal · Tangem — all coins auto-populated
-          </p>
-        </div>
-        <ChevronRight size={16} className="text-muted-foreground" />
-      </button>
 
       {/* ── Backup CTA ── */}
       {canBackup && (
@@ -723,12 +667,6 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         onClose={() => setImportChain(null)}
         onSave={handleImportSave}
         onRemove={handleImportRemove}
-      />
-
-      <HardwareWalletSheet
-        open={hwSheetOpen}
-        onClose={() => setHwSheetOpen(false)}
-        onSave={handleHWSave}
       />
     </div>
   );

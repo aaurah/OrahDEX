@@ -25,15 +25,12 @@ export const REOWN_NETWORKS: [AppKitNetwork, ...AppKitNetwork[]] = [
 let _modal: ReturnType<typeof createAppKit> | null = null;
 let _adapter: WagmiAdapter | null = null;
 let _initialized = false;
-let _projectId = "";
-let _wcEthProvider: any = null;
 
 export function setupReown(projectId: string): void {
   if (_initialized || !projectId) return;
-  _projectId = projectId;
 
   try {
-    _adapter = new WagmiAdapter({ networks: REOWN_NETWORKS, projectId, ssr: false });
+    _adapter = new WagmiAdapter({ networks: REOWN_NETWORKS, projectId });
 
     _modal = createAppKit({
       adapters: [_adapter],
@@ -727,75 +724,5 @@ export async function getBlockNumber(chainId: number): Promise<number | null> {
     return json?.result ? parseInt(json.result, 16) : null;
   } catch {
     return null;
-  }
-}
-
-/* ── Direct WalletConnect v2 connection (bypasses AppKit WagmiAdapter) ───── */
-
-/**
- * Connect via WalletConnect v2 using EthereumProvider directly.
- * Calls onUri(uri) as soon as the QR/deep-link URI is ready.
- * Resolves with { address, chainId } when the wallet approves.
- */
-export async function connectViaWalletConnect(
-  onUri: (uri: string) => void,
-): Promise<{ address: string; chainId: number }> {
-  const pid = _projectId || (import.meta.env?.VITE_REOWN_PROJECT_ID as string | undefined) || "";
-  if (!pid) throw new Error("Reown project ID not set — check VITE_REOWN_PROJECT_ID.");
-
-  // Disconnect any stale session
-  if (_wcEthProvider) {
-    try { await (_wcEthProvider as any).disconnect(); } catch { /* ignore */ }
-    _wcEthProvider = null;
-  }
-
-  const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
-
-  const provider = await EthereumProvider.init({
-    projectId: pid,
-    chains: [1],
-    showQrModal: false,
-    optionalChains: [56, 137, 42161, 10, 8453, 43114, 59144, 324, 534352, 5000, 250, 25],
-    methods: ["eth_sendTransaction", "eth_sign", "personal_sign", "eth_signTypedData", "eth_signTypedData_v4"],
-    events: ["chainChanged", "accountsChanged"],
-    metadata: {
-      name: "OrahDEX",
-      description: "Trade means DEX — Multi-chain BSV DEX with instant on-chain settlement",
-      url: window.location.origin,
-      icons: [`${window.location.origin}/favicon.svg`],
-    },
-  });
-
-  _wcEthProvider = provider;
-
-  (provider as any).on("display_uri", (uri: string) => {
-    onUri(uri);
-  });
-
-  try {
-    await (provider as any).connect();
-  } catch (err: any) {
-    _wcEthProvider = null;
-    throw err;
-  }
-
-  const accounts: string[] = (provider as any).accounts ?? [];
-  const chainId: number = (provider as any).chainId ?? 1;
-
-  if (!accounts.length) {
-    _wcEthProvider = null;
-    throw new Error("No accounts returned from wallet.");
-  }
-
-  return { address: accounts[0], chainId };
-}
-
-/**
- * Cancel an in-progress WalletConnect v2 connection attempt.
- */
-export function cancelWalletConnect(): void {
-  if (_wcEthProvider) {
-    try { (_wcEthProvider as any).disconnect(); } catch { /* ignore */ }
-    _wcEthProvider = null;
   }
 }
