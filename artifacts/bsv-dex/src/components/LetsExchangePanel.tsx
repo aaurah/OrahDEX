@@ -19,7 +19,7 @@ import { QRCodeSVG } from "qrcode.react";
 import {
   Search, Loader2, AlertTriangle, X, ChevronDown, ArrowUpDown,
   Zap, CheckCircle2, ChevronLeft, Copy, Check, RefreshCw,
-  Clock, Lock, Wallet, Trash2, ArrowRight, History,
+  Clock, Lock, Wallet, Trash2, ArrowRight, History, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -840,13 +840,15 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   order: OrderResult; fromCoin: LeCoin; toCoin: LeCoin;
   onBack: () => void; onReset: () => void;
 }) {
-  const [status,      setStatus]      = useState<StatusResult|null>(null);
-  const [statusError, setStatusError] = useState(false);
-  const [infoOpen,    setInfoOpen]    = useState(false);
-  const [refreshKey,  setRefreshKey]  = useState(0);
-  const [sendState,   setSendState]   = useState<"idle"|"sending"|"sent"|"error">("idle");
-  const [txHash,      setTxHash]      = useState<string|null>(null);
-  const [sendError,   setSendError]   = useState<string|null>(null);
+  const [status,         setStatus]         = useState<StatusResult|null>(null);
+  const [statusError,    setStatusError]    = useState(false);
+  const [notFoundCount,  setNotFoundCount]  = useState(0);
+  const [effectiveVenue, setEffectiveVenue] = useState<string>(order.best_venue ?? "letsexchange");
+  const [infoOpen,       setInfoOpen]       = useState(false);
+  const [refreshKey,     setRefreshKey]     = useState(0);
+  const [sendState,      setSendState]      = useState<"idle"|"sending"|"sent"|"error">("idle");
+  const [txHash,         setTxHash]         = useState<string|null>(null);
+  const [sendError,      setSendError]      = useState<string|null>(null);
 
   const { address: evmAddress } = useAccount();
 
@@ -902,15 +904,27 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const venueSuffix = order.best_venue && order.best_venue !== "letsexchange"
-        ? `?venue=${encodeURIComponent(order.best_venue)}`
+      const venueSuffix = effectiveVenue && effectiveVenue !== "letsexchange"
+        ? `?venue=${encodeURIComponent(effectiveVenue)}`
         : "";
       const r = await fetch(`${API}/letsexchange/status/${order.transaction_id}${venueSuffix}`);
       const d = await r.json();
-      if (r.ok && d.transaction_id) { setStatus(d); setStatusError(false); }
-      else setStatusError(true);
+      if (r.ok && d.transaction_id) {
+        // If the server rescued the exchange from a different venue, update our local venue
+        if (d.venue_rescued && d.best_venue && d.best_venue !== effectiveVenue) {
+          setEffectiveVenue(d.best_venue);
+        }
+        setStatus(d);
+        setStatusError(false);
+        setNotFoundCount(0);
+      } else if (r.status === 404) {
+        setNotFoundCount(n => n + 1);
+        setStatusError(true);
+      } else {
+        setStatusError(true);
+      }
     } catch { setStatusError(true); }
-  }, [order.transaction_id, order.best_venue]);
+  }, [order.transaction_id, effectiveVenue]);
 
   useEffect(() => { fetchStatus(); }, [fetchStatus, refreshKey]);
 
@@ -967,6 +981,57 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
         </div>
         {statusError && <AlertTriangle className="w-4 h-4 text-yellow-400/50 shrink-0" />}
       </div>
+
+      {/* Support card — shown after 3+ consecutive "not found" responses */}
+      {notFoundCount >= 3 && (
+        <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/5 p-4 space-y-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-yellow-300">Exchange not found</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                If you already sent funds, contact the exchange provider with your order details below.
+              </p>
+            </div>
+          </div>
+          <div className="space-y-1.5 text-xs font-mono">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground w-20 shrink-0">Order ID</span>
+              <span className="text-foreground break-all">{order.transaction_id}</span>
+              <CopyButton text={order.transaction_id} />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground w-20 shrink-0">Pair</span>
+              <span className="text-foreground">{order.coin_from} → {order.coin_to}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground w-20 shrink-0">Amount</span>
+              <span className="text-foreground">{order.deposit_amount} {order.coin_from}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground w-20 shrink-0">Deposit to</span>
+              <span className="text-foreground break-all">{order.deposit}</span>
+              <CopyButton text={order.deposit} />
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <a href="https://support.changenow.io/" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
+              ChangeNOW Support <ExternalLink className="w-3 h-3" />
+            </a>
+            <span className="text-muted-foreground/40">·</span>
+            <a href="https://stealthex.io/faq/" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
+              StealthEX Support <ExternalLink className="w-3 h-3" />
+            </a>
+            <span className="text-muted-foreground/40">·</span>
+            <a href="https://simpleswap.io/help" target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
+              SimpleSwap Support <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Deposit address */}
       <div className="space-y-2">
@@ -1058,6 +1123,16 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
             <span className="text-xs text-emerald-400 font-mono">{shortAddr(order.transaction_id)}</span>
             <CopyButton text={order.transaction_id} />
           </div>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">Provider</span>
+          <span className="text-xs text-foreground/70">
+            {effectiveVenue === "changenow"   ? "ChangeNOW"   :
+             effectiveVenue === "stealthex"   ? "StealthEX"   :
+             effectiveVenue === "simpleswap"  ? "SimpleSwap"  :
+             effectiveVenue === "changelly"   ? "Changelly"   :
+             "LetsExchange"}
+          </span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">Rate</span>
