@@ -17,7 +17,7 @@ import crypto from "node:crypto";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
 import { FALLBACK_PRICES, seedMarketsIfNeeded } from "./priceUpdater.js";
-import { serviceState } from "../routes/admin.js";
+import { serviceState } from "./serviceState.js";
 
 /** Stablecoin quote assets — treated as 1:1 with USD for cross-price math */
 const STABLECOINS = new Set(["USDT","USDC","TUSD","USDD","BUSD","DAI"]);

@@ -16,7 +16,7 @@ import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
-import { serviceState } from "../routes/admin.js";
+import { serviceState } from "./serviceState.js";
 
 const WOC_BASE       = BSV_NET.wocBase;
 const WOC_CHAIN_INFO = `${WOC_BASE}/chain/info`;
