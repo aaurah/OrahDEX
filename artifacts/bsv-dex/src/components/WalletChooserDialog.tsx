@@ -883,13 +883,13 @@ export function WalletChooserDialog() {
 
               <div className="space-y-2">
                 <OptionCard
-                  onClick={() => setTab("create-wallet")}
-                  iconBg="bg-emerald-500/10 border border-emerald-500/20 group-hover:bg-emerald-500/15 group-hover:border-emerald-500/35"
-                  icon={<Plus className="w-5 h-5 text-emerald-400" />}
-                  title="Create Wallet"
-                  sub="New passkey wallet · Face ID · Touch ID · 12-word seed"
+                  onClick={() => setTab("passkey")}
+                  iconBg="bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40"
+                  icon={<Fingerprint className="w-5 h-5 text-primary" />}
+                  title="OrahDEX Wallet"
+                  sub="Create new · or use existing passkey · BSV · BTC · ETH · SOL + more"
                   badge={
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 tracking-wider">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 tracking-wider">
                       NEW
                     </span>
                   }
@@ -902,14 +902,6 @@ export function WalletChooserDialog() {
                   icon={<FileKey className="w-5 h-5 text-violet-400" />}
                   title="Seed Phrase Wallet"
                   sub="12-word backup · protect with Face ID, Touch ID, or PIN"
-                />
-
-                <OptionCard
-                  onClick={() => setTab("passkey")}
-                  iconBg="bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40"
-                  icon={<Fingerprint className="w-5 h-5 text-primary" />}
-                  title="Passkey Wallet"
-                  sub="Use existing OrahDEX passkey · BSV · BTC · ETH · SOL + more"
                 />
 
                 <OptionCard
