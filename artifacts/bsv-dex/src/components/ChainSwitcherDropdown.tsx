@@ -342,6 +342,24 @@ const OTHER_CHAINS_MAINNET = [
   { key: "doge", name: "Dogecoin",     symbol: "DOGE", icon: "Ð",  color: "text-yellow-500", network: "doge" as const },
 ];
 
+/** Returns true only if the wallet store has an address for the given network. */
+function canSwitchToNetwork(network: string): boolean {
+  const s = useWalletStore.getState();
+  switch (network) {
+    case 'evm':      return !!(s.internalEvmAddress  ?? (s.network === 'evm'                                  ? s.address : null));
+    case 'bsv':
+    case 'bsv-test': return !!(s.internalBsvAddress  ?? (['bsv','bsv-test'].includes(s.network ?? '')          ? s.address : null));
+    case 'btc':      return !!(s.internalBtcAddress  ?? (s.network === 'btc'                                  ? s.address : null));
+    case 'sol':      return !!(s.internalSolAddress  ?? (s.network === 'sol'                                  ? s.address : null));
+    case 'bch':      return !!(s.internalBchAddress  ?? (s.network === 'bch'                                  ? s.address : null));
+    case 'xrp':      return !!(s.internalXrpAddress  ?? (s.network === 'xrp'                                  ? s.address : null));
+    case 'ltc':      return !!(s.internalLtcAddress  ?? (s.network === 'ltc'                                  ? s.address : null));
+    case 'doge':     return !!(s.internalDogeAddress ?? (s.network === 'doge'                                 ? s.address : null));
+    case 'tron':     return !!(s.internalTronAddress ?? (s.network === 'tron'                                 ? s.address : null));
+    default:         return false;
+  }
+}
+
 const BADGE_COLORS: Record<string, string> = {
   L1: "bg-blue-500/15 text-blue-400 border-blue-500/30",
   L2: "bg-violet-500/15 text-violet-400 border-violet-500/30",
@@ -374,8 +392,31 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
     /* ── Reown / WalletConnect path ─────────────────────────────────────── */
     if (provider === "reown") {
       try {
-        await switchReownChain(chain.id);
-        // Use switchChain to update only the chainId — never wipes internal addresses
+        const switched = await switchReownChain(chain.id);
+        if (!switched) {
+          /* Chain not pre-configured in AppKit — fall back to injected provider */
+          const eth = (window as any).ethereum;
+          if (!eth) throw new Error(`${chain.name} is not available via WalletConnect. Please connect via MetaMask to use this chain.`);
+          const hexId = `0x${chain.id.toString(16)}`;
+          try {
+            await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
+          } catch (switchErr: any) {
+            if (switchErr?.code === 4902 || switchErr?.code === -32603) {
+              await eth.request({
+                method: "wallet_addEthereumChain",
+                params: [{
+                  chainId: hexId,
+                  chainName: chain.name,
+                  nativeCurrency: { name: chain.nativeName, symbol: chain.symbol, decimals: chain.nativeDecimals },
+                  rpcUrls: [chain.rpcUrl],
+                  blockExplorerUrls: [chain.blockExplorerUrl],
+                }],
+              });
+              await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
+            } else throw switchErr;
+          }
+        }
+        /* Use switchChain to update only the chainId — never wipes internal addresses */
         switchChain(chain.id);
         const bal = await fetchEvmBalance(address!, chain.id);
         if (bal !== null) useWalletStore.getState().setBalance(bal);
@@ -591,7 +632,15 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
                   const active = network === chain.network;
                   return (
                     <button key={chain.key} disabled={active}
-                      onClick={() => { if (!active) switchNetworkType(chain.network); setOpen(false); }}
+                      onClick={() => {
+                        if (active) return;
+                        if (!canSwitchToNetwork(chain.network)) {
+                          toast({ title: `No ${chain.name} wallet`, description: "Create or import an OrahDEX multi-chain wallet to use this network.", variant: "destructive" });
+                          return;
+                        }
+                        switchNetworkType(chain.network);
+                        setOpen(false);
+                      }}
                       className={cn("w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left",
                         active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
                     >
@@ -615,7 +664,15 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
                   const active = network === chain.network;
                   return (
                     <button key={chain.key} disabled={active}
-                      onClick={() => { if (!active) switchNetworkType(chain.network); setOpen(false); }}
+                      onClick={() => {
+                        if (active) return;
+                        if (!canSwitchToNetwork(chain.network)) {
+                          toast({ title: `No ${chain.name} wallet`, description: "Create or import an OrahDEX multi-chain wallet to use this network.", variant: "destructive" });
+                          return;
+                        }
+                        switchNetworkType(chain.network);
+                        setOpen(false);
+                      }}
                       className={cn("w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left",
                         active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
                     >
@@ -685,7 +742,15 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
                     const active = network === chain.network;
                     return (
                       <button key={chain.key} disabled={active}
-                        onClick={() => { if (!active) switchNetworkType(chain.network); setOpen(false); }}
+                        onClick={() => {
+                        if (active) return;
+                        if (!canSwitchToNetwork(chain.network)) {
+                          toast({ title: `No ${chain.name} wallet`, description: "Create or import an OrahDEX multi-chain wallet to use this network.", variant: "destructive" });
+                          return;
+                        }
+                        switchNetworkType(chain.network);
+                        setOpen(false);
+                      }}
                         className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
                           active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
                       >
@@ -709,7 +774,15 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
                     const active = network === chain.network;
                     return (
                       <button key={chain.key} disabled={active}
-                        onClick={() => { if (!active) switchNetworkType(chain.network); setOpen(false); }}
+                        onClick={() => {
+                        if (active) return;
+                        if (!canSwitchToNetwork(chain.network)) {
+                          toast({ title: `No ${chain.name} wallet`, description: "Create or import an OrahDEX multi-chain wallet to use this network.", variant: "destructive" });
+                          return;
+                        }
+                        switchNetworkType(chain.network);
+                        setOpen(false);
+                      }}
                         className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
                           active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
                       >
