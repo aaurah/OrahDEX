@@ -1305,9 +1305,6 @@ export function LetsExchangePanel({
               Connect Wallet
             </button>
           ) : null}
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-500/15 text-yellow-400 font-semibold">
-            {coins.length}+ coins
-          </span>
         </div>
       </div>
 
