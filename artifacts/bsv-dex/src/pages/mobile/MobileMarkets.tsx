@@ -111,7 +111,7 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "brc20",     label: "BRC-20" },
   { id: "uniswap",   label: "UNISWAP" },
   { id: "pancake",   label: "PANCAKE" },
-  { id: "futures",   label: "Futures" },
+  { id: "futures",   label: "FUTURES" },
 ];
 
 /**
