@@ -29,6 +29,7 @@ const THEME_LABELS = { dark: "Dark", light: "Light", amoled: "Amoled", system: "
 
 const NAV_LINKS = [
   { href: "/swap",                   label: "Exchange",   icon: Waves },
+  { href: "/bridge",                 label: "Buy·Swap·Bridge·DEX", icon: Link2 },
   { href: "/trade/BSV-USDT",         label: "Trade",      icon: ArrowRightLeft },
   { href: "/futures/BSV-USDT-PERP",  label: "Futures",    icon: LineChart },
   { href: "/markets",                label: "Markets",    icon: Activity },

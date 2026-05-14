@@ -1622,9 +1622,9 @@ function BsvQuickSwap({ onSwapDone }: { onSwapDone?: () => void }) {
 
 export function BridgePage() {
   useSEO({
-    title: "Cross-Chain Bridge — Swap BSV, BTC, ETH, SOL across L1 & L2",
-    description: "Cross-chain swap between BSV, BTC, Ethereum, Solana and L2 networks. Atomic HTLC swaps and wrapped asset bridging with BSV on-chain settlement.",
-    keywords: "cross-chain bridge, atomic swap, HTLC, BSV bridge, BTC ETH swap, L1 L2 bridge, OrahDEX bridge",
+    title: "Buy · Swap · Bridge · DEX — OrahDEX",
+    description: "Buy crypto with card, swap 6,000+ coins across 30+ chains, bridge between L1 & L2 networks, or trade on-chain DEX — all in one place on OrahDEX.",
+    keywords: "buy crypto, swap, cross-chain bridge, atomic swap, HTLC, BSV bridge, DEX, L1 L2 bridge, OrahDEX",
     url: "/bridge",
   });
 
@@ -1869,11 +1869,11 @@ export function BridgePage() {
 
       {/* ── Header ── */}
       <div className="mb-6">
-        <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mb-1">
-          Deposit, Withdraw &amp; Bridge
+        <h1 className="text-2xl lg:text-3xl font-bold tracking-tight mb-1 bg-gradient-to-r from-violet-400 via-fuchsia-400 to-emerald-400 bg-clip-text text-transparent">
+          Buy · Swap · Bridge · DEX
         </h1>
         <p className="text-muted-foreground text-sm">
-          Move ETH, BTC, SOL and more between chains — or deposit to start trading.
+          Deposit, withdraw &amp; bridge across 30+ chains — or open the Exchange tab for swap, buy/sell and on-chain DEX.
         </p>
       </div>
 

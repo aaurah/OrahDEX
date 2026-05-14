@@ -737,6 +737,13 @@ router.get("/letsexchange/status/:id", async (req, res) => {
   }
 });
 
+// ── GET /api/letsexchange/config ─────────────────────────────────────────────
+// Returns the affiliate ID derived from the JWT so the frontend can construct
+// the widget iframe URL without exposing the raw API key.
+router.get("/letsexchange/config", (_req, res) => {
+  res.json({ affiliateId: AFFILIATE_ID || null });
+});
+
 // Pre-warm LE price cache at startup: fetch coin list then batch-request USD rates.
 // Runs entirely in the background — errors are caught inside each helper.
 (async () => {
