@@ -77,6 +77,8 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   return (
     <style
       dangerouslySetInnerHTML={{
+        // Values are developer-supplied chart config (not user input).
+        // Strip </style> sequences to satisfy CodeQL css-injection rule.
         __html: Object.entries(THEMES)
           .map(
             ([theme, prefix]) => `
@@ -86,7 +88,9 @@ ${colorConfig
     const color =
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ||
       itemConfig.color
-    return color ? `  --color-${key}: ${color};` : null
+    // Sanitize: remove any </style> that could break out of the style block
+    const safe = color ? color.replace(/<\/style>/gi, "") : null
+    return safe ? `  --color-${key}: ${safe};` : null
   })
   .join("\n")}
 }

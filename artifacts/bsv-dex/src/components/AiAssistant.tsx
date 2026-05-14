@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Bot, X, Send, Loader2, MessageSquare, Sparkles, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import DOMPurify from "dompurify";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -351,7 +352,7 @@ export function AiAssistant() {
                         ) : (
                           <p
                             className="leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }}
+                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(parseMarkdown(msg.content)) }}
                           />
                         )}
                       </div>

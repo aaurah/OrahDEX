@@ -56,6 +56,11 @@ async function ssRequest(
   for (const [k, v] of Object.entries(params)) qs.set(k, String(v));
   const url = `${SS_BASE}${path}?${qs.toString()}`;
 
+  // SSRF guard: verify the URL stays within the hardcoded API base.
+  if (!url.startsWith(SS_BASE + "/")) {
+    return { ok: false, status: 0, data: { error: "Invalid request path" } };
+  }
+
   try {
     const res = await fetch(url, {
       method,

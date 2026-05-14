@@ -60,6 +60,12 @@ export async function leRequest(
   body?: unknown,
 ): Promise<{ ok: boolean; status: number; data: unknown }> {
   const url  = `${LE_BASE}${path}`;
+
+  // SSRF guard: verify the URL stays within the hardcoded API base.
+  if (!url.startsWith(LE_BASE + "/")) {
+    return { ok: false, status: 0, data: { error: "Invalid request path" } };
+  }
+
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "Accept":       "application/json",
