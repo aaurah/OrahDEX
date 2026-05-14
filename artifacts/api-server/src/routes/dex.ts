@@ -350,4 +350,54 @@ router.get("/coins/:id/tickers", async (req, res) => {
   }
 });
 
+// ─── OpenOcean aggregator proxy (free, no API key) ────────────────────────────
+// Routes through 1inch, PancakeSwap, Uniswap, Curve, Balancer, and 100+ DEXes
+
+const OO_CHAINS: Record<number, string> = {
+  1: "eth", 56: "bsc", 8453: "base",
+  42161: "arbitrum", 10: "optimism", 137: "polygon", 43114: "avax",
+};
+
+router.get("/aggregator/quote", async (req, res) => {
+  try {
+    const { chainId, inTokenAddress, outTokenAddress, amount, slippage = "1" } =
+      req.query as Record<string, string>;
+    const chain = OO_CHAINS[parseInt(chainId)];
+    if (!chain) return res.status(400).json({ error: "Chain not supported by OpenOcean" });
+    const params = new URLSearchParams({
+      inTokenAddress, outTokenAddress, amount, slippage, gasPrice: "5",
+    });
+    const url = `https://open-api.openocean.finance/v3/${chain}/quote?${params}`;
+    const r = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    const d = await r.json();
+    return res.json(d);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.get("/aggregator/swap", async (req, res) => {
+  try {
+    const { chainId, inTokenAddress, outTokenAddress, amount, slippage = "1", account } =
+      req.query as Record<string, string>;
+    const chain = OO_CHAINS[parseInt(chainId)];
+    if (!chain) return res.status(400).json({ error: "Chain not supported by OpenOcean" });
+    const params = new URLSearchParams({
+      inTokenAddress, outTokenAddress, amount, slippage, account, gasPrice: "5",
+    });
+    const url = `https://open-api.openocean.finance/v3/${chain}/swap_quote?${params}`;
+    const r = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+    const d = await r.json();
+    return res.json(d);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;

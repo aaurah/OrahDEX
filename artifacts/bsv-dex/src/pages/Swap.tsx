@@ -30,7 +30,7 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { ALL_SPOT_MOCK } from "@/lib/mock-data";
 import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData, erc20Abi } from "viem";
 import type { Account } from "viem";
-import { writeContract as coreWriteContract, signMessage } from "@wagmi/core";
+import { writeContract as coreWriteContract, sendTransaction as coreSendTransaction, signMessage } from "@wagmi/core";
 import { getWagmiConfig, CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS } from "@/lib/reown";
 import { checkAllowance, pollTxReceipt } from "@/lib/reown";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
@@ -193,6 +193,30 @@ const WETH: Record<SupportedChainId, `0x${string}`> = {
 
 const FEE_TIERS = [100, 500, 3000, 10000];
 
+// ─── PancakeSwap V3 contracts (same ABI as Uniswap V3, different addresses) ───
+const PANCAKE_QUOTER_V2: Partial<Record<SupportedChainId, `0x${string}`>> = {
+  1:     "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+  8453:  "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+  56:    "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+  42161: "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+  10:    "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+  137:   "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+};
+const PANCAKE_SWAP_ROUTER: Partial<Record<SupportedChainId, `0x${string}`>> = {
+  1:     "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+  8453:  "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+  56:    "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+  42161: "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+  10:    "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+  137:   "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+};
+
+// ─── OpenOcean chain slugs (aggregates 1inch, Uniswap, PancakeSwap, Curve…) ──
+const OPENOCEAN_CHAIN: Partial<Record<SupportedChainId, string>> = {
+  1: "eth", 8453: "base", 56: "bsc",
+  42161: "arbitrum", 10: "optimism", 137: "polygon", 43114: "avax",
+};
+
 // ─── ABIs ─────────────────────────────────────────────────────────────────────
 
 const QUOTER_V2_ABI = [
@@ -259,6 +283,21 @@ interface QuoteResult {
   fee:         number;
 }
 
+type DexProtocol = "auto" | "uniswap" | "pancake" | "openocean";
+
+interface ProtocolQuote {
+  protocol:  DexProtocol;
+  label:     string;
+  color:     string;
+  amountOut: bigint;
+  decimals:  number;
+  fee?:      number;
+  via?:      string;
+  calldata?: `0x${string}`;
+  routerTo?: `0x${string}`;
+  txValue?:  bigint;
+}
+
 async function tryQuoteOnRpc(
   rpcUrl: string,
   quoterAddr: `0x${string}`,
@@ -296,18 +335,58 @@ async function getSwapQuote(
   const tokenIn  = fromToken.isNative ? WETH[chainId] : fromToken.address;
   const tokenOut = toToken.isNative   ? WETH[chainId] : toToken.address;
 
-  // Try primary RPC first
   const primary = await tryQuoteOnRpc(primaryRpc, quoterAddr, tokenIn, tokenOut, amountIn);
   if (primary) return primary;
 
-  // If primary returned nothing, try fallback RPC before giving up
   const fallbackRpc = CHAIN_RPC_FALLBACKS[chainId];
   if (fallbackRpc && fallbackRpc !== primaryRpc) {
     const fallback = await tryQuoteOnRpc(fallbackRpc, quoterAddr, tokenIn, tokenOut, amountIn);
     if (fallback) return fallback;
   }
-
   return null;
+}
+
+async function getPancakeQuote(
+  chainId: SupportedChainId,
+  fromToken: Token,
+  toToken: Token,
+  amountIn: bigint,
+): Promise<QuoteResult | null> {
+  const quoterAddr = PANCAKE_QUOTER_V2[chainId];
+  const primaryRpc = CHAIN_RPC_URLS[chainId];
+  if (!quoterAddr || !primaryRpc || amountIn === 0n) return null;
+  const tokenIn  = fromToken.isNative ? WETH[chainId] : fromToken.address;
+  const tokenOut = toToken.isNative   ? WETH[chainId] : toToken.address;
+  try {
+    const q = await tryQuoteOnRpc(primaryRpc, quoterAddr, tokenIn, tokenOut, amountIn);
+    return q;
+  } catch { return null; }
+}
+
+async function getOpenOceanQuote(
+  chainId: SupportedChainId,
+  fromToken: Token,
+  toToken: Token,
+  amount: string,
+): Promise<{ amountOut: bigint; via: string; calldata?: `0x${string}`; routerTo?: `0x${string}`; txValue?: bigint } | null> {
+  if (!OPENOCEAN_CHAIN[chainId]) return null;
+  try {
+    const inAddr  = fromToken.isNative ? "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" : fromToken.address;
+    const outAddr = toToken.isNative   ? "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" : toToken.address;
+    const r = await fetch(
+      `${API_BASE}/dex/aggregator/quote?chainId=${chainId}&inTokenAddress=${inAddr}&outTokenAddress=${outAddr}&amount=${amount}&slippage=1`,
+      { signal: AbortSignal.timeout(7000) },
+    );
+    const d = await r.json();
+    if (d.code !== 200 || !d.data?.outAmount) return null;
+    const via = (d.data.path as any[])
+      ?.flatMap((p: any) => p.dexes?.map((x: any) => x.dex) ?? [])
+      .filter(Boolean).slice(0, 3).join(", ") || "OpenOcean";
+    return {
+      amountOut: BigInt(d.data.outAmount),
+      via,
+    };
+  } catch { return null; }
 }
 
 // ─── Swap executor ────────────────────────────────────────────────────────────
@@ -320,8 +399,9 @@ async function executeSwap(
   amountOutMin: bigint,
   fee: number,
   userAddress: `0x${string}`,
+  routerOverride?: `0x${string}`,
 ): Promise<`0x${string}`> {
-  const routerAddr = SWAP_ROUTER[chainId];
+  const routerAddr = routerOverride ?? SWAP_ROUTER[chainId];
   const weth       = WETH[chainId];
   const config     = getWagmiConfig();
   const tokenIn    = fromToken.isNative ? weth : fromToken.address;
@@ -388,8 +468,9 @@ async function executeSwapWithLocalAccount(
   account: Account,
   chainName: string,
   nativeSymbol: string,
+  routerOverride?: `0x${string}`,
 ): Promise<`0x${string}`> {
-  const routerAddr = SWAP_ROUTER[chainId];
+  const routerAddr = routerOverride ?? SWAP_ROUTER[chainId];
   const weth       = WETH[chainId];
   const rpcUrl     = CHAIN_RPC_URLS[chainId];
   const tokenIn    = fromToken.isNative ? weth : fromToken.address;
@@ -2074,9 +2155,11 @@ export function Swap() {
   const [amountIn,  setAmountIn]  = useState("");
   const [slippage,  setSlippage]  = useState(0.5);
 
-  const [quote,     setQuote]     = useState<QuoteResult | null>(null);
-  const [quoting,   setQuoting]   = useState(false);
-  const [quoteErr,  setQuoteErr]  = useState<string | null>(null);
+  const [quote,          setQuote]          = useState<QuoteResult | null>(null);
+  const [quoting,        setQuoting]        = useState(false);
+  const [quoteErr,       setQuoteErr]       = useState<string | null>(null);
+  const [dexProtocol,    setDexProtocol]    = useState<DexProtocol>("auto");
+  const [protocolQuotes, setProtocolQuotes] = useState<ProtocolQuote[]>([]);
 
   const [swapping,  setSwapping]  = useState(false);
   const [txHash,    setTxHash]    = useState<string | null>(null);
@@ -2146,24 +2229,68 @@ export function Swap() {
     }
   }, [walletChainId]);
 
-  // Debounced quote fetch
+  // Multi-source quote fetch — Uniswap V3 + PancakeSwap V3 + OpenOcean in parallel
   const fetchQuote = useCallback(async (val: string) => {
     if (!val || parseFloat(val) <= 0 || fromToken.address === toToken.address) {
-      setQuote(null); setQuoteErr(null); return;
+      setQuote(null); setQuoteErr(null); setProtocolQuotes([]); return;
     }
     setQuoting(true);
     setQuoteErr(null);
+    setProtocolQuotes([]);
     try {
       const amtIn = parseUnits(val, fromToken.decimals);
-      const result = await getSwapQuote(chainId, fromToken, toToken, amtIn);
-      if (result) { setQuote(result); }
-      else         { setQuoteErr(`No liquidity pool found for ${fromToken.symbol} → ${toToken.symbol} on this chain. Try a different token pair or switch chains.`); setQuote(null); }
+
+      const [uniResult, pancakeResult, ooResult] = await Promise.all([
+        getSwapQuote(chainId, fromToken, toToken, amtIn).catch(() => null),
+        getPancakeQuote(chainId, fromToken, toToken, amtIn).catch(() => null),
+        getOpenOceanQuote(chainId, fromToken, toToken, val).catch(() => null),
+      ]);
+
+      const quotes: ProtocolQuote[] = [];
+      if (uniResult) quotes.push({
+        protocol: "uniswap", label: "Uniswap V3", color: "text-pink-400",
+        amountOut: uniResult.amountOut, decimals: toToken.decimals, fee: uniResult.fee,
+      });
+      if (pancakeResult) quotes.push({
+        protocol: "pancake", label: "PancakeSwap", color: "text-yellow-400",
+        amountOut: pancakeResult.amountOut, decimals: toToken.decimals, fee: pancakeResult.fee,
+      });
+      if (ooResult) quotes.push({
+        protocol: "openocean", label: "OpenOcean", color: "text-blue-400",
+        amountOut: ooResult.amountOut, decimals: toToken.decimals, via: ooResult.via,
+      });
+
+      // Sort by best output
+      quotes.sort((a, b) => (b.amountOut > a.amountOut ? 1 : -1));
+      setProtocolQuotes(quotes);
+
+      // Pick best on-chain quote for execution (Uniswap or Pancake — whichever is higher)
+      const bestOnChain = [uniResult, pancakeResult]
+        .filter((q): q is QuoteResult => q !== null)
+        .sort((a, b) => (b.amountOut > a.amountOut ? 1 : -1))[0] ?? null;
+
+      if (bestOnChain) {
+        setQuote(bestOnChain);
+        // If best on-chain is pancake but dexProtocol is auto, track which router to use
+        if (pancakeResult && (!uniResult || pancakeResult.amountOut >= uniResult.amountOut)) {
+          if (dexProtocol === "auto") setDexProtocol("pancake");
+        } else {
+          if (dexProtocol === "pancake" || dexProtocol === "auto") setDexProtocol("auto");
+        }
+      } else if (ooResult) {
+        // If no on-chain quote available, still show OpenOcean quote amount
+        setQuote({ amountOut: ooResult.amountOut, gasEstimate: 0n, fee: 0 });
+        setQuoteErr(null);
+      } else {
+        setQuoteErr(`No liquidity found for ${fromToken.symbol} → ${toToken.symbol}. Try a different pair or switch chains.`);
+        setQuote(null);
+      }
     } catch (e: any) {
       setQuoteErr(e.message ?? "Quote failed.");
       setQuote(null);
     }
     setQuoting(false);
-  }, [chainId, fromToken, toToken]);
+  }, [chainId, fromToken, toToken, dexProtocol]);
 
   const handleAmountChange = (val: string) => {
     setAmountIn(val);
@@ -2191,8 +2318,12 @@ export function Swap() {
 
       let hash: `0x${string}`;
 
+      // Determine which router to use based on selected/best protocol
+      const pancakeRouter = PANCAKE_SWAP_ROUTER[chainId];
+      const usePancake = dexProtocol === "pancake" && !!pancakeRouter;
+      const routerOverride = usePancake ? pancakeRouter : undefined;
+
       if (isOrahWallet) {
-        // Imported / passkey wallet → unified signer (PIN modal or biometric assertion)
         let account: Account;
         try {
           account = await getViemAccountForAddress(address, {
@@ -2216,12 +2347,12 @@ export function Swap() {
         hash = await executeSwapWithLocalAccount(
           chainId, fromToken, toToken, amtIn, amtOutMin, quote.fee,
           address as `0x${string}`, account,
-          chainConfig.name, chainConfig.nativeSymbol,
+          chainConfig.name, chainConfig.nativeSymbol, routerOverride,
         );
       } else {
         hash = await executeSwap(
           chainId, fromToken, toToken, amtIn, amtOutMin, quote.fee,
-          address as `0x${string}`,
+          address as `0x${string}`, routerOverride,
         );
       }
 
@@ -2296,7 +2427,7 @@ export function Swap() {
             {activeTab === "swap"    && "6,000+ coins · 30+ chains · Best rate guaranteed"}
             {activeTab === "buysell" && (buySellMode === "buy" ? "Buy any coin · USDT preset · 6,000+ pairs · Non-custodial" : "Sell any coin → USDT · Best rate · Non-custodial")}
             {activeTab === "bridge"  && "L1 ↔ L2 · Canonical bridge · HTLC atomic swaps · CCTP"}
-            {activeTab === "dex"     && "On-chain · Uniswap V3 · Your wallet signs · Non-custodial"}
+            {activeTab === "dex"     && "Uniswap V3 · PancakeSwap · OpenOcean · Best route · Non-custodial"}
           </p>
         </div>
 
@@ -2464,12 +2595,12 @@ export function Swap() {
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent" />
           <div className="relative p-5 pb-3 space-y-1">
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black tracking-tight">DEX</h2>
+              <h2 className="text-xl font-black tracking-tight">DEX Aggregator</h2>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">On-Chain</span>
             </div>
-            <p className="text-xs text-muted-foreground">Uniswap V3 · Best price routing · Your wallet signs · Non-custodial</p>
-            <div className="flex items-center gap-4 pt-2 pb-1">
-              {[["⚡","Uniswap V3"],["🛡️","Non-custodial"],["🔄","Best route"]].map(([icon,label]) => (
+            <p className="text-xs text-muted-foreground">Uniswap V3 · PancakeSwap · OpenOcean · Best route · Non-custodial</p>
+            <div className="flex flex-wrap items-center gap-3 pt-2 pb-1">
+              {[["🦄","Uniswap V3"],["🥞","PancakeSwap"],["🌊","OpenOcean"],["🛡️","Non-custodial"]].map(([icon,label]) => (
                 <div key={label as string} className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
                   <span>{icon}</span>{label}
                 </div>
@@ -2479,6 +2610,66 @@ export function Swap() {
         </div>
 
         <>
+            {/* ── Protocol selector ── */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                {([
+                  { key: "auto",      label: "Auto (Best)",  emoji: "⚡" },
+                  { key: "uniswap",   label: "Uniswap V3",   emoji: "🦄" },
+                  { key: "pancake",   label: "PancakeSwap",  emoji: "🥞" },
+                  { key: "openocean", label: "OpenOcean",    emoji: "🌊" },
+                ] as const).map(p => {
+                  const pq = protocolQuotes.find(q => q.protocol === p.key);
+                  const isBest = protocolQuotes.length > 0 && protocolQuotes[0].protocol === p.key;
+                  const isActive = dexProtocol === p.key;
+                  return (
+                    <button
+                      key={p.key}
+                      onClick={() => setDexProtocol(p.key)}
+                      className={cn(
+                        "shrink-0 flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl border text-xs transition-all",
+                        isActive
+                          ? "bg-orange-500/15 border-orange-500/50 text-orange-300"
+                          : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground",
+                      )}
+                    >
+                      <div className="flex items-center gap-1 font-semibold">
+                        <span>{p.emoji}</span>
+                        <span>{p.label}</span>
+                        {isBest && (
+                          <span className="text-[9px] font-bold px-1 py-px rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">BEST</span>
+                        )}
+                      </div>
+                      {pq && amountIn && parseFloat(amountIn) > 0 ? (
+                        <span className="text-[10px] font-mono text-foreground/70">
+                          {parseFloat(formatUnits(pq.amountOut, pq.decimals)).toFixed(4)}
+                        </span>
+                      ) : quoting ? (
+                        <span className="text-[10px] text-muted-foreground/40">…</span>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground/30">—</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              {protocolQuotes.length > 1 && amountIn && parseFloat(amountIn) > 0 && (
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 px-1">
+                  <span>Route:</span>
+                  {protocolQuotes[0].via ? (
+                    <span className="font-mono">{protocolQuotes[0].via}</span>
+                  ) : (
+                    <span>{protocolQuotes[0].label} {protocolQuotes[0].fee ? `${protocolQuotes[0].fee / 10000}%` : ""}</span>
+                  )}
+                  {protocolQuotes.length > 1 && (
+                    <span className="text-emerald-400 font-medium">
+                      +{((Number(protocolQuotes[0].amountOut - protocolQuotes[protocolQuotes.length - 1].amountOut) / Number(protocolQuotes[protocolQuotes.length - 1].amountOut)) * 100).toFixed(2)}% vs worst
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+
             {/* Chain selector + Gas top-up */}
             <div className="space-y-2">
               <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
