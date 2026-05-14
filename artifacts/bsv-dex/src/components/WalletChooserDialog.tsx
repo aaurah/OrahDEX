@@ -857,7 +857,7 @@ export function WalletChooserDialog() {
   return (
     <Dialog open={isOpen} onOpenChange={v => { if (!v) handleClose(); }}>
       <DialogContent
-        className="p-0 gap-0 bg-background border-border sm:max-w-[420px] overflow-hidden rounded-2xl shadow-2xl"
+        className="p-0 gap-0 bg-background border-border sm:max-w-[420px] overflow-hidden rounded-2xl shadow-2xl flex flex-col max-h-[90dvh]"
         style={{ backgroundImage: "radial-gradient(ellipse 70% 40% at 50% -5%, hsl(var(--primary) / 0.08) 0%, transparent 70%)" }}
       >
         <DialogTitle style={srOnly}>Connect Wallet</DialogTitle>
@@ -867,8 +867,8 @@ export function WalletChooserDialog() {
             CHOOSE PANEL
         ══════════════════════════════════════ */}
         {tab === "choose" && (
-          <div className="flex flex-col">
-            <div className="px-6 pt-7 pb-5">
+          <div className="flex flex-col min-h-0 flex-1">
+            <div className="px-6 pt-7 pb-3 shrink-0">
               <div className="flex items-center gap-3 mb-5">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
                   <Wallet className="w-5 h-5 text-primary" />
@@ -880,7 +880,9 @@ export function WalletChooserDialog() {
               </div>
 
               <p className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase mb-2.5">Wallet Options</p>
+            </div>
 
+            <div className="flex-1 overflow-y-auto overscroll-contain px-6 pb-4">
               <div className="space-y-2">
                 <OptionCard
                   onClick={() => setTab("passkey")}
@@ -943,7 +945,7 @@ export function WalletChooserDialog() {
               </div>
             </div>
 
-            <div className="px-6 py-3.5 border-t border-border flex items-center gap-2">
+            <div className="shrink-0 px-6 py-3.5 border-t border-border flex items-center gap-2">
               <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
               <p className="text-[11px] text-muted-foreground/70">
                 Non-custodial · Your keys, your coins · End-to-end encrypted
