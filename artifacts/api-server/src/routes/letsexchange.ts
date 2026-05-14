@@ -665,141 +665,175 @@ router.post("/letsexchange/exchange", async (req, res) => {
   const toNetwork   = String(network_to).trim().toUpperCase();
 
   try {
-    // ── ChangeNOW ─────────────────────────────────────────────────────────────
-    if (bestVenue === "changenow") {
-      const result = await createCNExchange({
-        from:          fromU,
-        to:            toU,
-        amount:        amt,
-        address:       withdrawalStr,
-        extraId:       withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
-        refundAddress: refund ? String(refund) : undefined,
-      });
-      if (!result.ok) { res.status(422).json({ error: result.error, venue: "changenow" }); return; }
-      const ex = result.exchange;
-      res.json({
-        transaction_id:    ex.id,
-        status:            "wait",
-        deposit:           ex.depositAddress,
-        deposit_extra_id:  ex.depositExtraId ?? null,
-        deposit_amount:    String(amt),
-        withdrawal_amount: ex.estimatedAmount ?? "0",
-        withdrawal:        withdrawalStr,
-        coin_from:         fromU,
-        coin_to:           toU,
-        coin_from_network: fromNetwork,
-        coin_to_network:   toNetwork,
-        best_venue:        "changenow",
-      });
+    // ── Auto-fallback exchange creation ───────────────────────────────────────
+    // Try the winning venue first; on any failure fall through to the next in
+    // priority order so a single-venue outage never blocks the whole flow.
+    const VENUE_PRIORITY = ["changenow", "stealthex", "simpleswap", "letsexchange"] as const;
+    const orderedVenues = [
+      bestVenue,
+      ...VENUE_PRIORITY.filter(v => v !== bestVenue),
+    ];
+
+    const venueErrors: Record<string, string> = {};
+
+    for (const venue of orderedVenues) {
+      // ── ChangeNOW ───────────────────────────────────────────────────────────
+      if (venue === "changenow") {
+        const result = await createCNExchange({
+          from:          fromU,
+          to:            toU,
+          amount:        amt,
+          address:       withdrawalStr,
+          extraId:       withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+          refundAddress: refund ? String(refund) : undefined,
+        });
+        if (result.ok) {
+          if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
+          const ex = result.exchange;
+          res.json({
+            transaction_id:    ex.id,
+            status:            "wait",
+            deposit:           ex.depositAddress,
+            deposit_extra_id:  ex.depositExtraId ?? null,
+            deposit_amount:    String(amt),
+            withdrawal_amount: ex.estimatedAmount ?? "0",
+            withdrawal:        withdrawalStr,
+            coin_from:         fromU,
+            coin_to:           toU,
+            coin_from_network: fromNetwork,
+            coin_to_network:   toNetwork,
+            best_venue:        "changenow",
+          });
+          return;
+        }
+        venueErrors["changenow"] = result.error;
+        logger.warn({ error: result.error, from: fromU, to: toU }, "exchange: changenow failed, trying next venue");
+        continue;
+      }
+
+      // ── StealthEX ───────────────────────────────────────────────────────────
+      if (venue === "stealthex") {
+        const result = await createSXExchange({
+          from:    fromU,
+          to:      toU,
+          amount:  amt,
+          address: withdrawalStr,
+          extraId: withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+        });
+        if (result.ok) {
+          if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
+          const ex = result.exchange;
+          res.json({
+            transaction_id:    ex.id,
+            status:            "wait",
+            deposit:           ex.depositAddress,
+            deposit_extra_id:  ex.depositExtraId ?? null,
+            deposit_amount:    String(amt),
+            withdrawal_amount: ex.estimatedAmount ?? "0",
+            withdrawal:        withdrawalStr,
+            coin_from:         fromU,
+            coin_to:           toU,
+            coin_from_network: fromNetwork,
+            coin_to_network:   toNetwork,
+            best_venue:        "stealthex",
+          });
+          return;
+        }
+        venueErrors["stealthex"] = result.error;
+        logger.warn({ error: result.error, from: fromU, to: toU }, "exchange: stealthex failed, trying next venue");
+        continue;
+      }
+
+      // ── SimpleSwap ──────────────────────────────────────────────────────────
+      if (venue === "simpleswap") {
+        const result = await createSsExchangePair({
+          from:    fromU,
+          to:      toU,
+          amount:  amt,
+          address: withdrawalStr,
+          extraId: withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+        });
+        if (result.ok) {
+          if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
+          const ex = result.exchange;
+          res.json({
+            transaction_id:    ex.id,
+            status:            "wait",
+            deposit:           ex.depositAddress,
+            deposit_extra_id:  ex.depositExtraId ?? null,
+            deposit_amount:    String(amt),
+            withdrawal_amount: ex.withdrawalAmount ?? "0",
+            withdrawal:        withdrawalStr,
+            coin_from:         fromU,
+            coin_to:           toU,
+            coin_from_network: fromNetwork,
+            coin_to_network:   toNetwork,
+            best_venue:        "simpleswap",
+          });
+          return;
+        }
+        venueErrors["simpleswap"] = result.error;
+        logger.warn({ error: result.error, from: fromU, to: toU }, "exchange: simpleswap failed, trying next venue");
+        continue;
+      }
+
+      // ── LetsExchange (default / last-resort) ─────────────────────────────────
+      if (!process.env.LETSEXCHANGE_API_KEY) {
+        venueErrors["letsexchange"] = "LETSEXCHANGE_API_KEY not configured";
+        continue;
+      }
+
+      const leBody: Record<string, unknown> = {
+        float:               isFloat ?? false,
+        coin_from:           fromU,
+        coin_to:             toU,
+        network_from:        fromNetwork,
+        network_to:          toNetwork,
+        deposit_amount:      amt,
+        withdrawal:          withdrawalStr,
+        withdrawal_extra_id: withdrawal_extra_id != null ? String(withdrawal_extra_id) : "",
+        affiliate_id:        AFFILIATE_ID,
+      };
+      if (refund)          leBody["return"]          = String(refund);
+      if (return_extra_id) leBody["return_extra_id"] = String(return_extra_id);
+      if (rate_id)         leBody["rate_id"]         = String(rate_id);
+      if (email)           leBody["email"]           = String(email);
+
+      const { ok: leOk, data: leData, status: leStatus } = await leRequest("/v1/transaction", "POST", leBody);
+      if (leStatus === 403) { res.status(403).json({ error: "Invalid API key", detail: leData }); return; }
+      if (!leOk) {
+        venueErrors["letsexchange"] = `LetsExchange HTTP ${leStatus}`;
+        logger.warn({ status: leStatus, from: fromU, to: toU }, "exchange: letsexchange failed, no more venues");
+        continue;
+      }
+
+      if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: "letsexchange" }, "exchange: fell back to alternate venue");
+      const d = leData as Record<string, unknown>;
+      if (d?.transaction_id) {
+        const leUsd = getCachedLEPrices();
+        const fromUsd = leUsd[fromU] ?? 0;
+        const depositUsd = fromUsd > 0 ? (amt * fromUsd).toFixed(4) : null;
+        db.insert(leSwapsTable).values({
+          id:               String(d.transaction_id),
+          coinFrom:         fromU,
+          coinTo:           toU,
+          networkFrom:      fromNetwork,
+          networkTo:        toNetwork,
+          depositAmount:    String(amt),
+          withdrawalAmount: d.withdrawal_amount ? String(d.withdrawal_amount) : null,
+          depositAmountUsd: depositUsd,
+          status:           String(d.status ?? "waiting"),
+          withdrawal:       withdrawalStr,
+        }).onConflictDoNothing().catch(e => logger.warn({ err: e }, "le_swaps insert failed"));
+      }
+      res.json({ ...d, best_venue: "letsexchange" });
       return;
     }
 
-    // ── StealthEX ─────────────────────────────────────────────────────────────
-    if (bestVenue === "stealthex") {
-      const result = await createSXExchange({
-        from:    fromU,
-        to:      toU,
-        amount:  amt,
-        address: withdrawalStr,
-        extraId: withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
-      });
-      if (!result.ok) { res.status(422).json({ error: result.error, venue: "stealthex" }); return; }
-      const ex = result.exchange;
-      res.json({
-        transaction_id:    ex.id,
-        status:            "wait",
-        deposit:           ex.depositAddress,
-        deposit_extra_id:  ex.depositExtraId ?? null,
-        deposit_amount:    String(amt),
-        withdrawal_amount: ex.estimatedAmount ?? "0",
-        withdrawal:        withdrawalStr,
-        coin_from:         fromU,
-        coin_to:           toU,
-        coin_from_network: fromNetwork,
-        coin_to_network:   toNetwork,
-        best_venue:        "stealthex",
-      });
-      return;
-    }
-
-    // ── SimpleSwap ────────────────────────────────────────────────────────────
-    if (bestVenue === "simpleswap") {
-      const result = await createSsExchangePair({
-        from:    fromU,
-        to:      toU,
-        amount:  amt,
-        address: withdrawalStr,
-        extraId: withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
-      });
-      if (!result.ok) { res.status(422).json({ error: result.error, venue: "simpleswap" }); return; }
-      const ex = result.exchange;
-      res.json({
-        transaction_id:    ex.id,
-        status:            "wait",
-        deposit:           ex.depositAddress,
-        deposit_extra_id:  ex.depositExtraId ?? null,
-        deposit_amount:    String(amt),
-        withdrawal_amount: ex.withdrawalAmount ?? "0",
-        withdrawal:        withdrawalStr,
-        coin_from:         fromU,
-        coin_to:           toU,
-        coin_from_network: fromNetwork,
-        coin_to_network:   toNetwork,
-        best_venue:        "simpleswap",
-      });
-      return;
-    }
-
-    // ── LetsExchange (default) ────────────────────────────────────────────────
-    if (!process.env.LETSEXCHANGE_API_KEY) {
-      res.status(503).json({
-        error: "No exchange provider available — please contact support.",
-        code: "NO_PROVIDER",
-      });
-      return;
-    }
-
-    const leBody: Record<string, unknown> = {
-      float:               isFloat ?? false,
-      coin_from:           fromU,
-      coin_to:             toU,
-      network_from:        fromNetwork,
-      network_to:          toNetwork,
-      deposit_amount:      amt,
-      withdrawal:          withdrawalStr,
-      withdrawal_extra_id: withdrawal_extra_id != null ? String(withdrawal_extra_id) : "",
-      affiliate_id:        AFFILIATE_ID,
-    };
-    if (refund)          leBody["return"]          = String(refund);
-    if (return_extra_id) leBody["return_extra_id"] = String(return_extra_id);
-    if (rate_id)         leBody["rate_id"]         = String(rate_id);
-    if (email)           leBody["email"]           = String(email);
-
-    const { ok, data, status } = await leRequest("/v1/transaction", "POST", leBody);
-    if (status === 403) { res.status(403).json({ error: "Invalid API key", detail: data }); return; }
-    if (status === 422) { res.status(422).json({ error: "Validation error", detail: data }); return; }
-    if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
-
-    const d = data as Record<string, unknown>;
-    if (d?.transaction_id) {
-      const leUsd = getCachedLEPrices();
-      const fromUsd = leUsd[fromU] ?? 0;
-      const depositUsd = fromUsd > 0 ? (amt * fromUsd).toFixed(4) : null;
-      db.insert(leSwapsTable).values({
-        id:               String(d.transaction_id),
-        coinFrom:         fromU,
-        coinTo:           toU,
-        networkFrom:      fromNetwork,
-        networkTo:        toNetwork,
-        depositAmount:    String(amt),
-        withdrawalAmount: d.withdrawal_amount ? String(d.withdrawal_amount) : null,
-        depositAmountUsd: depositUsd,
-        status:           String(d.status ?? "waiting"),
-        withdrawal:       withdrawalStr,
-      }).onConflictDoNothing().catch(e => logger.warn({ err: e }, "le_swaps insert failed"));
-    }
-
-    res.json({ ...d, best_venue: "letsexchange" });
+    // All venues failed
+    const errorSummary = Object.entries(venueErrors).map(([v, e]) => `${v}: ${e}`).join("; ");
+    logger.error({ venueErrors, from: fromU, to: toU }, "exchange: all venues failed");
+    res.status(422).json({ error: "No exchange provider could fulfil this pair at this amount. Please try a different amount or contact support.", detail: errorSummary });
   } catch (err: any) {
     logger.error({ err }, "letsexchange /exchange failed");
     res.status(502).json({ error: "Failed to reach exchange provider" });
@@ -827,49 +861,67 @@ router.get("/letsexchange/status/:id", async (req, res) => {
     return map[raw.toLowerCase()] ?? raw;
   };
 
+  // Helper: try to get status from one specific venue.
+  // Returns the normalised status object or null if not found.
+  const tryGetStatus = async (v: string, exchangeId: string): Promise<Record<string, unknown> | null> => {
+    try {
+      if (v === "changenow") {
+        const result = await getCNExchange(exchangeId);
+        if (!result || !result.status) return null;
+        return { transaction_id: exchangeId, status: normalizeStatus(result.status), hash_out: result.txTo ?? null, best_venue: "changenow" };
+      }
+      if (v === "stealthex") {
+        const result = await getSXExchange(exchangeId);
+        if (!result || !result.status) return null;
+        return { transaction_id: exchangeId, status: normalizeStatus(result.status), hash_out: result.txTo ?? null, best_venue: "stealthex" };
+      }
+      if (v === "simpleswap") {
+        const result = await getSsExchange(exchangeId);
+        if (!result || !result.status) return null;
+        return { transaction_id: exchangeId, status: normalizeStatus(result.status), hash_out: result.txTo ?? null, best_venue: "simpleswap" };
+      }
+      // LetsExchange
+      const { ok: leOk, data: leData, status: leHttpStatus } = await leRequest(`/v1/transaction/${encodeURIComponent(exchangeId)}`);
+      if (leHttpStatus === 403) return null;
+      if (!leOk || !leData || typeof leData !== "object") return null;
+      const d = leData as Record<string, unknown>;
+      if (!d.transaction_id && !d.status) return null;
+      return { ...d, best_venue: "letsexchange" };
+    } catch {
+      return null;
+    }
+  };
+
   try {
-    // ── ChangeNOW ─────────────────────────────────────────────────────────────
-    if (venue === "changenow") {
-      const result = await getCNExchange(id);
-      if (!result) { res.status(404).json({ error: "Exchange not found" }); return; }
-      res.json({ transaction_id: id, status: normalizeStatus(result.status), hash_out: result.txTo });
+    // ── Try primary venue ─────────────────────────────────────────────────────
+    const primaryResult = await tryGetStatus(venue, id);
+    if (primaryResult) {
+      // Sync LE swap status to DB
+      if (venue === "letsexchange" && primaryResult.transaction_id && primaryResult.status) {
+        const isFinished = ["finished", "refunded", "overdue", "emergency"].includes(String(primaryResult.status));
+        db.update(leSwapsTable).set({
+          status:           String(primaryResult.status),
+          withdrawalAmount: primaryResult.withdrawal_amount ? String(primaryResult.withdrawal_amount) : undefined,
+          completedAt:      isFinished ? new Date() : undefined,
+        } as any).where(eq(leSwapsTable.id, String(primaryResult.transaction_id)))
+          .catch(e => logger.warn({ err: e }, "le_swaps status sync failed"));
+      }
+      res.json(primaryResult);
       return;
     }
 
-    // ── StealthEX ─────────────────────────────────────────────────────────────
-    if (venue === "stealthex") {
-      const result = await getSXExchange(id);
-      if (!result) { res.status(404).json({ error: "Exchange not found" }); return; }
-      res.json({ transaction_id: id, status: normalizeStatus(result.status), hash_out: result.txTo });
-      return;
+    // ── Rescue: try all other venues in case venue metadata was lost ──────────
+    const ALL_VENUES = ["changenow", "stealthex", "simpleswap", "letsexchange"];
+    for (const fallbackVenue of ALL_VENUES.filter(v => v !== venue)) {
+      const rescued = await tryGetStatus(fallbackVenue, id);
+      if (rescued) {
+        logger.info({ id, originalVenue: venue, foundVenue: fallbackVenue }, "status: rescued exchange on alternate venue");
+        res.json({ ...rescued, venue_rescued: true });
+        return;
+      }
     }
 
-    // ── SimpleSwap ────────────────────────────────────────────────────────────
-    if (venue === "simpleswap") {
-      const result = await getSsExchange(id);
-      if (!result) { res.status(404).json({ error: "Exchange not found" }); return; }
-      res.json({ transaction_id: id, status: normalizeStatus(result.status), hash_out: result.txTo });
-      return;
-    }
-
-    // ── LetsExchange (default) ────────────────────────────────────────────────
-    const { ok, data, status } = await leRequest(`/v1/transaction/${encodeURIComponent(id)}`);
-    if (status === 403) { res.status(403).json({ error: "Invalid API key", detail: data }); return; }
-    if (status === 404) { res.status(404).json({ error: "Transaction not found", detail: data }); return; }
-    if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
-
-    const d = data as Record<string, unknown>;
-    if (d?.transaction_id && d?.status) {
-      const isFinished = ["finished", "refunded", "overdue", "emergency"].includes(String(d.status));
-      db.update(leSwapsTable).set({
-        status:           String(d.status),
-        withdrawalAmount: d.withdrawal_amount ? String(d.withdrawal_amount) : undefined,
-        completedAt:      isFinished ? new Date() : undefined,
-      } as any).where(eq(leSwapsTable.id, String(d.transaction_id)))
-        .catch(e => logger.warn({ err: e }, "le_swaps status sync failed"));
-    }
-
-    res.json(data);
+    res.status(404).json({ error: "Exchange not found" });
   } catch (err: any) {
     logger.error({ err }, "letsexchange /status failed");
     res.status(502).json({ error: "Failed to reach exchange provider" });
