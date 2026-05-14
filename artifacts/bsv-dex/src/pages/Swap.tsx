@@ -67,6 +67,7 @@ interface Token {
   address:   `0x${string}`;
   isNative?: boolean;
   logo?:     string;
+  logoURI?:  string;
 }
 
 const NATIVE_PLACEHOLDER = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE" as `0x${string}`;
@@ -155,6 +156,56 @@ const TOKENS: Record<SupportedChainId, Token[]> = {
     { symbol: "UNI",  name: "Uniswap",         decimals: 18, address: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984" },
   ],
 };
+
+// ─── Dynamic token list loader ────────────────────────────────────────────────
+// Fetches the Uniswap default token list + PancakeSwap extended list once and
+// caches the result so every chain gets hundreds of tradable tokens.
+
+const SUPPORTED_DEX_CHAIN_IDS = new Set([1, 8453, 56, 42161, 10, 137, 43114]);
+
+let _tokenListCache: Record<number, Token[]> | null = null;
+let _tokenListPromise: Promise<Record<number, Token[]>> | null = null;
+
+async function loadDexTokenList(): Promise<Record<number, Token[]>> {
+  if (_tokenListCache) return _tokenListCache;
+  if (_tokenListPromise) return _tokenListPromise;
+
+  _tokenListPromise = (async () => {
+    const TOKEN_LIST_URLS = [
+      "https://tokens.uniswap.org/",
+      "https://tokens.pancakeswap.finance/pancakeswap-extended.json",
+      "https://raw.githubusercontent.com/ava-labs/avalanche-bridge-resources/main/token_list.json",
+    ];
+
+    const results = await Promise.allSettled(
+      TOKEN_LIST_URLS.map(url => fetch(url, { signal: AbortSignal.timeout(8000) }).then(r => r.json())),
+    );
+
+    const byChain: Record<number, Token[]> = {};
+    for (const res of results) {
+      if (res.status !== "fulfilled") continue;
+      const toks: { chainId: number; address: string; symbol: string; name: string; decimals: number; logoURI?: string }[] =
+        res.value?.tokens ?? [];
+      for (const t of toks) {
+        if (!SUPPORTED_DEX_CHAIN_IDS.has(t.chainId)) continue;
+        if (!t.address || !t.symbol || !t.name) continue;
+        const addr = t.address as `0x${string}`;
+        if (!byChain[t.chainId]) byChain[t.chainId] = [];
+        byChain[t.chainId].push({
+          symbol: t.symbol,
+          name: t.name,
+          decimals: t.decimals ?? 18,
+          address: addr,
+          logoURI: t.logoURI,
+        });
+      }
+    }
+    _tokenListCache = byChain;
+    return byChain;
+  })();
+
+  return _tokenListPromise;
+}
 
 // ─── Contract addresses ───────────────────────────────────────────────────────
 
@@ -540,6 +591,23 @@ async function executeSwapWithLocalAccount(
 
 // ─── Token picker ─────────────────────────────────────────────────────────────
 
+function TokenLogo({ token, size = 24 }: { token: Token; size?: number }) {
+  const [imgErr, setImgErr] = useState(false);
+  if (token.logoURI && !imgErr) {
+    return (
+      <img
+        src={token.logoURI}
+        alt={token.symbol}
+        width={size}
+        height={size}
+        className="rounded-full shrink-0 bg-muted"
+        onError={() => setImgErr(true)}
+      />
+    );
+  }
+  return <CoinLogo symbol={token.symbol} size={size} />;
+}
+
 function TokenPicker({
   tokens, selected, onChange, label,
 }: {
@@ -547,10 +615,15 @@ function TokenPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const filtered = tokens.filter(t =>
-    t.symbol.toLowerCase().includes(search.toLowerCase()) ||
-    t.name.toLowerCase().includes(search.toLowerCase()),
-  );
+  const q = search.toLowerCase().trim();
+  const filtered = q
+    ? tokens.filter(t =>
+        t.symbol.toLowerCase().includes(q) ||
+        t.name.toLowerCase().includes(q) ||
+        t.address.toLowerCase().includes(q),
+      )
+    : tokens;
+
   return (
     <div className="relative">
       {label && <p className="text-xs text-muted-foreground mb-1">{label}</p>}
@@ -558,28 +631,31 @@ function TokenPicker({
         onClick={() => setOpen(true)}
         className="flex items-center gap-2 px-3 py-2 rounded-xl bg-muted/60 hover:bg-muted border border-border/40 transition-colors min-w-[120px]"
       >
-        <CoinLogo symbol={selected.symbol} size={20} />
+        <TokenLogo token={selected} size={20} />
         <span className="font-bold text-sm">{selected.symbol}</span>
         <ChevronDown className="w-3.5 h-3.5 text-muted-foreground ml-auto" />
       </button>
       {open && (
-        <div className="absolute z-50 top-full mt-1 left-0 w-64 bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
+        <div className="absolute z-50 top-full mt-1 left-0 w-72 bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
           <div className="p-2 border-b border-border">
             <div className="flex items-center gap-2">
               <Input
                 autoFocus
-                placeholder="Search tokens…"
+                placeholder="Search by name, symbol or address…"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="h-8 text-xs"
               />
-              <button onClick={() => setOpen(false)} className="p-1 text-muted-foreground hover:text-foreground">
+              <button onClick={() => { setOpen(false); setSearch(""); }} className="p-1 text-muted-foreground hover:text-foreground">
                 <X className="w-4 h-4" />
               </button>
             </div>
           </div>
-          <div className="max-h-56 overflow-y-auto py-1">
-            {filtered.map(t => (
+          <div className="max-h-72 overflow-y-auto py-1">
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-6">No tokens match "{search}"</p>
+            )}
+            {filtered.slice(0, 200).map(t => (
               <button
                 key={t.address}
                 onClick={() => { onChange(t); setOpen(false); setSearch(""); }}
@@ -588,14 +664,19 @@ function TokenPicker({
                   selected.address === t.address && "bg-primary/5",
                 )}
               >
-                <CoinLogo symbol={t.symbol} size={24} />
-                <div className="text-left">
+                <TokenLogo token={t} size={24} />
+                <div className="text-left min-w-0">
                   <p className="text-sm font-semibold">{t.symbol}</p>
-                  <p className="text-xs text-muted-foreground">{t.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{t.name}</p>
                 </div>
-                {selected.address === t.address && <CheckCircle2 className="w-4 h-4 text-primary ml-auto" />}
+                {selected.address === t.address && <CheckCircle2 className="w-4 h-4 text-primary ml-auto shrink-0" />}
               </button>
             ))}
+            {filtered.length > 200 && (
+              <p className="text-[10px] text-muted-foreground text-center py-2">
+                Showing 200 of {filtered.length} — refine your search
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -2147,11 +2228,25 @@ export function Swap() {
 
   // Default: all wallets start in on-chain DEX mode (Uniswap V3).
   // Orah passkey wallets sign transactions via biometric auth — no seed phrase stored.
-  const [chainId,   setChainId]   = useState<SupportedChainId>(1);
-  const tokens = TOKENS[chainId];
+  const [chainId,       setChainId]       = useState<SupportedChainId>(1);
+  const [fetchedTokens, setFetchedTokens] = useState<Record<number, Token[]>>({});
 
-  const [fromToken, setFromToken] = useState<Token>(tokens[0]);
-  const [toToken,   setToToken]   = useState<Token>(tokens[1]);
+  // Fetch Uniswap + PancakeSwap token lists once on mount
+  useEffect(() => {
+    loadDexTokenList().then(setFetchedTokens).catch(() => {});
+  }, []);
+
+  // Merged token list: static list first (always available), then fetched extras
+  const tokens = useMemo(() => {
+    const staticList = TOKENS[chainId] ?? [];
+    const fetched    = fetchedTokens[chainId] ?? [];
+    const seen       = new Set(staticList.map(t => t.address.toLowerCase()));
+    const extras     = fetched.filter(t => !seen.has(t.address.toLowerCase()));
+    return [...staticList, ...extras];
+  }, [chainId, fetchedTokens]);
+
+  const [fromToken, setFromToken] = useState<Token>(TOKENS[1][0]);
+  const [toToken,   setToToken]   = useState<Token>(TOKENS[1][1]);
   const [amountIn,  setAmountIn]  = useState("");
   const [slippage,  setSlippage]  = useState(0.5);
 
