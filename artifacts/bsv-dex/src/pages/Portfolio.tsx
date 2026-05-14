@@ -252,7 +252,7 @@ export function Portfolio() {
       "@type": "WebPage",
       "name": "OrahDEX Portfolio",
       "description": "Cryptocurrency portfolio tracker and asset manager",
-      "url": "https://orahdex.replit.app/portfolio"
+      "url": "https://orahdex.org/portfolio"
     }
   });
 

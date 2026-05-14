@@ -55,7 +55,7 @@ const DEFAULT_SETTINGS = {
   seoDescription: "OrahDEX is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, cross-chain bridge, on-chain copy trading (CopyVault), and 7-tab mobile navigation.",
   seoKeywords: "BSV DEX, Bitcoin SV, decentralized exchange, crypto trading, spot futures, cross-chain bridge, copy trading, paper trading, mobile DEX",
   ogImageUrl: "",
-  canonicalUrl: "https://orahdex.replit.app",
+  canonicalUrl: "https://orahdex.org",
   twitterCard: "summary_large_image",
   twitterSite: "@orahdex",
   // Legal
@@ -401,7 +401,7 @@ export function AdminSiteSettings() {
               <Input value={settings.seoKeywords} onChange={set("seoKeywords")} placeholder="BSV DEX, crypto trading, Bitcoin SV exchange" />
             </Field>
             <Field label="Canonical URL" description="Canonical domain for SEO">
-              <Input value={settings.canonicalUrl} onChange={set("canonicalUrl")} placeholder="https://orahdex.replit.app" />
+              <Input value={settings.canonicalUrl} onChange={set("canonicalUrl")} placeholder="https://orahdex.org" />
             </Field>
             <Field label="Open Graph Image URL" description="1200×630 image for social sharing previews">
               <Input value={settings.ogImageUrl} onChange={set("ogImageUrl")} placeholder="https://cdn.example.com/og.png" />
