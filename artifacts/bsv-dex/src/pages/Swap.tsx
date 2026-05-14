@@ -38,6 +38,7 @@ import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
+import { LetsExchangeWidget } from "@/components/LetsExchangeWidget";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
@@ -1997,7 +1998,7 @@ function BuyCryptoPanel({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function Swap() {
-  useSEO({ title: "Exchange — OrahDEX", description: "Buy, swap & bridge crypto in one place — OrahDEX Exchange" });
+  useSEO({ title: "Buy · Swap · Bridge · DEX — OrahDEX", description: "Buy crypto with card, swap 6,000+ coins across 30+ chains, bridge between networks, or trade on-chain DEX — all in one place." });
   const [, setLocation] = useLocation();
   const searchStr = useSearch();
   const searchParams = new URLSearchParams(searchStr);
@@ -2011,7 +2012,8 @@ export function Swap() {
   const { open: openWalletModal } = useWalletModalStore();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<"buy" | "swap" | "bridge">("buy");
+  const [activeTab, setActiveTab] = useState<"swap" | "buysell" | "bridge" | "dex">("swap");
+  const [buySellMode, setBuySellMode] = useState<"buy" | "sell">("buy");
 
   const [fiatModalOpen, setFiatModalOpen]           = useState(false);
   const [fiatModalMethod, setFiatModalMethod]       = useState<FiatPayMethod>("card");
@@ -2257,33 +2259,71 @@ export function Swap() {
     <div className="min-h-screen bg-background flex flex-col items-center py-8 px-4">
       <div className="w-full max-w-md space-y-4">
 
-        {/* Tab selector — Buy · Swap · Bridge */}
-        <div className="flex items-center gap-1 p-1 bg-muted/40 rounded-2xl border border-border/40 backdrop-blur-sm">
-          {([ 
-            { key: "buy",    label: "Buy",    icon: <ShoppingCart className="w-3.5 h-3.5" />,  gradient: "from-blue-500 to-violet-600" },
-            { key: "swap",   label: "Swap",   icon: <ArrowUpDown className="w-3.5 h-3.5" />,   gradient: "from-violet-500 to-fuchsia-600" },
-            { key: "bridge", label: "Bridge", icon: <Link2 className="w-3.5 h-3.5" />,         gradient: "from-emerald-500 to-teal-500" },
-          ] as const).map(tab => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={cn(
-                "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-bold transition-all duration-200",
-                activeTab === tab.key
-                  ? `bg-gradient-to-r ${tab.gradient} text-white shadow-lg shadow-primary/20`
-                  : "text-muted-foreground hover:text-foreground hover:bg-background/60",
-              )}
-            >
-              {tab.icon}
-              {tab.label}
-            </button>
-          ))}
+        {/* ─── Page title ─── */}
+        <div className="text-center space-y-1 pb-1">
+          <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-violet-400 via-fuchsia-400 to-emerald-400 bg-clip-text text-transparent">
+            Buy · Swap · Bridge · DEX
+          </h1>
+          <p className="text-xs text-muted-foreground">Secure · Non-custodial · Best rates · 6,000+ coins</p>
         </div>
 
-        {/* ═══════════════ BUY TAB ═══════════════ */}
-        {activeTab === "buy" && (
+        {/* ─── Tab bar — Swap · Buy/Sell · Bridge · DEX (LetsExchange style) ─── */}
+        <div className="space-y-1">
+          <div className="flex items-center gap-0.5 p-1 bg-muted/30 rounded-2xl border border-border/30 backdrop-blur-sm">
+            {([
+              { key: "swap",    label: "Swap",     icon: <ArrowUpDown className="w-3.5 h-3.5" />,  gradient: "from-violet-500 to-fuchsia-600" },
+              { key: "buysell", label: "Buy/Sell", icon: <ShoppingCart className="w-3.5 h-3.5" />, gradient: "from-blue-500 to-violet-600" },
+              { key: "bridge",  label: "Bridge",   icon: <Link2 className="w-3.5 h-3.5" />,        gradient: "from-emerald-500 to-teal-500" },
+              { key: "dex",     label: "DEX",      icon: <Zap className="w-3.5 h-3.5" />,          gradient: "from-orange-500 to-amber-500" },
+            ] as const).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200",
+                  activeTab === tab.key
+                    ? `bg-gradient-to-r ${tab.gradient} text-white shadow-lg shadow-primary/20`
+                    : "text-muted-foreground hover:text-foreground hover:bg-background/50",
+                )}
+              >
+                {tab.icon}
+                <span className="hidden sm:inline">{tab.label}</span>
+                <span className="sm:hidden">{tab.label}</span>
+              </button>
+            ))}
+          </div>
+          {/* Sub-label row */}
+          <p className="text-center text-[10px] text-muted-foreground/50 font-medium tracking-wide">
+            {activeTab === "swap"    && "6,000+ coins · 30+ chains · Best rate guaranteed"}
+            {activeTab === "buysell" && "Card · Apple Pay · Google Pay · Bank · 150+ countries"}
+            {activeTab === "bridge"  && "L1 ↔ L2 · Canonical bridge · HTLC atomic swaps · CCTP"}
+            {activeTab === "dex"     && "On-chain · Uniswap V3 · Your wallet signs · Non-custodial"}
+          </p>
+        </div>
+
+        {/* ═══════════════ BUY/SELL TAB ═══════════════ */}
+        {activeTab === "buysell" && (
           <>
-            {/* Hero card */}
+            {/* LetsExchange full widget — card, Apple Pay, Google Pay, bank, 20+ fiat currencies */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-0.5">
+                <div>
+                  <h2 className="text-lg font-black tracking-tight">Buy / Sell Crypto</h2>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Card · Apple Pay · Google Pay · Bank · 150+ countries · Powered by LetsExchange
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-[10px] font-bold text-emerald-400">Live rates</span>
+                </div>
+              </div>
+
+              <LetsExchangeWidget tab="buy_sell" className="w-full" />
+            </div>
+
+            {/* Legacy modals — kept in tree in case other code paths open them */}
+            <div className="hidden">
             <div className="relative rounded-3xl overflow-hidden border border-blue-500/20 shadow-2xl">
               {/* Background gradient */}
               <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-violet-600/15 to-fuchsia-600/10" />
@@ -2425,20 +2465,22 @@ export function Swap() {
               onClose={() => setBuyCryptoOpen(false)}
               defaultPayMethod={fiatModalMethod}
             />
+            </div>{/* /hidden legacy modals */}
           </>
         )}
 
-        {/* ═══════════════ BRIDGE TAB ═══════════════ */}
-        {activeTab === "bridge" && (
+        {/* ═══════════════ SWAP TAB (LetsExchange cross-chain) ═══════════════ */}
+        {activeTab === "swap" && (
           <div className="space-y-4">
-            {/* Bridge hero */}
-            <div className="relative rounded-3xl overflow-hidden border border-emerald-500/20 shadow-2xl">
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-600/15 via-teal-600/10 to-cyan-600/5" />
+            {/* Swap hero */}
+            <div className="relative rounded-3xl overflow-hidden border border-violet-500/20 shadow-2xl">
+              <div className="absolute inset-0 bg-gradient-to-br from-violet-600/20 via-fuchsia-600/10 to-pink-600/5" />
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-violet-500/10 via-transparent to-transparent" />
               <div className="relative p-5 pb-3 space-y-1">
-                <h2 className="text-xl font-black tracking-tight">Cross-Chain Bridge</h2>
-                <p className="text-xs text-muted-foreground">6,000+ coins · Non-custodial · Best rates across chains</p>
+                <h2 className="text-xl font-black tracking-tight">Swap Crypto</h2>
+                <p className="text-xs text-muted-foreground">6,000+ coins · 30+ chains · Best rate · Non-custodial</p>
                 <div className="flex items-center gap-4 pt-2 pb-1">
-                  {[["🌐","Multi-chain"],["⚡","Fast swaps"],["🔐","Non-custodial"]].map(([icon,label]) => (
+                  {[["🌐","Multi-chain"],["⚡","Best rate"],["🔐","Non-custodial"]].map(([icon,label]) => (
                     <div key={label as string} className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
                       <span>{icon}</span>{label}
                     </div>
@@ -2452,15 +2494,77 @@ export function Swap() {
           </div>
         )}
 
-        {/* ═══════════════ SWAP TAB ═══════════════ */}
-        {activeTab === "swap" && (<>
+        {/* ═══════════════ BRIDGE TAB (canonical L1↔L2) ═══════════════ */}
+        {activeTab === "bridge" && (
+          <div className="space-y-4">
+            {/* Bridge hero */}
+            <div className="relative rounded-3xl overflow-hidden border border-emerald-500/20 shadow-2xl">
+              <div className="absolute inset-0 bg-gradient-to-br from-emerald-600/15 via-teal-600/10 to-cyan-600/5" />
+              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-emerald-500/10 via-transparent to-transparent" />
+              <div className="relative p-5 pb-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-xl font-black tracking-tight">Bridge</h2>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">L1 ↔ L2</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Canonical deposits & withdrawals · HTLC atomic swaps · CCTP</p>
+                <div className="flex items-center gap-4 pt-2 pb-1">
+                  {[["🔐","Non-custodial"],["⛓️","Multi-chain"],["🔄","CCTP"]].map(([icon,label]) => (
+                    <div key={label as string} className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
+                      <span>{icon}</span>{label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
 
-        {/* Swap hero label */}
-        <div className="relative rounded-3xl overflow-hidden border border-violet-500/20 shadow-xl">
-          <div className="absolute inset-0 bg-gradient-to-br from-violet-600/15 via-fuchsia-600/10 to-pink-600/5" />
+            {/* Quick-access bridge action cards */}
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                { tab: "deposit",  icon: "⬇️", title: "Deposit",       desc: "L1 → L2 canonical",  color: "border-green-500/30 bg-green-500/8 hover:bg-green-500/15", badge: "green-400" },
+                { tab: "withdraw", icon: "⬆️", title: "Withdraw",      desc: "L2 → L1 canonical",  color: "border-orange-500/30 bg-orange-500/8 hover:bg-orange-500/15", badge: "orange-400" },
+                { tab: "bsvswap",  icon: "₿",  title: "BSV → Any",     desc: "HTLC atomic swap",   color: "border-emerald-500/30 bg-emerald-500/8 hover:bg-emerald-500/15", badge: "emerald-400" },
+                { tab: "swap",     icon: "🔁", title: "Cross-chain",   desc: "Wrapped + route",    color: "border-cyan-500/30 bg-cyan-500/8 hover:bg-cyan-500/15", badge: "cyan-400" },
+              ] as const).map(card => (
+                <a
+                  key={card.tab}
+                  href={`/bridge?tab=${card.tab}`}
+                  className={`flex flex-col gap-2 p-4 rounded-2xl border ${card.color} transition-all group`}
+                >
+                  <div className="text-2xl">{card.icon}</div>
+                  <div>
+                    <div className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">{card.title}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{card.desc}</div>
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground group-hover:text-primary transition-colors">
+                    Open <ArrowRight className="w-3 h-3" />
+                  </div>
+                </a>
+              ))}
+            </div>
+
+            {/* Info strip */}
+            <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl border border-border/30 bg-muted/15 text-xs text-muted-foreground">
+              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-400" />
+              <span>
+                <b className="text-foreground">Canonical Bridge:</b> Lock assets on L1 to mint wrapped tokens on L2 (1:1 backed), or burn wrapped tokens to withdraw native assets. Circle CCTP supported for USDC.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* ═══════════════ DEX TAB (on-chain Uniswap V3) ═══════════════ */}
+        {activeTab === "dex" && (<>
+
+        {/* DEX hero label */}
+        <div className="relative rounded-3xl overflow-hidden border border-orange-500/20 shadow-xl">
+          <div className="absolute inset-0 bg-gradient-to-br from-orange-600/15 via-amber-600/10 to-yellow-600/5" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent" />
           <div className="relative p-5 pb-3 space-y-1">
-            <h2 className="text-xl font-black tracking-tight">On-Chain Swap</h2>
-            <p className="text-xs text-muted-foreground">DEX swap · Best price routing · Your keys, your crypto</p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-black tracking-tight">DEX</h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">On-Chain</span>
+            </div>
+            <p className="text-xs text-muted-foreground">Uniswap V3 · Best price routing · Your wallet signs · Non-custodial</p>
             <div className="flex items-center gap-4 pt-2 pb-1">
               {[["⚡","Uniswap V3"],["🛡️","Non-custodial"],["🔄","Best route"]].map(([icon,label]) => (
                 <div key={label as string} className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
