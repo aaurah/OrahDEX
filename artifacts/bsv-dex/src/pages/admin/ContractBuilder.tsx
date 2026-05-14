@@ -1,11 +1,10 @@
-import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Cpu, Plus, X, CheckCircle2, Clock, ExternalLink, Copy, Check, Zap, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-const fetchContracts = () => adminFetch(`/api/admin/contracts`).then(r => r.json());
+const fetchContracts = () => fetch(`${BASE}/api/admin/contracts`).then(r => r.json());
 
 const TOKEN_TYPES = [
   { id: "token", label: "Fungible Token", desc: "Standard BSV token (BSV-20 compatible)", icon: "💰" },
@@ -29,11 +28,11 @@ export function AdminContractBuilder() {
     description: "",
   });
 
-  const { data: contracts = [], isLoading } = useQuery({ queryKey: ["admin-contracts"], queryFn: fetchContracts, staleTime: 0 });
+  const { data: contracts = [], isLoading } = useQuery({ queryKey: ["admin-contracts"], queryFn: fetchContracts });
 
   const deploy = useMutation({
     mutationFn: (data: any) =>
-      adminFetch(`/api/admin/contracts/deploy`, {
+      fetch(`${BASE}/api/admin/contracts/deploy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -114,13 +113,13 @@ export function AdminContractBuilder() {
                       <label className="text-xs text-muted-foreground font-medium block mb-1">Token Name *</label>
                       <input value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
                         className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary"
-                        placeholder="Orah Token" />
+                        placeholder="OrahDEX Token" />
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground font-medium block mb-1">Symbol *</label>
                       <input value={form.symbol} onChange={e => setForm(f => ({...f, symbol: e.target.value.toUpperCase()}))}
                         className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-primary font-mono"
-                        placeholder="ORAH" maxLength={10} />
+                        placeholder="ORAHDEX" maxLength={10} />
                     </div>
                     <div>
                       <label className="text-xs text-muted-foreground font-medium block mb-1">Total Supply</label>
@@ -234,20 +233,16 @@ export function AdminContractBuilder() {
                       )}>{c.status}</span>
                       <span className="text-[10px] bg-blue-400/10 text-blue-400 px-1.5 py-0.5 rounded font-bold">{c.network}</span>
                     </div>
-                    {c.address ? (
-                      <div className="flex items-center gap-2">
-                        <code className="text-xs font-mono text-muted-foreground truncate">{c.address}</code>
-                        <button onClick={() => copyText(c.address, c.id)} className="text-muted-foreground hover:text-primary shrink-0">
-                          {copied === c.id ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground italic">No on-chain address yet</p>
-                    )}
+                    <div className="flex items-center gap-2">
+                      <code className="text-xs font-mono text-muted-foreground truncate">{c.address}</code>
+                      <button onClick={() => copyText(c.address, c.id)} className="text-muted-foreground hover:text-primary shrink-0">
+                        {copied === c.id ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
                     <div className="flex flex-wrap gap-3 mt-2 text-xs text-muted-foreground">
                       <span>Supply: {parseInt(c.supply).toLocaleString()}</span>
                       <span>Decimals: {c.decimals}</span>
-                      <span>Created: {c.deployedAt}</span>
+                      <span>Deployed: {c.deployedAt}</span>
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2">
@@ -255,11 +250,9 @@ export function AdminContractBuilder() {
                       ? <CheckCircle2 className="w-5 h-5 text-green-400" />
                       : <Clock className="w-5 h-5 text-orange-400 animate-pulse" />
                     }
-                    {c.address && (
-                      <button className="p-1.5 text-muted-foreground hover:text-primary rounded-lg hover:bg-primary/5 transition-colors">
-                        <ExternalLink className="w-4 h-4" />
-                      </button>
-                    )}
+                    <button className="p-1.5 text-muted-foreground hover:text-primary rounded-lg hover:bg-primary/5 transition-colors">
+                      <ExternalLink className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               </div>

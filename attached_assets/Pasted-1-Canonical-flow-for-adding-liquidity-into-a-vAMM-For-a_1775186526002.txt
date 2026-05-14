@@ -24,7 +24,7 @@ For a vAMM-style DEX (no real reserves in the pool, only virtual balances):
 
 2. Minimal vAMM + liquidity skeleton (Solidity-style)
 
-This is a clean base you can align OrahDex with:
+This is a clean base you can align Orah with:
 
 pragma solidity ^0.8.20;
 
@@ -35,7 +35,7 @@ interface IERC20 {
     function decimals() external view returns (uint8);
 }
 
-contract OrahVAMMPool {
+contract OrahDEXVAMMPool {
     address public token0;
     address public token1;
 

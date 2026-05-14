@@ -22,18 +22,6 @@ function resolvedDatabaseUrl(raw: string): string {
 
 export const pool = new Pool({
   connectionString: resolvedDatabaseUrl(process.env.DATABASE_URL),
-  // Keep TCP connections alive so the managed Postgres server does not silently
-  // drop idle sockets. Without this the pool reuses dead connections and gets
-  // "Authentication timed out" across all background workers simultaneously.
-  keepAlive: true,
-  keepAliveInitialDelayMillis: 10_000,
-  // Evict idle connections after 20 s — well below Replit Postgres's idle
-  // timeout — so stale sockets are recycled before the server closes them.
-  idleTimeoutMillis: 20_000,
-  // Fail fast on new connection attempts rather than hanging indefinitely.
-  connectionTimeoutMillis: 10_000,
-  // Cap pool size to avoid overwhelming the managed database.
-  max: 10,
 });
 export const db = drizzle(pool, { schema });
 

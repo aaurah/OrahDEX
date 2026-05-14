@@ -1,4 +1,3 @@
-import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -12,12 +11,12 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 // ── API helpers ────────────────────────────────────────────────────────────
 const api = {
-  list:   () => adminFetch(`/api/admin/cex-accounts`).then(r => r.json()),
-  add:    (d: any) => adminFetch(`/api/admin/cex-accounts`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) }).then(r => r.json()),
-  update: (id: number, d: any) => adminFetch(`/api/admin/cex-accounts/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) }).then(r => r.json()),
-  remove: (id: number) => adminFetch(`/api/admin/cex-accounts/${id}`, { method: "DELETE" }).then(r => r.json()),
-  test:   (id: number) => adminFetch(`/api/admin/cex-accounts/${id}/test`, { method: "POST" }).then(r => r.json()),
-  quote:  (symbol: string) => adminFetch(`/api/admin/cex-accounts/quote?symbol=${symbol}`).then(r => r.json()),
+  list:   () => fetch(`${BASE}/api/admin/cex-accounts`).then(r => r.json()),
+  add:    (d: any) => fetch(`${BASE}/api/admin/cex-accounts`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) }).then(r => r.json()),
+  update: (id: number, d: any) => fetch(`${BASE}/api/admin/cex-accounts/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d) }).then(r => r.json()),
+  remove: (id: number) => fetch(`${BASE}/api/admin/cex-accounts/${id}`, { method: "DELETE" }).then(r => r.json()),
+  test:   (id: number) => fetch(`${BASE}/api/admin/cex-accounts/${id}/test`, { method: "POST" }).then(r => r.json()),
+  quote:  (symbol: string) => fetch(`${BASE}/api/admin/cex-accounts/quote?symbol=${symbol}`).then(r => r.json()),
 };
 
 // ── Status badge ───────────────────────────────────────────────────────────
@@ -277,7 +276,7 @@ function QuotePanel() {
           {/* AMM placeholder */}
           <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold">OrahDEX AMM</span>
+              <span className="text-xs font-bold">Orah AMM</span>
               <span className="text-[10px] text-primary">On-chain</span>
             </div>
             <div className="space-y-1 text-xs">

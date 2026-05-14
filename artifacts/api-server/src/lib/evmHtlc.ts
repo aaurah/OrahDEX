@@ -1,5 +1,5 @@
 /**
- * evmHtlc.ts — EVM HTLC settlement service for OrahDEX
+ * evmHtlc.ts — EVM HTLC settlement service for Orah
  *
  * ── PURPOSE ───────────────────────────────────────────────────────────────────
  *
@@ -8,13 +8,13 @@
  *     • Seller locks ETH (or ERC-20) → buyer receives on reveal
  *     • Buyer  locks USDT (or ERC-20) → seller receives on reveal
  *
- *   The OrahDEX server generates the secret; users lock from their own wallets
+ *   The Orah server generates the secret; users lock from their own wallets
  *   (MetaMask/WalletConnect) by calling `lockETH()` or `lockToken()` on the
- *   deployed OrahDEXHTLC contract.
+ *   deployed OrahHTLC contract.
  *
  * ── NON-CUSTODIAL MODEL ───────────────────────────────────────────────────────
  *
- *   OrahDEX never holds user funds. The contract holds them atomically.
+ *   Orah never holds user funds. The contract holds them atomically.
  *   The server only:
  *     1. Generates the random secret (server-side entropy)
  *     2. Returns lock instructions (contract address, secretHash, calldata)
@@ -48,11 +48,7 @@
  *   can refund without the buyer being able to claim the seller's ETH.
  */
 
-import crypto, {
-  createCipheriv,
-  createDecipheriv,
-  randomBytes,
-} from "node:crypto";
+import crypto from "node:crypto";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { db } from "@workspace/db";
 import { evmHtlcSessionsTable } from "@workspace/db/schema";
@@ -68,57 +64,6 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { logger } from "./logger.js";
-
-// ── HTLC secret encryption (AES-256-GCM) ─────────────────────────────────────
-// Secrets are encrypted at rest to prevent DB dump / read-replica disclosure.
-// Key is derived via SHA-256 from EVM_RELAYER_KEY or EVM_WALLET_SECRET.
-//
-// IMPORTANT: The source env var must be high-entropy (>= 32 random bytes / 64
-// hex chars, e.g. a secp256k1 private key).  A low-entropy passphrase could be
-// brute-forced to recover historical secrets.
-//
-// Storage format: "iv_hex:authTag_hex:ciphertext_hex" (colon-delimited).
-// Legacy plain-hex secrets (no ":") are read back as-is for migration compatibility.
-
-function getHtlcEncryptionKey(): Buffer {
-  const raw = process.env.EVM_RELAYER_KEY ?? process.env.EVM_WALLET_SECRET ?? "";
-  if (!raw) {
-    throw new Error("[FATAL] EVM_RELAYER_KEY or EVM_WALLET_SECRET must be set to encrypt HTLC secrets.");
-  }
-  // Derive a 32-byte key deterministically from the raw secret via SHA-256.
-  return Buffer.from(
-    crypto.createHash("sha256").update(raw, "utf8").digest()
-  );
-}
-
-function encryptHtlcSecret(plainHex: string): string {
-  const key = getHtlcEncryptionKey();
-  const iv  = randomBytes(12); // 96-bit IV for GCM
-  const c   = createCipheriv("aes-256-gcm", key, iv);
-  const enc = Buffer.concat([c.update(plainHex, "utf8"), c.final()]);
-  const tag = c.getAuthTag();
-  return [iv.toString("hex"), tag.toString("hex"), enc.toString("hex")].join(":");
-}
-
-function decryptHtlcSecret(stored: string): string {
-  // Legacy plain hex secrets (pre-encryption migration): no ":" separators
-  if (!stored.includes(":")) return stored;
-  const parts = stored.split(":");
-  if (parts.length !== 3) {
-    // Malformed encrypted value — log a warning so operators notice.
-    logger.warn({ storedLen: stored.length }, "evmHtlc: malformed encrypted secret (wrong part count) — treating as plaintext");
-    return stored;
-  }
-  const [ivHex, tagHex, encHex] = parts;
-  if (!ivHex || !tagHex || !encHex) {
-    logger.warn("evmHtlc: malformed encrypted secret (empty part) — treating as plaintext");
-    return stored;
-  }
-  const key = getHtlcEncryptionKey();
-  const d   = createDecipheriv("aes-256-gcm", key, Buffer.from(ivHex, "hex"), { authTagLength: 16 });
-  d.setAuthTag(Buffer.from(tagHex, "hex"));
-  return Buffer.concat([d.update(Buffer.from(encHex, "hex")), d.final()]).toString("utf8");
-}
 
 // ── Contract ABI (subset — only methods we call from the relayer) ─────────────
 
@@ -374,10 +319,6 @@ export async function initiateEvmHtlcSession(
   });
 
   // ── Persist to DB ────────────────────────────────────────────────────────
-  // Store the secret encrypted at rest (AES-256-GCM). The plain secret is
-  // only ever held in process memory for the duration of this call.
-
-  const encryptedSecret = encryptHtlcSecret(secret);
 
   await db.insert(evmHtlcSessionsTable).values({
     id:               sessionId,
@@ -385,7 +326,7 @@ export async function initiateEvmHtlcSession(
     pair,
     chainId,
     contractAddress:  chain.contractAddress ?? "UNDEPLOYED",
-    secret:           encryptedSecret,
+    secret,
     secretHash,
     sellerAddress:    sellerAddress.toLowerCase(),
     buyerAddress:     buyerAddress.toLowerCase(),
@@ -461,8 +402,8 @@ function buildLockInstruction(p: {
   if (!contractAddress) {
     calldata     = "0x";
     instructions = [
-      `OrahDEXHTLC contract not yet deployed on this chain.`,
-      `Contact OrahDEX support to complete settlement.`,
+      `OrahHTLC contract not yet deployed on this chain.`,
+      `Contact Orah support to complete settlement.`,
     ];
   } else if (isNative) {
     calldata = encodeFunctionData({
@@ -471,7 +412,7 @@ function buildLockInstruction(p: {
       args:         [lockId, secretHash, recipient, BigInt(timelockUnix)],
     });
     instructions = [
-      `Send ${formatAmount(amount, 18)} ${asset} to the OrahDEX HTLC contract.`,
+      `Send ${formatAmount(amount, 18)} ${asset} to the Orah HTLC contract.`,
       `Contract: ${contractAddress}`,
       `Lock ID: ${lockId}`,
       `The MetaMask transaction value must equal your trade amount.`,
@@ -485,7 +426,7 @@ function buildLockInstruction(p: {
       args:         [lockId, secretHash, tokenAddress, BigInt(amount), recipient, BigInt(timelockUnix)],
     });
     instructions = [
-      `Approve and lock ${asset} in the OrahDEX HTLC contract.`,
+      `Approve and lock ${asset} in the Orah HTLC contract.`,
       `Contract: ${contractAddress}`,
       `Token: ${tokenAddress}`,
       `Lock ID: ${lockId}`,
@@ -707,16 +648,7 @@ async function checkSessionOnChain(
     } catch { /* isLocked may revert if not found */ }
   }
 
-  // Trigger reveal when both locks are confirmed, or when a previous buyer
-  // reveal failed (PARTIAL_REVEAL — seller paid but buyer reveal needs retry).
-  if (
-    sellerLocked && buyerLocked &&
-    session.status !== "REVEALING" &&
-    session.status !== "COMPLETED"
-  ) {
-    await revealBothLocks(session, chain);
-  } else if (session.status === "PARTIAL_REVEAL") {
-    // Seller was already revealed; retry the buyer leg.
+  if (sellerLocked && buyerLocked && session.status !== "REVEALING" && session.status !== "COMPLETED") {
     await revealBothLocks(session, chain);
   }
 }
@@ -725,7 +657,7 @@ async function checkSessionOnChain(
 
 /**
  * Called by the watcher when both parties have locked.
- * The OrahDEX relayer wallet calls reveal() on both locks to settle the trade.
+ * The Orah relayer wallet calls reveal() on both locks to settle the trade.
  *
  * Requires: EVM_RELAYER_KEY env variable with the relayer's EVM private key.
  */
@@ -742,14 +674,10 @@ async function revealBothLocks(
     return;
   }
 
-  // Only transition to REVEALING when we haven't started yet.
-  // PARTIAL_REVEAL means seller was revealed but buyer failed — skip re-marking.
-  if (session.status !== "PARTIAL_REVEAL") {
-    await db
-      .update(evmHtlcSessionsTable)
-      .set({ status: "REVEALING", updatedAt: new Date() })
-      .where(eq(evmHtlcSessionsTable.id, session.id));
-  }
+  await db
+    .update(evmHtlcSessionsTable)
+    .set({ status: "REVEALING", updatedAt: new Date() })
+    .where(eq(evmHtlcSessionsTable.id, session.id));
 
   const account = privateKeyToAccount(relayerKey);
   const viemChain = buildViemChain(chain);
@@ -760,73 +688,48 @@ async function revealBothLocks(
     chain: viemChain,
   });
 
-  const secretHex = ("0x" + decryptHtlcSecret(session.secret)) as Hex;
+  const secretHex = ("0x" + session.secret) as Hex;
 
-  // Re-fetch the freshest session to know which legs have already been revealed.
-  const [fresh] = await db
-    .select({ revealSellerTxid: evmHtlcSessionsTable.revealSellerTxid })
-    .from(evmHtlcSessionsTable)
-    .where(eq(evmHtlcSessionsTable.id, session.id));
-  const sellerAlreadyRevealed = !!(fresh?.revealSellerTxid);
+  try {
+    const sellerRevealHash = await walletClient.writeContract({
+      address:      chain.contractAddress!,
+      abi:          HTLC_ABI,
+      functionName: "reveal",
+      args:         [session.sellerLockId as Hex, secretHex],
+    });
 
-  let sellerRevealed = sellerAlreadyRevealed;
+    logger.info({ sessionId: session.id, txHash: sellerRevealHash }, "evmHtlc: seller reveal() submitted");
 
-  if (!sellerAlreadyRevealed) {
-    try {
-      const sellerRevealHash = await walletClient.writeContract({
-        address:      chain.contractAddress!,
-        abi:          HTLC_ABI,
-        functionName: "reveal",
-        args:         [session.sellerLockId as Hex, secretHex],
-      });
-
-      logger.info({ sessionId: session.id, txHash: sellerRevealHash }, "evmHtlc: seller reveal() submitted");
-
-      await db
-        .update(evmHtlcSessionsTable)
-        .set({ revealSellerTxid: sellerRevealHash, updatedAt: new Date() })
-        .where(eq(evmHtlcSessionsTable.id, session.id));
-
-      sellerRevealed = true;
-    } catch (err) {
-      logger.warn({ err, sessionId: session.id }, "evmHtlc: seller reveal() failed");
-      // Leave session in REVEALING so the next poll cycle retries.
-      return;
-    }
+    await db
+      .update(evmHtlcSessionsTable)
+      .set({ revealSellerTxid: sellerRevealHash, updatedAt: new Date() })
+      .where(eq(evmHtlcSessionsTable.id, session.id));
+  } catch (err) {
+    logger.warn({ err, sessionId: session.id }, "evmHtlc: seller reveal() failed");
   }
 
-  // Only attempt buyer reveal once seller is confirmed revealed.
-  if (sellerRevealed) {
-    try {
-      const buyerRevealHash = await walletClient.writeContract({
-        address:      chain.contractAddress!,
-        abi:          HTLC_ABI,
-        functionName: "reveal",
-        args:         [session.buyerLockId as Hex, secretHex],
-      });
+  try {
+    const buyerRevealHash = await walletClient.writeContract({
+      address:      chain.contractAddress!,
+      abi:          HTLC_ABI,
+      functionName: "reveal",
+      args:         [session.buyerLockId as Hex, secretHex],
+    });
 
-      logger.info({ sessionId: session.id, txHash: buyerRevealHash }, "evmHtlc: buyer reveal() submitted");
+    logger.info({ sessionId: session.id, txHash: buyerRevealHash }, "evmHtlc: buyer reveal() submitted");
 
-      await db
-        .update(evmHtlcSessionsTable)
-        .set({
-          revealBuyerTxid: buyerRevealHash,
-          status:          "COMPLETED",
-          updatedAt:       new Date(),
-        })
-        .where(eq(evmHtlcSessionsTable.id, session.id));
+    await db
+      .update(evmHtlcSessionsTable)
+      .set({
+        revealBuyerTxid: buyerRevealHash,
+        status:          "COMPLETED",
+        updatedAt:       new Date(),
+      })
+      .where(eq(evmHtlcSessionsTable.id, session.id));
 
-      logger.info({ sessionId: session.id }, "evmHtlc: EVM HTLC settlement COMPLETED");
-    } catch (err) {
-      // Seller revealed but buyer reveal failed. Mark PARTIAL_REVEAL so the
-      // poller will retry this session on the next cycle until it succeeds or
-      // the timelock expires. This prevents unilateral loss for the seller.
-      logger.warn({ err, sessionId: session.id }, "evmHtlc: buyer reveal() failed — marking PARTIAL_REVEAL for retry");
-      await db
-        .update(evmHtlcSessionsTable)
-        .set({ status: "PARTIAL_REVEAL", updatedAt: new Date() })
-        .where(eq(evmHtlcSessionsTable.id, session.id));
-    }
+    logger.info({ sessionId: session.id }, "evmHtlc: EVM HTLC settlement COMPLETED");
+  } catch (err) {
+    logger.warn({ err, sessionId: session.id }, "evmHtlc: buyer reveal() failed");
   }
 }
 
@@ -841,86 +744,6 @@ function buildViemChain(chain: ChainConfig) {
       : { name: "Ether", symbol: "ETH", decimals: 18 },
     rpcUrls: { default: { http: [chain.rpcUrl] } },
   };
-}
-
-// ── Real-time lock detection via webhook ─────────────────────────────────────
-
-/**
- * Called by the EVM webhook handler when a Locked event is detected on-chain
- * (replaces waiting for the 30 s poll cycle). Works with any webhook provider
- * that delivers EVM log events to /api/webhooks/evm.
- *
- * Flow:
- *  1. Find the active HTLC session whose sellerLockId or buyerLockId matches.
- *  2. Record the lock via confirmLockTx() (same path as frontend callback).
- *  3. If both parties are now locked, immediately call revealBothLocks() so
- *     settlement fires within seconds of the second lock confirming.
- *
- * @param lockId  bytes32 hex from topics[1] of the Locked event.
- * @param txHash  Transaction hash carrying the Locked event.
- */
-export async function triggerEvmHtlcCheckByLockId(
-  lockId: string,
-  txHash: string,
-): Promise<void> {
-  // Fetch all non-terminal sessions — there are typically very few active at once.
-  const sessions = await db
-    .select()
-    .from(evmHtlcSessionsTable)
-    .where(notInArray(evmHtlcSessionsTable.status, TERMINAL_STATUSES));
-
-  const session = sessions.find(
-    s => s.sellerLockId === lockId || s.buyerLockId === lockId,
-  );
-
-  if (!session) {
-    logger.debug(
-      { lockId },
-      "evmHtlc: triggerEvmHtlcCheckByLockId — no active session found (may be a different dApp)",
-    );
-    return;
-  }
-
-  const side: "seller" | "buyer" =
-    session.sellerLockId === lockId ? "seller" : "buyer";
-
-  logger.info(
-    { sessionId: session.id, tradeId: session.tradeId, side, lockId, txHash },
-    "evmHtlc: Locked event from QN Streams — recording lock",
-  );
-
-  // Record the lock (idempotent — safe to call even if already recorded)
-  await confirmLockTx(session.id, side, txHash);
-
-  // Re-fetch after update to get accurate locked flags
-  const refreshed = await db
-    .select()
-    .from(evmHtlcSessionsTable)
-    .where(eq(evmHtlcSessionsTable.id, session.id));
-
-  const updated = refreshed[0];
-  if (!updated) return;
-
-  if (
-    updated.sellerLocked &&
-    updated.buyerLocked &&
-    updated.status !== "REVEALING" &&
-    updated.status !== "COMPLETED"
-  ) {
-    const chain = EVM_CHAINS[updated.chainId];
-    if (!chain || !chain.contractAddress) {
-      logger.warn(
-        { sessionId: updated.id, chainId: updated.chainId },
-        "evmHtlc: both locked but chain config missing — cannot auto-reveal",
-      );
-      return;
-    }
-    logger.info(
-      { sessionId: updated.id },
-      "evmHtlc: both locks confirmed via Streams — triggering immediate reveal",
-    );
-    await revealBothLocks(updated, chain);
-  }
 }
 
 // ── Manual lock confirmation (webhook / frontend callback) ────────────────────

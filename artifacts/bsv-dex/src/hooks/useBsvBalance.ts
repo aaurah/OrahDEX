@@ -34,7 +34,7 @@ export function useBsvBalance() {
   const refresh = useCallback(async () => {
     const currentAddress = useWalletStore.getState().address;
     const currentNetwork = useWalletStore.getState().network;
-    if (!currentAddress || (currentNetwork !== "bsv" && currentNetwork !== "bsv-test")) return;
+    if (!currentAddress || currentNetwork !== "bsv") return;
 
     const result = await fetchBsvBalance(currentAddress);
     if (result && result.balance !== undefined && result.error !== "paymail_unresolved") {
@@ -43,7 +43,7 @@ export function useBsvBalance() {
   }, [setBalance]);
 
   useEffect(() => {
-    if ((network !== "bsv" && network !== "bsv-test") || !address) {
+    if (network !== "bsv" || !address) {
       if (intervalRef.current) clearInterval(intervalRef.current);
       intervalRef.current = null;
       lastAddressRef.current = null;

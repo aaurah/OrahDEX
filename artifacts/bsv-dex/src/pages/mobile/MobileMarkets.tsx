@@ -17,14 +17,10 @@ import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
-  BASE_MARKETS, ZORA_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
+  BASE_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
-  GAMING_MARKETS, COSMOS_MARKETS, L1_MARKETS, L2_MARKETS,
-  RWA_MARKETS, EXCHANGE_MARKETS, DEPIN_MARKETS, BRC20_MARKETS,
-  UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
-import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { cn } from "@/lib/utils";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -36,9 +32,7 @@ function fmt(p: number): string {
   if (p >= 1)      return p.toFixed(4);
   if (p >= 0.01)   return p.toFixed(4);
   if (p >= 0.0001) return p.toFixed(6);
-  if (p >= 1e-8)   return p.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
-  const mag = -Math.floor(Math.log10(p));
-  return p.toFixed(Math.min(mag + 3, 18)).replace(/\.?0+$/, "");
+  return p.toFixed(10).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function fmtShort(n: number): string {
@@ -73,17 +67,15 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "new" | "chains" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "favorites" | "new" | "chains" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "vote",      label: "🗳️ Vote" },
   { id: "favorites", label: "Favs" },
-  { id: "all",       label: "All" },
   { id: "new",       label: "NEW" },
   { id: "chains",    label: "🌐 Chains" },
   { id: "usd",       label: "USD" },
   { id: "btc",       label: "BTC" },
-  { id: "bsv",       label: "BSV" },
   { id: "eth",       label: "ETH" },
   { id: "bnb",       label: "BNB" },
   { id: "matic",     label: "MATIC" },
@@ -93,26 +85,16 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "ftm",       label: "FTM" },
   { id: "cro",       label: "CRO" },
   { id: "base",      label: "⬡ Base" },
-  { id: "zora",      label: "ZORA" },
   { id: "linea",     label: "LINEA" },
   { id: "zk",        label: "ZK" },
   { id: "scr",       label: "SCROLL" },
   { id: "mnt",       label: "MNT" },
   { id: "sol",       label: "SOL" },
   { id: "bch",       label: "BCH" },
+  { id: "bsv",       label: "BSV" },
   { id: "ai",        label: "AI" },
-  { id: "depin",     label: "DePIN" },
   { id: "meme",      label: "MEME" },
   { id: "defi",      label: "DEFI" },
-  { id: "gaming",    label: "GAMING" },
-  { id: "cosmos",    label: "COSMOS" },
-  { id: "l1",        label: "LAYER 1" },
-  { id: "l2",        label: "LAYER 2" },
-  { id: "rwa",       label: "RWA" },
-  { id: "exchange",  label: "EXCHANGE" },
-  { id: "brc20",     label: "BRC-20" },
-  { id: "uniswap",   label: "UNISWAP" },
-  { id: "pancake",   label: "PANCAKE" },
   { id: "futures",   label: "Futures" },
 ];
 
@@ -120,73 +102,28 @@ const CATS: { id: Cat; label: string }[] = [
  * Always use mock data as the full pair list; enrich prices from API where available.
  * This ensures all pairs are visible even when the API DB only tracks a small subset.
  */
-// Complete, deduplicated pool — used for Favorites and "All" tabs
-const _ALL_POOL_RAW = [
-  ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
-  ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
-  ...BNB_MARKETS, ...MATIC_MARKETS, ...AVAX_MARKETS, ...ARB_MARKETS,
-  ...OP_MARKETS, ...FTM_MARKETS, ...CRO_MARKETS,
-  ...BASE_MARKETS, ...ZORA_MARKETS, ...LINEA_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...MNT_MARKETS,
-  ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
-  ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
-  ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...DEPIN_MARKETS, ...BRC20_MARKETS,
-  ...UNISWAP_MARKETS, ...PANCAKE_MARKETS,
-  ...NEW_MARKETS, ...FUTURES_MARKETS,
-];
-const MOBILE_ALL_POOL: any[] = Array.from(
-  new Map(_ALL_POOL_RAW.map(m => [m.symbol ?? `${m.baseAsset}-${m.quoteAsset}`, m])).values()
-);
-
-function getCatRows(
-  cat: Cat,
-  usdSub: UsdSub,
-  livePrice: Map<string, MktRow>,
-  favorites: Set<string>,
-  leAllPairs: MktRow[],
-  lePairs: MktRow[],      // LetsExchange BSV-quoted pairs
-  leBtcPairs: MktRow[],   // LetsExchange BTC-quoted pairs
-  apiRows: MktRow[],      // All live DB pairs (normalised)
-): MktRow[] {
+function getCatRows(cat: Cat, usdSub: UsdSub, livePrice: Map<string, MktRow>, favorites: Set<string>): MktRow[] {
   const enrich = (mock: any[]): MktRow[] =>
     mock.map(m => {
       const n = normalise(m);
       const live = livePrice.get(n.symbol);
       if (!live) return n;
-      const chg = live.chg !== 0 ? live.chg : n.chg;
-      return { ...n, price: live.price, chg, vol: live.vol };
+      return { ...n, price: live.price, chg: live.chg, vol: live.vol };
     });
 
-  /** All DB pairs for a given quote, priced > 0 */
-  const dbByQuote = (quote: string): MktRow[] =>
-    apiRows.filter(m => m.quote === quote && m.type !== "futures" && m.price > 0);
+  const ALL_POOL = [
+    ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
+    ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
+    ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
+  ];
 
   switch (cat) {
-    case "all":       return [
-      ...enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures" && m.price > 0),
-      ...leAllPairs.filter(p => !MOBILE_ALL_POOL.some((m: any) => (m.symbol ?? `${m.baseAsset}/${m.quoteAsset}`) === p.symbol) && p.price > 0),
-    ];
-    case "favorites": return [
-      ...enrich(MOBILE_ALL_POOL).filter(m => favorites.has(m.symbol)),
-      ...leAllPairs.filter(p => favorites.has(p.symbol)),
-    ];
+    case "favorites": return enrich(ALL_POOL).filter(m => favorites.has(m.symbol));
     case "new":       return NEW_MARKETS.map(normalise);
     case "usd":       return enrich(STABLE_MOCK[usdSub]);
-    case "btc": {
-      const dbBtc = dbByQuote("BTC");
-      if (dbBtc.length > 0) return dbBtc;
-      // Fallback: static list enriched with live prices + LE extras
-      const native = enrich(BTC_MARKETS);
-      const seenBtcBases = new Set(native.map(r => r.base));
-      const seenBtcSymbols = new Set(native.map(r => r.symbol));
-      const extraBtc = leBtcPairs
-        .filter(p => !seenBtcBases.has(p.base) && !seenBtcSymbols.has(p.symbol) && p.price > 0)
-        .sort((a, b) => a.base.localeCompare(b.base));
-      return [...native, ...extraBtc];
-    }
-    case "eth":       return dbByQuote("ETH").length > 0 ? dbByQuote("ETH") : enrich(ETH_MARKETS);
-    case "bnb":       return dbByQuote("BNB").length > 0 ? dbByQuote("BNB") : enrich(BNB_MARKETS);
-    case "sol":       return enrich(SOL_MARKETS);
-    case "bch":       return enrich(BCH_MARKETS);
+    case "btc":       return enrich(BTC_MARKETS);
+    case "eth":       return enrich(ETH_MARKETS);
+    case "bnb":       return enrich(BNB_MARKETS);
     case "matic":     return enrich(MATIC_MARKETS);
     case "avax":      return enrich(AVAX_MARKETS);
     case "arb":       return enrich(ARB_MARKETS);
@@ -194,33 +131,16 @@ function getCatRows(
     case "ftm":       return enrich(FTM_MARKETS);
     case "cro":       return enrich(CRO_MARKETS);
     case "base":      return enrich(BASE_MARKETS);
-    case "zora":      return enrich(ZORA_MARKETS);
     case "linea":     return enrich(LINEA_MARKETS);
     case "zk":        return enrich(ZK_MARKETS);
     case "scr":       return enrich(SCR_MARKETS);
     case "mnt":       return enrich(MNT_MARKETS);
-    case "bsv": {
-      const native = enrich(BSV_MARKETS).filter(m => m.price > 0);
-      const seenBases = new Set(native.map(r => r.base));
-      const seenSymbols = new Set(native.map(r => r.symbol));
-      const extra = lePairs
-        .filter(p => !seenBases.has(p.base) && !seenSymbols.has(p.symbol) && p.price > 0)
-        .sort((a, b) => a.base.localeCompare(b.base));
-      return [...native, ...extra];
-    }
+    case "sol":       return enrich(SOL_MARKETS);
+    case "bch":       return enrich(BCH_MARKETS);
+    case "bsv":       return enrich(BSV_MARKETS);
     case "ai":        return enrich(AI_MARKETS);
-    case "depin":     return enrich(DEPIN_MARKETS);
     case "meme":      return enrich(MEME_MARKETS);
     case "defi":      return enrich(DEFI_MARKETS);
-    case "gaming":    return enrich(GAMING_MARKETS);
-    case "cosmos":    return enrich(COSMOS_MARKETS);
-    case "l1":        return enrich(L1_MARKETS);
-    case "l2":        return enrich(L2_MARKETS);
-    case "rwa":       return enrich(RWA_MARKETS);
-    case "exchange":  return enrich(EXCHANGE_MARKETS);
-    case "brc20":     return enrich(BRC20_MARKETS);
-    case "uniswap":   return enrich(UNISWAP_MARKETS);
-    case "pancake":   return enrich(PANCAKE_MARKETS);
     case "futures":   return enrich(FUTURES_MARKETS);
     default:          return [];
   }
@@ -233,12 +153,7 @@ export function MobileMarkets() {
   const [usdSub, setUsdSub]       = useState<UsdSub>("USDT");
   const [sortKey, setSortKey]     = useState<SortKey>("base");
   const [sortDir, setSortDir]     = useState<SortDir>("asc");
-  const [favorites, setFavorites] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem("market_favorites");
-      return raw ? new Set<string>(JSON.parse(raw)) : new Set<string>();
-    } catch { return new Set<string>(); }
-  });
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
   const prevAddressRef = useRef<string | null>(null);
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
@@ -249,24 +164,12 @@ export function MobileMarkets() {
   const { prices: crossPrices } = useWalletPrices();
   const BTC_USD = crossPrices.BTC.usd || 83000;
   const BSV_USD = crossPrices.BSV.usd || 14;
-  const ETH_USD = crossPrices.ETH.usd || 2400;
+  const ETH_USD = crossPrices.ETH.usd || 1800;
   const CROSS_QUOTE_USD: Record<string, number> = {
-    USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1, BUSD: 1,
+    USDT: 1, USDC: 1, TUSD: 1, USDD: 1, FDUSD: 1,
     BTC: BTC_USD, ETH: ETH_USD, BSV: BSV_USD,
-    BNB:   crossPrices.BNB?.usd   || 580,
-    BCH:   crossPrices.BCH?.usd   || 320,
-    SOL:   crossPrices.SOL?.usd   || 130,
-    MATIC: crossPrices.MATIC?.usd || 0.32,
-    AVAX:  crossPrices.AVAX?.usd  || 18,
-    ARB:   crossPrices.ARB?.usd   || 0.42,
-    OP:    crossPrices.OP?.usd    || 0.70,
-    FTM:   crossPrices.FTM?.usd   || 0.20,
-    CRO:   crossPrices.CRO?.usd   || 0.09,
-    BASE:  crossPrices.BASE?.usd  || 0.85,
-    LINEA: crossPrices.LINEA?.usd || 0.05,
-    ZK:    crossPrices.ZK?.usd    || 0.15,
-    SCR:   crossPrices.SCR?.usd   || 0.52,
-    MNT:   crossPrices.MNT?.usd   || 1.02,
+    BNB: 580, BCH: 320, SOL: 130, MATIC: 0.32,
+    AVAX: 18, ARB: 0.42, OP: 0.70, FTM: 0.51,
   };
 
   /* Auto-switch to correct market category when wallet connects / chain changes */
@@ -297,68 +200,20 @@ export function MobileMarkets() {
     refetchInterval: 30_000,
   });
 
-  // LetsExchange all quoted pairs — complete exchange pair universe
-  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true });
-  const leAllPairs = useMemo<MktRow[]>(() =>
-    (rawLeAllPairs ?? []).map(p => ({
-      symbol: p.symbol,
-      base:   p.baseAsset,
-      quote:  p.quoteAsset,
-      price:  p.lastPrice ?? 0,
-      chg:    p.priceChangePercent24h ?? 0,
-      vol:    p.volume ?? 0,
-      cap:    0,
-      type:   "spot",
-    })),
-  [rawLeAllPairs]);
-
-  // LetsExchange BSV-quoted pairs — provides all 800+ coins tradeable vs BSV
-  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
-  const lePairs = useMemo<MktRow[]>(() =>
-    (rawLePairs ?? []).map(p => ({
-      symbol: p.symbol,
-      base:   p.baseAsset,
-      quote:  p.quoteAsset,
-      price:  p.lastPrice ?? 0,
-      chg:    p.priceChangePercent24h ?? 0,
-      vol:    p.volume ?? 0,
-      cap:    0,
-      type:   "spot",
-    })),
-  [rawLePairs]);
-
-  // LetsExchange BTC-quoted pairs — provides all 800+ coins tradeable vs BTC
-  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC" });
-  const leBtcPairs = useMemo<MktRow[]>(() =>
-    (rawLeBtcPairs ?? []).map(p => ({
-      symbol: p.symbol,
-      base:   p.baseAsset,
-      quote:  p.quoteAsset,
-      price:  p.lastPrice ?? 0,
-      chg:    p.priceChangePercent24h ?? 0,
-      vol:    p.volume ?? 0,
-      cap:    0,
-      type:   "spot",
-    })),
-  [rawLeBtcPairs]);
-
-  const apiRows = useMemo<MktRow[]>(
-    () => (Array.isArray(apiData) ? apiData : []).map(normalise),
-    [apiData]
-  );
-
   const livePrice = useMemo(() => new Map<string, MktRow>(
-    apiRows.map((m: MktRow) => [m.symbol, m])
-  ), [apiRows]);
+    (apiData && Array.isArray(apiData) ? apiData : [])
+      .map(normalise)
+      .map((m: MktRow) => [m.symbol, m])
+  ), [apiData]);
 
   const globalRows = useMemo(() => Array.from(new Map(
     [
-      ...apiRows,
-      ...CATS.flatMap(c => getCatRows(c.id, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs, apiRows)),
+      ...(Array.isArray(apiData) ? apiData : []).map(normalise),
+      ...CATS.flatMap(c => getCatRows(c.id, usdSub, livePrice, favorites)),
     ].map((m: MktRow) => [m.symbol, m])
-  ).values()), [apiRows, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs]);
+  ).values()), [apiData, usdSub, livePrice, favorites]);
 
-  let rows = getCatRows(cat, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs, apiRows);
+  let rows = getCatRows(cat, usdSub, livePrice, favorites);
 
   if (search) {
     const q = search.toUpperCase();
@@ -379,17 +234,11 @@ export function MobileMarkets() {
   };
 
   const toggleFav = (sym: string) =>
-    setFavorites(prev => {
-      const n = new Set(prev);
-      n.has(sym) ? n.delete(sym) : n.add(sym);
-      try { localStorage.setItem("market_favorites", JSON.stringify([...n])); } catch {}
-      return n;
-    });
+    setFavorites(prev => { const n = new Set(prev); n.has(sym) ? n.delete(sym) : n.add(sym); return n; });
 
   const goTrade = (m: MktRow) => {
     const slug = m.symbol.replace(/\//g, "-");
-    if (m.type === "futures") { navigate(`/futures/${slug}`); return; }
-    navigate(`/trade/${slug}`);
+    navigate(m.type === "futures" ? `/futures/${slug}` : `/trade/${slug}`);
   };
 
   function SortIcon({ k }: { k: SortKey }) {
@@ -414,7 +263,6 @@ export function MobileMarkets() {
               placeholder="Search coins…"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
             />
             {search && <button onClick={() => setSearch("")}><X size={13} className="text-muted-foreground" /></button>}
           </div>
@@ -573,14 +421,11 @@ export function MobileMarkets() {
 const STABLE_QUOTE_SET = new Set(["USDT", "USDC", "TUSD", "USDD", "USD", "BUSD"]);
 
 function fmtCross(v: number, decimals: number): string {
-  if (!v || v <= 0) return "—";
-  if (v >= 1000)  return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  if (v >= 1)     return v.toFixed(decimals <= 4 ? 4 : decimals);
+  if (!v) return "—";
+  if (v >= 1000) return v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  if (v >= 1)    return v.toFixed(decimals <= 4 ? 4 : decimals);
   if (v >= 0.001) return v.toFixed(6);
-  if (v >= 1e-8)  return v.toFixed(8);
-  // Sub-satoshi prices: extend decimal places to show 4 significant figures
-  const mag = -Math.floor(Math.log10(v));
-  return v.toFixed(Math.min(mag + 3, 18)).replace(/\.?0+$/, "");
+  return v.toFixed(8);
 }
 
 function MexcRow({

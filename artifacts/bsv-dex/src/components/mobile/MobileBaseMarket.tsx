@@ -235,7 +235,7 @@ export function MobileBaseMarket() {
         </div>
         <div className="min-w-0">
           <p className="text-[12px] font-bold text-blue-400 leading-tight">Base Chain · Live DEX Markets</p>
-          <p className="text-[10px] text-blue-300/60 leading-tight mt-0.5">Real-time on-chain data</p>
+          <p className="text-[10px] text-blue-300/60 leading-tight mt-0.5">Real-time on-chain data from Uniswap, Aerodrome &amp; more</p>
         </div>
       </div>
 

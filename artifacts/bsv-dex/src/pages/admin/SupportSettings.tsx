@@ -1,4 +1,3 @@
-import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect, useRef } from "react";
 import {
   Mail, MessageCircle, Inbox, HelpCircle, Save, Plus,
@@ -66,11 +65,11 @@ interface Faq {
 function EmailSetupTab() {
   const { toast } = useToast();
   const [settings, setSettings] = useState({
-    support_email: "support@orahdex.org",
-    support_email_legal: "legal@orahdex.org",
-    support_email_billing: "billing@orahdex.org",
-    support_email_press: "press@orahdex.org",
-    support_email_privacy: "privacy@orahdex.org",
+    support_email: "support@orah.org",
+    support_email_legal: "legal@orah.org",
+    support_email_billing: "billing@orah.org",
+    support_email_press: "press@orah.org",
+    support_email_privacy: "privacy@orah.org",
     support_response_time: "< 2 hours",
     support_hours: "24/7",
   });
@@ -78,7 +77,7 @@ function EmailSetupTab() {
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    adminFetch(`/api/admin/support/settings`)
+    fetch(`${BASE}/api/admin/support/settings`)
       .then(r => r.json())
       .then(data => {
         setSettings(s => ({ ...s, ...data }));
@@ -90,7 +89,7 @@ function EmailSetupTab() {
   const save = async () => {
     setSaving(true);
     try {
-      const r = await adminFetch(`/api/admin/support/settings`, {
+      const r = await fetch(`${BASE}/api/admin/support/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
@@ -125,7 +124,7 @@ function EmailSetupTab() {
                 type="email"
                 value={(settings as any)[f.key]}
                 onChange={e => setSettings(s => ({ ...s, [f.key]: e.target.value }))}
-                placeholder={`e.g. ${f.key.replace("support_email_", "").replace("support_email", "support")}@orahdex.com`}
+                placeholder={`e.g. ${f.key.replace("support_email_", "").replace("support_email", "support")}@orah.com`}
                 className="w-full max-w-sm bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors font-mono"
               />
               <p className="text-[11px] text-muted-foreground mt-1">{f.hint}</p>
@@ -232,7 +231,7 @@ function LiveChatTab() {
 
   useEffect(() => {
     loadChannels();
-    adminFetch(`/api/admin/support/settings`)
+    fetch(`${BASE}/api/admin/support/settings`)
       .then(r => r.json())
       .then(d => {
         if (d.support_telegram_url) setTelegramUrl(d.support_telegram_url);
@@ -279,7 +278,7 @@ function LiveChatTab() {
   const saveLinks = async () => {
     setSavingLinks(true);
     try {
-      await adminFetch(`/api/admin/support/settings`, {
+      await fetch(`${BASE}/api/admin/support/settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ support_telegram_url: telegramUrl, support_discord_url: discordUrl }),
@@ -302,7 +301,7 @@ function LiveChatTab() {
       <div className="flex items-center gap-3 p-4 bg-blue-400/5 border border-blue-400/20 rounded-2xl">
         <MessageCircle className="w-5 h-5 text-blue-400 shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-blue-400">Native OrahDEX Chat — Online</p>
+          <p className="text-sm font-semibold text-blue-400">Native Orah Chat — Online</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             Built-in multi-channel SSE system · {channels.length} channels · {totalMessages} messages · {totalSubs} live subscriber{totalSubs !== 1 ? "s" : ""}
           </p>
@@ -492,7 +491,7 @@ function LiveChatTab() {
             <input
               value={telegramUrl}
               onChange={e => setTelegramUrl(e.target.value)}
-              placeholder="https://t.me/orahdex"
+              placeholder="https://t.me/orah"
               className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors"
             />
           </div>
@@ -501,7 +500,7 @@ function LiveChatTab() {
             <input
               value={discordUrl}
               onChange={e => setDiscordUrl(e.target.value)}
-              placeholder="https://discord.gg/orahdex"
+              placeholder="https://discord.gg/orah"
               className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-primary/50 transition-colors"
             />
           </div>
@@ -534,7 +533,7 @@ function TicketsTab() {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await adminFetch(`/api/admin/support/tickets`);
+      const r = await fetch(`${BASE}/api/admin/support/tickets`);
       setTickets(await r.json());
     } catch { /* silent */ }
     finally { setLoading(false); }
@@ -548,7 +547,7 @@ function TicketsTab() {
     if (!selected || !reply.trim()) return;
     setReplying(true);
     try {
-      const r = await adminFetch(`/api/admin/support/tickets/${selected.id}`, {
+      const r = await fetch(`${BASE}/api/admin/support/tickets/${selected.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ adminReply: reply.trim() }),
@@ -567,7 +566,7 @@ function TicketsTab() {
 
   const updateStatus = async (id: number, status: string) => {
     try {
-      const r = await adminFetch(`/api/admin/support/tickets/${id}`, {
+      const r = await fetch(`${BASE}/api/admin/support/tickets/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
@@ -584,7 +583,7 @@ function TicketsTab() {
   const deleteTicket = async (id: number) => {
     if (!confirm("Delete this ticket permanently?")) return;
     try {
-      await adminFetch(`/api/admin/support/tickets/${id}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/admin/support/tickets/${id}`, { method: "DELETE" });
       setTickets(ts => ts.filter(t => t.id !== id));
       if (selected?.id === id) setSelected(null);
       toast({ title: "Ticket deleted" });
@@ -771,7 +770,7 @@ function FaqsTab() {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await adminFetch(`/api/admin/support/faqs`);
+      const r = await fetch(`${BASE}/api/admin/support/faqs`);
       setFaqs(await r.json());
     } catch { /* silent */ }
     finally { setLoading(false); }
@@ -786,7 +785,7 @@ function FaqsTab() {
     }
     setSaving(true);
     try {
-      const r = await adminFetch(`/api/admin/support/faqs`, {
+      const r = await fetch(`${BASE}/api/admin/support/faqs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newFaq),
@@ -804,7 +803,7 @@ function FaqsTab() {
   const updateFaq = async (faq: Faq) => {
     setSaving(true);
     try {
-      const r = await adminFetch(`/api/admin/support/faqs/${faq.id}`, {
+      const r = await fetch(`${BASE}/api/admin/support/faqs/${faq.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(faq),
@@ -820,7 +819,7 @@ function FaqsTab() {
 
   const togglePublish = async (faq: Faq) => {
     try {
-      const r = await adminFetch(`/api/admin/support/faqs/${faq.id}`, {
+      const r = await fetch(`${BASE}/api/admin/support/faqs/${faq.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isPublished: !faq.isPublished }),
@@ -833,7 +832,7 @@ function FaqsTab() {
   const deleteFaq = async (id: number) => {
     if (!confirm("Delete this FAQ?")) return;
     try {
-      await adminFetch(`/api/admin/support/faqs/${id}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/admin/support/faqs/${id}`, { method: "DELETE" });
       setFaqs(f => f.filter(x => x.id !== id));
       toast({ title: "FAQ deleted" });
     } catch {
@@ -1003,7 +1002,7 @@ function NotificationsTab() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    adminFetch(`/api/admin/support/settings`)
+    fetch(`${BASE}/api/admin/support/settings`)
       .then(r => r.json())
       .then(data => { setSettings(s => ({ ...s, ...data })); setLoaded(true); })
       .catch(() => setLoaded(true));
@@ -1012,7 +1011,7 @@ function NotificationsTab() {
   const save = async () => {
     setSaving(true);
     try {
-      await adminFetch(`/api/admin/support/settings`, {
+      await fetch(`${BASE}/api/admin/support/settings`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings),
       });
       toast({ title: "Notification settings saved" });
@@ -1024,7 +1023,7 @@ function NotificationsTab() {
   const test = async (channel: string, payload: Record<string, string>) => {
     setTesting(channel);
     try {
-      const r = await adminFetch(`/api/admin/support/notifications/test`, {
+      const r = await fetch(`${BASE}/api/admin/support/notifications/test`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel, ...payload }),
       });
@@ -1037,7 +1036,7 @@ function NotificationsTab() {
   };
 
   const copyTopic = () => {
-    navigator.clipboard.writeText(settings.notif_ntfy_topic || "orahdex-support");
+    navigator.clipboard.writeText(settings.notif_ntfy_topic || "orah-support");
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -1096,7 +1095,7 @@ function NotificationsTab() {
               <input
                 value={settings.notif_ntfy_topic}
                 onChange={e => setSettings(s => ({ ...s, notif_ntfy_topic: e.target.value }))}
-                placeholder="e.g. orahdex-support-abc123"
+                placeholder="e.g. orah-support-abc123"
                 className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-sm font-mono focus:outline-none focus:border-primary/50"
               />
               <button onClick={copyTopic} title="Copy topic" className="px-3 rounded-xl border border-border hover:bg-white/5 transition-colors text-muted-foreground hover:text-foreground">

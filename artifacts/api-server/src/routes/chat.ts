@@ -1,6 +1,5 @@
 import { Router, type Request, type Response } from "express";
 import { logger } from "../lib/logger.js";
-import { notifyNewTicket } from "../lib/notifier.js";
 
 const router = Router();
 
@@ -85,23 +84,6 @@ function extractTxid(text: string): string | undefined {
   return m ? m[0] : undefined;
 }
 
-/* ── Support-notify debounce (per wallet, 5 min) ─────────────────────────── */
-const SUPPORT_NOTIFY_COOLDOWN = 5 * 60_000;
-const supportNotifyMap = new Map<string, number>();
-function shouldNotifySupport(wallet: string): boolean {
-  const now = Date.now();
-  const last = supportNotifyMap.get(wallet) ?? 0;
-  if (now - last < SUPPORT_NOTIFY_COOLDOWN) return false;
-  supportNotifyMap.set(wallet, now);
-  /* Lazy GC: prune entries older than 1h */
-  if (supportNotifyMap.size > 500) {
-    for (const [k, v] of supportNotifyMap) {
-      if (now - v > 3_600_000) supportNotifyMap.delete(k);
-    }
-  }
-  return true;
-}
-
 /* ── Rate limiting ───────────────────────────────────────────────────────── */
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT = 10; // msgs per window
@@ -137,14 +119,14 @@ function seedSystemChannel() {
     {
       channel: "system",
       wallet: "system",
-      displayName: "OrahDEX",
+      displayName: "Orah",
       role: "system",
-      text: "Welcome to OrahDEX System Announcements. This channel carries protocol updates, maintenance windows, and incident reports. It is read-only.",
+      text: "Welcome to Orah System Announcements. This channel carries protocol updates, maintenance windows, and incident reports. It is read-only.",
     },
     {
       channel: "system",
       wallet: "system",
-      displayName: "OrahDEX",
+      displayName: "Orah",
       role: "system",
       text: "Protocol v4.2.0 active. BSV on-chain settlement operational. All markets live.",
     },
@@ -249,26 +231,6 @@ router.post("/channels/:channel/messages", (req: Request, res: Response) => {
 
   addMessage(channel, msg);
   logger.debug({ channel, wallet: msg.wallet, msgId: msg.id }, "chat message posted");
-
-  /* Fire admin notification for support-channel user messages (Telegram/Discord/ntfy/Pushover)
-   * Debounced per wallet (5 min cooldown) to avoid spamming admin channels when a user types
-   * many messages in a row. The first message of each "burst" pings; subsequent messages
-   * within the window are silently delivered via SSE only. */
-  if (channel === "support" && msg.role !== "support" && msg.role !== "system") {
-    if (shouldNotifySupport(msg.wallet)) {
-      const subjectPreview = msg.text.length > 60 ? msg.text.slice(0, 60) + "…" : msg.text;
-      notifyNewTicket({
-        id: Math.floor(msg.ts / 1000) % 1_000_000, // pseudo-id for visual distinction
-        name: msg.displayName,
-        email: msg.wallet,
-        subject: `Live chat: ${subjectPreview}`,
-        category: "live_chat",
-        message: msg.text,
-        priority: "normal",
-      }).catch(e => logger.warn({ err: e?.message }, "support chat notify failed"));
-    }
-  }
-
   res.json({ ok: true, message: msg });
 });
 
@@ -304,7 +266,7 @@ router.post("/system", (req: Request, res: Response) => {
     id: genId(),
     channel: "system",
     wallet: "system",
-    displayName: "OrahDEX",
+    displayName: "Orah",
     role: "system",
     text: text.trim(),
     ts: Date.now(),

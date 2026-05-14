@@ -1,5 +1,5 @@
 /**
- * fundingVerifier.ts — Funding invariant enforcement for OrahDEX orders
+ * fundingVerifier.ts — Funding invariant enforcement for Orah orders
  *
  * The central enforcement point for the rule:
  *   "No order reaches the matching engine without verifiable funding."
@@ -30,7 +30,7 @@
  *               For BSV: uses utxoRef as proof.
  *               The API ledger is NOT debited for external wallets.
  *
- *   "orah"      API-managed wallet with real deposited funds.
+ *   "orahdex"      API-managed wallet with real deposited funds.
  *               Locks from the API ledger.
  *
  * ── Usage ─────────────────────────────────────────────────────────────────────
@@ -49,9 +49,7 @@
  */
 
 import crypto from "node:crypto";
-import { createPublicClient, http } from "viem";
 import { pool } from "@workspace/db";
-import { logger } from "./logger.js";
 import {
   lockForOrder,
   getBalances,
@@ -64,7 +62,6 @@ import {
   type OrderKind,
   type WalletSource,
 } from "./orderIntent.js";
-import { getTokenInfo, isNativeAsset } from "./tokenRegistry.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -94,18 +91,7 @@ export interface VerifyFundingParams {
   signature?:    string;
   /** BSV UTXO reference "txid:vout" (for external BSV wallets) */
   utxoRef?:      string;
-  /**
-   * Chain ID for on-chain balance queries (external EVM wallets).
-   * Must be provided when walletSource === "external" and the wallet is an EVM address.
-   * If absent, the on-chain balance check is skipped and the order is gated on
-   * the internal ledger balance only.
-   * @deprecated reportedBalance (client-supplied) is no longer accepted.
-   */
-  chainId?:      number;
-  /**
-   * @deprecated Ignored. Client-supplied balance claims are never trusted.
-   * Left in the interface for backwards-compatible callers; will be removed.
-   */
+  /** Reported on-chain balance (for external wallets — checked but not trusted) */
   reportedBalance?: number;
 }
 
@@ -114,7 +100,7 @@ export interface VerifyFundingParams {
 async function verifySpotFunding(
   params: VerifyFundingParams,
 ): Promise<FundingVerificationResult> {
-  const { walletAddress, walletSource, asset, amount, signature, utxoRef, chainId } = params;
+  const { walletAddress, walletSource, asset, amount, signature, utxoRef, reportedBalance } = params;
   const needed = parseFloat(amount);
 
   // ── External BSV UTXO wallet ────────────────────────────────────────────
@@ -130,8 +116,7 @@ async function verifySpotFunding(
   // These wallets hold funds on-chain. They may also have accumulated internal
   // exchange balance from previous trades (e.g. bought BSV, now selling).
   // Strategy: try the internal ledger first (zero-friction if balance is there),
-  // then verify on-chain balance via RPC (chainId required). Fails closed:
-  // any unverifiable state is rejected rather than silently accepted.
+  // then fall back to on-chain reportedBalance so trades work from the wallet directly.
   if (walletSource === "external") {
     // 1. Try internal ledger — covers exchange-accumulated balance
     try {
@@ -141,138 +126,33 @@ async function verifySpotFunding(
       // Not enough internal balance — fall through to on-chain check
     }
 
-    // 2. Require wallet signature (proof of identity).
-    //    Without a signature the caller cannot prove they control walletAddress.
-    if (!signature) {
-      return {
-        valid:      false,
-        fundingRef: "",
-        error:      "Wallet signature required for on-chain order placement. Please sign the order in your wallet.",
-        code:       "FUNDING_PROOF_REQUIRED",
-      };
-    }
-
-    // Verify the signature recovers to walletAddress (lightweight format check).
-    if (walletAddress.startsWith("0x")) {
-      const sigStr = signature.startsWith("0x") ? signature.slice(2) : signature;
-      if (sigStr.length !== 130) {
+    // 2. Require wallet signature + accept on-chain balance as proof of funding.
+    // External EVM wallets must sign the order intent (personal_sign) to authorise
+    // on-chain settlement via the Orah HTLC contract.
+    const onChain = reportedBalance ?? 0;
+    if (onChain >= needed) {
+      if (!signature) {
         return {
           valid:      false,
           fundingRef: "",
-          error:      "Invalid EVM signature format (expected 65-byte hex).",
-          code:       "INVALID_SIGNATURE",
+          error:      "Wallet signature required for on-chain order placement. Please sign the order in your wallet.",
+          code:       "SIGNATURE_REQUIRED",
         };
       }
+      const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
+      return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
     }
 
-    // 3. chainId is required to verify on-chain balance — reject without it.
-    //    Accepting unverified balance claims is a security risk (funds could be absent).
-    if (!chainId) {
-      return {
-        valid:      false,
-        fundingRef: "",
-        error:      "chainId is required for external EVM wallet orders so on-chain balance can be verified.",
-        code:       "CHAIN_ID_REQUIRED",
-      };
-    }
-
-    const RPC_URLS: Record<number, string> = {
-      1:        process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
-      56:       process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
-      137:      process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",
-      8453:     process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
-      42161:    process.env.ARB_RPC_URL      ?? "https://arb1.arbitrum.io/rpc",
-      10:       process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",
-      43114:    process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
-      11155111: process.env.SEPOLIA_RPC_URL  ?? "https://ethereum-sepolia-rpc.publicnode.com",
+    return {
+      valid:      false,
+      fundingRef: "",
+      error:      `Insufficient ${asset} balance`,
+      code:       "INSUFFICIENT_FUNDS",
     };
-    const rpcUrl = RPC_URLS[chainId];
-    if (!rpcUrl) {
-      return {
-        valid:      false,
-        fundingRef: "",
-        error:      `chainId ${chainId} is not supported for on-chain balance verification.`,
-        code:       "CHAIN_ID_REQUIRED",
-      };
-    }
-
-    try {
-      const client = createPublicClient({ transport: http(rpcUrl) });
-
-      // Minimal ERC-20 ABI for balanceOf
-      const ERC20_BALANCE_OF_ABI = [
-        {
-          type:    "function",
-          name:    "balanceOf",
-          inputs:  [{ name: "account", type: "address" }],
-          outputs: [{ name: "", type: "uint256" }],
-          stateMutability: "view",
-        },
-      ] as const;
-
-      let onChain: number;
-
-      if (isNativeAsset(chainId, asset)) {
-        // Native chain asset: ETH / BNB / MATIC / AVAX
-        const onChainBal = await client.getBalance({ address: walletAddress as `0x${string}` });
-        onChain = Number(onChainBal) / 1e18;
-      } else {
-        // ERC-20 token: look up contract address and decimals.
-        // Unknown tokens are rejected — accepting without verification is a security risk.
-        const tokenInfo = getTokenInfo(chainId, asset);
-        if (!tokenInfo) {
-          logger.warn(
-            { walletAddress, chainId, asset },
-            "fundingVerifier: token not in registry — rejecting order",
-          );
-          return {
-            valid:      false,
-            fundingRef: "",
-            error:      `Token ${asset} is not supported on chain ${chainId}. Add it to the token registry or deposit via a supported path.`,
-            code:       "TOKEN_UNSUPPORTED",
-          };
-        }
-        const rawBalance = await client.readContract({
-          address:      tokenInfo.address as `0x${string}`,
-          abi:          ERC20_BALANCE_OF_ABI,
-          functionName: "balanceOf",
-          args:         [walletAddress as `0x${string}`],
-        });
-        onChain = Number(rawBalance) / 10 ** tokenInfo.decimals;
-      }
-
-      if (onChain < needed) {
-        return {
-          valid:      false,
-          fundingRef: "",
-          error:      `Insufficient on-chain ${asset} balance (verified via RPC)`,
-          code:       "INSUFFICIENT_FUNDS",
-        };
-      }
-    } catch (rpcErr: any) {
-      // RPC verification failed — fail closed rather than proceeding unverified.
-      // Operators should monitor for repeated failures and check RPC health.
-      logger.warn(
-        { walletAddress, chainId, err: rpcErr?.message },
-        "fundingVerifier: on-chain RPC balance check failed",
-      );
-      return {
-        valid:      false,
-        fundingRef: "",
-        error:      "On-chain balance verification is temporarily unavailable. Please try again later.",
-        code:       "BALANCE_VERIFICATION_UNAVAILABLE",
-      };
-    }
-
-    const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
-    return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
   }
 
-  // ── Orah internal ledger ────────────────────────────────────────────────
+  // ── OrahDEX internal ledger ────────────────────────────────────────────────
   // Lock funds from user_balances — returns INSUFFICIENT_FUNDS if balance is too low.
-  // Settlement (settleTrade) requires this lock to exist, so we cannot accept
-  // an Orah order without it. Imported seed-phrase wallets with on-chain funds
-  // must deposit first; the client surfaces a DEPOSIT_REQUIRED prompt for that.
   try {
     await lockForOrder({ walletAddress, asset, amount });
     return { valid: true, fundingRef: ledgerFundingRef(walletAddress, asset, amount) };

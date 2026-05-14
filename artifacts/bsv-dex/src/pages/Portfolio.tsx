@@ -9,9 +9,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ReceiveModal } from "@/components/ReceiveModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
-import { DirectBuyModal } from "@/components/DirectBuyModal";
-import { BuyHistory } from "@/components/BuyHistory";
-import { BridgeHistory } from "@/components/BridgeHistory";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { fetchBsvBalance, type BsvBalanceResult } from "@/hooks/useBsvBalance";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
@@ -229,7 +226,7 @@ function useLivePrices() {
   return useQuery<Record<string, MarketRow>>({
     queryKey: ["portfolio-live-prices"],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/api/markets`);
+      const res = await fetch(`${BASE}/api/markets`, { cache: "no-store" });
       if (!res.ok) throw new Error("price fetch failed");
       const rows: MarketRow[] = await res.json();
       // Only use USDT-quoted pairs so non-USDT cross rates don't corrupt prices
@@ -244,74 +241,40 @@ function useLivePrices() {
 export function Portfolio() {
   useSEO({
     title: "Portfolio — Track Your Crypto Assets",
-    description: "View and manage your entire crypto portfolio on OrahDEX. Track balances, P&L, trade history, and asset allocation across all connected wallets.",
-    keywords: "crypto portfolio, asset tracker, wallet balance, P&L tracker, trade history, OrahDEX portfolio",
+    description: "View and manage your entire crypto portfolio on Orah. Track balances, P&L, trade history, and asset allocation across all connected wallets.",
+    keywords: "crypto portfolio, asset tracker, wallet balance, P&L tracker, trade history, Orah portfolio",
     url: "/portfolio",
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "WebPage",
-      "name": "OrahDEX Portfolio",
+      "name": "Orah Portfolio",
       "description": "Cryptocurrency portfolio tracker and asset manager",
-      "url": "https://orahdex.replit.app/portfolio"
+      "url": "https://orah.replit.app/portfolio"
     }
   });
 
-  const {
-    address, network, provider, chainId, balance, setBalance,
-    internalEvmAddress, internalBsvAddress, internalTronAddress,
-  } = useWalletStore();
+  const { address, network, provider, chainId, balance, setBalance } = useWalletStore();
   const openWallet = useWalletModalStore((s) => s.open);
   const { quoteCurrency } = useSettingsStore();
   const { getUserPositions } = useLiquidityStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
   const { data: prices, isLoading: pricesLoading, refetch, isFetching } = useLivePrices();
-
-  // Primary chain balances (for the active network)
   const { balances: evmBalances, loading: evmLoading, refresh: evmRefresh } = useEvmBalances(
     network === "evm" ? address : null,
     network === "evm" ? (chainId ?? 1) : null,
   );
-  // Internal EVM sub-account: fetched for non-EVM users who have a provisioned EVM address
-  const { balances: intEvmBalances, loading: intEvmLoading, refresh: intEvmRefresh } = useEvmBalances(
-    network !== "evm" && internalEvmAddress ? internalEvmAddress : null,
-    network !== "evm" && internalEvmAddress ? 1 : null,
-  );
   const { balances: tronBalances, loading: tronLoading, refresh: tronRefresh } = useTronBalances(
-    network === "tron" ? address : (internalTronAddress ?? null),
+    network === "tron" ? address : null,
   );
-
-  // Open spot-orders count (live)
-  const evmAddr  = internalEvmAddress ?? (network === "evm"  ? address : null);
-  const bsvAddr  = internalBsvAddress  ?? (network === "bsv" || network === "bsv-test" ? address : null);
-  const { data: openOrdersData } = useQuery({
-    queryKey: ["portfolio-open-orders", address],
-    queryFn: async () => {
-      if (!address) return { count: 0 };
-      const addrs = [address, evmAddr, bsvAddr].filter((a): a is string => !!a && a !== address);
-      const primary = await fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(address)}&status=open`).then(r => r.ok ? r.json() : []);
-      const extras: any[] = await Promise.all(
-        addrs.map(a => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(a)}&status=open`).then(r => r.ok ? r.json() : []).catch(() => []))
-      );
-      const all = [...(Array.isArray(primary) ? primary : []), ...extras.flat()];
-      const seen = new Set<number>();
-      return { count: all.filter(o => { if (seen.has(o.id)) return false; seen.add(o.id); return true; }).length };
-    },
-    enabled: !!address,
-    refetchInterval: 30_000,
-    staleTime: 15_000,
-  });
 
   const [hideBalances, setHideBalances] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
-  const [resumeBuy, setResumeBuy] = useState<{ coin: string; usd: string } | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; color: string } | null>(null);
   const [copiedAddr, setCopiedAddr] = useState(false);
   const [bsvBalResult, setBsvBalResult] = useState<BsvBalanceResult | null>(null);
   const [bsvBalFetching, setBsvBalFetching] = useState(false);
-  // Internal BSV balance for EVM users who have a provisioned BSV sub-account
-  const [intBsvBalance, setIntBsvBalance] = useState<number>(0);
 
   const chainInfo  = getChainInfo(chainId);
   const networkLabel = getNetworkLabel(network, chainId, provider);
@@ -330,23 +293,11 @@ export function Portfolio() {
     setBsvBalFetching(false);
   }, [address, network, setBalance]);
 
-  const refreshIntBsvBalance = useCallback(async () => {
-    if (!internalBsvAddress || network === "bsv" || network === "bsv-test") return;
-    const result = await fetchBsvBalance(internalBsvAddress);
-    if (result && result.error !== "paymail_unresolved" && result.balance !== undefined) {
-      setIntBsvBalance(result.balance);
-    }
-  }, [internalBsvAddress, network]);
-
   useEffect(() => {
     if (network === "bsv" && address) {
       refreshBsvBalance();
     }
   }, [address, network, refreshBsvBalance]);
-
-  useEffect(() => {
-    refreshIntBsvBalance();
-  }, [refreshIntBsvBalance]);
 
   const handleCopyAddr = () => {
     if (!address) return;
@@ -485,26 +436,21 @@ export function Portfolio() {
 
   const stableSet = new Set(["USDT","USDC","DAI","BUSD","TUSD"]);
 
-  // Helper: map a raw EVM balance array into unified balance rows
-  function mapEvmRows(src: typeof evmBalances) {
-    return src.map(b => {
-      const isStable = stableSet.has(b.symbol);
-      const mkt    = prices?.[b.symbol];
-      const price  = b.price > 0 ? b.price : isStable ? 1 : (mkt?.lastPrice ?? 0);
-      const change = b.change24h !== 0 ? b.change24h : isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
-      const valueUSD = b.usdValue > 0 ? b.usdValue : b.amount * price;
-      const pnl24h   = valueUSD * change / 100;
-      const color = ASSET_COLORS[b.symbol] ?? "#6B7280";
-      return { asset: b.symbol, color, marketKey: b.symbol,
-               total: b.amount, free: b.amount, locked: 0,
-               price, change24hPercent: change, valueUSD, pnl24h, isNative: b.isNative };
-    });
-  }
-
   // Build balance rows from on-chain data.
   const balances = (() => {
     if (network === "evm" && evmBalances.length > 0) {
-      return mapEvmRows(evmBalances);
+      return evmBalances.map(b => {
+        const isStable = stableSet.has(b.symbol);
+        const mkt    = prices?.[b.symbol];
+        const price  = b.price > 0 ? b.price : isStable ? 1 : (mkt?.lastPrice ?? 0);
+        const change = b.change24h !== 0 ? b.change24h : isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
+        const valueUSD = b.usdValue > 0 ? b.usdValue : b.amount * price;
+        const pnl24h   = valueUSD * change / 100;
+        const color = ASSET_COLORS[b.symbol] ?? "#6B7280";
+        return { asset: b.symbol, color, marketKey: b.symbol,
+                 total: b.amount, free: b.amount, locked: 0,
+                 price, change24hPercent: change, valueUSD, pnl24h, isNative: b.isNative };
+      });
     }
     if (network === "tron" && tronBalances.length > 0) {
       return tronBalances.map(b => {
@@ -520,22 +466,7 @@ export function Portfolio() {
                  price, change24hPercent: change, valueUSD, pnl24h, isNative: b.isNative };
       });
     }
-    // For EVM/Tron wallets whose chain balances haven't loaded yet, show only the
-    // native-asset balance from the wallet store so that stablecoin rows such as
-    // USDT and USDC don't appear with a misleading 0 balance.
-    if (network === "evm" || network === "tron") {
-      const isStable = stableSet.has(nativeAsset);
-      const mkt    = prices?.[nativeAsset];
-      const price  = isStable ? 1 : (mkt?.lastPrice ?? 0);
-      const change = isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
-      const valueUSD = nativeBalance * price;
-      const pnl24h   = valueUSD * change / 100;
-      const color    = ASSET_COLORS[nativeAsset] ?? "#6B7280";
-      return [{ asset: nativeAsset, color, marketKey: nativeAsset,
-                total: nativeBalance, free: nativeBalance, locked: 0,
-                price, change24hPercent: change, valueUSD, pnl24h, isNative: true }];
-    }
-    // Non-EVM fallback (BSV, BTC, SOL…): list of known assets, only native has a real balance
+    // Non-EVM fallback: list of known assets, only native has a real balance
     const PORTFOLIO_ASSETS = getPortfolioAssets(nativeAsset);
     return PORTFOLIO_ASSETS.map(a => {
       const isStable = stableSet.has(a.asset);
@@ -549,58 +480,15 @@ export function Portfolio() {
     });
   })();
 
-  // ── Internal sub-account balances ──────────────────────────────────────────
-  // For BSV/non-EVM users: append their EVM sub-account rows, merging by symbol
-  const intEvmRows = network !== "evm" && intEvmBalances.length > 0 ? mapEvmRows(intEvmBalances) : [];
-  // For non-BSV users: append their BSV sub-account row if it has a balance
-  const bsvMktPrice = prices?.["BSV"]?.lastPrice ?? 0;
-  const intBsvRow = network !== "bsv" && network !== "bsv-test" && intBsvBalance > 0
-    ? [{ asset: "BSV", color: ASSET_COLORS.BSV, marketKey: "BSV",
-         total: intBsvBalance, free: intBsvBalance, locked: 0,
-         price: bsvMktPrice, change24hPercent: prices?.["BSV"]?.priceChangePercent24h ?? 0,
-         valueUSD: intBsvBalance * bsvMktPrice, pnl24h: intBsvBalance * bsvMktPrice * (prices?.["BSV"]?.priceChangePercent24h ?? 0) / 100,
-         isNative: false }]
-    : [];
-
-  // Merge — primary balances first, then internal rows (de-dup by symbol: primary wins)
-  const primarySymbols = new Set(balances.map(b => b.asset));
-  const allBalances = [
-    ...balances,
-    ...intEvmRows.filter(b => !primarySymbols.has(b.asset)),
-    ...intBsvRow.filter(b => !primarySymbols.has(b.asset)),
-  ];
-
-  const totalValueUSD  = allBalances.reduce((s, b) => s + b.valueUSD, 0);
-  const totalPnlUSD    = allBalances.reduce((s, b) => s + b.pnl24h, 0);
+  const totalValueUSD  = balances.reduce((s, b) => s + b.valueUSD, 0);
+  const totalPnlUSD    = balances.reduce((s, b) => s + b.pnl24h, 0);
   const totalPnlPercent = totalValueUSD > 0 ? (totalPnlUSD / totalValueUSD) * 100 : 0;
-  const nonZero        = allBalances.filter(b => b.total > 0);
-
-  // True while waiting for chain-specific token balances (EVM or Tron).
-  const isLoadingChainBalances =
-    (network === "evm"  && evmLoading) ||
-    (network === "tron" && tronLoading) ||
-    (network !== "evm"  && intEvmLoading);
-
-  // Resolve the correct withdrawal address for a given asset network
-  const addressForAssetNetwork = (assetNetwork: string): string => {
-    if (assetNetwork === "bsv") return internalBsvAddress ?? (network === "bsv" || network === "bsv-test" ? address : null) ?? "";
-    if (assetNetwork === "evm") return internalEvmAddress ?? (network === "evm" ? address : null) ?? "";
-    if (assetNetwork === "tron") return internalTronAddress ?? (network === "tron" ? address : null) ?? "";
-    return address ?? "";
-  };
+  const nonZero        = balances.filter(b => b.total > 0);
 
   return (
     <>
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
-      <DirectBuyModal
-        open={!!resumeBuy}
-        onClose={() => setResumeBuy(null)}
-        defaultCoin={resumeBuy?.coin ?? "BTC"}
-        defaultFiatUsd={resumeBuy?.usd}
-        defaultPayMethod="card"
-        onSwitchToProviders={() => { setResumeBuy(null); setBuyCryptoOpen(true); }}
-      />
       {withdrawAsset && (() => {
         const assetNet = getAssetNetworkInfo(withdrawAsset.asset, network, chainId);
         const sameNetwork = assetNet.network === (network ?? "evm");
@@ -608,8 +496,8 @@ export function Portfolio() {
           <WithdrawSheet
             open={withdrawOpen}
             onClose={() => { setWithdrawOpen(false); setWithdrawAsset(null); }}
-            walletAddress={addressForAssetNetwork(assetNet.network)}
-            defaultRecipient={sameNetwork ? addressForAssetNetwork(assetNet.network) : ""}
+            walletAddress={address ?? ""}
+            defaultRecipient={sameNetwork ? (address ?? "") : ""}
             asset={withdrawAsset.asset}
             available={withdrawAsset.available}
             network={assetNet.network}
@@ -661,7 +549,7 @@ export function Portfolio() {
           </div>
           <div className="flex gap-3 items-center">
             <button
-              onClick={() => { refetch(); if (network === "bsv") refreshBsvBalance(); if (network === "evm") evmRefresh(); if (network === "tron") tronRefresh(); intEvmRefresh(); refreshIntBsvBalance(); }}
+              onClick={() => { refetch(); if (network === "bsv") refreshBsvBalance(); if (network === "evm") evmRefresh(); if (network === "tron") tronRefresh(); }}
               className="p-2.5 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
               title="Refresh prices & balance"
             >
@@ -812,7 +700,7 @@ export function Portfolio() {
                 </button>
               </div>
               <div className="flex items-end gap-4 mb-6">
-                {(pricesLoading || isLoadingChainBalances) && totalValueUSD === 0 ? (
+                {pricesLoading && totalValueUSD === 0 ? (
                   <div className="h-14 w-52 bg-muted/40 rounded-xl animate-pulse" />
                 ) : (
                   <span className="text-5xl font-bold font-mono tracking-tight text-foreground">
@@ -837,13 +725,11 @@ export function Portfolio() {
           <div className="bg-card p-6 rounded-3xl border border-border shadow-xl flex flex-col justify-center gap-4">
             <div className="flex justify-between items-center p-4 bg-secondary/50 rounded-2xl">
               <span className="text-muted-foreground font-medium">Open Spot Orders</span>
-              <span className="text-2xl font-bold font-mono text-foreground">
-                {openOrdersData?.count ?? 0}
-              </span>
+              <span className="text-2xl font-bold font-mono text-foreground">0</span>
             </div>
             <div className="flex justify-between items-center p-4 bg-secondary/50 rounded-2xl">
-              <span className="text-muted-foreground font-medium">Tracked Assets</span>
-              <span className="text-2xl font-bold font-mono text-foreground">{nonZero.length}</span>
+              <span className="text-muted-foreground font-medium">Futures Positions</span>
+              <span className="text-2xl font-bold font-mono text-foreground">0</span>
             </div>
             <button onClick={() => setReceiveOpen(true)}
               className="flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary/10 border border-primary/25 text-primary text-sm font-semibold hover:bg-primary/20 transition-colors">
@@ -887,7 +773,7 @@ export function Portfolio() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {(pricesLoading || isLoadingChainBalances) && totalValueUSD === 0
+                {pricesLoading && totalValueUSD === 0
                   ? Array.from({ length: 5 }).map((_, i) => (
                       <tr key={i}>
                         {Array.from({ length: 6 }).map((__, j) => (
@@ -897,7 +783,7 @@ export function Portfolio() {
                         ))}
                       </tr>
                     ))
-                  : allBalances.map(bal => (
+                  : balances.map(bal => (
                       <tr key={bal.asset} className={cn("transition-colors", bal.total > 0 ? "hover:bg-white/5" : "opacity-50")}>
                         <td className="p-4">
                           <div className="flex items-center gap-3">
@@ -973,26 +859,6 @@ export function Portfolio() {
               </tbody>
             </table>
           </div>
-        </div>
-
-        {/* ── Buy-Crypto Purchase History ──────────────────────────────────
-           Pass BOTH the connected wallet AND the session identity so orders
-           bought from any prior wallet/network still appear here. */}
-        <div className="mt-8">
-          <BuyHistory
-            walletAddress={[address, sessionStorage.getItem("orahdex_session_addr")]
-              .filter((s): s is string => !!s && s.length >= 6)
-              .join(",") || null}
-            onResume={(o) => setResumeBuy({
-              coin: o.coin_symbol,
-              usd: (o.fiat_amount_cents / 100).toFixed(2),
-            })}
-          />
-        </div>
-
-        {/* ── Bridge / Cross-Chain Swap History ───────────────────────── */}
-        <div className="mt-6">
-          <BridgeHistory />
         </div>
 
         {/* ── LP Positions ───────────────────────────────────────────────── */}

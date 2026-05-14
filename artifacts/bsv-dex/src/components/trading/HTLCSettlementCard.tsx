@@ -4,7 +4,7 @@
  * Shown after an EVM/EVM trade fills, guiding both parties through the
  * lock-and-reveal flow that atomically settles the trade on-chain.
  *
- * Non-custodial: no funds flow through OrahDEX servers.
+ * Non-custodial: no funds flow through Orah servers.
  * The user signs transactions directly in MetaMask/WalletConnect.
  */
 
@@ -20,7 +20,6 @@ import {
   type EvmHtlcSession,
   type LockInstruction,
 } from "../../hooks/useEvmHtlcSession";
-import { getPublicClient } from "../../lib/escrow";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -105,14 +104,13 @@ interface LockPanelProps {
   locked:       boolean;
   lockTxid:     string | null;
   userAddress:  string;
-  partyAddress: string;  // wallet address of the seller or buyer for this panel
   sessionId:    string;
   chainId:      number;
   onConfirmed:  (txHash: string) => void;
 }
 
 function LockPanel({
-  lock, side, locked, lockTxid, userAddress, partyAddress, chainId, onConfirmed,
+  lock, side, locked, lockTxid, userAddress, chainId, onConfirmed,
 }: LockPanelProps) {
   const [step,    setStep]    = useState<"idle" | "approving" | "locking" | "done" | "error">("idle");
   const [txHash,  setTxHash]  = useState<string | null>(lockTxid ?? null);
@@ -142,12 +140,7 @@ function LockPanel({
           lock.amount,
           userAddress
         );
-        const approveTxHash = await sendTx(approveParams);
-        // Wait for the approve confirmation so the allowance is on-chain
-        // before lockERC20 executes (prevents "allowance too low" reverts).
-        await getPublicClient(chainId).waitForTransactionReceipt({
-          hash: approveTxHash as `0x${string}`,
-        });
+        await sendTx(approveParams);
       }
 
       setStep("locking");
@@ -167,9 +160,11 @@ function LockPanel({
     }
   }
 
-  // True when the connected wallet address matches this panel's party (seller or buyer).
-  // Only the relevant party should see an active Lock button.
-  const isUserSide = userAddress.toLowerCase() === partyAddress.toLowerCase();
+  const isUserSide = userAddress.toLowerCase() === (
+    side === "seller"
+      ? lock.contractAddress?.toLowerCase()
+      : lock.contractAddress?.toLowerCase()
+  );
 
   const sideLabel = side === "seller" ? "Seller" : "Buyer";
   const verb = isNative ? "Lock ETH" : `Approve & Lock ${lock.asset}`;
@@ -222,7 +217,7 @@ function LockPanel({
         >
           Tx: {shortHash(txHash)} ↗
         </a>
-      ) : !locked && lock.contractAddress && isUserSide ? (
+      ) : !locked && lock.contractAddress ? (
         <div className="space-y-2">
           {step === "idle" || step === "error" ? (
             <button
@@ -246,10 +241,6 @@ function LockPanel({
           {errMsg && (
             <div className="text-xs text-red-400">{errMsg}</div>
           )}
-        </div>
-      ) : !locked && lock.contractAddress && !isUserSide ? (
-        <div className="text-xs text-zinc-500 italic">
-          Waiting for counterparty to lock…
         </div>
       ) : !lock.contractAddress ? (
         <div className="text-xs text-zinc-500 italic">
@@ -374,7 +365,6 @@ export function HTLCSettlementCard({
           locked={session.sellerLocked}
           lockTxid={session.sellerLockTxid}
           userAddress={userAddress}
-          partyAddress={session.sellerAddress}
           sessionId={sessionId}
           chainId={session.chainId}
           onConfirmed={(hash) => confirmLock("seller", hash)}
@@ -385,7 +375,6 @@ export function HTLCSettlementCard({
           locked={session.buyerLocked}
           lockTxid={session.buyerLockTxid}
           userAddress={userAddress}
-          partyAddress={session.buyerAddress}
           sessionId={sessionId}
           chainId={session.chainId}
           onConfirmed={(hash) => confirmLock("buyer", hash)}
@@ -457,7 +446,7 @@ export function HTLCSettlementCard({
       {!isTerminal && (
         <div className="border-t border-zinc-800 px-5 py-3 flex items-center justify-between">
           <p className="text-xs text-zinc-600">
-            Non-custodial · OrahDEX never holds your funds
+            Non-custodial · Orah never holds your funds
           </p>
           <button
             onClick={refresh}

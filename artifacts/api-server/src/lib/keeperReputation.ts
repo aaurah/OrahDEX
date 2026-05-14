@@ -1,5 +1,5 @@
 /**
- * Keeper Reputation Engine — OrahDEX Settlement Layer
+ * Keeper Reputation Engine — Orah Settlement Layer
  *
  * Computes a deterministic reputation score for a Keeper address from the
  * raw signals in keeper_actions + htlc_registry.

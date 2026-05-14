@@ -3,11 +3,9 @@ import {
   ArrowDownToLine,
   Copy, Check, RefreshCw, Info,
   LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
-  ArrowDownLeft, ArrowUpRight, History, Upload, ChevronDown, X,
+  ArrowDownLeft, ArrowUpRight, History, Upload,
 } from "lucide-react";
 
-import { useOnChainTxHistory } from "@/hooks/useOnChainTxHistory";
-import type { OnChainTx } from "@/hooks/useOnChainTxHistory";
 import { useWalletStore } from "@/store/useWalletStore";
 import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -16,8 +14,6 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReceiveModal } from "@/components/ReceiveModal";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
-import { DirectBuyModal } from "@/components/DirectBuyModal";
-import { BuyHistory } from "@/components/BuyHistory";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { cn, getProviderLabel } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
@@ -26,7 +22,6 @@ import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 
 import { EXPLORER_TX, CHAIN_NAMES } from "@/lib/onChainLiquidity";
-import { ChainSwitcherDropdown } from "@/components/ChainSwitcherDropdown";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -212,7 +207,7 @@ function useLivePrices() {
   return useQuery<Record<string, MarketRow>>({
     queryKey: ["portfolio-mobile-prices"],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/api/markets`);
+      const res = await fetch(`${BASE}/api/markets`, { cache: "no-store" });
       if (!res.ok) throw new Error("price fetch failed");
       const rows: MarketRow[] = await res.json();
       // Only use USDT-quoted pairs so non-USDT cross rates don't corrupt prices
@@ -228,76 +223,22 @@ const STATUS_COLOR: Record<string, string> = { open: "#4ade80", filled: "#22c55e
 
 type Tab = "assets" | "defi" | "orders" | "history";
 
-export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?: Tab[]; hidePreContent?: boolean } = {}) {
+export function MobilePortfolio() {
   const { address, network, provider, chainId, balance, disconnect, internalEvmAddress } = useWalletStore();
-  // For orah-wallet, always query the ledger using the EVM address (primary account key)
+  // For orahdex-wallet, always query the ledger using the EVM address (primary account key)
   // so switching to BSV/BTC network doesn't fetch a different (empty) ledger account
-  const ledgerAddress = (provider === "orah-wallet" && internalEvmAddress) ? internalEvmAddress : address;
+  const ledgerAddress = (provider === "orahdex-wallet" && internalEvmAddress) ? internalEvmAddress : address;
   const { quoteCurrency } = useSettingsStore();
   const { getUserPositions, removePosition, clearWalletPositions } = useLiquidityStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
   const { open: openWallet } = useWalletModalStore();
   const [, navigate] = useLocation();
-  const [tab, setTab] = useState<Tab | null>(() => hidePreContent ? null : (visibleTabs?.[0] ?? "assets"));
+  const [tab, setTab] = useState<Tab>("assets");
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
-  const [directBuyOpen, setDirectBuyOpen] = useState(false);
-  const [directBuyCoin, setDirectBuyCoin] = useState<string>("BTC");
-  const [directBuyUsd, setDirectBuyUsd] = useState<string | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const [chainSheetOpen, setChainSheetOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
-  const [historySubTab, setHistorySubTab] = useState<"onchain" | "trades" | "bridge" | "swaps" | "buys">(
-    hidePreContent ? "onchain" : "trades"
-  );
-  const [onchainChainFilter, setOnchainChainFilter] = useState<number | null>(null);
-  const { data: onchainTxs = [], isLoading: onchainLoading, refetch: refetchOnchain } = useOnChainTxHistory(
-    historySubTab === "onchain" ? (ledgerAddress ?? address) : null
-  );
-  const [bridgeHistory, setBridgeHistory] = useState<any[]>(() => {
-    try { return JSON.parse(localStorage.getItem("le_swap_history") ?? "[]"); } catch { return []; }
-  });
-  const [swapHistory] = useState<any[]>(() => {
-    try { return JSON.parse(localStorage.getItem("orah_swap_history") ?? "[]"); } catch { return []; }
-  });
-  const [liveLeStatuses, setLiveLeStatuses] = useState<Record<string, any>>({});
-
-  // Poll status for pending bridge entries whenever the Bridge tab is open
-  useEffect(() => {
-    if (historySubTab !== "bridge") return;
-    const pending = bridgeHistory.filter(
-      e => !["finished", "failed", "refunded"].includes(e.status ?? "")
-    );
-    if (pending.length === 0) return;
-
-    const fetchAll = async () => {
-      for (const e of pending) {
-        try {
-          const r = await fetch(`${BASE}/api/letsexchange/status/${e.transaction_id}`);
-          if (!r.ok) continue;
-          const d = await r.json();
-          if (!d.transaction_id) continue;
-          setLiveLeStatuses(prev => ({ ...prev, [e.transaction_id]: d }));
-          // Persist updated status back to localStorage
-          if (d.status) {
-            setBridgeHistory(prev => {
-              const updated = prev.map(x =>
-                x.transaction_id === e.transaction_id ? { ...x, status: d.status } : x
-              );
-              try { localStorage.setItem("le_swap_history", JSON.stringify(updated)); } catch {}
-              return updated;
-            });
-          }
-        } catch {}
-      }
-    };
-
-    fetchAll();
-    const iv = setInterval(fetchAll, 30_000);
-    return () => clearInterval(iv);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historySubTab, bridgeHistory.length]);
   const [coinHistoryOpen, setCoinHistoryOpen] = useState<string | null>(null);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [withdrawAsset, setWithdrawAsset] = useState<{ asset: string; available: number; network: string; networkLabel: string; color: string } | null>(null);
@@ -328,8 +269,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
     queryKey: ["portfolio-orders", ledgerAddress],
     queryFn: () => fetch(`${BASE}/api/orders?walletAddress=${encodeURIComponent(ledgerAddress || "")}`).then(r => r.json()),
     enabled: !!ledgerAddress,
-    refetchInterval: 5_000,
-    staleTime:       4_000,
+    refetchInterval: 2000,
   });
   const myOrders: any[] = Array.isArray(ordersData) ? ordersData : [];
 
@@ -442,13 +382,12 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   let tokensTotal = rows.reduce((s, r) => s + r.value, 0);
   const lpTotalValue = lpPositions.reduce((s, [, pos]) => s + (pos.depositedValueUsd ?? 0), 0);
 
-  // Non-custodial: wallet rows are shown as-is — no OrahDEX ledger adjustments.
+  // Non-custodial: wallet rows are shown as-is — no Orah ledger adjustments.
   // Trades settle directly wallet-to-wallet; no internal balance tracking needed.
 
   // ── BUCKET 2: Busy in Trade — assets locked in open limit/stop orders ─────
   // For SELL orders: base asset is reserved (e.g. 0.003 ETH locked for a sell)
   // For BUY  orders: quote asset is reserved (price × qty USDT)
-  const STABLES = new Set(["USDT","USDC","DAI","BUSD","TUSD","FDUSD","USDD","oUSD"]);
   const openOrders = myOrders.filter(o => o.status === "open" || o.status === "pending");
   const lockedByAsset: Record<string, { amount: number; orders: { id: string; symbol: string; side: string; qty: number; price: number; type: string }[] }> = {};
   for (const order of openOrders) {
@@ -465,37 +404,22 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
     } else {
       const qty   = parseFloat(order.quantity) || parseFloat(order.qty) || 0;
       const price = parseFloat(order.price) || 0;
-      // For market buy orders price is null/0 — estimate cost via USDT cross-rate
-      let cost = price > 0 ? price * qty : 0;
-      let estimatedPrice = price;
-      if (cost === 0 && qty > 0) {
-        const basePriceUsdt  = prices?.[base]?.lastPrice  ?? 0;
-        const quotePriceUsdt = STABLES.has(quote) ? 1 : (prices?.[quote]?.lastPrice ?? 0);
-        estimatedPrice = quotePriceUsdt > 0 ? basePriceUsdt / quotePriceUsdt : 0;
-        cost = estimatedPrice > 0 ? estimatedPrice * qty : 0;
-      }
-      if (qty > 0 && quote) {
+      const cost  = price > 0 ? price * qty : 0;
+      if (cost > 0 && quote) {
         if (!lockedByAsset[quote]) lockedByAsset[quote] = { amount: 0, orders: [] };
         lockedByAsset[quote].amount += cost;
-        lockedByAsset[quote].orders.push({ id: order.id, symbol: order.symbol, side: "buy", qty, price: estimatedPrice, type: order.type ?? "market" });
+        lockedByAsset[quote].orders.push({ id: order.id, symbol: order.symbol, side: "buy", qty, price, type: order.type ?? "limit" });
       }
     }
   }
-  // Self-custody EVM: open orders are signed intents, NOT on-chain locks.
-  // Funds remain fully available in the user's wallet (Rabby/MetaMask) until
-  // the order fills. Showing a "Busy in Trade" reservation here is misleading
-  // because the on-chain balance is unchanged. Hide the bucket entirely for
-  // self-custody EVM users.
-  const isSelfCustodyEvm = network === "evm";
-  const rawLockedEntries = Object.entries(lockedByAsset).filter(([, v]) => v.amount > 0);
-  const lockedEntries = isSelfCustodyEvm ? [] : rawLockedEntries;
+  const lockedEntries = Object.entries(lockedByAsset).filter(([, v]) => v.amount > 0);
+  const STABLES = new Set(["USDT","USDC","DAI","BUSD","TUSD","FDUSD","USDD","oUSD"]);
   const lockedTotalUsd = lockedEntries.reduce((s, [token, v]) => {
     const p = STABLES.has(token) ? 1 : (prices?.[token]?.lastPrice ?? 0);
     return s + v.amount * p;
   }, 0);
-  const hasOpenIntents = isSelfCustodyEvm && rawLockedEntries.length > 0;
 
-  // ── BUCKET 1: Wallet balance (real on-chain, minus OrahDEX-consumed amounts) ──
+  // ── BUCKET 1: Wallet balance (real on-chain, minus Orah-consumed amounts) ──
   const total = tokensTotal;
   const nonZero = rows.filter(r => r.amount > 0);
   const totalChange = tokensTotal > 0 && nonZero.length > 0
@@ -509,7 +433,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (!address && !hidePreContent) {
+  if (!address) {
     return (
       <div className="flex flex-col h-full bg-background overflow-y-auto pb-24">
         <div className="px-4 pt-6 pb-4">
@@ -638,14 +562,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
     <>
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
       <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
-      <DirectBuyModal
-        open={directBuyOpen}
-        onClose={() => { setDirectBuyOpen(false); setDirectBuyUsd(undefined); }}
-        defaultCoin={directBuyCoin}
-        defaultFiatUsd={directBuyUsd}
-        defaultPayMethod="card"
-        onSwitchToProviders={() => setBuyCryptoOpen(true)}
-      />
       {withdrawAsset && (() => {
         const assetNet = getAssetNetworkInfo(withdrawAsset.asset, network);
         const sameNetwork = assetNet.network === (network ?? "evm");
@@ -653,7 +569,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
           <WithdrawSheet
             open={withdrawOpen}
             onClose={() => { setWithdrawOpen(false); setWithdrawAsset(null); }}
-            walletAddress={ledgerAddress ?? ""}
+            walletAddress={address ?? ""}
             defaultRecipient={sameNetwork ? (address ?? "") : ""}
             asset={withdrawAsset.asset}
             available={withdrawAsset.available}
@@ -663,26 +579,20 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             color={withdrawAsset.color}
             initialTab={withdrawInitialTab}
             visibleTabs={withdrawVisibleTabs}
-            isOrahWallet={provider === "orah-wallet"}
+            isOrahDEXWallet={provider === "orahdex-wallet"}
           />
         );
       })()}
 
-      <div className={hidePreContent ? "flex flex-col" : "flex flex-col h-full overflow-y-auto pb-24 bg-background"}>
-        {!hidePreContent && (
+      <div className="flex flex-col h-full overflow-y-auto pb-24 bg-background">
+        {/* Header */}
         <div className="px-4 pt-safe-top pb-3 pt-6 flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-foreground">Chain Balance</h1>
+            <h1 className="text-xl font-bold text-foreground">Portfolio</h1>
             {network && (
-              <button
-                onClick={() => setChainSheetOpen(true)}
-                className="flex items-center gap-1 mt-0.5 group active:opacity-60 transition-opacity"
-              >
-                <p className="text-[10px] text-muted-foreground">
-                  {provider ? getProviderLabel(provider) : network.toUpperCase()} · {network.toUpperCase()}
-                </p>
-                <ChevronDown size={10} className="text-muted-foreground/60 group-hover:text-muted-foreground transition-colors" />
-              </button>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {provider ? getProviderLabel(provider) : network.toUpperCase()} · {network.toUpperCase()}
+              </p>
             )}
           </div>
           <div className="flex items-center gap-1.5">
@@ -705,42 +615,8 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             </button>
           </div>
         </div>
-        )}
 
-        {/* ── Chain picker bottom sheet ─────────────────────────────────── */}
-        {chainSheetOpen && (
-          <div
-            className="fixed inset-0 z-50 flex items-end"
-            style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
-            onClick={() => setChainSheetOpen(false)}
-          >
-            <div
-              className="w-full rounded-t-3xl overflow-hidden"
-              style={{ background: "var(--color-bg, hsl(var(--card)))", maxHeight: "80vh", display: "flex", flexDirection: "column" }}
-              onClick={e => e.stopPropagation()}
-            >
-              {/* Handle + header */}
-              <div className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0">
-                <div className="w-10 h-1 rounded-full bg-border mx-auto absolute left-1/2 -translate-x-1/2 top-2" />
-                <p className="font-bold text-sm text-foreground">Select Network</p>
-                <button onClick={() => setChainSheetOpen(false)} className="p-1 rounded-full hover:bg-white/10 transition-colors">
-                  <X size={16} className="text-muted-foreground" />
-                </button>
-              </div>
-              {/* Chain list via inline accordion — starts expanded, closes sheet on selection */}
-              <div className="overflow-y-auto flex-1 px-3 pb-6">
-                <ChainSwitcherDropdown
-                  inline
-                  startOpen
-                  onChainSelected={() => setChainSheetOpen(false)}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className={`px-4 ${hidePreContent && tab === null ? "space-y-0" : "space-y-4"}`}>
-          {!hidePreContent && <>
+        <div className="px-4 space-y-4">
           {/* ── BUCKET 1: Balance card ───────────────────────────────────────────── */}
           {/* On-chain balance card */}
           <div className="bg-card border border-border rounded-2xl p-5">
@@ -814,19 +690,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             )}
           </div>
 
-          {/* Self-custody info banner: open orders are signed intents only */}
-          {hasOpenIntents && (
-            <div className="bg-blue-500/5 border border-blue-500/25 rounded-2xl p-3 flex items-start gap-2">
-              <svg className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-blue-300">Self-custody — your keys, your funds</p>
-                <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
-                  {rawLockedEntries.length} open order{rawLockedEntries.length === 1 ? "" : "s"}. Funds for unlocked orders stay in your wallet; locked orders are held in the on-chain escrow contract until the trade settles or you cancel.
-                </p>
-              </div>
-            </div>
-          )}
-
           {/* ── BUCKET 2: Busy in Trade (locked in open limit/stop orders) ───── */}
           {lockedEntries.length > 0 && (
             <div className="bg-orange-500/5 border border-orange-500/25 rounded-2xl p-4">
@@ -872,7 +735,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
 
           {/* Buy / Receive / Bridge */}
           <div className="grid grid-cols-3 gap-2">
-            <button onClick={() => setDirectBuyOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-gradient-to-b from-green-600 to-emerald-600 text-white font-bold text-xs shadow-lg shadow-green-600/20 active:opacity-90">
+            <button onClick={() => setBuyCryptoOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-gradient-to-b from-green-600 to-emerald-600 text-white font-bold text-xs shadow-lg shadow-green-600/20 active:opacity-90">
               <CreditCard size={15} />
               Buy
             </button>
@@ -885,6 +748,62 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
               Bridge
             </button>
           </div>
+
+          {/* Deposit / Withdraw */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                setWithdrawAsset({ asset: "USDT", available: 0, network: "evm", networkLabel: "Ethereum (ERC-20)", color: "#26A17B" });
+                setWithdrawInitialTab("deposit");
+                setWithdrawVisibleTabs(["deposit"]);
+                setWithdrawOpen(true);
+              }}
+              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-green-600 to-emerald-500 text-white font-bold text-sm shadow-lg shadow-green-600/25 active:opacity-90"
+            >
+              <ArrowDownToLine size={16} />
+              Deposit
+            </button>
+            <button
+              onClick={() => {
+                const firstAsset = nonZero[0];
+                if (firstAsset) {
+                  const assetNet = getAssetNetworkInfo(firstAsset.asset, network ?? "evm");
+                  setWithdrawAsset({ asset: firstAsset.asset, available: firstAsset.amount, network: assetNet.network, networkLabel: assetNet.networkLabel, color: firstAsset.color });
+                } else {
+                  setWithdrawAsset({ asset: "USDT", available: 0, network: "evm", networkLabel: "Ethereum (ERC-20)", color: "#26A17B" });
+                }
+                setWithdrawInitialTab("withdraw");
+                setWithdrawVisibleTabs(["withdraw", "history"]);
+                setWithdrawOpen(true);
+              }}
+              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 text-white font-bold text-sm shadow-lg shadow-red-600/25 active:opacity-90"
+            >
+              <Upload size={16} />
+              Withdraw
+            </button>
+          </div>
+
+          {/* Fund CTAs */}
+          <button onClick={() => setBuyCryptoOpen(true)} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-green-500/5 border border-green-500/20 hover:border-green-500/40 transition-colors text-left">
+            <div className="w-9 h-9 rounded-xl bg-green-500/15 flex items-center justify-center shrink-0">
+              <CreditCard size={16} className="text-green-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-foreground">Buy Crypto with Fiat</p>
+              <p className="text-xs text-muted-foreground truncate">Apple Pay · Google Pay · Card · Bank Transfer — instant</p>
+            </div>
+            <span className="text-green-400 text-xs font-medium shrink-0">Buy →</span>
+          </button>
+          <button onClick={() => setReceiveOpen(true)} className="w-full flex items-center gap-3 p-4 rounded-2xl bg-primary/5 border border-primary/20 hover:border-primary/40 transition-colors text-left">
+            <div className="w-9 h-9 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+              <ArrowDownToLine size={16} className="text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-foreground">Receive via QR Code</p>
+              <p className="text-xs text-muted-foreground truncate">ETH · BNB · MATIC · ARB · BASE · AVAX · Linea · Scroll · Mantle · all EVM</p>
+            </div>
+            <span className="text-primary text-xs font-medium shrink-0">Scan →</span>
+          </button>
 
 
           {/* ── BUCKET 4: DeFi / Liquidity (LP tokens, Uniswap, AMM) ─────────── */}
@@ -899,19 +818,17 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                 <span className="text-base font-bold text-primary">{formatQuoteAmount(lpTotalValue, quoteCurrency)}</span>
               </div>
               <p className="text-[10px] text-muted-foreground">
-                Liquidity deposited into AMM pools. Underlying tokens stay in your wallet — value shown here is your LP position.
+                Liquidity deposited into AMM pools (Uniswap, etc.). Underlying tokens stay in your wallet — value shown here is your LP position.
               </p>
             </div>
           )}
-          </>}
 
-          {/* Tabs — filtered by visibleTabs prop */}
-          {(!visibleTabs || visibleTabs.length > 1) && (
+          {/* Tabs */}
           <div className="flex gap-2 overflow-x-auto pb-0.5 no-scrollbar">
-            {(["assets", "defi", "orders", "history"] as Tab[]).filter(t => !visibleTabs || visibleTabs.includes(t)).map(t => (
+            {(["assets", "defi", "orders", "history"] as Tab[]).map(t => (
               <button
                 key={t}
-                onClick={() => setTab(prev => prev === t ? null : t)}
+                onClick={() => setTab(t)}
                 className={`shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1.5 ${
                   tab === t
                     ? "bg-primary/15 border-primary/40 text-primary"
@@ -922,15 +839,14 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                   : t === "defi" ? "DeFi"
                   : t === "orders" ? "Orders"
                   : <><History size={11} className="shrink-0" />History</>}
-                {t === "defi" && (lpPositions.length + openOrders.length) > 0 && (
+                {t === "defi" && lpPositions.length > 0 && (
                   <span className="w-4 h-4 rounded-full bg-primary text-[9px] font-bold text-primary-foreground flex items-center justify-center">
-                    {lpPositions.length + openOrders.length}
+                    {lpPositions.length}
                   </span>
                 )}
               </button>
             ))}
           </div>
-          )}
 
           {/* Assets tab */}
           {tab === "assets" && (
@@ -974,16 +890,10 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                       </p>
                       {r.price > 0 && !["USDT","USDC","DAI"].includes(r.asset) && (
                         <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                          @ ${(() => {
-                            const p = r.price;
-                            if (p >= 1000) return p.toLocaleString(undefined, { maximumFractionDigits: 2 });
-                            if (p >= 1)    return p.toFixed(2);
-                            if (p >= 0.01) return p.toFixed(4);
-                            if (p >= 0.001) return p.toFixed(6);
-                            if (p >= 1e-8)  return p.toFixed(8);
-                            const mag = -Math.floor(Math.log10(p));
-                            return p.toFixed(Math.min(mag + 3, 18)).replace(/\.?0+$/, "");
-                          })()}
+                          @ ${r.price.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: r.price < 1 ? 6 : 2,
+                          })}
                         </p>
                       )}
                     </div>
@@ -1005,119 +915,14 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
 
           {/* DeFi tab */}
           {tab === "defi" && (
-            lpPositions.length === 0 && openOrders.length === 0 ? (
+            lpPositions.length === 0 ? (
               <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
                 <Droplets className="w-8 h-8 opacity-30 mb-1" />
                 <p className="text-sm font-medium">No DeFi positions yet</p>
-                <p className="text-xs opacity-60 text-center">Place orders or add liquidity to get started</p>
+                <p className="text-xs opacity-60 text-center">Add liquidity to a pool to get started</p>
               </div>
             ) : (
               <div className="flex flex-col gap-3 mb-4">
-
-                {/* ── Open Orders — for self-custody EVM these are signed intents,
-                       for everyone else they reserve internal-ledger funds ─────── */}
-                {openOrders.length > 0 && (() => {
-                  const isSelfCustodyEvm = !!address?.startsWith("0x");
-                  return (
-                  <div className={cn(
-                    "border rounded-2xl p-4",
-                    isSelfCustodyEvm
-                      ? "bg-blue-500/5 border-blue-500/25"
-                      : "bg-orange-500/5 border-orange-500/25",
-                  )}>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <svg className={cn("w-3.5 h-3.5", isSelfCustodyEvm ? "text-blue-400" : "text-orange-400")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        <span className={cn("text-sm font-bold", isSelfCustodyEvm ? "text-blue-300" : "text-orange-300")}>
-                          {isSelfCustodyEvm ? "Open Orders" : "In Exchange"}
-                        </span>
-                        <span className={cn(
-                          "text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide",
-                          isSelfCustodyEvm
-                            ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
-                            : "bg-orange-500/20 text-orange-400 border-orange-500/30",
-                        )}>Open</span>
-                      </div>
-                      {!isSelfCustodyEvm && lockedTotalUsd > 0 && (
-                        <span className="text-base font-bold text-orange-300">{formatQuoteAmount(lockedTotalUsd, quoteCurrency)}</span>
-                      )}
-                    </div>
-                    <p className="text-[10px] text-muted-foreground mb-3">
-                      {isSelfCustodyEvm
-                        ? "Signed intents — funds stay in your wallet until the order fills."
-                        : "Coins reserved for your open orders. Released when orders fill or are cancelled."}
-                    </p>
-                    <div className="space-y-2">
-                      {openOrders.map((o: any) => {
-                        const parts = (o.symbol ?? "").split("/");
-                        const orderBase  = parts[0] ?? "";
-                        const orderQuote = parts[1] ?? "USDT";
-                        const qty   = parseFloat(o.quantity ?? o.qty ?? "0") || 0;
-                        const price = parseFloat(o.price ?? "0") || 0;
-                        const isMarket = !o.price || o.type === "market";
-                        const isBuy  = o.side === "buy";
-                        const lockedAsset  = isBuy ? orderQuote : orderBase;
-                        const ordInLocked = lockedByAsset[lockedAsset]?.orders.find((x: any) => String(x.id) === String(o.id));
-                        const lockedAmount = isBuy
-                          ? (ordInLocked ? ordInLocked.price * ordInLocked.qty : 0)
-                          : qty;
-                        const assetColor = ASSET_COLORS[lockedAsset] ?? "#6B7280";
-                        return (
-                          <div key={o.id} className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border">
-                            <div
-                              className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold shrink-0 border"
-                              style={{ backgroundColor: assetColor + "22", borderColor: assetColor + "44", color: assetColor }}
-                            >
-                              {lockedAsset[0]}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="text-xs font-bold text-foreground">{o.symbol}</span>
-                                <span
-                                  className="text-[9px] font-bold px-1.5 py-0.5 rounded"
-                                  style={{
-                                    backgroundColor: isBuy ? "#22c55e18" : "#ef444418",
-                                    color: isBuy ? "#22c55e" : "#ef4444",
-                                  }}
-                                >
-                                  {o.side?.toUpperCase()}
-                                </span>
-                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-secondary text-muted-foreground border border-border">
-                                  {(o.type ?? "limit").toUpperCase()}
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-muted-foreground mt-0.5">
-                                <span className="font-mono">{qty.toLocaleString(undefined, { maximumFractionDigits: 6 })}</span>
-                                <span className="ml-1">{orderBase}</span>
-                                {!isMarket && price > 0 && (
-                                  <span className="ml-1 text-muted-foreground/70">@ {price < 1 ? price.toFixed(6) : price.toLocaleString(undefined, { maximumFractionDigits: 4 })} {orderQuote}</span>
-                                )}
-                                {isMarket && <span className="ml-1 text-muted-foreground/70">at market</span>}
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              {lockedAmount > 0 && (
-                                <div className="text-xs font-mono font-bold text-orange-300">
-                                  {lockedAmount.toLocaleString(undefined, { maximumFractionDigits: lockedAmount < 0.001 ? 8 : 6 })}
-                                  <span className="text-[9px] font-normal text-muted-foreground ml-0.5">{lockedAsset}</span>
-                                </div>
-                              )}
-                              <button
-                                onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || ledgerAddress || "") })}
-                                disabled={cancellingId === String(o.id)}
-                                className="mt-1 text-[10px] px-2 py-1 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 font-semibold disabled:opacity-40 transition-all"
-                              >
-                                {cancellingId === String(o.id) ? "…" : "Cancel"}
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  );
-                })()}
-
 
                 {/* DeFi summary row — only when LP positions exist */}
                 {lpPositions.length > 0 && (
@@ -1268,457 +1073,126 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
 
           {/* History tab */}
           {tab === "history" && (
-            <>
-              {/* Sub-tab chips: On-Chain / Trades / Bridge / Coin Travel / Buys */}
-              <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
-                {([
-                  { key: "onchain", label: "Txn History" },
-                  { key: "trades",  label: "Trades"      },
-                  { key: "bridge",  label: "Bridge"      },
-                  { key: "swaps",   label: "Coin Travel" },
-                  { key: "buys",    label: "Buys"        },
-                ] as const).map(({ key, label }) => (
-                  <button
-                    key={key}
-                    onClick={() => setHistorySubTab(key)}
-                    className={cn(
-                      "flex-1 min-w-[72px] py-2 rounded-xl text-xs font-bold border transition-all",
-                      historySubTab === key
-                        ? "bg-primary/15 border-primary/40 text-primary"
-                        : "bg-card border-border text-muted-foreground"
-                    )}
-                  >
-                    {label}
-                  </button>
-                ))}
+            historyLoading ? (
+              <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+                <RefreshCw size={20} className="animate-spin opacity-40" />
+                <p className="text-xs">Loading history…</p>
               </div>
-
-              {/* ── ON-CHAIN wallet transactions ────────────────────────── */}
-              {historySubTab === "onchain" && (() => {
-                const chains = Array.from(new Set(onchainTxs.map(t => t.chainId)));
-                const filtered = onchainChainFilter
-                  ? onchainTxs.filter(t => t.chainId === onchainChainFilter)
-                  : onchainTxs;
-
-                const timeAgo = (ts: number) => {
-                  const s = Math.floor(Date.now() / 1000) - ts;
-                  if (s < 60)   return `${s}s ago`;
-                  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-                  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-                  return `${Math.floor(s / 86400)}d ago`;
-                };
-
-                const fmt = (n: number, decimals = 4) =>
-                  n === 0 ? "0" : n < 0.0001 ? n.toExponential(2) : n.toLocaleString(undefined, { maximumFractionDigits: decimals });
-
-                return (
-                  <>
-                    {/* Chain filter pills */}
-                    {chains.length > 1 && (
-                      <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar mb-3">
-                        <button
-                          onClick={() => setOnchainChainFilter(null)}
-                          className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
-                            !onchainChainFilter ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground"
-                          }`}
-                        >All</button>
-                        {chains.map(cid => {
-                          const sample = onchainTxs.find(t => t.chainId === cid)!;
-                          return (
-                            <button key={cid}
-                              onClick={() => setOnchainChainFilter(onchainChainFilter === cid ? null : cid)}
-                              className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
-                                onchainChainFilter === cid ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground"
-                              }`}
-                            >
-                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: sample.chainColor }} />
-                              {sample.chainName}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-
-                    {/* Refresh button */}
-                    <div className="flex justify-end mb-2">
+            ) : historyData.length === 0 ? (
+              <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
+                <History size={28} className="opacity-20 mb-1" />
+                <p className="text-sm font-medium">No transaction history yet</p>
+                <p className="text-xs opacity-60 text-center">Your trades will appear here after you buy or sell</p>
+              </div>
+            ) : (
+              <>
+                {/* Coin filter chips */}
+                {historyCoins.length > 1 && (
+                  <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+                    <button
+                      onClick={() => setHistoryFilter(null)}
+                      className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                        !historyFilter
+                          ? "bg-primary/15 border-primary/40 text-primary"
+                          : "bg-card border-border text-muted-foreground"
+                      }`}
+                    >
+                      All
+                    </button>
+                    {historyCoins.map(coin => (
                       <button
-                        onClick={() => refetchOnchain()}
-                        disabled={onchainLoading}
-                        className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                        key={coin}
+                        onClick={() => setHistoryFilter(historyFilter === coin ? null : coin)}
+                        className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
+                          historyFilter === coin
+                            ? "bg-primary/15 border-primary/40 text-primary"
+                            : "bg-card border-border text-muted-foreground"
+                        }`}
                       >
-                        <RefreshCw size={11} className={onchainLoading ? "animate-spin" : ""} />
-                        {onchainLoading ? "Loading…" : "Refresh"}
+                        <span
+                          className="w-4 h-4 rounded-md flex items-center justify-center text-[9px] font-bold"
+                          style={{ backgroundColor: (ASSET_COLORS[coin] ?? "#6B7280") + "33", color: ASSET_COLORS[coin] ?? "#6B7280" }}
+                        >
+                          {coin[0]}
+                        </span>
+                        {coin}
                       </button>
-                    </div>
-
-                    {onchainLoading && filtered.length === 0 ? (
-                      <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-                        <RefreshCw size={20} className="animate-spin opacity-40" />
-                        <p className="text-xs">Fetching on-chain history…</p>
-                      </div>
-                    ) : !address ? (
-                      <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
-                        <History size={28} className="opacity-20 mb-1" />
-                        <p className="text-sm font-medium">Connect your wallet</p>
-                        <p className="text-xs opacity-60 text-center">Connect to view on-chain transaction history</p>
-                      </div>
-                    ) : filtered.length === 0 ? (
-                      <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
-                        <History size={28} className="opacity-20 mb-1" />
-                        <p className="text-sm font-medium">No transactions found</p>
-                        <p className="text-xs opacity-60 text-center">On-chain transactions will appear here</p>
-                      </div>
-                    ) : (
-                      <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4 divide-y divide-border">
-                        {filtered.map((tx: OnChainTx, i: number) => {
-                          const label = tx.isTokenTransfer
-                            ? (tx.isIncoming ? `Receive ${tx.tokenSymbol ?? "Token"}` : `Send ${tx.tokenSymbol ?? "Token"}`)
-                            : tx.functionName
-                              ? tx.functionName.split("(")[0].replace(/([A-Z])/g, " $1").trim()
-                              : (tx.isIncoming ? `Receive ${tx.nativeSymbol}` : `Send ${tx.nativeSymbol}`);
-
-                          const amount = tx.isTokenTransfer
-                            ? `${tx.isIncoming ? "+" : "-"}${fmt(tx.tokenValue ?? 0)} ${tx.tokenSymbol}`
-                            : tx.valueEth > 0
-                              ? `${tx.isIncoming ? "+" : "-"}${fmt(tx.valueEth, 6)} ${tx.nativeSymbol}`
-                              : "Contract call";
-
-                          return (
-                            <a
-                              key={`${tx.hash}-${i}`}
-                              href={tx.explorerUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-3 px-4 py-3.5 hover:bg-muted/30 transition-colors active:bg-muted/50"
-                            >
-                              {/* Direction icon */}
-                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                                tx.isError
-                                  ? "bg-red-500/10 text-red-400"
-                                  : tx.isIncoming
-                                    ? "bg-green-500/10 text-green-400"
-                                    : "bg-muted text-muted-foreground"
-                              }`}>
-                                {tx.isError
-                                  ? <span className="text-xs font-bold">!</span>
-                                  : tx.isIncoming
-                                    ? <ArrowDownLeft size={15} />
-                                    : <ArrowUpRight size={15} />}
-                              </div>
-
-                              {/* Info */}
-                              <div className="flex-1 min-w-0">
-                                <p className="text-[13px] font-semibold text-foreground truncate capitalize">{label}</p>
-                                <div className="flex items-center gap-1.5 mt-0.5">
-                                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: tx.chainColor }} />
-                                  <p className="text-[11px] text-muted-foreground">{tx.chainName} · {timeAgo(tx.timeStamp)}</p>
-                                  {tx.isError && (
-                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/20">FAILED</span>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Amount + link */}
-                              <div className="text-right shrink-0 flex items-center gap-2">
-                                <p className={`text-xs font-semibold font-mono ${
-                                  tx.isError ? "text-muted-foreground line-through" :
-                                  tx.isIncoming ? "text-green-400" : "text-foreground"
-                                }`}>{amount}</p>
-                                <ExternalLink size={11} className="text-muted-foreground/40 shrink-0" />
-                              </div>
-                            </a>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-
-              {/* ── BUYS (fiat → crypto purchases) ─────────────────────── */}
-              {historySubTab === "buys" && (
-                <BuyHistory
-                  walletAddress={[address, internalEvmAddress, sessionStorage.getItem("orahdex_session_addr")]
-                    .filter((s): s is string => !!s && s.length >= 6)
-                    .join(",") || null}
-                  onResume={(o) => {
-                    setDirectBuyCoin(o.coin_symbol);
-                    setDirectBuyUsd((o.fiat_amount_cents / 100).toFixed(2));
-                    setDirectBuyOpen(true);
-                  }}
-                />
-              )}
-
-              {/* ── TRADES ─────────────────────────────────────────────── */}
-              {historySubTab === "trades" && (
-                historyLoading ? (
-                  <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-                    <RefreshCw size={20} className="animate-spin opacity-40" />
-                    <p className="text-xs">Loading trades…</p>
+                    ))}
                   </div>
-                ) : historyData.length === 0 ? (
-                  <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
-                    <History size={28} className="opacity-20 mb-1" />
-                    <p className="text-sm font-medium">No trade history yet</p>
-                    <p className="text-xs opacity-60 text-center">Your filled orders will appear here</p>
-                  </div>
-                ) : (
-                  <>
-                    {historyCoins.length > 1 && (
-                      <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar mb-2">
-                        <button
-                          onClick={() => setHistoryFilter(null)}
-                          className={`shrink-0 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
-                            !historyFilter ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground"
-                          }`}
-                        >All</button>
-                        {historyCoins.map(coin => (
-                          <button
-                            key={coin}
-                            onClick={() => setHistoryFilter(historyFilter === coin ? null : coin)}
-                            className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border transition-colors ${
-                              historyFilter === coin ? "bg-primary/15 border-primary/40 text-primary" : "bg-card border-border text-muted-foreground"
-                            }`}
+                )}
+                <div className="space-y-4 mb-4">
+                  {historyByDate.map(({ label, trades }) => (
+                    <div key={label}>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1 mb-1.5">{label}</p>
+                      <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                        {trades.map((t: any, i: number) => {
+                          const isBuy  = (t.side ?? "buy") === "buy";
+                          const sym    = (t.symbol ?? "BSV/USDT").split("/");
+                          const base   = sym[0] ?? "BSV";
+                          const quote  = sym[1] ?? "USDT";
+                          const coinIn  = isBuy ? base  : quote;
+                          const coinOut = isBuy ? quote : base;
+                          const amtIn   = isBuy
+                            ? Number(t.quantity ?? t.fillQty ?? 0)
+                            : Number(t.total    ?? (Number(t.quantity) * Number(t.price)));
+                          const amtOut  = isBuy
+                            ? Number(t.total    ?? (Number(t.quantity) * Number(t.price)))
+                            : Number(t.quantity ?? t.fillQty ?? 0);
+                          const time    = new Date(t.timestamp ?? t.createdAt ?? Date.now());
+                          const timeStr = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                          const fee     = Number(t.fee ?? 0);
+                          const color = ASSET_COLORS[base] ?? "#6B7280";
+                        return (
+                          <div
+                            key={t.id ?? i}
+                            className={`flex items-center gap-3 px-4 py-3.5 ${i < trades.length - 1 ? "border-b border-border" : ""}`}
                           >
-                            <span className="w-4 h-4 rounded-md flex items-center justify-center text-[9px] font-bold"
-                              style={{ backgroundColor: (ASSET_COLORS[coin] ?? "#6B7280") + "33", color: ASSET_COLORS[coin] ?? "#6B7280" }}>
-                              {coin[0]}
-                            </span>
-                            {coin}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <div className="space-y-4 mb-4">
-                      {historyByDate.map(({ label, trades }) => (
-                        <div key={label}>
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60 px-1 mb-1.5">{label}</p>
-                          <div className="bg-card border border-border rounded-2xl overflow-hidden">
-                            {trades.map((t: any, i: number) => {
-                              const isBuy   = (t.side ?? "buy") === "buy";
-                              const sym     = (t.symbol ?? "BSV/USDT").split("/");
-                              const base    = sym[0] ?? "BSV";
-                              const quote   = sym[1] ?? "USDT";
-                              const coinIn  = isBuy ? base  : quote;
-                              const coinOut = isBuy ? quote : base;
-                              const amtIn   = isBuy ? Number(t.quantity ?? t.fillQty ?? 0) : Number(t.total ?? (Number(t.quantity) * Number(t.price)));
-                              const amtOut  = isBuy ? Number(t.total ?? (Number(t.quantity) * Number(t.price))) : Number(t.quantity ?? t.fillQty ?? 0);
-                              const time    = new Date(t.timestamp ?? t.createdAt ?? Date.now());
-                              const timeStr = time.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-                              const fee     = Number(t.fee ?? 0);
-                              const color   = ASSET_COLORS[base] ?? "#6B7280";
-                              return (
-                                <div key={t.id ?? i} className={`flex items-center gap-3 px-4 py-3.5 ${i < trades.length - 1 ? "border-b border-border" : ""}`}>
-                                  <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
-                                    style={{ backgroundColor: color + "22", borderColor: color + "44", color }}>
-                                    {base[0]}
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="text-sm font-semibold text-foreground">{base}/{quote}</span>
-                                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isBuy ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
-                                        {isBuy ? "BUY" : "SELL"}
-                                      </span>
-                                    </div>
-                                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                                      @ ${Number(t.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} · {timeStr}
-                                      {fee > 0 && <span className="text-muted-foreground/50"> · fee {fee.toFixed(4)}</span>}
-                                    </p>
-                                  </div>
-                                  <div className="text-right shrink-0 space-y-0.5">
-                                    <div className="flex items-center justify-end gap-1 text-green-400">
-                                      <ArrowDownLeft size={10} strokeWidth={2.5} />
-                                      <span className="text-xs font-bold font-mono">+{amtIn.toLocaleString(undefined, { maximumFractionDigits: amtIn < 0.01 ? 6 : 4 })} {coinIn}</span>
-                                    </div>
-                                    <div className="flex items-center justify-end gap-1 text-muted-foreground/70">
-                                      <ArrowUpRight size={10} strokeWidth={2.5} />
-                                      <span className="text-[11px] font-mono">-{amtOut.toLocaleString(undefined, { maximumFractionDigits: amtOut < 0.01 ? 6 : 4 })} {coinOut}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )
-              )}
-
-              {/* ── BRIDGE (LetsExchange cross-chain) ──────────────────── */}
-              {historySubTab === "bridge" && (
-                bridgeHistory.length === 0 ? (
-                  <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
-                    <ArrowLeftRight size={28} className="opacity-20 mb-1" />
-                    <p className="text-sm font-medium">No bridge history yet</p>
-                    <p className="text-xs opacity-60 text-center">Cross-chain swaps will appear here</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2 mb-4">
-                    {bridgeHistory.map((e: any, i: number) => {
-                      const fmtAmt = (n: any, maxDec = 8) => {
-                        const v = parseFloat(String(n ?? ""));
-                        if (!isFinite(v) || isNaN(v) || v === 0) return String(n ?? "–");
-                        const abs = Math.abs(v);
-                        const dec = abs >= 1000 ? 2 : abs >= 1 ? 4 : abs >= 0.01 ? 6 : Math.min(maxDec, 8);
-                        return v.toFixed(dec).replace(/\.?0+$/, "");
-                      };
-                      const live = liveLeStatuses[e.transaction_id];
-                      const status = live?.status ?? e.status ?? "wait";
-                      const rawTs = e.createdAt ?? e.created_at;
-                      const ts = rawTs ? new Date(rawTs) : null;
-                      const dateStr = ts
-                        ? ts.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                        : "";
-                      const isFinished = status === "finished";
-                      const isFailed   = status === "failed" || status === "refunded";
-                      const isPending  = !isFinished && !isFailed;
-                      const statusColor = isFinished ? "text-green-400 bg-green-500/15"
-                        : isFailed ? "text-red-400 bg-red-500/15"
-                        : "text-yellow-400 bg-yellow-500/15";
-                      const statusLabel = status === "wait" ? "awaiting deposit"
-                        : status === "confirming" ? "confirming"
-                        : status === "exchanging" ? "exchanging"
-                        : status === "sending" ? "sending"
-                        : status;
-                      const hashIn  = live?.hash_in  ?? null;
-                      const hashOut = live?.hash_out ?? null;
-                      const depositAddr = e.deposit ?? null;
-                      const withdrawalAmt = e.withdrawal_amount && Number(e.withdrawal_amount) > 0
-                        ? fmtAmt(e.withdrawal_amount)
-                        : null;
-
-                      const copyText = async (text: string) => {
-                        try { await navigator.clipboard.writeText(text); } catch {}
-                      };
-
-                      return (
-                        <div key={e.transaction_id ?? i} className="bg-card border border-border rounded-2xl overflow-hidden">
-                          {/* Header row */}
-                          <div className="flex items-center gap-3 px-4 pt-3.5 pb-2.5">
-                            <div className={cn(
-                              "w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border",
-                              isFinished ? "bg-green-500/10 border-green-500/25" : isFailed ? "bg-red-500/10 border-red-500/25" : "bg-primary/10 border-primary/20"
-                            )}>
-                              <ArrowLeftRight size={16} className={isFinished ? "text-green-400" : isFailed ? "text-red-400" : "text-primary"} />
+                            {/* Coin avatar */}
+                            <div
+                              className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0 border"
+                              style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
+                            >
+                              {base[0]}
                             </div>
+
+                            {/* Info */}
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-sm font-bold text-foreground">{e.coin_from} → {e.coin_to}</span>
-                                <span className={cn("text-[10px] font-bold px-1.5 py-0.5 rounded-md capitalize", statusColor)}>
-                                  {statusLabel}
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-sm font-semibold text-foreground">{base}/{quote}</span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${isBuy ? "bg-green-500/15 text-green-400" : "bg-red-500/15 text-red-400"}`}>
+                                  {isBuy ? "BUY" : "SELL"}
                                 </span>
-                                {isPending && (
-                                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-pulse shrink-0" />
-                                )}
                               </div>
                               <p className="text-[11px] text-muted-foreground mt-0.5">
-                                {fmtAmt(e.deposit_amount)} {e.coin_from}
-                                {withdrawalAmt
-                                  ? <> → <span className="text-green-400 font-semibold">{withdrawalAmt} {e.coin_to}</span></>
-                                  : <span className="text-muted-foreground/50"> → pending</span>}
-                                {dateStr && <span className="text-muted-foreground/40"> · {dateStr}</span>}
+                                @ ${Number(t.price ?? 0).toLocaleString(undefined, { maximumFractionDigits: 4 })} · {timeStr}
+                                {fee > 0 && <span className="text-muted-foreground/50"> · fee {fee.toFixed(4)}</span>}
                               </p>
                             </div>
-                          </div>
 
-                          {/* Deposit address — shown for pending swaps */}
-                          {isPending && depositAddr && (
-                            <div className="mx-4 mb-2.5 rounded-xl border border-yellow-500/25 bg-yellow-500/8 px-3 py-2">
-                              <p className="text-[10px] text-yellow-400/80 font-semibold mb-0.5">Send {fmtAmt(e.deposit_amount)} {e.coin_from} to:</p>
-                              <div className="flex items-center gap-2">
-                                <p className="text-[11px] font-mono text-foreground/80 truncate flex-1">{depositAddr}</p>
-                                <button
-                                  onClick={() => copyText(depositAddr)}
-                                  className="shrink-0 text-yellow-400/70 hover:text-yellow-400 active:opacity-60 transition-colors"
-                                >
-                                  <Copy size={12} />
-                                </button>
+                            {/* In / Out amounts */}
+                            <div className="text-right shrink-0 space-y-0.5">
+                              <div className="flex items-center justify-end gap-1 text-green-400">
+                                <ArrowDownLeft size={10} strokeWidth={2.5} />
+                                <span className="text-xs font-bold font-mono">
+                                  +{amtIn.toLocaleString(undefined, { maximumFractionDigits: amtIn < 0.01 ? 6 : 4 })} {coinIn}
+                                </span>
                               </div>
-                              {e.deposit_extra_id && (
-                                <p className="text-[10px] text-muted-foreground/60 mt-0.5">Memo: <span className="font-mono">{e.deposit_extra_id}</span></p>
-                              )}
+                              <div className="flex items-center justify-end gap-1 text-muted-foreground/70">
+                                <ArrowUpRight size={10} strokeWidth={2.5} />
+                                <span className="text-[11px] font-mono">
+                                  -{amtOut.toLocaleString(undefined, { maximumFractionDigits: amtOut < 0.01 ? 6 : 4 })} {coinOut}
+                                </span>
+                              </div>
                             </div>
-                          )}
-
-                          {/* TX hashes */}
-                          {(hashIn || hashOut) && (
-                            <div className="mx-4 mb-2.5 space-y-1">
-                              {hashIn && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[10px] text-muted-foreground/50 shrink-0 w-16">Deposit TX</span>
-                                  <span className="text-[10px] font-mono text-muted-foreground/70 truncate flex-1">{hashIn}</span>
-                                  <button onClick={() => copyText(hashIn)} className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground active:opacity-60">
-                                    <Copy size={10} />
-                                  </button>
-                                </div>
-                              )}
-                              {hashOut && (
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[10px] text-muted-foreground/50 shrink-0 w-16">Receive TX</span>
-                                  <span className="text-[10px] font-mono text-muted-foreground/70 truncate flex-1">{hashOut}</span>
-                                  <button onClick={() => copyText(hashOut)} className="shrink-0 text-muted-foreground/40 hover:text-muted-foreground active:opacity-60">
-                                    <Copy size={10} />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Order ID */}
-                          <div className="flex items-center gap-2 px-4 pb-2.5">
-                            <span className="text-[10px] text-muted-foreground/30 shrink-0">ID</span>
-                            <span className="text-[10px] font-mono text-muted-foreground/35 truncate">{e.transaction_id}</span>
-                            <button onClick={() => copyText(e.transaction_id)} className="shrink-0 text-muted-foreground/25 hover:text-muted-foreground/60 active:opacity-60">
-                              <Copy size={10} />
-                            </button>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                )
-              )}
-
-              {/* ── COIN TRAVEL (on-chain DEX swaps) ───────────────────── */}
-              {historySubTab === "swaps" && (
-                swapHistory.length === 0 ? (
-                  <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
-                    <Zap size={28} className="opacity-20 mb-1" />
-                    <p className="text-sm font-medium">No on-chain swaps yet</p>
-                    <p className="text-xs opacity-60 text-center">On-chain DEX swaps will appear here</p>
-                  </div>
-                ) : (
-                  <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
-                    {swapHistory.map((s: any, i: number) => {
-                      const ts = s.ts ? new Date(s.ts) : null;
-                      const dateStr = ts
-                        ? ts.toLocaleDateString([], { month: "short", day: "numeric" }) + " " + ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                        : "";
-                      return (
-                        <div key={s.id ?? i} className={`flex items-center gap-3 px-4 py-3.5 ${i < swapHistory.length - 1 ? "border-b border-border" : ""}`}>
-                          <div className="w-9 h-9 rounded-xl bg-green-500/10 border border-green-500/20 flex items-center justify-center shrink-0">
-                            <Zap size={16} className="text-green-400" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-bold text-foreground">BSV → {s.coinSymbol}</span>
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-green-500/15 text-green-400">SWAP</span>
-                            </div>
-                            <p className="text-[11px] text-muted-foreground mt-0.5">
-                              {s.bsvAmount} BSV → {Number(s.receiveAmt).toFixed(6)} {s.coinSymbol}
-                              {s.chainLabel && <span className="text-muted-foreground/50"> · {s.chainLabel}</span>}
-                              {dateStr && <span className="text-muted-foreground/50"> · {dateStr}</span>}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )
-              )}
-            </>
+                ))}
+              </div>
+              </>
+            )
           )}
         </div>
 

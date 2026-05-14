@@ -1,4 +1,3 @@
-import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -10,17 +9,17 @@ import { cn } from "@/lib/utils";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function fetchConfig() {
-  return adminFetch(`/api/admin/liquidity/config`).then(r => r.json());
+  return fetch(`${BASE}/api/admin/liquidity/config`).then(r => r.json());
 }
 function saveConfig(body: any) {
-  return adminFetch(`/api/admin/liquidity/config`, {
+  return fetch(`${BASE}/api/admin/liquidity/config`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   }).then(r => r.json());
 }
 function resetConfig() {
-  return adminFetch(`/api/admin/liquidity/reset`, { method: "POST" }).then(r => r.json());
+  return fetch(`${BASE}/api/admin/liquidity/reset`, { method: "POST" }).then(r => r.json());
 }
 
 function Field({
@@ -87,8 +86,8 @@ export function AdminLiquidityBot() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="min-w-0">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
             <Bot className="w-5 h-5 text-primary" />
             Liquidity Bot
@@ -97,33 +96,33 @@ export function AdminLiquidityBot() {
             Configure the market-making and liquidity provision engine
           </p>
         </div>
-        <div className="flex items-center flex-wrap gap-2 sm:justify-end">
+        <div className="flex items-center gap-2">
           {isDirty && (
-            <span className="text-[11px] text-orange-400 bg-orange-400/10 border border-orange-400/20 px-2 py-1.5 rounded-lg whitespace-nowrap">
+            <span className="text-xs text-orange-400 bg-orange-400/10 border border-orange-400/20 px-2 py-1 rounded-lg">
               Unsaved changes
             </span>
           )}
           {saved && (
-            <span className="text-[11px] text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-1.5 rounded-lg flex items-center gap-1 whitespace-nowrap">
+            <span className="text-xs text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-1 rounded-lg flex items-center gap-1">
               <CheckCircle className="w-3 h-3" /> Saved
             </span>
           )}
           <button
             onClick={handleReset}
             disabled={resetMut.isPending}
-            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl border border-border hover:border-orange-400/40 text-xs font-semibold text-muted-foreground hover:text-orange-400 transition-all whitespace-nowrap"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border hover:border-orange-400/40 text-xs text-muted-foreground hover:text-orange-400 transition-all"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            Reset
+            Reset to Defaults
           </button>
           <button
             onClick={handleSave}
             disabled={saveMut.isPending || !isDirty}
             className={cn(
-              "inline-flex items-center justify-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap border",
+              "flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-semibold transition-all",
               isDirty
-                ? "bg-primary text-primary-foreground border-primary hover:bg-primary/90 shadow-lg shadow-primary/20"
-                : "bg-primary/10 text-primary/70 border-primary/20 cursor-not-allowed"
+                ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                : "bg-white/5 text-muted-foreground cursor-not-allowed"
             )}
           >
             <Save className="w-3.5 h-3.5" />
@@ -158,16 +157,16 @@ export function AdminLiquidityBot() {
               <button
                 onClick={() => set("enabled", !current.enabled)}
                 className={cn(
-                  "relative shrink-0 inline-flex items-center w-12 h-7 rounded-full transition-all border",
+                  "relative w-11 h-6 rounded-full transition-all border",
                   current.enabled
                     ? "bg-green-400/20 border-green-400/40"
                     : "bg-white/5 border-border"
                 )}
               >
                 <span className={cn(
-                  "block w-5 h-5 rounded-full shadow-md transition-transform duration-200",
+                  "absolute top-0.5 w-5 h-5 rounded-full transition-transform",
                   current.enabled
-                    ? "translate-x-[22px] bg-green-400"
+                    ? "translate-x-5 bg-green-400"
                     : "translate-x-0.5 bg-muted-foreground"
                 )} />
               </button>

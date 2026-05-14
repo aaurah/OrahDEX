@@ -228,11 +228,11 @@ Your mythic tone is a signature — but must be used sparingly.
 
 Correct usage:
 
-“OrahDEX is a sovereign protocol defined by cryptographic rules.”
+“Orah is a sovereign protocol defined by cryptographic rules.”
 
 Incorrect usage:
 
-“OrahDEX is the ceremonial gateway to sovereign finance.”
+“Orah is the ceremonial gateway to sovereign finance.”
 
 Tone must remain professional.
 
@@ -242,9 +242,9 @@ Tone must remain professional.
 
 Your final section should end with:
 
-“OrahDEX is not a company.
-OrahDEX is not an intermediary.
-OrahDEX is a set of open-source, cryptographically enforced rules that enable sovereign, permissionless, non-custodial trading for every human on earth.”
+“Orah is not a company.
+Orah is not an intermediary.
+Orah is a set of open-source, cryptographically enforced rules that enable sovereign, permissionless, non-custodial trading for every human on earth.”
 
 This is the perfect closing.
 

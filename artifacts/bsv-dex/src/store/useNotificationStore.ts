@@ -1,7 +1,5 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { playNotificationFx, showDesktopNotification } from "@/lib/notificationFx";
-import { useSettingsStore } from "@/store/useSettingsStore";
 
 export type NotifType =
   | "order_placed"
@@ -13,14 +11,14 @@ export type NotifType =
   | "wallet_connected"
   | "wallet_disconnected"
   | "withdrawal"
+  | "deposit"
   | "liquidity"
   | "support"
   | "support_reply"
   | "info"
   | "warning"
   | "success"
-  | "error"
-  | "deposit";
+  | "error";
 
 export interface AppNotification {
   id: string;
@@ -65,21 +63,6 @@ export const useNotificationStore = create<NotificationState>()(
         set((s) => ({
           notifications: [entry, ...s.notifications].slice(0, 100),
         }));
-        // Fire sound + vibration + desktop push based on user prefs.
-        // Honours DND, per-category mute, and master toggles. Silently no-ops if
-        // disabled or the browser/OS doesn't support the API.
-        try {
-          const s = useSettingsStore.getState();
-          const prefs = {
-            sound:           s.soundEnabled,
-            haptics:         s.hapticsEnabled,
-            desktop:         s.desktopEnabled,
-            dndUntil:        s.dndUntil,
-            mutedCategories: s.mutedCategories,
-          };
-          playNotificationFx(entry.type, prefs);
-          showDesktopNotification(entry, prefs);
-        } catch { /* never let FX break the store */ }
       },
 
       markRead: (id) => {
@@ -101,7 +84,7 @@ export const useNotificationStore = create<NotificationState>()(
       unreadCount: () => get().notifications.filter((n) => !n.read).length,
     }),
     {
-      name: "orahdex_notifs_v4",
+      name: "orah_notifs_v4",
       partialize: (s) => ({ notifications: s.notifications.slice(0, 50) }),
     },
   ),

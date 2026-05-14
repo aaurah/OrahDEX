@@ -1,5 +1,4 @@
-import { pgTable, text, numeric, timestamp, index, uniqueIndex, boolean } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
+import { pgTable, text, numeric, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -12,13 +11,13 @@ export const ordersTable = pgTable("orders", {
   side: text("side").notNull(),
   type: text("type").notNull(),
   status: text("status").notNull().default("open"),
-  price: numeric("price", { precision: 36, scale: 18 }),
-  stopPrice: numeric("stop_price", { precision: 36, scale: 18 }),
-  quantity: numeric("quantity", { precision: 36, scale: 18 }).notNull(),
-  filledQuantity: numeric("filled_quantity", { precision: 36, scale: 18 }).notNull().default("0"),
-  remainingQuantity: numeric("remaining_quantity", { precision: 36, scale: 18 }).notNull(),
-  total: numeric("total", { precision: 36, scale: 18 }),
-  fee: numeric("fee", { precision: 36, scale: 18 }).notNull().default("0"),
+  price: numeric("price", { precision: 20, scale: 8 }),
+  stopPrice: numeric("stop_price", { precision: 20, scale: 8 }),
+  quantity: numeric("quantity", { precision: 20, scale: 8 }).notNull(),
+  filledQuantity: numeric("filled_quantity", { precision: 20, scale: 8 }).notNull().default("0"),
+  remainingQuantity: numeric("remaining_quantity", { precision: 20, scale: 8 }).notNull(),
+  total: numeric("total", { precision: 30, scale: 8 }),
+  fee: numeric("fee", { precision: 20, scale: 8 }).notNull().default("0"),
   feeAsset: text("fee_asset").notNull().default("USDT"),
   timeInForce: text("time_in_force").notNull().default("GTC"),
   // BSV on-chain settlement txid (OP_RETURN transaction)
@@ -38,20 +37,11 @@ export const ordersTable = pgTable("orders", {
   nonce: text("nonce"),
   /** Unix ms — the server rejected this intent if expiry < Date.now() at receipt time */
   expiry: text("expiry"),  // stored as string to avoid bigint serialization issues
-  /**
-   * Explicit liquidity-provider classification flags.
-   * isBot:       order was placed by an automated market-maker / liquidity bot.
-   * isSynthetic: order is a synthetic depth quote (not backed by real funds).
-   * These are used by the hybrid router to exclude non-real liquidity.
-   */
-  isBot:       boolean("is_bot").notNull().default(false),
-  isSynthetic: boolean("is_synthetic").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (t) => [
   index("orders_symbol_status_idx").on(t.symbol, t.status),
   index("orders_wallet_status_idx").on(t.walletAddress, t.status),
-  uniqueIndex("orders_wallet_nonce_uidx").on(sql`lower(${t.walletAddress})`, t.nonce),
 ]);
 
 export const insertOrderSchema = createInsertSchema(ordersTable).omit({ createdAt: true, updatedAt: true });

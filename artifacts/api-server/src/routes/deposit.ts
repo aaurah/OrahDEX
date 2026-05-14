@@ -1,5 +1,5 @@
 /**
- * deposit.ts — EVM deposit flow for OrahDEX
+ * deposit.ts — EVM deposit flow for Orah
  *
  * GET  /deposit/address   — provision and return a user's unique deposit address
  * POST /deposit/verify    — verify an on-chain tx and credit the internal ledger
@@ -23,7 +23,7 @@ import { eq } from "drizzle-orm";
 const router = Router();
 
 // ── GET /deposit/address ──────────────────────────────────────────────────────
-// Provisions (or returns) the user's dedicated OrahDEX deposit address.
+// Provisions (or returns) the user's dedicated Orah deposit address.
 // The address is unique per user wallet — funds sent here are credited to the
 // sender's internal ledger after verification via POST /deposit/verify.
 
@@ -181,10 +181,8 @@ router.post("/deposit/bsv-verify", async (req, res) => {
     res.status(400).json({ error: "walletAddress and txHash are required" });
     return;
   }
-
-  // Validate txHash is a 64-character hexadecimal string to prevent SSRF
-  if (!/^[0-9a-fA-F]{64}$/.test(txHash)) {
-    res.status(400).json({ error: "Invalid transaction hash format. Expected 64 hexadecimal characters." });
+  if (!/^[a-fA-F0-9]{64}$/.test(String(txHash))) {
+    res.status(400).json({ error: "txHash must be a valid 64-character hex string" });
     return;
   }
 
@@ -204,31 +202,14 @@ router.post("/deposit/bsv-verify", async (req, res) => {
     }
 
     // Fetch tx from WhatsOnChain
-    const txRes = await fetch(`${BSV_NET.wocBase}/tx/hash/${txHash}`);
+    const txUrl = new URL(`/tx/hash/${encodeURIComponent(txHash)}`, BSV_NET.wocBase);
+    const txRes = await fetch(txUrl);
     if (!txRes.ok) {
       res.status(400).json({ error: "Transaction not found on BSV chain. Please wait for confirmation and try again." });
       return;
     }
 
-    const tx = await txRes.json() as {
-      vin?:  { addr?: string }[];
-      vout?: { value: number; scriptPubKey?: { addresses?: string[] } }[];
-    };
-
-    // Verify the transaction's sending address matches the claimed walletAddress.
-    // For BSV P2PKH wallets this is a direct address comparison. Skip the check
-    // for EVM addresses (0x…) since they identify the exchange account, not the
-    // BSV sending address.
-    if (!walletAddress.startsWith("0x")) {
-      const senderAddr = tx.vin?.[0]?.addr;
-      if (!senderAddr || senderAddr.toLowerCase() !== walletAddress.toLowerCase()) {
-        res.status(403).json({
-          error: "Transaction sender does not match walletAddress. " +
-                 "Only the owner of the BSV wallet that sent this transaction may claim the deposit.",
-        });
-        return;
-      }
-    }
+    const tx = await txRes.json() as { vout?: { value: number; scriptPubKey?: { addresses?: string[] } }[] };
 
     // Find output paying to deposit address
     const output = tx.vout?.find(o =>
@@ -236,7 +217,7 @@ router.post("/deposit/bsv-verify", async (req, res) => {
     );
 
     if (!output) {
-      res.status(400).json({ error: "Transaction does not send BSV to the OrahDEX deposit address. Please ensure you sent to the correct address." });
+      res.status(400).json({ error: "Transaction does not send BSV to the Orah deposit address. Please ensure you sent to the correct address." });
       return;
     }
 
@@ -470,23 +451,8 @@ router.post("/deposit/solana-verify", async (req, res) => {
     );
 
     if (depIdx === -1) {
-      res.status(400).json({ error: "Transaction does not send SOL to the OrahDEX deposit address. Please ensure you sent to the correct address." });
+      res.status(400).json({ error: "Transaction does not send SOL to the Orah deposit address. Please ensure you sent to the correct address." });
       return;
-    }
-
-    // Verify the fee-payer (accountKeys[0]) is the claimed walletAddress.
-    // For Solana-native wallets, the walletAddress should match the transaction
-    // sender (base58 public key). Skip this check for EVM addresses (0x…) since
-    // they identify the exchange account rather than the Solana signing key.
-    if (!walletAddress.startsWith("0x")) {
-      const senderKey = accountKeys[0]?.pubkey;
-      if (!senderKey || senderKey !== walletAddress) {
-        res.status(403).json({
-          error: "Transaction sender does not match walletAddress. " +
-                 "Only the wallet that sent this transaction may claim the deposit.",
-        });
-        return;
-      }
     }
 
     const pre  = tx.meta?.preBalances?.[depIdx]  ?? 0;

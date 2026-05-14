@@ -13,7 +13,7 @@ import { API_BASE } from "@/lib/api";
 
 /* ── QR data types ────────────────────────────────────────────────────── */
 type ScanResult =
-  | { type: "orahdex_connect"; token: string; expires: number }
+  | { type: "orah_connect"; token: string; expires: number }
   | { type: "address"; chain: string; address: string; label?: string; amount?: string }
   | { type: "wc"; uri: string }
   | { type: "url"; url: string }
@@ -22,12 +22,12 @@ type ScanResult =
 function parseQR(raw: string): ScanResult {
   const t = raw.trim();
 
-  // OrahDEX session connect
-  if (t.startsWith("orahdex://connect?")) {
+  // Orah session connect
+  if (t.startsWith("orah://connect?")) {
     const params = new URLSearchParams(t.split("?")[1] ?? "");
     const token   = params.get("token") ?? "";
     const expires = Number(params.get("expires") ?? Date.now() + 300_000);
-    if (token) return { type: "orahdex_connect", token, expires };
+    if (token) return { type: "orah_connect", token, expires };
   }
 
   // WalletConnect v2
@@ -150,8 +150,8 @@ export function MobileQRScanner() {
     return () => stopCamera();
   }, [tab]);
 
-  /* ── OrahDEX connect flow ────────────────────────────────────────────── */
-  const handleOrahDEXConnect = async (token: string) => {
+  /* ── Orah connect flow ────────────────────────────────────────────── */
+  const handleOrahConnect = async (token: string) => {
     if (!address) {
       setConnError("No wallet connected on this device. Connect a wallet first, then scan again.");
       return;
@@ -295,7 +295,7 @@ export function MobileQRScanner() {
                 <p className="text-white font-bold text-base">Connect to Exchange</p>
               </div>
               <p className="text-white/45 text-sm leading-relaxed mb-5">
-                Point at the QR code displayed on the OrahDEX desktop or web app to link your mobile wallet instantly.
+                Point at the QR code displayed on the Orah desktop or web app to link your mobile wallet instantly.
               </p>
 
               {/* Divider */}
@@ -326,8 +326,8 @@ export function MobileQRScanner() {
         {tab === "scan" && result && (
           <div className="w-full max-w-sm">
 
-            {/* OrahDEX Connect result */}
-            {result.type === "orahdex_connect" && (
+            {/* Orah Connect result */}
+            {result.type === "orah_connect" && (
               <div className="bg-[#0d1a0d] rounded-3xl border border-green-500/30 overflow-hidden">
                 {/* Icon bar */}
                 <div className="flex justify-center pt-7 pb-4">
@@ -345,12 +345,12 @@ export function MobileQRScanner() {
 
                 <div className="px-6 pb-6 text-center space-y-2">
                   <p className="text-green-400 font-black text-lg">
-                    {connected ? "Wallet Connected!" : "OrahDEX Exchange"}
+                    {connected ? "Wallet Connected!" : "Orah Exchange"}
                   </p>
                   <p className="text-white/55 text-sm leading-relaxed">
                     {connected
                       ? "Your wallet is now linked to the exchange session. You can trade on desktop."
-                      : "This QR code will connect your mobile wallet to an OrahDEX exchange session."}
+                      : "This QR code will connect your mobile wallet to an Orah exchange session."}
                   </p>
 
                   {/* Session expiry */}
@@ -387,7 +387,7 @@ export function MobileQRScanner() {
                     ) : (
                       <>
                         <button
-                          onClick={() => handleOrahDEXConnect(result.token)}
+                          onClick={() => handleOrahConnect(result.token)}
                           disabled={connecting}
                           className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-green-500 text-black font-bold text-sm active:scale-95 transition-transform disabled:opacity-60"
                         >
@@ -507,7 +507,7 @@ export function MobileQRScanner() {
             )}
 
             {/* Scan again button */}
-            {result.type !== "orahdex_connect" && (
+            {result.type !== "orah_connect" && (
               <button
                 onClick={rescan}
                 className="w-full mt-4 flex items-center justify-center gap-2 py-3.5 rounded-2xl border border-white/12 text-white/55 text-sm font-semibold active:bg-white/5 transition-colors"
@@ -542,7 +542,7 @@ export function MobileQRScanner() {
                     <p className="text-white font-bold text-sm">Your Wallet QR</p>
                   </div>
                   <p className="text-white/40 text-xs leading-relaxed">
-                    Show this QR code to OrahDEX desktop or another device to share your wallet address instantly.
+                    Show this QR code to Orah desktop or another device to share your wallet address instantly.
                   </p>
 
                   <div className="bg-white/5 rounded-2xl px-4 py-3">

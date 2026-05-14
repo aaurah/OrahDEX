@@ -37,9 +37,8 @@ import {
 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { validateAltChainAddress } from "@/lib/addressValidation";
-import { isAddress as isEvmAddress } from "viem";
 import { CHAIN_RPC_URLS } from "@/lib/reown";
-import { getViemAccountForAddress } from "@/lib/walletSigner";
+import { getViemAccountForOrahDEXWallet } from "@/lib/passkeyWallet";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
@@ -47,10 +46,9 @@ import { QRCodeCanvas } from "qrcode.react";
 
 // ── constants ────────────────────────────────────────────────────────────────
 const SUPPORTED_CHAINS: { id: number; label: string; short: string; color: string }[] = [
-  { id: 1,        label: "Ethereum Mainnet", short: "Ethereum", color: "#627EEA" },
-  { id: 8453,     label: "Base",             short: "Base",     color: "#0052FF" },
-  { id: 56,       label: "BNB Smart Chain",  short: "BSC",      color: "#F3BA2F" },
-  { id: 11155111, label: "Sepolia Testnet",  short: "Sepolia",  color: "#9B59B6" },
+  { id: 1,    label: "Ethereum Mainnet", short: "Ethereum", color: "#627EEA" },
+  { id: 8453, label: "Base",             short: "Base",     color: "#0052FF" },
+  { id: 56,   label: "BNB Smart Chain",  short: "BSC",      color: "#F3BA2F" },
 ];
 
 // ── wallet-send chain & token registry ───────────────────────────────────────
@@ -58,14 +56,13 @@ interface WalletChain  { id: number; name: string; symbol: string; color: string
 interface WalletToken  { symbol: string; decimals: number; isNative: boolean; address: string | null; color: string }
 
 const WALLET_CHAINS: WalletChain[] = [
-  { id: 8453,     name: "Base",      symbol: "ETH",  color: "#0052FF", explorer: "https://basescan.org/tx/" },
-  { id: 1,        name: "Ethereum",  symbol: "ETH",  color: "#627EEA", explorer: "https://etherscan.io/tx/" },
-  { id: 56,       name: "BSC",       symbol: "BNB",  color: "#F0B90B", explorer: "https://bscscan.com/tx/" },
-  { id: 42161,    name: "Arbitrum",  symbol: "ETH",  color: "#28A0F0", explorer: "https://arbiscan.io/tx/" },
-  { id: 10,       name: "Optimism",  symbol: "ETH",  color: "#FF0420", explorer: "https://optimistic.etherscan.io/tx/" },
-  { id: 137,      name: "Polygon",   symbol: "POL",  color: "#8247E5", explorer: "https://polygonscan.com/tx/" },
-  { id: 43114,    name: "Avalanche", symbol: "AVAX", color: "#E84142", explorer: "https://snowtrace.io/tx/" },
-  { id: 11155111, name: "Sepolia",   symbol: "ETH",  color: "#9B59B6", explorer: "https://sepolia.etherscan.io/tx/" },
+  { id: 8453,  name: "Base",      symbol: "ETH",  color: "#0052FF", explorer: "https://basescan.org/tx/" },
+  { id: 1,     name: "Ethereum",  symbol: "ETH",  color: "#627EEA", explorer: "https://etherscan.io/tx/" },
+  { id: 56,    name: "BSC",       symbol: "BNB",  color: "#F0B90B", explorer: "https://bscscan.com/tx/" },
+  { id: 42161, name: "Arbitrum",  symbol: "ETH",  color: "#28A0F0", explorer: "https://arbiscan.io/tx/" },
+  { id: 10,    name: "Optimism",  symbol: "ETH",  color: "#FF0420", explorer: "https://optimistic.etherscan.io/tx/" },
+  { id: 137,   name: "Polygon",   symbol: "POL",  color: "#8247E5", explorer: "https://polygonscan.com/tx/" },
+  { id: 43114, name: "Avalanche", symbol: "AVAX", color: "#E84142", explorer: "https://snowtrace.io/tx/" },
 ];
 
 const WALLET_TOKENS: Record<number, WalletToken[]> = {
@@ -105,12 +102,6 @@ const WALLET_TOKENS: Record<number, WalletToken[]> = {
     { symbol: "AVAX", decimals: 18, isNative: true,  address: null,                                       color: "#E84142" },
     { symbol: "USDC", decimals: 6,  isNative: false, address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", color: "#3B82F6" },
     { symbol: "USDT", decimals: 6,  isNative: false, address: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", color: "#22C55E" },
-  ],
-  11155111: [
-    { symbol: "ETH",  decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
-    { symbol: "USDC", decimals: 6,  isNative: false, address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", color: "#3B82F6" },
-    { symbol: "USDT", decimals: 6,  isNative: false, address: "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0", color: "#22C55E" },
-    { symbol: "WBTC", decimals: 8,  isNative: false, address: "0x29f2D40B0605204364af54EC677bD022dA425d03", color: "#F97316" },
   ],
 };
 
@@ -217,8 +208,8 @@ export interface WithdrawSheetProps {
   initialTab?:         "deposit" | "withdraw" | "history";
   /** Restrict which tabs are visible in the tab bar. Defaults to all three. */
   visibleTabs?:        ("deposit" | "withdraw" | "history")[];
-  /** Whether this is a passkey / orah-wallet — enables "Send from Wallet" mode */
-  isOrahWallet?:       boolean;
+  /** Whether this is a passkey / orahdex-wallet — enables "Send from Wallet" mode */
+  isOrahDEXWallet?:       boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -235,7 +226,7 @@ export function WithdrawSheet({
   color = "#6B7280",
   initialTab = "withdraw",
   visibleTabs,
-  isOrahWallet = false,
+  isOrahDEXWallet = false,
 }: WithdrawSheetProps) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
@@ -303,26 +294,6 @@ export function WithdrawSheet({
       setSolTxHash("");
     }
   }, [open, defaultRecipient, initialTab]);
-
-  // ── live OrahDEX ledger balance for this asset ───────────────────────────
-  // Fetches the user_balances row directly so the displayed "OrahDEX Balance"
-  // is always the custodial ledger amount, never the on-chain wallet balance
-  // that may be passed in via the `available` prop.
-  const { data: ledgerBal } = useQuery<{ available: string }>({
-    queryKey: ["withdraw-ledger-balance", walletAddress, asset],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/balances/${asset}?walletAddress=${encodeURIComponent(walletAddress)}`, { cache: "no-store" });
-      if (!r.ok) return { available: "0" };
-      return r.json();
-    },
-    enabled: !!walletAddress && !!asset && open,
-    refetchInterval: open ? 10_000 : false,
-    staleTime: 5_000,
-  });
-  const ledgerAvailable = parseFloat(ledgerBal?.available ?? "0") || 0;
-  // Use the live ledger value when we have one; fall back to the prop only
-  // before the first fetch returns.
-  const exchangeAvailable = ledgerBal !== undefined ? ledgerAvailable : available;
 
   // ── deposit address ──────────────────────────────────────────────────────
   const { data: depositData, isLoading: depositLoading, refetch: refetchDeposit } =
@@ -449,7 +420,7 @@ export function WithdrawSheet({
 
   // ── withdraw logic ───────────────────────────────────────────────────────
   const parsedAmount    = parseFloat(amount) || 0;
-  const exceedsBalance  = parsedAmount > exchangeAvailable;
+  const exceedsBalance  = parsedAmount > available;
 
   const isValidRecipient = (() => {
     const r = recipient.trim();
@@ -457,9 +428,8 @@ export function WithdrawSheet({
     if (isSolana)     return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(r);
     if (isBitcoinFork) return /^[13mn][a-km-zA-HJ-NP-Z1-9]{25,50}$/.test(r);
     if (isAltChain)   return validateAltChainAddress(network, r);
-    // EVM: viem's isAddress validates EIP-55 checksum so a single mistyped
-    // character is caught rather than silently passing regex.
-    return isEvmAddress(r, { strict: false });
+    // EVM: 0x + 40 hex chars
+    return /^0x[0-9a-fA-F]{40}$/.test(r);
   })();
 
   const canSubmit = parsedAmount > 0 && !exceedsBalance && isValidRecipient && !submitting;
@@ -509,10 +479,10 @@ export function WithdrawSheet({
   }, [walletAddress]);
 
   useEffect(() => {
-    if (open && tab === "deposit" && depositMode === "exchange" && isOrahWallet) {
+    if (open && tab === "deposit" && depositMode === "exchange" && isOrahDEXWallet) {
       fetchDepFromWalletBalance(depositChain.id);
     }
-  }, [open, tab, depositMode, depositChain.id, isOrahWallet, fetchDepFromWalletBalance]);
+  }, [open, tab, depositMode, depositChain.id, isOrahDEXWallet, fetchDepFromWalletBalance]);
 
   // ── deposit-from-wallet: broadcast ──────────────────────────────────────
   const handleDepositFromWallet = async (depositAddress: string, nativeSymbol: string) => {
@@ -521,10 +491,8 @@ export function WithdrawSheet({
     setDepFromWalletSending(true);
     setDepFromWalletError(null);
     try {
-      const account = await getViemAccountForAddress(walletAddress, {
-        title: "Authorize deposit",
-        subtitle: `Unlock your imported OrahDEX wallet to send ${depFromWalletAmount} ${nativeSymbol}.`,
-      });
+      toast({ title: "Biometric authentication", description: "Authenticate with Face ID / Touch ID to sign the deposit…" });
+      const account = await getViemAccountForOrahDEXWallet(walletAddress);
       const { createWalletClient, http, parseEther } = await import("viem");
       const chainDef = {
         id:             depositChain.id,
@@ -540,7 +508,7 @@ export function WithdrawSheet({
       setDepFromWalletTxHash(hash);
       // Auto-fill the TX verify field so user can verify in one tap
       setTxHash(hash);
-      toast({ title: "Deposit sent!", description: `${depFromWalletAmount} ${nativeSymbol} sent to OrahDEX. Tap Verify to credit your balance.` });
+      toast({ title: "Deposit sent!", description: `${depFromWalletAmount} ${nativeSymbol} sent to Orah. Tap Verify to credit your balance.` });
       addNotification({ type: "deposit", title: "Deposit Sent", body: `${depFromWalletAmount} ${nativeSymbol} sent on-chain. Verify to credit balance.` });
       setTimeout(() => fetchDepFromWalletBalance(depositChain.id), 4000);
     } catch (err: any) {
@@ -589,10 +557,10 @@ export function WithdrawSheet({
   }, [walletAddress]);
 
   useEffect(() => {
-    if (open && tab === "withdraw" && withdrawSource === "wallet" && isOrahWallet) {
+    if (open && tab === "withdraw" && withdrawSource === "wallet" && isOrahDEXWallet) {
       fetchWalletBalance(walletSendChain, walletSendToken);
     }
-  }, [open, tab, withdrawSource, walletSendChain, walletSendToken, isOrahWallet, fetchWalletBalance]);
+  }, [open, tab, withdrawSource, walletSendChain, walletSendToken, isOrahDEXWallet, fetchWalletBalance]);
 
   // ── wallet send: broadcast ───────────────────────────────────────────────
   const handleWalletSend = async () => {
@@ -601,10 +569,8 @@ export function WithdrawSheet({
     setWalletSending(true);
     setWalletSendError(null);
     try {
-      const account = await getViemAccountForAddress(walletAddress, {
-        title: "Authorize transfer",
-        subtitle: `Unlock your imported OrahDEX wallet to send ${walletSendAmount} ${walletSendToken.symbol}.`,
-      });
+      toast({ title: "Biometric authentication", description: "Authenticate with Face ID / Touch ID to sign the transfer…" });
+      const account = await getViemAccountForOrahDEXWallet(walletAddress);
 
       const { createWalletClient, http, parseEther, parseUnits } = await import("viem");
       // build minimal chain object viem needs
@@ -665,7 +631,7 @@ export function WithdrawSheet({
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error ?? "Verification failed");
-      toast({ title: "Deposit credited!", description: `${data.amount} ${data.asset} added to your OrahDEX balance.` });
+      toast({ title: "Deposit credited!", description: `${data.amount} ${data.asset} added to your Orah balance.` });
       setTxHash("");
       refetchDeposit();
     } catch (err: any) {
@@ -780,10 +746,10 @@ export function WithdrawSheet({
                       <div className="rounded-xl border border-orange-500/30 bg-orange-500/5 p-4 space-y-3">
                         <div className="flex items-center gap-2">
                           <div className="w-2 h-2 rounded-full bg-orange-400" />
-                          <p className="text-xs font-bold text-orange-400 uppercase tracking-wide">OrahDEX {bitcoinDepositData.symbol} Deposit Address</p>
+                          <p className="text-xs font-bold text-orange-400 uppercase tracking-wide">Orah {bitcoinDepositData.symbol} Deposit Address</p>
                         </div>
                         <p className="text-[11px] text-muted-foreground -mt-1">
-                          Funds sent here are credited to your <strong className="text-foreground">OrahDEX trading balance</strong>.
+                          Funds sent here are credited to your <strong className="text-foreground">Orah trading balance</strong>.
                         </p>
                         <div className="flex flex-col items-center gap-3">
                           <div className="p-3 bg-white rounded-xl shadow-sm">
@@ -846,7 +812,7 @@ export function WithdrawSheet({
                           <p className="text-xs font-bold text-green-400 uppercase tracking-wide">Your Personal {bitcoinDepositData.symbol} Wallet Address</p>
                         </div>
                         <p className="text-[11px] text-muted-foreground -mt-2">
-                          Funds sent here go <strong className="text-foreground">directly to your wallet</strong> — not to your OrahDEX trading balance. Use this for personal receives.
+                          Funds sent here go <strong className="text-foreground">directly to your wallet</strong> — not to your Orah trading balance. Use this for personal receives.
                         </p>
                         {walletAddress && /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(walletAddress) ? (
                           <>
@@ -924,10 +890,10 @@ export function WithdrawSheet({
                 <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 p-4 space-y-3">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-purple-400" />
-                    <p className="text-xs font-bold text-purple-400 uppercase tracking-wide">OrahDEX Solana Deposit Address</p>
+                    <p className="text-xs font-bold text-purple-400 uppercase tracking-wide">Orah Solana Deposit Address</p>
                   </div>
                   <p className="text-[11px] text-muted-foreground -mt-1">
-                    Funds sent here are credited to your <strong className="text-foreground">OrahDEX trading balance</strong>. Send only SOL (native) to this address.
+                    Funds sent here are credited to your <strong className="text-foreground">Orah trading balance</strong>. Send only SOL (native) to this address.
                   </p>
                   <div className="flex flex-col items-center gap-3">
                     <div className="p-3 bg-white rounded-xl shadow-sm">
@@ -1012,11 +978,11 @@ export function WithdrawSheet({
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-blue-400" />
                     <p className="text-xs font-bold text-blue-400 uppercase tracking-wide">
-                      OrahDEX {altchainData.symbol} Deposit Address
+                      Orah {altchainData.symbol} Deposit Address
                     </p>
                   </div>
                   <p className="text-[11px] text-muted-foreground -mt-1">
-                    Send <strong className="text-foreground">{altchainData.symbol}</strong> to this address. Your OrahDEX trading balance is credited within <strong className="text-foreground">24 hours</strong> after network confirmation.
+                    Send <strong className="text-foreground">{altchainData.symbol}</strong> to this address. Your Orah trading balance is credited within <strong className="text-foreground">24 hours</strong> after network confirmation.
                   </p>
                   <div className="flex flex-col items-center gap-3">
                     <div className="p-3 bg-white rounded-xl shadow-sm">
@@ -1054,7 +1020,7 @@ export function WithdrawSheet({
                 <div className="flex gap-2.5 p-3 rounded-xl bg-blue-500/5 border border-blue-500/20">
                   <Zap className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    After sending, your deposit will be automatically detected and credited to your OrahDEX balance within 24 hours. No manual verification needed.
+                    After sending, your deposit will be automatically detected and credited to your Orah balance within 24 hours. No manual verification needed.
                   </p>
                 </div>
               </div>
@@ -1085,7 +1051,7 @@ export function WithdrawSheet({
                   <p className="text-xs font-bold text-green-400 uppercase tracking-wide">Your Personal Wallet Address</p>
                 </div>
                 <p className="text-[11px] text-muted-foreground -mt-2">
-                  Funds sent here go <strong className="text-foreground">directly to your wallet</strong> — not to your OrahDEX trading balance. Use this for personal receives.
+                  Funds sent here go <strong className="text-foreground">directly to your wallet</strong> — not to your Orah trading balance. Use this for personal receives.
                 </p>
 
                 {/* QR code */}
@@ -1119,7 +1085,7 @@ export function WithdrawSheet({
                 <div className="flex gap-2.5 p-3 rounded-xl bg-green-500/8 border border-green-500/20">
                   <Zap className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    This is your OrahDEX passkey wallet address. Anyone can send EVM tokens here directly.
+                    This is your Orah passkey wallet address. Anyone can send EVM tokens here directly.
                   </p>
                 </div>
               </div>
@@ -1135,7 +1101,7 @@ export function WithdrawSheet({
           <div className="space-y-4">
 
             {/* Source toggle — only for passkey wallet users */}
-            {isOrahWallet && (
+            {isOrahDEXWallet && (
               <div className="flex rounded-xl bg-secondary/40 border border-border p-1 gap-1">
                 <button
                   onClick={() => setWithdrawSource("exchange")}
@@ -1181,9 +1147,9 @@ export function WithdrawSheet({
                 {/* Balance summary */}
                 <div className="p-3.5 rounded-xl bg-secondary/30 border border-border space-y-1.5">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">OrahDEX Balance</span>
+                    <span className="text-muted-foreground">Orah Balance</span>
                     <span className="font-bold font-mono" style={{ color }}>
-                      {exchangeAvailable.toLocaleString(undefined, { maximumFractionDigits: exchangeAvailable < 0.0001 ? 8 : 6 })} {asset}
+                      {available.toLocaleString(undefined, { maximumFractionDigits: available < 0.0001 ? 8 : 6 })} {asset}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -1204,7 +1170,7 @@ export function WithdrawSheet({
                     />
                     <button
                       type="button"
-                      onClick={() => setAmount(exchangeAvailable.toFixed(exchangeAvailable < 0.0001 ? 8 : 6))}
+                      onClick={() => setAmount(available.toFixed(available < 0.0001 ? 8 : 6))}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-primary hover:text-primary/80 px-2 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
                     >
                       MAX
@@ -1212,7 +1178,7 @@ export function WithdrawSheet({
                   </div>
                   {exceedsBalance && (
                     <p className="text-xs text-red-400 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" /> Exceeds available OrahDEX balance
+                      <AlertCircle className="w-3 h-3" /> Exceeds available Orah balance
                     </p>
                   )}
                 </div>
@@ -1250,7 +1216,7 @@ export function WithdrawSheet({
                   <div className="flex gap-2.5 p-3 rounded-xl bg-yellow-500/8 border border-yellow-500/20">
                     <Clock className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      {networkLabel} withdrawals are processed within <strong className="text-foreground">24 hours</strong>. Your OrahDEX balance is debited immediately upon request.
+                      {networkLabel} withdrawals are processed within <strong className="text-foreground">24 hours</strong>. Your Orah balance is debited immediately upon request.
                     </p>
                   </div>
                 ) : (

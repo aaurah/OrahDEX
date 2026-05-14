@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   Heart, MessageCircle, Share2, Zap, BadgeCheck, Search,
@@ -6,31 +6,14 @@ import {
   Flame, Clock, Star, Lock, Layers, Copy, Send, Globe,
   AtSign, Camera, ArrowUpRight, ArrowDownRight,
   UserPlus, UserCheck, BarChart2, Grid3X3, Activity,
-  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon, MessagesSquare,
+  ShoppingBag, Settings, ChevronRight, RefreshCw, Sparkles, ExternalLink, Edit3, Link, ImageIcon,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
-import { resolveNftSpendBalance } from "@/lib/nftBalance";
 import { useLocation } from "wouter";
-import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
-import { useHybridBalance } from "@/hooks/useHybridBalance";
-import { signTradeIfNeeded } from "@/lib/tradeSig";
-import { MediaCapture } from "@/components/MediaCapture";
 
-const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
-
-/** Only allow http/https URLs or raster-format data URIs for image src attributes.
- *  SVG is excluded because it can contain embedded JavaScript. */
-function sanitizeImageUrl(url: string): string {
-  if (!url) return "";
-  try {
-    const u = new URL(url);
-    if (u.protocol === "https:" || u.protocol === "http:") return u.href;
-    if (u.protocol === "data:" && /^data:image\/(png|jpeg|jpg|gif|webp);base64,/i.test(url)) return url;
-  } catch { /* invalid URL */ }
-  return "";
-}
+const API = "/api";
 
 function Portal({ children }: { children: React.ReactNode }) {
   const target = typeof document !== "undefined"
@@ -77,27 +60,6 @@ interface Creator {
 interface Holding { coin_creator: string; holder: string; amount: number; username: string; symbol: string; price_usd: number; market_cap_usd: number; }
 
 function shortAddr(a: string) { return a?.length > 12 ? `${a.slice(0, 6)}…${a.slice(-4)}` : (a ?? "—"); }
-// Auto-generated coin symbols are the last few uppercase hex chars of the
-// creator's wallet address. Treat those as addresses so we hide them when a
-// real handle exists — trading is keyed off the handle, not the raw address.
-function isAddrLikeSymbol(s?: string) {
-  if (!s) return true;
-  const t = s.trim();
-  return t.length === 0 || /^[0-9A-F]{4,8}$/.test(t);
-}
-const MIN_ADDRESS_LIKE_LENGTH = 24;
-function isAddressLike(value: string) {
-  const v = value.trim();
-  if (!v) return false;
-  if (v.includes("…")) return true;
-  if (v.startsWith("0x")) return true;
-  return new RegExp(`^[A-Za-z0-9]{${MIN_ADDRESS_LIKE_LENGTH},}$`).test(v);
-}
-function commentHandle(comment: Comment) {
-  const displayName = comment.display_name?.trim();
-  if (displayName && !isAddressLike(displayName)) return displayName;
-  return "user";
-}
 function fmtNum(raw: unknown) {
   const n = Number(raw);
   if (!n || !isFinite(n)) return "0";
@@ -121,8 +83,8 @@ function safePrice(v: unknown, decimals = 4) {
 }
 function getNftProfileAddress({
   address,
-  provider: _provider,
-  network: _network,
+  provider,
+  network,
   internalEvmAddress,
 }: {
   address: string | null;
@@ -130,13 +92,8 @@ function getNftProfileAddress({
   network: string | null;
   internalEvmAddress: string | null;
 }) {
-  // If the user has a fixed, internally-derived EVM address (seed phrase, passkey,
-  // or server-side provisioning), ALWAYS use it as their NFT profile identity.
-  // internalEvmAddress is explicitly preserved by every chain-switch path and is
-  // only cleared when a genuinely different wallet connects.
-  if (internalEvmAddress) return internalEvmAddress;
-  // For external-only wallets (MetaMask, WalletConnect, etc.) use the connected address.
   if (!address) return null;
+  if (provider === "orahdex-wallet" && network !== "evm" && internalEvmAddress) return internalEvmAddress;
   return address;
 }
 function timeAgo(iso: string) {
@@ -150,17 +107,8 @@ const CAT_ICONS: Record<string, string> = {
   all: "🌐", art: "🎨", generative: "⚡", relics: "🏛️",
   utility: "🔧", governance: "🗳️", bridge: "🌉", ai: "🤖",
 };
-const CHAINS = ["BSV", "ETH", "BASE", "BNB", "MATIC", "ARB", "OP", "SOL", "BTC", "BCH"];
-const CHAIN_COLOR: Record<string, string> = {
-  BSV: "#00ff88", ETH: "#627eea", BASE: "#0052ff", BNB: "#f3ba2f",
-  MATIC: "#8247e5", ARB: "#12aaff", OP: "#ff0420", SOL: "#9945ff",
-  BTC: "#f7931a", BCH: "#4caf50",
-};
-// Chain → EVM chainId. Non-EVM chains (BSV/SOL/BTC/BCH) are intentionally absent
-// so the wallet keeps its current network for those — only the feed filter changes.
-const EVM_CHAIN_IDS_FOR_NFT: Record<string, number> = {
-  ETH: 1, OP: 10, BASE: 8453, ARB: 42161, BNB: 56, MATIC: 137,
-};
+const CHAINS = ["BSV", "ETH", "BNB", "SOL", "MATIC"];
+const CHAIN_COLOR: Record<string, string> = { BSV: "#00ff88", ETH: "#7b68ee", BNB: "#f3ba2f", SOL: "#9945ff", MATIC: "#8247e5" };
 const HIGH_PRICE_IMPACT_THRESHOLD_PERCENT = 3;
 
 function Avatar({ src, name, size = 36, ring }: { src?: string; name?: string; size?: number; ring?: boolean }) {
@@ -215,23 +163,22 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
-  const { address, network, chainId, balance: storeBalance, provider } = useWalletStore();
+  const { address, network, balance: storeBalance, provider, chainId } = useWalletStore();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
-  const isOrahWallet = provider === "orah-wallet";
+  const isOrahDEXWallet = provider === "orahdex-wallet";
 
   useBsvBalance();
-  const { balances: evmBalances } = useEvmBalances(isEvm ? address : null, chainId ?? null);
+  const { balances: evmBalances } = useEvmBalances(isEvm ? (address ?? null) : null, isEvm ? (chainId ?? 1) : null);
 
   const nativeEvmBalance = evmBalances?.find(b => b.isNative);
-  const availableBsvNum = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? Number(nativeEvmBalance.amount) || 0 : 0)
+  const availableBsvNum = isEvm && !isOrahDEXWallet
+    ? (nativeEvmBalance ? nativeEvmBalance.amount || 0 : 0)
     : parseFloat(String(storeBalance ?? "0")) || 0;
-  const hasLoadedBalance = isEvm && !isOrahWallet
+  const hasLoadedBalance = isEvm && !isOrahDEXWallet
     ? (evmBalances != null && evmBalances.length > 0)
     : storeBalance != null;
-  const nativeSymbol = isEvm && !isOrahWallet ? (nativeEvmBalance?.symbol ?? "ETH") : "BSV";
-  const availableLabel = isEvm && !isOrahWallet
-    ? (nativeEvmBalance ? `${Number(nativeEvmBalance.amount).toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
+  const availableLabel = isEvm && !isOrahDEXWallet
+    ? (nativeEvmBalance ? `${nativeEvmBalance.amount.toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
     : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
 
   const [holdingAmount, setHoldingAmount] = useState<number | null>(null);
@@ -254,9 +201,9 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
   useEffect(() => {
     const t = setTimeout(async () => {
       try {
-        const params = (mode === "buy"
+        const params = mode === "buy"
           ? `type=buy&bsv_amount=${bsvAmount}`
-          : `type=sell&token_amount=${tokenAmount}`) + `&payment_asset=${nativeSymbol}`;
+          : `type=sell&token_amount=${tokenAmount}`;
         const r = await fetch(`${API}/social/quote/${creator.address}?${params}`);
         if (r.ok) setQuote(await r.json());
       } catch {}
@@ -269,13 +216,6 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
     if (!canTrade) return;
     setLoading(true); setError("");
     try {
-      const amountStr = mode === "buy"
-        ? String(parseFloat(bsvAmount))
-        : String(parseFloat(tokenAmount));
-      const sig = await signTradeIfNeeded({
-        walletAddress: address, network, isOrahWallet,
-        creator: creator.address, side: mode, amount: amountStr, asset: nativeSymbol,
-      });
       const res = await fetch(`${API}/social/creators/${creator.address}/trade`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -283,8 +223,6 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
           trader: address, trade_type: mode,
           bsv_amount: mode === "buy" ? parseFloat(bsvAmount) : undefined,
           token_amount: mode === "sell" ? parseFloat(tokenAmount) : undefined,
-          payment_asset: nativeSymbol,
-          ...(sig.nonce && sig.signature ? { nonce: sig.nonce, signature: sig.signature } : {}),
         }),
       });
       const d = await res.json();
@@ -303,7 +241,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             <div className="text-5xl mb-3">{mode === "buy" ? "🚀" : "💸"}</div>
             <h3 className="text-xl font-bold mb-1 text-foreground">{mode === "buy" ? "Bought!" : "Sold!"}</h3>
             <p className="text-sm mb-4 text-muted-foreground">
-              {mode === "buy" ? `+${fmtNum(success.tokensExchanged)} ${isAddrLikeSymbol(creator.symbol) ? (creator.username || "tokens") : `$${creator.symbol}`}` : `+${safePrice(success.bsvExchanged)} ${nativeSymbol}`}
+              {mode === "buy" ? `+${fmtNum(success.tokensExchanged)} $${creator.symbol}` : `+${safePrice(success.bsvExchanged)} BSV`}
             </p>
             <p className="text-[10px] text-muted-foreground mb-4">New market cap: {fmtUsd(success.newMarketCap)}</p>
             <button onClick={onClose} className="px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Done</button>
@@ -313,7 +251,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <Avatar src={creator.avatar_url} name={creator.username} size={28} />
-                <span className="font-bold text-foreground">{creator.username || (isAddrLikeSymbol(creator.symbol) ? "Anon" : `$${creator.symbol}`)}</span>
+                <span className="font-bold text-foreground">${creator.symbol}</span>
               </div>
               <button onClick={onClose}><X size={20} className="text-muted-foreground" /></button>
             </div>
@@ -328,7 +266,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             {mode === "buy" ? (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs text-muted-foreground">{nativeSymbol} Amount</label>
+                  <label className="text-xs text-muted-foreground">BSV Amount</label>
                   {availableLabel && (
                     <span className="text-xs text-muted-foreground">
                       Available: <span className={`font-mono ${insufficientFunds ? "text-red-400" : "text-foreground"}`}>{availableLabel}</span>
@@ -356,7 +294,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             )}
             {quote && (
               <div className="mt-3 p-3 rounded-xl bg-muted/20 space-y-1 text-xs text-muted-foreground">
-                <div className="flex justify-between"><span>Est. receive</span><span className="font-mono text-foreground">{mode === "buy" ? `${fmtNum(quote.tokensOut)} ${isAddrLikeSymbol(creator.symbol) ? "tokens" : `$${creator.symbol}`}` : `${safePrice(quote.bsvOut)} ${nativeSymbol}`}</span></div>
+                <div className="flex justify-between"><span>Est. receive</span><span className="font-mono text-foreground">{mode === "buy" ? `${fmtNum(quote.tokensOut)} $${creator.symbol}` : `${safePrice(quote.bsvOut)} BSV`}</span></div>
                 <div className="flex justify-between"><span>Price impact</span><span className="font-mono" style={{ color: (quote.priceImpact ?? 0) > HIGH_PRICE_IMPACT_THRESHOLD_PERCENT ? "#ff4444" : "#00ff88" }}>{safePrice(quote.priceImpact, 2)}%</span></div>
               </div>
             )}
@@ -364,7 +302,7 @@ function TradeSheet({ creator, onClose }: { creator: Creator; onClose: () => voi
             <button onClick={doTrade} disabled={loading || !canTrade}
               className="w-full mt-4 py-3 rounded-xl font-bold text-sm disabled:opacity-50 transition-all"
               style={{ background: insufficientFunds || insufficientTokens ? "#555" : mode === "buy" ? "#00ff88" : "#ff4444", color: insufficientFunds || insufficientTokens ? "#fff" : "#000" }}>
-              {loading ? "Processing…" : insufficientFunds ? "Insufficient Balance" : insufficientTokens ? "Insufficient Tokens" : `${mode === "buy" ? "Buy" : "Sell"} ${isAddrLikeSymbol(creator.symbol) ? (creator.username || "tokens") : `$${creator.symbol}`}`}
+              {loading ? "Processing…" : insufficientFunds ? "Insufficient Balance" : insufficientTokens ? "Insufficient Tokens" : `${mode === "buy" ? "Buy" : "Sell"} $${creator.symbol}`}
             </button>
           </>
         )}
@@ -382,32 +320,18 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
   const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState<"hot" | "new" | "top">("hot");
   const [cat, setCat] = useState("all");
-  const [chain, setChain] = useState("all");
-  const switchChain = useWalletStore(s => s.switchChain);
+  const [chain, setChain] = useState("BSV");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ sort, limit: "50" });
       if (cat !== "all") params.set("category", cat);
-      if (chain !== "all") params.set("chain", chain);
       const r = await fetch(`${API}/social/feed?${params}`);
       if (r.ok) { const d = await r.json(); setPosts(d.posts ?? d); }
     } catch {} finally { setLoading(false); }
   }, [sort, cat, chain]);
   useEffect(() => { load(); }, [load]);
-
-  // Smart chain switch: when the user picks an EVM chain in the filter, also
-  // flip the connected wallet to that chain so trading/minting hits the right
-  // network without an extra step. Non-EVM chains (BSV/SOL/BTC/BCH) just filter
-  // the feed; the wallet keeps whatever provider it has.
-  function pickChain(c: string) {
-    setChain(c);
-    const id = EVM_CHAIN_IDS_FOR_NFT[c];
-    if (id) switchChain(id);
-  }
-
-  const chainOpts = [{ key: "all", label: "All", color: "#888" }, ...CHAINS.map(c => ({ key: c, label: c, color: CHAIN_COLOR[c] ?? "#888" }))];
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -420,23 +344,12 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
             </button>
           ))}
         </div>
-        <div className="ml-auto flex gap-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-          {chainOpts.map(({ key, label, color }) => {
-            const active = chain === key;
-            return (
-              <button key={key} onClick={() => pickChain(key)}
-                title={key === "all" ? "Show all chains" : `Filter ${label} & switch wallet`}
-                className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold whitespace-nowrap shrink-0 transition-all"
-                style={{
-                  background: active ? `${color}22` : "transparent",
-                  color: active ? color : "var(--color-text-secondary)",
-                  border: active ? `1px solid ${color}60` : "1px solid transparent",
-                }}>
-                {key !== "all" && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />}
-                {label}
-              </button>
-            );
-          })}
+        <div className="ml-auto flex gap-1">
+          {CHAINS.map(c => (
+            <button key={c} onClick={() => setChain(c)}
+              className={`px-2 py-0.5 rounded text-[9px] font-bold ${chain === c ? "opacity-100" : "opacity-40"}`}
+              style={{ color: CHAIN_COLOR[c] }}>{c}</button>
+          ))}
         </div>
       </div>
       <div className="flex shrink-0 gap-1 px-4 py-1.5 overflow-x-auto">
@@ -454,7 +367,7 @@ function FeedTab({ likedIds, onLike, onMint, onOpen, onCreator }: {
           <div className="text-center py-16 text-muted-foreground">
             <Sparkles size={32} className="mx-auto mb-2 opacity-40" />
             <p className="text-sm font-medium">No posts yet</p>
-            <p className="text-xs mt-1">Be the first to create on OrahNFT</p>
+            <p className="text-xs mt-1">Be the first to create on OrahDEXNFT</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -622,42 +535,28 @@ function SearchTab({ onCreator, onOpenPost }: { onCreator: (a: string) => void; 
 }
 
 function CreateTab({ onSuccess }: { onSuccess: () => void }) {
-  const { address, provider, network, internalEvmAddress } = useWalletStore();
-  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
+  const { address } = useWalletStore();
   const [, navigate] = useLocation();
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [cat, setCat] = useState("art");
   const [chain, setChain] = useState("BSV");
   const [imageUrl, setImageUrl] = useState("");
-
-  /** Sanitize image URLs at state-set time: only allow http/https or raster data URIs */
-  function setValidatedImageUrl(url: string) {
-    setImageUrl(sanitizeImageUrl(url));
-  }
   const [mintPrice, setMintPrice] = useState("0.001");
   const [maxSupply, setMaxSupply] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [captureOpen, setCaptureOpen] = useState(false);
-  const [captureTab, setCaptureTab] = useState<"camera" | "ai" | "photos">("camera");
-
-  function openCapture(tab: "camera" | "ai" | "photos") {
-    setCaptureTab(tab);
-    setCaptureOpen(true);
-  }
 
   async function publish() {
     if (!address) { navigate("/settings"); return; }
     if (!title.trim()) { setError("Title required"); return; }
-    const creatorAddress = actorAddress ?? address;
     setLoading(true); setError("");
     try {
       const res = await fetch(`${API}/social/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          creator: creatorAddress, title, description: desc, image_url: imageUrl,
+          creator: address, title, description: desc, image_url: imageUrl,
           category: cat, chain, mint_price: mintPrice, mint_currency: "BSV",
           max_supply: maxSupply ? parseInt(maxSupply) : null, tags: "",
         }),
@@ -669,17 +568,23 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
     finally { setLoading(false); }
   }
 
+  if (!address) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-center p-8">
+          <Lock size={32} className="mx-auto mb-3 text-muted-foreground" />
+          <h3 className="text-lg font-bold text-foreground mb-2">Connect Wallet</h3>
+          <p className="text-sm text-muted-foreground mb-4">Connect your wallet to create posts on OrahDEXNFT</p>
+          <button onClick={() => navigate("/settings")} className="px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Connect</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full overflow-y-auto px-4 py-4">
       <div className="max-w-2xl mx-auto space-y-4">
         <h2 className="text-lg font-bold text-foreground">Create Post</h2>
-        {!address && (
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs"
-               style={{ background: "rgba(255,170,0,0.12)", color: "#ffaa00" }}>
-            <Lock size={13} />
-            <span>Connect a wallet to publish — you can still generate AI images now.</span>
-          </div>
-        )}
         <div className="space-y-2">
           <label className="text-xs text-muted-foreground font-semibold">Title *</label>
           <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Give your creation a title"
@@ -691,35 +596,9 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
             className="w-full px-3 py-2.5 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary resize-none" />
         </div>
         <div className="space-y-2">
-          <label className="text-xs text-muted-foreground font-semibold">Image</label>
-          {imageUrl && (
-            <div className="rounded-xl overflow-hidden border border-border" style={{ aspectRatio: "1/1", maxWidth: 280 }}>
-              <img src={sanitizeImageUrl(imageUrl)} alt="" className="w-full h-full object-cover"
-                   onError={() => setImageUrl("")} />
-            </div>
-          )}
-          <div className="flex gap-2">
-            <button type="button" onClick={() => openCapture("camera")}
-              className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
-              style={{ background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)" }}>
-              <Camera size={13} /> Camera
-            </button>
-            <button type="button" onClick={() => openCapture("ai")}
-              className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
-              style={{ background: "#00ff88", color: "#000" }}>
-              <Sparkles size={13} /> AI Generate
-            </button>
-            <button type="button" onClick={() => openCapture("photos")}
-              className="flex-1 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5"
-              style={{ background: "rgba(255,255,255,0.08)", color: "#fff", border: "1px solid rgba(255,255,255,0.12)" }}>
-              <ImageIcon size={13} /> Upload
-            </button>
-          </div>
-          <input value={imageUrl} onChange={e => setValidatedImageUrl(e.target.value)} placeholder="…or paste image URL"
+          <label className="text-xs text-muted-foreground font-semibold">Image URL</label>
+          <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://…"
             className="w-full px-3 py-2.5 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary" />
-          <MediaCapture open={captureOpen} onClose={() => setCaptureOpen(false)}
-            initialTab={captureTab}
-            onSelect={(dataUrl) => setValidatedImageUrl(dataUrl)} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
@@ -753,7 +632,7 @@ function CreateTab({ onSuccess }: { onSuccess: () => void }) {
         <button onClick={publish} disabled={loading}
           className="w-full py-3 rounded-xl text-sm font-bold disabled:opacity-50 transition-all"
           style={{ background: "#00ff88", color: "#000" }}>
-          {loading ? "Publishing…" : !address ? "Connect Wallet to Publish" : "Publish to BSV"}
+          {loading ? "Publishing…" : "Publish to BSV"}
         </button>
       </div>
     </div>
@@ -781,8 +660,7 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
       .finally(() => setLoading(false));
   }, [profileAddress]);
 
-  // Truly disconnected — no wallet at all
-  if (!address) {
+  if (!profileAddress) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center p-8">
@@ -790,18 +668,6 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
           <h3 className="text-lg font-bold text-foreground mb-2">Connect Wallet</h3>
           <p className="text-sm text-muted-foreground mb-4">Connect your wallet to view your NFT profile</p>
           <button onClick={() => navigate("/settings")} className="px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Connect</button>
-        </div>
-      </div>
-    );
-  }
-
-  // Wallet connected but internal EVM identity not yet ready (e.g. just switched chain)
-  if (!profileAddress) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center p-8">
-          <RefreshCw size={24} className="mx-auto mb-3 text-muted-foreground animate-spin" />
-          <p className="text-sm text-muted-foreground">Setting up your NFT identity…</p>
         </div>
       </div>
     );
@@ -820,7 +686,7 @@ function MyProfileTab({ onOpenCreator, onOpenPost }: { onOpenCreator: (a: string
                 <div className="flex items-center gap-2">
                   <h2 className="text-lg font-bold text-foreground">{creator.username}</h2>
                   {creator.is_verified && <BadgeCheck size={18} className="text-primary" />}
-                  {!isAddrLikeSymbol(creator.symbol) && <span className="text-sm font-bold text-primary">${creator.symbol}</span>}
+                  <span className="text-sm font-bold text-primary">${creator.symbol}</span>
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">{creator.bio || "No bio"}</p>
               </div>
@@ -915,9 +781,7 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
   const [createForm, setCreateForm] = useState({ username: "", bio: "", avatar_url: "", website: "" });
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
-  const [avatarCaptureOpen, setAvatarCaptureOpen] = useState(false);
   const isViewingOwnProfile = !!currentUserAddress && currentUserAddress === creatorAddress;
-  const hybrid = useHybridBalance(60_000);
 
   const loadProfileData = useCallback(() => {
     setLoading(true);
@@ -987,31 +851,12 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
                   rows={3}
                   className="w-full px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary resize-none"
                 />
-                {createForm.avatar_url && (
-                  <div className="flex justify-center">
-                    <div className="w-20 h-20 rounded-full overflow-hidden" style={{ border: "2px solid #00ff88" }}>
-                      <img src={createForm.avatar_url} alt="" className="w-full h-full object-cover"
-                           onError={() => setCreateForm(p => ({ ...p, avatar_url: "" }))} />
-                    </div>
-                  </div>
-                )}
-                <button type="button" onClick={() => setAvatarCaptureOpen(true)}
-                  className="w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
-                  style={{ background: "#00ff88", color: "#000" }}>
-                  <Camera size={12} /> Camera
-                  <span style={{ opacity: 0.5 }}>•</span>
-                  <Sparkles size={12} /> AI
-                  <span style={{ opacity: 0.5 }}>•</span>
-                  <ImageIcon size={12} /> Upload
-                </button>
                 <input
                   value={createForm.avatar_url}
                   onChange={e => setCreateForm(prev => ({ ...prev, avatar_url: e.target.value }))}
-                  placeholder="…or paste avatar URL"
+                  placeholder="Avatar URL"
                   className="w-full px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary"
                 />
-                <MediaCapture open={avatarCaptureOpen} onClose={() => setAvatarCaptureOpen(false)}
-                  onSelect={(dataUrl) => setCreateForm(p => ({ ...p, avatar_url: dataUrl }))} />
                 <input
                   value={createForm.website}
                   onChange={e => setCreateForm(prev => ({ ...prev, website: e.target.value }))}
@@ -1038,14 +883,14 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
                   <Avatar src={creator.avatar_url} name={creator.username} size={48} ring={creator.is_verified} />
                   <div className="flex-1">
                     <div className="flex items-center gap-1">
-                      <span className="font-bold text-foreground">{creator.username || "Anon"}</span>
+                      <span className="font-bold text-foreground">{creator.username || shortAddr(creator.address)}</span>
                       {creator.is_verified && <BadgeCheck size={14} className="text-primary" />}
                     </div>
-                    {!isAddrLikeSymbol(creator.symbol) && <span className="text-sm font-bold text-primary">${creator.symbol}</span>}
+                    <span className="text-sm font-bold text-primary">${creator.symbol}</span>
                   </div>
                   <button onClick={() => setShowTrade(true)}
                     className="px-4 py-2 rounded-xl text-xs font-bold" style={{ background: "#00ff88", color: "#000" }}>
-                    Trade {isAddrLikeSymbol(creator.symbol) ? (creator.username || "tokens") : `$${creator.symbol}`}
+                    Trade ${creator.symbol}
                   </button>
                 </div>
                 {creator.bio && <p className="text-xs text-muted-foreground mb-3">{creator.bio}</p>}
@@ -1056,33 +901,6 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
                   <div><div className="text-sm font-bold text-foreground">{fmtUsd(creator.ath_usd)}</div><div className="text-[9px] text-muted-foreground">ATH</div></div>
                 </div>
               </div>
-
-              {/* ── Hybrid portfolio (own profile only) ── */}
-              {isViewingOwnProfile && (
-                <div className="mx-4 mb-3 rounded-xl p-3 border border-border/40" style={{ background: "rgba(0,255,136,0.04)" }}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total Portfolio</span>
-                    {hybrid.loading && <RefreshCw size={10} className="animate-spin text-muted-foreground" />}
-                  </div>
-                  <div className="text-lg font-black text-primary mb-1.5">
-                    {hybrid.loading && hybrid.chains.length === 0
-                      ? "—"
-                      : `$${hybrid.totalUsd.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                  </div>
-                  {hybrid.chains.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {hybrid.chains.filter(c => c.native > 0).map(c => (
-                        <span key={c.symbol} className="text-[10px] px-1.5 py-0.5 rounded-md border border-border/40 text-muted-foreground">
-                          {c.symbol} {c.native < 0.0001 ? c.native.toExponential(2) : c.native.toLocaleString("en-US", { maximumFractionDigits: 4 })}
-                          {" · "}
-                          <span className="text-primary">${c.usd.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
               <div className="flex border-t border-border">
                 {(["posts", "holders"] as const).map(t => (
                   <button key={t} onClick={() => setTab(t)}
@@ -1110,7 +928,7 @@ function CreatorProfileSheet({ creatorAddress, currentUserAddress, onClose, onOp
                 ) : (
                   holders.length > 0 ? holders.map(h => (
                     <div key={h.holder} className="flex items-center justify-between p-2 rounded-xl border border-border">
-                      <span className="text-xs font-medium text-muted-foreground truncate">{(h as any).username ?? "Anon holder"}</span>
+                      <span className="text-xs font-mono text-muted-foreground">{shortAddr(h.holder)}</span>
                       <span className="text-xs font-bold text-foreground">{fmtNum(h.amount)}</span>
                     </div>
                   )) : <p className="text-xs text-muted-foreground text-center py-4">No holders</p>
@@ -1132,24 +950,23 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
 }) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState("");
-  const { address, provider, network, internalEvmAddress } = useWalletStore();
-  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
+  const { address } = useWalletStore();
 
   useEffect(() => {
     fetch(`${API}/social/posts/${post.id}`).then(r => r.ok ? r.json() : null).then(d => setComments(d?.comments ?? [])).catch(() => {});
   }, [post.id]);
 
   async function submitComment() {
-    if (!commentText.trim() || !actorAddress) return;
+    if (!commentText.trim() || !address) return;
     try {
       const r = await fetch(`${API}/social/posts/${post.id}/comment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet_address: actorAddress, content: commentText }),
+        body: JSON.stringify({ wallet_address: address, content: commentText }),
       });
       if (r.ok) {
         const c = await r.json();
-        setComments(c?.comments ?? []);
+        setComments(prev => [...prev, c]);
         setCommentText("");
       }
     } catch {}
@@ -1210,9 +1027,9 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
               <h4 className="text-xs font-bold text-foreground">Comments ({comments.length})</h4>
               {comments.map(c => (
                 <div key={c.id} className="flex items-start gap-2 p-2 rounded-lg bg-muted/10">
-                  <Avatar name={commentHandle(c)} size={24} />
+                  <Avatar name={c.display_name || c.wallet_address} size={24} />
                   <div>
-                    <span className="text-[10px] font-bold text-foreground">{commentHandle(c)}</span>
+                    <span className="text-[10px] font-bold text-foreground">{c.display_name || shortAddr(c.wallet_address)}</span>
                     <p className="text-xs text-muted-foreground">{c.content}</p>
                   </div>
                 </div>
@@ -1238,28 +1055,27 @@ function PostDetailSheet({ post, onClose, onMint, onSell, onLike, liked, onCreat
 
 function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose: () => void; initialMode?: "buy" | "sell" }) {
   const [mode, setMode] = useState<"buy" | "sell">(initialMode);
-  const { address, network, chainId, balance: storeBalance, provider, internalEvmAddress } = useWalletStore();
-  const actorAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
+  const { address, network, balance: storeBalance, provider, chainId } = useWalletStore();
   const [, navigate] = useLocation();
   const isEvm = !address || network === "evm" || (!!address && address.startsWith("0x"));
-  const isOrahWallet = provider === "orah-wallet";
+  const isOrahDEXWallet = provider === "orahdex-wallet";
   useBsvBalance();
-  const { balances: evmBalances, loading: evmBalancesLoading } = useEvmBalances(isEvm ? address : null, chainId ?? null);
-  const { availableAmount: availableNum, hasLoadedBalance, availableLabel } = resolveNftSpendBalance({
-    isEvm,
-    isOrahWallet,
-    storeBalance,
-    evmBalances,
-    evmBalancesLoading,
-    mintCurrency: post.mint_currency,
-  });
+  const { balances: evmBalances } = useEvmBalances(isEvm ? (address ?? null) : null, isEvm ? (chainId ?? 1) : null);
+  const nativeEvmBalance = evmBalances?.find(b => b.isNative);
+  const availableNum = isEvm && !isOrahDEXWallet
+    ? (nativeEvmBalance ? nativeEvmBalance.amount || 0 : 0)
+    : parseFloat(String(storeBalance ?? "0")) || 0;
+  const hasLoadedBalance = isEvm && !isOrahDEXWallet ? evmBalances != null : storeBalance != null;
+  const availableLabel = isEvm && !isOrahDEXWallet
+    ? (nativeEvmBalance ? `${nativeEvmBalance.amount.toFixed(4)} ${nativeEvmBalance.symbol ?? "ETH"}` : null)
+    : storeBalance != null ? `${parseFloat(String(storeBalance)).toFixed(6)} BSV` : null;
   const mintPrice = parseFloat(String(post.mint_price)) || 0;
-  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && mintPrice > 0 && availableNum < mintPrice;
+  const isBsvMint = !isEvm || post.mint_currency === "BSV";
+  const insufficientFunds = mode === "buy" && !!address && hasLoadedBalance && isBsvMint && mintPrice > 0 && availableNum < mintPrice;
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState<any>(null);
   const [error, setError] = useState("");
   const [listPriceInput, setListPriceInput] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const sellDisabled = mode === "sell" && !listPriceInput;
   const actionDisabled = loading || insufficientFunds || sellDisabled;
   const actionBg = actionDisabled ? "#555" : mode === "buy" ? "#00ff88" : "#ff4444";
@@ -1280,14 +1096,13 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
 
   async function doMint() {
     if (!ensureAddress()) return;
-    if (!actorAddress) return;
     if (insufficientFunds) return;
     setLoading(true); setError("");
     try {
       const r = await fetch(`${API}/social/posts/${post.id}/mint`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ minter: actorAddress }),
+        body: JSON.stringify({ minter: address }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Mint failed");
@@ -1305,14 +1120,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
       const r = await fetch(`${API}/nft/listings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          nftId: post.id,
-          collectionId: "social-posts",
-          seller: address,
-          chain: post.chain,
-          price: String(price),
-          currency: post.mint_currency || "BSV",
-        }),
+        body: JSON.stringify({ post_id: post.id, seller: address, price_bsv: price }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error ?? "Failed to list");
@@ -1330,8 +1138,8 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
             <div className="text-5xl mb-3">{mode === "buy" ? "⚡" : "🏷️"}</div>
             <h3 className="text-xl font-bold text-foreground mb-1">{mode === "buy" ? "Collected!" : "Listed!"}</h3>
             <p className="text-sm text-muted-foreground mb-2">{post.title}</p>
-            {mode === "buy" && success.inscriptionId && (
-              <p className="text-[10px] text-muted-foreground font-mono">Inscription: {String(success.inscriptionId).slice(0, 20)}…</p>
+            {mode === "buy" && success.inscription_id && (
+              <p className="text-[10px] text-muted-foreground font-mono">Inscription: {success.inscription_id.slice(0, 20)}…</p>
             )}
             <button onClick={onClose} className="mt-4 px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Done</button>
           </div>
@@ -1384,23 +1192,6 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
                 <p id="nft-list-price-help" className="text-xs text-muted-foreground">Mint price: {safePrice(post.mint_price)} {post.mint_currency}</p>
               </div>
             )}
-            <div className="mt-3 rounded-xl border border-border overflow-hidden">
-              <button
-                onClick={() => setShowAdvanced(v => !v)}
-                className="w-full px-3 py-2 text-xs font-bold flex items-center justify-between bg-muted/20 text-foreground"
-              >
-                <span>Advanced NFT Details</span>
-                <ChevronRight size={14} className={`transition-transform ${showAdvanced ? "rotate-90" : ""}`} />
-              </button>
-              {showAdvanced && (
-                <div className="p-3 space-y-1.5 text-[11px] text-muted-foreground">
-                  <div className="flex justify-between gap-3"><span>Post ID</span><span className="font-mono text-foreground truncate">{post.id}</span></div>
-                  <div className="flex justify-between gap-3"><span>Creator</span><span className="font-mono text-foreground truncate">{post.creator}</span></div>
-                  <div className="flex justify-between gap-3"><span>Chain</span><span style={{ color: CHAIN_COLOR[post.chain] ?? "#9ca3af" }}>{post.chain}</span></div>
-                  <div className="flex justify-between gap-3"><span>Currency</span><span className="text-foreground">{post.mint_currency}</span></div>
-                </div>
-              )}
-            </div>
             {error && <p className="text-xs text-red-400 mt-2">{error}</p>}
             {!address ? (
               <p className="text-xs text-center text-muted-foreground mt-4">{mode === "buy" ? "Connect wallet to collect" : "Connect wallet to list"}</p>
@@ -1419,197 +1210,7 @@ function MintSheet({ post, onClose, initialMode = "buy" }: { post: Post; onClose
   );
 }
 
-/* ─── CHAT PANEL (desktop) ───────────────────────────────────────────────────── */
-interface ChatMsg {
-  id: string; channel: string; wallet: string; displayName: string;
-  role: string; text: string; ts: number; txid?: string;
-}
-
-function NftChatPanel() {
-  const { address, provider, network, internalEvmAddress } = useWalletStore();
-  const actor = getNftProfileAddress({ address, provider, network, internalEvmAddress });
-
-  const CHANNEL = "nft";
-  const [messages, setMessages] = useState<ChatMsg[]>([]);
-  const [decrypted, setDecrypted] = useState<Record<string, string>>({});
-  const [input, setInput] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
-  const [online, setOnline] = useState(false);
-  const [cryptoReady, setCryptoReady] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const cryptoKeyRef = useRef<CryptoKey | null>(null);
-
-  useEffect(() => {
-    deriveChannelKey(CHANNEL).then(k => { cryptoKeyRef.current = k; setCryptoReady(true); });
-  }, []);
-
-  async function decryptBatch(msgs: ChatMsg[]) {
-    if (!cryptoKeyRef.current) return;
-    const entries = await Promise.all(
-      msgs.map(async m => [m.id, await decryptMessage(cryptoKeyRef.current!, m.text)] as const)
-    );
-    setDecrypted(prev => ({ ...prev, ...Object.fromEntries(entries) }));
-  }
-
-  useEffect(() => {
-    if (!cryptoReady) return;
-    const src = new EventSource(`${API}/chat/channels/${CHANNEL}/stream`);
-    src.onopen = () => setOnline(true);
-    src.onerror = () => setOnline(false);
-    src.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.type === "backfill") {
-          const msgs: ChatMsg[] = data.messages ?? [];
-          setMessages(msgs);
-          decryptBatch(msgs);
-        } else if (data.id) {
-          setMessages(prev => prev.find(m => m.id === data.id) ? prev : [...prev, data]);
-          decryptMessage(cryptoKeyRef.current!, data.text).then(plain =>
-            setDecrypted(prev => ({ ...prev, [data.id]: plain }))
-          );
-        }
-      } catch {}
-    };
-    return () => src.close();
-  }, [cryptoReady]);
-
-  useEffect(() => {
-    if (messages.length > 0) bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  async function sendMsg() {
-    const txt = input.trim();
-    if (!txt || sending || !cryptoKeyRef.current) return;
-    setInput("");
-    setSending(true);
-    setError("");
-    try {
-      const displayName = actor ? `${actor.slice(0, 6)}…${actor.slice(-4)}` : "anon";
-      const encrypted = await encryptMessage(cryptoKeyRef.current, txt);
-      const res = await fetch(`${API}/chat/channels/${CHANNEL}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: encrypted, wallet: actor ?? "anonymous", displayName, role: "trader" }),
-      });
-      const d = await res.json();
-      if (!res.ok) setError(d.error ?? "Failed to send");
-    } catch { setError("Network error"); }
-    finally { setSending(false); inputRef.current?.focus(); }
-  }
-
-  const roleColor: Record<string, string> = {
-    trader: "hsl(var(--muted-foreground))",
-    leader: "hsl(var(--primary))",
-    support: "#ffaa00",
-    system: "#7b68ee",
-    ora: "#00aaff",
-  };
-
-  return (
-    <div className="flex h-full">
-      {/* Message list */}
-      <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex items-center justify-between px-6 py-3 border-b border-border shrink-0">
-          <div className="flex items-center gap-2">
-            <MessagesSquare size={16} className="text-primary" />
-            <span className="font-bold text-sm text-foreground">NFT Community Chat</span>
-            <span className="text-[10px] text-muted-foreground">(real-time · all users)</span>
-            <span className="text-[9px] px-1.5 py-0.5 rounded-full font-mono bg-primary/10 text-primary">🔒 E2E encrypted</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full" style={{ background: online ? "hsl(var(--primary))" : "#555", boxShadow: online ? "0 0 5px hsl(var(--primary))" : "none" }} />
-            <span className="text-[10px]" style={{ color: online ? "hsl(var(--primary))" : "hsl(var(--muted-foreground))" }}>
-              {online ? "live" : "connecting…"}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3">
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full text-center py-16">
-              <MessagesSquare size={48} className="text-muted-foreground/30 mb-3" />
-              <p className="text-base font-semibold text-foreground">NFT Community Chat</p>
-              <p className="text-sm text-muted-foreground mt-1 max-w-xs">
-                Discuss NFTs, drops, creator coins, and BSV inscriptions with the community.
-              </p>
-            </div>
-          )}
-          {!cryptoReady && (
-            <div className="flex justify-center py-4">
-              <span className="text-xs text-muted-foreground">🔒 Initialising encryption…</span>
-            </div>
-          )}
-          {messages.map(msg => {
-            const isMe = actor && msg.wallet === actor;
-            const isSystem = msg.role === "system" || msg.role === "ora";
-            const time = new Date(msg.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-            const plainText = decrypted[msg.id] ?? msg.text;
-            if (isSystem) {
-              return (
-                <div key={msg.id} className="flex justify-center">
-                  <div className="text-[10px] px-3 py-1 rounded-full bg-primary/10 text-primary/80">{plainText}</div>
-                </div>
-              );
-            }
-            return (
-              <div key={msg.id} className={`flex gap-3 ${isMe ? "flex-row-reverse" : ""}`}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${isMe ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
-                  {(msg.displayName?.[0] ?? "?").toUpperCase()}
-                </div>
-                <div className={`flex flex-col max-w-[60%] ${isMe ? "items-end" : "items-start"}`}>
-                  <div className="flex items-center gap-2 mb-0.5">
-                    {!isMe && <span className="text-[10px] font-semibold" style={{ color: roleColor[msg.role] ?? "hsl(var(--muted-foreground))" }}>{msg.displayName}</span>}
-                    <span className="text-[9px] text-muted-foreground">{time}</span>
-                  </div>
-                  <div className={`px-3 py-2 rounded-2xl text-sm break-words ${isMe ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted text-foreground rounded-bl-sm"}`}>
-                    {plainText}
-                    {msg.txid && <div className="mt-0.5 text-[9px] font-mono opacity-60 truncate max-w-[200px]">txid: {msg.txid.slice(0, 14)}…</div>}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-          <div ref={bottomRef} />
-        </div>
-
-        {error && <div className="px-6 py-1 text-xs text-destructive bg-destructive/10 shrink-0">{error}</div>}
-
-        <div className="shrink-0 px-6 py-4 border-t border-border">
-          {!actor ? (
-            <div className="text-center py-3 text-sm text-muted-foreground bg-muted/30 rounded-xl">
-              Connect a wallet to join the chat
-            </div>
-          ) : (
-            <div className="flex items-center gap-3 bg-muted/30 rounded-2xl px-4 py-2.5 border border-border">
-              <input
-                ref={inputRef}
-                className="flex-1 bg-transparent text-sm outline-none text-foreground placeholder:text-muted-foreground"
-                placeholder="Message the NFT community…"
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), sendMsg())}
-                maxLength={500}
-                disabled={sending}
-              />
-              <button
-                onClick={sendMsg}
-                disabled={!input.trim() || sending}
-                className="flex items-center justify-center w-8 h-8 rounded-xl transition-all disabled:opacity-40 bg-primary hover:bg-primary/90 disabled:bg-muted"
-                style={{ color: input.trim() ? "hsl(var(--primary-foreground))" : "hsl(var(--muted-foreground))" }}>
-                <Send size={14} />
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-type ActiveTab = "feed" | "search" | "create" | "chat" | "profile";
+type ActiveTab = "feed" | "search" | "create" | "profile";
 
 export function NFTPage() {
   const { address, provider, network, internalEvmAddress } = useWalletStore();
@@ -1622,17 +1223,16 @@ export function NFTPage() {
 
   const handleLike = useCallback((id: string) => {
     setLikedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-    if (profileAddress) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: profileAddress }) }).catch(() => {});
-  }, [profileAddress]);
+    if (address) fetch(`${API}/social/posts/${id}/like`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet_address: address }) }).catch(() => {});
+  }, [address]);
 
   const openPost = useCallback((p: Post) => setDetailPost(p), []);
   const openCreator = useCallback((a: string) => setCreatorAddress(a), []);
 
   const INNER_TABS: { key: ActiveTab; label: string; Icon: any }[] = [
-    { key: "feed",    label: "Feed",    Icon: Flame },
-    { key: "search",  label: "Search",  Icon: Search },
-    { key: "create",  label: "Create",  Icon: PlusSquare },
-    { key: "chat",    label: "Chat",    Icon: MessagesSquare },
+    { key: "feed", label: "Feed", Icon: Flame },
+    { key: "search", label: "Search", Icon: Search },
+    { key: "create", label: "Create", Icon: PlusSquare },
     { key: "profile", label: "Profile", Icon: User },
   ];
 
@@ -1641,7 +1241,7 @@ export function NFTPage() {
       <div className="flex items-center justify-between px-6 py-3 shrink-0 border-b border-border">
         <div className="flex items-center gap-4">
           <div>
-            <h1 className="text-xl font-black tracking-tight text-foreground">Orah<span className="text-primary">NFT</span></h1>
+            <h1 className="text-xl font-black tracking-tight text-foreground">OrahDEX<span className="text-primary">NFT</span></h1>
             <div className="text-[10px] font-mono text-muted-foreground">BSV · Multichain · Creator Coins</div>
           </div>
           <div className="flex gap-1 ml-6 p-0.5 rounded-lg bg-muted/30">
@@ -1654,10 +1254,10 @@ export function NFTPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {(profileAddress ?? address) && (
+          {address && (
             <button onClick={() => profileAddress && openCreator(profileAddress)} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors">
-              <Avatar src={undefined} name={profileAddress ?? address!} size={20} />
-              <span className="text-xs font-mono text-muted-foreground">{shortAddr(profileAddress ?? address ?? "")}</span>
+              <Avatar src={undefined} name={address} size={20} />
+              <span className="text-xs font-mono text-muted-foreground">{shortAddr(address)}</span>
             </button>
           )}
           <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full animate-pulse bg-primary" /><span className="text-[10px] text-muted-foreground">live</span></div>
@@ -1668,7 +1268,6 @@ export function NFTPage() {
         {activeTab === "feed"    && <FeedTab likedIds={likedIds} onLike={handleLike} onMint={p => setMintPost({ post: p, mode: "buy" })} onOpen={openPost} onCreator={openCreator} />}
         {activeTab === "search"  && <SearchTab onCreator={openCreator} onOpenPost={openPost} />}
         {activeTab === "create"  && <CreateTab onSuccess={() => setActiveTab("feed")} />}
-        {activeTab === "chat"    && <NftChatPanel />}
         {activeTab === "profile" && <MyProfileTab onOpenCreator={openCreator} onOpenPost={openPost} />}
       </div>
 

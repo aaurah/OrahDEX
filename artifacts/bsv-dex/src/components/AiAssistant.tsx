@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Bot, X, Send, Loader2, MessageSquare, Sparkles, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import DOMPurify from "dompurify";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -10,20 +9,8 @@ interface Message {
   content: string;
 }
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#x27;");
-}
-
 function parseMarkdown(text: string): string {
-  // HTML-escape first so that any HTML in the AI response is rendered as text,
-  // then apply safe markdown-to-HTML transforms on the escaped content.
-  const escaped = escapeHtml(text);
-  return escaped
+  return text
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.*?)\*/g, "<em>$1</em>")
     .replace(/`(.*?)`/g, '<code class="bg-white/10 px-1 rounded text-xs font-mono">$1</code>')
@@ -39,30 +26,6 @@ const QUICK_PROMPTS = [
   "How do I read the order book?",
 ];
 
-const POS_STORAGE_KEY = "ora:assistant:pos";
-type Pos = { right: number; bottom: number };
-const DEFAULT_POS: Pos = { right: 24, bottom: 24 };
-
-function loadPos(): Pos {
-  try {
-    const raw = typeof window !== "undefined" ? window.localStorage.getItem(POS_STORAGE_KEY) : null;
-    if (!raw) return DEFAULT_POS;
-    const p = JSON.parse(raw);
-    if (typeof p?.right === "number" && typeof p?.bottom === "number") return p;
-  } catch {}
-  return DEFAULT_POS;
-}
-
-function clampPos(p: Pos): Pos {
-  if (typeof window === "undefined") return p;
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  return {
-    right: Math.max(8, Math.min(p.right, w - 64)),
-    bottom: Math.max(8, Math.min(p.bottom, h - 64)),
-  };
-}
-
 export function AiAssistant() {
   const [open, setOpen] = useState(false);
   const [conversationId, setConversationId] = useState<number | null>(null);
@@ -71,49 +34,10 @@ export function AiAssistant() {
   const [streaming, setStreaming] = useState(false);
   const [minimised, setMinimised] = useState(false);
   const [unread, setUnread] = useState(0);
-  const [pos, setPos] = useState<Pos>(() => clampPos(loadPos()));
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const pendingMsgRef = useRef<string | null>(null);
-  const dragRef = useRef<{ moved: boolean; startX: number; startY: number; startPos: Pos } | null>(null);
-
-  useEffect(() => {
-    try { window.localStorage.setItem(POS_STORAGE_KEY, JSON.stringify(pos)); } catch {}
-  }, [pos]);
-
-  useEffect(() => {
-    function onResize() { setPos(p => clampPos(p)); }
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
-  function startDrag(e: React.PointerEvent) {
-    // Don't start drag from interactive controls (buttons inside header)
-    const target = e.target as HTMLElement;
-    if (target.closest("[data-no-drag]")) return;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    dragRef.current = { moved: false, startX: e.clientX, startY: e.clientY, startPos: pos };
-  }
-  function moveDrag(e: React.PointerEvent) {
-    const d = dragRef.current;
-    if (!d) return;
-    const dx = e.clientX - d.startX;
-    const dy = e.clientY - d.startY;
-    if (!d.moved && Math.hypot(dx, dy) < 4) return;
-    d.moved = true;
-    setPos(clampPos({ right: d.startPos.right - dx, bottom: d.startPos.bottom - dy }));
-  }
-  function endDrag(e: React.PointerEvent) {
-    const d = dragRef.current;
-    dragRef.current = null;
-    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
-    // If drag moved, swallow the click that would otherwise fire
-    if (d?.moved) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  }
 
   const scrollBottom = useCallback(() => {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
@@ -239,24 +163,16 @@ export function AiAssistant() {
 
   return (
     <>
-      {/* Floating button (draggable) */}
+      {/* Floating button */}
       <button
-        onPointerDown={startDrag}
-        onPointerMove={moveDrag}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onClick={(e) => {
-          if (dragRef.current) { e.preventDefault(); return; }
-          setOpen(true);
-        }}
-        style={{ right: pos.right, bottom: pos.bottom, touchAction: "none" }}
+        onClick={() => setOpen(true)}
         className={cn(
-          "fixed z-50 w-14 h-14 rounded-full shadow-2xl cursor-grab active:cursor-grabbing",
+          "fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full shadow-2xl",
           "bg-gradient-to-br from-green-400 to-emerald-600 hover:from-green-300 hover:to-emerald-500",
-          "flex items-center justify-center transition-colors duration-200",
+          "flex items-center justify-center transition-all duration-200 hover:scale-110",
           open && "hidden"
         )}
-        title="Ask Ora — drag to move"
+        title="Ask Ora — AI Trading Assistant"
       >
         <Bot className="w-6 h-6 text-black" />
         {unread > 0 && (
@@ -268,22 +184,13 @@ export function AiAssistant() {
 
       {/* Chat panel */}
       {open && (
-        <div
-          style={{ right: pos.right, bottom: pos.bottom }}
-          className={cn(
-            "fixed z-50 flex flex-col rounded-2xl shadow-2xl border border-white/10",
-            "bg-[#0a0f0a] transition-colors duration-200",
-            minimised ? "w-72 h-14" : "w-[380px] h-[580px] max-h-[85vh]"
+        <div className={cn(
+          "fixed bottom-6 right-6 z-50 flex flex-col rounded-2xl shadow-2xl border border-white/10",
+          "bg-[#0a0f0a] transition-all duration-200",
+          minimised ? "w-72 h-14" : "w-[380px] h-[580px] max-h-[85vh]"
         )}>
-          {/* Header (drag handle) */}
-          <div
-            onPointerDown={startDrag}
-            onPointerMove={moveDrag}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-            style={{ touchAction: "none" }}
-            className="flex items-center gap-2 px-4 py-3 border-b border-white/10 bg-gradient-to-r from-green-950/80 to-emerald-950/80 rounded-t-2xl shrink-0 cursor-grab active:cursor-grabbing select-none"
-          >
+          {/* Header */}
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10 bg-gradient-to-r from-green-950/80 to-emerald-950/80 rounded-t-2xl shrink-0">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-600 flex items-center justify-center shrink-0">
               <Bot className="w-4 h-4 text-black" />
             </div>
@@ -292,13 +199,13 @@ export function AiAssistant() {
                 <span className="font-semibold text-white text-sm">Ora</span>
                 <Sparkles className="w-3 h-3 text-green-400" />
               </div>
-              <p className="text-[10px] text-green-400">AI Trading Intelligence · OrahDEX</p>
+              <p className="text-[10px] text-green-400">AI Trading Intelligence · Orah</p>
             </div>
-            <div className="flex items-center gap-1" data-no-drag>
-              <button data-no-drag onClick={() => setMinimised(m => !m)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
+            <div className="flex items-center gap-1">
+              <button onClick={() => setMinimised(m => !m)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
                 <ChevronDown className={cn("w-4 h-4 transition-transform", minimised && "rotate-180")} />
               </button>
-              <button data-no-drag onClick={() => setOpen(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
+              <button onClick={() => setOpen(false)} className="p-1.5 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -352,7 +259,7 @@ export function AiAssistant() {
                         ) : (
                           <p
                             className="leading-relaxed"
-                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(parseMarkdown(msg.content)) }}
+                            dangerouslySetInnerHTML={{ __html: parseMarkdown(msg.content) }}
                           />
                         )}
                       </div>

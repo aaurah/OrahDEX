@@ -35,9 +35,9 @@ export const useThemeStore = create<ThemeState>()(
 );
 
 export function applyStoredTheme() {
-  const raw = localStorage.getItem('aura-dex-theme');
-  if (!raw) return;
   try {
+    const raw = localStorage.getItem('aura-dex-theme');
+    if (!raw) return;
     const { state } = JSON.parse(raw);
     applyTheme(state?.theme ?? 'dark');
   } catch {}

@@ -133,7 +133,7 @@ This is the core cryptographic guarantee.
 
 Your payload:
 
-ORAH|v1|tradeId|pair|buyer|seller|amount|price|timestamp
+ORAHDEX|v1|tradeId|pair|buyer|seller|amount|price|timestamp
 
 
 This is fine, but you should add:
@@ -142,7 +142,7 @@ Optional: include a SHA256 hash of the full trade JSON for tamper-evident off-ch
 
 Example:
 
-ORAH|v1|tradeId|pair|buyer|seller|amount|price|timestamp|hash
+ORAHDEX|v1|tradeId|pair|buyer|seller|amount|price|timestamp|hash
 
 
 This allows:
@@ -256,7 +256,7 @@ Finality ~10 min (probabilistic)
 
 Correct, but you should add:
 
-OrahDEX treats 6 confirmations as final for settlement proofs.
+Orah treats 6 confirmations as final for settlement proofs.
 
 This is standard practice.
 

@@ -33,7 +33,7 @@ interface HtlcStatusResult {
 interface SettlementExplorerProps {
   /** BSV settlement txid (OP_RETURN transaction) */
   settlementTxid:     string;
-  /** OP_RETURN payload string (v2 format: ORAH|v2|...) */
+  /** OP_RETURN payload string (v2 format: ORAHDEX|v2|...) */
   opReturnPayload?:   string;
   /** HTLC P2SH address — cross-chain only */
   htlcAddress?:       string | null;

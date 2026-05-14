@@ -1,4 +1,3 @@
-import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -10,7 +9,7 @@ import { cn } from "@/lib/utils";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function fetchUsers(search = "", status = "all") {
-  return adminFetch(`/api/admin/users?search=${search}&status=${status}`).then(r => r.json());
+  return fetch(`${BASE}/api/admin/users?search=${search}&status=${status}`).then(r => r.json());
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -51,7 +50,7 @@ function EditUserModal({
 
   const handleSave = async () => {
     setSaving(true);
-    const res = await adminFetch(`/api/admin/users/${user.id}`, {
+    const res = await fetch(`${BASE}/api/admin/users/${user.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -215,7 +214,7 @@ export function AdminUsers() {
 
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
-      adminFetch(`/api/admin/users/${id}/status`, {
+      fetch(`${BASE}/api/admin/users/${id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),

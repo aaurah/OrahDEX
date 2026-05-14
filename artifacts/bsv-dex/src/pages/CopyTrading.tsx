@@ -664,8 +664,8 @@ function MyPositionCard({ position, onWithdraw }: {
 /* ── Main Page ─────────────────────────────────────────────────────── */
 export function CopyTrading() {
   useSEO({
-    title: "CopyVault — Copy Trading | OrahDEX",
-    description: "Mirror elite traders on-chain. Deposit into CopyVaults and automatically copy the best leaders on OrahDEX.",
+    title: "CopyVault — Copy Trading | Orah",
+    description: "Mirror elite traders on-chain. Deposit into CopyVaults and automatically copy the best leaders on Orah.",
   });
 
   const { address } = useWalletStore();

@@ -5,9 +5,9 @@ packages:
   - scripts
 
 allowBuilds:
-  '@reown/appkit': true
-  esbuild: true
-  keccak: true
+  '@reown/appkit': set this to true or false
+  esbuild: set this to true or false
+  keccak: set this to true or false
 
 autoInstallPeers: false
 
@@ -34,7 +34,7 @@ catalog:
   vite: ^8.0.5
   zod: ^4.3.6
 
-minimumReleaseAge: 0
+minimumReleaseAge: 1440
 
 minimumReleaseAgeExclude:
   - '@replit/*'
@@ -47,6 +47,18 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
+  axios: '1.16.0'
+  fast-uri: '3.1.2'
+  postcss: '>=8.5.10'
+  node-forge: '>=1.4.0'
+  path-to-regexp: '>=8.4.0'
+  picomatch: '>=4.0.4'
+  '@xmldom/xmldom': '>=0.8.12'
+  lodash: '4.18.0'
+  cookie: '0.7.2'
+  follow-redirects: '1.16.0'
+  nodemailer: '8.0.5'
+  tmp: '0.2.4'
   serialize-javascript: '>=7.0.3'
   undici: '>=6.24.0'
   '@esbuild-kit/esm-loader': npm:tsx@^4.21.0

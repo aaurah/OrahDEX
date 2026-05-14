@@ -22,7 +22,6 @@ export const EXCHANGE_TREASURY = "EXCHANGE_TREASURY";
 
 export type FeeSource =
   | "swap"
-  | "buy"
   | "orderbook"
   | "copy_trade"
   | "lp_spread"

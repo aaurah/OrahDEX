@@ -1,5 +1,5 @@
 Parminder — perfect, now we’re aligned.
-You already discovered the truth: OrahDEX can show USDT, USDC, DAI, WBTC, LINK, etc. because the architecture is already built for it.
+You already discovered the truth: Orah can show USDT, USDC, DAI, WBTC, LINK, etc. because the architecture is already built for it.
 
 The only reason they “don’t show” on some chains is simple:
 

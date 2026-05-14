@@ -1,5 +1,5 @@
 /**
- * withdrawalProcessor.ts — OrahDEX
+ * withdrawalProcessor.ts — Orah
  *
  * Automatically broadcasts on-chain withdrawals the moment a user requests one.
  *
@@ -20,13 +20,12 @@ import {
   createWalletClient,
   http,
   parseAbi,
-  parseUnits,
   type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { getOrCreateWallet, fetchWalletBalance, buildAndBroadcastBsvTx } from "./bsvWallet.js";
 import { getOrCreateEvmHotWallet } from "./exchangeHotWallet.js";
-import { isVaultConfigured, vaultWithdraw } from "./orahVault.js";
+import { isVaultConfigured, vaultWithdraw } from "./orahdexVault.js";
 import { logger } from "./logger.js";
 
 // ── EVM chain registry ─────────────────────────────────────────────────────────
@@ -54,20 +53,6 @@ const EVM_REGISTRY: Record<string, EvmChain> = {
   BLAST:  { id: 81457,   name: "Blast",      rpcUrl: process.env.BLAST_RPC_URL    ?? "https://rpc.blast.io",                       explorer: "https://blastscan.io",              nativeToken: "ETH"  },
   MODE:   { id: 34443,   name: "Mode",       rpcUrl: process.env.MODE_RPC_URL     ?? "https://mainnet.mode.network",               explorer: "https://modescan.io",               nativeToken: "ETH"  },
   TAIKO:  { id: 167000,  name: "Taiko",      rpcUrl: process.env.TAIKO_RPC_URL    ?? "https://rpc.mainnet.taiko.xyz",              explorer: "https://taikoscan.io",              nativeToken: "ETH"  },
-  // ── Testnets (use by setting EVM_USE_TESTNET=1, or routing via network='sepolia') ──
-  SEPOLIA:    { id: 11155111, name: "Sepolia",      rpcUrl: process.env.SEPOLIA_RPC_URL     ?? "https://ethereum-sepolia.publicnode.com", explorer: "https://sepolia.etherscan.io",     nativeToken: "ETH" },
-  BASE_SEP:   { id: 84532,    name: "Base Sepolia", rpcUrl: process.env.BASE_SEPOLIA_RPC_URL ?? "https://base-sepolia.publicnode.com",    explorer: "https://sepolia.basescan.org",     nativeToken: "ETH" },
-  ARB_SEP:    { id: 421614,   name: "Arbitrum Sepolia", rpcUrl: process.env.ARB_SEPOLIA_RPC_URL ?? "https://arbitrum-sepolia.publicnode.com", explorer: "https://sepolia.arbiscan.io", nativeToken: "ETH" },
-};
-
-// When EVM_USE_TESTNET=1 the registry and chain map auto-route ETH-family
-// withdrawals to their Sepolia equivalents. Lets the operator drain a testnet
-// hot-wallet balance instead of mainnet for testing or when mainnet is unfunded.
-export const EVM_USE_TESTNET = process.env.EVM_USE_TESTNET === "1" || process.env.EVM_USE_TESTNET === "true";
-const TESTNET_REMAP: Record<number, number> = {
-  1:    11155111,   // ETH mainnet → Sepolia
-  8453: 84532,      // Base → Base Sepolia
-  42161: 421614,    // Arbitrum → Arbitrum Sepolia
 };
 
 // Maps the l2.chainId keys used in the Bridge UI → EVM_REGISTRY keys
@@ -86,10 +71,6 @@ const BRIDGE_CHAIN_TO_REGISTRY: Record<string, string> = {
   blast:  "BLAST",
   mode:   "MODE",
   taiko:  "TAIKO",
-  sepolia:     "SEPOLIA",
-  base_sep:    "BASE_SEP",
-  basesepolia: "BASE_SEP",
-  arb_sep:     "ARB_SEP",
 };
 
 // ── ERC-20 token registry (symbol → per-chainId contract + decimals) ──────────
@@ -164,12 +145,8 @@ async function processEvmWithdrawal(params: {
   recipient:  string;
   chainIdOverride?: number;
 }): Promise<{ txid: string; explorer: string }> {
-  const baseChainId = params.chainIdOverride ?? assetToChainId(params.asset);
-  const chainId     = EVM_USE_TESTNET && TESTNET_REMAP[baseChainId] ? TESTNET_REMAP[baseChainId] : baseChainId;
-  const chain       = chainById(chainId);
-  if (chainId !== baseChainId) {
-    logger.info({ from: baseChainId, to: chainId, asset: params.asset }, "EVM_USE_TESTNET=1 → routing withdrawal to testnet");
-  }
+  const chainId = params.chainIdOverride ?? assetToChainId(params.asset);
+  const chain   = chainById(chainId);
   if (!chain) throw new Error(`No EVM chain config for chainId ${chainId}`);
 
   const assetUp  = params.asset.toUpperCase();
@@ -210,9 +187,7 @@ async function processEvmWithdrawal(params: {
 
   if (isNative) {
     // ── Native token transfer (ETH, BNB, MATIC, AVAX, FTM) ──────────────────
-    // Use parseUnits (string → BigInt) to avoid IEEE-754 precision loss on
-    // large balances (> ~9007 ETH would overflow Number.MAX_SAFE_INTEGER).
-    const weiAmount = parseUnits(params.amount.toFixed(18), 18);
+    const weiAmount = BigInt(Math.round(params.amount * 1e18));
     txHash = await walletClient.sendTransaction({
       to:    params.recipient as Address,
       value: weiAmount,
@@ -222,8 +197,7 @@ async function processEvmWithdrawal(params: {
     const tokenInfo = ERC20_TOKENS[assetUp]?.[chainId];
     if (!tokenInfo) throw new Error(`No ERC-20 contract known for ${assetUp} on chainId ${chainId}`);
 
-    // Use parseUnits to avoid precision loss for tokens with up to 18 decimals.
-    const tokenAmount = parseUnits(params.amount.toFixed(tokenInfo.decimals), tokenInfo.decimals);
+    const tokenAmount = BigInt(Math.round(params.amount * 10 ** tokenInfo.decimals));
 
     txHash = await walletClient.writeContract({
       address:      tokenInfo.address,

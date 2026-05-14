@@ -143,16 +143,18 @@ router.get("/balances/:asset", async (req, res) => {
     return;
   }
   try {
-    const { rows } = await pool.query<{ available: string; locked: string }>(
-      `SELECT available, locked
+    const { rows } = await pool.query<{ available: string; locked: string; seeded: string }>(
+      `SELECT available, locked, COALESCE(seeded, 0) AS seeded
          FROM user_balances
         WHERE LOWER(wallet_address) = LOWER($1) AND asset_symbol = $2`,
       [walletAddress, asset],
     );
-    const row = rows[0] ?? { available: "0", locked: "0" };
+    const row = rows[0] ?? { available: "0", locked: "0", seeded: "0" };
+    // Show only real (non-seeded) balance to the user
+    const realAvailable = Math.max(0, parseFloat(row.available) - parseFloat(row.seeded));
     res.json({
       asset,
-      available: row.available,
+      available: realAvailable.toString(),
       locked:    row.locked,
     });
   } catch (err) {

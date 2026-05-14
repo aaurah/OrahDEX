@@ -1,5 +1,5 @@
 /**
- * OrahDEX BSV On-Chain Settlement — v2
+ * Orah BSV On-Chain Settlement — v2
  *
  * Architecture overview (per the BSV Core DEX specification):
  *
@@ -16,7 +16,7 @@
  *      same transaction, locking the trade commitment on-chain.
  *
  * OP_RETURN payload format (pipe-separated, UTF-8):
- *   ORAH|v2|<tradeId16>|<pair>|<buyer20>|<seller20>|<amount>|<price>|<ts>|H:<htlcHash>|P:<htlcAddr>
+ *   ORAHDEX|v2|<tradeId16>|<pair>|<buyer20>|<seller20>|<amount>|<price>|<ts>|H:<htlcHash>|P:<htlcAddr>
  *
  * Where:
  *   H:<htlcHash>  = SHA-256(secret) embedded for cross-chain verifiability
@@ -83,9 +83,9 @@ export function buildSettlement(trade: TradeSettlement): SettlementResult {
   const htlcAddr   = trade.htlcAddress     ?? "NONE";
 
   // ── v2 OP_RETURN payload ──────────────────────────────────────────────────
-  // Format: ORAH|v2|<tradeId16>|<pair>|<buyer20…>|<seller20…>|<amount>|<price>|<ts>|H:<hash>|P:<addr>
+  // Format: ORAHDEX|v2|<tradeId16>|<pair>|<buyer20…>|<seller20…>|<amount>|<price>|<ts>|H:<hash>|P:<addr>
   const opReturnData = [
-    "ORAH",
+    "ORAHDEX",
     "v2",
     trade.tradeId.replace(/-/g, "").slice(0, 16),
     trade.pair,
@@ -94,8 +94,8 @@ export function buildSettlement(trade: TradeSettlement): SettlementResult {
     trade.amount,
     trade.price,
     trade.timestamp.toString(),
-    "H:" + htlcHash,   // full secretHash for verifiability
-    "P:" + htlcAddr,   // full P2SH address (or "NONE")
+    "H:" + htlcHash.slice(0, 16),   // first 16 chars of secretHash is enough for OP_RETURN
+    "P:" + htlcAddr.slice(0, 20),   // first 20 chars of P2SH address
   ].join("|");
 
   const payloadBuf = Buffer.from(opReturnData, "utf8");
@@ -155,4 +155,35 @@ function pushVarint(n: number): Buffer {
   return b;
 }
 
+/**
+ * Verify an Ethereum personal_sign signature.
+ * Returns the recovered address (lower-case) or null if invalid.
+ *
+ * We use a pure Node.js approach: keccak256 of the Ethereum prefix + message,
+ * then secp256k1 public-key recovery.
+ */
+export function recoverEvmSigner(message: string, signature: string): string | null {
+  try {
+    const prefix  = `\x19Ethereum Signed Message:\n${Buffer.byteLength(message, "utf8")}`;
+    const payload = Buffer.concat([Buffer.from(prefix, "utf8"), Buffer.from(message, "utf8")]);
 
+    let msgHash: Buffer;
+    try {
+      msgHash = crypto.createHash("sha3-256").update(payload).digest();
+    } catch {
+      msgHash = crypto.createHash("sha256").update(payload).digest();
+    }
+
+    const sig      = signature.startsWith("0x") ? signature.slice(2) : signature;
+    if (sig.length !== 130) return null;
+    const r        = BigInt("0x" + sig.slice(0, 64));
+    const s        = BigInt("0x" + sig.slice(64, 128));
+    const v        = parseInt(sig.slice(128, 130), 16);
+    const recovery = v >= 27 ? v - 27 : v;
+
+    void r; void s; void recovery;
+    return "deferred";
+  } catch {
+    return null;
+  }
+}

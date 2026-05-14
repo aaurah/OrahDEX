@@ -4,13 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "export NODE_ENV=development && fuser -k ${PORT:-8090}/tcp 2>/dev/null; sleep 3; node ./build.mjs && node --max-old-space-size=2048 ./dist/index.mjs",
+    "dev": "export NODE_ENV=development && fuser -k ${PORT:-8080}/tcp 2>/dev/null; node ./build.mjs && exec node --enable-source-maps --max-old-space-size=512 ./dist/index.mjs",
     "build": "node ./build.mjs",
-    "start": "node --enable-source-maps --max-old-space-size=2048 ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "start": "node --enable-source-maps --max-old-space-size=512 ./dist/index.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --experimental-strip-types ./src/lib/__tests__/*.test.ts"
   },
   "dependencies": {
-    "@noble/ed25519": "^2.3.0",
     "@noble/hashes": "^2.0.1",
     "@noble/secp256k1": "^3.0.0",
     "@types/compression": "^1.8.1",
@@ -22,7 +22,7 @@
     "cors": "^2.8.6",
     "drizzle-orm": "catalog:",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.4.1",
+    "express-rate-limit": "8.5.1",
     "nodemailer": "^8.0.5",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",

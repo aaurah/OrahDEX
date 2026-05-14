@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
-import { BrandLogo, OrahInline, OrahO } from "@/components/BrandLogo";
+import { BrandLogo, OrahDEXInline, OrahDEXO } from "@/components/BrandLogo";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, formatQuoteAmount } from "@/store/useSettingsStore";
@@ -410,15 +410,15 @@ function VammSwapModal({ symbol, onClose }: { symbol: string; onClose: () => voi
 export function DexHub() {
   useSEO({
     title: "Market Hub — All CEX & DEX Exchanges",
-    description: "Explore aggregated CEX and DEX data across all chains on OrahDEX Market Hub. Track volumes, liquidity, and top tokens with sovereign on-chain data.",
-    keywords: "DEX hub, crypto market data, cross-chain DEX, CEX exchanges, liquidity data, on-chain trading, OrahDEX, BSV settlement",
+    description: "Explore aggregated CEX and DEX data across all chains on Orah Market Hub. Track volumes, liquidity, and top tokens with sovereign on-chain data.",
+    keywords: "DEX hub, crypto market data, cross-chain DEX, CEX exchanges, liquidity data, on-chain trading, Orah, BSV settlement",
     url: "/dex",
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "WebPage",
-      "name": "OrahDEX Market Hub",
+      "name": "Orah Market Hub",
       "description": "Cross-chain DEX market data aggregator",
-      "url": "https://orahdex.replit.app/dex"
+      "url": "https://orah.replit.app/dex"
     }
   });
 
@@ -577,7 +577,7 @@ export function DexHub() {
       );
     }
     return [...rows].sort(sortFn);
-  }, [allExchanges, exType, search, sortBy]);
+  }, [allExchanges, exType, search, sortBy, exSortDir]);
 
   const btcPrice: number = data?.btcPrice ?? 0;
 
@@ -629,7 +629,7 @@ export function DexHub() {
           All Exchanges — CEX &amp; DEX
         </h1>
         <p className="text-muted-foreground text-sm lg:text-base max-w-3xl">
-          Every centralised and decentralised exchange ranked by volume &amp; market cap — sovereign data from the OrahDEX price engine. Trade any pair with on-chain BSV settlement.
+          Every centralised and decentralised exchange ranked by volume &amp; market cap — sovereign data from the Orah price engine. Trade any pair with on-chain BSV settlement.
         </p>
       </div>
 
@@ -649,7 +649,7 @@ export function DexHub() {
             items: ["Arbitrum · Optimism · Base", "Cheap AMM execution", "Rollup-secured trades"],
           },
           {
-            layer: "L3", title: "OrahDEX Router", icon: Link2,
+            layer: "L3", title: "Orah Router", icon: Link2,
             color: "text-primary", border: "border-primary/20",
             bg: "from-primary/5 to-transparent",
             items: ["Smart cross-chain routing", "BSV settlement fabric", "Fee & rewards system"],
@@ -1204,7 +1204,7 @@ export function DexHub() {
                     onClick={() => { navigate(`/trade/${selectedCoin.symbol}-USDT`); setSelectedCoin(null); }}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors"
                   >
-                    <Zap className="w-4 h-4" /> Trade {selectedCoin.symbol}/USDT on <OrahInline className="text-sm" />
+                    <Zap className="w-4 h-4" /> Trade {selectedCoin.symbol}/USDT on <OrahDEXInline className="text-sm" />
                   </button>
                 </div>
               </div>
@@ -1361,10 +1361,10 @@ export function DexHub() {
 
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      {ex.id === "orahdex" ? (
-                        /* OrahDEX brand O logo */
+                      {ex.id === "orah" ? (
+                        /* Orah brand O logo */
                         <span className="inline-flex items-center justify-center shrink-0" style={{ width: 28, height: 28, fontSize: 28 }}>
-                          <OrahO online={online} />
+                          <OrahDEXO online={online} />
                         </span>
                       ) : ex.image ? (
                         <ExLogo src={ex.image} name={ex.name} type={ex.type} />

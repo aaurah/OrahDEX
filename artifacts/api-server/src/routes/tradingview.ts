@@ -51,7 +51,7 @@ router.get("/config", (_req, res) => {
     supports_timescale_marks: false,
     supports_time: true,
     exchanges: [
-      { value: "OrahDEX", name: "OrahDEX", desc: "OrahDEX Sovereign DEX" },
+      { value: "Orah", name: "Orah", desc: "Orah Sovereign DEX" },
       { value: "BSV",     name: "BSV",     desc: "Bitcoin SV On-Chain" },
     ],
     symbols_types: [
@@ -103,8 +103,8 @@ router.get("/symbols", async (req, res) => {
       description:   `${base} / ${quote}`,
       type:          "crypto",
       session:       "24x7",
-      exchange:      "OrahDEX",
-      listed_exchange: "OrahDEX",
+      exchange:      "Orah",
+      listed_exchange: "Orah",
       timezone:      "Etc/UTC",
       minmov:        1,
       pricescale,
@@ -142,9 +142,9 @@ router.get("/search", async (req, res) => {
     res.json(
       markets.map(m => ({
         symbol:      m.symbol,
-        full_name:   `OrahDEX:${m.symbol}`,
+        full_name:   `Orah:${m.symbol}`,
         description: `${m.baseAsset} / ${m.quoteAsset}`,
-        exchange:    "OrahDEX",
+        exchange:    "Orah",
         type:        "crypto",
         ticker:      m.symbol,
       }))
@@ -159,7 +159,7 @@ router.get("/history", async (req, res) => {
   const t0 = Date.now();
   res.set("Access-Control-Allow-Origin", "*");
 
-  const symbol     = (req.query.symbol as string ?? "").replace(/^OrahDEX:/, "");
+  const symbol     = (req.query.symbol as string ?? "").replace(/^Orah:/, "");
   const resolution = req.query.resolution as string ?? "60";
   const from       = parseInt(req.query.from as string ?? "0");
   const to         = parseInt(req.query.to   as string ?? String(Math.floor(Date.now() / 1000)));
@@ -173,9 +173,12 @@ router.get("/history", async (req, res) => {
     const encodedSymbol = encodeURIComponent(symbol);
     const limit = Math.min(Math.ceil((to - from) / intervalToSeconds(interval)) + 10, 1000);
 
-    // Use the process PORT to build an internal URL instead of trusting the Host header
-    const internalPort = process.env["PORT"] ?? "8080";
-    const candleUrl = `http://127.0.0.1:${internalPort}/api/markets/${encodedSymbol}/candles?interval=${interval}&limit=${limit}&from=${from}&to=${to}`;
+    const localPort = req.socket.localPort ?? Number(process.env.PORT ?? 8080);
+    const candleUrl = new URL(`/api/markets/${encodedSymbol}/candles`, `http://127.0.0.1:${localPort}`);
+    candleUrl.searchParams.set("interval", interval);
+    candleUrl.searchParams.set("limit", String(limit));
+    candleUrl.searchParams.set("from", String(from));
+    candleUrl.searchParams.set("to", String(to));
 
     const resp = await fetch(candleUrl, { signal: AbortSignal.timeout(8000) });
     if (!resp.ok) {

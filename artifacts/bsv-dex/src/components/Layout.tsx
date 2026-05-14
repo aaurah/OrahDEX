@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, BellOff, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target, Upload, Droplets, Headphones, MessageCircle, ArrowUpDown, TrendingUp, Search, Moon as MoonIcon, Filter } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target, Upload, Droplets, Headphones, MessageCircle, ArrowUpDown, TrendingUp } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -12,10 +12,6 @@ import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
-import { usePriceAlertsWatcher } from "@/hooks/usePriceAlertsWatcher";
-import { primeAudioContext } from "@/lib/notificationFx";
-import { useSettingsStore } from "@/store/useSettingsStore";
-import { CATEGORY_OF, ALL_CATEGORIES, CATEGORY_META, type NotifCategory } from "@/lib/notificationCategories";
 
 /* ── Heavy modals — loaded only when first opened ── */
 const WalletConnectModal = lazy(() => import("./WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
@@ -28,19 +24,19 @@ const THEME_CYCLE = ["dark", "light", "amoled", "system"] as const;
 const THEME_LABELS = { dark: "Dark", light: "Light", amoled: "Amoled", system: "System" };
 
 const NAV_LINKS = [
-  { href: "/swap",                   label: "Exchange",   icon: Waves },
+  { href: "/swap",                   label: "Swap",       icon: ArrowUpDown },
   { href: "/trade/BSV-USDT",         label: "Trade",      icon: ArrowRightLeft },
   { href: "/futures/BSV-USDT-PERP",  label: "Futures",    icon: LineChart },
   { href: "/markets",                label: "Markets",    icon: Activity },
   { href: "/dex",                    label: "Mkt Hub",    icon: Layers },
   { href: "/prediction",             label: "Predict",    icon: Target },
   { href: "/nft",                    label: "NFT",        icon: Sparkles },
-  { href: "/wallet",                 label: "Wallet",     icon: Wallet },
   { href: "/portfolio",              label: "Portfolio",  icon: LayoutDashboard },
 ];
 
 const NAV_MORE = [
   { href: "/p2p",       label: "P2P",       icon: Users },
+  { href: "/bridge",    label: "Bridge",    icon: Link2 },
   { href: "/copy",      label: "CopyVault", icon: Copy },
   { href: "/keeper",    label: "Keepers",   icon: Shield },
   { href: "/fees",      label: "Revenue",   icon: TrendingUp },
@@ -122,26 +118,12 @@ const NOTIF_TYPE_COLOR: Record<string, string> = {
   error:              "text-red-400",
 };
 
-const SEEN_ANN_KEY = "orahdex_announcements_seen_v1";
-
-function loadSeenAnnouncements(): Set<string> {
-  try {
-    const raw = JSON.parse(localStorage.getItem(SEEN_ANN_KEY) ?? "[]");
-    return new Set(Array.isArray(raw) ? raw : []);
-  } catch { return new Set(); }
-}
-
-function saveSeenAnnouncements(ids: Set<string>) {
-  try { localStorage.setItem(SEEN_ANN_KEY, JSON.stringify([...ids])); } catch { /* ignore */ }
-}
-
 function usePlatformAnnouncements() {
   const [notifs, setNotifs] = useState<PlatformNotif[]>([]);
-  const [seen, setSeen] = useState<Set<string>>(() => loadSeenAnnouncements());
   useEffect(() => {
     const load = () => {
       try {
-        const raw: PlatformNotif[] = JSON.parse(localStorage.getItem("orahdex_notifications") ?? "[]");
+        const raw: PlatformNotif[] = JSON.parse(localStorage.getItem("orah_notifications") ?? "[]");
         setNotifs(raw.filter(n => n.active));
       } catch { setNotifs([]); }
     };
@@ -149,14 +131,7 @@ function usePlatformAnnouncements() {
     window.addEventListener("storage", load);
     return () => window.removeEventListener("storage", load);
   }, []);
-  const unseenCount = notifs.filter(n => !seen.has(n.id)).length;
-  const markAllSeen = () => {
-    const next = new Set(seen);
-    notifs.forEach(n => next.add(n.id));
-    setSeen(next);
-    saveSeenAnnouncements(next);
-  };
-  return { notifs, unseenCount, markAllSeen };
+  return notifs;
 }
 
 function getNotifPath(n: { type: string; pair?: string; href?: string }): string | null {
@@ -169,7 +144,7 @@ function getNotifPath(n: { type: string; pair?: string; href?: string }): string
       return isFutures ? `/futures/${urlPair}` : `/trade/${urlPair}`;
     }
   }
-  if (type === "bridge") return "/swap";
+  if (type === "bridge") return "/bridge";
   if (type === "wallet_connected" || type === "wallet_disconnected") return "/portfolio";
   if (type === "withdrawal") return "/portfolio";
   if (type === "liquidity") return "/liquidity";
@@ -179,31 +154,6 @@ function getNotifPath(n: { type: string; pair?: string; href?: string }): string
 }
 
 export function Layout({ children }: { children: ReactNode }) {
-  usePriceAlertsWatcher();
-
-  // Most browsers suspend AudioContext until a user gesture. Prime it on the
-  // first interaction (iOS Safari requires touchstart specifically + a silent
-  // buffer play, which primeAudioContext does internally).
-  useEffect(() => {
-    const onGesture = () => {
-      primeAudioContext();
-      window.removeEventListener("pointerdown", onGesture);
-      window.removeEventListener("touchstart", onGesture);
-      window.removeEventListener("keydown", onGesture);
-      window.removeEventListener("click", onGesture);
-    };
-    window.addEventListener("pointerdown", onGesture, { passive: true });
-    window.addEventListener("touchstart", onGesture, { passive: true });
-    window.addEventListener("keydown", onGesture);
-    window.addEventListener("click", onGesture);
-    return () => {
-      window.removeEventListener("pointerdown", onGesture);
-      window.removeEventListener("touchstart", onGesture);
-      window.removeEventListener("keydown", onGesture);
-      window.removeEventListener("click", onGesture);
-    };
-  }, []);
-
   const [location, navigate] = useLocation();
   const { address, network, provider, chainId } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
@@ -211,26 +161,15 @@ export function Layout({ children }: { children: ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showMoreNav, setShowMoreNav] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
-  const [notifFilter, setNotifFilter] = useState<"all" | "unread" | NotifCategory>("all");
-  const [notifSearch, setNotifSearch] = useState("");
-  const dndUntil = useSettingsStore((s) => s.dndUntil);
-  const setDndUntil = useSettingsStore((s) => s.setDndUntil);
-  // Re-render every minute so DND auto-expires visually without action.
-  const [, _tick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => _tick((n) => n + 1), 30_000);
-    return () => clearInterval(id);
-  }, []);
-  const dndActive = dndUntil !== null && Date.now() < dndUntil;
   const [bsvPopover, setBsvPopover] = useState(false);
   const bsvPopoverRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
   const { data: bsvChain } = useBsvChain();
   const bsvOnline = bsvChain?.online ?? false;
   const bsvBlock  = bsvChain?.blockHeight ?? 0;
-  const { notifs: announcements, unseenCount: announcementsUnseen, markAllSeen: markAnnouncementsSeen } = usePlatformAnnouncements();
+  const announcements = usePlatformAnnouncements();
   const { notifications, addNotification, markRead, markAllRead, clearAll, unreadCount } = useNotificationStore();
-  const unread = unreadCount() + announcementsUnseen;
+  const unread = unreadCount() + announcements.length;
   const lastPollRef = useRef<number>(0);
 
   /* Poll /api/notifications every 20 s when wallet is connected */
@@ -294,21 +233,6 @@ export function Layout({ children }: { children: ReactNode }) {
     }, 300);
     return () => clearInterval(check);
   }, []);
-
-  // Periodic EVM balance refresh for the compact header button (every 30s)
-  useEffect(() => {
-    if (!address || network !== "evm" || !chainId) return;
-    const refresh = async () => {
-      const reown = await import("@/lib/reown").catch(() => null);
-      if (!reown) return;
-      const bal = await reown.fetchEvmBalance(address, chainId);
-      if (bal !== null) useWalletStore.getState().setBalance(bal);
-    };
-    refresh();
-    const id = setInterval(refresh, 30_000);
-    return () => clearInterval(id);
-  }, [address, network, chainId]);
-
   useEffect(() => {
     const prev = prevAddressRef.current;
     if (!prev && address) {
@@ -316,7 +240,7 @@ export function Layout({ children }: { children: ReactNode }) {
         ? `${address.slice(0, 6)}…${address.slice(-4)}`
         : address;
       const networkLabel = network === "bsv" ? "BSV" : network === "sol" ? "Solana" : network === "btc" ? "Bitcoin" : network === "tron" ? "TRON" : "EVM";
-      const providerLabel = (provider === 'reown' || provider === 'orah-wallet') ? 'Orah Wallet' : (provider ?? networkLabel);
+      const providerLabel = provider ?? networkLabel;
       toast({
         title: "Wallet Connected",
         description: `${providerLabel} · ${shortAddr}`,
@@ -409,7 +333,7 @@ export function Layout({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-2">
           {/* Hamburger — left side */}
           <button
-            className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors shrink-0"
+            className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors shrink-0"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label="Toggle navigation"
           >
@@ -425,7 +349,7 @@ export function Layout({ children }: { children: ReactNode }) {
           {/* Theme toggle */}
           <button
             onClick={cycleTheme}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors text-xs font-medium"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors text-xs font-medium"
             title={`Switch theme — currently ${THEME_LABELS[safeTheme]}`}
           >
             <ThemeIcon className="w-3.5 h-3.5" />
@@ -439,7 +363,7 @@ export function Layout({ children }: { children: ReactNode }) {
               "p-2 rounded-lg transition-colors",
               location.startsWith("/settings")
                 ? "text-primary bg-primary/10"
-                : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
             )}
             title="Settings"
           >
@@ -451,15 +375,12 @@ export function Layout({ children }: { children: ReactNode }) {
             <button
               onClick={() => {
                 setNotifOpen(o => !o);
-                if (!notifOpen) {
-                  markAllRead();
-                  markAnnouncementsSeen();
-                }
+                if (!notifOpen) markAllRead();
               }}
-              className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
-              title={dndActive ? "Notifications (Do Not Disturb on)" : "Notifications"}
+              className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-white/5 rounded-lg transition-colors"
+              title="Notifications"
             >
-              {dndActive ? <BellOff className="w-4 h-4 text-amber-400" /> : <Bell className="w-4 h-4" />}
+              <Bell className="w-4 h-4" />
               {unread > 0 && (
                 <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-black flex items-center justify-center leading-none">
                   {unread > 9 ? "9+" : unread}
@@ -470,113 +391,23 @@ export function Layout({ children }: { children: ReactNode }) {
             {notifOpen && (
               <div className="absolute right-0 top-full mt-2 w-80 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col" style={{ maxHeight: "480px" }}>
                 {/* Header */}
-                <div className="px-4 py-2.5 border-b border-border bg-secondary/30 shrink-0 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Megaphone className="w-3.5 h-3.5 text-primary" />
-                      <span className="font-semibold text-sm">Notifications</span>
-                      {(notifications.length + announcements.length) > 0 && (
-                        <span className="text-[10px] text-muted-foreground">({notifications.length + announcements.length})</span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {/* DND quick toggle */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (dndActive) setDndUntil(null);
-                          else setDndUntil(Date.now() + 60 * 60 * 1000); // 1h
-                        }}
-                        className={cn(
-                          "flex items-center gap-1 text-[10px] transition-colors",
-                          dndActive ? "text-amber-400" : "text-muted-foreground hover:text-amber-400",
-                        )}
-                        title={dndActive ? "Disable Do Not Disturb" : "Snooze for 1 hour"}
-                      >
-                        {dndActive ? <BellOff className="w-3 h-3" /> : <MoonIcon className="w-3 h-3" />}
-                        {dndActive ? "DND" : "Snooze"}
-                      </button>
-                      {notifications.length > 0 && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); clearAll(); }}
-                          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-red-400 transition-colors"
-                          title="Clear all"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          Clear
-                        </button>
-                      )}
-                    </div>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary/30 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Megaphone className="w-3.5 h-3.5 text-primary" />
+                    <span className="font-semibold text-sm">Notifications</span>
+                    {(notifications.length + announcements.length) > 0 && (
+                      <span className="text-[10px] text-muted-foreground">({notifications.length + announcements.length})</span>
+                    )}
                   </div>
-
-                  {/* DND active banner with snooze options */}
-                  {dndActive && (
-                    <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md bg-amber-500/10 border border-amber-500/20">
-                      <span className="text-[10px] text-amber-400 font-medium">
-                        Quiet until {dndUntil! >= Number.MAX_SAFE_INTEGER ? "off" : new Date(dndUntil!).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setDndUntil(null); }}
-                        className="text-[10px] text-amber-400 hover:underline font-semibold"
-                      >
-                        Resume
-                      </button>
-                    </div>
-                  )}
-                  {!dndActive && (notifications.length + announcements.length) > 3 && (
-                    <div className="flex items-center gap-1">
-                      {[
-                        { label: "15m", ms: 15 * 60 * 1000 },
-                        { label: "1h",  ms: 60 * 60 * 1000 },
-                        { label: "8h",  ms: 8 * 60 * 60 * 1000 },
-                      ].map((opt) => (
-                        <button
-                          key={opt.label}
-                          onClick={(e) => { e.stopPropagation(); setDndUntil(Date.now() + opt.ms); }}
-                          className="px-2 py-0.5 text-[10px] rounded bg-muted/40 hover:bg-amber-500/10 hover:text-amber-400 text-muted-foreground transition-colors"
-                          title={`Mute for ${opt.label}`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Search + filter tabs (only show when there's content) */}
-                  {(notifications.length + announcements.length) > 0 && (
-                    <>
-                      <div className="relative">
-                        <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground/60" />
-                        <input
-                          type="text"
-                          value={notifSearch}
-                          onChange={(e) => setNotifSearch(e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                          placeholder="Search notifications…"
-                          className="w-full pl-7 pr-2 py-1.5 text-[11px] bg-background/60 border border-border rounded-md focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/50"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 scrollbar-none">
-                        {([
-                          { id: "all",    label: "All" },
-                          { id: "unread", label: `Unread${unreadCount() > 0 ? ` (${unreadCount()})` : ""}` },
-                          ...ALL_CATEGORIES.map((c) => ({ id: c, label: CATEGORY_META[c].label.split(" ")[0] })),
-                        ] as const).map((tab) => (
-                          <button
-                            key={tab.id}
-                            onClick={(e) => { e.stopPropagation(); setNotifFilter(tab.id as typeof notifFilter); }}
-                            className={cn(
-                              "px-2 py-0.5 text-[10px] rounded-md font-semibold whitespace-nowrap transition-colors shrink-0",
-                              notifFilter === tab.id
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted/40 text-muted-foreground hover:bg-muted/70 hover:text-foreground",
-                            )}
-                          >
-                            {tab.label}
-                          </button>
-                        ))}
-                      </div>
-                    </>
+                  {notifications.length > 0 && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); clearAll(); }}
+                      className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-red-400 transition-colors"
+                      title="Clear all"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      Clear
+                    </button>
                   )}
                 </div>
 
@@ -617,31 +448,10 @@ export function Layout({ children }: { children: ReactNode }) {
                         <p className="text-[10px] text-center text-muted-foreground/70">Place an order or make a trade to see activity here.</p>
                       )}
                     </div>
-                  ) : (() => {
-                    const q = notifSearch.trim().toLowerCase();
-                    const matchesSearch = (title: string, body: string) =>
-                      !q || title.toLowerCase().includes(q) || body.toLowerCase().includes(q);
-                    const filteredNotifs = notifications.filter((n) => {
-                      if (notifFilter === "unread") return !n.read && matchesSearch(n.title, n.body);
-                      if (notifFilter !== "all" && CATEGORY_OF[n.type] !== notifFilter) return false;
-                      return matchesSearch(n.title, n.body);
-                    });
-                    const filteredAnns = (notifFilter === "all" || notifFilter === "system")
-                      ? announcements.filter((a) => matchesSearch(a.title, a.body))
-                      : [];
-                    if (filteredNotifs.length === 0 && filteredAnns.length === 0) {
-                      return (
-                        <div className="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2 px-4">
-                          <Filter className="w-6 h-6 opacity-20" />
-                          <p className="text-xs font-medium">No matches</p>
-                          <p className="text-[10px] text-center text-muted-foreground/70">Try a different filter or clear your search.</p>
-                        </div>
-                      );
-                    }
-                    return (
+                  ) : (
                     <>
                       {/* Trade / order notifications from store */}
-                      {filteredNotifs.map(n => {
+                      {notifications.map(n => {
                         const Icon = NOTIF_TYPE_ICON[n.type] ?? Info;
                         const color = NOTIF_TYPE_COLOR[n.type] ?? "text-blue-400";
                         const dest = getNotifPath(n);
@@ -661,7 +471,7 @@ export function Layout({ children }: { children: ReactNode }) {
                             className={cn(
                               "w-full text-left px-4 py-3 border-b border-border/40 transition-colors last:border-0 group",
                               !n.read && "bg-primary/5",
-                              dest ? "cursor-pointer hover:bg-muted/50 active:bg-muted" : "cursor-default",
+                              dest ? "cursor-pointer hover:bg-white/5 active:bg-white/10" : "cursor-default",
                             )}
                           >
                             <div className="flex items-start gap-2.5">
@@ -685,7 +495,7 @@ export function Layout({ children }: { children: ReactNode }) {
                                   </div>
                                 </div>
                                 <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{n.body}</p>
-                                {n.txid && !n.txid.startsWith("htlc-pending-") && (
+                                {n.txid && (
                                   (() => {
                                     const txExplorerUrl = n.href
                                       ?? (n.txid.startsWith("0x")
@@ -712,7 +522,7 @@ export function Layout({ children }: { children: ReactNode }) {
                       })}
 
                       {/* Platform announcements (from admin panel) */}
-                      {filteredAnns.map(n => {
+                      {announcements.map(n => {
                         const color = NOTIF_TYPE_COLOR[n.type] ?? "text-blue-400";
                         return (
                           <div key={n.id} className="px-4 py-3 border-b border-border/40 transition-colors last:border-0 bg-secondary/10">
@@ -735,8 +545,7 @@ export function Layout({ children }: { children: ReactNode }) {
                         );
                       })}
                     </>
-                    );
-                  })()}
+                  )}
                 </div>
               </div>
             )}
@@ -875,7 +684,7 @@ export function Layout({ children }: { children: ReactNode }) {
                       "flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all",
                       isActive
                         ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
                     )}
                   >
                     <link.icon className="w-5 h-5 shrink-0" />
@@ -888,7 +697,7 @@ export function Layout({ children }: { children: ReactNode }) {
               {/* More section */}
               <button
                 onClick={() => setShowMoreNav(v => !v)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-all"
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground transition-all"
               >
                 <Gauge className="w-5 h-5 shrink-0" />
                 <span className="text-sm">More</span>
@@ -908,7 +717,7 @@ export function Layout({ children }: { children: ReactNode }) {
                           "flex items-center gap-3 px-3 py-2 rounded-xl font-medium transition-all text-sm",
                           isActive
                             ? "bg-primary/10 text-primary"
-                            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                            : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
                         )}
                       >
                         <link.icon className="w-4 h-4 shrink-0" />
@@ -929,7 +738,7 @@ export function Layout({ children }: { children: ReactNode }) {
                   "flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium transition-all",
                   location.startsWith("/settings")
                     ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                    : "text-muted-foreground hover:bg-white/5 hover:text-foreground"
                 )}
               >
                 <Settings className="w-5 h-5 shrink-0" />
@@ -964,10 +773,8 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* Fixed tx status overlay — bottom right */}
       <TxStatusBar />
 
-      {/* Ora — AI Trading Assistant — only shown on exchange/trading pages */}
-      {(location.startsWith("/trade") || location.startsWith("/futures") || location.startsWith("/swap")) && (
-        <Suspense fallback={null}><AiAssistant /></Suspense>
-      )}
+      {/* Ora — AI Trading Assistant (site-wide floating chat) */}
+      <Suspense fallback={null}><AiAssistant /></Suspense>
 
     </div>
   );

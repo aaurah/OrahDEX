@@ -301,7 +301,7 @@ This makes the economics transparent.
 
 You must explicitly state:
 
-OrahDEX is economically self-sustaining without token issuance, inflation, or governance tokens.
+Orah is economically self-sustaining without token issuance, inflation, or governance tokens.
 
 This is a major differentiator.
 
@@ -311,7 +311,7 @@ This is a major differentiator.
 
 You must explicitly state:
 
-OrahDEX does not issue a token because tokens introduce custodial risk, regulatory exposure, and misaligned incentives.
+Orah does not issue a token because tokens introduce custodial risk, regulatory exposure, and misaligned incentives.
 
 This reinforces sovereignty.
 

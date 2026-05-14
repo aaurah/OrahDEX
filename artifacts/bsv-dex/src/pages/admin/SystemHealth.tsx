@@ -1,4 +1,3 @@
-import { adminFetch } from "@/lib/adminFetch";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity, Cpu, Database, Clock, Server, Zap,
@@ -9,7 +8,7 @@ import { cn } from "@/lib/utils";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function fetchHealth() {
-  return adminFetch(`/api/admin/health`).then(r => r.json());
+  return fetch(`${BASE}/api/admin/health`).then(r => r.json());
 }
 
 function fmtUptime(s: number) {
@@ -93,8 +92,7 @@ export function AdminSystemHealth() {
   const { data, isLoading, refetch, dataUpdatedAt } = useQuery({
     queryKey:        ["admin-health"],
     queryFn:         fetchHealth,
-    refetchInterval: 20_000,
-    staleTime:       15_000,
+    refetchInterval: 10_000,
   });
 
   const lastUpdated = dataUpdatedAt

@@ -1,4 +1,3 @@
-import { adminFetch } from "@/lib/adminFetch";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRightLeft, Filter, RefreshCw, Search, TrendingUp, Waves, ShieldCheck, Activity } from "lucide-react";
@@ -29,11 +28,10 @@ export function AdminTradeAnalytics() {
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["admin-trade-analytics"],
     queryFn: async () => {
-      const r = await adminFetch(`/api/admin/trade-analytics`);
+      const r = await fetch(`${BASE}/api/admin/trade-analytics`);
       return r.ok ? r.json() : null;
     },
-    refetchInterval: 30_000,
-    staleTime:       25_000,
+    refetchInterval: 15_000,
   });
 
   const orders = Array.isArray(data?.orders) ? data.orders : [];

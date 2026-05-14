@@ -26,8 +26,8 @@ export default function SeededPool() {
     setLoading(true);
     try {
       const [poolRes, sumRes] = await Promise.all([
-        adminFetch("/api/admin/seeded-pool"),
-        adminFetch("/api/admin/seeded-pool/summary"),
+        adminFetch("/admin/seeded-pool"),
+        adminFetch("/admin/seeded-pool/summary"),
       ]);
       const poolData = await poolRes.json();
       const sumData  = await sumRes.json();
@@ -49,7 +49,7 @@ export default function SeededPool() {
     setReclaimBusy(true);
     setMsg(null);
     try {
-      const res = await adminFetch("/api/admin/seeded-pool/reclaim", {
+      const res = await adminFetch("/admin/seeded-pool/reclaim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(reclaimAsset ? { asset: reclaimAsset } : {}),

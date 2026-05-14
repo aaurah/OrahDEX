@@ -21,7 +21,6 @@ import supportRouter from "./support.js";
 import virtualAmmRouter from "./virtualAmm.js";
 import liquidityRouter from "./liquidity.js";
 import swapRouter from "./swap.js";
-import buyRouter from "./buy.js";
 import keeperRouter from "./keeper.js";
 import p2pIntentsRouter from "./p2pIntents.js";
 import chatRouter from "./chat.js";
@@ -30,22 +29,16 @@ import withdrawalsRouter from "./withdrawals.js";
 import depositRouter from "./deposit.js";
 import nftRouter from "./nft.js";
 import socialNftRouter from "./socialNft.js";
-import aiImageRouter from "./aiImage.js";
 import creatorCoinsRouter from "./creatorCoins.js";
 import predictionRouter from "./prediction.js";
 import feeRevenueRouter from "./feeRevenue.js";
 import tradeRouter from "./trade.js";
-import letsexchangeRouter from "./letsexchange.js";
-import stakingRouter from "./staking.js";
-import stripeCheckoutRouter from "./stripeCheckout.js";
-import adminDiagnosticsRouter from "./adminDiagnostics.js";
-import coinbaseRouter from "./coinbase.js";
-import kycRouter from "./kyc.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
 import { sql as drizzleSql } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import { isIP } from "node:net";
 import { getOrCreateEvmWallet, getEvmWallet } from "../lib/internalEvmWallet.js";
 import { getOrCreateBsvWallet, getBsvWallet } from "../lib/internalBsvWallet.js";
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
@@ -53,6 +46,85 @@ import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 
 const router: IRouter = Router();
+
+function isPrivateHostname(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, "");
+  if (!host) return true;
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
+
+  const ipType = isIP(host);
+  if (ipType === 4) {
+    const [a, b] = host.split(".").map(Number);
+    if (a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    return false;
+  }
+  if (ipType === 6) {
+    return host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe8") || host.startsWith("fe9") || host.startsWith("fea") || host.startsWith("feb");
+  }
+  return false;
+}
+
+function isSafePaymailDomain(domain: string): boolean {
+  const d = domain.trim().toLowerCase();
+  if (!d || d.length > 253 || d.startsWith(".") || d.endsWith(".") || d.includes("..")) return false;
+  for (const ch of d) {
+    const isLower = ch >= "a" && ch <= "z";
+    const isDigit = ch >= "0" && ch <= "9";
+    if (!isLower && !isDigit && ch !== "." && ch !== "-") return false;
+  }
+  if (!d.includes(".")) return false;
+  return !isPrivateHostname(d);
+}
+
+function isAllowedPaymailPkiUrl(rawUrl: string, domain: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    const d = domain.toLowerCase();
+    if (isPrivateHostname(host)) return false;
+    return host === d || host === `bsvalias.${d}` || host.endsWith(`.${d}`);
+  } catch {
+    return false;
+  }
+}
+
+function stripHtmlTags(input: string): string {
+  let out = "";
+  let insideTag = false;
+  for (const ch of input) {
+    if (ch === "<") {
+      insideTag = true;
+      continue;
+    }
+    if (ch === ">") {
+      insideTag = false;
+      out += " ";
+      continue;
+    }
+    if (!insideTag) out += ch;
+  }
+  return out;
+}
+
+function collapseWhitespace(input: string): string {
+  let out = "";
+  let previousWasWhitespace = false;
+  for (const ch of input) {
+    const isWhitespace = ch === " " || ch === "\n" || ch === "\r" || ch === "\t" || ch === "\f" || ch === "\v";
+    if (isWhitespace) {
+      if (!previousWasWhitespace) out += " ";
+      previousWasWhitespace = true;
+    } else {
+      out += ch;
+      previousWasWhitespace = false;
+    }
+  }
+  return out.trim();
+}
 
 // Public settings — only whitelisted keys exposed (Reown project ID is a public identifier)
 const PUBLIC_SETTING_KEYS = ["reown_project_id"];
@@ -81,7 +153,6 @@ router.use(futuresRouter);
 router.use(dexRouter);
 router.use(liquidityRouter);
 router.use(swapRouter);
-router.use(buyRouter);
 // Protect all /admin routes — allow only the public auth endpoints through without a token.
 const ADMIN_OPEN_METHODS_PATHS = new Set([
   "POST:/auth",
@@ -94,7 +165,6 @@ router.use("/admin", (req, res, next) => {
   return requireAdminToken(req, res, next);
 });
 router.use("/admin", adminRouter);
-router.use("/admin", adminDiagnosticsRouter);
 router.use("/admin", cexRouter);
 router.use("/tv", tvRouter);
 router.use("/global-markets", globalMarketsRouter);
@@ -108,21 +178,15 @@ router.use(virtualAmmRouter);
 router.use(keeperRouter);
 router.use(p2pIntentsRouter);
 router.use(feeRevenueRouter);
-router.use(withdrawalsRouter);
 router.use(tradeRouter);
 router.use("/chat", chatRouter);
 router.use("/settlement/evm", evmSettlementRouter);
+router.use(withdrawalsRouter);
 router.use(depositRouter);
-router.use(nftRouter);
+router.use("/nft", nftRouter);
 router.use(socialNftRouter);
-router.use(aiImageRouter);
 router.use(creatorCoinsRouter);
 router.use(predictionRouter);
-router.use(letsexchangeRouter);
-router.use(stakingRouter);
-router.use(stripeCheckoutRouter);
-router.use(coinbaseRouter);
-router.use(kycRouter);
 
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
@@ -148,7 +212,7 @@ router.get("/bsv/resolve-handle/:handle", async (req, res) => {
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 4000);
-      const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } });
+      const r = await fetch(url, { signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" } });
       clearTimeout(timer);
       if (r.ok) {
         const data = await r.json() as any;
@@ -235,16 +299,15 @@ router.get("/bsv/balance/:address", async (req, res) => {
   } else if (isPaymail(raw)) {
     // Try paymail PKI resolution to get the P2PKH address
     const [alias, domain] = raw.split("@");
-
-    // Validate domain is a safe public hostname to prevent SSRF
-    if (!/^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/.test(domain)) {
-      res.status(400).json({ error: "Invalid paymail domain." });
+    if (!alias || !domain || !isSafePaymailDomain(domain)) {
+      res.status(400).json({ error: "Invalid or unsafe paymail domain." });
       return;
     }
 
     // Strategy 1: Try well-known bsvalias to find pki endpoint
     const paymailDomains = [domain, `bsvalias.${domain}`];
     for (const d of paymailDomains) {
+      if (!isSafePaymailDomain(d)) continue;
       try {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), 3000);
@@ -254,11 +317,10 @@ router.get("/bsv/balance/:address", async (req, res) => {
           const caps = await wk.json() as any;
           const pkiTmpl: string | undefined = caps?.capabilities?.pki;
           if (pkiTmpl) {
-            // Only follow https:// PKI template URLs to prevent SSRF
             const pkiUrl = pkiTmpl
-              .replace("{alias}", encodeURIComponent(alias))
-              .replace("{domain.tld}", encodeURIComponent(domain));
-            if (!pkiUrl.startsWith("https://")) { break; }
+              .replace("{alias}", alias)
+              .replace("{domain.tld}", domain);
+            if (!isAllowedPaymailPkiUrl(pkiUrl, domain)) continue;
             const ctrl2 = new AbortController();
             const t2 = setTimeout(() => ctrl2.abort(), 3000);
             const pkiRes = await fetch(pkiUrl, { signal: ctrl2.signal });
@@ -280,14 +342,13 @@ router.get("/bsv/balance/:address", async (req, res) => {
 
     // Strategy 2: Try well-known direct PKI endpoint patterns
     if (!bsvAddress) {
-      const encodedAlias = encodeURIComponent(alias);
-      const encodedDomain = encodeURIComponent(domain);
       const pkiPatterns = [
-        `https://bsvalias.${domain}/${encodedAlias}@${encodedDomain}/id-key`,
-        `https://bsvalias.${domain}/${encodedAlias}@${encodedDomain}/public-key`,
-        `https://${domain}/${encodedAlias}@${encodedDomain}/id-key`,
+        `https://bsvalias.${domain}/${alias}@${domain}/id-key`,
+        `https://bsvalias.${domain}/${alias}@${domain}/public-key`,
+        `https://${domain}/${alias}@${domain}/id-key`,
       ];
       for (const url of pkiPatterns) {
+        if (!isAllowedPaymailPkiUrl(url, domain)) continue;
         try {
           const ctrl = new AbortController();
           const timer = setTimeout(() => ctrl.abort(), 2500);
@@ -329,7 +390,7 @@ router.get("/bsv/balance/:address", async (req, res) => {
     const timer = setTimeout(() => ctrl.abort(), 5000);
     const wocRes = await fetch(
       `${BSV_NET.wocBase}/address/${bsvAddress}/balance`,
-      { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
+      { signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" } }
     );
     clearTimeout(timer);
 
@@ -364,15 +425,11 @@ router.get("/bsv/balance/:address", async (req, res) => {
 router.get("/bsv/utxos/:address", async (req, res) => {
   const address = req.params.address ?? "";
   if (!address) { res.status(400).json({ error: "address required" }); return; }
-  // Validate BSV address format to prevent SSRF
-  if (!isBsvAddress(address)) { res.status(400).json({ error: "invalid BSV address" }); return; }
   try {
     const ctrl  = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 8000);
-    const wocRes = await fetch(
-      `${BSV_NET.wocBase}/address/${address}/unspent`,
-      { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
-    );
+    const utxoUrl = new URL(`/address/${encodeURIComponent(address)}/unspent`, BSV_NET.wocBase);
+    const wocRes = await fetch(utxoUrl, { signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" } });
     clearTimeout(timer);
     if (!wocRes.ok) { res.json([]); return; }
     const data = await wocRes.json() as Array<{
@@ -410,7 +467,7 @@ router.post("/bsv/broadcast", async (req, res) => {
     const timer = setTimeout(() => ctrl.abort(), 15_000);
     const wocRes = await fetch(BSV_NET.wocBroadcast, {
       method:  "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
+      headers: { "Content-Type": "application/json", "User-Agent": "Orah/1.0" },
       body:    JSON.stringify({ txhex: rawHex }),
       signal:  ctrl.signal,
     });
@@ -425,7 +482,7 @@ router.post("/bsv/broadcast", async (req, res) => {
     }
   } catch (err: any) {
     logger.warn({ err: err?.message }, "BSV broadcast failed");
-    res.status(500).json({ error: "Broadcast failed" });
+    res.status(500).json({ error: err?.message ?? "Broadcast failed" });
   }
 });
 
@@ -457,7 +514,7 @@ router.post("/passkey/backup", async (req, res) => {
       .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: "Backup failed" });
+    res.status(500).json({ error: err?.message ?? "Backup failed" });
   }
 });
 
@@ -470,7 +527,7 @@ router.get("/passkey/backup/:credentialId", async (req, res) => {
     if (!row) { res.status(404).json({ error: "No backup found" }); return; }
     res.json(JSON.parse(row.value));
   } catch (err: any) {
-    res.status(500).json({ error: "Restore failed" });
+    res.status(500).json({ error: err?.message ?? "Restore failed" });
   }
 });
 
@@ -496,7 +553,7 @@ router.post("/passkey/transfer", async (req, res) => {
       .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
     res.json({ success: true, code });
   } catch (err: any) {
-    res.status(500).json({ error: "Transfer code generation failed" });
+    res.status(500).json({ error: err?.message ?? "Transfer code generation failed" });
   }
 });
 
@@ -517,7 +574,7 @@ router.get("/passkey/transfer/:code", async (req, res) => {
     await db.delete(platformSettingsTable).where(drizzleSql`${platformSettingsTable.key} = ${key}`);
     res.json(data);
   } catch (err: any) {
-    res.status(500).json({ error: "Transfer code lookup failed" });
+    res.status(500).json({ error: err?.message ?? "Transfer code lookup failed" });
   }
 });
 
@@ -545,7 +602,7 @@ router.post("/webhook/email-inbound", async (req, res) => {
       b.sender ?? b.from ?? b.From ?? b.fromAddress ?? b.from_email ?? "unknown@unknown.com";
 
     const to: string =
-      b.recipient ?? b.to ?? b.To ?? b.toAddress ?? b.to_email ?? "inbox@orahdex.org";
+      b.recipient ?? b.to ?? b.To ?? b.toAddress ?? b.to_email ?? "inbox@orah.org";
 
     const subject: string =
       b.subject ?? b.Subject ?? "(no subject)";
@@ -555,19 +612,7 @@ router.post("/webhook/email-inbound", async (req, res) => {
       b["body-html"] ?? b.html ?? b.HtmlBody ?? "(empty)";
 
     // Strip basic HTML tags for storage if we only got HTML
-    // Use a character-by-character approach to avoid ReDoS on untrusted input.
-    // Handles nested `<` by tracking the outermost opening tag only.
-    const MAX_EMAIL_BODY_LENGTH = 50_000;
-    const cleanBody = (() => {
-      let out = "";
-      let tagDepth = 0;
-      for (const ch of body.slice(0, MAX_EMAIL_BODY_LENGTH)) {
-        if (ch === "<") { tagDepth++; continue; }
-        if (ch === ">" && tagDepth > 0) { tagDepth--; if (tagDepth === 0) out += " "; continue; }
-        if (tagDepth === 0) out += ch;
-      }
-      return out.replace(/  +/g, " ").trim();
-    })();
+    const cleanBody = collapseWhitespace(stripHtmlTags(body));
 
     if (!from || !subject) {
       res.status(400).json({ error: "Missing required fields: from, subject" });
@@ -589,7 +634,7 @@ router.post("/webhook/email-inbound", async (req, res) => {
     res.json({ success: true, id: inserted.id });
   } catch (err: any) {
     logger.error({ err: err?.message }, "Failed to process inbound email webhook");
-    res.status(500).json({ error: "Failed to process inbound email" });
+    res.status(500).json({ error: err?.message ?? "Failed to process inbound email" });
   }
 });
 
@@ -642,7 +687,7 @@ router.post("/users/ping", async (req, res) => {
     res.json({ success: true, address: addr, isNew: isNewEntry });
   } catch (err: any) {
     logger.error({ err: err?.message }, "Failed to ping wallet");
-    res.status(500).json({ error: "Failed to register wallet" });
+    res.status(500).json({ error: err?.message ?? "Failed to register wallet" });
   }
 });
 
@@ -715,7 +760,7 @@ router.post("/user/api-keys", (req, res) => {
   const key = {
     id, wallet: wallet.toLowerCase(),
     name, permission, rateLimit: parseInt(rateLimit) || 100,
-    key: `orah_usr_${rand}`,
+    key: `orahdex_usr_${rand}`,
     calls24h: 0, status: "active",
     createdAt: new Date().toISOString().split("T")[0],
   };
@@ -844,4 +889,3 @@ router.put("/connect-session/:token", (req, res) => {
 });
 
 export default router;
-

@@ -58,7 +58,7 @@ function isPortFree(p: number): Promise<boolean> {
   });
 }
 
-async function startWithRetry(maxAttempts = 20, delayMs = 1500): Promise<void> {
+async function startWithRetry(maxAttempts = 8, delayMs = 1000): Promise<void> {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const free = await isPortFree(port);
     if (free) break;

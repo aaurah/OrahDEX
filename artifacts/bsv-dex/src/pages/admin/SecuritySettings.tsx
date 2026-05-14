@@ -1,4 +1,3 @@
-import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect } from "react";
 import {
   Save, RefreshCw, Shield, Plus, Trash2, AlertTriangle, Lock,
@@ -200,7 +199,7 @@ export function AdminSecuritySettings() {
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>("auth");
   const [sec, setSec] = useState<Sec>(() => {
-    try { return { ...DEFAULT_SEC, ...JSON.parse(localStorage.getItem("orahdex_security") ?? "{}") }; }
+    try { return { ...DEFAULT_SEC, ...JSON.parse(localStorage.getItem("orah_security") ?? "{}") }; }
     catch { return DEFAULT_SEC; }
   });
   const [saving, setSaving] = useState(false);
@@ -219,7 +218,7 @@ export function AdminSecuritySettings() {
   const loadVault = async () => {
     setVaultLoading(true);
     try {
-      const r = await adminFetch(`/api/admin/security-vault`);
+      const r = await fetch(`${BASE}/api/admin/security-vault`);
       const d = await r.json();
       if (r.ok) setVault(d);
     } finally { setVaultLoading(false); }
@@ -232,7 +231,7 @@ export function AdminSecuritySettings() {
   const handleRegenBsv = async () => {
     setRegenerating(true);
     try {
-      const r = await adminFetch(`/api/admin/security-vault/regenerate-bsv`, { method: "POST" });
+      const r = await fetch(`${BASE}/api/admin/security-vault/regenerate-bsv`, { method: "POST" });
       const d = await r.json();
       if (r.ok) {
         setVault(v => v ? { ...v, bsvWallet: d } : v);
@@ -252,7 +251,7 @@ export function AdminSecuritySettings() {
   const loadWhitelist = async () => {
     setWlLoading(true);
     try {
-      const r = await adminFetch(`/api/admin/wallet-whitelist`);
+      const r = await fetch(`${BASE}/api/admin/wallet-whitelist`);
       const d = await r.json();
       if (r.ok) setWhitelist(d.addresses ?? []);
     } finally { setWlLoading(false); }
@@ -280,7 +279,7 @@ export function AdminSecuritySettings() {
   const saveWhitelist = async () => {
     setWlSaving(true);
     try {
-      const r = await adminFetch(`/api/admin/wallet-whitelist`, {
+      const r = await fetch(`${BASE}/api/admin/wallet-whitelist`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ addresses: whitelist }),
@@ -296,7 +295,7 @@ export function AdminSecuritySettings() {
   const save = async () => {
     setSaving(true);
     await new Promise(r => setTimeout(r, 400));
-    localStorage.setItem("orahdex_security", JSON.stringify(sec));
+    localStorage.setItem("orah_security", JSON.stringify(sec));
     setSaving(false);
     toast({ title: "Security settings saved", description: "All security policies have been updated." });
   };
@@ -339,7 +338,7 @@ export function AdminSecuritySettings() {
             <Toggle value={sec.loginNotifySuspicious} onChange={set("loginNotifySuspicious")} label="Suspicious Login Alerts" description="Alert users when login is detected from a new country or IP" />
             <Toggle value={sec.antiPhishingEnabled} onChange={set("antiPhishingEnabled")} label="Anti-Phishing Code" description="Users set a personal code that appears in all emails to verify authenticity" />
             {sec.antiPhishingEnabled && (
-              <StringInput value={sec.antiPhishingCode} onChange={set("antiPhishingCode")} label="Default Anti-Phishing Code" description="Admin default (users can override in their settings)" placeholder="SECURE-ORAH-2025" />
+              <StringInput value={sec.antiPhishingCode} onChange={set("antiPhishingCode")} label="Default Anti-Phishing Code" description="Admin default (users can override in their settings)" placeholder="SECURE-ORAHDEX-2025" />
             )}
             <NumberInput value={sec.maxLoginAttempts} onChange={set("maxLoginAttempts")} label="Max Login Attempts" description="Lock account after this many consecutive failed logins" min={1} max={20} />
             <NumberInput value={sec.lockoutDurationMin} onChange={set("lockoutDurationMin")} label="Account Lockout Duration" min={1} suffix="minutes" />

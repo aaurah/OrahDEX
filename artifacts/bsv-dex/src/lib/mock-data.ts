@@ -77,14 +77,13 @@ export const USDT_MARKETS: any[] = [
 ];
 
 // ─── BSV PAIRS ────────────────────────────────────────────────────────────────
-const BSV_PRICE = 15.84;
+const BSV_PRICE = 14.35;
 function bsvPair(base: string, usdtPrice: number, chg: number, vol: number): any {
   const p = usdtPrice / BSV_PRICE;
   return spot(base, "BSV", p, chg, vol / BSV_PRICE);
 }
 
 export const BSV_MARKETS: any[] = [
-  // ── Top L1s ──────────────────────────────────────────────────────────────────
   bsvPair("BTC",   68310,     -1.85, 2_450_000_000),
   bsvPair("ETH",   3415,       1.32,   950_000_000),
   bsvPair("SOL",   148.5,      3.21,   420_000_000),
@@ -95,170 +94,76 @@ export const BSV_MARKETS: any[] = [
   bsvPair("DOT",   6.82,      -1.20,    38_000_000),
   bsvPair("AVAX",  36.4,       2.15,    62_000_000),
   bsvPair("MATIC", 0.718,     -0.92,    54_000_000),
-  bsvPair("NEAR",  6.55,       4.82,    24_000_000),
-  bsvPair("APT",   10.5,       5.21,    18_000_000),
-  bsvPair("SUI",   1.22,       6.45,    35_000_000),
-  bsvPair("TRX",   0.1205,     2.31,    35_000_000),
-  bsvPair("LTC",   78.2,       0.45,    32_000_000),
-  bsvPair("BCH",   384,        1.10,    28_000_000),
-  bsvPair("ETC",   26.8,      -1.45,    14_000_000),
-  bsvPair("ATOM",  8.42,      -0.78,    18_000_000),
-  bsvPair("XLM",   0.112,      1.42,    12_000_000),
-  bsvPair("XMR",   125.5,      0.42,     5_000_000),
-  bsvPair("DASH",  28.5,       1.15,     3_500_000),
-  bsvPair("ZEC",   28.2,       0.85,     3_000_000),
-  bsvPair("TON",   3.1,        2.40,    28_000_000),
-  bsvPair("KAS",   0.053,      7.20,     9_200_000),
-  // ── DeFi ─────────────────────────────────────────────────────────────────────
   bsvPair("LINK",  14.52,      3.64,    48_000_000),
   bsvPair("UNI",   9.84,       1.55,    22_000_000),
-  bsvPair("AAVE",  96.5,       1.82,    12_000_000),
-  bsvPair("MKR",   2920,      -0.45,     8_000_000),
-  bsvPair("CRV",   0.382,     -1.15,    18_000_000),
-  bsvPair("SNX",   2.82,      -1.32,     6_000_000),
-  bsvPair("COMP",  52.5,       0.62,     5_000_000),
-  bsvPair("YFI",   6820,       1.05,     4_000_000),
-  bsvPair("GRT",   0.192,      3.15,    12_000_000),
-  bsvPair("LDO",   2.15,       1.95,    14_000_000),
-  bsvPair("ENS",   16.2,       2.48,     6_000_000),
-  bsvPair("SUSHI", 1.22,      -0.85,     8_000_000),
-  bsvPair("DYDX",  0.58,      -0.80,     4_200_000),
-  bsvPair("GMX",   12,         1.75,     3_100_000),
-  bsvPair("CAKE",  1.8,        2.40,     9_500_000),
-  bsvPair("RUNE",  5.52,       4.85,    12_000_000),
-  // ── L2 / Rollups ─────────────────────────────────────────────────────────────
-  bsvPair("ARB",   1.12,       2.85,    28_000_000),
-  bsvPair("OP",    2.41,       3.10,    22_000_000),
-  bsvPair("IMX",   0.80,       1.60,     6_200_000),
-  bsvPair("MNT",   0.62,       1.15,     8_400_000),
-  bsvPair("STX",   0.75,       3.20,     9_800_000),
-  bsvPair("INJ",   28.4,       4.21,    15_000_000),
-  // ── Meme / Community ─────────────────────────────────────────────────────────
-  bsvPair("PEPE",  0.0000082,  8.50,   185_000_000),
-  bsvPair("SHIB",  0.0000235,  6.10,    92_000_000),
-  bsvPair("FLOKI", 0.000052,   2.80,    12_000_000),
-  bsvPair("WIF",   1.4,        8.50,    22_000_000),
-  bsvPair("BONK",  0.000012,   3.90,    18_000_000),
-  bsvPair("TRUMP", 0.95,       6.20,    14_000_000),
-  bsvPair("MANA",  0.421,      2.15,     7_800_000),
-  bsvPair("SAND",  0.432,      3.42,     9_500_000),
-  // ── Solana ecosystem ─────────────────────────────────────────────────────────
-  bsvPair("JUP",   0.48,       4.10,    18_000_000),
-  bsvPair("ORCA",  0.28,       2.75,     4_200_000),
-  bsvPair("RAY",   1.8,        3.40,     8_500_000),
-  bsvPair("JTO",   1.5,        2.90,     5_600_000),
-  bsvPair("PYTH",  0.23,       1.80,     7_200_000),
-  // ── AI / DePIN ───────────────────────────────────────────────────────────────
-  bsvPair("FET",   0.60,       5.30,    14_000_000),
-  bsvPair("RNDR",  3.8,        4.80,    10_200_000),
-  bsvPair("TAO",   220,        6.50,     5_800_000),
-  bsvPair("WLD",   0.98,       3.20,     9_400_000),
-  bsvPair("AGIX",  0.44,       2.90,     5_100_000),
-  // ── Cosmos / Interchain ──────────────────────────────────────────────────────
-  bsvPair("OSMO",  0.42,      -1.10,     6_400_000),
-  bsvPair("TIA",   3.8,        5.40,     8_200_000),
-  // ── BRC-20 / Ordinals ────────────────────────────────────────────────────────
-  bsvPair("ORDI",  12.5,       8.20,     4_200_000),
-  bsvPair("SATS",  0.000042,   5.60,     3_800_000),
-  // ── Others ───────────────────────────────────────────────────────────────────
+  bsvPair("ATOM",  8.42,      -0.78,    18_000_000),
+  bsvPair("LTC",   78.2,       0.45,    32_000_000),
+  bsvPair("BCH",   384,        1.10,    28_000_000),
+  bsvPair("TRX",   0.1205,     2.31,    35_000_000),
+  bsvPair("ETC",   26.8,      -1.45,    14_000_000),
+  bsvPair("NEAR",  6.55,       4.82,    24_000_000),
   bsvPair("ICP",   11.2,       0.95,    12_000_000),
   bsvPair("VET",   0.0398,     1.25,     8_000_000),
   bsvPair("FIL",   5.82,      -2.18,    10_000_000),
+  bsvPair("SAND",  0.432,      3.42,     9_500_000),
+  bsvPair("MANA",  0.421,      2.15,     7_800_000),
+  bsvPair("APT",   10.5,       5.21,    18_000_000),
+  bsvPair("ARB",   1.12,       2.85,    28_000_000),
+  bsvPair("OP",    2.41,       3.10,    22_000_000),
+  bsvPair("SUI",   1.22,       6.45,    35_000_000),
+  bsvPair("INJ",   28.4,       4.21,    15_000_000),
+  bsvPair("PEPE",  0.0000082,  8.50,   185_000_000),
+  bsvPair("SHIB",  0.0000235,  6.10,    92_000_000),
+  bsvPair("MKR",   2920,      -0.45,     8_000_000),
+  bsvPair("AAVE",  96.5,       1.82,    12_000_000),
+  bsvPair("CRV",   0.382,     -1.15,    18_000_000),
+  bsvPair("ENS",   16.2,       2.48,     6_000_000),
+  bsvPair("LDO",   2.15,       1.95,    14_000_000),
+  bsvPair("SUSHI", 1.22,      -0.85,     8_000_000),
+  bsvPair("COMP",  52.5,       0.62,     5_000_000),
+  bsvPair("GRT",   0.192,      3.15,    12_000_000),
+  bsvPair("SNX",   2.82,      -1.32,     6_000_000),
+  bsvPair("YFI",   6820,       1.05,     4_000_000),
+  bsvPair("RUNE",  5.52,       4.85,    12_000_000),
+  bsvPair("FTM",   0.652,      3.28,    18_000_000),
   bsvPair("ALGO",  0.182,     -0.95,     8_000_000),
+  bsvPair("XLM",   0.112,      1.42,    12_000_000),
   bsvPair("HBAR",  0.0952,     2.18,     9_000_000),
   bsvPair("EGLD",  42.5,       1.62,     5_000_000),
   bsvPair("THETA", 1.42,      -0.75,     4_000_000),
   bsvPair("EOS",   0.722,     -1.25,     6_000_000),
-  bsvPair("FTM",   0.652,      3.28,    18_000_000),
-  bsvPair("LRC",   0.14,       1.60,     2_800_000),
-  bsvPair("ZIL",   0.011,      3.10,     3_200_000),
+  bsvPair("ZEC",   28.2,       0.85,     3_000_000),
+  bsvPair("DASH",  28.5,       1.15,     3_500_000),
+  bsvPair("XMR",   125.5,      0.42,     5_000_000),
 ];
 
 // ─── BTC PAIRS ────────────────────────────────────────────────────────────────
-const BTC_PRICE = 83000;
+const BTC_PRICE = 68310;
 function btcPair(base: string, usdtPrice: number, chg: number, vol: number): any {
   const p = usdtPrice / BTC_PRICE;
   return spot(base, "BTC", p, chg, vol / BTC_PRICE);
 }
 export const BTC_MARKETS: any[] = [
-  // ── Top L1s ─────────────────────────────────────────────────────────────────
   btcPair("ETH",   3415,    1.32,  950_000_000),
-  btcPair("SOL",   148.5,   3.21,  420_000_000),
-  btcPair("BNB",   580,     0.88,  320_000_000),
   btcPair("XRP",   0.5242, -0.64,  110_000_000),
-  btcPair("ADA",   0.4421, -2.10,   45_000_000),
-  btcPair("AVAX",  36.4,    2.15,   62_000_000),
-  btcPair("DOT",   6.82,   -1.20,   38_000_000),
-  btcPair("NEAR",  6.55,    4.82,   24_000_000),
-  btcPair("APT",   10.5,    5.21,   18_000_000),
-  btcPair("SUI",   1.22,    6.45,   35_000_000),
-  btcPair("TRX",   0.1205,  2.31,   35_000_000),
-  btcPair("LTC",   78.2,    0.45,   32_000_000),
-  btcPair("BCH",   384,     1.10,   28_000_000),
-  btcPair("ETC",   26.8,   -1.45,   14_000_000),
-  btcPair("ATOM",  8.42,   -0.78,   18_000_000),
-  btcPair("XLM",   0.112,   1.42,   12_000_000),
-  btcPair("XMR",   125.5,   0.42,    5_000_000),
-  btcPair("DASH",  28.5,    1.15,    3_500_000),
-  btcPair("ZEC",   28.2,    0.85,    3_000_000),
-  // ── DeFi ────────────────────────────────────────────────────────────────────
-  btcPair("LINK",  14.52,   3.64,   48_000_000),
-  btcPair("UNI",   9.84,    1.55,   22_000_000),
-  btcPair("AAVE",  96.5,    1.82,   12_000_000),
-  btcPair("MKR",   1400,    2.10,    5_000_000),
-  btcPair("CRV",   0.35,   -1.20,    8_000_000),
-  btcPair("SNX",   1.8,     0.95,    3_500_000),
-  btcPair("COMP",  42,      1.45,    2_800_000),
-  btcPair("YFI",   5800,    2.20,    1_200_000),
-  btcPair("DYDX",  0.58,   -0.80,    4_200_000),
-  btcPair("GMX",   12,      1.75,    3_100_000),
-  btcPair("CAKE",  1.8,     2.40,    9_500_000),
-  // ── L2 / Rollups ────────────────────────────────────────────────────────────
-  btcPair("ARB",   1.12,    2.85,   28_000_000),
-  btcPair("OP",    2.41,    3.10,   22_000_000),
-  btcPair("MATIC", 0.718,  -0.92,   54_000_000),
-  btcPair("IMX",   0.80,    1.60,    6_200_000),
-  btcPair("MNT",   0.62,    1.15,    8_400_000),
-  btcPair("STX",   0.75,    3.20,    9_800_000),
-  // ── Meme / Community ────────────────────────────────────────────────────────
-  btcPair("DOGE",  0.1185,  5.42,   78_000_000),
-  btcPair("SHIB",  0.0000094, 3.18, 65_000_000),
-  btcPair("PEPE",  0.0000085, 4.52, 48_000_000),
-  btcPair("FLOKI", 0.000052,  2.80, 12_000_000),
-  btcPair("WIF",   1.4,      8.50,  22_000_000),
-  btcPair("BONK",  0.000012,  3.90, 18_000_000),
-  btcPair("TRUMP", 0.95,     6.20,  14_000_000),
-  // ── Solana ecosystem ────────────────────────────────────────────────────────
-  btcPair("JUP",   0.48,    4.10,   18_000_000),
-  btcPair("ORCA",  0.28,    2.75,    4_200_000),
-  btcPair("RAY",   1.8,     3.40,    8_500_000),
-  btcPair("JTO",   1.5,     2.90,    5_600_000),
-  btcPair("PYTH",  0.23,    1.80,    7_200_000),
-  // ── AI / DePIN ──────────────────────────────────────────────────────────────
-  btcPair("FET",   0.60,    5.30,   14_000_000),
-  btcPair("RNDR",  3.8,     4.80,   10_200_000),
-  btcPair("TAO",   220,     6.50,    5_800_000),
-  btcPair("WLD",   0.98,    3.20,    9_400_000),
-  btcPair("AGIX",  0.44,    2.90,    5_100_000),
-  // ── Cosmos / Interchain ─────────────────────────────────────────────────────
-  btcPair("OSMO",  0.42,   -1.10,    6_400_000),
-  btcPair("INJ",   28.4,    4.21,   15_000_000),
-  btcPair("TIA",   3.8,     5.40,    8_200_000),
-  btcPair("RUNE",  3.2,     3.80,    7_600_000),
-  // ── BRC-20 / Ordinals (native BTC chain) ────────────────────────────────────
-  btcPair("ORDI",  12.5,    8.20,    4_200_000),
-  btcPair("SATS",  0.000042, 5.60,   3_800_000),
-  // ── Privacy / Others ────────────────────────────────────────────────────────
-  btcPair("KAS",   0.053,   7.20,    9_200_000),
-  btcPair("TON",   3.1,     2.40,   28_000_000),
-  btcPair("VET",   0.022,   1.85,    8_400_000),
-  btcPair("ALGO",  0.14,   -0.60,    7_200_000),
-  btcPair("ICP",   5.8,     2.10,    6_800_000),
-  btcPair("FIL",   3.5,     1.95,    5_400_000),
-  btcPair("THETA", 0.73,    1.40,    4_200_000),
-  btcPair("GRT",   0.096,   2.20,    6_100_000),
-  btcPair("LRC",   0.14,    1.60,    2_800_000),
-  btcPair("ZIL",   0.011,   3.10,    3_200_000),
+  btcPair("XMR",   125.5,   0.42,   5_000_000),
+  btcPair("TRX",   0.1205,  2.31,  35_000_000),
+  btcPair("DOGE",  0.1185,  5.42,  78_000_000),
+  btcPair("LTC",   78.2,    0.45,  32_000_000),
+  btcPair("ADA",   0.4421, -2.10,  45_000_000),
+  btcPair("DOT",   6.82,   -1.20,  38_000_000),
+  btcPair("DASH",  28.5,    1.15,   3_500_000),
+  btcPair("BCH",   384,     1.10,  28_000_000),
+  btcPair("ATOM",  8.42,   -0.78,  18_000_000),
+  btcPair("ETC",   26.8,   -1.45,  14_000_000),
+  btcPair("SOL",   148.5,   3.21,  420_000_000),
+  btcPair("XLM",   0.112,   1.42,  12_000_000),
+  btcPair("ZEC",   28.2,    0.85,   3_000_000),
+  btcPair("LINK",  14.52,   3.64,  48_000_000),
+  btcPair("UNI",   9.84,    1.55,  22_000_000),
+  btcPair("AAVE",  96.5,    1.82,  12_000_000),
+  btcPair("AVAX",  36.4,    2.15,  62_000_000),
+  btcPair("NEAR",  6.55,    4.82,  24_000_000),
 ];
 
 // ─── STABLECOIN PAIRS (USDC / TUSD / USDD) ───────────────────────────────────
@@ -521,7 +426,7 @@ export const BASE_MARKETS: any[] = [
   spot("DEGEN",  "USDC",  0.00842,   14.82,   138_000_000), // Farcaster social token
   spot("HIGHER", "USDC",  0.00215,    9.64,    82_000_000), // Base cultural token
   spot("MOCHI",  "USDC",  0.00142,   11.25,    58_000_000), // Base cat meme
-  spot("DOGINME","USDC",  0.0000945, 12.84,    18_000_000), // Base dog meme
+  spot("DOGINME","USDC",  0.000428,  16.84,    52_000_000), // Base dog meme
   spot("BALD",   "USDC",  0.00284,    8.42,    42_000_000), // first Base meme coin
   spot("NORMIE", "USDC",  0.00182,   13.10,    38_000_000), // Base meme
   spot("MORPHO", "USDC",  1.82,       5.21,    48_000_000), // Morpho lending on Base
@@ -755,7 +660,6 @@ export const MEME_MARKETS: any[] = [
   spot("WIF",     "USDT", 0.892,      8.42,  82_000_000),
   spot("POPCAT",  "USDT", 0.842,     15.42,  62_000_000),
   spot("BRETT",   "USDT", 0.1142,    18.42,  42_000_000),
-  spot("DOGINME", "USDT", 0.0000945, 12.84,  18_000_000),
   spot("MOG",     "USDT", 0.0000082, 11.50,  22_000_000),
   spot("TURBO",   "USDT", 0.00842,   15.84,  18_000_000),
   spot("BOME",    "USDT", 0.00842,   18.50,  92_000_000),
@@ -1047,10 +951,13 @@ export const BRC20_MARKETS: any[] = [
   /* ── Stacks (Bitcoin L2) ── */
   spot("STX",   "USDT", 1.52,    6.42,  22_000_000),  // Stacks — Bitcoin smart contracts
   /* ── Bitcoin ecosystem ── */
-  spot("WBTC",  "USDT", 83000,  -1.85, 120_000_000),  // Wrapped Bitcoin (ERC-20)
-  spot("CBBTC", "USDT", 83000,  -1.85,  85_000_000),  // Coinbase Wrapped BTC (Base)
-  spot("RBTC",  "USDT", 83000,  -1.92,  12_000_000),  // RSK smart Bitcoin
-  spot("TBTC",  "USDT", 83000,  -1.92,   8_000_000),  // tBTC — decentralized bridge
+  spot("WBTC",  "USDT", 70215,  -1.92, 120_000_000),  // Wrapped Bitcoin (ERC-20)
+  spot("CBBTC", "USDT", 70725,  -1.85,  85_000_000),  // Coinbase Wrapped BTC (Base)
+  spot("RBTC",  "USDT", 70215,  -1.92,  12_000_000),  // RSK smart Bitcoin
+  spot("TBTC",  "USDT", 70215,  -1.92,   8_000_000),  // tBTC — decentralized bridge
+  /* ── Bitcoin Cash ecosystem ── */
+  spot("BCH",   "USDT", 477,     1.10,  28_000_000),
+  spot("BSV",   "USDT", 55.42,   4.41,  18_500_000),
 ];
 
 export const NEW_MARKETS: any[] = [

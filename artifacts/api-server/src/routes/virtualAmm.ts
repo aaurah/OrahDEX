@@ -240,36 +240,21 @@ router.get("/genesis/quote", (req, res) => {
 });
 
 /* POST /api/genesis/swap */
-// Hard caps prevent a malformed or hostile request from blowing up the
-// virtual-AMM accounting (m.supply / m.treasury are floats — Infinity or
-// NaN would brick the market permanently).
-const MAX_GENESIS_USD     = 1_000_000_000;   // $1B per swap
-const MAX_GENESIS_TOKENS  = 1e12;
 router.post("/genesis/swap", (req, res) => {
-  const body = (req.body ?? {}) as Record<string, unknown>;
-  const symbol = typeof body.symbol === "string" ? body.symbol : "";
-  const side   = body.side;
-  const wallet = typeof body.wallet === "string" ? body.wallet : undefined;
+  const { symbol, side, usdtAmount, tokenAmount, wallet } = req.body as {
+    symbol: string; side: "buy" | "sell";
+    usdtAmount?: number; tokenAmount?: number; wallet?: string;
+  };
 
-  if (!symbol)                                         { res.status(400).json({ error: "symbol is required" });           return; }
-  if (side !== "buy" && side !== "sell")               { res.status(400).json({ error: "side must be 'buy' or 'sell'" }); return; }
-
-  const m = markets.get(symbol.toUpperCase());
+  const m = markets.get(symbol?.toUpperCase());
   if (!m) { res.status(404).json({ error: `Market not found: ${symbol}` }); return; }
 
   const price = currentPrice(m);
-  void price;
   const tradeId = Math.random().toString(36).slice(2, 10).toUpperCase();
 
   if (side === "buy") {
-    const raw = body.usdtAmount;
-    const usdIn = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
-    if (!Number.isFinite(usdIn) || usdIn <= 0) {
-      res.status(400).json({ error: "usdtAmount must be a finite number > 0" }); return;
-    }
-    if (usdIn > MAX_GENESIS_USD) {
-      res.status(400).json({ error: `usdtAmount exceeds max ${MAX_GENESIS_USD}` }); return;
-    }
+    const usdIn = Number(usdtAmount ?? 0);
+    if (usdIn <= 0) { res.status(400).json({ error: "usdtAmount must be > 0" }); return; }
 
     const tokensOut = tokensForUsd(m, usdIn);
     const cost = buyCost(m, tokensOut);
@@ -289,17 +274,8 @@ router.post("/genesis/swap", (req, res) => {
     res.json({ success: true, tradeId, side: "buy", tokensReceived: tokensOut, usdtSpent: cost, fee, avgPrice, newPrice: currentPrice(m), trade });
 
   } else {
-    const raw = body.tokenAmount;
-    const tokIn = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : NaN;
-    if (!Number.isFinite(tokIn) || tokIn <= 0) {
-      res.status(400).json({ error: "tokenAmount must be a finite number > 0" }); return;
-    }
-    if (tokIn > MAX_GENESIS_TOKENS) {
-      res.status(400).json({ error: `tokenAmount exceeds max ${MAX_GENESIS_TOKENS}` }); return;
-    }
-    if (tokIn > m.supply) {
-      res.status(400).json({ error: "tokenAmount exceeds available supply" }); return;
-    }
+    const tokIn = Number(tokenAmount ?? 0);
+    if (tokIn <= 0) { res.status(400).json({ error: "tokenAmount must be > 0" }); return; }
 
     const payout = sellPayout(m, tokIn);
     const fee = payout * SWAP_FEE;

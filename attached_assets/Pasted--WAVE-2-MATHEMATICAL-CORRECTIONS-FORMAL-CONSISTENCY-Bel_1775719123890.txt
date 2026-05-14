@@ -270,7 +270,7 @@ R \in \{0,1\}^{256}
 
 You wrote:
 
-ORAH|v1||…
+ORAHDEX|v1||…
 
 You should add:
 
@@ -311,7 +311,7 @@ TWAP uses a 60‑second rolling window with 1‑second sampling.
 
 You wrote:
 
-Mark Price = median(OrahDEX Order Book VWAP, OrahDEX TWAP, BSV On-Chain Feed)
+Mark Price = median(Orah Order Book VWAP, Orah TWAP, BSV On-Chain Feed)
 
 Correct, but you must define:
 

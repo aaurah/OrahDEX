@@ -9,7 +9,6 @@ import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, FUTURES_MARKET
 import { formatPrice, formatPercent, cn } from "@/lib/utils";
 import { X, ChevronDown, AlertTriangle, Wallet, Loader2, Search } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
-import { useSettingsStore } from "@/store/useSettingsStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useToast } from "@/hooks/use-toast";
 import { API_BASE } from "@/lib/api";
@@ -118,16 +117,16 @@ function useFundingCountdown() {
 
 export function FuturesTrading() {
   const { symbol: rawSymbol = "BSV-USDT-PERP" } = useParams();
-  const symbol = rawSymbol.replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
+  const symbol = rawSymbol.replace(/-PERP$/, "-PERP").replace(/^([^-]+)-([^-]+)(-PERP)?$/, "$1/$2$3");
   const seoBase = rawSymbol.split("-")[0];
 
   const { address, network, balance, chainId: walletChainId, provider, internalBsvAddress, internalEvmAddress } = useWalletStore();
-  const isOrahWallet = provider === 'orah-wallet';
-  const usesApiBalance = isOrahWallet;
+  const isOrahDEXWallet = provider === 'orahdex-wallet';
+  const usesApiBalance = isOrahDEXWallet;
   const openModal = useWalletModalStore((s) => s.open);
   const { toast } = useToast();
 
-  // Alt address for cross-network order visibility (BSV ↔ EVM Orah wallet users)
+  // Alt address for cross-network order visibility (BSV ↔ EVM OrahDEX wallet users)
   const altAddress = (internalEvmAddress && internalEvmAddress !== address)
     ? internalEvmAddress
     : (internalBsvAddress && internalBsvAddress !== address)
@@ -136,41 +135,29 @@ export function FuturesTrading() {
 
   useSEO({
     title: `${seoBase} Perpetual Futures — Up to 100x Leverage`,
-    description: `Trade ${seoBase} perpetual futures on OrahDEX with up to 100x leverage. Real-time funding rate, mark price, and liquidation tools. Cross & isolated margin.`,
-    keywords: `${seoBase} futures, ${seoBase} perpetual, ${seoBase} leverage, crypto futures, perp trading, ${rawSymbol}, OrahDEX futures`,
+    description: `Trade ${seoBase} perpetual futures on Orah with up to 100x leverage. Real-time funding rate, mark price, and liquidation tools. Cross & isolated margin.`,
+    keywords: `${seoBase} futures, ${seoBase} perpetual, ${seoBase} leverage, crypto futures, perp trading, ${rawSymbol}, Orah futures`,
     url: `/futures/${rawSymbol}`,
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "WebPage",
-      "name": `${seoBase} Perpetual Futures on OrahDEX`,
+      "name": `${seoBase} Perpetual Futures on Orah`,
       "description": `${seoBase} perpetual futures with up to 100x leverage, cross and isolated margin`,
-      "url": `https://orahdex.replit.app/futures/${rawSymbol}`
+      "url": `https://orah.replit.app/futures/${rawSymbol}`
     }
   });
 
-  const noStoreRequest = { cache: "no-store" as const };
-  const { data: apiTicker } = useGetTicker(encodeURIComponent(symbol), { request: noStoreRequest });
-  const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: "1h", limit: 100 }, { request: noStoreRequest });
-  const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, { request: noStoreRequest });
+  const { data: apiTicker } = useGetTicker(encodeURIComponent(symbol));
+  const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: "1h", limit: 100 });
+  const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 });
 
-  const defaultLeverage = useSettingsStore((s) => s.defaultLeverage);
-  const setDefaultLeverage = useSettingsStore((s) => s.setDefaultLeverage);
-  const [leverage, setLeverageLocal] = useState(defaultLeverage);
-  const setLeverage = (v: number) => {
-    setLeverageLocal(v);
-    setDefaultLeverage(v);
-  };
-  useEffect(() => { setLeverageLocal((cur) => (cur !== defaultLeverage ? defaultLeverage : cur)); }, [defaultLeverage]);
+  const [leverage, setLeverage] = useState(20);
   const [marginMode, setMarginMode] = useState<"cross" | "isolated">("cross");
   const [showLeverageModal, setShowLeverageModal] = useState(false);
   const [orderType, setOrderType] = useState<"limit" | "market" | "stop">("limit");
   const [size, setSize] = useState("");
   const [price, setPrice] = useState("");
-  const [chartInterval, setChartInterval] = useState(() => {
-    const saved = localStorage.getItem('orahdex-futures-interval');
-    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y','All'];
-    return saved && valid.includes(saved) ? saved : "1h";
-  });
+  const [chartInterval, setChartInterval] = useState("1h");
   const [futuresSide, setFuturesSide] = useState<"buy" | "sell">("buy");
   const [bottomTab, setBottomTab] = useState<"positions" | "orders" | "history">("positions");
 
@@ -189,9 +176,6 @@ export function FuturesTrading() {
     if (pairDropOpen) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [pairDropOpen]);
-
-  // Persist chart interval across page refreshes
-  useEffect(() => { localStorage.setItem('orahdex-futures-interval', chartInterval); }, [chartInterval]);
 
   const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
     { walletAddress: address || "" },
@@ -318,7 +302,7 @@ export function FuturesTrading() {
     ?? MOCK_TICKER[rawSymbol]
     ?? MOCK_TICKER["BSV-USDT"];
   const isPositive = ticker.priceChangePercent >= 0;
-  const candles = (apiCandles && apiCandles.length > 0) ? apiCandles : generateMockCandles(ticker.lastPrice);
+  const candles = apiCandles || generateMockCandles(ticker.lastPrice);
 
   function toEntries(raw: number[][], descending: boolean) {
     const sorted = [...raw].sort((a, b) => descending ? b[0] - a[0] : a[0] - b[0]);
@@ -326,10 +310,9 @@ export function FuturesTrading() {
     return sorted.map(([p, q]) => { cum += p * q; return { price: p, quantity: q, total: cum }; });
   }
   const rawOB = apiOrderBook as any;
-  const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
-  const orderBook = (hasRealOB && Array.isArray(rawOB.bids[0])
+  const orderBook = (rawOB?.bids && Array.isArray(rawOB.bids[0])
     ? { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) }
-    : (hasRealOB ? apiOrderBook : generateMockOrderBook(ticker.lastPrice))) as import("@workspace/api-client-react").OrderBook;
+    : (apiOrderBook || generateMockOrderBook(ticker.lastPrice))) as import("@workspace/api-client-react").OrderBook;
 
   const base = symbol.split("/")[0];
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
@@ -486,7 +469,6 @@ export function FuturesTrading() {
               <Chart
                 symbol={symbol}
                 interval={chartInterval}
-                onIntervalChange={setChartInterval}
               />
             </div>
             <div className="h-[220px] shrink-0 bg-card flex flex-col">
@@ -796,7 +778,7 @@ export function FuturesTrading() {
                   <button
                     key={pct}
                     onClick={() => {
-                      // Use USDT ledger balance for Orah wallets, native balance for external EVM wallets
+                      // Use USDT ledger balance for OrahDEX wallets, native balance for external EVM wallets
                       const availBal = usesApiBalance ? apiUsdtBal : nativeBal;
                       const portion = availBal * (pct / 100);
                       const entryPrice = parseFloat(price || String(ticker.lastPrice)) || ticker.lastPrice;

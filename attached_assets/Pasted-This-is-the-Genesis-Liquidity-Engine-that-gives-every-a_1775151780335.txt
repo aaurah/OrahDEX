@@ -12,7 +12,7 @@ I’ll give you:
 8. UI integration
 
 
-Everything is modular and ready to plug into your existing OrahDex stack.
+Everything is modular and ready to plug into your existing Orah stack.
 
 ---
 
@@ -109,7 +109,7 @@ It includes:
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-contract OrahDexVirtualAMM {
+contract OrahVirtualAMM {
 
     // Token supply
     uint256 public totalSupply;
@@ -318,4 +318,4 @@ C. Full UI code (React + Wagmi)
 
 D. Full deployment scripts
 
-E. Full integration into your existing OrahDex AMM
+E. Full integration into your existing Orah AMM

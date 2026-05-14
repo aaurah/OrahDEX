@@ -35,22 +35,9 @@ export interface LpPosition {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Normalize a wallet address for ledger storage / lookup.
- * EVM addresses (0x-prefixed) are case-insensitive on chain — the checksum
- * casing is purely a display convention. We lowercase them so a single user
- * never ends up with multiple ledger rows (one per casing variant) which
- * caused "Insufficient funds" failures when the order endpoint locked funds
- * with a different casing than the deposit credited.
- *
- * Non-EVM addresses (BSV legacy, BTC bech32, BCH cashaddr, Tron, Solana)
- * are case-sensitive and pass through unchanged.
- */
-function normAddr(addr: string): string {
-  if (typeof addr !== "string") return addr;
-  return addr.startsWith("0x") || addr.startsWith("0X")
-    ? addr.toLowerCase()
-    : addr;
+function big(n: string | number): bigint {
+  // We keep amounts as strings in the DB.  Use comparison helpers below.
+  return 0n; // placeholder; we rely on DB for arithmetic
 }
 
 // Compare two decimal strings
@@ -73,22 +60,25 @@ async function ensureBalance(
     `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
      VALUES ($1, $2, '0', '0', now())
      ON CONFLICT (wallet_address, asset_symbol) DO NOTHING`,
-    [normAddr(walletAddress), asset],
+    [walletAddress, asset],
   );
 }
 
 // ── Get all balances for a wallet ────────────────────────────────────────────
 
 export async function getBalances(walletAddress: string): Promise<Balance[]> {
-  const { rows } = await pool.query<{ asset_symbol: string; available: string; locked: string }>(
+  const { rows } = await pool.query<{ asset_symbol: string; available: string; locked: string; seeded: string }>(
     `SELECT asset_symbol,
-            available,
-            locked
+            GREATEST(0, available - COALESCE(seeded, 0)) AS available,
+            locked,
+            COALESCE(seeded, 0) AS seeded
      FROM user_balances
      WHERE wallet_address = $1
      ORDER BY asset_symbol`,
-    [normAddr(walletAddress)],
+    [walletAddress],
   );
+  // Only return assets where the user has a real (non-seeded) balance > 0,
+  // so the portfolio view is clean and shows nothing for pure-seeded wallets.
   return rows
     .map(r => ({ asset: r.asset_symbol, available: r.available, locked: r.locked }))
     .filter(r => parseFloat(r.available) > 0 || parseFloat(r.locked) > 0);
@@ -298,7 +288,6 @@ export async function ensureSeedForAsset(
   asset:         string,
   neededAmount:  string,
 ): Promise<void> {
-  walletAddress = normAddr(walletAddress);
   const needed = parseFloat(neededAmount);
   // Run inside a transaction with a row lock so two concurrent callers
   // cannot both read the same balance and both decide to seed.
@@ -357,7 +346,7 @@ export async function creditAvailable(
      VALUES ($1, $2, $3, '0', now())
      ON CONFLICT (wallet_address, asset_symbol)
      DO UPDATE SET available = user_balances.available + $3, updated_at = now()`,
-    [normAddr(walletAddress), asset, amount],
+    [walletAddress, asset, amount],
   );
 }
 
@@ -368,7 +357,6 @@ export async function debitAvailable(
   asset:         string,
   amount:        string,
 ): Promise<void> {
-  walletAddress = normAddr(walletAddress);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -405,22 +393,26 @@ export async function lockForOrder(params: {
   asset:         string;
   amount:        string;
 }): Promise<void> {
-  params = { ...params, walletAddress: normAddr(params.walletAddress) };
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     await ensureBalance(client, params.walletAddress, params.asset);
 
-    const { rows } = await client.query<{ available: string }>(
-      `SELECT available FROM user_balances
+    const { rows } = await client.query<{ available: string; seeded: string }>(
+      `SELECT available, COALESCE(seeded, 0) AS seeded FROM user_balances
        WHERE wallet_address = $1 AND asset_symbol = $2
        FOR UPDATE`,
       [params.walletAddress, params.asset],
     );
 
     const row = rows[0];
-    if (!row || lt(row.available, params.amount)) {
+    // Real (withdrawable) balance = available − seeded. Seeded funds are
+    // platform liquidity — users cannot trade with them directly.
+    const realAvailable = row
+      ? Math.max(0, parseFloat(row.available) - parseFloat(row.seeded)).toFixed(18)
+      : "0";
+    if (!row || lt(realAvailable, params.amount)) {
       throw new Error(`INSUFFICIENT_FUNDS:${params.asset}`);
     }
 
@@ -449,65 +441,17 @@ export async function unlockFunds(params: {
   asset:         string;
   amount:        string;
 }): Promise<void> {
-  params = { ...params, walletAddress: normAddr(params.walletAddress) };
-  return _unlockFundsImpl(params);
-}
-
-async function _unlockFundsImpl(params: {
-  walletAddress: string;
-  asset:         string;
-  amount:        string;
-}): Promise<void> {
-  // Lock the row, read its current locked value, then move the smaller of
-  // (requested, locked) from locked → available in a single statement inside
-  // an explicit transaction. This prevents the previous bug where two separate
-  // UPDATEs could leave funds stranded if anything failed between them.
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const { rows } = await client.query<{ locked: string }>(
-      `SELECT locked FROM user_balances
-       WHERE wallet_address = $1 AND asset_symbol = $2 FOR UPDATE`,
-      [params.walletAddress, params.asset],
-    );
-    if (rows.length === 0) {
-      await client.query("COMMIT");
-      return;
-    }
-    const lockedNum  = parseFloat(rows[0]!.locked) || 0;
-    const requested  = parseFloat(params.amount)   || 0;
-    const moveAmount = Math.min(lockedNum, Math.max(0, requested));
-    if (moveAmount > 0) {
-      await client.query(
-        `UPDATE user_balances
-         SET locked     = locked - $1,
-             available  = available + $1,
-             updated_at = now()
-         WHERE wallet_address = $2 AND asset_symbol = $3`,
-        [moveAmount.toFixed(18), params.walletAddress, params.asset],
-      );
-    }
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+  await pool.query(
+    `UPDATE user_balances
+     SET locked     = GREATEST(locked - $1, 0),
+         available  = available + LEAST(locked, $1),
+         updated_at = now()
+     WHERE wallet_address = $2 AND asset_symbol = $3`,
+    [params.amount, params.walletAddress, params.asset],
+  );
 }
 
 // ── Settle a matched trade (locked → available for both parties) ──────────────
-
-/**
- * Tolerance for accumulated floating-point rounding across multiple partial
- * fills on the same limit order. Values within 1e-9 of zero are treated as
- * sufficient — this prevents spurious INSUFFICIENT_LOCK failures caused by
- * IEEE-754 rounding errors while still catching real balance deficits.
- */
-// Absolute epsilon for floating-point rounding in toFixed(18) arithmetic.
-// Kept small — actual market-order price slippage is handled by the 0.5%
-// lock buffer added in orders.ts at order-placement time.
-const SETTLE_EPSILON = 1e-6;
 
 export async function settleTrade(params: {
   buyerAddress:  string;
@@ -517,19 +461,8 @@ export async function settleTrade(params: {
   amount:        string;   // base amount filled
   price:         string;   // fill price
   feePct?:       number;   // fraction e.g. 0.001 = 0.1%
-  /** True when the seller is the synthetic liquidity bot.
-   *  The bot inserts orders without pre-locking funds in user_balances, so the
-   *  standard locked-balance assertion and debit are skipped for its side.
-   *  The buyer's locked quote is still strictly validated and debited. */
-  isBotSeller?:  boolean;
-  /** True when the buyer is the synthetic liquidity bot (user places a sell that
-   *  matches the bot's buy order). Same reasoning as isBotSeller: the bot has
-   *  no pre-locked quote in user_balances, so skip the buyer assertion and debit. */
-  isBotBuyer?:   boolean;
 }): Promise<void> {
-  const buyerAddress  = normAddr(params.buyerAddress);
-  const sellerAddress = normAddr(params.sellerAddress);
-  const { baseAsset, quoteAsset, amount, price, feePct = 0.001, isBotSeller = false, isBotBuyer = false } = params;
+  const { buyerAddress, sellerAddress, baseAsset, quoteAsset, amount, price, feePct = 0.001 } = params;
   const cost    = (parseFloat(amount) * parseFloat(price)).toFixed(18);
   const buyFee  = (parseFloat(amount) * feePct).toFixed(18);
   const sellFee = (parseFloat(cost)   * feePct).toFixed(18);
@@ -540,14 +473,9 @@ export async function settleTrade(params: {
   try {
     await client.query("BEGIN");
 
-    // Lock all four rows at once (ORDER BY to prevent deadlocks) and read
-    // current locked balances so we can assert sufficiency before crediting.
-    const { rows: lockedRows } = await client.query<{
-      wallet_address: string;
-      asset_symbol:   string;
-      locked:         string;
-    }>(
-      `SELECT wallet_address, asset_symbol, locked FROM user_balances
+    // Lock all four rows at once (ORDER BY to prevent deadlocks)
+    await client.query(
+      `SELECT id FROM user_balances
        WHERE (wallet_address = $1 OR wallet_address = $2)
          AND asset_symbol IN ($3, $4)
        ORDER BY wallet_address, asset_symbol
@@ -555,56 +483,18 @@ export async function settleTrade(params: {
       [buyerAddress, sellerAddress, baseAsset, quoteAsset],
     );
 
-    // Helper: find the locked value for a specific (wallet, asset) pair
-    const lockedOf = (addr: string, asset: string): number => {
-      const row = lockedRows.find(
-        r => r.wallet_address === addr && r.asset_symbol === asset,
-      );
-      return parseFloat(row?.locked ?? "0");
-    };
-
-    // Strict invariant: locked funds must cover the settlement amounts.
-    // GREATEST(locked - x, 0) is explicitly prohibited here — it silently
-    // creates ledger value from nothing when locked < debit amount.
-    // SETTLE_EPSILON tolerates accumulated floating-point rounding across
-    // multiple partial fills on the same limit order.
-
-    if (!isBotBuyer) {
-      const buyerLockedQuote = lockedOf(buyerAddress, quoteAsset);
-      if (buyerLockedQuote < parseFloat(cost) - SETTLE_EPSILON) {
-        throw new Error(
-          `SETTLEMENT_INSUFFICIENT_LOCK: buyer ${buyerAddress} has ` +
-          `${buyerLockedQuote} locked ${quoteAsset}, need ${cost}`,
-        );
-      }
-    }
-
-    if (!isBotSeller) {
-      const sellerLockedBase = lockedOf(sellerAddress, baseAsset);
-      if (sellerLockedBase < parseFloat(amount) - SETTLE_EPSILON) {
-        throw new Error(
-          `SETTLEMENT_INSUFFICIENT_LOCK: seller ${sellerAddress} has ` +
-          `${sellerLockedBase} locked ${baseAsset}, need ${amount}`,
-        );
-      }
-    }
-
     // Buyer: deduct only the fill cost from locked (not the entire locked balance).
     // Any over-locked amount (price improvement on a limit order) stays locked
     // until the order is fully filled or cancelled — the cancel handler returns
     // any remaining locked balance via unlockFunds().
-    // For the bot as buyer (isBotBuyer), skip the locked debit — the bot has no
-    // pre-locked quote in user_balances (symmetric to isBotSeller handling).
-    if (!isBotBuyer) {
-      await client.query(
-        `UPDATE user_balances
-         SET locked     = locked - $1::numeric,
-             updated_at = now()
-         WHERE wallet_address = $2 AND asset_symbol = $3`,
-        [cost, buyerAddress, quoteAsset],
-      );
-    }
-    // Always credit the buyer with the received base asset.
+    // Separately credit the received base asset.
+    await client.query(
+      `UPDATE user_balances
+       SET locked     = GREATEST(locked - $1::numeric, 0),
+           updated_at = now()
+       WHERE wallet_address = $2 AND asset_symbol = $3`,
+      [cost, buyerAddress, quoteAsset],
+    );
     await client.query(
       `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
        VALUES ($1, $2, $3, '0', now())
@@ -614,19 +504,13 @@ export async function settleTrade(params: {
     );
 
     // Seller: locked_base -= amount, available_quote += netQuote
-    // For the bot (isBotSeller), there is no pre-locked base — skip the locked
-    // debit.  We still credit the bot's quote balance so platform revenue is
-    // tracked, but the base asset is created synthetically (the bot is the
-    // platform's own liquidity provider and does not draw from user_balances).
-    if (!isBotSeller) {
-      await client.query(
-        `UPDATE user_balances
-         SET locked     = locked - $1,
-             updated_at = now()
-         WHERE wallet_address = $2 AND asset_symbol = $3`,
-        [amount, sellerAddress, baseAsset],
-      );
-    }
+    await client.query(
+      `UPDATE user_balances
+       SET locked     = GREATEST(locked - $1, 0),
+           updated_at = now()
+       WHERE wallet_address = $2 AND asset_symbol = $3`,
+      [amount, sellerAddress, baseAsset],
+    );
     await client.query(
       `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
        VALUES ($1, $2, $3, '0', now())
@@ -653,8 +537,7 @@ export async function settleSwap(params: {
   amountIn:      string;
   amountOut:     string;
 }): Promise<void> {
-  const walletAddress = normAddr(params.walletAddress);
-  const { assetIn, assetOut, amountIn, amountOut } = params;
+  const { walletAddress, assetIn, assetOut, amountIn, amountOut } = params;
 
   const client = await pool.connect();
   try {

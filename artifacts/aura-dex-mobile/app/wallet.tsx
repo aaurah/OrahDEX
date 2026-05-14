@@ -1,18 +1,17 @@
-import React, { useState, useCallback } from "react";
+import React, { useState } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Platform, TextInput, ActivityIndicator,
+  Platform, TextInput, Alert, Pressable,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
-import { useWallet, ConnectedWallet } from "@/context/WalletContext";
+import { useWallet } from "@/context/WalletContext";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/utils/seedPhrase";
 
 const C = Colors.dark;
-const PIN_LENGTH = 6;
 
 const EVM_WALLETS = [
   { id: "metamask", name: "MetaMask", icon: "🦊", desc: "Most popular Ethereum wallet", network: "evm" as const, popular: true },
@@ -31,18 +30,10 @@ const BSV_WALLETS = [
   { id: "yours", name: "Yours Wallet", icon: "💛", desc: "Open-source BSV wallet", network: "bsv" as const },
 ];
 
-type WalletView = "landing" | "create" | "import" | "connect" | "pinSetup";
+type WalletView = "landing" | "create" | "import" | "connect";
 type ConnectTab = "evm" | "bsv";
 type WalletNetwork = "evm" | "bsv";
-
-interface WalletEntry {
-  id: string;
-  name: string;
-  icon: string;
-  desc: string;
-  network: WalletNetwork;
-  popular?: boolean;
-}
+type WalletOption = (typeof EVM_WALLETS)[number] | (typeof BSV_WALLETS)[number];
 
 function generateAddress(network: WalletNetwork): string {
   const hex = () => Math.floor(Math.random() * 16).toString(16);
@@ -55,8 +46,6 @@ export default function WalletScreen() {
   const insets = useSafeAreaInsets();
   const { connect, wallet, disconnect } = useWallet();
   const [view, setView] = useState<WalletView>("landing");
-  // Holds the wallet to connect AFTER PIN setup
-  const [pendingWallet, setPendingWallet] = useState<ConnectedWallet | null>(null);
 
   const handleClose = () => router.back();
 
@@ -64,15 +53,8 @@ export default function WalletScreen() {
     if (view === "landing") return "Get Started";
     if (view === "create") return "Create Wallet";
     if (view === "import") return "Import Wallet";
-    if (view === "pinSetup") return "Secure Wallet";
     return "Connect Wallet";
   };
-
-  // Called by Create/Import views when address is ready — go to PIN setup
-  const handleWalletReady = useCallback((w: ConnectedWallet) => {
-    setPendingWallet(w);
-    setView("pinSetup");
-  }, []);
 
   return (
     <View style={[styles.container, { backgroundColor: C.background }]}>
@@ -95,12 +77,9 @@ export default function WalletScreen() {
       </View>
 
       {view === "landing" && <LandingView onSelect={setView} wallet={wallet} disconnect={disconnect} />}
-      {view === "create" && <CreateView onWalletReady={handleWalletReady} />}
-      {view === "import" && <ImportView onWalletReady={handleWalletReady} />}
+      {view === "create" && <CreateView connect={connect} onDone={handleClose} />}
+      {view === "import" && <ImportView connect={connect} onDone={handleClose} />}
       {view === "connect" && <ConnectView connect={connect} onDone={handleClose} />}
-      {view === "pinSetup" && pendingWallet && (
-        <PinSetupView pendingWallet={pendingWallet} onDone={handleClose} />
-      )}
     </View>
   );
 }
@@ -183,20 +162,21 @@ function LandingView({
         <Feather name="shield" size={15} color={C.primary} />
         <Text style={styles.infoText}>
           <Text style={{ fontFamily: "Inter_700Bold", color: C.primary }}>Non-custodial & Trustless. </Text>
-          Orah DEX never holds your funds or stores your seed phrase. All trades settle on-chain.
+          OrahDEX DEX never holds your funds or stores your seed phrase. All trades settle on-chain.
         </Text>
       </View>
     </ScrollView>
   );
 }
 
-function CreateView({ onWalletReady }: { onWalletReady: (w: ConnectedWallet) => void }) {
+function CreateView({ connect, onDone }: { connect: any; onDone: () => void }) {
   const [network, setNetwork] = useState<WalletNetwork>("bsv");
   const [wordCount, setWordCount] = useState<12 | 24>(12);
   const [mnemonic, setMnemonic] = useState<string[]>(() => generateMnemonic(12));
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [done, setDone] = useState(false);
 
   const regen = () => {
     setMnemonic(generateMnemonic(wordCount));
@@ -207,8 +187,22 @@ function CreateView({ onWalletReady }: { onWalletReady: (w: ConnectedWallet) => 
     if (!confirmed || !revealed) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const address = deriveAddress(mnemonic, network);
-    onWalletReady({ address, provider: "aura-wallet", network });
+    connect({ address, provider: "aura-wallet", network });
+    setDone(true);
+    setTimeout(onDone, 1800);
   };
+
+  if (done) {
+    return (
+      <View style={styles.doneContainer}>
+        <View style={[styles.doneIcon, { backgroundColor: C.buy + "20" }]}>
+          <Feather name="check-circle" size={48} color={C.buy} />
+        </View>
+        <Text style={styles.doneTitle}>Wallet Created!</Text>
+        <Text style={styles.doneSub}>Your {network.toUpperCase()} wallet is ready. Keep your seed phrase safe.</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 40 }}>
@@ -308,10 +302,12 @@ function CreateView({ onWalletReady }: { onWalletReady: (w: ConnectedWallet) => 
   );
 }
 
-function ImportView({ onWalletReady }: { onWalletReady: (w: ConnectedWallet) => void }) {
+function ImportView({ connect, onDone }: { connect: any; onDone: () => void }) {
   const [network, setNetwork] = useState<WalletNetwork>("bsv");
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+  const [address, setAddress] = useState("");
 
   const wordCount = input.trim().split(/\s+/).filter(Boolean).length;
 
@@ -321,8 +317,25 @@ function ImportView({ onWalletReady }: { onWalletReady: (w: ConnectedWallet) => 
     setError(null);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const addr = deriveAddress(result.words, network);
-    onWalletReady({ address: addr, provider: "aura-wallet", network });
-  };  return (
+    setAddress(addr);
+    connect({ address: addr, provider: "aura-wallet", network });
+    setDone(true);
+    setTimeout(onDone, 1800);
+  };
+
+  if (done) {
+    return (
+      <View style={styles.doneContainer}>
+        <View style={[styles.doneIcon, { backgroundColor: "#7C3AED20" }]}>
+          <Feather name="check-circle" size={48} color="#A78BFA" />
+        </View>
+        <Text style={styles.doneTitle}>Wallet Imported!</Text>
+        <Text style={styles.doneSub}>{address.slice(0, 16)}...{address.slice(-8)}</Text>
+      </View>
+    );
+  }
+
+  return (
     <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 40 }}>
       <View>
         <Text style={styles.sectionLabel}>Network</Text>
@@ -372,7 +385,7 @@ function ImportView({ onWalletReady }: { onWalletReady: (w: ConnectedWallet) => 
       <View style={styles.warnCard}>
         <Feather name="alert-triangle" size={14} color="#FBBF24" />
         <Text style={styles.warnText}>
-          Never enter your seed phrase on untrusted sites. Orah DEX never stores or transmits your phrase — all derivation is local.
+          Never enter your seed phrase on untrusted sites. OrahDEX DEX never stores or transmits your phrase — all derivation is local.
         </Text>
       </View>
 
@@ -396,7 +409,7 @@ function ConnectView({ connect, onDone }: { connect: any; onDone: () => void }) 
   const popular = wallets.filter((w) => w.popular);
   const others = wallets.filter((w) => !w.popular);
 
-  const handleConnect = (w: WalletEntry) => {
+  const handleConnect = (w: WalletOption) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setConnecting(w.id);
     setTimeout(() => {
@@ -429,7 +442,7 @@ function ConnectView({ connect, onDone }: { connect: any; onDone: () => void }) 
         <Feather name="shield" size={15} color={C.primary} />
         <Text style={styles.infoText}>
           <Text style={{ fontFamily: "Inter_700Bold", color: C.primary }}>Non-custodial & Trustless. </Text>
-          Orah DEX never holds your funds. All trades settle directly on-chain.
+          OrahDEX DEX never holds your funds. All trades settle directly on-chain.
         </Text>
       </View>
     </ScrollView>
@@ -437,7 +450,7 @@ function ConnectView({ connect, onDone }: { connect: any; onDone: () => void }) 
 }
 
 function WalletRow({ wallet, connecting, onConnect }: {
-  wallet: WalletEntry; connecting: string | null; onConnect: (w: WalletEntry) => void;
+  wallet: WalletOption; connecting: string | null; onConnect: (w: WalletOption) => void;
 }) {
   const isConnecting = connecting === wallet.id;
   const isDisabled = !!connecting;
@@ -456,209 +469,6 @@ function WalletRow({ wallet, connecting, onConnect }: {
     </TouchableOpacity>
   );
 }
-
-// ── PIN Setup View ─────────────────────────────────────────────────────────────
-// Shown after a seed phrase wallet is created or imported. The user sets a
-// 6-digit PIN and optionally enables biometric unlock.
-
-const PIN_KEYPAD_ROWS = [
-  ["1", "2", "3"],
-  ["4", "5", "6"],
-  ["7", "8", "9"],
-  ["", "0", "del"],
-] as const;
-
-function PinSetupView({
-  pendingWallet,
-  onDone,
-}: {
-  pendingWallet: ConnectedWallet;
-  onDone: () => void;
-}) {
-  const { connect, setPin, toggleBiometrics, hasBiometrics } = useWallet();
-  const [step, setStep] = useState<"enter" | "confirm" | "biometrics">("enter");
-  const [firstPin, setFirstPin] = useState("");
-  const [digits, setDigits] = useState<string[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const handleDigit = useCallback((d: string) => {
-    if (digits.length >= PIN_LENGTH) return;
-    Haptics.selectionAsync();
-    const next = [...digits, d];
-    setDigits(next);
-    if (next.length === PIN_LENGTH) {
-      setTimeout(() => advance(next.join("")), 80);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [digits, step, firstPin]);
-
-  const handleDelete = () => {
-    Haptics.selectionAsync();
-    setDigits((p) => p.slice(0, -1));
-    setError(null);
-  };
-
-  const advance = (pin: string) => {
-    if (step === "enter") {
-      setFirstPin(pin);
-      setDigits([]);
-      setStep("confirm");
-    } else {
-      if (pin === firstPin) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        if (hasBiometrics) {
-          setStep("biometrics");
-        } else {
-          finalize(false);
-        }
-      } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        setError("PINs don't match — try again.");
-        setDigits([]);
-        setStep("enter");
-        setFirstPin("");
-      }
-    }
-  };
-
-  const finalize = async (enableBio: boolean) => {
-    setSaving(true);
-    try {
-      await setPin(firstPin);
-      if (enableBio) await toggleBiometrics(true);
-      connect(pendingWallet);
-      onDone();
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const skipPin = () => {
-    connect(pendingWallet);
-    onDone();
-  };
-
-  if (step === "biometrics") {
-    return (
-      <View style={pinSetupStyles.centerWrap}>
-        <View style={[pinSetupStyles.iconWrap, { backgroundColor: C.primary + "20" }]}>
-          <Feather name="smile" size={44} color={C.primary} />
-        </View>
-        <Text style={pinSetupStyles.title}>Enable Biometrics?</Text>
-        <Text style={pinSetupStyles.sub}>
-          Use Face ID or Fingerprint alongside your PIN for faster, more convenient unlocking.
-        </Text>
-        <TouchableOpacity
-          style={[pinSetupStyles.primaryBtn, { marginBottom: 12 }, saving && { opacity: 0.6 }]}
-          onPress={() => finalize(true)}
-          disabled={saving}
-        >
-          {saving
-            ? <ActivityIndicator color="#000" size="small" />
-            : <><Feather name="smile" size={18} color="#000" /><Text style={pinSetupStyles.primaryBtnText}>Enable Biometrics</Text></>}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[pinSetupStyles.outlineBtn, saving && { opacity: 0.6 }]}
-          onPress={() => finalize(false)}
-          disabled={saving}
-        >
-          <Text style={pinSetupStyles.outlineBtnText}>Skip, PIN only</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView
-      contentContainerStyle={pinSetupStyles.scroll}
-      showsVerticalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled"
-    >
-      <View style={[pinSetupStyles.iconWrap, { backgroundColor: C.primary + "18" }]}>
-        <Feather name="lock" size={36} color={C.primary} />
-      </View>
-      <Text style={pinSetupStyles.title}>
-        {step === "enter" ? "Set a 6-digit PIN" : "Confirm your PIN"}
-      </Text>
-      <Text style={pinSetupStyles.sub}>
-        {step === "enter"
-          ? "Your PIN protects access to your wallet on this device."
-          : "Re-enter the same PIN to confirm."}
-      </Text>
-
-      <View style={pinSetupStyles.dotsRow}>
-        {Array.from({ length: PIN_LENGTH }).map((_, i) => (
-          <View key={i} style={[pinSetupStyles.dot, i < digits.length && pinSetupStyles.dotFilled]} />
-        ))}
-      </View>
-
-      {error && <Text style={pinSetupStyles.errorText}>{error}</Text>}
-
-      <View style={pinSetupStyles.keypad}>
-        {PIN_KEYPAD_ROWS.map((row, ri) => (
-          <View key={ri} style={pinSetupStyles.keyRow}>
-            {row.map((key, ki) => {
-              if (!key) return <View key={ki} style={pinSetupStyles.keyBtn} />;
-              if (key === "del") {
-                return (
-                  <TouchableOpacity key="del" style={pinSetupStyles.keyBtn} onPress={handleDelete}>
-                    <Feather name="delete" size={20} color={C.textSecondary} />
-                  </TouchableOpacity>
-                );
-              }
-              return (
-                <TouchableOpacity
-                  key={key}
-                  style={[pinSetupStyles.keyBtn, pinSetupStyles.keyBtnNum]}
-                  onPress={() => handleDigit(key)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={pinSetupStyles.keyText}>{key}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        ))}
-      </View>
-
-      <TouchableOpacity style={{ marginTop: 20 }} onPress={skipPin}>
-        <Text style={{ fontFamily: "Inter_400Regular", fontSize: 14, color: C.textMuted, textAlign: "center" }}>
-          Skip for now
-        </Text>
-      </TouchableOpacity>
-    </ScrollView>
-  );
-}
-
-const pinSetupStyles = StyleSheet.create({
-  scroll: { padding: 24, paddingBottom: 48, alignItems: "center" },
-  centerWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 14 },
-  iconWrap: { width: 84, height: 84, borderRadius: 26, alignItems: "center", justifyContent: "center", marginBottom: 12 },
-  title: { fontFamily: "Inter_700Bold", fontSize: 24, color: C.text, textAlign: "center", marginBottom: 8 },
-  sub: { fontFamily: "Inter_400Regular", fontSize: 14, color: C.textSecondary, textAlign: "center", lineHeight: 21, marginBottom: 28, maxWidth: 300 },
-  dotsRow: { flexDirection: "row", gap: 18, marginBottom: 14 },
-  dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: C.cardBorder, backgroundColor: "transparent" },
-  dotFilled: { backgroundColor: C.primary, borderColor: C.primary },
-  errorText: { fontFamily: "Inter_400Regular", fontSize: 13, color: C.sell, marginBottom: 8, textAlign: "center" },
-  keypad: { width: "100%", gap: 14, marginTop: 8 },
-  keyRow: { flexDirection: "row", justifyContent: "center", gap: 20 },
-  keyBtn: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
-  keyBtnNum: { backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder },
-  keyText: { fontFamily: "Inter_600SemiBold", fontSize: 24, color: C.text },
-  primaryBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    backgroundColor: C.primary, borderRadius: 14, paddingVertical: 15,
-    width: "100%",
-  },
-  primaryBtnText: { fontFamily: "Inter_700Bold", fontSize: 15, color: "#000" },
-  outlineBtn: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    borderRadius: 14, paddingVertical: 15, borderWidth: 1.5, borderColor: C.cardBorder,
-    width: "100%",
-  },
-  outlineBtnText: { fontFamily: "Inter_600SemiBold", fontSize: 15, color: C.textSecondary },
-});
 
 const styles = StyleSheet.create({
   container: { flex: 1 },

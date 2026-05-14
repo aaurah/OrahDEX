@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { adminFetch } from "@/lib/adminFetch";
+import { API_BASE } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   Activity, AlertTriangle, CheckCircle2, XCircle, RefreshCw,
@@ -7,6 +7,7 @@ import {
   TrendingUp, Terminal, Info,
 } from "lucide-react";
 
+const ADMIN_BASE = API_BASE.replace("/api", "") + "/api/admin";
 const POLL_MS = 5_000;
 const CRASH_THRESHOLD = 3;
 
@@ -168,7 +169,7 @@ export function ApiMonitor() {
   const poll = useCallback(async () => {
     const t0 = performance.now();
     try {
-      const r = await adminFetch(`/api/admin/health`);
+      const r = await fetch(`${ADMIN_BASE}/health`, { credentials: "include" });
       const ms = Math.round(performance.now() - t0);
       if (r.ok) {
         const json: HealthData = await r.json();
@@ -204,7 +205,7 @@ export function ApiMonitor() {
     setRestarting(true);
     setRestartMsg(null);
     try {
-      const r = await adminFetch(`/api/admin/restart-services`, { method: "POST" });
+      const r = await fetch(`${ADMIN_BASE}/restart-services`, { method: "POST", credentials: "include" });
       if (r.ok) {
         setRestartMsg("Services restarting — status will update in ~10s");
         setCrashed(false);

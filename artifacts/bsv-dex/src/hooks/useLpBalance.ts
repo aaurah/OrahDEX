@@ -1,11 +1,11 @@
 /**
- * useLpBalance — reads the user's OrahDEX LP token balance on-chain.
+ * useLpBalance — reads the user's Orah LP token balance on-chain.
  *
  * Workflow:
- *   1. Call OrahFactory.getPair(tokenA, tokenB) → pair address
- *   2. Call OrahPair.balanceOf(userAddress)      → raw LP balance (wei)
- *   3. Call OrahPair.totalSupply()               → total LP supply (wei)
- *   4. Call OrahPair.getReserves()               → reserve0, reserve1
+ *   1. Call OrahDEXFactory.getPair(tokenA, tokenB) → pair address
+ *   2. Call OrahDEXPair.balanceOf(userAddress)      → raw LP balance (wei)
+ *   3. Call OrahDEXPair.totalSupply()               → total LP supply (wei)
+ *   4. Call OrahDEXPair.getReserves()               → reserve0, reserve1
  *   5. Derive the user's share of pool value in USD
  *
  * Returns null values while loading or when AMM is not deployed on chain.
@@ -13,7 +13,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getOrahAmm, ORAH_FACTORY_ABI, ORAH_PAIR_ABI } from "@/lib/orahAmmAddresses";
+import { getOrahDEXAmm, ORAHDEX_FACTORY_ABI, ORAHDEX_PAIR_ABI } from "@/lib/orahdexAmmAddresses";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
 
 const POLL_INTERVAL_MS = 30_000;
@@ -100,18 +100,9 @@ function decodeAddress(hex: string): string {
   return "0x" + clean.slice(-40);
 }
 
-/**
- * Convert a wei bigint to a decimal number safely for amounts that may exceed
- * 2^53. Splits into integer + fractional parts so neither overflows JS Number
- * precision. The result is a best-effort double; for exact display use string
- * formatting instead.
- */
 function fromWei(raw: bigint, decimals: number): number {
   if (raw === 0n) return 0;
-  const denom = 10n ** BigInt(decimals);
-  const whole = raw / denom;
-  const frac  = raw % denom;
-  return Number(whole) + Number(frac) / Number(denom);
+  return Number(raw) / 10 ** decimals;
 }
 
 /** Resolve a pool's token symbols to contract addresses on the given chain */
@@ -165,7 +156,7 @@ export function useLpBalance(
       return;
     }
 
-    const amm = getOrahAmm(chainId);
+    const amm = getOrahDEXAmm(chainId);
     if (!amm) {
       // AMM not deployed on this chain — nothing to show
       setLpBalance(null); setPoolShare(null); setValueUsd(null);
@@ -234,21 +225,14 @@ export function useLpBalance(
       const lpBal   = fromWei(rawBalance,     LP_DECIMALS);
       const lpTotal = fromWei(rawTotalSupply, LP_DECIMALS);
 
-      // Compute pool share with bigint math to avoid Number(bigint) precision
-      // loss for large LP totals (>2^53). Use a 1e18 fixed-point ratio.
-      const SCALE = 1_000_000_000_000_000_000n;
-      const shareScaled = rawTotalSupply > 0n
-        ? Number((rawBalance * SCALE) / rawTotalSupply) / 1e18
-        : 0;
-      const share = shareScaled;
+      const share = lpTotal > 0 ? lpBal / lpTotal : 0;
 
       const basePrice  = SPOT_PRICES[base.toUpperCase()]  ?? 0;
       const quotePrice = SPOT_PRICES[quote.toUpperCase()] ?? 0;
       const poolTvl    = baseReserve * basePrice + quoteReserve * quotePrice;
       const usd        = share * poolTvl;
-      void lpBal; void lpTotal;
 
-      setLpBalance(fromWei(rawBalance, LP_DECIMALS));
+      setLpBalance(lpBal);
       setPoolShare(share);
       setValueUsd(usd);
     } catch (e: any) {

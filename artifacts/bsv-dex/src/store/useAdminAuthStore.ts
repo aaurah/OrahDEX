@@ -134,7 +134,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       })),
     }),
     {
-      name: 'orahdex-admin-auth',
+      name: 'orah-admin-auth',
       partialize: (s) => ({
         isAuthenticated: s.isAuthenticated,
         twoFaEnabled: s.twoFaEnabled,

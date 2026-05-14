@@ -2,7 +2,7 @@
  * dex.ts — Sovereign DEX market data routes
  *
  * All price and market data now sourced from:
- *   - OrahDEX own markets DB table
+ *   - Orah own markets DB table
  *   - Binance public REST API (no key required) — reference feed
  *   - WhatsOnChain public API — BSV price
  *
@@ -89,51 +89,26 @@ async function fetchBtcUsd(): Promise<number> {
   return FALLBACK_PRICES["BTC"] ?? 70000;
 }
 
-/* ── Fetch key prices from Coinbase (primary) + Binance (fallback) + WoC ──── */
-// Coinbase Exchange public stats endpoint isn't geo-restricted from most regions,
-// while Binance is blocked from many cloud regions including Replit. We try
-// Coinbase first; if it fails, fall back to Binance, then to FALLBACK_PRICES.
-async function fetchSpotPair(symbol: string): Promise<{ usd: number; change24h: number } | null> {
-  // Coinbase Exchange — gives last price + 24h open for change%
-  try {
-    const r = await fetch(`https://api.exchange.coinbase.com/products/${symbol}-USD/stats`,
-      { signal: AbortSignal.timeout(4000) });
-    if (r.ok) {
-      const d = await r.json() as { last?: string; open?: string };
-      const usd = parseFloat(d.last ?? "0");
-      const open = parseFloat(d.open ?? "0");
-      if (usd > 0) {
-        const change24h = open > 0 ? ((usd - open) / open) * 100 : 0;
-        return { usd, change24h };
-      }
-    }
-  } catch {}
-  // Binance fallback (works in some regions)
-  try {
-    const r = await fetch(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}USDT`,
-      { signal: AbortSignal.timeout(4000) });
-    if (r.ok) {
-      const d = await r.json() as { lastPrice?: string; priceChangePercent?: string };
-      const usd = parseFloat(d.lastPrice ?? "0");
-      if (usd > 0) return { usd, change24h: parseFloat(d.priceChangePercent ?? "0") };
-    }
-  } catch {}
-  return null;
-}
-
-export async function fetchKeyPrices() {
+/* ── Fetch key prices from Binance + WhatsOnChain ──────────────────────────── */
+async function fetchKeyPrices() {
   const results: Record<string, { usd: number; change24h: number }> = {
     USDT: { usd: 1, change24h: 0 },
     USDC: { usd: 1, change24h: 0 },
   };
   try {
-    const [btc, eth, bsvRes] = await Promise.allSettled([
-      fetchSpotPair("BTC"),
-      fetchSpotPair("ETH"),
-      fetch(`${BSV_NET.wocBase}/exchangerate`, { signal: AbortSignal.timeout(4000) }),
+    const [btcRes, ethRes, bsvRes] = await Promise.allSettled([
+      fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT", { signal: AbortSignal.timeout(4000) }),
+      fetch("https://api.binance.com/api/v3/ticker/24hr?symbol=ETHUSDT", { signal: AbortSignal.timeout(4000) }),
+      fetch(`${BSV_NET.wocBase}/exchangerate`,                             { signal: AbortSignal.timeout(4000) }),
     ]);
-    if (btc.status === "fulfilled" && btc.value) results["BTC"] = btc.value;
-    if (eth.status === "fulfilled" && eth.value) results["ETH"] = eth.value;
+    if (btcRes.status === "fulfilled" && btcRes.value.ok) {
+      const d = await btcRes.value.json() as { lastPrice?: string; priceChangePercent?: string };
+      results["BTC"] = { usd: parseFloat(d.lastPrice ?? "0") || (FALLBACK_PRICES["BTC"] ?? 70000), change24h: parseFloat(d.priceChangePercent ?? "0") };
+    }
+    if (ethRes.status === "fulfilled" && ethRes.value.ok) {
+      const d = await ethRes.value.json() as { lastPrice?: string; priceChangePercent?: string };
+      results["ETH"] = { usd: parseFloat(d.lastPrice ?? "0") || (FALLBACK_PRICES["ETH"] ?? 2152), change24h: parseFloat(d.priceChangePercent ?? "0") };
+    }
     if (bsvRes.status === "fulfilled" && bsvRes.value.ok) {
       const d = await bsvRes.value.json() as { rate?: number };
       if (d.rate && d.rate > 0) {
@@ -146,14 +121,6 @@ export async function fetchKeyPrices() {
   if (!results["ETH"]) results["ETH"] = { usd: FALLBACK_PRICES["ETH"] ?? 2152,  change24h: 0 };
   // Use last-known-good BSV price rather than hardcoded fallback when WOC is unreachable
   if (!results["BSV"]) results["BSV"] = { usd: _lastKnownBsvUsd, change24h: 0 };
-
-  // Ensure full cross-asset coverage for all tracked markets.
-  for (const [symbol, usd] of Object.entries(FALLBACK_PRICES)) {
-    if (usd <= 0) continue;
-    if (!results[symbol]) {
-      results[symbol] = { usd, change24h: 0 };
-    }
-  }
   return results;
 }
 
@@ -161,7 +128,12 @@ export async function fetchKeyPrices() {
 router.get("/dex/prices", async (_req, res) => {
   if (priceCache && Date.now() - priceCache.ts < PRICE_CACHE_MS) { res.json(priceCache.data); return; }
   const p  = await fetchKeyPrices();
-  const data = p;
+  const data = {
+    BTC:  { usd: p["BTC"]!.usd,  change24h: p["BTC"]!.change24h },
+    ETH:  { usd: p["ETH"]!.usd,  change24h: p["ETH"]!.change24h },
+    BSV:  { usd: p["BSV"]!.usd,  change24h: p["BSV"]!.change24h },
+    USDT: { usd: 1,               change24h: 0 },
+  };
   priceCache = { data, ts: Date.now() };
   res.json(data);
 });
@@ -175,10 +147,10 @@ router.get("/dex/exchanges", async (_req, res) => {
   const btcPrice = await fetchBtcUsd();
 
   const exchanges = [
-    // OrahDEX always pinned first
+    // Orah always pinned first
     {
-      id: "orahdex", name: "OrahDEX", url: "https://orahdex.org",
-      image: "/orahdex-logo.jpg", country: null, yearEstablished: 2026,
+      id: "orah", name: "Orah", url: "https://orah.org",
+      image: "/orah-logo.jpg", country: null, yearEstablished: 2026,
       type: "dex", chain: "BSV", rank: 1, trustScore: 9,
       tradeVolume24hBtc: 120,
       tradeVolume24hUsd: 120 * btcPrice,
@@ -212,7 +184,7 @@ router.get("/dex/exchanges", async (_req, res) => {
     dexCount:       dexExchanges.length,
     cexCount:       cexExchanges.length,
     exchanges,
-    source:         "orahdex-sovereign",
+    source:         "orah-sovereign",
   };
 
   exchangeCache = { data: result, ts: Date.now() };
@@ -280,7 +252,7 @@ router.get("/coins/markets", async (req, res) => {
       const low24h    = parseFloat(m.low24h  ?? "0");
 
       coins.push({
-        id:            `orah-${m.baseAsset.toLowerCase()}`,
+        id:            `orahdex-${m.baseAsset.toLowerCase()}`,
         rank,
         name:          m.baseAsset,
         symbol:        m.baseAsset,
@@ -292,7 +264,7 @@ router.get("/coins/markets", async (req, res) => {
         high24h:       high24h || usdPrice * 1.02,
         low24h:        low24h  || usdPrice * 0.98,
         circulatingSupply: 0,
-        source:        "orahdex",
+        source:        "orah",
       });
       rank++;
     }
@@ -316,15 +288,15 @@ router.get("/coins/:id/tickers", async (req, res) => {
   if (cached && Date.now() - cached.ts < TICKER_CACHE_MS) return res.json(cached.data);
 
   try {
-    const symbol = id.replace(/^orah-/, "").toUpperCase();
+    const symbol = id.replace(/^orahdex-/, "").toUpperCase();
     const markets = await db
       .select()
       .from(marketsTable)
       .where(eq(marketsTable.baseAsset, symbol));
 
     const tickers = markets.map(m => ({
-      exchangeId:    "orahdex",
-      exchangeName:  "OrahDEX",
+      exchangeId:    "orah",
+      exchangeName:  "Orah",
       exchangeLogo:  null,
       base:          m.baseAsset,
       target:        m.quoteAsset,
@@ -332,14 +304,14 @@ router.get("/coins/:id/tickers", async (req, res) => {
       volume:        parseFloat(m.volume24h ?? "0"),
       spread:        null,
       trustScore:    "green",
-      tradeUrl:      `https://orahdex.org/spot/${m.baseAsset}-${m.quoteAsset}`,
+      tradeUrl:      `https://orah.org/spot/${m.baseAsset}-${m.quoteAsset}`,
       convertedLast: parseFloat(m.lastPrice ?? "0"),
       convertedVol:  parseFloat(m.volume24h ?? "0"),
       isAnomaly:     false,
       isStale:       false,
     }));
 
-    const result = { coinId: id, name: symbol, tickers, source: "orahdex-sovereign" };
+    const result = { coinId: id, name: symbol, tickers, source: "orah-sovereign" };
     tickerCache.set(id, { data: result, ts: Date.now() });
     return res.json(result);
   } catch (err: any) {

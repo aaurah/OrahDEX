@@ -1,4 +1,3 @@
-import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
@@ -85,7 +84,7 @@ export function AdminSupportInbox() {
 
   const load = useCallback(async () => {
     try {
-      const r = await adminFetch(`/api/admin/support/tickets`);
+      const r = await fetch(`${BASE}/api/admin/support/tickets`);
       if (!r.ok) return;
       const data: Ticket[] = await r.json();
       setTickets(data);
@@ -102,7 +101,7 @@ export function AdminSupportInbox() {
   }, [load]);
 
   const patchTicket = async (id: number, body: object) => {
-    const r = await adminFetch(`/api/admin/support/tickets/${id}`, {
+    const r = await fetch(`${BASE}/api/admin/support/tickets/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -161,7 +160,7 @@ export function AdminSupportInbox() {
     if (!selected) return;
     if (!confirm(`Delete ticket #${selected.id}? This cannot be undone.`)) return;
     try {
-      await adminFetch(`/api/admin/support/tickets/${selected.id}`, { method: "DELETE" });
+      await fetch(`${BASE}/api/admin/support/tickets/${selected.id}`, { method: "DELETE" });
       setTickets(ts => ts.filter(t => t.id !== selected.id));
       setSelected(null);
       toast({ title: "Ticket deleted" });

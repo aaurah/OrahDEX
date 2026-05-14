@@ -6,20 +6,9 @@ import {
   type AppKitNetwork,
 } from "@reown/appkit/networks";
 
-const sepolia: AppKitNetwork = {
-  id:              11155111,
-  name:            "Sepolia",
-  caipNetworkId:   "eip155:11155111",
-  chainNamespace:  "eip155",
-  nativeCurrency:  { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls:         { default: { http: ["https://ethereum-sepolia-rpc.publicnode.com"] } },
-  blockExplorers:  { default: { name: "Etherscan", url: "https://sepolia.etherscan.io" } },
-  testnet:         true,
-};
-
 export const REOWN_NETWORKS: [AppKitNetwork, ...AppKitNetwork[]] = [
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
-  linea, zkSync, scroll, mantle, fantom, cronos, sepolia,
+  linea, zkSync, scroll, mantle, fantom, cronos,
 ];
 
 let _modal: ReturnType<typeof createAppKit> | null = null;
@@ -37,7 +26,7 @@ export function setupReown(projectId: string): void {
       networks: REOWN_NETWORKS,
       projectId,
       metadata: {
-        name: "OrahDEX",
+        name: "Orah",
         description: "Trade means DEX — Multi-chain BSV DEX with instant on-chain settlement",
         url: window.location.origin,
         icons: [`${window.location.origin}/favicon.svg`, `${window.location.origin}/logo.png`],
@@ -61,7 +50,7 @@ export function setupReown(projectId: string): void {
     _initialized = true;
     suppressThirdPartyBranding();
   } catch (err) {
-    console.error("[OrahDEX] Failed to initialize Reown AppKit:", err);
+    console.error("[Orah] Failed to initialize Reown AppKit:", err);
   }
 }
 
@@ -72,7 +61,7 @@ export function setupReown(projectId: string): void {
  * each one so newly-added nested components are caught too.
  */
 function suppressThirdPartyBranding(): void {
-  const STYLE_ID = "orahdex-no-brand";
+  const STYLE_ID = "orah-no-brand";
   const HIDE_CSS = `
     wui-ux-by-reown,
     wui-footer,
@@ -142,7 +131,7 @@ type ReownView =
 
 export function openReownModal(view?: ReownView): boolean {
   if (!_modal) {
-    console.warn("[OrahDEX] Reown modal not ready — Project ID may not be configured.");
+    console.warn("[Orah] Reown modal not ready — Project ID may not be configured.");
     return false;
   }
   _modal.open(view ? { view } : undefined);
@@ -213,42 +202,26 @@ export const CHAIN_RPC_URLS: Record<number, string> = {
 
 /* ── Fallback RPC endpoints (tried when primary is rate-limited) ─────── */
 export const CHAIN_RPC_FALLBACKS: Record<number, string> = {
-  1:        "https://ethereum.publicnode.com",
-  56:       "https://bsc-dataseed.binance.org",
-  137:      "https://rpc.ankr.com/polygon",
-  42161:    "https://arb1.arbitrum.io/rpc",
-  10:       "https://mainnet.optimism.io",
-  8453:     "https://mainnet.base.org",
-  43114:    "https://api.avax.network/ext/bc/C/rpc",
-  11155111: "https://eth-sepolia.public.blastapi.io",
+  1:     "https://ethereum.publicnode.com",
+  56:    "https://bsc-dataseed.binance.org",
+  137:   "https://rpc.ankr.com/polygon",
+  42161: "https://arb1.arbitrum.io/rpc",
+  10:    "https://mainnet.optimism.io",
+  8453:  "https://mainnet.base.org",
+  43114: "https://api.avax.network/ext/bc/C/rpc",
 };
 
 /**
  * Fetch the native token balance for any EVM address on any chain.
- * Priority:
- *   1. wagmi getBalance (works via WalletConnect session — no window.ethereum needed)
- *   2. Injected wallet provider (MetaMask extension desktop)
- *   3. Public RPC primary + fallback
+ * Uses a public JSON-RPC endpoint — works regardless of whether
+ * window.ethereum exists (covers MetaMask, WalletConnect/Reown, Coinbase, etc.)
  */
 export async function fetchEvmBalance(
   address: string,
   chainId?: number | null
 ): Promise<string | null> {
   try {
-    /* 1. wagmi getBalance — works with WalletConnect/Reown (mobile) */
-    if (chainId && _adapter?.wagmiConfig) {
-      try {
-        const { getBalance } = await import("@wagmi/core");
-        const result = await getBalance(_adapter.wagmiConfig, {
-          address: address as `0x${string}`,
-          chainId,
-        });
-        const native = Number(result.value) / 1e18;
-        if (native >= 0) return native.toFixed(6);
-      } catch { /* fall through */ }
-    }
-
-    /* 2. Injected wallet (MetaMask desktop extension — already on correct chain) */
+    /* 1. Try injected wallet provider first (fast path, already on correct chain) */
     const eth = (window as any).ethereum;
     if (eth) {
       try {
@@ -259,35 +232,30 @@ export async function fetchEvmBalance(
         const wei = BigInt(hex);
         const native = Number(wei) / 1e18;
         return native.toFixed(6);
-      } catch { /* fall through */ }
+      } catch {
+        /* fall through to public RPC */
+      }
     }
 
-    /* 3. Public RPC primary then fallback */
-    const rpcs = [
-      chainId ? CHAIN_RPC_URLS[chainId] : null,
-      chainId ? CHAIN_RPC_FALLBACKS[chainId] : null,
-    ].filter(Boolean) as string[];
+    /* 2. Fall back to public RPC (needed for WalletConnect / Reown) */
+    const rpc = chainId ? CHAIN_RPC_URLS[chainId] : null;
+    if (!rpc) return null;
 
-    for (const rpc of rpcs) {
-      try {
-        const res = await fetch(rpc, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0", id: 1,
-            method: "eth_getBalance",
-            params: [address, "latest"],
-          }),
-        });
-        if (!res.ok) continue;
-        const json = await res.json();
-        if (!json?.result) continue;
-        const native = Number(BigInt(json.result)) / 1e18;
-        return native.toFixed(6);
-      } catch { continue; }
-    }
-
-    return null;
+    const res = await fetch(rpc, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_getBalance",
+        params: [address, "latest"],
+      }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json?.result) return null;
+    const native = Number(BigInt(json.result)) / 1e18;
+    return native.toFixed(6);
   } catch {
     return null;
   }
@@ -386,74 +354,6 @@ export async function signMessageWithReownProvider(
 }
 
 /**
- * Send a native-coin transfer (ETH / BNB / POL…) via any connected wallet.
- * Works with MetaMask (window.ethereum), WalletConnect, and Reown AppKit.
- * Automatically switches the wallet to `targetChainId` if needed.
- * Returns the tx hash on success; throws on rejection or no wallet.
- */
-export async function sendEvmTransfer({
-  from,
-  to,
-  valueWei,
-  targetChainId,
-}: {
-  from: string;
-  to: string;
-  valueWei: bigint;
-  targetChainId: number;
-}): Promise<string> {
-  const valueHex = "0x" + valueWei.toString(16);
-  const chainHex = "0x" + targetChainId.toString(16);
-
-  // Helper: switch + send on a given EIP-1193 provider
-  async function tryProvider(provider: any): Promise<string | null> {
-    try {
-      // Switch chain if needed
-      const currentHex: string = await provider.request({ method: "eth_chainId" });
-      if (parseInt(currentHex, 16) !== targetChainId) {
-        await provider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: chainHex }],
-        });
-      }
-      const hash: string = await provider.request({
-        method: "eth_sendTransaction",
-        params: [{ from, to, value: valueHex }],
-      });
-      return hash ?? null;
-    } catch (err: any) {
-      // User rejected (code 4001) — propagate immediately
-      if (err?.code === 4001 || err?.message?.includes("rejected")) throw err;
-      return null; // provider inactive — try next
-    }
-  }
-
-  // 1. Try injected window.ethereum first (MetaMask desktop)
-  const injected = (window as any).ethereum;
-  if (injected) {
-    const hash = await tryProvider(injected);
-    if (hash) return hash;
-  }
-
-  // 2. Try every wagmi connector (covers WalletConnect / Reown AppKit mobile)
-  const config = _adapter?.wagmiConfig;
-  if (config) {
-    for (const connector of config.connectors) {
-      try {
-        const provider = await (connector as any).getProvider?.();
-        if (!provider) continue;
-        const hash = await tryProvider(provider);
-        if (hash) return hash;
-      } catch (err: any) {
-        if (err?.code === 4001 || err?.message?.includes("rejected")) throw err;
-      }
-    }
-  }
-
-  throw new Error("No active wallet found. Please connect MetaMask or use the WalletConnect button.");
-}
-
-/**
  * Fully disconnect from the Reown session — kills the WalletConnect/AppKit
  * session so re-opening the modal shows the wallet picker from scratch.
  */
@@ -463,7 +363,7 @@ export async function disconnectReown(): Promise<void> {
   try {
     await (_modal as any).disconnect?.();
   } catch (err) {
-    console.warn("[OrahDEX] Reown disconnect:", err);
+    console.warn("[Orah] Reown disconnect:", err);
   }
 }
 

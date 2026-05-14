@@ -1,5 +1,5 @@
 /**
- * spotSettlement.ts — MARKET and LIMIT trade settlement for OrahDEX
+ * spotSettlement.ts — MARKET and LIMIT trade settlement for Orah
  *
  * Handles one fill at a time.  Called from the matching loop in orders.ts
  * (or any future matching engine) for each counter-order that is consumed.
@@ -37,8 +37,6 @@ import {
 } from "./htlc.js";
 import { getBsvChainStatus } from "./bsvChainMonitor.js";
 import { settleTrade } from "./ledger.js";
-import { BOT_ADDRESS } from "./liquidityBot.js";
-import { onTradeSettled as copyVaultOnTradeSettled } from "./copyOrchestrator.js";
 import { registerHtlc } from "./htlcWatcher.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -131,14 +129,11 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
   }
 
   // ── 3. Build OP_RETURN settlement payload ────────────────────────────────
-  // Determine which ID is the buy order vs sell order.
-  // The new/incoming order (newOrderId) is the buyer when the match counter-order is on the sell side.
-  const newOrderIsBuy = matchOrder.walletAddress === sellerAddress;
   const fallback = buildSettlement({
     tradeId,
     pair,
-    buyOrderId:         newOrderIsBuy ? newOrderId : matchOrder.id,
-    sellOrderId:        newOrderIsBuy ? matchOrder.id : newOrderId,
+    buyOrderId:         buyerAddress === params.buyerAddress ? newOrderId : matchOrder.id,
+    sellOrderId:        sellerAddress === params.sellerAddress ? newOrderId : matchOrder.id,
     buyerAddress,
     sellerAddress,
     buyerNetwork,
@@ -153,33 +148,7 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
     htlcLocktimeBlocks: htlcResult?.locktimeBlocks,
   });
 
-  // ── 4. Settle ledger balances FIRST (atomic, source of truth) ───────────
-  // Run for every fill — bot fills too.  The ledger must be committed before
-  // any on-chain broadcast so the two cannot diverge (broadcast is best-effort;
-  // ledger is authoritative). If ledger settlement fails we do NOT broadcast.
-  try {
-    await settleTrade({
-      buyerAddress,
-      sellerAddress,
-      baseAsset:   baseAsset!,
-      quoteAsset:  quoteAsset!,
-      amount:      fillQty.toString(),
-      price:       fillPrice.toString(),
-      isBotSeller: sellerAddress === BOT_ADDRESS,
-      isBotBuyer:  buyerAddress  === BOT_ADDRESS,
-    });
-  } catch (err) {
-    // Ledger settlement is the source of truth for balances.
-    // A failure here means the fill cannot be credited — propagate so the
-    // caller can roll back order state and avoid phantom balances.
-    log.error({ err, tradeId }, "spotSettlement: ledger settlement failed — aborting fill (no broadcast)");
-    throw err;
-  }
-
-  // ── 5. Attempt real BSV broadcast (best-effort) ──────────────────────────
-  // Only broadcast AFTER the ledger is committed.  If broadcast fails the
-  // deterministic txid is used as the audit reference; the ledger is already
-  // settled so user balances are correct regardless.
+  // ── 4. Attempt real BSV broadcast ────────────────────────────────────────
   let broadcastTxid    = fallback.txid;
   let wasRealBroadcast = false;
 
@@ -215,13 +184,7 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
       }
     }
   } catch (err) {
-    log.warn({ err }, "spotSettlement: BSV broadcast failed — using deterministic txid (ledger already settled)");
-  }
-
-  // Mark unbroadcast (local-only) settlement txids so the UI doesn't link
-  // them to WhatsOnChain (which would 404). Real broadcasts stay un-prefixed.
-  if (!wasRealBroadcast && !broadcastTxid.startsWith("local:")) {
-    broadcastTxid = `local:${broadcastTxid}`;
+    log.warn({ err }, "spotSettlement: BSV broadcast failed — using deterministic txid");
   }
 
   log.info(
@@ -239,24 +202,21 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
       : `spotSettlement: deterministic txid committed (${fallback.settlementType})`
   );
 
-  // ── 5b. CopyVault hook: mirror this trade into any vault led by buyer/seller ─
-  // Fire-and-forget — copy bookkeeping must never fail the underlying fill.
-  void copyVaultOnTradeSettled({
-    traderAddress: buyerAddress,
-    symbol: pair,
-    side: "buy",
-    price: fillPrice,
-    quantity: fillQty,
-    orderId: newOrderId,
-  }).catch(err => log.warn({ err }, "spotSettlement: copyVault hook (buy) failed"));
-  void copyVaultOnTradeSettled({
-    traderAddress: sellerAddress,
-    symbol: pair,
-    side: "sell",
-    price: fillPrice,
-    quantity: fillQty,
-    orderId: matchOrder.id,
-  }).catch(err => log.warn({ err }, "spotSettlement: copyVault hook (sell) failed"));
+  // ── 5. Settle ledger balances ────────────────────────────────────────────
+  // This runs for every fill — bot fills too.  The ledger is the source of
+  // truth for free/locked balances; on-chain broadcast is best-effort.
+  try {
+    await settleTrade({
+      buyerAddress,
+      sellerAddress,
+      baseAsset:  baseAsset!,
+      quoteAsset: quoteAsset!,
+      amount:     fillQty.toString(),
+      price:      fillPrice.toString(),
+    });
+  } catch (err) {
+    log.warn({ err, tradeId }, "spotSettlement: ledger settlement failed");
+  }
 
   // ── 6. Register HTLC with watcher (Relayer Keeper notifications) ─────────
   if (isCrossChain && htlcResult?.htlcAddress && broadcastTxid) {

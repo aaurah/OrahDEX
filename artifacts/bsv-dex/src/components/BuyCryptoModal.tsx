@@ -12,7 +12,6 @@ interface Props {
   open: boolean;
   onClose: () => void;
   defaultCoin?: string;
-  defaultPayMethod?: PayMethod;
 }
 
 interface EvmChain {
@@ -301,7 +300,7 @@ type Step = "connect" | "coin" | "method" | "quote" | "checkout";
 const STEPS: Step[] = ["connect","coin","method","quote","checkout"];
 const STEP_LABELS = ["Connect","Select","Pay","Quote","Confirm"];
 
-export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayMethod }: Props) {
+export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC" }: Props) {
   const { address, provider: walletProvider, chainId: connectedChainId } = useWalletStore();
   const connectWallet = useWalletStore(s => s.connect);
 
@@ -338,28 +337,16 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
   const [switchedChainId, setSwitchedChainId] = useState<number|null>(null);
   const [copied, setCopied]               = useState(false);
 
-  // Coinbase Onramp project ID (fetched from server, used as appId in pay.coinbase.com URL)
-  const [coinbaseProjectId, setCoinbaseProjectId] = useState<string>("");
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/coinbase/onramp-config")
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (!cancelled && d?.projectId) setCoinbaseProjectId(d.projectId); })
-      .catch(() => { /* optional — falls back to generic Coinbase URL */ });
-    return () => { cancelled = true; };
-  }, []);
-
   useEffect(() => {
     if (open) {
       setStep(address ? "coin" : "connect");
-      setCoin(defaultCoin); setSearch(""); setAmount("100");
-      setPayMethod(defaultPayMethod ?? "card");
+      setCoin(defaultCoin); setSearch(""); setAmount("100"); setPayMethod("card");
       setProviderId(""); setNativeAddr(""); setAddrErr(null); setSwitchErr(null); setSwitchedChainId(null);
       setNotFoundWalletId(null); setManualEvmAddr(""); setManualEvmErr(null);
       setBsvSubStep("list"); setBsvHandle(""); setHandleState("idle"); setHandleErr(null);
       setManualBsvAddr(""); setManualBsvWallet("bsv");
     }
-  }, [open, defaultCoin, defaultPayMethod]);
+  }, [open, defaultCoin]);
 
   useEffect(() => { if (step === "connect" && address) setStep("coin"); }, [address, step]);
   useEffect(() => { setNativeAddr(""); setAddrErr(null); setSwitchErr(null); setSwitchedChainId(null); }, [coin]);
@@ -527,12 +514,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
   function getProviderUrl(pId: string) {
     const p = PROVIDERS.find(x => x.id === pId);
     if (!p) return "#";
-    const baseParams = p.params(coin,fiat,amount,payMethod,effectiveAddr) as Record<string,string>;
-    // Coinbase Onramp requires appId (CDP Project ID) — inject it when available
-    if (p.id === "coinbase" && coinbaseProjectId) {
-      baseParams.appId = coinbaseProjectId;
-    }
-    return `${p.baseUrl}?${new URLSearchParams(baseParams)}`;
+    return `${p.baseUrl}?${new URLSearchParams(p.params(coin,fiat,amount,payMethod,effectiveAddr))}`;
   }
 
   function validateAndContinue() {
@@ -958,7 +940,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
 
               <div className="flex items-center gap-2 p-3 bg-secondary/40 border border-border rounded-xl">
                 <Shield className="w-4 h-4 text-green-400 shrink-0"/>
-                <p className="text-[11px] text-muted-foreground">All payment providers are regulated and use bank-grade encryption. OrahDEX never sees your payment details.</p>
+                <p className="text-[11px] text-muted-foreground">All payment providers are regulated and use bank-grade encryption. Orah never sees your payment details.</p>
               </div>
             </div>
           )}
@@ -1281,7 +1263,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
               <div className="flex items-start gap-2 p-3 bg-secondary/40 border border-border rounded-xl">
                 <CheckCircle className="w-4 h-4 text-green-400 shrink-0 mt-0.5"/>
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  {selectedProvider.name} sends {coin} to your {coinNet.name} address. Typically within 5–30 minutes of payment confirmation. OrahDEX never handles your funds.
+                  {selectedProvider.name} sends {coin} to your {coinNet.name} address. Typically within 5–30 minutes of payment confirmation. Orah never handles your funds.
                 </p>
               </div>
             </div>

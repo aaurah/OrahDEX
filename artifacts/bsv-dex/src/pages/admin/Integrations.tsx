@@ -1,4 +1,3 @@
-import { adminFetch } from "@/lib/adminFetch";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -6,7 +5,6 @@ import {
   AlertTriangle, CheckCircle2, Cpu, Globe, Zap,
   Wallet, Bell, Shield, Mail, BarChart3, MessageSquare,
   ChevronDown, ChevronUp, Wifi, WifiOff, Loader2, ExternalLink,
-  Link2, ShieldCheck, Copy, IdCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -36,8 +34,6 @@ interface IntegrationSettings {
   discord_webhook_url: string;
   telegram_bot_token: string;
   telegram_chat_id: string;
-  letsexchange_api_key: string;
-  sumsub_api_key: string;
 }
 
 const DEFAULTS: IntegrationSettings = {
@@ -63,15 +59,13 @@ const DEFAULTS: IntegrationSettings = {
   discord_webhook_url: "",
   telegram_bot_token: "",
   telegram_chat_id: "",
-  letsexchange_api_key: "",
-  sumsub_api_key: "",
 };
 
 const fetchIntegrations = (): Promise<IntegrationSettings> =>
-  adminFetch(`/api/admin/integrations`).then(r => r.json());
+  fetch(`${BASE}/api/admin/integrations`).then(r => r.json());
 
 const saveIntegrations = (data: IntegrationSettings) =>
-  adminFetch(`/api/admin/integrations`, {
+  fetch(`${BASE}/api/admin/integrations`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -186,219 +180,6 @@ function Section({ icon, title, description, badge, badgeColor, children, defaul
   );
 }
 
-// LetsExchange section — shows the decoded Partner ID (the "exchange ID"
-// LetsExchange shows in their dashboard), lets the operator paste a new
-// JWT, decode it locally, and ping LE /v2/coins to verify it works
-// before clicking Save All.
-interface LeAffiliate {
-  configured: boolean;
-  source: "env" | "db" | "none";
-  partnerId: string | null;
-  partnerEmail?: string | null;
-  expiresAt?: number | null;
-  expired?: boolean;
-  decodeError?: string | null;
-  affiliateUrl: string | null;
-  dashboardUrl: string;
-  message?: string;
-}
-
-function decodeLeJwtClient(jwt: string): { partnerId: string | null; email: string | null; expiresAt: number | null } {
-  if (!jwt || !jwt.includes(".")) return { partnerId: null, email: null, expiresAt: null };
-  try {
-    const payload = JSON.parse(atob(jwt.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-    const id = payload?.data?.id ?? payload?.sub ?? null;
-    const email = payload?.data?.email ?? payload?.email ?? null;
-    const exp = typeof payload?.exp === "number" ? payload.exp * 1000 : null;
-    return { partnerId: id != null ? String(id) : null, email: email ? String(email) : null, expiresAt: exp };
-  } catch { return { partnerId: null, email: null, expiresAt: null }; }
-}
-
-function LetsExchangeSection({
-  form, setKey, configuredCount,
-}: {
-  form: IntegrationSettings;
-  setKey: (v: string) => void;
-  configuredCount: number;
-}) {
-  const { toast } = useToast();
-  const { data: active, refetch } = useQuery<LeAffiliate>({
-    queryKey: ["le-affiliate"],
-    queryFn: () => adminFetch(`/api/admin/letsexchange/affiliate`).then(r => r.json()),
-  });
-
-  // Live-decode the value currently in the form so the operator sees the
-  // partner ID change as they paste a new key, before saving.
-  const draft = decodeLeJwtClient(form.letsexchange_api_key);
-  const draftDiffersFromActive =
-    draft.partnerId != null && active?.partnerId != null && draft.partnerId !== active.partnerId;
-
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string; partnerId?: string|null } | null>(null);
-
-  const onTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const r = await adminFetch(`/api/admin/letsexchange/test`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: form.letsexchange_api_key }),
-      }).then(r => r.json());
-      setTestResult({ ok: !!r.ok, message: r.message ?? r.error ?? "", partnerId: r.partnerId });
-    } catch (err: any) {
-      setTestResult({ ok: false, message: err?.message ?? "Network error" });
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const copy = (txt: string, label: string) => {
-    navigator.clipboard.writeText(txt).then(
-      () => toast({ title: `${label} copied` }),
-      () => toast({ title: `Could not copy`, variant: "destructive" }),
-    );
-  };
-
-  const expiresAt = active?.expiresAt ?? draft.expiresAt;
-  const expiresLabel = expiresAt ? new Date(expiresAt).toLocaleDateString() : null;
-
-  return (
-    <Section
-      icon={<Link2 className="w-4 h-4" />}
-      title="Bridge — LetsExchange"
-      description="Powers the Bridge tab. Users can swap 340+ coins cross-chain. Your Partner ID is embedded in every swap so commissions are credited on letsexchange.io."
-      badge="Recommended"
-      badgeColor="bg-amber-400/10 text-amber-400 border-amber-400/20"
-      configuredCount={configuredCount}
-      totalCount={1}
-    >
-      {/* ── Active Partner ID card ───────────────────────────────────────── */}
-      <div className="p-4 rounded-xl border border-cyan-500/20 bg-gradient-to-br from-cyan-500/5 to-cyan-500/0">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/15 flex items-center justify-center text-cyan-300 shrink-0">
-              <IdCard className="w-5 h-5" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300/80">
-                Your LetsExchange Partner ID
-              </div>
-              {active?.partnerId ? (
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xl font-black font-mono text-cyan-300">{active.partnerId}</span>
-                  <button
-                    type="button"
-                    onClick={() => copy(active.partnerId!, "Partner ID")}
-                    className="p-1 rounded-md hover:bg-white/5 text-cyan-300/70 hover:text-cyan-300"
-                    title="Copy Partner ID"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ) : (
-                <div className="text-sm text-amber-400 mt-0.5">
-                  {active?.message ?? "Not configured — paste a key below to generate one."}
-                </div>
-              )}
-              {active?.partnerEmail && (
-                <div className="text-[11px] text-muted-foreground mt-0.5">{active.partnerEmail}</div>
-              )}
-              <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
-                {active?.source && active.source !== "none" && (
-                  <span>Source: <span className="font-mono">{active.source === "env" ? "environment" : "database"}</span></span>
-                )}
-                {expiresLabel && (
-                  <span className={cn(active?.expired && "text-red-400 font-semibold")}>
-                    {active?.expired ? "Expired" : "Expires"} {expiresLabel}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {active?.affiliateUrl && (
-              <a
-                href={active.affiliateUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 text-xs font-bold border border-cyan-500/20"
-                title="Your tracked referral link"
-              >
-                <ExternalLink className="w-3.5 h-3.5" /> Referral link
-              </a>
-            )}
-            <a
-              href={active?.dashboardUrl ?? "https://letsexchange.io/affiliate"}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-secondary hover:bg-secondary/70 text-foreground text-xs font-bold border border-border"
-            >
-              <ExternalLink className="w-3.5 h-3.5" /> Open dashboard
-            </a>
-          </div>
-        </div>
-
-        {draftDiffersFromActive && (
-          <div className="mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-300">
-            Pasted key decodes to a <span className="font-bold">different Partner ID ({draft.partnerId})</span>.
-            Click <span className="font-bold">Save All</span> to switch.
-          </div>
-        )}
-      </div>
-
-      <MaskedField
-        label="LetsExchange API Key (JWT)"
-        value={form.letsexchange_api_key}
-        onChange={setKey}
-        placeholder="eyJhbGciOiJIUzI1NiIs..."
-        hint="The whole JWT token from letsexchange.io → Affiliate Program → API Keys. The Partner ID above is decoded from this token's payload."
-      />
-
-      <div className="flex items-center gap-2 flex-wrap">
-        <button
-          type="button"
-          onClick={onTest}
-          disabled={testing || !form.letsexchange_api_key}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold border border-primary/20 disabled:opacity-50"
-        >
-          {testing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wifi className="w-3.5 h-3.5" />}
-          {testing ? "Testing…" : "Test connection"}
-        </button>
-        <button
-          type="button"
-          onClick={() => refetch()}
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-secondary hover:bg-secondary/70 text-foreground text-xs font-bold border border-border"
-        >
-          <RefreshCw className="w-3.5 h-3.5" /> Refresh
-        </button>
-        {testResult && (
-          <span className={cn(
-            "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border",
-            testResult.ok
-              ? "text-green-400 bg-green-500/10 border-green-500/20"
-              : "text-red-400 bg-red-500/10 border-red-500/20",
-          )}>
-            {testResult.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
-            {testResult.message}
-          </span>
-        )}
-      </div>
-
-      <div className="p-3 bg-cyan-400/5 border border-cyan-400/15 rounded-xl text-xs text-cyan-300 space-y-1.5">
-        <p className="font-semibold">How to get your Partner ID:</p>
-        <ol className="list-decimal list-inside space-y-0.5 text-cyan-300/80">
-          <li>Sign up at <a href="https://letsexchange.io/affiliate" target="_blank" rel="noreferrer" className="underline">letsexchange.io/affiliate</a> (free, no KYC).</li>
-          <li>Open <span className="font-mono">Dashboard → API Keys</span> and click <span className="font-mono">Generate API Key</span>.</li>
-          <li>Copy the entire JWT token and paste it into the field above.</li>
-          <li>The Partner ID is decoded from the token automatically — no separate ID to copy.</li>
-          <li>Click <span className="font-mono">Save All</span>. From that moment every Bridge swap credits commissions to that Partner ID.</li>
-        </ol>
-      </div>
-    </Section>
-  );
-}
-
 export function AdminIntegrations() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -438,7 +219,7 @@ export function AdminIntegrations() {
   const testSmtpMutation = useMutation({
     mutationFn: async () => {
       await saveIntegrations(form);
-      return adminFetch(`/api/admin/mail/test-smtp`, { method: "POST" }).then(r => r.json());
+      return fetch(`${BASE}/api/admin/mail/test-smtp`, { method: "POST" }).then(r => r.json());
     },
     onSuccess: (data: { success: boolean; error?: string }) => {
       setSmtpTestResult(data);
@@ -453,7 +234,7 @@ export function AdminIntegrations() {
 
   const autoEmailMutation = useMutation({
     mutationFn: () =>
-      adminFetch(`/api/admin/auto-setup-email`, { method: "POST" }).then(r => r.json()),
+      fetch(`${BASE}/api/admin/auto-setup-email`, { method: "POST" }).then(r => r.json()),
     onSuccess: (data: { success: boolean; user?: string; pass?: string; host?: string; port?: number; from?: string; error?: string }) => {
       if (!data.success) {
         toast({ title: "Failed", description: data.error ?? "Could not create test account", variant: "destructive" });
@@ -571,7 +352,7 @@ export function AdminIntegrations() {
       <Section
         icon={<BarChart3 className="w-4 h-4" />}
         title="Price Data — Sovereign Engine"
-        description="OrahDEX runs its own price engine (Binance public feed + WhatsOnChain + own order books). No external API key needed for core price data. Optional keys below enhance token discovery."
+        description="Orah runs its own price engine (Binance public feed + WhatsOnChain + own order books). No external API key needed for core price data. Optional keys below enhance token discovery."
         badge="Optional"
         badgeColor="bg-secondary text-muted-foreground border-border"
         configuredCount={countSet("dexscreener_api_key", "geckoterm_api_key")}
@@ -594,7 +375,7 @@ export function AdminIntegrations() {
           />
         </div>
         <p className="text-xs text-muted-foreground/70 pt-1">
-          Core price data is served from OrahDEX sovereign engine — Binance public ticker + WhatsOnChain BSV rate + own trades. Zero dependency on CoinGecko or CoinMarketCap.
+          Core price data is served from Orah sovereign engine — Binance public ticker + WhatsOnChain BSV rate + own trades. Zero dependency on CoinGecko or CoinMarketCap.
         </p>
       </Section>
 
@@ -688,7 +469,7 @@ export function AdminIntegrations() {
       <Section
         icon={<Mail className="w-4 h-4" />}
         title="Email / SMTP"
-        description="Send transactional emails from OrahDEX (password resets, trade confirmations, notifications)."
+        description="Send transactional emails from Orah (password resets, trade confirmations, notifications)."
         badge={form.smtp_host ? "Configured" : "Not set"}
         badgeColor={form.smtp_host ? "bg-green-400/10 text-green-400 border-green-400/20" : "bg-amber-400/10 text-amber-400 border-amber-400/20"}
         defaultOpen={!form.smtp_host}
@@ -726,13 +507,13 @@ export function AdminIntegrations() {
               {
                 label: "SendGrid",
                 color: "text-blue-400 border-blue-500/30 bg-blue-500/8 hover:bg-blue-500/15",
-                fill: { smtp_host: "smtp.sendgrid.net", smtp_port: "587", smtp_user: "apikey", smtp_from: "support@orahdex.org" },
+                fill: { smtp_host: "smtp.sendgrid.net", smtp_port: "587", smtp_user: "apikey", smtp_from: "support@orah.org" },
                 note: "Username = apikey\nPassword = your SG API key\nFree: 100 emails/day",
               },
               {
                 label: "Mailgun",
                 color: "text-red-400 border-red-500/30 bg-red-500/8 hover:bg-red-500/15",
-                fill: { smtp_host: "smtp.mailgun.org", smtp_port: "587", smtp_user: "", smtp_from: "support@orahdex.org" },
+                fill: { smtp_host: "smtp.mailgun.org", smtp_port: "587", smtp_user: "", smtp_from: "support@orah.org" },
                 note: "Username = your Mailgun SMTP login\nPassword = Mailgun SMTP password\nFree: 100 emails/day (sandbox)",
               },
               {
@@ -807,7 +588,7 @@ export function AdminIntegrations() {
             label="From Email Address"
             value={form.smtp_from}
             onChange={set("smtp_from")}
-            placeholder="noreply@orahdex.org"
+            placeholder="noreply@orah.org"
             type="email"
             hint="Sender address shown on all outgoing emails."
           />
@@ -865,39 +646,6 @@ export function AdminIntegrations() {
             To switch to real delivery, paste your SendGrid/Mailgun/Gmail credentials above and click Save All.
           </div>
         )}
-      </Section>
-
-      {/* ── Bridge — LetsExchange ── */}
-      <LetsExchangeSection
-        form={form}
-        setKey={set("letsexchange_api_key")}
-        configuredCount={countSet("letsexchange_api_key")}
-      />
-
-      {/* ── KYC / AML ── */}
-
-      <Section
-        icon={<ShieldCheck className="w-4 h-4" />}
-        title="KYC / AML — Sumsub"
-        description="Automated identity verification for withdrawals, spot, futures, and P2P. Required for regulated regions."
-        badge="Recommended"
-        badgeColor="bg-amber-400/10 text-amber-400 border-amber-400/20"
-        configuredCount={countSet("sumsub_api_key")}
-        totalCount={1}
-      >
-        <MaskedField
-          label="Sumsub App Token"
-          value={form.sumsub_api_key}
-          onChange={set("sumsub_api_key")}
-          placeholder="sbx:xxxxxxxx.xxxxxxxx"
-          hint="Get your App Token from app.sumsub.com → Settings → API Keys. Prefix sbx: for sandbox, prd: for production."
-        />
-        <div className="p-3 bg-amber-400/5 border border-amber-400/15 rounded-xl text-xs text-amber-300 space-y-1">
-          <p className="font-semibold">KYC is enforced at the feature-flag level:</p>
-          <p className="text-amber-300/80">
-            Go to <a href="/admin/features" className="underline underline-offset-2">Feature Flags</a> to configure which actions require KYC (withdrawals, spot, futures, P2P).
-          </p>
-        </div>
       </Section>
 
       {/* ── 5. Security & Anti-Spam ── */}

@@ -21,7 +21,7 @@ A. Kill auto-seeding for real wallets
 
 In ensureSeedForAsset:
 
-• Add wallet source awareness (e.g. walletSource: 'demo' | 'orah' | 'external').
+• Add wallet source awareness (e.g. walletSource: 'demo' | 'orahdex' | 'external').
 • Only allow auto-seed when:• walletSource === 'demo' (or whatever you call your sandbox wallet).
 
 • For external / real EVM wallets:• Do not create or top up balances.
@@ -59,7 +59,7 @@ Contract: No lock, no order. Ever.
 
 Update the order placement endpoint to:
 
-• Require:• walletSource (e.g. 'demo' | 'orah' | 'external').
+• Require:• walletSource (e.g. 'demo' | 'orahdex' | 'external').
 • reportedBalance (client-side view of balance for that asset).
 
 • Use walletSource to:• Decide whether seeding is allowed.
@@ -109,7 +109,7 @@ reportedBalance: currentBalanceForAsset,
 
 
 • Ensure walletSource is derived from your existing flags:• isDemo → 'demo'
-• isOrahWallet → 'orah'
+• isOrahDEXWallet → 'orahdex'
 • external → 'external'
 
 

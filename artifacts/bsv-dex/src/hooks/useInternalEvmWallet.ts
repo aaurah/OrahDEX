@@ -2,7 +2,7 @@
  * useInternalEvmWallet
  *
  * When a BSV wallet is connected, automatically provisions a custodial EVM
- * sub-account on OrahDEX. The private key never leaves the server; only the
+ * sub-account on Orah. The private key never leaves the server; only the
  * EVM address is returned and stored in the wallet store so UI components
  * can use it for display and order routing.
  *
@@ -25,7 +25,7 @@ export function useInternalEvmWallet() {
   const provisionedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!address || (network !== "bsv" && network !== "bsv-test")) {
+    if (!address || network !== "bsv") {
       if (!address) setInternalEvm(null);
       return;
     }
@@ -45,7 +45,7 @@ export function useInternalEvmWallet() {
         setInternalEvm(data.evmAddress);
       })
       .catch(err => {
-        console.warn("[OrahDEX] Could not provision internal EVM wallet:", err);
+        console.warn("[Orah] Could not provision internal EVM wallet:", err);
         provisionedFor.current = null;
       });
   }, [address, network, internalEvmAddress]);

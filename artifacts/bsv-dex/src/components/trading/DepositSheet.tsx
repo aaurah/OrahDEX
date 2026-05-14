@@ -2,7 +2,7 @@
  * DepositSheet.tsx
  *
  * Deposit flow for external EVM wallets — guides the user through:
- *   1. Viewing their unique OrahDEX deposit address
+ *   1. Viewing their unique Orah deposit address
  *   2. Sending ETH on-chain to that address
  *   3. Verifying the tx hash to credit their internal ledger
  */
@@ -135,21 +135,13 @@ export function DepositSheet({
   const ledgerBal      = info?.ledgerBalances?.[nativeSym] ?? "0";
   const explorerBase   = info?.blockExplorer ?? "https://etherscan.io";
 
-  /** Build a safe explorer TX URL — only when the hash is a well-formed 0x-prefixed 64-hex-char string */
-  function safeExplorerUrl(base: string, hash: string): string | undefined {
-    if (/^0x[0-9a-fA-F]{64}$/.test(hash)) {
-      return `${base}/tx/${hash}`;
-    }
-    return undefined;
-  }
-
   return (
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="max-w-md bg-card border-border text-foreground">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             <ArrowDownToLine className="w-4 h-4 text-emerald-400" />
-            Deposit {nativeSym} to OrahDEX
+            Deposit {nativeSym} to Orah
           </DialogTitle>
         </DialogHeader>
 
@@ -165,9 +157,9 @@ export function DepositSheet({
         ) : (
           <div className="space-y-5">
 
-            {/* Current OrahDEX balance */}
+            {/* Current Orah balance */}
             <div className="flex items-center justify-between text-sm px-3 py-2 rounded-lg bg-muted/40">
-              <span className="text-muted-foreground">OrahDEX balance</span>
+              <span className="text-muted-foreground">Orah balance</span>
               <span className="font-mono font-semibold">
                 {parseFloat(ledgerBal) > 0
                   ? parseFloat(ledgerBal).toLocaleString("en-US", { maximumFractionDigits: 6 })
@@ -182,7 +174,7 @@ export function DepositSheet({
               </div>
               <div className="w-full">
                 <p className="text-xs text-muted-foreground mb-1">
-                  Your OrahDEX deposit address ({info.chainName})
+                  Your Orah deposit address ({info.chainName})
                 </p>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 text-xs font-mono bg-muted px-2 py-1.5 rounded-md truncate">
@@ -206,7 +198,7 @@ export function DepositSheet({
               {[
                 `Send ${nativeSym} from your wallet to the address above on ${info.chainName}.`,
                 "Wait for the transaction to be confirmed (usually 1–3 minutes).",
-                "Paste the transaction hash below and click Verify — your OrahDEX balance will be credited instantly.",
+                "Paste the transaction hash below and click Verify — your Orah balance will be credited instantly.",
               ].map((step, i) => (
                 <li key={i} className="flex gap-2">
                   <span className="shrink-0 w-4 h-4 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold text-muted-foreground mt-px">
@@ -226,7 +218,7 @@ export function DepositSheet({
                 <CheckCircle2 className="w-10 h-10 text-emerald-400" />
                 <p className="text-sm font-semibold text-emerald-400">{verified.message}</p>
                 <a
-                  href={safeExplorerUrl(explorerBase, txHash)}
+                  href={`${explorerBase}/tx/${txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
@@ -278,7 +270,7 @@ export function DepositSheet({
 
             {/* Withdraw note */}
             <p className="text-[11px] text-muted-foreground/60 text-center">
-              OrahDEX holds your deposit in custody. Withdraw anytime via the Portfolio page.
+              Orah holds your deposit in custody. Withdraw anytime via the Portfolio page.
             </p>
           </div>
         )}

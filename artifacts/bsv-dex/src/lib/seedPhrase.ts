@@ -1,15 +1,15 @@
 /**
- * OrahDEX HD Wallet — BIP39 + BIP44/SLIP-0010 multi-chain derivation (browser-safe).
+ * Orah HD Wallet — BIP39 + BIP44/SLIP-0010 multi-chain derivation (browser-safe).
  *
- * One seed phrase → eight chain addresses (each using its own BIP44 coin type):
+ * One seed phrase → five chain addresses:
  *   EVM (Ethereum, BSC, Polygon…)  : m/44'/60'/0'/0/0   secp256k1
- *   BTC (Bitcoin)                  : m/84'/0'/0'/0/0    secp256k1, P2WPKH bech32 (starts with "bc1q")
- *   BSV (Bitcoin SV)               : m/44'/236'/0'/0/0  secp256k1, P2PKH (starts with "1")
- *   BCH (Bitcoin Cash)             : m/44'/145'/0'/0/0  secp256k1, CashAddr (bitcoincash:q…)
+ *   BTC / BSV / BCH (Bitcoin forks): m/44'/0'/0'/0/0    secp256k1 — shared key
+ *     → All three produce the identical legacy P2PKH address (starts with "1")
  *   SOL (Solana)                   : m/44'/501'/0'/0'   ed25519 SLIP-0010 (Phantom-compatible)
- *   XRP (Ripple XRP Ledger)        : m/44'/144'/0'/0/0  secp256k1, XRP Base58 alphabet (starts with "r")
- *   LTC (Litecoin)                 : m/44'/2'/0'/0/0    secp256k1, P2PKH version 0x30 (starts with "L")
- *   DOGE (Dogecoin)                : m/44'/3'/0'/0/0    secp256k1, P2PKH version 0x1E (starts with "D")
+ *
+ * BTC, BCH, and BSV are all Bitcoin forks sharing the same secp256k1 curve.
+ * Deriving from the same BIP44 path (coin type 0') ensures the same legacy
+ * address across all three chains when switching networks.
  *
  * All addresses are fully compatible with MetaMask, Trust Wallet, Phantom, Ledger, etc.
  */
@@ -43,10 +43,6 @@ export interface HdWalletAddresses {
   bch: string;
   bsv: string;
   sol: string;
-  tron: string;
-  xrp: string;
-  ltc: string;
-  doge: string;
 }
 
 export async function deriveAllAddresses(mnemonic: string[]): Promise<HdWalletAddresses> {
@@ -57,162 +53,21 @@ export async function deriveAllAddresses(mnemonic: string[]): Promise<HdWalletAd
   const seed = await mnemonicToSeed(phrase);
   const root = HDKey.fromMasterSeed(seed);
 
-  const btcKey = root.derive("m/84'/0'/0'/0/0");  // BIP84 Native SegWit
-  const btc = deriveP2WPKH(btcKey);              // bech32 bc1q… address
+  const bitcoinKey = root.derive("m/44'/0'/0'/0/0");
+  const btc = deriveP2PKH(bitcoinKey);
+  const bch = btc;
+  const bsv = btc;
+  const sol = deriveSolanaAddress(seed);
 
-  const bsvKey = root.derive("m/44'/236'/0'/0/0");
-  const bsv = deriveP2PKH(bsvKey);
-
-  const bchKey = root.derive("m/44'/145'/0'/0/0");
-  const bch = deriveCashAddr(bchKey);
-
-  const sol  = deriveSolanaAddress(seed);
-  const tron = evmToTronAddress(evm);   // same key as EVM, Tron Base58Check encoding
-
-  const xrpKey  = root.derive("m/44'/144'/0'/0/0");
-  const xrp  = deriveXrpAddress(xrpKey);
-
-  const ltcKey  = root.derive("m/44'/2'/0'/0/0");
-  const ltc  = deriveLtcAddress(ltcKey);
-
-  const dogeKey = root.derive("m/44'/3'/0'/0/0");
-  const doge = deriveDogeAddress(dogeKey);
-
-  return { evm, btc, bch, bsv, sol, tron, xrp, ltc, doge };
+  return { evm, btc, bch, bsv, sol };
 }
 
-// ─── Base58 with configurable alphabet ───────────────────────────────────────
-
-const BITCOIN_BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-const XRP_BASE58     = "rpshnaf39wBUDNEGHJKLM4PQRST7VWXYZ2bcdeCg65jkm8oFqi1tuvAxyz";
-
-function base58EncodeWithAlphabet(bytes: Uint8Array, alphabet: string): string {
-  const digits: number[] = [0];
-  for (const byte of bytes) {
-    let carry = byte;
-    for (let j = 0; j < digits.length; j++) {
-      carry += digits[j] << 8;
-      digits[j] = carry % 58;
-      carry = Math.floor(carry / 58);
-    }
-    while (carry) { digits.push(carry % 58); carry = Math.floor(carry / 58); }
-  }
-  let result = "";
-  for (const b of bytes) { if (b !== 0) break; result += alphabet[0]; }
-  return result + digits.reverse().map(d => alphabet[d]).join("");
-}
-
-function base58Encode(bytes: Uint8Array): string {
-  return base58EncodeWithAlphabet(bytes, BITCOIN_BASE58);
-}
-
-// ─── Base58Check (BTC / BSV / LTC / DOGE — Bitcoin alphabet) ─────────────────
-
-function encodeBase58Check(payload: Uint8Array, version: number): string {
-  const versioned = new Uint8Array(1 + payload.length);
-  versioned[0] = version;
-  versioned.set(payload, 1);
-  const checksum = sha256(sha256(versioned)).slice(0, 4);
-  const full = new Uint8Array(versioned.length + 4);
-  full.set(versioned);
-  full.set(checksum, versioned.length);
-  return base58Encode(full);
-}
-
-/** Base58Check with a custom alphabet — used for XRP (XRP Ledger alphabet). */
-function encodeBase58CheckWithAlphabet(payload: Uint8Array, version: number, alphabet: string): string {
-  const versioned = new Uint8Array(1 + payload.length);
-  versioned[0] = version;
-  versioned.set(payload, 1);
-  const checksum = sha256(sha256(versioned)).slice(0, 4);
-  const full = new Uint8Array(versioned.length + 4);
-  full.set(versioned);
-  full.set(checksum, versioned.length);
-  return base58EncodeWithAlphabet(full, alphabet);
-}
-
-// ─── P2PKH Base58Check (BSV — version 0x00 → starts with "1") ───────────────
+// ─── P2PKH Base58Check (BTC / BSV) ───────────────────────────────────────────
 
 function deriveP2PKH(key: HDKey): string {
   if (!key.publicKey) throw new Error("no public key");
   const pkh = hash160(key.publicKey);
   return encodeBase58Check(pkh, 0x00);
-}
-
-// ─── Bech32 (BTC Native SegWit P2WPKH — BIP84 → starts with "bc1q") ─────────
-
-const BECH32_CHARSET  = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
-const BECH32_GEN      = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
-
-function bech32Polymod(values: number[]): number {
-  let chk = 1;
-  for (const v of values) {
-    const b = chk >> 25;
-    chk = ((chk & 0x1ffffff) << 5) ^ v;
-    for (let i = 0; i < 5; i++) if ((b >> i) & 1) chk ^= BECH32_GEN[i];
-  }
-  return chk;
-}
-
-function bech32HrpExpand(hrp: string): number[] {
-  const ret: number[] = [];
-  for (const ch of hrp) ret.push(ch.charCodeAt(0) >> 5);
-  ret.push(0);
-  for (const ch of hrp) ret.push(ch.charCodeAt(0) & 31);
-  return ret;
-}
-
-function bech32Encode(hrp: string, witnessVersion: number, program: Uint8Array): string {
-  const data5 = Array.from(convertBits(program, 8, 5, true));
-  const full   = [witnessVersion, ...data5];
-  const expand = bech32HrpExpand(hrp);
-  const mod    = bech32Polymod([...expand, ...full, 0, 0, 0, 0, 0, 0]) ^ 1;
-  const checksum = Array.from({ length: 6 }, (_, p) => (mod >> (5 * (5 - p))) & 31);
-  return hrp + "1" + [...full, ...checksum].map(d => BECH32_CHARSET[d]).join("");
-}
-
-/** BIP84 P2WPKH — Native SegWit, produces a "bc1q…" address. */
-function deriveP2WPKH(key: HDKey): string {
-  if (!key.publicKey) throw new Error("no public key");
-  const pkh = hash160(key.publicKey);
-  return bech32Encode("bc", 0, pkh);  // witness version 0 = P2WPKH
-}
-
-// ─── Tron (same key as EVM — prefix 0x41 + Base58Check) ──────────────────────
-
-/**
- * Convert an EVM address (0x…) to a Tron Base58Check address (T…).
- * Tron uses the same secp256k1 key as Ethereum and the same address hashing,
- * but prefixes the 20-byte address with 0x41 (Tron mainnet) before Base58Check.
- */
-function evmToTronAddress(evmHex: string): string {
-  const hex = evmHex.startsWith("0x") ? evmHex.slice(2) : evmHex;
-  const bytes = new Uint8Array(hex.match(/.{2}/g)!.map(b => parseInt(b, 16)));
-  return encodeBase58Check(bytes, 0x41);  // 0x41 = Tron mainnet prefix → "T…"
-}
-
-// ─── XRP (XRP Ledger — version 0x00 with XRP Base58 alphabet → starts with "r") ─
-
-function deriveXrpAddress(key: HDKey): string {
-  if (!key.publicKey) throw new Error("no public key");
-  const pkh = hash160(key.publicKey);
-  return encodeBase58CheckWithAlphabet(pkh, 0x00, XRP_BASE58);
-}
-
-// ─── LTC (Litecoin — P2PKH version 0x30 → starts with "L") ──────────────────
-
-function deriveLtcAddress(key: HDKey): string {
-  if (!key.publicKey) throw new Error("no public key");
-  const pkh = hash160(key.publicKey);
-  return encodeBase58Check(pkh, 0x30);
-}
-
-// ─── DOGE (Dogecoin — P2PKH version 0x1E → starts with "D") ─────────────────
-
-function deriveDogeAddress(key: HDKey): string {
-  if (!key.publicKey) throw new Error("no public key");
-  const pkh = hash160(key.publicKey);
-  return encodeBase58Check(pkh, 0x1E);
 }
 
 // ─── Solana (ed25519 / SLIP-0010) ────────────────────────────────────────────
@@ -316,6 +171,39 @@ function convertBits(data: Uint8Array, from: number, to: number, pad: boolean): 
   }
   if (pad && bits > 0) result.push((acc << (to - bits)) & maxv);
   return new Uint8Array(result);
+}
+
+// ─── Base58 (plain, no checksum) — used for Solana ───────────────────────────
+
+const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+function base58Encode(bytes: Uint8Array): string {
+  const digits: number[] = [0];
+  for (const byte of bytes) {
+    let carry = byte;
+    for (let j = 0; j < digits.length; j++) {
+      carry += digits[j] << 8;
+      digits[j] = carry % 58;
+      carry = Math.floor(carry / 58);
+    }
+    while (carry) { digits.push(carry % 58); carry = Math.floor(carry / 58); }
+  }
+  let result = "";
+  for (const b of bytes) { if (b !== 0) break; result += "1"; }
+  return result + digits.reverse().map(d => BASE58[d]).join("");
+}
+
+// ─── Base58Check (BTC / BSV) ─────────────────────────────────────────────────
+
+function encodeBase58Check(payload: Uint8Array, version: number): string {
+  const versioned = new Uint8Array(1 + payload.length);
+  versioned[0] = version;
+  versioned.set(payload, 1);
+  const checksum = sha256(sha256(versioned)).slice(0, 4);
+  const full = new Uint8Array(versioned.length + 4);
+  full.set(versioned);
+  full.set(checksum, versioned.length);
+  return base58Encode(full);
 }
 
 // ─── HASH160 = SHA256 → RIPEMD160 ────────────────────────────────────────────

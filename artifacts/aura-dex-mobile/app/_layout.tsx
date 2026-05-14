@@ -14,8 +14,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { PinLock } from "@/components/PinLock";
-import { WalletProvider, useWallet } from "@/context/WalletContext";
+import { WalletProvider } from "@/context/WalletContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -26,30 +25,24 @@ const queryClient = new QueryClient({
 });
 
 function RootLayoutNav() {
-  const { isLocked } = useWallet();
-
   return (
-    <>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="trade/[symbol]"
-          options={{
-            headerShown: false,
-            presentation: "card",
-          }}
-        />
-        <Stack.Screen
-          name="wallet"
-          options={{
-            headerShown: false,
-            presentation: "modal",
-          }}
-        />
-      </Stack>
-      {/* PIN lock overlay — rendered above all navigation when wallet is locked */}
-      {isLocked && <PinLock />}
-    </>
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="trade/[symbol]"
+        options={{
+          headerShown: false,
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="wallet"
+        options={{
+          headerShown: false,
+          presentation: "modal",
+        }}
+      />
+    </Stack>
   );
 }
 

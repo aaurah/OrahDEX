@@ -14,7 +14,6 @@ import { eq } from "drizzle-orm";
 import { buildHtlc, verifySecret } from "../lib/htlc.js";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
-import { createPublicClient, http, parseAbi, encodeFunctionData, type Address, type Hex } from "viem";
 
 const router = Router();
 type CctpIntentStatus = "created" | "attested" | "completed";
@@ -46,7 +45,7 @@ async function getCurrentBlockHeight(): Promise<number> {
     const timer = setTimeout(() => ctrl.abort(), 4000);
     const res = await fetch(`${BSV_NET.wocBase}/chain/info`, {
       signal: ctrl.signal,
-      headers: { "User-Agent": "OrahDEX/1.0" },
+      headers: { "User-Agent": "Orah/1.0" },
     });
     clearTimeout(timer);
     if (res.ok) {
@@ -70,7 +69,7 @@ async function checkHtlcFunding(address: string, expectedBsv: number): Promise<{
     const timer = setTimeout(() => ctrl.abort(), 5000);
     const res = await fetch(
       `${BSV_NET.wocBase}/address/${address}/unspent`,
-      { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
+      { signal: ctrl.signal, headers: { "User-Agent": "Orah/1.0" } }
     );
     clearTimeout(timer);
 
@@ -288,6 +287,45 @@ router.post("/htlc/:id/cancel", async (req, res) => {
   }
 });
 
+// ── GET /bridge/coins — list all swappable coins via LetsExchange ────────────
+router.get("/coins", async (_req, res) => {
+  try {
+    const apiKey = process.env.LETSEXCHANGE_API_KEY;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+    const r = await fetch("https://api.letsexchange.io/api/v1/coins", {
+      headers,
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (r.ok) {
+      const data = await r.json();
+      res.json(data);
+      return;
+    }
+  } catch { /* fallback below */ }
+  // Fallback: return a curated list of popular coins
+  res.json([
+    { symbol: "BTC",  name: "Bitcoin",       network: "BTC",      image: null },
+    { symbol: "BSV",  name: "Bitcoin SV",    network: "BSV",      image: null },
+    { symbol: "ETH",  name: "Ethereum",      network: "ETH",      image: null },
+    { symbol: "USDT", name: "Tether",        network: "ETH",      image: null },
+    { symbol: "USDC", name: "USD Coin",      network: "ETH",      image: null },
+    { symbol: "SOL",  name: "Solana",        network: "SOL",      image: null },
+    { symbol: "BNB",  name: "BNB",           network: "BSC",      image: null },
+    { symbol: "XRP",  name: "Ripple",        network: "XRP",      image: null },
+    { symbol: "ADA",  name: "Cardano",       network: "ADA",      image: null },
+    { symbol: "DOGE", name: "Dogecoin",      network: "DOGE",     image: null },
+    { symbol: "LTC",  name: "Litecoin",      network: "LTC",      image: null },
+    { symbol: "MATIC",name: "Polygon",       network: "MATIC",    image: null },
+    { symbol: "DOT",  name: "Polkadot",      network: "DOT",      image: null },
+    { symbol: "AVAX", name: "Avalanche",     network: "AVAX",     image: null },
+    { symbol: "LINK", name: "Chainlink",     network: "ETH",      image: null },
+  ]);
+});
+
 // ── CCTP: list supported chains ───────────────────────────────────────────────
 router.get("/cctp/networks", (_req, res) => {
   res.json({
@@ -393,221 +431,6 @@ router.get("/cctp/intent/:id", (req, res) => {
     sender: intent.sender,
     recipient: intent.recipient,
   });
-});
-
-// ── GET /api/bridge/evm-lock-info — decode a lockETH tx + return refund path ──
-// Called by the HtlcLockRecovery UI so a user can recover ETH whose HTLC
-// timelock expired without the counter-party locking.
-router.get("/evm-lock-info", async (req, res) => {
-  const { txHash, chainId: chainIdStr } = req.query as { txHash?: string; chainId?: string };
-
-  if (!txHash || !/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
-    res.status(400).json({ error: "Provide a valid 0x transaction hash." });
-    return;
-  }
-
-  const chainId = parseInt(chainIdStr ?? "1");
-
-  // Multiple fallback RPCs tried in order until one works
-  const RPC_FALLBACKS: Record<number, string[]> = {
-    1: [
-      process.env.ETH_RPC_URL ?? "",
-      "https://ethereum.publicnode.com",
-      "https://cloudflare-eth.com",
-      "https://eth.llamarpc.com",
-      "https://1rpc.io/eth",
-    ].filter(Boolean),
-    11155111: [
-      process.env.SEPOLIA_RPC_URL ?? "",
-      "https://ethereum-sepolia.publicnode.com",
-      "https://sepolia.gateway.tenderly.co",
-      "https://rpc.sepolia.org",
-      "https://1rpc.io/sepolia",
-    ].filter(Boolean),
-    137: [
-      process.env.POLYGON_RPC_URL ?? "",
-      "https://polygon-rpc.com",
-      "https://polygon.publicnode.com",
-    ].filter(Boolean),
-    56: [
-      process.env.BSC_RPC_URL ?? "",
-      "https://bsc-dataseed.binance.org",
-      "https://bsc.publicnode.com",
-    ].filter(Boolean),
-    8453: [
-      process.env.BASE_RPC_URL ?? "",
-      "https://mainnet.base.org",
-      "https://base.publicnode.com",
-      "https://1rpc.io/base",
-    ].filter(Boolean),
-    42161: [
-      process.env.ARB_RPC_URL ?? "",
-      "https://arb1.arbitrum.io/rpc",
-      "https://arbitrum.publicnode.com",
-      "https://1rpc.io/arb",
-    ].filter(Boolean),
-  };
-  const CONTRACT_ADDRS: Record<number, string | null> = {
-    1:        process.env.EVM_HTLC_CONTRACT_ETH      ?? null,
-    11155111: process.env.EVM_HTLC_CONTRACT_SEPOLIA  ?? null,
-    137:      process.env.EVM_HTLC_CONTRACT_POLYGON  ?? null,
-    56:       process.env.EVM_HTLC_CONTRACT_BSC      ?? null,
-    8453:     process.env.EVM_HTLC_CONTRACT_BASE     ?? null,
-    42161:    process.env.EVM_HTLC_CONTRACT_ARB      ?? null,
-  };
-  const rpcList = RPC_FALLBACKS[chainId] ?? RPC_FALLBACKS[1];
-
-  const HTLC_ABI = parseAbi([
-    "function getLock(bytes32 id) view returns (address sender, address recipient, address token, uint256 amount, bytes32 secretHash, uint256 timelockUnix, bool revealed, bool refunded)",
-    "function refund(bytes32 id)",
-  ]);
-
-  try {
-    // Try each RPC in sequence until we get the transaction — track which one worked
-    let tx: Awaited<ReturnType<ReturnType<typeof createPublicClient>["getTransaction"]>> | null = null;
-    let workingRpc = rpcList[0];
-    let lastRpcError = "";
-    for (const rpcUrl of rpcList) {
-      try {
-        const c = createPublicClient({ transport: http(rpcUrl, { timeout: 8_000 }) });
-        tx = await c.getTransaction({ hash: txHash as Hex });
-        if (tx) { workingRpc = rpcUrl; break; }
-      } catch (e: any) {
-        lastRpcError = e?.message ?? String(e);
-        logger.warn({ rpcUrl, err: lastRpcError.slice(0, 80) }, "bridge: evm-lock-info RPC miss, trying next");
-      }
-    }
-    if (!tx) {
-      res.status(404).json({
-        error: `Transaction not found on Ethereum mainnet. It may be very recent (wait 1–2 min) or the hash may be incorrect. (${lastRpcError.slice(0, 120)})`,
-      });
-      return;
-    }
-
-    const input = tx.input ?? "";
-    if (!input || input.length < 10) {
-      res.status(400).json({ error: "Transaction does not appear to be a contract call." });
-      return;
-    }
-
-    // lockId is the first 32-byte ABI parameter (bytes 4–35 of calldata)
-    // Works for both 1-param (lockETH(bytes32)) and 4-param (lockETH(bytes32,...)) variants
-    const lockIdHex = input.slice(10, 74);
-    if (lockIdHex.length < 64) {
-      res.status(400).json({ error: "Could not extract lockId from calldata." });
-      return;
-    }
-    const lockId = ("0x" + lockIdHex) as Hex;
-
-    // The contract is always the tx recipient
-    const contractAddress = tx.to as Address | null;
-    if (!contractAddress) {
-      res.status(400).json({ error: "Could not determine HTLC contract address." });
-      return;
-    }
-
-    // Reuse the RPC that successfully returned the transaction
-    const client = createPublicClient({ transport: http(workingRpc, { timeout: 8_000 }) });
-
-    // Amount locked = tx.value (for ETH locks)
-    const lockedWei = tx.value ?? 0n;
-    const amountEth = (Number(lockedWei) / 1e18).toFixed(6);
-
-    // Known cancel/refund selectors — try in order of likelihood
-    // cancel(bytes32) = 0xc4d252f5, refund(bytes32) = 0x7249fbb6
-    const CANCEL_SIGS = [
-      { name: "cancel", selector: "0xc4d252f5", abi: "function cancel(bytes32 id)" },
-      { name: "refund", selector: "0x7249fbb6", abi: "function refund(bytes32 id)" },
-    ] as const;
-
-    // Determine which cancel function the contract exposes by simulation
-    let cancelCalldata: Hex | null = null;
-    let cancelSimFailed = false;
-    let cancelRevertReason = "";
-
-    for (const sig of CANCEL_SIGS) {
-      const calldata = (sig.selector + lockId.slice(2).padStart(64, "0")) as Hex;
-      try {
-        const gasEst = await client.estimateGas({
-          to:   contractAddress,
-          data: calldata,
-          account: tx.from as Address,
-        });
-        if (gasEst > 0n) {
-          cancelCalldata  = calldata;
-          break;
-        }
-      } catch (e: any) {
-        cancelRevertReason = e?.message ?? String(e);
-        cancelSimFailed = true;
-      }
-    }
-
-    // Try getLock for richer state info (standard 4-param HTLC ABI)
-    let timelockUnixSecs: number | null = null;
-    let revealed  = false;
-    let refunded  = false;
-    try {
-      const lockData = await client.readContract({
-        address:      contractAddress,
-        abi:          HTLC_ABI,
-        functionName: "getLock",
-        args:         [lockId],
-      }) as readonly [Address, Address, Address, bigint, Hex, bigint, boolean, boolean];
-      timelockUnixSecs = Number(lockData[5]);
-      revealed         = lockData[6];
-      refunded         = lockData[7];
-    } catch {
-      // Contract doesn't implement getLock — use simulation result
-    }
-
-    const now        = Math.floor(Date.now() / 1000);
-    const isExpired  = timelockUnixSecs !== null ? timelockUnixSecs < now : true; // assume expired if unknown
-    const canRefund  = !!cancelCalldata && !revealed && !refunded;
-
-    if (!canRefund && cancelSimFailed) {
-      // Simulation failed — lock may be gone already (already cancelled/revealed)
-      // Check tx logs to confirm the lock was ever created
-      const receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
-      const hasLog  = (receipt?.logs ?? []).some(
-        l => l.address?.toLowerCase() === contractAddress.toLowerCase()
-      );
-      if (!hasLog) {
-        res.status(400).json({ error: "This transaction does not appear to interact with the HTLC contract." });
-        return;
-      }
-      // Log exists but cancel failed — likely already cancelled/revealed
-      res.json({
-        lockId, contractAddress, sender: tx.from,
-        amount: lockedWei.toString(), amountEth,
-        timelockUnix: timelockUnixSecs ?? 0,
-        isExpired: true, revealed: true, refunded: false,
-        canRefund: false,
-        refundCalldata: null,
-        chainId,
-        note: "Lock is no longer active on the contract (already cancelled or settled).",
-      });
-      return;
-    }
-
-    res.json({
-      lockId,
-      contractAddress,
-      sender:       tx.from,
-      amount:       lockedWei.toString(),
-      amountEth,
-      timelockUnix: timelockUnixSecs ?? 0,
-      isExpired,
-      revealed,
-      refunded,
-      canRefund,
-      refundCalldata: cancelCalldata,
-      chainId,
-    });
-  } catch (err: any) {
-    logger.error({ err: err?.message, txHash }, "bridge: evm-lock-info failed");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch lock info." });
-  }
 });
 
 export default router;

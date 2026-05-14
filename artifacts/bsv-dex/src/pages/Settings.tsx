@@ -5,12 +5,8 @@ import {
   CheckCircle2,
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
   Headphones, MessageCircle, HelpCircle, Mail, Search, X,
-  Settings as SettingsIcon, Key, Volume2, KeyRound, Wallet as WalletIcon,
+  Settings as SettingsIcon, Key,
 } from "lucide-react";
-import { getImportedWallet } from "@/lib/walletPin";
-import { listPasskeyWallets } from "@/lib/passkeyWallet";
-import { RevealSecretSheet } from "@/components/wallet/RevealSecretSheet";
-import { NotificationAdvancedRows } from "@/components/NotificationAdvancedRows";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { SocialBar } from "@/components/SocialBar";
@@ -18,9 +14,6 @@ import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
 import { useSettingsStore, FIAT_CURRENCIES, CRYPTO_QUOTE_CURRENCIES } from "@/store/useSettingsStore";
-import { usePriceAlertsStore } from "@/store/usePriceAlertsStore";
-import { PriceAlertsDialog } from "@/components/PriceAlertsDialog";
-import { SlippagePicker, LeveragePicker } from "@/components/TradingDefaultsPickers";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
 
@@ -103,30 +96,11 @@ export function WebSettings() {
   const { open: openWallet } = useWalletModalStore();
   const { theme, setTheme } = useThemeStore();
   const { quoteCurrency, setQuoteCurrency } = useSettingsStore();
-  const slippageBps = useSettingsStore((s) => s.slippageBps);
-  const setSlippageBps = useSettingsStore((s) => s.setSlippageBps);
-  const defaultLeverage = useSettingsStore((s) => s.defaultLeverage);
-  const setDefaultLeverage = useSettingsStore((s) => s.setDefaultLeverage);
-  const [showSlippage, setShowSlippage] = useState(false);
-  const [showLeverage, setShowLeverage] = useState(false);
-  const soundEnabled = useSettingsStore((s) => s.soundEnabled);
-  const setSoundEnabled = useSettingsStore((s) => s.setSoundEnabled);
-  const hapticsEnabled = useSettingsStore((s) => s.hapticsEnabled);
-  const setHapticsEnabled = useSettingsStore((s) => s.setHapticsEnabled);
   const [, navigate] = useLocation();
-  const alertsEnabled = usePriceAlertsStore((s) => s.enabled);
-  const setAlertsEnabled = usePriceAlertsStore((s) => s.setEnabled);
-  const alertsCount = usePriceAlertsStore((s) => s.alerts.length);
-  const activeAlerts = usePriceAlertsStore((s) => s.alerts.filter((a) => a.triggeredAt === null).length);
-  const [showAlerts, setShowAlerts] = useState(false);
+  const [notifications, setNotifications] = useState(true);
+  const [haptics, setHaptics] = useState(true);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [currencySearch, setCurrencySearch] = useState("");
-  const [revealOpen, setRevealOpen] = useState(false);
-  const imported = address ? getImportedWallet(address) : null;
-  const passkeyOwned = address
-    ? listPasskeyWallets().some(w => w.address.toLowerCase() === address.toLowerCase())
-    : false;
-  const canBackup = !!imported || passkeyOwned;
 
   const handleDisconnect = async () => {
     if (window.confirm("Disconnect your wallet?")) {
@@ -164,22 +138,6 @@ export function WebSettings() {
                 value={network === "evm" ? "EVM (Ethereum Compatible)" : network === "bsv" ? "Bitcoin SV" : network === "tron" ? "TRON" : network === "sol" ? "Solana" : String(network)}
               />
               <Row
-                icon={WalletIcon}
-                iconColor="#22c55e"
-                label="Open wallet"
-                value="All chains, send / receive, swap, history"
-                onClick={() => navigate("/wallet")}
-              />
-              {canBackup && (
-                <Row
-                  icon={KeyRound}
-                  iconColor="#f59e0b"
-                  label="Back up wallet"
-                  value={`Reveal recovery phrase / private key · ${imported?.protectedBy === "pin" ? "PIN" : "passkey"} required`}
-                  onClick={() => setRevealOpen(true)}
-                />
-              )}
-              <Row
                 icon={LogOut}
                 iconColor="#ef4444"
                 label="Disconnect Wallet"
@@ -194,18 +152,8 @@ export function WebSettings() {
 
         {/* ── Trading ── */}
         <Section title="Trading">
-          <Row
-            icon={Percent}
-            label="Default Slippage"
-            value={`${(slippageBps / 100).toString()}% · used on market orders`}
-            onClick={() => setShowSlippage(true)}
-          />
-          <Row
-            icon={Zap}
-            label="Default Leverage"
-            value={`${defaultLeverage}x · pre-fills Futures & Prediction`}
-            onClick={() => setShowLeverage(true)}
-          />
+          <Row icon={Percent} label="Default Slippage" value="0.5%" />
+          <Row icon={Zap} label="Default Leverage" value="10x" />
           <Row
             icon={DollarSign}
             label="Quote Currency"
@@ -254,31 +202,15 @@ export function WebSettings() {
           <Row
             icon={Bell}
             label="Price Alerts"
-            value={
-              alertsCount === 0
-                ? "Tap to set a target price for any coin"
-                : `${activeAlerts} active · ${alertsCount} total · tap to manage`
-            }
-            onClick={() => setShowAlerts(true)}
-            rightEl={
-              <span onClick={(e) => e.stopPropagation()}>
-                <Toggle value={alertsEnabled} onChange={setAlertsEnabled} />
-              </span>
-            }
-          />
-          <Row
-            icon={Volume2}
-            label="Notification Sound"
-            value="Play a chime when new alerts arrive"
-            rightEl={<Toggle value={soundEnabled} onChange={setSoundEnabled} />}
+            value="Get notified on significant price moves"
+            rightEl={<Toggle value={notifications} onChange={setNotifications} />}
           />
           <Row
             icon={Activity}
             label="Haptic Feedback"
-            value="Vibrate on notifications (mobile, system permitting)"
-            rightEl={<Toggle value={hapticsEnabled} onChange={setHapticsEnabled} />}
+            value="Vibration on interactions (mobile)"
+            rightEl={<Toggle value={haptics} onChange={setHaptics} />}
           />
-          <NotificationAdvancedRows Row={Row} Toggle={Toggle} />
         </Section>
 
         {/* ── API Access ── */}
@@ -312,8 +244,8 @@ export function WebSettings() {
             icon={Mail}
             iconColor="#3b82f6"
             label="Email Support"
-            value="support@orahdex.org"
-            onClick={() => window.open("mailto:support@orahdex.org")}
+            value="support@orah.org"
+            onClick={() => window.open("mailto:support@orah.org")}
           />
           <Row
             icon={HelpCircle}
@@ -327,7 +259,7 @@ export function WebSettings() {
         {/* ── About ── */}
         <Section title="About">
           <Row icon={Info} label="Version" value="1.0.0" />
-          <Row icon={BookOpen} iconColor="#4ade80" label="White Paper" value="OrahDEX project white paper" onClick={() => navigate("/whitepaper")} />
+          <Row icon={BookOpen} iconColor="#4ade80" label="White Paper" value="Orah project white paper" onClick={() => navigate("/whitepaper")} />
           <Row icon={FileText} label="Terms of Service" onClick={() => navigate("/terms")} />
           <Row icon={Shield} label="Privacy Policy" onClick={() => navigate("/privacy")} />
         </Section>
@@ -348,20 +280,6 @@ export function WebSettings() {
           </div>
         </div>
       </div>
-
-      <PriceAlertsDialog open={showAlerts} onOpenChange={setShowAlerts} />
-      <SlippagePicker
-        open={showSlippage}
-        onClose={() => setShowSlippage(false)}
-        valueBps={slippageBps}
-        onSave={setSlippageBps}
-      />
-      <LeveragePicker
-        open={showLeverage}
-        onClose={() => setShowLeverage(false)}
-        value={defaultLeverage}
-        onSave={setDefaultLeverage}
-      />
 
       {/* Quote Currency Picker Modal */}
       {showCurrencyPicker && (() => {
@@ -475,7 +393,6 @@ export function WebSettings() {
           </div>
         );
       })()}
-      <RevealSecretSheet open={revealOpen} onClose={() => setRevealOpen(false)} address={address ?? null} />
     </div>
   );
 }

@@ -3,30 +3,29 @@ import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 interface Props {
   textSize?: string;
   tooltip?: boolean;
-  suffix?: string;
 }
 
-export function BrandLogo({ textSize = 'text-xl', tooltip = true, suffix = 'DEX' }: Props) {
+export function BrandLogo({ textSize = 'text-xl', tooltip = true }: Props) {
   const online = useOnlineStatus();
 
   return (
     <span
       className={`inline-flex items-center font-bold tracking-tight text-foreground leading-none ${textSize}`}
-      title={tooltip ? (online ? 'All systems operational' : 'Service issues detected') : undefined}
+      title={tooltip ? (online ? 'Connected to internet' : 'No internet connection') : undefined}
     >
-      <OrahO online={online} />
+      <OrahDEXO online={online} />
       <span>rah</span>
-      <span className="text-green-400">{suffix}</span>
+      <span className="text-green-400">DEX</span>
     </span>
   );
 }
 
-/** Inline branded "OrahDEX" — shares the same online state to avoid duplicate timers */
-export function OrahInline({ className = "" }: { className?: string }) {
+/** Inline branded "Orah" — shares the same online state to avoid duplicate timers */
+export function OrahDEXInline({ className = "" }: { className?: string }) {
   const online = useOnlineStatus();
   return (
     <span className={`inline-flex items-center font-bold tracking-tight leading-none align-middle ${className}`}>
-      <OrahO online={online} />
+      <OrahDEXO online={online} />
       <span>rah</span>
       <span className="text-green-400">DEX</span>
     </span>
@@ -34,7 +33,7 @@ export function OrahInline({ className = "" }: { className?: string }) {
 }
 
 /** Just the animated O glyph — reused by both exports */
-export function OrahO({ online }: { online: boolean }) {
+export function OrahDEXO({ online }: { online: boolean }) {
   const color = online ? '#4ade80' : '#ef4444';
   const glowColor = online ? 'rgba(74,222,128,0.8)' : 'rgba(239,68,68,0.8)';
   return (

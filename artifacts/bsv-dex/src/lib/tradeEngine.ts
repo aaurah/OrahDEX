@@ -1,7 +1,7 @@
 /**
  * Trade Engine — Single Golden Execution Path
  *
- * Every trade on OrahDEX flows through exactly this sequence:
+ * Every trade on Orah flows through exactly this sequence:
  *   1. precheck  — instant off-chain validation (balance, slippage, route)
  *   2. build     — construct the exact on-chain call
  *   3. sign      — user signs in their wallet
@@ -13,7 +13,7 @@
  * ── BSV UTXO Lifecycle (on-chain settlement) ────────────────────────────────
  *
  * For BSV-native (same-chain) trades:
- *   LOCK → MATCH → OP_RETURN audit → confirmed (v2 format: ORAH|v2|...)
+ *   LOCK → MATCH → OP_RETURN audit → confirmed (v2 format: ORAHDEX|v2|...)
  *
  * For cross-chain trades (EVM ↔ BSV):
  *   LOCK → MATCH → HTLC generation → P2SH output + OP_RETURN broadcast
@@ -22,7 +22,7 @@
  *       → OR user reclaims after locktimeBlocks via CLTV (Path B: refund)
  *
  * Settlement transaction output layout (cross-chain):
- *   Output 0: OP_RETURN — ORAH|v2|...|H:<secretHash>|P:<htlcAddress>
+ *   Output 0: OP_RETURN — ORAHDEX|v2|...|H:<secretHash>|P:<htlcAddress>
  *   Output 1: P2SH      — OP_HASH160 <scriptHash> OP_EQUAL  (HTLC lock)
  *   Output N: P2PKH      — change back to settlement wallet
  *

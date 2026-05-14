@@ -3,7 +3,7 @@ import { logger } from "../lib/logger.js";
 
 const router = Router();
 const GT_BASE = "https://api.geckoterminal.com/api/v2";
-const GT_HEADERS = { Accept: "application/json;version=20230302", "User-Agent": "OrahDEX/1.0" };
+const GT_HEADERS = { Accept: "application/json;version=20230302", "User-Agent": "Orah/1.0" };
 
 /* ── In-memory cache ─────────────────────────────────────────────────────── */
 const cache = new Map<string, { data: unknown; ts: number }>();

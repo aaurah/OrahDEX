@@ -130,7 +130,7 @@ router.get("/revenue", async (req, res) => {
       currency: "USD-equivalent",
     });
   } catch (err: any) {
-    res.status(500).json({ error: "Revenue query failed" });
+    res.status(500).json({ error: err?.message ?? "Revenue query failed" });
   }
 });
 

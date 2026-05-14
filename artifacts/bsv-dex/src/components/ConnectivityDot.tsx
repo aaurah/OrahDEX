@@ -5,7 +5,7 @@ interface Props {
 }
 
 /**
- * A small dot next to the OrahDEX logo:
+ * A small dot next to the Orah logo:
  *  • Green + pulsing ring  → internet connected
  *  • Red (no ring)         → internet disconnected
  */

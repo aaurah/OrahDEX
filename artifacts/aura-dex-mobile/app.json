@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Orah DEX",
-    "slug": "orahdex",
+    "name": "OrahDEX DEX",
+    "slug": "orah",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "orahdex",
+    "scheme": "orah",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
@@ -15,10 +15,10 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.orahdex.app"
+      "bundleIdentifier": "com.orah.app"
     },
     "android": {
-      "package": "com.orahdex.app",
+      "package": "com.orah.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#080A0E"

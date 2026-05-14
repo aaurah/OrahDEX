@@ -34,18 +34,7 @@ const INTERVALS = [
   { id: '2h', label: '2h' }, { id: '4h', label: '4h' }, { id: '6h', label: '6h' },
   { id: '12h', label: '12h' }, { id: '1d', label: '1D' }, { id: '3d', label: '3D' },
   { id: '1w', label: '1W' }, { id: '1M', label: '1M' },
-  { id: '1Y', label: '1Y' }, { id: '2Y', label: '2Y' },
-  { id: '5Y', label: '5Y' }, { id: '10Y', label: '10Y' }, { id: 'All', label: 'All' },
 ];
-
-/* Map long-range presets → actual API interval + candle limit */
-const RANGE_PRESET_MAP: Record<string, { apiInterval: string; limit: number }> = {
-  '1Y':  { apiInterval: '1d', limit: 365 },
-  '2Y':  { apiInterval: '1w', limit: 104 },
-  '5Y':  { apiInterval: '1w', limit: 261 },
-  '10Y': { apiInterval: '1M', limit: 120 },
-  'All': { apiInterval: '1M', limit: 1500 },
-};
 
 /* ── Chart type definitions ─────────────────────────────────────────────── */
 const CHART_TYPES: { id: ChartType; label: string; svg: string }[] = [
@@ -232,10 +221,10 @@ function fmtPrice(v: number, price: number): string {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   ORAHCHART — Maximum Features Edition
+   ORAHDEXCHART — Maximum Features Edition
 ══════════════════════════════════════════════════════════════════════════ */
-function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndicatorProp, hideIntervalBar, data: fallbackData }: {
-  symbol: string; interval: string; onIntervalChange?: (iv: string) => void; subIndicator?: SubIndicator; hideIntervalBar?: boolean; data?: Candle[];
+function OrahDEXChart({ symbol, interval, onIntervalChange, subIndicator: subIndicatorProp, hideIntervalBar }: {
+  symbol: string; interval: string; onIntervalChange?: (iv: string) => void; subIndicator?: SubIndicator; hideIntervalBar?: boolean;
 }) {
   const mainRef   = useRef<HTMLDivElement>(null);
   const subRef    = useRef<HTMLDivElement>(null);
@@ -269,16 +258,10 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const { theme } = useThemeStore();
   const [candles, setCandles]     = useState<Candle[]>([]);
   const [loading, setLoading]     = useState(true);
-  const [chartType, setChartType] = useState<ChartType>(() => {
-    const saved = localStorage.getItem('orahdex-chart-type') as ChartType | null;
-    return saved && ['candle','heikinashi','bar','line','area','baseline'].includes(saved) ? saved : 'line';
-  });
+  const [chartType, setChartType] = useState<ChartType>('line');
   const [subInd, setSubInd]       = useState<SubIndicator>(subIndicatorProp ?? 'none');
   const [activeOverlays, setActiveOverlays] = useState<Set<string>>(new Set());
   const [showIndicatorPanel, setShowIndicatorPanel] = useState(false);
-
-  /* Persist chart type across refreshes */
-  useEffect(() => { localStorage.setItem('orahdex-chart-type', chartType); }, [chartType]);
 
   // Sync external subIndicator prop → internal state (allows parent to control it)
   useEffect(() => {
@@ -305,12 +288,8 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   /* ── Fetch candles ──────────────────────────────────────────────────── */
   const fetchCandles = useCallback(async () => {
     try {
-      const preset = RANGE_PRESET_MAP[interval];
-      const apiInterval = preset ? preset.apiInterval : interval;
-      const limit = preset
-        ? preset.limit
-        : ['1d','3d','1w','1M'].includes(interval) ? 300 : 500;
-      const url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/candles?interval=${apiInterval}&limit=${limit}`;
+      const limit = ['1d','3d','1w','1M'].includes(interval) ? 300 : 500;
+      const url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/candles?interval=${interval}&limit=${limit}`;
       const res = await fetch(url);
       if (!res.ok) return;
       const raw = await res.json();
@@ -343,13 +322,6 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     timerRef.current = setInterval(() => { fetchCandles(); fetchTicker(); }, 30_000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchCandles, fetchTicker]);
-
-  /* When the API fetch completes with no data, fall back to the provided candles */
-  useEffect(() => {
-    if (!loading && candles.length === 0 && fallbackData && fallbackData.length > 0) {
-      setCandles(fallbackData);
-    }
-  }, [loading, candles.length, fallbackData]);
 
   /* Keep candlesRef always current so crosshair callback is never stale */
   useEffect(() => { candlesRef.current = candles; }, [candles]);
@@ -759,7 +731,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
           </>
         )}
         <div className="ml-auto flex items-center gap-1 shrink-0">
-          <span className="text-[10px] text-green-400/70 font-mono">OrahDEX Live</span>
+          <span className="text-[10px] text-green-400/70 font-mono">Orah Live</span>
           <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
         </div>
       </div>
@@ -901,7 +873,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
                 letterSpacing: '0.15em',
               }}
             >
-              OrahDEX
+              Orah
             </span>
           </div>
         )}
@@ -947,7 +919,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
       {/* ── BOTTOM STATUS BAR ── */}
       <div className="px-3 py-1 border-t shrink-0 flex items-center justify-between" style={{ borderColor: col.grid }}>
         <span className="text-[10px]" style={{ color: col.text, opacity: 0.5 }}>
-          {parts.base}/{parts.quote} · {INTERVALS.find(i => i.id === interval)?.label} · OrahDEX Sovereign Engine
+          {parts.base}/{parts.quote} · {INTERVALS.find(i => i.id === interval)?.label} · Orah Sovereign Engine
         </span>
         <div className="flex items-center gap-2">
           {activeOverlays.size > 0 && (
@@ -966,6 +938,6 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
 /* ══════════════════════════════════════════════════════════════════════════
    EXPORT
 ══════════════════════════════════════════════════════════════════════════ */
-export function Chart({ symbol = 'BTC/USDT', interval = '1h', onIntervalChange, subIndicator, hideIntervalBar, data }: ChartProps) {
-  return <OrahChart symbol={symbol} interval={interval} onIntervalChange={onIntervalChange} subIndicator={subIndicator} hideIntervalBar={hideIntervalBar} data={data} />;
+export function Chart({ symbol = 'BTC/USDT', interval = '1h', onIntervalChange, subIndicator, hideIntervalBar }: ChartProps) {
+  return <OrahDEXChart symbol={symbol} interval={interval} onIntervalChange={onIntervalChange} subIndicator={subIndicator} hideIntervalBar={hideIntervalBar} />;
 }

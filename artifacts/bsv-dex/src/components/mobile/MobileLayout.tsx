@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, Target, TrendingUp, Copy, Repeat, Waves, Users, Wallet, Flame } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, Target, TrendingUp, Copy, Repeat, ArrowUpDown } from "lucide-react";
 
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -12,17 +12,14 @@ import { ChatWidget } from "@/components/ChatWidget";
 const WalletConnectModal = lazy(() => import("@/components/WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
 
 const NAV_TABS = [
-  { path: "/swap",                       matchPrefix: "/swap",       label: "Exchange",   Icon: Waves },
+  { path: "/swap",                       matchPrefix: "/swap",       label: "Swap",       Icon: ArrowUpDown },
   { path: "/trade/BSV-USDT",             matchPrefix: "/trade",      label: "Trade",      Icon: ArrowRightLeft },
   { path: "/futures/BSV-USDT-PERP",      matchPrefix: "/futures",    label: "Futures",    Icon: TrendingUp },
   { path: "/markets",                    matchPrefix: "/markets",    label: "Markets",    Icon: BarChart2 },
-  { path: "/staking",                    matchPrefix: "/staking",    label: "Stake",      Icon: Flame },
   { path: "/dex",                        matchPrefix: "/dex",        label: "Mkt Hub",    Icon: Layers },
   { path: "/prediction",                 matchPrefix: "/prediction", label: "Predict",    Icon: Target },
   { path: "/nft",                        matchPrefix: "/nft",        label: "NFT",        Icon: Image },
-  { path: "/p2p",                        matchPrefix: "/p2p",         label: "P2P",        Icon: Users },
-  { path: "/copy",                       matchPrefix: "/copy",       label: "Copy Trade", Icon: Copy },
-  { path: "/wallet",                     matchPrefix: "/wallet",     label: "Wallet",     Icon: Briefcase },
+  { path: "/portfolio",                  matchPrefix: "/portfolio",  label: "Portfolio",  Icon: Briefcase },
   { path: "/settings",                   matchPrefix: "/settings",   label: "Settings",   Icon: Settings },
 ];
 
@@ -86,7 +83,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
             onClick={() => navigate("/swap")}
             className="flex items-center h-full px-2 active:opacity-70 transition-opacity shrink-0"
           >
-            <BrandLogo textSize="text-2xl" suffix={location.startsWith("/nft") ? "NFT" : "DEX"} />
+            <BrandLogo textSize="text-2xl" />
           </button>
 
           <div className="flex-1" />
@@ -164,7 +161,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
       <Suspense fallback={null}>
         <WalletConnectModal isOpen={walletOpen} onClose={() => closeWallet()} />
       </Suspense>
-      {!chatOpen && !location.startsWith("/nft") && (
+      {!chatOpen && (
         <button
           onClick={() => setChatOpen(true)}
           title="Live Support"
@@ -174,9 +171,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
           <MessageCircle size={20} className="text-white" />
         </button>
       )}
-      {!location.startsWith("/nft") && (
-        <ChatWidget open={chatOpen} onClose={() => setChatOpen(false)} />
-      )}
+      <ChatWidget open={chatOpen} onClose={() => setChatOpen(false)} />
     </div>
   );
 }

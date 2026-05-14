@@ -3,7 +3,7 @@ Pure, honest on‑chain value
 • Zero fake balances or hidden custody
 
 
-Here’s the cleanest hybrid design for OrahDEX.
+Here’s the cleanest hybrid design for Orah.
 
 ---
 
@@ -64,7 +64,7 @@ If the indexer dies, funds are still safe—contracts hold everything.
 
 4. Hybrid wallet experience
 
-In Orah Wallet / OrahDEX UI:
+In OrahDEX Wallet / Orah UI:
 
 • Rich, opinionated views:• LP breakdown, fee APR, IL estimates
 • NFT collections, creator stats
@@ -79,7 +79,7 @@ In MetaMask / Rabby / Phantom:
 • NFTs
 • Vault shares
 
-• Their DeFi tab picks up OrahDEX automatically once your contracts are known.
+• Their DeFi tab picks up Orah automatically once your contracts are known.
 
 
 You get deep UX in your app, universal visibility in wallets.
@@ -88,7 +88,7 @@ You get deep UX in your app, universal visibility in wallets.
 
 5. Keeper / “internal” path (the only allowed soft balance)
 
-If you ever keep an internal Orah wallet:
+If you ever keep an internal OrahDEX wallet:
 
 • It must be:• Explicitly labeled as custodial / internal
 • Fully backed by on‑chain contracts

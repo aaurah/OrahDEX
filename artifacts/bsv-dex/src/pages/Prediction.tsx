@@ -10,7 +10,6 @@ import {
   ChevronDown, TrendingUp, TrendingDown, Zap, History, AlertTriangle,
   Check, X, Timer, DollarSign, Shield, Target, ArrowRightLeft,
 } from "lucide-react";
-import { generateMockCandles, MOCK_TICKER } from "@/lib/mock-data";
 
 const Chart = lazy(() => import("@/components/trading/Chart").then(m => ({ default: m.Chart })));
 
@@ -207,11 +206,7 @@ export function PredictionTrading() {
   const [myBets, setMyBets] = useState<BetRecord[]>([]);
   const [tab, setTab] = useState<"chart" | "rounds" | "history">("chart");
   const [usdtBalance, setUsdtBalance] = useState(0);
-  const [candleInterval, setCandleInterval] = useState(() => {
-    const saved = localStorage.getItem('orahdex-prediction-interval');
-    const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y'];
-    return saved && valid.includes(saved) ? saved : "5m";
-  });
+  const [candleInterval, setCandleInterval] = useState("5m");
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { address } = useWalletStore();
@@ -263,9 +258,6 @@ export function PredictionTrading() {
   }, [fetchRounds]);
 
   useEffect(() => { fetchHistory(); fetchBalance(); }, [fetchHistory, fetchBalance]);
-
-  // Persist candle interval across page refreshes
-  useEffect(() => { localStorage.setItem('orahdex-prediction-interval', candleInterval); }, [candleInterval]);
 
   const placeBet = async () => {
     if (!address || !selectedRound) return;
@@ -452,7 +444,6 @@ export function PredictionTrading() {
                   symbol={symbol}
                   interval={candleInterval}
                   onIntervalChange={setCandleInterval}
-                  data={currentPrice > 0 ? undefined : generateMockCandles(MOCK_TICKER[symbol]?.lastPrice ?? 14.35)}
                 />
               </Suspense>
             </div>

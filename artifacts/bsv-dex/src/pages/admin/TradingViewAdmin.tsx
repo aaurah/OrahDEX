@@ -1,4 +1,3 @@
-import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -10,10 +9,10 @@ import { cn } from "@/lib/utils";
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function fetchTvStatus() {
-  return adminFetch(`/api/admin/tradingview`).then(r => r.json());
+  return fetch(`${BASE}/api/admin/tradingview`).then(r => r.json());
 }
 function runTest(body: any) {
-  return adminFetch(`/api/admin/tradingview/test`, {
+  return fetch(`${BASE}/api/admin/tradingview/test`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

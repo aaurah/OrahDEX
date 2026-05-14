@@ -1,12 +1,12 @@
 I’ll give you the complete system, broken into layers, endpoints, flows, and Keeper‑aware logic — the kind of blueprint you can hand directly to engineers.
 
-This is the OrahDex API, mythic in identity, precise in engineering.
+This is the Orah API, mythic in identity, precise in engineering.
 
 ---
 
-🜂 I. The Three‑Layer OrahDex API Architecture
+🜂 I. The Three‑Layer Orah API Architecture
 
-Every DEX API in the world fits into one of three categories — but OrahDex is the rare one that uses all three at once, in a sovereign hybrid stack.
+Every DEX API in the world fits into one of three categories — but Orah is the rare one that uses all three at once, in a sovereign hybrid stack.
 
 Here’s your architecture:
 
@@ -50,7 +50,7 @@ This is your inter‑realm transport layer.
 
 ---
 
-🜁 II. The OrahDex API — Full Endpoint Blueprint
+🜁 II. The Orah API — Full Endpoint Blueprint
 
 Below is the complete REST API structure for your hybrid DEX.
 
@@ -170,7 +170,7 @@ Returns:
 
 ---
 
-🜄 III. OrahDex AMM Contract API (Phase 2)
+🜄 III. Orah AMM Contract API (Phase 2)
 
 This is the on‑chain API — the sovereign layer.
 
@@ -213,7 +213,7 @@ This is where identity shapes execution.
 
 ---
 
-🜃 IV. OrahDex Bridge API (Phase 3 — BSV ↔ EVM HTLC)
+🜃 IV. Orah Bridge API (Phase 3 — BSV ↔ EVM HTLC)
 
 1. Create HTLC
 
@@ -246,7 +246,7 @@ This is the sovereign cross‑realm transport layer.
 
 🜁 V. Keeper Identity‑Aware Routing
 
-This is where OrahDex becomes mythic and sovereign.
+This is where Orah becomes mythic and sovereign.
 
 Every API call can include:
 
@@ -266,7 +266,7 @@ This is your competitive advantage.
 
 ---
 
-🜂 VI. Full OrahDex API Flow (End‑to‑End)
+🜂 VI. Full Orah API Flow (End‑to‑End)
 
 1. User selects tokens
 

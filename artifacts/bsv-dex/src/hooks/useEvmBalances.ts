@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, getWagmiConfig } from "@/lib/reown";
+import { CHAIN_RPC_URLS } from "@/lib/reown";
 
 export interface TokenBalance {
   symbol: string;
@@ -219,12 +219,13 @@ function balanceOfCalldata(address: string): string {
 }
 
 /**
- * RPC call wrapper — tries public RPC primary, then fallback, then injected wallet.
- * All paths are tried so WalletConnect / mobile wallets work without window.ethereum.
+ * RPC call wrapper — prefers the public JSON-RPC endpoint for the specified
+ * chainId so balances are always from the correct chain.
+ * Falls back to the injected wallet only when no public RPC is configured.
  */
 async function rpcCall(method: string, params: any[], chainId: number): Promise<any> {
-  const urls = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter(Boolean);
-  for (const rpcUrl of urls) {
+  const rpcUrl = CHAIN_RPC_URLS[chainId];
+  if (rpcUrl) {
     try {
       const res = await globalThis.fetch(rpcUrl, {
         method: "POST",
@@ -233,9 +234,11 @@ async function rpcCall(method: string, params: any[], chainId: number): Promise<
       });
       if (res.ok) {
         const json = await res.json();
-        if (!json.error && json.result !== undefined) return json.result;
+        if (!json.error) return json.result;
       }
-    } catch { /* try next */ }
+    } catch {
+      /* fall through to injected wallet */
+    }
   }
 
   const injected = (window as any).ethereum;
@@ -253,7 +256,7 @@ async function rpcCall(method: string, params: any[], chainId: number): Promise<
 }
 
 /**
- * Fetch USD prices for all tokens from the OrahDEX markets API.
+ * Fetch USD prices for all tokens from the Orah markets API.
  * Returns a symbol → USD price map, stablecoins always = 1.
  */
 async function fetchMarketPrices(): Promise<Record<string, number>> {
@@ -274,7 +277,7 @@ async function fetchMarketPrices(): Promise<Record<string, number>> {
   } catch { /* use hardcoded fallbacks only */ }
 
   // Hardcoded last-resort fallbacks for native gas tokens
-  if (!prices["ETH"])  prices["ETH"]  = 2400;
+  if (!prices["ETH"])  prices["ETH"]  = 1800;
   if (!prices["BNB"])  prices["BNB"]  = 580;
   if (!prices["AVAX"]) prices["AVAX"] = 18;
   if (!prices["FTM"])  prices["FTM"]  = 0.2;
@@ -293,32 +296,17 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
 
   const fetch = useCallback(async () => {
     if (!address || !chainId) return;
-    const resolvedChainId: number = chainId;
 
     setLoading(true);
     try {
-      // Prefer wagmi getBalance for native token (works with WalletConnect on mobile)
-      async function fetchNativeAmount(): Promise<number> {
-        const config = getWagmiConfig();
-        if (config) {
-          try {
-            const { getBalance } = await import("@wagmi/core");
-            const result = await getBalance(config, {
-              address: address as `0x${string}`,
-              chainId: resolvedChainId,
-            });
-            return Number(result.value) / 1e18;
-          } catch { /* fall through to rpcCall */ }
-        }
-        const hex = await rpcCall("eth_getBalance", [address, "latest"], resolvedChainId);
-        return Number(BigInt(hex)) / 1e18;
-      }
-
       // Fetch prices and native balance in parallel
-      const [usdPrices, nativeAmount] = await Promise.all([
+      const [usdPrices, nativeHex] = await Promise.all([
         fetchMarketPrices(),
-        fetchNativeAmount(),
+        rpcCall("eth_getBalance", [address, "latest"], chainId),
       ]);
+
+      const nativeWei = BigInt(nativeHex);
+      const nativeAmount = Number(nativeWei) / 1e18;
       const nativeDef = NATIVE_TOKENS[chainId] ?? { symbol: "ETH", name: "Ethereum", color: "#8B5CF6", cgId: "ethereum" };
       const nativePrice = usdPrices[nativeDef.symbol] ?? usdPrices["ETH"] ?? 0;
 
@@ -345,7 +333,7 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
             { to: token.address, data: balanceOfCalldata(address) },
             "latest",
           ], chainId);
-          const raw = hexBal && hexBal.length > 2 ? BigInt(hexBal) : 0n;
+          const raw = BigInt(hexBal || "0x0");
           const amount = Number(raw) / Math.pow(10, token.decimals);
           return { token, amount };
         })

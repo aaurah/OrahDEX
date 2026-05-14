@@ -1,12 +1,9 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { db, pool } from "@workspace/db";
-
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
-// Note: generateAdminToken and revokeAllAdminTokens are now async (DB-persisted)
-import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable } from "@workspace/db/schema";
-import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
-import { eq, desc, and, sql, ne, isNotNull, or, like, ilike } from "drizzle-orm";
+import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages } from "@workspace/db/schema";
+import { eq, desc, and, sql, ne, isNotNull, or } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
 import { decrypt as decryptEvmKey } from "../lib/internalEvmWallet.js";
@@ -16,18 +13,8 @@ import { base } from "viem/chains";
 import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { sendMail, testSmtpConnection, getSmtpStatus, autoSetupTestEmail } from "../lib/mailer.js";
-import { updateMarketPrices, syncAllLEPairs } from "../lib/priceUpdater.js";
+import { updateMarketPrices } from "../lib/priceUpdater.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
-import { logger } from "../lib/logger.js";
-import {
-  buildFilterFunction,
-  WATCHED_CONTRACTS,
-  TOPIC_HTLC_LOCKED,
-  TOPIC_HTLC_REVEALED,
-  TOPIC_HTLC_REFUNDED,
-  TOPIC_ESCROW_RELEASED,
-  logTopics,
-} from "../lib/evmWebhook.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
 export const serviceState = {
@@ -93,68 +80,6 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
-/* ─── AUTH ENDPOINT RATE LIMITER ─────────────────────────────────────────── */
-// Protects POST /auth, POST /auth/totp, and POST /auth/wallet from brute-force
-// attacks. Up to AUTH_MAX_FAILURES failures per AUTH_WINDOW_MS per IP are
-// allowed; exceeding that blocks the IP for AUTH_COOLDOWN_MS.
-
-const AUTH_MAX_FAILURES  = 5;
-const AUTH_WINDOW_MS     = 60 * 1_000;       // 1-minute sliding window
-const AUTH_COOLDOWN_MS   = 15 * 60 * 1_000;  // 15-minute block on excessive failures
-
-interface AuthBucket { count: number; windowStart: number; blockedUntil: number; }
-const authBuckets = new Map<string, AuthBucket>();
-
-setInterval(() => {
-  const now = Date.now();
-  // Remove buckets that are neither currently blocked nor within an active window
-  for (const [k, v] of authBuckets.entries()) {
-    if (v.blockedUntil < now && v.windowStart + AUTH_WINDOW_MS < now) authBuckets.delete(k);
-  }
-}, 5 * 60 * 1_000);
-
-function getClientIp(req: import("express").Request): string {
-  const forwarded = req.headers["x-forwarded-for"];
-  if (forwarded) return (Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0]).trim();
-  return req.socket?.remoteAddress ?? "unknown";
-}
-
-/** Returns true if the request should proceed; sends 429 and returns false if blocked. */
-function checkAuthRateLimit(req: import("express").Request, res: import("express").Response): boolean {
-  const ip  = getClientIp(req);
-  const now = Date.now();
-  let   bkt = authBuckets.get(ip);
-
-  if (bkt?.blockedUntil && bkt.blockedUntil > now) {
-    const secs = Math.ceil((bkt.blockedUntil - now) / 1000);
-    res.status(429).json({ error: `Too many failed attempts. Try again in ${secs} seconds.` });
-    return false;
-  }
-
-  // Reset window if expired
-  if (!bkt || now - bkt.windowStart > AUTH_WINDOW_MS) {
-    bkt = { count: 0, windowStart: now, blockedUntil: 0 };
-    authBuckets.set(ip, bkt);
-  }
-  return true;
-}
-
-/** Call on every failed auth attempt (wrong password, wrong TOTP, bad sig). */
-function recordAuthFailure(req: import("express").Request): void {
-  const ip  = getClientIp(req);
-  const now = Date.now();
-  let   bkt = authBuckets.get(ip) ?? { count: 0, windowStart: now, blockedUntil: 0 };
-
-  if (now - bkt.windowStart > AUTH_WINDOW_MS) {
-    bkt = { count: 0, windowStart: now, blockedUntil: 0 };
-  }
-  bkt.count++;
-  if (bkt.count >= AUTH_MAX_FAILURES) {
-    bkt.blockedUntil = now + AUTH_COOLDOWN_MS;
-  }
-  authBuckets.set(ip, bkt);
-}
-
 /* ─── SERVER-SIDE TOTP (RFC 6238) ─────────────────────────────────────────── */
 function base32Decode(input: string): Buffer {
   const alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -199,9 +124,7 @@ async function verifyTOTPServer(code: string, secret: string): Promise<boolean> 
  * Validates email + password against ADMIN_EMAIL / ADMIN_PASSWORD env secrets.
  * Credentials are NEVER stored in source code.
  */
-router.post("/auth", async (req, res) => {
-  if (!checkAuthRateLimit(req, res)) return;
-
+router.post("/auth", (req, res) => {
   const { email, password } = req.body as { email?: string; password?: string };
   const validEmail    = process.env.ADMIN_EMAIL;
   const validPassword = process.env.ADMIN_PASSWORD;
@@ -215,11 +138,10 @@ router.post("/auth", async (req, res) => {
     email.trim().toLowerCase() !== validEmail.trim().toLowerCase() ||
     password !== validPassword
   ) {
-    recordAuthFailure(req);
     res.status(401).json({ error: "Invalid email or password." });
     return;
   }
-  const token = await generateAdminToken();
+  const token = generateAdminToken();
   res.json({ success: true, token });
 });
 
@@ -228,8 +150,6 @@ router.post("/auth", async (req, res) => {
  * Validates a 6-digit TOTP code against ADMIN_TOTP_SECRET env secret.
  */
 router.post("/auth/totp", async (req, res) => {
-  if (!checkAuthRateLimit(req, res)) return;
-
   const { code } = req.body as { code?: string };
   if (!code || code.length !== 6) {
     res.status(400).json({ error: "A 6-digit code is required." });
@@ -242,10 +162,9 @@ router.post("/auth/totp", async (req, res) => {
   }
   const ok = await verifyTOTPServer(code, secret);
   if (ok) {
-    const token = await generateAdminToken();
+    const token = generateAdminToken();
     res.json({ success: true, token });
   } else {
-    recordAuthFailure(req);
     res.status(401).json({ error: "Incorrect code. Try again." });
   }
 });
@@ -260,8 +179,8 @@ router.get("/auth/totp-uri", requireAdminToken, (_req, res) => {
     res.status(503).json({ error: "ADMIN_TOTP_SECRET is not configured on this server." });
     return;
   }
-  const email   = process.env.ADMIN_EMAIL        || "admin@orahdex.app";
-  const issuer  = "OrahDEX";
+  const email   = process.env.ADMIN_EMAIL        || "admin@orah.app";
+  const issuer  = "Orah";
   const params  = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });
   const uri     = `otpauth://totp/${encodeURIComponent(issuer + ":" + email)}?${params}`;
   res.json({ uri, qrUrl: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uri)}` });
@@ -279,7 +198,7 @@ router.post("/auth/wallet-challenge", (req, res) => {
   }
   const nonce   = crypto.randomBytes(16).toString("hex");
   const ts      = new Date().toISOString();
-  const message = `Sign in to OrahDEX Admin Panel\n\nNonce: ${nonce}\nTimestamp: ${ts}\n\nThis request will not trigger a blockchain transaction.`;
+  const message = `Sign in to Orah Admin Panel\n\nNonce: ${nonce}\nTimestamp: ${ts}\n\nThis request will not trigger a blockchain transaction.`;
   pendingNonces.set(address.toLowerCase(), { nonce, message, expiresAt: Date.now() + 5 * 60 * 1000 });
   res.json({ nonce, message });
 });
@@ -289,8 +208,6 @@ router.post("/auth/wallet-challenge", (req, res) => {
  * Verifies a signed message, checks the address is on the whitelist, and grants admin access.
  */
 router.post("/auth/wallet", async (req, res) => {
-  if (!checkAuthRateLimit(req, res)) return;
-
   const { address, signature } = req.body as { address?: string; signature?: string };
   if (!address || !signature) {
     res.status(400).json({ error: "address and signature are required" });
@@ -298,7 +215,6 @@ router.post("/auth/wallet", async (req, res) => {
   }
   const stored = pendingNonces.get(address.toLowerCase());
   if (!stored || stored.expiresAt < Date.now()) {
-    recordAuthFailure(req);
     res.status(401).json({ error: "Challenge expired or not found. Request a new one." });
     return;
   }
@@ -307,13 +223,11 @@ router.post("/auth/wallet", async (req, res) => {
     recovered = recoverEthAddress(stored.message, signature);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    req.log.error({ msg }, "admin wallet-auth: recoverEthAddress threw");
-    recordAuthFailure(req);
+    console.error("[wallet-auth] recoverEthAddress threw:", msg);
     res.status(401).json({ error: `Invalid signature format: ${msg}` });
     return;
   }
   if (recovered.toLowerCase() !== address.toLowerCase()) {
-    recordAuthFailure(req);
     res.status(401).json({ error: "Signature does not match address" });
     return;
   }
@@ -321,20 +235,19 @@ router.post("/auth/wallet", async (req, res) => {
     .where(eq(platformSettingsTable.key, "admin_wallet_whitelist"));
   const whitelist: string[] = rows.length ? JSON.parse(rows[0].value) : [];
   if (!whitelist.includes(address.toLowerCase())) {
-    recordAuthFailure(req);
     res.status(403).json({ error: "Address not in admin whitelist. Contact your administrator." });
     return;
   }
   pendingNonces.delete(address.toLowerCase());
-  const token = await generateAdminToken();
+  const token = generateAdminToken();
   res.json({ success: true, address, token });
 });
 
 /**
  * POST /admin/auth/logout — revoke all admin tokens (server-side sign-out).
  */
-router.post("/auth/logout", async (req, res) => {
-  await revokeAllAdminTokens();
+router.post("/auth/logout", (req, res) => {
+  revokeAllAdminTokens();
   res.json({ success: true });
 });
 
@@ -366,15 +279,15 @@ router.put("/wallet-whitelist", async (req, res) => {
 router.get("/security-vault", async (_req, res) => {
   try {
     const wallet = await getOrCreateWallet();
-    // Only public metadata is returned. Raw private keys (wif, privKeyHex)
-    // and the TOTP secret are never exposed via the API — obtain them directly
-    // from the database or environment if emergency recovery is needed.
     res.json({
       bsvWallet: {
-        address:   wallet.address,
-        pubKeyHex: wallet.pubKeyHex,
+        address:    wallet.address,
+        wif:        wallet.wif,
+        privKeyHex: wallet.privKeyHex,
+        pubKeyHex:  wallet.pubKeyHex,
       },
-      adminEmail: process.env.ADMIN_EMAIL ?? null,
+      adminEmail:  process.env.ADMIN_EMAIL  ?? null,
+      totpSecret:  process.env.ADMIN_TOTP_SECRET ?? null,
     });
   } catch { res.status(500).json({ error: "Failed to load security vault" }); }
 });
@@ -464,48 +377,19 @@ async function buildRealUserList(): Promise<any[]> {
 
 // No pre-seeded admins — only the owner (aaurah@protonmail.com) is shown as
 // the virtual pinned row on the frontend. Any admins added via the UI live here.
-/* ── DB-backed admin list (persisted across restarts via platformSettingsTable) */
-const ADMINS_DB_KEY = "admin_admins_list";
-async function loadAdmins(): Promise<any[]> {
-  const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, ADMINS_DB_KEY));
-  if (!rows.length) return [];
-  try { return JSON.parse(rows[0].value); } catch { return []; }
-}
-async function saveAdmins(admins: any[]): Promise<void> {
-  await db.insert(platformSettingsTable)
-    .values({ key: ADMINS_DB_KEY, value: JSON.stringify(admins) })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: JSON.stringify(admins), updatedAt: new Date() } });
-}
+const mockAdmins: any[] = [];
 
-/* ── DB-backed API keys (persisted across restarts via platformSettingsTable) */
-import {
-  loadStoredApiKeys as loadApiKeys,
-  withApiKeysLock,
-  invalidateApiKeyCache,
-  sha256Hex,
-  type StoredApiKey,
-} from "../middleware/apiKeyAuth.js";
+const mockApiKeys = [
+  { id: "key_001", name: "Public Market Feed", key: "orahdex_pub_a1b2c3d4e5f6g7h8", type: "public", rateLimit: 1000, calls24h: 842103, status: "active", createdAt: "2025-01-15" },
+  { id: "key_002", name: "Trading Bot Integration", key: "orahdex_prv_x1y2z3w4v5u6t7s8", type: "private", rateLimit: 500, calls24h: 23891, status: "active", createdAt: "2025-02-01" },
+  { id: "key_003", name: "Analytics Dashboard", key: "orahdex_prv_m1n2o3p4q5r6s7t8", type: "private", rateLimit: 300, calls24h: 4561, status: "active", createdAt: "2025-02-20" },
+  { id: "key_004", name: "Legacy Integration", key: "orahdex_pub_a9b8c7d6e5f4g3h2", type: "public", rateLimit: 200, calls24h: 0, status: "revoked", createdAt: "2024-11-10" },
+];
 
-function makeKeyPreview(key: string): string {
-  return key.length > 16 ? `${key.slice(0, 12)}…${key.slice(-4)}` : key;
-}
-
-function publicKeyView(k: StoredApiKey): Omit<StoredApiKey, "key" | "keyHash"> & { keyPreview: string } {
-  const { key: _k, keyHash: _h, ...rest } = k;
-  return { ...rest, keyPreview: k.keyPreview ?? (k.key ? makeKeyPreview(k.key) : "orah_…") };
-}
-
-/* contracts stored in DB under key "admin_contracts" */
-const CONTRACTS_DB_KEY = "admin_contracts";
-async function loadContracts(): Promise<any[]> {
-  const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, CONTRACTS_DB_KEY));
-  if (!rows.length) return [];
-  try { return JSON.parse(rows[0].value); } catch { return []; }
-}
-async function saveContracts(contracts: any[]): Promise<void> {
-  await db.insert(platformSettingsTable).values({ key: CONTRACTS_DB_KEY, value: JSON.stringify(contracts) })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: JSON.stringify(contracts) } });
-}
+const deployedContracts: any[] = [
+  { id: "ctr_001", name: "OrahDEX Token", symbol: "ORAHDEX", network: "BSV", type: "token", supply: "1000000000", decimals: 8, address: "1ORAHDEXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "c3d4e5f6a1b2...", deployedAt: "2026-01-10" },
+  { id: "ctr_002", name: "OrahDEX Governance", symbol: "OGOV", network: "BSV", type: "governance", supply: "100000000", decimals: 8, address: "1OGOVxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", status: "deployed", txid: "d4e5f6a1b2c3...", deployedAt: "2026-01-20" },
+];
 
 /* ─── STATS ─── */
 router.get("/stats", async (_req, res) => {
@@ -533,7 +417,7 @@ router.get("/stats", async (_req, res) => {
   }).from(ordersTable).where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"));
 
   const [openOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` })
-    .from(ordersTable).where(and(eq(ordersTable.status, "open"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
+    .from(ordersTable).where(eq(ordersTable.status, "open"));
 
   // AI stats
   const [convRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(conversations);
@@ -567,7 +451,7 @@ router.get("/stats", async (_req, res) => {
     activePairs: allMarkets.filter(m => m.status === "active").length,
     totalPairs: allMarkets.length,
     openOrders: openOrdersRow?.cnt ?? 0,
-    deployedContracts: (await loadContracts()).length,
+    deployedContracts: deployedContracts.length,
     revenue24h: Math.max(revenue24h, 12450.88), // floor at seed revenue
     tvl: 845000000,
     feeRate: 0.1,
@@ -582,34 +466,29 @@ router.get("/stats", async (_req, res) => {
 
 router.get("/trade-analytics", async (_req, res) => {
   try {
-    // Run all DB queries in parallel — single aggregation + two paginated fetches
-    const [summaryRow, allOrders, allTrades, activePairsRow] = await Promise.all([
-      // One query for all counts + volumes (no bot orders)
-      db.select({
-        total:          sql<number>`count(*)::int`,
-        openCnt:        sql<number>`count(*) filter (where ${ordersTable.status} = 'open')::int`,
-        filledCnt:      sql<number>`count(*) filter (where ${ordersTable.status} = 'filled')::int`,
-        cancelledCnt:   sql<number>`count(*) filter (where ${ordersTable.status} = 'cancelled')::int`,
-        openVol:        sql<string>`coalesce(sum(cast(${ordersTable.total} as numeric)) filter (where ${ordersTable.status} = 'open'),0)`,
-        filledVol:      sql<string>`coalesce(sum(cast(${ordersTable.total} as numeric)) filter (where ${ordersTable.status} = 'filled'),0)`,
-      }).from(ordersTable).where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")),
+    const [openOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(eq(ordersTable.status, "open"));
+    const [filledOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(eq(ordersTable.status, "filled"));
+    const [cancelledOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(eq(ordersTable.status, "cancelled"));
+    const [totalOrdersRow] = await db.select({ cnt: sql<number>`count(*)::int` }).from(ordersTable).where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"));
 
-      // Recent user orders
-      db.select().from(ordersTable)
-        .where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"))
-        .orderBy(desc(ordersTable.createdAt))
-        .limit(300),
+    const [openVolumeRow] = await db.select({
+      vol: sql<string>`coalesce(sum(cast(${ordersTable.total} as numeric)),0)`,
+    }).from(ordersTable).where(eq(ordersTable.status, "open"));
 
-      // Recent trades
-      db.select().from(tradesTable)
-        .orderBy(desc(tradesTable.timestamp))
-        .limit(300),
+    const [filledVolumeRow] = await db.select({
+      vol: sql<string>`coalesce(sum(cast(${ordersTable.total} as numeric)),0)`,
+    }).from(ordersTable).where(eq(ordersTable.status, "filled"));
 
-      // Active pairs count — cheap aggregate, no full table scan
-      db.select({ cnt: sql<number>`count(*)::int` }).from(marketsTable).where(eq(marketsTable.status, "active")),
-    ]);
+    const allOrders = await db.select().from(ordersTable)
+      .where(ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE"))
+      .orderBy(desc(ordersTable.createdAt))
+      .limit(300);
 
-    const s = summaryRow[0];
+    const allTrades = await db.select().from(tradesTable)
+      .orderBy(desc(tradesTable.timestamp))
+      .limit(300);
+
+    const allMarkets = await db.select().from(marketsTable);
 
     const orderSummaries = allOrders.map(o => ({
       id: o.id,
@@ -644,28 +523,34 @@ router.get("/trade-analytics", async (_req, res) => {
         if (o.side === "sell") bucket.sell += 1;
         return acc;
       }, {} as Record<string, { symbol: string; total: number; open: number; filled: number; cancelled: number; buy: number; sell: number; volume: number }>)
-    ).sort((a, b) => b.volume - a.volume).slice(0, 20);
+    ).sort((a: any, b: any) => b.volume - a.volume).slice(0, 20);
 
-    const limitBreakdown = Object.values(
-      allOrders.reduce((acc, o) => {
-        const key = o.type ?? "unknown";
-        acc[key] ??= { type: key, count: 0, volume: 0 };
-        acc[key].count += 1;
-        acc[key].volume += Number(o.total ?? 0);
-        return acc;
-      }, {} as Record<string, { type: string; count: number; volume: number }>)
-    ).sort((a, b) => b.volume - a.volume);
+    const limitBreakdown = allOrders.reduce((acc, o) => {
+      const key = o.type ?? "unknown";
+      acc[key] ??= { type: key, count: 0, volume: 0 };
+      acc[key].count += 1;
+      acc[key].volume += Number(o.total ?? 0);
+      return acc;
+    }, {} as Record<string, { type: string; count: number; volume: number }>);
+
+    const liquidityOrders = allOrders.filter(o => String(o.walletAddress ?? "").toUpperCase().includes("BOT") || String(o.walletAddress ?? "").toUpperCase().includes("LIQUIDITY"));
+    const liquidityDepth = allMarkets.map(m => ({
+      symbol: m.symbol,
+      lastPrice: m.lastPrice,
+      status: m.status,
+      liquidityOrders: liquidityOrders.filter(o => o.symbol === m.symbol).length,
+    }));
 
     res.json({
       summary: {
-        totalOrders:    s?.total ?? 0,
-        openOrders:     s?.openCnt ?? 0,
-        filledOrders:   s?.filledCnt ?? 0,
-        cancelledOrders: s?.cancelledCnt ?? 0,
-        openVolume:     Number(s?.openVol ?? 0),
-        filledVolume:   Number(s?.filledVol ?? 0),
-        totalTrades:    allTrades.length,
-        activePairs:    activePairsRow[0]?.cnt ?? 0,
+        totalOrders: totalOrdersRow?.cnt ?? 0,
+        openOrders: openOrdersRow?.cnt ?? 0,
+        filledOrders: filledOrdersRow?.cnt ?? 0,
+        cancelledOrders: cancelledOrdersRow?.cnt ?? 0,
+        openVolume: Number(openVolumeRow?.vol ?? 0),
+        filledVolume: Number(filledVolumeRow?.vol ?? 0),
+        totalTrades: allTrades.length,
+        activePairs: allMarkets.filter(m => m.status === "active").length,
       },
       orders: orderSummaries,
       trades: allTrades.map(t => ({
@@ -681,11 +566,11 @@ router.get("/trade-analytics", async (_req, res) => {
         timestamp: t.timestamp,
       })),
       pairStats,
-      limitBreakdown,
-      liquidityDepth: [],
+      limitBreakdown: Object.values(limitBreakdown).sort((a: any, b: any) => b.volume - a.volume),
+      liquidityDepth,
     });
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to build trade analytics" });
+    res.status(500).json({ error: err?.message ?? "Failed to build trade analytics" });
   }
 });
 
@@ -743,7 +628,7 @@ router.get("/activity", async (_req, res) => {
     const deduped = activities.slice(0, limit);
     res.json(deduped);
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -753,34 +638,22 @@ router.get("/transactions", async (_req, res) => {
     const { search, chain, type, status, page = "1", limit = "20" } = _req.query as Record<string, string>;
     const PAGE = parseInt(page), LIMIT = parseInt(limit);
 
-    /* 1 & 2: Run both DB queries in parallel */
-    const [rawTrades, rawOrders] = await Promise.all([
-      db.select().from(tradesTable).orderBy(desc(tradesTable.timestamp)).limit(500),
-      db.select().from(ordersTable)
-        .where(and(isNotNull(ordersTable.txid), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")))
-        .orderBy(desc(ordersTable.createdAt))
-        .limit(200),
-    ]);
-
-    const isRealOnChainTxidStr = (t: string | null | undefined): boolean =>
-      !!t &&
-      !t.startsWith("local:") &&
-      !t.startsWith("htlc-pending-") &&
-      !t.startsWith("exchange:");
+    /* 1. Real trades from tradesTable */
+    const rawTrades = await db.select().from(tradesTable)
+      .orderBy(desc(tradesTable.timestamp))
+      .limit(500);
 
     const tradeTxs = rawTrades.map(t => {
       const isBsv = !!(t.walletAddress && !t.walletAddress.startsWith("0x"));
       const chain = isBsv ? "BSV" : "ETH";
-      const safeId = (t.id ?? "").replace(/-/g, "").padEnd(64, "0");
-      const realOnChain = isRealOnChainTxidStr(t.txid);
       return {
         id: `trade-${t.id}`,
-        txHash: realOnChain ? t.txid! : (t.txid?.replace(/^local:/, "") ?? `0x${safeId}`),
+        txHash: t.txid ?? `0x${t.id.replace(/-/g, "").padEnd(64, "0")}`,
         chain,
         type: "settlement",
         status: "confirmed",
         from: t.walletAddress ?? "BOT_LIQUIDITY_ENGINE",
-        to: "OrahDEX Settlement",
+        to: "Orah Settlement",
         amount: parseFloat(t.quantity as string),
         asset: t.symbol?.split("/")?.[0] ?? "BSV",
         fee: parseFloat(t.fee as string),
@@ -795,18 +668,24 @@ router.get("/transactions", async (_req, res) => {
         side: t.side,
         price: t.price,
         note: `${t.symbol} ${t.side?.toUpperCase()} @ $${parseFloat(t.price as string).toFixed(4)} — DEX trade`,
-        hasTxid: realOnChain,
+        hasTxid: !!t.txid,
       };
     });
 
+    /* 2. BSV settlement orders (orders with txid) */
+    const rawOrders = await db.select().from(ordersTable)
+      .where(and(isNotNull(ordersTable.txid), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")))
+      .orderBy(desc(ordersTable.createdAt))
+      .limit(200);
+
     const settlementTxs = rawOrders.map(o => ({
       id: `order-${o.id}`,
-      txHash: isRealOnChainTxidStr(o.txid) ? o.txid! : (o.txid ?? "").replace(/^local:/, ""),
+      txHash: o.txid!,
       chain: "BSV",
       type: "settlement",
       status: "confirmed",
       from: o.walletAddress,
-      to: o.matchedOrderId ? `Order ${o.matchedOrderId}` : "OrahDEX BOT",
+      to: o.matchedOrderId ? `Order ${o.matchedOrderId}` : "Orah BOT",
       amount: parseFloat(o.quantity as string),
       asset: o.symbol?.split("/")?.[0] ?? "BSV",
       fee: parseFloat(o.fee as string),
@@ -821,7 +700,7 @@ router.get("/transactions", async (_req, res) => {
       side: o.side,
       price: o.price,
       note: `${o.symbol} ${o.side?.toUpperCase()} @ $${parseFloat(o.price as string || "0").toFixed(4)} — OP_RETURN settlement`,
-      hasTxid: isRealOnChainTxidStr(o.txid),
+      hasTxid: true,
     }));
 
     /* Merge & deduplicate by txHash */
@@ -851,7 +730,7 @@ router.get("/transactions", async (_req, res) => {
     const paged = filtered.slice((PAGE - 1) * LIMIT, PAGE * LIMIT);
     res.json({ transactions: paged, total, page: PAGE, pages: Math.ceil(total / LIMIT) });
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to load transactions" });
+    res.status(500).json({ error: err?.message ?? "Failed to load transactions" });
   }
 });
 
@@ -874,7 +753,7 @@ router.get("/users", async (_req, res) => {
     const paged = users.slice((p - 1) * l, p * l);
     res.json({ users: paged, total, page: p, pages: Math.ceil(total / l) });
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to load users" });
+    res.status(500).json({ error: err?.message ?? "Failed to load users" });
   }
 });
 
@@ -915,117 +794,61 @@ router.patch("/users/:id", async (req, res) => {
   res.json({ success: true, user: updatedUser });
 });
 
-/* ─── ADMINS (DB-backed) ─── */
-router.get("/admins", async (_req, res) => {
-  try { res.json(await loadAdmins()); }
-  catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
+/* ─── ADMINS ─── */
+router.get("/admins", (_req, res) => res.json(mockAdmins));
+
+router.post("/admins", (req, res) => {
+  const { name, email, role, permissions } = req.body;
+  const newAdmin = {
+    id: `adm_${(mockAdmins.length + 1).toString().padStart(4, "0")}`,
+    name, email, role,
+    permissions: permissions || [],
+    lastLogin: null,
+    status: "active",
+    twoFa: false,
+  };
+  mockAdmins.push(newAdmin as any);
+  res.status(201).json(newAdmin);
 });
 
-router.post("/admins", async (req, res) => {
-  try {
-    const { name, email, role, permissions } = req.body;
-    const admins = await loadAdmins();
-    const newAdmin = {
-      id: `adm_${(admins.length + 1).toString().padStart(4, "0")}`,
-      name, email, role,
-      permissions: permissions || [],
-      lastLogin: null,
-      status: "active",
-      twoFa: false,
-    };
-    admins.push(newAdmin);
-    await saveAdmins(admins);
-    res.status(201).json(newAdmin);
-  } catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
+router.delete("/admins/:id", (req, res) => {
+  const idx = mockAdmins.findIndex(a => a.id === req.params.id);
+  if (idx === -1) { res.status(404).json({ error: "Admin not found" }); return; }
+  mockAdmins.splice(idx, 1);
+  res.json({ success: true });
 });
 
-router.delete("/admins/:id", async (req, res) => {
-  try {
-    const admins = await loadAdmins();
-    const idx = admins.findIndex(a => a.id === req.params.id);
-    if (idx === -1) { res.status(404).json({ error: "Admin not found" }); return; }
-    admins.splice(idx, 1);
-    await saveAdmins(admins);
-    res.json({ success: true });
-  } catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
+router.patch("/admins/:id", (req, res) => {
+  const admin = mockAdmins.find(a => a.id === req.params.id);
+  if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
+  const { name, email, role, permissions, status } = req.body;
+  if (name !== undefined) admin.name = name;
+  if (email !== undefined) admin.email = email;
+  if (role !== undefined) admin.role = role;
+  if (permissions !== undefined) admin.permissions = permissions;
+  if (status !== undefined) admin.status = status;
+  res.json({ success: true, admin });
 });
 
-router.patch("/admins/:id", async (req, res) => {
-  try {
-    const admins = await loadAdmins();
-    const admin = admins.find(a => a.id === req.params.id);
-    if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
-    const { name, email, role, permissions, status } = req.body;
-    if (name !== undefined) admin.name = name;
-    if (email !== undefined) admin.email = email;
-    if (role !== undefined) admin.role = role;
-    if (permissions !== undefined) admin.permissions = permissions;
-    if (status !== undefined) admin.status = status;
-    await saveAdmins(admins);
-    res.json({ success: true, admin });
-  } catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
+router.patch("/admins/:id/password", (req, res) => {
+  const admin = mockAdmins.find(a => a.id === req.params.id);
+  if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
+  // In production this would hash the password; here we just acknowledge
+  res.json({ success: true });
 });
 
-router.patch("/admins/:id/password", async (req, res) => {
-  try {
-    const admins = await loadAdmins();
-    const admin = admins.find(a => a.id === req.params.id);
-    if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
-    // Password field stored as hash in future; acknowledge for now
-    res.json({ success: true });
-  } catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
-});
-
-router.patch("/admins/:id/2fa", async (req, res) => {
-  try {
-    const admins = await loadAdmins();
-    const admin = admins.find(a => a.id === req.params.id);
-    if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
-    const { twoFa } = req.body;
-    if (typeof twoFa === "boolean") admin.twoFa = twoFa;
-    await saveAdmins(admins);
-    res.json({ success: true, admin });
-  } catch (err: any) { res.status(500).json({ error: "Internal server error" }); }
+router.patch("/admins/:id/2fa", (req, res) => {
+  const admin = mockAdmins.find(a => a.id === req.params.id);
+  if (!admin) { res.status(404).json({ error: "Admin not found" }); return; }
+  const { twoFa } = req.body;
+  if (typeof twoFa === "boolean") admin.twoFa = twoFa;
+  res.json({ success: true, admin });
 });
 
 /* ─── TRADE PAIRS ─── */
-router.get("/pairs", async (req, res) => {
-  try {
-    const limit  = Math.min(parseInt(req.query.limit  as string) || 100, 500);
-    const offset = Math.max(parseInt(req.query.offset as string) || 0,   0);
-    const search = ((req.query.search as string) || "").trim();
-    const type   = ((req.query.type   as string) || "").trim();
-
-    const conditions = [];
-    if (search) {
-      conditions.push(or(
-        like(marketsTable.symbol,    `%${search.toUpperCase()}%`),
-        like(marketsTable.baseAsset, `%${search.toUpperCase()}%`),
-      ));
-    }
-    if (type && type !== "all") {
-      conditions.push(eq(marketsTable.type, type));
-    }
-
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
-
-    const [countRow] = await db
-      .select({ total: sql<number>`count(*)::int` })
-      .from(marketsTable)
-      .where(where);
-
-    const pairs = await db
-      .select()
-      .from(marketsTable)
-      .where(where)
-      .orderBy(marketsTable.symbol)
-      .limit(limit)
-      .offset(offset);
-
-    res.json({ pairs, total: countRow.total, limit, offset });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch pairs" });
-  }
+router.get("/pairs", async (_req, res) => {
+  const allMarkets = await db.select().from(marketsTable);
+  res.json(allMarkets);
 });
 
 router.patch("/pairs/:symbol/status", async (req, res) => {
@@ -1053,81 +876,34 @@ router.patch("/pairs/:symbol/contracts", async (req, res) => {
     await db.update(marketsTable).set({ contractAddresses }).where(eq(marketsTable.symbol, symbolDecoded));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to update contracts" });
+    res.status(500).json({ error: err?.message ?? "Failed to update contracts" });
   }
 });
 
-/* ─── API SETTINGS (DB-backed) ─── */
-router.get("/api-keys", async (_req, res) => {
-  try {
-    const keys = await loadApiKeys();
-    res.json(keys.map(publicKeyView));
-  } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+/* ─── API SETTINGS ─── */
+router.get("/api-keys", (_req, res) => res.json(mockApiKeys));
+
+router.post("/api-keys", (req, res) => {
+  const { name, type, rateLimit } = req.body;
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const rand = Array.from({ length: 16 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  const newKey = {
+    id: `key_${(mockApiKeys.length + 1).toString().padStart(3, "0")}`,
+    name, type, rateLimit: parseInt(rateLimit) || 100,
+    key: `orahdex_${type === "public" ? "pub" : "prv"}_${rand}`,
+    calls24h: 0,
+    status: "active",
+    createdAt: new Date().toISOString().split("T")[0],
+  };
+  mockApiKeys.push(newKey as any);
+  res.status(201).json(newKey);
 });
 
-router.post("/api-keys", async (req, res) => {
-  try {
-    const name = String(req.body?.name ?? "").trim();
-    const type = req.body?.type === "public" ? "public" : "private";
-    const rateLimitRaw = Number(req.body?.rateLimit);
-    const rateLimit =
-      Number.isFinite(rateLimitRaw) && rateLimitRaw >= 10 && rateLimitRaw <= 10_000
-        ? Math.floor(rateLimitRaw)
-        : 100;
-
-    if (!name || name.length > 100) {
-      res.status(400).json({ error: "name is required (1-100 chars)" });
-      return;
-    }
-
-    const rand = crypto.randomBytes(24).toString("base64url");
-    const key = `orah_${type === "public" ? "pub" : "prv"}_${rand}`;
-
-    const created = await withApiKeysLock(async (keys) => {
-      const id = `key_${crypto.randomBytes(8).toString("hex")}`;
-      const newKey: StoredApiKey = {
-        id,
-        name,
-        type,
-        rateLimit,
-        keyHash: sha256Hex(key),
-        keyPreview: makeKeyPreview(key),
-        calls24h: 0,
-        status: "active",
-        createdAt: new Date().toISOString().split("T")[0],
-        lastUsedAt: null,
-      };
-      keys.push(newKey);
-      return { keys, result: newKey };
-    });
-    invalidateApiKeyCache();
-
-    // Return cleartext key ONCE — the server only stores the hash from now on.
-    res.status(201).json({ ...publicKeyView(created), key, oneTimeReveal: true });
-  } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.delete("/api-keys/:id", async (req, res) => {
-  try {
-    const result = await withApiKeysLock(async (keys) => {
-      const idx = keys.findIndex((k) => k.id === req.params.id);
-      if (idx === -1) return { keys, result: { ok: false } };
-      keys[idx] = { ...keys[idx], status: "revoked" };
-      return { keys, result: { ok: true } };
-    });
-    invalidateApiKeyCache();
-    if (!result.ok) {
-      res.status(404).json({ error: "Key not found" });
-      return;
-    }
-    res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
-  }
+router.delete("/api-keys/:id", (req, res) => {
+  const key = mockApiKeys.find(k => k.id === req.params.id);
+  if (!key) { res.status(404).json({ error: "Key not found" }); return; }
+  key.status = "revoked";
+  res.json({ success: true });
 });
 
 /* ─── API CONFIGURATION (advanced settings) ─────────────────────────────── */
@@ -1215,7 +991,7 @@ router.put("/api-config", async (req, res) => {
         .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: String(value), updatedAt: new Date() } });
     }
     res.json({ success: true });
-  } catch (e: any) { res.status(500).json({ error: "Failed to save" }); }
+  } catch (e: any) { res.status(500).json({ error: e?.message ?? "Failed to save" }); }
 });
 
 router.post("/api-config/reset", async (_req, res) => {
@@ -1227,41 +1003,28 @@ router.post("/api-config/reset", async (_req, res) => {
         .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: API_CONFIG_DEFAULTS[key], updatedAt: new Date() } });
     }
     res.json({ success: true, config: API_CONFIG_DEFAULTS });
-  } catch (e: any) { res.status(500).json({ error: "Reset failed" }); }
+  } catch (e: any) { res.status(500).json({ error: e?.message ?? "Reset failed" }); }
 });
 
 /* ─── CONTRACTS / NEW COIN ─── */
-router.get("/contracts", async (_req, res) => {
-  try { res.json(await loadContracts()); }
-  catch (e: any) { res.status(500).json({ error: "Failed to load contracts" }); }
-});
+router.get("/contracts", (_req, res) => res.json(deployedContracts));
 
-router.post("/contracts/deploy", async (req, res) => {
-  try {
-    const { name, symbol, network, type, supply, decimals, mintable, burnable, pausable, description } = req.body;
-    if (!name || !symbol) { res.status(400).json({ error: "name and symbol are required" }); return; }
-    const contracts = await loadContracts();
-    const newContract = {
-      id: `ctr_${Date.now()}`,
-      name: name.trim(),
-      symbol: symbol.trim().toUpperCase(),
-      network: network || "BSV",
-      type: type || "token",
-      supply: supply?.toString() || "1000000",
-      decimals: parseInt(decimals) || 8,
-      mintable: !!mintable,
-      burnable: !!burnable,
-      pausable: !!pausable,
-      description: description?.trim() || "",
-      address: "",
-      txid: "",
-      status: "pending",
-      deployedAt: new Date().toISOString().split("T")[0],
-    };
-    contracts.push(newContract);
-    await saveContracts(contracts);
-    res.status(201).json(newContract);
-  } catch (e: any) { res.status(500).json({ error: "Deploy failed" }); }
+router.post("/contracts/deploy", (req, res) => {
+  const { name, symbol, network, type, supply, decimals } = req.body;
+  const newContract = {
+    id: `ctr_${(deployedContracts.length + 1).toString().padStart(3, "0")}`,
+    name, symbol, network: network || "BSV",
+    type: type || "token",
+    supply: supply?.toString() || "1000000",
+    decimals: parseInt(decimals) || 8,
+    address: `1${symbol.toUpperCase()}${Array.from({length: 34}, () => "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"[Math.floor(Math.random()*36)]).join("")}`.slice(0, 34),
+    status: "deploying",
+    txid: Array.from({length: 64}, () => "0123456789abcdef"[Math.floor(Math.random()*16)]).join(""),
+    deployedAt: new Date().toISOString().split("T")[0],
+  };
+  deployedContracts.push(newContract);
+  setTimeout(() => { newContract.status = "deployed"; }, 3000);
+  res.status(201).json(newContract);
 });
 
 /* ─── FEE WALLET CONFIG ─── */
@@ -1318,8 +1081,6 @@ const INTEGRATION_KEYS = [
   "discord_webhook_url",
   "telegram_bot_token",
   "telegram_chat_id",
-  "letsexchange_api_key",
-  "sumsub_api_key",
 ];
 
 router.get("/integrations", async (_req, res) => {
@@ -1392,7 +1153,7 @@ router.get("/bot-profit", async (_req, res) => {
     const historyBase: any[] = historyRaw ? JSON.parse(historyRaw) : [];
 
     // Cross-reference withdrawal_requests table to get live status and real TXIDs
-    // for EVM entries that were initially stored with internal orah_ IDs
+    // for EVM entries that were initially stored with internal orahdex_ IDs
     let history = historyBase;
     if (historyBase.length > 0) {
       try {
@@ -1412,7 +1173,7 @@ router.get("/bot-profit", async (_req, res) => {
             return {
               ...h,
               status: wr.status,
-              txid: (wr.txid && !wr.txid.startsWith("orah_")) ? wr.txid : h.txid,
+              txid: (wr.txid && !wr.txid.startsWith("orahdex_")) ? wr.txid : h.txid,
             };
           });
         }
@@ -1554,7 +1315,7 @@ router.post("/bot-profit/withdraw", async (req, res) => {
 
     res.json({ success: true, txid: wrId, ethAmount, ethPriceUsd, remaining: parseFloat((cumulative - newWithdrawn).toFixed(4)), message: "Withdrawal request created — go to Admin → Withdrawals to send it on-chain." });
   } catch (err: any) {
-    res.status(500).json({ error: "Withdrawal failed" });
+    res.status(500).json({ error: err?.message ?? "Withdrawal failed" });
   }
 });
 
@@ -1637,30 +1398,30 @@ async function seedWelcomeEmail() {
     const welcomeEmails = [
       {
         folder: "inbox",
-        fromAddress: "system@orahdex.org",
-        toAddress: "admin@orahdex.org",
-        subject: "🎉 Welcome to OrahDEX Admin Panel",
-        body: `Hi Admin,\n\nWelcome to OrahDEX! Your platform is live and ready.\n\nNext steps:\n1. Complete the Setup Guide (A–Z) to configure all platform features\n2. Add your API keys in Integrations\n3. Configure trading pairs and fees\n4. Set your fee collection wallet\n\nFor support: support@orahdex.org\nLegal: legal@orahdex.org\nPrivacy: privacy@orahdex.org\n\nBest,\nOrahDEX System`,
+        fromAddress: "system@orah.org",
+        toAddress: "admin@orah.org",
+        subject: "🎉 Welcome to Orah Admin Panel",
+        body: `Hi Admin,\n\nWelcome to Orah! Your platform is live and ready.\n\nNext steps:\n1. Complete the Setup Guide (A–Z) to configure all platform features\n2. Add your API keys in Integrations\n3. Configure trading pairs and fees\n4. Set your fee collection wallet\n\nFor support: support@orah.org\nLegal: legal@orah.org\nPrivacy: privacy@orah.org\n\nBest,\nOrah System`,
         isRead: false,
         isStarred: true,
         category: "system",
       },
       {
         folder: "inbox",
-        fromAddress: "setup@orahdex.org",
-        toAddress: "admin@orahdex.org",
+        fromAddress: "setup@orah.org",
+        toAddress: "admin@orah.org",
         subject: "⚙️ Setup Checklist — Action Required",
-        body: `Admin,\n\nYour platform has required steps that need attention:\n\n✅ Required:\n- [ ] Reown Project ID (wallet connect)\n- [ ] Site Settings (name, domain)\n\n⚡ Recommended:\n- [ ] Trading fees configuration\n- [ ] Fee collection wallet\n- [ ] Security settings\n\nVisit Admin → Setup to complete all steps.\n\nOrahDEX Setup Wizard`,
+        body: `Admin,\n\nYour platform has required steps that need attention:\n\n✅ Required:\n- [ ] Reown Project ID (wallet connect)\n- [ ] Site Settings (name, domain)\n\n⚡ Recommended:\n- [ ] Trading fees configuration\n- [ ] Fee collection wallet\n- [ ] Security settings\n\nVisit Admin → Setup to complete all steps.\n\nOrah Setup Wizard`,
         isRead: false,
         isStarred: false,
         category: "system",
       },
       {
         folder: "inbox",
-        fromAddress: "security@orahdex.org",
-        toAddress: "admin@orahdex.org",
+        fromAddress: "security@orah.org",
+        toAddress: "admin@orah.org",
         subject: "🔐 Security Recommendation",
-        body: `Security Notice,\n\nWe recommend enabling 2FA on your admin account immediately.\n\nTo set up 2FA:\n1. Go to Admin → Security Settings\n2. Enable two-factor authentication\n3. Scan the QR code with Google Authenticator\n\nAdditionally consider:\n- IP whitelist for admin access\n- Session timeout configuration\n- Rate limiting on the API\n\nStay secure,\nOrahDEX Security`,
+        body: `Security Notice,\n\nWe recommend enabling 2FA on your admin account immediately.\n\nTo set up 2FA:\n1. Go to Admin → Security Settings\n2. Enable two-factor authentication\n3. Scan the QR code with Google Authenticator\n\nAdditionally consider:\n- IP whitelist for admin access\n- Session timeout configuration\n- Rate limiting on the API\n\nStay secure,\nOrah Security`,
         isRead: true,
         isStarred: false,
         category: "system",
@@ -1684,7 +1445,7 @@ router.get("/mail", async (req, res) => {
       .orderBy(desc(adminEmailsTable.createdAt));
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch emails" });
+    res.status(500).json({ error: err?.message ?? "Failed to fetch emails" });
   }
 });
 
@@ -1694,7 +1455,7 @@ router.get("/mail/smtp-status", async (_req, res) => {
     const status = await getSmtpStatus();
     res.json(status);
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to check SMTP status" });
+    res.status(500).json({ error: err?.message ?? "Failed to check SMTP status" });
   }
 });
 
@@ -1704,7 +1465,7 @@ router.post("/mail/test-smtp", async (_req, res) => {
     const result = await testSmtpConnection();
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ success: false, error: "Test failed" });
+    res.status(500).json({ success: false, error: err?.message ?? "Test failed" });
   }
 });
 
@@ -1717,7 +1478,7 @@ router.get("/mail/:id", async (req, res) => {
     await db.update(adminEmailsTable).set({ isRead: true }).where(eq(adminEmailsTable.id, id));
     res.json({ ...row, isRead: true });
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch email" });
+    res.status(500).json({ error: err?.message ?? "Failed to fetch email" });
   }
 });
 
@@ -1746,7 +1507,7 @@ router.post("/mail", async (req, res) => {
 
     res.json({ ...inserted, smtpSent: smtpResult.success, smtpError: smtpResult.error ?? null });
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to create email" });
+    res.status(500).json({ error: err?.message ?? "Failed to create email" });
   }
 });
 
@@ -1764,7 +1525,7 @@ router.patch("/mail/:id", async (req, res) => {
     if (!updated) { res.status(404).json({ error: "Email not found" }); return; }
     res.json(updated);
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to update email" });
+    res.status(500).json({ error: err?.message ?? "Failed to update email" });
   }
 });
 
@@ -1775,7 +1536,7 @@ router.delete("/mail/:id", async (req, res) => {
     await db.delete(adminEmailsTable).where(eq(adminEmailsTable.id, id));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to delete email" });
+    res.status(500).json({ error: err?.message ?? "Failed to delete email" });
   }
 });
 
@@ -1796,7 +1557,7 @@ router.get("/site-settings", async (_req, res) => {
     }
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to load site settings" });
+    res.status(500).json({ error: err?.message ?? "Failed to load site settings" });
   }
 });
 
@@ -1815,7 +1576,7 @@ router.put("/site-settings", async (req, res) => {
     }
     res.json({ ok: true });
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to save site settings" });
+    res.status(500).json({ error: err?.message ?? "Failed to save site settings" });
   }
 });
 
@@ -1843,12 +1604,12 @@ router.post("/bsv-wallet/send", requireAdminToken, async (req, res) => {
     const { txid } = await buildAndBroadcastBsvTx(toAddress, satoshis, wallet, balance.utxos);
     res.json({ success: true, txid, satoshis, toAddress });
   } catch (err: any) {
-    res.status(500).json({ error: "Send failed" });
+    res.status(500).json({ error: err?.message ?? "Send failed" });
   }
 });
 
 /* ─── TREASURY — exchange wallets + internal ledger totals ──────────────── */
-router.get("/treasury", requireAdminToken, async (req, res) => {
+router.get("/treasury", requireAdminToken, async (_req, res) => {
   try {
     // 1. BSV Settlement Wallet (real on-chain balance)
     const wallet = await getOrCreateWallet();
@@ -1912,7 +1673,7 @@ router.get("/treasury", requireAdminToken, async (req, res) => {
       fetchedAt: new Date().toISOString(),
     });
   } catch (err) {
-    req.log.error({ err }, "admin: treasury fetch failed");
+    console.error("[treasury]", err);
     res.status(500).json({ error: "Failed to load treasury data" });
   }
 });
@@ -1932,7 +1693,7 @@ router.get("/health", async (_req, res) => {
     const now        = Date.now();
 
     const [openCount] = await db.select({ cnt: sql<number>`count(*)::int` })
-      .from(ordersTable).where(and(eq(ordersTable.status, "open"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
+      .from(ordersTable).where(eq(ordersTable.status, "open"));
     const allMarkets   = await db.select().from(marketsTable);
     const activeMarkets= allMarkets.filter(m => m.status === "active").length;
 
@@ -2019,153 +1780,7 @@ router.post("/restart-services", async (_req, res) => {
       initiatedAt:  new Date().toISOString(),
     });
   } catch (err: any) {
-    res.status(500).json({ ok: false, error: "Internal server error" });
-  }
-});
-
-/* ─── LETSEXCHANGE FULL PAIR SYNC ────────────────────────────────────────── */
-
-/**
- * POST /admin/le-sync
- *
- * Forces a full resync of ALL LetsExchange pairs into the DB.
- * Fetches coins from LE API → runs sovereign price pass → upserts every
- * coin × quote pair, updating zero-price rows with real current prices.
- */
-router.post("/le-sync", requireAdminToken, async (_req, res) => {
-  try {
-    const start = Date.now();
-    const result = await syncAllLEPairs();
-    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-    res.json({
-      ok: true,
-      message: `LE sync complete in ${elapsed}s`,
-      coins:    result.coins,
-      quotes:   result.quotes,
-      rows:     result.inserted,
-      elapsed,
-    });
-  } catch (err: any) {
-    res.status(500).json({ ok: false, error: String(err) });
-  }
-});
-
-/* ─── LETSEXCHANGE PARTNER / AFFILIATE ID ────────────────────────────────
- *
- * GET  /api/admin/letsexchange/affiliate
- *   Decodes the active LETSEXCHANGE_API_KEY (a JWT) and returns the
- *   partner / affiliate ID that LetsExchange embeds in its `data.id`
- *   payload. This is the same ID OrahDEX sends as `affiliate_id` on
- *   every /v1/info and /v1/transaction call, and is what shows up in
- *   the partner dashboard at letsexchange.io.
- *
- * POST /api/admin/letsexchange/test
- *   Body: { apiKey?: string }
- *   Decodes a candidate key (without saving it) and pings LE /v2/coins
- *   to verify it is live. Useful to validate a new key before clicking
- *   Save All in the integrations panel.
- */
-function decodeLeJwt(jwt: string): {
-  partnerId: string | null;
-  email: string | null;
-  expiresAt: number | null;
-  expired: boolean;
-  error: string | null;
-} {
-  if (!jwt || !jwt.includes(".")) {
-    return { partnerId: null, email: null, expiresAt: null, expired: false, error: "Not a JWT" };
-  }
-  try {
-    const parts = jwt.split(".");
-    if (parts.length < 2) return { partnerId: null, email: null, expiresAt: null, expired: false, error: "Malformed JWT" };
-    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    const id = payload?.data?.id ?? payload?.sub ?? null;
-    const email = payload?.data?.email ?? payload?.email ?? null;
-    const exp = typeof payload?.exp === "number" ? payload.exp * 1000 : null;
-    const expired = exp != null && exp < Date.now();
-    return {
-      partnerId: id != null ? String(id) : null,
-      email: email ? String(email) : null,
-      expiresAt: exp,
-      expired,
-      error: null,
-    };
-  } catch (err: any) {
-    return { partnerId: null, email: null, expiresAt: null, expired: false, error: err?.message ?? "Decode failed" };
-  }
-}
-
-async function loadActiveLeKey(): Promise<{ key: string; source: "env" | "db" | "none" }> {
-  const envKey = (process.env.LETSEXCHANGE_API_KEY ?? "").trim();
-  if (envKey) return { key: envKey, source: "env" };
-  try {
-    const rows = await db.select().from(platformSettingsTable)
-      .where(eq(platformSettingsTable.key, "letsexchange_api_key"));
-    const dbKey = (rows[0]?.value ?? "").trim();
-    if (dbKey) return { key: dbKey, source: "db" };
-  } catch { /* ignore */ }
-  return { key: "", source: "none" };
-}
-
-router.get("/letsexchange/affiliate", requireAdminToken, async (_req, res) => {
-  const { key, source } = await loadActiveLeKey();
-  if (!key) {
-    res.json({
-      configured: false,
-      source,
-      partnerId: null,
-      affiliateUrl: null,
-      dashboardUrl: "https://letsexchange.io/affiliate",
-      signupUrl: "https://letsexchange.io/affiliate",
-      message: "No LETSEXCHANGE_API_KEY set. Sign up at letsexchange.io/affiliate to get one.",
-    });
-    return;
-  }
-  const decoded = decodeLeJwt(key);
-  res.json({
-    configured: true,
-    source,
-    partnerId: decoded.partnerId,
-    partnerEmail: decoded.email,
-    expiresAt: decoded.expiresAt,
-    expired: decoded.expired,
-    decodeError: decoded.error,
-    // The affiliate ID is what LetsExchange uses in their referral URL —
-    // anyone landing on letsexchange.io with ?ref=<partnerId> is tracked
-    // back to your dashboard.
-    affiliateUrl: decoded.partnerId ? `https://letsexchange.io/?ref=${decoded.partnerId}` : null,
-    dashboardUrl: "https://letsexchange.io/affiliate",
-  });
-});
-
-router.post("/letsexchange/test", requireAdminToken, async (req, res) => {
-  const candidate = typeof req.body?.apiKey === "string" && req.body.apiKey.trim().length > 0
-    ? String(req.body.apiKey).trim()
-    : (await loadActiveLeKey()).key;
-  if (!candidate) {
-    res.status(400).json({ ok: false, error: "No API key provided and none configured" });
-    return;
-  }
-  const decoded = decodeLeJwt(candidate);
-  try {
-    const r = await fetch("https://api.letsexchange.io/api/v2/coins", {
-      headers: { Authorization: `Bearer ${candidate}`, Accept: "application/json" },
-    });
-    const live = r.ok;
-    res.json({
-      ok: live && !!decoded.partnerId,
-      httpStatus: r.status,
-      partnerId: decoded.partnerId,
-      partnerEmail: decoded.email,
-      expired: decoded.expired,
-      message: live
-        ? (decoded.partnerId
-            ? `Key is live. Partner ID ${decoded.partnerId} will be credited for every swap.`
-            : "Key reaches LetsExchange but no partner ID could be decoded — commission may not be tracked.")
-        : `LetsExchange returned HTTP ${r.status}. The key is invalid or revoked.`,
-    });
-  } catch (err: any) {
-    res.status(502).json({ ok: false, error: "Network error reaching LetsExchange" });
+    res.status(500).json({ ok: false, error: err?.message });
   }
 });
 
@@ -2235,12 +1850,15 @@ router.post("/tradingview/test", async (req, res) => {
   const { symbol = "BSV/USDT", resolution = "60" } = req.body ?? {};
   const t0 = Date.now();
   try {
-    // Use the process PORT to build an internal URL instead of trusting the Host header
-    const internalPort = process.env["PORT"] ?? "8080";
+    const localPort = req.socket.localPort ?? Number(process.env.PORT ?? 8080);
     const from  = Math.floor(Date.now() / 1000) - 86400;
     const to    = Math.floor(Date.now() / 1000);
-    const url   = `http://127.0.0.1:${internalPort}/api/tv/history?symbol=${encodeURIComponent(symbol)}&resolution=${resolution}&from=${from}&to=${to}`;
-    const r     = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const url = new URL("/api/tv/history", `http://127.0.0.1:${localPort}`);
+    url.searchParams.set("symbol", String(symbol));
+    url.searchParams.set("resolution", String(resolution));
+    url.searchParams.set("from", String(from));
+    url.searchParams.set("to", String(to));
+    const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
     const data  = await r.json() as any;
     const latency = Date.now() - t0;
     res.json({
@@ -2276,7 +1894,7 @@ export function pushAdminLog(level: LogEntry["level"], message: string, context?
 }
 
 // Seed with startup log
-pushAdminLog("info", "OrahDEX API server started", "system");
+pushAdminLog("info", "Orah API server started", "system");
 
 router.get("/logs", (req, res) => {
   const level  = req.query.level as string | undefined;
@@ -2311,7 +1929,7 @@ router.get("/markets", async (req, res) => {
 
     res.json({ markets: paged, total, page, limit, pages: Math.ceil(total / limit) });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -2330,7 +1948,7 @@ router.patch("/markets/:symbol/precision", async (req, res) => {
     await db.update(marketsTable).set(updates).where(eq(marketsTable.symbol, symbol));
     res.json({ success: true, symbol, updates });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -2345,58 +1963,31 @@ router.patch("/markets/:symbol/status", async (req, res) => {
     pushAdminLog("info", `Market ${symbol} set to ${status}`, "admin");
     res.json({ success: true, symbol, status });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-/**
- * PATCH /admin/markets/:symbol/enabled
- *
- * Soft-enable or soft-disable a market without deleting it.
- * Pinned markets (internal spot/futures) can be disabled but remain in DB.
- * Body: { enabled: true | false }
- */
-router.patch("/markets/:symbol/enabled", requireAdminToken, async (req, res) => {
-  try {
-    const symbol  = decodeURIComponent(String(req.params.symbol));
-    const enabled = req.body?.enabled;
-    if (typeof enabled !== "boolean") {
-      res.status(400).json({ error: "enabled must be a boolean" }); return;
-    }
-    const [row] = await db
-      .update(marketsTable)
-      .set({ enabled })
-      .where(eq(marketsTable.symbol, symbol))
-      .returning({ symbol: marketsTable.symbol, enabled: marketsTable.enabled, pinned: marketsTable.pinned });
-    if (!row) { res.status(404).json({ error: "Market not found" }); return; }
-    pushAdminLog("info", `Market ${symbol} enabled=${enabled}`, "admin");
-    res.json({ success: true, symbol: row.symbol, enabled: row.enabled, pinned: row.pinned });
-  } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
 /* ─── AUTO-SETUP — seed all defaults + test email in one click ────────────── */
 
 const SITE_DEFAULTS: Record<string, string> = {
-  site_name: "OrahDEX",
-  site_domain: "orahdex.org",
-  contact_email: "support@orahdex.org",
-  legal_email: "legal@orahdex.org",
-  privacy_email: "privacy@orahdex.org",
-  company_name: "OrahDEX Ltd.",
-  canonical_url: "https://orahdex.org",
+  site_name: "Orah",
+  site_domain: "orah.org",
+  contact_email: "support@orah.org",
+  legal_email: "legal@orah.org",
+  privacy_email: "privacy@orah.org",
+  company_name: "Orah Ltd.",
+  canonical_url: "https://orah.org",
   maker_fee: "0.001",
   taker_fee: "0.001",
-  seo_title: "OrahDEX — Trade means DEX | BSV Settlement Exchange",
-  seo_description: "OrahDEX is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, and cross-chain settlement.",
+  seo_title: "Orah — Trade means DEX | BSV Settlement Exchange",
+  seo_description: "Orah is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, and cross-chain settlement.",
   seo_keywords: "BSV DEX, Bitcoin SV, decentralized exchange, crypto trading, spot futures",
-  twitter_site: "@orahdex",
+  twitter_site: "@orah",
   twitter_card: "summary_large_image",
   terms_url: "/terms",
   privacy_url: "/privacy",
   whitepaper_url: "/whitepaper",
-  footer_text: "© 2025 OrahDEX. All rights reserved.",
+  footer_text: "© 2025 Orah. All rights reserved.",
   default_theme: "dark",
 };
 
@@ -2447,7 +2038,7 @@ router.post("/auto-setup", async (_req, res) => {
       },
     });
   } catch (err: any) {
-    res.status(500).json({ error: "Auto-setup failed" });
+    res.status(500).json({ error: err?.message ?? "Auto-setup failed" });
   }
 });
 
@@ -2465,7 +2056,7 @@ router.post("/auto-setup-email", async (_req, res) => {
       note: "Free test account created via Ethereal. Sent emails are viewable at https://ethereal.email/messages",
     });
   } catch (err: any) {
-    res.status(500).json({ error: "Email auto-setup failed" });
+    res.status(500).json({ error: err?.message ?? "Email auto-setup failed" });
   }
 });
 
@@ -2483,7 +2074,7 @@ pool.query(`
     admin_ref   TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
   )
-`).catch(err => logger.warn({ err: err?.message }, "admin: mint_burn_log table init failed"));
+`).catch(err => console.warn("mint_burn_log table init:", err.message));
 
 /**
  * GET /admin/mint-burn-log
@@ -2499,13 +2090,13 @@ router.get("/mint-burn-log", requireAdminToken, async (_req, res) => {
     );
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
 /**
  * GET /admin/user-exchange-balance/:address
- * Returns the OrahDEX exchange (ledger) balances for a wallet.
+ * Returns the Orah exchange (ledger) balances for a wallet.
  */
 router.get("/user-exchange-balance/:address", requireAdminToken, async (req, res) => {
   try {
@@ -2518,7 +2109,7 @@ router.get("/user-exchange-balance/:address", requireAdminToken, async (req, res
     );
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2663,7 +2254,7 @@ router.get("/ledger-wallets", requireAdminToken, async (req, res) => {
     );
     res.json({ wallets: rows, total: parseInt(total[0]?.cnt ?? "0") });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2681,7 +2272,7 @@ router.get("/ledger-audit", requireAdminToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2701,7 +2292,7 @@ router.get("/ledger-stats", requireAdminToken, async (req, res) => {
       totalRows:    parseInt(r.total_rows ?? "0"),
     });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2718,7 +2309,7 @@ router.delete("/ledger-wipe-all", requireAdminToken, async (req, res) => {
     req.log.warn({ rowsDeleted: result.rowCount }, "admin: ledger-wipe-all executed");
     res.json({ success: true, rowsDeleted: result.rowCount });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2776,7 +2367,7 @@ router.get("/exchange-wallet", requireAdminToken, async (req, res) => {
     });
   } catch (err: any) {
     req.log.error({ err }, "admin/exchange-wallet: failed");
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2805,8 +2396,8 @@ router.get("/db-health", requireAdminToken, async (req, res) => {
       run("SELECT COUNT(*) AS cnt FROM orders WHERE status = 'open'"),
       run("SELECT COUNT(*) AS cnt FROM trades"),
       run("SELECT COUNT(*) AS cnt FROM withdrawal_requests WHERE status = 'pending'"),
-      run("SELECT COUNT(*) AS cnt FROM evm_deposits_verified"),
-      run("SELECT COUNT(*) AS cnt FROM evm_deposit_addresses"),
+      pool.query("SELECT COUNT(*) AS cnt FROM evm_deposits_verified").then(r => r.rows).catch(() => [{ cnt: "0" }]),
+      pool.query("SELECT COUNT(*) AS cnt FROM evm_deposit_addresses").then(r => r.rows).catch(() => [{ cnt: "0" }]),
       run("SELECT COUNT(*) AS cnt FROM mint_burn_log"),
       run("SELECT network_type, COUNT(*) AS cnt FROM wallets GROUP BY network_type ORDER BY cnt DESC"),
       run(`SELECT w.address, w.network_type, w.provider, w.last_seen,
@@ -2847,7 +2438,7 @@ router.get("/db-health", requireAdminToken, async (req, res) => {
       recentMintBurn,
     });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2875,11 +2466,11 @@ router.post("/db-sync", requireAdminToken, async (req, res) => {
            FROM trades
            WHERE wallet_address IS NOT NULL AND wallet_address NOT IN (SELECT address FROM wallets)
            ON CONFLICT (address) DO UPDATE SET last_seen = NOW()`),
-      run(`INSERT INTO wallets (address, network_type, status, first_seen, last_seen)
+      pool.query(`INSERT INTO wallets (address, network_type, status, first_seen, last_seen)
            SELECT DISTINCT user_wallet, 'evm', 'active', NOW(), NOW()
            FROM evm_deposit_addresses
            WHERE user_wallet NOT IN (SELECT address FROM wallets)
-           ON CONFLICT (address) DO UPDATE SET last_seen = NOW()`),
+           ON CONFLICT (address) DO UPDATE SET last_seen = NOW()`).then(r => r.rowCount ?? 0).catch(() => 0),
     ]);
 
     const totalInserted = fromBalances + fromOrders + fromTrades + fromDeposits;
@@ -2892,7 +2483,7 @@ router.post("/db-sync", requireAdminToken, async (req, res) => {
       message: `Reconciled ${totalInserted} wallet(s). Total registered: ${tw[0]?.cnt}`,
     });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2917,7 +2508,7 @@ router.get("/wallet-detail/:address", requireAdminToken, async (req, res) => {
                 fee::text, txid, timestamp
          FROM trades WHERE wallet_address = $1 ORDER BY timestamp DESC LIMIT 20`, [addr]),
       pool.query(`SELECT tx_hash, chain_id, asset, amount::text, verified_at
-         FROM evm_deposits_verified WHERE user_wallet = $1 ORDER BY verified_at DESC`, [addr]),
+         FROM evm_deposits_verified WHERE user_wallet = $1 ORDER BY verified_at DESC`, [addr]).catch(() => ({ rows: [] })),
       pool.query(`SELECT id, asset, amount::text, network, status, txid, created_at
          FROM withdrawal_requests WHERE wallet_address = $1 ORDER BY created_at DESC LIMIT 20`, [addr]),
     ]);
@@ -2931,7 +2522,7 @@ router.get("/wallet-detail/:address", requireAdminToken, async (req, res) => {
       withdrawals: withdrawals.rows,
     });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2996,7 +2587,7 @@ router.post("/rescue-evm-wallet", requireAdminToken, async (req, res) => {
     res.json({ success: true, txHash, from: account.address, to: toAddress, ethSent, gasCostEth: formatEther(gasCost), chainId });
   } catch (err: any) {
     req.log.error({ err: err?.message }, "admin: rescue-evm-wallet failed");
-    res.status(500).json({ error: "Rescue failed" });
+    res.status(500).json({ error: err?.message ?? "Rescue failed" });
   }
 });
 
@@ -3062,7 +2653,7 @@ router.post("/retry-pending-withdrawals", requireAdminToken, async (req, res) =>
     res.json({ message: `Retried ${rows.length} withdrawal(s).`, processed: rows.length, succeeded, failed, results });
   } catch (err: any) {
     req.log.error({ err: err?.message }, "admin: retry-pending-withdrawals error");
-    res.status(500).json({ error: "Retry failed" });
+    res.status(500).json({ error: err?.message ?? "Retry failed" });
   }
 });
 
@@ -3094,7 +2685,7 @@ router.get("/arb-bot", requireAdminToken, async (req, res) => {
       lastOppsFound:    parseInt(s["arb_bot_last_opps_found"]   ?? "0"),
     });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -3114,7 +2705,7 @@ router.post("/arb-bot/toggle", requireAdminToken, async (req, res) => {
     req.log.info({ enabled }, "admin: arb-bot toggled");
     res.json({ success: true, enabled });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -3138,7 +2729,7 @@ router.post("/arb-bot/reset-stats", requireAdminToken, async (req, res) => {
     req.log.info("admin: arb-bot stats reset");
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -3151,21 +2742,23 @@ router.get("/seeded-pool", requireAdminToken, async (req, res) => {
   try {
     const { rows } = await pool.query<{
       asset_symbol: string;
+      total_seeded: string;
       total_available: string;
       wallet_count: string;
     }>(
       `SELECT
          asset_symbol,
+         SUM(seeded)    AS total_seeded,
          SUM(available) AS total_available,
          COUNT(*)       AS wallet_count
        FROM user_balances
-       WHERE available > 0
+       WHERE seeded > 0
        GROUP BY asset_symbol
-       ORDER BY total_available::numeric DESC`,
-    );
+       ORDER BY total_seeded::numeric DESC`,
+    ).catch(() => ({ rows: [] as any[] }));
     res.json({ pool: rows });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -3177,26 +2770,24 @@ router.get("/seeded-pool/summary", requireAdminToken, async (req, res) => {
     const { rows } = await pool.query<{
       total_wallets: string;
       total_assets: string;
-      total_available_usdt_equiv: string;
+      total_seeded_usdt_equiv: string;
     }>(
       `SELECT
          COUNT(DISTINCT wallet_address) AS total_wallets,
          COUNT(DISTINCT asset_symbol)   AS total_assets,
-         SUM(CASE WHEN asset_symbol IN ('USDT','USDC','DAI','BUSD') THEN available ELSE 0 END) AS total_available_usdt_equiv
+         SUM(CASE WHEN asset_symbol IN ('USDT','USDC','DAI','BUSD') THEN seeded ELSE 0 END) AS total_seeded_usdt_equiv
        FROM user_balances
-       WHERE available > 0`,
-    );
-    res.json(rows[0] ?? { total_wallets: "0", total_assets: "0", total_available_usdt_equiv: "0" });
+       WHERE seeded > 0`,
+    ).catch(() => ({ rows: [] as any[] }));
+    res.json(rows[0] ?? { total_wallets: "0", total_assets: "0", total_seeded_usdt_equiv: "0" });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
 /* ── POST /admin/seeded-pool/reclaim ─────────────────────────────────────────
    Remove a specific seeded asset balance from all user wallets (platform
    reclaims). Supply { asset } to reclaim one asset, or leave blank for all.
-   This reduces available balance by the seeded amount and clears the seeded
-   column — effectively the platform pulling back its liquidity.
 ──────────────────────────────────────────────────────────────────────────────── */
 router.post("/seeded-pool/reclaim", requireAdminToken, async (req, res) => {
   try {
@@ -3206,313 +2797,110 @@ router.post("/seeded-pool/reclaim", requireAdminToken, async (req, res) => {
       const sym = (asset as string).toUpperCase();
       result = await pool.query(
         `UPDATE user_balances
-            SET updated_at  = now()
-          WHERE asset_symbol = $1 AND available > 0`,
+            SET available   = GREATEST(0, available - seeded),
+                seeded      = 0,
+                updated_at  = now()
+          WHERE asset_symbol = $1 AND seeded > 0`,
         [sym],
-      );
+      ).catch(() => ({ rowCount: 0 }));
     } else {
       result = await pool.query(
         `UPDATE user_balances
-            SET updated_at  = now()`,
-      );
+            SET available   = GREATEST(0, available - seeded),
+                seeded      = 0,
+                updated_at  = now()
+          WHERE seeded > 0`,
+      ).catch(() => ({ rowCount: 0 }));
     }
     req.log.info({ asset: asset ?? "ALL", rowsAffected: result.rowCount }, "admin: seeded pool reclaimed");
     res.json({ success: true, rowsAffected: result.rowCount });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
-/* ─── LE SWAP INCOME ─────────────────────────────────────────────────────── */
-
-// GET /api/admin/le-income  – summary stats + recent swap list
+/* ── GET /admin/le-income ────────────────────────────────────────────────────
+   LetsExchange affiliate income summary. Reads from platform_settings where
+   the LE webhook stores revenue data, or falls back to zeros if not yet set.
+──────────────────────────────────────────────────────────────────────────────── */
 router.get("/le-income", requireAdminToken, async (req, res) => {
   try {
-    // Aggregate stats
-    const statsResult = await db.execute<{
-      total_swaps: string;
-      finished_swaps: string;
-      total_volume_usd: string;
-      finished_volume_usd: string;
-    }>(sql`
-      SELECT
-        COUNT(*)                                                    AS total_swaps,
-        COUNT(*) FILTER (WHERE status = 'finished')                 AS finished_swaps,
-        COALESCE(SUM(deposit_amount_usd), 0)                        AS total_volume_usd,
-        COALESCE(SUM(deposit_amount_usd) FILTER (WHERE status = 'finished'), 0) AS finished_volume_usd
-      FROM le_swaps
-    `);
-    const statsRow = statsResult.rows[0];
-
-    // Top coins by volume
-    const topCoinsResult = await db.execute<{ coin_from: string; coin_to: string; count: string; volume_usd: string }>(sql`
-      SELECT coin_from, coin_to,
-             COUNT(*)                      AS count,
-             COALESCE(SUM(deposit_amount_usd), 0) AS volume_usd
-      FROM le_swaps
-      GROUP BY coin_from, coin_to
-      ORDER BY volume_usd DESC
-      LIMIT 10
-    `);
-
-    // Monthly breakdown
-    const monthlyResult = await db.execute<{ month: string; count: string; volume_usd: string }>(sql`
-      SELECT TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS month,
-             COUNT(*)                      AS count,
-             COALESCE(SUM(deposit_amount_usd), 0) AS volume_usd
-      FROM le_swaps
-      GROUP BY month
-      ORDER BY month DESC
-      LIMIT 12
-    `);
-
-    // Recent swaps
-    const recent = await db
-      .select()
-      .from(leSwapsTable)
-      .orderBy(desc(leSwapsTable.createdAt))
-      .limit(50);
-
-    const totalVolumeUsd  = parseFloat(statsRow?.total_volume_usd   ?? "0");
-    const finishedVolUsd  = parseFloat(statsRow?.finished_volume_usd ?? "0");
-    // LetsExchange affiliate earns ~50% of their ~0.35% fee per swap
-    const COMMISSION_RATE = 0.0017; // ~0.17% of volume (50% × 0.35%)
-
+    const keys = [
+      "le_total_volume_usd", "le_total_revenue_usd", "le_total_swaps",
+      "le_last_swap_at", "le_affiliate_id",
+    ];
+    const { rows } = await pool.query<{ key: string; value: string }>(
+      `SELECT key, value FROM platform_settings WHERE key = ANY($1)`,
+      [keys],
+    );
+    const kv = Object.fromEntries(rows.map(r => [r.key, r.value]));
     res.json({
-      summary: {
-        totalSwaps:           Number(statsRow?.total_swaps   ?? 0),
-        finishedSwaps:        Number(statsRow?.finished_swaps ?? 0),
-        totalVolumeUsd:       totalVolumeUsd,
-        finishedVolumeUsd:    finishedVolUsd,
-        estimatedCommissionUsd: parseFloat((finishedVolUsd * COMMISSION_RATE).toFixed(2)),
-        commissionRatePct:    (COMMISSION_RATE * 100).toFixed(2),
-      },
-      topPairs:   topCoinsResult.rows,
-      monthly:    monthlyResult.rows,
-      recent,
+      affiliateId:    kv["le_affiliate_id"]    ?? process.env.LETSEXCHANGE_API_KEY?.slice(0, 8) ?? "not-set",
+      totalVolumeUsd: parseFloat(kv["le_total_volume_usd"]  ?? "0"),
+      totalRevenueUsd:parseFloat(kv["le_total_revenue_usd"] ?? "0"),
+      totalSwaps:     parseInt(kv["le_total_swaps"]         ?? "0"),
+      lastSwapAt:     kv["le_last_swap_at"] ?? null,
     });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
-// ── GET /admin/routing-profiles ───────────────────────────────────────────────
-// List all per-pair routing configs stored in the routing_profiles table.
-router.get("/routing-profiles", requireAdminToken, async (_req, res) => {
+/* ── GET /admin/stripe-orders ────────────────────────────────────────────────
+   Returns Stripe crypto purchase orders from platform_settings ledger, or
+   an empty list if Stripe has not been used yet.
+──────────────────────────────────────────────────────────────────────────────── */
+router.get("/stripe-orders", requireAdminToken, async (req, res) => {
   try {
-    const rows = await db
-      .select()
-      .from(routingProfilesTable)
-      .orderBy(routingProfilesTable.baseSymbol, routingProfilesTable.quoteSymbol);
-    res.json({ profiles: rows, count: rows.length });
+    const { rows } = await pool.query<{
+      id: string; amount: string; currency: string; status: string;
+      wallet_address: string; asset: string; created_at: string;
+    }>(
+      `SELECT id, amount::text, currency, status, wallet_address, asset, created_at
+       FROM stripe_orders ORDER BY created_at DESC LIMIT 100`,
+    ).catch(() => ({ rows: [] as any[] }));
+    const { rows: summary } = await pool.query<{ total_revenue: string; order_count: string }>(
+      `SELECT COALESCE(SUM(amount),0)::text AS total_revenue, COUNT(*)::text AS order_count
+       FROM stripe_orders WHERE status = 'succeeded'`,
+    ).catch(() => ({ rows: [{ total_revenue: "0", order_count: "0" }] }));
+    res.json({
+      orders: rows,
+      summary: {
+        totalRevenue: parseFloat(summary[0]?.total_revenue ?? "0"),
+        orderCount:   parseInt(summary[0]?.order_count     ?? "0"),
+      },
+    });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
-// ── POST /admin/routing-profiles ──────────────────────────────────────────────
-// Upsert a routing profile (insert or update on pair key conflict).
-router.post("/routing-profiles", requireAdminToken, async (req, res) => {
-  const { baseSymbol, quoteSymbol, maxSlippageBps, minFillFraction,
-          maxInternalSize, oracleRequired, enabled, splitEnabled, notes } = req.body ?? {};
-  if (!baseSymbol || !quoteSymbol) {
-    res.status(400).json({ error: "baseSymbol and quoteSymbol are required" }); return;
-  }
+/* ── GET /admin/letsexchange/affiliate ───────────────────────────────────────
+   Proxies the LetsExchange affiliate stats API and returns income data.
+──────────────────────────────────────────────────────────────────────────────── */
+router.get("/letsexchange/affiliate", requireAdminToken, async (req, res) => {
   try {
-    const [row] = await db
-      .insert(routingProfilesTable)
-      .values({
-        baseSymbol:      String(baseSymbol).toUpperCase(),
-        quoteSymbol:     String(quoteSymbol).toUpperCase(),
-        maxSlippageBps:  maxSlippageBps  != null ? Number(maxSlippageBps)    : 150,
-        minFillFraction: minFillFraction != null ? String(minFillFraction)   : "0.9",
-        maxInternalSize: maxInternalSize != null ? String(maxInternalSize)   : null,
-        oracleRequired:  oracleRequired  != null ? Boolean(oracleRequired)   : true,
-        enabled:         enabled         != null ? Boolean(enabled)          : true,
-        splitEnabled:    splitEnabled    != null ? Boolean(splitEnabled)     : false,
-        notes:           notes           != null ? String(notes)             : null,
-      })
-      .onConflictDoUpdate({
-        target: [routingProfilesTable.baseSymbol, routingProfilesTable.quoteSymbol],
-        set: {
-          maxSlippageBps:  sql`excluded.max_slippage_bps`,
-          minFillFraction: sql`excluded.min_fill_fraction`,
-          maxInternalSize: sql`excluded.max_internal_size`,
-          oracleRequired:  sql`excluded.oracle_required`,
-          enabled:         sql`excluded.enabled`,
-          splitEnabled:    sql`excluded.split_enabled`,
-          notes:           sql`excluded.notes`,
-          updatedAt:       sql`NOW()`,
-        },
-      })
-      .returning();
-
-    invalidatePairConfigCache(
-      String(baseSymbol).toUpperCase(),
-      String(quoteSymbol).toUpperCase(),
-    );
-    res.status(201).json({ profile: row });
+    const apiKey = process.env.LETSEXCHANGE_API_KEY;
+    if (!apiKey) {
+      res.json({ error: "LETSEXCHANGE_API_KEY not configured", stats: null });
+      return;
+    }
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+    const r = await fetch("https://api.letsexchange.io/api/v1/affiliate/stats", {
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (!r.ok) {
+      res.json({ error: `LetsExchange API returned ${r.status}`, stats: null });
+      return;
+    }
+    const data = await r.json();
+    res.json({ stats: data });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.json({ error: err?.message ?? "Failed to fetch affiliate stats", stats: null });
   }
-});
-
-// ── PUT /admin/routing-profiles/:id ──────────────────────────────────────────
-// Partial update of a routing profile by its UUID.
-router.put("/routing-profiles/:id", requireAdminToken, async (req, res) => {
-  const id = String(req.params.id);
-  const {
-    maxSlippageBps, minFillFraction, maxInternalSize,
-    oracleRequired, enabled, splitEnabled, notes,
-  } = req.body ?? {};
-
-  const patch: Record<string, unknown> = { updatedAt: sql`NOW()` };
-  if (maxSlippageBps  != null) patch.maxSlippageBps  = Number(maxSlippageBps);
-  if (minFillFraction != null) patch.minFillFraction  = String(minFillFraction);
-  if (maxInternalSize !== undefined) patch.maxInternalSize = maxInternalSize != null ? String(maxInternalSize) : null;
-  if (oracleRequired  != null) patch.oracleRequired  = Boolean(oracleRequired);
-  if (enabled         != null) patch.enabled         = Boolean(enabled);
-  if (splitEnabled    != null) patch.splitEnabled    = Boolean(splitEnabled);
-  if (notes           !== undefined) patch.notes     = notes != null ? String(notes) : null;
-
-  if (Object.keys(patch).length === 1) {
-    res.status(400).json({ error: "No updatable fields provided" }); return;
-  }
-
-  try {
-    const [row] = await db
-      .update(routingProfilesTable)
-      .set(patch as any)
-      .where(eq(routingProfilesTable.id, id))
-      .returning();
-
-    if (!row) { res.status(404).json({ error: "Profile not found" }); return; }
-    // Invalidate cache for this pair
-    invalidatePairConfigCache(row.baseSymbol, row.quoteSymbol);
-    res.json({ profile: row });
-  } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// ── EVM webhook & RPC configuration info ──────────────────────────────────────
-// GET  /api/admin/evm/topics       — display computed event topic hashes
-// GET  /api/admin/evm/webhook-info — show webhook URL and env var status
-// GET  /api/admin/evm/rpc-config   — show which RPC endpoints are configured
-// GET  /api/admin/evm/filter-fn    — generate a filter function for a webhook provider
-
-// Also kept under /quicknode/ paths for backwards compatibility with any
-// existing admin tooling or bookmarks.
-
-router.get(["/evm/topics", "/quicknode/topics"], (_req, res) => {
-  logTopics();
-  res.json({
-    TOPIC_HTLC_LOCKED,
-    TOPIC_HTLC_REVEALED,
-    TOPIC_HTLC_REFUNDED,
-    TOPIC_ESCROW_RELEASED,
-    watchedContracts: WATCHED_CONTRACTS,
-    note: "These are the keccak256(ABI event signature) values used to filter EVM log webhooks.",
-  });
-});
-
-router.get(["/evm/webhook-info", "/quicknode/webhook-info"], (req, res) => {
-  const domain = process.env["REPLIT_DEV_DOMAIN"] ?? null;
-  const primaryUrl = domain
-    ? `https://${domain}/api/webhooks/evm`
-    : null;
-  const legacyUrl = domain
-    ? `https://${domain}/api/webhooks/quicknode`
-    : null;
-
-  res.json({
-    webhookUrls: {
-      primary: primaryUrl,
-      legacy:  legacyUrl,
-      note:    "Register the primary URL with your EVM log provider (Alchemy, Infura, Tenderly, etc.).",
-    },
-    hmacSecret: {
-      configured: !!(process.env["EVM_WEBHOOK_SECRET"] ?? process.env["QUICKNODE_WEBHOOK_SECRET"]),
-      envVar:     "EVM_WEBHOOK_SECRET",
-      fallbackVar: "QUICKNODE_WEBHOOK_SECRET (accepted for backwards compat)",
-      note: "Set EVM_WEBHOOK_SECRET to the HMAC secret configured in your provider dashboard.",
-    },
-    extraContracts: {
-      envVar: "EVM_WATCHED_CONTRACTS",
-      current: (process.env["EVM_WATCHED_CONTRACTS"] ?? "").split(",").filter(Boolean),
-      note: "Comma-separated extra contract addresses to accept events from.",
-    },
-    filterFunction: buildFilterFunction(WATCHED_CONTRACTS),
-  });
-});
-
-router.get(["/evm/rpc-config", "/quicknode/rpc-config"], (_req, res) => {
-  const chains: Record<string, { envVar: string; configured: boolean; url?: string }> = {
-    ethereum: {
-      envVar:     "ETH_RPC_URL",
-      configured: !!process.env["ETH_RPC_URL"],
-      url:        process.env["ETH_RPC_URL"] ? "(set)" : undefined,
-    },
-    "ethereum-ws": {
-      envVar:     "ETH_WS_URL",
-      configured: !!process.env["ETH_WS_URL"],
-      url:        process.env["ETH_WS_URL"] ? "(set)" : undefined,
-    },
-    sepolia: {
-      envVar:     "SEPOLIA_RPC_URL",
-      configured: !!process.env["SEPOLIA_RPC_URL"],
-    },
-    base: {
-      envVar:     "BASE_RPC_URL",
-      configured: !!process.env["BASE_RPC_URL"],
-    },
-    arbitrum: {
-      envVar:     "ARB_RPC_URL",
-      configured: !!process.env["ARB_RPC_URL"],
-    },
-    optimism: {
-      envVar:     "OP_RPC_URL",
-      configured: !!process.env["OP_RPC_URL"],
-    },
-    bnb: {
-      envVar:     "BSC_RPC_URL",
-      configured: !!process.env["BSC_RPC_URL"],
-    },
-    polygon: {
-      envVar:     "POLYGON_RPC_URL",
-      configured: !!process.env["POLYGON_RPC_URL"],
-    },
-    avalanche: {
-      envVar:     "AVAX_RPC_URL",
-      configured: !!process.env["AVAX_RPC_URL"],
-    },
-  };
-
-  const totalChains    = Object.keys(chains).length;
-  const configuredCount = Object.values(chains).filter(c => c.configured).length;
-
-  res.json({
-    summary: `${configuredCount}/${totalChains} chains have custom RPC URLs configured.`,
-    note: "Chains without a custom URL fall back to public nodes. Set env vars to use your own nodes.",
-    chains,
-  });
-});
-
-router.get(["/evm/filter-fn", "/quicknode/filter-fn"], (req, res) => {
-  const extra = ((req.query["contracts"] as string) ?? "")
-    .split(",")
-    .map(s => s.trim().toLowerCase())
-    .filter(s => /^0x[0-9a-f]{40}$/.test(s));
-
-  const contracts = [...WATCHED_CONTRACTS, ...extra];
-  const filterFn  = buildFilterFunction(contracts);
-
-  res.json({
-    contracts,
-    filterFunction: filterFn,
-    note: "Paste this filter function into your EVM log webhook provider's filter field. Add extra contract addresses via the ?contracts= query param.",
-  });
 });
 
 export default router;
-

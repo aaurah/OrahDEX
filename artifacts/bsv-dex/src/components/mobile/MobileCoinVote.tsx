@@ -106,7 +106,7 @@ function NominateSheet({ onClose, onSuccess }: { onClose:()=>void; onSuccess:()=
         <div className="flex items-center justify-between px-5 pb-3 pt-2">
           <div>
             <h2 className="text-base font-bold text-foreground">Nominate a Coin</h2>
-            <p className="text-[11px] text-muted-foreground mt-0.5">Suggest a coin to be listed on OrahDEX</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">Suggest a coin to be listed on Orah</p>
           </div>
           <button onClick={onClose} className="text-muted-foreground p-1"><X className="w-5 h-5"/></button>
         </div>
@@ -126,7 +126,7 @@ function NominateSheet({ onClose, onSuccess }: { onClose:()=>void; onSuccess:()=
           <Field label="Coin Name *" field="name" placeholder="e.g. PepeCoin"/>
           <Field label="Contract Address" field="contractAddress" placeholder="0x… or token mint"/>
           <Field label="Website" field="website" placeholder="https://…"/>
-          <Field label="Description" field="description" placeholder="Tell us why this coin should be listed on OrahDEX…" as="textarea"/>
+          <Field label="Description" field="description" placeholder="Tell us why this coin should be listed on Orah…" as="textarea"/>
 
           {err&&<div className="text-[12px] text-red-400 bg-red-500/10 px-3 py-2 rounded-lg">{err}</div>}
 
@@ -146,7 +146,7 @@ export function MobileCoinVote() {
   const [showSuccess,  setShowSuccess]  = useState(false);
   const [search, setSearch]   = useState("");
   const [votedIds, setVotedIds] = useState<Set<number>>(()=>{
-    try { return new Set(JSON.parse(localStorage.getItem("orahdex_voted")??"[]") as number[]); } catch { return new Set(); }
+    try { return new Set(JSON.parse(localStorage.getItem("orah_voted")??"[]") as number[]); } catch { return new Set(); }
   });
 
   const qc = useQueryClient();
@@ -168,7 +168,7 @@ export function MobileCoinVote() {
     },
     onSuccess: (_,id)=>{
       const next = new Set(votedIds); next.add(id); setVotedIds(next);
-      localStorage.setItem("orahdex_voted", JSON.stringify([...next]));
+      localStorage.setItem("orah_voted", JSON.stringify([...next]));
       qc.invalidateQueries({queryKey:["coin-votes"]});
     },
   });
@@ -189,7 +189,7 @@ export function MobileCoinVote() {
         <div className="min-w-0 flex-1">
           <p className="text-[12px] font-bold text-primary leading-tight">Coin Listing Votes</p>
           <p className="text-[10px] text-primary/60 leading-tight mt-0.5">
-            {coins.length>0?`${coins.length} nominations · `:""} Vote to list a coin on OrahDEX
+            {coins.length>0?`${coins.length} nominations · `:""} Vote to list a coin on Orah
           </p>
         </div>
         <button onClick={()=>setShowNominate(true)}
@@ -270,7 +270,7 @@ export function MobileCoinVote() {
 
         {!isLoading&&filtered.length>0&&(
           <div className="flex items-center justify-center gap-2 py-5 text-[10px] text-muted-foreground/40">
-            <Clock className="w-3 h-3"/>Top voted coins are reviewed for listing on OrahDEX
+            <Clock className="w-3 h-3"/>Top voted coins are reviewed for listing on Orah
           </div>
         )}
       </div>

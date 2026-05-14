@@ -6,9 +6,7 @@
  * POST /trade/wallet         — validate & return on-chain routing params (no server-side signing)
  * POST /trade/exchange/quote — internal AMM quote
  * POST /trade/exchange       — settle internal ledger trade (proxies /swap)
- * POST /trade/wallet/settle  — record confirmed on-chain swap & credit balance (EVM wallets only)
- *
- * Withdrawal endpoints (/withdraw, /withdraw/challenge) live in withdrawals.ts.
+ * POST /withdraw             — withdraw from internal balance to wallet (proxies /withdrawals)
  */
 
 import { Router, type IRouter } from "express";
@@ -16,19 +14,16 @@ import { createPublicClient, http } from "viem";
 import { db } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { or, eq, desc } from "drizzle-orm";
-import { settleSwap, getBalances, creditAvailable, debitAvailable } from "../lib/ledger.js";
+import { settleSwap, getBalances, creditAvailable } from "../lib/ledger.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
-import { isVaultConfigured, getVaultAddress, getVaultChainId } from "../lib/orahVault.js";
+import { processWithdrawal } from "../lib/withdrawalProcessor.js";
+import { isVaultConfigured, getVaultAddress, getVaultChainId, vaultWithdraw } from "../lib/orahdexVault.js";
 import { db as _db, pool } from "@workspace/db";
+import { withdrawalRequestsTable } from "@workspace/db/schema";
 import crypto from "node:crypto";
+import rateLimit from "express-rate-limit";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
-import {
-  buildExchangeAuthMessage,
-  verifyEvmSignature,
-  issueExchangeChallenge,
-  verifyExchangeSignature,
-} from "../lib/walletAuth.js";
 
 // ── Chain RPC map (for on-chain tx verification) ──────────────────────────────
 const VERIFY_RPC: Record<number, string> = {
@@ -61,9 +56,68 @@ function tradeExplorerUrl(txid: string | null | undefined, chainId?: number | nu
   return `${BSV_NET.explorer}/tx/${txid}`;
 }
 
-import { TOKEN_REGISTRY } from "../lib/tokenRegistry.js";
+// ── Well-known ERC-20 token registry per chain ─────────────────────────────────
+// Maps chainId → { symbol (uppercase) → { address (lowercase), decimals } }
+// Used to validate that Transfer logs come from the expected token contract and
+// to scale raw BigInt amounts correctly.
+const TOKEN_REGISTRY: Record<number, Record<string, { address: string; decimals: number }>> = {
+  1: { // Ethereum
+    USDT:  { address: "0xdac17f958d2ee523a2206206994597c13d831ec7", decimals: 6  },
+    USDC:  { address: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", decimals: 6  },
+    DAI:   { address: "0x6b175474e89094c44da98b954eedeac495271d0f", decimals: 18 },
+    WETH:  { address: "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", decimals: 18 },
+    WBTC:  { address: "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599", decimals: 8  },
+    LINK:  { address: "0x514910771af9ca656af840dff83e8264ecf986ca", decimals: 18 },
+    UNI:   { address: "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984", decimals: 18 },
+  },
+  56: { // BNB Chain
+    USDT:  { address: "0x55d398326f99059ff775485246999027b3197955", decimals: 18 },
+    USDC:  { address: "0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d", decimals: 18 },
+    WBNB:  { address: "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c", decimals: 18 },
+  },
+  137: { // Polygon
+    USDT:  { address: "0xc2132d05d31c914a87c6611c10748aeb04b58e8f", decimals: 6  },
+    USDC:  { address: "0x2791bca1f2de4661ed88a30c99a7a9449aa84174", decimals: 6  },
+    WMATIC:{ address: "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270", decimals: 18 },
+    WETH:  { address: "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619", decimals: 18 },
+  },
+  8453: { // Base
+    USDC:  { address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", decimals: 6  },
+    WETH:  { address: "0x4200000000000000000000000000000000000006", decimals: 18 },
+  },
+  42161: { // Arbitrum One
+    USDT:  { address: "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9", decimals: 6  },
+    USDC:  { address: "0xaf88d065e77c8cc2239327c5edb3a432268e5831", decimals: 6  },
+    WETH:  { address: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1", decimals: 18 },
+    WBTC:  { address: "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f", decimals: 8  },
+  },
+  10: { // Optimism
+    USDC:  { address: "0x0b2c639c533813f4aa9d7837caf62653d097ff85", decimals: 6  },
+    USDT:  { address: "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58", decimals: 6  },
+    WETH:  { address: "0x4200000000000000000000000000000000000006", decimals: 18 },
+  },
+  43114: { // Avalanche C-Chain
+    USDT:  { address: "0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7", decimals: 6  },
+    USDC:  { address: "0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e", decimals: 6  },
+    WETH:  { address: "0x49d5c2bdffac6ce2bfdb6640f4f80f226bc10bab", decimals: 18 },
+  },
+};
 
 const router: IRouter = Router();
+const tradeSettleLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
+const tradeWithdrawLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please try again shortly." },
+});
 
 const FEE_PCT = 0.003; // 0.3%
 
@@ -89,78 +143,6 @@ async function resolveRate(assetIn: string, assetOut: string): Promise<number | 
   return inUsd / outUsd;
 }
 
-function normalizeAssetSymbol(input: unknown): string | null {
-  if (typeof input !== "string") return null;
-  const v = input.trim().toUpperCase();
-  return v.length > 0 ? v : null;
-}
-
-function parseTradeSymbol(input: unknown): { base: string; quote: string; normalized: string } | null {
-  if (typeof input !== "string") return null;
-  const normalized = input.trim().toUpperCase().replace(/-/g, "/");
-  const [base, quote] = normalized.split("/");
-  if (!base || !quote) return null;
-  return { base, quote, normalized: `${base}/${quote}` };
-}
-
-async function executeExchangeTrade(params: {
-  walletAddress: string;
-  assetIn: string;
-  assetOut: string;
-  amountIn: number;
-  minAmountOut?: number;
-}) {
-  const { walletAddress, minAmountOut } = params;
-  const assetIn = params.assetIn.toUpperCase();
-  const assetOut = params.assetOut.toUpperCase();
-  const amountIn = params.amountIn;
-
-  const rate = await resolveRate(assetIn, assetOut);
-  if (!rate) {
-    throw new Error("NO_PRICE");
-  }
-
-  const grossOut = amountIn * rate;
-  const fee = grossOut * FEE_PCT;
-  const amtOut = grossOut - fee;
-
-  if (minAmountOut != null && amtOut < minAmountOut) {
-    throw new Error(`SLIPPAGE_EXCEEDED:${amtOut.toFixed(8)}`);
-  }
-
-  await settleSwap({
-    walletAddress,
-    assetIn,
-    assetOut,
-    amountIn: amountIn.toFixed(8),
-    amountOut: amtOut.toFixed(8),
-  });
-  await recordPlatformFee({ source: "swap", amount: fee, asset: assetOut });
-
-  const tradeId = crypto.randomUUID();
-  const price = amountIn > 0 ? amtOut / amountIn : 0;
-  const symbol = `${assetIn}/${assetOut}`;
-  try {
-    await db.insert(tradesTable).values({
-      id: tradeId,
-      symbol,
-      side: "buy",
-      price: price.toFixed(18),
-      quantity: amountIn.toFixed(18),
-      total: amtOut.toFixed(18),
-      fee: fee.toFixed(18),
-      feeAsset: assetIn,
-      walletAddress,
-      txid: `exchange:${tradeId}`,
-    });
-  } catch (dbErr: any) {
-    logger.warn({ dbErr: dbErr?.message }, "Exchange trade record insert failed (settlement still valid)");
-  }
-
-  const balances = await getBalances(walletAddress);
-  return { tradeId, assetIn, assetOut, amountIn, amountOut: amtOut, fee, rate, balances };
-}
-
 // ── GET /trade/modes ───────────────────────────────────────────────────────────
 router.get("/trade/modes", (_req, res) => {
   res.json({
@@ -168,7 +150,7 @@ router.get("/trade/modes", (_req, res) => {
       {
         id: "wallet",
         name: "Wallet Mode (On-chain Swap)",
-        description: "Routes through an on-chain DEX router (Uniswap-style). User signs the transaction with their own wallet. Funds never touch OrahDEX — ETH leaves the wallet, USDC returns directly.",
+        description: "Routes through an on-chain DEX router (Uniswap-style). User signs the transaction with their own wallet. Funds never touch Orah — ETH leaves the wallet, USDC returns directly.",
         settlementLayer: "on-chain",
         gasRequired: true,
         custodial: false,
@@ -180,7 +162,7 @@ router.get("/trade/modes", (_req, res) => {
       {
         id: "exchange",
         name: "Exchange Mode (Internal Ledger)",
-        description: "Trades execute against the internal OrahDEX ledger. No gas, instant settlement. Withdraw via /withdraw which calls the Vault contract or hot-wallet broadcast.",
+        description: "Trades execute against the internal Orah ledger. No gas, instant settlement. Withdraw via /withdraw which calls the Vault contract or hot-wallet broadcast.",
         settlementLayer: "internal-ledger",
         gasRequired: false,
         custodial: true,
@@ -239,7 +221,7 @@ router.post("/trade/wallet/quote", async (req, res) => {
       rate:      rate.toFixed(8),
       chainId:   chainId ?? null,
       router:    chainId ? (ROUTERS[Number(chainId)] ?? null) : null,
-      note: "Transaction must be signed and submitted by the user's wallet. OrahDEX never holds funds in wallet mode.",
+      note: "Transaction must be signed and submitted by the user's wallet. Orah never holds funds in wallet mode.",
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "trade/wallet/quote failed");
@@ -294,51 +276,18 @@ router.post("/trade/wallet", async (req, res) => {
 // ── POST /trade/wallet/settle — record confirmed on-chain swap & credit balance ──
 /**
  * Called by the frontend AFTER the user's on-chain swap transaction is confirmed.
- * 1. Verifies the EVM wallet signature to prove the caller owns walletAddress.
- * 2. Fetches the tx receipt from the chain to verify success.
- * 3. Inserts a record in the trades table (with txid).
- * 4. Credits the user's internal exchange balance with the received assetOut amount,
+ * 1. Fetches the tx receipt from the chain to verify success.
+ * 2. Inserts a record in the trades table (with txid).
+ * 3. Credits the user's internal exchange balance with the received assetOut amount,
  *    so tokens are immediately available for exchange-mode trading or withdrawal.
  *
- * Body: { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature }
+ * Body: { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut }
  */
-router.post("/trade/wallet/settle", async (req, res) => {
-  const { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature } = req.body ?? {};
+router.post("/trade/wallet/settle", tradeSettleLimiter, async (req, res) => {
+  const { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut } = req.body ?? {};
 
   if (!txHash || !chainId || !walletAddress || !assetIn || !assetOut || !amountIn || !amountOut) {
     res.status(400).json({ error: "txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut are required" });
-    return;
-  }
-
-  // Only EVM wallets can initiate on-chain swap settlements via this endpoint.
-  if (!/^0x[0-9a-fA-F]{40}$/.test(String(walletAddress))) {
-    res.status(400).json({ error: "walletAddress must be an EVM address (0x...) for /trade/wallet/settle." });
-    return;
-  }
-
-  // Require a wallet signature to prove the caller owns walletAddress.
-  // This prevents any party who merely knows a wallet address from crediting its balance.
-  if (!walletSignature) {
-    res.status(401).json({
-      error: "walletSignature is required. Sign the settlement auth message with your EVM wallet before calling this endpoint.",
-      code: "WALLET_SIGNATURE_REQUIRED",
-    });
-    return;
-  }
-
-  // Verify the signature. The auth message commits to the txHash so the signature
-  // is single-purpose and cannot be replayed for a different transaction.
-  const authMsg = [
-    "Authorize OrahDEX on-chain swap settlement",
-    `Wallet: ${walletAddress}`,
-    `TxHash: ${txHash}`,
-    `AssetIn: ${assetIn}`,
-    `AssetOut: ${assetOut}`,
-  ].join("\n");
-  try {
-    verifyEvmSignature(walletAddress, authMsg, walletSignature);
-  } catch {
-    res.status(401).json({ error: "Invalid wallet signature for settlement.", code: "SIGNATURE_MISMATCH" });
     return;
   }
 
@@ -361,11 +310,7 @@ router.post("/trade/wallet/settle", async (req, res) => {
   try {
     // Verify the tx on-chain — require the receipt; do NOT proceed optimistically
     const client = createPublicClient({ transport: http(VERIFY_RPC[numChain]) });
-    let receipt: {
-      status: string;
-      logs: { topics: string[]; data: string; address: string }[];
-      blockNumber: bigint;
-    } | null = null;
+    let receipt: { status: string; logs: { topics: string[]; data: string; address: string }[] } | null = null;
     try {
       receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` }) as any;
     } catch (rpcErr: any) {
@@ -415,26 +360,16 @@ router.post("/trade/wallet/settle", async (req, res) => {
     const tokenDecimals   = tokenInfo?.decimals ?? 18;
     let   verifiedAmount  = Number(rawTransferAmount) / 10 ** tokenDecimals;
 
-    // If no ERC-20 Transfer to the user was found, attempt to measure the
-    // native-asset balance change for the caller's address between the block
-    // before the tx and the tx block. This correctly captures ETH/BNB/MATIC
-    // output swaps that arrive as internal transfers rather than ERC-20 events.
-    // Trusting the client-supplied amountOut is explicitly prohibited here.
+    // If no ERC-20 Transfer to the user was found, fall back to the tx's native
+    // ETH value (for ETH-in / ETH-out swaps where there are no Transfer events).
+    // If still zero, reject — we cannot verify what the user received.
     if (verifiedAmount <= 0) {
+      // For native ETH output there are no Transfer logs. Accept client amountOut
+      // only for native-asset-out swaps where assetOut matches the chain's native symbol.
       const NATIVE_SYMBOLS: Record<number, string> = { 1:"ETH", 56:"BNB", 137:"MATIC", 8453:"ETH", 42161:"ETH", 10:"ETH", 43114:"AVAX" };
-      if (assetOutUpper === (NATIVE_SYMBOLS[numChain] ?? "") && receipt.blockNumber > 0n) {
-        try {
-          const [balBefore, balAfter] = await Promise.all([
-            client.getBalance({ address: walletAddress as `0x${string}`, blockNumber: receipt.blockNumber - 1n }),
-            client.getBalance({ address: walletAddress as `0x${string}`, blockNumber: receipt.blockNumber }),
-          ]);
-          const delta = balAfter > balBefore ? balAfter - balBefore : 0n;
-          verifiedAmount = Number(delta) / 1e18;
-        } catch (balErr: any) {
-          logger.warn({ txHash, err: balErr?.message }, "Native balance delta query failed");
-        }
-      }
-      if (verifiedAmount <= 0) {
+      if (assetOutUpper === (NATIVE_SYMBOLS[numChain] ?? "")) {
+        verifiedAmount = parseFloat(amountOut);
+      } else {
         res.status(422).json({ error: "Could not verify received amount from on-chain logs. Settlement rejected.", txHash });
         return;
       }
@@ -460,8 +395,8 @@ router.post("/trade/wallet/settle", async (req, res) => {
            (id, symbol, side, price, quantity, total, fee, fee_asset, wallet_address, txid)
          VALUES ($1,$2,'buy',$3,$4,$5,$6,$7,$8,$9)`,
         [
-          tradeId, symbol, price.toFixed(18), amtIn.toFixed(18),
-          amtOut.toFixed(18), fee.toFixed(18), assetIn.toUpperCase(),
+          tradeId, symbol, price.toFixed(8), amtIn.toFixed(8),
+          amtOut.toFixed(8), fee.toFixed(8), assetIn.toUpperCase(),
           walletAddress, txHash,
         ],
       );
@@ -550,31 +485,6 @@ router.get("/trade/settlements/:walletAddress", async (req, res) => {
   }
 });
 
-// ── POST /trade/exchange/challenge ────────────────────────────────────────────
-// Issues a server-side nonce the EVM wallet must sign before POST /trade/exchange.
-// Clients: call this endpoint, sign the returned `message` with personal_sign,
-// then include `signature` + `nonce` in the POST /trade/exchange body.
-router.post("/trade/exchange/challenge", (req, res) => {
-  const { walletAddress, assetIn, assetOut, amountIn } = req.body as {
-    walletAddress?: string; assetIn?: string; assetOut?: string; amountIn?: string;
-  };
-  if (!walletAddress || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
-    res.status(400).json({ error: "Valid EVM address required (0x…)" });
-    return;
-  }
-  if (!assetIn || !assetOut || !amountIn) {
-    res.status(400).json({ error: "assetIn, assetOut, amountIn are required" });
-    return;
-  }
-  const challenge = issueExchangeChallenge({
-    walletAddress,
-    assetIn:  assetIn.toUpperCase(),
-    assetOut: assetOut.toUpperCase(),
-    amountIn: String(parseFloat(amountIn)),
-  });
-  res.json(challenge);
-});
-
 // ── POST /trade/exchange/quote ─────────────────────────────────────────────────
 router.post("/trade/exchange/quote", async (req, res) => {
   const { assetIn, assetOut, amountIn } = req.body ?? {};
@@ -614,85 +524,70 @@ router.post("/trade/exchange/quote", async (req, res) => {
 
 // ── POST /trade/exchange ───────────────────────────────────────────────────────
 // Settle a trade on the internal ledger. Seeds balances for new users.
-// EVM wallet callers (0x…) must supply `signature` + `nonce` to prove they
-// authorised this swap. Obtain the canonical message from
-// buildExchangeAuthMessage and sign it with personal_sign in MetaMask/ethers.
 router.post("/trade/exchange", async (req, res) => {
-  const body = req.body ?? {};
-  const walletAddress = body.walletAddress;
-  const signature = body.signature;
-  const nonce = body.nonce;
+  const { walletAddress, assetIn, assetOut, amountIn, minAmountOut } = req.body ?? {};
 
-  if (!walletAddress) {
-    res.status(400).json({ error: "walletAddress is required" });
+  if (!walletAddress || !assetIn || !assetOut || !amountIn) {
+    res.status(400).json({ error: "walletAddress, assetIn, assetOut, amountIn are required" });
     return;
   }
 
-  // Require wallet signature for EVM wallets to prove the caller owns walletAddress.
-  // The signature must have been produced over the server-issued challenge from
-  // POST /trade/exchange/challenge — this enforces single-use nonces and prevents replay.
-  if (walletAddress.startsWith("0x")) {
-    if (!signature || !nonce) {
-      res.status(401).json({
-        error: "signature and nonce are required for EVM wallet exchange swaps. " +
-               "Request a challenge via POST /trade/exchange/challenge, sign the returned message, " +
-               "and include signature + nonce in this request.",
-      });
-      return;
-    }
-    try {
-      verifyExchangeSignature(walletAddress, String(nonce), signature);
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
-    }
+  const amtIn = parseFloat(amountIn);
+  if (isNaN(amtIn) || amtIn <= 0) {
+    res.status(400).json({ error: "amountIn must be a positive number" });
+    return;
   }
 
   try {
-    let assetIn = normalizeAssetSymbol(body.assetIn);
-    let assetOut = normalizeAssetSymbol(body.assetOut);
-    let amtIn = parseFloat(String(body.amountIn ?? "NaN"));
-    let minOut = body.minAmountOut != null ? parseFloat(String(body.minAmountOut)) : undefined;
-
-    // Advanced path: accept { symbol: "ETH/USDC", side: "sell|buy", quantity }
-    if ((!assetIn || !assetOut || !Number.isFinite(amtIn)) && body.symbol && body.side && body.quantity != null) {
-      const pair = parseTradeSymbol(body.symbol);
-      const side = String(body.side).toLowerCase();
-      const qty = parseFloat(String(body.quantity));
-      if (!pair || !Number.isFinite(qty) || qty <= 0 || (side !== "buy" && side !== "sell")) {
-        res.status(400).json({ error: "Invalid advanced trade params: symbol, side, quantity" });
-        return;
-      }
-      if (side === "sell") {
-        assetIn = pair.base;
-        assetOut = pair.quote;
-        amtIn = qty;
-      } else {
-        assetIn = pair.quote;
-        assetOut = pair.base;
-        const r = await resolveRate(assetIn, assetOut);
-        if (!r || r <= 0) {
-          res.status(422).json({ error: "No price available for this pair" });
-          return;
-        }
-        // quantity for BUY is desired base output; convert to required quote input
-        amtIn = qty / (r * (1 - FEE_PCT));
-        if (minOut == null) minOut = qty * 0.999;
-      }
-    }
-
-    if (!assetIn || !assetOut || !Number.isFinite(amtIn) || amtIn <= 0) {
-      res.status(400).json({ error: "walletAddress, assetIn, assetOut, amountIn are required" });
+    const rate = await resolveRate(assetIn.toUpperCase(), assetOut.toUpperCase());
+    if (!rate) {
+      res.status(422).json({ error: "No price available for this pair" });
       return;
     }
 
-    const trade = await executeExchangeTrade({
+    const grossOut = amtIn * rate;
+    const fee      = grossOut * FEE_PCT;
+    const amtOut   = grossOut - fee;
+
+    if (minAmountOut && amtOut < parseFloat(minAmountOut)) {
+      res.status(422).json({
+        error: `Slippage exceeded: expected at least ${minAmountOut}, got ${amtOut.toFixed(8)}`,
+        amountOut: amtOut.toFixed(8),
+      });
+      return;
+    }
+
+    await settleSwap({
       walletAddress,
-      assetIn,
-      assetOut,
-      amountIn: amtIn,
-      minAmountOut: minOut,
+      assetIn:   assetIn.toUpperCase(),
+      assetOut:  assetOut.toUpperCase(),
+      amountIn:  amtIn.toFixed(8),
+      amountOut: amtOut.toFixed(8),
     });
+    await recordPlatformFee({ source: "swap", amount: fee, asset: assetOut.toUpperCase() });
+
+    // Record exchange-mode trade in trades table
+    const tradeId = crypto.randomUUID();
+    const price   = amtIn > 0 ? amtOut / amtIn : 0;
+    const symbol  = `${assetIn.toUpperCase()}/${assetOut.toUpperCase()}`;
+    try {
+      await db.insert(tradesTable).values({
+        id:           tradeId,
+        symbol,
+        side:         "buy",
+        price:        price.toFixed(8),
+        quantity:     amtIn.toFixed(8),
+        total:        amtOut.toFixed(8),
+        fee:          fee.toFixed(8),
+        feeAsset:     assetIn.toUpperCase(),
+        walletAddress,
+        txid:         `exchange:${tradeId}`,
+      });
+    } catch (dbErr: any) {
+      logger.warn({ dbErr: dbErr?.message }, "Exchange trade record insert failed (settlement still valid)");
+    }
+
+    const balances = await getBalances(walletAddress);
 
     const vaultActive  = isVaultConfigured();
     const vaultAddress = vaultActive ? getVaultAddress() : null;
@@ -701,189 +596,144 @@ router.post("/trade/exchange", async (req, res) => {
     res.json({
       mode:       "exchange",
       success:    true,
-      tradeId: trade.tradeId,
+      tradeId,
       walletAddress,
-      assetIn:    trade.assetIn,
-      assetOut:   trade.assetOut,
-      amountIn:   trade.amountIn.toFixed(8),
-      amountOut:  trade.amountOut.toFixed(8),
-      fee:        trade.fee.toFixed(8),
+      assetIn:    assetIn.toUpperCase(),
+      assetOut:   assetOut.toUpperCase(),
+      amountIn:   amtIn.toFixed(8),
+      amountOut:  amtOut.toFixed(8),
+      fee:        fee.toFixed(8),
       feePct:     FEE_PCT * 100,
-      rate:       trade.rate.toFixed(8),
+      rate:       rate.toFixed(8),
       settlement: {
         layer:           vaultActive ? "vault" : "internal-ledger",
         vaultAddress:    vaultAddress ?? null,
         vaultChainId:    vaultChain   ?? null,
         withdrawEnabled: vaultActive,
         note:            vaultActive
-          ? `Withdrawals settled via OrahVault on chain ${vaultChain}`
-          : "Internal ledger settlement — deploy OrahVault to enable on-chain withdrawals",
+          ? `Withdrawals settled via OrahDEXVault on chain ${vaultChain}`
+          : "Internal ledger settlement — deploy OrahDEXVault to enable on-chain withdrawals",
       },
-      balances: trade.balances,
+      balances,
       settledAt:  new Date().toISOString(),
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "trade/exchange failed");
-    if (err?.message === "NO_PRICE") {
-      res.status(422).json({ error: "No price available for this pair" });
-    } else if (err?.message?.startsWith("SLIPPAGE_EXCEEDED:")) {
-      res.status(422).json({
-        error: "Slippage exceeded",
-        amountOut: err.message.split(":")[1] ?? null,
-      });
-    } else if (err?.message?.includes("Insufficient") || err?.message?.includes("INSUFFICIENT_FUNDS")) {
-      res.status(400).json({ error: "Internal server error", code: "INSUFFICIENT_FUNDS" });
+    if (err?.message?.includes("Insufficient")) {
+      res.status(400).json({ error: err.message, code: "INSUFFICIENT_FUNDS" });
     } else {
-      res.status(500).json({ error: "Trade failed" });
+      res.status(500).json({ error: err?.message ?? "Trade failed" });
     }
   }
 });
 
-// ── POST /trade/exchange/advanced ───────────────────────────────────────────────
-// Dedicated advanced market-style endpoint: { walletAddress, symbol, side, quantity }
-router.post("/trade/exchange/advanced", async (req, res) => {
-  const { walletAddress, symbol, side, quantity, minAmountOut, signature, nonce } = req.body ?? {};
-  const pair = parseTradeSymbol(symbol);
-  const normalizedSide = String(side ?? "").toLowerCase();
-  const qty = parseFloat(String(quantity));
+// ── POST /withdraw ─────────────────────────────────────────────────────────────
+// Withdraw from internal exchange balance to the user's on-chain wallet.
+// Deducts the internal balance atomically, then attempts on-chain broadcast
+// via the hot wallet. If a Vault contract address is configured, it will be
+// used instead (set VAULT_CONTRACT_ADDRESS env var + deploy the contract first).
+router.post("/withdraw", tradeWithdrawLimiter, async (req, res) => {
+  const { walletAddress, asset, amount, network, recipient, networkLabel } = req.body ?? {};
 
-  if (!walletAddress || !pair || (normalizedSide !== "buy" && normalizedSide !== "sell") || !Number.isFinite(qty) || qty <= 0) {
-    res.status(400).json({ error: "walletAddress, symbol, side (buy|sell), quantity are required" });
+  if (!walletAddress || !asset || !amount || !network || !recipient) {
+    res.status(400).json({ error: "walletAddress, asset, amount, network, recipient are required" });
     return;
   }
 
-  if (String(walletAddress).startsWith("0x")) {
-    if (!signature || !nonce) {
-      res.status(401).json({
-        error: "signature and nonce are required for EVM wallet exchange swaps. Request a challenge via POST /trade/exchange/challenge and include signature + nonce.",
+  const parsed = parseFloat(amount);
+  if (isNaN(parsed) || parsed <= 0) {
+    res.status(400).json({ error: "amount must be a positive number" });
+    return;
+  }
+
+  // If a Vault contract is configured, note it in the response (wiring deferred until contract is deployed)
+  const vaultAddress = process.env.VAULT_CONTRACT_ADDRESS ?? null;
+
+  const id     = crypto.randomUUID();
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const { rows: balRows } = await client.query<{ available: string }>(
+      `SELECT available FROM user_balances
+       WHERE wallet_address = $1 AND asset_symbol = $2
+       FOR UPDATE`,
+      [walletAddress, asset],
+    );
+
+    const available = parseFloat(balRows[0]?.available ?? "0");
+    if (available < parsed) {
+      await client.query("ROLLBACK");
+      res.status(400).json({
+        error: `Insufficient balance. Available: ${available} ${asset}, requested: ${parsed} ${asset}`,
+        code: "INSUFFICIENT_FUNDS",
       });
       return;
     }
-    try {
-      verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
-    }
-  }
 
-  try {
-    let assetIn: string;
-    let assetOut: string;
-    let amountIn: number;
-    let minOut = minAmountOut != null ? parseFloat(String(minAmountOut)) : undefined;
+    await client.query(
+      `UPDATE user_balances SET available = available - $1, updated_at = now()
+       WHERE wallet_address = $2 AND asset_symbol = $3`,
+      [parsed.toString(), walletAddress, asset],
+    );
 
-    if (normalizedSide === "sell") {
-      assetIn = pair.base;
-      assetOut = pair.quote;
-      amountIn = qty;
-    } else {
-      assetIn = pair.quote;
-      assetOut = pair.base;
-      const rate = await resolveRate(assetIn, assetOut);
-      if (!rate || rate <= 0) {
-        res.status(422).json({ error: "No price available for this pair" });
-        return;
+    await client.query(
+      `INSERT INTO withdrawal_requests
+         (id, wallet_address, asset, amount, network, network_label, recipient, status, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',now(),now())`,
+      [id, walletAddress, asset, parsed.toString(), network, networkLabel ?? network, recipient],
+    );
+
+    await client.query("COMMIT");
+
+    const useVault   = isVaultConfigured();
+    const vaultAddr  = getVaultAddress();
+    const vaultChain = getVaultChainId();
+
+    logger.info({ id, walletAddress, asset, amount: parsed, network, recipient, useVault, vaultAddr }, "withdraw: request created");
+
+    // Attempt async on-chain broadcast (vault → hot-wallet fallback)
+    setImmediate(async () => {
+      try {
+        if (useVault) {
+          await vaultWithdraw({ asset, amount: parsed, recipient, chainId: vaultChain });
+          logger.info({ id, asset, amount: parsed, recipient, vault: vaultAddr }, "withdraw: vault.withdraw() succeeded");
+        } else {
+          await processWithdrawal({ asset, amount: parsed, network, recipient });
+        }
+        // Mark completed in DB
+        await client.query(
+          `UPDATE withdrawal_requests SET status='completed', updated_at=now() WHERE id=$1`,
+          [id],
+        ).catch(() => {});
+      } catch (err: any) {
+        logger.warn({ id, err: err?.message }, "withdraw: on-chain broadcast failed — staying pending");
       }
-      amountIn = qty / (rate * (1 - FEE_PCT));
-      if (minOut == null) minOut = qty * 0.999;
-    }
-
-    const trade = await executeExchangeTrade({
-      walletAddress,
-      assetIn,
-      assetOut,
-      amountIn,
-      minAmountOut: minOut,
     });
 
-    res.json({
-      mode: "exchange-advanced",
-      success: true,
-      tradeId: trade.tradeId,
-      walletAddress,
-      symbol: pair.normalized,
-      side: normalizedSide,
-      quantity: qty.toFixed(8),
-      inputAsset: trade.assetIn,
-      outputAsset: trade.assetOut,
-      amountIn: trade.amountIn.toFixed(8),
-      amountOut: trade.amountOut.toFixed(8),
-      fee: trade.fee.toFixed(8),
-      feePct: FEE_PCT * 100,
-      rate: trade.rate.toFixed(8),
-      balances: trade.balances,
-      settledAt: new Date().toISOString(),
-    });
-  } catch (err: any) {
-    logger.error({ err: err?.message }, "trade/exchange/advanced failed");
-    if (err?.message?.startsWith("SLIPPAGE_EXCEEDED:")) {
-      res.status(422).json({ error: "Slippage exceeded", amountOut: err.message.split(":")[1] ?? null });
-    } else if (err?.message?.includes("Insufficient") || err?.message?.includes("INSUFFICIENT_FUNDS")) {
-      res.status(400).json({ error: "Internal server error", code: "INSUFFICIENT_FUNDS" });
-    } else {
-      res.status(500).json({ error: "Advanced trade failed" });
-    }
-  }
-});
-
-// ── POST /trade/exchange/mint ───────────────────────────────────────────────────
-router.post("/trade/exchange/mint", async (req, res) => {
-  const walletAddress = req.body?.walletAddress;
-  const asset = normalizeAssetSymbol(req.body?.asset) ?? "USDC";
-  const amount = parseFloat(String(req.body?.amount ?? "NaN"));
-
-  if (!walletAddress || !Number.isFinite(amount) || amount <= 0) {
-    res.status(400).json({ error: "walletAddress and positive amount are required" });
-    return;
-  }
-
-  try {
-    await creditAvailable(walletAddress, asset, amount.toFixed(8));
-    const balances = await getBalances(walletAddress);
     res.status(201).json({
-      success: true,
-      action: "mint",
+      id,
+      status:           "pending",
       walletAddress,
       asset,
-      amount: amount.toFixed(8),
-      balances,
+      amount:           parsed.toString(),
+      network,
+      recipient,
+      settlementMethod: useVault ? "vault" : "hot-wallet",
+      vaultAddress:     vaultAddr,
+      vaultChainId:     useVault ? vaultChain : null,
+      note: useVault
+        ? `vault.withdraw() called on OrahDEXVault at ${vaultAddr} (chainId ${vaultChain}).`
+        : "Hot-wallet broadcast initiated. Fund the hot wallet to enable instant auto-withdrawals.",
+      createdAt: new Date().toISOString(),
     });
   } catch (err: any) {
-    logger.error({ err: err?.message }, "trade/exchange/mint failed");
-    res.status(500).json({ error: "Mint failed" });
-  }
-});
-
-// ── POST /trade/exchange/burn ───────────────────────────────────────────────────
-router.post("/trade/exchange/burn", async (req, res) => {
-  const walletAddress = req.body?.walletAddress;
-  const asset = normalizeAssetSymbol(req.body?.asset) ?? "USDC";
-  const amount = parseFloat(String(req.body?.amount ?? "NaN"));
-
-  if (!walletAddress || !Number.isFinite(amount) || amount <= 0) {
-    res.status(400).json({ error: "walletAddress and positive amount are required" });
-    return;
-  }
-
-  try {
-    await debitAvailable(walletAddress, asset, amount.toFixed(8));
-    const balances = await getBalances(walletAddress);
-    res.json({
-      success: true,
-      action: "burn",
-      walletAddress,
-      asset,
-      amount: amount.toFixed(8),
-      balances,
-    });
-  } catch (err: any) {
-    logger.error({ err: err?.message }, "trade/exchange/burn failed");
-    if (err?.message?.includes("INSUFFICIENT_FUNDS")) {
-      res.status(400).json({ error: "Internal server error", code: "INSUFFICIENT_FUNDS" });
-    } else {
-      res.status(500).json({ error: "Burn failed" });
-    }
+    await client.query("ROLLBACK").catch(() => {});
+    logger.error({ err: err?.message }, "withdraw: transaction failed");
+    res.status(500).json({ error: err?.message ?? "Withdrawal failed" });
+  } finally {
+    client.release();
   }
 });
 

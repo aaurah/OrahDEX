@@ -8,20 +8,6 @@ import { logger } from "../lib/logger.js";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 
 const router: IRouter = Router();
-const USD_PEGGED_CURRENCIES = new Set(["USD", "USDT", "USDC", "USDB", "USDBC", "USDC.E", "USDBE", "BUSD", "TUSD", "USDD"]);
-
-// Scope the "not available" guard to /nft/* paths only.
-// A blanket router.use() without a path prefix intercepts every request that
-// reaches this router (e.g. /bsv-status, /staking/providers) because Express
-// walks sub-routers in registration order.
-router.use((req, res, next) => {
-  if (process.env.NFT_ENABLED !== "true" && req.path.startsWith("/nft")) {
-    return res.status(503).json({
-      error: "NFT features are not yet available. Coming soon.",
-    });
-  }
-  return next();
-});
 
 function uid(): string {
   return crypto.randomUUID();
@@ -69,7 +55,7 @@ const MOCK_COLLECTIONS = [
   {
     id: "col-ordinals", name: "Bitcoin Ordinals Genesis",    slug: "ordinals-genesis", chain: "BSV",
     contractAddress: null,
-    description: "The first series of inscribed relics on BSV — proof-of-existence artifacts for the OrahDEX genesis epoch.",
+    description: "The first series of inscribed relics on BSV — proof-of-existence artifacts for the Orah genesis epoch.",
     imageUrl: "https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UDNn5NVIT3gxvEL669OVmuORexPloJjKFLhr0a5jDqTl_bqXRXwm?w=500&auto=format",
     bannerUrl: "https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxpYLoDl-KGSnMSmoXWijkMbZKSIQ1532MHf6DVbWObhH0yFdoVJLPT5yeBTZ?w=500&auto=format",
     category: "relics", floorPrice: "0.24", floorCurrency: "BSV", volume24h: "18.4",
@@ -226,7 +212,7 @@ router.get("/nft/collections", async (req, res) => {
 
     res.json({ collections: rows, total: rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -255,7 +241,7 @@ router.get("/nft/collections/:slug", async (req, res) => {
 
     res.json({ collection: col, nfts, listings, activity });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -275,7 +261,7 @@ router.get("/nft/items", async (req, res) => {
 
     res.json({ items: rows, total: rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -304,7 +290,7 @@ router.get("/nft/items/:id", async (req, res) => {
 
     res.json({ nft, collection: col ?? null, listings, bids, activity });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -323,67 +309,34 @@ router.get("/nft/listings", async (req, res) => {
 
     res.json({ listings: rows, total: rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
 /* POST /nft/listings — create listing */
 router.post("/nft/listings", async (req, res) => {
   try {
-    const {
-      nftId,
-      post_id,
-      collectionId,
-      seller,
-      chain,
-      price,
-      price_bsv,
-      currency,
-      mint_currency,
-    } = req.body as Record<string, string>;
-    const normalizedNftId = nftId ?? post_id;
-    const normalizedCollectionId = collectionId ?? (post_id ? "social-posts" : undefined);
-    const normalizedPrice = price ?? price_bsv;
-    const normalizedCurrency = (currency ?? mint_currency ?? "BSV").toUpperCase();
-    if (!normalizedNftId || !seller || !normalizedPrice) {
-      res.status(400).json({ error: "seller plus (nftId or post_id) and (price or price_bsv) are required" }); return;
+    const { nftId, collectionId, seller, chain, price, currency } = req.body as Record<string, string>;
+    if (!nftId || !seller || !price) {
+      res.status(400).json({ error: "nftId, seller, price are required" }); return;
     }
 
-    // Stablecoins are treated as $1 when no live quote is cached.
-    const quoteUsd = FALLBACK_PRICES[normalizedCurrency]
-      ?? (USD_PEGGED_CURRENCIES.has(normalizedCurrency) ? 1 : null);
-    if (!quoteUsd) {
-      res.status(400).json({ error: `Unsupported listing currency: ${normalizedCurrency}` }); return;
-    }
-    const priceUsd = String((parseFloat(normalizedPrice) * quoteUsd).toFixed(2));
+    const ethUsd = FALLBACK_PRICES["ETH"] ?? 1800;
+    const priceUsd = String((parseFloat(price) * (currency === "ETH" ? ethUsd : 1)).toFixed(2));
 
     const [listing] = await db.insert(nftListingsTable).values({
-      id: uid(),
-      nftId: normalizedNftId,
-      collectionId: normalizedCollectionId ?? "uncategorized",
-      seller,
-      chain: chain ?? "BSV",
-      price: normalizedPrice,
-      currency: normalizedCurrency,
-      priceUsd,
-      status: "active",
+      id: uid(), nftId, collectionId, seller, chain: chain ?? "ETH",
+      price, currency: currency ?? "ETH", priceUsd, status: "active",
     }).returning();
 
     await db.insert(nftActivityTable).values({
-      id: uid(),
-      nftId: normalizedNftId,
-      collectionId: normalizedCollectionId ?? "uncategorized",
-      type: "listing",
-      fromAddress: seller,
-      price: normalizedPrice,
-      currency: normalizedCurrency,
-      priceUsd,
-      chain: chain ?? "BSV",
+      id: uid(), nftId, collectionId, type: "listing", fromAddress: seller,
+      price, currency, priceUsd, chain: chain ?? "ETH",
     });
 
     res.json({ success: true, listing });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -395,7 +348,7 @@ router.post("/nft/bids", async (req, res) => {
       res.status(400).json({ error: "nftId, bidder, price are required" }); return;
     }
 
-    const ethUsd = FALLBACK_PRICES["ETH"] ?? 2400;
+    const ethUsd = FALLBACK_PRICES["ETH"] ?? 1800;
     const priceUsd = String((parseFloat(price) * (currency === "ETH" ? ethUsd : 1)).toFixed(2));
 
     const [bid] = await db.insert(nftBidsTable).values({
@@ -410,7 +363,7 @@ router.post("/nft/bids", async (req, res) => {
 
     res.json({ success: true, bid });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -431,7 +384,7 @@ router.get("/nft/portfolio/:address", async (req, res) => {
 
     res.json({ owned, myListings, myBids });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
@@ -449,7 +402,7 @@ router.get("/nft/activity", async (req, res) => {
 
     res.json({ activity: rows, total: rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: err?.message });
   }
 });
 
