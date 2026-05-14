@@ -26,7 +26,29 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { API_BASE } from "@/lib/api";
 import { useAccount } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
-import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useEvmBalances, ERC20_TOKENS } from "@/hooks/useEvmBalances";
+import { sendEvmTransfer, sendErc20Transfer } from "@/lib/reown";
+
+// ─── EVM chain helpers ────────────────────────────────────────────────────────
+// Maps LetsExchange / venue network codes → EVM chainId
+const LE_NETWORK_CHAIN: Record<string, number> = {
+  ETH: 1, ETHEREUM: 1,
+  BNB: 56, BSC: 56,
+  MATIC: 137, POL: 137, POLYGON: 137,
+  AVAXC: 43114, AVAX: 43114, AVALANCHE: 43114,
+  ARB: 42161, ARBITRUM: 42161,
+  OP: 10, OPT: 10, OPTIMISM: 10,
+  BASE: 8453,
+  LINEA: 59144,
+  SCROLL: 534352,
+  ZKSYNC: 324, ZKSYNCERA: 324,
+};
+// Native token symbol per chainId
+const CHAIN_NATIVE: Record<number, string> = {
+  1: "ETH", 56: "BNB", 137: "POL", 42161: "ETH",
+  10: "ETH", 8453: "ETH", 43114: "AVAX", 59144: "ETH",
+  534352: "ETH", 324: "ETH",
+};
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -822,6 +844,61 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const [statusError, setStatusError] = useState(false);
   const [infoOpen,    setInfoOpen]    = useState(false);
   const [refreshKey,  setRefreshKey]  = useState(0);
+  const [sendState,   setSendState]   = useState<"idle"|"sending"|"sent"|"error">("idle");
+  const [txHash,      setTxHash]      = useState<string|null>(null);
+  const [sendError,   setSendError]   = useState<string|null>(null);
+
+  const { address: evmAddress } = useAccount();
+
+  // Resolve chain info for the from-coin so we can offer wallet-send
+  const network    = (fromCoin.network ?? fromCoin.symbol ?? "").toUpperCase();
+  const chainId    = LE_NETWORK_CHAIN[network] ?? null;
+  const isNative   = chainId !== null && CHAIN_NATIVE[chainId] === fromCoin.symbol.toUpperCase();
+  const erc20Entry = chainId !== null && !isNative
+    ? (ERC20_TOKENS[chainId] ?? []).find(t => t.symbol.toUpperCase() === fromCoin.symbol.toUpperCase()) ?? null
+    : null;
+  const isEvmDeposit = typeof order.deposit === "string" && /^0x[0-9a-fA-F]{40}$/.test(order.deposit);
+  const canSendFromWallet = !!evmAddress && isEvmDeposit && chainId !== null && (isNative || erc20Entry !== null);
+
+  async function handleSendFromWallet() {
+    if (!evmAddress || !chainId) return;
+    setSendState("sending"); setSendError(null); setTxHash(null);
+    try {
+      const depositAmt = parseFloat(order.deposit_amount);
+      let hash: string;
+
+      if (isNative) {
+        // Native coin (ETH, BNB, AVAX…) — convert to wei (18 decimals)
+        const weiAmt = BigInt(Math.round(depositAmt * 1e9)) * BigInt(1e9);
+        hash = await sendEvmTransfer({
+          from: evmAddress,
+          to: order.deposit,
+          valueWei: weiAmt,
+          targetChainId: chainId,
+        });
+      } else if (erc20Entry) {
+        // ERC-20 token — convert to smallest unit using token decimals
+        const factor = 10 ** erc20Entry.decimals;
+        const rawAmt = BigInt(Math.round(depositAmt * factor));
+        hash = await sendErc20Transfer({
+          tokenAddress: erc20Entry.address,
+          from: evmAddress,
+          to: order.deposit,
+          amount: rawAmt,
+          targetChainId: chainId,
+        });
+      } else {
+        throw new Error("Token not supported for wallet-send on this chain.");
+      }
+
+      setTxHash(hash);
+      setSendState("sent");
+    } catch (err: any) {
+      const msg: string = err?.message ?? "Transaction failed";
+      setSendError(msg.includes("rejected") ? "Transaction rejected by wallet." : msg.slice(0, 90));
+      setSendState("error");
+    }
+  }
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -916,6 +993,62 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
         <QRCodeSVG value={qrValue} size={188} bgColor="#ffffff" fgColor="#000000" />
         <p className="text-[10px] text-black/40 font-mono truncate max-w-full">{shortAddr(order.deposit)}</p>
       </div>
+
+      {/* Send from Wallet — only shown when wallet is connected + EVM chain detected */}
+      {canSendFromWallet && !isDone && (
+        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-emerald-400" />
+            <p className="text-sm font-semibold text-emerald-300">Send from connected wallet</p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Send exactly <span className="text-foreground font-mono font-bold">{order.deposit_amount} {fromCoin.symbol}</span> directly from{" "}
+            <span className="font-mono">{evmAddress?.slice(0,6)}…{evmAddress?.slice(-4)}</span>.
+            Your wallet will prompt you to confirm.
+          </p>
+
+          {sendState === "idle" && (
+            <button type="button" onClick={handleSendFromWallet}
+              className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition-all active:scale-[0.98]">
+              Send {order.deposit_amount} {fromCoin.symbol} from Wallet
+            </button>
+          )}
+
+          {sendState === "sending" && (
+            <button type="button" disabled
+              className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
+              <Loader2 className="w-4 h-4 animate-spin" /> Waiting for wallet confirmation…
+            </button>
+          )}
+
+          {sendState === "sent" && txHash && (
+            <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 space-y-1">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <p className="text-sm font-semibold text-emerald-300">Transaction submitted!</p>
+              </div>
+              <p className="text-xs text-muted-foreground">TX hash:</p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-mono text-emerald-400 break-all">{txHash}</p>
+                <CopyButton text={txHash} />
+              </div>
+            </div>
+          )}
+
+          {sendState === "error" && (
+            <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                <p className="text-sm text-red-300">{sendError ?? "Transaction failed"}</p>
+              </div>
+              <button type="button" onClick={() => setSendState("idle")}
+                className="text-xs text-muted-foreground hover:text-foreground underline transition-colors">
+                Try again
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Rate + TX info */}
       <div className="rounded-xl bg-muted/40 p-3 space-y-1.5">
