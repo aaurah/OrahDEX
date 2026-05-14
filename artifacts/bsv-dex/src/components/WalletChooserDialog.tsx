@@ -4,7 +4,7 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import {
   Fingerprint, Loader2, Plus, LogIn, Shield, AlertCircle,
   Download, ArrowLeft, Eye, EyeOff, CheckCircle2,
-  HardDrive, ChevronRight, X, Wallet,
+  HardDrive, ChevronRight, Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -341,14 +341,6 @@ export function WalletChooserDialog() {
       >
         <DialogTitle style={srOnly}>Connect Wallet</DialogTitle>
         <DialogDescription style={srOnly}>Choose how to connect your wallet to OrahDEX.</DialogDescription>
-
-        {/* ── Close button ── */}
-        <button
-          onClick={handleClose}
-          className="absolute right-4 top-4 z-10 w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-accent transition-all"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
 
         {/* ══════════════════════════════════════
             CHOOSE PANEL
