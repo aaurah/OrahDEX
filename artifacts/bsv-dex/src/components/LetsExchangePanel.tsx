@@ -1164,18 +1164,25 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
 
 // ─── HistoryView ─────────────────────────────────────────────────────────────
 
+const DONE_STATUSES_SET = new Set(["finished", "failed", "refunded", "overdue"]);
+
 function HistoryView({ onClose }: { onClose: () => void }) {
-  const [entries,     setEntries]     = useState<HistoryEntry[]>(() => loadHistory());
-  const [expanded,    setExpanded]    = useState<string | null>(null);
-  const [liveStatus,  setLiveStatus]  = useState<Record<string, StatusResult>>({});
-  const [fetching,    setFetching]    = useState<Set<string>>(new Set());
+  const [entries,      setEntries]      = useState<HistoryEntry[]>(() => loadHistory());
+  const [expanded,     setExpanded]     = useState<string | null>(null);
+  const [liveStatus,   setLiveStatus]   = useState<Record<string, StatusResult>>({});
+  const [fetching,     setFetching]     = useState<Set<string>>(new Set());
   const [confirmClear, setConfirmClear] = useState(false);
+
+  const entriesRef    = useRef(entries);
+  const liveStatusRef = useRef(liveStatus);
+  entriesRef.current    = entries;
+  liveStatusRef.current = liveStatus;
 
   const fetchStatus = useCallback(async (id: string) => {
     if (fetching.has(id)) return;
     setFetching(prev => new Set(prev).add(id));
     try {
-      const entry = entries.find(e => e.transaction_id === id);
+      const entry = entriesRef.current.find(e => e.transaction_id === id);
       const venueSuffix = entry?.venue && entry.venue !== "letsexchange"
         ? `?venue=${encodeURIComponent(entry.venue)}`
         : "";
@@ -1184,16 +1191,41 @@ function HistoryView({ onClose }: { onClose: () => void }) {
       if (r.ok && d.transaction_id) {
         setLiveStatus(prev => ({ ...prev, [id]: d as StatusResult }));
         setEntries(prev => {
-          const updated = prev.map(e => e.transaction_id === id ? { ...e, status: d.status ?? e.status } : e);
+          const updated = prev.map(e => {
+            if (e.transaction_id !== id) return e;
+            let next = e;
+            if (d.status && d.status !== e.status)           next = { ...next, status: d.status };
+            if (d.venue_rescued && d.best_venue && d.best_venue !== e.venue) next = { ...next, venue: d.best_venue };
+            return next;
+          });
           saveHistory(updated);
           return updated;
         });
       }
     } catch {}
     setFetching(prev => { const s = new Set(prev); s.delete(id); return s; });
-  }, [fetching, entries]);
+  }, [fetching]);
 
-  // Auto-fetch status for expanded entry
+  // Auto-poll all pending entries every 15 s
+  const pollAllPending = useCallback(async () => {
+    const pending = entriesRef.current.filter(e =>
+      !DONE_STATUSES_SET.has((liveStatusRef.current[e.transaction_id]?.status ?? e.status ?? "wait").toLowerCase())
+    );
+    await Promise.all(pending.map(e => fetchStatus(e.transaction_id)));
+  }, [fetchStatus]);
+
+  useEffect(() => {
+    pollAllPending();
+    const hasPending = entries.some(e =>
+      !DONE_STATUSES_SET.has((liveStatus[e.transaction_id]?.status ?? e.status ?? "wait").toLowerCase())
+    );
+    if (!hasPending) return;
+    const id = setInterval(pollAllPending, 15_000);
+    return () => clearInterval(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries.length]);
+
+  // Immediate re-fetch when an entry is expanded
   useEffect(() => {
     if (expanded) fetchStatus(expanded);
   // eslint-disable-next-line react-hooks/exhaustive-deps
