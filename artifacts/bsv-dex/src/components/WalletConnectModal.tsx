@@ -252,7 +252,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   }, [isOpen]);
 
   const [view, setView] = useState<View>("landing");
-  const [connectTab, setConnectTab] = useState<ConnectTab>("bsv");
+  const [connectTab, setConnectTab] = useState<ConnectTab>("reown");
   const [connecting, setConnecting] = useState<string | null>(null);
   const [connected, setConnected] = useState<string | null>(null);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -1024,7 +1024,8 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
   };
 
   const handleConnect = (walletId: string, _installUrl?: string) => {
-    if (connectTab === "tron") return handleConnectTron(walletId);
+    if (connectTab === "reown") return handleConnectEvm(walletId, _installUrl);
+    if (connectTab === "tron")  return handleConnectTron(walletId);
     return handleConnectBsv(walletId);
   };
 
@@ -1214,7 +1215,10 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
     }
   };
 
-  const currentWallets = connectTab === "tron" ? TRON_WALLETS : BSV_WALLETS;
+  const currentWallets =
+    connectTab === "reown" ? EVM_WALLETS  :
+    connectTab === "tron"  ? TRON_WALLETS :
+    BSV_WALLETS;
 
   return createPortal(
     <AnimatePresence>
@@ -2256,13 +2260,6 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                         </div>
                       ) : (
                         <>
-                          {/* Reown tab — full-panel content */}
-                          {connectTab === "reown" && (
-                            <div className="p-6">
-                              <ReownConnectPanel onConnected={() => handleClose()} />
-                            </div>
-                          )}
-
                           {connectTab === "ledger" && (
                             <div className="p-6">
                               <LedgerConnectPanel
@@ -2290,7 +2287,7 @@ export function WalletConnectModal({ isOpen, onClose }: { isOpen: boolean; onClo
                           </div>
                           )}
 
-                          {connectTab !== "reown" && connectTab !== "ledger" && (
+                          {connectTab !== "ledger" && (
                           <div className="p-4 space-y-2">
                             {currentWallets.map(wallet => {
                               const isConn = connecting === wallet.id;
