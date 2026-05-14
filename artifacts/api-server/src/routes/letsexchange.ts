@@ -33,6 +33,7 @@ import { getBestExternalQuote } from "../lib/metaRouter.js";
 import { createCNExchange, getCNExchange } from "../lib/changenow.js";
 import { createSXExchange, getSXExchange } from "../lib/stealthex.js";
 import { createSsExchangePair, getSsExchange } from "../lib/simpleswap.js";
+import { createChangellyExchange, getChangellyExchange, isChangellyConfigured } from "../lib/changelly.js";
 
 const router: IRouter = Router();
 
@@ -386,29 +387,28 @@ router.get("/letsexchange/pairs", async (req, res) => {
     SUSD: 1, USDP: 1, EURC: 1.09, USDN: 1,
   };
   const FALLBACK_USD: Record<string, number> = {
-    BTC: 95000, ETH: 2400,  BNB: 600,   BSV: 16,    BCH: 320,  SOL: 150,
-    XRP: 0.52,  DOGE: 0.08, LTC: 65,    TRX: 0.24,  ADA: 0.35, DOT: 5.2,
-    LINK: 11,   MATIC: 0.32, AVAX: 18,  UNI: 5.8,   AAVE: 95,  MKR: 1400,
-    SNX: 1.8,   SUSHI: 0.7, COMP: 42,   YFI: 5800,  CRV: 0.35,
-    "1INCH": 0.22, FTM: 0.51, CRO: 0.085, OP: 0.70, ARB: 0.42,
-    IMX: 0.80,  APT: 5.2,   SUI: 0.92,  NEAR: 2.1,  FIL: 3.5,
-    ICP: 5.8,   ATOM: 4.2,  ALGO: 0.14, MANA: 0.25, SAND: 0.28,
-    AXS: 3.8,   THETA: 0.73, VET: 0.022, ETC: 17,   XLM: 0.088,
-    ZIL: 0.011, ENJ: 0.11,  BAT: 0.12,  ZRX: 0.24,  GRT: 0.096,
-    LRC: 0.14,  DYDX: 0.58, PEPE: 0.0000085, SHIB: 0.0000094,
-    FLOKI: 0.000052, BONK: 0.000012, WIF: 1.4,   POPCAT: 0.34,
-    TON: 3.1,   NOT: 0.0065, HMSTR: 0.0018, DOGS: 0.00018,
-    INJ: 10.2,  SEI: 0.24,  TIA: 3.8,   PYTH: 0.23, JUP: 0.48,
-    RNDR: 3.8,  WLD: 0.98,  FET: 0.60,  AGIX: 0.44, OCEAN: 0.33,
-    TAO: 220,   ROSE: 0.046, CFX: 0.088, STX: 0.75, AR: 5.8,
-    KAS: 0.053, JASMY: 0.016, ACH: 0.022, MAGIC: 0.38, GMX: 12,
-    PERP: 0.43, BICO: 0.12, BAND: 0.98, REN: 0.042, NMR: 12,
-    RAY: 1.8,   MNGO: 0.012, ORCA: 0.28, JTO: 1.5,
-    RSR: 0.0048, LQTY: 0.72, ALCX: 10, SPELL: 0.00055, CVX: 1.8, BAL: 1.5,
-    ANKR: 0.017, SKL: 0.024, CTSI: 0.078, STORJ: 0.36, OGN: 0.065,
-    // Meme / culture tokens with LE support (only entries not already above)
-    DOGINME: 0.0000945, LMWR: 0.021, TURBO: 0.0082, MOG: 0.0000082,
-    MEW: 0.0058, NEIRO: 0.00048, MEME: 0.012, EIGEN: 2.42,
+    BTC: 103000, ETH: 2500,  BNB: 620,   BSV: 18,    BCH: 340,  SOL: 165,
+    XRP: 2.30,   DOGE: 0.20, LTC: 88,    TRX: 0.26,  ADA: 0.72, DOT: 4.8,
+    LINK: 14,    MATIC: 0.22, AVAX: 22,  UNI: 6.2,   AAVE: 180, MKR: 1600,
+    SNX: 1.5,    SUSHI: 0.6, COMP: 48,   YFI: 5200,  CRV: 0.28,
+    "1INCH": 0.20, FTM: 0.48, CRO: 0.10, OP: 0.78,  ARB: 0.38,
+    IMX: 0.72,   APT: 5.8,   SUI: 3.50,  NEAR: 2.8,  FIL: 3.2,
+    ICP: 5.4,    ATOM: 4.0,  ALGO: 0.18, MANA: 0.22, SAND: 0.24,
+    AXS: 4.2,    THETA: 0.78, VET: 0.025, ETC: 19,   XLM: 0.28,
+    ZIL: 0.012,  ENJ: 0.10,  BAT: 0.14,  ZRX: 0.26,  GRT: 0.12,
+    LRC: 0.12,   DYDX: 0.60, PEPE: 0.000013, SHIB: 0.000015,
+    FLOKI: 0.00011, BONK: 0.000022, WIF: 1.2,  POPCAT: 0.32,
+    TON: 3.4,    NOT: 0.0060, HMSTR: 0.0015, DOGS: 0.00020,
+    INJ: 9.8,    SEI: 0.22,  TIA: 3.2,   PYTH: 0.20, JUP: 0.52,
+    RNDR: 4.2,   WLD: 1.10,  FET: 0.72,  AGIX: 0.48, OCEAN: 0.38,
+    TAO: 380,    ROSE: 0.052, CFX: 0.090, STX: 0.82, AR: 8.2,
+    KAS: 0.088,  JASMY: 0.018, ACH: 0.020, MAGIC: 0.34, GMX: 14,
+    PERP: 0.38,  BICO: 0.10, BAND: 0.90, REN: 0.038, NMR: 13,
+    RAY: 2.2,    MNGO: 0.010, ORCA: 0.30, JTO: 1.8,
+    RSR: 0.0055, LQTY: 0.68, ALCX: 9, SPELL: 0.00048, CVX: 2.0, BAL: 1.4,
+    ANKR: 0.020, SKL: 0.022, CTSI: 0.072, STORJ: 0.38, OGN: 0.060,
+    DOGINME: 0.0001, LMWR: 0.018, TURBO: 0.0088, MOG: 0.0000090,
+    MEW: 0.0062, NEIRO: 0.00052, MEME: 0.011, EIGEN: 2.60,
   };
 
   // Layer 1: static fallbacks
@@ -668,7 +668,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
     // ── Auto-fallback exchange creation ───────────────────────────────────────
     // Try the winning venue first; on any failure fall through to the next in
     // priority order so a single-venue outage never blocks the whole flow.
-    const VENUE_PRIORITY = ["changenow", "stealthex", "simpleswap", "letsexchange"] as const;
+    const VENUE_PRIORITY = ["changenow", "stealthex", "simpleswap", "changelly", "letsexchange"] as const;
     const orderedVenues = [
       bestVenue,
       ...VENUE_PRIORITY.filter(v => v !== bestVenue),
@@ -777,6 +777,44 @@ router.post("/letsexchange/exchange", async (req, res) => {
         continue;
       }
 
+      // ── Changelly ───────────────────────────────────────────────────────────
+      if (venue === "changelly") {
+        if (!isChangellyConfigured()) {
+          venueErrors["changelly"] = "CHANGELLY_API_KEY or CHANGELLY_API_SECRET not configured";
+          continue;
+        }
+        const result = await createChangellyExchange({
+          from:           fromU,
+          to:             toU,
+          amount:         amt,
+          address:        withdrawalStr,
+          extraId:        withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+          refundAddress:  refund ? String(refund) : undefined,
+        });
+        if (result.ok) {
+          if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
+          const ex = result.exchange;
+          res.json({
+            transaction_id:    ex.id,
+            status:            "wait",
+            deposit:           ex.depositAddress,
+            deposit_extra_id:  ex.depositExtraId ?? null,
+            deposit_amount:    String(amt),
+            withdrawal_amount: ex.estimatedAmount ?? "0",
+            withdrawal:        withdrawalStr,
+            coin_from:         fromU,
+            coin_to:           toU,
+            coin_from_network: fromNetwork,
+            coin_to_network:   toNetwork,
+            best_venue:        "changelly",
+          });
+          return;
+        }
+        venueErrors["changelly"] = result.error;
+        logger.warn({ error: result.error, from: fromU, to: toU }, "exchange: changelly failed, trying next venue");
+        continue;
+      }
+
       // ── LetsExchange (default / last-resort) ─────────────────────────────────
       if (!process.env.LETSEXCHANGE_API_KEY) {
         venueErrors["letsexchange"] = "LETSEXCHANGE_API_KEY not configured";
@@ -880,6 +918,11 @@ router.get("/letsexchange/status/:id", async (req, res) => {
         if (!result || !result.status) return null;
         return { transaction_id: exchangeId, status: normalizeStatus(result.status), hash_out: result.txTo ?? null, best_venue: "simpleswap" };
       }
+      if (v === "changelly") {
+        const result = await getChangellyExchange(exchangeId);
+        if (!result || !result.status) return null;
+        return { transaction_id: exchangeId, status: normalizeStatus(result.status), hash_out: result.txTo ?? null, best_venue: "changelly" };
+      }
       // LetsExchange
       const { ok: leOk, data: leData, status: leHttpStatus } = await leRequest(`/v1/transaction/${encodeURIComponent(exchangeId)}`);
       if (leHttpStatus === 403) return null;
@@ -911,7 +954,7 @@ router.get("/letsexchange/status/:id", async (req, res) => {
     }
 
     // ── Rescue: try all other venues in case venue metadata was lost ──────────
-    const ALL_VENUES = ["changenow", "stealthex", "simpleswap", "letsexchange"];
+    const ALL_VENUES = ["changenow", "stealthex", "simpleswap", "changelly", "letsexchange"];
     for (const fallbackVenue of ALL_VENUES.filter(v => v !== venue)) {
       const rescued = await tryGetStatus(fallbackVenue, id);
       if (rescued) {
