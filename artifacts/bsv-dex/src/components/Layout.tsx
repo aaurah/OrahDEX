@@ -18,8 +18,7 @@ import { useSettingsStore } from "@/store/useSettingsStore";
 import { CATEGORY_OF, ALL_CATEGORIES, CATEGORY_META, type NotifCategory } from "@/lib/notificationCategories";
 
 /* ── Heavy modals — loaded only when first opened ── */
-const WalletConnectModal = lazy(() => import("./WalletConnectModal").then(m => ({ default: m.WalletConnectModal })));
-const AiAssistant        = lazy(() => import("./AiAssistant").then(m => ({ default: m.AiAssistant })));
+const AiAssistant = lazy(() => import("./AiAssistant").then(m => ({ default: m.AiAssistant })));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -208,7 +207,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
   const { address, network, provider, chainId } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
-  const { isOpen: isWalletModalOpen, open: openWalletModal, close: closeWalletModal } = useWalletModalStore();
+  const { open: openWalletModal } = useWalletModalStore();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showMoreNav, setShowMoreNav] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -268,32 +267,25 @@ export function Layout({ children }: { children: ReactNode }) {
 
   // Auto-sync Reown/EVM wallet into wallet store on page load (handles refresh reconnect)
   useEffect(() => {
-    let tries = 0;
-    const check = setInterval(async () => {
-      const reown = await import("@/lib/reown").catch(() => null);
-      if (!reown) { clearInterval(check); return; }
-      const { isReownReady, subscribeReownAccount, fetchEvmBalance, parseChainFromCaip } = reown;
-      if (isReownReady()) {
-        clearInterval(check);
-        subscribeReownAccount(async (state) => {
-          if (state.isConnected && state.address) {
-            const { address: current, chainId: currentChainId, connect, setBalance } = useWalletStore.getState();
-            const newChainId = parseChainFromCaip(state.caipAddress) ?? undefined;
-            if (!current) {
-              connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
-              const bal = await fetchEvmBalance(state.address, newChainId ?? null);
-              if (bal !== null) setBalance(bal);
-            } else if (newChainId && newChainId !== currentChainId) {
-              connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
-              const bal = await fetchEvmBalance(state.address, newChainId ?? null);
-              if (bal !== null) setBalance(bal);
-            }
+    let sub: (() => void) | null = null;
+    import("@/lib/reown").then(({ subscribeReownAccount, fetchEvmBalance, parseChainFromCaip }) => {
+      sub = subscribeReownAccount(async (state) => {
+        if (state.isConnected && state.address) {
+          const { address: current, chainId: currentChainId, connect, setBalance } = useWalletStore.getState();
+          const newChainId = parseChainFromCaip(state.caipAddress) ?? undefined;
+          if (!current) {
+            connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
+            const bal = await fetchEvmBalance(state.address, newChainId ?? null);
+            if (bal !== null) setBalance(bal);
+          } else if (newChainId && newChainId !== currentChainId) {
+            connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
+            const bal = await fetchEvmBalance(state.address, newChainId ?? null);
+            if (bal !== null) setBalance(bal);
           }
-        });
-      }
-      if (++tries > 100) clearInterval(check);
-    }, 300);
-    return () => clearInterval(check);
+        }
+      });
+    });
+    return () => sub?.();
   }, []);
 
   // Periodic EVM balance refresh for the compact header button (every 30s)
@@ -954,13 +946,6 @@ export function Layout({ children }: { children: ReactNode }) {
       <main className="flex-1 min-w-0 relative z-0">
         {children}
       </main>
-
-      <Suspense fallback={null}>
-        <WalletConnectModal
-          isOpen={isWalletModalOpen}
-          onClose={closeWalletModal}
-        />
-      </Suspense>
 
       {/* Fixed tx status overlay — bottom right */}
       <TxStatusBar />
