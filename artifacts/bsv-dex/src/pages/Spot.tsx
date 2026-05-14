@@ -354,8 +354,11 @@ export function SpotTrading() {
     },
     onSettled: (_d, _e, vars) => {
       setCancellingIds(prev => { const n = new Set(prev); n.delete(vars.orderId); return n; });
-      refetchOrders();
-      refetchAltOrders();
+      // Invalidate in the background — the optimistic update already shows the
+      // correct state; a hard refetch would cause an unnecessary network round-trip
+      // and a visible list flicker. The 5-second polling interval will sync normally.
+      queryClient.invalidateQueries({ queryKey: getGetOrdersQueryKey({ walletAddress: address || "" }), refetchType: "none" });
+      if (altAddress) queryClient.invalidateQueries({ queryKey: getGetOrdersQueryKey({ walletAddress: altAddress }), refetchType: "none" });
     },
   });
 

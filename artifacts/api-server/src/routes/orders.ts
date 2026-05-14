@@ -1227,32 +1227,37 @@ router.delete("/orders/:orderId", async (req, res) => {
       return;
     }
 
-    // ── Unlock the reserved balance ──────────────────────────────────────────
-    try {
-      const [baseAsset, quoteAsset = "USDT"] = order.symbol.split("/");
-      const lockAsset = order.side === "buy" ? quoteAsset : baseAsset;
-      const remaining = parseFloat(order.remainingQuantity);
-
-      // Market orders have no stored price — look up current market price so
-      // the unlock amount mirrors what was locked at order placement time.
-      let lockPrice = parseFloat(order.price ?? "0");
-      if (!lockPrice && order.side === "buy") {
-        const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, order.symbol));
-        lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
-      }
-
-      const lockAmount = order.side === "buy"
-        ? (lockPrice * remaining).toString()
-        : remaining.toString();
-
-      if (parseFloat(lockAmount) > 0 && lockAsset) {
-        await unlockFunds({ walletAddress: order.walletAddress, asset: lockAsset, amount: lockAmount });
-      }
-    } catch (unlockErr) {
-      req.log.warn({ unlockErr }, "Ledger unlock failed on cancel");
-    }
-
+    // ── Respond immediately — the order is already cancelled in the DB ────────
+    // Unlocking the reserved balance is a separate DB transaction; we fire it
+    // in the background so the client doesn't have to wait for it.
     res.json(serializeOrder(order));
+
+    // ── Unlock the reserved balance (background, non-blocking) ───────────────
+    (async () => {
+      try {
+        const [baseAsset, quoteAsset = "USDT"] = order.symbol.split("/");
+        const lockAsset = order.side === "buy" ? quoteAsset : baseAsset;
+        const remaining = parseFloat(order.remainingQuantity);
+
+        // Market orders have no stored price — look up current market price so
+        // the unlock amount mirrors what was locked at order placement time.
+        let lockPrice = parseFloat(order.price ?? "0");
+        if (!lockPrice && order.side === "buy") {
+          const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, order.symbol));
+          lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
+        }
+
+        const lockAmount = order.side === "buy"
+          ? (lockPrice * remaining).toString()
+          : remaining.toString();
+
+        if (parseFloat(lockAmount) > 0 && lockAsset) {
+          await unlockFunds({ walletAddress: order.walletAddress, asset: lockAsset, amount: lockAmount });
+        }
+      } catch (unlockErr) {
+        req.log.warn({ unlockErr }, "Ledger unlock failed on cancel");
+      }
+    })();
   } catch (err) {
     req.log.error({ err }, "Failed to cancel order");
     res.status(500).json({ error: "Internal server error" });
