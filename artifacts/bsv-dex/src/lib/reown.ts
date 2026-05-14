@@ -30,7 +30,7 @@ export function setupReown(projectId: string): void {
   if (_initialized || !projectId) return;
 
   try {
-    _adapter = new WagmiAdapter({ networks: REOWN_NETWORKS, projectId });
+    _adapter = new WagmiAdapter({ networks: REOWN_NETWORKS, projectId, ssr: false });
 
     _modal = createAppKit({
       adapters: [_adapter],
