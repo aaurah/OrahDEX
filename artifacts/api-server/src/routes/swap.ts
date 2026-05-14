@@ -23,6 +23,10 @@ import { getHybridRoute } from "../lib/hybridRouter.js";
 import { leRequest, AFFILIATE_ID } from "../lib/lePriceCache.js";
 import { issueExchangeChallenge, verifyExchangeSignature } from "../lib/walletAuth.js";
 import { logger } from "../lib/logger.js";
+import { getBestExternalQuote, type ExternalVenue } from "../lib/metaRouter.js";
+import { createCNExchange, getCNExchange } from "../lib/changenow.js";
+import { createSXExchange, getSXExchange }  from "../lib/stealthex.js";
+import { createChangellyExchange, getChangellyExchange } from "../lib/changelly.js";
 
 const router: IRouter = Router();
 
@@ -297,15 +301,68 @@ router.post("/swap/route", async (req, res) => {
   }
 });
 
+// ── POST /swap/multi-quote ────────────────────────────────────────────────────
+// Read-only: query all configured external swap providers in parallel and
+// return scored quotes so the caller can compare prices before executing.
+//
+// Body: assetIn, assetOut, amountIn
+//
+// Response:
+//   best      — highest-scoring RouteQuote (or null if none succeed)
+//   all       — all RouteQuote objects, sorted descending by score
+//   errors    — per-venue error messages (null = no error)
+router.post("/swap/multi-quote", async (req, res) => {
+  const { assetIn, assetOut, amountIn } = req.body ?? {};
+  if (!assetIn || !assetOut || !amountIn) {
+    res.status(400).json({ error: "assetIn, assetOut, amountIn are required" });
+    return;
+  }
+  const amt = parseFloat(String(amountIn));
+  if (!isFinite(amt) || amt <= 0) {
+    res.status(400).json({ error: "amountIn must be a positive number" });
+    return;
+  }
+  const [a, b] = [String(assetIn).toUpperCase(), String(assetOut).toUpperCase()];
+
+  try {
+    // Resolve USD prices for both tokens using the oracle (best-effort)
+    const [inUsd, outUsd] = await Promise.all([
+      resolveRate(a, "USDT").catch(() => null),
+      resolveRate(b, "USDT").catch(() => null),
+    ]);
+    const inputUsdPrice  = inUsd  ?? 1;
+    const outputUsdPrice = outUsd ?? 1;
+
+    const result = await getBestExternalQuote(a, b, amt, inputUsdPrice, outputUsdPrice);
+
+    res.set("Cache-Control", "no-store");
+    res.json({
+      assetIn:  a,
+      assetOut: b,
+      amountIn: amt,
+      inputUsdPrice,
+      outputUsdPrice,
+      best:   result.best,
+      all:    result.all,
+      errors: result.errors,
+    });
+  } catch (err: any) {
+    logger.error({ err }, "swap/multi-quote failed");
+    res.status(500).json({ error: "Multi-quote failed" });
+  }
+});
+
 // ── POST /swap/execute ────────────────────────────────────────────────────────
 // Unified dispatcher: auto-routes to internal / letsexchange / split.
 // Body:
 //   assetIn, assetOut, amountIn    — required for all paths
 //   walletAddress                  — required for internal leg
-//   withdrawal, networkFrom, networkTo — required for LE leg
+//   withdrawal, networkFrom, networkTo — required for LE/CN/SX/CL leg
 //   allowSplit                     — boolean; opt in to split routing
 //   forceSource                    — "internal"|"letsexchange" (trusted callers only)
 //   minAmountOut                   — slippage guard for internal leg
+//   externalVenue                  — "letsexchange"|"changenow"|"stealthex"|"changelly"
+//                                    (overrides meta-router selection for external leg)
 //   withdrawal_extra_id, return, rate_id, email — forwarded to LE
 //
 // Response shape:
@@ -316,7 +373,10 @@ router.post("/swap/execute", async (req, res) => {
     walletAddress, assetIn, assetOut, amountIn,
     minAmountOut, withdrawal, networkFrom, networkTo, withdrawal_extra_id,
     return: refund, rate_id, email, forceSource, allowSplit, signature, nonce,
+    externalVenue: rawExternalVenue,
   } = req.body ?? {};
+  const externalVenue: ExternalVenue | null =
+    typeof rawExternalVenue === "string" ? (rawExternalVenue as ExternalVenue) : null;
 
   if (!assetIn || !assetOut || !amountIn) {
     res.status(400).json({ error: "assetIn, assetOut, amountIn are required" }); return;
@@ -492,16 +552,108 @@ router.post("/swap/execute", async (req, res) => {
       });
     }
 
-    // ── LetsExchange-only execution ───────────────────────────────────────────
+    // ── External-only execution (LetsExchange / ChangeNOW / StealthEX / Changelly) ──
     if (!withdrawal) {
-      res.status(400).json({ error: "withdrawal address is required for LetsExchange routing" }); return;
-    }
-    if (!networkFrom || !networkTo) {
-      res.status(400).json({ error: "networkFrom and networkTo are required for LetsExchange routing" }); return;
+      res.status(400).json({ error: "withdrawal address is required for external routing" }); return;
     }
     const withdrawalStr = String(withdrawal).trim();
     if (withdrawalStr.length < 10 || withdrawalStr.length > 200) {
       res.status(400).json({ error: "Invalid withdrawal address" }); return;
+    }
+
+    // Determine which venue to use.
+    // Priority: explicit externalVenue param > meta-router selection > letsexchange fallback.
+    let chosenVenue: ExternalVenue = externalVenue ?? "letsexchange";
+    if (!externalVenue) {
+      // Auto-select best venue via meta-router (best-effort; falls back to LE on error)
+      try {
+        const [inUsd, outUsd] = await Promise.all([
+          resolveRate(a, "USDT").catch(() => null),
+          resolveRate(b, "USDT").catch(() => null),
+        ]);
+        const { best } = await getBestExternalQuote(a, b, amt, inUsd ?? 1, outUsd ?? 1);
+        if (best) chosenVenue = best.venue;
+      } catch (metaErr) {
+        logger.warn({ metaErr }, "swap/execute: meta-router selection failed, defaulting to letsexchange");
+      }
+    }
+
+    logger.info({ a, b, amt, chosenVenue }, "hybrid swap: external leg executing");
+
+    // ── ChangeNOW ─────────────────────────────────────────────────────────────
+    if (chosenVenue === "changenow") {
+      const result = await createCNExchange({
+        from:     a,
+        to:       b,
+        amount:   amt,
+        address:  withdrawalStr,
+        extraId:  withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+        refundAddress: refund ? String(refund) : undefined,
+      });
+      if (!result.ok) {
+        res.status(422).json({ error: result.error, venue: "changenow" }); return;
+      }
+      logger.info({ a, b, amt, id: result.exchange.id, venue: "changenow" }, "hybrid swap: ChangeNOW routed");
+      return res.json({
+        success: true,
+        source:  "changenow",
+        id:      result.exchange.id,
+        depositAddress:  result.exchange.depositAddress,
+        depositExtraId:  result.exchange.depositExtraId,
+        estimatedAmount: result.exchange.estimatedAmount,
+      });
+    }
+
+    // ── StealthEX ─────────────────────────────────────────────────────────────
+    if (chosenVenue === "stealthex") {
+      const result = await createSXExchange({
+        from:     a,
+        to:       b,
+        amount:   amt,
+        address:  withdrawalStr,
+        extraId:  withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+      });
+      if (!result.ok) {
+        res.status(422).json({ error: result.error, venue: "stealthex" }); return;
+      }
+      logger.info({ a, b, amt, id: result.exchange.id, venue: "stealthex" }, "hybrid swap: StealthEX routed");
+      return res.json({
+        success: true,
+        source:  "stealthex",
+        id:      result.exchange.id,
+        depositAddress:  result.exchange.depositAddress,
+        depositExtraId:  result.exchange.depositExtraId,
+        estimatedAmount: result.exchange.estimatedAmount,
+      });
+    }
+
+    // ── Changelly ─────────────────────────────────────────────────────────────
+    if (chosenVenue === "changelly") {
+      const result = await createChangellyExchange({
+        from:           a,
+        to:             b,
+        amount:         amt,
+        address:        withdrawalStr,
+        extraId:        withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+        refundAddress:  refund ? String(refund) : undefined,
+      });
+      if (!result.ok) {
+        res.status(422).json({ error: result.error, venue: "changelly" }); return;
+      }
+      logger.info({ a, b, amt, id: result.exchange.id, venue: "changelly" }, "hybrid swap: Changelly routed");
+      return res.json({
+        success: true,
+        source:  "changelly",
+        id:      result.exchange.id,
+        depositAddress:  result.exchange.depositAddress,
+        depositExtraId:  result.exchange.depositExtraId,
+        estimatedAmount: result.exchange.estimatedAmount,
+      });
+    }
+
+    // ── LetsExchange (default) ────────────────────────────────────────────────
+    if (!networkFrom || !networkTo) {
+      res.status(400).json({ error: "networkFrom and networkTo are required for LetsExchange routing" }); return;
     }
 
     const leBody: Record<string, unknown> = {
@@ -524,7 +676,7 @@ router.post("/swap/execute", async (req, res) => {
     if (status === 422) { res.status(422).json({ error: "Validation error", detail: data }); return; }
     if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
 
-    logger.info({ a, b, amt, withdrawal: withdrawalStr, source: "letsexchange" }, "hybrid swap: LE routed");
+    logger.info({ a, b, amt, withdrawal: withdrawalStr, venue: "letsexchange" }, "hybrid swap: LE routed");
     return res.json({ success: true, source: "letsexchange", ...(data as object) });
 
   } catch (err: any) {
@@ -537,6 +689,44 @@ router.post("/swap/execute", async (req, res) => {
     return;
   }
 });
+// ── GET /swap/exchange/:venue/:id ─────────────────────────────────────────────
+// Unified exchange status endpoint for all external swap venues.
+// venue: "changenow" | "stealthex" | "changelly"
+// Returns: { status, txTo }
+router.get("/swap/exchange/:venue/:id", async (req, res) => {
+  const { venue, id } = req.params;
+  if (!id) { res.status(400).json({ error: "id is required" }); return; }
+
+  try {
+    let result: { status: string; txTo: string | null } | null = null;
+
+    switch (venue) {
+      case "changenow":
+        result = await getCNExchange(id);
+        break;
+      case "stealthex":
+        result = await getSXExchange(id);
+        break;
+      case "changelly":
+        result = await getChangellyExchange(id);
+        break;
+      default:
+        res.status(400).json({ error: `Unknown venue: ${venue}. Use changenow, stealthex, or changelly.` });
+        return;
+    }
+
+    if (!result) {
+      res.status(404).json({ error: "Exchange not found or provider unavailable" });
+      return;
+    }
+
+    res.json({ venue, id, ...result });
+  } catch (err: any) {
+    logger.error({ err, venue, id }, "swap/exchange status failed");
+    res.status(500).json({ error: "Status check failed" });
+  }
+});
+
 async function resolveRate(assetIn: string, assetOut: string): Promise<number | null> {
   const STABLES = new Set(["USDT", "USDC", "BUSD", "TUSD"]);
 
