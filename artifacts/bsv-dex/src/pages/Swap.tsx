@@ -161,7 +161,7 @@ const TOKENS: Record<SupportedChainId, Token[]> = {
 // Fetches the Uniswap default token list + PancakeSwap extended list once and
 // caches the result so every chain gets hundreds of tradable tokens.
 
-const SUPPORTED_DEX_CHAIN_IDS = new Set([1, 8453, 56, 42161, 10, 137, 43114]);
+const SUPPORTED_DEX_CHAIN_IDS = new Set([1, 8453, 56, 42161, 10, 137, 43114, 11155111]);
 
 let _tokenListCache: Record<number, Token[]> | null = null;
 let _tokenListPromise: Promise<Record<number, Token[]>> | null = null;
