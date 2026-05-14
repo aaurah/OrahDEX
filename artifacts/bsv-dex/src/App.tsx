@@ -407,8 +407,10 @@ function Router() {
         <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
       </Route>
 
-      {/* ── Root: go straight to the trade page ── */}
-      <Route path="/"><RedirectTo href="/trade/BSV-USDT" /></Route>
+      {/* ── Root: landing page ── */}
+      <Route path="/">
+        <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
+      </Route>
 
       {/* ── Redirects ── */}
       <Route path="/spot"><RedirectTo href="/trade/BSV-USDT" /></Route>
