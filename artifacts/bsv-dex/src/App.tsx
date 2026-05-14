@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { WalletChooserDialog } from "@/components/WalletChooserDialog";
 
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
-import { applyStoredTheme, useThemeStore } from "@/store/useThemeStore";
+import { applyStoredTheme } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
@@ -222,13 +222,6 @@ function Router() {
   useEffect(() => {
     applyStoredTheme();
 
-    // Apply app theme to Reown modal once after it finishes initialising
-    const themeTimer = setTimeout(() => {
-      import("@/lib/reown").then(({ syncReownTheme }) =>
-        syncReownTheme(useThemeStore.getState().theme)
-      );
-    }, 1500);
-    const unsubTheme = () => clearTimeout(themeTimer);
 
     const eth = (window as any).ethereum;
 
@@ -317,7 +310,6 @@ function Router() {
     });
 
     return () => {
-      unsubTheme();
       reownUnsub?.();
       if (eth) {
         eth.removeListener?.("accountsChanged", onAccountsChanged);
