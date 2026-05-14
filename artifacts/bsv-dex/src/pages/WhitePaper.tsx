@@ -229,7 +229,7 @@ export function WhitePaper() {
                 The protocol unifies spot trading, perpetual futures, Virtual AMM (Genesis Liquidity Engine), automated market making (AMM), peer-to-peer (P2P) settlement, cross-chain atomic bridging, on-chain copy trading (CopyVault), an NFT marketplace with creator coins (OrahNFT), fiat on-ramp (6 providers), and AI-powered market intelligence (Ora) — across 200+ blockchain networks, 36,000+ trading pairs, and every major wallet type — within a single sovereign interface that any human on earth with internet access can use without asking permission from anyone.
               </p>
               <p>
-                At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its immutable settlement layer. BSV's UTXO-based architecture, unbounded block size, and sub-cent fee structure make it the only public blockchain capable of recording every trade as an on-chain OP_RETURN proof without economic friction. Hash Time-Locked Contract (HTLC) atomic swaps execute cross-chain settlements without trusting any third party. Ten EVM chains are natively supported with live on-chain balance tracking — <span className="text-foreground font-medium">Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, Linea, Scroll, and Mantle</span> — via Reown/WalletConnect, with a 43-token ERC-20 registry that calls <code className="text-green-400 text-[10px]">balanceOf()</code> directly on-chain, requiring no backend price oracle or API key. TRON (TRX and TRC-20 USDT) is natively supported giving hundreds of millions of TRON-ecosystem users full access to OrahDEX without wrapping, bridging, or converting.
+                At its core, OrahDEX leverages <span className="text-foreground font-medium">Bitcoin SV (BSV)</span> as its immutable settlement layer. BSV's UTXO-based architecture, unbounded block size, and sub-cent fee structure make it the only public blockchain capable of recording every trade as an on-chain OP_RETURN proof without economic friction. Hash Time-Locked Contract (HTLC) atomic swaps execute cross-chain settlements without trusting any third party. Ten EVM chains are natively supported with live on-chain balance tracking — <span className="text-foreground font-medium">Ethereum, BNB Chain, Polygon, Arbitrum, Optimism, Base, Avalanche, Linea, Scroll, and Mantle</span> — with native Web3 wallet integration and a 43-token ERC-20 registry that calls <code className="text-green-400 text-[10px]">balanceOf()</code> directly on-chain, requiring no backend price oracle or API key. TRON (TRX and TRC-20 USDT) is natively supported giving hundreds of millions of TRON-ecosystem users full access to OrahDEX without wrapping, bridging, or converting.
               </p>
               <p>
                 The <span className="text-foreground font-medium">Genesis Liquidity Engine</span> is OrahDEX's proprietary Virtual AMM — a linear bonding curve mechanism that guarantees every listed asset is instantly tradeable before real liquidity exists, eliminating the cold-start problem that has plagued every new DEX in history.
@@ -287,7 +287,7 @@ export function WhitePaper() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
                   { title: "Non-Custodial by Architecture", icon: "🔐", desc: "Users retain full control of their private keys and assets at all times. OrahDEX cannot hold, freeze, seize, or reverse user funds — not because of policy, but because the system is designed to make it mathematically impossible." },
-                  { title: "Multi-Chain Native", icon: "🌐", desc: "Native support for BSV (settlement), Ethereum + 12 EVM chains (Reown/WalletConnect), and TRON (TRX/TRC-20 USDT). One sovereign interface — every major chain." },
+                  { title: "Multi-Chain Native", icon: "🌐", desc: "Native support for BSV (settlement), Ethereum + 12 EVM chains, and TRON (TRX/TRC-20 USDT). One sovereign interface — every major chain." },
                   { title: "Always-On Liquidity", icon: "⚡", desc: "Genesis Liquidity Engine (VAMM) provides permanent, simulation-based liquidity for all listed assets via a linear bonding curve. The cold-start liquidity problem is eliminated: every asset is tradeable from the moment it is listed, independent of real LP participation." },
                   { title: "Full Trading Spectrum", icon: "📊", desc: "Spot, futures (100x), VAMM, AMM, P2P, bridge, CopyVault, NFT marketplace, fiat on-ramp (6 providers) — every instrument in one interface with BSV settlement proofs across all." },
                   { title: "OrahNFT — Creator Economy", icon: "🎨", desc: "A Zora×Instagram-style social NFT marketplace where every post is a BSV inscription and a tradeable creator coin. Creators publish, collectors mint, and bonding curves ensure instant liquidity for every creator token." },
@@ -382,7 +382,7 @@ export function WhitePaper() {
               <InfoBox title="Full Technology Stack" color="blue">
                 <p><strong>Frontend:</strong> React 19 + Vite 7 + TailwindCSS v4 · TypeScript 5.7</p>
                 <p><strong>Backend:</strong> Node.js 24 + Express 5 + Drizzle ORM + PostgreSQL 16</p>
-                <p><strong>EVM:</strong> Wagmi v2 + Viem v2 + Reown AppKit (WalletConnect v3) — 10 chains · 43 ERC-20 tokens</p>
+                <p><strong>EVM:</strong> Wagmi v2 + Viem v2 + OrahDEX Web3 Protocol — 10 chains · 43 ERC-20 tokens</p>
                 <p><strong>Token Registry:</strong> Ethereum · Base · Arbitrum · Optimism · Polygon · BSC · Avalanche · Linea · Scroll · Mantle — live on-chain balanceOf() calls, no backend dependency</p>
                 <p><strong>TRON:</strong> TronWeb 6 + multi-adapter wallet support (6 wallets)</p>
                 <p><strong>BSV:</strong> WhatsOnChain API + native UTXO/OP_RETURN construction + HTLC Script</p>
@@ -1958,7 +1958,7 @@ If any authority requests user identity data:
                     "Enhanced /api/health endpoint — now returns per-service status (healthy / degraded / stuck / dead), last-run and last-success timestamps, consecutive failure counts, average tick duration, stale-since ms, and a human-readable alerts list. Returns HTTP 503 (not just 200) when any service is dead — enables monitoring systems to trigger auto-restart.",
                     "Order Reconciler — automatic background task (every 5 min) that detects and auto-cancels user orders stuck open for more than 30 minutes. Prevents indefinite capital lock-up without operator intervention.",
                     "withRetry utility — exponential-backoff + jitter wrapper for DB/network calls. Protects price updates, deposit scans, and balance queries from transient failures.",
-                    "Trading pairs updated — live liquidity bot confirms 36,000+ active markets (native spot + 35,000+ LetsExchange cross-chain pairs). All whitepaper references updated from 950+ to 36,000+.",
+                    "Trading pairs updated — live liquidity bot confirms 36,000+ active markets (native spot + 35,000+ OrahDEX cross-chain pairs). All whitepaper references updated from 950+ to 36,000+.",
                     "Staking Hub documented in Phase 1 — 43 PoS coins, 10 external staking providers, OrahDEX-native fixed-APY staking with lock-period bonus rates (30/60/90/180 days) backed by on-chain DB records.",
                     "Ora AI insights cache updated — 800+ pre-computed market insights (up from 682+).",
                     "BSV block height updated to 947,877 (live as of publish date).",
@@ -2086,7 +2086,7 @@ If any authority requests user identity data:
                     color: "text-green-400",
                     bg: "bg-green-400/5 border-green-400/15",
                     items: [
-                      "36,000+ trading pairs — native spot order book plus 35,000+ cross-chain pairs via LetsExchange integration",
+                      "36,000+ trading pairs — native spot order book plus 35,000+ cross-chain pairs via OrahDEX cross-chain router",
                       "BSV OP_RETURN settlement proof on every matched trade",
                       "HTLC atomic swap bridge (BSV ↔ EVM + TRON)",
                       "Genesis Liquidity Engine (56 VAMM assets, linear bonding curve)",

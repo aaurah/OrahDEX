@@ -1717,7 +1717,7 @@ function BuyCryptoPanel({
       const data = await r.json();
       if (!r.ok) {
         if (data.code === "LE_KEY_NOT_CONFIGURED") {
-          setQuoteErr("Cross-chain exchange is not yet configured on this server. The administrator needs to set the LETSEXCHANGE_API_KEY secret.");
+          setQuoteErr("Cross-chain exchange is temporarily unavailable. Please try again later or contact support.");
           setQuote(null);
         } else if (data.route === "letsexchange") {
           // 422 with route:"letsexchange" means LE but network fields needed

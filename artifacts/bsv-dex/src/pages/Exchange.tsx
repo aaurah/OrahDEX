@@ -103,11 +103,11 @@ const VENUE_COLORS: Record<string, string> = {
 };
 
 const VENUE_LABELS: Record<string, string> = {
-  letsexchange: "LetsExchange",
-  changenow:    "ChangeNOW",
-  simpleswap:   "SimpleSwap",
-  stealthex:    "StealthEX",
-  changelly:    "Changelly",
+  letsexchange: "OrahRouter",
+  changenow:    "OrahBridge",
+  simpleswap:   "OrahSwap",
+  stealthex:    "OrahLink",
+  changelly:    "OrahPath",
 };
 
 const COIN_CACHE_TTL = 30 * 60 * 1000;
@@ -560,7 +560,7 @@ export function ExchangePage() {
 
   useSEO({
     title: "Exchange — OrahDEX",
-    description: "Cross-chain trading via ChangeNOW, SimpleSwap and LetsExchange with best-rate routing.",
+    description: "Cross-chain trading with best-rate routing via OrahDEX's multi-venue liquidity network.",
   });
 
   // ── Coins
