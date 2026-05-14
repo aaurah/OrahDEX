@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowLeftRight, RefreshCw, ChevronDown, ChevronUp,
   CheckCircle2, Clock, XCircle, ExternalLink, Copy, Check,
@@ -9,21 +9,24 @@ import { API_BASE } from "@/lib/api";
 const LS_KEY = "le_swap_history";
 
 interface BridgeEntry {
-  transaction_id:   string;
-  coin_from:        string;
-  coin_to:          string;
-  network_from?:    string;
-  network_to?:      string;
-  deposit_amount?:  string;
+  transaction_id:    string;
+  coin_from:         string;
+  coin_to:           string;
+  network_from?:     string;
+  network_to?:       string;
+  deposit_amount?:   string;
   withdrawal_amount?: string;
-  withdrawal?:      string;
-  deposit?:         string;
+  withdrawal?:       string;
+  deposit?:          string;
   deposit_extra_id?: string | null;
-  status?:          string;
-  rate?:            string;
-  createdAt?:       string;
-  created_at?:      string;
+  status?:           string;
+  rate?:             string;
+  venue?:            string;
+  createdAt?:        string | number;
+  created_at?:       string;
 }
+
+const DONE = new Set(["finished", "failed", "refunded", "overdue"]);
 
 function loadHistory(): BridgeEntry[] {
   try {
@@ -46,9 +49,9 @@ function fmtAmt(n: any): string {
   return v.toFixed(dec).replace(/\.?0+$/, "");
 }
 
-function fmtDate(iso?: string) {
+function fmtDate(iso?: string | number) {
   if (!iso) return "";
-  const d = new Date(iso);
+  const d = new Date(typeof iso === "number" ? iso : iso);
   if (isNaN(d.getTime())) return "";
   return d.toLocaleDateString([], { month: "short", day: "numeric" }) +
     " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -60,16 +63,17 @@ function statusMeta(status: string) {
     label: "Completed", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
     icon: <CheckCircle2 className="w-3.5 h-3.5" />,
   };
-  if (s === "failed" || s === "refunded") return {
-    label: s === "refunded" ? "Refunded" : "Failed",
+  if (s === "failed" || s === "refunded" || s === "overdue") return {
+    label: s === "refunded" ? "Refunded" : s === "overdue" ? "Overdue" : "Failed",
     color: "text-red-400 bg-red-500/10 border-red-500/20",
     icon: <XCircle className="w-3.5 h-3.5" />,
   };
   const label =
-    s === "wait"       ? "Awaiting deposit" :
-    s === "confirming" ? "Confirming" :
-    s === "exchanging" ? "Exchanging" :
-    s === "sending"    ? "Sending" : (status || "Pending");
+    s === "wait"         ? "Awaiting deposit" :
+    s === "confirming"   ? "Confirming" :
+    s === "confirmation" ? "Confirming" :
+    s === "exchanging"   ? "Exchanging" :
+    s === "sending"      ? "Sending" : (status || "Pending");
   return {
     label, color: "text-amber-400 bg-amber-500/10 border-amber-500/20",
     icon: <Clock className="w-3.5 h-3.5 animate-pulse" />,
@@ -214,10 +218,14 @@ function Row({ entry, liveStatus }: { entry: BridgeEntry; liveStatus?: any }) {
 }
 
 export function BridgeHistory() {
-  const [entries, setEntries] = useState<BridgeEntry[]>(() => loadHistory());
-  const [visible, setVisible] = useState(true);
+  const [entries,      setEntries]      = useState<BridgeEntry[]>(() => loadHistory());
+  const [visible,      setVisible]      = useState(true);
   const [liveStatuses, setLiveStatuses] = useState<Record<string, any>>({});
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshing,   setRefreshing]   = useState(false);
+  const entriesRef = useRef(entries);
+  const liveRef    = useRef(liveStatuses);
+  entriesRef.current = entries;
+  liveRef.current    = liveStatuses;
 
   const refreshFromStorage = useCallback(() => setEntries(loadHistory()), []);
 
@@ -228,46 +236,75 @@ export function BridgeHistory() {
   }, [refreshFromStorage]);
 
   const pollPending = useCallback(async () => {
-    const pending = entries.filter(e => {
-      const s = (liveStatuses[e.transaction_id]?.status ?? e.status ?? "wait").toLowerCase();
-      return s !== "finished" && s !== "failed" && s !== "refunded";
+    const allEntries = entriesRef.current;
+    const allLive    = liveRef.current;
+
+    const pending = allEntries.filter(e => {
+      const s = (allLive[e.transaction_id]?.status ?? e.status ?? "wait").toLowerCase();
+      return !DONE.has(s);
     });
     if (!pending.length) return;
+
     setRefreshing(true);
     try {
       const results = await Promise.all(pending.map(async e => {
         try {
-          const r = await fetch(`${API_BASE}/letsexchange/status/${encodeURIComponent(e.transaction_id)}`);
+          // Use stored venue to hit the correct provider directly
+          const venueSuffix = e.venue && e.venue !== "letsexchange"
+            ? `?venue=${encodeURIComponent(e.venue)}`
+            : "";
+          const r = await fetch(`${API_BASE}/letsexchange/status/${encodeURIComponent(e.transaction_id)}${venueSuffix}`);
           if (!r.ok) return null;
           const data = await r.json();
           return { id: e.transaction_id, data };
         } catch { return null; }
       }));
-      const next: Record<string, any> = { ...liveStatuses };
-      let changed = false;
+
+      const next: Record<string, any> = { ...liveRef.current };
+      let liveChanged    = false;
       let storageChanged = false;
-      const updated = [...entries];
+      const updated = [...entriesRef.current];
+
       for (const r of results) {
-        if (!r) continue;
-        next[r.id] = r.data;
-        changed = true;
+        if (!r || !r.data) continue;
+        const prev = next[r.id];
+        // Only count as changed if status actually differs
+        if (prev?.status !== r.data.status || !prev) {
+          next[r.id] = r.data;
+          liveChanged = true;
+        }
         const idx = updated.findIndex(x => x.transaction_id === r.id);
-        if (idx >= 0 && r.data?.status && r.data.status !== updated[idx].status) {
-          updated[idx] = { ...updated[idx], status: r.data.status };
-          storageChanged = true;
+        if (idx >= 0) {
+          let changed = false;
+          // Update status in storage
+          if (r.data.status && r.data.status !== updated[idx].status) {
+            updated[idx] = { ...updated[idx], status: r.data.status };
+            changed = true;
+          }
+          // If rescue returned a corrected venue, persist it so future polls hit the right endpoint
+          if (r.data.venue_rescued && r.data.best_venue && r.data.best_venue !== updated[idx].venue) {
+            updated[idx] = { ...updated[idx], venue: r.data.best_venue };
+            changed = true;
+          }
+          if (changed) storageChanged = true;
         }
       }
-      if (changed) setLiveStatuses(next);
+
+      if (liveChanged)    setLiveStatuses(next);
       if (storageChanged) { saveHistory(updated); setEntries(updated); }
     } finally {
       setRefreshing(false);
     }
-  }, [entries, liveStatuses]);
+  }, []);
 
+  // Poll immediately on mount, then every 15 s while there are pending entries.
+  // The interval resets whenever entries change (new swap added or one finishes).
   useEffect(() => {
     if (!visible) return;
     pollPending();
-    const id = setInterval(pollPending, 30_000);
+    const hasPending = entries.some(e => !DONE.has((liveStatuses[e.transaction_id]?.status ?? e.status ?? "wait").toLowerCase()));
+    if (!hasPending) return;
+    const id = setInterval(pollPending, 15_000);
     return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible, entries.length]);
