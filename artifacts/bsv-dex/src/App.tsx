@@ -16,6 +16,7 @@ import { useInternalBsvWallet } from "@/hooks/useInternalBsvWallet";
 
 const AdminLayout  = lazy(() => import("@/components/AdminLayout").then(m => ({ default: m.AdminLayout })));
 const MobileLayout = lazy(() => import("@/components/mobile/MobileLayout").then(m => ({ default: m.MobileLayout })));
+const MobileTabKeeper = lazy(() => import("@/components/mobile/MobileTabKeeper").then(m => ({ default: m.MobileTabKeeper })));
 const Layout = lazy(() => import("@/components/Layout").then(m => ({ default: m.Layout })));
 
 /* ─── Lazy page imports — each becomes its own JS chunk ─── */
@@ -417,38 +418,7 @@ function Router() {
           <Suspense fallback={<PageSkeleton />}>
           <MobileLayout>
             <Suspense fallback={<PageSkeleton />}>
-              <Switch>
-                <Route path="/markets"   component={MobileMarkets} />
-                <Route path="/trade/:symbol">
-                  {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
-                </Route>
-                <Route path="/futures/:symbol">
-                  {(params) => <MobileTrade symbol={params.symbol ?? "BSV-USDT"} />}
-                </Route>
-                <Route path="/dex"        component={DexHub} />
-                <Route path="/swap"       component={SwapPage} />
-                <Route path="/liquidity"  component={MobileLiquidity} />
-                <Route path="/genesis"    component={MobileGenesis} />
-                <Route path="/p2p"        component={P2P} />
-                <Route path="/bridge"     component={BridgePage} />
-                <Route path="/copy"       component={CopyTrading} />
-                <Route path="/fees"       component={RevenuePage} />
-                <Route path="/keeper"     component={KeeperProfile} />
-                <Route path="/wallet">{() => <MobileWalletPortfolio />}</Route>
-                <Route path="/portfolio">{() => <MobileWalletPortfolio />}</Route>
-                <Route path="/portfolio/:coin">
-                  {(params) => <MobileCoinWallet coin={params.coin ?? "BTC"} />}
-                </Route>
-                <Route path="/settings"           component={MobileSettings} />
-                <Route path="/settings/api-keys" component={UserApiKeys} />
-                <Route path="/deposit-bsv" component={MobileHandCashBridge} />
-                <Route path="/staking"    component={MobileStaking} />
-                <Route path="/nft"        component={MobileNFT} />
-                <Route path="/prediction" component={PredictionTrading} />
-                <Route path="/sovereign"  component={SovereignOverviewPage} />
-                <Route path="/qr-scan"    component={MobileQRScanner} />
-                <Route component={MobileMarkets} />
-              </Switch>
+              <MobileTabKeeper />
             </Suspense>
           </MobileLayout>
           </Suspense>
