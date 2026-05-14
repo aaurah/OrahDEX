@@ -14,7 +14,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useLocation, useSearch } from "wouter";
 import { useSEO } from "@/hooks/useSEO";
 import {
-  ArrowUpDown, Settings2, ChevronDown, Loader2,
+  ArrowUpDown, Settings2, ChevronDown, ChevronLeft, Loader2,
   Zap, ExternalLink, AlertTriangle, CheckCircle2,
   RefreshCw, ArrowRight, Info, Wallet, X, Link2,
   ShoppingCart, Copy, QrCode, CreditCard, Building2, Smartphone,
@@ -38,7 +38,6 @@ import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
-import { LetsExchangeWidget } from "@/components/LetsExchangeWidget";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
@@ -2014,6 +2013,12 @@ export function Swap() {
 
   const [activeTab, setActiveTab] = useState<"swap" | "buysell" | "bridge" | "dex">("swap");
   const [buySellMode, setBuySellMode] = useState<"buy" | "sell">("buy");
+  const [buySellPayStep, setBuySellPayStep] = useState<"methods" | "crypto">("methods");
+  const [leAffiliateId, setLeAffiliateId] = useState<string | null>(null);
+  useEffect(() => {
+    fetch(`${API_BASE}/letsexchange/config`)
+      .then(r => r.json()).then(d => setLeAffiliateId(d.affiliateId ?? null)).catch(() => {});
+  }, []);
 
   const [fiatModalOpen, setFiatModalOpen]           = useState(false);
   const [fiatModalMethod, setFiatModalMethod]       = useState<FiatPayMethod>("card");
@@ -2303,170 +2308,207 @@ export function Swap() {
 
         {/* ═══════════════ BUY/SELL TAB ═══════════════ */}
         {activeTab === "buysell" && (
-          <>
-            {/* LetsExchange full widget — card, Apple Pay, Google Pay, bank, 20+ fiat currencies */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between px-0.5">
-                <div>
-                  <h2 className="text-lg font-black tracking-tight">Buy / Sell Crypto</h2>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Card · Apple Pay · Google Pay · Bank · 150+ countries · Powered by LetsExchange
-                  </p>
-                </div>
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-[10px] font-bold text-emerald-400">Live rates</span>
-                </div>
-              </div>
+          <div className="space-y-4">
 
-              <LetsExchangeWidget tab="buy_sell" className="w-full" />
+            {/* ── Buy / Sell toggle ── */}
+            <div className="flex items-center gap-1 p-1 rounded-2xl bg-white/5 border border-white/10">
+              {(["buy","sell"] as const).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => { setBuySellMode(mode); setBuySellPayStep("methods"); }}
+                  className={cn(
+                    "flex-1 py-2.5 text-sm font-black rounded-xl transition-all",
+                    buySellMode === mode
+                      ? mode === "buy"
+                        ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-lg"
+                        : "bg-gradient-to-r from-rose-600 to-orange-500 text-white shadow-lg"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {mode === "buy" ? "Buy" : "Sell"}
+                </button>
+              ))}
             </div>
 
-            {/* Legacy modals — kept in tree in case other code paths open them */}
-            <div className="hidden">
-            <div className="relative rounded-3xl overflow-hidden border border-blue-500/20 shadow-2xl">
-              {/* Background gradient */}
-              <div className="absolute inset-0 bg-gradient-to-br from-blue-600/20 via-violet-600/15 to-fuchsia-600/10" />
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-500/10 via-transparent to-transparent" />
-
-              <div className="relative p-5 space-y-4">
-                {/* Title row */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-xl font-black tracking-tight">Buy Crypto</h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">Instant purchase · Best rates · 150+ countries</p>
-                  </div>
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
-                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-[10px] font-bold text-emerald-400">Live rates</span>
-                  </div>
-                </div>
-
-                {/* Trust strips */}
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { icon: "⚡", label: "Instant" },
-                    { icon: "🔒", label: "Secure" },
-                    { icon: "💳", label: "No fees*" },
-                  ].map(t => (
-                    <div key={t.label} className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-white/5 border border-white/10 text-[11px] font-semibold text-muted-foreground">
-                      <span>{t.icon}</span> {t.label}
-                    </div>
-                  ))}
-                </div>
-
-                {/* Payment method cards — 2×2 */}
-                <div className="grid grid-cols-2 gap-2.5">
-
-                  {/* Credit Card — featured */}
-                  <button
-                    onClick={() => openFiatModal("card")}
-                    className="group relative col-span-2 flex items-center gap-4 p-4 rounded-2xl border border-blue-500/40 bg-gradient-to-r from-blue-600/25 to-violet-600/20 hover:from-blue-600/35 hover:to-violet-600/30 hover:border-blue-400/60 transition-all active:scale-[0.99] shadow-lg"
-                  >
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center shadow-lg shrink-0">
-                      <CreditCard className="w-6 h-6 text-white" />
-                    </div>
-                    <div className="text-left flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-black">Credit / Debit Card</span>
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">RECOMMENDED</span>
+            {/* ── BUY MODE ── */}
+            {buySellMode === "buy" && (
+              <>
+                {buySellPayStep === "methods" ? (
+                  <div className="space-y-3">
+                    {/* Subtitle */}
+                    <div className="flex items-center justify-between px-0.5">
+                      <div>
+                        <p className="text-sm font-black">Buy Crypto</p>
+                        <p className="text-[11px] text-muted-foreground">150+ countries · Best rate · Instant</p>
                       </div>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">Visa · Mastercard · Amex · Instant</p>
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-500/30">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span className="text-[10px] font-bold text-emerald-400">Live rates</span>
+                      </div>
                     </div>
-                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all shrink-0" />
-                  </button>
 
-                  {/* Apple Pay */}
-                  <button
-                    onClick={() => openFiatModal("apple")}
-                    className="group flex flex-col items-center gap-2.5 p-4 rounded-2xl border border-border/60 bg-gradient-to-br from-zinc-900/80 to-zinc-800/60 hover:border-white/25 hover:from-zinc-800/90 hover:to-zinc-700/70 transition-all active:scale-95 shadow"
-                  >
-                    <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shadow-md">
-                      <svg viewBox="0 0 24 24" className="w-6 h-6 fill-black"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                    {/* Trust chips */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {[["⚡","Instant"],["🔒","Secure"],["💳","No fees*"]].map(([icon,label]) => (
+                        <div key={label} className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl bg-white/5 border border-white/10 text-[11px] font-semibold text-muted-foreground">
+                          <span>{icon}</span>{label}
+                        </div>
+                      ))}
                     </div>
-                    <div className="text-center">
-                      <p className="text-xs font-bold text-white">Apple Pay</p>
-                      <p className="text-[9px] text-muted-foreground">Touch ID · Face ID</p>
-                    </div>
-                  </button>
 
-                  {/* Google Pay */}
-                  <button
-                    onClick={() => openFiatModal("google")}
-                    className="group flex flex-col items-center gap-2.5 p-4 rounded-2xl border border-border/60 bg-gradient-to-br from-slate-900/80 to-slate-800/60 hover:border-blue-400/30 hover:from-slate-800/90 hover:to-slate-700/70 transition-all active:scale-95 shadow"
-                  >
-                    <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shadow-md">
-                      <svg viewBox="0 0 24 24" className="w-6 h-6">
-                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                      </svg>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-xs font-bold">Google Pay</p>
-                      <p className="text-[9px] text-muted-foreground">1-tap · Secure</p>
-                    </div>
-                  </button>
+                    {/* Card — featured */}
+                    <button
+                      onClick={() => { window.open(`https://letsexchange.io/buy${leAffiliateId ? `?ref_code=${leAffiliateId}` : ""}`, "_blank"); }}
+                      className="group relative w-full flex items-center gap-4 p-4 rounded-2xl border border-blue-500/40 bg-gradient-to-r from-blue-600/25 to-violet-600/20 hover:from-blue-600/35 hover:to-violet-600/30 hover:border-blue-400/60 transition-all active:scale-[0.99] shadow-lg"
+                    >
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center shadow-lg shrink-0">
+                        <CreditCard className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="text-left flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-black">Credit / Debit Card</span>
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30">RECOMMENDED</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">Visa · Mastercard · Amex · Instant</p>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all shrink-0" />
+                    </button>
 
-                  {/* Bank Transfer */}
-                  <button
-                    onClick={() => openFiatModal("bank")}
-                    className="group col-span-2 flex items-center gap-4 p-4 rounded-2xl border border-border/60 bg-gradient-to-r from-emerald-950/40 to-teal-950/30 hover:border-emerald-500/30 hover:from-emerald-950/60 hover:to-teal-950/50 transition-all active:scale-[0.99] shadow"
-                  >
-                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow shrink-0">
-                      <Building2 className="w-5 h-5 text-white" />
+                    {/* Apple Pay + Google Pay */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <button
+                        onClick={() => { window.open(`https://letsexchange.io/buy${leAffiliateId ? `?ref_code=${leAffiliateId}` : ""}`, "_blank"); }}
+                        className="group flex flex-col items-center gap-2.5 p-4 rounded-2xl border border-border/60 bg-gradient-to-br from-zinc-900/80 to-zinc-800/60 hover:border-white/25 hover:from-zinc-800/90 hover:to-zinc-700/70 transition-all active:scale-95 shadow"
+                      >
+                        <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shadow-md">
+                          <svg viewBox="0 0 24 24" className="w-6 h-6 fill-black"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs font-bold text-white">Apple Pay</p>
+                          <p className="text-[9px] text-muted-foreground">Touch ID · Face ID</p>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => { window.open(`https://letsexchange.io/buy${leAffiliateId ? `?ref_code=${leAffiliateId}` : ""}`, "_blank"); }}
+                        className="group flex flex-col items-center gap-2.5 p-4 rounded-2xl border border-border/60 bg-gradient-to-br from-slate-900/80 to-slate-800/60 hover:border-blue-400/30 hover:from-slate-800/90 hover:to-slate-700/70 transition-all active:scale-95 shadow"
+                      >
+                        <div className="w-11 h-11 rounded-2xl bg-white flex items-center justify-center shadow-md">
+                          <svg viewBox="0 0 24 24" className="w-6 h-6">
+                            <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+                            <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                            <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                            <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+                          </svg>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs font-bold">Google Pay</p>
+                          <p className="text-[9px] text-muted-foreground">1-tap · Secure</p>
+                        </div>
+                      </button>
                     </div>
-                    <div className="text-left flex-1">
-                      <p className="text-sm font-bold">Bank Transfer</p>
-                      <p className="text-[11px] text-muted-foreground">SEPA · ACH · Wire · 1–3 days</p>
+
+                    {/* Bank Transfer */}
+                    <button
+                      onClick={() => { window.open(`https://letsexchange.io/buy${leAffiliateId ? `?ref_code=${leAffiliateId}` : ""}`, "_blank"); }}
+                      className="group w-full flex items-center gap-4 p-4 rounded-2xl border border-border/60 bg-gradient-to-r from-emerald-950/40 to-teal-950/30 hover:border-emerald-500/30 hover:from-emerald-950/60 hover:to-teal-950/50 transition-all active:scale-[0.99] shadow"
+                    >
+                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow shrink-0">
+                        <Building2 className="w-5 h-5 text-white" />
+                      </div>
+                      <div className="text-left flex-1">
+                        <p className="text-sm font-bold">Bank Transfer</p>
+                        <p className="text-[11px] text-muted-foreground">SEPA · ACH · Wire · 1–3 days</p>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all shrink-0" />
+                    </button>
+
+                    {/* Divider */}
+                    <div className="flex items-center gap-3 pt-1">
+                      <div className="flex-1 h-px bg-border/30" />
+                      <span className="text-[11px] text-muted-foreground/50 font-medium px-1">or buy with stablecoin</span>
+                      <div className="flex-1 h-px bg-border/30" />
                     </div>
-                    <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all shrink-0" />
-                  </button>
+
+                    {/* Buy with USDT/USDC — native LetsExchange swap */}
+                    <button
+                      onClick={() => setBuySellPayStep("crypto")}
+                      className="group w-full flex items-center gap-4 p-4 rounded-2xl border border-violet-500/30 bg-gradient-to-r from-violet-600/15 to-fuchsia-600/10 hover:border-violet-400/50 hover:from-violet-600/25 hover:to-fuchsia-600/20 transition-all active:scale-[0.99] shadow"
+                    >
+                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center shadow shrink-0">
+                        <span className="text-lg font-black text-white">₮</span>
+                      </div>
+                      <div className="text-left flex-1">
+                        <p className="text-sm font-bold">Buy with USDT / USDC</p>
+                        <p className="text-[11px] text-muted-foreground">6,000+ coins · Best rate · Non-custodial</p>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all shrink-0" />
+                    </button>
+
+                    <p className="text-[10px] text-muted-foreground/40 text-center">
+                      *Network fees apply · Best rate guarantee · Powered by LetsExchange
+                    </p>
+                  </div>
+                ) : (
+                  /* Buy with stablecoin — show LetsExchangePanel */
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => setBuySellPayStep("methods")}
+                      className="flex items-center gap-2 text-[12px] text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      Back to payment methods
+                    </button>
+                    <LetsExchangePanel
+                      walletAddress={address ?? undefined}
+                      onConnectWallet={openWalletModal}
+                      initialFrom="USDT"
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* ── SELL MODE — crypto → USDT via LetsExchange ── */}
+            {buySellMode === "sell" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between px-0.5">
+                  <div>
+                    <p className="text-sm font-black">Sell Crypto</p>
+                    <p className="text-[11px] text-muted-foreground">Any coin → USDT · Instant · Best rate</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-rose-500/15 border border-rose-500/30">
+                    <div className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse" />
+                    <span className="text-[10px] font-bold text-rose-400">Live rates</span>
+                  </div>
                 </div>
-
-                <p className="text-[10px] text-muted-foreground/50 text-center pb-1">
-                  *Network fees apply · Powered by Stripe · Best rate guarantee
-                </p>
+                <LetsExchangePanel
+                  walletAddress={address ?? undefined}
+                  onConnectWallet={openWalletModal}
+                  initialTo="USDT"
+                />
               </div>
-            </div>
+            )}
 
-            {/* Divider */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-border/30" />
-              <span className="text-[11px] text-muted-foreground/50 font-medium px-1">or buy with crypto</span>
-              <div className="flex-1 h-px bg-border/30" />
-            </div>
-
-            {/* Crypto-to-crypto buy panel */}
-            <BuyCryptoPanel address={address} onOpenWallet={openWalletModal} />
-
-            {/* Purchase history is shown on the Portfolio tab. */}
-
-            {/* KYC gate */}
+            {/* Modals */}
             <KycModal
               open={kycModalOpen}
               walletAddress={address ?? ""}
               onClose={() => { setKycModalOpen(false); setKycPending(null); }}
               onVerified={handleKycVerified}
             />
-
-            {/* Direct buy modal (Stripe + LetsExchange — $120 min) */}
             <DirectBuyModal
               open={fiatModalOpen}
               onClose={() => setFiatModalOpen(false)}
               defaultPayMethod={fiatModalMethod}
               onSwitchToProviders={() => setBuyCryptoOpen(true)}
             />
-
-            {/* Partner-provider modal (Ramp/Transak/MoonPay/etc — from $5) */}
             <BuyCryptoModal
               open={buyCryptoOpen}
               onClose={() => setBuyCryptoOpen(false)}
               defaultPayMethod={fiatModalMethod}
             />
-            </div>{/* /hidden legacy modals */}
-          </>
+          </div>
         )}
 
         {/* ═══════════════ SWAP TAB (LetsExchange cross-chain) ═══════════════ */}
