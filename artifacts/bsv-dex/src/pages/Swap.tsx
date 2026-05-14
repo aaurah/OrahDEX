@@ -2173,7 +2173,7 @@ export function Swap() {
   const { open: openWalletModal } = useWalletModalStore();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<"swap" | "buysell" | "bridge" | "dex">("swap");
+  const [activeTab, setActiveTab] = useState<"swap" | "buysell" | "bridge">("swap");
   const [buySellMode, setBuySellMode] = useState<"buy" | "sell">("buy");
 
   const [fiatModalOpen, setFiatModalOpen]           = useState(false);
@@ -2499,7 +2499,6 @@ export function Swap() {
               { key: "swap",    label: "Swap",     icon: <ArrowUpDown className="w-3.5 h-3.5" />,  gradient: "from-violet-500 to-fuchsia-600" },
               { key: "buysell", label: "Buy/Sell", icon: <ShoppingCart className="w-3.5 h-3.5" />, gradient: "from-blue-500 to-violet-600" },
               { key: "bridge",  label: "Bridge",   icon: <Link2 className="w-3.5 h-3.5" />,        gradient: "from-emerald-500 to-teal-500" },
-              { key: "dex",     label: "DEX",      icon: <Zap className="w-3.5 h-3.5" />,          gradient: "from-orange-500 to-amber-500" },
             ] as const).map(tab => (
               <button
                 key={tab.key}
@@ -2522,7 +2521,6 @@ export function Swap() {
             {activeTab === "swap"    && "6,000+ coins · 30+ chains · Best rate guaranteed"}
             {activeTab === "buysell" && (buySellMode === "buy" ? "Buy any coin · USDT preset · 6,000+ pairs · Non-custodial" : "Sell any coin → USDT · Best rate · Non-custodial")}
             {activeTab === "bridge"  && "L1 ↔ L2 · Canonical bridge · HTLC atomic swaps · CCTP"}
-            {activeTab === "dex"     && "Uniswap V3 · PancakeSwap · OpenOcean · Best route · Non-custodial"}
           </p>
         </div>
 
@@ -2681,8 +2679,8 @@ export function Swap() {
           </div>
         )}
 
-        {/* ═══════════════ DEX TAB (on-chain Uniswap V3) ═══════════════ */}
-        {activeTab === "dex" && (<>
+        {/* DEX tab removed */}
+        {false && (<>
 
         {/* DEX hero label */}
         <div className="relative rounded-3xl overflow-hidden border border-orange-500/20 shadow-xl">
