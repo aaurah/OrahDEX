@@ -1,0 +1,196 @@
+You’re building something big here—so let’s lay it out like a real exchange system, not a toy.
+
+---
+
+High-level architecture overview
+
+OrahDEX is a hybrid exchange with three pillars:
+
+1. On-chain settlement layer (EVM chains: ETH, BNB, MATIC, AVAX, ARB, OP, Base, etc.)
+2. Off-chain swap/aggregator layer (BTC, BSV, BCH, SOL, BRC‑20, long-tail tokens)
+3. Exchange core layer (internal ledger, markets, risk, routing, UI)
+
+
+Think of it as:
+
+• Chains = plumbing
+• Aggregators = bridges
+• OrahDEX core = brain
+
+
+---
+
+1. On-chain settlement layer (EVM side)
+
+Scope:
+
+• ETH, BNB, MATIC, AVAX, ARB, OP, CRO, Base, Zora, Mantle, Linea, Scroll, ZK, etc.
+• ERC‑20 and chain-native tokens
+
+
+Components:
+
+• Escrow / swap smart contracts• Hold user funds during swaps
+• Support:• Direct swaps (token A ↔ token B)
+• Cross-chain via bridges (optional)
+
+
+• On-chain price oracles• Pull prices from Chainlink / Pyth / internal feeds
+
+• Event listeners• Watch contract events
+• Notify backend when swaps complete / fail
+
+
+
+Flow (example: ETH → USDC):
+
+1. User signs approve
+2. User calls swap() on OrahDEX contract
+3. Contract executes swap (AMM or routed)
+4. Backend indexes events and updates UI
+
+
+---
+
+2. Off-chain swap / aggregator layer (AOS)
+
+Scope:
+
+• BTC, BSV, BCH, SOL, BRC‑20, non‑EVM chains, long-tail tokens
+• Any “/BSV AOS” or “/BTC AOS” style pair
+
+
+Components:
+
+• Aggregator connectors• LetsExchange, ChangeNOW, SimpleSwap, etc.
+• Unified interface:• getQuote(from, to, amount)
+• createSwap(from, to, amount, userAddress)
+• getStatus(swapId)
+
+
+• Swap orchestration service• Chooses best route (which aggregator)
+• Tracks swap lifecycle
+• Handles timeouts, errors, refunds (where possible)
+
+
+
+Flow (example: DOGE → BSV):
+
+1. User selects DOGE → BSV (AOS)
+2. Backend calls aggregator getQuote
+3. User is shown:• Deposit address
+• Expected BSV
+• Time window
+
+4. User sends DOGE
+5. Aggregator swaps internally and sends BSV to user
+6. Backend polls/webhooks → marks swap complete
+
+
+No on-chain contract here—pure off-chain routing.
+
+---
+
+3. Exchange core layer (the brain)
+
+This is where OrahDEX becomes an exchange, not just a swap widget.
+
+Core services:
+
+• User & wallet management• Non-custodial mode: connect wallets (EVM, BSV, BTC, etc.)
+• Optional custodial mode later (internal balances)
+
+• Market registry• Defines all markets:• On-chain: ETH/USDC, ARB/ETH, MATIC/USDT
+• AOS: BTC/BSV, DOGE/BSV, SOL/BTC
+• Synthetic categories: AI, DePIN, MEME, L1, L2, RWA, etc.
+
+
+• Routing engine• For each market, decides:• ON_CHAIN → use smart contract
+• AOS → use aggregator
+• INTERNAL (future) → internal orderbook/AMM
+
+
+• Pricing & analytics• Pulls prices from:• CEX APIs
+• Aggregators
+• On-chain oracles
+
+• Normalizes to:• USD
+• BTC
+• BSV
+
+
+• Risk & limits• Min/max trade sizes
+• Volatility filters
+• Disabled routes when liquidity is bad
+
+
+
+---
+
+4. Frontend / UI architecture
+
+Key screens:
+
+• Global market selector• Tabs:• All, BTC, BSV, ETH, SOL, L1, L2, AI, DePIN, MEME, RWA, etc.
+
+• Each row:• Pair (e.g., DOGE / BSV)
+• Type badge: ON-CHAIN, AOS
+• Price, 24h change
+
+
+• Swap screen• From: token + chain
+• To: token + chain
+• Shows:• Route type (On-chain / AOS)
+• Estimated output
+• Fees
+• Time estimate
+
+
+• Status / history• On-chain swaps: link to explorer
+• AOS swaps: aggregator status + tx hash
+
+
+
+---
+
+5. How everything connects
+
+• User action → UI → Routing engine• Routing engine decides:• Call smart contract (EVM)
+• Call aggregator (AOS)
+
+
+• Settlement• On-chain: contract emits events → backend listens
+• AOS: aggregator webhooks/polling → backend updates
+
+• Observability• Logs, metrics, alerts for:• Failed swaps
+• Stuck swaps
+• Bad quotes
+• Disabled markets
+
+
+
+
+---
+
+6. What you get with this design
+
+• You can list all the markets you wrote:• BTC, BSV, ETH, BNB, AVAX, SOL, BCH, BRC‑20, etc.
+• AI, DePIN, MEME, L1, L2, RWA, Gaming, Cosmos, Exchange tokens
+
+• You’re not limited by:• Single chain
+• Single tech model
+
+• You can evolve:• Start with AOS + EVM contracts
+• Later add:• Internal orderbooks
+• Your own liquidity pools
+• Your own cross-chain bridges
+
+
+
+
+---
+
+If you want, next I can:
+
+• Map each market type (BTC, BSV, SOL, AI, etc.) to a concrete routing rule table, or
+• Draft a service-by-service diagram (names, responsibilities, and APIs) for your devs.
