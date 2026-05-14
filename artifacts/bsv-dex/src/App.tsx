@@ -383,10 +383,8 @@ function Router() {
         <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
       </Route>
 
-      {/* ── Root: show landing page ── */}
-      <Route path="/">
-        <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
-      </Route>
+      {/* ── Root: go straight to the app ── */}
+      <Route path="/"><RedirectTo href="/swap" /></Route>
 
       {/* ── Redirects ── */}
       <Route path="/spot"><RedirectTo href="/trade/BSV-USDT" /></Route>
