@@ -4,7 +4,7 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import {
   Fingerprint, Loader2, Plus, LogIn, Shield, AlertCircle,
   Download, ArrowLeft, Eye, EyeOff, CheckCircle2,
-  HardDrive, ChevronRight, Wallet,
+  HardDrive, ChevronRight, Wallet, QrCode,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -328,6 +328,7 @@ export function WalletChooserDialog() {
 
   const handleClose = () => { setTab("choose"); close(); };
   const handleEvmClick = () => { handleClose(); setTimeout(() => openEvm(), 100); };
+  const handleMobileQr = () => { handleClose(); setTimeout(() => openEvm(), 100); };
   const handleHWPick = (device: HWDevice) => setTab(device);
 
   const isDeviceTab = (t: Tab): t is HWDevice =>
@@ -372,6 +373,14 @@ export function WalletChooserDialog() {
                       EVM
                     </span>
                   }
+                />
+
+                <OptionCard
+                  onClick={handleMobileQr}
+                  iconBg="bg-cyan-500/10 border border-cyan-500/20 group-hover:bg-cyan-500/15 group-hover:border-cyan-500/30"
+                  icon={<QrCode className="w-5 h-5 text-cyan-400" />}
+                  title="Connect via Mobile QR"
+                  sub="Scan with your phone to link instantly"
                 />
 
                 <OptionCard
