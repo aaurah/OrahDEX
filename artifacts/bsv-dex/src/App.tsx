@@ -7,7 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { WalletChooserDialog } from "@/components/WalletChooserDialog";
 
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
-import { applyStoredTheme } from "@/store/useThemeStore";
+import { applyStoredTheme, useThemeStore } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
@@ -222,6 +222,14 @@ function Router() {
   useEffect(() => {
     applyStoredTheme();
 
+    // Sync Reown modal theme — deferred with setTimeout(0) so each call lands
+    // in its own event-loop task, safely outside any Lit or React update cycle.
+    const doSyncTheme = (theme: string) =>
+      setTimeout(() =>
+        import("@/lib/reown").then(({ syncReownTheme }) => syncReownTheme(theme)),
+      0);
+    const themeTimer = setTimeout(() => doSyncTheme(useThemeStore.getState().theme), 500);
+    const unsubTheme = useThemeStore.subscribe(s => doSyncTheme(s.theme));
 
     const eth = (window as any).ethereum;
 
@@ -310,6 +318,8 @@ function Router() {
     });
 
     return () => {
+      clearTimeout(themeTimer);
+      unsubTheme();
       reownUnsub?.();
       if (eth) {
         eth.removeListener?.("accountsChanged", onAccountsChanged);
