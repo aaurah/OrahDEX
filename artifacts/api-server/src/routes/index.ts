@@ -425,7 +425,7 @@ router.post("/bsv/broadcast", async (req, res) => {
     }
   } catch (err: any) {
     logger.warn({ err: err?.message }, "BSV broadcast failed");
-    res.status(500).json({ error: err?.message ?? "Broadcast failed" });
+    res.status(500).json({ error: "Broadcast failed" });
   }
 });
 
@@ -457,7 +457,7 @@ router.post("/passkey/backup", async (req, res) => {
       .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Backup failed" });
+    res.status(500).json({ error: "Backup failed" });
   }
 });
 
@@ -470,7 +470,7 @@ router.get("/passkey/backup/:credentialId", async (req, res) => {
     if (!row) { res.status(404).json({ error: "No backup found" }); return; }
     res.json(JSON.parse(row.value));
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Restore failed" });
+    res.status(500).json({ error: "Restore failed" });
   }
 });
 
@@ -496,7 +496,7 @@ router.post("/passkey/transfer", async (req, res) => {
       .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
     res.json({ success: true, code });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Transfer code generation failed" });
+    res.status(500).json({ error: "Transfer code generation failed" });
   }
 });
 
@@ -517,7 +517,7 @@ router.get("/passkey/transfer/:code", async (req, res) => {
     await db.delete(platformSettingsTable).where(drizzleSql`${platformSettingsTable.key} = ${key}`);
     res.json(data);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Transfer code lookup failed" });
+    res.status(500).json({ error: "Transfer code lookup failed" });
   }
 });
 
@@ -589,7 +589,7 @@ router.post("/webhook/email-inbound", async (req, res) => {
     res.json({ success: true, id: inserted.id });
   } catch (err: any) {
     logger.error({ err: err?.message }, "Failed to process inbound email webhook");
-    res.status(500).json({ error: err?.message ?? "Failed to process inbound email" });
+    res.status(500).json({ error: "Failed to process inbound email" });
   }
 });
 
@@ -642,7 +642,7 @@ router.post("/users/ping", async (req, res) => {
     res.json({ success: true, address: addr, isNew: isNewEntry });
   } catch (err: any) {
     logger.error({ err: err?.message }, "Failed to ping wallet");
-    res.status(500).json({ error: err?.message ?? "Failed to register wallet" });
+    res.status(500).json({ error: "Failed to register wallet" });
   }
 });
 

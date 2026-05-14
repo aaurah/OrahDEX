@@ -44,7 +44,7 @@ router.get("/copy/vaults", async (_req, res) => {
     res.json({ vaults });
   } catch (err: any) {
     logger.error({ err: err?.message }, "copy/vaults list error");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch vaults" });
+    res.status(500).json({ error: "Failed to fetch vaults" });
   }
 });
 
@@ -67,7 +67,7 @@ router.get("/copy/vaults/:id", async (req, res) => {
     res.json({ vault, trades });
   } catch (err: any) {
     logger.error({ err: err?.message }, "copy/vaults/:id error");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch vault" });
+    res.status(500).json({ error: "Failed to fetch vault" });
   }
 });
 
@@ -125,7 +125,7 @@ router.post("/copy/vaults", requireAdminToken, async (req, res) => {
     res.json({ vault });
   } catch (err: any) {
     logger.error({ err: err?.message }, "copy/vaults create error");
-    res.status(500).json({ error: err?.message ?? "Failed to create vault" });
+    res.status(500).json({ error: "Failed to create vault" });
   }
 });
 
@@ -262,7 +262,7 @@ router.post("/copy/vaults/:id/deposit", async (req, res) => {
   } catch (err: any) {
     try { await client.query("ROLLBACK"); } catch { /* ignore */ }
     logger.error({ err: err?.message }, "copy deposit error");
-    res.status(500).json({ error: err?.message ?? "Failed to deposit" });
+    res.status(500).json({ error: "Failed to deposit" });
   } finally {
     client.release();
   }
@@ -381,7 +381,7 @@ router.post("/copy/vaults/:id/withdraw", async (req, res) => {
     res.json(payload);
   } catch (err: any) {
     logger.error({ err: err?.message }, "copy withdraw error");
-    res.status(500).json({ error: err?.message ?? "Failed to withdraw" });
+    res.status(500).json({ error: "Failed to withdraw" });
   }
 });
 
@@ -421,7 +421,7 @@ router.get("/copy/my-positions", async (req, res) => {
     res.json({ positions: enriched });
   } catch (err: any) {
     logger.error({ err: err?.message }, "copy my-positions error");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch positions" });
+    res.status(500).json({ error: "Failed to fetch positions" });
   }
 });
 
@@ -493,7 +493,7 @@ router.post("/copy/vaults/:id/trade", async (req, res) => {
     res.json({ trade });
   } catch (err: any) {
     logger.error({ err: err?.message }, "copy vault trade error");
-    res.status(500).json({ error: err?.message ?? "Failed to execute trade" });
+    res.status(500).json({ error: "Failed to execute trade" });
   }
 });
 
@@ -555,7 +555,7 @@ router.post("/copy/vaults/:id/sync-price", async (req, res) => {
     res.json(result);
   } catch (err: any) {
     logger.error({ err: err?.message }, "copy sync-price error");
-    res.status(500).json({ error: err?.message ?? "Failed to sync price" });
+    res.status(500).json({ error: "Failed to sync price" });
   }
 });
 
@@ -574,7 +574,7 @@ router.get("/copy/stats", async (_req, res) => {
 
     res.json(result[0] ?? { totalVaults: 0, totalTvl: "0", totalFollowers: 0, avgPnlPct: "0" });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

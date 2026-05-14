@@ -226,7 +226,7 @@ router.get("/nft/collections", async (req, res) => {
 
     res.json({ collections: rows, total: rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -255,7 +255,7 @@ router.get("/nft/collections/:slug", async (req, res) => {
 
     res.json({ collection: col, nfts, listings, activity });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -275,7 +275,7 @@ router.get("/nft/items", async (req, res) => {
 
     res.json({ items: rows, total: rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -304,7 +304,7 @@ router.get("/nft/items/:id", async (req, res) => {
 
     res.json({ nft, collection: col ?? null, listings, bids, activity });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -323,7 +323,7 @@ router.get("/nft/listings", async (req, res) => {
 
     res.json({ listings: rows, total: rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -383,7 +383,7 @@ router.post("/nft/listings", async (req, res) => {
 
     res.json({ success: true, listing });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -410,7 +410,7 @@ router.post("/nft/bids", async (req, res) => {
 
     res.json({ success: true, bid });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -431,7 +431,7 @@ router.get("/nft/portfolio/:address", async (req, res) => {
 
     res.json({ owned, myListings, myBids });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -449,7 +449,7 @@ router.get("/nft/activity", async (req, res) => {
 
     res.json({ activity: rows, total: rows.length });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

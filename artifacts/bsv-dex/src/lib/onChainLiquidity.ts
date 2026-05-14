@@ -16,7 +16,7 @@
  *  "simulated" – Non-EVM wallet or unsupported chain.
  */
 
-import { encodeFunctionData, erc20Abi, maxUint256, parseUnits } from "viem";
+import { encodeFunctionData, erc20Abi, parseUnits } from "viem";
 import {
   sendTransaction as coreSendTx,
   writeContract  as coreWriteContract,
@@ -191,20 +191,22 @@ async function sendTx(
 }
 
 /**
- * ERC-20 approve(spender, maxUint256) via whichever wallet is connected.
+ * ERC-20 approve(spender, amount) via whichever wallet is connected.
+ * Uses exact amount only — never grants unlimited (maxUint256) allowance.
  */
 async function approveErc20(
   tokenAddress: `0x${string}`,
   spender: `0x${string}`,
   _from: string,          // kept for API compatibility
   chainId: number,
+  amount: bigint,         // exact approval amount
 ): Promise<string> {
   const config = requireConfig();
   return await coreWriteContract(config, {
     address:      tokenAddress,
     abi:          erc20Abi,
     functionName: "approve",
-    args:         [spender, maxUint256],
+    args:         [spender, amount],
     chainId,
   });
 }
@@ -367,7 +369,7 @@ export async function addLiquidityOnChain(params: AddLiquidityParams): Promise<v
     update({ step: "approving" });
     let approvalHash: string;
     try {
-      approvalHash = await approveErc20(quoteAddr, posMan, address, chainId);
+      approvalHash = await approveErc20(quoteAddr, posMan, address, chainId, quoteRaw);
     } catch (err: any) {
       const msg = err?.code === 4001 ? "Approval rejected by wallet."
                 : err?.message ?? "Approval failed. Please try again.";
@@ -394,7 +396,7 @@ export async function addLiquidityOnChain(params: AddLiquidityParams): Promise<v
       update({ step: "approving" });
       let bHash: string;
       try {
-        bHash = await approveErc20(baseAddr, posMan, address, chainId);
+        bHash = await approveErc20(baseAddr, posMan, address, chainId, baseWei);
       } catch (err: any) {
         const msg = err?.code === 4001 ? "Approval rejected by wallet."
                   : err?.message ?? "Base token approval failed.";

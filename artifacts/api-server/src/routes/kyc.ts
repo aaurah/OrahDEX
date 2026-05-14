@@ -53,7 +53,7 @@ router.get("/kyc/status", async (req, res) => {
       submittedAt: row.submitted_at,
     });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message ?? "Failed to check KYC status" });
+    res.status(500).json({ error: "Failed to check KYC status" });
   }
 });
 
@@ -146,7 +146,7 @@ router.post("/kyc/submit", async (req, res) => {
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "KYC submission failed");
-    res.status(500).json({ error: err?.message ?? "KYC submission failed" });
+    res.status(500).json({ error: "KYC submission failed" });
   }
 });
 
