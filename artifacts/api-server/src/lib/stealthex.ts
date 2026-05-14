@@ -1,21 +1,21 @@
 /**
- * stealthex.ts — StealthEX API helper
+ * stealthex.ts — StealthEX API helper (v2)
  *
  * Docs: https://stealthex.io/api/
- * Base: https://api.stealthex.io/api/v3
+ * Base: https://api.stealthex.io/api/v2
+ *
+ * Auth: api_key query parameter on every request.
  *
  * Flow:
- *   1. Min     — GET /min-amount/{from}/{to}?api_key=…   (pair minimum)
- *   2. Quote   — GET /estimated/{from}/{to}?amount=…&api_key=…
- *   3. Create  — POST /exchange?api_key=…
- *   4. Status  — GET /exchange/{id}?api_key=…
- *
- * Auth: api_key query parameter (no body or header auth).
+ *   1. Range    — GET /range/{from}/{to}?api_key=…      → { min_amount }
+ *   2. Quote    — GET /estimate/{from}/{to}?api_key=…&amount=…
+ *   3. Create   — POST /exchange?api_key=…              → deposit address
+ *   4. Status   — GET /exchange/{id}?api_key=…
  */
 
 import { logger } from "./logger.js";
 
-const SX_BASE = "https://api.stealthex.io/api/v3";
+const SX_BASE = "https://api.stealthex.io/api/v2";
 const API_KEY = process.env.STEALTHEX_API_KEY ?? "";
 
 export function isStealthExConfigured(): boolean {
@@ -61,13 +61,14 @@ export interface SxQuoteResult {
 
 /**
  * Get minimum exchange amount for a pair.
+ * Endpoint: GET /range/{from}/{to} → { min_amount }
  */
 export async function getSxMinAmount(
   from: string,
   to: string,
 ): Promise<number | null> {
   try {
-    const { ok, data } = await sxRequest(`/min-amount/${from.toLowerCase()}/${to.toLowerCase()}`);
+    const { ok, data } = await sxRequest(`/range/${from.toLowerCase()}/${to.toLowerCase()}`);
     if (!ok || !data || typeof data !== "object") return null;
     const d = data as Record<string, unknown>;
     const min = parseFloat(String(d.min_amount ?? "")) || 0;
@@ -78,18 +79,19 @@ export async function getSxMinAmount(
 }
 
 /**
- * Get a quote: how much `to` coin do we get for `amount` of `from`.
+ * Get a quote: how much `to` coin do we receive for `amount` of `from`.
+ * Endpoint: GET /estimate/{from}/{to}?amount={amount}
  */
 export async function quoteFromSX(
-  from: string,
-  to: string,
+  from:   string,
+  to:     string,
   amount: number,
 ): Promise<SxQuoteResult | null> {
   try {
     const [minResult, quoteResult] = await Promise.all([
       getSxMinAmount(from, to),
-      sxRequest(`/estimated/${from.toLowerCase()}/${to.toLowerCase()}`, "GET", undefined, {
-        amount: amount,
+      sxRequest(`/estimate/${from.toLowerCase()}/${to.toLowerCase()}`, "GET", undefined, {
+        amount,
       }),
     ]);
 
@@ -111,14 +113,16 @@ export async function quoteFromSX(
 }
 
 export interface SxExchange {
-  id:             string;
-  depositAddress: string;
-  depositExtraId: string | null;
+  id:              string;
+  depositAddress:  string;
+  depositExtraId:  string | null;
   estimatedAmount: string | null;
 }
 
 /**
  * Create an exchange. Returns the deposit address for the user to send to.
+ * Endpoint: POST /exchange
+ * Body: { currency_from, currency_to, amount_from, address_to, extra_id_to }
  */
 export async function createSXExchange(args: {
   from:     string;
@@ -128,17 +132,18 @@ export async function createSXExchange(args: {
   extraId?: string;
 }): Promise<{ ok: true; exchange: SxExchange } | { ok: false; error: string }> {
   const body: Record<string, unknown> = {
-    currency_from:     args.from.toLowerCase(),
-    currency_to:       args.to.toLowerCase(),
-    amount:            args.amount,
-    address_to:        args.address.trim(),
-    extra_id_to:       args.extraId ?? "",
+    currency_from: args.from.toLowerCase(),
+    currency_to:   args.to.toLowerCase(),
+    amount_from:   args.amount,
+    address_to:    args.address.trim(),
+    extra_id_to:   args.extraId ?? "",
   };
 
   const { ok, status, data } = await sxRequest("/exchange", "POST", body);
   if (!ok || !data || typeof data !== "object") {
     const d = data as Record<string, unknown> | null;
-    const msg = (d?.message as string) ?? (d?.error as string) ?? `StealthEX HTTP ${status}`;
+    const errObj = (d as Record<string, unknown>)?.err as Record<string, unknown> | undefined;
+    const msg = (errObj?.details as string) ?? (d?.message as string) ?? `StealthEX HTTP ${status}`;
     logger.error({ msg, from: args.from, to: args.to }, "StealthEX: createSXExchange failed");
     return { ok: false, error: msg };
   }
