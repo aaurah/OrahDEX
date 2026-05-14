@@ -2,7 +2,18 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
+import fs from "fs";
+import { createRequire } from "module";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
+
+// Resolve the vite-plugin-node-polyfills package directory so we can return
+// absolute paths to shim files, bypassing Rolldown's broken conditions check
+// for the deprecated trailing-slash exports pattern.
+const _require = createRequire(import.meta.url);
+const _polyfillsPkgDir = path.resolve(
+  path.dirname(_require.resolve("vite-plugin-node-polyfills")),
+  "..",
+);
 
 // PORT is only needed for the dev/preview server, not the production build.
 const rawPort = process.env.PORT;
@@ -25,6 +36,71 @@ export default defineConfig({
     'import.meta.env.VITE_API_BASE': JSON.stringify(process.env.VITE_API_BASE ?? ''),
   },
   plugins: [
+    // Rolldown (Vite 8) strips ".js" from subpath specifiers when looking up
+    // the package exports map. "@noble/curves" v2.x exports ONLY ".js" keys
+    // (e.g. "./secp256k1.js"), so Rolldown can't find them (looks for
+    // "./secp256k1" without .js). This plugin intercepts extensionless
+    // @noble/curves/* and @noble/hashes/* imports, checks the exports map,
+    // and if there is no extensionless key (v2.x), resolves the .js file
+    // by absolute path — bypassing the broken exports map lookup entirely.
+    // v1.x packages have extensionless keys and are left alone.
+    // Rolldown (Vite 8) fails to resolve vite-plugin-node-polyfills shim
+    // imports: its conditions check ["module","browser","production","require"]
+    // stops at "production" (not in the shim's {"require":...,"import":...}
+    // value) instead of continuing to "require". Also handles the deprecated
+    // trailing-slash folder export pattern ("./shims/buffer/") that Rolldown
+    // doesn't support. Bypass both issues by returning the absolute ESM path.
+    {
+      name: "polyfills-shims-compat",
+      enforce: "pre",
+      resolveId(id: string) {
+        const m = id.match(
+          /^vite-plugin-node-polyfills\/shims\/(buffer|global|process)\/?$/,
+        );
+        if (!m) return null;
+        return path.join(_polyfillsPkgDir, `shims/${m[1]}/dist/index.js`);
+      },
+    },
+    {
+      name: "noble-pkg-compat",
+      enforce: "pre",
+      async resolveId(id: string, importer: string | undefined) {
+        if (!importer) return null;
+        const match = id.match(/^(@noble\/(curves|hashes))\/([^./]+)$/);
+        if (!match) return null;
+        const pkg = match[1];
+        const subpath = match[3];
+
+        // Resolve the package main entry relative to the importer so we get
+        // the correct nested version (not necessarily the workspace root).
+        const pkgMain = await this.resolve(pkg, importer, { skipSelf: true });
+        if (!pkgMain) return null;
+
+        // Walk up to find the node_modules/<pkg> directory.
+        const pkgMarker = `/node_modules/${pkg}/`;
+        const markerIdx = pkgMain.id.lastIndexOf(pkgMarker);
+        if (markerIdx === -1) return null;
+        const pkgDir = pkgMain.id.slice(0, markerIdx + pkgMarker.length - 1);
+
+        // Read the exports map and check for an extensionless key.
+        let pkgExports: Record<string, unknown> = {};
+        try {
+          const raw = fs.readFileSync(path.join(pkgDir, "package.json"), "utf-8");
+          pkgExports = JSON.parse(raw).exports ?? {};
+        } catch {
+          return null;
+        }
+
+        // If the extensionless key exists, let Rolldown handle it normally.
+        if (pkgExports[`./${subpath}`]) return null;
+
+        // No extensionless key (v2.x) — resolve the .js file by absolute path
+        // so Rolldown never touches the exports map for this import.
+        const jsFile = path.join(pkgDir, `${subpath}.js`);
+        if (!fs.existsSync(jsFile)) return null;
+        return { id: jsFile };
+      },
+    },
     nodePolyfills({
       globals: { Buffer: true, global: true, process: true },
       protocolImports: true,
