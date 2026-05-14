@@ -532,19 +532,19 @@ export function WalletChooserDialog() {
                 />
 
                 <OptionCard
-                  onClick={handleMobileQr}
-                  iconBg="bg-cyan-500/10 border border-cyan-500/20 group-hover:bg-cyan-500/15 group-hover:border-cyan-500/30"
-                  icon={<QrCode className="w-5 h-5 text-cyan-400" />}
-                  title="Connect via Mobile QR"
-                  sub="Scan with your phone to link instantly"
-                />
-
-                <OptionCard
                   onClick={() => setTab("hardware")}
                   iconBg="bg-amber-500/10 border border-amber-500/20 group-hover:bg-amber-500/15 group-hover:border-amber-500/30"
                   icon={<HardDrive className="w-5 h-5 text-amber-400" />}
                   title="Hardware Wallet"
                   sub="Ledger · Trezor · Keystone · GridPlus"
+                />
+
+                <OptionCard
+                  onClick={handleMobileQr}
+                  iconBg="bg-cyan-500/10 border border-cyan-500/20 group-hover:bg-cyan-500/15 group-hover:border-cyan-500/30"
+                  icon={<QrCode className="w-5 h-5 text-cyan-400" />}
+                  title="Connect via Mobile QR"
+                  sub="Scan with your phone to link instantly"
                 />
               </div>
             </div>
