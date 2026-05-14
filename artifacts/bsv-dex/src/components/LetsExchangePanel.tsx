@@ -615,13 +615,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
             </p>
             {estimate.best_venue && (
               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-muted/60 border border-border/40 text-[10px] text-muted-foreground/70 font-medium">
-                via {
-                  estimate.best_venue === "changenow"   ? "ChangeNOW"   :
-                  estimate.best_venue === "stealthex"   ? "StealthEX"   :
-                  estimate.best_venue === "simpleswap"  ? "SimpleSwap"  :
-                  estimate.best_venue === "changelly"   ? "Changelly"   :
-                  "LetsExchange"
-                }
+                Best Rate
               </span>
             )}
           </div>
@@ -1015,19 +1009,9 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
             </div>
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
-            <a href="https://support.changenow.io/" target="_blank" rel="noopener noreferrer"
+            <a href="mailto:support@orahdex.org"
               className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
-              ChangeNOW Support <ExternalLink className="w-3 h-3" />
-            </a>
-            <span className="text-muted-foreground/40">·</span>
-            <a href="https://stealthex.io/faq/" target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
-              StealthEX Support <ExternalLink className="w-3 h-3" />
-            </a>
-            <span className="text-muted-foreground/40">·</span>
-            <a href="https://simpleswap.io/help" target="_blank" rel="noopener noreferrer"
-              className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
-              SimpleSwap Support <ExternalLink className="w-3 h-3" />
+              Contact OrahDEX Support <ExternalLink className="w-3 h-3" />
             </a>
           </div>
         </div>
@@ -1126,13 +1110,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
         </div>
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">Provider</span>
-          <span className="text-xs text-foreground/70">
-            {effectiveVenue === "changenow"   ? "ChangeNOW"   :
-             effectiveVenue === "stealthex"   ? "StealthEX"   :
-             effectiveVenue === "simpleswap"  ? "SimpleSwap"  :
-             effectiveVenue === "changelly"   ? "Changelly"   :
-             "LetsExchange"}
-          </span>
+          <span className="text-xs text-foreground/70">OrahDEX Router</span>
         </div>
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">Rate</span>
