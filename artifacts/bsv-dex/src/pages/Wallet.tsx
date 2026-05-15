@@ -18,6 +18,7 @@ import { ReceiveModal } from "@/components/ReceiveModal";
 import { RevealSecretSheet } from "@/components/wallet/RevealSecretSheet";
 import { ChainReceiveSheet } from "@/components/wallet/ChainReceiveSheet";
 import { ManualImportSheet, type ImportChain } from "@/components/wallet/ManualImportSheet";
+import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -392,6 +393,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const totalNonEvm  = CHAINS.filter(c => c.family !== "evm").length;
 
   const [receiveOpen, setReceiveOpen]   = useState(false);
+  const [sendOpen, setSendOpen]         = useState(false);
   const [chainReceive, setChainReceive] = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
   const [revealOpen, setRevealOpen]     = useState(false);
   const [copied, setCopied]             = useState(false);
@@ -549,7 +551,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         {/* Action buttons — imToken / MetaMask style */}
         <div className="grid grid-cols-4 gap-2">
           <ActionButton icon={Download}    label="Receive" onClick={() => setReceiveOpen(true)} />
-          <ActionButton icon={Send}        label="Send"    onClick={() => navigate("/swap")} />
+          <ActionButton icon={Send}        label="Send"    onClick={() => setSendOpen(true)} />
           <ActionButton icon={ArrowDownUp} label="Swap"    onClick={() => navigate("/swap")} />
           <ActionButton icon={Sparkles}    label="Buy"     onClick={() => navigate("/swap")} />
         </div>
@@ -648,6 +650,18 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
 
       {/* ── Modals & sheets ── */}
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
+
+      <WithdrawSheet
+        open={sendOpen}
+        onClose={() => setSendOpen(false)}
+        walletAddress={evmAddress ?? address ?? ""}
+        asset="ETH"
+        available={0}
+        network="eth"
+        networkLabel="Ethereum"
+        initialTab="withdraw"
+        isOrahWallet={canBackup}
+      />
 
       <ChainReceiveSheet
         open={chainReceive.open}
