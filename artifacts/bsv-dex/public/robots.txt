@@ -5,17 +5,37 @@ Allow: /
 Disallow: /admin/
 Disallow: /admin
 
-# Allow all major crawlers full access
+# Disallow user-specific / private pages
+Disallow: /wallet
+Disallow: /wallet/
+Disallow: /settings
+Disallow: /settings/
+Disallow: /portfolio
+Disallow: /portfolio/
+
+# Allow all major crawlers full access to public content
 User-agent: Googlebot
 Allow: /
+Disallow: /admin/
+Disallow: /wallet
+Disallow: /settings
+Disallow: /portfolio
 
 User-agent: Bingbot
 Allow: /
+Disallow: /admin/
+Disallow: /wallet
+Disallow: /settings
+Disallow: /portfolio
+Crawl-delay: 1
 
 User-agent: Twitterbot
 Allow: /
 
 User-agent: facebookexternalhit
+Allow: /
+
+User-agent: LinkedInBot
 Allow: /
 
 # Sitemap

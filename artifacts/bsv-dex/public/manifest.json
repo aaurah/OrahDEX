@@ -1,7 +1,7 @@
 {
   "name": "OrahDEX — Trade means DEX",
   "short_name": "OrahDEX",
-  "description": "Multi-chain DEX with spot trading, perpetual futures, P2P markets, and on-chain BSV settlement. 226+ markets with real-time prices.",
+  "description": "Multi-chain DEX with spot trading, perpetual futures, P2P markets, and on-chain BSV settlement. 900+ markets across EVM, TRON and BSV networks.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

@@ -83,6 +83,8 @@ export function useSEO({
     setMeta("og:site_name", SITE_NAME, "property");
 
     setMeta("twitter:card", "summary_large_image");
+    setMeta("twitter:site", "@OrahDEX");
+    setMeta("twitter:creator", "@OrahDEX");
     setMeta("twitter:title", fullTitle);
     if (description) setMeta("twitter:description", description);
     setMeta("twitter:image", image);
