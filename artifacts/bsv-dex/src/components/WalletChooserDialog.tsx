@@ -23,7 +23,7 @@ import {
 } from "@/lib/passkeyWallet";
 import { validateMnemonic, deriveAllAddresses, generateMnemonic } from "@/lib/seedPhrase";
 import {
-  validatePin, hasPin, setPin, storeWithPin,
+  validatePin, hasPin, setPin as savePinVerifier, storeWithPin,
   storeWithPasskey, createImportPasskey, saveDerivedAddresses,
 } from "@/lib/walletPin";
 import {
@@ -451,7 +451,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
     if (pin !== pinConfirm) { setPinError("PINs do not match"); return; }
     setPinError(null);
     setLoading(true);
-    try { await setPin(pin); await finishWithPin(pin); }
+    try { await savePinVerifier(pin); await finishWithPin(pin); }
     catch (err: any) { setPinError(err?.message || "Could not set PIN"); }
     finally { setLoading(false); }
   };
@@ -645,7 +645,7 @@ function SeedCreatePanel({ onDone }: { onDone: () => void }) {
     if (pin !== pinConfirm) { setPinError("PINs do not match"); return; }
     setPinError(null);
     setLoading(true);
-    try { await setPin(pin); await finishWithPin(pin); }
+    try { await savePinVerifier(pin); await finishWithPin(pin); }
     catch (err: any) { setPinError(err?.message || "Could not set PIN"); }
     finally { setLoading(false); }
   };
