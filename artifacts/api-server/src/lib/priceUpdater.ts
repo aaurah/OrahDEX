@@ -1402,6 +1402,8 @@ export async function updateMarketPrices() {
       );
     }
     pendingUpdates.length = 0;
+    // Release the large markets query result before proceeding
+    (markets as unknown[]).length = 0;
 
     // Push live USD prices into Genesis VAMM so it tracks the real market
     for (const [sym, data] of Object.entries(prices)) {
