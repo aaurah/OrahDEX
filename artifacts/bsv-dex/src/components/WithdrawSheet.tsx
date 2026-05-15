@@ -219,6 +219,8 @@ export interface WithdrawSheetProps {
   visibleTabs?:        ("deposit" | "withdraw" | "history")[];
   /** Whether this is a passkey / orah-wallet — enables "Send from Wallet" mode */
   isOrahWallet?:       boolean;
+  /** Open the withdraw tab directly in wallet-send mode ("wallet") or exchange mode ("exchange"). Default: "exchange". */
+  initialSource?:      "exchange" | "wallet";
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -236,6 +238,7 @@ export function WithdrawSheet({
   initialTab = "withdraw",
   visibleTabs,
   isOrahWallet = false,
+  initialSource = "exchange",
 }: WithdrawSheetProps) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
@@ -290,7 +293,7 @@ export function WithdrawSheet({
       setRecipient(defaultRecipient ?? "");
       setSubmitted(false);
       setTxHash("");
-      setWithdrawSource("exchange");
+      setWithdrawSource(initialSource);
       setWalletSendTxHash(null);
       setWalletSendError(null);
       setWalletSendAmount("");
