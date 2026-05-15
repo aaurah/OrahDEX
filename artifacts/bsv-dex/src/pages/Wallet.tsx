@@ -660,6 +660,8 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         network="eth"
         networkLabel="Ethereum"
         initialTab="withdraw"
+        initialSource="wallet"
+        visibleTabs={["withdraw"]}
         isOrahWallet={canBackup}
       />
 
