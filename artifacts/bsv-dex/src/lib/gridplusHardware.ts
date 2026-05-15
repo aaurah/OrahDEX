@@ -27,7 +27,7 @@ let _client: any = null;
 async function getClient(name = "OrahDEX") {
   if (_client) return _client;
   const { Client } = await import("gridplus-sdk");
-  _client = new Client({ name, crypto: window.crypto });
+  _client = new Client({ name });
   return _client;
 }
 
