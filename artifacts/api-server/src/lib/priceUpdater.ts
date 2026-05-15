@@ -1383,9 +1383,9 @@ export async function updateMarketPrices() {
       });
     }
 
-    // Flush all price updates in parallel batches of 50 — avoids holding
-    // the full markets array in memory across thousands of sequential awaits.
-    const BATCH = 50;
+    // Flush all price updates in parallel batches of 5 — keeps DB connection
+    // usage low so background bots don't exhaust the shared pool (max: 20).
+    const BATCH = 5;
     for (let i = 0; i < pendingUpdates.length; i += BATCH) {
       await Promise.all(
         pendingUpdates.slice(i, i + BATCH).map(u =>
