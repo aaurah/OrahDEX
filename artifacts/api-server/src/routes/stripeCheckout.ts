@@ -314,14 +314,13 @@ router.get("/stripe/order/:id", async (req, res) => {
 router.get("/stripe/orders", async (req, res) => {
   const raw = req.query.walletAddress;
   if (!raw || typeof raw !== "string") {
-    res.status(400).json({ error: "walletAddress query param required" });
-    return;
+    return res.status(400).json({ error: "walletAddress query param required" });
   }
   try {
     const addrs = Array.from(new Set(
       raw.split(",").map(s => s.trim().toLowerCase()).filter(s => s.length >= 6)
     ));
-    if (!addrs.length) { res.json([]); return; }
+    if (!addrs.length) return res.json([]);
 
     /* Match on user_wallet (identity) OR wallet_address (destination) so
        BTC/SOL/XRP purchases appear when looked up by the user's EVM/session ID */
@@ -333,9 +332,9 @@ router.get("/stripe/orders", async (req, res) => {
        ORDER BY created_at DESC LIMIT 50`,
       [addrs]
     );
-    res.json(result.rows);
+    return res.json(result.rows);
   } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch orders" });
+    return res.status(500).json({ error: "Failed to fetch orders" });
   }
 });
 
@@ -353,7 +352,7 @@ router.delete("/stripe/orders/:id", async (req, res) => {
   const addrs = Array.from(new Set(
     raw.split(",").map(s => s.trim().toLowerCase()).filter(s => s.length >= 6)
   ));
-  if (!addrs.length) { res.status(400).json({ error: "walletAddress invalid" }); return; }
+  if (!addrs.length) return res.status(400).json({ error: "walletAddress invalid" });
 
   try {
     const { rows } = await pool.query(
@@ -362,12 +361,12 @@ router.delete("/stripe/orders/:id", async (req, res) => {
       [req.params.id]
     );
     const order = rows[0];
-    if (!order) { res.status(404).json({ error: "Order not found" }); return; }
+    if (!order) return res.status(404).json({ error: "Order not found" });
 
     /* Ownership check */
     const ownerOk = addrs.includes((order.user_wallet ?? "").toLowerCase()) ||
                     addrs.includes((order.wallet_address ?? "").toLowerCase());
-    if (!ownerOk) { res.status(403).json({ error: "Not your order" }); return; }
+    if (!ownerOk) return res.status(403).json({ error: "Not your order" });
 
     /* Only deletable while not yet fulfilled */
     const status = String(order.status ?? "").toLowerCase();
@@ -390,10 +389,10 @@ router.delete("/stripe/orders/:id", async (req, res) => {
     }
 
     await pool.query(`DELETE FROM crypto_orders WHERE id = $1`, [order.id]);
-    res.json({ ok: true });
+    return res.json({ ok: true });
   } catch (err: any) {
     logger.error({ err: err?.message }, "user delete stripe order failed");
-    res.status(500).json({ error: "Delete failed" });
+    return res.status(500).json({ error: "Delete failed" });
   }
 });
 
@@ -545,8 +544,7 @@ router.post("/admin/stripe-orders/:id/fulfill", requireAdminToken, async (req, r
 
     const paidAmountCents = Number(order.fiat_amount_cents);
     if (!Number.isFinite(paidAmountCents) || paidAmountCents <= 0) {
-      res.status(400).json({ error: "Order fiat amount is missing or invalid" });
-      return;
+      return res.status(400).json({ error: "Order fiat amount is missing or invalid" });
     }
 
     const { fulfillOrder } = await import("../webhookHandlers.js");
@@ -563,10 +561,10 @@ router.post("/admin/stripe-orders/:id/fulfill", requireAdminToken, async (req, r
       [order.id]
     );
     logger.info({ orderId: order.id }, "admin: manual fulfillment triggered");
-    res.json({ ok: true, order: updated[0] });
+    return res.json({ ok: true, order: updated[0] });
   } catch (err: any) {
     logger.error({ err: err?.message }, "admin: manual fulfillment failed");
-    res.status(500).json({ error: "Fulfillment failed" });
+    return res.status(500).json({ error: "Fulfillment failed" });
   }
 });
 
