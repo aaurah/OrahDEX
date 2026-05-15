@@ -303,10 +303,11 @@ async function runCycle(): Promise<void> {
       }
     }
 
-    // Process in batches of 3 — each refreshMarket uses 2 connections (DELETE +
-    // INSERT), so 3 concurrent = 6 connections, leaving plenty of headroom in
-    // the pool (max: 20) for the price updater and user-facing requests.
-    const BATCH_SIZE = 3;
+    // Process in batches of 2 — each refreshMarket uses 2 connections (DELETE +
+    // INSERT), so 2 concurrent = 4 connections. A 30 ms yield between batches
+    // lets the price updater and user-facing requests acquire pool connections
+    // without timing out during the ~67-second liquidity cycle.
+    const BATCH_SIZE = 2;
     for (let i = 0; i < active.length; i += BATCH_SIZE) {
       const batch = active.slice(i, i + BATCH_SIZE);
       await Promise.all(
@@ -334,6 +335,9 @@ async function runCycle(): Promise<void> {
             .catch(err => logger.warn({ err, symbol: m.symbol }, "Bot: skipped market"));
         }),
       );
+      // Yield for 30 ms between batches so other services (price updater,
+      // user-facing requests) can acquire pool connections without timing out.
+      await new Promise(r => setTimeout(r, 30));
     }
 
     const activeLen = active.length;
