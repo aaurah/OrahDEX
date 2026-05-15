@@ -290,9 +290,9 @@ async function runCycle(): Promise<void> {
       }
     }
 
-    // Process in batches of 20 directly — no intermediate marketJobs array
-    // so the full 4003-element list is never held alongside the batch closures.
-    const BATCH_SIZE = 20;
+    // Process in batches of 10 directly — smaller batches reduce peak memory
+    // from concurrent in-flight DB promises (each holds response buffers).
+    const BATCH_SIZE = 10;
     for (let i = 0; i < active.length; i += BATCH_SIZE) {
       const batch = active.slice(i, i + BATCH_SIZE);
       await Promise.all(
@@ -322,10 +322,18 @@ async function runCycle(): Promise<void> {
       );
     }
 
+    const activeLen = active.length;
     await accumulateCycleProfit(active);
+    // Release large arrays before the next GC boundary
+    (active as unknown[]).length = 0;
+    crossUpdates.length = 0;
+    usdMap.clear();
+    usdtVolByBase.clear();
+    // Hint V8 to collect now while the heap is clear (--expose-gc flag required)
+    (globalThis as any).gc?.();
     serviceState.botLastCycleAt = Date.now();
     serviceState.botCycles++;
-    logger.info({ markets: active.length }, "Liquidity bot cycle complete");
+    logger.info({ markets: activeLen }, "Liquidity bot cycle complete");
   } catch (err) {
     logger.error({ err }, "Liquidity bot cycle failed");
   }
