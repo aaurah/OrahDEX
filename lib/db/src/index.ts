@@ -30,12 +30,12 @@ export const pool = new Pool({
   // Evict idle connections after 20 s — well below Replit Postgres's idle
   // timeout — so stale sockets are recycled before the server closes them.
   idleTimeoutMillis: 20_000,
-  // Fail fast on new connection attempts rather than hanging indefinitely.
-  connectionTimeoutMillis: 10_000,
-  // Cap pool size to avoid overwhelming the managed database.
-  // 20 connections gives background bots (liquidity, price, arb) enough headroom
-  // to run bulk operations concurrently without timing out user-facing requests.
-  max: 20,
+  // Wait up to 20 s for a free connection before erroring — long enough to ride
+  // out a burst from the liquidity bot cycle without cascading failures.
+  connectionTimeoutMillis: 20_000,
+  // 25 connections: liquidity bot (4) + price updater (1 bulk) + watchers (3)
+  // + user-facing headroom (17). Raised from 20 to absorb concurrent bursts.
+  max: 25,
 });
 export const db = drizzle(pool, { schema });
 

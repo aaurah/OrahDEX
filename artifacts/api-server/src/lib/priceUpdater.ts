@@ -1,4 +1,4 @@
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { eq, desc, gte, inArray, notInArray, and, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
@@ -1383,23 +1383,45 @@ export async function updateMarketPrices() {
       });
     }
 
-    // Flush all price updates in parallel batches of 5 — keeps DB connection
-    // usage low so background bots don't exhaust the shared pool (max: 20).
-    const BATCH = 5;
-    for (let i = 0; i < pendingUpdates.length; i += BATCH) {
-      await Promise.all(
-        pendingUpdates.slice(i, i + BATCH).map(u =>
-          db.update(marketsTable).set({
-            lastPrice:             u.lastPrice,
-            priceChange24h:        u.priceChange24h,
-            priceChangePercent24h: u.priceChangePercent24h,
-            volume24h:             u.volume24h,
-            high24h:               u.high24h,
-            low24h:                u.low24h,
-            marketCap:             u.marketCap,
-          }).where(eq(marketsTable.symbol, u.symbol))
+    // Flush all price updates in a single bulk UPDATE per chunk — uses exactly
+    // 1 DB connection instead of N concurrent ones, eliminating the pool
+    // exhaustion that caused the 15 May 2026 production outage.
+    // 8 params per row × 500 rows = 4000 — well within PostgreSQL's 65535 limit.
+    const BULK_CHUNK = 500;
+    for (let i = 0; i < pendingUpdates.length; i += BULK_CHUNK) {
+      const chunk = pendingUpdates.slice(i, i + BULK_CHUNK);
+      const placeholders = chunk
+        .map((_, j) => {
+          const b = j * 8;
+          return `($${b+1}, $${b+2}::numeric, $${b+3}::numeric, $${b+4}::numeric, $${b+5}::numeric, $${b+6}::numeric, $${b+7}::numeric, $${b+8}::numeric)`;
+        })
+        .join(", ");
+      const params = chunk.flatMap(u => [
+        u.symbol,
+        u.lastPrice,
+        u.priceChange24h,
+        u.priceChangePercent24h,
+        u.volume24h,
+        u.high24h,
+        u.low24h,
+        u.marketCap ?? null,
+      ]);
+      await pool
+        .query(
+          `UPDATE markets AS m
+             SET last_price              = v.lp,
+                 price_change_24h        = v.pc,
+                 price_change_percent_24h = v.pcp,
+                 volume_24h              = v.vol,
+                 high_24h                = v.hi,
+                 low_24h                 = v.lo,
+                 market_cap              = v.mc
+           FROM (VALUES ${placeholders})
+             AS v(sym, lp, pc, pcp, vol, hi, lo, mc)
+           WHERE m.symbol = v.sym`,
+          params,
         )
-      );
+        .catch(err => logger.warn({ err }, "priceUpdater: bulk UPDATE failed"));
     }
     pendingUpdates.length = 0;
     // Release the large markets query result before proceeding
