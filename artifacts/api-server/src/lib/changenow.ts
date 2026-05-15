@@ -219,7 +219,10 @@ export async function getCNExchange(id: string): Promise<{
   status: string;
   txTo:   string | null;
 } | null> {
-  const { ok, data } = await cnRequest(`/exchange/${id}`);
+  const safeId = id.trim();
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(safeId)) return null;
+
+  const { ok, data } = await cnRequest(`/exchange/${encodeURIComponent(safeId)}`);
   if (!ok || !data || typeof data !== "object") return null;
   const d = data as Record<string, unknown>;
   return {
