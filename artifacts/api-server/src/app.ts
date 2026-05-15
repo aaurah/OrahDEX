@@ -1,5 +1,6 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import compression from "compression";
 import pinoHttp from "pino-http";
 import rateLimit from "express-rate-limit";
@@ -48,6 +49,15 @@ function assertWebhookMiddlewareOrder(order: string[]): void {
 /* ── Trust proxy — required for correct IP detection behind Replit's reverse proxy
  * Enables accurate rate-limiting and X-Forwarded-For header parsing. ────────── */
 app.set("trust proxy", 1);
+
+/* ── Security headers (helmet) ───────────────────────────────────────────────
+ * Sets X-Frame-Options, X-Content-Type-Options, HSTS, X-DNS-Prefetch-Control,
+ * Referrer-Policy, and more. CSP is disabled here because the same server also
+ * serves the SPA — the frontend's Vite build handles its own CSP needs.       */
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
 
 /* ── Compression — gzip all API responses (typically 60-80% smaller) ──── */
 app.use(compression({
@@ -210,6 +220,38 @@ const estimateLimiter = rateLimit({
 });
 app.use("/api/letsexchange/estimate", estimateLimiter);
 app.use("/api/swap/quote",            estimateLimiter);
+
+/* Withdrawal endpoints — financial risk, apply same strict limit as exchange */
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (
+    req.method !== "GET" &&
+    (req.path === "/api/withdrawals" || req.path === "/api/withdraw" ||
+     req.path.startsWith("/api/withdrawals/") || req.path.startsWith("/api/withdraw/"))
+  ) {
+    return exchangeLimiter(req, res, next);
+  }
+  return next();
+});
+
+/* KYC submission — 5 per minute per IP to prevent enumeration/spam */
+const kycLimiter = rateLimit({
+  windowMs:        60_000,
+  max:             5,
+  standardHeaders: "draft-7",
+  legacyHeaders:   false,
+  handler: (_req, res) => res.status(429).json({ error: "Too many KYC requests — please wait before resubmitting." }),
+});
+app.use("/api/kyc/submit", kycLimiter);
+
+/* Email inbound webhook — 20 per minute to prevent admin inbox flooding */
+const emailWebhookLimiter = rateLimit({
+  windowMs:        60_000,
+  max:             20,
+  standardHeaders: "draft-7",
+  legacyHeaders:   false,
+  handler: (_req, res) => res.status(429).json({ error: "Email webhook rate limit exceeded." }),
+});
+app.use("/api/webhook/email-inbound", emailWebhookLimiter);
 
 /* ── Smart cache headers for common API routes ──────────────────────────── */
 app.use("/api", (req: Request, res: Response, next: NextFunction) => {
