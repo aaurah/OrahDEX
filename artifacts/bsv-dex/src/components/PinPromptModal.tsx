@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Shield, Loader2, AlertTriangle, X } from "lucide-react";
@@ -13,9 +13,20 @@ import { cn } from "@/lib/utils";
 export function PinPromptModal() {
   const { open, title, subtitle, busy, error, address, submit, cancel } = usePinPromptStore();
   const [pin, setPin] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (!open) setPin("");
+    if (!open) {
+      setPin("");
+      return;
+    }
+    // iOS Safari: keyboard only opens when focus() is called inside a user-gesture
+    // handler OR after the modal animation finishes. We use a delay that comfortably
+    // clears the enter animation (300 ms) so the element is fully painted & interactive.
+    const t = setTimeout(() => {
+      inputRef.current?.focus();
+    }, 350);
+    return () => clearTimeout(t);
   }, [open]);
 
   if (typeof document === "undefined") return null;
@@ -28,7 +39,7 @@ export function PinPromptModal() {
       {open && (
         <motion.div
           key="pin-prompt-backdrop"
-          className="fixed inset-0 z-[120] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4"
+          className="fixed inset-0 z-[120] bg-black/80 flex items-center justify-center px-4"
           initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
           onClick={() => { if (!busy) cancel(); }}
         >
@@ -68,14 +79,19 @@ export function PinPromptModal() {
               <p className="text-xs text-muted-foreground leading-relaxed">{subtitle}</p>
 
               <input
+                ref={inputRef}
                 type="password"
                 inputMode="numeric"
                 pattern="[0-9]*"
                 maxLength={PIN_MAX_LEN}
-                autoFocus
+                autoComplete="one-time-code"
+                autoCorrect="off"
+                autoCapitalize="none"
+                spellCheck={false}
                 value={pin}
                 onChange={e => setPin(e.target.value.replace(/\D/g, ""))}
                 onKeyDown={e => { if (e.key === "Enter") onSubmit(); }}
+                onTouchEnd={e => { e.currentTarget.focus(); }}
                 disabled={busy}
                 placeholder="••••••"
                 className={cn(
