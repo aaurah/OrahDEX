@@ -5,6 +5,7 @@ import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, Trending
 import { useThemeStore } from "@/store/useThemeStore";
 import { SocialBar } from "@/components/SocialBar";
 import { API_BASE } from "@/lib/api";
+import { useSEO } from "@/hooks/useSEO";
 
 /* ── Theme cycle helpers ─────────────────────────────────────────────────── */
 const LAND_THEME_CYCLE = ["amoled", "dark", "light"] as const;
@@ -617,6 +618,22 @@ export function LandingPage() {
   const lowMotionMode = useLowMotionLandingMode();
   const MARKET_COUNT_PLACEHOLDER = 1000; // startup placeholder until live total is fetched
   const MARKETS_PREVIEW_LIMIT = 50;
+
+  useSEO({
+    title: "OrahDEX — Trade means DEX | Spot, Futures & P2P Crypto Exchange",
+    description: "OrahDEX is a sovereign multi-chain DEX with spot trading, perpetual futures, P2P markets, copy trading, and on-chain BSV settlement. Trade 900+ markets across EVM, TRON and BSV networks.",
+    keywords: "OrahDEX, DEX, decentralized exchange, crypto trading, BSV, spot trading, perpetual futures, P2P, copy trading, DeFi, multi-chain, EVM, AMM, liquidity pools",
+    url: "https://orahdex.org/",
+    type: "website",
+    jsonLd: {
+      "@context": "https://schema.org",
+      "@type": "WebPage",
+      "name": "OrahDEX — Trade means DEX",
+      "description": "Sovereign multi-chain decentralized exchange featuring spot trading, perpetual futures, P2P markets, copy trading, and on-chain BSV settlement.",
+      "url": "https://orahdex.org/",
+      "isPartOf": { "@type": "WebSite", "name": "OrahDEX", "url": "https://orahdex.org" }
+    },
+  });
 
   const safeTheme: LandTheme = (LAND_THEME_CYCLE as readonly string[]).includes(theme)
     ? (theme as LandTheme)

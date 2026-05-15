@@ -2,15 +2,20 @@
 <html lang="en" dir="ltr">
   <head>
     <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="format-detection" content="telephone=no, date=no, email=no, address=no" />
 
     <!-- Primary meta -->
     <title>OrahDEX — Trade means DEX | Spot, Futures & P2P Crypto Exchange</title>
-    <meta name="description" content="OrahDEX is a multi-chain DEX featuring spot trading, perpetual futures, P2P markets, and on-chain BSV settlement. Trade 226+ markets with real-time CoinGecko prices." />
-    <meta name="keywords" content="OrahDEX, crypto exchange, DEX, decentralized exchange, BSV, Bitcoin SV, spot trading, futures, P2P, DeFi, multi-chain, EVM, WalletConnect, AMM, liquidity pools" />
+    <meta name="description" content="OrahDEX is a multi-chain DEX featuring spot trading, perpetual futures, P2P markets, and on-chain BSV settlement. Trade 900+ markets across EVM, TRON and BSV networks." />
+    <meta name="keywords" content="OrahDEX, crypto exchange, DEX, decentralized exchange, BSV, Bitcoin SV, spot trading, futures, perpetual, P2P, DeFi, multi-chain, EVM, WalletConnect, AMM, liquidity pools, copy trading, on-chain settlement" />
     <meta name="author" content="OrahDEX" />
+    <meta name="rating" content="general" />
     <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
-    <meta name="googlebot" content="index, follow" />
+    <meta name="googlebot" content="index, follow, max-snippet:-1, max-image-preview:large" />
+    <meta name="bingbot" content="index, follow" />
     <link rel="canonical" href="https://orahdex.org/" />
 
     <!-- Open Graph / Facebook -->
@@ -100,11 +105,44 @@
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'" />
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" /></noscript>
   </head>
   <body>
     <div id="root"></div>
     <div id="modal-root" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;pointer-events:none;"></div>
+    <!-- Visible fallback content for crawlers that do not execute JavaScript -->
+    <noscript>
+      <main style="font-family:sans-serif;max-width:900px;margin:40px auto;padding:0 20px;color:#f0f0f0;background:#080d13">
+        <header>
+          <h1 style="font-size:2.5rem;margin-bottom:0.5rem">OrahDEX — Trade means DEX</h1>
+          <p style="font-size:1.1rem;color:#aaa">Multi-chain decentralized exchange · 900+ markets · Spot, Futures, P2P, Copy Trading</p>
+        </header>
+        <section>
+          <h2>What is OrahDEX?</h2>
+          <p>OrahDEX is a sovereign, multi-chain decentralized exchange (DEX) offering spot trading, perpetual futures up to 100× leverage, peer-to-peer (P2P) markets, copy trading, and on-chain settlement via Bitcoin SV (BSV). Connect EVM, TRON, Solana, or BSV wallets and trade 900+ markets with real-time prices.</p>
+        </section>
+        <nav aria-label="Main navigation">
+          <ul style="list-style:none;padding:0;display:flex;flex-wrap:wrap;gap:12px">
+            <li><a href="/markets" style="color:#4ade80">Markets</a></li>
+            <li><a href="/trade/BTC-USDT" style="color:#4ade80">Spot Trading</a></li>
+            <li><a href="/futures/BTC-USDT-PERP" style="color:#4ade80">Futures</a></li>
+            <li><a href="/p2p" style="color:#4ade80">P2P</a></li>
+            <li><a href="/swap" style="color:#4ade80">Swap</a></li>
+            <li><a href="/copy-trading" style="color:#4ade80">Copy Trading</a></li>
+            <li><a href="/liquidity" style="color:#4ade80">Liquidity</a></li>
+            <li><a href="/dex" style="color:#4ade80">DEX Hub</a></li>
+            <li><a href="/bridge" style="color:#4ade80">Bridge</a></li>
+            <li><a href="/nft" style="color:#4ade80">NFT</a></li>
+            <li><a href="/white-paper" style="color:#4ade80">White Paper</a></li>
+            <li><a href="/terms" style="color:#4ade80">Terms of Service</a></li>
+            <li><a href="/privacy" style="color:#4ade80">Privacy Policy</a></li>
+          </ul>
+        </nav>
+        <p style="margin-top:2rem;color:#888">JavaScript is required for the full OrahDEX trading experience. Please enable JavaScript in your browser.</p>
+      </main>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
