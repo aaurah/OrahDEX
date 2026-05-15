@@ -43,7 +43,8 @@ import {
 
 function connectHardwareWallet(address: string) {
   const store = useWalletStore.getState();
-  store.connect({ address, provider: "orah-wallet", network: "evm" });
+  const existingChainId = store.chainId ?? 1;
+  store.connect({ address, provider: "orah-wallet", network: "evm", chainId: existingChainId });
   store.setInternalEvmAddress(address);
 }
 
