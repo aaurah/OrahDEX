@@ -530,7 +530,7 @@ router.delete("/admin/stripe-orders/:id", requireAdminToken, async (req, res) =>
 router.post("/admin/stripe-orders/:id/fulfill", requireAdminToken, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, stripe_payment_intent_id, wallet_address, coin_symbol, status, le_transaction_id
+      `SELECT id, stripe_payment_intent_id, wallet_address, coin_symbol, status, le_transaction_id, fiat_amount_cents
          FROM crypto_orders WHERE id = $1`,
       [req.params.id]
     );
@@ -548,7 +548,7 @@ router.post("/admin/stripe-orders/:id/fulfill", requireAdminToken, async (req, r
       orderId: order.id,
       coinSymbol: order.coin_symbol,
       walletAddress: order.wallet_address,
-    });
+    }, Number(order.fiat_amount_cents ?? 0));
 
     const { rows: updated } = await pool.query(
       `SELECT id, status, le_transaction_id, le_deposit_address, le_deposit_extra_id,

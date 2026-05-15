@@ -228,9 +228,9 @@ router.post("/derive-from-key", async (req, res) => {
         return res.status(400).json({ error: `Private key import is not yet supported for ${family}. Please paste the public address instead.` });
     }
 
-    res.json({ address });
+    return res.json({ address });
   } catch (err: any) {
-    res.status(400).json({ error: err?.message ?? "Failed to derive address from key" });
+    return res.status(400).json({ error: err?.message ?? "Failed to derive address from key" });
   }
 });
 
