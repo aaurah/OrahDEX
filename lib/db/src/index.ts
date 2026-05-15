@@ -33,7 +33,9 @@ export const pool = new Pool({
   // Fail fast on new connection attempts rather than hanging indefinitely.
   connectionTimeoutMillis: 10_000,
   // Cap pool size to avoid overwhelming the managed database.
-  max: 10,
+  // 20 connections gives background bots (liquidity, price, arb) enough headroom
+  // to run bulk operations concurrently without timing out user-facing requests.
+  max: 20,
 });
 export const db = drizzle(pool, { schema });
 
