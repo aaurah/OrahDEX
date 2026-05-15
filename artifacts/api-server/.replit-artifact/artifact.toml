@@ -6,7 +6,7 @@ id = "3B4_FFSkEVBkAeYMFRJ2e"
 deploymentTarget = "vm"
 
 [[services]]
-localPort = 8080
+localPort = 80
 name = "API Server"
 paths = ["/api", "/v1"]
 
@@ -26,7 +26,7 @@ NODE_ENV = "production"
 args = ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
 
 [services.production.run.env]
-PORT = "8080"
+PORT = "80"
 NODE_ENV = "production"
 
 [services.production.health.startup]
