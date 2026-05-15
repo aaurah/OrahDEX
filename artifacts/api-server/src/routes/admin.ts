@@ -244,7 +244,7 @@ router.post("/auth/totp", async (req, res) => {
  * GET /admin/auth/totp-uri
  * Returns the otpauth URI for QR-code generation (uses server-side secret).
  */
-router.get("/auth/totp-uri", requireAdminToken, (_req, res) => {
+router.get("/auth/totp-uri", requireAdminToken, async (_req, res) => {
   const secret  = process.env.ADMIN_TOTP_SECRET;
   if (!secret) {
     res.status(503).json({ error: "ADMIN_TOTP_SECRET is not configured on this server." });
@@ -254,10 +254,16 @@ router.get("/auth/totp-uri", requireAdminToken, (_req, res) => {
   const issuer  = "OrahDEX";
   const params  = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });
   const uri     = `otpauth://totp/${encodeURIComponent(issuer + ":" + email)}?${params}`;
-  // Return only the URI — the admin client renders the QR code locally.
-  // Never send the otpauth URI to a third-party QR service; it would expose
-  // the plaintext TOTP secret to an external server.
-  res.json({ uri });
+  // Generate QR code server-side as a data URI — never send the TOTP secret
+  // to a third-party service (e.g. api.qrserver.com).
+  let qrUrl = "";
+  try {
+    const QRCode = (await import("qrcode")).default;
+    qrUrl = await QRCode.toDataURL(uri, { width: 200, margin: 1 });
+  } catch {
+    // Non-fatal — admin can still configure from the plain secret key.
+  }
+  res.json({ uri, qrUrl });
 });
 
 /**
