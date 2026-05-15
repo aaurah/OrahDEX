@@ -18,7 +18,8 @@ interface Props {
 
 function applyOrahWallet(address: string, chains?: PasskeyChainAddresses) {
   const store = useWalletStore.getState();
-  store.connect({ address, provider: "orah-wallet", network: "evm" });
+  const existingChainId = store.chainId ?? 1;
+  store.connect({ address, provider: "orah-wallet", network: "evm", chainId: existingChainId });
   if (chains) {
     store.setInternalEvmAddress(chains.evm ?? address);
     if (chains.bsv)  store.setInternalBsvAddress(chains.bsv);
