@@ -543,12 +543,18 @@ router.post("/admin/stripe-orders/:id/fulfill", requireAdminToken, async (req, r
       [order.id]
     );
 
+    const paidAmountCents = Number(order.fiat_amount_cents);
+    if (!Number.isFinite(paidAmountCents) || paidAmountCents <= 0) {
+      res.status(400).json({ error: "Order fiat amount is missing or invalid" });
+      return;
+    }
+
     const { fulfillOrder } = await import("../webhookHandlers.js");
     await fulfillOrder(order.stripe_payment_intent_id ?? `manual:${order.id}`, {
       orderId: order.id,
       coinSymbol: order.coin_symbol,
       walletAddress: order.wallet_address,
-    }, Number(order.fiat_amount_cents ?? 0));
+    }, paidAmountCents);
 
     const { rows: updated } = await pool.query(
       `SELECT id, status, le_transaction_id, le_deposit_address, le_deposit_extra_id,
