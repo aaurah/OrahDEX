@@ -10,7 +10,7 @@
  * so it can be excluded from real-user analytics.
  */
 
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { ordersTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, and, notInArray } from "drizzle-orm";
 import crypto from "node:crypto";
@@ -267,17 +267,30 @@ async function runCycle(): Promise<void> {
       crossUpdates.push({ symbol: m.symbol, price: crossPrice.toFixed(8) });
     }
 
-    const CROSS_BATCH = 50;
-    for (let ci = 0; ci < crossUpdates.length; ci += CROSS_BATCH) {
-      const batch = crossUpdates.slice(ci, ci + CROSS_BATCH);
-      await Promise.all(
-        batch.map(({ symbol, price }) =>
-          db.update(marketsTable)
-            .set({ lastPrice: price })
-            .where(eq(marketsTable.symbol, symbol))
-            .catch(err => logger.warn({ err, symbol }, "Bot: failed to update cross-price")),
-        ),
-      );
+    // Single bulk UPDATE per chunk — uses 1 connection instead of N concurrent
+    // individual UPDATEs that would exhaust the shared pg-pool (max: 20).
+    // PostgreSQL parameter limit is 65535; 1000 pairs × 2 params = 2000 — safe.
+    if (crossUpdates.length > 0) {
+      const BULK_CHUNK = 1000;
+      for (let ci = 0; ci < crossUpdates.length; ci += BULK_CHUNK) {
+        const chunk = crossUpdates.slice(ci, ci + BULK_CHUNK);
+        // price values arrive as numeric strings ("0.00000349"); cast them
+        // to numeric in the VALUES clause so PostgreSQL can assign them
+        // directly to the numeric last_price column without a type error.
+        const placeholders = chunk
+          .map((_, i) => `($${i * 2 + 1}::text, $${i * 2 + 2}::numeric)`)
+          .join(", ");
+        const params = chunk.flatMap(u => [u.symbol, u.price]);
+        await pool
+          .query(
+            `UPDATE markets AS m
+               SET last_price = v.price
+             FROM (VALUES ${placeholders}) AS v(symbol, price)
+             WHERE m.symbol = v.symbol`,
+            params,
+          )
+          .catch(err => logger.warn({ err }, "Bot: bulk cross-price update failed"));
+      }
     }
 
     // ── Step 3: Seed order books using the now-consistent prices ────────────
@@ -290,9 +303,10 @@ async function runCycle(): Promise<void> {
       }
     }
 
-    // Process in batches of 10 directly — smaller batches reduce peak memory
-    // from concurrent in-flight DB promises (each holds response buffers).
-    const BATCH_SIZE = 10;
+    // Process in batches of 3 — each refreshMarket uses 2 connections (DELETE +
+    // INSERT), so 3 concurrent = 6 connections, leaving plenty of headroom in
+    // the pool (max: 20) for the price updater and user-facing requests.
+    const BATCH_SIZE = 3;
     for (let i = 0; i < active.length; i += BATCH_SIZE) {
       const batch = active.slice(i, i + BATCH_SIZE);
       await Promise.all(
