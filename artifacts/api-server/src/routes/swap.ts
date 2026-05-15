@@ -497,24 +497,32 @@ router.post("/swap/execute", async (req, res) => {
         leResult = await executeLELeg(externalAmt);
       } catch (leErr: any) {
         // Compensate: reverse the internal leg settlement so the user is whole.
+        // Both balance updates run inside a single transaction so either both
+        // succeed or both roll back — no partial refund leaves the user short.
+        const refundClient = await pool.connect();
         try {
-          await pool.query(
+          await refundClient.query("BEGIN");
+          await refundClient.query(
             `UPDATE user_balances
                SET available  = available + $1, updated_at = now()
              WHERE wallet_address = $2 AND asset_symbol = $3`,
             [internalAmt.toFixed(18), walletAddress, a],
           );
-          await pool.query(
+          await refundClient.query(
             `UPDATE user_balances
                SET available  = GREATEST(available - $1, 0), updated_at = now()
              WHERE wallet_address = $2 AND asset_symbol = $3`,
             [internalResult.amtOut.toFixed(18), walletAddress, b],
           );
+          await refundClient.query("COMMIT");
         } catch (refundErr: any) {
+          await refundClient.query("ROLLBACK").catch(() => {});
           logger.error(
             { refundErr: refundErr?.message, walletAddress },
             "swap: split route compensation refund failed — manual reconciliation needed",
           );
+        } finally {
+          refundClient.release();
         }
         const msg = String(leErr?.message ?? "");
         if (msg === "MISSING_WITHDRAWAL") throw Object.assign(new Error("withdrawal is required for split swap LetsExchange leg"), { status: 400 });

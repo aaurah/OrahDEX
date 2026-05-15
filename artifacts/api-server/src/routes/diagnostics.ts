@@ -13,6 +13,7 @@
 import { Router, type IRouter } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { requireAdminToken } from "../middleware/adminAuth.js";
 
 const router: IRouter = Router();
 
@@ -58,7 +59,7 @@ async function q<T extends Record<string, any>>(sql: string, params: any[] = [])
   return res.rows as T[];
 }
 
-router.get("/diagnostics", async (_req, res) => {
+router.get("/diagnostics", requireAdminToken, async (_req, res) => {
   const started = Date.now();
 
   const results = await Promise.all([

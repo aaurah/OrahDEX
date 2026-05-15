@@ -150,6 +150,9 @@ importers:
       express-rate-limit:
         specifier: ^8.4.1
         version: 8.4.1(express@5.2.1)
+      helmet:
+        specifier: ^8.1.0
+        version: 8.1.0
       nodemailer:
         specifier: 8.0.5
         version: 8.0.5
@@ -159,6 +162,9 @@ importers:
       pino-http:
         specifier: ^11.0.0
         version: 11.0.0
+      qrcode:
+        specifier: ^1.5.4
+        version: 1.5.4
       viem:
         specifier: ^2.47.6
         version: 2.47.6(typescript@6.0.2)(zod@4.3.6)
@@ -6698,6 +6704,10 @@ packages:
     resolution: {integrity: sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==}
     hasBin: true
 
+  helmet@8.1.0:
+    resolution: {integrity: sha512-jOiHyAZsmnr8LqoPGmCjYAaiuWwjAPLgY8ZX2XrmHawt99/u1y6RgrZMTeoPfpUbV96HOalYgz1qzkRbw54Pmg==}
+    engines: {node: '>=18.0.0'}
+
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
 
@@ -8038,6 +8048,11 @@ packages:
 
   qrcode@1.5.3:
     resolution: {integrity: sha512-puyri6ApkEHYiVl4CFzo1tDkAZ+ATcnbJrJ6RiBM1Fhctdn/ix9MTE3hRph33omisEbC/2fcfemsseiKgBPKZg==}
+    engines: {node: '>=10.13.0'}
+    hasBin: true
+
+  qrcode@1.5.4:
+    resolution: {integrity: sha512-1ca71Zgiu6ORjHqFBDpnSMTR2ReToX4l1Au1VFLyVeBTFavzQnv5JxMFr3ukHVKpSrSA2MCk0lNJSykjUfz7Zg==}
     engines: {node: '>=10.13.0'}
     hasBin: true
 
@@ -17047,6 +17062,8 @@ snapshots:
 
   he@1.2.0: {}
 
+  helmet@8.1.0: {}
+
   help-me@5.0.0: {}
 
   hermes-compiler@250829098.0.9: {}
@@ -18560,6 +18577,12 @@ snapshots:
     dependencies:
       dijkstrajs: 1.0.3
       encode-utf8: 1.0.3
+      pngjs: 5.0.0
+      yargs: 15.4.1
+
+  qrcode@1.5.4:
+    dependencies:
+      dijkstrajs: 1.0.3
       pngjs: 5.0.0
       yargs: 15.4.1
 
