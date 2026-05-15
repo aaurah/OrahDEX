@@ -254,7 +254,10 @@ router.get("/auth/totp-uri", requireAdminToken, (_req, res) => {
   const issuer  = "OrahDEX";
   const params  = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });
   const uri     = `otpauth://totp/${encodeURIComponent(issuer + ":" + email)}?${params}`;
-  res.json({ uri, qrUrl: `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uri)}` });
+  // Return only the URI — the admin client renders the QR code locally.
+  // Never send the otpauth URI to a third-party QR service; it would expose
+  // the plaintext TOTP secret to an external server.
+  res.json({ uri });
 });
 
 /**
@@ -2562,7 +2565,7 @@ router.post("/mint-burn", requireAdminToken, async (req, res) => {
     res.status(isInsufficient ? 400 : 500).json({
       error: isInsufficient
         ? `Insufficient ${asset} balance to burn that amount`
-        : err.message,
+        : "Internal error — see server logs for details",
     });
   }
 });
@@ -2617,7 +2620,7 @@ router.post("/ledger-adjust", requireAdminToken, async (req, res) => {
     res.status(isInsufficient ? 400 : 500).json({
       error: isInsufficient
         ? `Insufficient ${asset?.toUpperCase()} balance to withdraw that amount`
-        : err.message,
+        : "Internal error — see server logs for details",
     });
   }
 });

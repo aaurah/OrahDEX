@@ -13,6 +13,7 @@
 import { Router, type IRouter } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { requireAdminToken } from "../middleware/adminAuth.js";
 
 const router: IRouter = Router();
 
