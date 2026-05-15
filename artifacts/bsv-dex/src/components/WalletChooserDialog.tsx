@@ -57,7 +57,10 @@ type Tab =
 
 function applyOrahWallet(address: string, chains?: PasskeyChainAddresses) {
   const store = useWalletStore.getState();
-  store.connect({ address, provider: "orah-wallet", network: "evm" });
+  // Default to Ethereum mainnet (1) so chainId is always populated for order signing.
+  // The user can switch chains at any time via the chain switcher.
+  const existingChainId = store.chainId ?? 1;
+  store.connect({ address, provider: "orah-wallet", network: "evm", chainId: existingChainId });
   if (chains) {
     store.setInternalEvmAddress(chains.evm ?? address);
     if (chains.bsv)  store.setInternalBsvAddress(chains.bsv);
@@ -372,6 +375,13 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
         <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/70 shrink-0" />
       </button>
 
+      <div className="flex items-start gap-2 px-1 pt-1">
+        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Your PIN and passkeys are stored on <strong>this device</strong> and tied to <strong>this website URL</strong>. A PIN set on one domain (e.g. dev) won't work on another (e.g. orahdex.org) — just set a new one there.
+        </p>
+      </div>
+
       <button onClick={() => setStep("phrase")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
     </div>
   );
@@ -391,10 +401,16 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
       onDone();
     } catch (err: any) {
       const msg: string = err?.message ?? "";
-      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+      // PRF extension not supported (common on iOS Safari) — auto-redirect to PIN
+      if (msg.toLowerCase().includes("prf") || msg.toLowerCase().includes("hmac-secret")) {
+        toast({ title: "Biometric encryption not available", description: "Your device doesn't support passkey encryption. Switching to PIN protection.", variant: "destructive" });
+        setStep(hasPin() ? "pin-entry" : "pin-setup");
+      } else if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort") || msg.toLowerCase().includes("notallowederror")) {
         toast({ title: "Cancelled", description: "Biometric authentication was cancelled.", variant: "destructive" });
       } else {
-        toast({ title: "Failed", description: msg || "Could not protect wallet.", variant: "destructive" });
+        // Any other error (e.g. no platform authenticator) — also fall back to PIN
+        toast({ title: "Biometric unavailable", description: "Switching to PIN protection.", variant: "destructive" });
+        setStep(hasPin() ? "pin-entry" : "pin-setup");
       }
     } finally { setLoading(false); }
   };
@@ -601,10 +617,15 @@ function SeedCreatePanel({ onDone }: { onDone: () => void }) {
       onDone();
     } catch (err: any) {
       const msg: string = err?.message ?? "";
-      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+      // PRF extension not supported (common on iOS Safari) — auto-redirect to PIN
+      if (msg.toLowerCase().includes("prf") || msg.toLowerCase().includes("hmac-secret")) {
+        toast({ title: "Biometric encryption not available", description: "Your device doesn't support passkey encryption. Switching to PIN protection.", variant: "destructive" });
+        setStep(hasPin() ? "pin-entry" : "pin-setup");
+      } else if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort") || msg.toLowerCase().includes("notallowederror")) {
         toast({ title: "Cancelled", description: "Biometric authentication was cancelled.", variant: "destructive" });
       } else {
-        toast({ title: "Failed", description: msg || "Could not create wallet.", variant: "destructive" });
+        toast({ title: "Biometric unavailable", description: "Switching to PIN protection.", variant: "destructive" });
+        setStep(hasPin() ? "pin-entry" : "pin-setup");
       }
     } finally { setLoading(false); }
   };
