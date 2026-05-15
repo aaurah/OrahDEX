@@ -240,31 +240,43 @@ function PasskeyPanel({ onDone, onViewSeed }: { onDone: () => void; onViewSeed?:
 
 /* ─── Import Wallet Panel ───────────────────────────────────────────────── */
 
+type ImportStep = "phrase" | "protect" | "biometric" | "pin-setup" | "pin-entry";
+
 function ImportPanel({ onDone }: { onDone: () => void }) {
   const { toast } = useToast();
-  const [phrase, setPhrase] = useState("");
-  const [show, setShow] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [step, setStep]                     = useState<ImportStep>("phrase");
+  const [phrase, setPhrase]                 = useState("");
+  const [show, setShow]                     = useState(false);
+  const [loading, setLoading]               = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [pin, setPin]                       = useState("");
+  const [pinConfirm, setPinConfirm]         = useState("");
+  const [pinError, setPinError]             = useState<string | null>(null);
+  const mnemonicRef = useRef<string>("");
+  const wordsRef    = useRef<string[]>([]);
 
   const wordCount = phrase.trim().split(/\s+/).filter(Boolean).length;
-  const isReady = wordCount === 12 || wordCount === 24;
+  const isReady   = wordCount === 12 || wordCount === 24;
 
-  const handleImport = async () => {
-    const { valid, words, error } = validateMnemonic(phrase);
-    if (!valid) { setValidationError(error ?? "Invalid seed phrase."); return; }
-    setLoading(true);
-    try {
-      const chains = await deriveAllAddresses(words);
-      applyOrahWallet(chains.evm, chains);
-      toast({ title: "Wallet imported", description: `${chains.evm.slice(0, 6)}…${chains.evm.slice(-4)} · BSV · BTC · ETH + more` });
-      onDone();
-    } catch (err: any) {
-      toast({ title: "Import failed", description: err?.message || "Could not derive addresses.", variant: "destructive" });
-    } finally { setLoading(false); }
+  const finishWithAddrs = (addrs: Awaited<ReturnType<typeof deriveAllAddresses>>) => {
+    const chains: PasskeyChainAddresses = {
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch,
+      bsv: addrs.bsv, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+    };
+    saveDerivedAddresses(addrs.evm, chains);
+    applyOrahWallet(addrs.evm, chains);
   };
 
-  return (
+  /* ── Step: phrase ───────────────────────────────────────────────────────── */
+  const handlePhraseNext = () => {
+    const { valid, words, error } = validateMnemonic(phrase);
+    if (!valid) { setValidationError(error ?? "Invalid seed phrase."); return; }
+    mnemonicRef.current = words.join(" ");
+    wordsRef.current    = words;
+    setStep("protect");
+  };
+
+  if (step === "phrase") return (
     <div className="space-y-3">
       <div className="relative">
         <Textarea
@@ -317,11 +329,11 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
 
       <Button
         className="w-full h-[46px] gap-2 text-sm font-semibold rounded-xl mt-1"
-        onClick={handleImport}
+        onClick={handlePhraseNext}
         disabled={!isReady || loading}
       >
-        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-        {loading ? "Deriving addresses…" : "Import Wallet"}
+        <Download className="w-4 h-4" />
+        Continue
       </Button>
 
       <div className="flex items-start gap-2 px-1">
@@ -330,6 +342,144 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
           Your phrase never leaves this device. All derivation runs locally in your browser.
         </p>
       </div>
+    </div>
+  );
+
+  /* ── Step: protect ──────────────────────────────────────────────────────── */
+  if (step === "protect") return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground text-center pb-1">How should this wallet be protected for signing?</p>
+
+      <button onClick={() => setStep("biometric")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-all text-left">
+        <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+          <Fingerprint className="w-5 h-5 text-primary" />
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">Face ID / Touch ID</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Biometric — no PIN to remember</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-primary/40 group-hover:text-primary/70 shrink-0" />
+      </button>
+
+      <button onClick={() => setStep(hasPin() ? "pin-entry" : "pin-setup")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/20 transition-all text-left">
+        <div className="w-10 h-10 rounded-xl bg-muted border border-border flex items-center justify-center shrink-0">
+          <KeyRound className="w-5 h-5 text-muted-foreground" />
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">PIN</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">6–10 digit code · works offline</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/70 shrink-0" />
+      </button>
+
+      <button onClick={() => setStep("phrase")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── Step: biometric ────────────────────────────────────────────────────── */
+  const handleBiometric = async () => {
+    setLoading(true);
+    try {
+      const addrs = await deriveAllAddresses(wordsRef.current);
+      const { credentialId, prfSecret } = await createImportPasskey("OrahDEX Wallet");
+      await storeWithPasskey({
+        address: addrs.evm, secret: mnemonicRef.current,
+        keyKind: "mnemonic", prfSecret, passkeyId: credentialId, label: "OrahDEX Wallet",
+      });
+      finishWithAddrs(addrs);
+      toast({ title: "Wallet imported!", description: `Face/Touch protected · ${addrs.evm.slice(0, 6)}…${addrs.evm.slice(-4)}` });
+      onDone();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+        toast({ title: "Cancelled", description: "Biometric authentication was cancelled.", variant: "destructive" });
+      } else {
+        toast({ title: "Failed", description: msg || "Could not protect wallet.", variant: "destructive" });
+      }
+    } finally { setLoading(false); }
+  };
+
+  if (step === "biometric") return (
+    <div className="space-y-4">
+      <div className="flex flex-col items-center gap-3 py-3">
+        <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          {loading ? <Loader2 className="w-6 h-6 text-primary animate-spin" /> : <Fingerprint className="w-6 h-6 text-primary" />}
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-semibold text-foreground">Biometric Protection</p>
+          <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+            Your seed phrase will be encrypted and only unlockable with your biometric.
+          </p>
+        </div>
+      </div>
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handleBiometric} disabled={loading}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Fingerprint className="w-4 h-4" />}
+        {loading ? "Waiting for biometric…" : "Authenticate & Import Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── PIN helpers ────────────────────────────────────────────────────────── */
+  const finishWithPin = async (pinVal: string) => {
+    const addrs = await deriveAllAddresses(wordsRef.current);
+    await storeWithPin({ address: addrs.evm, secret: mnemonicRef.current, keyKind: "mnemonic", pin: pinVal, label: "OrahDEX Wallet" });
+    finishWithAddrs(addrs);
+    toast({ title: "Wallet imported!", description: `PIN protected · ${addrs.evm.slice(0, 6)}…${addrs.evm.slice(-4)}` });
+    onDone();
+  };
+
+  const handlePinSetup = async () => {
+    const v = validatePin(pin);
+    if (!v.valid) { setPinError(v.error!); return; }
+    if (pin !== pinConfirm) { setPinError("PINs do not match"); return; }
+    setPinError(null);
+    setLoading(true);
+    try { await setPin(pin); await finishWithPin(pin); }
+    catch (err: any) { setPinError(err?.message || "Could not set PIN"); }
+    finally { setLoading(false); }
+  };
+
+  const handlePinEntry = async () => {
+    setPinError(null);
+    setLoading(true);
+    try { await finishWithPin(pin); }
+    catch (err: any) { setPinError(err?.message || "Incorrect PIN"); }
+    finally { setLoading(false); }
+  };
+
+  /* ── Step: pin-setup (first time) ──────────────────────────────────────── */
+  if (step === "pin-setup") return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground text-center leading-relaxed">Create a PIN for this device. You'll use it every time you sign a transaction.</p>
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="New PIN (6–10 digits)"
+        value={pin} onChange={e => { setPin(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="Confirm PIN"
+        value={pinConfirm} onChange={e => { setPinConfirm(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      {pinError && <div className="flex items-start gap-2 text-destructive text-[11px]"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{pinError}</span></div>}
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handlePinSetup} disabled={loading || pin.length < 6}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+        {loading ? "Importing wallet…" : "Set PIN & Import Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── Step: pin-entry (PIN already exists on device) ─────────────────────── */
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground text-center leading-relaxed">Enter your PIN to protect this wallet with your existing device PIN.</p>
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="Enter your PIN"
+        value={pin} onChange={e => { setPin(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      {pinError && <div className="flex items-start gap-2 text-destructive text-[11px]"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{pinError}</span></div>}
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handlePinEntry} disabled={loading || pin.length < 6}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+        {loading ? "Importing wallet…" : "Import Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
     </div>
   );
 }
