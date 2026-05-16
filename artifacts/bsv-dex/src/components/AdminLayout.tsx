@@ -6,7 +6,7 @@ import {
   Wallet, Bot, Globe, Home, ToggleLeft, Shield, DollarSign,
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle, Search, ArrowDownToLine,
-  Landmark, Plug2, Printer, Database, CreditCard, Link2,
+  Landmark, Plug2, Printer, Database, CreditCard, Link2, Shuffle,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
@@ -105,6 +105,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/diagnostics",  label: "Diagnostics",        icon: Activity },
       { href: "/admin/api-monitor",  label: "API Monitor",        icon: Activity },
       { href: "/admin/liquidity",    label: "Liquidity Bot",      icon: Bot },
+      { href: "/admin/bsv-intents", label: "BSV Intents",        icon: Shuffle, badge: "NEW" },
       { href: "/admin/tradingview",  label: "TradingView Feed",   icon: TrendingUp },
       { href: "/admin/logs",         label: "System Logs",        icon: Terminal },
     ],
