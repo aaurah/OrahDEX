@@ -64,6 +64,27 @@ const BINANCE_INTERVAL_MAP: Record<string, string> = {
   "1d":"1d","3d":"3d","1w":"1w","1M":"1M",
 };
 
+/* ── Poloniex symbol overrides — coins listed under a different ticker ────────
+   BSV trades as BCHSV on Poloniex. Add others here if needed.              */
+const POLONIEX_SYMBOL_MAP: Record<string, string> = {
+  "BSV": "BCHSV",
+};
+
+/* Poloniex interval strings (covers every interval we use) */
+const POLONIEX_INTERVAL_MAP: Record<string, string> = {
+  "1m":"MINUTE_1","3m":"MINUTE_5","5m":"MINUTE_5","15m":"MINUTE_15",
+  "30m":"MINUTE_30","1h":"HOUR_1","2h":"HOUR_2","4h":"HOUR_4",
+  "6h":"HOUR_6","12h":"HOUR_12","1d":"DAY_1","3d":"DAY_3",
+  "1w":"WEEK_1","1M":"MONTH_1",
+};
+
+/* Gate.io interval strings (fallback for coins not on Poloniex) */
+const GATE_INTERVAL_MAP: Record<string, string> = {
+  "1m":"1m","3m":"5m","5m":"5m","15m":"15m","30m":"30m",
+  "1h":"1h","2h":"4h","4h":"4h","6h":"8h","12h":"1d",
+  "1d":"1d","3d":"1d","1w":"7d","1M":"30d",
+};
+
 interface Candle {
   time:   number;
   open:   number;
@@ -159,6 +180,60 @@ async function fetchBinanceCandles(
     close:  parseFloat(k[4] as unknown as string),
     volume: parseFloat(k[5] as unknown as string),
   }));
+}
+
+/* ── 2b. Poloniex public candles ──────────────────────────────────────────────────
+   Poloniex lists BSV as "BCHSV". Use this for any coin in POLONIEX_SYMBOL_MAP
+   that Binance no longer supports.                                               */
+async function fetchPoloniexCandles(
+  poloniexSym: string,
+  interval:    string,
+  limit:       number,
+): Promise<Candle[]> {
+  const pInterval = POLONIEX_INTERVAL_MAP[interval] || "HOUR_1";
+  // Poloniex max is 500 candles per request
+  const clampedLimit = Math.min(limit, 500);
+  const url = `https://api.poloniex.com/markets/${poloniexSym}_USDT/candles?interval=${pInterval}&limit=${clampedLimit}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`Poloniex candles HTTP ${res.status}`);
+  const data = await res.json() as string[][];
+  // Format: [low, high, open, close, amount, qty, buyTakerAmt, buyTakerQty, tradeCount, ts_ms, ...]
+  return data
+    .filter(k => k.length >= 10 && Number(k[9]) > 0)
+    .map(k => ({
+      time:   Math.floor(Number(k[9]) / 1000),
+      open:   parseFloat(k[2]),
+      high:   parseFloat(k[1]),
+      low:    parseFloat(k[0]),
+      close:  parseFloat(k[3]),
+      volume: parseFloat(k[5]),
+    }))
+    .sort((a, b) => a.time - b.time);
+}
+
+/* ── 2c. Gate.io public candles — secondary fallback for non-Binance pairs ────── */
+async function fetchGateCandles(
+  gateSym:  string,
+  interval: string,
+  limit:    number,
+): Promise<Candle[]> {
+  const gInterval = GATE_INTERVAL_MAP[interval] || "1h";
+  const url = `https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=${gateSym}_USDT&interval=${gInterval}&limit=${Math.min(limit, 1000)}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error(`Gate.io candles HTTP ${res.status}`);
+  const data = await res.json() as string[][];
+  // Format: [ts_sec, quote_vol, close, high, low, open, base_vol, closed]
+  return data
+    .filter(k => k.length >= 6)
+    .map(k => ({
+      time:   Number(k[0]),
+      open:   parseFloat(k[5]),
+      high:   parseFloat(k[3]),
+      low:    parseFloat(k[4]),
+      close:  parseFloat(k[2]),
+      volume: parseFloat(k[6]),
+    }))
+    .sort((a, b) => a.time - b.time);
 }
 
 /* ── 3. Synthetic fallback — proper random walk ────────────────────────────────── */
@@ -279,6 +354,33 @@ export async function fetchRealCandles(
       return pinLastCandle(candles, lastPrice);
     } catch (err) {
       logger.warn({ err, symbol }, "Binance candle fetch failed — using synthetic");
+    }
+  }
+
+  // ── 2b. Poloniex (for coins with a different ticker, e.g. BSV → BCHSV) ─────
+  if (base && quote === "USDT" && POLONIEX_SYMBOL_MAP[base]) {
+    const poloniexSym = POLONIEX_SYMBOL_MAP[base]!;
+    try {
+      const candles = await fetchPoloniexCandles(poloniexSym, interval, limit);
+      if (candles.length >= Math.min(3, limit)) {
+        setCached(cacheKey, candles);
+        return pinLastCandle(candles, lastPrice);
+      }
+    } catch (err) {
+      logger.warn({ err, symbol }, "Poloniex candle fetch failed — trying Gate.io");
+    }
+  }
+
+  // ── 2c. Gate.io (secondary real-data fallback for non-Binance USDT pairs) ──
+  if (base && quote === "USDT" && !BINANCE_USDT_PAIRS.has(base)) {
+    try {
+      const candles = await fetchGateCandles(base, interval, limit);
+      if (candles.length >= Math.min(3, limit)) {
+        setCached(cacheKey, candles);
+        return pinLastCandle(candles, lastPrice);
+      }
+    } catch (err) {
+      logger.warn({ err, symbol }, "Gate.io candle fetch failed — using synthetic");
     }
   }
 
