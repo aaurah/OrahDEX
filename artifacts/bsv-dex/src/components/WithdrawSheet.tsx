@@ -44,6 +44,7 @@ import { signBsvChallengeWithPasskey, listPasskeyWallets, loginWithPasskey } fro
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
+import { useAddressBookStore, WALLET_TYPE_META } from "@/store/useAddressBookStore";
 import { QRCodeCanvas } from "qrcode.react";
 
 // ── constants ────────────────────────────────────────────────────────────────
@@ -1387,6 +1388,37 @@ export function WithdrawSheet({
                 {/* Recipient */}
                 <div className="space-y-1.5">
                   <label className="text-sm font-semibold">Recipient address</label>
+                  {/* Address book suggestions */}
+                  {(() => {
+                    const chain = withdrawChainMode.toUpperCase();
+                    const { getByChain } = useAddressBookStore.getState();
+                    const entries = getByChain(chain);
+                    if (!entries.length || nonEvmSendRecipient) return null;
+                    return (
+                      <div className="flex flex-col gap-1">
+                        {entries.map(e => {
+                          const meta = WALLET_TYPE_META[e.walletType];
+                          return (
+                            <button
+                              key={e.id}
+                              type="button"
+                              onClick={() => setNonEvmSendRecipient(e.address)}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-muted/30 border border-border hover:bg-muted/50 text-left transition-colors"
+                            >
+                              <span className="text-base leading-none">{meta.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-semibold truncate">{e.nickname}</span>
+                                  <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0", meta.color)}>{meta.label}</span>
+                                </div>
+                                <span className="text-[10px] text-muted-foreground font-mono truncate block">{e.address}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                   <Input
                     placeholder={addressPlaceholder}
                     value={nonEvmSendRecipient}

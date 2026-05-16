@@ -20,6 +20,7 @@ import {
 } from "recharts";
 import { QRCodeCanvas } from "qrcode.react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useAddressBookStore, WALLET_TYPE_META, type WalletType } from "@/store/useAddressBookStore";
 import { API_BASE } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -251,7 +252,11 @@ export function MobileCoinWallet({ coin }: Props) {
   const [sendAddress, setSendAddress]     = useState("");
   const [sendNickname, setSendNickname]   = useState("");
   const [saveToBook, setSaveToBook]       = useState(false);
+  const [sendWalletType, setSendWalletType] = useState<WalletType>("personal");
   const [sendAmount, setSendAmount]       = useState("");
+
+  const { add: addToBook, getByChain } = useAddressBookStore();
+  const bookEntries = getByChain(coinUpper);
   const [sendSubmitting, setSendSubmitting] = useState(false);
 
   const sendNetworks = useMemo(() => getSendNetworks(coinUpper), [coinUpper]);
@@ -430,11 +435,22 @@ export function MobileCoinWallet({ coin }: Props) {
         const err = await r.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error ?? "Failed");
       }
+      if (saveToBook && sendAddress.trim()) {
+        addToBook({
+          nickname:   sendNickname.trim() || sendAddress.trim().slice(0, 8) + "…",
+          address:    sendAddress.trim(),
+          chain:      coinUpper,
+          walletType: sendWalletType,
+        });
+      }
       toast({ title: "Withdrawal submitted", description: `${sendAmount} ${coinUpper} withdrawal is being processed.` });
       setSendOpen(false);
       setSendStep(1);
       setSendAddress("");
       setSendAmount("");
+      setSendNickname("");
+      setSaveToBook(false);
+      setSendWalletType("personal");
     } catch (e) {
       toast({ variant: "destructive", title: "Error", description: (e as Error).message });
     } finally {
@@ -944,6 +960,32 @@ export function MobileCoinWallet({ coin }: Props) {
                         Paste address
                       </button>
                     </div>
+
+                    {/* Address book suggestions */}
+                    {bookEntries.length > 0 && !sendAddress && (
+                      <div className="mb-2 flex flex-col gap-1">
+                        {bookEntries.map(e => {
+                          const meta = WALLET_TYPE_META[e.walletType];
+                          return (
+                            <button
+                              key={e.id}
+                              onClick={() => setSendAddress(e.address)}
+                              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-[#1a1a1a] border border-white/8 active:bg-white/5 text-left"
+                            >
+                              <span className="text-base leading-none">{meta.icon}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-semibold text-white truncate">{e.nickname}</span>
+                                  <span className={cn("text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0", meta.color)}>{meta.label}</span>
+                                </div>
+                                <span className="text-[10px] text-white/30 font-mono truncate block">{e.address}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
                     <div className="relative">
                       <input
                         value={sendAddress}
@@ -979,16 +1021,56 @@ export function MobileCoinWallet({ coin }: Props) {
                     <span className="text-sm text-white/70">Save to address book</span>
                   </div>
 
-                  {/* Nickname field */}
-                  <div>
-                    <label className="text-xs text-white/50 mb-1.5 block">Nickname</label>
-                    <input
-                      value={sendNickname}
-                      onChange={e => setSendNickname(e.target.value)}
-                      placeholder="Enter nickname (optional)"
-                      className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#4A9EF5]/50 transition-colors"
-                    />
-                  </div>
+                  {/* Nickname + wallet type (shown when saving) */}
+                  {saveToBook && (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs text-white/50 mb-1.5 block">Nickname</label>
+                        <input
+                          value={sendNickname}
+                          onChange={e => setSendNickname(e.target.value)}
+                          placeholder="Enter nickname (optional)"
+                          className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#4A9EF5]/50 transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-white/50 mb-1.5 block">Wallet type</label>
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {(Object.keys(WALLET_TYPE_META) as WalletType[]).map(t => {
+                            const m = WALLET_TYPE_META[t];
+                            return (
+                              <button
+                                key={t}
+                                onClick={() => setSendWalletType(t)}
+                                className={cn(
+                                  "flex flex-col items-center gap-1 py-2 px-1 rounded-xl border text-center transition-colors",
+                                  sendWalletType === t
+                                    ? "border-[#4A9EF5]/60 bg-[#4A9EF5]/10"
+                                    : "border-white/10 bg-[#1a1a1a]"
+                                )}
+                              >
+                                <span className="text-base leading-none">{m.icon}</span>
+                                <span className="text-[9px] text-white/60 leading-tight">{m.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Nickname field (shown when NOT saving — legacy placeholder) */}
+                  {!saveToBook && (
+                    <div>
+                      <label className="text-xs text-white/50 mb-1.5 block">Nickname</label>
+                      <input
+                        value={sendNickname}
+                        onChange={e => setSendNickname(e.target.value)}
+                        placeholder="Enter nickname (optional)"
+                        className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl px-4 py-3.5 text-sm outline-none focus:border-[#4A9EF5]/50 transition-colors"
+                      />
+                    </div>
+                  )}
                 </div>
               </>
             )}
