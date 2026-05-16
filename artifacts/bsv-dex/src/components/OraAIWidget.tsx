@@ -205,10 +205,8 @@ export function OraAIWidget() {
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
               )}
-              <Link href="/ora-ai">
-                <a className="p-1.5 hover:bg-muted/50 rounded-lg transition-colors text-muted-foreground hover:text-foreground">
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+              <Link href="/ora-ai" className="p-1.5 hover:bg-muted/50 rounded-lg transition-colors text-muted-foreground hover:text-foreground inline-flex">
+                <ExternalLink className="w-3.5 h-3.5" />
               </Link>
               <button onClick={() => setOpen(false)} className="p-1.5 hover:bg-muted/50 rounded-lg transition-colors text-muted-foreground hover:text-foreground">
                 <Minimize2 className="w-3.5 h-3.5" />
