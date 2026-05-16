@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { WalletAddresses } from "@/components/wallet/WalletAddresses";
 import { WalletDApps } from "@/components/wallet/WalletDApps";
+import { SmartAccountPanel } from "@/components/wallet/SmartAccountPanel";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -1074,6 +1075,11 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         <p className="mt-3 text-center text-[10px] text-muted-foreground/60">
           Tap <Link2 size={9} className="inline mb-0.5" /> on any chain to link an address or import a private key
         </p>
+      </div>
+
+      {/* ── Smart Account (EIP-4337) ── */}
+      <div className="mt-5 bg-card border border-border rounded-2xl p-5">
+        <SmartAccountPanel />
       </div>
 
       </>)}
