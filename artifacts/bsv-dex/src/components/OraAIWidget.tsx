@@ -153,7 +153,7 @@ export function OraAIWidget() {
   return (
     <>
       {/* Floating bubble */}
-      <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
+      <div className="fixed bottom-5 left-5 z-50 flex flex-col items-start gap-3">
         {/* Tooltip hint when closed */}
         {!open && pulse && (
           <div className="rounded-2xl px-3 py-2 text-xs font-bold text-foreground shadow-xl animate-fade-in"
@@ -176,7 +176,7 @@ export function OraAIWidget() {
       {/* Chat panel */}
       {open && (
         <div
-          className="fixed bottom-24 right-5 z-50 flex flex-col rounded-3xl overflow-hidden shadow-2xl"
+          className="fixed bottom-24 left-5 z-50 flex flex-col rounded-3xl overflow-hidden shadow-2xl"
           style={{
             width: "min(380px, calc(100vw - 20px))",
             height: "min(560px, calc(100vh - 120px))",
