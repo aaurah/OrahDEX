@@ -40,7 +40,7 @@ import { validateAltChainAddress } from "@/lib/addressValidation";
 import { isAddress as isEvmAddress } from "viem";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, fetchEvmBalance } from "@/lib/reown";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
-import { signBsvChallengeWithPasskey, listPasskeyWallets } from "@/lib/passkeyWallet";
+import { signBsvChallengeWithPasskey, listPasskeyWallets, loginWithPasskey } from "@/lib/passkeyWallet";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
@@ -381,6 +381,8 @@ export function WithdrawSheet({
   const [nonEvmSending,       setNonEvmSending]       = useState(false);
   const [nonEvmSendTxHash,    setNonEvmSendTxHash]    = useState<string | null>(null);
   const [nonEvmSendError,     setNonEvmSendError]     = useState<string | null>(null);
+  const [passkeyRegistering,  setPasskeyRegistering]  = useState(false);
+  const [passkeyRegistered,   setPasskeyRegistered]   = useState(false);
 
   // ── withdraw chain selector (overrides network prop inside withdraw tab) ──
   const [withdrawChainMode, setWithdrawChainMode] = useState<string>(
@@ -1392,6 +1394,46 @@ export function WithdrawSheet({
                     className="h-11 font-mono text-xs"
                   />
                 </div>
+
+                {/* ── Register passkey on this device ── */}
+                {isOrahWallet && !passkeyRegistered && (() => {
+                  const stored = listPasskeyWallets();
+                  const matched = passkeyEvmAddress
+                    ? stored.some(w => w.address.toLowerCase() === passkeyEvmAddress.toLowerCase())
+                    : stored.length > 0;
+                  return !matched;
+                })() && (
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-amber-300">OrahDEX Wallet not registered on this device</p>
+                      <p className="text-[11px] text-amber-400/80 mt-0.5">Register it now so you can sign withdrawals with Face ID / Touch ID.</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={passkeyRegistering}
+                        onClick={async () => {
+                          setPasskeyRegistering(true);
+                          setNonEvmSendError(null);
+                          try {
+                            await loginWithPasskey();
+                            setPasskeyRegistered(true);
+                            toast({ title: "Passkey registered", description: "OrahDEX Wallet is now active on this device." });
+                          } catch (err: any) {
+                            setNonEvmSendError(err?.message ?? "Registration failed — please try again.");
+                          } finally {
+                            setPasskeyRegistering(false);
+                          }
+                        }}
+                        className="mt-2 h-7 text-xs border-amber-500/40 text-amber-300 hover:bg-amber-500/10"
+                      >
+                        {passkeyRegistering
+                          ? <><Loader2 className="w-3 h-3 animate-spin mr-1" /> Registering…</>
+                          : "Register OrahDEX Wallet on this device"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 {nonEvmSendError && (
                   <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
