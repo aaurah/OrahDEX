@@ -4,7 +4,7 @@ import {
   ChevronRight, BookOpen, Bot, RefreshCw, ChevronDown, ChevronUp, X,
   Globe, Play, Download, FileCode, Hash, TrendingUp, Loader2,
   GitBranch, Activity, Layers, Search, Wallet, Shield, Database,
-  Link, CheckCircle, FolderOpen, PenLine, Wrench,
+  Link, CheckCircle, FolderOpen, PenLine, Wrench, Upload,
 } from "lucide-react";
 import { useSEO } from "@/hooks/useSEO";
 import { cn } from "@/lib/utils";
@@ -422,6 +422,8 @@ export function DevAIPage() {
   const [streaming, setStreaming] = useState(false);
   const [loadingConvs, setLoadingConvs] = useState(true);
   const [showApiPanel, setShowApiPanel] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishDone, setPublishDone] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef  = useRef<AbortController | null>(null);
@@ -505,6 +507,19 @@ export function DevAIPage() {
     setConvs(prev => prev.filter(c => c.id !== id));
     if (activeId === id) { setActiveId(null); setMessages([]); }
   }, [activeId]);
+
+  const publish = useCallback(async () => {
+    if (publishing) return;
+    setPublishing(true);
+    setPublishDone(false);
+    try {
+      await fetch(`${API}/admin/devai/restart`, { method: "POST" });
+      setPublishDone(true);
+      setTimeout(() => setPublishDone(false), 4000);
+    } catch { /* ignore */ } finally {
+      setPublishing(false);
+    }
+  }, [publishing]);
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streaming) return;
@@ -737,6 +752,26 @@ export function DevAIPage() {
               <Activity className="w-3 h-3 animate-pulse" />
               <span className="text-[10px] font-bold">13 live tools</span>
             </div>
+            {/* Publish / restart button */}
+            <button
+              onClick={publish}
+              disabled={publishing}
+              title="Restart services to apply code changes"
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-all",
+                publishDone
+                  ? "border-green-500/40 bg-green-500/15 text-green-400"
+                  : "border-orange-500/30 bg-orange-500/8 text-orange-400 hover:bg-orange-500/15"
+              )}
+            >
+              {publishing
+                ? <RefreshCw className="w-3 h-3 animate-spin" />
+                : publishDone
+                  ? <CheckCircle className="w-3 h-3" />
+                  : <Upload className="w-3 h-3" />
+              }
+              {publishing ? "Restarting…" : publishDone ? "Live" : "Publish"}
+            </button>
             <button
               onClick={() => setShowApiPanel(v => !v)}
               className={cn(
