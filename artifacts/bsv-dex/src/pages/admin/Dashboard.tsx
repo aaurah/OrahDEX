@@ -168,37 +168,37 @@ export function AdminDashboard() {
       <div className="bg-card border border-border rounded-2xl p-5">
         <h3 className="font-semibold mb-4 flex items-center gap-2">
           <Zap className="w-4 h-4 text-primary" /> Recent Updates
-          <span className="ml-auto text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">v4.6.0 · 1 May 2026</span>
+          <span className="ml-auto text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">v4.8.0 · 16 May 2026</span>
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             {
-              icon: "🛡",
+              icon: "₿",
               color: "text-green-400",
               bg: "bg-green-400/5 border-green-400/20",
-              title: "API Rate Limiting",
-              detail: "Global 200 req/min, exchange writes 30/min, estimate 60/min. Body limit capped at 1 MB.",
+              title: "BSV Withdrawal Fixed",
+              detail: "@noble/curves v2 API update: secp256k1.sign() now returns raw Uint8Array directly. Removed stale .toCompactRawBytes() call in bsvTx.ts — on-chain BSV withdrawals working end-to-end.",
             },
             {
-              icon: "🔗",
+              icon: "✓",
+              color: "text-primary",
+              bg: "bg-primary/5 border-primary/20",
+              title: "Withdrawal Success Card",
+              detail: "Styled confirmation card after withdrawal: 'Withdrawal submitted' header, full txid with one-tap copy, and per-chain explorer link (WhatsOnChain, Mempool.space, Blockchair, Solana, XRPScan, TronScan).",
+            },
+            {
+              icon: "💬",
               color: "text-cyan-400",
               bg: "bg-cyan-400/5 border-cyan-400/20",
-              title: "Bridge Hints Updated",
-              detail: "Zero-balance warnings now direct users to Bridge (LetsExchange) — no longer misleads to 'Buy first'.",
+              title: "Chat with Ora Fixed",
+              detail: "AiAssistant now mounts on the landing page (/). SessionStorage bridge prevents race condition when button is clicked before lazy component loads. Event detail format normalised (string & object both handled).",
             },
             {
               icon: "🔑",
               color: "text-amber-400",
               bg: "bg-amber-400/5 border-amber-400/20",
-              title: "Trade Signature Fix",
-              detail: "Frontend and server now use the same canonical order auth message. Replay protection via nonce + expiry.",
-            },
-            {
-              icon: "🌐",
-              color: "text-violet-400",
-              bg: "bg-violet-400/5 border-violet-400/20",
-              title: "Network Switching",
-              detail: "BSV Testnet, Solana, BTC, and BCH network switching fixed. Native addresses persist correctly.",
+              title: "Named Wallet Import",
+              detail: "Wallet name field added to seed phrase import flow (protect step). Custom label passed to both biometric (passkey) and PIN import paths — no longer hardcoded to 'OrahDEX Wallet'.",
             },
           ].map(({ icon, color, bg, title, detail }) => (
             <div key={title} className={`flex items-start gap-3 p-3 rounded-xl border text-sm ${bg}`}>
