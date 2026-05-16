@@ -1047,7 +1047,7 @@ export function WithdrawSheet({
   // ── render ───────────────────────────────────────────────────────────────
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
-      <DialogContent className="max-w-md bg-background border-border">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[90dvh] overflow-y-auto bg-background border-border">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2.5">
             <div
