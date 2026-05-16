@@ -57,3 +57,4 @@ Thumbs.db
 .env.test.local
 .env.production.local
 !.env.example
+.local/changelly-keys.txt
