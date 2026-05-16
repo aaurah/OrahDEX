@@ -398,7 +398,12 @@ function Router() {
       <Route path="/admin/mail">          <AdminRoute><AdminEmailInbox /></AdminRoute></Route>
       <Route path="/admin/integrations"> <AdminRoute><AdminIntegrations /></AdminRoute></Route>
       <Route path="/admin/ai">        <AdminRoute><AdminAiIntelligence /></AdminRoute></Route>
-      <Route path="/admin/devai">     <AdminRoute><AdminDevAISettings /></AdminRoute></Route>
+      <Route path="/admin/devai/settings"><AdminRoute><AdminDevAISettings /></AdminRoute></Route>
+      <Route path="/admin/devai">
+        <RequireAdminAuth>
+          <Suspense fallback={<PageSkeleton />}><DevAIPage /></Suspense>
+        </RequireAdminAuth>
+      </Route>
       <Route path="/admin/health">    <AdminRoute><AdminSystemHealth /></AdminRoute></Route>
       <Route path="/admin/liquidity"> <AdminRoute><AdminLiquidityBot /></AdminRoute></Route>
       <Route path="/admin/copy-vaults"><AdminRoute><AdminCopyVault /></AdminRoute></Route>
@@ -492,7 +497,7 @@ function Router() {
                   <Route path="/prediction"     component={PredictionTrading} />
                   <Route path="/sovereign"      component={SovereignOverviewPage} />
                   <Route path="/ora-ai"         component={OraAIPage} />
-                  <Route path="/devai"><RequireAdminAuth><DevAIPage /></RequireAdminAuth></Route>
+                  <Route path="/devai"><RedirectTo href="/admin/devai" /></Route>
                   <Route path="/settings"           component={WebSettings} />
                   <Route path="/settings/api-keys" component={UserApiKeys} />
                   <Route component={NotFound} />

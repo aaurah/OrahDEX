@@ -41,7 +41,7 @@ const NAV_LINKS = [
 
 const NAV_MORE = [
   { href: "/ora-ai",    label: "Ora AI",    icon: Bot },
-  { href: "/devai",     label: "DevAI",     icon: Code2 },
+  { href: "/admin/devai", label: "DevAI",   icon: Code2 },
   { href: "/p2p",       label: "P2P",       icon: Users },
   { href: "/copy",      label: "CopyVault", icon: Copy },
   { href: "/keeper",    label: "Keepers",   icon: Shield },
