@@ -815,6 +815,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [trailingRate, setTrailingRate] = useState("");
   const [amount, setAmount] = useState("");
   const [showOrderForm, setShowOrderForm] = useState(false);
+  const [swapMode, setSwapMode] = useState(false);
   const scrollBodyRef  = useRef<HTMLDivElement>(null);
   const orderFormRef   = useRef<HTMLDivElement>(null);
   const [receiveAddress, setReceiveAddress] = useState("");
@@ -934,15 +935,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   // ── Auto-fetch best swap-venue quote when native order book has no liquidity ─
   useEffect(() => {
-    if (orderError?.code !== "NO_LIQUIDITY") {
+    if (!swapMode && orderError?.code !== "NO_LIQUIDITY") {
       setSwapQuote(null);
       return;
     }
     const amtNum = parseFloat(amount || "0");
-    if (amtNum <= 0) return;
+    if (amtNum <= 0) { setSwapQuote(null); return; }
     const assetIn  = side === "buy" ? quote : base;
     const assetOut = side === "buy" ? base  : quote;
-    const amountIn = side === "buy" ? amtNum * lastPrice : amtNum;
+    // In swap mode the user enters the "from" asset amount directly;
+    // in order mode a buy entry is in base units so multiply by price.
+    const amountIn = swapMode ? amtNum : (side === "buy" ? amtNum * lastPrice : amtNum);
     if (amountIn <= 0) return;
     let cancelled = false;
     setSwapQuoteLoading(true);
@@ -973,7 +976,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       .finally(() => { if (!cancelled) setSwapQuoteLoading(false); });
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderError?.code, amount, side, base, quote, lastPrice]);
+  }, [swapMode, orderError?.code, amount, side, base, quote, lastPrice]);
 
   // ── lockedBuySpend: quote asset spent in open buy orders ───────────────────
   // Market orders have price: null in the DB, so we fall back to lastPrice to
@@ -1843,6 +1846,89 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {showOrderForm && (
           <div ref={orderFormRef} className="px-3 pt-3 pb-2 border-t border-border mt-2 space-y-2.5">
 
+            {/* ── INSTANT SWAP WIDGET (shown when swapMode) ── */}
+            {swapMode && (
+              <div className="flex flex-col gap-3">
+                {/* Direction toggle */}
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={() => { setSide("sell"); setSwapQuote(null); }}
+                    className={cn("flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-colors", side === "sell" ? "bg-primary/10 border-primary/30 text-primary" : "bg-card border-border text-muted-foreground")}
+                  >{base} → {quote}</button>
+                  <button
+                    onClick={() => { setSide("buy"); setSwapQuote(null); }}
+                    className={cn("flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-colors", side === "buy" ? "bg-primary/10 border-primary/30 text-primary" : "bg-card border-border text-muted-foreground")}
+                  >{quote} → {base}</button>
+                </div>
+
+                {/* You send */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] text-muted-foreground font-medium px-0.5">You send</span>
+                  <div className="flex items-center gap-1.5 h-12 bg-card border border-border rounded-xl overflow-hidden">
+                    <button onClick={() => setAmount(a => String(Math.max(0, parseFloat(a || "0") - 1)))} className="w-10 h-full flex items-center justify-center text-muted-foreground border-r border-border shrink-0 active:bg-border/40"><Minus size={14} /></button>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={amount}
+                      onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
+                      placeholder="0"
+                      className="flex-1 bg-transparent text-base font-mono font-bold text-center outline-none"
+                    />
+                    <span className="text-sm font-semibold text-foreground mr-3 shrink-0">{side === "sell" ? base : quote}</span>
+                  </div>
+                </div>
+
+                {/* Arrow */}
+                <div className="flex items-center justify-center text-muted-foreground"><ArrowLeftRight size={16} /></div>
+
+                {/* You receive */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-[11px] text-muted-foreground font-medium px-0.5">You receive</span>
+                  {swapQuoteLoading ? (
+                    <div className="flex items-center gap-2 h-12 px-4 rounded-xl border border-border/50 bg-card/50">
+                      <span className="animate-spin w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full shrink-0" />
+                      <span className="text-xs text-muted-foreground">Getting best rate…</span>
+                    </div>
+                  ) : swapQuote && amtNum > 0 ? (
+                    <div className="flex items-center justify-between h-12 px-4 rounded-xl border border-primary/30 bg-primary/5">
+                      <span className="text-base font-mono font-bold text-primary">≈ {parseFloat(swapQuote.expectedOutput.toFixed(8)).toString()}</span>
+                      <span className="text-sm font-semibold text-primary shrink-0">{swapQuote.assetOut}</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center h-12 px-4 rounded-xl border border-border/40 bg-card/50">
+                      <span className="text-muted-foreground text-sm">Enter amount above</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Rate + venue */}
+                {swapQuote && amtNum > 0 && (
+                  <div className="flex items-center justify-between text-[11px] px-0.5">
+                    <span className="text-muted-foreground">1 {swapQuote.assetIn} ≈ {(swapQuote.expectedOutput / swapQuote.amountIn).toFixed(6)} {swapQuote.assetOut}</span>
+                    <span className={cn("font-semibold", VENUE_COLORS[swapQuote.venue] ?? "text-primary")}>via {VENUE_LABELS[swapQuote.venue] ?? swapQuote.venue}</span>
+                  </div>
+                )}
+
+                {/* Swap CTA */}
+                {!address ? (
+                  <button onClick={() => openWallet()} className="w-full py-3.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-red-500 to-primary flex items-center justify-center gap-2 active:opacity-80">
+                    <Wallet size={16} />
+                    Connect Wallet to Swap
+                  </button>
+                ) : (
+                  <a
+                    href={swapQuote ? `${BASE}/swap?from=${swapQuote.assetIn}&to=${swapQuote.assetOut}&amount=${swapQuote.amountIn}` : `${BASE}/swap`}
+                    className={cn("w-full py-3.5 rounded-xl text-sm font-bold text-center text-white bg-primary block active:opacity-80 transition-opacity", !swapQuote && "opacity-40 pointer-events-none")}
+                  >
+                    {swapQuote ? `Swap via ${VENUE_LABELS[swapQuote.venue] ?? "OrahBridge"} →` : "Enter amount to see quote"}
+                  </a>
+                )}
+              </div>
+            )}
+
+            {/* ── REGULAR ORDER FORM ── */}
+            {!swapMode && (<>
+
             {/* Non-custodial mode disclosure */}
             {isSelfCustodyEvm && (
               <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-[11px] bg-primary/8 border border-primary/20">
@@ -2629,6 +2715,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </button>
             )}
 
+            </>)}
           </div>
         )}
 
@@ -2670,27 +2757,28 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {/* Buy button */}
             <button
               onClick={() => {
-                if (side === "buy" && showOrderForm && amtNum > 0) {
+                if (side === "buy" && showOrderForm && amtNum > 0 && !swapMode) {
                   handlePlaceOrder();
                 } else {
                   setSide("buy");
                   setOrderError(null);
                   setShowOrderForm(true);
+                  setSwapMode(false);
                 }
               }}
               disabled={isSubmitting}
               className={cn(
                 "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
                 isSubmitting ? "opacity-50 cursor-not-allowed"
-                  : side === "buy" && showOrderForm && amtNum > 0
+                  : side === "buy" && showOrderForm && amtNum > 0 && !swapMode
                   ? "opacity-100 scale-[1.01]"
                   : "opacity-85"
               )}
               style={{ backgroundColor: "#16a34a" }}
             >
-              {isSubmitting && side === "buy"
+              {isSubmitting && side === "buy" && !swapMode
                 ? "Placing…"
-                : side === "buy" && showOrderForm && amtNum > 0
+                : side === "buy" && showOrderForm && amtNum > 0 && !swapMode
                 ? `Buy ${amtNum.toFixed(4)} ${base}`
                 : `Buy ${base}`}
             </button>
@@ -2698,29 +2786,48 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {/* Sell button */}
             <button
               onClick={() => {
-                if (side === "sell" && showOrderForm && amtNum > 0) {
+                if (side === "sell" && showOrderForm && amtNum > 0 && !swapMode) {
                   handlePlaceOrder();
                 } else {
                   setSide("sell");
                   setOrderError(null);
                   setShowOrderForm(true);
+                  setSwapMode(false);
                 }
               }}
               disabled={isSubmitting}
               className={cn(
                 "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
                 isSubmitting ? "opacity-50 cursor-not-allowed"
-                  : side === "sell" && showOrderForm && amtNum > 0
+                  : side === "sell" && showOrderForm && amtNum > 0 && !swapMode
                   ? "opacity-100 scale-[1.01]"
                   : "opacity-85"
               )}
               style={{ backgroundColor: "#dc2626" }}
             >
-              {isSubmitting && side === "sell"
+              {isSubmitting && side === "sell" && !swapMode
                 ? "Placing…"
-                : side === "sell" && showOrderForm && amtNum > 0
+                : side === "sell" && showOrderForm && amtNum > 0 && !swapMode
                 ? `Sell ${amtNum.toFixed(4)} ${base}`
                 : `Sell ${base}`}
+            </button>
+
+            {/* Swap bridge button */}
+            <button
+              onClick={() => {
+                setSwapMode(v => !v);
+                setShowOrderForm(true);
+                setOrderError(null);
+              }}
+              className={cn(
+                "flex-1 py-3 rounded-xl text-sm font-bold transition-all active:opacity-80 flex items-center justify-center gap-1",
+                swapMode && showOrderForm
+                  ? "bg-primary/15 border border-primary/40 text-primary"
+                  : "bg-card border border-border text-muted-foreground"
+              )}
+            >
+              <ArrowLeftRight size={14} />
+              Swap
             </button>
           </>
         )}
