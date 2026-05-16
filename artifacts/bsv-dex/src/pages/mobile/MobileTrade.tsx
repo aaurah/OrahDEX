@@ -931,21 +931,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const lastPrice = parseFloat(ticker?.lastPrice) || lePairPrice || 0;
 
-  // ── Scroll order form into view on Android after it appears ─────────────────
-  // Android Chromium loses the scroll context after a DOM mutation that adds
-  // significant height to an overflow-y-auto container. Nudging scrollTop
-  // immediately after mount re-engages the native scroll engine.
+  // ── Re-engage Android scroll engine after order form appears ─────────────────
+  // Android Chromium sometimes freezes scroll on an overflow-y-auto container
+  // after a DOM mutation. A 1px scrollTop nudge (then restore) forces the
+  // compositor to re-evaluate the scrollable area without moving the view.
   useEffect(() => {
     if (!showOrderForm) return;
     const frame = requestAnimationFrame(() => {
-      const el = orderFormRef.current;
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      } else if (scrollBodyRef.current) {
-        // Fallback: scroll the container to the bottom
-        const c = scrollBodyRef.current;
-        c.scrollTop = c.scrollHeight;
-      }
+      const c = scrollBodyRef.current;
+      if (!c) return;
+      const prev = c.scrollTop;
+      c.scrollTop = prev + 1;
+      c.scrollTop = prev;
     });
     return () => cancelAnimationFrame(frame);
   }, [showOrderForm]);
