@@ -491,7 +491,7 @@ function Router() {
                   <Route path="/prediction"     component={PredictionTrading} />
                   <Route path="/sovereign"      component={SovereignOverviewPage} />
                   <Route path="/ora-ai"         component={OraAIPage} />
-                  <Route path="/devai"          component={DevAIPage} />
+                  <Route path="/devai"><RequireAdminAuth><DevAIPage /></RequireAdminAuth></Route>
                   <Route path="/settings"           component={WebSettings} />
                   <Route path="/settings/api-keys" component={UserApiKeys} />
                   <Route component={NotFound} />
