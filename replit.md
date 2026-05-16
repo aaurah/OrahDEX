@@ -78,17 +78,19 @@ lib/
 
 ## Product
 
-- Spot + perpetuals trading across 958 markets (10 EVM chains + BSV/BTC/SOL/TRON)
+- Spot + perpetuals trading across 36,000+ markets (10 EVM chains + BSV/BTC/SOL/TRON)
 - EVM HTLC atomic swaps (seller + buyer lock → relayer reveals both)
 - OrahDEXEscrow for open-order collateral locking
 - BSV HTLC cross-chain settlement
 - CopyVault ERC4626-style copy trading
 - AMM liquidity pools (OrahPair/Factory/Router on Sepolia)
-- Native HD wallet (BIP39/44: EVM, BTC, BSV, SOL, XRP, LTC, DOGE)
+- Native HD wallet (BIP39/44: EVM, BTC, BSV, SOL, XRP, LTC, DOGE) — passkey-encrypted, named on import
 - Fiat on-ramp via Stripe → LetsExchange / SimpleSwap
 - Social NFT marketplace (BSV inscriptions)
 - **Staking Hub** (`/staking`): 43 PoS coins, 10 external providers (Lido, Everstake, Validatrium, Ankr, Chorus One, Rocket Pool, Marinade, Stakefish, Figment, P2P.org) with deep-link staking URLs; OrahDEX-native fixed-APY staking with lock periods (30/60/90/180d bonus rates) backed by `staking_positions` DB table
-- Admin panel with AI intelligence, routing profiles, fee management
+- **Ora AI** chat assistant — mounts on landing page (`/`) and all trading routes; sessionStorage bridge for reliable open-on-click from landing page CTA
+- **DevAI** admin tool at `/admin/devai` — 14 tools, Publish button, New chat/Clear, full-screen layout, `write_github_file` tool commits to GitHub
+- Admin panel with AI intelligence, routing profiles, fee management, system health
 
 ## User preferences
 
@@ -96,6 +98,17 @@ lib/
 - Do not modify `lib/api-spec` folder.
 - `artifacts/bsv-dex/src/lib/seedPhrase.ts` is safe to modify (XRP/LTC/DOGE derivation added).
 - Clear and concise communication.
+
+## Recent changes (v4.8.0 · 16 May 2026)
+
+- **BSV withdrawal signing** — `@noble/curves` v2.0.1 changed `secp256k1.sign()` to return a raw 64-byte `Uint8Array` directly. Removed the stale `.toCompactRawBytes()` call in `bsvTx.ts`. Withdrawals now sign, broadcast, and confirm on-chain.
+- **Withdrawal success card** — `WithdrawSheet.tsx` shows a structured green card post-submission: "Withdrawal submitted" header, full txid with copy button, per-chain explorer link (WhatsOnChain / Mempool.space / Blockchair / Solana Explorer / XRPScan / TronScan).
+- **WithdrawSheet mobile sizing** — `DialogContent` uses `w-[calc(100vw-2rem)]` + `max-w-md` + `max-h-[90dvh] overflow-y-auto` — dialog no longer clips at screen edges or overflows on narrow phones.
+- **Chat with Ora (landing page)** — `AiAssistant` now mounts at `/` in `Layout.tsx`. `openOra()` in `Landing.tsx` writes `sessionStorage.setItem("ora:pending", msg)` before dispatching the event, so the message is picked up on mount even if the lazy component hadn't loaded yet. Event `detail` normalised to handle both `string` and `{ message }` shapes.
+- **Named wallet import** — "Wallet name" `<input>` added to the protect step in `WalletChooserDialog.tsx`; label passed to `importPasskeyWallet()` (biometric) and `storeWithPin()` (PIN) — no longer hardcoded.
+- **DevAI admin** — moved to `/admin/devai` (full-screen); settings at `/admin/devai/settings`; Publish button POSTs to `/api/admin/devai/restart`; New chat / Clear buttons always visible; `write_github_file` is the 14th tool.
+- **Admin login redirect** — `RequireAdminAuth` passes `?redirect=` param; `Login.tsx` reads it and returns to origin after auth.
+- **WhitePaper** bumped to v4.8.0; **Admin Dashboard** "Recent Updates" card updated to v4.8.0.
 
 ## Gotchas
 
