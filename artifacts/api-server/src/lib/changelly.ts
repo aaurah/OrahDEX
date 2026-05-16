@@ -1,9 +1,11 @@
 /**
  * changelly.ts — Changelly API v2 helper
  *
- * Docs: https://api.changelly.com/v2
+ * Docs: https://api.changelly.com/v2 / https://docs.changelly.com
  *
- * Auth: X-Api-Key header + X-Api-Signature (HMAC-SHA512 of JSON body).
+ * Auth: RSA-SHA256 (new key-pair scheme)
+ *   X-Api-Key       = SHA256(publicKey) as base64   → CHANGELLY_API_KEY env var
+ *   X-Api-Signature = RSA-SHA256 signature of body  → derived from CHANGELLY_PRIVATE_KEY (DER hex)
  *
  * Flow:
  *   1. Quote   — POST /getExchangeAmount      (estimate output for given input)
@@ -12,27 +14,39 @@
  *   4. Status  — POST /getTransactions        (poll for completion)
  */
 
-import { createHmac } from "crypto";
+import { createSign, createPrivateKey, createPublicKey, createHash } from "crypto";
 import { logger } from "./logger.js";
 
-const CHANGELLY_BASE   = "https://api.changelly.com/v2";
-const API_KEY          = process.env.CHANGELLY_API_KEY    ?? "";
-const API_SECRET       = process.env.CHANGELLY_API_SECRET ?? "";
+const CHANGELLY_BASE = "https://api.changelly.com/v2";
+
+// CHANGELLY_API_KEY   = SHA256(publicKey) as base64 — shared with Changelly at registration
+// CHANGELLY_PRIVATE_KEY = RSA private key in PKCS#8 DER format, hex-encoded — never shared
+const API_KEY         = process.env.CHANGELLY_API_KEY     ?? "";
+const PRIVATE_KEY_HEX = process.env.CHANGELLY_PRIVATE_KEY ?? "";
 
 export function isChangellyConfigured(): boolean {
-  return API_KEY.length > 0 && API_SECRET.length > 0;
+  return API_KEY.length > 0 && PRIVATE_KEY_HEX.length > 0;
 }
 
-function sign(body: string): string {
-  return createHmac("sha512", API_SECRET).update(body).digest("hex");
+/**
+ * Sign a request body with the RSA private key using SHA256 (per Changelly docs).
+ * Returns the base64-encoded signature.
+ */
+function signBody(body: string): string {
+  const privateKey = createPrivateKey({
+    key:    Buffer.from(PRIVATE_KEY_HEX, "hex"),
+    format: "der",
+    type:   "pkcs8",
+  });
+  return createSign("sha256").update(Buffer.from(body)).sign(privateKey, "base64");
 }
 
 async function changellyRequest(
   endpoint: string,
   params: Record<string, unknown>,
 ): Promise<{ ok: boolean; status: number; data: unknown }> {
-  if (!API_KEY || !API_SECRET) {
-    return { ok: false, status: 0, data: { error: "CHANGELLY_API_KEY or CHANGELLY_API_SECRET not configured" } };
+  if (!API_KEY || !PRIVATE_KEY_HEX) {
+    return { ok: false, status: 0, data: { error: "CHANGELLY_API_KEY or CHANGELLY_PRIVATE_KEY not configured" } };
   }
 
   const body = JSON.stringify({
@@ -41,9 +55,9 @@ async function changellyRequest(
     method:  endpoint,
     params,
   });
-  const signature = sign(body);
 
   try {
+    const signature = signBody(body);
     const res = await fetch(CHANGELLY_BASE, {
       method: "POST",
       headers: {
