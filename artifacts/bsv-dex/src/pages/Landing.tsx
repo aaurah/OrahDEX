@@ -419,7 +419,13 @@ function OraAiSection() {
     s === "bearish" ? "border-red-500/25 bg-red-500/5" :
     "border-white/8 bg-white/3";
 
-  const openOra = () => window.dispatchEvent(new CustomEvent("ora:open", { detail: { message: "Give me today's top market intelligence." } }));
+  const openOra = () => {
+    const msg = "Give me today's top market intelligence.";
+    // Write to sessionStorage so AiAssistant picks it up even if not yet mounted
+    try { sessionStorage.setItem("ora:pending", msg); } catch {}
+    // Also fire the event in case the component is already mounted
+    window.dispatchEvent(new CustomEvent("ora:open", { detail: msg }));
+  };
 
   return (
     <section className="relative px-6 lg:px-10 py-24" style={{ background: "linear-gradient(180deg, rgba(74,222,128,0.02) 0%, transparent 100%)" }}>
