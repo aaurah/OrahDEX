@@ -815,6 +815,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [trailingRate, setTrailingRate] = useState("");
   const [amount, setAmount] = useState("");
   const [showOrderForm, setShowOrderForm] = useState(false);
+  const scrollBodyRef  = useRef<HTMLDivElement>(null);
+  const orderFormRef   = useRef<HTMLDivElement>(null);
   const [receiveAddress, setReceiveAddress] = useState("");
   const baseChain = getAssetNativeChain(base);
   const canReceiveBase = walletCanReceive(network, baseChain);
