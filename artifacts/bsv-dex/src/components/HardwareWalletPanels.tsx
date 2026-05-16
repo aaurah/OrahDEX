@@ -41,11 +41,16 @@ import {
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
 
-function connectHardwareWallet(address: string) {
+function connectHardwareWallet(
+  address: string,
+  type: "ledger" | "trezor" | "keystone" | "gridplus" = "ledger",
+  path?: string,
+) {
   const store = useWalletStore.getState();
   const existingChainId = store.chainId ?? 1;
   store.connect({ address, provider: "orah-wallet", network: "evm", chainId: existingChainId });
   store.setInternalEvmAddress(address);
+  store.setHardwareWallet(type, path ?? null);
 }
 
 function shortAddr(addr: string) {
@@ -136,8 +141,8 @@ export function LedgerPanel({ onDone }: { onDone: () => void }) {
     }
   };
 
-  const handlePick = (address: string) => {
-    connectHardwareWallet(address);
+  const handlePick = (address: string, path?: string) => {
+    connectHardwareWallet(address, "ledger", path);
     sessionRef.current?.transport?.close().catch(() => {});
     toast({ title: "Ledger connected", description: shortAddr(address) });
     onDone();
@@ -221,7 +226,7 @@ export function TrezorPanel({ onDone }: { onDone: () => void }) {
   };
 
   const handlePick = (address: string) => {
-    connectHardwareWallet(address);
+    connectHardwareWallet(address, "trezor");
     toast({ title: "Trezor connected", description: shortAddr(address) });
     onDone();
   };
@@ -308,7 +313,7 @@ export function KeystonePanel({ onDone }: { onDone: () => void }) {
       } else {
         result = await decodeURPayload(data);
       }
-      connectHardwareWallet(result.address);
+      connectHardwareWallet(result.address, "keystone");
       toast({ title: "Keystone connected", description: shortAddr(result.address) });
       onDone();
     } catch (err: any) {
@@ -474,7 +479,7 @@ export function GridPlusPanel({ onDone }: { onDone: () => void }) {
   };
 
   const handlePick = (address: string) => {
-    connectHardwareWallet(address);
+    connectHardwareWallet(address, "gridplus");
     toast({ title: "GridPlus connected", description: shortAddr(address) });
     onDone();
   };

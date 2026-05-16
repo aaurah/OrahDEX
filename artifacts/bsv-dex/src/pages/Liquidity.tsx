@@ -1074,6 +1074,226 @@ function OnChainLpBadge({
   );
 }
 
+// ─── Create Pool Modal ────────────────────────────────────────────────────────
+
+const EVM_TOKENS = [
+  "ETH", "USDC", "USDT", "WBTC", "DAI", "ORAH", "ARB", "OP", "AAVE", "LINK", "UNI",
+];
+
+function CreatePoolModal({ onClose }: { onClose: () => void }) {
+  const { address, provider } = useWalletStore();
+  const { toast } = useToast();
+  const { addNotification } = useNotificationStore();
+
+  const [tokenA,    setTokenA]    = useState("ETH");
+  const [tokenB,    setTokenB]    = useState("USDC");
+  const [amtA,      setAmtA]      = useState("");
+  const [amtB,      setAmtB]      = useState("");
+  const [feeTier,   setFeeTier]   = useState(0.3);
+  const [creating,  setCreating]  = useState(false);
+  const [txStatus,  setTxStatus]  = useState<LiquidityTxStatus>({ step: "idle" });
+  const [txHash,    setTxHash]    = useState<string | null>(null);
+
+  const isConnected = !!address;
+  const isOrahAmm   = true; // new pools always go through OrahDEX AMM (Sepolia)
+  const SEPOLIA_ID  = 11155111;
+
+  const handleCreate = async () => {
+    if (!isConnected || !amtA || !amtB || creating) return;
+    if (tokenA === tokenB) {
+      toast({ title: "Invalid pair", description: "Token A and Token B must be different.", variant: "destructive" });
+      return;
+    }
+    setCreating(true);
+    setTxStatus({ step: "approving" });
+
+    const syntheticPool: Pool = {
+      id:      `${tokenA.toLowerCase()}-${tokenB.toLowerCase()}-new`,
+      base:    tokenA,
+      quote:   tokenB,
+      tvl:     0,
+      vol24:   0,
+      fee:     feeTier,
+      farmApr: 0,
+      userLp:  0,
+      chain:   "Sepolia",
+      chainId: SEPOLIA_ID,
+    };
+
+    try {
+      const txReceipt = await addLiquidityOrahAmm({
+        pool:    syntheticPool,
+        amtA,
+        amtB,
+        walletAddress: address!,
+        walletProvider: provider ?? "orah-wallet",
+        slippageBps: 100,
+        onStatus: setTxStatus,
+      });
+
+      if (txReceipt?.transactionHash) {
+        setTxHash(txReceipt.transactionHash);
+      }
+
+      toast({
+        title: "Pool created!",
+        description: `${tokenA}/${tokenB} pool is live on Sepolia. You have added initial liquidity.`,
+      });
+      addNotification({
+        type: "liquidity",
+        title: "New AMM Pool Created",
+        body: `${amtA} ${tokenA} + ${amtB} ${tokenB} · ${tokenA}/${tokenB} pool created on OrahDEX`,
+      });
+    } catch (err: any) {
+      toast({ title: "Pool creation failed", description: err?.message ?? "Unknown error", variant: "destructive" });
+      setTxStatus({ step: "error", error: err?.message });
+    }
+    setCreating(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div
+        className="relative w-full max-w-md bg-background rounded-2xl border border-border shadow-2xl p-6 space-y-5"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <Plus size={16} className="text-primary" />
+            </div>
+            <div>
+              <h2 className="font-bold text-base">Create New Pool</h2>
+              <p className="text-xs text-muted-foreground">OrahDEX x·y=k AMM — Sepolia</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Token selectors */}
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { label: "Token A", value: tokenA, set: setTokenA, amt: amtA, setAmt: setAmtA, exclude: tokenB },
+            { label: "Token B", value: tokenB, set: setTokenB, amt: amtB, setAmt: setAmtB, exclude: tokenA },
+          ].map(({ label, value, set, amt, setAmt, exclude }) => (
+            <div key={label} className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">{label}</label>
+              <select
+                value={value}
+                onChange={e => set(e.target.value)}
+                className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-sm font-bold focus:outline-none focus:border-primary/50"
+              >
+                {EVM_TOKENS.filter(t => t !== exclude).map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder={`${value} amount`}
+                value={amt}
+                onChange={e => setAmt(e.target.value)}
+                className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/50"
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Fee tier */}
+        <div className="space-y-2">
+          <label className="text-xs font-semibold text-muted-foreground">Fee tier</label>
+          <div className="flex gap-2">
+            {[0.05, 0.3, 1.0].map(f => (
+              <button
+                key={f}
+                onClick={() => setFeeTier(f)}
+                className={cn(
+                  "flex-1 py-2 rounded-xl text-xs font-bold border transition-colors",
+                  feeTier === f
+                    ? "bg-primary/15 border-primary/40 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/30",
+                )}
+              >
+                {f}%
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Pool preview */}
+        {amtA && amtB && (
+          <div className="bg-secondary/40 rounded-xl px-4 py-3 space-y-1.5">
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Pool pair</span>
+              <span className="font-bold">{tokenA} / {tokenB}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Initial ratio</span>
+              <span className="font-mono">1 {tokenA} = {amtB && amtA ? (parseFloat(amtB) / parseFloat(amtA)).toFixed(4) : "—"} {tokenB}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">AMM fee</span>
+              <span className="font-bold text-green-400">{feeTier}%</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Network</span>
+              <span>Sepolia Testnet</span>
+            </div>
+          </div>
+        )}
+
+        {/* Status */}
+        {txStatus.step !== "idle" && txStatus.step !== "error" && (
+          <div className="flex items-center gap-2 text-sm text-primary">
+            <Loader2 size={14} className="animate-spin shrink-0" />
+            <span>
+              {txStatus.step === "approving" && "Approving tokens…"}
+              {txStatus.step === "sending"   && "Creating pool & adding liquidity…"}
+              {txStatus.step === "done"      && "Pool created!"}
+            </span>
+          </div>
+        )}
+        {txStatus.step === "error" && (
+          <p className="text-xs text-destructive">{txStatus.error}</p>
+        )}
+        {txHash && (
+          <a
+            href={`https://sepolia.etherscan.io/tx/${txHash}`}
+            target="_blank" rel="noreferrer"
+            className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+          >
+            <ExternalLink size={11} />
+            View on Etherscan
+          </a>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-3 pt-1">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold hover:bg-secondary/60 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleCreate}
+            disabled={!isConnected || !amtA || !amtB || creating || tokenA === tokenB}
+            className="flex-1 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center justify-center gap-2"
+          >
+            {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            {creating ? "Creating…" : isConnected ? "Create Pool" : "Connect Wallet"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type Tab = "pools" | "positions" | "farming";
 
 export function Liquidity() {
@@ -1094,6 +1314,7 @@ export function Liquidity() {
   const [tab, setTab]         = useState<Tab>("pools");
   const [sortBy, setSortBy]   = useState<"apr" | "tvl" | "vol">("tvl");
   const [chainFilter, setChainFilter] = useState<string>("all");
+  const [showCreatePool, setShowCreatePool] = useState(false);
   const [modalPool, setModalPool] = useState<Pool | null>(null);
   const [modalMode, setModalMode] = useState<"add" | "remove">("add");
   const [showAmmInfo, setShowAmmInfo] = useState(false);
@@ -1287,6 +1508,13 @@ export function Liquidity() {
                 {s === "vol" ? "Volume" : s.toUpperCase()}
               </button>
             ))}
+            <button
+              onClick={() => setShowCreatePool(true)}
+              className="ml-2 flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition-opacity"
+            >
+              <Plus size={14} />
+              Create Pool
+            </button>
           </div>
 
           <div className="bg-card border border-border rounded-xl overflow-hidden">
@@ -1523,6 +1751,9 @@ export function Liquidity() {
       {modalPool && (
         <LiquidityModal pool={modalPool} mode={modalMode} onClose={() => setModalPool(null)} />
       )}
+
+      {/* ── Create Pool Modal ── */}
+      {showCreatePool && <CreatePoolModal onClose={() => setShowCreatePool(false)} />}
     </div>
   );
 }

@@ -54,10 +54,18 @@ interface WalletState {
   /** TRON address for HD-wallet users (same secp256k1 key as EVM, Tron Base58Check 0x41 prefix → "T…"). */
   internalTronAddress: string | null;
 
+  /** True when the connected wallet is a hardware device (Ledger, Trezor, etc.) */
+  isHardwareWallet: boolean;
+  /** Which hardware wallet family is connected */
+  hardwareWalletType: "ledger" | "trezor" | "keystone" | "gridplus" | null;
+  /** BIP-44 derivation path used to select the hardware wallet account */
+  hardwareWalletPath: string | null;
+
   connect: (wallet: ConnectedWallet) => void;
   disconnect: () => void;
   setConnecting: (connecting: boolean) => void;
   setBalance: (balance: string | null) => void;
+  setHardwareWallet: (type: "ledger" | "trezor" | "keystone" | "gridplus" | null, path?: string | null) => void;
   /** Unconfirmed (mempool) BSV in BSV units — set by useBsvBalance, 0 when none. */
   bsvUnconfirmed: number;
   setBsvUnconfirmed: (v: number) => void;
@@ -133,6 +141,9 @@ export const useWalletStore = create<WalletState>()(
       internalTronAddress: null,
       balanceRefreshKey: 0,
       bsvUnconfirmed: 0,
+      isHardwareWallet:   false,
+      hardwareWalletType: null,
+      hardwareWalletPath: null,
 
       connect: (wallet) =>
         set((s) => {
@@ -180,10 +191,14 @@ export const useWalletStore = create<WalletState>()(
           internalLtcAddress: null,
           internalDogeAddress: null,
           internalTronAddress: null,
+          isHardwareWallet:   false,
+          hardwareWalletType: null,
+          hardwareWalletPath: null,
         }),
 
       setConnecting: (isConnecting) => set({ isConnecting }),
       setBalance: (balance) => set({ balance }),
+      setHardwareWallet: (type, path = null) => set({ isHardwareWallet: !!type, hardwareWalletType: type, hardwareWalletPath: path ?? null }),
       setBsvUnconfirmed: (bsvUnconfirmed) => set({ bsvUnconfirmed }),
       setInternalEvmAddress:  (internalEvmAddress)  => set({ internalEvmAddress }),
       setInternalBsvAddress:  (internalBsvAddress)  => set({ internalBsvAddress }),

@@ -45,6 +45,7 @@ import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useAddressBookStore, WALLET_TYPE_META } from "@/store/useAddressBookStore";
+import { useWalletStore } from "@/store/useWalletStore";
 import { QRCodeCanvas } from "qrcode.react";
 
 // ── constants ────────────────────────────────────────────────────────────────
@@ -111,6 +112,7 @@ const WALLET_TOKENS: Record<number, WalletToken[]> = {
     { symbol: "CRV",   decimals: 18, isNative: false, address: "0xD533a949740bb3306d119CC777fa900bA034cd52", color: "#FF0000" },
     { symbol: "LDO",   decimals: 18, isNative: false, address: "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32", color: "#F57A25" },
     { symbol: "ARB",   decimals: 18, isNative: false, address: "0xB50721BCf8d664c30412Cfbc6cf7a15145234ad1", color: "#28A0F0" },
+    { symbol: "ORAH",  decimals: 18, isNative: false, address: "0x0000000000000000000000000000000000000000", color: "#00D4AA" },
   ],
   // ── BNB Smart Chain ────────────────────────────────────────────────────────
   56: [
@@ -181,6 +183,7 @@ const WALLET_TOKENS: Record<number, WalletToken[]> = {
     { symbol: "USDT",  decimals: 6,  isNative: false, address: "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0", color: "#22C55E" },
     { symbol: "WBTC",  decimals: 8,  isNative: false, address: "0x29f2D40B0605204364af54EC677bD022dA425d03", color: "#F97316" },
     { symbol: "DAI",   decimals: 18, isNative: false, address: "0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357", color: "#F5A623" },
+    { symbol: "ORAH",  decimals: 18, isNative: false, address: "0x0000000000000000000000000000000000000000", color: "#00D4AA" },
   ],
 };
 
@@ -343,6 +346,7 @@ export function WithdrawSheet({
 }: WithdrawSheetProps) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
+  const { isHardwareWallet, hardwareWalletType } = useWalletStore();
 
   const isBitcoinFork = ["bsv", "btc", "bch"].includes(network.toLowerCase());
   const isSolana      = network.toLowerCase() === "sol";
@@ -845,6 +849,110 @@ export function WithdrawSheet({
     setWalletSending(true);
     setWalletSendError(null);
     try {
+      // ── Hardware wallet signing path ──────────────────────────────────────
+      if (isHardwareWallet) {
+        const deviceName = hardwareWalletType
+          ? hardwareWalletType.charAt(0).toUpperCase() + hardwareWalletType.slice(1)
+          : "hardware wallet";
+        toast({ title: `Sign on your ${deviceName}`, description: "Approve the transaction on your device." });
+
+        if (hardwareWalletType === "ledger") {
+          const { openLedgerSession, ledgerErrMsg } = await import("@/lib/ledgerHardware");
+          const {
+            createPublicClient, http, parseEther, parseUnits, serializeTransaction,
+            encodeFunctionData,
+          } = await import("viem");
+
+          const chainDef = {
+            id:         walletSendChain.id,
+            name:       walletSendChain.name,
+            nativeCurrency: { name: walletSendChain.symbol, symbol: walletSendChain.symbol, decimals: 18 },
+            rpcUrls:    { default: { http: [CHAIN_RPC_URLS[walletSendChain.id]] } },
+          } as const;
+
+          const publicClient = createPublicClient({ chain: chainDef as any, transport: http(CHAIN_RPC_URLS[walletSendChain.id]) });
+          const sender = walletAddress as `0x${string}`;
+          const to     = walletSendRecipient.trim() as `0x${string}`;
+
+          const [nonce, gasPrice, feeData] = await Promise.all([
+            publicClient.getTransactionCount({ address: sender }),
+            publicClient.getGasPrice(),
+            publicClient.estimateFeesPerGas().catch(() => null),
+          ]);
+
+          let txData: `0x${string}` = "0x";
+          let txValue = 0n;
+          if (walletSendToken.isNative) {
+            txValue = parseEther(walletSendAmount);
+          } else {
+            txData = encodeFunctionData({
+              abi: [{ name: "transfer", type: "function", stateMutability: "nonpayable",
+                inputs: [{ name: "to", type: "address" }, { name: "value", type: "uint256" }],
+                outputs: [{ name: "", type: "bool" }] }],
+              functionName: "transfer",
+              args: [to, parseUnits(walletSendAmount, walletSendToken.decimals)],
+            });
+          }
+
+          const txTarget  = walletSendToken.isNative ? to : (walletSendToken.address as `0x${string}`);
+          const gas       = await publicClient.estimateGas({ account: sender, to: txTarget, value: txValue, data: txData });
+          const maxFee    = feeData?.maxFeePerGas        ?? gasPrice;
+          const maxPrio   = feeData?.maxPriorityFeePerGas ?? gasPrice / 10n;
+
+          const unsignedTx = {
+            type:                 "eip1559" as const,
+            chainId:              walletSendChain.id,
+            nonce,
+            gas,
+            maxFeePerGas:         maxFee,
+            maxPriorityFeePerGas: maxPrio,
+            to:                   txTarget,
+            value:                txValue,
+            data:                 txData,
+          };
+
+          const rawUnsigned = serializeTransaction(unsignedTx);
+
+          // Open Ledger session to sign
+          let session: Awaited<ReturnType<typeof openLedgerSession>> | null = null;
+          try {
+            session = await openLedgerSession();
+            const derivPath = (useWalletStore.getState().hardwareWalletPath ?? "m/44'/60'/0'/0/0").replace(/^m\//, "");
+            const sig       = await session.eth.signTransaction(derivPath, rawUnsigned.slice(2), null);
+
+            const signedTx = serializeTransaction(unsignedTx, {
+              r: `0x${sig.r}` as `0x${string}`,
+              s: `0x${sig.s}` as `0x${string}`,
+              v: BigInt(sig.v),
+            });
+
+            const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTx });
+            setWalletSendTxHash(hash);
+            toast({ title: "Transaction sent!", description: `${walletSendAmount} ${walletSendToken.symbol} is being confirmed on-chain.` });
+            addNotification({
+              type: "withdrawal",
+              title: "Ledger Transfer Sent",
+              body: `${walletSendAmount} ${walletSendToken.symbol} sent via Ledger on ${walletSendChain.name}. TX: ${hash.slice(0, 12)}…`,
+            });
+            setTimeout(() => fetchWalletBalance(walletSendChain, walletSendToken), 4000);
+          } catch (err: any) {
+            const msg = ledgerErrMsg(err);
+            setWalletSendError(msg);
+            toast({ title: "Ledger signing failed", description: msg, variant: "destructive" });
+          } finally {
+            session?.transport?.close().catch(() => {});
+            setWalletSending(false);
+          }
+          return;
+        }
+
+        // Trezor / Keystone / GridPlus — show instruction
+        setWalletSendError(`${deviceName} transaction signing — connect your device and use ${deviceName} Suite to broadcast.`);
+        setWalletSending(false);
+        return;
+      }
+
+      // ── Software wallet signing path (passkey / private key) ────────────
       const account = await getViemAccountForAddress(walletAddress, {
         title: "Authorize transfer",
         subtitle: `Unlock your imported OrahDEX wallet to send ${walletSendAmount} ${walletSendToken.symbol}.`,
