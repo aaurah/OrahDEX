@@ -1,17 +1,17 @@
 User-agent: *
 Allow: /
 
-# Disallow admin area from indexing
+# Disallow admin and private areas
 Disallow: /admin/
 Disallow: /admin
-
-# Disallow user-specific / private pages
 Disallow: /wallet
 Disallow: /wallet/
 Disallow: /settings
 Disallow: /settings/
 Disallow: /portfolio
 Disallow: /portfolio/
+Disallow: /api/
+Disallow: /api
 
 # Allow all major crawlers full access to public content
 User-agent: Googlebot
@@ -20,6 +20,7 @@ Disallow: /admin/
 Disallow: /wallet
 Disallow: /settings
 Disallow: /portfolio
+Disallow: /api/
 
 User-agent: Bingbot
 Allow: /
@@ -27,6 +28,7 @@ Disallow: /admin/
 Disallow: /wallet
 Disallow: /settings
 Disallow: /portfolio
+Disallow: /api/
 Crawl-delay: 1
 
 User-agent: Twitterbot

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ArrowLeft, FileText, Download, ChevronDown, ChevronUp, ExternalLink } from "lucide-react";
+import { useSEO } from "@/hooks/useSEO";
 import { useLocation } from "wouter";
 import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
@@ -117,6 +118,11 @@ function InfoBox({ title, children, color = "blue" }: { title: string; children:
 }
 
 export function WhitePaper() {
+  useSEO({
+    title: "White Paper — OrahDEX",
+    description: "Read the OrahDEX white paper: sovereign decentralized exchange architecture, BSV on-chain settlement, Genesis Liquidity Engine, Keeper Protocol, and tokenomics.",
+    keywords: "OrahDEX whitepaper, DEX white paper, BSV settlement paper, sovereign exchange, Keeper Protocol, Genesis Liquidity Engine",
+  });
   const [, navigate] = useLocation();
   const [tocOpen, setTocOpen] = useState(false);
   const [activeSection, setActiveSection] = useState("abstract");
