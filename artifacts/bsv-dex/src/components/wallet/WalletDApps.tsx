@@ -5,12 +5,14 @@
  */
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Link2, Link2Off, Wifi, WifiOff, Loader2, X, Check, Copy,
-  AlertTriangle, ChevronRight, Globe, Scan, Send, KeyRound,
-  ShieldCheck, ShieldAlert, RefreshCw, ExternalLink, Zap,
+  Link2, Link2Off, Wifi, WifiOff, Loader2, X, Check,
+  AlertTriangle, Globe, Scan, ShieldCheck, ShieldAlert,
+  ExternalLink, Zap, Camera, QrCode, RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import * as jsQRModule from "jsqr";
+const jsQR: typeof import("jsqr").default = (jsQRModule as any).default ?? jsQRModule;
 import type { IWeb3Wallet } from "@walletconnect/web3wallet";
 import type { SessionTypes, PairingTypes } from "@walletconnect/types";
 import {
@@ -45,6 +47,186 @@ interface PendingRequest {
     request: { method: string; params: unknown[] };
     chainId: string;
   };
+}
+
+// ── Inline camera QR scanner ──────────────────────────────────────────────────
+
+function CameraQRScanner({
+  onScan, onClose,
+}: {
+  onScan: (uri: string) => void;
+  onClose: () => void;
+}) {
+  const videoRef  = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const rafRef    = useRef<number>(0);
+
+  const [permission, setPermission] = useState<"pending" | "granted" | "denied">("pending");
+  const [flash, setFlash]           = useState(false);
+  const [scanned, setScanned]       = useState(false);
+
+  const stopCamera = useCallback(() => {
+    cancelAnimationFrame(rafRef.current);
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+  }, []);
+
+  const scanLoop = useCallback(() => {
+    const video  = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas || video.readyState < 2) {
+      rafRef.current = requestAnimationFrame(scanLoop);
+      return;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) { rafRef.current = requestAnimationFrame(scanLoop); return; }
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+      inversionAttempts: "dontInvert",
+    });
+    if (code?.data?.trim().startsWith("wc:")) {
+      setFlash(true);
+      setScanned(true);
+      stopCamera();
+      setTimeout(() => {
+        setFlash(false);
+        onScan(code.data.trim());
+        onClose();
+      }, 400);
+      return;
+    }
+    rafRef.current = requestAnimationFrame(scanLoop);
+  }, [stopCamera, onScan, onClose]);
+
+  const startCamera = useCallback(async () => {
+    setPermission("pending");
+    setScanned(false);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setPermission("granted");
+        scanLoop();
+      }
+    } catch {
+      setPermission("denied");
+    }
+  }, [scanLoop]);
+
+  useEffect(() => {
+    startCamera();
+    return () => stopCamera();
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black flex flex-col">
+      {/* Header */}
+      <div className="shrink-0 flex items-center gap-3 px-4 py-4 pt-safe">
+        <button
+          onClick={() => { stopCamera(); onClose(); }}
+          className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white active:bg-white/20 transition-colors"
+        >
+          <X size={18} />
+        </button>
+        <div className="flex-1 text-center">
+          <p className="text-white font-bold text-base">Scan WalletConnect QR</p>
+          <p className="text-white/40 text-xs mt-0.5">Point at the QR code shown by any web3 dApp</p>
+        </div>
+        <div className="w-9" />
+      </div>
+
+      {/* Viewfinder */}
+      <div className="flex-1 flex flex-col items-center justify-center px-4 gap-6">
+        <div className="relative w-full max-w-sm aspect-square rounded-3xl overflow-hidden bg-[#0a0a0a] border border-white/10">
+          {/* Green flash on scan */}
+          {flash && (
+            <div className="absolute inset-0 bg-blue-400/30 z-20 pointer-events-none rounded-3xl transition-opacity" />
+          )}
+
+          <video ref={videoRef} className="w-full h-full object-cover" muted playsInline autoPlay />
+          <canvas ref={canvasRef} className="hidden" />
+
+          {/* Permission denied */}
+          {permission === "denied" && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/90 px-6 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center">
+                <Camera size={24} className="text-white/30" />
+              </div>
+              <div>
+                <p className="text-white font-bold mb-1">Camera access denied</p>
+                <p className="text-white/40 text-sm">Allow camera in your browser settings, then tap Try Again</p>
+              </div>
+              <button
+                onClick={startCamera}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-500 text-white font-semibold text-sm active:scale-95 transition-transform"
+              >
+                <RefreshCw size={14} /> Try Again
+              </button>
+            </div>
+          )}
+
+          {/* Pending */}
+          {permission === "pending" && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black">
+              <Loader2 size={28} className="text-blue-400 animate-spin" />
+              <p className="text-white/50 text-sm">Starting camera…</p>
+            </div>
+          )}
+
+          {/* Scan frame corners */}
+          {permission === "granted" && !scanned && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="relative w-60 h-60">
+                {([ ["top-0 left-0","border-t-2 border-l-2 rounded-tl-2xl"],
+                    ["top-0 right-0","border-t-2 border-r-2 rounded-tr-2xl"],
+                    ["bottom-0 left-0","border-b-2 border-l-2 rounded-bl-2xl"],
+                    ["bottom-0 right-0","border-b-2 border-r-2 rounded-br-2xl"],
+                  ] as [string, string][]).map(([pos, style]) => (
+                  <div key={pos} className={`absolute w-10 h-10 border-blue-400 ${pos} ${style}`} />
+                ))}
+                {/* Scan line */}
+                <div
+                  className="absolute left-2 right-2 h-[2px] bg-gradient-to-r from-transparent via-blue-400 to-transparent"
+                  style={{ animation: "scanline 2s ease-in-out infinite", top: "50%" }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Success flash */}
+          {scanned && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70">
+              <div className="w-16 h-16 rounded-full bg-blue-500 flex items-center justify-center">
+                <Check size={28} className="text-white" strokeWidth={2.5} />
+              </div>
+              <p className="text-white font-bold">WalletConnect URI detected!</p>
+            </div>
+          )}
+        </div>
+
+        {/* Info */}
+        <div className="text-center max-w-xs">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <Zap size={14} className="text-blue-400" />
+            <p className="text-white/70 text-sm font-semibold">Auto-connects on detection</p>
+          </div>
+          <p className="text-white/35 text-xs leading-relaxed">
+            Open any web3 site (Uniswap, OpenSea, Aave…), click
+            <strong className="text-white/50"> Connect Wallet → WalletConnect</strong>,
+            then point your camera at their QR code.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -331,7 +513,7 @@ function SignRequestModal({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function WalletDApps({ evmAddress }: { evmAddress: string | null }) {
+export function WalletDApps({ evmAddress, initialUri = "" }: { evmAddress: string | null; initialUri?: string }) {
   const { toast } = useToast();
 
   const walletRef           = useRef<IWeb3Wallet | null>(null);
@@ -341,7 +523,8 @@ export function WalletDApps({ evmAddress }: { evmAddress: string | null }) {
   const [pairings, setPairings]               = useState<PairingTypes.Struct[]>([]);
   const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
   const [pendingRequest, setPendingRequest]   = useState<PendingRequest | null>(null);
-  const [wcUri, setWcUri]   = useState("");
+  const [wcUri, setWcUri]         = useState("");
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [connecting, setConnecting]   = useState(false);
   const [approving, setApproving]     = useState(false);
   const [copiedTopic, setCopiedTopic] = useState<string | null>(null);
@@ -394,12 +577,20 @@ export function WalletDApps({ evmAddress }: { evmAddress: string | null }) {
     return () => { cancelled = true; };
   }, [projectId, refreshSessions]);
 
+  // Auto-pair when navigated here with ?uri= from the QR scanner page
+  useEffect(() => {
+    if (!initialUri || !ready || !walletRef.current) return;
+    setWcUri(initialUri);
+    const t = setTimeout(() => pairUri(initialUri), 300);
+    return () => clearTimeout(t);
+  }, [initialUri, ready]);
+
   // ── Pairing ────────────────────────────────────────────────────────────────
-  const handlePair = async () => {
-    if (!walletRef.current || !wcUri.trim()) return;
+  const pairUri = async (uri: string) => {
+    if (!walletRef.current || !uri.trim()) return;
     setConnecting(true);
     try {
-      await walletRef.current.core.pairing.pair({ uri: wcUri.trim() });
+      await walletRef.current.core.pairing.pair({ uri: uri.trim() });
       setWcUri("");
       toast({ title: "Pairing request sent", description: "Waiting for dApp approval…" });
     } catch (e: any) {
@@ -407,6 +598,15 @@ export function WalletDApps({ evmAddress }: { evmAddress: string | null }) {
     }
     setConnecting(false);
   };
+
+  const handlePair = () => pairUri(wcUri);
+
+  const handleScannedUri = useCallback((uri: string) => {
+    setWcUri(uri);
+    setScannerOpen(false);
+    // Short delay so the input is visible before pairing begins
+    setTimeout(() => pairUri(uri), 150);
+  }, []);
 
   // ── Approve session proposal ───────────────────────────────────────────────
   const handleApproveSession = async () => {
@@ -524,6 +724,14 @@ export function WalletDApps({ evmAddress }: { evmAddress: string | null }) {
 
   return (
     <>
+      {/* Full-screen camera QR scanner overlay */}
+      {scannerOpen && (
+        <CameraQRScanner
+          onScan={handleScannedUri}
+          onClose={() => setScannerOpen(false)}
+        />
+      )}
+
       <div className="space-y-4">
 
         {/* Status bar */}
@@ -553,10 +761,20 @@ export function WalletDApps({ evmAddress }: { evmAddress: string | null }) {
           </ol>
         </div>
 
+        {/* Scan QR button — opens full-screen camera scanner */}
+        <button
+          onClick={() => setScannerOpen(true)}
+          disabled={!ready}
+          className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-2xl border-2 border-dashed border-blue-500/40 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500/60 disabled:opacity-40 text-blue-400 font-semibold text-sm transition-all active:scale-[0.98]"
+        >
+          <Camera size={17} />
+          Scan WalletConnect QR with Camera
+        </button>
+
         {/* URI input */}
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-secondary)] mb-1.5">
-            Paste WalletConnect URI
+            Or paste WalletConnect URI manually
           </p>
           <div className="flex gap-2">
             <input
@@ -578,10 +796,6 @@ export function WalletDApps({ evmAddress }: { evmAddress: string | null }) {
               {connecting ? "Connecting…" : "Connect"}
             </button>
           </div>
-          <p className="text-[10px] text-[var(--color-text-secondary)] mt-1.5 flex items-center gap-1">
-            <Scan size={10} />
-            Or use the QR scanner on the Exchange page to scan a WalletConnect QR code
-          </p>
         </div>
 
         {!evmAddress && (

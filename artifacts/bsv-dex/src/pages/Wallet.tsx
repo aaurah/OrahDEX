@@ -737,7 +737,10 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const linkedChains = CHAINS.filter(c => c.family !== "evm" && !!addressForChain(c, evmAddress, address, network, derived)).length;
   const totalNonEvm  = CHAINS.filter(c => c.family !== "evm").length;
 
-  const [tab, setTab]                         = useState<"portfolio" | "addresses" | "dapps">("portfolio");
+  const _qs = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const _initialTab = (_qs?.get("tab") === "dapps" ? "dapps" : "portfolio") as "portfolio" | "addresses" | "dapps";
+  const _initialUri = _qs?.get("uri") ?? "";
+  const [tab, setTab]                         = useState<"portfolio" | "addresses" | "dapps">(_initialTab);
   const [receiveOpen, setReceiveOpen]         = useState(false);
   const [sendOpen, setSendOpen]               = useState(false);
   const [chainReceive, setChainReceive]       = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
@@ -944,7 +947,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
 
       {/* ── dApps tab ── */}
       {tab === "dapps" && (
-        <WalletDApps evmAddress={evmAddress} />
+        <WalletDApps evmAddress={evmAddress} initialUri={_initialUri} />
       )}
 
       {/* ── Portfolio tab ── */}
