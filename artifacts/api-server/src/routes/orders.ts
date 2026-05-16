@@ -236,13 +236,19 @@ router.post("/orders", async (req, res) => {
     const isBsvAddress = detectIsBsvAddress(body.walletAddress);
     const isSolAddress = detectIsSolAddress(body.walletAddress);
 
-    // Address format detection always takes priority over client-supplied walletSource.
-    // This prevents a client from setting walletSource:"orah" with an EVM address to
-    // skip the cryptographic signature verification that external wallets require.
+    // For EVM addresses, format-detection always wins — EVM external wallets must
+    // supply an evmSignature regardless of walletSource claim.
+    // For BSV/SOL, the client-supplied walletSource is trusted because these chains
+    // have no browser-native signing API; Orah-managed BSV/SOL wallets are
+    // authenticated server-side and do not require a per-order signature.
     const walletSource: "external" | "orah" =
-      (isEvmAddress || isBsvAddress || isSolAddress) ? "external"
-      : body.walletSource === "orah" ? "orah"
-      : "orah";
+      isEvmAddress
+        ? "external"
+        : body.walletSource === "orah"
+          ? "orah"
+          : (isBsvAddress || isSolAddress)
+            ? "external"
+            : "orah";
 
     const isExternalWallet = walletSource === "external";
 
