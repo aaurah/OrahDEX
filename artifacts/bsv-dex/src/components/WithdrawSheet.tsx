@@ -297,9 +297,7 @@ export interface WithdrawSheetProps {
   visibleTabs?:        ("deposit" | "withdraw" | "history")[];
   /** Whether this is a passkey / orah-wallet — enables "Send from Wallet" mode */
   isOrahWallet?:       boolean;
-  /** Open the withdraw tab directly in wallet-send mode ("wallet") or exchange mode ("exchange"). Default: "exchange". */
-  initialSource?:      "exchange" | "wallet";
-  /** EVM address of the OrahWallet passkey — required for BSV/non-EVM "My Wallet" signing. */
+  /** EVM address of the OrahWallet passkey — required for BSV/non-EVM wallet signing. */
   passkeyEvmAddress?:  string;
 }
 
@@ -318,7 +316,6 @@ export function WithdrawSheet({
   initialTab = "withdraw",
   visibleTabs,
   isOrahWallet = false,
-  initialSource = "exchange",
   passkeyEvmAddress,
 }: WithdrawSheetProps) {
   const { toast } = useToast();
@@ -329,18 +326,12 @@ export function WithdrawSheet({
   const isEvmNetwork  = !isBitcoinFork && !isSolana && (network.toLowerCase() === "evm" || network === "");
   const isAltChain    = !isBitcoinFork && !isSolana && !isEvmNetwork; // LTC, DOGE, XRP, ADA, TRON, TON, etc.
   const isNonEvm      = isBitcoinFork || isSolana || isAltChain;
-  const isManualWithdraw = !isEvmNetwork && network.toLowerCase() !== "bsv" && network.toLowerCase() !== "bch";
-
   const [tab,          setTab]          = useState<"deposit" | "withdraw" | "history">(initialTab);
-  const [amount,       setAmount]       = useState("");
-  const [recipient,    setRecipient]    = useState(defaultRecipient ?? "");
-  const [submitting,   setSubmitting]   = useState(false);
-  const [submitted,    setSubmitted]    = useState(false);
   const [copiedId,     setCopiedId]     = useState<string | null>(null);
   const [expandedNote, setExpandedNote] = useState<string | null>(null);
   const [depositChain, setDepositChain] = useState(SUPPORTED_CHAINS[1]); // Base default
   const [depositMode,  setDepositMode]  = useState<"exchange" | "wallet">("exchange");
-  const [txHash,       setTxHash]       = useState("");
+  const [txHash,       setTxHash]       = useState("");   // EVM deposit TX verification
   const [verifying,    setVerifying]    = useState(false);
   const [bsvTxHash,    setBsvTxHash]    = useState("");
   const [bsvVerifying, setBsvVerifying] = useState(false);
@@ -356,7 +347,6 @@ export function WithdrawSheet({
   const [depFromWalletError,    setDepFromWalletError]    = useState<string | null>(null);
 
   // ── wallet send state (EVM) ──────────────────────────────────────────────
-  const [withdrawSource,      setWithdrawSource]      = useState<"exchange" | "wallet">("exchange");
   const [walletSendChain,     setWalletSendChain]     = useState<WalletChain>(() => resolveWalletChainToken(asset).chain);
   const [walletSendToken,     setWalletSendToken]     = useState<WalletToken>(() => resolveWalletChainToken(asset).token);
   const [walletSendBalance,   setWalletSendBalance]   = useState<number | null>(null);
@@ -379,11 +369,6 @@ export function WithdrawSheet({
   useEffect(() => {
     if (open) {
       setTab(initialTab);
-      setAmount("");
-      setRecipient(defaultRecipient ?? "");
-      setSubmitted(false);
-      setTxHash("");
-      setWithdrawSource(initialSource);
       setWalletSendTxHash(null);
       setWalletSendError(null);
       setWalletSendAmount("");
@@ -407,25 +392,6 @@ export function WithdrawSheet({
     }
   }, [open, asset, defaultRecipient, initialTab]);
 
-  // ── live OrahDEX ledger balance for this asset ───────────────────────────
-  // Fetches the user_balances row directly so the displayed "OrahDEX Balance"
-  // is always the custodial ledger amount, never the on-chain wallet balance
-  // that may be passed in via the `available` prop.
-  const { data: ledgerBal } = useQuery<{ available: string }>({
-    queryKey: ["withdraw-ledger-balance", walletAddress, asset],
-    queryFn: async () => {
-      const r = await fetch(`${API_BASE}/balances/${asset}?walletAddress=${encodeURIComponent(walletAddress)}`, { cache: "no-store" });
-      if (!r.ok) return { available: "0" };
-      return r.json();
-    },
-    enabled: !!walletAddress && !!asset && open,
-    refetchInterval: open ? 10_000 : false,
-    staleTime: 5_000,
-  });
-  const ledgerAvailable = parseFloat(ledgerBal?.available ?? "0") || 0;
-  // Use the live ledger value when we have one; fall back to the prop only
-  // before the first fetch returns.
-  const exchangeAvailable = ledgerBal !== undefined ? ledgerAvailable : available;
 
   // ── deposit address ──────────────────────────────────────────────────────
   const { data: depositData, isLoading: depositLoading, refetch: refetchDeposit } =
@@ -542,7 +508,7 @@ export function WithdrawSheet({
       return r.json();
     },
     enabled: !!walletAddress && open,
-    refetchInterval: submitted ? 4_000 : 30_000,
+    refetchInterval: 30_000,
     staleTime: 2_000,
   });
 
@@ -550,44 +516,6 @@ export function WithdrawSheet({
     h => isGasError(h.note) && (h.status === "cancelled" || h.status === "pending")
   );
 
-  // ── withdraw logic ───────────────────────────────────────────────────────
-  const parsedAmount    = parseFloat(amount) || 0;
-  const exceedsBalance  = parsedAmount > exchangeAvailable;
-
-  const isValidRecipient = (() => {
-    const r = recipient.trim();
-    if (!r) return false;
-    if (isSolana)     return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(r);
-    if (isBitcoinFork) return /^[13mn][a-km-zA-HJ-NP-Z1-9]{25,50}$/.test(r);
-    if (isAltChain)   return validateAltChainAddress(network, r);
-    // EVM: viem's isAddress validates EIP-55 checksum so a single mistyped
-    // character is caught rather than silently passing regex.
-    return isEvmAddress(r, { strict: false });
-  })();
-
-  const canSubmit = parsedAmount > 0 && !exceedsBalance && isValidRecipient && !submitting;
-
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
-    setSubmitting(true);
-    try {
-      const r = await fetch(`${API_BASE}/withdrawals`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress, asset, amount: parsedAmount, network, networkLabel, recipient: recipient.trim() }),
-      });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error ?? "Failed to submit withdrawal");
-      setSubmitted(true);
-      toast({ title: "Withdrawal sent", description: `${parsedAmount} ${asset} is being broadcast on-chain.` });
-      addNotification({ type: "withdrawal", title: "Withdrawal Processing", body: `${parsedAmount} ${asset} is being sent on-chain.` });
-      refetchHistory();
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally {
-      setSubmitting(false);
-    }
-  };
 
   // ── deposit-from-wallet: native balance fetch ────────────────────────────
   const fetchDepFromWalletBalance = useCallback(async (chainId: number) => {
@@ -696,10 +624,10 @@ export function WithdrawSheet({
   }, [walletAddress]);
 
   useEffect(() => {
-    if (open && tab === "withdraw" && withdrawSource === "wallet" && isOrahWallet && isEvmNetwork) {
+    if (open && tab === "withdraw" && isOrahWallet && isEvmNetwork) {
       fetchWalletBalance(walletSendChain, walletSendToken);
     }
-  }, [open, tab, withdrawSource, walletSendChain, walletSendToken, isOrahWallet, isEvmNetwork, fetchWalletBalance]);
+  }, [open, tab, walletSendChain, walletSendToken, isOrahWallet, isEvmNetwork, fetchWalletBalance]);
 
   // ── wallet send: non-EVM balance fetch (BSV, LTC, XRP, …) ───────────────
   const fetchNonEvmBalance = useCallback(async () => {
@@ -738,10 +666,10 @@ export function WithdrawSheet({
   }, [walletAddress, network]);
 
   useEffect(() => {
-    if (open && tab === "withdraw" && withdrawSource === "wallet" && isOrahWallet && !isEvmNetwork) {
+    if (open && tab === "withdraw" && isOrahWallet && !isEvmNetwork) {
       fetchNonEvmBalance();
     }
-  }, [open, tab, withdrawSource, isOrahWallet, isEvmNetwork, fetchNonEvmBalance]);
+  }, [open, tab, isOrahWallet, isEvmNetwork, fetchNonEvmBalance]);
 
   // ── wallet send: non-EVM challenge/sign/broadcast ────────────────────────
   const handleNonEvmWalletSend = async () => {
@@ -1338,146 +1266,11 @@ export function WithdrawSheet({
         )}
 
         {/* ── WITHDRAW TAB ─────────────────────────────────────────────────── */}
-        {tab === "withdraw" && !submitted && (
+        {tab === "withdraw" && (
           <div className="space-y-4">
 
-            {/* Source toggle — only for passkey wallet users */}
-            {isOrahWallet && (
-              <div className="flex rounded-xl bg-secondary/40 border border-border p-1 gap-1">
-                <button
-                  onClick={() => setWithdrawSource("exchange")}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
-                    withdrawSource === "exchange"
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  Exchange Balance
-                </button>
-                <button
-                  onClick={() => setWithdrawSource("wallet")}
-                  className={cn(
-                    "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold transition-all",
-                    withdrawSource === "wallet"
-                      ? "bg-green-600 text-white shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Wallet className="w-3.5 h-3.5" />
-                  My Wallet
-                </button>
-              </div>
-            )}
-
-            {/* ── EXCHANGE SOURCE ── */}
-            {withdrawSource === "exchange" && (
-              <>
-                {/* Queued withdrawal notice */}
-                {hasGasError && (
-                  <div className="w-full flex items-start gap-2.5 p-3 rounded-xl bg-secondary/40 border border-border text-left">
-                    <Clock className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold text-foreground">Withdrawal queued</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">Your withdrawal is queued and will be processed automatically.</p>
-                    </div>
-                  </div>
-                )}
-
-                {/* Balance summary */}
-                <div className="p-3.5 rounded-xl bg-secondary/30 border border-border space-y-1.5">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">OrahDEX Balance</span>
-                    <span className="font-bold font-mono" style={{ color }}>
-                      {exchangeAvailable.toLocaleString(undefined, { maximumFractionDigits: exchangeAvailable < 0.0001 ? 8 : 6 })} {asset}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Destination network</span>
-                    <span className="font-medium">{networkLabel}</span>
-                  </div>
-                </div>
-
-                {/* Amount */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold">Amount to withdraw</label>
-                  <div className="relative">
-                    <Input
-                      value={amount}
-                      onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                      placeholder="0.00"
-                      className={cn("pr-16 font-mono text-base", exceedsBalance && "border-red-500/60 focus-visible:ring-red-500/30")}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setAmount(exchangeAvailable.toFixed(exchangeAvailable < 0.0001 ? 8 : 6))}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-primary hover:text-primary/80 px-2 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
-                    >
-                      MAX
-                    </button>
-                  </div>
-                  {exceedsBalance && (
-                    <p className="text-xs text-red-400 flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" /> Exceeds available OrahDEX balance
-                    </p>
-                  )}
-                </div>
-
-                {/* Recipient */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-semibold">Withdrawal address</label>
-                  <Input
-                    value={recipient}
-                    onChange={e => setRecipient(e.target.value)}
-                    placeholder={addressPlaceholder}
-                    className={cn("font-mono text-xs", recipient.trim() && !isValidRecipient && "border-destructive focus-visible:ring-destructive")}
-                  />
-                  {recipient.trim() && !isValidRecipient ? (
-                    <p className="text-xs text-destructive">
-                      {isSolana
-                        ? "Invalid Solana address — must be a 32–44 character base58 public key."
-                        : isBitcoinFork
-                          ? `Invalid ${network.toUpperCase()} address — expected a P2PKH address starting with 1 or 3.`
-                          : isAltChain
-                            ? `Invalid ${networkLabel} address format. Double-check the address from your wallet.`
-                            : "Invalid EVM address — must start with 0x followed by 40 hex characters."}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      {walletAddress
-                        ? `Pre-filled with your connected wallet. You may change this to any valid ${networkLabel} address.`
-                        : `Enter a valid ${networkLabel} address.`}
-                    </p>
-                  )}
-                </div>
-
-                {/* Processing notice */}
-                {isManualWithdraw ? (
-                  <div className="flex gap-2.5 p-3 rounded-xl bg-yellow-500/8 border border-yellow-500/20">
-                    <Clock className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      {networkLabel} withdrawals are processed within <strong className="text-foreground">24 hours</strong>. Your OrahDEX balance is debited immediately upon request.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex gap-2.5 p-3 rounded-xl bg-emerald-500/8 border border-emerald-500/20">
-                    <Zap className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      Withdrawals are processed instantly on-chain. Funds go directly to your wallet — no waiting.
-                    </p>
-                  </div>
-                )}
-
-                <Button onClick={handleSubmit} disabled={!canSubmit} className="w-full gap-2 h-11">
-                  {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  {submitting ? "Submitting…" : `Withdraw${parsedAmount > 0 ? ` ${parsedAmount}` : ""} ${asset}`}
-                </Button>
-              </>
-            )}
-
-            {/* ── WALLET SOURCE — non-EVM (BSV, LTC, XRP…) ─────────────── */}
-            {withdrawSource === "wallet" && !isEvmNetwork && (
+            {/* ── WALLET SEND — non-EVM (BSV, LTC, XRP…) ───────────────── */}
+            {!isEvmNetwork && (
               <>
                 {/* Balance display */}
                 <div className="flex items-center justify-between p-3 rounded-xl bg-secondary/30 border border-border">
@@ -1570,8 +1363,8 @@ export function WithdrawSheet({
               </>
             )}
 
-            {/* ── WALLET SOURCE — EVM (passkey wallet direct on-chain send) ── */}
-            {withdrawSource === "wallet" && isEvmNetwork && (
+            {/* ── WALLET SEND — EVM (passkey wallet direct on-chain send) ── */}
+            {isEvmNetwork && (
               <>
                 {/* Chain selector */}
                 <div className="space-y-1.5">
@@ -1761,26 +1554,6 @@ export function WithdrawSheet({
                 </Button>
               </>
             )}
-          </div>
-        )}
-
-        {/* ── SUCCESS STATE ─────────────────────────────────────────────────── */}
-        {tab === "withdraw" && submitted && (
-          <div className="flex flex-col items-center gap-4 py-6 text-center">
-            <div className="w-16 h-16 rounded-full bg-green-500/15 border border-green-500/25 flex items-center justify-center">
-              <CheckCircle2 className="w-9 h-9 text-green-400" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-lg font-bold">Sending to Your Wallet</p>
-              <p className="text-sm text-muted-foreground leading-relaxed max-w-xs mx-auto">
-                <span className="font-semibold text-foreground">{parsedAmount} {asset}</span>{" "}
-                is being broadcast on-chain. Check the History tab for your transaction ID once confirmed.
-              </p>
-            </div>
-            <div className="flex gap-2 w-full pt-2">
-              <Button variant="outline" className="flex-1" onClick={() => setTab("history")}>View History</Button>
-              <Button className="flex-1" onClick={() => { setSubmitted(false); setAmount(""); }}>New Withdrawal</Button>
-            </div>
           </div>
         )}
 
