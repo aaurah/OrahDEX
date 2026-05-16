@@ -346,12 +346,15 @@ importers:
       '@keystonehq/bc-ur-registry-eth':
         specifier: ^0.22.1
         version: 0.22.1
+      '@ledgerhq/context-module':
+        specifier: ^1.17.1
+        version: 1.17.1(@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2))
       '@ledgerhq/device-management-kit':
         specifier: ^1.4.1
         version: 1.4.1(rxjs@7.8.2)
       '@ledgerhq/device-signer-kit-ethereum':
         specifier: ^1.15.1
-        version: 1.15.1(@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2))
+        version: 1.15.1(@ledgerhq/context-module@1.17.1(@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2)))(@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2))
       '@ledgerhq/device-transport-kit-web-hid':
         specifier: ^1.2.3
         version: 1.2.3(@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2))(rxjs@7.8.2)
@@ -2417,6 +2420,11 @@ packages:
 
   '@ledgerhq/client-ids@0.8.3':
     resolution: {integrity: sha512-+0lR1JPxlV7ln2CForSLRj1jritH0+s6D4sP8RJysgv5aDFVdxZl0Wo4mpvxvnudqISqgN3Y3eyXnMNjJ7/1yA==}
+
+  '@ledgerhq/context-module@1.17.1':
+    resolution: {integrity: sha512-Nu3B36tkACBfI9zouQGx8ZmeQ8SmeJwFBL1JozS/yRH4nAR7jizfKwBL6hYdqgcyG9rbV6z67+hv0BBe6r3b5A==}
+    peerDependencies:
+      '@ledgerhq/device-management-kit': ^1.3.0
 
   '@ledgerhq/device-management-kit@1.4.1':
     resolution: {integrity: sha512-TEfO0fOSQ6iphOT7lMVYCjW1q7B3xSLhf9DaXgbiYT6tDgVHlYznbgpPWDFBeczbDapt0m+YlXQH7VqVIwOqzQ==}
@@ -11556,6 +11564,18 @@ snapshots:
       - react
       - react-redux
 
+  '@ledgerhq/context-module@1.17.1(@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2))':
+    dependencies:
+      '@ledgerhq/device-management-kit': 1.4.1(rxjs@7.8.2)
+      crypto-js: 4.2.0
+      ethers: 6.14.1
+      inversify: 7.5.1(reflect-metadata@0.2.2)
+      purify-ts: 2.1.0
+      reflect-metadata: 0.2.2
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   '@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2)':
     dependencies:
       '@noble/hashes': 1.8.0
@@ -11574,8 +11594,9 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  '@ledgerhq/device-signer-kit-ethereum@1.15.1(@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2))':
+  '@ledgerhq/device-signer-kit-ethereum@1.15.1(@ledgerhq/context-module@1.17.1(@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2)))(@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2))':
     dependencies:
+      '@ledgerhq/context-module': 1.17.1(@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2))
       '@ledgerhq/device-management-kit': 1.4.1(rxjs@7.8.2)
       '@ledgerhq/signer-utils': 1.2.0(@ledgerhq/device-management-kit@1.4.1(rxjs@7.8.2))
       ethers: 6.14.1

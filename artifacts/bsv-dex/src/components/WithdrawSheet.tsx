@@ -911,22 +911,25 @@ export function WithdrawSheet({
             data:                 txData,
           };
 
-          const rawUnsigned = serializeTransaction(unsignedTx);
-
-          // Open Ledger session to sign
-          let session: Awaited<ReturnType<typeof openLedgerSession>> | null = null;
+          // Open Ledger DMK session, sign, broadcast
+          let dmkSessionId: string | null = null;
           try {
-            session = await openLedgerSession();
-            const derivPath = (useWalletStore.getState().hardwareWalletPath ?? "m/44'/60'/0'/0/0").replace(/^m\//, "");
-            const sig       = await session.eth.signTransaction(derivPath, rawUnsigned.slice(2), null);
+            const dmkSess  = await dmkConnect();
+            dmkSessionId   = dmkSess.sessionId;
+            const derivPath = useWalletStore.getState().hardwareWalletPath ?? "m/44'/60'/0'/0/0";
 
-            const signedTx = serializeTransaction(unsignedTx, {
-              r: `0x${sig.r}` as `0x${string}`,
-              s: `0x${sig.s}` as `0x${string}`,
-              v: BigInt(sig.v),
+            const signedTx = await dmkSignTransaction(dmkSess.sessionId, derivPath, {
+              chainId:              unsignedTx.chainId,
+              to:                   unsignedTx.to,
+              value:                unsignedTx.value,
+              data:                 unsignedTx.data,
+              nonce:                unsignedTx.nonce,
+              gasLimit:             unsignedTx.gas,
+              maxFeePerGas:         unsignedTx.maxFeePerGas,
+              maxPriorityFeePerGas: unsignedTx.maxPriorityFeePerGas,
             });
 
-            const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTx });
+            const hash = await publicClient.sendRawTransaction({ serializedTransaction: signedTx as `0x${string}` });
             setWalletSendTxHash(hash);
             toast({ title: "Transaction sent!", description: `${walletSendAmount} ${walletSendToken.symbol} is being confirmed on-chain.` });
             addNotification({
@@ -935,12 +938,12 @@ export function WithdrawSheet({
               body: `${walletSendAmount} ${walletSendToken.symbol} sent via Ledger on ${walletSendChain.name}. TX: ${hash.slice(0, 12)}…`,
             });
             setTimeout(() => fetchWalletBalance(walletSendChain, walletSendToken), 4000);
-          } catch (err: any) {
-            const msg = ledgerErrMsg(err);
+          } catch (err: unknown) {
+            const msg = dmkErrMsg(err);
             setWalletSendError(msg);
             toast({ title: "Ledger signing failed", description: msg, variant: "destructive" });
           } finally {
-            session?.transport?.close().catch(() => {});
+            if (dmkSessionId) dmkDisconnect(dmkSessionId).catch(() => {});
             setWalletSending(false);
           }
           return;
