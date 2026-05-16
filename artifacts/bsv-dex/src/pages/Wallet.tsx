@@ -1,13 +1,15 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
 import {
   Wallet as WalletIcon, Download, ArrowDownUp, Copy, Check,
   ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles,
-  RefreshCw, Link2, Link2Off, Send, TrendingUp,
+  RefreshCw, Link2, Link2Off, Send, TrendingUp, ChevronDown, ChevronUp,
+  Coins, Trash2, Loader2, ExternalLink,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useNativeChainBalance } from "@/hooks/useNativeChainBalance";
 import {
   getImportedWallet, getDerivedAddresses, saveDerivedAddresses,
@@ -102,12 +104,17 @@ function addressForChain(
 
 function ChainRowShell({
   chain, chainAddr, balanceSlot, onReceive, onImport,
+  expandable, expanded, onToggleExpand, extra,
 }: {
   chain: ChainRow;
   chainAddr: string | null;
   balanceSlot: ReactNode;
   onReceive: () => void;
   onImport: () => void;
+  expandable?: boolean;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+  extra?: ReactNode;
 }) {
   const hasAddr   = !!chainAddr;
   const canReceive = hasAddr && chain.live;
@@ -119,78 +126,314 @@ function ChainRowShell({
       : "Coming soon";
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/30 transition-colors group">
-      {/* Chain icon */}
+    <div className="flex flex-col">
       <div
-        className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm"
-        style={{ backgroundColor: chain.color }}
+        className={cn(
+          "flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/30 transition-colors group",
+          expandable && "cursor-pointer"
+        )}
+        onClick={expandable ? onToggleExpand : undefined}
       >
-        {chain.symbol.slice(0, 3)}
-      </div>
+        {/* Chain icon */}
+        <div
+          className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm"
+          style={{ backgroundColor: chain.color }}
+        >
+          {chain.symbol.slice(0, 3)}
+        </div>
 
-      {/* Name + address */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <p className="text-sm font-semibold text-foreground truncate">{chain.name}</p>
-          {chain.badge && (
-            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/15 text-primary uppercase tracking-wider shrink-0">
-              {chain.badge}
-            </span>
-          )}
-          {/* Watch-mode indicator */}
-          {hasAddr && chain.family !== "evm" && (
-            <span className="hidden group-hover:inline-flex items-center gap-0.5 text-[9px] font-semibold text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded-full uppercase tracking-wide shrink-0">
-              <Link2 size={8} /> Linked
-            </span>
+        {/* Name + address */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-semibold text-foreground truncate">{chain.name}</p>
+            {chain.badge && (
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/15 text-primary uppercase tracking-wider shrink-0">
+                {chain.badge}
+              </span>
+            )}
+            {hasAddr && chain.family !== "evm" && (
+              <span className="hidden group-hover:inline-flex items-center gap-0.5 text-[9px] font-semibold text-primary/70 bg-primary/10 px-1.5 py-0.5 rounded-full uppercase tracking-wide shrink-0">
+                <Link2 size={8} /> Linked
+              </span>
+            )}
+          </div>
+
+          {hasAddr ? (
+            <p className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate">{addrLabel}</p>
+          ) : (
+            chain.live ? (
+              <button
+                onClick={e => { e.stopPropagation(); onImport(); }}
+                className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-primary/80 hover:text-primary transition-colors"
+              >
+                <Plus size={10} />
+                Link address or import key
+              </button>
+            ) : (
+              <p className="text-[11px] text-muted-foreground mt-0.5">{addrLabel}</p>
+            )
           )}
         </div>
 
-        {hasAddr ? (
-          <p className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate">{addrLabel}</p>
-        ) : (
-          chain.live ? (
+        {/* Balance slot */}
+        {balanceSlot}
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {chain.family !== "evm" && chain.live && (
             <button
-              onClick={onImport}
-              className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-primary/80 hover:text-primary transition-colors"
+              onClick={e => { e.stopPropagation(); onImport(); }}
+              title={hasAddr ? "Manage linked address" : "Link address or import key"}
+              className={cn(
+                "w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0",
+                hasAddr
+                  ? "bg-primary/10 hover:bg-primary/20 text-primary"
+                  : "bg-secondary/60 hover:bg-primary/15 text-muted-foreground hover:text-primary",
+              )}
             >
-              <Plus size={10} />
-              Link address or import key
+              {hasAddr ? <Link2 size={13} /> : <Link2Off size={13} />}
             </button>
-          ) : (
-            <p className="text-[11px] text-muted-foreground mt-0.5">{addrLabel}</p>
-          )
-        )}
+          )}
+
+          <button
+            onClick={e => { e.stopPropagation(); onReceive(); }}
+            disabled={!canReceive}
+            className="w-8 h-8 rounded-lg bg-secondary/60 hover:bg-secondary disabled:opacity-30 flex items-center justify-center transition-colors shrink-0"
+            title="Receive"
+          >
+            <Download size={14} />
+          </button>
+
+          {expandable && (
+            <button
+              onClick={e => { e.stopPropagation(); onToggleExpand?.(); }}
+              className="w-8 h-8 rounded-lg bg-secondary/60 hover:bg-secondary flex items-center justify-center transition-colors shrink-0"
+              title={expanded ? "Collapse" : "Show tokens"}
+            >
+              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Balance slot */}
-      {balanceSlot}
+      {extra}
+    </div>
+  );
+}
 
-      {/* Action buttons */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        {/* Import / link button (always visible for non-EVM chains) */}
-        {chain.family !== "evm" && chain.live && (
-          <button
-            onClick={onImport}
-            title={hasAddr ? "Manage linked address" : "Link address or import key"}
-            className={cn(
-              "w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0",
-              hasAddr
-                ? "bg-primary/10 hover:bg-primary/20 text-primary"
-                : "bg-secondary/60 hover:bg-primary/15 text-muted-foreground hover:text-primary",
-            )}
-          >
-            {hasAddr ? <Link2 size={13} /> : <Link2Off size={13} />}
-          </button>
+// ─── Add Custom Token dialog ─────────────────────────────────────────────────
+
+const CHAIN_NAMES: Record<number, string> = {
+  1: "Ethereum", 56: "BNB Chain", 137: "Polygon", 42161: "Arbitrum",
+  10: "Optimism", 8453: "Base", 43114: "Avalanche", 59144: "Linea",
+};
+
+function AddCustomTokenDialog({
+  open, chainId, onClose,
+}: { open: boolean; chainId: number | null; onClose: () => void }) {
+  const { add } = useCustomTokenStore();
+  const { toast } = useToast();
+
+  const [address,  setAddress]  = useState("");
+  const [symbol,   setSymbol]   = useState("");
+  const [name,     setName]     = useState("");
+  const [decimals, setDecimals] = useState("18");
+  const [color,    setColor]    = useState("#6B7280");
+  const [fetching, setFetching] = useState(false);
+  const [fetched,  setFetched]  = useState(false);
+
+  const reset = () => {
+    setAddress(""); setSymbol(""); setName(""); setDecimals("18");
+    setColor("#6B7280"); setFetched(false);
+  };
+  const handleClose = () => { reset(); onClose(); };
+
+  const handleAutoDetect = useCallback(async () => {
+    if (!chainId || !address.match(/^0x[0-9a-fA-F]{40}$/)) {
+      toast({ variant: "destructive", title: "Invalid address", description: "Enter a valid 0x contract address first." });
+      return;
+    }
+    setFetching(true);
+    try {
+      const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
+      const rpcUrls: Record<number, string> = {
+        1: "https://eth.drpc.org", 56: "https://bsc.drpc.org",
+        137: "https://polygon.drpc.org", 42161: "https://arbitrum.drpc.org",
+        10: "https://optimism.drpc.org", 8453: "https://base.drpc.org",
+        43114: "https://avalanche.drpc.org", 59144: "https://linea.drpc.org",
+      };
+      const rpc = rpcUrls[chainId] ?? `${BASE}/api/rpc/${chainId}`;
+
+      async function callRpc(data: string) {
+        const r = await fetch(rpc, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: address, data }, "latest"] }),
+        });
+        const j = await r.json();
+        return j.result as string;
+      }
+
+      function parseString(hex: string): string {
+        if (!hex || hex.length <= 2) return "";
+        const data = hex.slice(2);
+        const len = parseInt(data.slice(64, 128), 16);
+        const str = data.slice(128, 128 + len * 2);
+        return str ? decodeURIComponent(str.replace(/../g, "%$&")) : "";
+      }
+      function parseUint(hex: string): number {
+        if (!hex || hex.length <= 2) return 18;
+        return parseInt(hex.slice(2), 16) || 18;
+      }
+
+      const [symHex, nameHex, decHex] = await Promise.all([
+        callRpc("0x95d89b41"), // symbol()
+        callRpc("0x06fdde03"), // name()
+        callRpc("0x313ce567"), // decimals()
+      ]);
+
+      const sym  = parseString(symHex);
+      const nm   = parseString(nameHex);
+      const dec  = parseUint(decHex);
+
+      if (!sym) throw new Error("Could not read token — is this an ERC-20 contract?");
+
+      setSymbol(sym.slice(0, 12).toUpperCase());
+      setName(nm || sym);
+      setDecimals(String(dec));
+      setFetched(true);
+      toast({ title: "Token detected", description: `${sym} on ${CHAIN_NAMES[chainId] ?? "chain " + chainId}` });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Detection failed", description: (e as Error).message });
+    } finally {
+      setFetching(false);
+    }
+  }, [chainId, address, toast]);
+
+  const handleSave = () => {
+    if (!chainId || !address.match(/^0x[0-9a-fA-F]{40}$/) || !symbol.trim()) {
+      toast({ variant: "destructive", title: "Missing fields", description: "Address and symbol are required." });
+      return;
+    }
+    const result = add({
+      chainId,
+      address: address.trim(),
+      symbol:  symbol.trim().toUpperCase(),
+      name:    name.trim() || symbol.trim(),
+      decimals: parseInt(decimals) || 18,
+      color,
+    });
+    if (!result) {
+      toast({ variant: "destructive", title: "Already added", description: "This token is already in your list." });
+      return;
+    }
+    toast({ title: "Token added", description: `${result.symbol} added to ${CHAIN_NAMES[chainId] ?? "chain"}` });
+    handleClose();
+  };
+
+  if (!open || !chainId) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose} />
+      <div className="relative w-full max-w-sm bg-card border border-border rounded-t-3xl sm:rounded-3xl shadow-2xl p-6 z-10">
+        <div className="flex items-center justify-between mb-5">
+          <div>
+            <h2 className="text-base font-bold text-foreground">Add Custom Token</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">{CHAIN_NAMES[chainId] ?? `Chain ${chainId}`}</p>
+          </div>
+          <button onClick={handleClose} className="w-8 h-8 rounded-lg bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors">✕</button>
+        </div>
+
+        {/* Contract address */}
+        <div className="mb-3">
+          <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Contract address</label>
+          <div className="flex gap-2">
+            <input
+              value={address}
+              onChange={e => { setAddress(e.target.value); setFetched(false); }}
+              placeholder="0x…"
+              className="flex-1 bg-secondary/30 border border-border rounded-xl px-3 py-2.5 text-sm font-mono outline-none focus:border-primary/50 transition-colors"
+            />
+            <button
+              onClick={handleAutoDetect}
+              disabled={fetching || !address}
+              className="px-3 py-2.5 rounded-xl bg-primary/15 text-primary text-xs font-semibold hover:bg-primary/25 transition-colors disabled:opacity-40 shrink-0 flex items-center gap-1.5"
+            >
+              {fetching ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />}
+              {fetching ? "Detecting…" : "Auto-detect"}
+            </button>
+          </div>
+        </div>
+
+        {fetched && (
+          <div className="mb-3 flex items-center gap-2 p-2.5 rounded-xl bg-green-500/10 border border-green-500/20">
+            <Check size={14} className="text-green-400 shrink-0" />
+            <span className="text-xs text-green-400 font-semibold">Token detected — review fields below</span>
+          </div>
         )}
 
-        {/* Receive button */}
+        {/* Symbol + name */}
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Symbol</label>
+            <input
+              value={symbol}
+              onChange={e => setSymbol(e.target.value)}
+              placeholder="e.g. USDT"
+              className="w-full bg-secondary/30 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-primary/50 transition-colors"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Decimals</label>
+            <input
+              value={decimals}
+              onChange={e => setDecimals(e.target.value)}
+              type="number"
+              min={0} max={18}
+              className="w-full bg-secondary/30 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-primary/50 transition-colors"
+            />
+          </div>
+        </div>
+        <div className="mb-3">
+          <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Token name</label>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="e.g. Tether USD"
+            className="w-full bg-secondary/30 border border-border rounded-xl px-3 py-2.5 text-sm outline-none focus:border-primary/50 transition-colors"
+          />
+        </div>
+
+        {/* Color picker */}
+        <div className="mb-5">
+          <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Color</label>
+          <div className="flex items-center gap-3">
+            <input
+              type="color"
+              value={color}
+              onChange={e => setColor(e.target.value)}
+              className="w-10 h-10 rounded-xl border border-border bg-transparent cursor-pointer p-0.5"
+            />
+            <div className="flex gap-1.5 flex-wrap">
+              {["#22C55E","#3B82F6","#F97316","#EAB308","#8B5CF6","#EC4899","#14B8A6","#6B7280"].map(c => (
+                <button
+                  key={c}
+                  onClick={() => setColor(c)}
+                  className={cn("w-6 h-6 rounded-full border-2 transition-all", color === c ? "border-foreground scale-110" : "border-transparent")}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
         <button
-          onClick={onReceive}
-          disabled={!canReceive}
-          className="w-8 h-8 rounded-lg bg-secondary/60 hover:bg-secondary disabled:opacity-30 flex items-center justify-center transition-colors shrink-0"
-          title="Receive"
+          onClick={handleSave}
+          disabled={!address || !symbol}
+          className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-colors disabled:opacity-40"
         >
-          <Download size={14} />
+          Add Token
         </button>
       </div>
     </div>
@@ -200,19 +443,31 @@ function ChainRowShell({
 // ─── EVM row ─────────────────────────────────────────────────────────────────
 
 function EvmChainRow({
-  chain, evmAddress, quoteCurrency, onReceive, onImport,
+  chain, evmAddress, quoteCurrency, onReceive, onImport, onAddToken,
 }: {
   chain: ChainRow;
   evmAddress: string | null;
   quoteCurrency: string;
   onReceive: () => void;
   onImport: () => void;
+  onAddToken: (chainId: number) => void;
 }) {
-  const { balances } = useEvmBalances(evmAddress, chain.evmChainId ?? null);
+  const { balances, loading } = useEvmBalances(evmAddress, chain.evmChainId ?? null);
+  const { remove }            = useCustomTokenStore();
+  const [expanded, setExpanded] = useState(false);
+  const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
+
   const native     = balances.find(b => b.isNative);
   const nativeAmt  = native?.amount ?? 0;
-  const tokenCount = balances.filter(b => !b.isNative && b.amount > 0).length;
+  const tokens     = balances.filter(b => !b.isNative);
+  const tokenCount = tokens.filter(b => b.amount > 0).length;
   const totalUsd   = balances.reduce((s, b) => s + (b.usdValue ?? 0), 0);
+
+  const copyContract = async (addr: string) => {
+    await navigator.clipboard.writeText(addr);
+    setCopiedAddr(addr);
+    setTimeout(() => setCopiedAddr(null), 1500);
+  };
 
   const balanceSlot = evmAddress ? (
     <div className="text-right shrink-0 min-w-[72px]">
@@ -225,6 +480,88 @@ function EvmChainRow({
     </div>
   ) : null;
 
+  const chainId = chain.evmChainId!;
+
+  const expandedPanel = expanded ? (
+    <div className="border-t border-border bg-secondary/10 px-4 py-3">
+      {/* Token list */}
+      {loading && tokens.length === 0 && (
+        <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+          <Loader2 size={12} className="animate-spin" /> Fetching balances…
+        </div>
+      )}
+
+      {!loading && tokens.length === 0 && (
+        <p className="text-xs text-muted-foreground py-1">No ERC-20 tokens found on this chain.</p>
+      )}
+
+      <div className="space-y-0.5">
+        {tokens.map((tok, i) => (
+          <div key={i} className="flex items-center gap-2.5 py-2">
+            <div
+              className="w-7 h-7 rounded-full shrink-0 flex items-center justify-center text-[9px] font-bold text-white"
+              style={{ backgroundColor: tok.color }}
+            >
+              {tok.symbol.slice(0, 3)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-foreground">{tok.symbol}</span>
+                {tok.isCustom && (
+                  <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20 uppercase tracking-wide shrink-0">
+                    Custom
+                  </span>
+                )}
+              </div>
+              {tok.contractAddress && (
+                <button
+                  onClick={() => copyContract(tok.contractAddress!)}
+                  className="flex items-center gap-1 mt-0.5 group/ca"
+                  title="Copy contract address"
+                >
+                  <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[140px] group-hover/ca:text-foreground transition-colors">
+                    {tok.contractAddress.slice(0, 6)}…{tok.contractAddress.slice(-4)}
+                  </span>
+                  {copiedAddr === tok.contractAddress
+                    ? <Check size={9} className="text-green-400 shrink-0" />
+                    : <Copy size={9} className="text-muted-foreground/60 shrink-0 group-hover/ca:text-primary transition-colors" />
+                  }
+                </button>
+              )}
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-xs font-semibold text-foreground tabular-nums">
+                {tok.amount > 0
+                  ? `${tok.amount < 0.001 ? tok.amount.toExponential(2) : tok.amount.toFixed(tok.decimals)}`
+                  : "0"}
+              </p>
+              {tok.usdValue > 0 && (
+                <p className="text-[10px] text-muted-foreground">{formatQuoteAmount(tok.usdValue, quoteCurrency)}</p>
+              )}
+            </div>
+            {tok.isCustom && (
+              <button
+                onClick={() => remove(`${chainId}_${tok.contractAddress?.toLowerCase()}`)}
+                className="w-6 h-6 rounded-lg hover:bg-red-500/15 text-muted-foreground hover:text-red-400 flex items-center justify-center transition-colors shrink-0"
+                title="Remove token"
+              >
+                <Trash2 size={11} />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Add token button */}
+      <button
+        onClick={() => onAddToken(chainId)}
+        className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-primary/30 text-xs font-semibold text-primary/70 hover:text-primary hover:border-primary/60 hover:bg-primary/5 transition-colors"
+      >
+        <Plus size={12} /> Add custom token
+      </button>
+    </div>
+  ) : null;
+
   return (
     <ChainRowShell
       chain={chain}
@@ -232,6 +569,10 @@ function EvmChainRow({
       balanceSlot={balanceSlot}
       onReceive={onReceive}
       onImport={onImport}
+      expandable={!!evmAddress}
+      expanded={expanded}
+      onToggleExpand={() => setExpanded(e => !e)}
+      extra={expandedPanel}
     />
   );
 }
@@ -279,7 +620,7 @@ function NativeChainRow({
 // ─── Chain row dispatcher ─────────────────────────────────────────────────────
 
 function ChainBalanceRow({
-  chain, address, evmAddress, network, derived, quoteCurrency, onReceive, onImport,
+  chain, address, evmAddress, network, derived, quoteCurrency, onReceive, onImport, onAddToken,
 }: {
   chain: ChainRow;
   address: string | null;
@@ -289,6 +630,7 @@ function ChainBalanceRow({
   quoteCurrency: string;
   onReceive: (chain: ChainRow) => void;
   onImport:  (chain: ChainRow) => void;
+  onAddToken: (chainId: number) => void;
 }) {
   const chainAddr    = addressForChain(chain, evmAddress, address, network, derived);
   const handleReceive = () => onReceive(chain);
@@ -302,6 +644,7 @@ function ChainBalanceRow({
         quoteCurrency={quoteCurrency}
         onReceive={handleReceive}
         onImport={handleImport}
+        onAddToken={onAddToken}
       />
     );
   }
@@ -392,13 +735,14 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const linkedChains = CHAINS.filter(c => c.family !== "evm" && !!addressForChain(c, evmAddress, address, network, derived)).length;
   const totalNonEvm  = CHAINS.filter(c => c.family !== "evm").length;
 
-  const [receiveOpen, setReceiveOpen]   = useState(false);
-  const [sendOpen, setSendOpen]         = useState(false);
-  const [chainReceive, setChainReceive] = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
-  const [revealOpen, setRevealOpen]     = useState(false);
-  const [copied, setCopied]             = useState(false);
-  const [refreshing, setRefreshing]     = useState(false);
-  const [importChain, setImportChain]   = useState<ChainRow | null>(null);
+  const [receiveOpen, setReceiveOpen]         = useState(false);
+  const [sendOpen, setSendOpen]               = useState(false);
+  const [chainReceive, setChainReceive]       = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
+  const [revealOpen, setRevealOpen]           = useState(false);
+  const [copied, setCopied]                   = useState(false);
+  const [refreshing, setRefreshing]           = useState(false);
+  const [importChain, setImportChain]         = useState<ChainRow | null>(null);
+  const [addTokenChainId, setAddTokenChainId] = useState<number | null>(null);
 
   const hasMissingChains = canBackup && (!derived?.btc || !derived?.bch || !derived?.tron || !derived?.xrp || !derived?.ltc || !derived?.doge);
 
@@ -638,6 +982,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
                 }
               }}
               onImport={(chain) => setImportChain(chain)}
+              onAddToken={(chainId) => setAddTokenChainId(chainId)}
             />
           ))}
         </div>
@@ -697,6 +1042,12 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         onClose={() => setImportChain(null)}
         onSave={handleImportSave}
         onRemove={handleImportRemove}
+      />
+
+      <AddCustomTokenDialog
+        open={addTokenChainId !== null}
+        chainId={addTokenChainId}
+        onClose={() => setAddTokenChainId(null)}
       />
     </div>
   );
