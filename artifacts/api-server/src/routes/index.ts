@@ -45,6 +45,7 @@ import coinbaseRouter from "./coinbase.js";
 import kycRouter from "./kyc.js";
 import walletRouter from "./wallet.js";
 import anthropicRouter from "./anthropic/index.js";
+import sorRouter from "./sor.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
@@ -85,6 +86,7 @@ router.use(futuresRouter);
 router.use(dexRouter);
 router.use(liquidityRouter);
 router.use(swapRouter);
+router.use(sorRouter);
 router.use(buyRouter);
 // Protect all /admin routes — allow only the public auth endpoints through without a token.
 const ADMIN_OPEN_METHODS_PATHS = new Set([

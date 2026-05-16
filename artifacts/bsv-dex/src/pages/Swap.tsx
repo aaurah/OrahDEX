@@ -41,6 +41,9 @@ import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
+import { SorRouteDisplay } from "@/components/SorRouteDisplay";
+import { makeSorQuoteDebouncer } from "@/lib/sorClient";
+import type { SorQuoteResponse } from "@/lib/sorClient";
 type FiatPayMethod = "apple" | "google" | "card" | "bank";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
@@ -1258,6 +1261,12 @@ function ExchangeSwapPanel({
   const [balancesLoaded, setBalancesLoaded] = useState(false);
   const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // SOR route state
+  const [sorQuote,   setSorQuote]   = useState<SorQuoteResponse | null>(null);
+  const [sorLoading, setSorLoading] = useState(false);
+  const [sorError,   setSorError]   = useState<string | null>(null);
+  const sorDebouncer = useRef(makeSorQuoteDebouncer(450));
+
   // Fetch the wallet's actual on-chain balance (uses the real connected chain, not DEX chain picker)
   const { balances: onChainWalletBals } = useEvmBalances(address ?? null, walletChainId ?? null);
 
@@ -1316,15 +1325,30 @@ function ExchangeSwapPanel({
     setQuoting(false);
   }, [fromAsset, toAsset]);
 
+  const triggerSorQuote = (from: string, to: string, val: string) => {
+    const amt = parseFloat(val);
+    if (!val || !Number.isFinite(amt) || amt <= 0 || from === to) {
+      setSorQuote(null); setSorError(null); return;
+    }
+    setSorLoading(true);
+    sorDebouncer.current(from, to, amt, (result, err) => {
+      setSorLoading(false);
+      if (err) { setSorError(err); setSorQuote(null); }
+      else      { setSorQuote(result); setSorError(null); }
+    });
+  };
+
   const handleAmountChange = (val: string) => {
     setAmount(val); setResult(null); setSwapErr(null);
     if (debRef.current) clearTimeout(debRef.current);
     debRef.current = setTimeout(() => fetchQuote(val), 400);
+    triggerSorQuote(fromAsset, toAsset, val);
   };
 
   const handleFlip = () => {
     setFromAsset(toAsset); setToAsset(fromAsset);
-    setQuote(null); setAmount(""); setResult(null);
+    setQuote(null); setSorQuote(null); setSorError(null);
+    setAmount(""); setResult(null);
   };
 
   const handleSwap = async () => {
@@ -1556,6 +1580,15 @@ function ExchangeSwapPanel({
         <div className="flex items-center gap-2 text-xs text-amber-400 px-1">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{quoteErr}
         </div>
+      )}
+
+      {/* SOR route visualization — shown when amount is entered */}
+      {(sorLoading || sorQuote || sorError) && (
+        <SorRouteDisplay
+          quote={sorQuote}
+          loading={sorLoading}
+          error={sorError}
+        />
       )}
 
       {/* Success */}
