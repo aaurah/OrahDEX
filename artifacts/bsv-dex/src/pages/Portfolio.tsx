@@ -616,6 +616,8 @@ export function Portfolio() {
             networkLabel={assetNet.networkLabel}
             addressPlaceholder={assetNet.placeholder}
             color={withdrawAsset.color}
+            isOrahWallet={provider === "orah-wallet"}
+            passkeyEvmAddress={provider === "orah-wallet" ? internalEvmAddress ?? undefined : undefined}
           />
         );
       })()}
