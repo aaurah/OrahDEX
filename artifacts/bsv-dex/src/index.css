@@ -44,6 +44,7 @@
 
 /* ───── DARK (default) ───── */
 :root {
+  --logo-ring: #ffffff;
   --background: 216 20% 5%;
   --foreground: 210 20% 90%;
   --card: 216 15% 9%;
@@ -71,6 +72,7 @@
 
 /* ───── LIGHT ───── */
 html.light {
+  --logo-ring: #000000;
   --background: 210 20% 98%;
   --foreground: 216 20% 10%;
   --card: 0 0% 100%;
