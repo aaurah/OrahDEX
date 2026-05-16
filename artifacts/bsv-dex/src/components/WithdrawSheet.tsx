@@ -721,11 +721,15 @@ export function WithdrawSheet({
       const { message } = await challengeRes.json();
 
       // 2. Sign with passkey-derived chain key
+      const activeChain = withdrawChainMode.toLowerCase();
+      const isBitcoinForkChain = ["bsv", "btc", "bch"].includes(activeChain);
       let signature: string;
-      if (isBitcoinFork && passkeyEvmAddress) {
+      if (isBitcoinForkChain && passkeyEvmAddress) {
         signature = await signBsvChallengeWithPasskey(passkeyEvmAddress, message);
-      } else {
+      } else if (!passkeyEvmAddress) {
         throw new Error("Passkey EVM address not available — cannot sign withdrawal");
+      } else {
+        throw new Error(`On-chain signing not yet supported for ${activeChain.toUpperCase()}`);
       }
 
       // 3. Submit withdrawal
