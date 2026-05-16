@@ -206,12 +206,13 @@ function PageSkeleton() {
 
 function RequireAdminAuth({ children }: { children: ReactNode }) {
   const { isAuthenticated, token, logout } = useAdminAuthStore();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
       if (isAuthenticated && !token) logout();
-      navigate("/admin/login");
+      const redirect = location && location !== "/admin/login" ? `?redirect=${encodeURIComponent(location)}` : "";
+      navigate(`/admin/login${redirect}`);
     }
   }, [isAuthenticated, token]);
 
