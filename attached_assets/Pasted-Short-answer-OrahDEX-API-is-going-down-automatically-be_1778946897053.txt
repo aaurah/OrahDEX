@@ -1,0 +1,178 @@
+Short answer: OrahDEX API is going down automatically because one or more core backend components are crashing under load, misconfigured, or not monitored, and the system has no auto‑restart, no health checks, and no resilience layer. To fix it permanently, you need continuous monitoring, auto‑recovery, rate‑limiting, error‑handling, and infrastructure hardening.
+
+Below is a complete, permanent‑fix blueprint tailored for your OrahDEX architecture.
+
+---
+
+🚨 Why your OrahDEX API server keeps going down
+
+These are the most common root causes, all confirmed by industry sources:
+
+• Server overload — High demand overwhelms the server, causing slow responses or timeouts.  Apidog
+• Network issues — DNS failures, congestion, or bandwidth limits make the API unreachable.  Apidog
+• Code bugs — Unhandled exceptions, memory leaks, or logic errors crash the backend.  Apidog
+• Security blocks — Firewalls or rate‑limiters mistakenly block legitimate requests.  Apidog
+• Misconfigured endpoints — Wrong URLs, missing routes, or version mismatches.  APIsec
+• Server‑side 500 errors — Crashes due to backend logic failures.  DEV Community
+• DDoS or traffic spikes — Attackers or bots overload your API.  monoscope.tech
+
+
+---
+
+🛠 Permanent Fix Blueprint for OrahDEX API
+
+This is the production‑grade solution you need.
+
+---
+
+1️⃣ Add real‑time monitoring + alerts
+
+Your API must never run blind.
+
+• Use Prometheus + Grafana, or UptimeRobot, or New Relic.
+• Track:• CPU, RAM, disk
+• API latency
+• Error rate
+• Request volume
+• Database connections
+
+• Set alerts for:• 500 errors
+• Memory spikes
+• Slow queries
+• API downtime
+
+
+
+Why: Real‑time monitoring is the #1 recommended method to detect failures early.  Apidog
+
+---
+
+2️⃣ Add automatic restart + health checks
+
+Your API should never stay down.
+
+• Use PM2, Docker healthchecks, or systemd to auto‑restart on crash.
+• Add /health endpoint returning:• DB connection status
+• Redis status
+• API uptime
+• Version
+
+
+
+Why: APIs fail when the “conversation” breaks; health checks prevent silent failures.  APIsec
+
+---
+
+3️⃣ Add rate limiting + bot protection
+
+If traffic spikes or bots hit your API, it will crash.
+
+• Use Nginx rate limiting, Cloudflare, or Express-rate-limit.
+• Set:• 100–300 req/min per IP
+• Burst protection
+• DDoS shield
+
+
+
+Why: Server overload is a major cause of API downtime.  Apidog
+
+---
+
+4️⃣ Fix backend code bugs
+
+Most API crashes come from unhandled exceptions.
+
+• Wrap all routes in try/catch
+• Log errors to:• CloudWatch
+• Logtail
+• ELK stack
+
+• Add fallback responses
+• Validate all inputs
+
+
+Why: Code bugs and unhandled exceptions are a top cause of API failure.  Apidog
+
+---
+
+5️⃣ Fix CORS, auth, and endpoint issues
+
+Common API failures include:
+
+• CORS misconfigurations
+• Expired tokens
+• Wrong endpoints
+• Missing parameters
+
+
+Why: Incorrect permissions, bad URLs, and expired tokens cause API failures.  APIsec
+
+---
+
+6️⃣ Harden your infrastructure
+
+To stop automatic shutdowns:
+
+• Use load balancer (Nginx / HAProxy)
+• Use horizontal scaling (multiple API instances)
+• Use Redis caching to reduce DB load
+• Use PostgreSQL connection pooling (PgBouncer)
+• Enable auto‑scaling if on cloud
+
+
+Why: API outages often come from fragility and lack of resilience.  appsentinels.ai
+
+---
+
+7️⃣ Add security protection
+
+Prevent downtime from attacks:
+
+• Cloudflare WAF
+• DDoS protection
+• IP reputation filtering
+• SQL injection firewall
+
+
+Why: DDoS and security threats are major causes of API downtime.  monoscope.tech
+
+---
+
+🧱 Permanent Architecture for OrahDEX
+
+This is the architecture you should move toward:
+
+Client → Cloudflare → Load Balancer → API Cluster (3 nodes)
+                             ↓
+                        Redis Cache
+                             ↓
+                        PostgreSQL DB
+                             ↓
+                   Monitoring + Alerts
+
+
+This ensures:
+
+• Zero‑downtime
+• Auto‑recovery
+• High availability
+• No single point of failure
+
+
+---
+
+🧭 What you should do next
+
+To fix OrahDEX permanently, I need to know:
+
+Which environment is your API running on?
+Choose one:
+
+• Docker
+• Node.js without Docker
+• Replit
+• VPS like DigitalOcean/Linode
+• Cloud provider (AWS/GCP/Azure)
+
+
+Once you tell me, I will give you the exact permanent fix for your setup.

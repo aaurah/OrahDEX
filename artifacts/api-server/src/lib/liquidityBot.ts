@@ -158,62 +158,50 @@ function buildLadder(
   });
 }
 
-/* ── Main refresh: wipe + re-seed one market ────────────────────────────── */
-async function refreshMarket(
-  symbol: string,
-  quoteAsset: string,
-  midPrice: number,
-  volume24h: number,
-  baseUsdPrice: number,   // base-asset USD price for synthetic volume fallback
-): Promise<void> {
+/* ── Build orders in memory for one market (no DB I/O) ──────────────────── */
+function buildMarketOrders(
+  symbol:      string,
+  quoteAsset:  string,
+  midPrice:    number,
+  volume24h:   number,
+  baseUsdPrice: number,
+): (typeof ordersTable.$inferInsert)[] {
   // If the live price is missing, try the static fallback map
   if (!midPrice || midPrice <= 0) {
     const baseAsset = symbol.split("/")[0];
     midPrice = baseAsset ? (FALLBACK_PRICES[baseAsset] ?? 0) : 0;
   }
-  if (!midPrice || midPrice <= 0) return; // truly unknown — skip
+  if (!midPrice || midPrice <= 0) return []; // truly unknown — skip
 
   const bSize = baseSize(volume24h, midPrice, baseUsdPrice);
-  const orders: LevelOrder[] = [
+  const levels: LevelOrder[] = [
     ...buildLadder("buy",  midPrice, bSize),
     ...buildLadder("sell", midPrice, bSize),
   ];
 
-  // Delete stale open bot orders for this symbol in one shot
-  await db.delete(ordersTable).where(
-    and(
-      eq(ordersTable.symbol, symbol),
-      eq(ordersTable.walletAddress, BOT_ADDRESS),
-      eq(ordersTable.status, "open"),
-    ),
-  );
-
-  // Batch-insert fresh orders
-  await db.insert(ordersTable).values(
-    orders.map(o => ({
-      id:                crypto.randomUUID(),
-      symbol,
-      walletAddress:     BOT_ADDRESS,
-      networkType:       "bsv",
-      side:              o.side,
-      type:              "limit" as const,
-      status:            "open" as const,
-      price:             o.price,
-      stopPrice:         null as string | null,
-      quantity:          o.quantity,
-      filledQuantity:    "0",
-      remainingQuantity: o.quantity,
-      total:             o.total,
-      fee:               "0",
-      feeAsset:          quoteAsset,
-      timeInForce:       "GTC",
-      txid:              null as string | null,
-      signedTx:          null as string | null,
-      matchedOrderId:    null as string | null,
-      isBot:             true,
-      isSynthetic:       false,
-    })),
-  );
+  return levels.map(o => ({
+    id:                crypto.randomUUID(),
+    symbol,
+    walletAddress:     BOT_ADDRESS,
+    networkType:       "bsv",
+    side:              o.side,
+    type:              "limit" as const,
+    status:            "open" as const,
+    price:             o.price,
+    stopPrice:         null as string | null,
+    quantity:          o.quantity,
+    filledQuantity:    "0",
+    remainingQuantity: o.quantity,
+    total:             o.total,
+    fee:               "0",
+    feeAsset:          quoteAsset,
+    timeInForce:       "GTC",
+    txid:              null as string | null,
+    signedTx:          null as string | null,
+    matchedOrderId:    null as string | null,
+    isBot:             true,
+    isSynthetic:       false,
+  }));
 }
 
 /* ── Full cycle: iterate all active markets ─────────────────────────────── */
@@ -229,35 +217,24 @@ async function runCycle(): Promise<void> {
       status:     marketsTable.status,
     }).from(marketsTable)
       .where(notInArray(marketsTable.type, ["letsexchange"]));
-    const active  = markets.filter(m => m.status === "active");
+    const active = markets.filter(m => m.status === "active");
 
     // ── Step 1: Build the master USD price map from live USDT spot markets ──
-    // All stablecoins are pegged 1:1. Every other asset's USD price comes
-    // from its USDT market price, which was just updated by the price updater.
-    // Seed from FALLBACK_PRICES first so every known asset has at least an
-    // approximate price — live data overwrites the fallback when available.
     const usdMap = new Map<string, number>();
     for (const s of STABLECOINS) usdMap.set(s, 1);
     for (const [sym, px] of Object.entries(FALLBACK_PRICES)) {
       if (px > 0) usdMap.set(sym, px);
     }
-
     for (const m of active) {
       if (m.quoteAsset === "USDT" && m.type === "spot") {
         const p = parseFloat(m.lastPrice as string);
-        if (p > 0) usdMap.set(m.baseAsset, p); // live price overwrites fallback
+        if (p > 0) usdMap.set(m.baseAsset, p);
       }
     }
 
-    // ── Step 2: Recompute & persist cross-pair DB prices from USD map ───────
-    // This keeps every ticker mathematically consistent with the order book.
-    // ETH/BTC price = ETH_USD / BTC_USD — same snapshot, no drift window.
-    // Process in batches of 50 to avoid overwhelming the DB connection pool
-    // (firing hundreds of concurrent UPDATE queries causes latency spikes and
-    // can exhaust connections on constrained Replit PostgreSQL instances).
+    // ── Step 2: Bulk update cross-pair prices ────────────────────────────────
     const crossUpdates: { symbol: string; price: string }[] = [];
     for (const m of active) {
-      // Skip stablecoin-quoted and futures markets (their prices come from external APIs)
       if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") continue;
       const baseUSD  = usdMap.get(m.baseAsset);
       const quoteUSD = usdMap.get(m.quoteAsset);
@@ -267,16 +244,10 @@ async function runCycle(): Promise<void> {
       crossUpdates.push({ symbol: m.symbol, price: crossPrice.toFixed(8) });
     }
 
-    // Single bulk UPDATE per chunk — uses 1 connection instead of N concurrent
-    // individual UPDATEs that would exhaust the shared pg-pool (max: 20).
-    // PostgreSQL parameter limit is 65535; 1000 pairs × 2 params = 2000 — safe.
     if (crossUpdates.length > 0) {
       const BULK_CHUNK = 1000;
       for (let ci = 0; ci < crossUpdates.length; ci += BULK_CHUNK) {
-        const chunk = crossUpdates.slice(ci, ci + BULK_CHUNK);
-        // price values arrive as numeric strings ("0.00000349"); cast them
-        // to numeric in the VALUES clause so PostgreSQL can assign them
-        // directly to the numeric last_price column without a type error.
+        const chunk       = crossUpdates.slice(ci, ci + BULK_CHUNK);
         const placeholders = chunk
           .map((_, i) => `($${i * 2 + 1}::text, $${i * 2 + 2}::numeric)`)
           .join(", ");
@@ -293,8 +264,11 @@ async function runCycle(): Promise<void> {
       }
     }
 
-    // ── Step 3: Seed order books using the now-consistent prices ────────────
-    // Pre-build USDT volume map for O(1) lookups (avoids O(n²) active.find()).
+    // ── Step 3: Build all new orders in memory (pure CPU, zero DB round-trips)
+    // Previously: N×DELETE + N×INSERT + N×150ms delay = O(N) queries + O(N) latency.
+    // Now: 1×DELETE (all bot orders) + chunked bulk INSERT = ~3 queries total.
+    // This prevents the guardedInterval timeout that occurs once active markets
+    // grow beyond ~80 (150ms × N markets eventually exceeds the 110s budget).
     const usdtVolByBase = new Map<string, number>();
     for (const m of active) {
       if (m.quoteAsset === "USDT" && m.type === "spot") {
@@ -303,15 +277,8 @@ async function runCycle(): Promise<void> {
       }
     }
 
-    // Process markets one at a time — each refreshMarket uses 2 connections
-    // (DELETE then INSERT, sequentially). Running markets in series means the
-    // bot holds at most 1 connection at any moment, leaving the rest of the
-    // pool free for user-facing requests, the futures engine, and watchers.
-    // A 150 ms yield between markets allows other services to acquire
-    // connections without timing out. With ~80 active markets, the full pass
-    // takes ≈12 s — well within the 110 s guardedInterval timeout.
-    for (let i = 0; i < active.length; i++) {
-      const m = active[i]!;
+    const allOrders: (typeof ordersTable.$inferInsert)[] = [];
+    for (const m of active) {
       const baseUSD  = usdMap.get(m.baseAsset)  ?? FALLBACK_PRICES[m.baseAsset]  ?? 0;
       const quoteUSD = usdMap.get(m.quoteAsset) ?? FALLBACK_PRICES[m.quoteAsset] ?? 1;
 
@@ -324,33 +291,49 @@ async function runCycle(): Promise<void> {
           : parseFloat(m.lastPrice as string) || 0;
       }
 
-      // Volume: DB value or derive via O(1) Map lookup (not O(n) find).
       let vol = parseFloat(m.volume24h as string) || 0;
       if (vol <= 0 && baseUSD > 0 && quoteUSD > 0) {
         const usdtVol = usdtVolByBase.get(m.baseAsset) ?? 0;
         if (usdtVol > 0) vol = usdtVol / quoteUSD;
       }
 
-      await refreshMarket(m.symbol, m.quoteAsset, midPrice, vol, baseUSD)
-        .catch(err => logger.warn({ err, symbol: m.symbol }, "Bot: skipped market"));
+      const marketOrders = buildMarketOrders(m.symbol, m.quoteAsset, midPrice, vol, baseUSD);
+      for (const o of marketOrders) allOrders.push(o);
+    }
 
-      // Yield for 150 ms so the price updater, futures engine, and
-      // user-facing requests can acquire pool connections between markets.
-      await new Promise(r => setTimeout(r, 150));
+    // Single DELETE wipes all stale bot orders in one round-trip
+    await db.delete(ordersTable).where(
+      and(
+        eq(ordersTable.walletAddress, BOT_ADDRESS),
+        eq(ordersTable.status, "open"),
+      ),
+    );
+
+    // Bulk INSERT in chunks of 400 orders
+    // (400 orders × ~19 columns = 7,600 parameters — well under PG's 65,535 limit)
+    if (allOrders.length > 0) {
+      const INSERT_CHUNK = 400;
+      for (let ci = 0; ci < allOrders.length; ci += INSERT_CHUNK) {
+        await db.insert(ordersTable)
+          .values(allOrders.slice(ci, ci + INSERT_CHUNK))
+          .catch(err => logger.warn({ err, offset: ci }, "Bot: bulk insert chunk failed"));
+      }
     }
 
     const activeLen = active.length;
+    const ordersLen = allOrders.length;
     await accumulateCycleProfit(active);
     // Release large arrays before the next GC boundary
     (active as unknown[]).length = 0;
     crossUpdates.length = 0;
+    allOrders.length = 0;
     usdMap.clear();
     usdtVolByBase.clear();
     // Hint V8 to collect now while the heap is clear (--expose-gc flag required)
     (globalThis as any).gc?.();
     serviceState.botLastCycleAt = Date.now();
     serviceState.botCycles++;
-    logger.info({ markets: activeLen }, "Liquidity bot cycle complete");
+    logger.info({ markets: activeLen, orders: ordersLen }, "Liquidity bot cycle complete");
   } catch (err) {
     logger.error({ err }, "Liquidity bot cycle failed");
   }
