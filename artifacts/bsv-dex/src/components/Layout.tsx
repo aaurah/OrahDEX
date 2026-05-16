@@ -999,8 +999,8 @@ export function Layout({ children }: { children: ReactNode }) {
       {/* Fixed tx status overlay — bottom right */}
       <TxStatusBar />
 
-      {/* Ora — AI Trading Assistant — only shown on exchange/trading pages */}
-      {(location.startsWith("/trade") || location.startsWith("/futures") || location.startsWith("/swap")) && (
+      {/* Ora — AI Trading Assistant */}
+      {(location === "/" || location.startsWith("/trade") || location.startsWith("/futures") || location.startsWith("/swap")) && (
         <Suspense fallback={null}><AiAssistant /></Suspense>
       )}
 
