@@ -413,6 +413,8 @@ export function DevAIPage() {
     keywords: "OrahDEX API, BSV blockchain AI, crypto trading bot, smart contract, DEX integration, developer AI, BSV developer, EVM wallet, DeFi bot",
   });
 
+  const PERSIST_KEY = "devai:activeConvId";
+
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -424,6 +426,7 @@ export function DevAIPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef  = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const didAutoLoad = useRef(false);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -434,11 +437,34 @@ export function DevAIPage() {
     el.style.height = Math.min(el.scrollHeight, 160) + "px";
   }, [input]);
 
+  // Persist active conversation ID across refreshes
+  useEffect(() => {
+    if (activeId != null) localStorage.setItem(PERSIST_KEY, String(activeId));
+    else localStorage.removeItem(PERSIST_KEY);
+  }, [activeId]);
+
   const loadConvs = useCallback(async () => {
     setLoadingConvs(true);
     try {
       const res = await fetch(`${API}/devai/conversations`);
-      if (res.ok) setConvs(await res.json());
+      if (res.ok) {
+        const list: Conversation[] = await res.json();
+        setConvs(list);
+        // Auto-restore last active session on first load
+        if (!didAutoLoad.current && list.length > 0) {
+          didAutoLoad.current = true;
+          const stored = Number(localStorage.getItem(PERSIST_KEY) || "0") || null;
+          const target = (stored && list.some(c => c.id === stored)) ? stored : list[0].id;
+          setActiveId(target);
+          const r = await fetch(`${API}/devai/conversations/${target}`);
+          if (r.ok) {
+            const data = await r.json();
+            setMessages(data.messages.map((m: any) => ({
+              id: String(m.id), role: m.role, content: m.content, toolCalls: [], createdAt: new Date(m.createdAt),
+            })));
+          }
+        }
+      }
     } finally {
       setLoadingConvs(false);
     }
@@ -598,10 +624,10 @@ export function DevAIPage() {
             </div>
           </div>
           <button
-            onClick={() => { setActiveId(null); setMessages([]); }}
+            onClick={() => { setActiveId(null); setMessages([]); localStorage.removeItem(PERSIST_KEY); didAutoLoad.current = true; }}
             className="w-full flex items-center gap-2 px-3 py-2 rounded-lg border border-border/50 hover:border-green-500/40 hover:bg-green-500/5 text-xs font-medium transition-all"
           >
-            <Plus className="w-3.5 h-3.5" /> New session
+            <Plus className="w-3.5 h-3.5" /> New chat
           </button>
         </div>
 

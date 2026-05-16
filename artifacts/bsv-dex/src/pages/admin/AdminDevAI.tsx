@@ -5,7 +5,7 @@ import {
   Code2, Terminal, Cpu, Zap, RefreshCw, Send, Trash2, Eye, ChevronDown, ChevronUp,
   CheckCircle, XCircle, Activity, MessageSquare, ToggleLeft, ToggleRight,
   Link, Key, Settings, Loader2, Bot, Copy, Check, BookOpen, AlertCircle, ShieldCheck,
-  GitBranch, FileCode, Clock,
+  GitBranch, FileCode, Clock, Download, Upload, PackageOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -573,6 +573,129 @@ function DevAIAccessCard() {
   );
 }
 
+/* ── Workspace Export Card ──────────────────────────────────────────────────── */
+function WorkspaceExportCard() {
+  const [exporting, setExporting] = useState(false);
+
+  async function doExport() {
+    setExporting(true);
+    try {
+      const r = await fetch(`${BASE}/api/admin/devai/export`);
+      if (!r.ok) { alert("Export failed: " + await r.text()); return; }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const date = new Date().toISOString().slice(0, 10);
+      a.download = `orahdex-workspace-${date}.tar.gz`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert("Export error: " + err?.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-xl bg-cyan-400/10 flex items-center justify-center">
+          <Download className="w-4 h-4 text-cyan-400" />
+        </div>
+        <div>
+          <p className="text-sm font-bold">Export Workspace</p>
+          <p className="text-xs text-muted-foreground">Download full project as tar.gz (excludes node_modules, .git)</p>
+        </div>
+      </div>
+      <div className="flex items-start gap-2.5 bg-cyan-500/8 border border-cyan-500/20 rounded-xl px-4 py-3">
+        <PackageOpen className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+        <p className="text-[11px] text-cyan-400/80">
+          Streams the live Replit workspace as a compressed archive. Use to back up, migrate, or share the full OrahDEX codebase. Excludes node_modules, .git, dist, and log files.
+        </p>
+      </div>
+      <button
+        onClick={doExport}
+        disabled={exporting}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 text-cyan-400 font-semibold text-sm transition-colors disabled:opacity-50"
+      >
+        {exporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+        {exporting ? "Generating archive…" : "Download workspace.tar.gz"}
+      </button>
+    </div>
+  );
+}
+
+/* ── Workspace Upload Card ──────────────────────────────────────────────────── */
+function WorkspaceUploadCard() {
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  async function doUpload(file: File) {
+    setUploading(true);
+    setResult(null);
+    try {
+      const r = await fetch(`${BASE}/api/admin/devai/upload`, {
+        method: "POST",
+        headers: { "Content-Type": "application/gzip" },
+        body: file,
+      });
+      const json = await r.json();
+      if (r.ok) setResult({ ok: true, message: json.message ?? "Extracted successfully" });
+      else setResult({ ok: false, message: json.error ?? "Upload failed" });
+    } catch (err: any) {
+      setResult({ ok: false, message: err?.message ?? "Network error" });
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 rounded-xl bg-orange-400/10 flex items-center justify-center">
+          <Upload className="w-4 h-4 text-orange-400" />
+        </div>
+        <div>
+          <p className="text-sm font-bold">Upload tar.gz</p>
+          <p className="text-xs text-muted-foreground">Extract an archive into the workspace</p>
+        </div>
+      </div>
+      <div className="flex items-start gap-2.5 bg-orange-500/8 border border-orange-500/20 rounded-xl px-4 py-3">
+        <Upload className="w-4 h-4 text-orange-400 shrink-0 mt-0.5" />
+        <p className="text-[11px] text-orange-400/80">
+          Upload a .tar.gz archive and extract it directly into /home/runner/workspace. Files are merged — existing files with the same path will be overwritten.
+        </p>
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept=".tar.gz,.tgz"
+        className="hidden"
+        onChange={e => { const f = e.target.files?.[0]; if (f) doUpload(f); e.target.value = ""; }}
+      />
+      <button
+        onClick={() => inputRef.current?.click()}
+        disabled={uploading}
+        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/20 text-orange-400 font-semibold text-sm transition-colors disabled:opacity-50"
+      >
+        {uploading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+        {uploading ? "Extracting…" : "Choose .tar.gz file"}
+      </button>
+      {result && (
+        <div className={cn(
+          "flex items-start gap-2 px-3 py-2.5 rounded-xl text-[11px] font-medium",
+          result.ok ? "bg-green-500/10 border border-green-500/20 text-green-400" : "bg-red-500/10 border border-red-500/20 text-red-400"
+        )}>
+          {result.ok ? <CheckCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> : <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
+          {result.message}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Main Page ──────────────────────────────────────────────────────────────── */
 export function AdminDevAI() {
   return (
@@ -604,6 +727,12 @@ export function AdminDevAI() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <DevAISessionManager />
         <DevAIAccessCard />
+      </div>
+
+      {/* Workspace tools */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <WorkspaceExportCard />
+        <WorkspaceUploadCard />
       </div>
     </div>
   );
