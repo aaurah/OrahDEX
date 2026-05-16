@@ -891,8 +891,8 @@ export function LandingPage() {
         <div className="relative z-10 w-full max-w-7xl mx-auto">
           <div className="grid lg:grid-cols-[1fr_460px] xl:grid-cols-[1fr_500px] gap-10 xl:gap-20 items-center">
 
-            {/* Left: Copy */}
-            <div className="flex flex-col gap-7 lg:gap-8">
+            {/* Left: Copy — centered on mobile, left-aligned on desktop */}
+            <div className="flex flex-col gap-7 lg:gap-8 items-center text-center lg:items-start lg:text-left">
 
               {/* Identity badge */}
               <div>
@@ -916,7 +916,7 @@ export function LandingPage() {
                     filter: "drop-shadow(0 0 40px rgba(74,222,128,0.25))",
                   }}>DEX.</span>
                 </h1>
-                <p className="mt-5 text-lg sm:text-xl font-semibold text-muted-foreground max-w-md leading-relaxed">
+                <p className="mt-5 text-lg sm:text-xl font-semibold text-muted-foreground max-w-md leading-relaxed mx-auto lg:mx-0">
                   Trade as a <span className="text-amber-400 font-black">Keeper</span>, not a customer.
                   <span className="text-muted-foreground/60"> Spot · Futures · P2P · Copy · Predict.</span>
                 </p>
@@ -925,7 +925,7 @@ export function LandingPage() {
               {/* Ritual taglines */}
               <div className="flex flex-col gap-2">
                 {["Identity is the engine.", "Execution is a ritual.", "Every trade is a declaration."].map((s, i) => (
-                  <div key={i} className="flex items-center gap-3 text-sm text-muted-foreground/60 font-medium">
+                  <div key={i} className="flex items-center justify-center lg:justify-start gap-3 text-sm text-muted-foreground/60 font-medium">
                     <div className="w-1 h-1 rounded-full shrink-0" style={{ background: "rgba(74,222,128,0.5)" }} />
                     {s}
                   </div>
@@ -933,15 +933,15 @@ export function LandingPage() {
               </div>
 
               {/* CTAs */}
-              <div className="flex flex-col sm:flex-row items-start gap-3">
+              <div className="flex flex-col sm:flex-row items-center lg:items-start gap-3 w-full sm:w-auto">
                 <Link href="/trade/BSV-USDT"
-                  className="group flex items-center gap-3 px-7 py-3.5 rounded-2xl font-black text-sm text-black transition-all hover:scale-[1.03] hover:shadow-2xl"
+                  className="group flex items-center justify-center gap-3 px-7 py-3.5 rounded-2xl font-black text-sm text-black transition-all hover:scale-[1.03] hover:shadow-2xl w-full sm:w-auto"
                   style={{ background: "linear-gradient(135deg, #4ade80, #22c55e)", boxShadow: "0 4px 40px rgba(74,222,128,0.35)" }}>
                   Enter the Exchange
                   <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
                 </Link>
                 <Link href="/markets"
-                  className="flex items-center gap-2 px-6 py-3.5 rounded-2xl font-bold text-sm text-muted-foreground border border-border/60 hover:text-foreground transition-all"
+                  className="flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl font-bold text-sm text-muted-foreground border border-border/60 hover:text-foreground transition-all w-full sm:w-auto"
                   style={{ background: "rgba(255,255,255,0.03)" }}>
                   View All Markets
                   <span className="text-xs font-black text-green-400 px-2 py-0.5 rounded-full"
@@ -952,7 +952,7 @@ export function LandingPage() {
               </div>
 
               {/* Live stats bar */}
-              <div className="flex flex-wrap gap-2.5">
+              <div className="flex flex-wrap justify-center lg:justify-start gap-2.5">
                 <StatPill label="Markets" value={marketCount.toLocaleString()} />
                 <StatPill label="Chains" value="20+" color="text-amber-400" />
                 <StatPill label="Settlement" value="BSV" color="text-blue-400" />
