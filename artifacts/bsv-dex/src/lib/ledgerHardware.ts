@@ -1,6 +1,20 @@
 /**
- * Ledger hardware wallet integration via WebHID.
- * Supports Chrome / Edge 89+. Falls back to Ledger Live (WalletConnect) on unsupported browsers.
+ * Ledger hardware wallet integration — LEGACY (hw-app-eth + hw-transport-webhid).
+ *
+ * This module uses the old ledgerjs packages which are maintained but no longer
+ * the recommended path for new wallet integrations.
+ *
+ * PREFERRED: Use ledgerDMK.ts which wraps the official Device Management Kit:
+ *   @ledgerhq/device-management-kit
+ *   @ledgerhq/device-transport-kit-web-hid
+ *   @ledgerhq/device-signer-kit-ethereum
+ *
+ * SDK:  https://github.com/LedgerHQ/device-sdk-ts
+ * Docs: https://developers.ledger.com/docs/device-interaction/getting-started
+ *
+ * This file is retained for backward-compatibility with any code paths that
+ * have not yet been migrated to the DMK. New features should be added to
+ * ledgerDMK.ts instead.
  */
 import TransportWebHID from "@ledgerhq/hw-transport-webhid";
 import Eth from "@ledgerhq/hw-app-eth";

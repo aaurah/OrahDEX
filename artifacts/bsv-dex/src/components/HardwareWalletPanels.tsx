@@ -12,13 +12,14 @@ import { Input } from "@/components/ui/input";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useToast } from "@/hooks/use-toast";
 import {
-  isWebHIDSupported,
-  openLedgerSession,
-  deriveAccounts,
-  LEDGER_PATHS,
-  ledgerErrMsg,
-  type LedgerAccount,
-} from "@/lib/ledgerHardware";
+  isDMKSupported,
+  dmkConnect,
+  dmkDeriveAccounts,
+  dmkDisconnect,
+  dmkErrMsg,
+  DMK_DEFAULT_PATHS,
+  type DMKAccount,
+} from "@/lib/ledgerDMK";
 import {
   getTrezorAccounts,
   trezorErrMsg,
@@ -119,36 +120,38 @@ function AccountPicker({ accounts, onPick, loading }: AccountPickerProps) {
 export function LedgerPanel({ onDone }: { onDone: () => void }) {
   const { toast } = useToast();
   const [status, setStatus] = useState<"idle" | "connecting" | "accounts" | "error">("idle");
-  const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
+  const [accounts, setAccounts] = useState<DMKAccount[]>([]);
   const [error, setError] = useState("");
-  const sessionRef = useRef<{ transport: any; eth: any } | null>(null);
+  const sessionRef = useRef<{ sessionId: string } | null>(null);
 
-  const supported = isWebHIDSupported();
+  const supported = isDMKSupported();
 
   const handleConnect = async () => {
     setStatus("connecting");
     setError("");
     try {
-      const session = await openLedgerSession();
-      sessionRef.current = session;
-      const accs = await deriveAccounts(session.eth, LEDGER_PATHS.slice(0, 5));
+      const session = await dmkConnect();
+      sessionRef.current = { sessionId: session.sessionId };
+      const accs = await dmkDeriveAccounts(session.sessionId, DMK_DEFAULT_PATHS.slice(0, 5));
       if (accs.length === 0) throw new Error("Ethereum app not open — unlock your Ledger and open the Ethereum app.");
       setAccounts(accs);
       setStatus("accounts");
     } catch (err) {
-      setError(ledgerErrMsg(err));
+      setError(dmkErrMsg(err));
       setStatus("error");
     }
   };
 
   const handlePick = (address: string, path?: string) => {
     connectHardwareWallet(address, "ledger", path);
-    sessionRef.current?.transport?.close().catch(() => {});
+    if (sessionRef.current) dmkDisconnect(sessionRef.current.sessionId).catch(() => {});
     toast({ title: "Ledger connected", description: shortAddr(address) });
     onDone();
   };
 
-  useEffect(() => () => { sessionRef.current?.transport?.close().catch(() => {}); }, []);
+  useEffect(() => () => {
+    if (sessionRef.current) dmkDisconnect(sessionRef.current.sessionId).catch(() => {});
+  }, []);
 
   if (!supported) return (
     <div className="space-y-3 mt-1">

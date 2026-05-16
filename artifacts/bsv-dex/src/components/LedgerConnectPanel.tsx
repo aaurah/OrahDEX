@@ -6,10 +6,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  isWebHIDSupported, openLedgerSession, deriveAccounts,
-  ledgerErrMsg, LEDGER_PATHS,
-  type LedgerAccount, type LedgerSession, type LedgerStatus,
-} from "@/lib/ledgerHardware";
+  isDMKSupported, dmkConnect, dmkDeriveAccounts, dmkDisconnect,
+  dmkErrMsg, DMK_DEFAULT_PATHS,
+  type DMKSession, type DMKAccount,
+} from "@/lib/ledgerDMK";
+import type { LedgerStatus } from "@/lib/ledgerHardware";
 
 interface LedgerConnectPanelProps {
   onConnected: (address: string, path: string) => void;
@@ -28,11 +29,11 @@ function shortAddr(addr: string) { return `${addr.slice(0, 8)}…${addr.slice(-6
 export function LedgerConnectPanel({ onConnected }: LedgerConnectPanelProps) {
   const [status,   setStatus]   = useState<LedgerStatus>("idle");
   const [error,    setError]    = useState<string | null>(null);
-  const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
-  const [session,  setSession]  = useState<LedgerSession | null>(null);
+  const [accounts, setAccounts] = useState<DMKAccount[]>([]);
+  const [session,  setSession]  = useState<DMKSession | null>(null);
   const [showMore, setShowMore] = useState(false);
 
-  const webHIDSupported = isWebHIDSupported();
+  const webHIDSupported = isDMKSupported();
 
   // ── connect & derive ───────────────────────────────────────────────────────
   const connect = useCallback(async () => {
@@ -40,18 +41,18 @@ export function LedgerConnectPanel({ onConnected }: LedgerConnectPanelProps) {
     setAccounts([]);
     setStatus("connecting");
     try {
-      const s = await openLedgerSession();
+      const s = await dmkConnect();
       setSession(s);
       setStatus("awaiting_app");
       setStatus("deriving");
-      const accs = await deriveAccounts(s.eth, LEDGER_PATHS.slice(0, 5));
+      const accs = await dmkDeriveAccounts(s.sessionId, DMK_DEFAULT_PATHS.slice(0, 5));
       if (accs.length === 0) throw new Error("0x6700");   // Eth app not open
       setAccounts(accs);
       setStatus("ready");
     } catch (err) {
-      setError(ledgerErrMsg(err));
+      setError(dmkErrMsg(err));
       setStatus("error");
-      try { session?.transport.close(); } catch { /* ignore */ }
+      if (session) dmkDisconnect(session.sessionId).catch(() => {});
       setSession(null);
     }
   }, [session]);
@@ -61,7 +62,7 @@ export function LedgerConnectPanel({ onConnected }: LedgerConnectPanelProps) {
     if (!session) return;
     setStatus("deriving");
     try {
-      const more = await deriveAccounts(session.eth, LEDGER_PATHS.slice(5));
+      const more = await dmkDeriveAccounts(session.sessionId, DMK_DEFAULT_PATHS.slice(5));
       setAccounts(a => {
         const existing = new Set(a.map(x => x.address));
         return [...a, ...more.filter(m => !existing.has(m.address))];
@@ -69,14 +70,14 @@ export function LedgerConnectPanel({ onConnected }: LedgerConnectPanelProps) {
       setShowMore(true);
       setStatus("ready");
     } catch (err) {
-      setError(ledgerErrMsg(err));
+      setError(dmkErrMsg(err));
       setStatus("error");
     }
   }, [session]);
 
   // ── select address ─────────────────────────────────────────────────────────
-  const pick = useCallback((acc: LedgerAccount) => {
-    session?.transport.close().catch(() => {});
+  const pick = useCallback((acc: DMKAccount) => {
+    if (session) dmkDisconnect(session.sessionId).catch(() => {});
     onConnected(acc.address, acc.path);
   }, [session, onConnected]);
 

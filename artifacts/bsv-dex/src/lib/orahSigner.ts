@@ -301,6 +301,60 @@ export function createLedgerSigner(
   };
 }
 
+// ── 2b. Ledger DMK adapter (Device Management Kit — current official SDK) ─────
+/**
+ * Creates an OrahSigner backed by the new Ledger Device Management Kit.
+ * Preferred over createLedgerSigner for all new integrations.
+ *
+ * The DMK provides:
+ *   - Native Clear Signing (human-readable tx fields on device screen)
+ *   - Observable-based DeviceAction API
+ *   - EIP-712 normalization bug fixes (May 2026)
+ *   - Forward-compatible with Ledger Stax, Flex, and future devices
+ *
+ * @param address   — EVM address derived from the device
+ * @param path      — BIP-32 derivation path (e.g. "m/44'/60'/0'/0/0")
+ * @param sessionId — DMKSession.sessionId from dmkConnect()
+ * @param label     — display name (default: "Ledger")
+ * @param originToken — optional Ledger partner program token for full Clear Signing
+ */
+export function createLedgerDMKSigner(
+  address:      string,
+  path:         string,
+  sessionId:    string,
+  label =       'Ledger',
+  originToken?: string,
+): OrahSigner {
+  return {
+    id:      `ledger:${address.toLowerCase()}`,
+    label,
+    kind:    'ledger',
+    address,
+    path,
+
+    async sign(req: OrahSignRequest): Promise<OrahSignResponse> {
+      const dmk = await import('./ledgerDMK');
+
+      if (req.typedData) {
+        const sig = await dmk.dmkSignTypedData(sessionId, path, req.typedData, originToken);
+        return { signature: sig };
+      }
+
+      if (req.message) {
+        const sig = await dmk.dmkSignMessage(sessionId, path, req.message);
+        return { signature: sig };
+      }
+
+      if (req.evmTx) {
+        const signedTx = await dmk.dmkSignTransaction(sessionId, path, req.evmTx, originToken);
+        return { signedTx };
+      }
+
+      throw new Error('Ledger DMK signer: request has no signable payload');
+    },
+  };
+}
+
 // ── 3. Trezor adapter ─────────────────────────────────────────────────────────
 
 export function createTrezorSigner(address: string, path: string, label = 'Trezor'): OrahSigner {

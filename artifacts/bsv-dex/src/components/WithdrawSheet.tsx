@@ -857,7 +857,7 @@ export function WithdrawSheet({
         toast({ title: `Sign on your ${deviceName}`, description: "Approve the transaction on your device." });
 
         if (hardwareWalletType === "ledger") {
-          const { openLedgerSession, ledgerErrMsg } = await import("@/lib/ledgerHardware");
+          const { dmkConnect, dmkSignTransaction, dmkDisconnect, dmkErrMsg } = await import("@/lib/ledgerDMK");
           const {
             createPublicClient, http, parseEther, parseUnits, serializeTransaction,
             encodeFunctionData,
