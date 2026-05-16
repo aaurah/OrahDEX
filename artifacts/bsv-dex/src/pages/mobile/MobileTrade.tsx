@@ -931,6 +931,25 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const lastPrice = parseFloat(ticker?.lastPrice) || lePairPrice || 0;
 
+  // ── Scroll order form into view on Android after it appears ─────────────────
+  // Android Chromium loses the scroll context after a DOM mutation that adds
+  // significant height to an overflow-y-auto container. Nudging scrollTop
+  // immediately after mount re-engages the native scroll engine.
+  useEffect(() => {
+    if (!showOrderForm) return;
+    const frame = requestAnimationFrame(() => {
+      const el = orderFormRef.current;
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      } else if (scrollBodyRef.current) {
+        // Fallback: scroll the container to the bottom
+        const c = scrollBodyRef.current;
+        c.scrollTop = c.scrollHeight;
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [showOrderForm]);
+
   // ── Auto-fetch best swap-venue quote when native order book has no liquidity ─
   useEffect(() => {
     if (orderError?.code !== "NO_LIQUIDITY") {
@@ -1380,7 +1399,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       </div>
 
       {/* ── SCROLLABLE BODY ── */}
-      <div className="flex-1 overflow-y-auto overscroll-contain pb-20">
+      <div
+        ref={scrollBodyRef}
+        className="flex-1 overflow-y-auto overscroll-contain pb-20"
+        style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+      >
 
         {/* ── PRICE BLOCK ── */}
         <div className="px-4 pt-3 pb-2">
@@ -1836,7 +1859,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
         {/* ── ORDER FORM (slide-up panel) ── */}
         {showOrderForm && (
-          <div className="px-3 pt-3 pb-2 border-t border-border mt-2 space-y-2.5">
+          <div ref={orderFormRef} className="px-3 pt-3 pb-2 border-t border-border mt-2 space-y-2.5">
 
             {/* Non-custodial mode disclosure */}
             {isSelfCustodyEvm && (
