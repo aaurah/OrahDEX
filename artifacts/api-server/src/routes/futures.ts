@@ -14,20 +14,6 @@ import { verifyAndLockFunding } from "../lib/fundingVerifier.js";
 
 const router: IRouter = Router();
 
-// Only block requests that are actually for futures endpoints.
-// A blanket router.use() without a path prefix intercepts ALL requests that
-// reach this router (including /health, /dex/prices, etc.) because Express
-// tries every sub-router in registration order.  Scoping to /futures/* here
-// ensures only actual futures paths are blocked when the feature is disabled.
-router.use((req, res, next) => {
-  if (process.env.FUTURES_ENABLED !== "true" && req.path.startsWith("/futures")) {
-    return res.status(503).json({
-      error: "Perpetual futures are not yet available. Coming soon.",
-    });
-  }
-  return next();
-});
-
 const FUNDING_RATES = [
   { symbol: "BSV/USDT", fundingRate: 0.0001, interval: "8h" },
   { symbol: "BTC/USDT", fundingRate: 0.00015, interval: "8h" },
@@ -37,6 +23,60 @@ const FUNDING_RATES = [
   { symbol: "BNB/USDT", fundingRate: 0.00010, interval: "8h" },
   { symbol: "ADA/USDT", fundingRate: 0.00004, interval: "8h" },
 ];
+
+// ── GET /futures/markets ─────────────────────────────────────────────────────
+// Returns the list of supported perpetual markets with live prices from the
+// sovereign price engine.
+const PERP_SYMBOLS = [
+  "BSV/USDT","BTC/USDT","ETH/USDT","SOL/USDT","XRP/USDT","BNB/USDT",
+  "ADA/USDT","DOGE/USDT","DOT/USDT","AVAX/USDT","MATIC/USDT","LINK/USDT",
+  "ARB/USDT","OP/USDT","SUI/USDT","INJ/USDT","NEAR/USDT","APT/USDT",
+];
+
+router.get("/futures/markets", async (_req, res) => {
+  try {
+    const allMarkets = await db.select().from(marketsTable);
+    const priceMap: Record<string, (typeof allMarkets)[0]> = {};
+    for (const m of allMarkets) priceMap[m.symbol] = m;
+
+    const markets = PERP_SYMBOLS.map((sym) => {
+      const m      = priceMap[sym];
+      const last   = m ? parseFloat(m.lastPrice) : 0;
+      const chg    = m ? parseFloat(m.priceChangePercent) : 0;
+      const vol    = m ? parseFloat(m.volume) : 0;
+      const base   = sym.split("/")[0];
+      const rate   = FUNDING_RATES.find((r) => r.symbol === sym);
+      return {
+        symbol:               `${base}/USDT-PERP`,
+        baseAsset:            base,
+        quoteAsset:           "USDT",
+        lastPrice:            last,
+        markPrice:            last,
+        indexPrice:           last,
+        priceChangePercent:   chg,
+        priceChangePercent24h: chg,
+        volume:               vol,
+        volume24h:            vol,
+        openInterest:         vol * 0.15,
+        fundingRate:          rate?.fundingRate ?? 0.0001,
+        fundingRatePct:       (rate?.fundingRate ?? 0.0001) * 100,
+        nextFundingTime:      (() => {
+          const d = new Date(); const h = d.getHours();
+          const nh = h < 8 ? 8 : h < 16 ? 16 : 24;
+          d.setHours(nh % 24, 0, 0, 0);
+          if (nh === 24) d.setDate(d.getDate() + 1);
+          return d.toISOString();
+        })(),
+        maxLeverage:          100,
+        type:                 "futures",
+      };
+    });
+
+    res.json(markets);
+  } catch (err) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 router.get("/futures/funding-rates", (_req, res) => {
   const now = new Date();

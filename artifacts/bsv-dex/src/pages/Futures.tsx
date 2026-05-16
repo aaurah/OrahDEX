@@ -222,6 +222,17 @@ export function FuturesTrading() {
   // ── Futures positions (fetched from /api/futures/positions) ─────────────────
   const [positions, setPositions] = useState<any[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
+  const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
+
+  // ── Live futures markets from API (for pair dropdown) ──────────────────────
+  const [liveMarkets, setLiveMarkets] = useState<any[]>([]);
+  useEffect(() => {
+    fetch(`${API_BASE}/futures/markets`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (Array.isArray(data) && data.length > 0) setLiveMarkets(data); })
+      .catch(() => {});
+  }, []);
+  const futuresMarketList = liveMarkets.length > 0 ? liveMarkets : FUTURES_MARKETS;
 
   const fetchPositions = useCallback(async () => {
     if (!address) { setPositions([]); return; }
@@ -239,6 +250,33 @@ export function FuturesTrading() {
     const t = setInterval(() => void fetchPositions(), 5000);
     return () => clearInterval(t);
   }, [address, fetchPositions]);
+
+  const handleClosePosition = async (positionId: string, markPrice: number) => {
+    if (!address) return;
+    setClosingPositionId(positionId);
+    try {
+      const resp = await fetch(`${API_BASE}/futures/positions/${encodeURIComponent(positionId)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: address, markPrice }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${resp.status}`);
+      }
+      const result = await resp.json();
+      const pnl = result.realizedPnl ?? 0;
+      toast({
+        title: "Position Closed",
+        description: `Realized PnL: ${pnl >= 0 ? "+" : ""}${Number(pnl).toFixed(4)} USDT`,
+      });
+      void fetchPositions();
+    } catch (err: any) {
+      toast({ title: "Close Failed", description: err.message ?? "Could not close position.", variant: "destructive" });
+    } finally {
+      setClosingPositionId(null);
+    }
+  };
 
   const countdown = useFundingCountdown();
 
@@ -409,7 +447,7 @@ export function FuturesTrading() {
                 <div className="overflow-y-auto max-h-64 min-h-0">
                   {(() => {
                     const q = dropSearch.toLowerCase();
-                    const rows = FUTURES_MARKETS.filter(m =>
+                    const rows = futuresMarketList.filter(m =>
                       !q || m.baseAsset?.toLowerCase().includes(q) || m.symbol?.toLowerCase().includes(q)
                     );
                     if (rows.length === 0) return (
@@ -540,11 +578,14 @@ export function FuturesTrading() {
                           <th className="p-2 font-medium text-right">Liq.</th>
                           <th className="p-2 font-medium text-right">PnL</th>
                           <th className="p-2 font-medium text-right">Margin</th>
+                          <th className="p-2 font-medium text-right">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-border">
                         {positions.map((p: any) => {
                           const pnl = parseFloat(p.unrealizedPnl ?? "0");
+                          const mark = parseFloat(p.markPrice);
+                          const isClosing = closingPositionId === p.id;
                           return (
                             <tr key={p.id} className="hover:bg-white/5 transition-colors">
                               <td className="p-2">{p.symbol}</td>
@@ -553,12 +594,21 @@ export function FuturesTrading() {
                               </td>
                               <td className="p-2 text-right">{Number(p.quantity).toFixed(4)}</td>
                               <td className="p-2 text-right">{formatPrice(parseFloat(p.entryPrice))}</td>
-                              <td className="p-2 text-right">{formatPrice(parseFloat(p.markPrice))}</td>
+                              <td className="p-2 text-right">{formatPrice(mark)}</td>
                               <td className="p-2 text-right text-orange-400">{formatPrice(parseFloat(p.liquidationPrice))}</td>
                               <td className={cn("p-2 text-right font-bold", pnl >= 0 ? "text-green-400" : "text-red-400")}>
                                 {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}
                               </td>
                               <td className="p-2 text-right">{Number(p.margin).toFixed(2)}</td>
+                              <td className="p-2 text-right">
+                                <button
+                                  onClick={() => handleClosePosition(p.id, mark)}
+                                  disabled={isClosing}
+                                  className="text-[10px] font-semibold px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:border-red-500 transition-all disabled:opacity-40 whitespace-nowrap"
+                                >
+                                  {isClosing ? <Loader2 className="w-3 h-3 animate-spin inline" /> : "Close"}
+                                </button>
+                              </td>
                             </tr>
                           );
                         })}
