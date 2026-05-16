@@ -167,22 +167,20 @@ function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boo
       <div className="absolute inset-0 rounded-[28px] pointer-events-none"
         style={{ background: "radial-gradient(ellipse at 50% 40%, rgba(74,222,128,0.18) 0%, transparent 65%)", filter: "blur(28px)", transform: "scale(1.15) translateY(5%)" }} />
 
-      {/* Card */}
-      <div className="relative rounded-[24px] border overflow-hidden"
+      {/* Card — uses theme CSS vars so it looks correct on dark/light/amoled */}
+      <div className="relative rounded-[24px] border border-green-500/20 overflow-hidden bg-card"
         style={{
-          borderColor: "rgba(74,222,128,0.22)",
-          background: "linear-gradient(160deg, rgba(74,222,128,0.06) 0%, rgba(7,10,16,0.97) 45%)",
-          backdropFilter: "blur(32px)",
-          boxShadow: "0 0 0 1px rgba(74,222,128,0.08), 0 32px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)",
+          background: "linear-gradient(160deg, rgba(74,222,128,0.06) 0%, hsl(var(--card)) 45%)",
+          boxShadow: "0 0 0 1px rgba(74,222,128,0.08), 0 32px 80px rgba(0,0,0,0.25), inset 0 1px 0 rgba(74,222,128,0.06)",
         }}>
 
         {/* Terminal titlebar */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: "rgba(255,255,255,0.07)" }}>
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-border/50">
           <div className="flex items-center gap-3">
             <div className="flex gap-1.5">
-              <div className="w-2.5 h-2.5 rounded-full" style={{ background: "rgba(248,113,113,0.7)" }} />
-              <div className="w-2.5 h-2.5 rounded-full" style={{ background: "rgba(251,191,36,0.7)" }} />
-              <div className="w-2.5 h-2.5 rounded-full" style={{ background: "rgba(74,222,128,0.7)" }} />
+              <div className="w-2.5 h-2.5 rounded-full bg-red-400/70" />
+              <div className="w-2.5 h-2.5 rounded-full bg-amber-400/70" />
+              <div className="w-2.5 h-2.5 rounded-full bg-green-400/70" />
             </div>
             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">LIVE MARKETS</span>
           </div>
@@ -193,10 +191,10 @@ function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boo
         </div>
 
         {/* Column headers */}
-        <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-5 py-2" style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-          <span className="text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/35">Pair</span>
-          <span className="text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/35 text-right">Price</span>
-          <span className="text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/35 text-right w-14">24h</span>
+        <div className="grid grid-cols-[1fr_auto_auto] gap-3 px-5 py-2 border-b border-border/30">
+          <span className="text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/40">Pair</span>
+          <span className="text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/40 text-right">Price</span>
+          <span className="text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/40 text-right w-14">24h</span>
         </div>
 
         {/* Market rows */}
@@ -207,18 +205,17 @@ function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boo
               <Link
                 key={m.symbol ?? i}
                 href={`/trade/${(m.symbol ?? "BSV-USDT").replace("/", "-")}`}
-                className="grid grid-cols-[1fr_auto_auto] gap-3 items-center px-5 py-3 transition-colors hover:bg-white/[0.03] group"
-                style={{ borderBottom: i < rows.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}
+                className="grid grid-cols-[1fr_auto_auto] gap-3 items-center px-5 py-3 transition-colors hover:bg-primary/5 group border-b border-border/20 last:border-b-0"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <CoinAvatar symbol={m.baseAsset ?? "BSV"} size={30} />
                   <div className="min-w-0">
                     <p className="text-xs font-black text-foreground leading-tight">{m.baseAsset}</p>
-                    <p className="text-[9px] text-muted-foreground/35 leading-tight">{fmtVol(m.volume24h ?? 0)} vol</p>
+                    <p className="text-[9px] text-muted-foreground/40 leading-tight">{fmtVol(m.volume24h ?? 0)} vol</p>
                   </div>
                 </div>
                 <span className="text-sm font-black text-foreground font-mono tabular-nums">{fmtPrice(m.lastPrice ?? 0)}</span>
-                <span className={`text-xs font-black w-14 text-right tabular-nums px-2 py-0.5 rounded-md ${up ? "text-green-400 bg-green-500/10" : "text-red-400 bg-red-500/10"}`}>
+                <span className={`text-xs font-black w-14 text-right tabular-nums px-2 py-0.5 rounded-md ${up ? "text-green-500 bg-green-500/10" : "text-red-500 bg-red-500/10"}`}>
                   {up ? "+" : ""}{(m.priceChangePercent24h ?? 0).toFixed(2)}%
                 </span>
               </Link>
@@ -234,10 +231,9 @@ function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boo
         )}
 
         {/* Footer CTA */}
-        <div className="px-5 py-4" style={{ borderTop: "1px solid rgba(255,255,255,0.06)", background: "rgba(74,222,128,0.02)" }}>
+        <div className="px-5 py-4 border-t border-border/40 bg-green-500/[0.02]">
           <Link href="/markets"
-            className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-black text-green-400 transition-all hover:bg-green-500/10 group"
-            style={{ border: "1px solid rgba(74,222,128,0.2)" }}>
+            className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-black text-green-500 transition-all hover:bg-green-500/10 border border-green-500/20 hover:border-green-500/40 group">
             View All Markets
             <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
           </Link>
