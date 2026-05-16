@@ -931,21 +931,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const lastPrice = parseFloat(ticker?.lastPrice) || lePairPrice || 0;
 
-  // ── Re-engage Android scroll engine after order form appears ─────────────────
-  // Android Chromium sometimes freezes scroll on an overflow-y-auto container
-  // after a DOM mutation. A 1px scrollTop nudge (then restore) forces the
-  // compositor to re-evaluate the scrollable area without moving the view.
-  useEffect(() => {
-    if (!showOrderForm) return;
-    const frame = requestAnimationFrame(() => {
-      const c = scrollBodyRef.current;
-      if (!c) return;
-      const prev = c.scrollTop;
-      c.scrollTop = prev + 1;
-      c.scrollTop = prev;
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [showOrderForm]);
 
   // ── Auto-fetch best swap-venue quote when native order book has no liquidity ─
   useEffect(() => {
@@ -1350,7 +1335,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-x-hidden">
+    <div className="flex flex-col bg-background overflow-x-hidden" style={{ height: "calc(100dvh - 56px)" }}>
 
       {/* ── HEADER ── */}
       <div className="shrink-0 flex items-center px-3 pt-3 pb-2 border-b border-border gap-2">
