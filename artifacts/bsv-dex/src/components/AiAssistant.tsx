@@ -127,11 +127,24 @@ export function AiAssistant() {
     }
   }, [open, scrollBottom]);
 
+  // On mount: check sessionStorage for a pending question (set before component loaded)
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("ora:pending");
+      if (stored) {
+        sessionStorage.removeItem("ora:pending");
+        pendingMsgRef.current = stored;
+        setOpen(true);
+      }
+    } catch {}
+  }, []);
+
   // Listen for external open events (e.g. from AiInsightsBar "Ask Ora" button)
   useEffect(() => {
     function handleOpenEvent(e: Event) {
-      const question = (e as CustomEvent<string>).detail;
-      pendingMsgRef.current = question ?? null;
+      const detail = (e as CustomEvent).detail;
+      const question = typeof detail === "string" ? detail : detail?.message ?? null;
+      pendingMsgRef.current = question;
       setOpen(true);
     }
     window.addEventListener("ora:open", handleOpenEvent);
