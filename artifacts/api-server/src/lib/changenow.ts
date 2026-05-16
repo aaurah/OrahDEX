@@ -113,23 +113,33 @@ export async function quoteFromCN(
   amount: number,
 ): Promise<CnQuoteResult | null> {
   try {
-    const { ok, data } = await cnRequest("/exchange/estimated-amount", "GET", undefined, {
-      fromCurrency: from.toLowerCase(),
-      toCurrency:   to.toLowerCase(),
-      fromAmount:   amount,
-      type:         "direct",
-      flow:         "standard",
-    });
-    if (!ok || !data || typeof data !== "object") return null;
-    const d = data as Record<string, unknown>;
+    // Fire estimate + min-amount in parallel — the estimated-amount endpoint
+    // doesn't always include minAmount inline, so we fetch it explicitly.
+    const [estimateRes, minRes] = await Promise.all([
+      cnRequest("/exchange/estimated-amount", "GET", undefined, {
+        fromCurrency: from.toLowerCase(),
+        toCurrency:   to.toLowerCase(),
+        fromAmount:   amount,
+        type:         "direct",
+        flow:         "standard",
+      }),
+      getCnMinAmount(from, to),
+    ]);
+
+    if (!estimateRes.ok || !estimateRes.data || typeof estimateRes.data !== "object") return null;
+    const d = estimateRes.data as Record<string, unknown>;
     const estimated = parseFloat(String(d.toAmount ?? d.estimatedAmount ?? "")) || 0;
     if (estimated <= 0) return null;
 
+    // Prefer inline minAmount from the estimate response; fall back to dedicated call
+    const inlineMin = d.minAmount != null ? parseFloat(String(d.minAmount)) || null : null;
+    const inlineMax = d.maxAmount != null ? parseFloat(String(d.maxAmount)) || null : null;
+
     return {
       estimatedAmount: estimated,
-      minAmount:       d.minAmount != null ? parseFloat(String(d.minAmount)) || null : null,
-      maxAmount:       d.maxAmount != null ? parseFloat(String(d.maxAmount)) || null : null,
-      rateId:          d.rateId    ? String(d.rateId) : undefined,
+      minAmount:       inlineMin ?? minRes,
+      maxAmount:       inlineMax,
+      rateId:          d.rateId ? String(d.rateId) : undefined,
     };
   } catch (err) {
     logger.warn({ err }, "ChangeNOW: quoteFromCN failed");
