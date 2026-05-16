@@ -4,6 +4,7 @@
  * Priority order:
  *   1. Own trades table  →  aggregate into OHLCV candles (most authoritative)
  *   2. Binance public klines API (no key required) — for pairs Binance supports
+ *   2b. Gate.io public candles API (no key required) — for BSV and other non-Binance pairs
  *   3. Synthetic fallback — generated from lastPrice when no trades exist yet
  *
  * CoinGecko and CoinMarketCap are NOT used.
