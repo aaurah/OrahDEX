@@ -505,6 +505,12 @@ function Router() {
   );
 }
 
+function OraAIWidgetGate() {
+  const [location] = useLocation();
+  if (location.startsWith("/devai") || location.startsWith("/admin")) return null;
+  return <OraAIWidget />;
+}
+
 function AppContent() {
   useInternalEvmWallet();
   useInternalBsvWallet();
@@ -513,13 +519,13 @@ function AppContent() {
     <>
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <Router />
+        {/* Ora AI floating chat widget — hidden on DevAI and admin pages */}
+        <OraAIWidgetGate />
       </WouterRouter>
       <Toaster />
       <PinPromptModal />
       {/* Wallet chooser — always mounted so it works across all layouts */}
       <WalletChooserDialog />
-      {/* Ora AI floating chat widget */}
-      <OraAIWidget />
     </>
   );
 }
