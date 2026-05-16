@@ -716,13 +716,27 @@ export async function signBsvChallengeWithPasskey(
   const msgHash = sha256(sha256(preimage));
 
   // Compact secp256k1 signature (65 bytes: 1 byte header + 32r + 32s)
-  // @noble/curves v2.x: sign() returns Uint8Array directly (not a Signature object).
-  // Using format:'recovered' gives [recoveryId(1), r(32), s(32)] in one call.
+  // @noble/curves v2.x: sign() defaults to prehash:true (applies SHA-256 internally).
+  // Since msgHash is already SHA256d, we must pass prehash:false to sign the raw hash.
+  // sign() only returns 64-byte compact r||s — recovery bit must be determined separately.
   const { secp256k1 } = await import("@noble/curves/secp256k1.js");
-  const rawSig = secp256k1.sign(msgHash, bsvPrivKey, { lowS: true, format: "recovered" } as any) as Uint8Array;
-  const recovery = rawSig[0];        // first byte = recovery id (0 or 1)
-  const compact  = rawSig.slice(1);  // remaining 64 bytes = r(32) + s(32)
-  const sigBytes = new Uint8Array([31 + recovery, ...compact]); // 31 = compressed key header
+  const compact64 = secp256k1.sign(msgHash, bsvPrivKey, { lowS: true, prehash: false });
+
+  // Find the correct recovery bit (0 or 1) by trying both and checking which one
+  // recovers back to our known public key.
+  const expectedPub = secp256k1.getPublicKey(bsvPrivKey, true);
+  let recoveryBit = 0;
+  for (let rec = 0; rec <= 1; rec++) {
+    const probe = new Uint8Array([rec, ...compact64]);
+    const recovered = secp256k1.recoverPublicKey(probe, msgHash, { prehash: false });
+    if (recovered.length === expectedPub.length && recovered.every((b, i) => b === expectedPub[i])) {
+      recoveryBit = rec;
+      break;
+    }
+  }
+
+  // Bitcoin compact-signature format: header = 31 + recoveryBit for compressed keys
+  const sigBytes = new Uint8Array([31 + recoveryBit, ...compact64]);
   return btoa(String.fromCharCode(...sigBytes));
 }
 
