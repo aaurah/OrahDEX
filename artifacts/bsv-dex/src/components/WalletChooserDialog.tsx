@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useWalletStore } from "@/store/useWalletStore";
 import {
   registerPasskeyWallet,
+  importPasskeyWallet,
   loginWithPasskey,
   isPasskeySupported,
   revealPasskeyWalletSecret,
@@ -390,25 +391,17 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   const handleBiometric = async () => {
     setLoading(true);
     try {
-      const addrs = await deriveAllAddresses(wordsRef.current);
-      const { credentialId, prfSecret } = await createImportPasskey("OrahDEX Wallet");
-      await storeWithPasskey({
-        address: addrs.evm, secret: mnemonicRef.current,
-        keyKind: "mnemonic", prfSecret, passkeyId: credentialId, label: "OrahDEX Wallet",
-      });
-      finishWithAddrs(addrs);
-      toast({ title: "Wallet imported!", description: `Face/Touch protected · ${addrs.evm.slice(0, 6)}…${addrs.evm.slice(-4)}` });
+      // importPasskeyWallet stores in the same system as registerPasskeyWallet
+      // (orahdex_passkey_wallets_v1) so BSV signing can find it via listPasskeyWallets()
+      const result = await importPasskeyWallet(mnemonicRef.current, "OrahDEX Wallet");
+      finishWithAddrs(result.addrs);
+      toast({ title: "Wallet imported!", description: `Face/Touch protected · ${result.address.slice(0, 6)}…${result.address.slice(-4)}` });
       onDone();
     } catch (err: any) {
       const msg: string = err?.message ?? "";
-      // PRF extension not supported (common on iOS Safari) — auto-redirect to PIN
-      if (msg.toLowerCase().includes("prf") || msg.toLowerCase().includes("hmac-secret")) {
-        toast({ title: "Biometric encryption not available", description: "Your device doesn't support passkey encryption. Switching to PIN protection.", variant: "destructive" });
-        setStep(hasPin() ? "pin-entry" : "pin-setup");
-      } else if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort") || msg.toLowerCase().includes("notallowederror")) {
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort") || msg.toLowerCase().includes("notallowederror")) {
         toast({ title: "Cancelled", description: "Biometric authentication was cancelled.", variant: "destructive" });
       } else {
-        // Any other error (e.g. no platform authenticator) — also fall back to PIN
         toast({ title: "Biometric unavailable", description: "Switching to PIN protection.", variant: "destructive" });
         setStep(hasPin() ? "pin-entry" : "pin-setup");
       }
@@ -606,22 +599,13 @@ function SeedCreatePanel({ onDone }: { onDone: () => void }) {
   const handleBiometric = async () => {
     setLoading(true);
     try {
-      const addrs = await deriveAllAddresses(words);
-      const { credentialId, prfSecret } = await createImportPasskey("OrahDEX Wallet");
-      await storeWithPasskey({
-        address: addrs.evm, secret: mnemonicRef.current,
-        keyKind: "mnemonic", prfSecret, passkeyId: credentialId, label: "OrahDEX Wallet",
-      });
-      finishWithAddrs(addrs);
-      toast({ title: "Wallet created!", description: `Face/Touch protected · ${addrs.evm.slice(0, 6)}…${addrs.evm.slice(-4)}` });
+      const result = await importPasskeyWallet(mnemonicRef.current, "OrahDEX Wallet");
+      finishWithAddrs(result.addrs);
+      toast({ title: "Wallet created!", description: `Face/Touch protected · ${result.address.slice(0, 6)}…${result.address.slice(-4)}` });
       onDone();
     } catch (err: any) {
       const msg: string = err?.message ?? "";
-      // PRF extension not supported (common on iOS Safari) — auto-redirect to PIN
-      if (msg.toLowerCase().includes("prf") || msg.toLowerCase().includes("hmac-secret")) {
-        toast({ title: "Biometric encryption not available", description: "Your device doesn't support passkey encryption. Switching to PIN protection.", variant: "destructive" });
-        setStep(hasPin() ? "pin-entry" : "pin-setup");
-      } else if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort") || msg.toLowerCase().includes("notallowederror")) {
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort") || msg.toLowerCase().includes("notallowederror")) {
         toast({ title: "Cancelled", description: "Biometric authentication was cancelled.", variant: "destructive" });
       } else {
         toast({ title: "Biometric unavailable", description: "Switching to PIN protection.", variant: "destructive" });

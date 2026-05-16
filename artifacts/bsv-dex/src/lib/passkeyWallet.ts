@@ -226,27 +226,21 @@ export interface RegisterResult {
 }
 
 /**
- * Create a new passkey and generate a BIP39 HD wallet (all 5 chains).
- * The 12-word mnemonic is encrypted with the passkey rawId — never stored in plain text.
- *
- * @param label  Optional display name for the wallet (default: "Passkey Wallet").
+ * Shared passkey credential creation — used by both register (fresh mnemonic)
+ * and import (user-supplied mnemonic) flows.
  */
-export async function registerPasskeyWallet(
-  label = "Passkey Wallet"
-): Promise<RegisterResult> {
+async function createPasskeyCredential(label: string): Promise<{ rawId: ArrayBuffer; credentialId: string }> {
   if (!isPasskeySupported()) throw new Error("Passkeys not supported in this browser");
-
   const challenge = crypto.getRandomValues(new Uint8Array(32));
   const userId    = crypto.getRandomValues(new Uint8Array(16));
-
   const credential = await navigator.credentials.create({
     publicKey: {
       challenge,
       rp:   { name: RP_NAME, id: window.location.hostname },
       user: { id: userId, name: label, displayName: label },
       pubKeyCredParams: [
-        { alg: -7,   type: "public-key" }, // ES256 (preferred)
-        { alg: -257, type: "public-key" }, // RS256 (fallback)
+        { alg: -7,   type: "public-key" },
+        { alg: -257, type: "public-key" },
       ],
       authenticatorSelection: {
         authenticatorAttachment: "platform",
@@ -258,46 +252,81 @@ export async function registerPasskeyWallet(
       attestation: "none",
     },
   }) as PublicKeyCredential | null;
-
   if (!credential) throw new Error("Passkey creation cancelled");
-
   const rawId        = credential.rawId;
   const credentialId = b642url(buf2b64(rawId));
+  return { rawId, credentialId };
+}
 
-  // Generate a BIP39 mnemonic and derive all 5 chain addresses
+/**
+ * Create a new passkey and generate a BIP39 HD wallet (all 5 chains).
+ * The 12-word mnemonic is encrypted with the passkey rawId — never stored in plain text.
+ *
+ * @param label  Optional display name for the wallet (default: "Passkey Wallet").
+ */
+export async function registerPasskeyWallet(
+  label = "Passkey Wallet"
+): Promise<RegisterResult> {
+  const { rawId, credentialId } = await createPasskeyCredential(label);
+
+  // Generate a fresh BIP39 mnemonic
   const words    = generateMnemonic(12);
   const addrs    = await deriveAllAddresses(words);
   const mnemonic = words.join(" ");
 
-  // Encrypt the mnemonic so it can only be decrypted after a passkey assertion
   const { encryptedKey, iv } = await encryptPrivateKey(mnemonic, rawId);
-
   const wallet: PasskeyWallet = {
-    credentialId,
-    address:     addrs.evm,
-    encryptedKey,
-    iv,
-    label,
-    createdAt:   Date.now(),
+    credentialId, address: addrs.evm, encryptedKey, iv, label, createdAt: Date.now(),
   };
-
   saveWallet(wallet);
   saveDerivedAddresses(addrs.evm, {
     evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
     tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
   });
-
-  // Silently back up to server (encrypted — safe to store remotely)
   pushBackupToServer(wallet);
-
   return {
-    address: addrs.evm,
-    credentialId,
-    label,
+    address: addrs.evm, credentialId, label,
     chains: {
       evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv,
       tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     },
+  };
+}
+
+/**
+ * Import an existing BIP39 mnemonic and protect it with a new passkey.
+ *
+ * Unlike registerPasskeyWallet (which generates a fresh mnemonic), this
+ * function stores the USER-SUPPLIED mnemonic encrypted under the new passkey's
+ * rawId — using the same AES-GCM/PBKDF2 scheme — so that BSV signing and all
+ * other passkey flows can find and decrypt it via listPasskeyWallets().
+ */
+export async function importPasskeyWallet(
+  mnemonic: string,
+  label    = "OrahDEX Wallet"
+): Promise<RegisterResult & { addrs: Awaited<ReturnType<typeof deriveAllAddresses>> }> {
+  const { rawId, credentialId } = await createPasskeyCredential(label);
+
+  const words = mnemonic.trim().split(/\s+/);
+  const addrs = await deriveAllAddresses(words);
+
+  const { encryptedKey, iv } = await encryptPrivateKey(mnemonic.trim(), rawId);
+  const wallet: PasskeyWallet = {
+    credentialId, address: addrs.evm, encryptedKey, iv, label, createdAt: Date.now(),
+  };
+  saveWallet(wallet);
+  saveDerivedAddresses(addrs.evm, {
+    evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+    tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+  });
+  pushBackupToServer(wallet);
+  return {
+    address: addrs.evm, credentialId, label,
+    chains: {
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv,
+      tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+    },
+    addrs,
   };
 }
 
