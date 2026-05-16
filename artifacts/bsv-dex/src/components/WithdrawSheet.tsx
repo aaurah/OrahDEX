@@ -40,7 +40,7 @@ import { validateAltChainAddress } from "@/lib/addressValidation";
 import { isAddress as isEvmAddress } from "viem";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, fetchEvmBalance } from "@/lib/reown";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
-import { signBsvChallengeWithPasskey, listPasskeyWallets, loginWithPasskey } from "@/lib/passkeyWallet";
+import { signBsvChallengeWithPasskey, sendBsvWithPasskey, listPasskeyWallets, loginWithPasskey } from "@/lib/passkeyWallet";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
@@ -714,12 +714,6 @@ export function WithdrawSheet({
       const activeChain = withdrawChainMode.toLowerCase();
       const isBitcoinForkChain = ["bsv", "btc", "bch"].includes(activeChain);
 
-      // For Bitcoin-fork chains, the server needs the BSV address to verify the
-      // Bitcoin message signature, but the DEX internal balance is tracked under
-      // the EVM address. We send both:
-      //   walletAddress   = EVM 0x… (balance lookup, stays unchanged)
-      //   bsvAddress      = 1Bfx… (challenge keyed on BSV address)
-      //   bsvSignerAddress = 1Bfx… (BSV sig verification in withdrawal POST)
       const chainAddress = isBitcoinForkChain
         ? (nonEvmAddresses?.[activeChain] ?? nonEvmAddresses?.[activeChain.toUpperCase()])
         : undefined;
@@ -731,6 +725,42 @@ export function WithdrawSheet({
         );
       }
 
+      // ── BSV: direct on-chain transaction ────────────────────────────────────
+      // The "On-chain Balance" shown is the user's REAL BSV at their passkey
+      // wallet address (fetched from WhatsOnChain). It is NOT in the exchange
+      // internal ledger, so going through /api/withdrawals would fail with
+      // "platform liquidity" because that endpoint checks the internal ledger.
+      //
+      // Instead we build, sign and broadcast a P2PKH transaction directly using
+      // the passkey-derived BSV private key — no exchange API involved.
+      if (activeChain === "bsv") {
+        if (!passkeyEvmAddress && listPasskeyWallets().length === 0) {
+          throw new Error("No passkey wallet found on this device. Please create or restore your OrahWallet first.");
+        }
+        const result = await sendBsvWithPasskey(
+          passkeyEvmAddress ?? "",
+          chainAddress!,
+          nonEvmSendRecipient.trim(),
+          parsedAmt,
+        );
+        setNonEvmSendTxHash(result.txid);
+        toast({
+          title:       "BSV sent",
+          description: `${parsedAmt} BSV sent on-chain. Fee: ${result.feeSat} sat. TXID: ${result.txid.slice(0, 16)}…`,
+        });
+        addNotification({
+          type:  "withdrawal",
+          title: "BSV Sent",
+          body:  `${parsedAmt} BSV sent from wallet (fee: ${result.feeSat} sat).`,
+          txid:  result.txid,
+          href:  `https://whatsonchain.com/tx/${result.txid}`,
+        });
+        refetchHistory?.();
+        setTimeout(() => fetchNonEvmBalance(), 8_000);
+        return;
+      }
+
+      // ── Other Bitcoin-fork chains (BTC, BCH): exchange withdrawal path ──────
       // 1. Request withdrawal challenge
       const challengeRes = await fetch(`${API_BASE}/withdraw/challenge`, {
         method:  "POST",
@@ -749,8 +779,6 @@ export function WithdrawSheet({
       // 2. Sign with passkey-derived chain key
       let signature: string;
       if (isBitcoinForkChain) {
-        // signBsvChallengeWithPasskey handles the case where passkeyEvmAddress
-        // is empty/missing by falling back to all stored passkey wallets.
         if (!passkeyEvmAddress && listPasskeyWallets().length === 0) {
           throw new Error("No passkey wallet found on this device. Please create or restore your OrahWallet first.");
         }
@@ -759,9 +787,7 @@ export function WithdrawSheet({
         throw new Error(`On-chain signing not yet supported for ${activeChain.toUpperCase()}`);
       }
 
-      // 3. Submit withdrawal — walletAddress stays EVM for balance lookup;
-      //    bsvSignerAddress tells the server to verify a Bitcoin message signature
-      //    against the passkey wallet's BSV address instead of an EVM signature.
+      // 3. Submit to exchange withdrawal endpoint
       const wAsset = withdrawChainMode.toUpperCase();
       const withdrawRes = await fetch(`${API_BASE}/withdrawals`, {
         method:  "POST",
