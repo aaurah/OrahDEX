@@ -15,6 +15,7 @@ import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useTxTracker } from "@/hooks/useTxTracker";
 import { useInternalEvmWallet } from "@/hooks/useInternalEvmWallet";
 import { useInternalBsvWallet } from "@/hooks/useInternalBsvWallet";
+import { useInactivityLock } from "@/hooks/useInactivityLock";
 
 const AdminLayout  = lazy(() => import("@/components/AdminLayout").then(m => ({ default: m.AdminLayout })));
 const MobileLayout = lazy(() => import("@/components/mobile/MobileLayout").then(m => ({ default: m.MobileLayout })));
@@ -241,6 +242,9 @@ function Router() {
   const { refresh: refreshBsvBalance } = useBsvBalance();
   const balanceRefreshKey = useWalletStore((s) => s.balanceRefreshKey);
   useTxTracker();
+
+  // Auto-lock wallet after 10 minutes of inactivity — emits "orahdex:wallet-lock"
+  useInactivityLock();
 
   useEffect(() => {
     if (balanceRefreshKey > 0) refreshBsvBalance();
