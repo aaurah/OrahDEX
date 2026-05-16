@@ -35,13 +35,15 @@ const RevenuePage           = lazy(() => import("@/pages/Revenue"));
 const KeeperProfile         = lazy(() => import("@/pages/KeeperProfile").then(m => ({ default: m.KeeperProfile })));
 const PredictionTrading     = lazy(() => import("@/pages/Prediction").then(m => ({ default: m.PredictionTrading })));
 const SovereignOverviewPage = lazy(() => import("@/pages/SovereignOverview").then(m => ({ default: m.SovereignOverviewPage })));
+const OraAIPage             = lazy(() => import("@/pages/OraAI").then(m => ({ default: m.OraAIPage })));
+const DevAIPage             = lazy(() => import("@/pages/DevAI").then(m => ({ default: m.DevAIPage })));
 
 /* ── Tab key type ────────────────────────────────────────────────────────── */
 type TabKey =
   | "markets" | "swap" | "trade" | "futures" | "wallet"
   | "settings" | "staking" | "nft" | "liquidity" | "genesis"
   | "dex" | "p2p" | "bridge" | "copy" | "fees" | "keeper"
-  | "prediction" | "sovereign";
+  | "prediction" | "sovereign" | "ora-ai" | "devai";
 
 /* Routes that need live params and are rendered normally (not kept alive) */
 const PASSTHROUGH_PREFIXES = [
@@ -74,6 +76,8 @@ function getTabKey(location: string): TabKey | null {
   if (location.startsWith("/keeper"))                        return "keeper";
   if (location.startsWith("/prediction"))                    return "prediction";
   if (location.startsWith("/sovereign"))                     return "sovereign";
+  if (location.startsWith("/ora-ai"))                        return "ora-ai";
+  if (location.startsWith("/devai"))                         return "devai";
   return null;
 }
 
@@ -172,6 +176,8 @@ export function MobileTabKeeper() {
       {vis("keeper")     && <Tab active={act("keeper")}>     <Suspense fallback={<Skeleton />}><KeeperProfile /></Suspense></Tab>}
       {vis("prediction") && <Tab active={act("prediction")}> <Suspense fallback={<Skeleton />}><PredictionTrading /></Suspense></Tab>}
       {vis("sovereign")  && <Tab active={act("sovereign")}>  <Suspense fallback={<Skeleton />}><SovereignOverviewPage /></Suspense></Tab>}
+      {vis("ora-ai")     && <Tab active={act("ora-ai")}>     <Suspense fallback={<Skeleton />}><OraAIPage /></Suspense></Tab>}
+      {vis("devai")      && <Tab active={act("devai")}>      <Suspense fallback={<Skeleton />}><DevAIPage /></Suspense></Tab>}
 
       {/* Fallback: unrecognised route — show markets */}
       {activeKey === null && !isPassthrough(location) && (
