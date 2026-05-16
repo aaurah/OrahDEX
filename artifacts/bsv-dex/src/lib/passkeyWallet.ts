@@ -348,25 +348,25 @@ export interface LoginResult {
  * the function automatically attempts to restore the encrypted blob from the
  * server backup, decrypts it with the passkey rawId, and saves it locally.
  */
-export async function loginWithPasskey(): Promise<LoginResult> {
+export async function loginWithPasskey(opts?: { hybrid?: boolean }): Promise<LoginResult> {
   if (!isPasskeySupported()) throw new Error("Passkeys not supported in this browser");
 
   const wallets   = listPasskeyWallets();
   const challenge = crypto.getRandomValues(new Uint8Array(32));
 
-  // Use discoverable-credential flow (empty allowCredentials) so the device
-  // presents ALL available passkeys for this origin — works even when
-  // localStorage is empty (different session, reinstall, etc.)
-  const allowCredentials = wallets.length > 0
-    ? wallets.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }))
-    : [];
+  // hybrid=true: force empty allowCredentials so the browser shows ALL passkeys
+  // including the "Use another device / QR code" cross-device option.
+  // Otherwise populate with known local credential IDs for a faster flow.
+  const allowCredentials = (opts?.hybrid || wallets.length === 0)
+    ? []
+    : wallets.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }));
 
   const assertion = await navigator.credentials.get({
     publicKey: {
       challenge,
       allowCredentials,
       userVerification: "required",
-      timeout:          60_000,
+      timeout:          opts?.hybrid ? 120_000 : 60_000,
     },
   }) as PublicKeyCredential | null;
 

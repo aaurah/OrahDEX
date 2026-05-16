@@ -141,7 +141,7 @@ function SubHeader({ onBack, icon, title, description }: {
 
 function PasskeyPanel({ onDone, onViewSeed }: { onDone: () => void; onViewSeed?: () => void }) {
   const { toast } = useToast();
-  const [loading, setLoading] = useState<"create" | "login" | null>(null);
+  const [loading, setLoading] = useState<"create" | "login" | "login-other" | null>(null);
   const supported = isPasskeySupported();
 
   const handleCreate = async () => {
@@ -183,6 +183,28 @@ function PasskeyPanel({ onDone, onViewSeed }: { onDone: () => void; onViewSeed?:
     } finally { setLoading(null); }
   };
 
+  const handleLoginOther = async () => {
+    setLoading("login-other");
+    try {
+      const result = await loginWithPasskey({ hybrid: true });
+      applyOrahWallet(result.address, result.chains);
+      toast({
+        title: result.restoredFromBackup ? "Wallet restored" : `Welcome back${result.label ? ` · ${result.label}` : ""}`,
+        description: result.restoredFromBackup ? "Restored from cloud backup" : `${result.address.slice(0, 6)}…${result.address.slice(-4)}`,
+      });
+      onDone();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+        toast({ title: "Cancelled", description: "Passkey login was cancelled.", variant: "destructive" });
+      } else if (msg.startsWith("WALLET_NOT_FOUND:")) {
+        toast({ title: "No wallet found", description: "No passkey wallet exists — create one first.", variant: "destructive" });
+      } else {
+        toast({ title: "Login failed", description: msg || "Could not authenticate.", variant: "destructive" });
+      }
+    } finally { setLoading(null); }
+  };
+
   if (!supported) return (
     <div className="flex items-start gap-2.5 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-sm text-destructive">
       <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -217,9 +239,24 @@ function PasskeyPanel({ onDone, onViewSeed }: { onDone: () => void; onViewSeed?:
         </div>
         <div className="flex-1">
           <div className="text-sm font-semibold text-foreground">Use Existing Passkey</div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">Any paired device or cloud backup</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">This device · paired cloud backup</div>
         </div>
         <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 group-hover:translate-x-0.5 transition-all shrink-0" />
+      </button>
+
+      <button
+        onClick={handleLoginOther}
+        disabled={!!loading}
+        className="group w-full flex items-center gap-4 px-4 py-4 rounded-xl border border-border bg-card hover:bg-accent hover:border-cyan-500/20 transition-all duration-200 text-left disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        <div className="w-11 h-11 rounded-xl bg-muted border border-border flex items-center justify-center shrink-0">
+          {loading === "login-other" ? <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" /> : <Smartphone className="w-5 h-5 text-cyan-400" />}
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">Use Another Device</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Scan QR code with your phone or tablet</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-cyan-400/50 group-hover:translate-x-0.5 transition-all shrink-0" />
       </button>
 
       <div className="flex items-start gap-2 pt-1 px-1">
