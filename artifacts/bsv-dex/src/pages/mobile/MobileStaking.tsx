@@ -257,10 +257,11 @@ function LiquidityTab() {
           const tvlB  = pool.tvl[pool.coinB] ?? 0;
           const isSelected = selected?.id === pool.id;
           return (
-            <button key={pool.id} type="button"
+            <div key={pool.id} role="button" tabIndex={0}
               onClick={() => { setSelected(pool); setCoin(pool.coinA); setShowForm(true); setAmount(""); }}
+              onKeyDown={e => e.key === "Enter" && (setSelected(pool), setCoin(pool.coinA), setShowForm(true), setAmount(""))}
               className={cn(
-                "w-full text-left p-3 rounded-xl border transition-all",
+                "w-full text-left p-3 rounded-xl border transition-all cursor-pointer",
                 isSelected && showForm
                   ? "border-blue-500/60 bg-blue-500/8"
                   : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-blue-500/30"
@@ -388,7 +389,7 @@ function LiquidityTab() {
                   </button>
                 </div>
               )}
-            </button>
+            </div>
           );
         })}
       </div>
