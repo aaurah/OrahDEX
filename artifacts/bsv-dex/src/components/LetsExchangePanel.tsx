@@ -203,30 +203,57 @@ function fmtNum(n: string|number|null|undefined, maxDec = 8): string {
 }
 function shortAddr(a: string) { return a.length <= 16 ? a : `${a.slice(0, 8)}…${a.slice(-6)}`; }
 
-// LetsExchange real status values (from docs)
+// Status labels — covers LetsExchange, ChangeNOW, StealthEX, SimpleSwap, Changelly
 const STATUS_LABEL: Record<string, string> = {
+  // waiting for deposit
   wait:         "Waiting for deposit",
+  waiting:      "Waiting for deposit",
+  pending:      "Pending",
+  // confirming
   confirmation: "Confirming deposit",
+  confirming:   "Confirming deposit",
   confirmed:    "Deposit confirmed",
-  exchanging:   "Processing exchange",
+  // in progress
+  exchanging:   "Processing",
+  exchange:     "Processing",
+  // sending
   sending:      "Sending funds",
+  send:         "Sending funds",
+  // terminal — success
   finished:     "Complete",
+  success:      "Complete",
+  done:         "Complete",
+  // terminal — failure
   failed:       "Failed",
-  overdue:      "Overdue — funds not received",
+  error:        "Failed",
+  expired:      "Expired",
+  overdue:      "Overdue",
+  // terminal — refund
   refunded:     "Refunded",
+  refund:       "Refunded",
 };
 const STATUS_COLOR: Record<string, string> = {
   wait:         "text-yellow-400",
+  waiting:      "text-yellow-400",
+  pending:      "text-yellow-400",
   confirmation: "text-blue-400",
+  confirming:   "text-blue-400",
   confirmed:    "text-blue-400",
   exchanging:   "text-blue-400",
+  exchange:     "text-blue-400",
   sending:      "text-blue-400",
+  send:         "text-blue-400",
   finished:     "text-emerald-400",
+  success:      "text-emerald-400",
+  done:         "text-emerald-400",
   failed:       "text-red-400",
+  error:        "text-red-400",
+  expired:      "text-orange-400",
   overdue:      "text-orange-400",
   refunded:     "text-orange-400",
+  refund:       "text-orange-400",
 };
-const DONE_STATUSES = new Set(["finished", "failed", "overdue", "refunded"]);
+const DONE_STATUSES = new Set(["finished", "success", "done", "failed", "error", "overdue", "expired", "refunded", "refund"]);
 
 // ─── CoinPicker ───────────────────────────────────────────────────────────────
 
@@ -1185,7 +1212,12 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
 
 // ─── HistoryView ─────────────────────────────────────────────────────────────
 
-const DONE_STATUSES_SET = new Set(["finished", "failed", "refunded", "overdue"]);
+// Keep in sync with DONE_STATUSES above
+const DONE_STATUSES_SET = new Set(["finished", "success", "done", "failed", "error", "overdue", "expired", "refunded", "refund"]);
+
+function isPending(status: string) {
+  return !DONE_STATUSES_SET.has(status.toLowerCase());
+}
 
 function HistoryView({ onClose }: { onClose: () => void }) {
   const [entries,      setEntries]      = useState<HistoryEntry[]>(() => loadHistory());
@@ -1194,13 +1226,17 @@ function HistoryView({ onClose }: { onClose: () => void }) {
   const [fetching,     setFetching]     = useState<Set<string>>(new Set());
   const [confirmClear, setConfirmClear] = useState(false);
 
+  // Refs so callbacks always see current values without recreating
   const entriesRef    = useRef(entries);
   const liveStatusRef = useRef(liveStatus);
+  const inFlightRef   = useRef(new Set<string>());   // replaces fetching-state guard
   entriesRef.current    = entries;
   liveStatusRef.current = liveStatus;
 
+  // Stable fetchStatus — never recreated, uses refs for current state
   const fetchStatus = useCallback(async (id: string) => {
-    if (fetching.has(id)) return;
+    if (inFlightRef.current.has(id)) return;
+    inFlightRef.current.add(id);
     setFetching(prev => new Set(prev).add(id));
     try {
       const entry = entriesRef.current.find(e => e.transaction_id === id);
@@ -1215,42 +1251,58 @@ function HistoryView({ onClose }: { onClose: () => void }) {
           const updated = prev.map(e => {
             if (e.transaction_id !== id) return e;
             let next = e;
-            if (d.status && d.status !== e.status)           next = { ...next, status: d.status };
-            if (d.venue_rescued && d.best_venue && d.best_venue !== e.venue) next = { ...next, venue: d.best_venue };
+            if (d.status && d.status !== e.status)
+              next = { ...next, status: d.status };
+            if (d.venue_rescued && d.best_venue && d.best_venue !== e.venue)
+              next = { ...next, venue: d.best_venue };
             return next;
           });
           saveHistory(updated);
           return updated;
         });
       }
-    } catch {}
+    } catch { /* non-fatal */ }
+    inFlightRef.current.delete(id);
     setFetching(prev => { const s = new Set(prev); s.delete(id); return s; });
-  }, [fetching]);
+  }, []); // stable — no deps, uses refs
 
-  // Auto-poll all pending entries every 15 s
+  // Poll all pending entries; returns true if any remain pending after this round
   const pollAllPending = useCallback(async () => {
     const pending = entriesRef.current.filter(e =>
-      !DONE_STATUSES_SET.has((liveStatusRef.current[e.transaction_id]?.status ?? e.status ?? "wait").toLowerCase())
+      isPending(liveStatusRef.current[e.transaction_id]?.status ?? e.status ?? "wait")
     );
+    if (pending.length === 0) return false;
     await Promise.all(pending.map(e => fetchStatus(e.transaction_id)));
+    return true;
   }, [fetchStatus]);
 
+  // Auto-poll every 10 s; interval self-cancels when all entries are done
   useEffect(() => {
-    pollAllPending();
-    const hasPending = entries.some(e =>
-      !DONE_STATUSES_SET.has((liveStatus[e.transaction_id]?.status ?? e.status ?? "wait").toLowerCase())
-    );
-    if (!hasPending) return;
-    const id = setInterval(pollAllPending, 15_000);
-    return () => clearInterval(id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries.length]);
+    let cancelled = false;
+    let timerId: ReturnType<typeof setInterval> | null = null;
+
+    const tick = async () => {
+      if (cancelled) return;
+      const hasPending = entriesRef.current.some(e =>
+        isPending(liveStatusRef.current[e.transaction_id]?.status ?? e.status ?? "wait")
+      );
+      if (!hasPending) {
+        if (timerId) clearInterval(timerId);
+        return;
+      }
+      await pollAllPending();
+    };
+
+    // Immediate first poll, then every 10 s
+    tick();
+    timerId = setInterval(tick, 10_000);
+    return () => { cancelled = true; if (timerId) clearInterval(timerId); };
+  }, [pollAllPending]);
 
   // Immediate re-fetch when an entry is expanded
   useEffect(() => {
     if (expanded) fetchStatus(expanded);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded]);
+  }, [expanded, fetchStatus]);
 
   const handleClear = () => {
     saveHistory([]);
@@ -1324,10 +1376,19 @@ function HistoryView({ onClose }: { onClose: () => void }) {
               </div>
               {/* Status + date */}
               <div className="flex flex-col items-end gap-1 shrink-0">
-                <span className={cn("text-[10px] font-bold uppercase tracking-wide",
-                  STATUS_COLOR[status] ?? "text-muted-foreground/70")}>
-                  {STATUS_LABEL[status] ?? status}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {/* Pulsing dot — visible while auto-polling is active */}
+                  {!isDone && (
+                    <span className={cn(
+                      "w-1.5 h-1.5 rounded-full shrink-0",
+                      isFetching ? "bg-blue-400 animate-pulse" : "bg-yellow-400/60 animate-pulse"
+                    )} />
+                  )}
+                  <span className={cn("text-[10px] font-bold uppercase tracking-wide",
+                    STATUS_COLOR[status] ?? "text-muted-foreground/70")}>
+                    {STATUS_LABEL[status] ?? status}
+                  </span>
+                </div>
                 <span className="text-[10px] text-muted-foreground/60">
                   {new Date(entry.createdAt).toLocaleDateString()}
                 </span>
