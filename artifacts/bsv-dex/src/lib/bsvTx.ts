@@ -262,8 +262,8 @@ export async function buildSignBroadcastBsvTx(
 
     const sighash = sha256(sha256(preimage)); // SHA256d
 
-    const sig    = secp256k1.sign(sighash, privateKey, { lowS: true, prehash: false });
-    const raw    = sig.toCompactRawBytes();   // 64 bytes: r‖s
+    // @noble/curves v2: sign() returns a raw 64-byte Uint8Array (compact r‖s) directly
+    const raw    = secp256k1.sign(sighash, privateKey, { lowS: true, prehash: false });
     const der    = derEncode(raw.slice(0, 32), raw.slice(32, 64));
     const derPlusSighash = concat(der, new Uint8Array([SIGHASH_TYPE]));
 
