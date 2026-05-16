@@ -78,7 +78,7 @@ function getTabKey(location: string): TabKey | null {
   if (location.startsWith("/prediction"))                    return "prediction";
   if (location.startsWith("/sovereign"))                     return "sovereign";
   if (location.startsWith("/ora-ai"))                        return "ora-ai";
-  if (location.startsWith("/devai"))                         return "devai";
+  if (location.startsWith("/admin/devai"))                   return "devai";
   return null;
 }
 
@@ -88,9 +88,12 @@ function Skeleton() {
 
 function AdminGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, token } = useAdminAuthStore();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
   useEffect(() => {
-    if (!isAuthenticated || !token) navigate("/admin/login");
+    if (!isAuthenticated || !token) {
+      const redirect = location && location !== "/admin/login" ? `?redirect=${encodeURIComponent(location)}` : "";
+      navigate(`/admin/login${redirect}`);
+    }
   }, [isAuthenticated, token]);
   if (!isAuthenticated || !token) return null;
   return <>{children}</>;
