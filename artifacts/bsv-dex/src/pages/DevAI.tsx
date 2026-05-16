@@ -3,6 +3,7 @@ import {
   Code2, Send, Plus, Trash2, Terminal, Cpu, Zap, Copy, Check,
   ChevronRight, BookOpen, Bot, RefreshCw, ChevronDown, ChevronUp, X,
 } from "lucide-react";
+import { useSEO } from "@/hooks/useSEO";
 
 const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
@@ -259,6 +260,11 @@ function ApiPanel({ onClose }: { onClose: () => void }) {
 
 /* ── Main DevAI page ─────────────────────────────────────────────────────── */
 export function DevAIPage() {
+  useSEO({
+    title: "DevAI — Developer Intelligence | OrahDEX",
+    description: "OrahDEX DevAI: build trading bots, integrate the OrahDEX API, simulate swaps, and generate TypeScript & Python code. The developer AI for the sovereign DEX.",
+    keywords: "OrahDEX API, crypto trading bot, DEX integration, developer AI, build on DEX, BSV developer tools, trading bot TypeScript",
+  });
   const [convs, setConvs] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);

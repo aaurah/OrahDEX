@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSEO } from "@/hooks/useSEO";
 import { Link } from "wouter";
 import {
   MessageCircle, Mail, Send, ChevronDown, ChevronUp,
@@ -89,6 +90,11 @@ function FaqItem({ question, answer }: { question: string; answer: string }) {
 }
 
 export function SupportPage() {
+  useSEO({
+    title: "Support — OrahDEX",
+    description: "Get help with OrahDEX — deposits, withdrawals, trading, wallets, and account issues. Contact our support team or browse the knowledge base.",
+    keywords: "OrahDEX support, crypto exchange help, trading support, deposit help, withdrawal support, OrahDEX contact",
+  });
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const { address } = useWalletStore();

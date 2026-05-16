@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useSEO } from "@/hooks/useSEO";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -196,6 +197,11 @@ function MarketCard({ m, selected, onClick }: { m:GenesisMarket; selected:boolea
 
 /* ── Main ────────────────────────────────────────────────────────────────*/
 export default function GenesisLiquidity() {
+  useSEO({
+    title: "Genesis Liquidity Engine — OrahDEX",
+    description: "Provide genesis liquidity on OrahDEX and earn trading fees. The Genesis Liquidity Engine bootstraps deep order books across 900+ markets with BSV settlement.",
+    keywords: "genesis liquidity, AMM liquidity, liquidity provider, earn trading fees, OrahDEX liquidity, BSV AMM, yield farming DEX",
+  });
   const qc = useQueryClient();
   const [symbol, setSymbol] = useState("BTC");
   const [side, setSide] = useState<"buy"|"sell">("buy");
