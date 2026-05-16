@@ -65,7 +65,17 @@ export function AdminLogin() {
     ? evmAddress
     : walletStore.address ?? activeEvmAddress ?? null;
 
-  useEffect(() => { if (isAuthenticated) navigate('/admin'); }, [isAuthenticated]);
+  useEffect(() => {
+    if (isAuthenticated) {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const redirect = params.get("redirect");
+        navigate(redirect && redirect.startsWith("/") && !redirect.startsWith("/admin/login") ? redirect : "/admin");
+      } catch {
+        navigate("/admin");
+      }
+    }
+  }, [isAuthenticated]);
   useEffect(() => { clearError(); }, [emailVal, password, totpCode]);
   useEffect(() => { if (tab === 'credentials') { setWalletError(''); setWalletChallenge(''); } }, [tab]);
 
