@@ -92,6 +92,7 @@ const AdminFeeConfig      = lazy(() => import("@/pages/admin/FeeConfig").then(m 
 const AdminAnnouncements  = lazy(() => import("@/pages/admin/Announcements").then(m => ({ default: m.AdminAnnouncements })));
 const AdminEmailInbox     = lazy(() => import("@/pages/admin/EmailInbox").then(m => ({ default: m.AdminEmailInbox })));
 const AdminAiIntelligence = lazy(() => import("@/pages/admin/AiIntelligence").then(m => ({ default: m.AdminAiIntelligence })));
+const AdminDevAISettings  = lazy(() => import("@/pages/admin/AdminDevAI").then(m => ({ default: m.AdminDevAI })));
 const AdminSystemHealth   = lazy(() => import("@/pages/admin/SystemHealth").then(m => ({ default: m.AdminSystemHealth })));
 const AdminLiquidityBot   = lazy(() => import("@/pages/admin/LiquidityBot").then(m => ({ default: m.AdminLiquidityBot })));
 const AdminCopyVault      = lazy(() => import("@/pages/admin/CopyVaultAdmin").then(m => ({ default: m.AdminCopyVault })));
@@ -396,6 +397,7 @@ function Router() {
       <Route path="/admin/mail">          <AdminRoute><AdminEmailInbox /></AdminRoute></Route>
       <Route path="/admin/integrations"> <AdminRoute><AdminIntegrations /></AdminRoute></Route>
       <Route path="/admin/ai">        <AdminRoute><AdminAiIntelligence /></AdminRoute></Route>
+      <Route path="/admin/devai">     <AdminRoute><AdminDevAISettings /></AdminRoute></Route>
       <Route path="/admin/health">    <AdminRoute><AdminSystemHealth /></AdminRoute></Route>
       <Route path="/admin/liquidity"> <AdminRoute><AdminLiquidityBot /></AdminRoute></Route>
       <Route path="/admin/copy-vaults"><AdminRoute><AdminCopyVault /></AdminRoute></Route>
