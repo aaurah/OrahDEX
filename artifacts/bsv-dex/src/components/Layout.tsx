@@ -398,23 +398,70 @@ export function Layout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background flex flex-col text-foreground">
-      <header className="sticky top-0 h-14 border-b border-border bg-card/95 backdrop-blur-sm flex items-center justify-between px-3 shrink-0 z-40">
-        <div className="flex items-center gap-2">
-          {/* Hamburger — left side */}
+      <header className="sticky top-0 border-b border-border/60 bg-card/90 backdrop-blur-xl flex items-center justify-between px-3 lg:px-4 shrink-0 z-40" style={{ height: 56 }}>
+        <div className="flex items-center gap-1.5 lg:gap-2 shrink-0">
+          {/* Hamburger — always visible for mobile menu */}
           <button
             className="p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors shrink-0"
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             aria-label="Toggle navigation"
           >
-            {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {isMobileMenuOpen ? <X className="w-4.5 h-4.5" /> : <Menu className="w-4.5 h-4.5" />}
           </button>
           {/* Brand */}
-          <Link href="/swap" className="flex items-center group">
-            <BrandLogo textSize="text-lg" />
+          <Link href="/swap" className="flex items-center group shrink-0">
+            <BrandLogo textSize="text-base" />
           </Link>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Desktop primary nav — visible lg+ */}
+        <nav className="hidden lg:flex items-center gap-0.5 flex-1 mx-3 overflow-x-auto scrollbar-none">
+          {NAV_LINKS.map(({ href, label, icon: Icon }) => {
+            const exactMatch = location === href || location.startsWith(href);
+            return (
+              <Link
+                key={href}
+                href={href}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-colors shrink-0",
+                  exactMatch
+                    ? "text-primary bg-primary/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                )}
+              >
+                <Icon className="w-3 h-3 shrink-0" />
+                {label}
+              </Link>
+            );
+          })}
+          {/* More nav items */}
+          <div className="relative">
+            <button
+              onClick={() => setShowMoreNav(v => !v)}
+              className={cn(
+                "flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors shrink-0",
+                showMoreNav ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+              )}
+            >
+              More
+              <ChevronRight className={cn("w-3 h-3 transition-transform", showMoreNav && "rotate-90")} />
+            </button>
+            {showMoreNav && (
+              <div className="absolute top-full left-0 mt-1 w-40 bg-card border border-border rounded-xl shadow-xl z-50 overflow-hidden py-1">
+                {NAV_MORE.map(({ href, label, icon: Icon }) => (
+                  <Link key={href} href={href}
+                    className="flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                    onClick={() => setShowMoreNav(false)}>
+                    <Icon className="w-3.5 h-3.5 shrink-0" />
+                    {label}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </nav>
+
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* Theme toggle */}
           <button
             onClick={cycleTheme}
