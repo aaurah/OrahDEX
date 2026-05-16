@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import healthRouter from "./health.js";
 import diagnosticsRouter from "./diagnostics.js";
 import aiRouter from "./ai.js";
+import devaiRouter from "./devai.js";
 import marketsRouter from "./markets.js";
 import ordersRouter from "./orders.js";
 import tradesRouter from "./trades.js";
@@ -78,6 +79,7 @@ router.get("/settings/public", async (_req, res) => {
 router.use(healthRouter);
 router.use(diagnosticsRouter);
 router.use(aiRouter);
+router.use(devaiRouter);
 router.use(marketsRouter);
 router.use(ordersRouter);
 router.use(tradesRouter);
