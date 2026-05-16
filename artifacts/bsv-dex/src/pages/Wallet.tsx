@@ -662,7 +662,11 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         initialTab="withdraw"
         visibleTabs={["withdraw"]}
         isOrahWallet={canBackup}
-        passkeyEvmAddress={canBackup ? (evmAddress ?? undefined) : undefined}
+        passkeyEvmAddress={
+          passkeyOwned
+            ? (address ?? undefined)
+            : (canBackup ? (evmAddress ?? undefined) : undefined)
+        }
         nonEvmAddresses={{
           bsv:  derived?.bsv  ?? undefined,
           btc:  derived?.btc  ?? undefined,
