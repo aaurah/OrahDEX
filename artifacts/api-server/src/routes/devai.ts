@@ -278,7 +278,7 @@ function toolExecuteCode(args: { code: string; description?: string }): string {
     Math,
     JSON: { parse: JSON.parse, stringify: JSON.stringify },
     Array, Object, String, Number, Boolean, Date, RegExp, Set, Map,
-    parseInt, parseFloat, isNaN, isFinite, isNaN,
+    parseInt, parseFloat, isNaN, isFinite,
     encodeURIComponent, decodeURIComponent, encodeURI, decodeURI,
     Buffer,
     BigInt,
