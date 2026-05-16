@@ -215,17 +215,26 @@ async function runLiquidationCycle(): Promise<void> {
 }
 
 /* ── Public start function ──────────────────────────────────────────────── */
-const EIGHT_HOURS = 8 * 60 * 60 * 1000;
-const ONE_MINUTE  = 60 * 1000;
+const EIGHT_HOURS    = 8 * 60 * 60 * 1000;
+const NINETY_SECONDS = 90 * 1000;
 
 export function startFuturesProfitEngine(): void {
   logger.info("Futures profit engine starting — funding rates & liquidations active");
 
-  /* funding: run immediately then every 8 h */
-  runFundingCycle().catch(err => logger.warn({ err }, "Futures: initial funding cycle failed"));
-  guardedInterval("futures-funding", runFundingCycle, EIGHT_HOURS, { timeoutMs: EIGHT_HOURS - 60_000 });
+  // funding: first run deferred to guardedInterval (no immediate fire) so
+  // boot-time pool pressure from all other services has subsided first.
+  guardedInterval("futures-funding", runFundingCycle, EIGHT_HOURS, {
+    timeoutMs:      EIGHT_HOURS - 60_000,
+    initialDelayMs: 0,
+  });
 
-  /* liquidations: run immediately then every 60 s */
-  runLiquidationCycle().catch(err => logger.warn({ err }, "Futures: initial liquidation cycle failed"));
-  guardedInterval("futures-liquidation", runLiquidationCycle, ONE_MINUTE, { timeoutMs: 55_000 });
+  // liquidations: run every 90 s (raised from 60 s) to reduce overlap with
+  // the liquidity bot (120 s cycle) and other workers — they will now
+  // coincide only once every ~360 s instead of every 60 s.
+  // First run is deferred by one full interval so the process is fully up
+  // before touching the pool.
+  guardedInterval("futures-liquidation", runLiquidationCycle, NINETY_SECONDS, {
+    timeoutMs:      80_000,
+    initialDelayMs: NINETY_SECONDS,
+  });
 }

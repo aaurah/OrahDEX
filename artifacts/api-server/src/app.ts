@@ -395,19 +395,32 @@ setTimeout(() => {
 // Calling it here would build 109,230 pair objects in RAM before the first
 // JSON.stringify completes, causing an out-of-memory crash on every boot.
 // The /api/admin/sync-le-pairs endpoint triggers it on demand when needed.
-try { startPriceUpdater();        } catch (e) { logger.error({ err: e }, "startPriceUpdater failed to init"); }
-try { startLiquidityBot();        } catch (e) { logger.error({ err: e }, "startLiquidityBot failed to init"); }
-try { startArbBot();              } catch (e) { logger.error({ err: e }, "startArbBot failed to init"); }
-try { startFuturesProfitEngine(); } catch (e) { logger.error({ err: e }, "startFuturesProfitEngine failed to init"); }
-try { startBsvChainMonitor();     } catch (e) { logger.error({ err: e }, "startBsvChainMonitor failed to init"); }
-try { startBsvDepositWatcher();   } catch (e) { logger.error({ err: e }, "startBsvDepositWatcher failed to init"); }
-try { startEvmDepositWatcher();   } catch (e) { logger.error({ err: e }, "startEvmDepositWatcher failed to init"); }
-startHtlcWatcher().catch(e => logger.error({ err: e }, "startHtlcWatcher failed to init"));
-startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
-try { startRouteCache();          } catch (e) { logger.error({ err: e }, "startRouteCache failed to init"); }
-try { startOrderReconciler();              } catch (e) { logger.error({ err: e }, "startOrderReconciler failed to init"); }
-try { startAllReconcilers();               } catch (e) { logger.error({ err: e }, "startAllReconcilers failed to init"); }
-try { startExchangeApiRepairEngine();      } catch (e) { logger.error({ err: e }, "startExchangeApiRepairEngine failed to init"); }
+
+// ── Staggered background-service startup ────────────────────────────────
+// All workers previously fired simultaneously, exhausting the DB connection
+// pool on every boot. Each service now starts 6 s after the previous one so
+// at most one worker is establishing its first DB connections at any time.
+// Critical services (price updater, liquidity bot) start first; reconcilers
+// and repair engines start last when the pool is under lower pressure.
+const _s = (ms: number, fn: () => void, label: string) =>
+  setTimeout(() => { try { fn(); } catch (e) { logger.error({ err: e }, `${label} failed to init`); } }, ms);
+
+_s(    0, startPriceUpdater,          "startPriceUpdater");
+_s(6_000, startLiquidityBot,          "startLiquidityBot");
+_s(12_000, startArbBot,               "startArbBot");
+_s(18_000, startFuturesProfitEngine,  "startFuturesProfitEngine");
+_s(24_000, startBsvChainMonitor,      "startBsvChainMonitor");
+_s(30_000, startBsvDepositWatcher,    "startBsvDepositWatcher");
+_s(36_000, startEvmDepositWatcher,    "startEvmDepositWatcher");
+_s(42_000, () => {
+  startHtlcWatcher().catch(e    => logger.error({ err: e }, "startHtlcWatcher failed to init"));
+  startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
+}, "startHtlcWatchers");
+_s(48_000, startRouteCache,           "startRouteCache");
+_s(54_000, startOrderReconciler,      "startOrderReconciler");
+_s(60_000, startAllReconcilers,       "startAllReconcilers");
+_s(66_000, startExchangeApiRepairEngine, "startExchangeApiRepairEngine");
+
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 
 /* ── Health check — both /health and /healthz (artifact.toml uses healthz) ── */
