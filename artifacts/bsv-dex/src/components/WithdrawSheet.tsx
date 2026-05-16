@@ -54,6 +54,19 @@ const SUPPORTED_CHAINS: { id: number; label: string; short: string; color: strin
   { id: 11155111, label: "Sepolia Testnet",  short: "Sepolia",  color: "#9B59B6" },
 ];
 
+// ── non-EVM chains available in the withdraw chain selector ──────────────────
+const NON_EVM_WITHDRAW_CHAINS = [
+  { id: "evm",  label: "EVM",  color: "#627EEA" },
+  { id: "bsv",  label: "BSV",  color: "#22C55E" },
+  { id: "btc",  label: "BTC",  color: "#F97316" },
+  { id: "sol",  label: "SOL",  color: "#9945FF" },
+  { id: "xrp",  label: "XRP",  color: "#00A9E0" },
+  { id: "ltc",  label: "LTC",  color: "#A0A0A0" },
+  { id: "doge", label: "DOGE", color: "#C8A300" },
+  { id: "trx",  label: "TRX",  color: "#EF4444" },
+  { id: "bch",  label: "BCH",  color: "#8DC351" },
+];
+
 // ── wallet-send chain & token registry ───────────────────────────────────────
 interface WalletChain  { id: number; name: string; symbol: string; color: string; explorer: string }
 interface WalletToken  { symbol: string; decimals: number; isNative: boolean; address: string | null; color: string }
@@ -366,6 +379,19 @@ export function WithdrawSheet({
   const [nonEvmSendTxHash,    setNonEvmSendTxHash]    = useState<string | null>(null);
   const [nonEvmSendError,     setNonEvmSendError]     = useState<string | null>(null);
 
+  // ── withdraw chain selector (overrides network prop inside withdraw tab) ──
+  const [withdrawChainMode, setWithdrawChainMode] = useState<string>(
+    isEvmNetwork ? "evm" : network.toLowerCase()
+  );
+  // Reset non-EVM form when user switches chain
+  useEffect(() => {
+    setNonEvmSendBalance(null);
+    setNonEvmSendAmount("");
+    setNonEvmSendRecipient("");
+    setNonEvmSendError(null);
+    setNonEvmSendTxHash(null);
+  }, [withdrawChainMode]);
+
   useEffect(() => {
     if (open) {
       setTab(initialTab);
@@ -635,7 +661,7 @@ export function WithdrawSheet({
     setNonEvmSendBalance(null);
     setNonEvmSendBalFetch(true);
     try {
-      const net = network.toLowerCase();
+      const net = withdrawChainMode.toLowerCase();
       if (net === "bsv") {
         const r = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${walletAddress}/balance`);
         if (r.ok) {
@@ -663,13 +689,13 @@ export function WithdrawSheet({
     } finally {
       setNonEvmSendBalFetch(false);
     }
-  }, [walletAddress, network]);
+  }, [walletAddress, withdrawChainMode]);
 
   useEffect(() => {
-    if (open && tab === "withdraw" && isOrahWallet && !isEvmNetwork) {
+    if (open && tab === "withdraw" && isOrahWallet && withdrawChainMode !== "evm") {
       fetchNonEvmBalance();
     }
-  }, [open, tab, isOrahWallet, isEvmNetwork, fetchNonEvmBalance]);
+  }, [open, tab, isOrahWallet, withdrawChainMode, fetchNonEvmBalance]);
 
   // ── wallet send: non-EVM challenge/sign/broadcast ────────────────────────
   const handleNonEvmWalletSend = async () => {
@@ -699,15 +725,16 @@ export function WithdrawSheet({
       }
 
       // 3. Submit withdrawal
+      const wAsset = withdrawChainMode.toUpperCase();
       const withdrawRes = await fetch(`${API_BASE}/withdrawals`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
           walletAddress,
-          asset,
+          asset:        wAsset,
           amount:       parsedAmt,
-          network,
-          networkLabel,
+          network:      withdrawChainMode,
+          networkLabel: wAsset,
           recipient:    nonEvmSendRecipient.trim(),
           signature,
         }),
@@ -716,8 +743,8 @@ export function WithdrawSheet({
       if (!withdrawRes.ok) throw new Error(data.error ?? "Withdrawal failed");
 
       setNonEvmSendTxHash(data.txid ?? "submitted");
-      toast({ title: "Withdrawal submitted", description: `${parsedAmt} ${asset} withdrawal is processing.` });
-      addNotification({ type: "withdrawal", title: "Withdrawal Processing", body: `${parsedAmt} ${asset} sent from wallet.` });
+      toast({ title: "Withdrawal submitted", description: `${parsedAmt} ${wAsset} withdrawal is processing.` });
+      addNotification({ type: "withdrawal", title: "Withdrawal Processing", body: `${parsedAmt} ${wAsset} sent from wallet.` });
       refetchHistory?.();
       setTimeout(() => fetchNonEvmBalance(), 6_000);
     } catch (err: any) {
@@ -1269,8 +1296,29 @@ export function WithdrawSheet({
         {tab === "withdraw" && (
           <div className="space-y-4">
 
+            {/* ── Chain family selector ────────────────────────────────── */}
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+              {NON_EVM_WITHDRAW_CHAINS.map(ch => (
+                <button
+                  key={ch.id}
+                  onClick={() => setWithdrawChainMode(ch.id)}
+                  className={cn(
+                    "shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all",
+                    withdrawChainMode === ch.id
+                      ? "border-2"
+                      : "border-border bg-secondary/30 text-muted-foreground hover:text-foreground"
+                  )}
+                  style={withdrawChainMode === ch.id
+                    ? { borderColor: ch.color, backgroundColor: ch.color + "22", color: ch.color }
+                    : {}}
+                >
+                  {ch.label}
+                </button>
+              ))}
+            </div>
+
             {/* ── WALLET SEND — non-EVM (BSV, LTC, XRP…) ───────────────── */}
-            {!isEvmNetwork && (
+            {withdrawChainMode !== "evm" && (
               <>
                 {/* Balance display */}
                 <div className="flex items-center justify-between p-3 rounded-xl bg-secondary/30 border border-border">
@@ -1280,7 +1328,7 @@ export function WithdrawSheet({
                       {nonEvmSendBalFetch
                         ? <span className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin" /> Loading…</span>
                         : nonEvmSendBalance !== null
-                          ? `${nonEvmSendBalance.toFixed(8)} ${asset}`
+                          ? `${nonEvmSendBalance.toFixed(8)} ${withdrawChainMode.toUpperCase()}`
                           : <span className="text-muted-foreground/60">—</span>
                       }
                     </p>
@@ -1296,13 +1344,13 @@ export function WithdrawSheet({
 
                 {/* Amount */}
                 <div className="space-y-1.5">
-                  <label className="text-sm font-semibold">Amount ({asset})</label>
+                  <label className="text-sm font-semibold">Amount ({withdrawChainMode.toUpperCase()})</label>
                   <div className="relative">
                     <Input
                       type="number"
                       min="0"
                       step="any"
-                      placeholder={`0.00 ${asset}`}
+                      placeholder={`0.00 ${withdrawChainMode.toUpperCase()}`}
                       value={nonEvmSendAmount}
                       onChange={e => setNonEvmSendAmount(e.target.value)}
                       className="h-11 pr-14 font-mono"
@@ -1358,13 +1406,13 @@ export function WithdrawSheet({
                 >
                   {nonEvmSending
                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Authenticating…</>
-                    : <><ArrowRight className="w-4 h-4" /> Send {nonEvmSendAmount ? `${nonEvmSendAmount} ` : ""}{asset} from Wallet</>}
+                    : <><ArrowRight className="w-4 h-4" /> Send {nonEvmSendAmount ? `${nonEvmSendAmount} ` : ""}{withdrawChainMode.toUpperCase()} from Wallet</>}
                 </Button>
               </>
             )}
 
             {/* ── WALLET SEND — EVM (passkey wallet direct on-chain send) ── */}
-            {isEvmNetwork && (
+            {withdrawChainMode === "evm" && (
               <>
                 {/* Chain selector */}
                 <div className="space-y-1.5">
