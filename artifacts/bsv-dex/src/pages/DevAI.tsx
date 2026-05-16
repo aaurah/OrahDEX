@@ -4,7 +4,7 @@ import {
   ChevronRight, BookOpen, Bot, RefreshCw, ChevronDown, ChevronUp, X,
   Globe, Play, Download, FileCode, Hash, TrendingUp, Loader2,
   GitBranch, Activity, Layers, Search, Wallet, Shield, Database,
-  Link, CheckCircle, FolderOpen,
+  Link, CheckCircle, FolderOpen, PenLine, Wrench,
 } from "lucide-react";
 import { useSEO } from "@/hooks/useSEO";
 import { cn } from "@/lib/utils";
@@ -48,6 +48,8 @@ const TOOL_META: Record<string, { label: string; icon: any; color: string }> = {
   read_project_file:  { label: "Reading file",      icon: FileCode,  color: "text-cyan-400" },
   list_project_dir:   { label: "Browsing project",  icon: FolderOpen,color: "text-cyan-400" },
   query_database:     { label: "Querying database", icon: Database,  color: "text-purple-400" },
+  write_project_file: { label: "Writing file",      icon: PenLine,   color: "text-yellow-400" },
+  run_terminal:       { label: "Running command",   icon: Wrench,    color: "text-orange-400" },
 };
 
 function toolSubtitle(name: string, args: Record<string, any>): string {
@@ -63,6 +65,8 @@ function toolSubtitle(name: string, args: Record<string, any>): string {
     case "read_project_file":  return args.path ?? "";
     case "list_project_dir":   return args.path ?? "/";
     case "query_database":     return (args.sql ?? "").slice(0, 60);
+    case "write_project_file": return args.path ?? "";
+    case "run_terminal":       return args.description ?? (args.command ?? "").slice(0, 60);
     default:                   return "";
   }
 }
@@ -606,8 +610,10 @@ export function DevAIPage() {
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Capabilities</div>
           <div className="space-y-1">
             {[
-              { icon: GitBranch,  label: "Read GitHub repos" },
+              { icon: GitBranch,  label: "Read & write GitHub repos" },
               { icon: FolderOpen, label: "Browse project files" },
+              { icon: PenLine,    label: "Write & edit any file" },
+              { icon: Wrench,     label: "Run shell commands" },
               { icon: Database,   label: "Query live database" },
               { icon: Play,       label: "Execute JavaScript" },
               { icon: Hash,       label: "BSV blockchain lookup" },
@@ -628,11 +634,11 @@ export function DevAIPage() {
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Quick actions</div>
           <div className="space-y-0.5">
             {[
-              { label: "Browse backend",     prompt: "List the backend API routes directory and show me all the route files in the project." },
-              { label: "Query DB schema",   prompt: "Query the database to list all tables and their column names." },
-              { label: "Market maker bot",  prompt: "Build a TypeScript market making bot for BSV/USDT. Check live prices first, then create a downloadable file." },
-              { label: "BSV tx builder",    prompt: "Show me how to build and broadcast a BSV transaction using @bsv/sdk — P2PKH with signing." },
-              { label: "Swap integration",  prompt: "Integrate OrahDEX swap API in TypeScript — get a live quote then execute it. Generate a downloadable file." },
+              { label: "Explore codebase",  prompt: "List the workspace root, then show me the backend routes directory and the frontend pages directory." },
+              { label: "Query DB schema",   prompt: "Query the database to list all tables and show column names for the most important ones." },
+              { label: "Add a feature",     prompt: "Read the current backend routes, then add a new GET /api/status/extended endpoint that returns server uptime, DB connection status, and active market count. Write the changes directly." },
+              { label: "Market maker bot",  prompt: "Build a TypeScript market making bot for BSV/USDT. Check live prices first, then write it as a downloadable file." },
+              { label: "Install a package", prompt: "Install the 'zod' validation library in the api-server and show me how to use it for request validation." },
             ].map(q => (
               <button
                 key={q.label}
@@ -703,7 +709,7 @@ export function DevAIPage() {
             {/* Live tools indicator */}
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-green-500/20 bg-green-500/5 text-green-400">
               <Activity className="w-3 h-3 animate-pulse" />
-              <span className="text-[10px] font-bold">11 live tools</span>
+              <span className="text-[10px] font-bold">13 live tools</span>
             </div>
             <button
               onClick={() => setShowApiPanel(v => !v)}

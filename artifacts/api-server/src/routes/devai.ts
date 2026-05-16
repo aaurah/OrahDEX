@@ -8,6 +8,7 @@ import { requireAdminToken } from "../middleware/adminAuth.js";
 import vm from "vm";
 import fs from "fs/promises";
 import path from "path";
+import { exec } from "child_process";
 
 const router = Router();
 
@@ -278,6 +279,37 @@ const DEVAI_TOOLS: any[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "write_project_file",
+      description: "Write or overwrite a file in the OrahDEX Replit workspace. Use this to implement features, fix bugs, create new routes, update components, or any code change. ALWAYS read the file first with read_project_file if it already exists. Paths are relative to /home/runner/workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "File path relative to workspace root, e.g. 'artifacts/api-server/src/routes/orders.ts'" },
+          content: { type: "string", description: "Full file content to write" },
+          description: { type: "string", description: "Brief description of what this change does" },
+        },
+        required: ["path", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "run_terminal",
+      description: "Run a shell command in the OrahDEX workspace root (/home/runner/workspace). Use to install packages (pnpm add), run builds, check git status, list processes, run scripts, or perform any system task. Commands run with a 60-second timeout.",
+      parameters: {
+        type: "object",
+        properties: {
+          command: { type: "string", description: "Shell command to run, e.g. 'pnpm --filter @workspace/api-server add zod' or 'git status' or 'ls artifacts/api-server/src/routes/'" },
+          description: { type: "string", description: "Brief description of what this command does" },
+        },
+        required: ["command"],
+      },
+    },
+  },
 ];
 
 // ── Tool implementations ───────────────────────────────────────────────────────
@@ -494,6 +526,46 @@ async function toolDecodeEthAddress(args: { address: string; chain?: string }): 
 
 const WORKSPACE_ROOT = "/home/runner/workspace";
 
+function execAsync(cmd: string, cwd: string, timeout: number): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    exec(cmd, { cwd, timeout, maxBuffer: 1024 * 512 }, (err, stdout, stderr) => {
+      if (err && !stdout && !stderr) return reject(err);
+      resolve({ stdout: stdout ?? "", stderr: stderr ?? "" });
+    });
+  });
+}
+
+async function toolWriteProjectFile(args: { path: string; content: string; description?: string }): Promise<string> {
+  try {
+    const safePath = path.resolve(WORKSPACE_ROOT, args.path.replace(/^\//, ""));
+    if (!safePath.startsWith(WORKSPACE_ROOT)) return "Access denied: path outside workspace.";
+    await fs.mkdir(path.dirname(safePath), { recursive: true });
+    await fs.writeFile(safePath, args.content, "utf-8");
+    const lines = args.content.split("\n").length;
+    return `Written: ${args.path} (${lines} lines, ${args.content.length.toLocaleString()} chars)${args.description ? `\n${args.description}` : ""}`;
+  } catch (err: any) {
+    return `Error writing file: ${err?.message ?? "Unknown error"}`;
+  }
+}
+
+async function toolRunTerminal(args: { command: string; description?: string }): Promise<string> {
+  const BLOCKED_PATTERNS = [/rm\s+-rf\s+\//, /:\(\)\{.*\}/, /mkfs/, /dd\s+if=\/dev\/zero/];
+  if (BLOCKED_PATTERNS.some(p => p.test(args.command))) {
+    return "Command blocked for safety. Destructive system-level operations are not allowed.";
+  }
+  try {
+    const { stdout, stderr } = await execAsync(args.command, WORKSPACE_ROOT, 60000);
+    const out = [
+      args.description ? `$ ${args.description}` : `$ ${args.command}`,
+      stdout.trim() ? stdout.trim().slice(0, 6000) : "",
+      stderr.trim() ? `[stderr] ${stderr.trim().slice(0, 2000)}` : "",
+    ].filter(Boolean).join("\n");
+    return out || "(command completed with no output)";
+  } catch (err: any) {
+    return `Command failed: ${err?.message?.slice(0, 800) ?? "Execution error"}`;
+  }
+}
+
 async function toolReadProjectFile(args: { path: string; offset?: number; limit?: number }): Promise<string> {
   try {
     const safePath = path.resolve(WORKSPACE_ROOT, args.path.replace(/^\//, ""));
@@ -593,6 +665,8 @@ async function executeTool(name: string, args: any, callId: string): Promise<Too
     case "read_project_file":  return { output: await toolReadProjectFile(args) };
     case "list_project_dir":   return { output: await toolListProjectDir(args) };
     case "query_database":     return { output: await toolQueryDatabase(args) };
+    case "write_project_file": return { output: await toolWriteProjectFile(args) };
+    case "run_terminal":       return { output: await toolRunTerminal(args) };
     default:                   return { output: `Unknown tool: ${name}` };
   }
 }
