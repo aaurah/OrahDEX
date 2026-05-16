@@ -588,22 +588,43 @@ export async function signBsvChallengeWithPasskey(
   evmAddress: string,
   message:    string,
 ): Promise<string> {
-  const wallets = listPasskeyWallets();
-  const wallet  = wallets.find(w => w.address.toLowerCase() === evmAddress.toLowerCase());
-  if (!wallet) throw new Error("OrahWallet not found on this device. Please create or restore your passkey wallet first.");
+  const wallets  = listPasskeyWallets();
+  const matching = wallets.filter(w => w.address.toLowerCase() === evmAddress.toLowerCase());
+
+  // If no local entry matches the address but other wallets exist, allow the
+  // browser to present them all — user picks the right one (same fallback as
+  // getViemAccountForOrahWallet). If there are NO wallets at all, fail early.
+  if (matching.length === 0 && wallets.length === 0) {
+    throw new Error("OrahWallet not found on this device. Please create or restore your passkey wallet first.");
+  }
+
+  const allowCredentials = matching.length > 0
+    ? matching.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }))
+    : wallets.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }));
 
   const challenge = new TextEncoder().encode(message.slice(0, 32));
   const assertion = await navigator.credentials.get({
     publicKey: {
       challenge,
-      allowCredentials: [{ id: b642buf(url2b64(wallet.credentialId)), type: "public-key" }],
+      allowCredentials,
       userVerification: "required",
       timeout:          60_000,
     },
   }) as PublicKeyCredential | null;
   if (!assertion) throw new Error("Passkey authentication cancelled");
 
-  const secret = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, assertion.rawId);
+  const rawId        = assertion.rawId;
+  const credentialId = b642url(buf2b64(rawId));
+
+  // Resolve the wallet by the credential that was actually used
+  let wallet = wallets.find(w => w.credentialId === credentialId);
+  if (!wallet) {
+    const restored = await tryRestoreFromServer(credentialId, rawId);
+    if (!restored) throw new Error("Passkey wallet data not found. Please restore your wallet first.");
+    wallet = restored;
+  }
+
+  const secret = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, rawId);
 
   // Derive BSV private key at BIP44 path m/44'/236'/0'/0/0
   const { HDKey } = await import("@scure/bip32");
