@@ -158,7 +158,12 @@ function LiveTerminalCard({ markets, animated }: { markets: any[]; animated: boo
   };
 
   const rows = useMemo(() => {
-    const live = markets.filter(m => m.status === "active").sort((a, b) => b.volume24h - a.volume24h).slice(0, 6);
+    const seen = new Set<string>();
+    const live = markets
+      .filter(m => m.status === "active")
+      .sort((a, b) => b.volume24h - a.volume24h)
+      .filter(m => { if (seen.has(m.symbol)) return false; seen.add(m.symbol); return true; })
+      .slice(0, 6);
     return live.length >= 4 ? live : HERO_FALLBACK_MKTS;
   }, [markets]);
 
