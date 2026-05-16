@@ -3,8 +3,10 @@ import {
   Wallet as WalletIcon, Download, ArrowDownUp, Copy, Check,
   ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles,
   RefreshCw, Link2, Link2Off, Send, TrendingUp, ChevronDown, ChevronUp,
-  Coins, Trash2, Loader2, ExternalLink,
+  Coins, Trash2, Loader2, ExternalLink, Cpu, Globe,
 } from "lucide-react";
+import { WalletAddresses } from "@/components/wallet/WalletAddresses";
+import { WalletDApps } from "@/components/wallet/WalletDApps";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -735,6 +737,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const linkedChains = CHAINS.filter(c => c.family !== "evm" && !!addressForChain(c, evmAddress, address, network, derived)).length;
   const totalNonEvm  = CHAINS.filter(c => c.family !== "evm").length;
 
+  const [tab, setTab]                         = useState<"portfolio" | "addresses" | "dapps">("portfolio");
   const [receiveOpen, setReceiveOpen]         = useState(false);
   const [sendOpen, setSendOpen]               = useState(false);
   const [chainReceive, setChainReceive]       = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
@@ -901,6 +904,52 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         </div>
       </div>
 
+      {/* ── Tab selector ── */}
+      <div className="flex bg-card border border-border rounded-2xl p-1 mb-4 gap-1">
+        {(
+          [
+            { id: "portfolio", label: "Portfolio",   icon: WalletIcon },
+            { id: "addresses", label: "All Addresses", icon: Cpu },
+            { id: "dapps",     label: "dApps",       icon: Globe },
+          ] as const
+        ).map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all",
+              tab === t.id
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+            )}
+          >
+            <t.icon size={13} />
+            <span className="hidden sm:inline">{t.label}</span>
+            <span className="sm:hidden">{t.label.split(" ")[0]}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Addresses tab ── */}
+      {tab === "addresses" && (
+        <WalletAddresses
+          evmAddress={evmAddress}
+          bsvAddress={address}
+          network={network}
+          derived={derived}
+          onRefresh={refreshAddresses}
+          refreshing={refreshing}
+        />
+      )}
+
+      {/* ── dApps tab ── */}
+      {tab === "dapps" && (
+        <WalletDApps evmAddress={evmAddress} />
+      )}
+
+      {/* ── Portfolio tab ── */}
+      {tab === "portfolio" && (<>
+
       {/* ── Quick stats — Atomic Wallet style ── */}
       <div className="flex gap-2 mb-4">
         <StatPill
@@ -993,7 +1042,10 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         </p>
       </div>
 
-      {/* ── Modals & sheets ── */}
+      </>)}
+      {/* ── end portfolio tab ── */}
+
+      {/* ── Modals & sheets (always mounted so state persists) ── */}
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
 
       <WithdrawSheet
