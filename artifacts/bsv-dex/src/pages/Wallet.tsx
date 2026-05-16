@@ -4,6 +4,7 @@ import {
   ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles,
   RefreshCw, Link2, Link2Off, Send, TrendingUp, ChevronDown, ChevronUp,
   Coins, Trash2, Loader2, ExternalLink, Cpu, Globe,
+  ArrowUpRight, ArrowDownLeft,
 } from "lucide-react";
 import { WalletAddresses } from "@/components/wallet/WalletAddresses";
 import { WalletDApps } from "@/components/wallet/WalletDApps";
@@ -445,7 +446,7 @@ function AddCustomTokenDialog({
 // ─── EVM row ─────────────────────────────────────────────────────────────────
 
 function EvmChainRow({
-  chain, evmAddress, quoteCurrency, onReceive, onImport, onAddToken,
+  chain, evmAddress, quoteCurrency, onReceive, onImport, onAddToken, onSendToken, onTokenReceive,
 }: {
   chain: ChainRow;
   evmAddress: string | null;
@@ -453,6 +454,8 @@ function EvmChainRow({
   onReceive: () => void;
   onImport: () => void;
   onAddToken: (chainId: number) => void;
+  onSendToken: (chainId: number, symbol: string) => void;
+  onTokenReceive: (symbol: string, chainName: string, address: string) => void;
 }) {
   const { balances, loading } = useEvmBalances(evmAddress, chain.evmChainId ?? null);
   const { remove }            = useCustomTokenStore();
@@ -521,7 +524,7 @@ function EvmChainRow({
                   className="flex items-center gap-1 mt-0.5 group/ca"
                   title="Copy contract address"
                 >
-                  <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[140px] group-hover/ca:text-foreground transition-colors">
+                  <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[120px] group-hover/ca:text-foreground transition-colors">
                     {tok.contractAddress.slice(0, 6)}…{tok.contractAddress.slice(-4)}
                   </span>
                   {copiedAddr === tok.contractAddress
@@ -540,6 +543,25 @@ function EvmChainRow({
               {tok.usdValue > 0 && (
                 <p className="text-[10px] text-muted-foreground">{formatQuoteAmount(tok.usdValue, quoteCurrency)}</p>
               )}
+            </div>
+            {/* Per-token Send / Receive actions */}
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={() => evmAddress && onTokenReceive(tok.symbol, chain.name, evmAddress)}
+                disabled={!evmAddress}
+                className="w-7 h-7 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-green-500 disabled:opacity-30 flex items-center justify-center transition-colors"
+                title={`Receive ${tok.symbol}`}
+              >
+                <ArrowDownLeft size={12} />
+              </button>
+              <button
+                onClick={() => onSendToken(chainId, tok.symbol)}
+                disabled={!evmAddress}
+                className="w-7 h-7 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary disabled:opacity-30 flex items-center justify-center transition-colors"
+                title={`Send ${tok.symbol}`}
+              >
+                <ArrowUpRight size={12} />
+              </button>
             </div>
             {tok.isCustom && (
               <button
@@ -622,7 +644,8 @@ function NativeChainRow({
 // ─── Chain row dispatcher ─────────────────────────────────────────────────────
 
 function ChainBalanceRow({
-  chain, address, evmAddress, network, derived, quoteCurrency, onReceive, onImport, onAddToken,
+  chain, address, evmAddress, network, derived, quoteCurrency,
+  onReceive, onImport, onAddToken, onSendToken, onTokenReceive,
 }: {
   chain: ChainRow;
   address: string | null;
@@ -633,6 +656,8 @@ function ChainBalanceRow({
   onReceive: (chain: ChainRow) => void;
   onImport:  (chain: ChainRow) => void;
   onAddToken: (chainId: number) => void;
+  onSendToken: (chainId: number, symbol: string) => void;
+  onTokenReceive: (symbol: string, chainName: string, address: string) => void;
 }) {
   const chainAddr    = addressForChain(chain, evmAddress, address, network, derived);
   const handleReceive = () => onReceive(chain);
@@ -647,6 +672,8 @@ function ChainBalanceRow({
         onReceive={handleReceive}
         onImport={handleImport}
         onAddToken={onAddToken}
+        onSendToken={onSendToken}
+        onTokenReceive={onTokenReceive}
       />
     );
   }
@@ -743,6 +770,8 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const [tab, setTab]                         = useState<"portfolio" | "addresses" | "dapps">(_initialTab);
   const [receiveOpen, setReceiveOpen]         = useState(false);
   const [sendOpen, setSendOpen]               = useState(false);
+  const [sendTokenConfig, setSendTokenConfig] = useState<{ chainId: number; symbol: string } | null>(null);
+  const [tokenReceive, setTokenReceive]       = useState<{ symbol: string; chainName: string; address: string } | null>(null);
   const [chainReceive, setChainReceive]       = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
   const [revealOpen, setRevealOpen]           = useState(false);
   const [copied, setCopied]                   = useState(false);
@@ -1035,6 +1064,8 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
               }}
               onImport={(chain) => setImportChain(chain)}
               onAddToken={(chainId) => setAddTokenChainId(chainId)}
+              onSendToken={(chainId, symbol) => setSendTokenConfig({ chainId, symbol })}
+              onTokenReceive={(symbol, chainName, addr) => setTokenReceive({ symbol, chainName, address: addr })}
             />
           ))}
         </div>
@@ -1052,8 +1083,8 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
 
       <WithdrawSheet
-        open={sendOpen}
-        onClose={() => setSendOpen(false)}
+        open={sendOpen || !!sendTokenConfig}
+        onClose={() => { setSendOpen(false); setSendTokenConfig(null); }}
         walletAddress={evmAddress ?? address ?? ""}
         asset="ETH"
         available={0}
@@ -1062,6 +1093,8 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         initialTab="withdraw"
         visibleTabs={["withdraw"]}
         isOrahWallet={canBackup}
+        initialChainId={sendTokenConfig?.chainId}
+        initialTokenSymbol={sendTokenConfig?.symbol}
         passkeyEvmAddress={
           passkeyOwned
             ? (address ?? undefined)
@@ -1077,6 +1110,16 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
           ltc:  derived?.ltc  ?? undefined,
           doge: derived?.doge ?? undefined,
         }}
+      />
+
+      {/* Per-token ERC-20 receive sheet */}
+      <ChainReceiveSheet
+        open={!!tokenReceive}
+        onClose={() => setTokenReceive(null)}
+        chainName={tokenReceive ? `${tokenReceive.symbol} on ${tokenReceive.chainName}` : ""}
+        symbol={tokenReceive?.symbol ?? ""}
+        address={tokenReceive?.address ?? null}
+        hint="This is your EVM address. Send any ERC-20 token to this address on the correct network."
       />
 
       <ChainReceiveSheet

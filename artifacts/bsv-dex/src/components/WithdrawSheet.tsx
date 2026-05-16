@@ -315,6 +315,10 @@ export interface WithdrawSheetProps {
   passkeyEvmAddress?:  string;
   /** Per-chain wallet addresses for the chain selector (bsv, btc, ltc, xrp, sol, trx, doge, bch) */
   nonEvmAddresses?:    Record<string, string | undefined>;
+  /** Pre-select a specific EVM chain when opened from a token row */
+  initialChainId?:     number;
+  /** Pre-select a specific token symbol when opened from a token row */
+  initialTokenSymbol?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -334,6 +338,8 @@ export function WithdrawSheet({
   isOrahWallet = false,
   passkeyEvmAddress,
   nonEvmAddresses,
+  initialChainId,
+  initialTokenSymbol,
 }: WithdrawSheetProps) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
@@ -416,13 +422,25 @@ export function WithdrawSheet({
       setDepFromWalletBalance(null);
       setBsvTxHash("");
       setSolTxHash("");
-      // Auto-select the right chain + token for this asset
+      // Pre-select chain+token from a token row click, otherwise fall back to asset prop
+      if (initialChainId) {
+        const preChain = WALLET_CHAINS.find(c => c.id === initialChainId);
+        if (preChain) {
+          setWalletSendChain(preChain);
+          const preToken = initialTokenSymbol
+            ? (WALLET_TOKENS[initialChainId] ?? []).find(t => t.symbol.toUpperCase() === initialTokenSymbol.toUpperCase())
+            : undefined;
+          setWalletSendToken(preToken ?? (WALLET_TOKENS[initialChainId]?.[0] ?? resolveWalletChainToken(asset).token));
+          setWalletSendBalance(null);
+          return;
+        }
+      }
       const resolved = resolveWalletChainToken(asset);
       setWalletSendChain(resolved.chain);
       setWalletSendToken(resolved.token);
       setWalletSendBalance(null);
     }
-  }, [open, asset, defaultRecipient, initialTab]);
+  }, [open, asset, defaultRecipient, initialTab, initialChainId, initialTokenSymbol]);
 
 
   // ── deposit address ──────────────────────────────────────────────────────
