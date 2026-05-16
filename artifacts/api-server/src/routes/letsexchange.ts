@@ -630,11 +630,15 @@ router.post("/letsexchange/estimate", async (req, res) => {
 
     const estimatedOutput = best.expectedOutput;
     const rate = amt > 0 ? estimatedOutput / amt : 0;
+    // Use the winning venue's minAmount; fall back to lowestMin across all venues
+    // so the UI always shows a real minimum (never "0" or blank).
+    const resolvedMin = best.minAmount ?? lowestMin;
+    const resolvedMax = best.maxAmount ?? null;
     res.json({
       amount:             String(estimatedOutput),
       rate:               String(rate),
-      min_amount:         best.minAmount != null ? String(best.minAmount) : "0",
-      max_amount:         best.maxAmount != null ? String(best.maxAmount) : "",
+      min_amount:         resolvedMin != null && resolvedMin > 0 ? String(resolvedMin) : "",
+      max_amount:         resolvedMax != null && resolvedMax > 0 ? String(resolvedMax) : "",
       rate_id,
       rate_id_expired_at,
       withdrawal_fee:     "0",
