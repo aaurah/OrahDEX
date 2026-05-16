@@ -657,12 +657,12 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         walletAddress={evmAddress ?? address ?? ""}
         asset="ETH"
         available={0}
-        network="eth"
+        network="evm"
         networkLabel="Ethereum"
         initialTab="withdraw"
-        initialSource="wallet"
         visibleTabs={["withdraw"]}
         isOrahWallet={canBackup}
+        passkeyEvmAddress={canBackup ? (evmAddress ?? undefined) : undefined}
       />
 
       <ChainReceiveSheet
