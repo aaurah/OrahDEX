@@ -1297,13 +1297,13 @@ export function WithdrawSheet({
           <div className="space-y-4">
 
             {/* ── Chain family selector ────────────────────────────────── */}
-            <div className="flex gap-1.5 overflow-x-auto pb-0.5 no-scrollbar">
+            <div className="flex flex-wrap gap-1.5">
               {NON_EVM_WITHDRAW_CHAINS.map(ch => (
                 <button
                   key={ch.id}
                   onClick={() => setWithdrawChainMode(ch.id)}
                   className={cn(
-                    "shrink-0 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all",
+                    "px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-all",
                     withdrawChainMode === ch.id
                       ? "border-2"
                       : "border-border bg-secondary/30 text-muted-foreground hover:text-foreground"
