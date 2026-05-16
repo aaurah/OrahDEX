@@ -1353,7 +1353,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-hidden">
+    <div className="flex flex-col h-full bg-background overflow-x-hidden">
 
       {/* ── HEADER ── */}
       <div className="shrink-0 flex items-center px-3 pt-3 pb-2 border-b border-border gap-2">
@@ -1401,8 +1401,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       {/* ── SCROLLABLE BODY ── */}
       <div
         ref={scrollBodyRef}
-        className="flex-1 overflow-y-auto overscroll-contain pb-20"
-        style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+        className="flex-1 overflow-y-auto pb-20"
+        style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y", overscrollBehaviorY: "none" }}
       >
 
         {/* ── PRICE BLOCK ── */}
