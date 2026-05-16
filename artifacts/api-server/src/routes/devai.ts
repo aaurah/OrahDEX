@@ -1,11 +1,13 @@
 import { Router } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { conversations, messages } from "@workspace/db/schema";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { eq, asc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import vm from "vm";
+import fs from "fs/promises";
+import path from "path";
 
 const router = Router();
 
@@ -30,13 +32,28 @@ You are a senior blockchain engineer. You write production-ready code, debug sma
 - **fetch_bsv_tx** — Look up a live BSV transaction on WhatsOnChain. Use when the user provides a txid or asks about BSV on-chain activity.
 - **get_orahdex_market** — Fetch live OrahDEX market data (prices, orderbooks, 24h stats). Use when the user asks about prices, liquidity, or market conditions.
 - **decode_eth_address** — Fetch EVM address info: native balance, recent transactions. Use when the user shares an ETH/EVM address.
+- **read_project_file** — Read any live source file from the OrahDEX Replit workspace. Use to inspect backend routes, frontend components, DB schema, configs.
+- **list_project_dir** — Browse any directory in the OrahDEX workspace. Use to navigate the project structure before reading specific files.
+- **query_database** — Run a read-only SELECT query against the live OrahDEX PostgreSQL database. Use to inspect real data, schemas, order books, user counts, etc.
+
+## Primary GitHub repository
+The main OrahDEX codebase lives at **github.com/aaurah/OrahDEX**. When the user asks about the codebase, repo structure, or "the code" without specifying a repo, default to \`aaurah/OrahDEX\`. Use \`list_github_repo\` first to explore, then \`read_github_file\` to read specific files.
 
 ## Tool usage rules
 - Always use **create_file** when you produce a complete script or bot (not just a code snippet in chat).
 - Always use **get_orahdex_market** before writing a trading bot (get real symbol names and prices).
 - Always use **fetch_bsv_tx** when the user gives you a txid — never guess what it does.
 - Always use **read_github_file** when the user shares a GitHub URL — read the actual code.
-- Chain tools intelligently: read repo → understand it → generate integration file → deliver with create_file.
+- Always use **read_project_file** / **list_project_dir** when asked about the live Replit backend or frontend source files.
+- Always use **query_database** when asked about live data, table structure, or database state.
+- Chain tools intelligently: explore repo/files → understand it → generate integration file → deliver with create_file.
+
+## Workspace layout (Replit)
+Root: /home/runner/workspace
+- artifacts/api-server/src/   — Express API (TypeScript)
+- artifacts/bsv-dex/src/      — React+Vite frontend
+- lib/db/src/schema.ts         — Drizzle ORM schema (all tables)
+- lib/db/src/index.ts          — DB connection (pool + drizzle instance)
 
 ## Blockchain Knowledge
 **BSV (Bitcoin SV)**
@@ -214,6 +231,50 @@ const DEVAI_TOOLS: any[] = [
           chain: { type: "string", description: "Chain name: eth, bsc, polygon, arbitrum, base. Default: eth" },
         },
         required: ["address"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_project_file",
+      description: "Read a live source file from the OrahDEX Replit workspace. Use to inspect backend routes, frontend components, DB schema, package.json, configs, etc. Paths are relative to /home/runner/workspace.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "File path relative to workspace root, e.g. 'artifacts/api-server/src/routes/devai.ts' or 'lib/db/src/schema.ts'" },
+          offset: { type: "number", description: "Line number to start reading from (1-indexed). Use for large files." },
+          limit: { type: "number", description: "Number of lines to read (max 200). Default 200." },
+        },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_project_dir",
+      description: "List files and directories in the OrahDEX Replit workspace. Use to explore the project structure before reading specific files.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Directory path relative to workspace root. Omit or use '.' for root." },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "query_database",
+      description: "Run a read-only SELECT query against the live OrahDEX PostgreSQL database. Use to inspect table schemas, row counts, live orders, users, market data, or any stored data. Only SELECT statements are allowed.",
+      parameters: {
+        type: "object",
+        properties: {
+          sql: { type: "string", description: "A read-only SQL SELECT statement. LIMIT your results (max 100 rows). Example: 'SELECT table_name FROM information_schema.tables WHERE table_schema=\\'public\\' ORDER BY table_name'" },
+        },
+        required: ["sql"],
       },
     },
   },
@@ -431,6 +492,85 @@ async function toolDecodeEthAddress(args: { address: string; chain?: string }): 
   }
 }
 
+const WORKSPACE_ROOT = "/home/runner/workspace";
+
+async function toolReadProjectFile(args: { path: string; offset?: number; limit?: number }): Promise<string> {
+  try {
+    const safePath = path.resolve(WORKSPACE_ROOT, args.path.replace(/^\//, ""));
+    if (!safePath.startsWith(WORKSPACE_ROOT)) return "Access denied: path outside workspace.";
+    const raw = await fs.readFile(safePath, "utf-8");
+    const lines = raw.split("\n");
+    const offset = Math.max(0, (args.offset ?? 1) - 1);
+    const limit = Math.min(200, args.limit ?? 200);
+    const slice = lines.slice(offset, offset + limit);
+    const totalLines = lines.length;
+    const header = `File: ${args.path} (${totalLines} lines total, showing ${offset + 1}-${offset + slice.length})\n${"─".repeat(60)}\n`;
+    return header + slice.map((l, i) => `${String(offset + i + 1).padStart(4)} ${l}`).join("\n");
+  } catch (err: any) {
+    if (err?.code === "ENOENT") return `File not found: ${args.path}`;
+    if (err?.code === "EISDIR") return `Path is a directory. Use list_project_dir instead.`;
+    return `Error reading file: ${err?.message ?? "Unknown error"}`;
+  }
+}
+
+async function toolListProjectDir(args: { path?: string }): Promise<string> {
+  try {
+    const dirPath = args.path && args.path !== "." ? args.path.replace(/^\//, "") : "";
+    const safePath = path.resolve(WORKSPACE_ROOT, dirPath);
+    if (!safePath.startsWith(WORKSPACE_ROOT)) return "Access denied: path outside workspace.";
+    const entries = await fs.readdir(safePath, { withFileTypes: true });
+    const IGNORE = new Set(["node_modules", ".git", "dist", ".cache", "__pycache__", ".turbo"]);
+    const filtered = entries.filter(e => !IGNORE.has(e.name) && !e.name.startsWith("."));
+    const dirs = filtered.filter(e => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
+    const files = filtered.filter(e => !e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
+    const lines: string[] = [`Directory: ${dirPath || "/"} (${entries.length} entries)\n${"─".repeat(60)}`];
+    for (const d of dirs) lines.push(`  DIR  ${d.name}/`);
+    for (const f of files) {
+      try {
+        const stat = await fs.stat(path.join(safePath, f.name));
+        lines.push(`       ${f.name} (${stat.size.toLocaleString()} bytes)`);
+      } catch {
+        lines.push(`       ${f.name}`);
+      }
+    }
+    return lines.join("\n");
+  } catch (err: any) {
+    if (err?.code === "ENOENT") return `Directory not found: ${args.path}`;
+    return `Error listing directory: ${err?.message ?? "Unknown error"}`;
+  }
+}
+
+async function toolQueryDatabase(args: { sql: string }): Promise<string> {
+  const query = args.sql.trim();
+  const upper = query.toUpperCase().replace(/\s+/g, " ");
+  if (!upper.startsWith("SELECT") && !upper.startsWith("WITH")) {
+    return "Only SELECT (and WITH ... SELECT) queries are allowed for safety.";
+  }
+  const BLOCKED = ["INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "TRUNCATE", "GRANT", "REVOKE"];
+  if (BLOCKED.some(kw => upper.includes(kw))) {
+    return "Write operations are not permitted. Only read-only SELECT queries allowed.";
+  }
+  // Enforce row limit
+  const limitedQuery = upper.includes("LIMIT") ? query : `${query} LIMIT 100`;
+  try {
+    const result = await pool.query(limitedQuery);
+    const { rows, fields } = result;
+    if (!rows.length) return "Query returned 0 rows.";
+    const headers = fields.map(f => f.name);
+    const colWidths = headers.map((h, i) =>
+      Math.min(40, Math.max(h.length, ...rows.map(r => String(r[h] ?? "null").length)))
+    );
+    const sep = colWidths.map(w => "─".repeat(w + 2)).join("┼");
+    const headerRow = headers.map((h, i) => h.padEnd(colWidths[i])).join(" │ ");
+    const dataRows = rows.map(row =>
+      headers.map((h, i) => String(row[h] ?? "null").slice(0, 40).padEnd(colWidths[i])).join(" │ ")
+    );
+    return [`${rows.length} row${rows.length === 1 ? "" : "s"} returned`, "─" + sep, headerRow, "─" + sep, ...dataRows, "─" + sep].join("\n");
+  } catch (err: any) {
+    return `SQL error: ${err?.message ?? "Query failed"}`;
+  }
+}
+
 // ── Tool dispatcher ────────────────────────────────────────────────────────────
 interface ToolResult {
   output: string;
@@ -450,6 +590,9 @@ async function executeTool(name: string, args: any, callId: string): Promise<Too
     case "fetch_bsv_tx":       return { output: await toolFetchBsvTx(args) };
     case "get_orahdex_market": return { output: await toolGetOrahDEXMarket(args) };
     case "decode_eth_address": return { output: await toolDecodeEthAddress(args) };
+    case "read_project_file":  return { output: await toolReadProjectFile(args) };
+    case "list_project_dir":   return { output: await toolListProjectDir(args) };
+    case "query_database":     return { output: await toolQueryDatabase(args) };
     default:                   return { output: `Unknown tool: ${name}` };
   }
 }
