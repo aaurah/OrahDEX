@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, raw } from "express";
 import { db, pool } from "@workspace/db";
 import { conversations, messages } from "@workspace/db/schema";
 import { openai } from "@workspace/integrations-openai-ai-server";
@@ -8,7 +8,7 @@ import { requireAdminToken } from "../middleware/adminAuth.js";
 import vm from "vm";
 import fs from "fs/promises";
 import path from "path";
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 
 const router = Router();
 
@@ -896,6 +896,56 @@ router.get("/admin/devai/github", async (_req, res) => {
     res.json({ connected: true, login: user.login, repos });
   } catch (err: any) {
     res.json({ connected: false, repos: [], error: err?.message ?? "Network error" });
+  }
+});
+
+// ── GET /admin/devai/export — stream workspace as tar.gz ──────────────────────
+router.get("/admin/devai/export", requireAdminToken, (req, res) => {
+  try {
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `orahdex-workspace-${date}.tar.gz`;
+    res.setHeader("Content-Type", "application/gzip");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    const proc = spawn("tar", [
+      "czf", "-",
+      "--exclude=.git",
+      "--exclude=node_modules",
+      "--exclude=.local",
+      "--exclude=dist",
+      "--exclude=*.log",
+      "-C", "/home/runner",
+      "workspace",
+    ]);
+    proc.stdout.pipe(res);
+    proc.stderr.on("data", (d) => logger.warn({ msg: d.toString().trim() }, "export warning"));
+    proc.on("error", (err) => {
+      logger.error({ err: err.message }, "export failed");
+      if (!res.headersSent) res.status(500).json({ error: err.message });
+    });
+    req.on("close", () => proc.kill());
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Export failed" });
+  }
+});
+
+// ── POST /admin/devai/upload — upload & extract a tar.gz to workspace ─────────
+router.post("/admin/devai/upload", requireAdminToken, raw({ type: "*/*", limit: "500mb" }), async (req, res) => {
+  const tmp = `/tmp/devai-upload-${Date.now()}.tar.gz`;
+  try {
+    if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+      res.status(400).json({ error: "Empty or missing file body" }); return;
+    }
+    await fs.writeFile(tmp, req.body as Buffer);
+    const { stdout, stderr } = await execAsync(
+      `tar xzf "${tmp}" -C /home/runner/workspace`,
+      WORKSPACE_ROOT, 120000
+    );
+    await fs.unlink(tmp).catch(() => {});
+    const lines = (stdout + stderr).trim().split("\n").filter(Boolean);
+    res.json({ ok: true, message: `Extracted ${req.body.length.toLocaleString()} bytes`, details: lines.slice(0, 20) });
+  } catch (err: any) {
+    await fs.unlink(tmp).catch(() => {});
+    res.status(500).json({ error: err?.message ?? "Extraction failed" });
   }
 });
 
