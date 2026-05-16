@@ -1659,9 +1659,57 @@ export function WithdrawSheet({
                 )}
 
                 {nonEvmSendTxHash && (
-                  <div className="flex items-start gap-2 p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-xs">
-                    <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                    <span>Withdrawal submitted! ID: {nonEvmSendTxHash}</span>
+                  <div className="rounded-xl border border-green-500/25 bg-green-500/8 overflow-hidden">
+                    {/* Title row */}
+                    <div className="flex items-center gap-2 px-3 py-2.5 border-b border-green-500/15">
+                      <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+                      <span className="text-sm font-semibold text-green-400">Withdrawal submitted</span>
+                    </div>
+                    {/* Txid */}
+                    {nonEvmSendTxHash !== "submitted" && (
+                      <div className="px-3 py-2.5 space-y-2">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Transaction ID</p>
+                        <div className="flex items-center gap-2 bg-background/60 border border-border/40 rounded-lg px-3 py-2">
+                          <span className="font-mono text-[11px] text-foreground/80 flex-1 truncate">
+                            {nonEvmSendTxHash}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => { navigator.clipboard.writeText(nonEvmSendTxHash); setCopiedId("withdraw-txid"); }}
+                            className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            {copiedId === "withdraw-txid"
+                              ? <Check className="w-3.5 h-3.5 text-green-400" />
+                              : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                        {/* Explorer link — resolve by chain */}
+                        {(() => {
+                          const chain = withdrawChainMode.toLowerCase();
+                          const url =
+                            chain === "bsv"  ? `https://whatsonchain.com/tx/${nonEvmSendTxHash}` :
+                            chain === "btc"  ? `https://mempool.space/tx/${nonEvmSendTxHash}` :
+                            chain === "bch"  ? `https://blockchair.com/bitcoin-cash/transaction/${nonEvmSendTxHash}` :
+                            chain === "ltc"  ? `https://blockchair.com/litecoin/transaction/${nonEvmSendTxHash}` :
+                            chain === "doge" ? `https://blockchair.com/dogecoin/transaction/${nonEvmSendTxHash}` :
+                            chain === "sol"  ? `https://explorer.solana.com/tx/${nonEvmSendTxHash}` :
+                            chain === "xrp"  ? `https://xrpscan.com/tx/${nonEvmSendTxHash}` :
+                            chain === "trx"  ? `https://tronscan.org/#/transaction/${nonEvmSendTxHash}` :
+                            null;
+                          return url ? (
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 text-[11px] text-green-400/70 hover:text-green-400 transition-colors"
+                            >
+                              <ExternalLink className="w-3 h-3" />
+                              View on explorer
+                            </a>
+                          ) : null;
+                        })()}
+                      </div>
+                    )}
                   </div>
                 )}
 
