@@ -30,6 +30,7 @@ import { getHealthReport, startOrderReconciler } from "./lib/selfHealing.js";
 import { startAllReconcilers } from "./lib/selfHealingReconcilers.js";
 import { hydrateAlertsFromDB } from "./lib/alertBus.js";
 import { startExchangeApiRepairEngine } from "./lib/exchangeApiRepairEngine.js";
+import { startBsvIntentWatcher } from "./lib/bsvIntentWatcher.js";
 
 const app: Express = express();
 const middlewareRegistrationOrder: string[] = [];
@@ -420,6 +421,7 @@ _s(48_000, startRouteCache,           "startRouteCache");
 _s(54_000, startOrderReconciler,      "startOrderReconciler");
 _s(60_000, startAllReconcilers,       "startAllReconcilers");
 _s(66_000, startExchangeApiRepairEngine, "startExchangeApiRepairEngine");
+_s(72_000, startBsvIntentWatcher,       "startBsvIntentWatcher");
 
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 
