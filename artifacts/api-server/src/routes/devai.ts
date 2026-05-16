@@ -4,143 +4,461 @@ import { conversations, messages } from "@workspace/db/schema";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { eq, asc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import vm from "vm";
 
 const router = Router();
 
-const DEVAI_SYSTEM_PROMPT = `You are OrahDevAI — the developer intelligence of OrahDEX (orahdex.org), a sovereign decentralized exchange built on BSV (Bitcoin SV) settlement.
+// ── Internal API base (same process, same port) ───────────────────────────────
+const INTERNAL = `http://localhost:${process.env.PORT ?? 4000}`;
+const GH_HEADERS = (token?: string) => ({
+  "User-Agent": "OrahDEX-DevAI/2.0",
+  ...(token ? { Authorization: `Bearer ${token}` } : {}),
+});
 
-You are a senior protocol engineer who deeply understands the OrahDEX stack. You help developers build bots, integrations, wallets, and tools on top of OrahDEX.
+// ── System prompt ─────────────────────────────────────────────────────────────
+const DEVAI_SYSTEM_PROMPT = `You are OrahDevAI — the developer intelligence and blockchain AI of OrahDEX (orahdex.org), a sovereign decentralized exchange where every coin is listed and all trades settle on BSV (Bitcoin SV).
 
-## OrahDEX REST API (base: https://orahdex.org/api)
+You are a senior blockchain engineer. You write production-ready code, debug smart contracts, analyse on-chain data, and build bots. You have live tools — use them.
 
-### Markets & Prices
-GET /api/markets                        — all listed pairs with price, volume, change
-GET /api/markets/:symbol/ticker         — single pair ticker (e.g. /api/markets/BSV%2FUSDT/ticker)
-GET /api/markets/:symbol/orderbook      — full orderbook { bids, asks }
-GET /api/dex/prices                     — DEX token prices
+## Your Tools (use them proactively)
+- **read_github_file** — Read actual source code from any GitHub repo. Use when the user shares a repo link or mentions their code files.
+- **list_github_repo** — Browse a repo's directory structure. Use to understand project layout before reading files.
+- **execute_code** — Run JavaScript in a sandbox and see real output. Use to validate logic, compute values, simulate algorithms, test encoding/decoding.
+- **fetch_url** — Fetch live content from any URL. Use to check live API responses, read docs, verify endpoint behaviour.
+- **create_file** — Generate a downloadable file. ALWAYS use this when you write a complete bot, script, config, or contract — never just paste code in chat when you could deliver a file the user can run immediately.
+- **fetch_bsv_tx** — Look up a live BSV transaction on WhatsOnChain. Use when the user provides a txid or asks about BSV on-chain activity.
+- **get_orahdex_market** — Fetch live OrahDEX market data (prices, orderbooks, 24h stats). Use when the user asks about prices, liquidity, or market conditions.
+- **decode_eth_address** — Fetch EVM address info: native balance, recent transactions. Use when the user shares an ETH/EVM address.
 
-### Orders
-POST /api/orders                        — place an order
-  body: { symbol, side: "buy"|"sell", type: "limit"|"market", price?, quantity, walletAddress }
-GET  /api/orders                        — open orders (query: ?walletAddress=)
-DELETE /api/orders/:id                  — cancel order
+## Tool usage rules
+- Always use **create_file** when you produce a complete script or bot (not just a code snippet in chat).
+- Always use **get_orahdex_market** before writing a trading bot (get real symbol names and prices).
+- Always use **fetch_bsv_tx** when the user gives you a txid — never guess what it does.
+- Always use **read_github_file** when the user shares a GitHub URL — read the actual code.
+- Chain tools intelligently: read repo → understand it → generate integration file → deliver with create_file.
 
-### Trades
-GET /api/trades                         — recent trades (query: ?symbol=&limit=)
-GET /api/portfolio                      — portfolio (query: ?walletAddress=)
+## Blockchain Knowledge
+**BSV (Bitcoin SV)**
+- UTXO model, Merkle proofs, OP_RETURN data embedding, BRC-20 tokens, 1Sat Ordinals
+- Script opcodes: OP_DUP, OP_HASH160, OP_EQUALVERIFY, OP_CHECKSIG (P2PKH), OP_RETURN (data)
+- HD derivation: m/44'/236'/0'/0/0 (BSV), m/44'/60'/0'/0/0 (EVM)
+- @bsv/sdk: Transaction, P2PKH, Script, PrivKey, PublicKey, Signature
+- Broadcast via: api.whatsonchain.com/v1/bsv/main/tx/raw
 
-### Swap / Bridge
-POST /api/swap/quote                    — get swap quote
-  body: { fromToken, toToken, amount, walletAddress }
-POST /api/swap/execute                  — execute swap (unsigned tx returned)
-GET  /api/bridge/providers              — available bridge providers
-POST /api/bridge/quote                  — cross-chain bridge quote
+**EVM / Ethereum**
+- ABI encoding: function selectors (first 4 bytes of keccak256), calldata layout
+- ERC-20: transfer(address,uint256), balanceOf(address), approve+transferFrom
+- ERC-721 / ERC-1155: NFT standards, tokenURI, safeTransferFrom
+- Gas optimisation: storage slots, packing, unchecked arithmetic, calldata vs memory
+- Events/logs: indexed topics, bloom filters, eth_getLogs
+- Multicall3: batch multiple read calls in one RPC request
 
-### Futures
-GET  /api/futures/positions             — open positions
-POST /api/futures/order                 — place futures order
-  body: { symbol, side, leverage, margin, type }
+**DeFi**
+- AMM math: x*y=k (Uniswap v2), concentrated liquidity (v3), tick ranges
+- Impermanent loss: IL = 2√k/(1+k) - 1 where k = price_ratio
+- Flash loans: borrow → use → repay + fee in one atomic tx
+- MEV: sandwich attacks, frontrunning, backrunning, private mempools (Flashbots)
+- Yield: APY = (1 + APR/n)^n - 1
 
-### BSV Settlement
-GET /api/health                         — { bsvBlock, mempoolTxs, status }
-GET /api/deposit/address/:walletAddress — get BSV deposit address
-POST /api/withdrawals                   — initiate withdrawal (requires signed tx)
+**OrahDEX REST API (base: https://orahdex.org/api)**
+GET  /api/markets                              — all listed pairs
+GET  /api/markets/:symbol/ticker               — single pair ticker
+GET  /api/markets/:symbol/orderbook            — { bids, asks }
+POST /api/orders                               — { symbol, side, type, price?, quantity, walletAddress }
+GET  /api/orders?walletAddress=               — open orders
+DELETE /api/orders/:id                         — cancel order
+GET  /api/trades?symbol=&limit=               — recent trades
+GET  /api/portfolio?walletAddress=            — portfolio holdings
+POST /api/swap/quote                           — { fromToken, toToken, amount, walletAddress }
+POST /api/swap/execute                         — unsigned swap tx
+GET  /api/bridge/providers                     — bridge providers
+POST /api/bridge/quote                         — cross-chain quote
+GET  /api/futures/positions                    — open futures
+POST /api/futures/order                        — { symbol, side, leverage, margin, type }
+GET  /api/health                               — { bsvBlock, mempoolTxs, status }
+GET  /api/deposit/address/:walletAddress       — BSV deposit address
+POST /api/withdrawals                          — initiate withdrawal
 
-### WebSocket (wss://orahdex.org/ws)
+WebSocket: wss://orahdex.org/ws
 Subscribe: { type: "subscribe", channel: "ticker:BSV/USDT" }
 Channels: ticker:<PAIR>, orderbook:<PAIR>, trades:<PAIR>, portfolio:<WALLET>
 
-## OrahSigner — transaction signing interface
+## Keeper Protocol fee tiers
+Standard: 30bps | Guardian (1K ORAH): 25bps | Elder (10K ORAH): 20bps | Archon (100K ORAH): 15bps
 
-\`\`\`typescript
-// createOrahSigner(wallet) returns a signer compatible with viem's WalletClient
-// Supported wallet types: MetaMask, WalletConnect, Ledger (DMK), internal EVM wallet
+## Response rules
+- Skip preamble — go straight to the answer or tool call
+- Use TypeScript by default; Python on request
+- Always show error handling in code
+- For transaction building: always build unsigned — never include private keys
+- When you write a complete file: use create_file so the user can download it
+- Today is May 2026`;
 
-import { createOrahSigner } from "@orahdex/sdk";
-const signer = createOrahSigner({ type: "metamask" });
-const address = await signer.getAddress();
-const signedTx = await signer.signTransaction(txRequest);
-\`\`\`
+// ── Tool definitions (OpenAI function calling) ─────────────────────────────────
+const DEVAI_TOOLS: any[] = [
+  {
+    type: "function",
+    function: {
+      name: "read_github_file",
+      description: "Read a specific file from a GitHub repository. Use when the user shares a GitHub URL or mentions code in their repo.",
+      parameters: {
+        type: "object",
+        properties: {
+          owner_repo: { type: "string", description: "owner/repo e.g. 'bitcoin-sv/ts-sdk'" },
+          path: { type: "string", description: "File path e.g. 'src/index.ts'" },
+          branch: { type: "string", description: "Branch name, omit for default branch" },
+        },
+        required: ["owner_repo", "path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_github_repo",
+      description: "List files and directories in a GitHub repository. Use to explore project structure.",
+      parameters: {
+        type: "object",
+        properties: {
+          owner_repo: { type: "string", description: "owner/repo format" },
+          path: { type: "string", description: "Directory path, omit for root" },
+        },
+        required: ["owner_repo"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "execute_code",
+      description: "Execute JavaScript code in a sandbox and return the output. Use to validate logic, compute blockchain values, test encoding, or demonstrate algorithms.",
+      parameters: {
+        type: "object",
+        properties: {
+          code: { type: "string", description: "JavaScript code to execute (synchronous, console.log for output)" },
+          description: { type: "string", description: "Brief description of what this computes" },
+        },
+        required: ["code"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "fetch_url",
+      description: "Fetch live content from any URL. Use to check API responses, read documentation, or verify endpoint behaviour.",
+      parameters: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Full URL to fetch" },
+        },
+        required: ["url"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_file",
+      description: "Create a downloadable file for the user. ALWAYS use this when generating a complete bot, script, smart contract, or config. The user downloads and runs it immediately.",
+      parameters: {
+        type: "object",
+        properties: {
+          filename: { type: "string", description: "Filename with extension e.g. 'market-maker.ts'" },
+          content: { type: "string", description: "Full file content" },
+          language: { type: "string", description: "Language for syntax highlighting e.g. typescript, python, solidity" },
+        },
+        required: ["filename", "content"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "fetch_bsv_tx",
+      description: "Fetch live BSV transaction details from WhatsOnChain blockchain explorer. Use when the user provides a BSV txid.",
+      parameters: {
+        type: "object",
+        properties: {
+          txid: { type: "string", description: "BSV transaction ID (64-char hex)" },
+        },
+        required: ["txid"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_orahdex_market",
+      description: "Fetch live OrahDEX market data including price, volume, and orderbook. Use before writing trading bots to get real symbol names and current prices.",
+      parameters: {
+        type: "object",
+        properties: {
+          symbol: { type: "string", description: "Trading pair e.g. 'BSV/USDT'. Omit for top markets overview." },
+          include_orderbook: { type: "boolean", description: "Also fetch the orderbook (bids/asks)" },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "decode_eth_address",
+      description: "Fetch EVM address information: native coin balance and recent activity. Use when the user shares an Ethereum or EVM wallet address.",
+      parameters: {
+        type: "object",
+        properties: {
+          address: { type: "string", description: "EVM address (0x...)" },
+          chain: { type: "string", description: "Chain name: eth, bsc, polygon, arbitrum, base. Default: eth" },
+        },
+        required: ["address"],
+      },
+    },
+  },
+];
 
-## BSV Integration
+// ── Tool implementations ───────────────────────────────────────────────────────
 
-\`\`\`typescript
-// BSV derivation path: m/44'/236'/0'/0/0
-// EVM derivation path: m/44'/60'/0'/0/0
-// All trades settle via BSV — EVM tokens are bridged through OrahDEX custody
-
-// BSV send (using @bsv/sdk)
-import { Transaction, P2PKH } from "@bsv/sdk";
-const tx = new Transaction();
-tx.addInput({ sourceTXID, sourceOutputIndex, script: new P2PKH().unlock(privKey, ...) });
-tx.addOutput({ lockingScript: new P2PKH().lock(toAddress), satoshis: amount });
-await tx.broadcast();
-\`\`\`
-
-## Keeper Protocol — fee tiers
-- Standard: 30bps (0.30%)  — default, no minimum hold
-- Guardian: 25bps (0.25%) — hold 1,000 ORAH
-- Elder:    20bps (0.20%) — hold 10,000 ORAH
-- Archon:   15bps (0.15%) — hold 100,000 ORAH
-
-## Market Making Bot Pattern (TypeScript)
-
-\`\`\`typescript
-import fetch from "node-fetch";
-const API = "https://orahdex.org/api";
-
-async function getOrderbook(symbol: string) {
-  const r = await fetch(\`\${API}/markets/\${encodeURIComponent(symbol)}/orderbook\`);
-  return r.json();
+async function toolReadGithubFile(args: { owner_repo: string; path: string; branch?: string }): Promise<string> {
+  const token = process.env.GITHUB_TOKEN;
+  const qs = args.branch ? `?ref=${encodeURIComponent(args.branch)}` : "";
+  const url = `https://api.github.com/repos/${args.owner_repo}/contents/${args.path}${qs}`;
+  try {
+    const r = await fetch(url, { headers: GH_HEADERS(token), signal: AbortSignal.timeout(12000) });
+    if (!r.ok) {
+      if (r.status === 404) return `File not found: ${args.owner_repo}/${args.path}`;
+      if (r.status === 401) return "GitHub authentication failed. Token may be invalid.";
+      return `GitHub API error: ${r.status} ${r.statusText}`;
+    }
+    const data = await r.json() as any;
+    if (data.encoding === "base64" && data.content) {
+      const content = Buffer.from(data.content.replace(/\n/g, ""), "base64").toString("utf-8");
+      if (content.length > 12000) return content.slice(0, 12000) + "\n\n[...truncated at 12000 chars]";
+      return content;
+    }
+    if (Array.isArray(data)) return "This is a directory. Use list_github_repo to browse it.";
+    return JSON.stringify(data).slice(0, 4000);
+  } catch (err: any) {
+    return `Error reading file: ${err?.message ?? "Network error"}`;
+  }
 }
 
-async function placeOrder(order: {
-  symbol: string; side: "buy"|"sell"; type: "limit"|"market";
-  price?: number; quantity: number; walletAddress: string;
-}) {
-  const r = await fetch(\`\${API}/orders\`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(order),
+async function toolListGithubRepo(args: { owner_repo: string; path?: string }): Promise<string> {
+  const token = process.env.GITHUB_TOKEN;
+  const path = args.path ? `/${args.path.replace(/^\//, "")}` : "";
+  const url = `https://api.github.com/repos/${args.owner_repo}/contents${path}`;
+  try {
+    const r = await fetch(url, { headers: GH_HEADERS(token), signal: AbortSignal.timeout(10000) });
+    if (!r.ok) {
+      if (r.status === 404) return `Repo or path not found: ${args.owner_repo}${path}`;
+      return `GitHub API error: ${r.status} ${r.statusText}`;
+    }
+    const data = await r.json() as any[];
+    if (!Array.isArray(data)) return "This is a file, not a directory. Use read_github_file to read it.";
+    return data
+      .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1))
+      .map(f => `${f.type === "dir" ? "DIR " : "    "} ${f.name}${f.type !== "dir" ? ` (${(f.size ?? 0).toLocaleString()} bytes)` : "/"}`)
+      .join("\n");
+  } catch (err: any) {
+    return `Error listing repo: ${err?.message ?? "Network error"}`;
+  }
+}
+
+function toolExecuteCode(args: { code: string; description?: string }): string {
+  const logs: string[] = [];
+  const sandbox = vm.createContext({
+    console: {
+      log: (...a: any[]) => logs.push(a.map((x: any) => (typeof x === "object" ? JSON.stringify(x, null, 2) : String(x))).join(" ")),
+      error: (...a: any[]) => logs.push("ERR: " + a.map(String).join(" ")),
+      warn: (...a: any[]) => logs.push("WARN: " + a.map(String).join(" ")),
+      info: (...a: any[]) => logs.push(a.map(String).join(" ")),
+      table: (data: any) => logs.push(JSON.stringify(data, null, 2)),
+    },
+    Math,
+    JSON: { parse: JSON.parse, stringify: JSON.stringify },
+    Array, Object, String, Number, Boolean, Date, RegExp, Set, Map,
+    parseInt, parseFloat, isNaN, isFinite, isNaN,
+    encodeURIComponent, decodeURIComponent, encodeURI, decodeURI,
+    Buffer,
+    BigInt,
+    Symbol,
   });
-  return r.json();
+  try {
+    vm.runInContext(args.code, sandbox, { timeout: 5000 });
+    return logs.length > 0 ? logs.join("\n") : "(no output — add console.log() to see results)";
+  } catch (err: any) {
+    return `RuntimeError: ${err?.message?.slice(0, 800) ?? "Execution failed"}`;
+  }
 }
 
-// Simple spread market maker
-async function tick(symbol: string, wallet: string, spreadBps = 20, size = 0.1) {
-  const { bids, asks } = await getOrderbook(symbol);
-  const mid = (bids[0][0] + asks[0][0]) / 2;
-  const spread = mid * (spreadBps / 10000);
-  await placeOrder({ symbol, side: "buy",  type: "limit", price: mid - spread, quantity: size, walletAddress: wallet });
-  await placeOrder({ symbol, side: "sell", type: "limit", price: mid + spread, quantity: size, walletAddress: wallet });
+async function toolFetchUrl(args: { url: string }): Promise<string> {
+  try {
+    const r = await fetch(args.url, {
+      signal: AbortSignal.timeout(12000),
+      headers: { "User-Agent": "OrahDEX-DevAI/2.0", Accept: "application/json, text/plain, */*" },
+    });
+    const ct = r.headers.get("content-type") ?? "";
+    let body: string;
+    if (ct.includes("json")) {
+      const json = await r.json();
+      body = JSON.stringify(json, null, 2).slice(0, 6000);
+    } else {
+      const text = await r.text();
+      body = text.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 4000);
+    }
+    return `HTTP ${r.status} ${r.statusText}\nContent-Type: ${ct}\n\n${body}`;
+  } catch (err: any) {
+    return `FetchError: ${err?.message ?? "Network error"}`;
+  }
 }
 
-setInterval(() => tick("BSV/USDT", "0xYourWallet"), 5000);
-\`\`\`
+async function toolFetchBsvTx(args: { txid: string }): Promise<string> {
+  const txid = args.txid.trim();
+  if (!/^[0-9a-fA-F]{64}$/.test(txid)) return "Invalid txid — must be 64 hex characters.";
+  try {
+    const r = await fetch(`https://api.whatsonchain.com/v1/bsv/main/tx/hash/${txid}`, {
+      headers: { "User-Agent": "OrahDEX-DevAI/2.0" },
+      signal: AbortSignal.timeout(12000),
+    });
+    if (!r.ok) {
+      if (r.status === 404) return `Transaction not found: ${txid}`;
+      return `WhatsOnChain error: ${r.status} ${r.statusText}`;
+    }
+    const d = await r.json() as any;
+    const out = {
+      txid: d.txid,
+      block_height: d.blockheight ?? "unconfirmed",
+      confirmations: d.confirmations ?? 0,
+      time: d.time ? new Date(d.time * 1000).toISOString() : "unconfirmed",
+      fee_satoshis: d.fees,
+      size_bytes: d.size,
+      inputs: (d.vin ?? []).slice(0, 10).map((i: any) => ({
+        prev_txid: i.txid,
+        vout: i.vout,
+        sequence: i.sequence,
+      })),
+      outputs: (d.vout ?? []).map((o: any) => ({
+        index: o.n,
+        value_bsv: o.value,
+        value_satoshis: Math.round(o.value * 1e8),
+        addresses: o.scriptPubKey?.addresses ?? [],
+        asm: o.scriptPubKey?.asm?.slice(0, 100),
+        type: o.scriptPubKey?.type,
+      })),
+    };
+    return JSON.stringify(out, null, 2);
+  } catch (err: any) {
+    return `Error: ${err?.message ?? "WhatsOnChain unreachable"}`;
+  }
+}
 
-## Swap Simulation
+async function toolGetOrahDEXMarket(args: { symbol?: string; include_orderbook?: boolean }): Promise<string> {
+  try {
+    if (args.symbol) {
+      const sym = encodeURIComponent(args.symbol);
+      const [tickerR, obR] = await Promise.all([
+        fetch(`${INTERNAL}/api/markets/${sym}/ticker`, { signal: AbortSignal.timeout(5000) }),
+        args.include_orderbook
+          ? fetch(`${INTERNAL}/api/markets/${sym}/orderbook`, { signal: AbortSignal.timeout(5000) })
+          : Promise.resolve(null),
+      ]);
+      if (!tickerR.ok) return `Market not found: ${args.symbol}`;
+      const ticker = await tickerR.json();
+      const result: any = { symbol: args.symbol, ticker };
+      if (obR?.ok) {
+        const ob = await obR.json() as any;
+        result.orderbook = {
+          top_bids: (ob.bids ?? []).slice(0, 5),
+          top_asks: (ob.asks ?? []).slice(0, 5),
+        };
+      }
+      return JSON.stringify(result, null, 2);
+    }
+    const r = await fetch(`${INTERNAL}/api/markets`, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return `Markets API error: ${r.status}`;
+    const data = await r.json() as any[];
+    const top = (Array.isArray(data) ? data : []).slice(0, 20).map((m: any) => ({
+      symbol: m.symbol,
+      price: m.price ?? m.last,
+      change_24h: m.change24h ?? m.change,
+      volume_24h: m.volume24h ?? m.volume,
+    }));
+    return JSON.stringify(top, null, 2);
+  } catch (err: any) {
+    return `Market data error: ${err?.message ?? "Internal API unreachable"}`;
+  }
+}
 
-\`\`\`typescript
-// Fetch a quote without executing
-const res = await fetch("https://orahdex.org/api/swap/quote", {
-  method: "POST",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ fromToken: "ETH", toToken: "BSV", amount: "1.0", walletAddress: "0x..." }),
-});
-const { outputAmount, priceImpact, route, fee } = await res.json();
-\`\`\`
+async function toolDecodeEthAddress(args: { address: string; chain?: string }): Promise<string> {
+  const addr = args.address.trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) return "Invalid EVM address format. Must be 0x followed by 40 hex chars.";
 
-## Guidelines for responses:
-- Always include working, runnable code examples
-- Use TypeScript by default; include Python on request
-- Show error handling in examples
-- For transaction building, always build unsigned first — never include private keys
-- When explaining BSV settlement, clarify that EVM assets bridge through OrahDEX's sovereign custody
-- Format code in proper fenced blocks with language tags (typescript, python, bash, json)
-- Be direct and concise. Skip preamble. Go straight to the code.
-- Today is May 2026.`;
+  const SCAN_APIS: Record<string, { api: string; symbol: string }> = {
+    eth:      { api: "https://api.etherscan.io/api",     symbol: "ETH" },
+    bsc:      { api: "https://api.bscscan.com/api",      symbol: "BNB" },
+    polygon:  { api: "https://api.polygonscan.com/api",  symbol: "MATIC" },
+    arbitrum: { api: "https://api.arbiscan.io/api",      symbol: "ETH" },
+    base:     { api: "https://api.basescan.org/api",     symbol: "ETH" },
+  };
 
-// ── GET /devai/conversations — list all dev sessions ─────────────────────────
+  const chainKey = (args.chain ?? "eth").toLowerCase();
+  const info = SCAN_APIS[chainKey] ?? SCAN_APIS.eth;
+
+  try {
+    const balR = await fetch(`${info.api}?module=account&action=balance&address=${addr}&tag=latest`, {
+      headers: { "User-Agent": "OrahDEX-DevAI/2.0" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!balR.ok) return `Scan API error: ${balR.status}`;
+    const balData = await balR.json() as any;
+    if (balData.status !== "1") {
+      return JSON.stringify({ address: addr, chain: chainKey, note: "API returned error (possibly rate-limited without API key)", raw: balData }, null, 2);
+    }
+    const balWei = BigInt(balData.result ?? "0");
+    const balNative = (Number(balWei) / 1e18).toFixed(8);
+
+    return JSON.stringify({
+      address: addr,
+      chain: chainKey,
+      native_balance: `${balNative} ${info.symbol}`,
+      native_balance_wei: balData.result,
+      note: "Token balances require an API key. Use get_orahdex_market to check OrahDEX positions.",
+    }, null, 2);
+  } catch (err: any) {
+    return `EVM lookup error: ${err?.message ?? "Network error"}`;
+  }
+}
+
+// ── Tool dispatcher ────────────────────────────────────────────────────────────
+interface ToolResult {
+  output: string;
+  file?: { id: string; filename: string; content: string; language: string };
+}
+
+async function executeTool(name: string, args: any, callId: string): Promise<ToolResult> {
+  switch (name) {
+    case "read_github_file":   return { output: await toolReadGithubFile(args) };
+    case "list_github_repo":   return { output: await toolListGithubRepo(args) };
+    case "execute_code":       return { output: toolExecuteCode(args) };
+    case "fetch_url":          return { output: await toolFetchUrl(args) };
+    case "create_file":        return {
+      output: `File "${args.filename}" ready for download (${args.content?.length ?? 0} chars).`,
+      file: { id: callId, filename: args.filename, content: args.content ?? "", language: args.language ?? "text" },
+    };
+    case "fetch_bsv_tx":       return { output: await toolFetchBsvTx(args) };
+    case "get_orahdex_market": return { output: await toolGetOrahDEXMarket(args) };
+    case "decode_eth_address": return { output: await toolDecodeEthAddress(args) };
+    default:                   return { output: `Unknown tool: ${name}` };
+  }
+}
+
+// ── Helper: SSE write ─────────────────────────────────────────────────────────
+function sse(res: any, payload: object) {
+  res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+// ── GET /devai/conversations ───────────────────────────────────────────────────
 router.get("/devai/conversations", async (_req, res) => {
   try {
     const rows = await db
@@ -148,7 +466,7 @@ router.get("/devai/conversations", async (_req, res) => {
       .from(conversations)
       .orderBy(conversations.id);
     res.json(rows.reverse());
-  } catch (err: any) {
+  } catch {
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -156,10 +474,7 @@ router.get("/devai/conversations", async (_req, res) => {
 // ── POST /devai/conversations ─────────────────────────────────────────────────
 router.post("/devai/conversations", async (_req, res) => {
   try {
-    const [conv] = await db
-      .insert(conversations)
-      .values({ title: "New Dev Session" })
-      .returning();
+    const [conv] = await db.insert(conversations).values({ title: "New Dev Session" }).returning();
     res.json({ id: conv.id, title: conv.title, createdAt: conv.createdAt });
   } catch (err: any) {
     logger.error({ err: err?.message }, "DevAI: failed to create conversation");
@@ -167,25 +482,21 @@ router.post("/devai/conversations", async (_req, res) => {
   }
 });
 
-// ── GET /devai/conversations/:id ──────────────────────────────────────────────
+// ── GET /devai/conversations/:id ───────────────────────────────────────────────
 router.get("/devai/conversations/:id", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
     const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
     if (!conv) { res.status(404).json({ error: "Not found" }); return; }
-    const msgs = await db
-      .select()
-      .from(messages)
-      .where(eq(messages.conversationId, id))
-      .orderBy(asc(messages.createdAt));
+    const msgs = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(asc(messages.createdAt));
     res.json({ ...conv, messages: msgs });
-  } catch (err: any) {
+  } catch {
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
-// ── POST /devai/conversations/:id/messages — SSE streaming ───────────────────
+// ── POST /devai/conversations/:id/messages — agentic SSE ──────────────────────
 router.post("/devai/conversations/:id/messages", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -207,80 +518,143 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
       .where(eq(messages.conversationId, id))
       .orderBy(asc(messages.createdAt));
 
-    const last20 = history.slice(-20);
-    const chatMessages: Array<{ role: "user" | "assistant" | "system"; content: string }> = [
+    type ChatMsg =
+      | { role: "system"; content: string }
+      | { role: "user"; content: string }
+      | { role: "assistant"; content: string | null; tool_calls?: any[] }
+      | { role: "tool"; tool_call_id: string; content: string };
+
+    const chatMessages: ChatMsg[] = [
       { role: "system", content: DEVAI_SYSTEM_PROMPT },
-      ...last20.map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
+      ...history.slice(-24).map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
     ];
 
-    let fullResponse = "";
-    const stream = await openai.chat.completions.create({
-      model: "gpt-5.4",
-      max_completion_tokens: 8192,
-      messages: chatMessages,
-      stream: true,
-    });
+    // ── Agentic tool-use loop (non-streaming) ──────────────────────────────────
+    const MAX_TOOL_ROUNDS = 8;
+    let toolRounds = 0;
+    let finalTextFromLoop: string | null = null;
 
-    for await (const chunk of stream) {
-      const token = chunk.choices[0]?.delta?.content;
-      if (token) {
-        fullResponse += token;
-        res.write(`data: ${JSON.stringify({ content: token })}\n\n`);
+    while (toolRounds < MAX_TOOL_ROUNDS) {
+      const resp = await openai.chat.completions.create({
+        model: "gpt-5.4",
+        max_completion_tokens: 6000,
+        messages: chatMessages as any,
+        tools: DEVAI_TOOLS,
+        tool_choice: "auto",
+        stream: false,
+      });
+
+      const choice = resp.choices[0];
+      const msg = choice.message;
+
+      if (choice.finish_reason === "tool_calls" && msg.tool_calls?.length) {
+        // Push assistant message with tool_calls
+        chatMessages.push({ role: "assistant", content: msg.content ?? null, tool_calls: msg.tool_calls });
+
+        // Execute each tool, stream events
+        for (const tc of msg.tool_calls) {
+          const name = tc.function.name;
+          let args: any = {};
+          try { args = JSON.parse(tc.function.arguments ?? "{}"); } catch { /* invalid json */ }
+
+          sse(res, { tool_call: { id: tc.id, name, args } });
+
+          let result: ToolResult;
+          try {
+            result = await executeTool(name, args, tc.id);
+          } catch (err: any) {
+            result = { output: `Tool error: ${err?.message ?? "Unknown"}` };
+          }
+
+          sse(res, { tool_result: { id: tc.id, name, output: result.output.slice(0, 8000) } });
+          if (result.file) sse(res, { file: result.file });
+
+          chatMessages.push({ role: "tool", tool_call_id: tc.id, content: result.output.slice(0, 8000) });
+        }
+        toolRounds++;
+        continue;
+      }
+
+      // No tool calls — capture text and break
+      finalTextFromLoop = msg.content ?? "";
+      break;
+    }
+
+    // ── Final streaming response ───────────────────────────────────────────────
+    let fullResponse = "";
+
+    if (toolRounds === 0 && finalTextFromLoop !== null) {
+      // No tools used: stream the already-received content in chunks (avoid extra API call)
+      const text = finalTextFromLoop;
+      for (let i = 0; i < text.length; i += 6) {
+        const chunk = text.slice(i, i + 6);
+        fullResponse += chunk;
+        sse(res, { content: chunk });
+        // tiny yield so the event loop can flush
+        await new Promise(r => setImmediate(r));
+      }
+    } else {
+      // Tools were used: make a final streaming call for a natural summary response
+      const finalStream = await openai.chat.completions.create({
+        model: "gpt-5.4",
+        max_completion_tokens: 8192,
+        messages: chatMessages as any,
+        stream: true,
+      });
+
+      for await (const chunk of finalStream) {
+        const token = chunk.choices[0]?.delta?.content;
+        if (token) {
+          fullResponse += token;
+          sse(res, { content: token });
+        }
       }
     }
 
-    await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
-
-    const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
-    if (conv?.title === "New Dev Session") {
-      const title = content.slice(0, 60).trim();
-      await db.update(conversations).set({ title }).where(eq(conversations.id, id));
+    // ── Persist final response ─────────────────────────────────────────────────
+    if (fullResponse) {
+      await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
     }
 
-    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    // Auto-title conversation
+    const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
+    if (conv?.title === "New Dev Session") {
+      await db.update(conversations).set({ title: content.slice(0, 60).trim() }).where(eq(conversations.id, id));
+    }
+
+    sse(res, { done: true });
     res.end();
   } catch (err: any) {
     logger.error({ err: err?.message }, "DevAI: chat error");
-    res.write(`data: ${JSON.stringify({ error: err?.message ?? "AI error" })}\n\n`);
+    sse(res, { error: err?.message ?? "AI error" });
     res.end();
   }
 });
 
-// ── GET /admin/devai/github — GitHub token status + repo list ────────────────
+// ── GET /admin/devai/github ────────────────────────────────────────────────────
 router.get("/admin/devai/github", async (_req, res) => {
   const token = process.env.GITHUB_TOKEN;
-  if (!token) {
-    res.json({ connected: false, repos: [] });
-    return;
-  }
+  if (!token) { res.json({ connected: false, repos: [] }); return; }
   try {
     const [userRes, reposRes] = await Promise.all([
-      fetch("https://api.github.com/user", {
-        headers: { Authorization: `Bearer ${token}`, "User-Agent": "OrahDEX-DevAI" },
-      }),
-      fetch("https://api.github.com/user/repos?per_page=30&sort=updated", {
-        headers: { Authorization: `Bearer ${token}`, "User-Agent": "OrahDEX-DevAI" },
-      }),
+      fetch("https://api.github.com/user", { headers: GH_HEADERS(token) }),
+      fetch("https://api.github.com/user/repos?per_page=30&sort=updated", { headers: GH_HEADERS(token) }),
     ]);
-    if (!userRes.ok) {
-      res.json({ connected: false, repos: [], error: "Invalid token" });
-      return;
-    }
+    if (!userRes.ok) { res.json({ connected: false, repos: [], error: "Invalid token" }); return; }
     const user = await userRes.json() as { login: string };
-    const repos = reposRes.ok ? (await reposRes.json() as any[]).map((r: any) => ({
-      name: r.name,
-      full_name: r.full_name,
-      private: r.private,
-      language: r.language ?? null,
-      updated_at: r.updated_at,
-    })) : [];
+    const repos = reposRes.ok
+      ? (await reposRes.json() as any[]).map((r: any) => ({
+          name: r.name, full_name: r.full_name, private: r.private,
+          language: r.language ?? null, updated_at: r.updated_at,
+        }))
+      : [];
     res.json({ connected: true, login: user.login, repos });
   } catch (err: any) {
     res.json({ connected: false, repos: [], error: err?.message ?? "Network error" });
   }
 });
 
-// ── DELETE /devai/conversations/:id ──────────────────────────────────────────
+// ── DELETE /devai/conversations/:id ───────────────────────────────────────────
 router.delete("/devai/conversations/:id", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -288,7 +662,7 @@ router.delete("/devai/conversations/:id", async (req, res) => {
     await db.delete(messages).where(eq(messages.conversationId, id));
     await db.delete(conversations).where(eq(conversations.id, id));
     res.json({ ok: true });
-  } catch (err: any) {
+  } catch {
     res.status(500).json({ error: "Internal server error" });
   }
 });

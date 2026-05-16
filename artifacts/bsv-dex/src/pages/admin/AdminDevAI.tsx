@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Code2, Terminal, Cpu, Zap, RefreshCw, Send, Trash2, Eye, ChevronDown, ChevronUp,
   CheckCircle, XCircle, Activity, MessageSquare, ToggleLeft, ToggleRight,
-  Github, Key, Settings, Loader2, Bot, Copy, Check, BookOpen, AlertCircle, ShieldCheck,
+  Link, Key, Settings, Loader2, Bot, Copy, Check, BookOpen, AlertCircle, ShieldCheck,
   GitBranch, FileCode, Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -111,7 +111,7 @@ function GitHubStatusCard() {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-white/8 flex items-center justify-center">
-            <Github className="w-4 h-4 text-foreground" />
+            <Link className="w-4 h-4 text-foreground" />
           </div>
           <div>
             <p className="text-sm font-bold">GitHub Integration</p>
