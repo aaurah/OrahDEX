@@ -23,7 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate Frogbot configuration
+        if: ${{ !((secrets.JF_URL != '' || vars.JF_URL != '') && (secrets.JF_ACCESS_TOKEN != '' || secrets.JFROG_ACCESS_TOKEN != '')) }}
+        run: |
+          echo "::warning::Skipping Frogbot scan. Configure JF_URL (secret or repository variable) and JF_ACCESS_TOKEN (or JFROG_ACCESS_TOKEN) secrets."
+
       - uses: jfrog/frogbot@5d9c42c30f1169d8be4ba5510b40e75ffcbbc2a9  # v2.21.2
+        if: ${{ (secrets.JF_URL != '' || vars.JF_URL != '') && (secrets.JF_ACCESS_TOKEN != '' || secrets.JFROG_ACCESS_TOKEN != '') }}
         env:
           # [Mandatory if the two conditions below are met]
           # 1. The project uses npm, yarn 2, NuGet or .NET to download its dependencies
@@ -34,11 +40,11 @@ jobs:
 
           # [Mandatory]
           # JFrog platform URL
-          JF_URL: ${{ secrets.JF_URL }}
+          JF_URL: ${{ secrets.JF_URL || vars.JF_URL }}
 
           # [Mandatory if JF_USER and JF_PASSWORD are not provided]
           # JFrog access token with 'read' permissions on Xray service
-          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN }}
+          JF_ACCESS_TOKEN: ${{ secrets.JF_ACCESS_TOKEN || secrets.JFROG_ACCESS_TOKEN }}
 
           # [Mandatory if JF_ACCESS_TOKEN is not provided]
           # JFrog username with 'read' permissions for Xray. Must be provided with JF_PASSWORD
