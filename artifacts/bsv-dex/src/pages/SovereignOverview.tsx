@@ -1,4 +1,5 @@
 import { Link } from "wouter";
+import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowRight, Shield, Key, Globe, Zap, Lock, Layers,
   ArrowRightLeft, Cpu, Wallet, TrendingUp, Users, ExternalLink,
@@ -135,6 +136,11 @@ function FeatureRow({ icon: Icon, title, body, href }: {
    Main export
 ═══════════════════════════════════════════════════════════════════════════ */
 export function SovereignOverviewPage() {
+  useSEO({
+    title: "Sovereign Exchange — OrahDEX",
+    description: "OrahDEX is a sovereign decentralized exchange — no intermediaries, no custodians. Every trade settles on-chain via Bitcoin SV. Your keys, your coins.",
+    keywords: "sovereign DEX, non-custodial exchange, decentralized trading, BSV settlement, self-custody crypto, OrahDEX sovereign",
+  });
   return (
     <div className="relative min-h-screen bg-background text-foreground overflow-x-hidden">
       <GridBackground />

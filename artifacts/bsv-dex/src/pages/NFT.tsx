@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useSEO } from "@/hooks/useSEO";
 import { createPortal } from "react-dom";
 import {
   Heart, MessageCircle, Share2, Zap, BadgeCheck, Search,
@@ -1612,6 +1613,11 @@ function NftChatPanel() {
 type ActiveTab = "feed" | "search" | "create" | "chat" | "profile";
 
 export function NFTPage() {
+  useSEO({
+    title: "NFT Marketplace — OrahDEX",
+    description: "Mint, trade, and collect NFTs on OrahDEX. Creator coins, on-chain provenance, and BSV-settled NFT transactions across EVM and BSV networks.",
+    keywords: "NFT marketplace, OrahDEX NFT, BSV NFT, mint NFT, buy NFT, sell NFT, creator coins, on-chain NFT",
+  });
   const { address, provider, network, internalEvmAddress } = useWalletStore();
   const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
   const [activeTab, setActiveTab] = useState<ActiveTab>("feed");

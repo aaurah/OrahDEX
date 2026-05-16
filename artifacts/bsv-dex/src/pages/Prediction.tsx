@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
+import { useSEO } from "@/hooks/useSEO";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useToast } from "@/hooks/use-toast";
@@ -193,6 +194,11 @@ function RoundCard({
 }
 
 export function PredictionTrading() {
+  useSEO({
+    title: "Prediction Markets — OrahDEX",
+    description: "Predict price movements on OrahDEX prediction markets. Bet on BSV, BTC, ETH and 900+ assets with on-chain settlement via Bitcoin SV.",
+    keywords: "prediction markets, crypto prediction, price betting, OrahDEX predict, BSV prediction, binary options crypto",
+  });
   const [symbol, setSymbol] = useState("BSV-USDT");
   const [rounds, setRounds] = useState<Round[]>([]);
   const [currentPrice, setCurrentPrice] = useState(0);

@@ -1,4 +1,5 @@
 {
+  "id": "orahdex",
   "name": "OrahDEX — Trade means DEX",
   "short_name": "OrahDEX",
   "description": "Multi-chain DEX with spot trading, perpetual futures, P2P markets, and on-chain BSV settlement. 900+ markets across EVM, TRON and BSV networks.",
@@ -7,7 +8,7 @@
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "browser"],
   "background_color": "#080d13",
-  "theme_color": "#7C3AED",
+  "theme_color": "#4ade80",
   "orientation": "any",
   "lang": "en",
   "dir": "ltr",
@@ -41,6 +42,13 @@
       "short_name": "BTC Perp",
       "description": "Bitcoin perpetual futures",
       "url": "/futures/BTC-USDT-PERP",
+      "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
+    },
+    {
+      "name": "DevAI",
+      "short_name": "DevAI",
+      "description": "Developer AI — build bots and integrations on OrahDEX",
+      "url": "/devai",
       "icons": [{ "src": "/favicon.svg", "sizes": "any" }]
     }
   ],

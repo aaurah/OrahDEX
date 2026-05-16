@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSEO } from "@/hooks/useSEO";
 import { TrendingUp, DollarSign, BarChart3, Layers, ArrowUpDown, Users, Droplets, Zap, ChevronDown, ChevronUp, RefreshCw, Info } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -57,6 +58,11 @@ function TierBadge({ tier }: { tier: string }) {
 }
 
 export default function Revenue() {
+  useSEO({
+    title: "Fee Revenue & Keeper Rewards — OrahDEX",
+    description: "OrahDEX fee revenue distribution and Keeper reward schedule. Earn trading fee rebates by holding ORAH tokens — Standard, Guardian, Elder, and Archon tiers.",
+    keywords: "OrahDEX fees, Keeper rewards, trading fee rebate, ORAH token, fee revenue, DEX revenue sharing",
+  });
   const [period, setPeriod] = useState<Period>("30d");
   const [scheduleOpen, setScheduleOpen] = useState(true);
 

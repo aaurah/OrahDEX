@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useSEO } from "@/hooks/useSEO";
 import { Bot, Send, Plus, Trash2, Sparkles, TrendingUp, Zap, ChevronRight, BarChart2, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getMarkets } from "@workspace/api-client-react";
@@ -71,6 +72,11 @@ function renderInline(text: string): React.ReactNode {
 }
 
 export function OraAIPage() {
+  useSEO({
+    title: "Ora AI — Trading Intelligence | OrahDEX",
+    description: "Chat with Ora, OrahDEX's AI trading assistant. Get market analysis, trading strategy, DeFi insights, and real-time data across 900+ markets.",
+    keywords: "crypto AI assistant, trading AI, Ora AI, OrahDEX AI, market analysis AI, DeFi AI, BSV trading intelligence",
+  });
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<number | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
