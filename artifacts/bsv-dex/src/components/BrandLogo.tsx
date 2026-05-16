@@ -44,7 +44,7 @@ export function OrahO({ online }: { online: boolean }) {
       fill="none"
       aria-hidden
     >
-      <circle cx="50" cy="50" r="40" strokeWidth="12" fill="none" className="stroke-foreground" />
+      <circle cx="50" cy="50" r="40" strokeWidth="12" fill="none" className="stroke-black dark:stroke-white" />
       <circle cx="50" cy="50" r="13" fill={color} opacity="0.7"
         style={{ filter: `blur(2px) drop-shadow(0 0 6px ${glowColor})` }}>
         <animate attributeName="r"       from="13" to="34" dur="1.2s" repeatCount="indefinite" />
