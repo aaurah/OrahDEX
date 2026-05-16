@@ -579,6 +579,77 @@ export interface SignResult {
 }
 
 /**
+ * Sign a BSV withdrawal challenge using the OrahWallet passkey.
+ * Finds the passkey wallet by its EVM address, authenticates, derives the
+ * BSV private key (m/44'/236'/0'/0/0), and returns a Bitcoin Signed Message
+ * compact-signature (65 bytes → base64): 1-byte header + 32r + 32s.
+ */
+export async function signBsvChallengeWithPasskey(
+  evmAddress: string,
+  message:    string,
+): Promise<string> {
+  const wallets = listPasskeyWallets();
+  const wallet  = wallets.find(w => w.address.toLowerCase() === evmAddress.toLowerCase());
+  if (!wallet) throw new Error("OrahWallet not found on this device. Please create or restore your passkey wallet first.");
+
+  const challenge = new TextEncoder().encode(message.slice(0, 32));
+  const assertion = await navigator.credentials.get({
+    publicKey: {
+      challenge,
+      allowCredentials: [{ id: b642buf(url2b64(wallet.credentialId)), type: "public-key" }],
+      userVerification: "required",
+      timeout:          60_000,
+    },
+  }) as PublicKeyCredential | null;
+  if (!assertion) throw new Error("Passkey authentication cancelled");
+
+  const secret = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, assertion.rawId);
+
+  // Derive BSV private key at BIP44 path m/44'/236'/0'/0/0
+  const { HDKey } = await import("@scure/bip32");
+  const { mnemonicToSeed } = await import("@scure/bip39");
+  const isMnemonic = secret.trim().split(/\s+/).length >= 12 && !secret.startsWith("0x");
+
+  let bsvPrivKey: Uint8Array;
+  if (isMnemonic) {
+    const seed    = await mnemonicToSeed(secret.trim());
+    const root    = HDKey.fromMasterSeed(seed);
+    const derived = root.derive("m/44'/236'/0'/0/0");
+    if (!derived.privateKey) throw new Error("BSV key derivation failed");
+    bsvPrivKey = derived.privateKey;
+  } else {
+    // Legacy raw EVM key — use it as-is
+    const hex = (secret.startsWith("0x") ? secret.slice(2) : secret).padStart(64, "0");
+    bsvPrivKey = new Uint8Array(hex.match(/.{2}/g)!.map((b: string) => parseInt(b, 16)));
+  }
+
+  // Bitcoin Signed Message hash: SHA256d("\x18Bitcoin Signed Message:\n" + varint(len) + message)
+  const { sha256 } = await import("@noble/hashes/sha2.js");
+  const msgBuf = new TextEncoder().encode(message);
+  const prefix = new TextEncoder().encode("\x18Bitcoin Signed Message:\n");
+  const len    = msgBuf.length;
+  const varint = len < 0xfd
+    ? new Uint8Array([len])
+    : len < 0xffff
+      ? new Uint8Array([0xfd, len & 0xff, (len >> 8) & 0xff])
+      : new Uint8Array([0xfe, len & 0xff, (len >> 8) & 0xff, (len >> 16) & 0xff, (len >> 24) & 0xff]);
+
+  const preimage = new Uint8Array(prefix.length + varint.length + msgBuf.length);
+  preimage.set(prefix, 0);
+  preimage.set(varint, prefix.length);
+  preimage.set(msgBuf, prefix.length + varint.length);
+  const msgHash = sha256(sha256(preimage));
+
+  // Compact secp256k1 signature (65 bytes: 1 byte header + 32r + 32s)
+  const { secp256k1 } = await import("@noble/curves/secp256k1.js");
+  const sig       = secp256k1.sign(msgHash, bsvPrivKey, { lowS: true });
+  const compact   = sig.toCompactRawBytes();
+  const recovery  = sig.recovery ?? 0;
+  const sigBytes  = new Uint8Array([31 + recovery, ...compact]); // 31 = compressed key header
+  return btoa(String.fromCharCode(...sigBytes));
+}
+
+/**
  * Sign arbitrary data with a passkey wallet.
  * Prompts biometric authentication, then decrypts the private key in-memory.
  */

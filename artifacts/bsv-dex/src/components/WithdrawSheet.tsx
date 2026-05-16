@@ -38,8 +38,9 @@ import {
 import { API_BASE } from "@/lib/api";
 import { validateAltChainAddress } from "@/lib/addressValidation";
 import { isAddress as isEvmAddress } from "viem";
-import { CHAIN_RPC_URLS } from "@/lib/reown";
+import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, fetchEvmBalance } from "@/lib/reown";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
+import { signBsvChallengeWithPasskey } from "@/lib/passkeyWallet";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
@@ -298,6 +299,8 @@ export interface WithdrawSheetProps {
   isOrahWallet?:       boolean;
   /** Open the withdraw tab directly in wallet-send mode ("wallet") or exchange mode ("exchange"). Default: "exchange". */
   initialSource?:      "exchange" | "wallet";
+  /** EVM address of the OrahWallet passkey — required for BSV/non-EVM "My Wallet" signing. */
+  passkeyEvmAddress?:  string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -316,6 +319,7 @@ export function WithdrawSheet({
   visibleTabs,
   isOrahWallet = false,
   initialSource = "exchange",
+  passkeyEvmAddress,
 }: WithdrawSheetProps) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
@@ -351,7 +355,7 @@ export function WithdrawSheet({
   const [depFromWalletTxHash,   setDepFromWalletTxHash]   = useState<string | null>(null);
   const [depFromWalletError,    setDepFromWalletError]    = useState<string | null>(null);
 
-  // ── wallet send state ────────────────────────────────────────────────────
+  // ── wallet send state (EVM) ──────────────────────────────────────────────
   const [withdrawSource,      setWithdrawSource]      = useState<"exchange" | "wallet">("exchange");
   const [walletSendChain,     setWalletSendChain]     = useState<WalletChain>(() => resolveWalletChainToken(asset).chain);
   const [walletSendToken,     setWalletSendToken]     = useState<WalletToken>(() => resolveWalletChainToken(asset).token);
@@ -362,6 +366,15 @@ export function WithdrawSheet({
   const [walletSending,       setWalletSending]       = useState(false);
   const [walletSendTxHash,    setWalletSendTxHash]    = useState<string | null>(null);
   const [walletSendError,     setWalletSendError]     = useState<string | null>(null);
+
+  // ── non-EVM wallet send state (BSV / LTC / XRP / etc.) ──────────────────
+  const [nonEvmSendBalance,   setNonEvmSendBalance]   = useState<number | null>(null);
+  const [nonEvmSendBalFetch,  setNonEvmSendBalFetch]  = useState(false);
+  const [nonEvmSendAmount,    setNonEvmSendAmount]    = useState("");
+  const [nonEvmSendRecipient, setNonEvmSendRecipient] = useState("");
+  const [nonEvmSending,       setNonEvmSending]       = useState(false);
+  const [nonEvmSendTxHash,    setNonEvmSendTxHash]    = useState<string | null>(null);
+  const [nonEvmSendError,     setNonEvmSendError]     = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -378,6 +391,11 @@ export function WithdrawSheet({
       setDepFromWalletTxHash(null);
       setDepFromWalletError(null);
       setDepFromWalletAmount("");
+      setNonEvmSendBalance(null);
+      setNonEvmSendAmount("");
+      setNonEvmSendRecipient("");
+      setNonEvmSendTxHash(null);
+      setNonEvmSendError(null);
       setDepFromWalletBalance(null);
       setBsvTxHash("");
       setSolTxHash("");
@@ -637,34 +655,38 @@ export function WithdrawSheet({
     }
   };
 
-  // ── wallet send: balance fetch ───────────────────────────────────────────
+  // ── wallet send: EVM balance fetch ──────────────────────────────────────
   const fetchWalletBalance = useCallback(async (chain: WalletChain, token: WalletToken) => {
     if (!walletAddress) return;
     setWalletSendBalance(null);
     setWalletSendBalFetch(true);
     try {
-      const rpc = CHAIN_RPC_URLS[chain.id];
-      if (!rpc) return;
-
       if (token.isNative) {
-        const res = await fetch(rpc, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [walletAddress, "latest"] }),
-        });
-        const { result } = await res.json();
-        setWalletSendBalance(Number(BigInt(result ?? "0x0")) / 1e18);
+        // fetchEvmBalance handles wagmi, injected provider, and RPC fallbacks
+        const bal = await fetchEvmBalance(walletAddress, chain.id);
+        setWalletSendBalance(bal !== null ? parseFloat(bal) : null);
       } else if (token.address) {
-        // balanceOf(address) → 0x70a08231 + padded address
-        const data = "0x70a08231" + walletAddress.toLowerCase().replace("0x", "").padStart(64, "0");
-        const res = await fetch(rpc, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: token.address, data }, "latest"] }),
-        });
-        const { result } = await res.json();
-        const raw = BigInt(result ?? "0x0");
-        setWalletSendBalance(Number(raw) / Math.pow(10, token.decimals));
+        // ERC-20 balanceOf: try primary RPC then fallback
+        const rpcs = [CHAIN_RPC_URLS[chain.id], CHAIN_RPC_FALLBACKS?.[chain.id]].filter(Boolean) as string[];
+        const data  = "0x70a08231" + walletAddress.toLowerCase().replace("0x", "").padStart(64, "0");
+        let fetched = false;
+        for (const rpc of rpcs) {
+          try {
+            const res = await fetch(rpc, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: token.address, data }, "latest"] }),
+            });
+            if (!res.ok) continue;
+            const json = await res.json();
+            if (!json?.result) continue;
+            const raw = BigInt(json.result);
+            setWalletSendBalance(Number(raw) / Math.pow(10, token.decimals));
+            fetched = true;
+            break;
+          } catch { continue; }
+        }
+        if (!fetched) setWalletSendBalance(null);
       }
     } catch {
       setWalletSendBalance(null);
@@ -674,10 +696,110 @@ export function WithdrawSheet({
   }, [walletAddress]);
 
   useEffect(() => {
-    if (open && tab === "withdraw" && withdrawSource === "wallet" && isOrahWallet) {
+    if (open && tab === "withdraw" && withdrawSource === "wallet" && isOrahWallet && isEvmNetwork) {
       fetchWalletBalance(walletSendChain, walletSendToken);
     }
-  }, [open, tab, withdrawSource, walletSendChain, walletSendToken, isOrahWallet, fetchWalletBalance]);
+  }, [open, tab, withdrawSource, walletSendChain, walletSendToken, isOrahWallet, isEvmNetwork, fetchWalletBalance]);
+
+  // ── wallet send: non-EVM balance fetch (BSV, LTC, XRP, …) ───────────────
+  const fetchNonEvmBalance = useCallback(async () => {
+    if (!walletAddress) return;
+    setNonEvmSendBalance(null);
+    setNonEvmSendBalFetch(true);
+    try {
+      const net = network.toLowerCase();
+      if (net === "bsv") {
+        const r = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${walletAddress}/balance`);
+        if (r.ok) {
+          const { confirmed, unconfirmed } = await r.json();
+          setNonEvmSendBalance(((confirmed ?? 0) + (unconfirmed ?? 0)) / 1e8);
+        }
+      } else if (net === "ltc") {
+        const r = await fetch(`https://litecoinspace.org/api/address/${walletAddress}`);
+        if (r.ok) {
+          const d = await r.json();
+          const funded = d.chain_stats?.funded_txo_sum ?? 0;
+          const spent  = d.chain_stats?.spent_txo_sum  ?? 0;
+          setNonEvmSendBalance((funded - spent) / 1e8);
+        }
+      } else if (net === "xrp") {
+        const r = await fetch(`https://data.ripple.com/v2/accounts/${walletAddress}/balances`);
+        if (r.ok) {
+          const d = await r.json();
+          const xrpEntry = (d.balances ?? []).find((b: any) => b.currency === "XRP");
+          if (xrpEntry) setNonEvmSendBalance(parseFloat(xrpEntry.value));
+        }
+      }
+    } catch {
+      setNonEvmSendBalance(null);
+    } finally {
+      setNonEvmSendBalFetch(false);
+    }
+  }, [walletAddress, network]);
+
+  useEffect(() => {
+    if (open && tab === "withdraw" && withdrawSource === "wallet" && isOrahWallet && !isEvmNetwork) {
+      fetchNonEvmBalance();
+    }
+  }, [open, tab, withdrawSource, isOrahWallet, isEvmNetwork, fetchNonEvmBalance]);
+
+  // ── wallet send: non-EVM challenge/sign/broadcast ────────────────────────
+  const handleNonEvmWalletSend = async () => {
+    const parsedAmt = parseFloat(nonEvmSendAmount);
+    if (!parsedAmt || !nonEvmSendRecipient.trim() || nonEvmSending) return;
+    setNonEvmSending(true);
+    setNonEvmSendError(null);
+    try {
+      // 1. Request withdrawal challenge
+      const challengeRes = await fetch(`${API_BASE}/withdraw/challenge`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ walletAddress }),
+      });
+      if (!challengeRes.ok) {
+        const err = await challengeRes.json().catch(() => ({}));
+        throw new Error(err.error ?? "Failed to get withdrawal challenge");
+      }
+      const { message } = await challengeRes.json();
+
+      // 2. Sign with passkey-derived chain key
+      let signature: string;
+      if (isBitcoinFork && passkeyEvmAddress) {
+        signature = await signBsvChallengeWithPasskey(passkeyEvmAddress, message);
+      } else {
+        throw new Error("Passkey EVM address not available — cannot sign withdrawal");
+      }
+
+      // 3. Submit withdrawal
+      const withdrawRes = await fetch(`${API_BASE}/withdrawals`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          walletAddress,
+          asset,
+          amount:       parsedAmt,
+          network,
+          networkLabel,
+          recipient:    nonEvmSendRecipient.trim(),
+          signature,
+        }),
+      });
+      const data = await withdrawRes.json().catch(() => ({}));
+      if (!withdrawRes.ok) throw new Error(data.error ?? "Withdrawal failed");
+
+      setNonEvmSendTxHash(data.txid ?? "submitted");
+      toast({ title: "Withdrawal submitted", description: `${parsedAmt} ${asset} withdrawal is processing.` });
+      addNotification({ type: "withdrawal", title: "Withdrawal Processing", body: `${parsedAmt} ${asset} sent from wallet.` });
+      refetchHistory?.();
+      setTimeout(() => fetchNonEvmBalance(), 6_000);
+    } catch (err: any) {
+      const msg = err?.message ?? "Transaction failed";
+      setNonEvmSendError(msg);
+      toast({ title: "Send failed", description: msg, variant: "destructive" });
+    } finally {
+      setNonEvmSending(false);
+    }
+  };
 
   // ── wallet send: broadcast ───────────────────────────────────────────────
   const handleWalletSend = async () => {
@@ -1354,8 +1476,102 @@ export function WithdrawSheet({
               </>
             )}
 
-            {/* ── WALLET SOURCE (passkey wallet direct on-chain send) ── */}
-            {withdrawSource === "wallet" && (
+            {/* ── WALLET SOURCE — non-EVM (BSV, LTC, XRP…) ─────────────── */}
+            {withdrawSource === "wallet" && !isEvmNetwork && (
+              <>
+                {/* Balance display */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-secondary/30 border border-border">
+                  <div>
+                    <p className="text-xs text-muted-foreground">On-chain Balance</p>
+                    <p className="text-sm font-bold font-mono text-foreground">
+                      {nonEvmSendBalFetch
+                        ? <span className="inline-flex items-center gap-1 text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin" /> Loading…</span>
+                        : nonEvmSendBalance !== null
+                          ? `${nonEvmSendBalance.toFixed(8)} ${asset}`
+                          : <span className="text-muted-foreground/60">—</span>
+                      }
+                    </p>
+                  </div>
+                  <button
+                    onClick={fetchNonEvmBalance}
+                    disabled={nonEvmSendBalFetch}
+                    className="text-xs text-primary hover:text-primary/80 transition-colors disabled:opacity-40"
+                  >
+                    Refresh
+                  </button>
+                </div>
+
+                {/* Amount */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold">Amount ({asset})</label>
+                  <div className="relative">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder={`0.00 ${asset}`}
+                      value={nonEvmSendAmount}
+                      onChange={e => setNonEvmSendAmount(e.target.value)}
+                      className="h-11 pr-14 font-mono"
+                    />
+                    {nonEvmSendBalance !== null && (
+                      <button
+                        onClick={() => setNonEvmSendAmount(nonEvmSendBalance.toFixed(8))}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-primary hover:text-primary/80 px-2 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
+                      >
+                        MAX
+                      </button>
+                    )}
+                  </div>
+                  {nonEvmSendBalance !== null && parseFloat(nonEvmSendAmount) > nonEvmSendBalance && (
+                    <p className="text-xs text-red-400 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" /> Exceeds wallet balance
+                    </p>
+                  )}
+                </div>
+
+                {/* Recipient */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-semibold">Recipient address</label>
+                  <Input
+                    placeholder={addressPlaceholder}
+                    value={nonEvmSendRecipient}
+                    onChange={e => setNonEvmSendRecipient(e.target.value)}
+                    className="h-11 font-mono text-xs"
+                  />
+                </div>
+
+                {nonEvmSendError && (
+                  <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                    <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>{nonEvmSendError}</span>
+                  </div>
+                )}
+
+                {nonEvmSendTxHash && (
+                  <div className="flex items-start gap-2 p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>Withdrawal submitted! ID: {nonEvmSendTxHash}</span>
+                  </div>
+                )}
+
+                <Button
+                  onClick={handleNonEvmWalletSend}
+                  disabled={
+                    !nonEvmSendAmount || !nonEvmSendRecipient.trim() || nonEvmSending ||
+                    (nonEvmSendBalance !== null && parseFloat(nonEvmSendAmount) > nonEvmSendBalance)
+                  }
+                  className="w-full gap-2 h-11 bg-green-600 hover:bg-green-500 text-white"
+                >
+                  {nonEvmSending
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Authenticating…</>
+                    : <><ArrowRight className="w-4 h-4" /> Send {nonEvmSendAmount ? `${nonEvmSendAmount} ` : ""}{asset} from Wallet</>}
+                </Button>
+              </>
+            )}
+
+            {/* ── WALLET SOURCE — EVM (passkey wallet direct on-chain send) ── */}
+            {withdrawSource === "wallet" && isEvmNetwork && (
               <>
                 {/* Chain selector */}
                 <div className="space-y-1.5">
