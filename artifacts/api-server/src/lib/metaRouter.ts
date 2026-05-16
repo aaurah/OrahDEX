@@ -58,9 +58,12 @@ export interface RouteQuote {
 }
 
 export interface MetaQuoteResult {
-  best:     RouteQuote | null;
-  all:      RouteQuote[];
-  errors:   Record<ExternalVenue, string | null>;
+  best:      RouteQuote | null;
+  all:       RouteQuote[];
+  errors:    Record<ExternalVenue, string | null>;
+  /** Lowest minimum input amount across all quotes, even canExecute=false ones.
+   *  Set when best=null because the amount is below every venue's threshold. */
+  lowestMin: number | null;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -118,10 +121,14 @@ async function quoteLetsExchange(
   amount: number,
 ): Promise<{ quote: RouteQuote | null; error: string | null }> {
   try {
+    // LE /v1/info requires: from, to, network_from, network_to, amount
+    // (NOT coin_from / coin_to / deposit_amount — those cause 422)
     const { ok, status, data } = await leRequest("/v1/info", "POST", {
-      coin_from:      from,
-      coin_to:        to,
-      deposit_amount: amount,
+      from,
+      to,
+      network_from:   from,   // for native chains the network = coin symbol
+      network_to:     to,
+      amount,
       affiliate_id:   AFFILIATE_ID,
     });
 
@@ -384,12 +391,21 @@ export async function getBestExternalQuote(
 
   const best = scored.find(q => Number.isFinite(q.score)) ?? null;
 
+  // Compute the lowest minimum across ALL quotes (including canExecute=false).
+  // This lets the caller tell the user exactly what amount to enter even when
+  // the requested amount is below every venue's threshold.
+  const allMins = scored
+    .map(q => q.minAmount)
+    .filter((m): m is number => m !== null && m > 0);
+  const lowestMin = allMins.length > 0 ? Math.min(...allMins) : null;
+
   logger.info(
     {
       from:  fromU,
       to:    toU,
       amount,
       best:  best?.venue ?? "none",
+      lowestMin,
       scores: scored.map(q => ({ venue: q.venue, output: q.expectedOutput, score: q.score.toFixed(4) })),
       errors: Object.fromEntries(
         Object.entries(errors).filter(([, v]) => v !== null),
@@ -398,7 +414,7 @@ export async function getBestExternalQuote(
     "metaRouter: best external quote selected",
   );
 
-  return { best, all: scored, errors };
+  return { best, all: scored, errors, lowestMin };
 }
 
 /**

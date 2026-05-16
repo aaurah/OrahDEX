@@ -452,10 +452,23 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
       if (!r.ok) {
         if (d.code === "LE_KEY_NOT_CONFIGURED") {
           setEstError("Cross-chain exchange is temporarily unavailable. Please try again later or contact support.");
+        } else if (d.error === "below_minimum" && d.min_amount) {
+          // Pair is supported but amount is below the minimum — surface the
+          // minimum so the UI can show "Min: X" and let the user tap to fill it.
+          setEstimate({
+            amount:             "0",
+            rate:               "0",
+            min_amount:         d.min_amount,
+            max_amount:         "",
+            rate_id:            null,
+            rate_id_expired_at: null,
+            withdrawal_fee:     "0",
+          } as Estimate);
+          setEstError(null);
         } else {
           setEstError(d.error ?? "Rate unavailable");
         }
-        setEstimate(null);
+        if (d.error !== "below_minimum") setEstimate(null);
       } else { setEstimate(d as Estimate); }
     } catch { setEstError("Network error"); }
     setEstLoading(false);

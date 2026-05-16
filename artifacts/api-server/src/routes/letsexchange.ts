@@ -590,12 +590,23 @@ router.post("/letsexchange/estimate", async (req, res) => {
     const inUsd  = lePrices[from]  ?? 1;
     const outUsd = lePrices[to]    ?? 1;
 
-    const { best, errors } = await getBestExternalQuote(from, to, amt, inUsd, outUsd);
+    const { best, errors, lowestMin } = await getBestExternalQuote(from, to, amt, inUsd, outUsd);
     if (!best) {
       const errDetails = Object.entries(errors)
         .filter(([, v]) => v !== null)
         .map(([k, v]) => `${k}: ${v}`)
         .join("; ");
+      // If lowestMin is set, the pair IS supported — the user just needs to send more.
+      // Return 422 with min_amount so the frontend can show a helpful prompt.
+      if (lowestMin != null && lowestMin > 0) {
+        res.status(422).json({
+          error:          "below_minimum",
+          min_amount:     String(lowestMin),
+          pair_supported: true,
+          detail:         errDetails,
+        });
+        return;
+      }
       res.status(404).json({ error: `No rate available for ${from}→${to}`, detail: errDetails }); return;
     }
 
