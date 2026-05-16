@@ -474,7 +474,7 @@ export function MobileQRScanner() {
                     <p className="text-white/55 text-xs font-mono break-all">{result.uri.slice(0, 60)}…</p>
                   </div>
                   <button
-                    onClick={() => toast({ title: "WalletConnect", description: "Pairing initiated…" })}
+                    onClick={() => navigate(`/wallet?tab=dapps&uri=${encodeURIComponent(result.uri)}`)}
                     className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl bg-blue-500 text-white text-sm font-bold active:scale-95 transition-transform"
                   >
                     <Link2 size={16} /> Connect to App

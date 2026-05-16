@@ -233,6 +233,13 @@ input[type=number] { -moz-appearance: textfield; }
 }
 .orah-fade-up  { animation: orah-fade-up 0.6s ease-out forwards; }
 
+/* QR scan line sweep */
+@keyframes scanline {
+  0%   { top: 10%; }
+  50%  { top: 85%; }
+  100% { top: 10%; }
+}
+
 /* Scrollbar hide */
 .scrollbar-none { scrollbar-width: none; }
 .scrollbar-none::-webkit-scrollbar { display: none; }
