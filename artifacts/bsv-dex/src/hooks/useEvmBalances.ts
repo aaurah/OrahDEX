@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, getWagmiConfig } from "@/lib/reown";
+import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 
 export interface TokenBalance {
   symbol: string;
@@ -11,6 +12,8 @@ export interface TokenBalance {
   color: string;
   decimals: number;
   isNative?: boolean;
+  contractAddress?: string;
+  isCustom?: boolean;
 }
 
 // ERC-20 token registry per chainId
@@ -337,8 +340,21 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
         isNative: true,
       });
 
-      // Fetch all registered ERC-20 balances for this chain
-      const tokens = ERC20_TOKENS[chainId] ?? [];
+      // Fetch all registered ERC-20 balances for this chain (built-in + custom)
+      const builtInTokens = ERC20_TOKENS[chainId] ?? [];
+      const customTokens  = useCustomTokenStore.getState().getByChainId(chainId).map(ct => ({
+        symbol:   ct.symbol,
+        name:     ct.name,
+        address:  ct.address,
+        decimals: ct.decimals,
+        color:    ct.color,
+        isCustom: true,
+      }));
+      const tokens = [
+        ...builtInTokens.map(t => ({ ...t, isCustom: false })),
+        ...customTokens,
+      ];
+
       const erc20Results = await Promise.allSettled(
         tokens.map(async (token) => {
           const hexBal: string = await rpcCall("eth_call", [
@@ -354,17 +370,19 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
       for (const r of erc20Results) {
         if (r.status !== "fulfilled") continue;
         const { token, amount } = r.value;
-        if (amount <= 0) continue;
+        if (amount <= 0 && !token.isCustom) continue;
         const price = usdPrices[token.symbol] ?? 0;
         result.push({
-          symbol: token.symbol,
-          name: token.name,
+          symbol:          token.symbol,
+          name:            token.name,
           amount,
-          usdValue: amount * price,
+          usdValue:        amount * price,
           price,
-          change24h: 0,
-          color: token.color,
-          decimals: STABLECOINS.has(token.symbol) ? 2 : token.symbol === "WBTC" || token.symbol === "cbBTC" ? 6 : 4,
+          change24h:       0,
+          color:           token.color,
+          decimals:        STABLECOINS.has(token.symbol) ? 2 : token.symbol === "WBTC" || token.symbol === "cbBTC" ? 6 : 4,
+          contractAddress: token.address,
+          isCustom:        token.isCustom,
         });
       }
 
