@@ -827,8 +827,7 @@ export function LandingPage() {
       {/* ── PROTOCOL SNAPSHOT ─────────────────────────────────────────────── */}
       <section className="relative z-10 px-6 lg:px-10 pb-6 -mt-[10px]">
         <div className="max-w-6xl mx-auto">
-          <div className="rounded-2xl border border-border/60 overflow-hidden"
-            style={{ background: "radial-gradient(circle at top left, rgba(24,27,43,0.9) 0%, rgba(5,6,10,0.95) 60%)" }}>
+          <div className="rounded-2xl border border-border/60 overflow-hidden bg-card">
             <div className="flex items-center justify-between px-5 py-3 border-b border-border/50">
               <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Protocol Snapshot</span>
               <div className="flex items-center gap-1.5 text-[10px] font-black text-green-400 uppercase tracking-widest">
