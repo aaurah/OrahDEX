@@ -159,7 +159,7 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         {children}
       </div>
 
-      {!chatOpen && !location.startsWith("/nft") && (
+      {!chatOpen && !location.startsWith("/nft") && !location.startsWith("/devai") && (
         <button
           onClick={() => setChatOpen(true)}
           title="Live Support"
