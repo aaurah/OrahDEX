@@ -452,6 +452,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
         vertLine: { color: '#4ade80', labelBackgroundColor: c.cross, style: 2, width: 1 },
         horzLine: { color: '#4ade80', labelBackgroundColor: c.cross, style: 2, width: 1 },
       },
+      handleScroll: { vertTouchDrag: false },
     });
 
     /* Volume series */
@@ -492,6 +493,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
         vertLine: { color: '#4ade80', labelBackgroundColor: c.subBg, style: 2, width: 1 },
         horzLine: { color: '#4ade80', labelBackgroundColor: c.subBg, style: 2, width: 1 },
       },
+      handleScroll: { vertTouchDrag: false },
     });
     subChartRef.current = chart;
 
