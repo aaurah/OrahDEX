@@ -1,4 +1,5 @@
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
+import { useSettingsStore } from "@/store/useSettingsStore";
 import { Monitor, Sun, Smartphone, Check, Palette } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -92,8 +93,58 @@ function ThemePreview({ theme }: { theme: typeof THEMES[0] }) {
   );
 }
 
+function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={cn(
+        "w-11 h-6 rounded-full border transition-all relative shrink-0",
+        enabled ? "bg-primary border-primary" : "bg-secondary border-border"
+      )}
+    >
+      <div className={cn(
+        "absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all duration-200",
+        enabled ? "left-5" : "left-0.5"
+      )} />
+    </button>
+  );
+}
+
 export function AdminThemes() {
   const { theme, setTheme } = useThemeStore();
+  const {
+    compactOrderBook,        setCompactOrderBook,
+    animatePriceChanges,     setAnimatePriceChanges,
+    showTradingViewWatermark, setShowTradingViewWatermark,
+    highContrastPrices,      setHighContrastPrices,
+  } = useSettingsStore();
+
+  const PREFS = [
+    {
+      label: "Compact Order Book",
+      desc:  "Reduce row height in order book for more data density",
+      value: compactOrderBook,
+      toggle: () => setCompactOrderBook(!compactOrderBook),
+    },
+    {
+      label: "Animate Price Changes",
+      desc:  "Flash green/red on price updates",
+      value: animatePriceChanges,
+      toggle: () => setAnimatePriceChanges(!animatePriceChanges),
+    },
+    {
+      label: "Show TradingView Watermark",
+      desc:  "Display chart attribution logo",
+      value: showTradingViewWatermark,
+      toggle: () => setShowTradingViewWatermark(!showTradingViewWatermark),
+    },
+    {
+      label: "High Contrast Prices",
+      desc:  "Use stronger green/red contrast for bid/ask",
+      value: highContrastPrices,
+      toggle: () => setHighContrastPrices(!highContrastPrices),
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -148,29 +199,17 @@ export function AdminThemes() {
 
       {/* Additional UI preferences */}
       <div className="bg-card border border-border rounded-2xl p-5">
-        <h3 className="font-semibold mb-4 flex items-center gap-2"><Palette className="w-4 h-4 text-primary" /> Additional Preferences</h3>
+        <h3 className="font-semibold mb-4 flex items-center gap-2">
+          <Palette className="w-4 h-4 text-primary" /> Additional Preferences
+        </h3>
         <div className="space-y-3">
-          {[
-            { label: "Compact Order Book", desc: "Reduce row height in order book for more data density" },
-            { label: "Animate Price Changes", desc: "Flash green/red on price updates" },
-            { label: "Show TradingView Watermark", desc: "Display chart attribution logo" },
-            { label: "High Contrast Prices", desc: "Use stronger green/red contrast for bid/ask" },
-          ].map((pref, i) => (
-            <div key={i} className="flex items-center justify-between p-3 bg-secondary/40 rounded-xl border border-border">
+          {PREFS.map((pref) => (
+            <div key={pref.label} className="flex items-center justify-between p-3 bg-secondary/40 rounded-xl border border-border">
               <div>
                 <p className="text-sm font-medium">{pref.label}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{pref.desc}</p>
               </div>
-              <button
-                className={cn(
-                  "w-11 h-6 rounded-full border transition-all relative",
-                  i % 2 === 0 ? "bg-primary border-primary" : "bg-secondary border-border"
-                )}
-              >
-                <div className={cn("absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all",
-                  i % 2 === 0 ? "left-5" : "left-0.5"
-                )} />
-              </button>
+              <Toggle enabled={pref.value} onToggle={pref.toggle} />
             </div>
           ))}
         </div>

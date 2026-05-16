@@ -99,6 +99,15 @@ interface SettingsState {
   // Default leverage multiplier used by Futures & Prediction (1–100).
   defaultLeverage: number;
   setDefaultLeverage: (v: number) => void;
+  // UI display preferences
+  compactOrderBook: boolean;
+  setCompactOrderBook: (v: boolean) => void;
+  animatePriceChanges: boolean;
+  setAnimatePriceChanges: (v: boolean) => void;
+  showTradingViewWatermark: boolean;
+  setShowTradingViewWatermark: (v: boolean) => void;
+  highContrastPrices: boolean;
+  setHighContrastPrices: (v: boolean) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -120,6 +129,14 @@ export const useSettingsStore = create<SettingsState>()(
       setSlippageBps: (v) => set({ slippageBps: Math.max(0, Math.min(5000, Math.floor(v))) }),
       defaultLeverage: 10,
       setDefaultLeverage: (v) => set({ defaultLeverage: Math.max(1, Math.min(100, Math.round(v))) }),
+      compactOrderBook: false,
+      setCompactOrderBook: (v) => set({ compactOrderBook: v }),
+      animatePriceChanges: true,
+      setAnimatePriceChanges: (v) => set({ animatePriceChanges: v }),
+      showTradingViewWatermark: false,
+      setShowTradingViewWatermark: (v) => set({ showTradingViewWatermark: v }),
+      highContrastPrices: false,
+      setHighContrastPrices: (v) => set({ highContrastPrices: v }),
     }),
     { name: "orahdex-settings-v1" }
   )

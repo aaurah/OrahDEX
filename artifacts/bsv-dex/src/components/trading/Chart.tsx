@@ -6,6 +6,7 @@ import {
 } from 'lightweight-charts';
 import type { Candle } from '@workspace/api-client-react';
 import { useThemeStore } from '@/store/useThemeStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
 import {
   Maximize2, Minimize2, ZoomIn, ZoomOut, AlignCenter,
   Camera, ChevronDown, ChevronUp,
@@ -267,6 +268,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const subHistRef  = useRef<any>(null);
 
   const { theme } = useThemeStore();
+  const { showTradingViewWatermark } = useSettingsStore();
   const [candles, setCandles]     = useState<Candle[]>([]);
   const [loading, setLoading]     = useState(true);
   const [chartType, setChartType] = useState<ChartType>(() => {
@@ -441,7 +443,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     const c = getChartColors(theme);
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: c.bg }, textColor: c.text, fontFamily: "'Inter', sans-serif", attributionLogo: false },
+      layout: { background: { type: ColorType.Solid, color: c.bg }, textColor: c.text, fontFamily: "'Inter', sans-serif", attributionLogo: showTradingViewWatermark },
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       timeScale: { borderColor: c.border, timeVisible: true, secondsVisible: false },
       rightPriceScale: { borderColor: c.border, scaleMargins: { top: 0.05, bottom: 0.2 }, minimumWidth: 72 },
@@ -481,7 +483,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     const c = getChartColors(theme);
     const chart = createChart(el, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: c.subBg }, textColor: c.text, fontFamily: "'Inter', sans-serif", attributionLogo: false },
+      layout: { background: { type: ColorType.Solid, color: c.subBg }, textColor: c.text, fontFamily: "'Inter', sans-serif", attributionLogo: showTradingViewWatermark },
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       timeScale: { borderColor: c.border, timeVisible: true, secondsVisible: false, visible: true },
       rightPriceScale: { borderColor: c.border, scaleMargins: { top: 0.1, bottom: 0.1 }, minimumWidth: 72 },

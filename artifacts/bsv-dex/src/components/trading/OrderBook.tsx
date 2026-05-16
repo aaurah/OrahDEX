@@ -4,6 +4,7 @@ import { formatPrice, formatVolume } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import type { Trade } from '@workspace/api-client-react';
 import { Zap, ArrowRight, CheckCircle2 } from "lucide-react";
+import { useSettingsStore } from '@/store/useSettingsStore';
 
 export interface OrderBookFill {
   price: string;
@@ -56,6 +57,7 @@ export function OrderBook({
   externalFlash,
 }: OrderBookProps) {
   const trades = Array.isArray(tradesProp) ? tradesProp : [];
+  const { compactOrderBook, animatePriceChanges, highContrastPrices } = useSettingsStore();
   const [mode, setMode] = useState<BookMode>("full");
   const [panel, setPanel] = useState<Panel>("book");
   const [flashKey, setFlashKey] = useState<string | null>(null);
@@ -199,13 +201,21 @@ export function OrderBook({
                 <div
                   key={t.id ?? i}
                   className={cn(
-                    "flex justify-between px-2 py-px transition-all duration-300",
-                    i === newTradeIdx
+                    "flex justify-between px-2 transition-all duration-300",
+                    compactOrderBook ? "py-px" : "py-1",
+                    i === newTradeIdx && animatePriceChanges
                       ? (t.side === "buy" ? "bg-buy/25 animate-in fade-in slide-in-from-top-1 duration-200" : "bg-sell/25 animate-in fade-in slide-in-from-top-1 duration-200")
-                      : "hover:bg-white/5"
+                      : i === newTradeIdx
+                        ? (t.side === "buy" ? "bg-buy/25" : "bg-sell/25")
+                        : "hover:bg-white/5"
                   )}
                 >
-                  <span className={cn("text-[10px] font-medium", t.side === "buy" ? "text-buy" : "text-sell")}>{formatPrice(t.price)}</span>
+                  <span className={cn(
+                    "text-[10px] font-medium",
+                    highContrastPrices
+                      ? (t.side === "buy" ? "text-green-400" : "text-red-400")
+                      : (t.side === "buy" ? "text-buy" : "text-sell")
+                  )}>{formatPrice(t.price)}</span>
                   <span className="text-[10px] text-foreground">{t.quantity.toFixed(3)}</span>
                   <span className="text-[10px] text-muted-foreground">{new Date(t.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
                 </div>
@@ -236,13 +246,14 @@ export function OrderBook({
                     <div
                       key={key}
                       className={cn(
-                        "relative flex items-center px-2 py-px cursor-pointer group transition-colors duration-100",
+                        "relative flex items-center px-2 cursor-pointer group transition-colors duration-100",
+                        compactOrderBook ? "py-px" : "py-1",
                         isFlash ? "bg-sell/30" : "hover:bg-sell/10"
                       )}
                       onClick={() => handleFill({ price: ask.price.toFixed(2), amount: ask.quantity.toFixed(4), side: "buy", ts: Date.now() }, key)}
                     >
                       <div className="absolute right-0 top-0 h-full bg-sell/12 transition-all duration-300" style={{ width: `${pct}%` }} />
-                      <span className="flex-1 text-sell text-[10px] relative z-10">{formatPrice(ask.price, 2)}</span>
+                      <span className={cn("flex-1 text-[10px] relative z-10", highContrastPrices ? "text-red-400" : "text-sell")}>{formatPrice(ask.price, 2)}</span>
                       <span className="w-16 text-right text-foreground text-[10px] relative z-10">{ask.quantity.toFixed(3)}</span>
                       <span className="w-16 text-right text-muted-foreground text-[10px] relative z-10">{formatVolume(ask.total)}</span>
                     </div>
@@ -311,13 +322,14 @@ export function OrderBook({
                     <div
                       key={key}
                       className={cn(
-                        "relative flex items-center px-2 py-px cursor-pointer group transition-colors duration-100",
+                        "relative flex items-center px-2 cursor-pointer group transition-colors duration-100",
+                        compactOrderBook ? "py-px" : "py-1",
                         isFlash ? "bg-buy/30" : "hover:bg-buy/10"
                       )}
                       onClick={() => handleFill({ price: bid.price.toFixed(2), amount: bid.quantity.toFixed(4), side: "sell", ts: Date.now() }, key)}
                     >
                       <div className="absolute right-0 top-0 h-full bg-buy/12 transition-all duration-300" style={{ width: `${pct}%` }} />
-                      <span className="flex-1 text-buy text-[10px] relative z-10">{formatPrice(bid.price, 2)}</span>
+                      <span className={cn("flex-1 text-[10px] relative z-10", highContrastPrices ? "text-green-400" : "text-buy")}>{formatPrice(bid.price, 2)}</span>
                       <span className="w-16 text-right text-foreground text-[10px] relative z-10">{bid.quantity.toFixed(3)}</span>
                       <span className="w-16 text-right text-muted-foreground text-[10px] relative z-10">{formatVolume(bid.total)}</span>
                     </div>
