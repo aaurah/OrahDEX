@@ -69,48 +69,103 @@ const WALLET_CHAINS: WalletChain[] = [
 ];
 
 const WALLET_TOKENS: Record<number, WalletToken[]> = {
-  8453:  [
-    { symbol: "ETH",  decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
-    { symbol: "USDC", decimals: 6,  isNative: false, address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", color: "#3B82F6" },
-    { symbol: "USDT", decimals: 6,  isNative: false, address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", color: "#22C55E" },
-    { symbol: "WETH", decimals: 18, isNative: false, address: "0x4200000000000000000000000000000000000006", color: "#8B5CF6" },
+  // ── Base ───────────────────────────────────────────────────────────────────
+  8453: [
+    { symbol: "ETH",   decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
+    { symbol: "USDC",  decimals: 6,  isNative: false, address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", color: "#3B82F6" },
+    { symbol: "USDT",  decimals: 6,  isNative: false, address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", color: "#22C55E" },
+    { symbol: "WETH",  decimals: 18, isNative: false, address: "0x4200000000000000000000000000000000000006", color: "#8B5CF6" },
+    { symbol: "WBTC",  decimals: 8,  isNative: false, address: "0x0555E30da8f98308EdB960aa94C0Db47230d2B9c", color: "#F97316" },
+    { symbol: "DAI",   decimals: 18, isNative: false, address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb", color: "#F5A623" },
+    { symbol: "cbETH", decimals: 18, isNative: false, address: "0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22", color: "#0052FF" },
+    { symbol: "AERO",  decimals: 18, isNative: false, address: "0x940181a94A35A4569E4529A3CDfB74e38FD98631", color: "#FF6B35" },
   ],
-  1:     [
-    { symbol: "ETH",  decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
-    { symbol: "USDT", decimals: 6,  isNative: false, address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", color: "#22C55E" },
-    { symbol: "USDC", decimals: 6,  isNative: false, address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", color: "#3B82F6" },
-    { symbol: "WBTC", decimals: 8,  isNative: false, address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", color: "#F97316" },
+  // ── Ethereum Mainnet ───────────────────────────────────────────────────────
+  1: [
+    { symbol: "ETH",   decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
+    { symbol: "USDT",  decimals: 6,  isNative: false, address: "0xdAC17F958D2ee523a2206206994597C13D831ec7", color: "#22C55E" },
+    { symbol: "USDC",  decimals: 6,  isNative: false, address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", color: "#3B82F6" },
+    { symbol: "WBTC",  decimals: 8,  isNative: false, address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", color: "#F97316" },
+    { symbol: "DAI",   decimals: 18, isNative: false, address: "0x6B175474E89094C44Da98b954EedeAC495271d0F", color: "#F5A623" },
+    { symbol: "LINK",  decimals: 18, isNative: false, address: "0x514910771AF9Ca656af840dff83E8264EcF986CA", color: "#2A5ADA" },
+    { symbol: "UNI",   decimals: 18, isNative: false, address: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", color: "#FF007A" },
+    { symbol: "AAVE",  decimals: 18, isNative: false, address: "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9", color: "#B6509E" },
+    { symbol: "SHIB",  decimals: 18, isNative: false, address: "0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE", color: "#E05C12" },
+    { symbol: "PEPE",  decimals: 18, isNative: false, address: "0x6982508145454Ce325dDbE47a25d4ec3d2311933", color: "#4CAF50" },
+    { symbol: "MKR",   decimals: 18, isNative: false, address: "0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2", color: "#1AAB9B" },
+    { symbol: "CRV",   decimals: 18, isNative: false, address: "0xD533a949740bb3306d119CC777fa900bA034cd52", color: "#FF0000" },
+    { symbol: "LDO",   decimals: 18, isNative: false, address: "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32", color: "#F57A25" },
+    { symbol: "ARB",   decimals: 18, isNative: false, address: "0xB50721BCf8d664c30412Cfbc6cf7a15145234ad1", color: "#28A0F0" },
   ],
-  56:    [
-    { symbol: "BNB",  decimals: 18, isNative: true,  address: null,                                       color: "#F0B90B" },
-    { symbol: "USDT", decimals: 18, isNative: false, address: "0x55d398326f99059fF775485246999027B3197955", color: "#22C55E" },
-    { symbol: "USDC", decimals: 18, isNative: false, address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", color: "#3B82F6" },
+  // ── BNB Smart Chain ────────────────────────────────────────────────────────
+  56: [
+    { symbol: "BNB",   decimals: 18, isNative: true,  address: null,                                       color: "#F0B90B" },
+    { symbol: "USDT",  decimals: 18, isNative: false, address: "0x55d398326f99059fF775485246999027B3197955", color: "#22C55E" },
+    { symbol: "USDC",  decimals: 18, isNative: false, address: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d", color: "#3B82F6" },
+    { symbol: "BUSD",  decimals: 18, isNative: false, address: "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56", color: "#F5A623" },
+    { symbol: "CAKE",  decimals: 18, isNative: false, address: "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82", color: "#FF6B81" },
+    { symbol: "WBTC",  decimals: 18, isNative: false, address: "0x7130d2A12B9BCbFAe4f2634d864A1Ee1Ce3Ead9c", color: "#F97316" },
+    { symbol: "ETH",   decimals: 18, isNative: false, address: "0x2170Ed0880ac9A755fd29B2688956BD959F933F8", color: "#627EEA" },
+    { symbol: "FLOKI", decimals: 9,  isNative: false, address: "0xfb5B838b6cfEEdC2873aB27866079AC55363D37", color: "#FF8C00" },
+    { symbol: "PEPE",  decimals: 18, isNative: false, address: "0x25d887Ce7a35172C62FeBFD67a1856F20Faebb00", color: "#4CAF50" },
+    { symbol: "XRP",   decimals: 18, isNative: false, address: "0x1D2F0da169ceB9fC7B3144628dB156f3F6c60dBE", color: "#00AAE4" },
   ],
+  // ── Arbitrum ───────────────────────────────────────────────────────────────
   42161: [
-    { symbol: "ETH",  decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
-    { symbol: "USDC", decimals: 6,  isNative: false, address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", color: "#3B82F6" },
-    { symbol: "USDT", decimals: 6,  isNative: false, address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", color: "#22C55E" },
+    { symbol: "ETH",   decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
+    { symbol: "USDC",  decimals: 6,  isNative: false, address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", color: "#3B82F6" },
+    { symbol: "USDT",  decimals: 6,  isNative: false, address: "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9", color: "#22C55E" },
+    { symbol: "ARB",   decimals: 18, isNative: false, address: "0x912CE59144191C1204E64559FE8253a0e49E6548", color: "#28A0F0" },
+    { symbol: "WBTC",  decimals: 8,  isNative: false, address: "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f", color: "#F97316" },
+    { symbol: "LINK",  decimals: 18, isNative: false, address: "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4", color: "#2A5ADA" },
+    { symbol: "UNI",   decimals: 18, isNative: false, address: "0xFa7F8980b0f1E64A2062791cc3b0871572f1F7f0", color: "#FF007A" },
+    { symbol: "GMX",   decimals: 18, isNative: false, address: "0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a", color: "#04D1A5" },
+    { symbol: "DAI",   decimals: 18, isNative: false, address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1", color: "#F5A623" },
+    { symbol: "AAVE",  decimals: 18, isNative: false, address: "0xba5DdD1f9d7F570dc94a51479a000E3BCE967196", color: "#B6509E" },
   ],
-  10:    [
-    { symbol: "ETH",  decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
-    { symbol: "USDC", decimals: 6,  isNative: false, address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", color: "#3B82F6" },
-    { symbol: "USDT", decimals: 6,  isNative: false, address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", color: "#22C55E" },
+  // ── Optimism ───────────────────────────────────────────────────────────────
+  10: [
+    { symbol: "ETH",   decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
+    { symbol: "USDC",  decimals: 6,  isNative: false, address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", color: "#3B82F6" },
+    { symbol: "USDT",  decimals: 6,  isNative: false, address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58", color: "#22C55E" },
+    { symbol: "OP",    decimals: 18, isNative: false, address: "0x4200000000000000000000000000000000000042", color: "#FF0420" },
+    { symbol: "WBTC",  decimals: 8,  isNative: false, address: "0x68f180fcCe6836688e9084f035309E29Bf0A2095", color: "#F97316" },
+    { symbol: "LINK",  decimals: 18, isNative: false, address: "0x350a791Bfc2C21F9Ed5d10980Dad2e2638ffa7f6", color: "#2A5ADA" },
+    { symbol: "SNX",   decimals: 18, isNative: false, address: "0x8700dAec35aF8Ff88c16BdF0418774CB3D7599B4", color: "#1E1A31" },
+    { symbol: "DAI",   decimals: 18, isNative: false, address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1", color: "#F5A623" },
+    { symbol: "AAVE",  decimals: 18, isNative: false, address: "0x76FB31fb4af56892A25e32cFC43De717950c9278", color: "#B6509E" },
   ],
-  137:   [
-    { symbol: "POL",  decimals: 18, isNative: true,  address: null,                                       color: "#8247E5" },
-    { symbol: "USDT", decimals: 6,  isNative: false, address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", color: "#22C55E" },
-    { symbol: "USDC", decimals: 6,  isNative: false, address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", color: "#3B82F6" },
+  // ── Polygon ────────────────────────────────────────────────────────────────
+  137: [
+    { symbol: "POL",   decimals: 18, isNative: true,  address: null,                                       color: "#8247E5" },
+    { symbol: "USDT",  decimals: 6,  isNative: false, address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", color: "#22C55E" },
+    { symbol: "USDC",  decimals: 6,  isNative: false, address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", color: "#3B82F6" },
+    { symbol: "WETH",  decimals: 18, isNative: false, address: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", color: "#627EEA" },
+    { symbol: "WBTC",  decimals: 8,  isNative: false, address: "0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6", color: "#F97316" },
+    { symbol: "DAI",   decimals: 18, isNative: false, address: "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063", color: "#F5A623" },
+    { symbol: "LINK",  decimals: 18, isNative: false, address: "0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39", color: "#2A5ADA" },
+    { symbol: "AAVE",  decimals: 18, isNative: false, address: "0xD6DF932A45C0f255f85145f286eA0b292B21C90B", color: "#B6509E" },
+    { symbol: "UNI",   decimals: 18, isNative: false, address: "0xb33EaAd8d922B1083446DC23f610c2567fB5180f", color: "#FF007A" },
+    { symbol: "SHIB",  decimals: 18, isNative: false, address: "0x6f8a06447Ff6FcF75d803135a7de15CE88C1d4ec", color: "#E05C12" },
   ],
+  // ── Avalanche ──────────────────────────────────────────────────────────────
   43114: [
-    { symbol: "AVAX", decimals: 18, isNative: true,  address: null,                                       color: "#E84142" },
-    { symbol: "USDC", decimals: 6,  isNative: false, address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", color: "#3B82F6" },
-    { symbol: "USDT", decimals: 6,  isNative: false, address: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", color: "#22C55E" },
+    { symbol: "AVAX",  decimals: 18, isNative: true,  address: null,                                       color: "#E84142" },
+    { symbol: "USDC",  decimals: 6,  isNative: false, address: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E", color: "#3B82F6" },
+    { symbol: "USDT",  decimals: 6,  isNative: false, address: "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7", color: "#22C55E" },
+    { symbol: "WBTC",  decimals: 8,  isNative: false, address: "0x50b7545627a5162F82A992c33b87aDc75187B218", color: "#F97316" },
+    { symbol: "WETH",  decimals: 18, isNative: false, address: "0x49D5c2BdFfac6CE2BFdB6640F4F80f226bc10bAB", color: "#627EEA" },
+    { symbol: "DAI",   decimals: 18, isNative: false, address: "0xd586E7F844cEa2F87f50152665BCbc2C279D8d70", color: "#F5A623" },
+    { symbol: "LINK",  decimals: 18, isNative: false, address: "0x5947BB275c521040051D82396192181b413227A3", color: "#2A5ADA" },
+    { symbol: "AAVE",  decimals: 18, isNative: false, address: "0x63a72806098Bd3D9520cC43356dD78afe5D386D9", color: "#B6509E" },
   ],
+  // ── Sepolia Testnet ────────────────────────────────────────────────────────
   11155111: [
-    { symbol: "ETH",  decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
-    { symbol: "USDC", decimals: 6,  isNative: false, address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", color: "#3B82F6" },
-    { symbol: "USDT", decimals: 6,  isNative: false, address: "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0", color: "#22C55E" },
-    { symbol: "WBTC", decimals: 8,  isNative: false, address: "0x29f2D40B0605204364af54EC677bD022dA425d03", color: "#F97316" },
+    { symbol: "ETH",   decimals: 18, isNative: true,  address: null,                                       color: "#627EEA" },
+    { symbol: "USDC",  decimals: 6,  isNative: false, address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238", color: "#3B82F6" },
+    { symbol: "USDT",  decimals: 6,  isNative: false, address: "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0", color: "#22C55E" },
+    { symbol: "WBTC",  decimals: 8,  isNative: false, address: "0x29f2D40B0605204364af54EC677bD022dA425d03", color: "#F97316" },
+    { symbol: "DAI",   decimals: 18, isNative: false, address: "0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357", color: "#F5A623" },
   ],
 };
 
@@ -201,6 +256,28 @@ function shortAddr(a: string) {
   return a ? `${a.slice(0, 8)}…${a.slice(-6)}` : "";
 }
 
+// ── auto-select chain + token for a given asset symbol ───────────────────────
+function resolveWalletChainToken(asset: string): { chain: WalletChain; token: WalletToken } {
+  const sym = asset.toUpperCase();
+  // 1. Check if the asset is a native token of any chain (e.g. ETH, BNB, AVAX, POL)
+  const nativeChain = WALLET_CHAINS.find(c => c.symbol.toUpperCase() === sym);
+  if (nativeChain) {
+    const token = (WALLET_TOKENS[nativeChain.id] ?? []).find(t => t.isNative) ?? WALLET_TOKENS[nativeChain.id][0];
+    return { chain: nativeChain, token };
+  }
+  // 2. Check if the asset appears as an ERC-20 token on any chain (prefer chain with most liquidity)
+  const CHAIN_PRIORITY = [1, 8453, 56, 42161, 10, 137, 43114, 11155111];
+  for (const chainId of CHAIN_PRIORITY) {
+    const tok = (WALLET_TOKENS[chainId] ?? []).find(t => t.symbol.toUpperCase() === sym);
+    if (tok) {
+      const chain = WALLET_CHAINS.find(c => c.id === chainId) ?? WALLET_CHAINS[0];
+      return { chain, token: tok };
+    }
+  }
+  // 3. Fallback to Base / ETH
+  return { chain: WALLET_CHAINS[0], token: WALLET_TOKENS[WALLET_CHAINS[0].id][0] };
+}
+
 // ── props ────────────────────────────────────────────────────────────────────
 export interface WithdrawSheetProps {
   open:                boolean;
@@ -276,8 +353,8 @@ export function WithdrawSheet({
 
   // ── wallet send state ────────────────────────────────────────────────────
   const [withdrawSource,      setWithdrawSource]      = useState<"exchange" | "wallet">("exchange");
-  const [walletSendChain,     setWalletSendChain]     = useState<WalletChain>(WALLET_CHAINS[0]); // Base default
-  const [walletSendToken,     setWalletSendToken]     = useState<WalletToken>(WALLET_TOKENS[WALLET_CHAINS[0].id][0]);
+  const [walletSendChain,     setWalletSendChain]     = useState<WalletChain>(() => resolveWalletChainToken(asset).chain);
+  const [walletSendToken,     setWalletSendToken]     = useState<WalletToken>(() => resolveWalletChainToken(asset).token);
   const [walletSendBalance,   setWalletSendBalance]   = useState<number | null>(null);
   const [walletSendBalFetch,  setWalletSendBalFetch]  = useState(false);
   const [walletSendAmount,    setWalletSendAmount]    = useState("");
@@ -304,8 +381,13 @@ export function WithdrawSheet({
       setDepFromWalletBalance(null);
       setBsvTxHash("");
       setSolTxHash("");
+      // Auto-select the right chain + token for this asset
+      const resolved = resolveWalletChainToken(asset);
+      setWalletSendChain(resolved.chain);
+      setWalletSendToken(resolved.token);
+      setWalletSendBalance(null);
     }
-  }, [open, defaultRecipient, initialTab]);
+  }, [open, asset, defaultRecipient, initialTab]);
 
   // ── live OrahDEX ledger balance for this asset ───────────────────────────
   // Fetches the user_balances row directly so the displayed "OrahDEX Balance"
