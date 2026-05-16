@@ -603,14 +603,35 @@ export async function signBsvChallengeWithPasskey(
     : wallets.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }));
 
   const challenge = new TextEncoder().encode(message.slice(0, 32));
-  const assertion = await navigator.credentials.get({
-    publicKey: {
-      challenge,
-      allowCredentials,
-      userVerification: "required",
-      timeout:          60_000,
-    },
-  }) as PublicKeyCredential | null;
+
+  let assertion: PublicKeyCredential | null;
+  try {
+    assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials,
+        userVerification: "required",
+        timeout:          60_000,
+      },
+    }) as PublicKeyCredential | null;
+  } catch (err: any) {
+    // iOS/Safari throws a platform error when the user picks a passkey that
+    // isn't in allowCredentials. Give a clear instruction instead of the raw
+    // browser error string.
+    const msg: string = err?.message ?? "";
+    if (
+      msg.includes("not allowed") ||
+      msg.includes("denied") ||
+      msg.includes("cancelled") ||
+      msg.includes("canceled") ||
+      err?.name === "NotAllowedError"
+    ) {
+      throw new Error(
+        'Wrong passkey selected. When prompted, please choose "OrahDEX Wallet" — not any other passkey on your device.'
+      );
+    }
+    throw err;
+  }
   if (!assertion) throw new Error("Passkey authentication cancelled");
 
   const rawId        = assertion.rawId;
@@ -620,7 +641,11 @@ export async function signBsvChallengeWithPasskey(
   let wallet = wallets.find(w => w.credentialId === credentialId);
   if (!wallet) {
     const restored = await tryRestoreFromServer(credentialId, rawId);
-    if (!restored) throw new Error("Passkey wallet data not found. Please restore your wallet first.");
+    if (!restored) {
+      throw new Error(
+        'Wrong passkey selected — wallet data not found. When prompted, please choose "OrahDEX Wallet".'
+      );
+    }
     wallet = restored;
   }
 
