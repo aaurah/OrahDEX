@@ -278,6 +278,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   const [pin, setPin]                       = useState("");
   const [pinConfirm, setPinConfirm]         = useState("");
   const [pinError, setPinError]             = useState<string | null>(null);
+  const [walletName, setWalletName]         = useState("");
   const mnemonicRef = useRef<string>("");
   const wordsRef    = useRef<string[]>([]);
 
@@ -374,6 +375,19 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   /* ── Step: protect ──────────────────────────────────────────────────────── */
   if (step === "protect") return (
     <div className="space-y-3">
+      {/* Wallet name */}
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Wallet name</label>
+        <input
+          type="text"
+          placeholder="e.g. My Main Wallet"
+          maxLength={32}
+          value={walletName}
+          onChange={e => setWalletName(e.target.value)}
+          className="w-full h-10 rounded-xl border border-border bg-muted/50 px-3 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/40"
+        />
+      </div>
+
       <p className="text-[11px] text-muted-foreground text-center pb-1">How should this wallet be protected for signing?</p>
 
       <button onClick={() => setStep("biometric")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-all text-left">
@@ -415,9 +429,9 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
     try {
       // importPasskeyWallet stores in the same system as registerPasskeyWallet
       // (orahdex_passkey_wallets_v1) so BSV signing can find it via listPasskeyWallets()
-      const result = await importPasskeyWallet(mnemonicRef.current, "OrahDEX Wallet");
+      const result = await importPasskeyWallet(mnemonicRef.current, walletName.trim() || "OrahDEX Wallet");
       finishWithAddrs(result.addrs);
-      toast({ title: "Wallet imported!", description: `Face/Touch protected · ${result.address.slice(0, 6)}…${result.address.slice(-4)}` });
+      toast({ title: "Wallet imported!", description: `${walletName.trim() || "OrahDEX Wallet"} · Face/Touch protected · ${result.address.slice(0, 6)}…${result.address.slice(-4)}` });
       onDone();
     } catch (err: any) {
       const msg: string = err?.message ?? "";
@@ -454,9 +468,9 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   /* ── PIN helpers ────────────────────────────────────────────────────────── */
   const finishWithPin = async (pinVal: string) => {
     const addrs = await deriveAllAddresses(wordsRef.current);
-    await storeWithPin({ address: addrs.evm, secret: mnemonicRef.current, keyKind: "mnemonic", pin: pinVal, label: "OrahDEX Wallet" });
+    await storeWithPin({ address: addrs.evm, secret: mnemonicRef.current, keyKind: "mnemonic", pin: pinVal, label: walletName.trim() || "OrahDEX Wallet" });
     finishWithAddrs(addrs);
-    toast({ title: "Wallet imported!", description: `PIN protected · ${addrs.evm.slice(0, 6)}…${addrs.evm.slice(-4)}` });
+    toast({ title: "Wallet imported!", description: `${walletName.trim() || "OrahDEX Wallet"} · PIN protected · ${addrs.evm.slice(0, 6)}…${addrs.evm.slice(-4)}` });
     onDone();
   };
 
