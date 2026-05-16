@@ -88,6 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "AI Intelligence",
     items: [
       { href: "/admin/ai",           label: "Ora AI Settings",    icon: Brain },
+      { href: "/admin/devai",        label: "DevAI Settings",     icon: Terminal },
       { href: "/admin/cex-connections", label: "CEX Connections",  icon: Link2 },
     ],
   },

@@ -246,6 +246,40 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
   }
 });
 
+// ── GET /admin/devai/github — GitHub token status + repo list ────────────────
+router.get("/admin/devai/github", async (_req, res) => {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    res.json({ connected: false, repos: [] });
+    return;
+  }
+  try {
+    const [userRes, reposRes] = await Promise.all([
+      fetch("https://api.github.com/user", {
+        headers: { Authorization: `Bearer ${token}`, "User-Agent": "OrahDEX-DevAI" },
+      }),
+      fetch("https://api.github.com/user/repos?per_page=30&sort=updated", {
+        headers: { Authorization: `Bearer ${token}`, "User-Agent": "OrahDEX-DevAI" },
+      }),
+    ]);
+    if (!userRes.ok) {
+      res.json({ connected: false, repos: [], error: "Invalid token" });
+      return;
+    }
+    const user = await userRes.json() as { login: string };
+    const repos = reposRes.ok ? (await reposRes.json() as any[]).map((r: any) => ({
+      name: r.name,
+      full_name: r.full_name,
+      private: r.private,
+      language: r.language ?? null,
+      updated_at: r.updated_at,
+    })) : [];
+    res.json({ connected: true, login: user.login, repos });
+  } catch (err: any) {
+    res.json({ connected: false, repos: [], error: err?.message ?? "Network error" });
+  }
+});
+
 // ── DELETE /devai/conversations/:id ──────────────────────────────────────────
 router.delete("/devai/conversations/:id", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
