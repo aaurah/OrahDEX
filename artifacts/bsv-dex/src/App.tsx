@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { WalletChooserDialog } from "@/components/WalletChooserDialog";
 
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
+import { OraAIWidget } from "@/components/OraAIWidget";
 import { applyStoredTheme, useThemeStore } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -36,6 +37,7 @@ const CopyTrading  = lazy(() => import("@/pages/CopyTrading").then(m => ({ defau
 const RevenuePage  = lazy(() => import("@/pages/Revenue"));
 const SovereignOverviewPage = lazy(() => import("@/pages/SovereignOverview").then(m => ({ default: m.SovereignOverviewPage })));
 const NotFound     = lazy(() => import("@/pages/not-found"));
+const OraAIPage    = lazy(() => import("@/pages/OraAI").then(m => ({ default: m.OraAIPage })));
 
 /* Legal / Info — standalone full-screen pages (no Layout wrapper) */
 const TermsOfService  = lazy(() => import("@/pages/TermsOfService").then(m => ({ default: m.TermsOfService })));
@@ -481,6 +483,7 @@ function Router() {
                   <Route path="/nft"            component={NFTPage} />
                   <Route path="/prediction"     component={PredictionTrading} />
                   <Route path="/sovereign"      component={SovereignOverviewPage} />
+                  <Route path="/ora-ai"         component={OraAIPage} />
                   <Route path="/settings"           component={WebSettings} />
                   <Route path="/settings/api-keys" component={UserApiKeys} />
                   <Route component={NotFound} />
@@ -507,6 +510,8 @@ function AppContent() {
       <PinPromptModal />
       {/* Wallet chooser — always mounted so it works across all layouts */}
       <WalletChooserDialog />
+      {/* Ora AI floating chat widget */}
+      <OraAIWidget />
     </>
   );
 }

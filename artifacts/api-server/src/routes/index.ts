@@ -43,6 +43,7 @@ import adminDiagnosticsRouter from "./adminDiagnostics.js";
 import coinbaseRouter from "./coinbase.js";
 import kycRouter from "./kyc.js";
 import walletRouter from "./wallet.js";
+import anthropicRouter from "./anthropic/index.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
@@ -127,6 +128,7 @@ router.use(stripeCheckoutRouter);
 router.use(coinbaseRouter);
 router.use(kycRouter);
 router.use("/wallet", walletRouter);
+router.use(anthropicRouter);
 
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
