@@ -140,6 +140,19 @@ const { outputAmount, priceImpact, route, fee } = await res.json();
 - Be direct and concise. Skip preamble. Go straight to the code.
 - Today is May 2026.`;
 
+// ── GET /devai/conversations — list all dev sessions ─────────────────────────
+router.get("/devai/conversations", async (_req, res) => {
+  try {
+    const rows = await db
+      .select({ id: conversations.id, title: conversations.title, createdAt: conversations.createdAt })
+      .from(conversations)
+      .orderBy(conversations.id);
+    res.json(rows.reverse());
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ── POST /devai/conversations ─────────────────────────────────────────────────
 router.post("/devai/conversations", async (_req, res) => {
   try {
