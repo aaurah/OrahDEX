@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { BrandLogo } from "@/components/BrandLogo";
 import { ArrowRight, Zap, Shield, Globe, ExternalLink, Sparkles, Brain, TrendingUp, TrendingDown, Minus, MessageSquare, FlaskConical, Layers, Wallet, Activity, Moon, Sun, Smartphone } from "lucide-react";
 import { useThemeStore } from "@/store/useThemeStore";
 import { SocialBar } from "@/components/SocialBar";
@@ -827,21 +828,7 @@ export function LandingPage() {
         <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-6 lg:px-12 py-4"
           style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", backdropFilter: "blur(12px)", background: "rgba(var(--background), 0.8)" }}>
           {/* Logo */}
-          <div className="flex items-center gap-2.5 font-black text-xl tracking-tight shrink-0">
-            <svg viewBox="0 0 100 100" className="w-7 h-7 overflow-visible" fill="none" aria-hidden>
-              <circle cx="50" cy="50" r="40" stroke="white" strokeWidth="11" fill="none" opacity="0.9" />
-              {!lowMotionMode && (
-                <circle cx="50" cy="50" r="13" fill="#4ade80" opacity="0.7"
-                  style={{ filter: "blur(2px) drop-shadow(0 0 6px rgba(74,222,128,0.8))" }}>
-                  <animate attributeName="r" from="13" to="34" dur="1.4s" repeatCount="indefinite" />
-                  <animate attributeName="opacity" from="0.7" to="0" dur="1.4s" repeatCount="indefinite" />
-                </circle>
-              )}
-              <circle cx="50" cy="50" r="13" fill="#4ade80"
-                style={lowMotionMode ? undefined : { filter: "drop-shadow(0 0 5px rgba(74,222,128,0.9))" }} />
-            </svg>
-            <span><span className="text-foreground">Orah</span><span className="text-green-400">DEX</span></span>
-          </div>
+          <BrandLogo textSize="text-xl" />
 
           {/* Center nav — desktop */}
           <nav className="hidden lg:flex items-center gap-1">
