@@ -601,6 +601,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const [orderError, setOrderError] = useState<{ message: string; code?: string } | null>(null);
 
+  const [swapQuote, setSwapQuote] = useState<{
+    venue: string;
+    assetIn: string;
+    assetOut: string;
+    amountIn: number;
+    expectedOutput: number;
+    canExecute: boolean;
+  } | null>(null);
+  const [swapQuoteLoading, setSwapQuoteLoading] = useState(false);
+
   const orderMutation = useMutation({
     mutationFn: async (body: object) => {
       const res = await fetch(`${BASE}/api/orders`, {
@@ -918,6 +928,49 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   });
 
   const lastPrice = parseFloat(ticker?.lastPrice) || lePairPrice || 0;
+
+  // ── Auto-fetch best swap-venue quote when native order book has no liquidity ─
+  useEffect(() => {
+    if (orderError?.code !== "NO_LIQUIDITY") {
+      setSwapQuote(null);
+      return;
+    }
+    const amtNum = parseFloat(amount || "0");
+    if (amtNum <= 0) return;
+    const assetIn  = side === "buy" ? quote : base;
+    const assetOut = side === "buy" ? base  : quote;
+    const amountIn = side === "buy" ? amtNum * lastPrice : amtNum;
+    if (amountIn <= 0) return;
+    let cancelled = false;
+    setSwapQuoteLoading(true);
+    setSwapQuote(null);
+    fetch(`${BASE}/api/swap/multi-quote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assetIn, assetOut, amountIn }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (cancelled) return;
+        const best = data?.best;
+        if (best && best.expectedOutput > 0) {
+          setSwapQuote({
+            venue:          best.venue,
+            assetIn:        best.inputToken,
+            assetOut:       best.outputToken,
+            amountIn:       best.inputAmount,
+            expectedOutput: best.expectedOutput,
+            canExecute:     best.canExecute,
+          });
+        } else {
+          setSwapQuote(null);
+        }
+      })
+      .catch(() => { if (!cancelled) setSwapQuote(null); })
+      .finally(() => { if (!cancelled) setSwapQuoteLoading(false); });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderError?.code, amount, side, base, quote, lastPrice]);
 
   // ── lockedBuySpend: quote asset spent in open buy orders ───────────────────
   // Market orders have price: null in the DB, so we fall back to lastPrice to
@@ -2434,41 +2487,108 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
             {/* Error banner */}
             {orderError && (
-              <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-xl border bg-red-500/10 border-red-500/25 text-red-400 text-sm">
-                <div className="flex items-start gap-2">
-                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                  <span className="font-semibold leading-snug">
-                    {orderError.code === "DEPOSIT_REQUIRED"
-                      ? (isSelfCustodyEvm ? "Insufficient on-chain balance" : "Deposit required to trade")
-                      : orderError.code === "INSUFFICIENT_FUNDS"
-                      ? (usesApiBalance ? "Insufficient trading balance" : "Insufficient wallet balance")
-                      : "Order failed"}
-                  </span>
-                </div>
-                <p className="text-xs text-red-400/80 leading-relaxed pl-6">
-                  {orderError.code === "DEPOSIT_REQUIRED"
-                    ? (usesApiBalance
-                      ? `Your ${side === "sell" ? base : quote} trading balance is empty. Use Bridge to fund it, or deposit on-chain.`
-                      : isSelfCustodyEvm
-                        ? `Not enough ${side === "sell" ? base : quote} in your connected wallet. Use Bridge to swap for more.`
-                        : `No ${side === "sell" ? base : quote} on-chain. Get it via Bridge or deposit from another wallet.`)
-                    : orderError.code === "INSUFFICIENT_FUNDS"
-                    ? (usesApiBalance
-                      ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Top up via Bridge or check Portfolio.`
-                      : `Not enough ${side === "sell" ? base : quote} on-chain. Use Bridge to swap for more, or deposit.`)
-                    : orderError.message}
-                </p>
-                {orderError.code === "DEPOSIT_REQUIRED" && (
-                  <div className="ml-6 mt-0.5 flex gap-3">
-                    <a href="/swap" className="text-xs font-bold text-cyan-400 underline underline-offset-2">
-                      Open Bridge →
-                    </a>
-                    {!isSelfCustodyEvm && (
-                      <a href={coinWalletHref} className="text-xs font-bold text-primary underline underline-offset-2">
-                        Open Wallet →
-                      </a>
-                    )}
+              <div className="flex flex-col gap-2">
+                <div className={cn(
+                  "flex flex-col gap-1.5 px-3 py-2.5 rounded-xl border text-sm",
+                  orderError.code === "NO_LIQUIDITY"
+                    ? "bg-amber-500/10 border-amber-500/25 text-amber-400"
+                    : "bg-red-500/10 border-red-500/25 text-red-400",
+                )}>
+                  <div className="flex items-start gap-2">
+                    <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                    <span className="font-semibold leading-snug">
+                      {orderError.code === "NO_LIQUIDITY"
+                        ? "No matching sellers"
+                        : orderError.code === "DEPOSIT_REQUIRED"
+                        ? (isSelfCustodyEvm ? "Insufficient on-chain balance" : "Deposit required to trade")
+                        : orderError.code === "INSUFFICIENT_FUNDS"
+                        ? (usesApiBalance ? "Insufficient trading balance" : "Insufficient wallet balance")
+                        : "Order failed"}
+                    </span>
                   </div>
+                  <p className={cn(
+                    "text-xs leading-relaxed pl-6",
+                    orderError.code === "NO_LIQUIDITY" ? "text-amber-400/80" : "text-red-400/80",
+                  )}>
+                    {orderError.code === "NO_LIQUIDITY"
+                      ? "No sellers at this price in the order book. Place a limit order to set your price, or use OrahBridge for an instant cross-chain swap below."
+                      : orderError.code === "DEPOSIT_REQUIRED"
+                      ? (usesApiBalance
+                        ? `Your ${side === "sell" ? base : quote} trading balance is empty. Use Bridge to fund it, or deposit on-chain.`
+                        : isSelfCustodyEvm
+                          ? `Not enough ${side === "sell" ? base : quote} in your connected wallet. Use Bridge to swap for more.`
+                          : `No ${side === "sell" ? base : quote} on-chain. Get it via Bridge or deposit from another wallet.`)
+                      : orderError.code === "INSUFFICIENT_FUNDS"
+                      ? (usesApiBalance
+                        ? `Not enough ${side === "sell" ? base : quote} in your trading balance. Top up via Bridge or check Portfolio.`
+                        : `Not enough ${side === "sell" ? base : quote} on-chain. Use Bridge to swap for more, or deposit.`)
+                      : orderError.message}
+                  </p>
+                  {orderError.code === "DEPOSIT_REQUIRED" && (
+                    <div className="ml-6 mt-0.5 flex gap-3">
+                      <a href="/swap" className="text-xs font-bold text-cyan-400 underline underline-offset-2">
+                        Open Bridge →
+                      </a>
+                      {!isSelfCustodyEvm && (
+                        <a href={coinWalletHref} className="text-xs font-bold text-primary underline underline-offset-2">
+                          Open Wallet →
+                        </a>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* OrahBridge instant-swap quote — shown when no native liquidity */}
+                {orderError.code === "NO_LIQUIDITY" && (
+                  swapQuoteLoading ? (
+                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border/40 bg-card text-xs text-muted-foreground">
+                      <span className="animate-spin w-3.5 h-3.5 border-2 border-primary/30 border-t-primary rounded-full shrink-0" />
+                      Checking OrahBridge rates…
+                    </div>
+                  ) : swapQuote ? (
+                    <div className="flex flex-col gap-2.5 px-3 py-3 rounded-xl border border-primary/25 bg-primary/5">
+                      <div className="flex items-center justify-between">
+                        <span className={cn("text-xs font-bold", VENUE_COLORS[swapQuote.venue] ?? "text-primary")}>
+                          {VENUE_LABELS[swapQuote.venue] ?? swapQuote.venue}
+                        </span>
+                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Instant Swap</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
+                        <span className="text-muted-foreground">Send</span>
+                        <span className="font-mono font-semibold text-foreground">
+                          {swapQuote.amountIn % 1 === 0
+                            ? swapQuote.amountIn.toFixed(0)
+                            : parseFloat(swapQuote.amountIn.toFixed(8)).toString()}
+                        </span>
+                        <span className="font-semibold text-foreground">{swapQuote.assetIn}</span>
+                        <span className="text-muted-foreground px-0.5">→</span>
+                        <span className="text-muted-foreground">Receive</span>
+                        <span className="font-mono font-semibold text-primary">
+                          ≈ {parseFloat(swapQuote.expectedOutput.toFixed(8)).toString()}
+                        </span>
+                        <span className="font-semibold text-primary">{swapQuote.assetOut}</span>
+                      </div>
+                      {!swapQuote.canExecute && (
+                        <p className="text-[10px] text-amber-400/80">Amount may be below this provider's minimum — try a larger size.</p>
+                      )}
+                      <a
+                        href={`${BASE}/swap`}
+                        className="w-full py-2.5 rounded-lg text-xs font-bold text-center text-white bg-primary hover:bg-primary/90 transition-colors"
+                      >
+                        Swap via {VENUE_LABELS[swapQuote.venue] ?? "OrahBridge"} →
+                      </a>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2 px-3 py-2.5 rounded-xl border border-border/40 bg-card">
+                      <p className="text-xs text-muted-foreground">No instant-swap quote available for this pair right now.</p>
+                      <a
+                        href={`${BASE}/swap`}
+                        className="text-xs font-bold text-primary underline underline-offset-2"
+                      >
+                        Browse OrahBridge →
+                      </a>
+                    </div>
+                  )
                 )}
               </div>
             )}
