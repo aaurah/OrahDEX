@@ -23,3 +23,4 @@ export * from "./social";
 export * from "./letsexchange";
 export * from "./routing_profiles";
 export * from "./staking";
+export * from "./bsvIntentSessions";
