@@ -172,16 +172,41 @@ async function runLiquidationCycle(): Promise<void> {
       priceMap[m.symbol] = parseFloat(m.lastPrice ?? "0") || 0;
     }
 
+    /* --- update mark prices and unrealized PnL for all open positions --- */
+    for (const pos of positions) {
+      const baseSym  = pos.symbol.replace("-PERP", "");
+      const markPrice = priceMap[baseSym] ?? priceMap[pos.symbol] ?? parseFloat(pos.markPrice) ?? 0;
+      if (markPrice <= 0) continue;
+      const entry    = parseFloat(pos.entryPrice) || 0;
+      const qty      = parseFloat(pos.quantity)   || 0;
+      const margin   = parseFloat(pos.margin)     || 1;
+      const priceDiff = markPrice - entry;
+      const dirMult  = pos.side === "long" ? 1 : -1;
+      const upnl     = dirMult * priceDiff * qty;
+      const upnlPct  = (upnl / margin) * 100;
+      try {
+        await pool.query(
+          `UPDATE futures_positions
+           SET mark_price            = $1,
+               unrealized_pnl        = $2,
+               unrealized_pnl_percent = $3
+           WHERE id = $4 AND status = 'open'`,
+          [markPrice.toFixed(8), upnl.toFixed(8), upnlPct.toFixed(4), pos.id],
+        );
+      } catch { /* non-fatal */ }
+    }
+
     /* --- check and liquidate real positions --- */
     let realLiqFees = 0;
     for (const pos of positions) {
-      const markPrice  = priceMap[pos.symbol] ?? parseFloat(pos.markPrice) ?? 0;
+      const baseSym   = pos.symbol.replace("-PERP", "");
+      const markPrice = priceMap[baseSym] ?? priceMap[pos.symbol] ?? parseFloat(pos.markPrice) ?? 0;
       const liqPrice   = parseFloat(pos.liquidationPrice) || 0;
       if (markPrice <= 0 || liqPrice <= 0) continue;
 
       const isLiquidated =
-        pos.side === "long"  ? markPrice <= liqPrice :
-        pos.side === "short" ? markPrice >= liqPrice : false;
+        (pos.side === "long"  && markPrice <= liqPrice) ||
+        (pos.side === "short" && markPrice >= liqPrice);
 
       if (isLiquidated) {
         /* Delegate to the canonical liquidation function which:
