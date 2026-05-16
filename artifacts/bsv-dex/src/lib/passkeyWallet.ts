@@ -716,13 +716,12 @@ export async function signBsvChallengeWithPasskey(
   const msgHash = sha256(sha256(preimage));
 
   // Compact secp256k1 signature (65 bytes: 1 byte header + 32r + 32s)
+  // @noble/curves v2.x: sign() returns Uint8Array directly (not a Signature object).
+  // Using format:'recovered' gives [recoveryId(1), r(32), s(32)] in one call.
   const { secp256k1 } = await import("@noble/curves/secp256k1.js");
-  const sig      = secp256k1.sign(msgHash, bsvPrivKey, { lowS: true });
-  // @noble/curves v2: toBytes() defaults to compact (32r+32s); v1 used toCompactRawBytes()
-  const compact  = typeof (sig as any).toCompactRawBytes === "function"
-    ? (sig as any).toCompactRawBytes()
-    : sig.toBytes();
-  const recovery = sig.recovery ?? 0;
+  const rawSig = secp256k1.sign(msgHash, bsvPrivKey, { lowS: true, format: "recovered" } as any) as Uint8Array;
+  const recovery = rawSig[0];        // first byte = recovery id (0 or 1)
+  const compact  = rawSig.slice(1);  // remaining 64 bytes = r(32) + s(32)
   const sigBytes = new Uint8Array([31 + recovery, ...compact]); // 31 = compressed key header
   return btoa(String.fromCharCode(...sigBytes));
 }
