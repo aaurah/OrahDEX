@@ -138,18 +138,6 @@ export function OrahWalletDialog({ open, onClose }: Props) {
             <span className="text-[10px] opacity-60 shrink-0">This device</span>
           </Button>
 
-          <Button
-            variant="outline"
-            className="w-full h-[52px] gap-3 text-sm justify-start px-4 border-cyan-500/30 hover:border-cyan-500/50 hover:bg-cyan-500/5"
-            onClick={() => handleLogin({ hybrid: true })}
-            disabled={!!loading || !supported}
-          >
-            {loading === "login-other"
-              ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <Smartphone className="w-4 h-4 shrink-0 text-cyan-400" />}
-            <span className="flex-1 text-left">Use Another Device</span>
-            <span className="text-[10px] opacity-60 shrink-0">Scan QR</span>
-          </Button>
         </div>
 
         <div className="flex items-start gap-1.5 border-t pt-3 mt-1">

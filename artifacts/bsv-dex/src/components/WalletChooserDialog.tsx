@@ -244,21 +244,6 @@ function PasskeyPanel({ onDone, onViewSeed }: { onDone: () => void; onViewSeed?:
         <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 group-hover:translate-x-0.5 transition-all shrink-0" />
       </button>
 
-      <button
-        onClick={handleLoginOther}
-        disabled={!!loading}
-        className="group w-full flex items-center gap-4 px-4 py-4 rounded-xl border border-border bg-card hover:bg-accent hover:border-cyan-500/20 transition-all duration-200 text-left disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        <div className="w-11 h-11 rounded-xl bg-muted border border-border flex items-center justify-center shrink-0">
-          {loading === "login-other" ? <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" /> : <Smartphone className="w-5 h-5 text-cyan-400" />}
-        </div>
-        <div className="flex-1">
-          <div className="text-sm font-semibold text-foreground">Use Another Device</div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">Scan QR code with your phone or tablet</div>
-        </div>
-        <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-cyan-400/50 group-hover:translate-x-0.5 transition-all shrink-0" />
-      </button>
-
       <div className="flex items-start gap-2 pt-1 px-1">
         <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
         <p className="text-[11px] text-muted-foreground leading-relaxed">
