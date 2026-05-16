@@ -40,7 +40,7 @@ import { validateAltChainAddress } from "@/lib/addressValidation";
 import { isAddress as isEvmAddress } from "viem";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, fetchEvmBalance } from "@/lib/reown";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
-import { signBsvChallengeWithPasskey } from "@/lib/passkeyWallet";
+import { signBsvChallengeWithPasskey, listPasskeyWallets } from "@/lib/passkeyWallet";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
@@ -724,10 +724,13 @@ export function WithdrawSheet({
       const activeChain = withdrawChainMode.toLowerCase();
       const isBitcoinForkChain = ["bsv", "btc", "bch"].includes(activeChain);
       let signature: string;
-      if (isBitcoinForkChain && passkeyEvmAddress) {
-        signature = await signBsvChallengeWithPasskey(passkeyEvmAddress, message);
-      } else if (!passkeyEvmAddress) {
-        throw new Error("Passkey EVM address not available — cannot sign withdrawal");
+      if (isBitcoinForkChain) {
+        // signBsvChallengeWithPasskey handles the case where passkeyEvmAddress
+        // is empty/missing by falling back to all stored passkey wallets.
+        if (!passkeyEvmAddress && listPasskeyWallets().length === 0) {
+          throw new Error("No passkey wallet found on this device. Please create or restore your OrahWallet first.");
+        }
+        signature = await signBsvChallengeWithPasskey(passkeyEvmAddress ?? "", message);
       } else {
         throw new Error(`On-chain signing not yet supported for ${activeChain.toUpperCase()}`);
       }
