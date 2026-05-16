@@ -750,7 +750,7 @@ export function DevAIPage() {
             {/* Live tools indicator */}
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-green-500/20 bg-green-500/5 text-green-400">
               <Activity className="w-3 h-3 animate-pulse" />
-              <span className="text-[10px] font-bold">13 live tools</span>
+              <span className="text-[10px] font-bold">14 live tools</span>
             </div>
             {/* Publish / restart button */}
             <button
