@@ -175,6 +175,66 @@ input[type=number] { -moz-appearance: textfield; }
   50%       { box-shadow: 0 0 14px 3px rgba(74,222,128,0.65); }
 }
 
+/* Terminal card float */
+@keyframes orah-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-10px); }
+}
+
+/* Shimmer sweep */
+@keyframes orah-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Hero glow pulse */
+@keyframes orah-glow-pulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50%       { opacity: 0.7; transform: scale(1.08); }
+}
+
+/* Scan line */
+@keyframes orah-scan {
+  0%   { transform: translateY(-100%); opacity: 0; }
+  10%  { opacity: 0.6; }
+  90%  { opacity: 0.6; }
+  100% { transform: translateY(800%); opacity: 0; }
+}
+
+/* Price tick flash */
+@keyframes orah-tick-up {
+  0%   { color: #4ade80; }
+  100% { color: inherit; }
+}
+@keyframes orah-tick-down {
+  0%   { color: #f87171; }
+  100% { color: inherit; }
+}
+
+/* Gradient border rotation */
+@keyframes orah-border-spin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Fade in up */
+@keyframes orah-fade-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.orah-float    { animation: orah-float 6s ease-in-out infinite; }
+.orah-shimmer  {
+  background: linear-gradient(90deg, transparent 0%, rgba(74,222,128,0.15) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: orah-shimmer 2.5s ease-in-out infinite;
+}
+.orah-fade-up  { animation: orah-fade-up 0.6s ease-out forwards; }
+
+/* Scrollbar hide */
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
 /* Hide third-party branding in the wallet connect popup */
 wui-footer,
 w3m-footer,
