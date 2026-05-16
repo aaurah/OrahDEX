@@ -608,6 +608,81 @@ export interface SignResult {
 }
 
 /**
+ * Send BSV directly on-chain from a passkey wallet.
+ *
+ * Authenticates via passkey biometrics, derives the BSV private key
+ * (m/44'/236'/0'/0/0), then builds, signs, and broadcasts a P2PKH
+ * transaction to the BSV network via WhatsOnChain — bypassing the
+ * exchange internal ledger entirely.
+ *
+ * Use this when the user's BSV is in their on-chain wallet (not in the
+ * exchange balance).  The exchange withdrawal endpoint checks the internal
+ * ledger and will fail for real on-chain BSV.
+ */
+export async function sendBsvWithPasskey(
+  evmAddress:       string,
+  senderBsvAddress: string,
+  recipientAddress: string,
+  amountBsv:        number,
+): Promise<{ txid: string; feeSat: number }> {
+  const { buildSignBroadcastBsvTx } = await import("./bsvTx.js");
+
+  const wallets  = listPasskeyWallets();
+  const matching = wallets.filter(w => w.address.toLowerCase() === evmAddress.toLowerCase());
+  if (matching.length === 0 && wallets.length === 0)
+    throw new Error("OrahWallet not found on this device. Please create or restore your passkey wallet first.");
+
+  const allowCredentials = matching.length > 0
+    ? matching.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }))
+    : wallets.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }));
+
+  const challenge = new TextEncoder().encode("send-bsv-" + recipientAddress.slice(0, 22));
+
+  let assertion: PublicKeyCredential | null;
+  try {
+    assertion = await navigator.credentials.get({
+      publicKey: { challenge, allowCredentials, userVerification: "required", timeout: 60_000 },
+    }) as PublicKeyCredential | null;
+  } catch (err: any) {
+    const msg: string = err?.message ?? "";
+    if (msg.includes("not allowed") || msg.includes("denied") || msg.includes("cancel") || err?.name === "NotAllowedError")
+      throw new Error('Wrong passkey selected. Please choose "OrahDEX Wallet" when prompted.');
+    throw err;
+  }
+  if (!assertion) throw new Error("Passkey authentication cancelled");
+
+  const rawId        = assertion.rawId;
+  const credentialId = b642url(buf2b64(rawId));
+  let wallet = wallets.find(w => w.credentialId === credentialId);
+  if (!wallet) {
+    const restored = await tryRestoreFromServer(credentialId, rawId);
+    if (!restored) throw new Error('Wrong passkey selected — wallet data not found. Please choose "OrahDEX Wallet".');
+    wallet = restored;
+  }
+
+  const secret = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, rawId);
+
+  const { HDKey }          = await import("@scure/bip32");
+  const { mnemonicToSeed } = await import("@scure/bip39");
+  const isMnemonic = secret.trim().split(/\s+/).length >= 12 && !secret.startsWith("0x");
+
+  let bsvPrivKey: Uint8Array;
+  if (isMnemonic) {
+    const seed    = await mnemonicToSeed(secret.trim());
+    const root    = HDKey.fromMasterSeed(seed);
+    const derived = root.derive("m/44'/236'/0'/0/0");
+    if (!derived.privateKey) throw new Error("BSV key derivation failed");
+    bsvPrivKey = derived.privateKey;
+  } else {
+    const hex = (secret.startsWith("0x") ? secret.slice(2) : secret).padStart(64, "0");
+    bsvPrivKey = new Uint8Array(hex.match(/.{2}/g)!.map((b: string) => parseInt(b, 16)));
+  }
+
+  const amountSat = Math.round(amountBsv * 1e8);
+  return buildSignBroadcastBsvTx(senderBsvAddress, recipientAddress, amountSat, bsvPrivKey);
+}
+
+/**
  * Sign a BSV withdrawal challenge using the OrahWallet passkey.
  * Finds the passkey wallet by its EVM address, authenticates, derives the
  * BSV private key (m/44'/236'/0'/0/0), and returns a Bitcoin Signed Message
