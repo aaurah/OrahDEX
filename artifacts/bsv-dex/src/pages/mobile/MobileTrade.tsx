@@ -1057,8 +1057,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // then open-order locks are subtracted client-side for accurate remaining size.
   const internalBaseBalance  = apiBalances[base]  ?? 0;
   const internalQuoteBalance = apiBalances[quote] ?? 0;
-  const grossSellBalance = usesApiBalance ? internalBaseBalance : walletBaseBalance;
-  const grossBuyBalance  = usesApiBalance ? internalQuoteBalance : walletQuoteBalance;
+  // For OrahWallet (non-EVM) users: use the internal exchange ledger as the primary
+  // source, but merge in the on-chain native balance so BSV shows correctly even
+  // when no funds have been deposited to the internal ledger yet.
+  const grossSellBalance = usesApiBalance
+    ? Math.max(internalBaseBalance,  isNativeBase  ? walletBal : 0)
+    : walletBaseBalance;
+  const grossBuyBalance  = usesApiBalance
+    ? Math.max(internalQuoteBalance, isNativeQuote ? walletBal : 0)
+    : walletQuoteBalance;
   // Self-custody EVM (Orah Wallet on EVM, or external wallet): open orders are
   // signed intents — funds remain on-chain in the wallet until fill. We DO NOT
   // subtract UI-side locks from displayed balance because nothing is actually

@@ -508,11 +508,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   // assets accumulated via exchange trades can also be sold / used.
   const internalBase  = apiBalances[base]  ?? 0;
   const internalQuote = apiBalances[quote] ?? 0;
+  const isNativeQuote = quote.toUpperCase() === nativeSymbol.toUpperCase();
+  // For OrahWallet (non-EVM): merge on-chain native balance so BSV shows correctly
+  // even when no funds have been deposited to the internal ledger yet.
   const baseAvailable  = usesApiBalance
-    ? internalBase
+    ? Math.max(internalBase,  isNativeBase  ? nativeBal : 0)
     : Math.max(walletBase, internalBase);
   const quoteAvailable = usesApiBalance
-    ? internalQuote
+    ? Math.max(internalQuote, isNativeQuote ? nativeBal : 0)
     : Math.max(walletQuote, internalQuote);
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
