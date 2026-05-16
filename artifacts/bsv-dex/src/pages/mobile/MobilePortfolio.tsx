@@ -480,9 +480,12 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
         return { asset: b.symbol, color, amount: b.amount, price, change, value: usdValue, isNative: b.isNative };
       });
     }
-    // Non-EVM wallets: show native asset with stored balance
+    // Non-EVM wallets: show native asset with stored balance + live price
     const nativeColor = ASSET_COLORS[nativeAsset] ?? "#6B7280";
-    return [{ asset: nativeAsset, color: nativeColor, amount: nativeBalance, price: 0, change: 0, value: 0, isNative: true }];
+    const mkt = prices?.[nativeAsset];
+    const nativePrice  = mkt?.lastPrice ?? 0;
+    const nativeChange = mkt?.priceChangePercent24h ?? 0;
+    return [{ asset: nativeAsset, color: nativeColor, amount: nativeBalance, price: nativePrice, change: nativeChange, value: nativeBalance * nativePrice, isNative: true }];
   })();
 
   // eslint-disable-next-line prefer-const
