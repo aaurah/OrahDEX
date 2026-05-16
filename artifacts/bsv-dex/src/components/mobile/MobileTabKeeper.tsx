@@ -12,6 +12,7 @@
 import { lazy, Suspense, useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { Switch, Route } from "wouter";
+import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 
 /* ── Lazy page imports ───────────────────────────────────────────────────── */
 const MobileMarkets         = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
@@ -83,6 +84,16 @@ function getTabKey(location: string): TabKey | null {
 
 function Skeleton() {
   return <div className="flex-1 flex items-center justify-center py-20"><div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>;
+}
+
+function AdminGuard({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, token } = useAdminAuthStore();
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    if (!isAuthenticated || !token) navigate("/admin/login");
+  }, [isAuthenticated, token]);
+  if (!isAuthenticated || !token) return null;
+  return <>{children}</>;
 }
 
 function Tab({ active, children }: { active: boolean; children: React.ReactNode }) {
@@ -177,7 +188,7 @@ export function MobileTabKeeper() {
       {vis("prediction") && <Tab active={act("prediction")}> <Suspense fallback={<Skeleton />}><PredictionTrading /></Suspense></Tab>}
       {vis("sovereign")  && <Tab active={act("sovereign")}>  <Suspense fallback={<Skeleton />}><SovereignOverviewPage /></Suspense></Tab>}
       {vis("ora-ai")     && <Tab active={act("ora-ai")}>     <Suspense fallback={<Skeleton />}><OraAIPage /></Suspense></Tab>}
-      {vis("devai")      && <Tab active={act("devai")}>      <Suspense fallback={<Skeleton />}><DevAIPage /></Suspense></Tab>}
+      {vis("devai")      && <Tab active={act("devai")}>      <AdminGuard><Suspense fallback={<Skeleton />}><DevAIPage /></Suspense></AdminGuard></Tab>}
 
       {/* Fallback: unrecognised route — show markets */}
       {activeKey === null && !isPassthrough(location) && (
