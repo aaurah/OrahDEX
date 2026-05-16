@@ -24,13 +24,20 @@ const router: IRouter = Router();
 // POST /withdrawals. The signed challenge proves the caller owns the wallet.
 // Supports EVM (0x…), BSV (1…/3…), and Solana (base58) addresses.
 router.post("/withdraw/challenge", (req, res) => {
-  const { walletAddress } = req.body as { walletAddress?: string };
+  const { walletAddress, bsvAddress } = req.body as { walletAddress?: string; bsvAddress?: string };
   if (!walletAddress) {
     res.status(400).json({ error: "walletAddress is required" });
     return;
   }
   if (/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
-    res.json(issueWithdrawChallenge(walletAddress));
+    // Passkey wallets doing a BSV withdrawal supply bsvAddress so the challenge is
+    // keyed on the BSV address (verified via Bitcoin message signature) while the
+    // internal DEX balance remains tracked under the EVM address.
+    if (bsvAddress && /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(bsvAddress)) {
+      res.json(issueBsvWithdrawChallenge(bsvAddress));
+    } else {
+      res.json(issueWithdrawChallenge(walletAddress));
+    }
   } else if (/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(walletAddress)) {
     res.json(issueBsvWithdrawChallenge(walletAddress));
   } else if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
@@ -56,7 +63,7 @@ const EVM_NETWORKS = new Set([
 const BSV_ADDRESS_RE = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
 
 router.post("/withdrawals", async (req, res) => {
-  const { walletAddress, asset, amount, network, networkLabel, recipient, fee, signature } = req.body;
+  const { walletAddress, asset, amount, network, networkLabel, recipient, fee, signature, bsvSignerAddress } = req.body;
 
   if (!walletAddress || !asset || !amount || !network || !recipient) {
     res.status(400).json({ error: "Missing required fields: walletAddress, asset, amount, network, recipient" });
@@ -89,7 +96,11 @@ router.post("/withdrawals", async (req, res) => {
 
   // Require wallet ownership proof for all external wallet types.
   if (walletAddress.startsWith("0x")) {
-    // EVM wallet
+    // EVM wallet.
+    // Passkey wallets withdrawing BSV supply a bsvSignerAddress — the Bitcoin P2PKH
+    // address of the passkey-derived BSV key. The challenge was issued to that address
+    // and must be verified with a Bitcoin message signature, while the DEX internal
+    // balance remains tracked under the EVM address.
     if (!signature) {
       res.status(401).json({
         error: "signature is required for EVM wallet withdrawals. " +
@@ -98,11 +109,24 @@ router.post("/withdrawals", async (req, res) => {
       });
       return;
     }
-    try {
-      verifyWithdrawSignature(walletAddress, signature);
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
+    const isBsvWithdrawal =
+      isBsvNetwork &&
+      typeof bsvSignerAddress === "string" &&
+      /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(bsvSignerAddress);
+    if (isBsvWithdrawal) {
+      try {
+        verifyBsvWithdrawSignature(bsvSignerAddress, signature);
+      } catch (authErr: any) {
+        res.status(401).json({ error: authErr.message });
+        return;
+      }
+    } else {
+      try {
+        verifyWithdrawSignature(walletAddress, signature);
+      } catch (authErr: any) {
+        res.status(401).json({ error: authErr.message });
+        return;
+      }
     }
   } else if (/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(walletAddress)) {
     // BSV P2PKH / P2SH wallet

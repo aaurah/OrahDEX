@@ -711,11 +711,34 @@ export function WithdrawSheet({
     setNonEvmSending(true);
     setNonEvmSendError(null);
     try {
+      const activeChain = withdrawChainMode.toLowerCase();
+      const isBitcoinForkChain = ["bsv", "btc", "bch"].includes(activeChain);
+
+      // For Bitcoin-fork chains, the server needs the BSV address to verify the
+      // Bitcoin message signature, but the DEX internal balance is tracked under
+      // the EVM address. We send both:
+      //   walletAddress   = EVM 0x… (balance lookup, stays unchanged)
+      //   bsvAddress      = 1Bfx… (challenge keyed on BSV address)
+      //   bsvSignerAddress = 1Bfx… (BSV sig verification in withdrawal POST)
+      const chainAddress = isBitcoinForkChain
+        ? (nonEvmAddresses?.[activeChain] ?? nonEvmAddresses?.[activeChain.toUpperCase()])
+        : undefined;
+
+      if (isBitcoinForkChain && !chainAddress) {
+        throw new Error(
+          `No ${activeChain.toUpperCase()} address found for this wallet. ` +
+          "Please ensure your OrahWallet is set up correctly.",
+        );
+      }
+
       // 1. Request withdrawal challenge
       const challengeRes = await fetch(`${API_BASE}/withdraw/challenge`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ walletAddress }),
+        body:    JSON.stringify({
+          walletAddress,
+          ...(isBitcoinForkChain && chainAddress ? { bsvAddress: chainAddress } : {}),
+        }),
       });
       if (!challengeRes.ok) {
         const err = await challengeRes.json().catch(() => ({}));
@@ -724,8 +747,6 @@ export function WithdrawSheet({
       const { message } = await challengeRes.json();
 
       // 2. Sign with passkey-derived chain key
-      const activeChain = withdrawChainMode.toLowerCase();
-      const isBitcoinForkChain = ["bsv", "btc", "bch"].includes(activeChain);
       let signature: string;
       if (isBitcoinForkChain) {
         // signBsvChallengeWithPasskey handles the case where passkeyEvmAddress
@@ -738,7 +759,9 @@ export function WithdrawSheet({
         throw new Error(`On-chain signing not yet supported for ${activeChain.toUpperCase()}`);
       }
 
-      // 3. Submit withdrawal
+      // 3. Submit withdrawal — walletAddress stays EVM for balance lookup;
+      //    bsvSignerAddress tells the server to verify a Bitcoin message signature
+      //    against the passkey wallet's BSV address instead of an EVM signature.
       const wAsset = withdrawChainMode.toUpperCase();
       const withdrawRes = await fetch(`${API_BASE}/withdrawals`, {
         method:  "POST",
@@ -751,6 +774,7 @@ export function WithdrawSheet({
           networkLabel: wAsset,
           recipient:    nonEvmSendRecipient.trim(),
           signature,
+          ...(isBitcoinForkChain && chainAddress ? { bsvSignerAddress: chainAddress } : {}),
         }),
       });
       const data = await withdrawRes.json().catch(() => ({}));
