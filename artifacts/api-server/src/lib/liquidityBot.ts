@@ -303,41 +303,40 @@ async function runCycle(): Promise<void> {
       }
     }
 
-    // Process in batches of 2 — each refreshMarket uses 2 connections (DELETE +
-    // INSERT), so 2 concurrent = 4 connections. A 30 ms yield between batches
-    // lets the price updater and user-facing requests acquire pool connections
-    // without timing out during the ~67-second liquidity cycle.
-    const BATCH_SIZE = 2;
-    for (let i = 0; i < active.length; i += BATCH_SIZE) {
-      const batch = active.slice(i, i + BATCH_SIZE);
-      await Promise.all(
-        batch.map(m => {
-          const baseUSD  = usdMap.get(m.baseAsset)  ?? FALLBACK_PRICES[m.baseAsset]  ?? 0;
-          const quoteUSD = usdMap.get(m.quoteAsset) ?? FALLBACK_PRICES[m.quoteAsset] ?? 1;
+    // Process markets one at a time — each refreshMarket uses 2 connections
+    // (DELETE then INSERT, sequentially). Running markets in series means the
+    // bot holds at most 1 connection at any moment, leaving the rest of the
+    // pool free for user-facing requests, the futures engine, and watchers.
+    // A 150 ms yield between markets allows other services to acquire
+    // connections without timing out. With ~80 active markets, the full pass
+    // takes ≈12 s — well within the 110 s guardedInterval timeout.
+    for (let i = 0; i < active.length; i++) {
+      const m = active[i]!;
+      const baseUSD  = usdMap.get(m.baseAsset)  ?? FALLBACK_PRICES[m.baseAsset]  ?? 0;
+      const quoteUSD = usdMap.get(m.quoteAsset) ?? FALLBACK_PRICES[m.quoteAsset] ?? 1;
 
-          let midPrice: number;
-          if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") {
-            midPrice = parseFloat(m.lastPrice as string) || 0;
-          } else {
-            midPrice = (baseUSD > 0 && quoteUSD > 0)
-              ? baseUSD / quoteUSD
-              : parseFloat(m.lastPrice as string) || 0;
-          }
+      let midPrice: number;
+      if (STABLECOINS.has(m.quoteAsset) || m.type === "futures") {
+        midPrice = parseFloat(m.lastPrice as string) || 0;
+      } else {
+        midPrice = (baseUSD > 0 && quoteUSD > 0)
+          ? baseUSD / quoteUSD
+          : parseFloat(m.lastPrice as string) || 0;
+      }
 
-          // Volume: DB value or derive via O(1) Map lookup (not O(n) find).
-          let vol = parseFloat(m.volume24h as string) || 0;
-          if (vol <= 0 && baseUSD > 0 && quoteUSD > 0) {
-            const usdtVol = usdtVolByBase.get(m.baseAsset) ?? 0;
-            if (usdtVol > 0) vol = usdtVol / quoteUSD;
-          }
+      // Volume: DB value or derive via O(1) Map lookup (not O(n) find).
+      let vol = parseFloat(m.volume24h as string) || 0;
+      if (vol <= 0 && baseUSD > 0 && quoteUSD > 0) {
+        const usdtVol = usdtVolByBase.get(m.baseAsset) ?? 0;
+        if (usdtVol > 0) vol = usdtVol / quoteUSD;
+      }
 
-          return refreshMarket(m.symbol, m.quoteAsset, midPrice, vol, baseUSD)
-            .catch(err => logger.warn({ err, symbol: m.symbol }, "Bot: skipped market"));
-        }),
-      );
-      // Yield for 30 ms between batches so other services (price updater,
-      // user-facing requests) can acquire pool connections without timing out.
-      await new Promise(r => setTimeout(r, 30));
+      await refreshMarket(m.symbol, m.quoteAsset, midPrice, vol, baseUSD)
+        .catch(err => logger.warn({ err, symbol: m.symbol }, "Bot: skipped market"));
+
+      // Yield for 150 ms so the price updater, futures engine, and
+      // user-facing requests can acquire pool connections between markets.
+      await new Promise(r => setTimeout(r, 150));
     }
 
     const activeLen = active.length;
