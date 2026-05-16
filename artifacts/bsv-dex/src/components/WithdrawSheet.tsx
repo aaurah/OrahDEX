@@ -1396,13 +1396,7 @@ export function WithdrawSheet({
                 </div>
 
                 {/* ── Register passkey on this device ── */}
-                {isOrahWallet && !passkeyRegistered && (() => {
-                  const stored = listPasskeyWallets();
-                  const matched = passkeyEvmAddress
-                    ? stored.some(w => w.address.toLowerCase() === passkeyEvmAddress.toLowerCase())
-                    : stored.length > 0;
-                  return !matched;
-                })() && (
+                {isOrahWallet && !passkeyRegistered && listPasskeyWallets().length === 0 && (
                   <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-amber-400" />
                     <div className="flex-1 min-w-0">
