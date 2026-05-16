@@ -747,6 +747,24 @@ export function DevAIPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* New chat */}
+            <button
+              onClick={() => { setActiveId(null); setMessages([]); localStorage.removeItem(PERSIST_KEY); didAutoLoad.current = true; }}
+              title="New chat"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border/50 hover:border-green-500/40 hover:bg-green-500/5 text-[10px] font-bold text-muted-foreground hover:text-foreground transition-all"
+            >
+              <Plus className="w-3 h-3" /> New chat
+            </button>
+            {/* Clear chat — only shown when there are messages */}
+            {messages.length > 0 && (
+              <button
+                onClick={() => setMessages([])}
+                title="Clear messages"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border/50 hover:border-red-500/40 hover:bg-red-500/5 text-[10px] font-bold text-muted-foreground hover:text-red-400 transition-all"
+              >
+                <Trash2 className="w-3 h-3" /> Clear
+              </button>
+            )}
             {/* Live tools indicator */}
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-green-500/20 bg-green-500/5 text-green-400">
               <Activity className="w-3 h-3 animate-pulse" />
