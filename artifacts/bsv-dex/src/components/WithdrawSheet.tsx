@@ -312,6 +312,8 @@ export interface WithdrawSheetProps {
   isOrahWallet?:       boolean;
   /** EVM address of the OrahWallet passkey — required for BSV/non-EVM wallet signing. */
   passkeyEvmAddress?:  string;
+  /** Per-chain wallet addresses for the chain selector (bsv, btc, ltc, xrp, sol, trx, doge, bch) */
+  nonEvmAddresses?:    Record<string, string | undefined>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -330,6 +332,7 @@ export function WithdrawSheet({
   visibleTabs,
   isOrahWallet = false,
   passkeyEvmAddress,
+  nonEvmAddresses,
 }: WithdrawSheetProps) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
@@ -657,19 +660,20 @@ export function WithdrawSheet({
 
   // ── wallet send: non-EVM balance fetch (BSV, LTC, XRP, …) ───────────────
   const fetchNonEvmBalance = useCallback(async () => {
-    if (!walletAddress) return;
+    const net     = withdrawChainMode.toLowerCase();
+    const chainAddr = nonEvmAddresses?.[net] ?? (net !== "evm" ? undefined : walletAddress);
+    if (!chainAddr) return;
     setNonEvmSendBalance(null);
     setNonEvmSendBalFetch(true);
     try {
-      const net = withdrawChainMode.toLowerCase();
       if (net === "bsv") {
-        const r = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${walletAddress}/balance`);
+        const r = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${chainAddr}/balance`);
         if (r.ok) {
           const { confirmed, unconfirmed } = await r.json();
           setNonEvmSendBalance(((confirmed ?? 0) + (unconfirmed ?? 0)) / 1e8);
         }
       } else if (net === "ltc") {
-        const r = await fetch(`https://litecoinspace.org/api/address/${walletAddress}`);
+        const r = await fetch(`https://litecoinspace.org/api/address/${chainAddr}`);
         if (r.ok) {
           const d = await r.json();
           const funded = d.chain_stats?.funded_txo_sum ?? 0;
@@ -677,7 +681,7 @@ export function WithdrawSheet({
           setNonEvmSendBalance((funded - spent) / 1e8);
         }
       } else if (net === "xrp") {
-        const r = await fetch(`https://data.ripple.com/v2/accounts/${walletAddress}/balances`);
+        const r = await fetch(`https://data.ripple.com/v2/accounts/${chainAddr}/balances`);
         if (r.ok) {
           const d = await r.json();
           const xrpEntry = (d.balances ?? []).find((b: any) => b.currency === "XRP");
@@ -689,7 +693,7 @@ export function WithdrawSheet({
     } finally {
       setNonEvmSendBalFetch(false);
     }
-  }, [walletAddress, withdrawChainMode]);
+  }, [walletAddress, nonEvmAddresses, withdrawChainMode]);
 
   useEffect(() => {
     if (open && tab === "withdraw" && isOrahWallet && withdrawChainMode !== "evm") {
