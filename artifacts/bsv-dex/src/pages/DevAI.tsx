@@ -4,7 +4,7 @@ import {
   ChevronRight, BookOpen, Bot, RefreshCw, ChevronDown, ChevronUp, X,
   Globe, Play, Download, FileCode, Hash, TrendingUp, Loader2,
   GitBranch, Activity, Layers, Search, Wallet, Shield, Database,
-  Link, CheckCircle,
+  Link, CheckCircle, FolderOpen,
 } from "lucide-react";
 import { useSEO } from "@/hooks/useSEO";
 import { cn } from "@/lib/utils";
@@ -45,6 +45,9 @@ const TOOL_META: Record<string, { label: string; icon: any; color: string }> = {
   fetch_bsv_tx:       { label: "BSV blockchain",    icon: Hash,      color: "text-orange-400" },
   get_orahdex_market: { label: "Market data",       icon: TrendingUp,color: "text-green-400" },
   decode_eth_address: { label: "EVM address",       icon: Wallet,    color: "text-violet-400" },
+  read_project_file:  { label: "Reading file",      icon: FileCode,  color: "text-cyan-400" },
+  list_project_dir:   { label: "Browsing project",  icon: FolderOpen,color: "text-cyan-400" },
+  query_database:     { label: "Querying database", icon: Database,  color: "text-purple-400" },
 };
 
 function toolSubtitle(name: string, args: Record<string, any>): string {
@@ -57,6 +60,9 @@ function toolSubtitle(name: string, args: Record<string, any>): string {
     case "fetch_bsv_tx":       return args.txid ? args.txid.slice(0, 16) + "…" : "";
     case "get_orahdex_market": return args.symbol ?? "top markets";
     case "decode_eth_address": return args.address ? args.address.slice(0, 10) + "…" + args.address.slice(-6) : "";
+    case "read_project_file":  return args.path ?? "";
+    case "list_project_dir":   return args.path ?? "/";
+    case "query_database":     return (args.sql ?? "").slice(0, 60);
     default:                   return "";
   }
 }
@@ -601,6 +607,8 @@ export function DevAIPage() {
           <div className="space-y-1">
             {[
               { icon: GitBranch,  label: "Read GitHub repos" },
+              { icon: FolderOpen, label: "Browse project files" },
+              { icon: Database,   label: "Query live database" },
               { icon: Play,       label: "Execute JavaScript" },
               { icon: Hash,       label: "BSV blockchain lookup" },
               { icon: TrendingUp, label: "Live market data" },
@@ -620,11 +628,11 @@ export function DevAIPage() {
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Quick actions</div>
           <div className="space-y-0.5">
             {[
+              { label: "Browse backend",     prompt: "List the backend API routes directory and show me all the route files in the project." },
+              { label: "Query DB schema",   prompt: "Query the database to list all tables and their column names." },
               { label: "Market maker bot",  prompt: "Build a TypeScript market making bot for BSV/USDT. Check live prices first, then create a downloadable file." },
               { label: "BSV tx builder",    prompt: "Show me how to build and broadcast a BSV transaction using @bsv/sdk — P2PKH with signing." },
-              { label: "DeFi AMM math",     prompt: "Show the Uniswap x*y=k AMM formula, price impact, and impermanent loss with working JS calculations." },
               { label: "Swap integration",  prompt: "Integrate OrahDEX swap API in TypeScript — get a live quote then execute it. Generate a downloadable file." },
-              { label: "ERC-20 bot",        prompt: "Write an ERC-20 token monitor using ethers.js that tracks Transfer events and logs them in real time." },
             ].map(q => (
               <button
                 key={q.label}
@@ -695,7 +703,7 @@ export function DevAIPage() {
             {/* Live tools indicator */}
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-green-500/20 bg-green-500/5 text-green-400">
               <Activity className="w-3 h-3 animate-pulse" />
-              <span className="text-[10px] font-bold">8 live tools</span>
+              <span className="text-[10px] font-bold">11 live tools</span>
             </div>
             <button
               onClick={() => setShowApiPanel(v => !v)}
