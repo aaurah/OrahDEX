@@ -2,7 +2,7 @@ import { adminFetch } from "@/lib/adminFetch";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity, Cpu, Database, Clock, Server, Zap,
-  RefreshCw, CheckCircle, AlertTriangle, HardDrive,
+  RefreshCw, CheckCircle, AlertTriangle, HardDrive, ShieldCheck, Link2, Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -203,6 +203,55 @@ export function AdminSystemHealth() {
                 icon={Activity} label="Uptime" color="violet"
                 value={fmtUptime(data.uptimeSeconds ?? 0)}
                 sub="Since last restart"
+              />
+            </div>
+          </div>
+
+          {/* DB pool config */}
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">DB Pool Configuration</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <MetricCard
+                icon={Database} label="Max Connections" color="blue"
+                value="25"
+                sub="Pool ceiling"
+              />
+              <MetricCard
+                icon={Timer} label="Query Timeout" color="orange"
+                value="20 s"
+                sub="Kills runaway queries"
+              />
+              <MetricCard
+                icon={Clock} label="Idle Timeout" color="violet"
+                value="15 s"
+                sub="Connection released if idle"
+              />
+              <MetricCard
+                icon={ShieldCheck} label="Keep-Alive" color="green"
+                value="Enabled"
+                sub="TCP keep-alive on"
+              />
+            </div>
+          </div>
+
+          {/* BSV Intent watcher */}
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">BSV Intent Settlement</h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <MetricCard
+                icon={Link2} label="Watcher" color="green"
+                value="Active"
+                sub="Polls every 30 s"
+              />
+              <MetricCard
+                icon={Clock} label="Startup Delay" color="blue"
+                value="72 s"
+                sub="Staggered after server boot"
+              />
+              <MetricCard
+                icon={ShieldCheck} label="Script Type" color="violet"
+                value="Dual-Hash"
+                sub="secretHash + intentHash"
               />
             </div>
           </div>

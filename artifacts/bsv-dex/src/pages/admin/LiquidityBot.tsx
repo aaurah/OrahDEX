@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bot, Settings, RefreshCw, Save, RotateCcw,
-  CheckCircle, AlertTriangle, TrendingUp, Layers, Clock, Zap,
+  CheckCircle, AlertTriangle, TrendingUp, Layers, Clock, Zap, Info,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -174,6 +174,17 @@ export function AdminLiquidityBot() {
             </div>
           </div>
 
+          {/* Stability notice */}
+          <div className="flex items-start gap-3 bg-blue-500/5 border border-blue-500/20 rounded-2xl px-4 py-3">
+            <Info className="w-4 h-4 text-blue-400 mt-0.5 shrink-0" />
+            <div className="text-xs text-blue-200/70 leading-relaxed">
+              <span className="font-semibold text-blue-300">Pool-exhaustion mode active</span> —
+              the bot is running in sequential (batch size 1) mode with 150 ms yields between orders
+              and a 90 s futures-liquidation cycle. This prevents DB connection pool exhaustion under load.
+              Batch size is configurable below but <span className="text-blue-300">1 is recommended</span> for stability.
+            </div>
+          </div>
+
           {/* Core settings */}
           <div className="bg-card border border-border rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-4">
@@ -188,10 +199,10 @@ export function AdminLiquidityBot() {
                 hint="How often the bot refreshes orders"
               />
               <Field
-                label="Batch Size" value={current.batchSize ?? 40}
+                label="Batch Size" value={current.batchSize ?? 1}
                 onChange={v => set("batchSize", v)}
                 min={1} max={200} step={1}
-                hint="Orders placed per cycle"
+                hint="Orders placed per cycle — set to 1 for sequential/safe mode (recommended)"
               />
               <Field
                 label="Levels Per Side" value={current.levelsPerSide ?? 6}

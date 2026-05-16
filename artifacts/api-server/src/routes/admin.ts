@@ -3515,5 +3515,110 @@ router.get(["/evm/filter-fn", "/quicknode/filter-fn"], (req, res) => {
   });
 });
 
+/* ─── BSV INTENT SESSIONS (admin) ────────────────────────────────────────── */
+
+import { bsvIntentSessionsTable } from "@workspace/db/schema";
+
+const STATUS_GROUPS = {
+  active:   ["PENDING_FUNDING", "FUNDED", "CONFIRMED", "FILLED", "CLAIMING"],
+  terminal: ["CLAIMED", "REFUNDED", "CANCELLED"],
+  stuck:    ["EXPIRED", "REFUNDING"],
+};
+
+router.get("/bsv-intents", requireAdminToken, async (req, res) => {
+  try {
+    const {
+      status,
+      userAddress,
+      limit = "50",
+      offset = "0",
+      group,
+    } = req.query as Record<string, string>;
+
+    const take = Math.min(parseInt(limit, 10) || 50, 500);
+    const skip = parseInt(offset, 10) || 0;
+
+    let rows = await db
+      .select()
+      .from(bsvIntentSessionsTable)
+      .orderBy(desc(bsvIntentSessionsTable.createdAt))
+      .limit(take + skip);
+
+    rows = rows.slice(skip);
+
+    if (status)      rows = rows.filter(r => r.status === status);
+    if (userAddress) rows = rows.filter(r => r.userAddress.toLowerCase().includes(userAddress.toLowerCase()));
+    if (group && group in STATUS_GROUPS) {
+      const allowed = STATUS_GROUPS[group as keyof typeof STATUS_GROUPS];
+      rows = rows.filter(r => allowed.includes(r.status));
+    }
+
+    const all = await db.select().from(bsvIntentSessionsTable);
+    const byStatus: Record<string, number> = {};
+    for (const r of all) {
+      byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+    }
+
+    const safe = rows.map(r => ({
+      id:                 r.id,
+      intentHash:         r.intentHash,
+      nonce:              r.nonce,
+      userAddress:        r.userAddress,
+      solverAddress:      r.solverAddress,
+      tokenIn:            r.tokenIn,
+      tokenOut:           r.tokenOut,
+      amountInSat:        r.amountInSat,
+      minAmountOut:       r.minAmountOut,
+      destinationChain:   r.destinationChain,
+      destinationAddress: r.destinationAddress,
+      deadlineTs:         r.deadlineTs,
+      deadlineBlocks:     r.deadlineBlocks,
+      secretHash:         r.secretHash,
+      redeemScript:       r.redeemScript,
+      htlcAddress:        r.htlcAddress,
+      fundingTxid:        r.fundingTxid,
+      fundingVout:        r.fundingVout,
+      fundingConfirmed:   r.fundingConfirmed,
+      confirmations:      r.confirmations,
+      solverPaymentTxid:  r.solverPaymentTxid,
+      fillNote:           r.fillNote,
+      claimTxid:          r.claimTxid,
+      refundTxid:         r.refundTxid,
+      auditTxid:          r.auditTxid,
+      status:             r.status,
+      terminalAt:         r.terminalAt,
+      createdAt:          r.createdAt,
+      updatedAt:          r.updatedAt,
+      expiresAt:          r.expiresAt,
+    }));
+
+    return res.json({ intents: safe, total: all.length, byStatus });
+  } catch (err) {
+    logger.error({ err }, "admin: bsv-intents list failed");
+    return res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
+router.post("/bsv-intents/:id/force-expire", requireAdminToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const rows = await db.select().from(bsvIntentSessionsTable).where(eq(bsvIntentSessionsTable.id, id));
+    if (!rows.length) return res.status(404).json({ error: "Intent not found" });
+    const intent = rows[0]!;
+    const TERMINAL = new Set(["CLAIMED", "REFUNDED", "CANCELLED"]);
+    if (TERMINAL.has(intent.status)) {
+      return res.status(409).json({ error: `Intent already terminal: ${intent.status}` });
+    }
+    await db.update(bsvIntentSessionsTable)
+      .set({ status: "EXPIRED", updatedAt: new Date() })
+      .where(eq(bsvIntentSessionsTable.id, id));
+    logger.info({ intentId: id, prevStatus: intent.status }, "admin: force-expired BSV intent");
+    return res.json({ status: "EXPIRED", prevStatus: intent.status });
+  } catch (err) {
+    logger.error({ err }, "admin: bsv-intent force-expire failed");
+    return res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
 export default router;
 
