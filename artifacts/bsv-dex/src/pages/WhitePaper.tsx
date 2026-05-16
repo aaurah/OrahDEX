@@ -5,8 +5,8 @@ import { useLocation } from "wouter";
 import { OrahInline, BrandLogo } from "@/components/BrandLogo";
 import { cn } from "@/lib/utils";
 
-const VERSION = "4.7.0";
-const PUBLISH_DATE = "6 May 2026";
+const VERSION = "4.8.0";
+const PUBLISH_DATE = "16 May 2026";
 const FOUNDER = "Parminder Singh";
 const FOUNDER_ALIASES = "Aura · Orah · Aaurah";
 
@@ -1955,9 +1955,29 @@ If any authority requests user identity data:
             {/* ── 20. ROADMAP ── */}
             <Section id="roadmap" title="21. Roadmap">
 
-              {/* v4.7.0 Changelog */}
+              {/* v4.8.0 Changelog */}
               <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3 mb-2">
-                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.7.0 · 6 May 2026</p>
+                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.8.0 · 16 May 2026</p>
+                <ul className="space-y-1.5 text-xs text-muted-foreground">
+                  {[
+                    "BSV withdrawal signing fixed — @noble/curves v2.0.1 changed secp256k1.sign() to return a raw 64-byte compact Uint8Array (r‖s) directly instead of a Signature object. Removed the stale .toCompactRawBytes() call in bsvTx.ts; withdrawal transactions now broadcast and confirm on-chain successfully.",
+                    "Withdrawal success UI — replaced inline text with a structured confirmation card: 'Withdrawal submitted' green header with checkmark, 'Transaction ID' label with full txid in a monospace box plus one-tap copy button, and a contextual explorer link that resolves per chain (WhatsOnChain for BSV, Mempool.space for BTC, Blockchair for BCH/LTC/DOGE, Solana Explorer, XRPScan, TronScan).",
+                    "WithdrawSheet mobile dialog sizing — dialog now uses w-[calc(100vw-2rem)] for 1rem breathing room on each side of mobile screens, max-w-md for desktop, and max-h-[90dvh] overflow-y-auto so tall content scrolls rather than overflowing the viewport.",
+                    "Chat with Ora button fixed on landing page — AiAssistant component now mounts at route / (landing page) in addition to /trade, /futures, and /swap. SessionStorage bridge (ora:pending key) prevents the race condition where the button click fires before the lazy-loaded component has registered its event listener. Event detail format normalised to handle both string and {message} object shapes.",
+                    "Named wallet import — 'Wallet name' input field added to the seed phrase import flow (protect step). Custom label is passed to both importPasskeyWallet (biometric path) and storeWithPin (PIN path), replacing the hardcoded 'OrahDEX Wallet' default. Label surfaces in the confirmation toast and is stored in the passkey wallet registry.",
+                    "DevAI admin enhancements — Publish button in DevAI header triggers API server restart; New chat and Clear buttons always visible (not just in lg sidebar); DevAI moved to /admin/devai as a full-screen route; settings at /admin/devai/settings; write_github_file added as 14th tool (commits files to GitHub via Contents API with automatic SHA fetch for updates).",
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="shrink-0 text-primary font-bold mt-0.5">→</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* v4.7.0 Changelog */}
+              <div className="p-4 rounded-xl border border-border/40 bg-muted/20 space-y-3 mb-2">
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">v4.7.0 · 6 May 2026</p>
                 <ul className="space-y-1.5 text-xs text-muted-foreground">
                   {[
                     "Self-Healing Worker Engine — all background services (price-updater, liquidity-bot, futures funding/liquidation, BSV/EVM deposit watchers) migrated from raw setInterval+_busy pattern to guardedInterval: force-releases locks stuck beyond per-service timeout, tracks consecutive failures with exponential skip-backoff, registers every service in a central health registry.",
