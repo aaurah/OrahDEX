@@ -27,6 +27,7 @@ You are a senior blockchain engineer. You write production-ready code, debug sma
 ## Your Tools (use them proactively)
 - **read_github_file** — Read actual source code from any GitHub repo. Use when the user shares a repo link or mentions their code files.
 - **list_github_repo** — Browse a repo's directory structure. Use to understand project layout before reading files.
+- **write_github_file** — Commit a file directly to a GitHub repo (create or update). ALWAYS read the file first, then write the full updated content with a clear commit message. Use for pushing code changes, fixes, or new files to the repo.
 - **execute_code** — Run JavaScript in a sandbox and see real output. Use to validate logic, compute values, simulate algorithms, test encoding/decoding.
 - **fetch_url** — Fetch live content from any URL. Use to check live API responses, read docs, verify endpoint behaviour.
 - **create_file** — Generate a downloadable file. ALWAYS use this when you write a complete bot, script, config, or contract — never just paste code in chat when you could deliver a file the user can run immediately.
@@ -174,6 +175,24 @@ const DEVAI_TOOLS: any[] = [
           path: { type: "string", description: "Directory path, omit for root" },
         },
         required: ["owner_repo"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "write_github_file",
+      description: "Create or update a file in a GitHub repository by committing the new content directly. Use to push code changes, fix bugs, add features, or update configs in the GitHub repo. ALWAYS read the file first with read_github_file so you have the full current content before overwriting.",
+      parameters: {
+        type: "object",
+        properties: {
+          owner_repo: { type: "string", description: "owner/repo e.g. 'aaurah/OrahDEX'" },
+          path: { type: "string", description: "File path e.g. 'src/index.ts'" },
+          content: { type: "string", description: "Full file content to write (UTF-8 text)" },
+          message: { type: "string", description: "Commit message describing the change" },
+          branch: { type: "string", description: "Branch to commit to, omit for default branch" },
+        },
+        required: ["owner_repo", "path", "content", "message"],
       },
     },
   },
@@ -366,6 +385,47 @@ async function toolReadGithubFile(args: { owner_repo: string; path: string; bran
     return JSON.stringify(data).slice(0, 4000);
   } catch (err: any) {
     return `Error reading file: ${err?.message ?? "Network error"}`;
+  }
+}
+
+async function toolWriteGithubFile(args: { owner_repo: string; path: string; content: string; message: string; branch?: string }): Promise<string> {
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) return "GITHUB_TOKEN is not configured — cannot push to GitHub.";
+  const qs = args.branch ? `?ref=${encodeURIComponent(args.branch)}` : "";
+  const contentsUrl = `https://api.github.com/repos/${args.owner_repo}/contents/${args.path.replace(/^\//, "")}`;
+  try {
+    // Step 1: get existing file SHA (required to update, absent for new files)
+    let sha: string | undefined;
+    const existing = await fetch(`${contentsUrl}${qs}`, { headers: GH_HEADERS(token), signal: AbortSignal.timeout(10000) });
+    if (existing.ok) {
+      const d = await existing.json() as any;
+      sha = d.sha;
+    } else if (existing.status !== 404) {
+      return `GitHub API error fetching existing file: ${existing.status} ${existing.statusText}`;
+    }
+    // Step 2: PUT new content
+    const body: any = {
+      message: args.message,
+      content: Buffer.from(args.content, "utf-8").toString("base64"),
+    };
+    if (sha) body.sha = sha;
+    if (args.branch) body.branch = args.branch;
+    const r = await fetch(contentsUrl, {
+      method: "PUT",
+      headers: { ...GH_HEADERS(token), "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({})) as any;
+      return `GitHub push failed (${r.status}): ${err?.message ?? r.statusText}`;
+    }
+    const result = await r.json() as any;
+    const commitSha = result?.commit?.sha?.slice(0, 7) ?? "?";
+    const commitUrl = result?.commit?.html_url ?? "";
+    return `Pushed successfully — commit ${commitSha}${commitUrl ? "\n" + commitUrl : ""}`;
+  } catch (err: any) {
+    return `Error pushing to GitHub: ${err?.message ?? "Network error"}`;
   }
 }
 
@@ -684,6 +744,7 @@ async function executeTool(name: string, args: any, callId: string): Promise<Too
   switch (name) {
     case "read_github_file":   return { output: await toolReadGithubFile(args) };
     case "list_github_repo":   return { output: await toolListGithubRepo(args) };
+    case "write_github_file":  return { output: await toolWriteGithubFile(args) };
     case "execute_code":       return { output: toolExecuteCode(args) };
     case "fetch_url":          return { output: await toolFetchUrl(args) };
     case "create_file":        return {
