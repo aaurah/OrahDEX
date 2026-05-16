@@ -1335,7 +1335,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   }
 
   return (
-    <div className="flex flex-col bg-background overflow-x-hidden" style={{ height: "calc(100dvh - 56px)" }}>
+    <div className="flex flex-col bg-background overflow-x-hidden" style={{ height: "calc(100svh - 56px)" }}>
 
       {/* ── HEADER ── */}
       <div className="shrink-0 flex items-center px-3 pt-3 pb-2 border-b border-border gap-2">
