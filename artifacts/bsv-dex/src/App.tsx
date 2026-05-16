@@ -39,6 +39,7 @@ const RevenuePage  = lazy(() => import("@/pages/Revenue"));
 const SovereignOverviewPage = lazy(() => import("@/pages/SovereignOverview").then(m => ({ default: m.SovereignOverviewPage })));
 const NotFound     = lazy(() => import("@/pages/not-found"));
 const OraAIPage    = lazy(() => import("@/pages/OraAI").then(m => ({ default: m.OraAIPage })));
+const DevAIPage    = lazy(() => import("@/pages/DevAI").then(m => ({ default: m.DevAIPage })));
 
 /* Legal / Info — standalone full-screen pages (no Layout wrapper) */
 const TermsOfService  = lazy(() => import("@/pages/TermsOfService").then(m => ({ default: m.TermsOfService })));
@@ -488,6 +489,7 @@ function Router() {
                   <Route path="/prediction"     component={PredictionTrading} />
                   <Route path="/sovereign"      component={SovereignOverviewPage} />
                   <Route path="/ora-ai"         component={OraAIPage} />
+                  <Route path="/devai"          component={DevAIPage} />
                   <Route path="/settings"           component={WebSettings} />
                   <Route path="/settings/api-keys" component={UserApiKeys} />
                   <Route component={NotFound} />
