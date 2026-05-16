@@ -102,6 +102,31 @@ export async function quoteFromSSPair(
     ssRequest("/get_ranges",    { fixed: false, currency_from: tickerFrom, currency_to: tickerTo }),
   ]);
 
+  // Parse range data first — needed in both success and below-minimum paths
+  let minAmount: number | null = null;
+  let maxAmount: number | null = null;
+  if (rangeRes.ok && rangeRes.data && typeof rangeRes.data === "object") {
+    const rd = rangeRes.data as Record<string, unknown>;
+    minAmount = rd.min != null ? parseFloat(String(rd.min)) || null : null;
+    const maxRaw = rd.max != null ? parseFloat(String(rd.max)) : null;
+    maxAmount = maxRaw && !Number.isNaN(maxRaw) && maxRaw > 0 ? maxRaw : null;
+  }
+
+  // 422 = amount is below the minimum (pair IS supported, just under threshold).
+  // Extract the minimum from the error description and return it so the caller
+  // can set canExecute=false and surface the minimum to the user.
+  if (estimateRes.status === 422) {
+    if (minAmount == null && estimateRes.data && typeof estimateRes.data === "object") {
+      const ed = estimateRes.data as Record<string, unknown>;
+      const desc = String(ed.description ?? "");
+      const match = desc.match(/Min:\s*([\d.]+)/i);
+      if (match) minAmount = parseFloat(match[1]) || null;
+    }
+    // estimatedAmount=0 signals canExecute=false in metaRouter
+    if (minAmount != null) return { estimatedAmount: 0, minAmount, maxAmount };
+    return null; // pair exists but minimum unknown
+  }
+
   if (!estimateRes.ok || estimateRes.data == null) return null;
 
   let estimatedAmount = 0;
@@ -113,15 +138,6 @@ export async function quoteFromSSPair(
     estimatedAmount = parseFloat(String(d.estimated_amount ?? d.amount ?? "")) || 0;
   }
   if (estimatedAmount <= 0) return null;
-
-  let minAmount: number | null = null;
-  let maxAmount: number | null = null;
-  if (rangeRes.ok && rangeRes.data && typeof rangeRes.data === "object") {
-    const rd = rangeRes.data as Record<string, unknown>;
-    minAmount = rd.min != null ? parseFloat(String(rd.min)) || null : null;
-    const maxRaw = rd.max != null ? parseFloat(String(rd.max)) : null;
-    maxAmount = maxRaw && !Number.isNaN(maxRaw) && maxRaw > 0 ? maxRaw : null;
-  }
 
   return { estimatedAmount, minAmount, maxAmount };
 }
