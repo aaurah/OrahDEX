@@ -663,6 +663,16 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         visibleTabs={["withdraw"]}
         isOrahWallet={canBackup}
         passkeyEvmAddress={canBackup ? (evmAddress ?? undefined) : undefined}
+        nonEvmAddresses={{
+          bsv:  derived?.bsv  ?? undefined,
+          btc:  derived?.btc  ?? undefined,
+          bch:  derived?.bch  ?? undefined,
+          sol:  derived?.sol  ?? undefined,
+          trx:  derived?.tron ?? undefined,
+          xrp:  derived?.xrp  ?? undefined,
+          ltc:  derived?.ltc  ?? undefined,
+          doge: derived?.doge ?? undefined,
+        }}
       />
 
       <ChainReceiveSheet
