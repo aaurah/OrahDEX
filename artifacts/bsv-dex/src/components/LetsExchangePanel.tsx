@@ -318,7 +318,7 @@ function CoinPicker({ coins, selected, onChange, exclude, compact }: {
       )}
 
       {open && (
-        <div className="absolute z-50 top-full mt-1 left-0 w-72 bg-card border border-border/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: 340 }}>
+        <div className={cn("absolute z-50 top-full mt-1 w-72 bg-card border border-border/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col", compact ? "right-0" : "left-0")} style={{ maxHeight: 340 }}>
           <div className="p-2.5 border-b border-border/40 flex items-center gap-2">
             <Search className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
             <input ref={inputRef} placeholder={`Search ${coins.length.toLocaleString()} coins…`} value={q}
