@@ -643,7 +643,7 @@ const MKT_TABS: { id: MktTab; label: string }[] = [
   { id: "BSV",  label: "BSV" },
 ];
 
-function FeaturedMarkets({ markets }: { markets: any[] }) {
+function FeaturedMarkets({ markets, totalCount }: { markets: any[]; totalCount: number }) {
   const [tab, setTab] = useState<MktTab>("ALL");
 
   const filtered = useMemo(() => {
@@ -691,7 +691,7 @@ function FeaturedMarkets({ markets }: { markets: any[] }) {
             <h2 className="text-2xl sm:text-3xl font-black text-foreground">
               Top Trading Pairs
               <span className="ml-3 text-sm font-bold text-muted-foreground/50 align-middle">
-                {markets.length.toLocaleString()}+ total
+                {totalCount.toLocaleString()}+ total
               </span>
             </h2>
           </div>
@@ -759,7 +759,7 @@ function FeaturedMarkets({ markets }: { markets: any[] }) {
             href="/markets"
             className="flex items-center gap-2 px-8 py-3.5 rounded-2xl font-black text-sm border border-green-500/30 text-green-400 hover:bg-green-500/8 hover:border-green-500/60 transition-all"
           >
-            View All {markets.length.toLocaleString()}+ Markets <ArrowRight className="w-4 h-4" />
+            View All {totalCount.toLocaleString()}+ Markets <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
       </div>
@@ -1039,7 +1039,7 @@ export function LandingPage() {
       </section>
 
       {/* ── FEATURED MARKETS ──────────────────────────────────────────────── */}
-      <FeaturedMarkets markets={markets ?? []} />
+      <FeaturedMarkets markets={markets ?? []} totalCount={marketCount} />
 
       {/* ── FEATURE STRIP ─────────────────────────────────────────────────── */}
       <section className="relative px-6 lg:px-12 py-10">
