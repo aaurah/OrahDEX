@@ -15,6 +15,8 @@ import { buildHtlc, verifySecret } from "../lib/htlc.js";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { createPublicClient, http, parseAbi, encodeFunctionData, type Address, type Hex } from "viem";
+import { creditAvailable } from "../lib/ledger.js";
+import { pushNotification } from "../lib/notifQueue.js";
 
 const router = Router();
 type CctpIntentStatus = "created" | "attested" | "completed";
@@ -205,33 +207,38 @@ router.get("/htlc/:id", async (req, res) => {
         lock.status      = "funded";
         lock.fundingTxid = check.txid ?? null;
 
-        logger.info({ lockId: id, txid: check.txid, amountBsv: check.amountBsv }, "HTLC funded — triggering wBSV mint");
+        logger.info({ lockId: id, txid: check.txid, amountBsv: check.amountBsv }, "HTLC funded — crediting internal BSV balance");
 
-        // NOTE: Real EVM minting (calling mint(to, amount, lockId) on the bridge contract)
-        // is not yet implemented. The status transitions below are SIMULATED to allow
-        // end-to-end UI testing. No wBSV is actually minted on-chain.
-        // Replace this block with an on-chain relayer call before production deployment.
-        logger.warn({ lockId: id }, "Bridge: wBSV mint is SIMULATED — no EVM transaction will be submitted. Do not use in production.");
+        try {
+          const BRIDGE_FEE = 0.001;
+          const grossBsv   = parseFloat(lock.amountBsv);
+          const netBsv     = (grossBsv * (1 - BRIDGE_FEE)).toFixed(8);
+          const creditAddr = lock.recipientEvmAddress ?? lock.senderBsvAddress;
 
-        setTimeout(async () => {
-          try {
-            // Status-only update — mintTxHash is intentionally left null to avoid
-            // showing a fake tx hash that would mislead the user into thinking minting occurred.
-            await db.update(htlcLocksTable)
-              .set({ status: "minting", updatedAt: new Date() })
-              .where(eq(htlcLocksTable.id, id));
+          await db.update(htlcLocksTable)
+            .set({ status: "minting", updatedAt: new Date() })
+            .where(eq(htlcLocksTable.id, id));
+          lock.status = "minting";
 
-            // Simulate confirmation after another 3s
-            setTimeout(async () => {
-              await db.update(htlcLocksTable)
-                .set({ status: "complete", updatedAt: new Date() })
-                .where(eq(htlcLocksTable.id, id));
-              logger.warn({ lockId: id }, "Bridge: HTLC status set to complete (SIMULATED — no real mint)");
-            }, 3000);
-          } catch (e: any) {
-            logger.error({ lockId: id, err: e?.message }, "Simulated mint status update failed");
+          if (creditAddr) {
+            await creditAvailable(creditAddr, "BSV", netBsv);
+            logger.info({ lockId: id, creditAddr, netBsv }, "Bridge: BSV credited to internal ledger");
+            pushNotification(creditAddr, {
+              type:  "bridge",
+              title: "Bridge complete",
+              body:  `${netBsv} BSV credited to your exchange balance (fee: ${(grossBsv * BRIDGE_FEE).toFixed(8)} BSV).`,
+            });
+          } else {
+            logger.warn({ lockId: id }, "Bridge: no recipient address on lock — BSV not credited");
           }
-        }, 5000);
+
+          await db.update(htlcLocksTable)
+            .set({ status: "complete", updatedAt: new Date() })
+            .where(eq(htlcLocksTable.id, id));
+          lock.status = "complete";
+        } catch (e: any) {
+          logger.error({ lockId: id, err: e?.message }, "Bridge: failed to credit BSV balance");
+        }
       }
     }
 

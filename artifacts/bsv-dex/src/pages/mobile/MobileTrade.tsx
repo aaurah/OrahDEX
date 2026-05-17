@@ -59,15 +59,33 @@ function formatDateTime(value: string | Date | number) {
   });
 }
 
+const EVM_EXPLORERS: Record<number, string> = {
+  1:      "https://etherscan.io/tx/",
+  10:     "https://optimistic.etherscan.io/tx/",
+  56:     "https://bscscan.com/tx/",
+  130:    "https://explorer.unichain.org/tx/",
+  137:    "https://polygonscan.com/tx/",
+  324:    "https://explorer.zksync.io/tx/",
+  1329:   "https://seitrace.com/tx/",
+  8453:   "https://basescan.org/tx/",
+  42161:  "https://arbiscan.io/tx/",
+  43114:  "https://snowtrace.io/tx/",
+  59144:  "https://lineascan.build/tx/",
+  534352: "https://scrollscan.com/tx/",
+};
+
 function getOrderExplorerUrl(order: any): string | null {
   if (order?.explorerUrl) return String(order.explorerUrl);
-  if (!order?.txid) return null;
-  const txid = String(order.txid);
-  // htlc-pending- is a placeholder — no on-chain txid yet
+  const txid = String(order?.txid ?? "");
+  if (!txid) return null;
   if (txid.startsWith("htlc-pending-")) return null;
-  return txid.startsWith("0x")
-    ? `https://etherscan.io/tx/${txid}`
-    : `https://whatsonchain.com/tx/${txid}`;
+  if (txid.startsWith("local:")) return null;
+  if (txid.startsWith("0x")) {
+    const chainId = order?.chainId ?? order?.evmChainId;
+    const base = (chainId && EVM_EXPLORERS[Number(chainId)]) ?? "https://etherscan.io/tx/";
+    return base + txid;
+  }
+  return `https://whatsonchain.com/tx/${txid}`;
 }
 
 function getNotifPath(n: { type: string; pair?: string; href?: string }): string | null {
@@ -890,6 +908,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     staleTime: 20000,
   });
 
+  const { data: perfCandles = [] } = useQuery({
+    queryKey: ["perf-candles", symbol],
+    queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=1d&limit=400`).then(r => r.json()),
+    refetchInterval: 300_000,
+    staleTime: 240_000,
+  });
+
   const { data: orderBook } = useQuery({
     queryKey: ["orderbook", symbol],
     queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/orderbook`).then(r => r.json()),
@@ -1496,17 +1521,36 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
         {/* ── PERFORMANCE ROW — spot only ── */}
         {!isFutures && (() => {
-          // Stable seed from symbol — no Math.random() so values don't re-randomize on every render.
-          // Hash: simple djb2 variant
-          const seedBase = (symbol + base + quote).split("").reduce((h, c) => (Math.imul(31, h) + c.charCodeAt(0)) | 0, 5381);
-          const perfPcts = PERIODS.map(({ label }, i) => {
-            const h = (seedBase ^ (i * 2654435761)) >>> 0;
-            return ((h % 2001) - 1000) / 100; // -10 to +10, two decimal places
-          });
+          const hasPerfData = Array.isArray(perfCandles) && perfCandles.length > 0 && lastPrice > 0;
+          const PERIOD_DAYS: Record<string, number> = {
+            today: 1, "7d": 7, "30d": 30, "90d": 90, "180d": 180, "1y": 365,
+          };
+          function calcPerfPct(daysAgo: number): number | null {
+            if (!hasPerfData) return null;
+            if (daysAgo === 1) return change;
+            const targetSec = Date.now() / 1000 - daysAgo * 86400;
+            let closest = (perfCandles as any[])[0];
+            let minDiff  = Math.abs((closest?.time ?? 0) - targetSec);
+            for (const c of (perfCandles as any[])) {
+              const d = Math.abs((c.time ?? 0) - targetSec);
+              if (d < minDiff) { minDiff = d; closest = c; }
+            }
+            const base = parseFloat(closest?.close ?? closest?.open ?? "0");
+            if (!base) return null;
+            return ((lastPrice - base) / base) * 100;
+          }
           return (
             <div className="flex overflow-x-auto no-scrollbar px-4 py-2 gap-5 border-b border-border">
-              {PERIODS.map(({ label }, i) => {
-                const pct = perfPcts[i]!;
+              {PERIODS.map(({ label, key }) => {
+                const pct = calcPerfPct(PERIOD_DAYS[key] ?? 1);
+                if (pct === null) {
+                  return (
+                    <div key={label} className="shrink-0 text-center">
+                      <p className="text-[10px] text-muted-foreground">{label}</p>
+                      <p className="text-[11px] font-semibold mt-0.5 text-muted-foreground/40">—</p>
+                    </div>
+                  );
+                }
                 return (
                   <div key={label} className="shrink-0 text-center">
                     <p className="text-[10px] text-muted-foreground">{label}</p>
@@ -1762,9 +1806,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                             <span className="text-xs text-foreground font-semibold">{o.symbol}</span>
                             <span className="text-[9px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">{o.type ?? "limit"}</span>
                           </div>
-                          <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                          <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
                             <span>Price: <span className="text-foreground font-mono">{o.price ? fmt(Number(o.price)) : "—"}</span></span>
                             <span>Qty: <span className="text-foreground font-mono">{Number(o.quantity).toFixed(4)}</span></span>
+                            {o.stopPrice && (
+                              <span>Stop: <span className="text-amber-400 font-mono">{fmt(Number(o.stopPrice))}</span></span>
+                            )}
+                            {o.trailingRate && (
+                              <span>Trail: <span className="text-amber-400 font-mono">{(Number(o.trailingRate) * 100).toFixed(2)}%</span></span>
+                            )}
                           </div>
                         </div>
                         <button
@@ -1798,9 +1848,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           <div className="flex-1 min-w-0 flex items-center gap-1">
                             <span className={cn("text-[10px] font-bold uppercase", o.side === "buy" ? "text-green-400" : "text-red-400")}>{o.side}</span>
                             <span className="text-[11px] text-foreground font-medium truncate">{o.symbol}</span>
+                            {o.type && o.type !== "limit" && (
+                              <span className="text-[9px] bg-secondary text-muted-foreground px-1 py-0.5 rounded shrink-0">{o.type}</span>
+                            )}
                           </div>
-                          <span className="w-16 text-right text-[11px] font-mono text-foreground">{o.price ? fmt(Number(o.price)) : "—"}</span>
-                          <span className="w-14 text-right text-[11px] font-mono text-muted-foreground">{Number(o.quantity).toFixed(3)}</span>
+                          <span className="w-16 text-right text-[11px] font-mono text-foreground">{o.price ? fmt(Number(o.price)) : "mkt"}</span>
+                          <div className="w-14 text-right">
+                            <span className="text-[11px] font-mono text-muted-foreground">{Number(o.filledQuantity ?? o.quantity).toFixed(3)}</span>
+                            {o.filledQuantity && Number(o.filledQuantity) < Number(o.quantity) && (
+                              <span className="block text-[9px] text-muted-foreground/50">/{Number(o.quantity).toFixed(3)}</span>
+                            )}
+                          </div>
                           {String(o.txid ?? "").startsWith("htlc-pending-") ? (
                             <span className="w-16 text-right text-[10px] font-semibold text-amber-400 flex items-center justify-end gap-0.5">
                               <Clock size={9} className="shrink-0" />
@@ -1818,14 +1876,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
                           <span className="font-mono">#{String(o.id).slice(0, 10)}</span>
                           <span>{formatDateTime(o.updatedAt ?? o.createdAt)}</span>
-                          {o.txid && getOrderExplorerUrl(o) && (
+                          {(() => {
+                            const fillQty = Number(o.filledQuantity ?? o.quantity);
+                            const fillPrice = Number(o.price ?? 0);
+                            const fee = fillQty * fillPrice * 0.001;
+                            if (fee > 0) return <span>Fee: {fee < 0.00001 ? fee.toExponential(2) : fee.toFixed(6)} {quote}</span>;
+                            return null;
+                          })()}
+                          {o.stopPrice && (
+                            <span>Stop: <span className="text-amber-400 font-mono">{fmt(Number(o.stopPrice))}</span></span>
+                          )}
+                          {getOrderExplorerUrl(o) && (
                             <a
                               href={getOrderExplorerUrl(o)!}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 text-primary font-mono"
                             >
-                              {o.txid.slice(0, 12)}… <Link2 size={10} />
+                              {String(o.txid).slice(0, 12)}… <Link2 size={10} />
                             </a>
                           )}
                         </div>
