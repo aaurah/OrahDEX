@@ -2732,7 +2732,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       {/* ── STICKY BOTTOM BAR ── */}
       <div
         className="shrink-0 flex items-center gap-2 px-4 py-3 border-t border-border bg-background/95 backdrop-blur"
-        style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
       >
         {/* Order type quick selector */}
         <button
