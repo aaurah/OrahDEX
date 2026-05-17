@@ -38,6 +38,7 @@ import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
+import { LetsExchangeWidget } from "@/components/LetsExchangeWidget";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
@@ -2206,7 +2207,10 @@ export function Swap() {
   const { open: openWalletModal } = useWalletModalStore();
   const { toast } = useToast();
 
-  const [activeTab, setActiveTab] = useState<"swap" | "buysell" | "bridge" | "dex">("swap");
+  const urlTab = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<"swap" | "buysell" | "bridge" | "dex">(
+    urlTab === "buysell" || urlTab === "bridge" || urlTab === "dex" ? urlTab : "swap"
+  );
   const [buySellMode, setBuySellMode] = useState<"buy" | "sell">("buy");
 
   const [fiatModalOpen, setFiatModalOpen]           = useState(false);
@@ -2550,74 +2554,7 @@ export function Swap() {
 
         {/* ═══════════════ BUY/SELL TAB ═══════════════ */}
         {activeTab === "buysell" && (
-          <div className="space-y-4">
-
-            {/* ── Buy / Sell toggle ── */}
-            <div className="flex items-center gap-1 p-1 rounded-2xl bg-white/5 border border-white/10">
-              {(["buy","sell"] as const).map(mode => (
-                <button
-                  key={mode}
-                  onClick={() => setBuySellMode(mode)}
-                  className={cn(
-                    "flex-1 py-2.5 text-sm font-black rounded-xl transition-all",
-                    buySellMode === mode
-                      ? mode === "buy"
-                        ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white shadow-lg"
-                        : "bg-gradient-to-r from-rose-600 to-orange-500 text-white shadow-lg"
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {mode === "buy" ? "Buy Crypto" : "Sell Crypto"}
-                </button>
-              ))}
-            </div>
-
-            {/* ── Header row ── */}
-            <div className="flex items-center justify-between px-0.5">
-              <div>
-                <p className="text-sm font-black">{buySellMode === "buy" ? "Buy Crypto" : "Sell Crypto"}</p>
-                <p className="text-[11px] text-muted-foreground">
-                  {buySellMode === "buy"
-                    ? "USDT → any coin · 6,000+ pairs · Best rate"
-                    : "Any coin → USDT · Instant · Best rate"}
-                </p>
-              </div>
-              <div className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border",
-                buySellMode === "buy"
-                  ? "bg-blue-500/15 border-blue-500/30"
-                  : "bg-rose-500/15 border-rose-500/30"
-              )}>
-                <div className={cn(
-                  "w-1.5 h-1.5 rounded-full animate-pulse",
-                  buySellMode === "buy" ? "bg-blue-400" : "bg-rose-400"
-                )} />
-                <span className={cn(
-                  "text-[10px] font-bold",
-                  buySellMode === "buy" ? "text-blue-400" : "text-rose-400"
-                )}>Live rates</span>
-              </div>
-            </div>
-
-            {/* ── In-built exchange panel ── */}
-            {buySellMode === "buy" ? (
-              <LetsExchangePanel
-                walletAddress={address ?? undefined}
-                onConnectWallet={openWalletModal}
-                initialFrom="USDT"
-              />
-            ) : (
-              <LetsExchangePanel
-                walletAddress={address ?? undefined}
-                onConnectWallet={openWalletModal}
-                initialTo="USDT"
-              />
-            )}
-
-            <p className="text-[10px] text-muted-foreground/40 text-center">
-              Non-custodial · Best rate guarantee · 6,000+ coins
-            </p>
-          </div>
+          <LetsExchangeWidget tab="buy_sell" className="min-h-[560px]" />
         )}
 
         {/* ═══════════════ SWAP TAB (LetsExchange cross-chain) ═══════════════ */}
@@ -2627,42 +2564,9 @@ export function Swap() {
           </div>
         )}
 
-        {/* ═══════════════ BRIDGE TAB (canonical L1↔L2) ═══════════════ */}
+        {/* ═══════════════ BRIDGE TAB ═══════════════ */}
         {activeTab === "bridge" && (
-          <div className="space-y-4">
-            {/* Quick-access bridge action cards */}
-            <div className="grid grid-cols-2 gap-3">
-              {([
-                { tab: "deposit",  icon: "⬇️", title: "Deposit",       desc: "L1 → L2 canonical",  color: "border-green-500/30 bg-green-500/8 hover:bg-green-500/15", badge: "green-400" },
-                { tab: "withdraw", icon: "⬆️", title: "Withdraw",      desc: "L2 → L1 canonical",  color: "border-orange-500/30 bg-orange-500/8 hover:bg-orange-500/15", badge: "orange-400" },
-                { tab: "bsvswap",  icon: "₿",  title: "BSV → Any",     desc: "HTLC atomic swap",   color: "border-emerald-500/30 bg-emerald-500/8 hover:bg-emerald-500/15", badge: "emerald-400" },
-                { tab: "swap",     icon: "🔁", title: "Cross-chain",   desc: "Wrapped + route",    color: "border-cyan-500/30 bg-cyan-500/8 hover:bg-cyan-500/15", badge: "cyan-400" },
-              ] as const).map(card => (
-                <a
-                  key={card.tab}
-                  href={`/bridge?tab=${card.tab}`}
-                  className={`flex flex-col gap-2 p-4 rounded-2xl border ${card.color} transition-all group`}
-                >
-                  <div className="text-2xl">{card.icon}</div>
-                  <div>
-                    <div className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">{card.title}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">{card.desc}</div>
-                  </div>
-                  <div className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground group-hover:text-primary transition-colors">
-                    Open <ArrowRight className="w-3 h-3" />
-                  </div>
-                </a>
-              ))}
-            </div>
-
-            {/* Info strip */}
-            <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl border border-border/30 bg-muted/15 text-xs text-muted-foreground">
-              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-400" />
-              <span>
-                <b className="text-foreground">Canonical Bridge:</b> Lock assets on L1 to mint wrapped tokens on L2 (1:1 backed), or burn wrapped tokens to withdraw native assets. Circle CCTP supported for USDC.
-              </span>
-            </div>
-          </div>
+          <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} />
         )}
 
         {/* ═══════════════ DEX TAB (on-chain Uniswap V3 / PancakeSwap) ═══════════════ */}
