@@ -63,7 +63,7 @@ export const ESCROW_ADDRESSES: Record<number, `0x${string}`> = {
   8453:   "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Base
   // 42161:  "0x...",                                       // Arbitrum   — deploy pending
   137:    "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Polygon
-  // 324:    "0x...",                                       // zkSync Era — deploy pending
+  324:    "0xeE234cEb85697b64800E696699b7841e00413B4f",   // zkSync Era
   1329:   "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Sei
   130:    "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Unichain
   // ── Testnets ────────────────────────────────────────────────────────────────
