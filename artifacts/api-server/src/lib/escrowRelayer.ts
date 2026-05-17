@@ -60,7 +60,7 @@ export const ESCROW_ADDRESSES: Record<number, `0x${string}`> = {
   43114:  "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Avalanche
   59144:  "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Linea
   534352: "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Scroll
-  // 8453:   "0x...",                                       // Base       — deploy pending
+  8453:   "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Base
   // 42161:  "0x...",                                       // Arbitrum   — deploy pending
   137:    "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Polygon
   // 324:    "0x...",                                       // zkSync Era — deploy pending
