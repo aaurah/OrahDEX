@@ -562,178 +562,160 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
   const canContinue = fromCoin && toCoin && numAmt && numAmt > 0 && estimateValid && !belowMin && !aboveMax;
 
   return (
-    <div className="flex flex-col gap-0">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <p className="text-xs text-muted-foreground">Step 1/3</p>
-          <h2 className="text-lg font-bold text-foreground">Choose deposit amount</h2>
-        </div>
-        {estimate && (
-          <Countdown key={`${refreshKey}-${estimate.rate_id ?? ""}`}
-            seconds={Math.min(rateSecondsLeft, RATE_REFRESH)}
-            onEnd={() => setRefreshKey(k => k + 1)} />
-        )}
-      </div>
+    <div className="flex flex-col gap-3">
 
-      {/* You send */}
-      <div className="rounded-xl bg-muted/40 p-3 mb-1">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-xs text-muted-foreground">You Send</p>
-          {availBal !== null && fromCoin && (
-            <p className="text-xs text-muted-foreground/70">
-              Available: <span className="font-mono text-foreground/80">{fmtNum(availBal, 6)} {fromCoin.symbol}</span>
-            </p>
-          )}
-        </div>
-        <input type="number" min="0" placeholder="0.0" value={amount}
-          onChange={e => setAmount(e.target.value)}
-          className="w-full bg-muted/60 border border-border/40 rounded-xl px-4 py-3 mb-2 text-xl font-bold text-foreground outline-none placeholder:text-muted-foreground/40 focus:border-primary/40 transition-colors" />
-        {/* Quick-fill percentage buttons */}
-        {availBal !== null && availBal > 0 && (
-          <div className="flex items-center gap-1.5 mb-2">
-            {([25, 50, 75] as const).map(pct => (
-              <button key={pct} type="button" onClick={() => applyPct(pct)}
-                className="flex-1 py-1.5 rounded-lg text-[11px] font-bold bg-muted/60 border border-border/40 hover:border-primary/40 hover:text-primary transition-colors text-muted-foreground">
-                {pct}%
-              </button>
-            ))}
-            <button type="button" onClick={() => applyPct(100)}
-              className="flex-1 py-1.5 rounded-lg text-[11px] font-bold bg-primary/10 border border-primary/30 hover:bg-primary/20 text-primary transition-colors">
-              Max
-            </button>
-          </div>
-        )}
-        <CoinPicker coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); }} exclude={toCoin?.symbol} />
-        {(minAmt !== null || maxAmt !== null) && fromCoin && numAmt !== null && numAmt > 0 && (
-          <div className={cn("flex items-center gap-3 text-xs mt-2", belowMin || aboveMax ? "text-red-400" : "text-emerald-400/80")}>
-            {minAmt !== null && (
-              <button type="button" onClick={() => setAmount(fmtNum(minAmt, 8))}
-                className="flex items-center gap-1 hover:opacity-70 active:opacity-50 transition-opacity cursor-pointer">
-                Min: <span className="font-mono underline underline-offset-2 decoration-dotted">{fmtNum(minAmt)} {fromCoin.symbol}</span>
-              </button>
-            )}
-            {maxAmt !== null && (
-              <button type="button" onClick={() => setAmount(fmtNum(maxAmt, 8))}
-                className="flex items-center gap-1 hover:opacity-70 active:opacity-50 transition-opacity cursor-pointer">
-                Max: <span className="font-mono underline underline-offset-2 decoration-dotted">{fmtNum(maxAmt, 7)} {fromCoin.symbol}</span>
+      {/* ── FROM / TO cards ── */}
+      <div className="relative">
+
+        {/* FROM card */}
+        <div className="rounded-t-2xl bg-muted/30 border border-border/40 px-4 pt-4 pb-7">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs text-muted-foreground font-medium">From</span>
+            {availBal !== null && fromCoin && (
+              <button type="button" onClick={() => applyPct(100)}
+                className="text-xs text-muted-foreground/70 hover:text-primary transition-colors">
+                Balance: <span className="font-mono">{fmtNum(availBal, 6)} {fromCoin.symbol}</span>
               </button>
             )}
           </div>
-        )}
-      </div>
-
-      {/* Swap direction */}
-      <div className="flex justify-center my-2">
-        <button type="button" onClick={() => { const t = fromCoin; setFromCoin(toCoin); setToCoin(t); setEstimate(null); setAmount(""); }}
-          className="p-2.5 rounded-full bg-muted/60 border border-border/40 hover:bg-muted hover:border-border/60 transition-colors">
-          <ArrowUpDown className="w-4 h-4 text-muted-foreground/70" />
-        </button>
-      </div>
-
-      {/* You get */}
-      <div className="rounded-xl bg-muted/40 p-3 mb-3">
-        <p className="text-xs text-muted-foreground mb-2">You Get</p>
-        <div className="w-full bg-muted/60 border border-border/40 rounded-xl px-4 py-3 mb-2 min-h-[52px] flex items-center justify-between gap-2">
-          {/* Keep the previous estimate visible during background refetches so the
-              UI doesn't flash. Only show a full spinner on the very first load. */}
-          {estimate ? (
-            <span className="text-xl font-bold text-emerald-400 font-mono">{fmtNum(estimate.amount, 8)}</span>
-          ) : estLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/60" />
-          ) : estError ? (
-            <span className="text-sm text-red-400/80">{estError}</span>
-          ) : (
-            <span className="text-xl font-bold text-muted-foreground/40">≈</span>
+          <div className="flex items-center gap-3">
+            <div className="w-40 shrink-0">
+              <CoinPicker coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); }} exclude={toCoin?.symbol} />
+            </div>
+            <input type="number" min="0" placeholder="0" value={amount}
+              onChange={e => setAmount(e.target.value)}
+              className="flex-1 text-right bg-transparent text-3xl font-bold text-foreground outline-none placeholder:text-muted-foreground/30 min-w-0" />
+          </div>
+          {/* Quick-fill % row */}
+          {availBal !== null && availBal > 0 && (
+            <div className="flex gap-1.5 mt-3">
+              {([25, 50, 75] as const).map(pct => (
+                <button key={pct} type="button" onClick={() => applyPct(pct)}
+                  className="flex-1 py-1 rounded-lg text-[11px] font-bold bg-muted/60 border border-border/40 hover:border-primary/40 hover:text-primary transition-colors text-muted-foreground">
+                  {pct}%
+                </button>
+              ))}
+              <button type="button" onClick={() => applyPct(100)}
+                className="flex-1 py-1 rounded-lg text-[11px] font-bold bg-primary/10 border border-primary/30 hover:bg-primary/20 text-primary transition-colors">
+                Max
+              </button>
+            </div>
           )}
-          {estimate && estLoading && (
-            <Loader2 className="w-3 h-3 animate-spin text-muted-foreground/40 shrink-0" />
+          {/* Min/max hints */}
+          {(minAmt !== null || maxAmt !== null) && fromCoin && numAmt !== null && numAmt > 0 && (
+            <div className={cn("flex items-center gap-3 text-xs mt-2", belowMin || aboveMax ? "text-red-400" : "text-muted-foreground/50")}>
+              {minAmt !== null && (
+                <button type="button" onClick={() => setAmount(fmtNum(minAmt, 8))}
+                  className="flex items-center gap-1 hover:opacity-70 active:opacity-50 transition-opacity">
+                  Min: <span className="font-mono underline underline-offset-2 decoration-dotted">{fmtNum(minAmt)} {fromCoin.symbol}</span>
+                </button>
+              )}
+              {maxAmt !== null && (
+                <button type="button" onClick={() => setAmount(fmtNum(maxAmt, 8))}
+                  className="flex items-center gap-1 hover:opacity-70 active:opacity-50 transition-opacity">
+                  Max: <span className="font-mono underline underline-offset-2 decoration-dotted">{fmtNum(maxAmt, 7)} {fromCoin.symbol}</span>
+                </button>
+              )}
+            </div>
           )}
         </div>
-        <CoinPicker coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); }} exclude={fromCoin?.symbol} />
 
-        {/* Rate + venue badge */}
-        {estimate && fromCoin && toCoin && (
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
-            <p className="text-xs text-muted-foreground">
-              1 {fromCoin.symbol} ≈ <span className="text-emerald-400 font-mono">{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
-            </p>
-            <span className={cn(
-              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold",
-              estimate.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/30 text-sky-400" :
-              estimate.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
-              estimate.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/30 text-orange-400" :
-              "bg-violet-500/10 border-violet-500/30 text-violet-400"
-            )}>
-              ⚡ {VENUE_LABELS[estimate.best_venue ?? ""] ?? "OrahRouter"}
-            </span>
+        {/* Swap arrow — overlaps card boundary */}
+        <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 z-10" style={{ top: "50%" }}>
+          <button type="button"
+            onClick={() => { const t = fromCoin; setFromCoin(toCoin); setToCoin(t); setEstimate(null); setAmount(""); }}
+            className="w-9 h-9 rounded-full bg-background border-2 border-border/60 flex items-center justify-center shadow-md hover:border-primary/60 hover:bg-primary/10 transition-all active:scale-95">
+            <ArrowRight className="w-4 h-4 text-muted-foreground rotate-90" />
+          </button>
+        </div>
+
+        {/* TO card */}
+        <div className="rounded-b-2xl bg-muted/30 border border-border/40 border-t-0 px-4 pt-7 pb-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-xs text-muted-foreground font-medium">To</span>
+            {estimate && (
+              <Countdown key={`${refreshKey}-${estimate.rate_id ?? ""}`}
+                seconds={Math.min(rateSecondsLeft, RATE_REFRESH)}
+                onEnd={() => setRefreshKey(k => k + 1)} />
+            )}
           </div>
-        )}
-        {estimate?.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && toCoin && (
-          <p className="text-[11px] text-muted-foreground/60 mt-1">
-            Network fee: <span className="font-mono">{fmtNum(estimate.withdrawal_fee, 6)} {toCoin.symbol}</span>
-          </p>
-        )}
+          <div className="flex items-center gap-3">
+            <div className="w-40 shrink-0">
+              <CoinPicker coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); }} exclude={fromCoin?.symbol} />
+            </div>
+            <div className="flex-1 text-right text-3xl font-bold tabular-nums">
+              {estLoading && !estimate ? (
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/40 ml-auto" />
+              ) : estimate ? (
+                <span className="text-emerald-400 font-mono">
+                  {fmtNum(estimate.amount, 8)}
+                  {estimate && estLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground/30 inline ml-1" />}
+                </span>
+              ) : estError ? (
+                <span className="text-red-400/70 text-sm font-semibold">{estError.length < 32 ? estError : "No route"}</span>
+              ) : (
+                <span className="text-muted-foreground/25">0</span>
+              )}
+            </div>
+          </div>
+          {/* Rate + venue */}
+          {estimate && fromCoin && toCoin && (
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <span className="text-xs text-muted-foreground">
+                1 {fromCoin.symbol} ≈ <span className="text-emerald-400 font-mono">{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
+              </span>
+              <span className={cn(
+                "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold",
+                estimate.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/30 text-sky-400" :
+                estimate.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
+                estimate.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/30 text-orange-400" :
+                "bg-violet-500/10 border-violet-500/30 text-violet-400"
+              )}>
+                ⚡ {VENUE_LABELS[estimate.best_venue ?? ""] ?? "OrahRouter"}
+              </span>
+              {estimate.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && toCoin && (
+                <span className="text-[11px] text-muted-foreground/50 ml-auto">
+                  Fee: <span className="font-mono">{fmtNum(estimate.withdrawal_fee, 6)} {toCoin.symbol}</span>
+                </span>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Smart Router badge — informational only */}
-      {(routeSource || routeLoading || routeError) && fromCoin && toCoin && numAmt && numAmt > 0 && (
+      {/* Smart Router badge — inline, subtle */}
+      {(routeSource || routeLoading) && fromCoin && toCoin && numAmt && numAmt > 0 && (
         <div className={cn(
-          "px-3 py-2 rounded-xl border text-xs transition-all",
-          routeLoading
-            ? "bg-muted/30 border-border/30 text-muted-foreground/50"
-            : routeError
-            ? "bg-muted/20 border-border/20 text-muted-foreground/40"
-            : routeSource === "internal"
-            ? "bg-emerald-500/10 border-emerald-500/30"
-            : "bg-blue-500/10 border-blue-500/30",
+          "px-3 py-2 rounded-xl border text-xs flex items-center gap-2",
+          routeLoading ? "bg-muted/20 border-border/20 text-muted-foreground/40" :
+          routeSource === "internal" ? "bg-emerald-500/8 border-emerald-500/25 text-emerald-400/80" :
+          "bg-blue-500/8 border-blue-500/25 text-blue-400/80"
         )}>
-          {routeLoading ? (
-            <div className="flex items-center gap-1.5 text-muted-foreground/50">
-              <Loader2 className="w-3 h-3 animate-spin" />
-              <span>Checking liquidity…</span>
-            </div>
-          ) : routeError ? (
-            <div className="flex items-center gap-1.5 text-muted-foreground/40">
-              <span>⚪</span>
-              <span>Routing check unavailable</span>
-            </div>
-          ) : routeSource === "internal" ? (
-            <>
-              <div className="flex items-center gap-1.5 font-medium text-emerald-400">
-                <span>⚡</span>
-                <span>Internal liquidity available</span>
-              </div>
-              <p className="mt-0.5 text-[11px] text-muted-foreground/60 leading-snug">
-                OrahDEX orderbook has depth for this pair. This panel routes via OrahBridge for cross-chain settlement. Internal execution is available in advanced mode.
-              </p>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-1.5 font-medium text-blue-400">
-                <span>🔄</span>
-                <span>Routing via OrahBridge</span>
-              </div>
-              <p className="mt-0.5 text-[11px] text-muted-foreground/60 leading-snug">
-                No sufficient internal liquidity for this pair and amount — using OrahBridge cross-chain.
-              </p>
-            </>
-          )}
+          {routeLoading
+            ? <><Loader2 className="w-3 h-3 animate-spin" /> Checking liquidity…</>
+            : routeSource === "internal"
+            ? <>⚡ OrahDEX internal liquidity</>
+            : <>🔄 Routing via OrahBridge</>
+          }
         </div>
       )}
 
+      {/* Confirm button */}
       <button type="button" disabled={!canContinue}
         onClick={() => canContinue && fromCoin && toCoin && onContinue(fromCoin, toCoin, amount, estimate)}
-        className={cn("w-full py-4 rounded-xl font-bold text-base transition-all",
+        className={cn(
+          "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2",
           canContinue
-            ? "bg-emerald-500 hover:bg-emerald-400 text-black active:scale-[0.98]"
-            : "bg-muted/60 text-muted-foreground/60 cursor-not-allowed")}>
+            ? "bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98]"
+            : "bg-muted/50 text-muted-foreground/50 cursor-not-allowed"
+        )}>
         {!fromCoin || !toCoin ? "Select coins" :
          !numAmt             ? "Enter amount" :
-         estLoading          ? "Finding best rate…" :
-         estError            ? (estError.length < 48 ? estError : "No route available for this amount") :
+         estLoading          ? <><Loader2 className="w-4 h-4 animate-spin" /> Finding best rate…</> :
+         estError            ? (estError.length < 48 ? estError : "No route available") :
          belowMin            ? `Below minimum (${fmtNum(minAmt)} ${fromCoin.symbol})` :
          aboveMax            ? `Above maximum (${fmtNum(maxAmt, 7)} ${fromCoin.symbol})` :
-         estimateValid       ? "Continue →" :
+         estimateValid       ? "Confirm" :
                                "Enter amount"}
       </button>
     </div>
