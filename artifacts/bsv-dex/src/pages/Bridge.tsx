@@ -1975,235 +1975,208 @@ export function BridgePage() {
       {pageTab === "history"  && <SwapHistory />}
       {pageTab !== "swap" && pageTab !== "bsvswap" && null}
 
-      {pageTab === "swap" && <>
+      {pageTab === "swap" && (
+        <div className="max-w-[460px] mx-auto space-y-3">
 
-      <div className="grid lg:grid-cols-[1fr_360px] gap-6">
+          {/* ── FROM / TO cards ── */}
+          <div className="relative">
 
-        {/* ── Left: Swap form ── */}
-        <div className="space-y-4">
+            {/* FROM card */}
+            <div className="bg-card border border-border rounded-t-2xl px-4 pt-4 pb-7">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs text-muted-foreground font-medium">From</span>
+                {/* Inline chain selector */}
+                <div className="w-56">
+                  <ChainSelect value={fromChain} onChange={(c) => { setFromChain(c); setFromToken(c.tokens[0]); setSimStep(0); }} />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {/* Token pill */}
+                <div className="flex gap-1.5 flex-wrap">
+                  {fromChain.tokens.map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setFromToken(t)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold border transition-all",
+                        fromToken === t
+                          ? "bg-primary/15 border-primary/40 text-primary"
+                          : "border-border/60 text-muted-foreground hover:text-foreground hover:bg-secondary"
+                      )}
+                    >
+                      <span className={cn("text-base leading-none", fromChain.color)}>{fromChain.icon}</span>
+                      {t}
+                      <ChevronDown className="w-3 h-3 opacity-60" />
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={e => { setAmount(e.target.value); setSimStep(0); }}
+                  placeholder="0"
+                  className="flex-1 text-right bg-transparent text-3xl font-bold text-foreground focus:outline-none min-w-0"
+                />
+              </div>
+              <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1 opacity-60">
+                  {evmAddress ? `${evmAddress.slice(0, 6)}…${evmAddress.slice(-4)}` : "No wallet"}
+                </span>
+                <span>
+                  {amount ? `≈ $${(parseFloat(amount) * fromPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "$0.00"}
+                </span>
+              </div>
+            </div>
 
-          {/* Mode toggle */}
-          <div className="flex gap-2 p-1 bg-secondary rounded-xl">
-            {(["htlc", "wrapped"] as SwapMode[]).map(m => (
+            {/* Swap direction arrow — overlaps the card boundary */}
+            <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 z-10" style={{ top: "50%" }}>
               <button
-                key={m}
-                onClick={() => { setMode(m); setSimStep(0); }}
-                className={cn(
-                  "flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2",
-                  mode === m
-                    ? "bg-card text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
+                onClick={handleSwapChains}
+                className="w-9 h-9 rounded-full bg-background border-2 border-border flex items-center justify-center shadow-md hover:border-primary/60 hover:bg-primary/10 transition-all active:scale-95"
               >
-                {m === "wrapped" ? (
-                  <><Layers className="w-3.5 h-3.5" /> Wrapped Bridge</>
-                ) : (
-                  <><Lock className="w-3.5 h-3.5" /> Atomic HTLC</>
-                )}
+                <ArrowDown className="w-4 h-4 text-muted-foreground" />
               </button>
-            ))}
+            </div>
+
+            {/* TO card */}
+            <div className="bg-card border border-border border-t-0 rounded-b-2xl px-4 pt-7 pb-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs text-muted-foreground font-medium">To</span>
+                <div className="w-56">
+                  <ChainSelect value={toChain} onChange={(c) => { setToChain(c); setToToken(c.tokens[0]); setSimStep(0); }} exclude={fromChain.id} />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1.5 flex-wrap">
+                  {toChain.tokens.map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setToToken(t)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold border transition-all",
+                        toToken === t
+                          ? "bg-primary/15 border-primary/40 text-primary"
+                          : "border-border/60 text-muted-foreground hover:text-foreground hover:bg-secondary"
+                      )}
+                    >
+                      <span className={cn("text-base leading-none", toChain.color)}>{toChain.icon}</span>
+                      {t}
+                      <ChevronDown className="w-3 h-3 opacity-60" />
+                    </button>
+                  ))}
+                </div>
+                <div className="flex-1 text-right text-3xl font-bold text-foreground tabular-nums">
+                  {outputAmount > 0 ? outputAmount.toFixed(6) : <span className="text-muted-foreground/40">0</span>}
+                </div>
+              </div>
+              <div className="flex justify-between mt-2 text-xs text-muted-foreground">
+                <span className="opacity-60">You receive</span>
+                <span>{outputAmount > 0 ? `≈ $${(outputAmount * toPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}` : "$0.00"}</span>
+              </div>
+            </div>
           </div>
 
-          {/* Mode description */}
-          <div className={cn(
-            "flex items-start gap-2.5 p-3 rounded-xl border text-xs text-muted-foreground",
-            mode === "htlc"
-              ? "border-orange-500/20 bg-orange-500/5"
-              : "border-primary/20 bg-primary/5"
-          )}>
-            <Info className="w-4 h-4 shrink-0 mt-0.5 text-muted-foreground" />
-            {mode === "htlc"
-              ? "Atomic HTLC: trustless peer-to-peer swap using Hash Time-Locked Contracts. Real P2SH HTLC script generated server-side. Send BSV to the HTLC address — bridge detects and mints wBSV on EVM."
-              : "Wrapped Bridge: assets locked in multi-sig vault, wrapped tokens minted on EVM for AMM trading. Fast (~30–60 sec) with pooled liquidity. Requires trusting bridge operators."
-            }
-          </div>
-
-          {/* HTLC: BSV→EVM wallet info banner */}
-          {mode === "htlc" && isBsvSource && (
-            <div className={cn(
-              "flex items-start gap-2.5 p-3 rounded-xl border text-xs",
-              evmAddress
-                ? "border-green-500/20 bg-green-500/5 text-green-400"
-                : "border-border bg-secondary/30 text-muted-foreground"
-            )}>
-              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              {evmAddress
-                ? `wBSV will mint to: ${evmAddress.slice(0, 10)}…${evmAddress.slice(-6)}`
-                : "Connect an EVM wallet to specify the wBSV recipient address."}
+          {/* ── Quick summary row ── */}
+          {outputAmount > 0 && !isSameChain && (
+            <div className="flex items-center justify-between px-1 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" /> {htlcTime}
+              </span>
+              <span>Fee: ${feeUsd.toFixed(4)}</span>
+              <span className="flex items-center gap-1 text-green-400">
+                <Zap className="w-3 h-3" /> BSV settled
+              </span>
             </div>
           )}
 
-          {/* From chain/token */}
-          <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">From</div>
-            <ChainSelect value={fromChain} onChange={(c) => { setFromChain(c); setFromToken(c.tokens[0]); setSimStep(0); }} />
-
-            <div className="flex items-center gap-2">
-              <div className="flex flex-wrap gap-1.5 flex-1">
-                {fromChain.tokens.map(t => (
+          {/* ── Settings (slippage + mode) — collapsible ── */}
+          <details className="group bg-card border border-border rounded-2xl overflow-hidden">
+            <summary className="cursor-pointer flex items-center justify-between px-4 py-3 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors list-none select-none">
+              <span className="flex items-center gap-1.5">
+                <Gauge className="w-3.5 h-3.5" />
+                Slippage {slippage}% · {mode === "htlc" ? "Atomic HTLC" : "Wrapped Bridge"}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 group-open:rotate-180 transition-transform" />
+            </summary>
+            <div className="px-4 pb-4 space-y-3 border-t border-border/50">
+              {/* Mode toggle */}
+              <div className="flex gap-2 pt-3">
+                {(["htlc", "wrapped"] as SwapMode[]).map(m => (
                   <button
-                    key={t}
-                    onClick={() => setFromToken(t)}
+                    key={m}
+                    onClick={() => { setMode(m); setSimStep(0); }}
                     className={cn(
-                      "px-2.5 py-1 rounded-lg text-xs font-bold border transition-all",
-                      fromToken === t
-                        ? "bg-primary/20 border-primary/50 text-primary"
-                        : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+                      "flex-1 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center justify-center gap-1.5",
+                      mode === m ? "bg-primary/15 border-primary/40 text-primary" : "border-border text-muted-foreground hover:text-foreground"
                     )}
-                  >{t}</button>
+                  >
+                    {m === "htlc" ? <><Lock className="w-3 h-3" /> Atomic HTLC</> : <><Layers className="w-3 h-3" /> Wrapped Bridge</>}
+                  </button>
                 ))}
               </div>
-              <input
-                type="number"
-                value={amount}
-                onChange={e => { setAmount(e.target.value); setSimStep(0); }}
-                placeholder="0.00"
-                className="w-36 text-right bg-secondary border border-border rounded-xl px-3 py-2 text-foreground font-mono font-semibold text-lg focus:outline-none focus:border-primary/50"
-              />
-            </div>
-            {amount && (
-              <div className="text-xs text-muted-foreground text-right">
-                ≈ ${(parseFloat(amount) * fromPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              {/* Slippage */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs text-muted-foreground">Slippage tolerance</span>
+                  <span className="text-xs font-bold text-primary">{slippage}%</span>
+                </div>
+                <div className="flex gap-1.5">
+                  {SLIPPAGE_PRESETS.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => { setSlippage(s); setCustomSlip(""); }}
+                      className={cn(
+                        "flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all",
+                        slippage === s && !customSlip ? "bg-primary/20 border-primary/50 text-primary" : "border-border text-muted-foreground hover:bg-secondary"
+                      )}
+                    >{s}%</button>
+                  ))}
+                  <input
+                    type="number"
+                    placeholder="Custom"
+                    value={customSlip}
+                    min="0.01" max="50" step="0.1"
+                    onChange={e => { setCustomSlip(e.target.value); const v = parseFloat(e.target.value); if (v > 0 && v <= 50) setSlippage(v); }}
+                    className="flex-1 py-1.5 rounded-lg text-xs font-bold border border-border bg-secondary text-foreground text-center focus:outline-none focus:border-primary/50"
+                  />
+                </div>
               </div>
-            )}
-          </div>
-
-          {/* Swap direction button */}
-          <div className="flex items-center justify-center">
-            <button
-              onClick={handleSwapChains}
-              className="w-10 h-10 rounded-full border border-border bg-card hover:border-primary/50 hover:bg-primary/10 flex items-center justify-center transition-all group"
-            >
-              <ArrowLeftRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
-            </button>
-          </div>
-
-          {/* To chain/token */}
-          <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">To</div>
-            <ChainSelect
-              value={toChain}
-              onChange={(c) => { setToChain(c); setToToken(c.tokens[0]); setSimStep(0); }}
-              exclude={fromChain.id}
-            />
-
-            <div className="flex items-center gap-2">
-              <div className="flex flex-wrap gap-1.5 flex-1">
-                {toChain.tokens.map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setToToken(t)}
-                    className={cn(
-                      "px-2.5 py-1 rounded-lg text-xs font-bold border transition-all",
-                      toToken === t
-                        ? "bg-primary/20 border-primary/50 text-primary"
-                        : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
-                    )}
-                  >{t}</button>
-                ))}
-              </div>
-              <div className="w-36 text-right bg-secondary/50 border border-border/50 rounded-xl px-3 py-2 font-mono font-semibold text-lg text-foreground">
-                {outputAmount > 0 ? outputAmount.toFixed(6) : "0.00"}
-              </div>
-            </div>
-            {outputAmount > 0 && (
-              <div className="text-xs text-muted-foreground text-right">
-                ≈ ${(outputAmount * toPrice).toLocaleString(undefined, { maximumFractionDigits: 2 })}
-              </div>
-            )}
-          </div>
-
-          {/* Slippage */}
-          <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Slippage Tolerance</span>
-              <span className="text-xs font-bold text-primary">{slippage}%</span>
-            </div>
-            <div className="flex gap-2">
-              {SLIPPAGE_PRESETS.map(s => (
-                <button
-                  key={s}
-                  onClick={() => { setSlippage(s); setCustomSlip(""); }}
-                  className={cn(
-                    "flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all",
-                    slippage === s && !customSlip
-                      ? "bg-primary/20 border-primary/50 text-primary"
-                      : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
-                  )}
-                >{s}%</button>
-              ))}
-              <div className="relative flex-1">
-                <input
-                  type="number"
-                  placeholder="Custom"
-                  value={customSlip}
-                  min="0.01"
-                  max="50"
-                  step="0.1"
-                  onChange={e => {
-                    setCustomSlip(e.target.value);
-                    const v = parseFloat(e.target.value);
-                    if (v > 0 && v <= 50) setSlippage(v);
-                  }}
-                  className="w-full py-1.5 rounded-lg text-xs font-bold border border-border bg-secondary text-foreground text-center focus:outline-none focus:border-primary/50"
-                />
-              </div>
-            </div>
-
-            {/* Summary */}
-            {outputAmount > 0 && (
-              <div className="space-y-1.5 pt-1 border-t border-border/50">
-                <div className="flex justify-between text-xs">
+              {/* Min received */}
+              {outputAmount > 0 && (
+                <div className="flex justify-between text-xs pt-1 border-t border-border/40">
                   <span className="text-muted-foreground">Min received</span>
-                  <span className="font-semibold text-foreground">
-                    {minReceived.toFixed(6)} {toToken}
-                  </span>
+                  <span className="font-semibold">{minReceived.toFixed(6)} {toToken}</span>
                 </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Bridge fee</span>
-                  <span className="font-semibold text-foreground">${feeUsd.toFixed(4)}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Settlement time</span>
-                  <span className="font-semibold text-foreground flex items-center gap-1">
-                    <Clock className="w-3 h-3" />{htlcTime}
-                  </span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">BSV Settlement</span>
-                  <span className="font-semibold text-green-400 flex items-center gap-1">
-                    <Zap className="w-3 h-3 animate-pulse" /> On-chain · &lt;5s · ~$0.001
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          </details>
 
-          {/* Warnings */}
+          {/* ── Warnings ── */}
           {isSameChain && (
             <div className="flex items-start gap-2.5 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-300">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              Select different source and destination chains for cross-chain bridging.
+              Select different source and destination chains.
             </div>
           )}
           {mode === "htlc" && !isBsvSource && (
             <div className="flex items-start gap-2.5 p-3 rounded-xl border border-blue-500/20 bg-blue-500/5 text-xs text-blue-400">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              Atomic HTLC requires <strong className="mx-0.5">BSV</strong> as the source asset. Switch the FROM chain to BSV, or use <button onClick={() => setMode("wrapped" as any)} className="underline font-semibold ml-0.5">Wrapped Bridge</button> for EVM↔EVM transfers.
+              Atomic HTLC requires <strong className="mx-0.5">BSV</strong> as source. Switch FROM to BSV, or use{" "}
+              <button onClick={() => setMode("wrapped" as any)} className="underline font-semibold ml-0.5">Wrapped Bridge</button>.
             </div>
           )}
-          {mode === "htlc" && isBsvSource && (
-            <div className="flex items-start gap-2.5 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 text-xs text-amber-400/80">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              HTLC swaps require a counterparty. If no match is found before the timeout window, funds are automatically refunded. Never share your secret preimage before receiving funds.
+          {mode === "htlc" && isBsvSource && evmAddress && (
+            <div className="flex items-center gap-2 p-3 rounded-xl border border-green-500/20 bg-green-500/5 text-xs text-green-400">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              BSV credited to {evmAddress.slice(0, 10)}…{evmAddress.slice(-6)} after HTLC confirms
             </div>
           )}
 
-          {/* Submit */}
+          {/* ── Confirm button ── */}
           <button
             onClick={handleBridgeClick}
             disabled={!amount || parseFloat(amount) <= 0 || isSameChain || simRunning || htlcLoading || (mode === "htlc" && !isBsvSource)}
-            className="w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2.5 bg-gradient-to-r from-primary to-green-500 text-primary-foreground shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            className="w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2.5 bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
           >
             {htlcLoading ? (
               <><Loader2 className="w-5 h-5 animate-spin" /> Generating HTLC…</>
@@ -2212,137 +2185,46 @@ export function BridgePage() {
             ) : mode === "htlc" && !isBsvSource ? (
               <>Switch FROM to BSV to use HTLC</>
             ) : (
-              <><ArrowRight className="w-5 h-5" /> {mode === "htlc" ? "Initiate HTLC Lock" : "Bridge Assets"}</>
+              <>Confirm</>
             )}
           </button>
-        </div>
 
-        {/* ── Right: Route & info ── */}
-        <div className="space-y-4">
-
-          {/* Route path */}
-          <div className="bg-card border border-border rounded-2xl p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-bold text-foreground">Route Path</span>
-              <span className={cn(
-                "text-[10px] font-bold px-2 py-0.5 rounded-full border",
-                mode === "htlc"
-                  ? "text-orange-400 border-orange-500/30 bg-orange-500/10"
-                  : "text-primary border-primary/30 bg-primary/10"
-              )}>
-                {mode === "htlc" ? "HTLC Atomic" : "Wrapped Bridge"}
-              </span>
-            </div>
-
-            <div className="space-y-2">
-              {routeSteps.map((step, i) => (
-                <RouteStep
-                  key={i}
-                  icon={step.icon}
-                  label={step.label}
-                  detail={step.detail}
-                  done={simStep > i + 1}
-                  active={simStep === i + 1 || (!simRunning && simStep === 0)}
-                />
-              ))}
-            </div>
-
-            {/* Chain → chain visualization */}
-            <div className="mt-4 flex items-center gap-2 justify-center">
-              <div className={cn("flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold", fromChain.bgColor, fromChain.color)}>
-                <span>{fromChain.icon}</span> {fromChain.name}
-              </div>
-              <ArrowRight className="w-4 h-4 text-muted-foreground" />
-              {mode === "wrapped" && (
-                <>
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-violet-500/30 bg-violet-500/10 text-xs font-bold text-violet-400">
-                    <span>⬡</span> EVM Bridge
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                </>
-              )}
-              {mode === "htlc" && (
-                <>
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-orange-500/30 bg-orange-500/10 text-xs font-bold text-orange-400">
-                    <Lock className="w-3 h-3" /> HTLC
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                </>
-              )}
-              <div className={cn("flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold", toChain.bgColor, toChain.color)}>
-                <span>{toChain.icon}</span> {toChain.name}
-              </div>
-            </div>
-          </div>
-
-          {/* Collapsible technical details */}
+          {/* ── Route details (collapsed) ── */}
           <details className="group">
-            <summary className="cursor-pointer flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors list-none py-1">
+            <summary className="cursor-pointer flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors list-none py-1 select-none">
               <Info className="w-3.5 h-3.5" />
-              <span>Technical details</span>
+              Route details
               <ChevronDown className="w-3.5 h-3.5 ml-auto group-open:rotate-180 transition-transform" />
             </summary>
-            <div className="mt-3 space-y-3">
-              {mode === "htlc" && (
-                <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-                  <div className="flex items-center gap-2 text-sm font-bold text-foreground">
-                    <Lock className="w-4 h-4 text-orange-400" />
-                    HTLC Script
-                  </div>
-                  <div className="space-y-2 text-xs">
-                    {[
-                      { label: "Script type", value: "P2SH HTLC" },
-                      { label: "Hash function", value: "SHA-256" },
-                      { label: "Claim path", value: "Reveal preimage → relayer claims" },
-                      { label: "Refund path", value: "CLTV + 144 blocks (~24 hrs)" },
-                      { label: "Network", value: "BSV Mainnet" },
-                    ].map(({ label, value }) => (
-                      <div key={label} className="flex justify-between">
-                        <span className="text-muted-foreground">{label}</span>
-                        <span className="font-mono font-semibold text-foreground">{value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="bg-card border border-border rounded-2xl p-4 space-y-3">
-                <div className="flex items-center gap-2 text-sm font-bold text-foreground">
-                  <Shield className="w-4 h-4 text-primary" />
-                  Security Notes
-                </div>
-                <ul className="space-y-2">
-                  {[
-                    { label: "Non-custodial HTLC", detail: "Funds locked by script — not by OrahDEX" },
-                    { label: "HTLC timeouts", detail: "144-block refund window prevents stuck funds" },
-                    { label: "Slippage protection", detail: "Min received guaranteed; tx reverts if breached" },
-                    { label: "On-chain verifiable", detail: "Redeem script and secret hash are public" },
-                  ].map(({ label, detail }) => (
-                    <li key={label} className="flex items-start gap-2 text-xs">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-green-400 shrink-0 mt-0.5" />
-                      <div>
-                        <span className="font-semibold text-foreground">{label}</span>
-                        <span className="text-muted-foreground"> — {detail}</span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+            <div className="mt-2 bg-card border border-border rounded-2xl p-4 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs font-semibold text-foreground">Route Path</span>
+                <span className={cn(
+                  "text-[10px] font-bold px-2 py-0.5 rounded-full border",
+                  mode === "htlc" ? "text-orange-400 border-orange-500/30 bg-orange-500/10" : "text-primary border-primary/30 bg-primary/10"
+                )}>
+                  {mode === "htlc" ? "HTLC Atomic" : "Wrapped Bridge"}
+                </span>
               </div>
-              <div className="rounded-2xl border border-green-500/25 bg-green-500/5 p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-green-500/15 flex items-center justify-center shrink-0">
-                  <span className="text-lg animate-pulse">⚡</span>
+              {routeSteps.map((step, i) => (
+                <RouteStep key={i} icon={step.icon} label={step.label} detail={step.detail} done={simStep > i + 1} active={simStep === i + 1 || (!simRunning && simStep === 0)} />
+              ))}
+              <div className="mt-3 flex items-center gap-2 justify-center pt-2 border-t border-border/40">
+                <div className={cn("flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold", fromChain.bgColor, fromChain.color)}>
+                  <span>{fromChain.icon}</span>{fromChain.name}
                 </div>
-                <div>
-                  <div className="text-sm font-bold text-green-400">BSV Final Settlement</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    Every cross-chain swap is anchored to the BSV blockchain via OP_RETURN — immutable, instant, &lt;$0.001.
-                  </div>
+                <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                {mode === "htlc" && <><div className="flex items-center gap-1 px-2 py-1 rounded-lg border border-orange-500/30 bg-orange-500/10 text-xs font-bold text-orange-400"><Lock className="w-3 h-3" />HTLC</div><ArrowRight className="w-4 h-4 text-muted-foreground" /></>}
+                {mode === "wrapped" && <><div className="flex items-center gap-1 px-2 py-1 rounded-lg border border-violet-500/30 bg-violet-500/10 text-xs font-bold text-violet-400">⬡ Bridge</div><ArrowRight className="w-4 h-4 text-muted-foreground" /></>}
+                <div className={cn("flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-bold", toChain.bgColor, toChain.color)}>
+                  <span>{toChain.icon}</span>{toChain.name}
                 </div>
               </div>
             </div>
           </details>
+
         </div>
-      </div>
-      </>}
+      )}
     </div>
   );
 }
