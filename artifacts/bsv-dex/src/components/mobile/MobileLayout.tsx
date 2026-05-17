@@ -73,12 +73,9 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
   const { icon: ThemeIcon, label: themeLabel } = THEME_META[theme];
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-hidden">
+    <div className="flex flex-col h-full bg-background overflow-hidden" style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}>
 
-      <div
-        className="shrink-0 bg-card"
-        style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
-      >
+      <div className="shrink-0 bg-card">
         <div className="flex items-center h-12">
           <button
             onClick={() => navigate("/swap")}
@@ -163,8 +160,8 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
         <button
           onClick={() => setChatOpen(true)}
           title="Live Support"
-          className="fixed bottom-6 right-4 z-50 rounded-full shadow-2xl bg-gradient-to-br from-primary/90 to-primary flex items-center justify-center active:scale-95 transition-transform"
-          style={{ width: 48, height: 48, marginBottom: "env(safe-area-inset-bottom, 0px)" }}
+          className="z-50 rounded-full shadow-2xl bg-gradient-to-br from-primary/90 to-primary flex items-center justify-center active:scale-95 transition-transform"
+          style={{ position: "fixed", right: 16, bottom: "max(env(safe-area-inset-bottom, 0px), 16px)", width: 48, height: 48 }}
         >
           <MessageCircle size={20} className="text-white" />
         </button>
