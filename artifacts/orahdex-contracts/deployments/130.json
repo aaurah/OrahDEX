@@ -1,0 +1,9 @@
+{
+  "chainId": 130,
+  "network": "unichain",
+  "label": "Unichain",
+  "escrow": "0xeE234cEb85697b64800E696699b7841e00413B4f",
+  "relayer": "0x5A391a3A2d6d885C412FE24be624126694de08dA",
+  "deployer": "0x5A391a3A2d6d885C412FE24be624126694de08dA",
+  "updatedAt": "2026-05-17T04:16:53.000Z"
+}

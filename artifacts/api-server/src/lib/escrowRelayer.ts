@@ -32,6 +32,10 @@ import {
   bsc, bscTestnet,
   avalanche, avalancheFuji,
   zksync,
+  linea, lineaSepolia,
+  scroll, scrollSepolia,
+  sei,
+  unichain, unichainSepolia,
 } from "viem/chains";
 import { getRequiredEnv } from "./requiredEnv.js";
 
@@ -51,13 +55,17 @@ export const ESCROW_ABI = parseAbi([
 export const ESCROW_ADDRESSES: Record<number, `0x${string}`> = {
   // ── Mainnets ────────────────────────────────────────────────────────────────
   1:      "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Ethereum
+  10:     "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Optimism
+  56:     "0xeE234cEb85697b64800E696699b7841e00413B4f",   // BSC
+  43114:  "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Avalanche
+  59144:  "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Linea
+  534352: "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Scroll
   // 8453:   "0x...",                                       // Base       — deploy pending
   // 42161:  "0x...",                                       // Arbitrum   — deploy pending
-  // 10:     "0x...",                                       // Optimism   — deploy pending
-  // 137:    "0x...",                                       // Polygon    — deploy pending
-  // 56:     "0x...",                                       // BSC        — deploy pending
-  // 43114:  "0x...",                                       // Avalanche  — deploy pending
+  137:    "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Polygon
   // 324:    "0x...",                                       // zkSync Era — deploy pending
+  1329:   "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Sei
+  130:    "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Unichain
   // ── Testnets ────────────────────────────────────────────────────────────────
   11155111: "0x4deb6023abD9E1C640aDa35201be8ff591d21cF2", // Sepolia
   // 84532:   "0x...",                                      // Base Sepolia   — deploy pending
@@ -78,6 +86,10 @@ const CHAIN_BY_ID = {
   56:     bsc,
   43114:  avalanche,
   324:    zksync,
+  59144:  linea,
+  534352: scroll,
+  1329:   sei,
+  130:    unichain,
   // ── Testnets ────────────────────────────────────────────────────────────────
   11155111: sepolia,
   84532:    baseSepolia,
@@ -98,6 +110,10 @@ const RPC_URLS: Record<number, string> = {
   56:     process.env.BSC_RPC_URL       ?? "https://bsc-dataseed.binance.org",
   43114:  process.env.AVALANCHE_RPC_URL ?? "https://api.avax.network/ext/bc/C/rpc",
   324:    process.env.ZKSYNC_RPC_URL    ?? "https://mainnet.era.zksync.io",
+  59144:  process.env.LINEA_RPC_URL    ?? "https://rpc.linea.build",
+  534352: process.env.SCROLL_RPC_URL   ?? "https://rpc.scroll.io",
+  1329:   process.env.SEI_RPC_URL      ?? "https://evm-rpc.sei-apis.com",
+  130:    process.env.UNICHAIN_RPC_URL  ?? "https://mainnet.unichain.org",
   // ── Testnets ────────────────────────────────────────────────────────────────
   11155111: process.env.SEPOLIA_RPC_URL       ?? "https://ethereum-sepolia-rpc.publicnode.com",
   84532:    process.env.BASE_SEPOLIA_RPC_URL   ?? "https://sepolia.base.org",
@@ -118,6 +134,10 @@ const EXPLORER: Record<number, string> = {
   56:     "https://bscscan.com/tx/",
   43114:  "https://snowtrace.io/tx/",
   324:    "https://explorer.zksync.io/tx/",
+  59144:  "https://lineascan.build/tx/",
+  534352: "https://scrollscan.com/tx/",
+  1329:   "https://seitrace.com/tx/",
+  130:    "https://uniscan.xyz/tx/",
   // ── Testnets ────────────────────────────────────────────────────────────────
   11155111: "https://sepolia.etherscan.io/tx/",
   84532:    "https://sepolia.basescan.org/tx/",
