@@ -1,0 +1,192 @@
+You are an expert TypeScript + EVM + cross-chain DeFi engineer.
+
+Goal:
+Build a “Rabby-style bridge logic” backend and minimal frontend that:
+- Aggregates quotes from multiple bridge providers (mocked at first, then pluggable real adapters)
+- Selects the best route based on configurable scoring (fees, time, slippage, reliability)
+- Builds and returns the transaction data for the user’s wallet to sign
+- Is architected cleanly enough to plug into a DEX frontend like OrahDEX later
+
+Tech stack:
+- Language: TypeScript
+- Runtime: Node.js (Express or Fastify)
+- Frontend: Minimal React + Vite (or Next.js if you prefer)
+- EVM interaction: ethers.js or viem
+- Config: dotenv
+- Linting/formatting: ESLint + Prettier
+
+High-level architecture:
+1. Core concepts:
+   - Chain: { id, name, rpcUrl, nativeCurrency, blockExplorerUrl }
+   - Token: { address, symbol, decimals, chainId, isNative }
+   - BridgeProvider: interface describing a bridge integration
+   - Quote: { providerId, fromChainId, toChainId, fromToken, toToken, amountIn, amountOut, fee, estimatedTimeSeconds, slippageBps, routeMeta }
+   - RouteScore: numeric score based on configurable weights
+
+2. Modules:
+   - /src/config/
+     - chains.ts: list of supported chains (e.g. Ethereum, Arbitrum, Optimism, BSC, Polygon)
+     - tokens.ts: list of supported tokens per chain
+     - bridgeProviders.ts: registry of enabled bridge providers
+     - scoringConfig.ts: weights for fee vs time vs slippage
+   - /src/bridges/
+     - IBridgeProvider.ts: TypeScript interface for all bridge providers
+       - getQuote(params): Promise<Quote>
+       - buildTx(params): Promise<{ to: string; data: string; value: string }>
+     - MockBridgeA.ts: mock implementation returning deterministic quotes
+     - MockBridgeB.ts: another mock with different characteristics
+     - (Design so real providers like LI.FI, Socket, Stargate, Across can be added later)
+   - /src/services/
+     - quoteAggregator.ts:
+       - getQuotesAcrossProviders(params): calls all providers in parallel
+       - filterInvalidQuotes(quotes): removes failed or incomplete quotes
+       - scoreQuotes(quotes, scoringConfig): returns quotes sorted by best score
+     - routeScoring.ts:
+       - computeRouteScore(quote, scoringConfig): combine fee, time, slippage into a single score
+   - /src/api/
+     - routes:
+       - POST /api/bridge/quote
+         - body: { fromChainId, toChainId, fromTokenAddress, toTokenAddress, amountIn }
+         - returns: { quotes: Quote[], bestQuote: Quote }
+       - POST /api/bridge/build-tx
+         - body: { providerId, fromChainId, toChainId, fromTokenAddress, toTokenAddress, amountIn, userAddress }
+         - returns: { to, data, value, chainId } for wallet to sign
+   - /src/index.ts:
+     - Express/Fastify server bootstrap
+     - JSON body parsing
+     - Error handling middleware
+     - CORS enabled for local frontend
+
+3. Bridge provider interface (very important):
+   - Define a strict interface in /src/bridges/IBridgeProvider.ts:
+
+     export interface BridgeQuoteParams {
+       fromChainId: number;
+       toChainId: number;
+       fromTokenAddress: string;
+       toTokenAddress: string;
+       amountIn: string; // in wei
+       userAddress?: string;
+     }
+
+     export interface BridgeQuote {
+       providerId: string;
+       fromChainId: number;
+       toChainId: number;
+       fromTokenAddress: string;
+       toTokenAddress: string;
+       amountIn: string;
+       amountOut: string;
+       fee: string;
+       estimatedTimeSeconds: number;
+       slippageBps: number;
+       routeMeta?: Record<string, any>;
+     }
+
+     export interface BuildTxParams extends BridgeQuoteParams {
+       quote: BridgeQuote;
+       userAddress: string;
+     }
+
+     export interface BuiltTx {
+       to: string;
+       data: string;
+       value: string;
+       chainId: number;
+     }
+
+     export interface IBridgeProvider {
+       id: string;
+       getQuote(params: BridgeQuoteParams): Promise<BridgeQuote | null>;
+       buildTx(params: BuildTxParams): Promise<BuiltTx>;
+     }
+
+   - Implement at least two mock providers:
+     - MockBridgeCheapSlow: low fee, high estimatedTimeSeconds
+     - MockBridgeFastExpensive: higher fee, low estimatedTimeSeconds
+
+4. Quote aggregation and scoring:
+   - In /src/services/routeScoring.ts:
+     - scoringConfig example:
+       const scoringConfig = {
+         feeWeight: 0.5,
+         timeWeight: 0.3,
+         slippageWeight: 0.2,
+       };
+
+     - computeRouteScore(quote, config):
+       - Normalize fee, time, slippage across all quotes (min-max normalization)
+       - Lower fee/time/slippage = better score
+       - Final score = (feeComponent * feeWeight) + (timeComponent * timeWeight) + (slippageComponent * slippageWeight)
+       - Return a numeric score where higher is better
+
+   - In /src/services/quoteAggregator.ts:
+     - getQuotesAcrossProviders(params):
+       - For each provider in registry, call getQuote(params) in parallel
+       - Collect successful quotes
+     - scoreQuotes(quotes, scoringConfig):
+       - Compute normalized metrics
+       - Compute score for each quote
+       - Sort by score descending
+       - Return { quotes, bestQuote }
+
+5. API endpoints in detail:
+   - POST /api/bridge/quote
+     - Validate input (fromChainId, toChainId, amountIn > 0, tokens exist in config)
+     - Call quoteAggregator.getQuotesAcrossProviders
+     - Score and sort quotes
+     - Return:
+       {
+         quotes: QuoteWithScore[],
+         bestQuote: QuoteWithScore | null
+       }
+
+   - POST /api/bridge/build-tx
+     - Validate providerId exists
+     - Validate quote parameters
+     - Call provider.buildTx
+     - Return { to, data, value, chainId }
+
+6. Minimal frontend (React):
+   - Pages/components:
+     - ChainSelector: dropdown for fromChain and toChain
+     - TokenSelector: dropdown for fromToken and toToken (filtered by chain)
+     - AmountInput: input for amountIn (in human-readable units)
+     - QuoteResultsTable:
+       - Shows providerId, amountOut, fee, estimatedTimeSeconds, slippageBps, score
+       - Highlights best route
+     - “Build Transaction” button:
+       - Calls /api/bridge/build-tx with selected quote
+       - Displays returned { to, data, value, chainId } in a JSON viewer
+       - This simulates what a wallet like Rabby would sign
+
+   - No wallet integration required yet; just show the transaction payload.
+
+7. Code quality:
+   - Add types everywhere (no any)
+   - Add basic unit tests for:
+     - routeScoring.computeRouteScore
+     - quoteAggregator.getQuotesAcrossProviders with mock providers
+   - Add README.md explaining:
+     - How to run backend
+     - How to run frontend
+     - How to add a new bridge provider adapter
+
+8. Stretch goals (if time permits):
+   - Add a “simulation mode” where quotes are randomly generated within ranges to stress-test scoring
+   - Add logging middleware for all API calls
+   - Add a simple in-memory cache for quotes for 30 seconds per parameter set
+
+Deliverables:
+- A working monorepo or single repo with:
+  - /backend (Node + TypeScript)
+  - /frontend (React + TypeScript)
+- Fully typed code
+- Clear instructions in README to run:
+  - Backend: npm install && npm run dev
+  - Frontend: npm install && npm run dev
+
+Focus:
+- Depth and clarity of architecture
+- Clean abstractions for bridge providers
+- Realistic “Rabby-style” flow: quote aggregation → scoring → best route → build transaction payload
