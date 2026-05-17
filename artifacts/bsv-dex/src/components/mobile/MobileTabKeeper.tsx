@@ -100,7 +100,7 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
 }
 
 function Tab({ active, children }: { active: boolean; children: React.ReactNode }) {
-  return <div style={active ? undefined : { display: "none" }}>{children}</div>;
+  return <div style={active ? { height: "100%" } : { display: "none" }}>{children}</div>;
 }
 
 export function MobileTabKeeper() {
