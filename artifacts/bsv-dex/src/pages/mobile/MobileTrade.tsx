@@ -1387,7 +1387,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       <div
         ref={scrollBodyRef}
         className="flex-1 overflow-y-auto pb-20"
-        style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y", overscrollBehaviorY: "none" }}
+        style={{ WebkitOverflowScrolling: "touch", overscrollBehaviorY: "none" }}
       >
 
         {/* ── PRICE BLOCK ── */}
