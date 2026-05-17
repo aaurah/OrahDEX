@@ -2519,44 +2519,33 @@ export function Swap() {
 
         {/* ─── Page title ─── */}
         <div className="text-center space-y-1 pb-1">
-          <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-violet-400 via-fuchsia-400 to-emerald-400 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-black tracking-tight text-foreground">
             Buy · Swap · Bridge · DEX
           </h1>
           <p className="text-xs text-muted-foreground">Secure · Non-custodial · Best rates · 6,000+ coins</p>
         </div>
 
-        {/* ─── Tab bar — Swap · Buy/Sell · Bridge · DEX (LetsExchange style) ─── */}
-        <div className="space-y-1">
-          <div className="flex items-center gap-0.5 p-1 bg-muted/30 rounded-2xl border border-border/30 backdrop-blur-sm">
-            {([
-              { key: "swap",    label: "Swap",     icon: <ArrowUpDown className="w-3.5 h-3.5" />,  gradient: "from-violet-500 to-fuchsia-600" },
-              { key: "buysell", label: "Buy/Sell", icon: <ShoppingCart className="w-3.5 h-3.5" />, gradient: "from-blue-500 to-violet-600" },
-              { key: "bridge",  label: "Bridge",   icon: <Link2 className="w-3.5 h-3.5" />,        gradient: "from-emerald-500 to-teal-500" },
-              { key: "dex",     label: "DEX",      icon: <Zap className="w-3.5 h-3.5" />,          gradient: "from-orange-500 to-amber-500" },
-            ] as const).map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={cn(
-                  "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold transition-all duration-200",
-                  activeTab === tab.key
-                    ? `bg-gradient-to-r ${tab.gradient} text-white shadow-lg shadow-primary/20`
-                    : "text-muted-foreground hover:text-foreground hover:bg-background/50",
-                )}
-              >
-                {tab.icon}
-                <span className="hidden sm:inline">{tab.label}</span>
-                <span className="sm:hidden">{tab.label}</span>
-              </button>
-            ))}
-          </div>
-          {/* Sub-label row */}
-          <p className="text-center text-[10px] text-muted-foreground/50 font-medium tracking-wide">
-            {activeTab === "swap"    && "6,000+ coins · 30+ chains · Best rate guaranteed"}
-            {activeTab === "buysell" && (buySellMode === "buy" ? "Buy any coin · USDT preset · 6,000+ pairs · Non-custodial" : "Sell any coin → USDT · Best rate · Non-custodial")}
-            {activeTab === "bridge"  && "L1 ↔ L2 · Canonical bridge · HTLC atomic swaps · CCTP"}
-            {activeTab === "dex"     && "Uniswap V3 · PancakeSwap · OpenOcean · On-chain · Non-custodial"}
-          </p>
+        {/* ─── Tab bar — LetsExchange segment-control style ─── */}
+        <div className="flex items-center gap-0.5 p-1 bg-muted/20 rounded-2xl border border-border/30">
+          {([
+            { key: "swap",    label: "Swap"     },
+            { key: "buysell", label: "Buy/Sell" },
+            { key: "bridge",  label: "Bridge"   },
+            { key: "dex",     label: "DEX"      },
+          ] as const).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                "flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150",
+                activeTab === tab.key
+                  ? "bg-card text-foreground shadow-sm border border-border/40"
+                  : "text-muted-foreground hover:text-foreground/80",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {/* ═══════════════ BUY/SELL TAB ═══════════════ */}
@@ -2633,52 +2622,14 @@ export function Swap() {
 
         {/* ═══════════════ SWAP TAB (LetsExchange cross-chain) ═══════════════ */}
         {activeTab === "swap" && (
-          <div className="space-y-4">
-            {/* Swap hero */}
-            <div className="relative rounded-3xl overflow-hidden border border-violet-500/20 shadow-2xl">
-              <div className="absolute inset-0 bg-gradient-to-br from-violet-600/20 via-fuchsia-600/10 to-pink-600/5" />
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_var(--tw-gradient-stops))] from-violet-500/10 via-transparent to-transparent" />
-              <div className="relative p-5 pb-3 space-y-1">
-                <h2 className="text-xl font-black tracking-tight">Swap Crypto</h2>
-                <p className="text-xs text-muted-foreground">6,000+ coins · 30+ chains · Best rate · Non-custodial</p>
-                <div className="flex items-center gap-4 pt-2 pb-1">
-                  {[["🌐","Multi-chain"],["⚡","Best rate"],["🔐","Non-custodial"]].map(([icon,label]) => (
-                    <div key={label as string} className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
-                      <span>{icon}</span>{label}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div id="lets-exchange-panel">
-              <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
-            </div>
+          <div id="lets-exchange-panel">
+            <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
           </div>
         )}
 
         {/* ═══════════════ BRIDGE TAB (canonical L1↔L2) ═══════════════ */}
         {activeTab === "bridge" && (
           <div className="space-y-4">
-            {/* Bridge hero */}
-            <div className="relative rounded-3xl overflow-hidden border border-emerald-500/20 shadow-2xl">
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-600/15 via-teal-600/10 to-cyan-600/5" />
-              <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-emerald-500/10 via-transparent to-transparent" />
-              <div className="relative p-5 pb-3 space-y-1">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-black tracking-tight">Bridge</h2>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">L1 ↔ L2</span>
-                </div>
-                <p className="text-xs text-muted-foreground">Canonical deposits & withdrawals · HTLC atomic swaps · CCTP</p>
-                <div className="flex items-center gap-4 pt-2 pb-1">
-                  {[["🔐","Non-custodial"],["⛓️","Multi-chain"],["🔄","CCTP"]].map(([icon,label]) => (
-                    <div key={label as string} className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
-                      <span>{icon}</span>{label}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
             {/* Quick-access bridge action cards */}
             <div className="grid grid-cols-2 gap-3">
               {([
@@ -2716,26 +2667,6 @@ export function Swap() {
 
         {/* ═══════════════ DEX TAB (on-chain Uniswap V3 / PancakeSwap) ═══════════════ */}
         {activeTab === "dex" && (<>
-
-        {/* DEX hero label */}
-        <div className="relative rounded-3xl overflow-hidden border border-orange-500/20 shadow-xl">
-          <div className="absolute inset-0 bg-gradient-to-br from-orange-600/15 via-amber-600/10 to-yellow-600/5" />
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_var(--tw-gradient-stops))] from-amber-500/10 via-transparent to-transparent" />
-          <div className="relative p-5 pb-3 space-y-1">
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black tracking-tight">DEX Aggregator</h2>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">On-Chain</span>
-            </div>
-            <p className="text-xs text-muted-foreground">Uniswap V3 · PancakeSwap · OpenOcean · Best route · Non-custodial</p>
-            <div className="flex flex-wrap items-center gap-3 pt-2 pb-1">
-              {[["🦄","Uniswap V3"],["🥞","PancakeSwap"],["🌊","OpenOcean"],["🛡️","Non-custodial"]].map(([icon,label]) => (
-                <div key={label as string} className="flex items-center gap-1 text-[10px] text-muted-foreground font-medium">
-                  <span>{icon}</span>{label}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
 
         <>
             {/* ── Protocol selector ── */}
