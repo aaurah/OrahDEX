@@ -1141,12 +1141,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const maxBuy  = maxBuyNum   > 0 ? maxBuyNum.toFixed(6)   : "0";
   const maxSell = sellBalance > 0 ? sellBalance.toFixed(6) : "0";
 
-  // Click available → fill max amount (exact balance — no shave factor)
+  // Click available → fill max amount, fee-adjusted so the order never exceeds balance.
+  // BUY : fee is charged on the quote spend, so max base = balance / (price × (1 + fee))
+  // SELL: fee is deducted from the quote received, so max base = full base balance (no adjustment)
   const handleFillMax = () => {
     if (!address || available <= 0) return;
     if (side === "buy") {
       if (effectivePrice <= 0) return;
-      setAmount((buyBalance / effectivePrice).toFixed(6));
+      const maxQty = buyBalance / (effectivePrice * (1 + FEE_RATE));
+      setAmount(maxQty.toFixed(6));
     } else {
       setAmount(sellBalance.toFixed(6));
     }
@@ -1155,7 +1158,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (!address || available <= 0) return;
     if (side === "buy") {
       if (effectivePrice <= 0) return;
-      const maxQty = buyBalance / effectivePrice;
+      const maxQty = buyBalance / (effectivePrice * (1 + FEE_RATE));
       const minQty = Math.min(maxQty, MIN_QUICK_FILL_QTY);
       setAmount(minQty > 0 ? minQty.toFixed(6) : "");
     } else {
