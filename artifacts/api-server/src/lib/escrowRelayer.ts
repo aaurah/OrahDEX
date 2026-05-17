@@ -23,7 +23,16 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { mainnet, sepolia } from "viem/chains";
+import {
+  mainnet, sepolia,
+  base, baseSepolia,
+  arbitrum, arbitrumSepolia,
+  optimism, optimismSepolia,
+  polygon, polygonAmoy,
+  bsc, bscTestnet,
+  avalanche, avalancheFuji,
+  zksync,
+} from "viem/chains";
 import { getRequiredEnv } from "./requiredEnv.js";
 
 // ── Contract config ───────────────────────────────────────────────────────────
@@ -37,24 +46,86 @@ export const ESCROW_ABI = parseAbi([
   "event OrderReleased(bytes32 indexed orderId, address indexed recipient, address token, uint256 amount)",
 ]);
 
+// Populated as contracts are deployed on each chain.
+// Deploy script (deploy-escrow-standalone.mjs) writes addresses here automatically.
 export const ESCROW_ADDRESSES: Record<number, `0x${string}`> = {
-  1: "0xeE234cEb85697b64800E696699b7841e00413B4f",
-  11155111: "0x4deb6023abD9E1C640aDa35201be8ff591d21cF2",
+  // ── Mainnets ────────────────────────────────────────────────────────────────
+  1:      "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Ethereum
+  // 8453:   "0x...",                                       // Base       — deploy pending
+  // 42161:  "0x...",                                       // Arbitrum   — deploy pending
+  // 10:     "0x...",                                       // Optimism   — deploy pending
+  // 137:    "0x...",                                       // Polygon    — deploy pending
+  // 56:     "0x...",                                       // BSC        — deploy pending
+  // 43114:  "0x...",                                       // Avalanche  — deploy pending
+  // 324:    "0x...",                                       // zkSync Era — deploy pending
+  // ── Testnets ────────────────────────────────────────────────────────────────
+  11155111: "0x4deb6023abD9E1C640aDa35201be8ff591d21cF2", // Sepolia
+  // 84532:   "0x...",                                      // Base Sepolia   — deploy pending
+  // 421614:  "0x...",                                      // Arb Sepolia    — deploy pending
+  // 11155420:"0x...",                                      // Op Sepolia     — deploy pending
+  // 80002:   "0x...",                                      // Polygon Amoy   — deploy pending
+  // 97:      "0x...",                                      // BSC Testnet    — deploy pending
+  // 43113:   "0x...",                                      // Avax Fuji      — deploy pending
 };
 
 const CHAIN_BY_ID = {
-  1: mainnet,
+  // ── Mainnets ────────────────────────────────────────────────────────────────
+  1:      mainnet,
+  8453:   base,
+  42161:  arbitrum,
+  10:     optimism,
+  137:    polygon,
+  56:     bsc,
+  43114:  avalanche,
+  324:    zksync,
+  // ── Testnets ────────────────────────────────────────────────────────────────
   11155111: sepolia,
+  84532:    baseSepolia,
+  421614:   arbitrumSepolia,
+  11155420: optimismSepolia,
+  80002:    polygonAmoy,
+  97:       bscTestnet,
+  43113:    avalancheFuji,
 } as const;
 
 const RPC_URLS: Record<number, string> = {
-  1: process.env.ETH_RPC_URL ?? "https://eth.llamarpc.com",
-  11155111: process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com",
+  // ── Mainnets ────────────────────────────────────────────────────────────────
+  1:      process.env.ETH_RPC_URL       ?? "https://eth.llamarpc.com",
+  8453:   process.env.BASE_RPC_URL      ?? "https://mainnet.base.org",
+  42161:  process.env.ARBITRUM_RPC_URL  ?? "https://arb1.arbitrum.io/rpc",
+  10:     process.env.OPTIMISM_RPC_URL  ?? "https://mainnet.optimism.io",
+  137:    process.env.POLYGON_RPC_URL   ?? "https://polygon-rpc.com",
+  56:     process.env.BSC_RPC_URL       ?? "https://bsc-dataseed.binance.org",
+  43114:  process.env.AVALANCHE_RPC_URL ?? "https://api.avax.network/ext/bc/C/rpc",
+  324:    process.env.ZKSYNC_RPC_URL    ?? "https://mainnet.era.zksync.io",
+  // ── Testnets ────────────────────────────────────────────────────────────────
+  11155111: process.env.SEPOLIA_RPC_URL       ?? "https://ethereum-sepolia-rpc.publicnode.com",
+  84532:    process.env.BASE_SEPOLIA_RPC_URL   ?? "https://sepolia.base.org",
+  421614:   process.env.ARB_SEPOLIA_RPC_URL    ?? "https://sepolia-rollup.arbitrum.io/rpc",
+  11155420: process.env.OP_SEPOLIA_RPC_URL     ?? "https://sepolia.optimism.io",
+  80002:    process.env.POLYGON_AMOY_RPC_URL   ?? "https://rpc-amoy.polygon.technology",
+  97:       process.env.BSC_TESTNET_RPC_URL    ?? "https://bsc-testnet-rpc.publicnode.com",
+  43113:    process.env.AVAX_FUJI_RPC_URL      ?? "https://api.avax-test.network/ext/bc/C/rpc",
 };
 
 const EXPLORER: Record<number, string> = {
-  1: "https://etherscan.io/tx/",
+  // ── Mainnets ────────────────────────────────────────────────────────────────
+  1:      "https://etherscan.io/tx/",
+  8453:   "https://basescan.org/tx/",
+  42161:  "https://arbiscan.io/tx/",
+  10:     "https://optimistic.etherscan.io/tx/",
+  137:    "https://polygonscan.com/tx/",
+  56:     "https://bscscan.com/tx/",
+  43114:  "https://snowtrace.io/tx/",
+  324:    "https://explorer.zksync.io/tx/",
+  // ── Testnets ────────────────────────────────────────────────────────────────
   11155111: "https://sepolia.etherscan.io/tx/",
+  84532:    "https://sepolia.basescan.org/tx/",
+  421614:   "https://sepolia.arbiscan.io/tx/",
+  11155420: "https://sepolia-optimism.etherscan.io/tx/",
+  80002:    "https://amoy.polygonscan.com/tx/",
+  97:       "https://testnet.bscscan.com/tx/",
+  43113:    "https://testnet.snowtrace.io/tx/",
 };
 
 const EVM_WALLET_SECRET = getRequiredEnv(
