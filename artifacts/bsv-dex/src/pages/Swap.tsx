@@ -38,7 +38,7 @@ import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
-import { LetsExchangeWidget } from "@/components/LetsExchangeWidget";
+import { FiatBuySellPanel } from "@/components/FiatBuySellPanel";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
@@ -2554,7 +2554,7 @@ export function Swap() {
 
         {/* ═══════════════ BUY/SELL TAB ═══════════════ */}
         {activeTab === "buysell" && (
-          <LetsExchangeWidget tab="buy_sell" className="min-h-[560px]" />
+          <FiatBuySellPanel />
         )}
 
         {/* ═══════════════ SWAP TAB (LetsExchange cross-chain) ═══════════════ */}
