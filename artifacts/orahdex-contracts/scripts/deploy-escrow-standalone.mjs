@@ -28,13 +28,17 @@ const ROOT = join(__dirname, "..");
 const CHAINS = {
   // ── Mainnets ─────────────────────────────────────────────────────────────
   ethereum:  { chainId: 1,     label: "Ethereum",   explorer: "https://etherscan.io",         rpcs: ["https://ethereum-rpc.publicnode.com", "https://1rpc.io/eth", "https://cloudflare-eth.com", "https://eth.llamarpc.com", "https://eth-pokt.nodies.app"] },
-  polygon:   { chainId: 137,   label: "Polygon",    explorer: "https://polygonscan.com",      rpcs: ["https://polygon-rpc.com", "https://rpc.ankr.com/polygon", "https://polygon-pokt.nodies.app"] },
+  polygon:   { chainId: 137,   label: "Polygon",    explorer: "https://polygonscan.com",      rpcs: ["https://polygon-bor-rpc.publicnode.com", "https://1rpc.io/matic", "https://rpc.ankr.com/polygon", "https://polygon-rpc.com"] },
   bsc:       { chainId: 56,    label: "BSC",        explorer: "https://bscscan.com",          rpcs: ["https://bsc-dataseed.binance.org", "https://rpc.ankr.com/bsc", "https://bsc-pokt.nodies.app"] },
   base:      { chainId: 8453,  label: "Base",       explorer: "https://basescan.org",         rpcs: ["https://mainnet.base.org", "https://base-pokt.nodies.app", "https://base.llamarpc.com"] },
   arbitrum:  { chainId: 42161, label: "Arbitrum",   explorer: "https://arbiscan.io",          rpcs: ["https://arb1.arbitrum.io/rpc", "https://arbitrum.llamarpc.com", "https://rpc.ankr.com/arbitrum"] },
   optimism:  { chainId: 10,    label: "Optimism",   explorer: "https://optimistic.etherscan.io", rpcs: ["https://mainnet.optimism.io", "https://optimism.llamarpc.com", "https://rpc.ankr.com/optimism"] },
   avalanche: { chainId: 43114, label: "Avalanche",  explorer: "https://snowtrace.io",         rpcs: ["https://api.avax.network/ext/bc/C/rpc", "https://avalanche-c-chain-rpc.publicnode.com"] },
-  zksync:    { chainId: 324,   label: "zkSync Era", explorer: "https://explorer.zksync.io",   rpcs: ["https://mainnet.era.zksync.io", "https://zksync.drpc.org"] },
+  zksync:    { chainId: 324,    label: "zkSync Era", explorer: "https://explorer.zksync.io",          rpcs: ["https://mainnet.era.zksync.io", "https://zksync.drpc.org"] },
+  linea:     { chainId: 59144,  label: "Linea",      explorer: "https://lineascan.build",              rpcs: ["https://rpc.linea.build", "https://linea-rpc.publicnode.com"] },
+  scroll:    { chainId: 534352, label: "Scroll",     explorer: "https://scrollscan.com",               rpcs: ["https://rpc.scroll.io", "https://scroll-mainnet.public.blastapi.io"] },
+  sei:       { chainId: 1329,   label: "Sei",        explorer: "https://seitrace.com",                 rpcs: ["https://sei-evm-rpc.publicnode.com", "https://evm-rpc.sei-apis.com", "https://sei.drpc.org", "https://rpc.ankr.com/sei"] },
+  unichain:  { chainId: 130,    label: "Unichain",   explorer: "https://uniscan.xyz",                  rpcs: ["https://unichain-rpc.publicnode.com", "https://mainnet.unichain.org"] },
 
   // ── Testnets ─────────────────────────────────────────────────────────────
   sepolia:        { chainId: 11155111, label: "Sepolia",        explorer: "https://sepolia.etherscan.io",      rpcs: ["https://eth-sepolia.public.blastapi.io", "https://sepolia.drpc.org", "https://ethereum-sepolia-rpc.publicnode.com", "https://1rpc.io/sepolia"] },
