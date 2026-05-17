@@ -2186,7 +2186,13 @@ export function BridgePage() {
               Select different source and destination chains for cross-chain bridging.
             </div>
           )}
-          {mode === "htlc" && (
+          {mode === "htlc" && !isBsvSource && (
+            <div className="flex items-start gap-2.5 p-3 rounded-xl border border-blue-500/20 bg-blue-500/5 text-xs text-blue-400">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              Atomic HTLC requires <strong className="mx-0.5">BSV</strong> as the source asset. Switch the FROM chain to BSV, or use <button onClick={() => setMode("wrapped" as any)} className="underline font-semibold ml-0.5">Wrapped Bridge</button> for EVM↔EVM transfers.
+            </div>
+          )}
+          {mode === "htlc" && isBsvSource && (
             <div className="flex items-start gap-2.5 p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 text-xs text-amber-400/80">
               <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
               HTLC swaps require a counterparty. If no match is found before the timeout window, funds are automatically refunded. Never share your secret preimage before receiving funds.
@@ -2196,13 +2202,15 @@ export function BridgePage() {
           {/* Submit */}
           <button
             onClick={handleBridgeClick}
-            disabled={!amount || parseFloat(amount) <= 0 || isSameChain || simRunning || htlcLoading}
+            disabled={!amount || parseFloat(amount) <= 0 || isSameChain || simRunning || htlcLoading || (mode === "htlc" && !isBsvSource)}
             className="w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2.5 bg-gradient-to-r from-primary to-green-500 text-primary-foreground shadow-lg shadow-primary/20 hover:shadow-primary/40 hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
           >
             {htlcLoading ? (
               <><Loader2 className="w-5 h-5 animate-spin" /> Generating HTLC…</>
             ) : simRunning ? (
               <><RefreshCw className="w-5 h-5 animate-spin" /> Routing…</>
+            ) : mode === "htlc" && !isBsvSource ? (
+              <>Switch FROM to BSV to use HTLC</>
             ) : (
               <><ArrowRight className="w-5 h-5" /> {mode === "htlc" ? "Initiate HTLC Lock" : "Bridge Assets"}</>
             )}
