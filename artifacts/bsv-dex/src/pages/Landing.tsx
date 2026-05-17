@@ -647,13 +647,24 @@ function FeaturedMarkets({ markets }: { markets: any[] }) {
   const [tab, setTab] = useState<MktTab>("ALL");
 
   const filtered = useMemo(() => {
+    const QUOTE_PREF: Record<string, number> = { USDT: 0, USDC: 1, BTC: 2, ETH: 3, BSV: 4 };
     let list = markets.filter(m => m.status === "active");
     if (tab === "BSV") {
       list = list.filter(m => m.baseAsset === "BSV" || m.quoteAsset === "BSV");
     } else if (tab !== "ALL") {
       list = list.filter(m => m.quoteAsset === tab);
     }
-    return list.sort((a, b) => b.volume24h - a.volume24h).slice(0, 24);
+    // Deduplicate: keep one pair per baseAsset — prefer preferred quotes, then highest volume
+    const seen = new Map<string, any>();
+    for (const m of list.sort((a, b) => {
+      const pa = QUOTE_PREF[a.quoteAsset] ?? 99;
+      const pb = QUOTE_PREF[b.quoteAsset] ?? 99;
+      if (pa !== pb) return pa - pb;
+      return b.volume24h - a.volume24h;
+    })) {
+      if (!seen.has(m.baseAsset)) seen.set(m.baseAsset, m);
+    }
+    return [...seen.values()].sort((a, b) => b.volume24h - a.volume24h).slice(0, 24);
   }, [markets, tab]);
 
   const fmtPrice = (p: number) => {
