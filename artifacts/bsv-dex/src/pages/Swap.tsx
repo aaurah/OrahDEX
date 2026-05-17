@@ -39,6 +39,7 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { FiatBuySellPanel } from "@/components/FiatBuySellPanel";
+import { BridgeAggPanel } from "@/components/BridgeAggPanel";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
@@ -2566,7 +2567,7 @@ export function Swap() {
 
         {/* ═══════════════ BRIDGE TAB ═══════════════ */}
         {activeTab === "bridge" && (
-          <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} />
+          <BridgeAggPanel walletAddress={address} />
         )}
 
         {/* ═══════════════ DEX TAB (on-chain Uniswap V3 / PancakeSwap) ═══════════════ */}
