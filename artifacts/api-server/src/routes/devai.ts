@@ -785,7 +785,7 @@ function sse(res: any, payload: object) {
 }
 
 // ── GET /devai/conversations ───────────────────────────────────────────────────
-router.get("/devai/conversations", requireAdminToken, async (_req, res) => {
+router.get("/devai/conversations", async (_req, res) => {
   try {
     const rows = await db
       .select({ id: conversations.id, title: conversations.title, createdAt: conversations.createdAt })
@@ -798,7 +798,7 @@ router.get("/devai/conversations", requireAdminToken, async (_req, res) => {
 });
 
 // ── POST /devai/conversations ─────────────────────────────────────────────────
-router.post("/devai/conversations", requireAdminToken, async (_req, res) => {
+router.post("/devai/conversations", async (_req, res) => {
   try {
     const [conv] = await db.insert(conversations).values({ title: "New Dev Session" }).returning();
     res.json({ id: conv.id, title: conv.title, createdAt: conv.createdAt });
@@ -809,7 +809,7 @@ router.post("/devai/conversations", requireAdminToken, async (_req, res) => {
 });
 
 // ── GET /devai/conversations/:id ───────────────────────────────────────────────
-router.get("/devai/conversations/:id", requireAdminToken, async (req, res) => {
+router.get("/devai/conversations/:id", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
@@ -823,7 +823,7 @@ router.get("/devai/conversations/:id", requireAdminToken, async (req, res) => {
 });
 
 // ── POST /devai/conversations/:id/messages — agentic SSE ──────────────────────
-router.post("/devai/conversations/:id/messages", requireAdminToken, async (req, res) => {
+router.post("/devai/conversations/:id/messages", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -1056,7 +1056,7 @@ router.post("/admin/devai/upload", requireAdminToken, raw({ type: "*/*", limit: 
 });
 
 // ── DELETE /devai/conversations/:id ───────────────────────────────────────────
-router.delete("/devai/conversations/:id", requireAdminToken, async (req, res) => {
+router.delete("/devai/conversations/:id", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
