@@ -14,6 +14,7 @@ const router = Router();
 
 // ── Internal API base (same process, same port) ───────────────────────────────
 const INTERNAL = `http://localhost:${process.env.PORT ?? 4000}`;
+const DEVAI_MODEL = (process.env.DEVAI_MODEL ?? "gpt-4o-mini").trim() || "gpt-4o-mini";
 const GH_HEADERS = (token?: string) => ({
   "User-Agent": "OrahDEX-DevAI/2.0",
   ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -846,7 +847,7 @@ router.post("/devai/conversations/:id/messages", requireAdminToken, async (req, 
 
     while (toolRounds < MAX_TOOL_ROUNDS) {
       const resp = await openai.chat.completions.create({
-        model: "gpt-5.4",
+        model: DEVAI_MODEL,
         max_completion_tokens: 6000,
         messages: chatMessages as any,
         tools: DEVAI_TOOLS,
@@ -906,7 +907,7 @@ router.post("/devai/conversations/:id/messages", requireAdminToken, async (req, 
     } else {
       // Tools were used: make a final streaming call for a natural summary response
       const finalStream = await openai.chat.completions.create({
-        model: "gpt-5.4",
+        model: DEVAI_MODEL,
         max_completion_tokens: 8192,
         messages: chatMessages as any,
         stream: true,
