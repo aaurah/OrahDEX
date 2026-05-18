@@ -451,7 +451,7 @@ export function DevAIPage() {
   const loadConvs = useCallback(async () => {
     setLoadingConvs(true);
     try {
-      const res = await fetch(`${API}/devai/conversations`);
+      const res = await fetch(`${API}/devai/conversations`, { headers: getAdminHeaders() });
       if (res.ok) {
         const list: Conversation[] = await res.json();
         setConvs(list);
@@ -461,7 +461,7 @@ export function DevAIPage() {
           const stored = Number(localStorage.getItem(PERSIST_KEY) || "0") || null;
           const target = (stored && list.some(c => c.id === stored)) ? stored : list[0].id;
           setActiveId(target);
-          const r = await fetch(`${API}/devai/conversations/${target}`);
+          const r = await fetch(`${API}/devai/conversations/${target}`, { headers: getAdminHeaders() });
           if (r.ok) {
             const data = await r.json();
             setMessages(data.messages.map((m: any) => ({
@@ -481,7 +481,7 @@ export function DevAIPage() {
     setActiveId(id);
     setMessages([]);
     try {
-      const res = await fetch(`${API}/devai/conversations/${id}`);
+      const res = await fetch(`${API}/devai/conversations/${id}`, { headers: getAdminHeaders() });
       if (!res.ok) return;
       const data = await res.json();
       setMessages(data.messages.map((m: any) => ({
@@ -495,7 +495,7 @@ export function DevAIPage() {
   }, []);
 
   const newConv = useCallback(async () => {
-    const res = await fetch(`${API}/devai/conversations`, { method: "POST" });
+    const res = await fetch(`${API}/devai/conversations`, { method: "POST", headers: getAdminHeaders() });
     if (!res.ok) return null;
     const conv = await res.json();
     setConvs(prev => [conv, ...prev]);
@@ -506,7 +506,7 @@ export function DevAIPage() {
 
   const deleteConv = useCallback(async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    await fetch(`${API}/devai/conversations/${id}`, { method: "DELETE" });
+    await fetch(`${API}/devai/conversations/${id}`, { method: "DELETE", headers: getAdminHeaders() });
     setConvs(prev => prev.filter(c => c.id !== id));
     if (activeId === id) { setActiveId(null); setMessages([]); }
   }, [activeId]);
@@ -546,7 +546,7 @@ export function DevAIPage() {
     try {
       const res = await fetch(`${API}/devai/conversations/${convId}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...getAdminHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ content: msg }),
         signal: abortRef.current.signal,
       });
