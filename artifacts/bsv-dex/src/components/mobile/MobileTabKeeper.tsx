@@ -78,7 +78,7 @@ function getTabKey(location: string): TabKey | null {
   if (location.startsWith("/prediction"))                    return "prediction";
   if (location.startsWith("/sovereign"))                     return "sovereign";
   if (location.startsWith("/ora-ai"))                        return "ora-ai";
-  if (location.startsWith("/admin/devai"))                   return "devai";
+  if (location.startsWith("/devai") || location.startsWith("/admin/devai")) return "devai";
   return null;
 }
 
@@ -191,7 +191,7 @@ export function MobileTabKeeper() {
       {vis("prediction") && <Tab active={act("prediction")}> <Suspense fallback={<Skeleton />}><PredictionTrading /></Suspense></Tab>}
       {vis("sovereign")  && <Tab active={act("sovereign")}>  <Suspense fallback={<Skeleton />}><SovereignOverviewPage /></Suspense></Tab>}
       {vis("ora-ai")     && <Tab active={act("ora-ai")}>     <Suspense fallback={<Skeleton />}><OraAIPage /></Suspense></Tab>}
-      {vis("devai")      && <Tab active={act("devai")}>      <AdminGuard><Suspense fallback={<Skeleton />}><DevAIPage /></Suspense></AdminGuard></Tab>}
+      {vis("devai")      && <Tab active={act("devai")}>      <Suspense fallback={<Skeleton />}><DevAIPage /></Suspense></Tab>}
 
       {/* Fallback: unrecognised route — show markets */}
       {activeKey === null && !isPassthrough(location) && (
