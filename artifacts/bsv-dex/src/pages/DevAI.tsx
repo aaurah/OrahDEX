@@ -566,6 +566,12 @@ export function DevAIPage() {
           try {
             const data = JSON.parse(line.slice(6));
             if (data.done) break;
+            if (data.error) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId ? { ...m, content: `Error: ${data.error}` } : m
+              ));
+              continue;
+            }
 
             if (data.content) {
               setMessages(prev => prev.map(m =>
