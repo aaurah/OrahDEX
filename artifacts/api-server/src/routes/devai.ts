@@ -879,6 +879,12 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
 
         // Execute each tool, stream events
         for (const tc of msg.tool_calls) {
+          if (tc.type !== "function") {
+            const unsupported = `Unsupported tool call type: ${tc.type}`;
+            sse(res, { tool_result: { id: tc.id, name: "unknown", output: unsupported } });
+            chatMessages.push({ role: "tool", tool_call_id: tc.id, content: unsupported });
+            continue;
+          }
           const name = tc.function.name;
           let args: any = {};
           try { args = JSON.parse(tc.function.arguments ?? "{}"); } catch { /* invalid json */ }
