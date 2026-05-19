@@ -14,8 +14,8 @@ import { verifyAndLockFunding } from "../lib/fundingVerifier.js";
 
 const router: IRouter = Router();
 
-router.use((_req, res, next) => {
-  if (process.env.FUTURES_ENABLED !== "true") {
+router.use((req, res, next) => {
+  if (process.env.FUTURES_ENABLED !== "true" && req.path.startsWith("/futures")) {
     return res.status(503).json({ error: "Futures features are not yet available. Coming soon." });
   }
   return next();
