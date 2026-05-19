@@ -1,9 +1,18 @@
 import OpenAI from "openai";
 
-// Instantiated without throwing — if env vars are absent the constructor
-// still succeeds; individual API calls will reject with auth errors, which
-// are already caught by the route try/catch blocks (returning HTTP 503).
+if (!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL) {
+  throw new Error(
+    "AI_INTEGRATIONS_OPENAI_BASE_URL must be set. Did you forget to provision the OpenAI AI integration?",
+  );
+}
+
+if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
+  throw new Error(
+    "AI_INTEGRATIONS_OPENAI_API_KEY must be set. Did you forget to provision the OpenAI AI integration?",
+  );
+}
+
 export const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY ?? "",
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
