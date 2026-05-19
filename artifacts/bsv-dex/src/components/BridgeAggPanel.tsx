@@ -113,7 +113,7 @@ function ChainDropdown({
     <div className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 bg-[#1a1f2e] border border-[#2a3047] rounded-xl px-3 py-2 text-sm font-medium text-white hover:border-[#4ade80]/40 transition-colors w-full"
+        className="flex items-center gap-2 bg-secondary/60 border border-border/50 rounded-xl px-3 py-2 text-sm font-medium text-foreground hover:border-primary/40 transition-colors w-full"
       >
         {selected ? (
           <>
@@ -124,26 +124,26 @@ function ChainDropdown({
             <span>{selected.name}</span>
           </>
         ) : (
-          <span className="text-gray-500">{label}</span>
+          <span className="text-muted-foreground">{label}</span>
         )}
-        <ChevronDown size={14} className="ml-auto text-gray-500" />
+        <ChevronDown size={14} className="ml-auto text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-[#1a1f2e] border border-[#2a3047] rounded-xl shadow-2xl overflow-hidden">
+        <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-card border border-border/50 rounded-xl shadow-2xl overflow-hidden">
           {chains
             .filter(c => c.id !== excludeId)
             .map(c => (
               <button
                 key={c.id}
                 onClick={() => { onSelect(c); setOpen(false); }}
-                className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-white hover:bg-[#232a3d] transition-colors text-left"
+                className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-foreground hover:bg-secondary/60 transition-colors text-left"
               >
                 <span
                   className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                   style={{ background: CHAIN_COLORS[c.id] ?? "#9ca3af" }}
                 />
                 {c.name}
-                <span className="ml-auto text-xs text-gray-500">{c.nativeSymbol}</span>
+                <span className="ml-auto text-xs text-muted-foreground">{c.nativeSymbol}</span>
               </button>
             ))}
         </div>
@@ -169,27 +169,27 @@ function TokenDropdown({
     <div className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-2 bg-[#232a3d] border border-[#2a3047] rounded-xl px-3 py-2 text-sm font-semibold text-white hover:border-[#4ade80]/40 transition-colors min-w-[110px]"
+        className="flex items-center gap-2 bg-secondary border border-border/50 rounded-xl px-3 py-2 text-sm font-semibold text-foreground hover:border-primary/40 transition-colors min-w-[110px]"
       >
         {selected ? (
           <>
-            <span className="text-[#4ade80] font-bold">{selected.symbol}</span>
+            <span className="text-primary font-bold">{selected.symbol}</span>
           </>
         ) : (
-          <span className="text-gray-500 font-normal">{label}</span>
+          <span className="text-muted-foreground font-normal">{label}</span>
         )}
-        <ChevronDown size={14} className="ml-auto text-gray-500" />
+        <ChevronDown size={14} className="ml-auto text-muted-foreground" />
       </button>
       {open && (
-        <div className="absolute z-50 top-full mt-1 right-0 min-w-[160px] bg-[#1a1f2e] border border-[#2a3047] rounded-xl shadow-2xl overflow-hidden">
+        <div className="absolute z-50 top-full mt-1 right-0 min-w-[160px] bg-card border border-border/50 rounded-xl shadow-2xl overflow-hidden">
           {tokens.map(t => (
             <button
               key={t.address}
               onClick={() => { onSelect(t); setOpen(false); }}
-              className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-white hover:bg-[#232a3d] transition-colors text-left"
+              className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm text-foreground hover:bg-secondary/60 transition-colors text-left"
             >
-              <span className="font-semibold text-[#4ade80]">{t.symbol}</span>
-              <span className="text-xs text-gray-500 ml-auto">{t.name}</span>
+              <span className="font-semibold text-primary">{t.symbol}</span>
+              <span className="text-xs text-muted-foreground ml-auto">{t.name}</span>
             </button>
           ))}
         </div>
@@ -220,13 +220,13 @@ function QuoteRow({
       onClick={onSelect}
       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-all text-left ${
         isSelected
-          ? "border-[#4ade80]/60 bg-[#4ade80]/5"
-          : "border-[#2a3047] bg-[#1a1f2e] hover:border-[#4ade80]/30"
+          ? "border-primary/60 bg-primary/5"
+          : "border-border/50 bg-card hover:border-primary/30"
       }`}
     >
       {/* Provider */}
       <div className="flex flex-col min-w-[90px]">
-        <span className="text-sm font-semibold text-white">{meta.label}</span>
+        <span className="text-sm font-semibold text-foreground">{meta.label}</span>
         {meta.tag && (
           <span
             className="text-[10px] font-medium px-1.5 py-0.5 rounded-full w-fit mt-0.5"
@@ -239,11 +239,11 @@ function QuoteRow({
 
       {/* Amount out */}
       <div className="flex-1 text-right">
-        <div className="text-sm font-bold text-white">
+        <div className="text-sm font-bold text-foreground">
           {trimAmount(quote.amountOutHuman)}
-          <span className="text-gray-400 font-normal ml-1">{toToken?.symbol}</span>
+          <span className="text-muted-foreground font-normal ml-1">{toToken?.symbol}</span>
         </div>
-        <div className="text-[11px] text-gray-500 mt-0.5">
+        <div className="text-[11px] text-muted-foreground/60 mt-0.5">
           Fee: {trimAmount(quote.feeHuman)} · {fmtTime(quote.estimatedTimeSeconds)}
         </div>
       </div>
@@ -256,12 +256,12 @@ function QuoteRow({
         >
           {fmtScore(quote.score)}
         </span>
-        <span className="text-[9px] text-gray-600 uppercase tracking-wide">score</span>
+        <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wide">score</span>
       </div>
 
       {/* Best / selected indicator */}
       <div className="w-4 flex-shrink-0">
-        {isSelected && <CheckCircle2 size={16} className="text-[#4ade80]" />}
+        {isSelected && <CheckCircle2 size={16} className="text-primary" />}
         {isBest && !isSelected && (
           <Zap size={14} className="text-yellow-400" />
         )}
@@ -283,24 +283,24 @@ function TxViewer({ tx, warning }: { tx: BuiltTx; warning?: string }) {
   }
 
   return (
-    <div className="bg-[#0f1420] border border-[#2a3047] rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#2a3047]">
-        <span className="text-xs font-semibold text-[#4ade80] uppercase tracking-wide">Transaction Payload</span>
+    <div className="bg-background border border-border/50 rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
+        <span className="text-xs font-semibold text-primary uppercase tracking-wide">Transaction Payload</span>
         <button
           onClick={copy}
-          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition-colors"
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <Copy size={12} />
           {copied ? "Copied!" : "Copy"}
         </button>
       </div>
       {warning && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border-b border-[#2a3047]">
+        <div className="flex items-center gap-2 px-4 py-2 bg-yellow-500/10 border-b border-border/50">
           <AlertCircle size={13} className="text-yellow-400 flex-shrink-0" />
           <span className="text-[11px] text-yellow-300">{warning}</span>
         </div>
       )}
-      <pre className="text-[11px] text-[#4ade80] font-mono px-4 py-3 overflow-x-auto leading-5">
+      <pre className="text-[11px] text-primary font-mono px-4 py-3 overflow-x-auto leading-5">
         {json}
       </pre>
     </div>
@@ -438,14 +438,14 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
 
       {/* ── Header ─────────────────────────────────────────────── */}
       <div className="text-center pb-1">
-        <h2 className="text-lg font-semibold text-white">Bridge</h2>
-        <p className="text-xs text-gray-500 mt-0.5">Best route across multiple providers</p>
+        <h2 className="text-lg font-semibold text-foreground">Bridge</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">Best route across multiple providers</p>
       </div>
 
       {/* ── From card ───────────────────────────────────────────── */}
-      <div className="bg-[#141824] border border-[#2a3047] rounded-2xl p-4 space-y-3">
+      <div className="bg-card border border-border/50 rounded-2xl p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">From</span>
+          <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">From</span>
           {fromChain && <ChainBadge chain={fromChain} />}
         </div>
 
@@ -466,7 +466,7 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
               value={amount}
               onChange={e => { setAmount(e.target.value); setQuotes([]); setSelectedQuote(null); setBuiltTx(null); }}
               placeholder="0.0"
-              className="w-full bg-[#1a1f2e] border border-[#2a3047] rounded-xl px-4 py-3 text-xl font-bold text-white placeholder-gray-600 focus:outline-none focus:border-[#4ade80]/50 transition-colors"
+              className="w-full bg-secondary/60 border border-border/50 rounded-xl px-4 py-3 text-xl font-bold text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 transition-colors"
             />
           </div>
           <TokenDropdown
@@ -482,16 +482,16 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
       <div className="flex items-center justify-center -my-1">
         <button
           onClick={swapChains}
-          className="w-9 h-9 rounded-full bg-[#1a1f2e] border border-[#2a3047] flex items-center justify-center hover:border-[#4ade80]/40 hover:bg-[#232a3d] transition-all"
+          className="w-9 h-9 rounded-full bg-secondary/60 border border-border/50 flex items-center justify-center hover:border-primary/40 hover:bg-secondary transition-all"
         >
-          <ArrowUpDown size={16} className="text-gray-400" />
+          <ArrowUpDown size={16} className="text-muted-foreground" />
         </button>
       </div>
 
       {/* ── To card ─────────────────────────────────────────────── */}
-      <div className="bg-[#141824] border border-[#2a3047] rounded-2xl p-4 space-y-3">
+      <div className="bg-card border border-border/50 rounded-2xl p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">To</span>
+          <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">To</span>
           {toChain && <ChainBadge chain={toChain} />}
         </div>
 
@@ -505,13 +505,13 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
 
         <div className="flex items-center gap-3">
           <div className="flex-1 relative">
-            <div className="w-full bg-[#1a1f2e] border border-[#2a3047] rounded-xl px-4 py-3 text-xl font-bold text-white">
+            <div className="w-full bg-secondary/60 border border-border/50 rounded-xl px-4 py-3 text-xl font-bold text-foreground">
               {selectedQuote ? (
-                <span className="text-[#4ade80]">
+                <span className="text-primary">
                   {trimAmount(selectedQuote.amountOutHuman)}
                 </span>
               ) : (
-                <span className="text-gray-600">—</span>
+                <span className="text-muted-foreground/40">—</span>
               )}
             </div>
           </div>
@@ -524,7 +524,7 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
         </div>
 
         {selectedQuote && (
-          <div className="flex items-center gap-3 text-xs text-gray-500 pt-1">
+          <div className="flex items-center gap-3 text-xs text-muted-foreground pt-1">
             <span className="flex items-center gap-1">
               <Clock size={11} />
               {fmtTime(selectedQuote.estimatedTimeSeconds)}
@@ -541,7 +541,7 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
       <button
         onClick={fetchQuotes}
         disabled={!canFetch || loadingQuotes}
-        className="w-full flex items-center justify-center gap-2.5 bg-[#4ade80] text-black font-bold rounded-xl py-3.5 text-sm hover:bg-[#22c55e] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        className="w-full flex items-center justify-center gap-2.5 bg-primary text-primary-foreground font-bold rounded-xl py-3.5 text-sm hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
       >
         {loadingQuotes ? (
           <>
@@ -568,17 +568,17 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
       {quotes.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Routes</span>
-            <span className="text-[11px] text-gray-600">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Routes</span>
+            <span className="text-[11px] text-muted-foreground/60">
               {quotes.length} provider{quotes.length > 1 ? "s" : ""} · sorted by score
             </span>
           </div>
 
           {/* Column headers */}
           <div className="grid grid-cols-4 px-4 pb-1">
-            <span className="text-[10px] text-gray-600 uppercase tracking-wide">Provider</span>
-            <span className="text-[10px] text-gray-600 uppercase tracking-wide text-right col-span-2">You Get</span>
-            <span className="text-[10px] text-gray-600 uppercase tracking-wide text-right">Score</span>
+            <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wide">Provider</span>
+            <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wide text-right col-span-2">You Get</span>
+            <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wide text-right">Score</span>
           </div>
 
           {quotes.map((q, i) => (
@@ -599,7 +599,7 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
         <button
           onClick={buildTx}
           disabled={buildingTx}
-          className="w-full flex items-center justify-center gap-2.5 bg-[#1a1f2e] border border-[#4ade80]/40 text-[#4ade80] font-semibold rounded-xl py-3 text-sm hover:bg-[#4ade80]/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="w-full flex items-center justify-center gap-2.5 bg-card border border-primary/40 text-primary font-semibold rounded-xl py-3 text-sm hover:bg-primary/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           {buildingTx ? (
             <>
@@ -621,7 +621,7 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
           <TxViewer tx={builtTx.tx} warning={builtTx.warning} />
           <button
             onClick={() => setBuiltTx(null)}
-            className="w-full text-xs text-gray-500 hover:text-gray-300 transition-colors py-1"
+            className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
           >
             Clear
           </button>
@@ -630,8 +630,8 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
 
       {/* ── Scoring legend ───────────────────────────────────────── */}
       {quotes.length > 0 && (
-        <div className="bg-[#141824] border border-[#2a3047] rounded-xl px-4 py-3">
-          <p className="text-[11px] text-gray-600 leading-relaxed">
+        <div className="bg-card border border-border/50 rounded-xl px-4 py-3">
+          <p className="text-[11px] text-muted-foreground/60 leading-relaxed">
             Score = fees (50%) + time (30%) + slippage (20%), min-max normalised.
             Higher is better. Select any route to bridge with it.
           </p>
