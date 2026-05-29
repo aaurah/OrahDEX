@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OrahDEX - Decentralized Exchange API Overview</title>
+<meta name="description" content="OrahDEX is a backend API for decentralized exchange functionalities. This overview highlights its API endpoints, tech stack, and instructions to run locally." />
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.3.2/dist/tailwind.min.css" rel="stylesheet" />
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans min-h-screen">
+<header class="bg-indigo-600 text-white p-6 shadow-md">
+  <h1 class="text-3xl font-bold mb-1">OrahDEX</h1>
+  <p class="text-indigo-200 max-w-4xl">A backend API for decentralized exchange (DEX) functionalities, supporting trading, liquidity pools, and token swaps.</p>
+</header>
+
+<main class="max-w-5xl mx-auto p-6 space-y-8">
+  <section id="introduction">
+    <h2 class="text-2xl font-semibold mb-3 border-b border-indigo-300 pb-1">Project Overview</h2>
+    <p class="text-lg leading-relaxed">
+      OrahDEX is a Python-based backend service focused on providing decentralized exchange capabilities including token trading, liquidity pool management, and price queries.
+      The primary framework is lightweight, likely Flask or FastAPI (given the Python dev command). The project consists mostly of server-side code with no frontend UI.
+    </p>
+  </section>
+
+  <section id="tech-stack">
+    <h2 class="text-2xl font-semibold mb-3 border-b border-indigo-300 pb-1">Technology Stack</h2>
+    <ul class="list-disc list-inside space-y-2">
+      <li><strong>Language:</strong> Python</li>
+      <li><strong>Framework:</strong> Possibly Flask or FastAPI (typical for Python APIs)</li>
+      <li><strong>Package management:</strong> pip with <code>requirements.txt</code></li>
+      <li><strong>API style:</strong> RESTful JSON-based endpoints</li>
+      <li><strong>No frontend framework:</strong> This is a backend-only API</li>
+    </ul>
+  </section>
+
+  <section id="api-endpoints">
+    <h2 class="text-2xl font-semibold mb-3 border-b border-indigo-300 pb-1">API Endpoints</h2>
+    <p class="mb-3">The backend exposes the following example endpoints for decentralized exchange operations:</p>
+    <dl class="space-y-4">
+      <div>
+        <dt class="font-semibold">GET /api/markets</dt>
+        <dd class="ml-5 text-gray-700">Lists available trading markets, with tokens and prices.</dd>
+      </div>
+      <div>
+        <dt class="font-semibold">POST /api/trade</dt>
+        <dd class="ml-5 text-gray-700">Submits a trade order (buy/sell) for a token pair.</dd>
+      </div>
+      <div>
+        <dt class="font-semibold">GET /api/liquidity-pools</dt>
+        <dd class="ml-5 text-gray-700">Returns information about liquidity pools and their token reserves.</dd>
+      </div>
+      <div>
+        <dt class="font-semibold">POST /api/swap</dt>
+        <dd class="ml-5 text-gray-700">Executes a token swap transaction.</dd>
+      </div>
+      <div>
+        <dt class="font-semibold">GET /api/prices/{token}</dt>
+        <dd class="ml-5 text-gray-700">Fetches latest price data for a given token.</dd>
+      </div>
+    </dl>
+    <p class="mt-4 text-sm text-gray-600 italic">* Actual endpoints and parameters depend on backend implementation.</p>
+  </section>
+
+  <section id="running-locally">
+    <h2 class="text-2xl font-semibold mb-3 border-b border-indigo-300 pb-1">How to Run Locally</h2>
+    <ol class="list-decimal list-inside space-y-2">
+      <li>Clone the repository.</li>
+      <li>Install dependencies with <code>pip install -r requirements.txt</code>.</li>
+      <li>Start the server by running <code>python main.py</code>.</li>
+      <li>The API will be accessible at <code>http://localhost:8000/</code> or the configured port.</li>
+    </ol>
+    <p class="mt-2 text-sm text-gray-600 italic">* See source code for full route info and request payloads.</p>
+  </section>
+
+  <section id="limitations" class="mt-8 text-center text-gray-500 italic text-sm">
+    <p>This preview is a static overview only; no frontend UI is provided in the project source.</p>
+  </section>
+</main>
+
+<footer class="bg-indigo-600 text-indigo-200 p-4 text-center text-sm">
+  &copy; 2024 OrahDEX Project
+</footer>
+</body>
+</html>
