@@ -362,7 +362,8 @@ router.post("/orders", async (req, res) => {
     }
 
     // ── Validate and extract optional chainId (additive — existing clients unaffected) ──
-    // When provided, enables on-chain RPC balance verification in fundingVerifier.
+    // When provided, enables on-chain RPC balance verification in fundingVerifier
+    // and allows the matching engine to reject cross-chain EVM mismatches.
     // Must be a numeric value in the supported set; unknown values are silently ignored.
     const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114, 11155111]);
     const chainId = body.chainId != null
@@ -371,6 +372,15 @@ router.post("/orders", async (req, res) => {
           return SUPPORTED_CHAIN_IDS.has(n) ? n : undefined;
         })()
       : undefined;
+
+    // Warn when an EVM external order arrives without chainId — the matching engine
+    // can still handle it (legacy-compatible) but cannot reject cross-chain mismatches.
+    if (walletSource === "external" && networkType === "evm" && chainId == null) {
+      req.log.warn(
+        { walletAddress: body.walletAddress, symbol },
+        "orders: EVM external order missing chainId — cross-chain match protection unavailable. Client should send chainId.",
+      );
+    }
 
     // ── Acquire funding lock BEFORE inserting the order (No funding → No order) ──
     // fundingVerifier enforces balance-bucket isolation:
@@ -444,6 +454,7 @@ router.post("/orders", async (req, res) => {
       fundingRef:        fundingRef || null,
       nonce:             body.nonce ?? id,   // use provided nonce or fall back to order id
       expiry:            body.expiry ? String(body.expiry) : String(Math.floor(Date.now() / 1000) + 5 * 60),
+      chainId:           chainId ?? null,
     };
 
     try {
@@ -540,13 +551,15 @@ router.post("/orders", async (req, res) => {
 
       // External EVM orders must match only against external EVM counterparties
       // so settlement remains wallet-to-wallet via HTLC, not synthetic ledger fill.
+      // When both the incoming order and a candidate have a chainId, they must match —
+      // cross-chain EVM fills (e.g. Ethereum vs Arbitrum) are rejected here.
       const requiresDefiWalletToWallet = walletSource === "external" && networkType === "evm";
       const eligibleMatches = requiresDefiWalletToWallet
         ? sorted.filter((candidate) => {
             const isBot = candidate.walletAddress === BOT_ADDRESS;
             if (isBot) return false;
             const ref = candidate.fundingRef ?? "";
-            return (
+            const isEvmExternal = (
               ref.startsWith("evm-sig:") ||
               ref.startsWith("evm-balance:") ||
               (candidate.walletAddress.startsWith("0x") &&
@@ -554,6 +567,13 @@ router.post("/orders", async (req, res) => {
                 !ref.startsWith("ledger:") &&
                 !ref.startsWith("margin:"))
             );
+            if (!isEvmExternal) return false;
+            // Reject cross-chain mismatch when both orders carry explicit chainId.
+            // Legacy orders (chainId IS NULL) are allowed through for backward compatibility.
+            if (chainId != null && candidate.chainId != null && chainId !== candidate.chainId) {
+              return false;
+            }
+            return true;
           })
         : sorted;
 
@@ -691,41 +711,52 @@ router.post("/orders", async (req, res) => {
 
         let fillResult: Awaited<ReturnType<typeof settleSpotFill>>;
 
-        if (bothEvmExternal) {
-          // ── On-chain EVM path: HTLC atomic settlement ──────────────────
-          // Both parties hold funds in their own wallets. Skip internal ledger
-          // settlement — funds are transferred directly on-chain via the HTLC
-          // contract (lockETH / lockToken → reveal). The HTLC watcher calls
-          // reveal() once both parties have locked, completing the trade.
-          fillResult = {
-            // Placeholder txid until the HTLC reveal transaction settles on-chain.
-            // Prefixed so auditing tools can distinguish it from real broadcast txids.
-            txid:             "htlc-pending-" + crypto.createHash("sha256").update(tradeId).digest("hex").slice(0, 32),
-            wasRealBroadcast: false,
-            settlementType:   "evm_htlc",
-            isCrossChain:     false,
-          };
-        } else {
-          // ── Standard path: BSV OP_RETURN + internal ledger settlement ──
-          // Architecture (per BSV Core DEX spec):
-          //   1. UTXO-scripted swap contract: for cross-chain trades (EVM ↔ BSV),
-          //      generate a P2SH HTLC — the secretHash is embedded in the OP_RETURN.
-          //   2. OP_RETURN audit record (v2): immutable on-chain record.
-          //   3. Real broadcast via settlement wallet UTXO (best-effort).
-          fillResult = await settleSpotFill({
-            tradeId,
-            newOrderId:    id,
-            matchOrder:    match,
-            pair:          symbol,
-            fillQty,
-            fillPrice,
-            buyerAddress,
-            sellerAddress,
-            buyerNetwork,
-            sellerNetwork,
-            isBot,
-            log:           req.log,
-          });
+        try {
+          if (bothEvmExternal) {
+            // ── On-chain EVM path: HTLC atomic settlement ──────────────────
+            // Both parties hold funds in their own wallets. Skip internal ledger
+            // settlement — funds are transferred directly on-chain via the HTLC
+            // contract (lockETH / lockToken → reveal). The HTLC watcher calls
+            // reveal() once both parties have locked, completing the trade.
+            fillResult = {
+              // Placeholder txid until the HTLC reveal transaction settles on-chain.
+              // Prefixed so auditing tools can distinguish it from real broadcast txids.
+              txid:             "htlc-pending-" + crypto.createHash("sha256").update(tradeId).digest("hex").slice(0, 32),
+              wasRealBroadcast: false,
+              settlementType:   "evm_htlc",
+              isCrossChain:     false,
+            };
+          } else {
+            // ── Standard path: BSV OP_RETURN + internal ledger settlement ──
+            // Architecture (per BSV Core DEX spec):
+            //   1. UTXO-scripted swap contract: for cross-chain trades (EVM ↔ BSV),
+            //      generate a P2SH HTLC — the secretHash is embedded in the OP_RETURN.
+            //   2. OP_RETURN audit record (v2): immutable on-chain record.
+            //   3. Real broadcast via settlement wallet UTXO (best-effort).
+            fillResult = await settleSpotFill({
+              tradeId,
+              newOrderId:    id,
+              matchOrder:    match,
+              pair:          symbol,
+              fillQty,
+              fillPrice,
+              buyerAddress,
+              sellerAddress,
+              buyerNetwork,
+              sellerNetwork,
+              isBot,
+              feePct:        feeRate,
+              log:           req.log,
+            });
+          }
+        } catch (fillErr: any) {
+          // Ledger settlement failed for this match. Since settleTrade() threw
+          // before committing, no funds changed — skip this match and try the next.
+          req.log.error(
+            { err: fillErr?.message, tradeId, matchId: match.id, fillQty, fillPrice },
+            "orders: fill settlement failed — skipping match, trying next counter-order",
+          );
+          continue;
         }
 
         const broadcastTxid = fillResult.txid;
@@ -1080,8 +1111,8 @@ router.post("/orders", async (req, res) => {
         // ── Mark the user's order with actual fill amount ─────────────────
         const avgFillPrice    = totalFillValue / totalFilled;
         const isFullyFilled   = remainingQty <= 0.000001;
-        const correctFee      = (totalFillValue * 0.001).toFixed(18);
-        // Record exchange revenue from the order book fill fee (0.1%)
+        const correctFee      = (totalFillValue * feeRate).toFixed(18);
+        // Record exchange revenue from the order book fill fee
         const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
         recordPlatformFee({ source: "orderbook", amount: correctFee, asset: feeAssetSymbol, txRef: id });
 

@@ -63,6 +63,8 @@ export interface SpotFillParams {
   sellerNetwork: string;
   /** True if the counter-order belongs to the liquidity bot */
   isBot:         boolean;
+  /** Taker fee fraction for this market (e.g. 0.001 = 0.1%). Falls back to 0.1% if omitted. */
+  feePct?:       number;
   log:           Logger;
 }
 
@@ -89,7 +91,7 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
   const {
     tradeId, newOrderId, matchOrder, pair,
     fillQty, fillPrice, buyerAddress, sellerAddress,
-    buyerNetwork, sellerNetwork, isBot, log,
+    buyerNetwork, sellerNetwork, isBot, feePct, log,
   } = params;
 
   const fillValue = fillQty * fillPrice;
@@ -165,6 +167,7 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
       quoteAsset:  quoteAsset!,
       amount:      fillQty.toString(),
       price:       fillPrice.toString(),
+      feePct,
       isBotSeller: sellerAddress === BOT_ADDRESS,
       isBotBuyer:  buyerAddress  === BOT_ADDRESS,
     });
