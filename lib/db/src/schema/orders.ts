@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, timestamp, index, uniqueIndex, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, timestamp, index, uniqueIndex, boolean, integer } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -38,6 +38,12 @@ export const ordersTable = pgTable("orders", {
   nonce: text("nonce"),
   /** Unix ms — the server rejected this intent if expiry < Date.now() at receipt time */
   expiry: text("expiry"),  // stored as string to avoid bigint serialization issues
+  /**
+   * EVM chain ID (e.g. 1 = Ethereum, 137 = Polygon, 42161 = Arbitrum).
+   * Null for BSV orders and for legacy EVM orders placed before this column was added.
+   * Used in the matching engine to prevent cross-chain EVM order mismatches.
+   */
+  chainId: integer("chain_id"),
   /**
    * Explicit liquidity-provider classification flags.
    * isBot:       order was placed by an automated market-maker / liquidity bot.
