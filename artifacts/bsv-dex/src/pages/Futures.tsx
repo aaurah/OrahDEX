@@ -219,7 +219,7 @@ export function FuturesTrading() {
   const openOrders = allOrders.filter((o: any) => o.status === "open");
   const filledOrders = allOrders.filter((o: any) => o.status === "filled" || o.status === "cancelled");
 
-  // ── Futures positions (fetched from /api/futures/positions) ─────────────────
+  // ── Futures positions (fetched from /api/futures/positions) ─────────────────────────
   const [positions, setPositions] = useState<any[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
   const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
