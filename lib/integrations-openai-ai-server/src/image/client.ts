@@ -19,9 +19,13 @@ export const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+// gpt-image-1 supported output sizes (the legacy 512²/256² DALL·E sizes are
+// rejected by this model).
+export type ImageSize = "1024x1024" | "1024x1536" | "1536x1024" | "auto";
+
 export async function generateImageBuffer(
   prompt: string,
-  size: "1024x1024" | "512x512" | "256x256" = "1024x1024"
+  size: ImageSize = "1024x1024"
 ): Promise<Buffer> {
   const response = await openai.images.generate({
     model: "gpt-image-1",
