@@ -3601,7 +3601,7 @@ router.get("/bsv-intents", requireAdminToken, async (req, res) => {
 
 router.post("/bsv-intents/:id/force-expire", requireAdminToken, async (req, res) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id ?? "");
     const rows = await db.select().from(bsvIntentSessionsTable).where(eq(bsvIntentSessionsTable.id, id));
     if (!rows.length) return res.status(404).json({ error: "Intent not found" });
     const intent = rows[0]!;

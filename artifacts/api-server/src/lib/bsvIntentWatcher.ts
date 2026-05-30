@@ -74,18 +74,18 @@ const processing = new Set<string>();
  * Query WhatsOnChain for a P2SH address funding status.
  * Returns { funded, confirmations, fundingTxid, fundingVout } or null on error.
  */
-async function queryFunding(htlcAddress: string): Promise<{
+async function queryFunding(htlcAddress: string, locktimeBlocks: number): Promise<{
   funded:       boolean;
   confirmations: number;
   fundingTxid:  string | null;
   fundingVout:  number | null;
 } | null> {
   try {
-    const status = await queryHtlcStatus(htlcAddress);
-    if (status === "CLAIMED" || status === "LOCKED") {
+    const result = await queryHtlcStatus(htlcAddress, locktimeBlocks);
+    if (result.status === "CLAIMED" || result.status === "LOCKED") {
       return { funded: true, confirmations: INTENT_MIN_CONFIRMATIONS + 1, fundingTxid: null, fundingVout: null };
     }
-    if (status === "UNKNOWN") return { funded: false, confirmations: 0, fundingTxid: null, fundingVout: null };
+    if (result.status === "UNKNOWN") return { funded: false, confirmations: 0, fundingTxid: null, fundingVout: null };
     return null;
   } catch {
     return null;
@@ -153,7 +153,7 @@ async function processIntent(intent: IntentRow, nowSecs: number): Promise<void> 
   try {
     // ── PENDING_FUNDING / FUNDED: detect BSV on-chain ─────────────────────
     if (intent.status === "PENDING_FUNDING" || intent.status === "FUNDED") {
-      const funding = await queryFunding(intent.htlcAddress);
+      const funding = await queryFunding(intent.htlcAddress, intent.deadlineBlocks);
       if (!funding) return;
 
       if (!funding.funded) {
@@ -290,7 +290,7 @@ async function processIntent(intent: IntentRow, nowSecs: number): Promise<void> 
 
     // ── CLAIMING (in-flight): check on-chain for confirmation ─────────────
     if (intent.status === "CLAIMING") {
-      const onChain = await queryFunding(intent.htlcAddress);
+      const onChain = await queryFunding(intent.htlcAddress, intent.deadlineBlocks);
       if (onChain && !onChain.funded) {
         await db.update(bsvIntentSessionsTable)
           .set({ status: "CLAIMED", terminalAt: new Date(), updatedAt: new Date() })
