@@ -14,8 +14,31 @@ deploymentTarget = "autoscale"
 args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }
 
+[[ports]]
+localPort = 20180
+externalPort = 80
+
+[[ports]]
+localPort = 8080
+externalPort = 3000
+
 [workflows]
 runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "pnpm --filter @workspace/api-server run dev"
+waitForPort = 8080
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=20180 pnpm --filter @workspace/bsv-dex run dev"
+waitForPort = 20180
 
 [agent]
 stack = "PNPM_WORKSPACE"
