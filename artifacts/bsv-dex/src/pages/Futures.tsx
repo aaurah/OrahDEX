@@ -195,11 +195,11 @@ export function FuturesTrading() {
 
   const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
     { walletAddress: address || "" },
-    { query: { enabled: !!address, refetchInterval: 5000 } }
+    { query: { enabled: !!address, refetchInterval: 5000 } as any }
   );
   const { data: altOrders, refetch: refetchAltOrders } = useGetOrders(
     { walletAddress: altAddress || "" },
-    { query: { enabled: !!altAddress, refetchInterval: 5000 } }
+    { query: { enabled: !!altAddress, refetchInterval: 5000 } as any }
   );
   const cancelOrder = useCancelOrder({
     mutation: { onSuccess: () => { refetchOrders(); refetchAltOrders(); } },

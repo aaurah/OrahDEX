@@ -197,7 +197,7 @@ export function Markets() {
     navigate(href);
   };
 
-  const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } });
+  const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } as any });
   const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
 
   // LetsExchange all quoted pairs — complete external pair universe

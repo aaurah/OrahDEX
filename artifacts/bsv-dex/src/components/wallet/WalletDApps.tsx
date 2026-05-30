@@ -566,7 +566,7 @@ export function WalletDApps({ evmAddress, initialUri = "" }: { evmAddress: strin
           if (!cancelled && walletRef.current) refreshSessions(walletRef.current);
         });
 
-        wallet.on("session_expire", () => {
+        (wallet as any).on("session_expire", () => {
           if (!cancelled && walletRef.current) refreshSessions(walletRef.current);
         });
       })
@@ -615,7 +615,7 @@ export function WalletDApps({ evmAddress, initialUri = "" }: { evmAddress: strin
     try {
       const accounts = buildEip155Accounts(evmAddress);
       const namespaces = buildApprovedNamespaces({
-        proposal: pendingProposal.params,
+        proposal: pendingProposal.params as any,
         supportedNamespaces: {
           eip155: {
             chains:   SUPPORTED_EIP155_CHAINS,
