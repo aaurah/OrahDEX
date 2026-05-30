@@ -212,17 +212,17 @@ export function SpotTrading() {
   const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: candleInterval as any, limit: 300 }, { request: noStoreRequest });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, {
     request: noStoreRequest,
-    query: { refetchInterval: 4000, staleTime: 2000 },
+    query: { refetchInterval: 4000, staleTime: 2000 } as any,
   });
   const { data: apiTrades }    = useGetRecentTrades(encodeURIComponent(symbol), { limit: 50 }, { request: noStoreRequest });
   const { data: apiOrders, refetch: refetchOrders } = useGetOrders(
     { walletAddress: address || '' },
-    { query: { enabled: !!address, refetchInterval: 5000 } }
+    { query: { enabled: !!address, refetchInterval: 5000 } as any }
   );
   // Also fetch orders placed under the alternate address (BSV ↔ EVM cross-network)
   const { data: altOrders, refetch: refetchAltOrders } = useGetOrders(
     { walletAddress: altAddress || '' },
-    { query: { enabled: !!altAddress, refetchInterval: 5000 } }
+    { query: { enabled: !!altAddress, refetchInterval: 5000 } as any }
   );
   const { data: apiMarkets } = useGetMarkets();
 

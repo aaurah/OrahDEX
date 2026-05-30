@@ -100,7 +100,7 @@ router.get("/chains", (_req: Request, res: Response) => {
 });
 
 router.get("/tokens/:chainId", (req: Request, res: Response) => {
-  const chainId = parseInt(req.params.chainId, 10);
+  const chainId = parseInt(String(req.params.chainId ?? ""), 10);
   const tokens = BRIDGE_TOKENS[chainId] ?? [];
   res.json({ tokens });
 });
