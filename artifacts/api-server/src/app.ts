@@ -3,7 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import pinoHttp from "pino-http";
-import rateLimit from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
