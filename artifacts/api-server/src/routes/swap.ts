@@ -532,8 +532,14 @@ router.post("/swap/execute", async (req, res) => {
       }
 
       if (leResult.status === 403) { res.status(403).json({ error: "LetsExchange API key invalid" }); return; }
-      if (leResult.status === 422) { res.status(422).json({ error: "LE validation error", detail: leResult.data }); return; }
-      if (!leResult.ok) { res.status(leResult.status).json({ error: "LetsExchange error", detail: leResult.data }); return; }
+      if (leResult.status === 422) {
+        logger.warn({ leData: leResult.data }, "swap: LetsExchange 422 validation error");
+        res.status(422).json({ error: "LE validation error" }); return;
+      }
+      if (!leResult.ok) {
+        logger.warn({ leStatus: leResult.status, leData: leResult.data }, "swap: LetsExchange error");
+        res.status(leResult.status > 0 && leResult.status < 600 ? leResult.status : 502).json({ error: "Exchange provider error" }); return;
+      }
 
       logger.info({
         walletMask: `${walletAddress?.slice(0,6)}…${walletAddress?.slice(-4)}`,
@@ -681,8 +687,14 @@ router.post("/swap/execute", async (req, res) => {
 
     const { ok, data, status } = await leRequest("/v1/transaction", "POST", leBody);
     if (status === 403) { res.status(403).json({ error: "Invalid API key" }); return; }
-    if (status === 422) { res.status(422).json({ error: "Validation error", detail: data }); return; }
-    if (!ok) { res.status(status).json({ error: "LetsExchange error", detail: data }); return; }
+    if (status === 422) {
+      logger.warn({ leData: data }, "swap: LetsExchange 422 validation error (LE-only path)");
+      res.status(422).json({ error: "Validation error" }); return;
+    }
+    if (!ok) {
+      logger.warn({ leStatus: status, leData: data }, "swap: LetsExchange error (LE-only path)");
+      res.status(status > 0 && status < 600 ? status : 502).json({ error: "Exchange provider error" }); return;
+    }
 
     logger.info({ a, b, amt, withdrawal: withdrawalStr, venue: "letsexchange" }, "hybrid swap: LE routed");
     return res.json({ success: true, source: "letsexchange", ...(data as object) });

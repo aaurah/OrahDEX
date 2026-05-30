@@ -107,7 +107,7 @@ router.get("/erc8004/discover", async (req, res) => {
     });
   } catch (err: any) {
     logger.warn({ err: err?.message }, "erc8004: discoverAgents failed");
-    res.status(502).json({ error: "Failed to query Identity Registry", details: err?.message });
+    res.status(502).json({ error: "Failed to query Identity Registry" });
   }
 });
 
@@ -133,7 +133,8 @@ router.get("/erc8004/agent/:agentId", async (req, res) => {
     } catch { /* leave card undefined */ }
     res.json(agent);
   } catch (err: any) {
-    res.status(502).json({ error: "Failed to fetch agent", details: err?.message });
+    logger.warn({ err: err?.message }, "erc8004: fetchAgent failed");
+    res.status(502).json({ error: "Failed to fetch agent" });
   }
 });
 
@@ -153,7 +154,8 @@ router.get("/erc8004/reputation/:agentId", async (req, res) => {
     const rep = await getAgentReputation(id);
     res.json({ ...rep, registry: REPUTATION_REGISTRY, network: VIEM_CHAIN.name });
   } catch (err: any) {
-    res.status(502).json({ error: "Failed to query Reputation Registry", details: err?.message });
+    logger.warn({ err: err?.message }, "erc8004: getReputation failed");
+    res.status(502).json({ error: "Failed to query Reputation Registry" });
   }
 });
 

@@ -94,7 +94,8 @@ async function flushCallBuffer(): Promise<void> {
         if (inc === 0 && lu === undefined) return k;
         const lastReset = (k as any).callsResetAt ? Number((k as any).callsResetAt) : null;
         const dayMs = 24 * 60 * 60 * 1000;
-        const resetDue = !lastReset || now - lastReset >= dayMs;
+        // Also reset if clock jumped backward (NTP sync) to avoid permanently stuck counters
+        const resetDue = !lastReset || now - lastReset >= dayMs || now < lastReset;
         return {
           ...k,
           calls24h: (resetDue ? 0 : k.calls24h ?? 0) + inc,
