@@ -1121,19 +1121,19 @@ function CreatePoolModal({ onClose }: { onClose: () => void }) {
     };
 
     try {
-      const txReceipt = await addLiquidityOrahAmm({
-        pool:    syntheticPool,
-        amtA,
-        amtB,
-        walletAddress: address!,
-        walletProvider: provider ?? "orah-wallet",
+      await addLiquidityOrahAmm({
+        base:    syntheticPool.base,
+        quote:   syntheticPool.quote,
+        amountA: parseFloat(amtA) || 0,
+        amountB: parseFloat(amtB) || 0,
+        address: address!,
+        chainId: syntheticPool.chainId!,
         slippageBps: 100,
-        onStatus: setTxStatus,
+        onStatus: (s) => {
+          setTxStatus(s);
+          if (s.step === "success" && s.txHash) setTxHash(s.txHash);
+        },
       });
-
-      if (txReceipt?.transactionHash) {
-        setTxHash(txReceipt.transactionHash);
-      }
 
       toast({
         title: "Pool created!",
@@ -1252,9 +1252,9 @@ function CreatePoolModal({ onClose }: { onClose: () => void }) {
           <div className="flex items-center gap-2 text-sm text-primary">
             <Loader2 size={14} className="animate-spin shrink-0" />
             <span>
-              {txStatus.step === "approving" && "Approving tokens…"}
-              {txStatus.step === "sending"   && "Creating pool & adding liquidity…"}
-              {txStatus.step === "done"      && "Pool created!"}
+              {txStatus.step === "approving"        && "Approving tokens…"}
+              {txStatus.step === "depositing"       && "Creating pool & adding liquidity…"}
+              {txStatus.step === "success"          && "Pool created!"}
             </span>
           </div>
         )}

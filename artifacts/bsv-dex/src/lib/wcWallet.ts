@@ -58,7 +58,8 @@ export async function getWeb3Wallet(projectId: string): Promise<IWeb3Wallet> {
     });
 
     const wallet = await Web3Wallet.init({
-      core,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      core: core as any,
       metadata: {
         name: "Orah Wallet",
         description: "OrahDEX Multi-Chain HD Wallet — connect to any web3 app",

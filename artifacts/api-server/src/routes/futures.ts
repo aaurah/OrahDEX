@@ -49,8 +49,8 @@ router.get("/futures/markets", async (_req, res) => {
     const markets = PERP_SYMBOLS.map((sym) => {
       const m      = priceMap[sym];
       const last   = m ? parseFloat(m.lastPrice) : 0;
-      const chg    = m ? parseFloat(m.priceChangePercent) : 0;
-      const vol    = m ? parseFloat(m.volume) : 0;
+      const chg    = m ? parseFloat(m.priceChangePercent24h ?? "0") : 0;
+      const vol    = m ? parseFloat(m.volume24h ?? "0") : 0;
       const base   = sym.split("/")[0];
       const rate   = FUNDING_RATES.find((r) => r.symbol === sym);
       return {
