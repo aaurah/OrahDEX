@@ -86,7 +86,7 @@ router.get("/support/tickets/:id", async (req, res) => {
     if (!ticket) { res.status(404).json({ error: "Ticket not found" }); return; }
     res.json(ticket);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -98,7 +98,7 @@ router.get("/support/faqs", async (_req, res) => {
       .orderBy(asc(supportFaqsTable.order), asc(supportFaqsTable.id));
     res.json(faqs);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -109,7 +109,7 @@ router.get("/admin/support/tickets", async (req, res) => {
       .orderBy(desc(supportTicketsTable.createdAt));
     res.json(tickets);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -152,7 +152,7 @@ router.patch("/admin/support/tickets/:id", async (req, res) => {
 
     res.json(ticket);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -163,7 +163,7 @@ router.delete("/admin/support/tickets/:id", async (req, res) => {
     await db.delete(supportTicketsTable).where(eq(supportTicketsTable.id, id));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -174,7 +174,7 @@ router.get("/admin/support/faqs", async (_req, res) => {
       .orderBy(asc(supportFaqsTable.order), asc(supportFaqsTable.id));
     res.json(faqs);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -194,7 +194,7 @@ router.post("/admin/support/faqs", async (req, res) => {
     }).returning();
     res.json(faq);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -212,7 +212,7 @@ router.put("/admin/support/faqs/:id", async (req, res) => {
     if (!faq) { res.status(404).json({ error: "FAQ not found" }); return; }
     res.json(faq);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -223,7 +223,7 @@ router.delete("/admin/support/faqs/:id", async (req, res) => {
     await db.delete(supportFaqsTable).where(eq(supportFaqsTable.id, id));
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -248,7 +248,7 @@ router.get("/admin/support/settings", async (_req, res) => {
     }
     res.json(settings);
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -276,7 +276,7 @@ router.post("/admin/support/settings", async (req, res) => {
     }
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err?.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -288,7 +288,8 @@ router.post("/admin/support/notifications/test", async (req, res) => {
     const result = await sendTestNotification(channel, settings);
     res.json(result);
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err?.message });
+    logger.error({ err: err?.message }, "support: notification test failed");
+    res.status(500).json({ success: false, error: "Internal server error" });
   }
 });
 

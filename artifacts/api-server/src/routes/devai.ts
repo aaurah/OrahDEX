@@ -7,17 +7,35 @@ import { logger } from "../lib/logger.js";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import vm from "vm";
 import fs from "fs/promises";
+import { existsSync } from "fs";
 import path from "path";
 import { exec, spawn } from "child_process";
+import { fileURLToPath } from "url";
 
 const router = Router();
 
 // ── Internal API base (same process, same port) ───────────────────────────────
 const INTERNAL = `http://localhost:${process.env.PORT ?? 4000}`;
+const DEVAI_MODEL = (process.env.DEVAI_MODEL ?? "gpt-4o-mini").trim() || "gpt-4o-mini";
 const GH_HEADERS = (token?: string) => ({
   "User-Agent": "OrahDEX-DevAI/2.0",
   ...(token ? { Authorization: `Bearer ${token}` } : {}),
 });
+const DEVAI_ROUTE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const WORKSPACE_CANDIDATES = [
+  process.env.DEVAI_WORKSPACE_ROOT,
+  "/home/runner/workspace",
+  path.resolve(DEVAI_ROUTE_DIR, "../../../.."),
+  process.cwd(),
+  path.resolve(process.cwd(), ".."),
+  path.resolve(process.cwd(), "../.."),
+].filter((candidate, index, arr): candidate is string => Boolean(candidate) && arr.indexOf(candidate) === index);
+
+function looksLikeWorkspaceRoot(candidate: string): boolean {
+  return existsSync(path.join(candidate, "package.json")) && existsSync(path.join(candidate, "artifacts"));
+}
+
+const WORKSPACE_ROOT = WORKSPACE_CANDIDATES.find(looksLikeWorkspaceRoot) ?? "/home/runner/workspace";
 
 // ── System prompt ─────────────────────────────────────────────────────────────
 const DEVAI_SYSTEM_PROMPT = `You are OrahDevAI — the developer intelligence and blockchain AI of OrahDEX (orahdex.org), a sovereign decentralized exchange where every coin is listed and all trades settle on BSV (Bitcoin SV).
@@ -34,11 +52,11 @@ You are a senior blockchain engineer. You write production-ready code, debug sma
 - **fetch_bsv_tx** — Look up a live BSV transaction on WhatsOnChain. Use when the user provides a txid or asks about BSV on-chain activity.
 - **get_orahdex_market** — Fetch live OrahDEX market data (prices, orderbooks, 24h stats). Use when the user asks about prices, liquidity, or market conditions.
 - **decode_eth_address** — Fetch EVM address info: native balance, recent transactions. Use when the user shares an ETH/EVM address.
-- **read_project_file** — Read any live source file from the OrahDEX Replit workspace. Use to inspect backend routes, frontend components, DB schema, configs.
-- **list_project_dir** — Browse any directory in the OrahDEX workspace. Use to navigate the project structure before reading specific files.
+- **read_project_file** — Read any live source file from the current OrahDEX workspace. Use to inspect backend routes, frontend components, DB schema, configs.
+- **list_project_dir** — Browse any directory in the current OrahDEX workspace. Use to navigate the project structure before reading specific files.
 - **query_database** — Run a read-only SELECT query against the live OrahDEX PostgreSQL database. Use to inspect real data, schemas, order books, user counts, etc.
-- **write_project_file** — Write or overwrite any file in the workspace. Use this to implement features, fix bugs, add routes, update components, or change configs. ALWAYS read the file first if it already exists so you don't lose code.
-- **run_terminal** — Run a shell command in the workspace root (60s timeout). Use to install packages (pnpm add), check git status, run builds, restart services, list files, or any system task.
+- **write_project_file** — Write or overwrite any file in the current workspace. Use this to implement features, fix bugs, add routes, update components, or change configs. ALWAYS read the file first if it already exists so you don't lose code.
+- **run_terminal** — Run a shell command in the current workspace root (60s timeout). Use to install packages (pnpm add), check git status, run builds, restart services, list files, or any system task.
 - **publish** — After writing any code changes, ALWAYS call POST /api/admin/devai/restart (admin token required) or instruct the user to click the Publish button. This restarts both services so changes go live within ~5 seconds.
 
 ## Primary GitHub repository
@@ -79,8 +97,8 @@ You can upgrade yourself. Your own source files are:
 - Backend devai.ts changes require a server restart to take effect
 - ALWAYS tell the user to click Publish (or do it yourself) after writing backend files
 
-## Workspace layout (Replit)
-Root: /home/runner/workspace
+## Workspace layout
+Root: ${WORKSPACE_ROOT}
 - artifacts/api-server/src/routes/devai.ts  — YOUR OWN BACKEND (tools, prompt, logic)
 - artifacts/bsv-dex/src/pages/DevAI.tsx     — YOUR OWN FRONTEND (chat UI, tool display)
 - artifacts/api-server/src/   — All Express API routes
@@ -289,7 +307,7 @@ const DEVAI_TOOLS: any[] = [
     type: "function",
     function: {
       name: "read_project_file",
-      description: "Read a live source file from the OrahDEX Replit workspace. Use to inspect backend routes, frontend components, DB schema, package.json, configs, etc. Paths are relative to /home/runner/workspace.",
+      description: `Read a live source file from the current OrahDEX workspace. Use to inspect backend routes, frontend components, DB schema, package.json, configs, etc. Paths are relative to ${WORKSPACE_ROOT}.`,
       parameters: {
         type: "object",
         properties: {
@@ -305,7 +323,7 @@ const DEVAI_TOOLS: any[] = [
     type: "function",
     function: {
       name: "list_project_dir",
-      description: "List files and directories in the OrahDEX Replit workspace. Use to explore the project structure before reading specific files.",
+      description: "List files and directories in the current OrahDEX workspace. Use to explore the project structure before reading specific files.",
       parameters: {
         type: "object",
         properties: {
@@ -333,7 +351,7 @@ const DEVAI_TOOLS: any[] = [
     type: "function",
     function: {
       name: "write_project_file",
-      description: "Write or overwrite a file in the OrahDEX Replit workspace. Use this to implement features, fix bugs, create new routes, update components, or any code change. ALWAYS read the file first with read_project_file if it already exists. Paths are relative to /home/runner/workspace.",
+      description: `Write or overwrite a file in the current OrahDEX workspace. Use this to implement features, fix bugs, create new routes, update components, or any code change. ALWAYS read the file first with read_project_file if it already exists. Paths are relative to ${WORKSPACE_ROOT}.`,
       parameters: {
         type: "object",
         properties: {
@@ -349,7 +367,7 @@ const DEVAI_TOOLS: any[] = [
     type: "function",
     function: {
       name: "run_terminal",
-      description: "Run a shell command in the OrahDEX workspace root (/home/runner/workspace). Use to install packages (pnpm add), run builds, check git status, list processes, run scripts, or perform any system task. Commands run with a 60-second timeout.",
+      description: `Run a shell command in the OrahDEX workspace root (${WORKSPACE_ROOT}). Use to install packages (pnpm add), run builds, check git status, list processes, run scripts, or perform any system task. Commands run with a 60-second timeout.`,
       parameters: {
         type: "object",
         properties: {
@@ -615,8 +633,6 @@ async function toolDecodeEthAddress(args: { address: string; chain?: string }): 
   }
 }
 
-const WORKSPACE_ROOT = "/home/runner/workspace";
-
 function execAsync(cmd: string, cwd: string, timeout: number): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     exec(cmd, { cwd, timeout, maxBuffer: 1024 * 512 }, (err, stdout, stderr) => {
@@ -769,7 +785,7 @@ function sse(res: any, payload: object) {
 }
 
 // ── GET /devai/conversations ───────────────────────────────────────────────────
-router.get("/devai/conversations", requireAdminToken, async (_req, res) => {
+router.get("/devai/conversations", async (_req, res) => {
   try {
     const rows = await db
       .select({ id: conversations.id, title: conversations.title, createdAt: conversations.createdAt })
@@ -782,7 +798,7 @@ router.get("/devai/conversations", requireAdminToken, async (_req, res) => {
 });
 
 // ── POST /devai/conversations ─────────────────────────────────────────────────
-router.post("/devai/conversations", requireAdminToken, async (_req, res) => {
+router.post("/devai/conversations", async (_req, res) => {
   try {
     const [conv] = await db.insert(conversations).values({ title: "New Dev Session" }).returning();
     res.json({ id: conv.id, title: conv.title, createdAt: conv.createdAt });
@@ -793,7 +809,7 @@ router.post("/devai/conversations", requireAdminToken, async (_req, res) => {
 });
 
 // ── GET /devai/conversations/:id ───────────────────────────────────────────────
-router.get("/devai/conversations/:id", requireAdminToken, async (req, res) => {
+router.get("/devai/conversations/:id", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   try {
@@ -807,7 +823,7 @@ router.get("/devai/conversations/:id", requireAdminToken, async (req, res) => {
 });
 
 // ── POST /devai/conversations/:id/messages — agentic SSE ──────────────────────
-router.post("/devai/conversations/:id/messages", requireAdminToken, async (req, res) => {
+router.post("/devai/conversations/:id/messages", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
@@ -846,7 +862,7 @@ router.post("/devai/conversations/:id/messages", requireAdminToken, async (req, 
 
     while (toolRounds < MAX_TOOL_ROUNDS) {
       const resp = await openai.chat.completions.create({
-        model: "gpt-5.4",
+        model: DEVAI_MODEL,
         max_completion_tokens: 6000,
         messages: chatMessages as any,
         tools: DEVAI_TOOLS,
@@ -863,6 +879,12 @@ router.post("/devai/conversations/:id/messages", requireAdminToken, async (req, 
 
         // Execute each tool, stream events
         for (const tc of msg.tool_calls) {
+          if (tc.type !== "function") {
+            const unsupported = `Unsupported tool call type: ${tc.type}`;
+            sse(res, { tool_result: { id: tc.id, name: "unknown", output: unsupported } });
+            chatMessages.push({ role: "tool", tool_call_id: tc.id, content: unsupported });
+            continue;
+          }
           const name = tc.function.name;
           let args: any = {};
           try { args = JSON.parse(tc.function.arguments ?? "{}"); } catch { /* invalid json */ }
@@ -906,7 +928,7 @@ router.post("/devai/conversations/:id/messages", requireAdminToken, async (req, 
     } else {
       // Tools were used: make a final streaming call for a natural summary response
       const finalStream = await openai.chat.completions.create({
-        model: "gpt-5.4",
+        model: DEVAI_MODEL,
         max_completion_tokens: 8192,
         messages: chatMessages as any,
         stream: true,
@@ -942,7 +964,7 @@ router.post("/devai/conversations/:id/messages", requireAdminToken, async (req, 
 });
 
 // ── GET /admin/devai/github ────────────────────────────────────────────────────
-router.get("/admin/devai/github", async (_req, res) => {
+router.get("/admin/devai/github", requireAdminToken, async (_req, res) => {
   const token = process.env.GITHUB_TOKEN;
   if (!token) { res.json({ connected: false, repos: [] }); return; }
   try {
@@ -961,6 +983,23 @@ router.get("/admin/devai/github", async (_req, res) => {
     res.json({ connected: true, login: user.login, repos });
   } catch (err: any) {
     res.json({ connected: false, repos: [], error: err?.message ?? "Network error" });
+  }
+});
+
+// ── POST /admin/devai/run-terminal — run a safe workspace command ──────────────
+router.post("/admin/devai/run-terminal", requireAdminToken, async (req, res) => {
+  const command = String(req.body?.command ?? "").trim();
+  const description = typeof req.body?.description === "string" ? req.body.description : undefined;
+  if (!command) {
+    res.status(400).json({ error: "Command is required" });
+    return;
+  }
+  try {
+    const output = await toolRunTerminal({ command, description });
+    res.json({ ok: true, output });
+  } catch (err: any) {
+    logger.error({ err: err?.message, command }, "DevAI: run-terminal error");
+    res.status(500).json({ error: err?.message ?? "Terminal execution failed" });
   }
 });
 
@@ -986,8 +1025,8 @@ router.get("/admin/devai/export", requireAdminToken, (req, res) => {
       "--exclude=.local",
       "--exclude=dist",
       "--exclude=*.log",
-      "-C", "/home/runner",
-      "workspace",
+      "-C", WORKSPACE_ROOT,
+      ".",
     ]);
     proc.stdout.pipe(res);
     proc.stderr.on("data", (d) => logger.warn({ msg: d.toString().trim() }, "export warning"));
@@ -1010,7 +1049,7 @@ router.post("/admin/devai/upload", requireAdminToken, raw({ type: "*/*", limit: 
     }
     await fs.writeFile(tmp, req.body as Buffer);
     const { stdout, stderr } = await execAsync(
-      `tar xzf "${tmp}" -C /home/runner/workspace`,
+      `tar xzf "${tmp}" -C "${WORKSPACE_ROOT}"`,
       WORKSPACE_ROOT, 120000
     );
     await fs.unlink(tmp).catch(() => {});
@@ -1023,7 +1062,7 @@ router.post("/admin/devai/upload", requireAdminToken, raw({ type: "*/*", limit: 
 });
 
 // ── DELETE /devai/conversations/:id ───────────────────────────────────────────
-router.delete("/devai/conversations/:id", requireAdminToken, async (req, res) => {
+router.delete("/devai/conversations/:id", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
   try {

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useSEO } from "@/hooks/useSEO";
 import { cn } from "@/lib/utils";
+import { getAdminHeaders } from "@/store/useAdminAuthStore";
 
 const API = (import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "") + "/api";
 
@@ -39,6 +40,7 @@ interface Conversation {
 const TOOL_META: Record<string, { label: string; icon: any; color: string }> = {
   read_github_file:   { label: "Reading file",      icon: Link,      color: "text-white" },
   list_github_repo:   { label: "Browsing repo",     icon: GitBranch, color: "text-white" },
+  write_github_file:  { label: "Writing to GitHub", icon: GitBranch, color: "text-blue-400" },
   execute_code:       { label: "Running code",      icon: Play,      color: "text-amber-400" },
   fetch_url:          { label: "Fetching URL",      icon: Globe,     color: "text-blue-400" },
   create_file:        { label: "Creating file",     icon: FileCode,  color: "text-green-400" },
@@ -56,6 +58,7 @@ function toolSubtitle(name: string, args: Record<string, any>): string {
   switch (name) {
     case "read_github_file":   return `${args.owner_repo}/${args.path}`;
     case "list_github_repo":   return `${args.owner_repo}${args.path ? "/" + args.path : ""}`;
+    case "write_github_file":  return `${args.owner_repo}/${args.path}`;
     case "execute_code":       return args.description ?? "JavaScript";
     case "fetch_url":          return args.url?.replace(/^https?:\/\//, "") ?? "";
     case "create_file":        return args.filename ?? "";
@@ -448,7 +451,7 @@ export function DevAIPage() {
   const loadConvs = useCallback(async () => {
     setLoadingConvs(true);
     try {
-      const res = await fetch(`${API}/devai/conversations`);
+      const res = await fetch(`${API}/devai/conversations`, { headers: getAdminHeaders() });
       if (res.ok) {
         const list: Conversation[] = await res.json();
         setConvs(list);
@@ -458,7 +461,7 @@ export function DevAIPage() {
           const stored = Number(localStorage.getItem(PERSIST_KEY) || "0") || null;
           const target = (stored && list.some(c => c.id === stored)) ? stored : list[0].id;
           setActiveId(target);
-          const r = await fetch(`${API}/devai/conversations/${target}`);
+          const r = await fetch(`${API}/devai/conversations/${target}`, { headers: getAdminHeaders() });
           if (r.ok) {
             const data = await r.json();
             setMessages(data.messages.map((m: any) => ({
@@ -478,7 +481,7 @@ export function DevAIPage() {
     setActiveId(id);
     setMessages([]);
     try {
-      const res = await fetch(`${API}/devai/conversations/${id}`);
+      const res = await fetch(`${API}/devai/conversations/${id}`, { headers: getAdminHeaders() });
       if (!res.ok) return;
       const data = await res.json();
       setMessages(data.messages.map((m: any) => ({
@@ -492,7 +495,7 @@ export function DevAIPage() {
   }, []);
 
   const newConv = useCallback(async () => {
-    const res = await fetch(`${API}/devai/conversations`, { method: "POST" });
+    const res = await fetch(`${API}/devai/conversations`, { method: "POST", headers: getAdminHeaders() });
     if (!res.ok) return null;
     const conv = await res.json();
     setConvs(prev => [conv, ...prev]);
@@ -503,7 +506,7 @@ export function DevAIPage() {
 
   const deleteConv = useCallback(async (id: number, e: React.MouseEvent) => {
     e.stopPropagation();
-    await fetch(`${API}/devai/conversations/${id}`, { method: "DELETE" });
+    await fetch(`${API}/devai/conversations/${id}`, { method: "DELETE", headers: getAdminHeaders() });
     setConvs(prev => prev.filter(c => c.id !== id));
     if (activeId === id) { setActiveId(null); setMessages([]); }
   }, [activeId]);
@@ -513,7 +516,7 @@ export function DevAIPage() {
     setPublishing(true);
     setPublishDone(false);
     try {
-      await fetch(`${API}/admin/devai/restart`, { method: "POST" });
+      await fetch(`${API}/admin/devai/restart`, { method: "POST", headers: getAdminHeaders() });
       setPublishDone(true);
       setTimeout(() => setPublishDone(false), 4000);
     } catch { /* ignore */ } finally {
@@ -543,7 +546,7 @@ export function DevAIPage() {
     try {
       const res = await fetch(`${API}/devai/conversations/${convId}/messages`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...getAdminHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ content: msg }),
         signal: abortRef.current.signal,
       });
@@ -565,6 +568,12 @@ export function DevAIPage() {
           try {
             const data = JSON.parse(line.slice(6));
             if (data.done) break;
+            if (data.error) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId ? { ...m, content: `Error: ${data.error}` } : m
+              ));
+              continue;
+            }
 
             if (data.content) {
               setMessages(prev => prev.map(m =>

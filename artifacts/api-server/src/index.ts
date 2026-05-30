@@ -3,6 +3,26 @@ import { logger } from "./lib/logger";
 
 import net from "node:net";
 
+// ── Critical env-var validation (fail fast before the HTTP server starts) ─────
+// Variables that are not set here will cause silent runtime failures deep
+// in the first request that exercises that code path.
+const REQUIRED_VARS: Array<{ name: string; fatal: boolean }> = [
+  { name: "DATABASE_URL",        fatal: true  },
+  { name: "API_KEY_HMAC_SECRET", fatal: true  },
+  { name: "EVM_WALLET_SECRET",   fatal: false }, // warn only — server runs without it
+  { name: "EVM_WEBHOOK_SECRET",  fatal: false },
+];
+
+for (const { name, fatal } of REQUIRED_VARS) {
+  if (!process.env[name]?.trim()) {
+    if (fatal) {
+      throw new Error(`[FATAL] ${name} is not set. Refusing to start.`);
+    }
+    // Use console.warn here — logger may not be initialised yet
+    console.warn(`[WARN] ${name} is not set — related features will be unavailable.`);
+  }
+}
+
 const rawPort = process.env["PORT"];
 
 if (!rawPort) {

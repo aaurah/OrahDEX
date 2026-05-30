@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
+    "@vercel/speed-insights": "^2.0.0",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -94,6 +95,7 @@
     "@stripe/react-stripe-js": "^6.3.0",
     "@stripe/stripe-js": "^9.4.0",
     "@trezor/connect-web": "^9.7.3",
+    "@vercel/speed-insights": "^2.0.0",
     "@wagmi/core": "^3.4.1",
     "@walletconnect/core": "^2.23.9",
     "@walletconnect/utils": "^2.23.9",

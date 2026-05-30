@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCP Server Evaluation Results</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background-color: #f9fafb;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center p-6 font-sans text-gray-900">
+  <main class="max-w-4xl w-full bg-white border border-gray-200 rounded-lg shadow-lg p-8 flex flex-col">
+    <h1 class="text-4xl font-extrabold mb-4 text-indigo-600">MCP Server Evaluation Results</h1>
+    <button id="refresh-btn" class="self-start mb-4 px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">Refresh Results</button>
+    <p id="status-text" aria-live="polite" class="mb-4 text-gray-600"></p>
+    <ul id="results-list" class="divide-y divide-gray-200 w-full max-h-[600px] overflow-y-auto"></ul>
+    <footer class="mt-8 text-sm text-gray-500 border-t pt-4">Results are loaded from localStorage for demo purposes only.</footer>
+  </main>
+  <script src="./app.js" defer></script>
+</body>
+</html>

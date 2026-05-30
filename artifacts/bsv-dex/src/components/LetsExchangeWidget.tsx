@@ -15,9 +15,10 @@
  *   tab            — "swap" | "buy_sell" | "bridge" | "dex"
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
+import { useThemeStore } from "@/store/useThemeStore";
 
 interface LetsExchangeWidgetProps {
   tab?: "swap" | "buy_sell" | "bridge" | "dex";
@@ -32,8 +33,14 @@ export function LetsExchangeWidget({
   toCurrency,
   className = "",
 }: LetsExchangeWidgetProps) {
+  const theme = useThemeStore(state => state.theme);
   const [affiliateId, setAffiliateId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [prefersDark, setPrefersDark] = useState(() =>
+    typeof window === "undefined" || typeof window.matchMedia !== "function"
+      ? true
+      : window.matchMedia("(prefers-color-scheme: dark)").matches
+  );
 
   useEffect(() => {
     fetch(`${API_BASE}/letsexchange/config`)
@@ -43,10 +50,31 @@ export function LetsExchangeWidget({
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (theme !== "system" || typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const syncPreference = (event?: MediaQueryListEvent) => {
+      setPrefersDark(event?.matches ?? mediaQuery.matches);
+    };
+
+    syncPreference();
+    mediaQuery.addEventListener("change", syncPreference);
+    return () => mediaQuery.removeEventListener("change", syncPreference);
+  }, [theme]);
+
+  const effectiveTheme = useMemo<"dark" | "light">(() => {
+    if (theme === "light") return "light";
+    if (theme === "system") return prefersDark ? "dark" : "light";
+    return "dark";
+  }, [prefersDark, theme]);
+
   const widgetUrl = (() => {
     const base = "https://widget.letsexchange.io/";
     const params = new URLSearchParams();
-    params.set("theme", "dark");
+    params.set("theme", effectiveTheme);
     params.set("tab", tab);
     if (fromCurrency) params.set("from_currency", fromCurrency);
     if (toCurrency)   params.set("to_currency",   toCurrency);
@@ -56,7 +84,7 @@ export function LetsExchangeWidget({
 
   if (loading) {
     return (
-      <div className={`flex items-center justify-center rounded-2xl bg-zinc-900/60 border border-white/10 min-h-[520px] ${className}`}>
+      <div className={`flex items-center justify-center rounded-2xl bg-card border border-border min-h-[520px] ${className}`}>
         <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -71,7 +99,7 @@ export function LetsExchangeWidget({
         allow="payment; clipboard-write"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
         className="w-full min-h-[560px] border-0 bg-transparent"
-        style={{ colorScheme: "dark" }}
+        style={{ colorScheme: effectiveTheme }}
       />
     </div>
   );

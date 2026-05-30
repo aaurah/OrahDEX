@@ -9,8 +9,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
-
 const DEVAI_MODELS = [
   { id: "gpt-5.4",    label: "GPT-5.4",    desc: "DevAI default — highest capability for code" },
   { id: "gpt-5.2",    label: "GPT-5.2",    desc: "Balanced — fast and capable" },
@@ -54,7 +52,7 @@ function DevAIStats() {
     queryKey: ["admin-devai-stats"],
     queryFn: async () => {
       const [convR, statsR] = await Promise.all([
-        fetch(`${BASE}/api/devai/conversations`),
+        adminFetch(`/api/devai/conversations`),
         adminFetch(`/api/admin/stats`).then(r => r.json()).catch(() => ({})),
       ]);
       const convs = convR.ok ? await convR.json() : [];
@@ -303,7 +301,7 @@ function DevAIChatTester() {
     try {
       let cId = convId;
       if (!cId) {
-        const r = await fetch(`${BASE}/api/devai/conversations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        const r = await adminFetch(`/api/devai/conversations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
         const d = await r.json();
         cId = d.id;
         setConvId(cId);
@@ -312,7 +310,7 @@ function DevAIChatTester() {
       setMessages(m => [...m, { role: "assistant", content: "" }]);
       abortRef.current = new AbortController();
 
-      const resp = await fetch(`${BASE}/api/devai/conversations/${cId}/messages`, {
+      const resp = await adminFetch(`/api/devai/conversations/${cId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content: q }),
@@ -335,6 +333,14 @@ function DevAIChatTester() {
           try {
             const data = JSON.parse(line.slice(6));
             if (data.done) break;
+            if (data.error) {
+              setMessages(m => {
+                const copy = [...m];
+                copy[copy.length - 1] = { ...copy[copy.length - 1], content: `Error: ${data.error}` };
+                return copy;
+              });
+              continue;
+            }
             if (data.content) setMessages(m => {
               const copy = [...m];
               copy[copy.length - 1] = { ...copy[copy.length - 1], content: copy[copy.length - 1].content + data.content };
@@ -445,20 +451,20 @@ function DevAISessionManager() {
   const { data: sessions = [], isFetching, refetch } = useQuery({
     queryKey: ["admin-devai-sessions"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/devai/conversations`);
+      const r = await adminFetch(`/api/devai/conversations`);
       return r.ok ? r.json() : [];
     },
   });
 
   async function deleteSession(id: number) {
-    await fetch(`${BASE}/api/devai/conversations/${id}`, { method: "DELETE" });
+    await adminFetch(`/api/devai/conversations/${id}`, { method: "DELETE" });
     qc.invalidateQueries({ queryKey: ["admin-devai-sessions"] });
     qc.invalidateQueries({ queryKey: ["admin-devai-stats"] });
   }
 
   async function deleteAll() {
     if (!sessions.length) return;
-    await Promise.all(sessions.map((s: any) => fetch(`${BASE}/api/devai/conversations/${s.id}`, { method: "DELETE" })));
+    await Promise.all(sessions.map((s: any) => adminFetch(`/api/devai/conversations/${s.id}`, { method: "DELETE" })));
     qc.invalidateQueries({ queryKey: ["admin-devai-sessions"] });
     qc.invalidateQueries({ queryKey: ["admin-devai-stats"] });
   }
@@ -581,10 +587,10 @@ function RestartServicesCard() {
     setState("restarting");
     try {
       if (target === "api" || target === "all") {
-        await fetch(`${BASE}/api/admin/devai/restart`, { method: "POST" });
+        await adminFetch(`/api/admin/devai/restart`, { method: "POST" });
       }
       if (target === "frontend" || target === "all") {
-        await fetch(`${BASE}/api/admin/devai/run-terminal`, {
+        await adminFetch(`/api/admin/devai/run-terminal`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ command: "pkill -f 'vite' 2>/dev/null; true", description: "Restart frontend" }),
@@ -656,7 +662,7 @@ function WorkspaceExportCard() {
   async function doExport() {
     setExporting(true);
     try {
-      const r = await fetch(`${BASE}/api/admin/devai/export`);
+      const r = await adminFetch(`/api/admin/devai/export`);
       if (!r.ok) { alert("Export failed: " + await r.text()); return; }
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
@@ -712,7 +718,7 @@ function WorkspaceUploadCard() {
     setUploading(true);
     setResult(null);
     try {
-      const r = await fetch(`${BASE}/api/admin/devai/upload`, {
+      const r = await adminFetch(`/api/admin/devai/upload`, {
         method: "POST",
         headers: { "Content-Type": "application/gzip" },
         body: file,

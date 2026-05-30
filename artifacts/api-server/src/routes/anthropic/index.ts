@@ -208,10 +208,14 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
       }
     }
 
-    await db.insert(messages).values({
+    // Persist the assistant reply independently — a DB failure must not
+    // send a false error event to the client (the user already saw the response).
+    db.insert(messages).values({
       conversationId: convId,
       role: "assistant",
       content: fullResponse,
+    }).catch((dbErr: unknown) => {
+      logger.error({ dbErr }, "Anthropic: failed to persist assistant message");
     });
 
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);

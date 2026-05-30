@@ -110,7 +110,12 @@ async function broadcastClaim(intent: IntentRow): Promise<string | null> {
       "bsvIntentWatcher: claim scriptSig ready — broadcasting",
     );
     // TODO: wire to bsvBroadcaster.broadcastTx(buildRawClaimTx(intent, claimSig))
-    // Return deterministic placeholder txid for now; replaced by real txid post-wire-up
+    // WARNING: This returns a placeholder txid. No real BSV transaction is broadcast.
+    // User funds at htlcAddress are NOT being claimed on-chain until this is wired up.
+    logger.error(
+      { intentId: intent.id, htlcAddress: intent.htlcAddress },
+      "bsvIntentWatcher: CLAIM BROADCAST NOT WIRED — placeholder txid used, funds not moved on-chain",
+    );
     return `claim-${intent.id.slice(0, 8)}`;
   } catch (err) {
     logger.error({ err, intentId: intent.id }, "bsvIntentWatcher: broadcastClaim failed");
@@ -126,6 +131,12 @@ async function broadcastRefund(intent: IntentRow): Promise<string | null> {
       "bsvIntentWatcher: refund scriptSig ready — broadcasting",
     );
     // TODO: wire to bsvBroadcaster.broadcastTx(buildRawRefundTx(intent, refundSig))
+    // WARNING: This returns a placeholder txid. No real BSV transaction is broadcast.
+    // User funds at htlcAddress are NOT being refunded on-chain until this is wired up.
+    logger.error(
+      { intentId: intent.id, htlcAddress: intent.htlcAddress },
+      "bsvIntentWatcher: REFUND BROADCAST NOT WIRED — placeholder txid used, funds not moved on-chain",
+    );
     return `refund-${intent.id.slice(0, 8)}`;
   } catch (err) {
     logger.error({ err, intentId: intent.id }, "bsvIntentWatcher: broadcastRefund failed");

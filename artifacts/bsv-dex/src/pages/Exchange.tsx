@@ -156,6 +156,46 @@ function timeAgo(ts: number): string {
   return `${Math.floor(s / 86400)}d ago`;
 }
 
+function normalizeOrderResult(
+  raw: any,
+  ctx: {
+    fromCoin: Coin;
+    toCoin: Coin;
+    amountIn: number;
+    withdrawalAddress: string;
+    venue?: string;
+  },
+): OrderResult {
+  const d = raw && typeof raw === "object" ? raw as Record<string, any> : {};
+  const transactionId = d.transaction_id ?? d.id;
+  if (!transactionId) {
+    throw new Error("Swap provider did not return a transaction id");
+  }
+
+  const bestVenue = String(
+    d.best_venue ??
+    d.source ??
+    d.provider ??
+    ctx.venue ??
+    "letsexchange",
+  ).toLowerCase();
+
+  return {
+    transaction_id: String(transactionId),
+    status: String(d.status ?? "wait"),
+    deposit: String(d.deposit ?? d.depositAddress ?? ""),
+    deposit_extra_id: d.deposit_extra_id ?? d.depositExtraId ?? null,
+    deposit_amount: String(d.deposit_amount ?? ctx.amountIn),
+    withdrawal_amount: String(d.withdrawal_amount ?? d.estimatedAmount ?? "0"),
+    withdrawal: String(d.withdrawal ?? ctx.withdrawalAddress),
+    coin_from: String(d.coin_from ?? ctx.fromCoin.symbol),
+    coin_to: String(d.coin_to ?? ctx.toCoin.symbol),
+    coin_from_network: String(d.coin_from_network ?? (ctx.fromCoin.network ?? ctx.fromCoin.symbol)),
+    coin_to_network: String(d.coin_to_network ?? (ctx.toCoin.network ?? ctx.toCoin.symbol)),
+    best_venue: bestVenue,
+  };
+}
+
 const STATUS_COLOR: Record<string, string> = {
   wait:       "text-yellow-400",
   confirming: "text-blue-400",
@@ -455,14 +495,17 @@ function VenueBar({ quotes, toCoin }: { quotes: VenueQuote[]; toCoin: Coin | nul
 
 // ─── Status Tracker ────────────────────────────────────────────────────────
 
-function StatusTracker({ txId, onDone }: { txId: string; onDone?: () => void }) {
+function StatusTracker({ txId, venue, onDone }: { txId: string; venue?: string; onDone?: () => void }) {
   const [status, setStatus] = useState<StatusResult | null>(null);
   const [copied, setCopied] = useState(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const poll = useCallback(async () => {
     try {
-      const r = await fetch(`${API_BASE}/letsexchange/transaction/${txId}`);
+      const venueSuffix = venue && venue !== "letsexchange"
+        ? `?venue=${encodeURIComponent(venue)}`
+        : "";
+      const r = await fetch(`${API_BASE}/letsexchange/status/${encodeURIComponent(txId)}${venueSuffix}`);
       if (!r.ok) return;
       const d: StatusResult = await r.json();
       setStatus(d);
@@ -472,7 +515,7 @@ function StatusTracker({ txId, onDone }: { txId: string; onDone?: () => void }) 
       }
     } catch {}
     pollRef.current = setTimeout(poll, 12_000);
-  }, [txId, onDone]);
+  }, [txId, venue, onDone]);
 
   useEffect(() => {
     poll();
@@ -689,11 +732,21 @@ export function ExchangePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d?.error ?? "Swap failed");
+      const text = await r.text();
+      const d = text ? (() => { try { return JSON.parse(text); } catch { return {}; } })() : {};
+      if (!r.ok) throw new Error(d?.error ?? d?.detail ?? `Swap failed (${r.status})`);
 
       // The execute endpoint may return nested letsexchange shape
-      const order: OrderResult = d.external ?? d;
+      const order: OrderResult = normalizeOrderResult(
+        d.external ?? d,
+        {
+          fromCoin,
+          toCoin,
+          amountIn: amt,
+          withdrawalAddress: withdrawalAddress.trim(),
+          venue: quote.best.venue,
+        },
+      );
       setOrderResult(order);
 
       // Persist to history
@@ -934,7 +987,7 @@ export function ExchangePage() {
                   )}
                 </div>
 
-                <StatusTracker txId={orderResult.transaction_id} />
+                <StatusTracker txId={orderResult.transaction_id} venue={orderResult.best_venue} />
 
                 <button
                   onClick={resetForm}
