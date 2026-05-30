@@ -66,7 +66,7 @@ export async function openLedgerSession(): Promise<LedgerSession> {
 
 // ── Derive one address ────────────────────────────────────────────────────────
 export async function deriveAddress(eth: Eth, path: string): Promise<string> {
-  const { address } = await eth.getAddress(path.replace(/^\/m\//, ""), false, false);
+  const { address } = await eth.getAddress(path.replace(/^m\//, ""), false, false);
   return address;
 }
 

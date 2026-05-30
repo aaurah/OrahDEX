@@ -296,7 +296,7 @@ router.delete("/futures/positions/:positionId", async (req, res) => {
       closedAt:         closed!.closedAt?.toISOString(),
     });
   } catch (err: any) {
-    req.log.error({ err }, "Failed to close futures position" );
+    req.log.error({ err }, "Failed to close futures position");
     if (err?.message?.startsWith("POSITION_NOT")) {
       res.status(400).json({ error: err.message });
     } else {

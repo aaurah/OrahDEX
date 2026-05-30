@@ -57,10 +57,10 @@ function assertWebhookMiddlewareOrder(order: string[]): void {
 }
 
 /* ── Trust proxy — required for correct IP detection behind Replit's reverse proxy
- * Enables accurate rate-limiting and X-Forwarded-For header parsing. ──────────── */
+ * Enables accurate rate-limiting and X-Forwarded-For header parsing. ────────── */
 app.set("trust proxy", 1);
 
-/* ── Security headers (helmet) ────────────────────────────────────────────
+/* ── Security headers (helmet) ───────────────────────────────────────────────
  * Sets X-Frame-Options, X-Content-Type-Options, HSTS, X-DNS-Prefetch-Control,
  * Referrer-Policy, and more. CSP is disabled here because the same server also
  * serves the SPA — the frontend's Vite build handles its own CSP needs.       */
@@ -121,7 +121,7 @@ app.use(cors({
   credentials: true,
 }));
 
-/* ── EVM webhook — registered BEFORE express.json() ────────────────────────
+/* ── EVM webhook — registered BEFORE express.json() ──────────────────────────
    HMAC-SHA256 signature verification requires the raw request body (Buffer).
    Any body-parsing middleware applied before this route would break verification.
    Receives EVM log events from any compatible provider (Alchemy, Infura, etc.).
@@ -179,7 +179,7 @@ app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 middlewareRegistrationOrder.push("express.json");
 assertWebhookMiddlewareOrder(middlewareRegistrationOrder);
 
-/* ── Rate limiting ───────────────────────────────────────────────────────────────
+/* ── Rate limiting ────────────────────────────────────────────────────────────
  * Layered approach:
  *  - Global:  200 req / 1 min per IP  (protects all endpoints)
  *  - Exchange mutations: 30 req / min  (orders, swap, p2p fill, LE exchange)
@@ -263,7 +263,7 @@ const emailWebhookLimiter = rateLimit({
 });
 app.use("/api/webhook/email-inbound", emailWebhookLimiter);
 
-/* ── Smart cache headers for common API routes ──────────────────────── */
+/* ── Smart cache headers for common API routes ──────────────────────────── */
 app.use("/api", (req: Request, res: Response, next: NextFunction) => {
   const url = req.path;
   const method = req.method;
@@ -315,7 +315,7 @@ app.use("/api", (req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-/* ── Request timeout — prevents hung external calls blocking a slot ──────────── */
+/* ── Request timeout — prevents hung external calls blocking a slot ────────── */
 app.use((_req: Request, res: Response, next: NextFunction) => {
   // AI image generation (gpt-image-1) can take 90–120 s — give it extra headroom.
   const isAiImage = _req.path === "/social/ai/image" && _req.method === "POST";
@@ -331,7 +331,7 @@ app.use((_req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
-/* ── Connectivity ping — returns 204, registered before main router ────────── */
+/* ── Connectivity ping — returns 204, registered before main router ──────── */
 app.get("/api/ping", (_req, res) => {
   res.status(204).end();
 });
@@ -381,7 +381,7 @@ if (process.env.NODE_ENV === "production") {
   }
 }
 
-/* ── Global Express error handler — catches any sync/async route throw ───────── */
+/* ── Global Express error handler — catches any sync/async route throw ─────── */
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   const msg  = err instanceof Error ? err.message : String(err);
   const code = (err as any)?.status ?? (err as any)?.statusCode ?? 500;
@@ -391,7 +391,7 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
   }
 });
 
-/* ── Background services — each wrapped so one failure can't crash others ────── */
+/* ── Background services — each wrapped so one failure can't crash others ──── */
 hydrateAdminTokens().catch(e => logger.warn({ err: e }, "hydrateAdminTokens failed (non-fatal)"));
 startCopyOrchestrator();
 // Delay the LE currencies warm-up by 60 s so it doesn't add to the boot-time
@@ -406,7 +406,7 @@ setTimeout(() => {
 // JSON.stringify completes, causing an out-of-memory crash on every boot.
 // The /api/admin/sync-le-pairs endpoint triggers it on demand when needed.
 
-// ── Staggered background-service startup ──────────────────────────────────────────────
+// ── Staggered background-service startup ────────────────────────────────
 // All workers previously fired simultaneously, exhausting the DB connection
 // pool on every boot. Each service now starts 6 s after the previous one so
 // at most one worker is establishing its first DB connections at any time.
@@ -488,7 +488,7 @@ async function healthHandler(_req: any, res: any) {
 // further up in this file. These duplicate registrations are intentionally removed
 // to avoid shadowing the correctly-ordered registrations above.
 
-/* ── BSV chain status ──────────────────────────────────────────────────────────── */
+/* ── BSV chain status ─────────────────────────────────────────────────────── */
 app.get("/api/bsv-status", async (_req, res) => {
   try {
     res.json(await getBsvChainStatus());

@@ -23,7 +23,7 @@
  *       - If a funded UTXO exists (BSV is locked), broadcasts the CLTV
  *         refund transaction and transitions to REFUNDING → REFUNDED.
  *
- * ── Safety invariants ───────────────────────────────────────────────────────────────────
+ * ── Safety invariants ─────────────────────────────────────────────────────
  *
  *   • Each tick acquires a per-intent soft lock (in-memory Set) before
  *     any DB write — prevents double-broadcasts when the poll interval
@@ -33,7 +33,7 @@
  *   • Terminal intents (CLAIMED, REFUNDED, CANCELLED) are evicted from
  *     the active set after processing to bound memory growth.
  *
- * ── Connection budget ─────────────────────────────────────────────────────────────────
+ * ── Connection budget ─────────────────────────────────────────────────────
  *
  *   The watcher is registered with guardedInterval at 30 s.  It processes
  *   active intents sequentially (not concurrently) and holds at most
@@ -58,7 +58,7 @@ import {
   INTENT_MIN_CONFIRMATIONS,
 } from "./bsvIntentSettlement.js";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────
 
 type IntentRow = typeof bsvIntentSessionsTable.$inferSelect;
 
@@ -68,7 +68,7 @@ const ACTIVE_STATUSES   = ["PENDING_FUNDING", "FUNDED", "CONFIRMED", "FILLED", "
 // Per-intent soft lock — prevents double-broadcasts within a single process
 const processing = new Set<string>();
 
-// ── Chain query helper ───────────────────────────────────────────────────────────────
+// ── Chain query helper ────────────────────────────────────────────────────
 
 /**
  * Query WhatsOnChain for a P2SH address funding status.
@@ -92,7 +92,7 @@ async function queryFunding(htlcAddress: string, locktimeBlocks: number): Promis
   }
 }
 
-// ── Broadcast helpers (stub — plugs into existing broadcaster) ──────────────────
+// ── Broadcast helpers (stub — plugs into existing broadcaster) ────────────
 // In production these call bsvBroadcaster.broadcastTx(rawHex).
 // For the initial integration the claim/refund logic is logged and the DB
 // transition is written; the actual broadcast wires in alongside the BSV
@@ -144,14 +144,14 @@ async function broadcastRefund(intent: IntentRow): Promise<string | null> {
   }
 }
 
-// ── Per-intent state handler ────────────────────────────────────────────────────────
+// ── Per-intent state handler ──────────────────────────────────────────────
 
 async function processIntent(intent: IntentRow, nowSecs: number): Promise<void> {
   if (processing.has(intent.id)) return;
   processing.add(intent.id);
 
   try {
-    // ── PENDING_FUNDING / FUNDED: detect BSV on-chain ───────────────────────
+    // ── PENDING_FUNDING / FUNDED: detect BSV on-chain ─────────────────────
     if (intent.status === "PENDING_FUNDING" || intent.status === "FUNDED") {
       const funding = await queryFunding(intent.htlcAddress, intent.deadlineBlocks);
       if (!funding) return;
@@ -189,7 +189,7 @@ async function processIntent(intent: IntentRow, nowSecs: number): Promise<void> 
       return;
     }
 
-    // ── CONFIRMED: await solver fill (or expire) ──────────────────────────────────
+    // ── CONFIRMED: await solver fill (or expire) ──────────────────────────
     if (intent.status === "CONFIRMED") {
       if (nowSecs > intent.deadlineTs) {
         await db.update(bsvIntentSessionsTable)
@@ -203,7 +203,7 @@ async function processIntent(intent: IntentRow, nowSecs: number): Promise<void> 
       return;
     }
 
-    // ── FILLED: verify constraints, then claim ──────────────────────────────────
+    // ── FILLED: verify constraints, then claim ────────────────────────────
     if (intent.status === "FILLED") {
       if (!intent.fundingConfirmed) {
         logger.warn({ intentId: intent.id }, "bsvIntentWatcher: filled but funding not yet confirmed — waiting");
@@ -251,7 +251,7 @@ async function processIntent(intent: IntentRow, nowSecs: number): Promise<void> 
       return;
     }
 
-    // ── EXPIRED / REFUNDING: broadcast CLTV refund ──────────────────────────────
+    // ── EXPIRED / REFUNDING: broadcast CLTV refund ────────────────────────
     if (intent.status === "EXPIRED" || intent.status === "REFUNDING") {
       if (!intent.fundingTxid && !intent.fundingConfirmed) {
         await db.update(bsvIntentSessionsTable)
@@ -288,7 +288,7 @@ async function processIntent(intent: IntentRow, nowSecs: number): Promise<void> 
       return;
     }
 
-    // ── CLAIMING (in-flight): check on-chain for confirmation ────────────────────
+    // ── CLAIMING (in-flight): check on-chain for confirmation ─────────────
     if (intent.status === "CLAIMING") {
       const onChain = await queryFunding(intent.htlcAddress, intent.deadlineBlocks);
       if (onChain && !onChain.funded) {
@@ -310,7 +310,7 @@ async function processIntent(intent: IntentRow, nowSecs: number): Promise<void> 
   }
 }
 
-// ── Main poll cycle ─────────────────────────────────────────────────────────────────
+// ── Main poll cycle ───────────────────────────────────────────────────────
 
 async function pollCycle(): Promise<void> {
   const nowSecs = Math.floor(Date.now() / 1000);
@@ -331,7 +331,7 @@ async function pollCycle(): Promise<void> {
   logger.debug({ processed: intents.length }, "bsvIntentWatcher: poll cycle complete");
 }
 
-// ── Public start function ────────────────────────────────────────────────────────
+// ── Public start function ─────────────────────────────────────────────────
 
 export function startBsvIntentWatcher(): void {
   logger.info("BSV Intent Watcher starting — 30 s poll interval");

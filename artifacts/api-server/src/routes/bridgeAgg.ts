@@ -13,7 +13,7 @@ import type { BridgeQuoteParams, BuildTxParams } from "../bridges/IBridgeProvide
 
 const router = Router();
 
-// ── Supported chains ────────────────────────────────────────────────────────────────
+// ── Supported chains ──────────────────────────────────────────────────────────
 
 export const BRIDGE_CHAINS = [
   { id: 1,     name: "Ethereum",  nativeSymbol: "ETH",  color: "#627EEA", logo: "ETH"  },
@@ -25,7 +25,7 @@ export const BRIDGE_CHAINS = [
   { id: 43114, name: "Avalanche", nativeSymbol: "AVAX", color: "#E84142", logo: "AVAX" },
 ];
 
-// ── Supported tokens per chain ──────────────────────────────────────────────────────
+// ── Supported tokens per chain ────────────────────────────────────────────────
 
 const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
@@ -71,7 +71,7 @@ export const BRIDGE_TOKENS: Record<number, { symbol: string; name: string; addre
   ],
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function toWei(amount: string, decimals: number): string {
   try {
@@ -93,7 +93,7 @@ function fromWei(wei: string, decimals: number): string {
   } catch { return "0"; }
 }
 
-// ── Routes ────────────────────────────────────────────────────────────────────────
+// ── Routes ────────────────────────────────────────────────────────────────────
 
 router.get("/chains", (_req: Request, res: Response) => {
   res.json({ chains: BRIDGE_CHAINS });
