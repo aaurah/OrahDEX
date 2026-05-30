@@ -613,7 +613,7 @@ router.get("/evm-lock-info", async (req, res) => {
     });
   } catch (err: any) {
     logger.error({ err: err?.message, txHash }, "bridge: evm-lock-info failed");
-    res.status(500).json({ error: err?.message ?? "Failed to fetch lock info." });
+    res.status(500).json({ error: "Failed to fetch lock info." });
   }
 });
 

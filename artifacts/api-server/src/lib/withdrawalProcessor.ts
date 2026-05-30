@@ -294,6 +294,9 @@ export interface ProcessResult {
  * Returns { status: "completed", txid } on success, or { status: "pending", note }
  * if the hot wallet is not configured or an error occurs.
  */
+const EVM_ADDRESS_RE  = /^0x[0-9a-fA-F]{40}$/;
+const BSV_ADDRESS_RE  = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$|^q[a-z0-9]{41,}$/;
+
 export async function processWithdrawal(params: {
   asset:     string;
   amount:    number;
@@ -305,6 +308,9 @@ export async function processWithdrawal(params: {
   try {
     // ── Legacy "evm" key — asset determines the chain ─────────────────────────
     if (net === "evm") {
+      if (!EVM_ADDRESS_RE.test(params.recipient)) {
+        throw new Error(`Invalid EVM recipient address: ${params.recipient}`);
+      }
       const { txid, explorer } = await processEvmWithdrawal(params);
       return { status: "completed", txid, explorer };
     }
@@ -312,6 +318,9 @@ export async function processWithdrawal(params: {
     // ── Bridge-specific chain keys (base, arb, op, zksync, …) ────────────────
     const registryKey = BRIDGE_CHAIN_TO_REGISTRY[net];
     if (registryKey) {
+      if (!EVM_ADDRESS_RE.test(params.recipient)) {
+        throw new Error(`Invalid EVM recipient address for ${net}: ${params.recipient}`);
+      }
       const chainCfg = EVM_REGISTRY[registryKey];
       if (!chainCfg) throw new Error(`No EVM registry config for key ${registryKey}`);
       const { txid, explorer } = await processEvmWithdrawal({ ...params, chainIdOverride: chainCfg.id });
@@ -319,6 +328,9 @@ export async function processWithdrawal(params: {
     }
 
     if (net === "bsv" || net === "bch") {
+      if (!BSV_ADDRESS_RE.test(params.recipient)) {
+        throw new Error(`Invalid BSV/BCH recipient address: ${params.recipient}`);
+      }
       const { txid, explorer } = await processBsvWithdrawal(params);
       return { status: "completed", txid, explorer };
     }

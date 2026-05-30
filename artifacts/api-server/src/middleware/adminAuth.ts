@@ -48,7 +48,9 @@ export async function hydrateAdminTokens(): Promise<void> {
             adminTokenExpirations.set(token, expiresAt);
           }
         }
-      } catch { /* malformed row — skip */ }
+      } catch (parseErr: any) {
+        logger.warn({ key: row.key, err: parseErr?.message }, "adminAuth: malformed admin session row — skipping");
+      }
     }
     logger.info({ sessions: adminTokens.size, expired }, "adminAuth: hydrated admin sessions from DB");
   } catch (err: any) {
@@ -100,13 +102,19 @@ export async function revokeAllAdminTokens(): Promise<void> {
 
 function hasMatchingAdminToken(token: string): boolean {
   const incoming = Buffer.from(token);
+  // Dummy buffer used when lengths differ so timingSafeEqual always runs
+  // (prevents early short-circuit that leaks token-length timing info).
+  const dummy = Buffer.alloc(incoming.length);
+  let found = false;
   for (const candidate of adminTokens) {
     const expected = Buffer.from(candidate);
-    if (incoming.length === expected.length && timingSafeEqual(incoming, expected)) {
-      return true;
+    if (incoming.length === expected.length) {
+      if (timingSafeEqual(incoming, expected)) found = true;
+    } else {
+      timingSafeEqual(incoming, dummy); // constant-time no-op
     }
   }
-  return false;
+  return found;
 }
 
 export function requireAdminToken(req: Request, res: Response, next: NextFunction): void {
