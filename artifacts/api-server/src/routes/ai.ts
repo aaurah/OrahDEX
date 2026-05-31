@@ -5,8 +5,6 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 import { eq, asc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 
-const isAiConfigured = !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
-
 const router = Router();
 
 const SYSTEM_PROMPT = `You are Ora — the AI Trading Intelligence of OrahDEX, a sovereign decentralized exchange where every coin is listed and every trade settles on BSV (Bitcoin SV) blockchain.
@@ -40,12 +38,62 @@ Guidelines:
 
 Today is approximately March 2026. BSV settlement is the backbone of OrahDEX's sovereign identity.`;
 
+// ── Circuit breaker — trips on 401/403 and skips AI calls until reset ─────────
+
+let aiUnavailable = false;
+let aiUnavailableUntil = 0;
+const AI_BACKOFF_MS = 5 * 60 * 1000; // retry AI after 5 min
+
+function isAuthError(err: unknown): boolean {
+  if (!err) return false;
+  const msg = String((err as any)?.message ?? (err as any)?.status ?? "");
+  return msg.includes("401") || msg.includes("403") || msg.includes("restricted") || msg.includes("Unauthorized");
+}
+
+function isAiAvailable(): boolean {
+  if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) return false;
+  if (aiUnavailable && Date.now() < aiUnavailableUntil) return false;
+  if (Date.now() >= aiUnavailableUntil) aiUnavailable = false; // reset after backoff
+  return true;
+}
+
+function tripCircuitBreaker(err: unknown) {
+  if (isAuthError(err)) {
+    aiUnavailable = true;
+    aiUnavailableUntil = Date.now() + AI_BACKOFF_MS;
+    logger.warn("AI provider unavailable (auth error) — falling back for 5 min");
+  }
+}
+
+// ── Fallback content ──────────────────────────────────────────────────────────
+
+const FALLBACK_INSIGHTS = [
+  "Monitor BSV on-chain settlement volumes for early trend signals.",
+  "DeFi TVL remains a leading indicator for altcoin rotations.",
+  "Cross-chain bridge flows signal where liquidity is moving next.",
+];
+
+function fallbackAnalysis(symbol: string): string {
+  return `**${symbol}** market analysis is temporarily unavailable. Check the Markets tab for live price data and order book depth.`;
+}
+
+function fallbackSignal(symbol: string): { signal: string; sentiment: string } {
+  return {
+    signal: `Live AI signals for ${symbol} are temporarily unavailable. Monitor the order book and recent trades for directional cues.`,
+    sentiment: "neutral",
+  };
+}
+
+const FALLBACK_CHAT = "I'm temporarily unavailable — the AI provider is offline. Please try again in a few minutes. In the meantime, check the Markets tab for live prices and the order book for directional signals.";
+
 // ── Cache for market analysis (5 min TTL) ────────────────────────────────────
+
 interface CacheEntry { content: string; ts: number }
 const analysisCache = new Map<string, CacheEntry>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000;
 
 // ── POST /ai/conversations — create a new conversation ───────────────────────
+
 router.post("/ai/conversations", async (_req, res) => {
   try {
     const [conv] = await db.insert(conversations).values({ title: "New Chat" }).returning();
@@ -57,6 +105,7 @@ router.post("/ai/conversations", async (_req, res) => {
 });
 
 // ── GET /ai/conversations/:id — get conversation + messages ──────────────────
+
 router.get("/ai/conversations/:id", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid conversation id" }); return; }
@@ -65,12 +114,13 @@ router.get("/ai/conversations/:id", async (req, res) => {
     if (!conv) { res.status(404).json({ error: "Conversation not found" }); return; }
     const msgs = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(asc(messages.createdAt));
     res.json({ ...conv, messages: msgs });
-  } catch (err: any) {
+  } catch {
     res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // ── POST /ai/conversations/:id/messages — send message with SSE streaming ────
+
 router.post("/ai/conversations/:id/messages", async (req, res) => {
   const id = parseInt(req.params.id ?? "");
   if (isNaN(id)) { res.status(400).json({ error: "Invalid conversation id" }); return; }
@@ -83,11 +133,28 @@ router.post("/ai/conversations/:id/messages", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
 
+  // Save user message first (always)
   try {
-    // Save user message
     await db.insert(messages).values({ conversationId: id, role: "user", content });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "Failed to save user message");
+    res.write(`data: ${JSON.stringify({ error: "Failed to save message" })}\n\n`);
+    res.end();
+    return;
+  }
 
-    // Load conversation history (last 20 messages to stay within context)
+  // If AI is unavailable, stream the fallback response
+  if (!isAiAvailable()) {
+    res.write(`data: ${JSON.stringify({ content: FALLBACK_CHAT })}\n\n`);
+    try {
+      await db.insert(messages).values({ conversationId: id, role: "assistant", content: FALLBACK_CHAT });
+    } catch { /* non-fatal */ }
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.end();
+    return;
+  }
+
+  try {
     const history = await db.select()
       .from(messages)
       .where(eq(messages.conversationId, id))
@@ -116,10 +183,8 @@ router.post("/ai/conversations/:id/messages", async (req, res) => {
       }
     }
 
-    // Save assistant response
     await db.insert(messages).values({ conversationId: id, role: "assistant", content: fullResponse });
 
-    // Update conversation title from first user message if still default
     const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
     if (conv?.title === "New Chat") {
       const title = content.slice(0, 60).trim();
@@ -129,13 +194,20 @@ router.post("/ai/conversations/:id/messages", async (req, res) => {
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
   } catch (err: any) {
+    tripCircuitBreaker(err);
     logger.error({ err: err?.message }, "AI chat error");
-    res.write(`data: ${JSON.stringify({ error: err?.message ?? "AI error" })}\n\n`);
+    // Stream fallback so the UI shows something, not a hanging spinner
+    res.write(`data: ${JSON.stringify({ content: FALLBACK_CHAT })}\n\n`);
+    try {
+      await db.insert(messages).values({ conversationId: id, role: "assistant", content: FALLBACK_CHAT });
+    } catch { /* non-fatal */ }
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
   }
 });
 
 // ── GET /ai/market-analysis?symbol=BTC — cached AI analysis for a coin ───────
+
 router.get("/ai/market-analysis", async (req, res) => {
   const symbol = ((req.query.symbol as string) ?? "").toUpperCase().trim();
   if (!symbol) { res.status(400).json({ error: "symbol is required" }); return; }
@@ -146,8 +218,8 @@ router.get("/ai/market-analysis", async (req, res) => {
     return;
   }
 
-  if (!isAiConfigured) {
-    res.json({ symbol, analysis: `Market analysis for **${symbol}** is temporarily unavailable. Configure the AI integration to enable real-time analysis.`, cached: false });
+  if (!isAiAvailable()) {
+    res.json({ symbol, analysis: fallbackAnalysis(symbol), cached: false });
     return;
   }
 
@@ -168,16 +240,18 @@ Keep it under 200 words. Use plain markdown. No financial advice disclaimer need
       ],
     }, { signal: AbortSignal.timeout(25_000) });
 
-    const content = response.choices[0]?.message?.content || "Analysis unavailable";
+    const content = response.choices[0]?.message?.content || fallbackAnalysis(symbol);
     analysisCache.set(symbol, { content, ts: Date.now() });
     if (!res.headersSent) res.json({ symbol, analysis: content, cached: false });
   } catch (err: any) {
+    tripCircuitBreaker(err);
     logger.error({ err: err?.message }, "AI market analysis error");
-    if (!res.headersSent) res.status(503).json({ error: "Analysis temporarily unavailable" });
+    if (!res.headersSent) res.json({ symbol, analysis: fallbackAnalysis(symbol), cached: false });
   }
 });
 
 // ── GET /ai/insights — overall market insights (cached 10 min) ────────────────
+
 const insightsCache: CacheEntry = { content: "", ts: 0 };
 const INSIGHTS_TTL = 10 * 60 * 1000;
 
@@ -186,14 +260,13 @@ router.get("/ai/insights", async (_req, res) => {
     try {
       if (!res.headersSent) res.json({ insights: JSON.parse(insightsCache.content), cached: true });
     } catch {
-      if (!res.headersSent) res.json({ insights: [insightsCache.content], cached: true });
+      if (!res.headersSent) res.json({ insights: FALLBACK_INSIGHTS, cached: true });
     }
     return;
   }
 
-  if (!isAiConfigured) {
-    const fallback = ["Monitor BSV on-chain settlement volumes for early trend signals.", "DeFi TVL remains a leading indicator for altcoin rotations.", "Cross-chain bridge flows signal where liquidity is moving next."];
-    if (!res.headersSent) res.json({ insights: fallback, cached: false });
+  if (!isAiAvailable()) {
+    if (!res.headersSent) res.json({ insights: FALLBACK_INSIGHTS, cached: false });
     return;
   }
 
@@ -223,12 +296,14 @@ router.get("/ai/insights", async (_req, res) => {
     insightsCache.ts = Date.now();
     if (!res.headersSent) res.json({ insights: parsed, cached: false });
   } catch (err: any) {
+    tripCircuitBreaker(err);
     logger.error({ err: err?.message }, "AI insights error");
-    if (!res.headersSent) res.status(503).json({ error: "AI insights temporarily unavailable" });
+    if (!res.headersSent) res.json({ insights: FALLBACK_INSIGHTS, cached: false });
   }
 });
 
 // ── GET /ai/trade-signal?symbol=BTC&action=buy — quick trade signal (cached 5 min) ──
+
 const signalCache = new Map<string, { signal: string; sentiment: string; ts: number }>();
 const SIGNAL_CACHE_TTL = 5 * 60 * 1000;
 
@@ -243,8 +318,9 @@ router.get("/ai/trade-signal", async (req, res) => {
     return;
   }
 
-  if (!isAiConfigured) {
-    if (!res.headersSent) res.json({ symbol, signal: "AI trade signals require the AI integration to be configured.", sentiment: "neutral", cached: false });
+  if (!isAiAvailable()) {
+    const fb = fallbackSignal(symbol);
+    if (!res.headersSent) res.json({ symbol, ...fb, cached: false });
     return;
   }
 
@@ -262,15 +338,17 @@ router.get("/ai/trade-signal", async (req, res) => {
       ],
     }, { signal: AbortSignal.timeout(25_000) });
 
-    const signal = response.choices[0]?.message?.content || "";
+    const signal = response.choices[0]?.message?.content || fallbackSignal(symbol).signal;
     const sentiment = signal.toLowerCase().includes("bullish") ? "bullish"
       : signal.toLowerCase().includes("bearish") ? "bearish" : "neutral";
 
     signalCache.set(cacheKey, { signal, sentiment, ts: Date.now() });
     if (!res.headersSent) res.json({ symbol, signal, sentiment });
   } catch (err: any) {
+    tripCircuitBreaker(err);
     logger.error({ err: err?.message }, "AI trade signal error");
-    if (!res.headersSent) res.status(503).json({ error: "Signal temporarily unavailable" });
+    const fb = fallbackSignal(symbol);
+    if (!res.headersSent) res.json({ symbol, ...fb, cached: false });
   }
 });
 
