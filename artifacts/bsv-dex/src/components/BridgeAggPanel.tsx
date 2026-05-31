@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { ChevronDown, ArrowRight, ArrowUpDown, RefreshCw, Zap, Clock, AlertCircle, CheckCircle2, Copy } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 
@@ -108,9 +108,17 @@ function ChainDropdown({
   excludeId?: number;
 }) {
   const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
 
   return (
-    <div className="relative">
+    <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 bg-secondary/60 border border-border/50 rounded-xl px-3 py-2 text-sm font-medium text-foreground hover:border-primary/40 transition-colors w-full"
@@ -164,9 +172,17 @@ function TokenDropdown({
   label: string;
 }) {
   const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
 
   return (
-    <div className="relative">
+    <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-2 bg-secondary border border-border/50 rounded-xl px-3 py-2 text-sm font-semibold text-foreground hover:border-primary/40 transition-colors min-w-[110px]"
@@ -322,8 +338,9 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
   const [selectedQuote, setSelectedQuote] = useState<BridgeQuote | null>(null);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
   const [quoteError, setQuoteError]       = useState<string | null>(null);
-  const [builtTx, setBuiltTx]     = useState<{ tx: BuiltTx; warning?: string } | null>(null);
+  const [builtTx, setBuiltTx]       = useState<{ tx: BuiltTx; warning?: string } | null>(null);
   const [buildingTx, setBuildingTx] = useState(false);
+  const [buildTxError, setBuildTxError] = useState<string | null>(null);
 
   // Load chains on mount
   useEffect(() => {
@@ -398,6 +415,7 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
     if (!selectedQuote || !fromChain || !toChain || !fromToken || !toToken) return;
     setBuildingTx(true);
     setBuiltTx(null);
+    setBuildTxError(null);
     try {
       const res = await fetch(`${API_BASE}/bridge-agg/build-tx`, {
         method: "POST",
@@ -416,18 +434,19 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Build tx failed");
       setBuiltTx({ tx: data.tx, warning: data.warning });
+    } catch (e: unknown) {
+      setBuildTxError(e instanceof Error ? e.message : "Build transaction failed");
     } finally {
       setBuildingTx(false);
     }
   }
 
-  // Swap chains
+  // Swap chains — tokens are reset by the useEffect that fires on chain change
   function swapChains() {
     const fc = fromChain, tc = toChain;
-    const ft = fromToken, tt = toToken;
     setFromChain(tc); setToChain(fc);
-    setFromToken(tt); setToToken(ft);
-    setQuotes([]); setSelectedQuote(null); setBuiltTx(null);
+    setFromToken(null); setToToken(null);
+    setQuotes([]); setSelectedQuote(null); setBuiltTx(null); setBuildTxError(null);
   }
 
   const bestQuote = quotes[0] ?? null;
@@ -613,6 +632,14 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
             </>
           )}
         </button>
+      )}
+
+      {/* ── Build tx error ───────────────────────────────────────── */}
+      {buildTxError && (
+        <div className="flex items-center gap-2.5 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+          <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+          <span className="text-sm text-red-300">{buildTxError}</span>
+        </div>
       )}
 
       {/* ── Built transaction viewer ─────────────────────────────── */}
