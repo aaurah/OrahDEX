@@ -78,8 +78,9 @@ export function findOpportunities(markets: MarketRow[]): ArbOpportunity[] {
     const priceBUSDT = priceMap.get(`${B}/USDT`);
     if (!priceAB || !priceAUSDT || !priceBUSDT) continue;
 
-    // Route 1: USDT → buy A → sell A for B → sell B for USDT
-    const r1Gross  = priceBUSDT / (priceAUSDT * priceAB);
+    // Route 1: USDT → buy A with USDT → sell A for B → sell B for USDT
+    // Start 1 USDT → get (1/priceAUSDT) A → get (priceAB/priceAUSDT) B → get (priceAB*priceBUSDT/priceAUSDT) USDT
+    const r1Gross  = (priceAB * priceBUSDT) / priceAUSDT;
     const r1Net    = r1Gross * Math.pow(1 - TRADE_FEE_RATE, 3);
     const r1Profit = r1Net - 1;
     if (r1Profit > MIN_PROFIT_PCT) {
@@ -95,8 +96,9 @@ export function findOpportunities(markets: MarketRow[]): ArbOpportunity[] {
       });
     }
 
-    // Route 2: USDT → buy B → buy A with B → sell A for USDT
-    const r2Gross  = (priceAUSDT * priceAB) / priceBUSDT;
+    // Route 2: USDT → buy B with USDT → buy A with B → sell A for USDT
+    // Start 1 USDT → get (1/priceBUSDT) B → get (1/(priceAB*priceBUSDT)) A → get (priceAUSDT/(priceAB*priceBUSDT)) USDT
+    const r2Gross  = priceAUSDT / (priceAB * priceBUSDT);
     const r2Net    = r2Gross * Math.pow(1 - TRADE_FEE_RATE, 3);
     const r2Profit = r2Net - 1;
     if (r2Profit > MIN_PROFIT_PCT) {

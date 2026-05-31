@@ -3,7 +3,7 @@ import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
 import pinoHttp from "pino-http";
-import rateLimit from "express-rate-limit";
+import { rateLimit } from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -31,6 +31,15 @@ import { startAllReconcilers } from "./lib/selfHealingReconcilers.js";
 import { hydrateAlertsFromDB } from "./lib/alertBus.js";
 import { startExchangeApiRepairEngine } from "./lib/exchangeApiRepairEngine.js";
 import { startBsvIntentWatcher } from "./lib/bsvIntentWatcher.js";
+import { pool } from "@workspace/db";
+
+// Run the chain_id column migration at startup (idempotent — IF NOT EXISTS).
+pool.query(`
+  ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "chain_id" integer;
+  CREATE INDEX IF NOT EXISTS "orders_chain_id_idx"
+    ON "orders" ("chain_id")
+    WHERE "chain_id" IS NOT NULL;
+`).catch((err: Error) => logger.warn({ err: err.message }, "chain_id migration failed (non-fatal)"));
 
 const app: Express = express();
 const middlewareRegistrationOrder: string[] = [];

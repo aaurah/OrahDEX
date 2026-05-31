@@ -27,7 +27,7 @@ async function getLiveMarketContext(): Promise<string> {
     if (!rows.length) return "Live market data unavailable right now.";
 
     const lines = rows.map((m) => {
-      const change = m.priceChangePercent24h ?? 0;
+      const change = parseFloat(String(m.priceChangePercent24h ?? 0));
       const arrow = change >= 0 ? "▲" : "▼";
       return `${m.symbol}: $${Number(m.lastPrice ?? 0).toLocaleString("en-US", { maximumFractionDigits: 6 })} ${arrow}${Math.abs(change).toFixed(2)}% | Vol: $${Number(m.volume24h ?? 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
     });

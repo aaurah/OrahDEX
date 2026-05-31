@@ -1,5 +1,4 @@
 import type { IBridgeProvider, BridgeQuoteParams, BridgeQuote, BuildTxParams, BuiltTx } from "./IBridgeProvider.js";
-import { parseUnits, formatUnits } from "viem";
 
 export class MockBridgeCheapSlow implements IBridgeProvider {
   id = "mock-cheap-slow";

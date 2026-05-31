@@ -2567,7 +2567,7 @@ export function Swap() {
 
         {/* ═══════════════ BRIDGE TAB ═══════════════ */}
         {activeTab === "bridge" && (
-          <BridgeAggPanel walletAddress={address} />
+          <BridgeAggPanel walletAddress={address ?? undefined} />
         )}
 
         {/* ═══════════════ DEX TAB (on-chain Uniswap V3 / PancakeSwap) ═══════════════ */}

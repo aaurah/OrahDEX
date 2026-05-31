@@ -221,7 +221,7 @@ export async function ledgerSignTransaction(
       {
         r:        `0x${sig.r}` as `0x${string}`,
         s:        `0x${sig.s}` as `0x${string}`,
-        yParity:  sig.v % 2 === 0 ? 0 : 1,
+        yParity:  parseInt(sig.v, 16) % 2 === 0 ? 0 : 1,
       },
     );
   } else {

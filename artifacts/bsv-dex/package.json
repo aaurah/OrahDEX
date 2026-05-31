@@ -10,7 +10,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "@vercel/speed-insights": "^2.0.0",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -49,6 +48,7 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "@vercel/speed-insights": "^2.0.0",
     "@vitejs/plugin-react": "catalog:",
     "@workspace/api-client-react": "workspace:*",
     "class-variance-authority": "catalog:",
@@ -67,6 +67,7 @@
     "react-icons": "^5.6.0",
     "react-resizable-panels": "^4.9.0",
     "recharts": "^3.8.1",
+    "rxjs": "^7.8.2",
     "sonner": "^2.0.7",
     "tailwind-merge": "catalog:",
     "tailwindcss": "catalog:",
@@ -77,6 +78,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@walletconnect/types": "^2.23.9",
     "@keystonehq/bc-ur-registry-eth": "^0.22.1",
     "@ledgerhq/context-module": "^1.17.1",
     "@ledgerhq/device-management-kit": "^1.4.1",

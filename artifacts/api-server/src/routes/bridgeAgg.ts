@@ -76,7 +76,7 @@ export const BRIDGE_TOKENS: Record<number, { symbol: string; name: string; addre
 function toWei(amount: string, decimals: number): string {
   try {
     const parts = amount.split(".");
-    const whole = parts[0] ?? "0";
+    const whole = parts[0] || "0";   // handles leading-dot amounts like ".5"
     const frac  = (parts[1] ?? "").padEnd(decimals, "0").slice(0, decimals);
     return (BigInt(whole) * 10n ** BigInt(decimals) + BigInt(frac || "0")).toString();
   } catch { return "0"; }
@@ -100,84 +100,94 @@ router.get("/chains", (_req: Request, res: Response) => {
 });
 
 router.get("/tokens/:chainId", (req: Request, res: Response) => {
-  const chainId = parseInt(req.params.chainId, 10);
+  const chainId = parseInt(String(req.params.chainId ?? ""), 10);
   const tokens = BRIDGE_TOKENS[chainId] ?? [];
   res.json({ tokens });
 });
 
 router.post("/quote", async (req: Request, res: Response) => {
-  const { fromChainId, toChainId, fromTokenAddress, toTokenAddress, amountIn } = req.body as {
-    fromChainId?: number; toChainId?: number;
-    fromTokenAddress?: string; toTokenAddress?: string;
-    amountIn?: string;
-  };
+  try {
+    const { fromChainId, toChainId, fromTokenAddress, toTokenAddress, amountIn } = req.body as {
+      fromChainId?: number; toChainId?: number;
+      fromTokenAddress?: string; toTokenAddress?: string;
+      amountIn?: string;
+    };
 
-  if (!fromChainId || !toChainId || !fromTokenAddress || !toTokenAddress || !amountIn) {
-    res.status(400).json({ error: "Missing required fields" });
-    return;
+    if (!fromChainId || !toChainId || !fromTokenAddress || !toTokenAddress || !amountIn) {
+      res.status(400).json({ error: "Missing required fields" });
+      return;
+    }
+    if (fromChainId === toChainId) {
+      res.status(400).json({ error: "Source and destination chains must differ" });
+      return;
+    }
+
+    // Find token decimals for human→wei conversion
+    const fromToken = BRIDGE_TOKENS[fromChainId]?.find(t => t.address.toLowerCase() === fromTokenAddress.toLowerCase());
+    const toToken   = BRIDGE_TOKENS[toChainId]?.find(t => t.address.toLowerCase() === toTokenAddress.toLowerCase());
+    const decimals  = fromToken?.decimals ?? 18;
+    const toDecimals = toToken?.decimals ?? 18;
+
+    const amountInWei = amountIn.includes(".")
+      ? toWei(amountIn, decimals)
+      : amountIn;
+
+    const params: BridgeQuoteParams = { fromChainId, toChainId, fromTokenAddress, toTokenAddress, amountIn: amountInWei };
+    const { quotes, bestQuote } = await getQuotesAcrossProviders(params);
+
+    // Annotate with human-readable amounts
+    const readable = quotes.map(q => ({
+      ...q,
+      amountInHuman:  fromWei(q.amountIn, decimals),
+      amountOutHuman: fromWei(q.amountOut, toDecimals),
+      feeHuman:       fromWei(q.fee, decimals),
+    }));
+
+    res.json({
+      quotes: readable,
+      bestQuote: bestQuote ? { ...bestQuote, amountInHuman: fromWei(bestQuote.amountIn, decimals), amountOutHuman: fromWei(bestQuote.amountOut, toDecimals), feeHuman: fromWei(bestQuote.fee, decimals) } : null,
+    });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Internal server error";
+    res.status(500).json({ error: msg });
   }
-  if (fromChainId === toChainId) {
-    res.status(400).json({ error: "Source and destination chains must differ" });
-    return;
-  }
-
-  // Find token decimals for human→wei conversion
-  const fromToken = BRIDGE_TOKENS[fromChainId]?.find(t => t.address.toLowerCase() === fromTokenAddress.toLowerCase());
-  const toToken   = BRIDGE_TOKENS[toChainId]?.find(t => t.address.toLowerCase() === toTokenAddress.toLowerCase());
-  const decimals  = fromToken?.decimals ?? 18;
-  const toDecimals = toToken?.decimals ?? 18;
-
-  const amountInWei = amountIn.includes(".")
-    ? toWei(amountIn, decimals)
-    : amountIn;
-
-  const params: BridgeQuoteParams = { fromChainId, toChainId, fromTokenAddress, toTokenAddress, amountIn: amountInWei };
-  const { quotes, bestQuote } = await getQuotesAcrossProviders(params);
-
-  // Annotate with human-readable amounts
-  const readable = quotes.map(q => ({
-    ...q,
-    amountInHuman:  fromWei(q.amountIn, decimals),
-    amountOutHuman: fromWei(q.amountOut, toDecimals),
-    feeHuman:       fromWei(q.fee, decimals),
-  }));
-
-  res.json({
-    quotes: readable,
-    bestQuote: bestQuote ? { ...bestQuote, amountInHuman: fromWei(bestQuote.amountIn, decimals), amountOutHuman: fromWei(bestQuote.amountOut, toDecimals), feeHuman: fromWei(bestQuote.fee, decimals) } : null,
-  });
 });
 
 router.post("/build-tx", async (req: Request, res: Response) => {
-  const { providerId, fromChainId, toChainId, fromTokenAddress, toTokenAddress, amountIn, userAddress, quote } = req.body as {
-    providerId?: string; fromChainId?: number; toChainId?: number;
-    fromTokenAddress?: string; toTokenAddress?: string;
-    amountIn?: string; userAddress?: string; quote?: unknown;
-  };
+  try {
+    const { providerId, fromChainId, toChainId, fromTokenAddress, toTokenAddress, amountIn, userAddress, quote } = req.body as {
+      providerId?: string; fromChainId?: number; toChainId?: number;
+      fromTokenAddress?: string; toTokenAddress?: string;
+      amountIn?: string; userAddress?: string; quote?: unknown;
+    };
 
-  if (!providerId || !fromChainId || !toChainId || !fromTokenAddress || !toTokenAddress || !amountIn || !userAddress || !quote) {
-    res.status(400).json({ error: "Missing required fields" });
-    return;
+    if (!providerId || !fromChainId || !toChainId || !fromTokenAddress || !toTokenAddress || !amountIn || !userAddress || !quote) {
+      res.status(400).json({ error: "Missing required fields" });
+      return;
+    }
+
+    const provider = getProvider(providerId);
+    if (!provider) {
+      res.status(404).json({ error: `Unknown provider: ${providerId}` });
+      return;
+    }
+
+    const fromToken = BRIDGE_TOKENS[fromChainId]?.find(t => t.address.toLowerCase() === fromTokenAddress.toLowerCase());
+    const decimals  = fromToken?.decimals ?? 18;
+    const amountInWei = amountIn.includes(".") ? toWei(amountIn, decimals) : amountIn;
+
+    const params: BuildTxParams = {
+      fromChainId, toChainId, fromTokenAddress, toTokenAddress,
+      amountIn: amountInWei, userAddress,
+      quote: quote as import("../bridges/IBridgeProvider.js").BridgeQuote,
+    };
+
+    const tx = await provider.buildTx(params);
+    res.json({ tx, warning: "This is a mock transaction — do not sign on mainnet." });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Internal server error";
+    res.status(500).json({ error: msg });
   }
-
-  const provider = getProvider(providerId);
-  if (!provider) {
-    res.status(404).json({ error: `Unknown provider: ${providerId}` });
-    return;
-  }
-
-  const fromToken = BRIDGE_TOKENS[fromChainId]?.find(t => t.address.toLowerCase() === fromTokenAddress.toLowerCase());
-  const decimals  = fromToken?.decimals ?? 18;
-  const amountInWei = amountIn.includes(".") ? toWei(amountIn, decimals) : amountIn;
-
-  const params: BuildTxParams = {
-    fromChainId, toChainId, fromTokenAddress, toTokenAddress,
-    amountIn: amountInWei, userAddress,
-    quote: quote as import("../bridges/IBridgeProvider.js").BridgeQuote,
-  };
-
-  const tx = await provider.buildTx(params);
-  res.json({ tx, warning: "This is a mock transaction — do not sign on mainnet." });
 });
 
 export default router;
