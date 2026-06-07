@@ -52,6 +52,7 @@ import crypto from "node:crypto";
 import { createPublicClient, http } from "viem";
 import { pool } from "@workspace/db";
 import { logger } from "./logger.js";
+import { getSolBalance } from "./solanaWallet.js";
 import {
   lockForOrder,
   getBalances,
@@ -186,7 +187,18 @@ async function verifySpotFunding(
       43114:    process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
       11155111: process.env.SEPOLIA_RPC_URL  ?? "https://ethereum-sepolia-rpc.publicnode.com",
     };
-    const rpcUrl = RPC_URLS[chainId];
+    let rpcUrl = RPC_URLS[chainId];
+    if (!rpcUrl) {
+      // Fall back to dynamically registered custom chains
+      try {
+        const { getCustomChains } = await import("./chainRegistry.js");
+        const customs = await getCustomChains();
+        const custom  = customs.find(c => c.chainId === chainId);
+        if (custom) rpcUrl = custom.rpcUrl;
+      } catch {
+        // Ignore dynamic lookup errors — fall through to the hard rejection below
+      }
+    }
     if (!rpcUrl) {
       return {
         valid:      false,

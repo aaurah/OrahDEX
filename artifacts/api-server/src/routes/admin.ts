@@ -29,6 +29,7 @@ import {
   TOPIC_ESCROW_RELEASED,
   logTopics,
 } from "../lib/evmWebhook.js";
+import { getAllChains, saveCustomChain, removeCustomChain } from "../lib/chainRegistry.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
 export { serviceState } from "../lib/serviceState.js";
@@ -3616,6 +3617,74 @@ router.post("/bsv-intents/:id/force-expire", requireAdminToken, async (req, res)
   } catch (err) {
     logger.error({ err }, "admin: bsv-intent force-expire failed");
     return res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
+/* ─── EVM CHAIN REGISTRY ─────────────────────────────────────────────────── */
+
+// GET /admin/chains — list all EVM chains (hardcoded + custom)
+router.get("/chains", requireAdminToken, async (_req, res) => {
+  try {
+    const chains = await getAllChains();
+    res.json([...chains.values()]);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to load chains" });
+  }
+});
+
+// POST /admin/chains — add a new EVM chain
+router.post("/chains", requireAdminToken, async (req, res) => {
+  try {
+    const { chainId, name, rpcUrl, nativeSymbol, blockExplorer, usdtAddress, usdcAddress, escrowAddress } = req.body;
+
+    // Validate required fields
+    if (!chainId || !name || !rpcUrl || !nativeSymbol || !blockExplorer) {
+      res.status(400).json({ error: "chainId, name, rpcUrl, nativeSymbol, blockExplorer are required" });
+      return;
+    }
+    const parsedChainId = parseInt(chainId);
+    if (isNaN(parsedChainId)) {
+      res.status(400).json({ error: "chainId must be a number" });
+      return;
+    }
+
+    // Validate EVM address formats if provided
+    const EVM_ADDR = /^0x[0-9a-fA-F]{40}$/;
+    for (const [field, val] of [["usdtAddress", usdtAddress], ["usdcAddress", usdcAddress], ["escrowAddress", escrowAddress]] as [string, unknown][]) {
+      if (val && !EVM_ADDR.test(val as string)) {
+        res.status(400).json({ error: `Invalid ${field} format` });
+        return;
+      }
+    }
+
+    await saveCustomChain({
+      chainId:       parsedChainId,
+      name,
+      rpcUrl,
+      nativeSymbol,
+      blockExplorer,
+      usdtAddress:   usdtAddress   || undefined,
+      usdcAddress:   usdcAddress   || undefined,
+      escrowAddress: escrowAddress || undefined,
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to save chain" });
+  }
+});
+
+// DELETE /admin/chains/:chainId — remove a custom chain
+router.delete("/chains/:chainId", requireAdminToken, async (req, res) => {
+  try {
+    const chainId = parseInt(String(req.params.chainId));
+    if (isNaN(chainId)) {
+      res.status(400).json({ error: "Invalid chainId" });
+      return;
+    }
+    await removeCustomChain(chainId);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to remove chain" });
   }
 });
 
