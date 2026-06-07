@@ -136,6 +136,129 @@ function derEncode(sig: { r: bigint; s: bigint }): Buffer {
   return Buffer.concat([Buffer.from([0x30, inner.length]), inner]);
 }
 
+/* ── Base58Check decode (for converting BSV addresses to hash160) ──────── */
+
+function base58CheckDecode(addr: string): Buffer {
+  const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let n = 0n;
+  for (const c of addr) {
+    const idx = B58.indexOf(c);
+    if (idx < 0) throw new Error(`Invalid Base58 char: ${c}`);
+    n = n * 58n + BigInt(idx);
+  }
+  let hex = n.toString(16);
+  if (hex.length % 2) hex = "0" + hex;
+  const leadingOnes = [...addr].filter(c => c === "1").length;
+  const payload = Buffer.concat([Buffer.alloc(leadingOnes), Buffer.from(hex, "hex")]);
+  const withoutCheck = payload.subarray(0, payload.length - 4);
+  const expectedCheck = payload.subarray(payload.length - 4);
+  if (!dsha256(withoutCheck).subarray(0, 4).equals(expectedCheck)) {
+    throw new Error("Base58Check checksum mismatch");
+  }
+  return withoutCheck.subarray(1); // strip version byte → 20-byte hash160
+}
+
+function p2pkhFromAddress(addr: string): Buffer {
+  return p2pkhScript(base58CheckDecode(addr));
+}
+
+/* ── P2SH spend (HTLC claim / refund) ──────────────────────────────────── */
+
+export interface P2SHSpendParams {
+  fundingTxid:   string;   // HTLC UTXO txid
+  fundingVout:   number;   // HTLC UTXO output index
+  fundingSat:    number;   // satoshis locked in the HTLC
+  scriptSigHex:  string;   // pre-built scriptSig (no ECDSA signing needed)
+  outputAddress: string;   // recipient BSV P2PKH address
+  feeSat?:       number;   // defaults to BSV_NET.feeSat
+  locktime?:     number;   // 0 for claim; deadlineBlocks for CLTV refund
+  sequence?:     number;   // 0xffffffff for claim; 0 for CLTV refund
+}
+
+export interface P2SHSpendResult {
+  success:   boolean;
+  txid:      string;
+  rawTxHex:  string;
+  broadcast: boolean;
+  error?:    string;
+}
+
+/**
+ * Build and broadcast a P2SH-spend transaction with a pre-built scriptSig.
+ * Used for HTLC intent claim (IF path, secret reveal) and refund (ELSE CLTV path).
+ * No ECDSA signing is required because the redeem scripts use OP_SHA256 / CLTV only.
+ */
+export async function broadcastP2SHSpend(params: P2SHSpendParams): Promise<P2SHSpendResult> {
+  const { fundingTxid, fundingVout, fundingSat, scriptSigHex, outputAddress } = params;
+  const fee      = params.feeSat   ?? FEE_SAT;
+  const locktime = params.locktime ?? 0;
+  const sequence = params.sequence ?? 0xffffffff;
+  const outSat   = fundingSat - fee;
+
+  if (outSat <= DUST_SAT) {
+    const msg = `P2SH spend: output ${outSat} sat is at or below dust — skipping`;
+    logger.warn({ fundingSat, fee }, msg);
+    return { success: false, txid: "", rawTxHex: "", broadcast: false, error: msg };
+  }
+
+  let outputScript: Buffer;
+  try {
+    outputScript = p2pkhFromAddress(outputAddress);
+  } catch (decErr) {
+    const msg = `P2SH spend: cannot decode output address ${outputAddress}: ${decErr}`;
+    logger.warn(msg);
+    return { success: false, txid: "", rawTxHex: "", broadcast: false, error: msg };
+  }
+
+  const scriptSig = Buffer.from(scriptSigHex, "hex");
+
+  const inputBuf = Buffer.concat([
+    txidToLE(fundingTxid),
+    uint32LE(fundingVout),
+    varint(scriptSig.length), scriptSig,
+    uint32LE(sequence),
+  ]);
+
+  const outputBuf = Buffer.concat([
+    uint64LE(outSat),
+    varint(outputScript.length),
+    outputScript,
+  ]);
+
+  const rawTx = Buffer.concat([
+    uint32LE(1),    // version
+    varint(1), inputBuf,
+    varint(1), outputBuf,
+    uint32LE(locktime),
+  ]);
+
+  const rawTxHex = rawTx.toString("hex");
+  const txid     = dsha256(rawTx).reverse().toString("hex");
+
+  try {
+    const res = await fetch(WOC_BROADCAST, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
+      body:    JSON.stringify({ txhex: rawTxHex }),
+      signal:  AbortSignal.timeout(15_000),
+    });
+
+    if (res.ok) {
+      const body = await res.text();
+      const broadcastedTxid = body.replace(/"/g, "").trim();
+      logger.info({ txid: broadcastedTxid || txid, fundingTxid }, "BSV P2SH spend broadcast SUCCESS");
+      return { success: true, txid: broadcastedTxid || txid, rawTxHex, broadcast: true };
+    }
+
+    const errText = await res.text().catch(() => "unknown");
+    logger.warn({ status: res.status, errText }, "BSV P2SH spend rejected by WoC");
+    return { success: false, txid, rawTxHex, broadcast: false, error: `WoC HTTP ${res.status}: ${errText}` };
+  } catch (err) {
+    logger.warn({ err }, "BSV P2SH spend network error");
+    return { success: false, txid, rawTxHex, broadcast: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /* ── Main build & broadcast function ───────────────────────────────────── */
 
 export interface BroadcastParams {
