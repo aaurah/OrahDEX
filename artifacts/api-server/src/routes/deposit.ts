@@ -10,7 +10,7 @@ import { Router } from "express";
 import { EVM_CHAINS } from "../lib/evmHtlc.js";
 import {
   isDepositAlreadyCredited,
-  recordVerifiedDeposit,
+  recordAndCreditDeposit,
 } from "../lib/depositAddresses.js";
 import { creditAvailable } from "../lib/ledger.js";
 import { pool } from "@workspace/db";
@@ -246,15 +246,19 @@ router.post("/deposit/bsv-verify", async (req, res) => {
       return;
     }
 
-    // Record first (prevents double-credit if credit step fails), then credit
-    await recordVerifiedDeposit({
+    // Atomically record the dedup row and credit the balance in one transaction.
+    // If the txHash was already credited (concurrent request or retry), credited=false.
+    const credited = await recordAndCreditDeposit({
       txHash,
       chainId:    0,
       userWallet: walletAddress,
       asset:      "BSV",
       amount:     String(bsvAmount),
     });
-    await creditAvailable(walletAddress, "BSV", String(bsvAmount));
+    if (!credited) {
+      res.status(409).json({ error: "This transaction has already been credited" });
+      return;
+    }
 
     req.log.info({ walletAddress, txHash, bsvAmount }, "BSV deposit credited");
     res.json({ success: true, asset: "BSV", amount: bsvAmount, txHash });
@@ -505,15 +509,18 @@ router.post("/deposit/solana-verify", async (req, res) => {
       return;
     }
 
-    // Record first (prevents double-credit if credit step fails), then credit
-    await recordVerifiedDeposit({
+    // Atomically record dedup row and credit in one transaction.
+    const solCredited = await recordAndCreditDeposit({
       txHash:     txHash.trim(),
       chainId:    -1,
       userWallet: walletAddress,
       asset:      "SOL",
       amount:     String(solAmount),
     });
-    await creditAvailable(walletAddress, "SOL", String(solAmount));
+    if (!solCredited) {
+      res.status(409).json({ error: "This transaction has already been credited" });
+      return;
+    }
 
     req.log.info({ walletAddress, txHash, solAmount }, "SOL deposit credited");
     res.json({ success: true, asset: "SOL", amount: solAmount, txHash });
