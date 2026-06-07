@@ -765,6 +765,13 @@ router.post("/user/api-keys", (req, res) => {
 router.delete("/user/api-keys/:id", (req, res) => {
   const k = userApiKeys.get(req.params.id);
   if (!k) { res.status(404).json({ error: "Key not found" }); return; }
+  // Require the caller to present the owning wallet address to prevent
+  // anyone with just a key ID from revoking someone else's key.
+  const callerWallet = ((req.body?.wallet ?? req.query.wallet) as string ?? "").toLowerCase().trim();
+  if (!callerWallet || callerWallet !== k.wallet) {
+    res.status(403).json({ error: "Wallet mismatch — only the key owner may revoke it" });
+    return;
+  }
   k.status = "revoked";
   res.json({ success: true });
 });
