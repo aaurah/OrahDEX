@@ -141,7 +141,8 @@ async function runArbCycle() {
     let tradesExecuted  = 0;
 
     for (const opp of opportunities) {
-      const net = opp.profitUSDT * (1 - TRADE_FEE_RATE * 3);
+      // profitUSDT already has 3-leg fees subtracted in findOpportunities via r1Net/r2Net
+      const net = opp.profitUSDT;
       if (net <= 0) continue;
       cycleProfitUSDT += net;
       tradesExecuted++;

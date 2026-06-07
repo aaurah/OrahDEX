@@ -169,15 +169,6 @@ router.post("/liquidity", async (req, res) => {
         }
       }
     } else if (signature) {
-      // Internal wallet but caller still supplied a sig — verify strictly.
-
-      try {
-        verifyLiquiditySignature({ walletAddress, nonce, signature, action: "add", poolId });
-      } catch (err: any) {
-        res.status(401).json({ error: "Invalid signature" });
-        return;
-      }
-    } else if (signature) {
       // Internal wallet but caller still supplied a sig — verify strictly so
       // a forged sig can't masquerade as a valid one for audit purposes.
       try {
