@@ -572,11 +572,6 @@ router.post("/orders", async (req, res) => {
                 !ref.startsWith("margin:"))
             );
             if (!isEvmExternal) return false;
-            // Reject cross-chain mismatch when both orders carry explicit chainId.
-            // Legacy orders (chainId IS NULL) are allowed through for backward compatibility.
-            if (chainId != null && candidate.chainId != null && chainId !== candidate.chainId) {
-              return false;
-            }
             return true;
           })
         : sorted;
@@ -607,11 +602,13 @@ router.post("/orders", async (req, res) => {
         const fillValue = fillQty * fillPrice;
         const isBot     = match.walletAddress === BOT_ADDRESS;
 
-        const tradeId      = crypto.randomUUID();
+        const tradeId       = crypto.randomUUID();
         const buyerNetwork  = side === "buy" ? networkType : (match.networkType ?? "evm");
         const sellerNetwork = side === "sell" ? networkType : (match.networkType ?? "evm");
         const buyerAddress  = side === "buy" ? body.walletAddress : match.walletAddress;
         const sellerAddress = side === "sell" ? body.walletAddress : match.walletAddress;
+        const buyerChainId  = side === "buy" ? chainId : (match.chainId ?? undefined);
+        const sellerChainId = side === "sell" ? chainId : (match.chainId ?? undefined);
 
         // ── Detect EVM/EVM wallet-to-wallet fill ─────────────────────────
         // A fill is "EVM external" when:
@@ -690,26 +687,8 @@ router.post("/orders", async (req, res) => {
               );
               continue;  // try next match
             }
-            // Different chains? → can't settle, skip match.
-            if (
-              prefetchedBuyerChain !== null &&
-              prefetchedSellerChain !== null &&
-              prefetchedBuyerChain !== prefetchedSellerChain
-            ) {
-              for (const addr of [buyerAddress, sellerAddress]) {
-                pushNotification(addr, {
-                  type:  "settlement_skipped",
-                  title: "Cross-chain match",
-                  body:  `Match found across different chains (${prefetchedSellerChain} vs ${prefetchedBuyerChain}) — cross-chain settlement is coming soon. Cancel to refund.`,
-                  pair:  symbol,
-                });
-              }
-              req.log.warn(
-                { incomingId: id, matchId: match.id, sellerChain: prefetchedSellerChain, buyerChain: prefetchedBuyerChain },
-                "orders: escrow precheck — cross-chain mismatch, skipping match",
-              );
-              continue;  // try next match
-            }
+            // Cross-chain escrow (buyer on chainA, seller on chainB): the escrow
+            // relayer releases each leg on its own chain, so this is now supported.
           }
         }
 
@@ -748,6 +727,8 @@ router.post("/orders", async (req, res) => {
               sellerAddress,
               buyerNetwork,
               sellerNetwork,
+              buyerChainId,
+              sellerChainId,
               isBot,
               feePct:        feeRate,
               log:           req.log,
