@@ -3,12 +3,18 @@ import { db } from "@workspace/db";
 import {
   nftCollectionsTable, nftsTable, nftListingsTable, nftBidsTable, nftActivityTable,
 } from "@workspace/db/schema";
-import { eq, and, desc, asc, ilike, or } from "drizzle-orm";
+import { eq, and, desc, asc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 
 const router: IRouter = Router();
 const USD_PEGGED_CURRENCIES = new Set(["USD", "USDT", "USDC", "USDB", "USDBC", "USDC.E", "USDBE", "BUSD", "TUSD", "USDD"]);
+
+const VALID_EVM_ADDR = /^0x[0-9a-fA-F]{40}$/;
+const VALID_BSV_ADDR = /^[1-9A-HJ-NP-Za-km-z]{25,34}$/;
+function isValidAddress(addr: string): boolean {
+  return VALID_EVM_ADDR.test(addr) || VALID_BSV_ADDR.test(addr);
+}
 
 // Scope the "not available" guard to /nft/* paths only.
 // A blanket router.use() without a path prefix intercepts every request that
@@ -123,6 +129,23 @@ function mockNftsForCollection(colId: string, chain: string, contract: string | 
   const colInfo = MOCK_COLLECTIONS.find(c => c.id === colId);
   const imageBase = colInfo?.imageUrl ?? "https://picsum.photos/seed/nft/400/400";
 
+  // Stable deterministic placeholder owners — not real addresses, clearly labelled
+  const PLACEHOLDER_OWNERS = [
+    "0x0000000000000000000000000000000000000001",
+    "0x0000000000000000000000000000000000000002",
+    "0x0000000000000000000000000000000000000003",
+    "0x0000000000000000000000000000000000000004",
+    "0x0000000000000000000000000000000000000005",
+    "0x0000000000000000000000000000000000000006",
+    "0x0000000000000000000000000000000000000007",
+    "0x0000000000000000000000000000000000000008",
+    "0x0000000000000000000000000000000000000009",
+    "0x000000000000000000000000000000000000000a",
+    "0x000000000000000000000000000000000000000b",
+    "0x000000000000000000000000000000000000000c",
+  ];
+  const LAST_SALE_MULTIPLIERS = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 0.88, 0.92, 0.97, 1.02, 1.10, 1.15];
+
   return seeds.slice(0, n).map((s, i) => ({
     id: `nft-${colId}-${i}`,
     collectionId: colId,
@@ -140,11 +163,11 @@ function mockNftsForCollection(colId: string, chain: string, contract: string | 
     ]),
     rarity: s.rare,
     rarityRank: s.rank,
-    lastSalePrice: String((parseFloat(colInfo?.floorPrice ?? "1") * (0.8 + Math.random() * 0.8)).toFixed(4)),
+    lastSalePrice: String((parseFloat(colInfo?.floorPrice ?? "1") * LAST_SALE_MULTIPLIERS[i]!).toFixed(4)),
     lastSaleCurrency: colInfo?.floorCurrency ?? "ETH",
     isWrapped: false,
     nativeChain: chain,
-    owner: `0x${Math.random().toString(16).slice(2).padEnd(40, "0")}`,
+    owner: PLACEHOLDER_OWNERS[i] ?? "0x0000000000000000000000000000000000000001",
   }));
 }
 
@@ -164,17 +187,18 @@ function mockListings(nfts: ReturnType<typeof mockNftsForCollection>, col: typeo
 
 function mockActivity(col: typeof MOCK_COLLECTIONS[0], n = 8) {
   const types = ["sale", "listing", "bid", "transfer"];
+  const PRICE_MULTIPLIERS = [0.90, 0.95, 1.00, 1.05, 0.92, 0.98, 1.03, 1.10];
   return Array.from({ length: n }, (_, i) => ({
     id: `act-${col.id}-${i}`,
     nftId: `nft-${col.id}-${i % 4}`,
     collectionId: col.id,
     type: types[i % types.length],
-    fromAddress: `0x${Math.random().toString(16).slice(2).padEnd(40, "0")}`,
-    toAddress:   `0x${Math.random().toString(16).slice(2).padEnd(40, "0")}`,
-    price: String((parseFloat(col.floorPrice) * (0.9 + Math.random() * 0.4)).toFixed(4)),
+    fromAddress: `0x000000000000000000000000000000000000000${(i + 1).toString(16)}`,
+    toAddress:   `0x00000000000000000000000000000000000000${((i + 5) % 16).toString(16).padStart(2, "0")}`,
+    price: String((parseFloat(col.floorPrice) * PRICE_MULTIPLIERS[i % PRICE_MULTIPLIERS.length]!).toFixed(4)),
     currency: col.floorCurrency,
-    priceUsd: String((parseFloat(col.floorPrice) * 1800 * (0.9 + Math.random() * 0.4)).toFixed(2)),
-    txHash: `0x${Math.random().toString(16).slice(2).padEnd(64, "0")}`,
+    priceUsd: String((parseFloat(col.floorPrice) * 1800 * PRICE_MULTIPLIERS[i % PRICE_MULTIPLIERS.length]!).toFixed(2)),
+    txHash: null,  // mock activity — no real txhash
     chain: col.chain,
   }));
 }
@@ -348,6 +372,13 @@ router.post("/nft/listings", async (req, res) => {
     if (!normalizedNftId || !seller || !normalizedPrice) {
       res.status(400).json({ error: "seller plus (nftId or post_id) and (price or price_bsv) are required" }); return;
     }
+    if (!isValidAddress(seller)) {
+      res.status(400).json({ error: "seller must be a valid EVM (0x…) or BSV address" }); return;
+    }
+    const parsedPrice = parseFloat(normalizedPrice);
+    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+      res.status(400).json({ error: "price must be a positive number" }); return;
+    }
 
     // Stablecoins are treated as $1 when no live quote is cached.
     const quoteUsd = FALLBACK_PRICES[normalizedCurrency]
@@ -387,6 +418,27 @@ router.post("/nft/listings", async (req, res) => {
   }
 });
 
+/* DELETE /nft/listings/:id — cancel listing (seller only) */
+router.delete("/nft/listings/:id", async (req, res) => {
+  try {
+    const { seller } = req.body as Record<string, string>;
+    if (!seller || !isValidAddress(seller)) {
+      res.status(400).json({ error: "seller address required" }); return;
+    }
+    const [listing] = await db.select().from(nftListingsTable).where(eq(nftListingsTable.id, req.params.id));
+    if (!listing) { res.status(404).json({ error: "Listing not found" }); return; }
+    if (listing.seller.toLowerCase() !== seller.toLowerCase()) {
+      res.status(403).json({ error: "Only the seller can cancel this listing" }); return;
+    }
+    await db.update(nftListingsTable)
+      .set({ status: "cancelled" })
+      .where(and(eq(nftListingsTable.id, req.params.id), eq(nftListingsTable.status, "active")));
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* POST /nft/bids — place bid */
 router.post("/nft/bids", async (req, res) => {
   try {
@@ -394,18 +446,28 @@ router.post("/nft/bids", async (req, res) => {
     if (!nftId || !bidder || !price) {
       res.status(400).json({ error: "nftId, bidder, price are required" }); return;
     }
+    if (!isValidAddress(bidder)) {
+      res.status(400).json({ error: "bidder must be a valid EVM (0x…) or BSV address" }); return;
+    }
+    const parsedBidPrice = parseFloat(price);
+    if (isNaN(parsedBidPrice) || parsedBidPrice <= 0) {
+      res.status(400).json({ error: "price must be a positive number" }); return;
+    }
 
-    const ethUsd = FALLBACK_PRICES["ETH"] ?? 2400;
-    const priceUsd = String((parseFloat(price) * (currency === "ETH" ? ethUsd : 1)).toFixed(2));
+    const normalizedCurrency = (currency ?? "ETH").toUpperCase();
+    const quoteUsd = FALLBACK_PRICES[normalizedCurrency]
+      ?? (USD_PEGGED_CURRENCIES.has(normalizedCurrency) ? 1 : null)
+      ?? 1;
+    const priceUsd = String((parsedBidPrice * quoteUsd).toFixed(2));
 
     const [bid] = await db.insert(nftBidsTable).values({
       id: uid(), nftId, collectionId, bidder, chain: chain ?? "ETH",
-      price, currency: currency ?? "ETH", priceUsd, status: "active",
+      price, currency: normalizedCurrency, priceUsd, status: "active",
     }).returning();
 
     await db.insert(nftActivityTable).values({
       id: uid(), nftId, collectionId, type: "bid", fromAddress: bidder,
-      price, currency, priceUsd, chain: chain ?? "ETH",
+      price, currency: normalizedCurrency, priceUsd, chain: chain ?? "ETH",
     });
 
     res.json({ success: true, bid });
