@@ -1610,7 +1610,236 @@ function NftChatPanel() {
   );
 }
 
-type ActiveTab = "feed" | "search" | "create" | "chat" | "profile";
+/* ── NFT Marketplace components ─────────────────────────────────────────── */
+
+interface NftListing { id: string; nftId: string; collectionId: string; seller: string; chain: string; price: string; currency: string; priceUsd: string | null; status: string; }
+interface NftCollection { id: string; name: string; slug: string; chain: string; imageUrl: string | null; floorPrice: string | null; floorCurrency: string | null; volume24h: string | null; totalSupply: number | null; isVerified: boolean; }
+interface NftItem { id: string; collectionId: string; name: string; imageUrl: string | null; rarity: string | null; rarityRank: number | null; owner: string | null; }
+
+function BuyBidModal({ listing, nft, mode, walletAddress, onClose, onDone }: {
+  listing: NftListing; nft: NftItem | null; mode: "buy" | "bid";
+  walletAddress: string | null; onClose: () => void; onDone: () => void;
+}) {
+  const [bidPrice, setBidPrice] = useState(listing.price);
+  const [currency, setCurrency] = useState(listing.currency || "ETH");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+  const [, navigate] = useLocation();
+
+  async function submit() {
+    if (!walletAddress) { navigate("/settings"); return; }
+    setLoading(true); setError("");
+    try {
+      if (mode === "buy") {
+        const r = await fetch(`${API}/nft/listings/${listing.id}/buy`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ buyer: walletAddress }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error ?? "Purchase failed");
+      } else {
+        const parsedPrice = parseFloat(bidPrice);
+        if (!parsedPrice || parsedPrice <= 0) throw new Error("Bid price must be > 0");
+        const r = await fetch(`${API}/nft/bids`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nftId: listing.nftId, collectionId: listing.collectionId, bidder: walletAddress, chain: listing.chain, price: String(parsedPrice), currency }),
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error ?? "Bid failed");
+      }
+      setDone(true);
+    } catch (err: any) { setError(err.message); }
+    finally { setLoading(false); }
+  }
+
+  return (
+    <Portal>
+      <div className="w-full h-full flex items-center justify-center" style={{ background: "rgba(0,0,0,0.80)" }} onClick={onClose}>
+        <div className="w-full max-w-sm rounded-2xl p-5" style={{ background: "hsl(var(--card))" }} onClick={e => e.stopPropagation()}>
+          {done ? (
+            <div className="text-center py-6">
+              <div className="text-5xl mb-3">{mode === "buy" ? "🎉" : "🏷️"}</div>
+              <h3 className="text-lg font-bold text-foreground mb-1">{mode === "buy" ? "Purchased!" : "Bid Placed!"}</h3>
+              <p className="text-sm text-muted-foreground mb-4">{mode === "buy" ? `${nft?.name ?? "NFT"} is now yours.` : `Your bid of ${bidPrice} ${currency} is live.`}</p>
+              <button onClick={onDone} className="px-6 py-2 rounded-xl text-sm font-bold" style={{ background: "#00ff88", color: "#000" }}>Done</button>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-foreground">{mode === "buy" ? "Buy Now" : "Place Bid"}</h3>
+                <button onClick={onClose}><X size={18} className="text-muted-foreground" /></button>
+              </div>
+              {nft?.imageUrl && (
+                <div className="rounded-xl overflow-hidden mb-4" style={{ aspectRatio: "1/1" }}>
+                  <img src={nft.imageUrl} alt={nft.name} className="w-full h-full object-cover" />
+                </div>
+              )}
+              <p className="text-sm font-bold text-foreground mb-1">{nft?.name ?? listing.nftId}</p>
+              {mode === "buy" ? (
+                <div className="p-3 rounded-xl bg-muted/20 mb-4 flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground">Price</span>
+                  <span className="font-bold text-foreground text-sm">{listing.price} {listing.currency}</span>
+                </div>
+              ) : (
+                <div className="space-y-2 mb-4">
+                  <label className="text-xs text-muted-foreground">Your bid</label>
+                  <div className="flex gap-2">
+                    <input type="number" value={bidPrice} onChange={e => setBidPrice(e.target.value)} step="0.001" min="0.001"
+                      className="flex-1 px-3 py-2 rounded-xl text-sm bg-muted/30 border border-border text-foreground outline-none focus:border-primary" />
+                    <select value={currency} onChange={e => setCurrency(e.target.value)}
+                      className="px-2 py-2 rounded-xl text-xs bg-muted/30 border border-border text-foreground outline-none">
+                      {["ETH","BSV","BNB","MATIC","USDT","USDC"].map(c => <option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">Floor: {listing.price} {listing.currency}</p>
+                </div>
+              )}
+              {error && <p className="text-xs text-red-400 mb-2">{error}</p>}
+              {!walletAddress && <p className="text-xs text-amber-400 mb-2">Connect a wallet to {mode === "buy" ? "purchase" : "bid"}.</p>}
+              <button onClick={submit} disabled={loading || !walletAddress}
+                className="w-full py-3 rounded-xl font-bold text-sm disabled:opacity-50 transition-all"
+                style={{ background: mode === "buy" ? "#00ff88" : "#4a9eff", color: "#000" }}>
+                {loading ? "Processing…" : !walletAddress ? "Connect Wallet" : mode === "buy" ? `Buy for ${listing.price} ${listing.currency}` : `Bid ${bidPrice} ${currency}`}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+function MarketTab({ walletAddress }: { walletAddress: string | null }) {
+  const [collections, setCollections] = useState<NftCollection[]>([]);
+  const [listings, setListings] = useState<NftListing[]>([]);
+  const [nftMap, setNftMap] = useState<Record<string, NftItem>>({});
+  const [selectedCol, setSelectedCol] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState<{ listing: NftListing; mode: "buy" | "bid" } | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [colR, lstR] = await Promise.all([
+        fetch(`${API}/nft/collections`),
+        fetch(`${API}/nft/listings${selectedCol ? `?collectionId=${selectedCol}` : ""}`),
+      ]);
+      if (colR.ok) { const d = await colR.json(); setCollections(d.collections ?? []); }
+      if (lstR.ok) {
+        const d = await lstR.json();
+        const lsts: NftListing[] = d.listings ?? [];
+        setListings(lsts);
+        // Batch-load NFT details
+        const ids = [...new Set(lsts.map(l => l.nftId))];
+        const items: Record<string, NftItem> = {};
+        await Promise.all(ids.map(async id => {
+          try {
+            const r = await fetch(`${API}/nft/items/${id}`);
+            if (r.ok) { const nd = await r.json(); items[id] = nd.nft ?? nd; }
+          } catch {}
+        }));
+        setNftMap(items);
+      }
+    } catch {} finally { setLoading(false); }
+  }, [selectedCol]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = selectedCol ? listings.filter(l => l.collectionId === selectedCol) : listings;
+
+  return (
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Collections strip */}
+      <div className="shrink-0 px-4 py-2 border-b border-border">
+        <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+          <button onClick={() => setSelectedCol(null)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${!selectedCol ? "bg-primary/20 text-primary" : "bg-muted/30 text-muted-foreground"}`}>
+            All Collections
+          </button>
+          {collections.map(col => (
+            <button key={col.id} onClick={() => setSelectedCol(col.id === selectedCol ? null : col.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 transition-all ${selectedCol === col.id ? "bg-primary/20 text-primary border border-primary/30" : "bg-muted/30 text-muted-foreground"}`}>
+              {col.imageUrl && <img src={col.imageUrl} alt="" className="w-4 h-4 rounded-full object-cover" />}
+              {col.name}
+              {col.floorPrice && <span className="ml-1 text-[9px] opacity-70">{col.floorPrice} {col.floorCurrency}</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Listings grid */}
+      <div className="flex-1 overflow-y-auto px-4 py-4">
+        {loading ? (
+          <div className="flex justify-center py-16"><RefreshCw className="animate-spin text-muted-foreground" size={20} /></div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-16 text-muted-foreground">
+            <ShoppingBag size={32} className="mx-auto mb-2 opacity-40" />
+            <p className="text-sm">No listings yet</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {filtered.map(lst => {
+              const nft = nftMap[lst.nftId];
+              return (
+                <div key={lst.id} className="rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/40 transition-all">
+                  <div className="aspect-square bg-muted/20 overflow-hidden">
+                    {nft?.imageUrl ? (
+                      <img src={nft.imageUrl} alt={nft.name} className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center"><ImageIcon size={24} className="text-muted-foreground/30" /></div>
+                    )}
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <p className="text-xs font-bold text-foreground truncate">{nft?.name ?? lst.nftId}</p>
+                    {nft?.rarity && (
+                      <span className="inline-block text-[9px] px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-semibold">{nft.rarity}</span>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-xs font-bold text-foreground">{lst.price} <span className="text-muted-foreground font-normal">{lst.currency}</span></div>
+                        {lst.priceUsd && <div className="text-[9px] text-muted-foreground">${parseFloat(lst.priceUsd).toFixed(2)}</div>}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] px-1 py-0.5 rounded font-bold" style={{ background: `${CHAIN_COLOR[lst.chain] ?? "#888"}22`, color: CHAIN_COLOR[lst.chain] ?? "#888" }}>{lst.chain}</span>
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button onClick={() => setModal({ listing: lst, mode: "buy" })}
+                        className="flex-1 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:scale-105"
+                        style={{ background: "#00ff88", color: "#000" }}>
+                        Buy
+                      </button>
+                      <button onClick={() => setModal({ listing: lst, mode: "bid" })}
+                        className="flex-1 py-1.5 rounded-lg text-[10px] font-bold border border-border text-muted-foreground hover:text-foreground hover:border-foreground/40 transition-all">
+                        Bid
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {modal && (
+        <BuyBidModal
+          listing={modal.listing}
+          nft={nftMap[modal.listing.nftId] ?? null}
+          mode={modal.mode}
+          walletAddress={walletAddress}
+          onClose={() => setModal(null)}
+          onDone={() => { setModal(null); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+type ActiveTab = "market" | "feed" | "search" | "create" | "chat" | "profile";
 
 export function NFTPage() {
   useSEO({
@@ -1620,7 +1849,7 @@ export function NFTPage() {
   });
   const { address, provider, network, internalEvmAddress } = useWalletStore();
   const profileAddress = getNftProfileAddress({ address, provider, network, internalEvmAddress });
-  const [activeTab, setActiveTab] = useState<ActiveTab>("feed");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("market");
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [mintPost, setMintPost] = useState<{ post: Post; mode: "buy" | "sell" } | null>(null);
   const [detailPost, setDetailPost] = useState<Post | null>(null);
@@ -1635,6 +1864,7 @@ export function NFTPage() {
   const openCreator = useCallback((a: string) => setCreatorAddress(a), []);
 
   const INNER_TABS: { key: ActiveTab; label: string; Icon: any }[] = [
+    { key: "market",  label: "Market",  Icon: ShoppingBag },
     { key: "feed",    label: "Feed",    Icon: Flame },
     { key: "search",  label: "Search",  Icon: Search },
     { key: "create",  label: "Create",  Icon: PlusSquare },
@@ -1671,6 +1901,7 @@ export function NFTPage() {
       </div>
 
       <div className="flex-1 overflow-hidden">
+        {activeTab === "market"  && <MarketTab walletAddress={profileAddress ?? address} />}
         {activeTab === "feed"    && <FeedTab likedIds={likedIds} onLike={handleLike} onMint={p => setMintPost({ post: p, mode: "buy" })} onOpen={openPost} onCreator={openCreator} />}
         {activeTab === "search"  && <SearchTab onCreator={openCreator} onOpenPost={openPost} />}
         {activeTab === "create"  && <CreateTab onSuccess={() => setActiveTab("feed")} />}

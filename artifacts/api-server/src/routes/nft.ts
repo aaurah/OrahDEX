@@ -21,10 +21,9 @@ function isValidAddress(addr: string): boolean {
 // reaches this router (e.g. /bsv-status, /staking/providers) because Express
 // walks sub-routers in registration order.
 router.use((req, res, next) => {
-  if (process.env.NFT_ENABLED !== "true" && req.path.startsWith("/nft")) {
-    return res.status(503).json({
-      error: "NFT features are not yet available. Coming soon.",
-    });
+  // NFT features are enabled by default; set NFT_ENABLED=false to disable
+  if (process.env.NFT_ENABLED === "false" && req.path.startsWith("/nft")) {
+    return res.status(503).json({ error: "NFT features are temporarily disabled." });
   }
   return next();
 });
@@ -492,6 +491,85 @@ router.get("/nft/portfolio/:address", async (req, res) => {
       .where(and(eq(nftBidsTable.bidder, address.toLowerCase()), eq(nftBidsTable.status, "active")));
 
     res.json({ owned, myListings, myBids });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /nft/listings/:id/buy — buy now (marks listing sold, transfers ownership) */
+router.post("/nft/listings/:id/buy", async (req, res) => {
+  try {
+    const { buyer } = req.body as Record<string, string>;
+    if (!buyer || !isValidAddress(buyer)) {
+      res.status(400).json({ error: "buyer address required" }); return;
+    }
+
+    const [listing] = await db.select().from(nftListingsTable)
+      .where(and(eq(nftListingsTable.id, req.params.id), eq(nftListingsTable.status, "active")));
+    if (!listing) { res.status(404).json({ error: "Listing not found or already sold" }); return; }
+    if (listing.seller.toLowerCase() === buyer.toLowerCase()) {
+      res.status(400).json({ error: "Cannot buy your own listing" }); return;
+    }
+
+    await db.update(nftListingsTable)
+      .set({ status: "sold" })
+      .where(and(eq(nftListingsTable.id, req.params.id), eq(nftListingsTable.status, "active")));
+
+    await db.update(nftsTable)
+      .set({ owner: buyer.toLowerCase() })
+      .where(eq(nftsTable.id, listing.nftId));
+
+    await db.insert(nftActivityTable).values({
+      id: uid(), nftId: listing.nftId, collectionId: listing.collectionId,
+      type: "sale", fromAddress: listing.seller, toAddress: buyer,
+      price: listing.price, currency: listing.currency, priceUsd: listing.priceUsd ?? "0",
+      chain: listing.chain,
+    });
+
+    // Cancel outstanding bids on this NFT now that it's sold
+    await db.update(nftBidsTable)
+      .set({ status: "cancelled" })
+      .where(and(eq(nftBidsTable.nftId, listing.nftId), eq(nftBidsTable.status, "active")));
+
+    res.json({ success: true, listing, buyer, price: listing.price, currency: listing.currency });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /nft/bids/:id/accept — NFT owner accepts the highest bid */
+router.post("/nft/bids/:id/accept", async (req, res) => {
+  try {
+    const { seller } = req.body as Record<string, string>;
+    if (!seller || !isValidAddress(seller)) {
+      res.status(400).json({ error: "seller address required" }); return;
+    }
+
+    const [bid] = await db.select().from(nftBidsTable)
+      .where(and(eq(nftBidsTable.id, req.params.id), eq(nftBidsTable.status, "active")));
+    if (!bid) { res.status(404).json({ error: "Bid not found or no longer active" }); return; }
+
+    const [nft] = await db.select().from(nftsTable).where(eq(nftsTable.id, bid.nftId));
+    if (!nft) { res.status(404).json({ error: "NFT not found" }); return; }
+    if ((nft.owner ?? "").toLowerCase() !== seller.toLowerCase()) {
+      res.status(403).json({ error: "Only the NFT owner can accept bids" }); return;
+    }
+
+    await db.update(nftBidsTable).set({ status: "accepted" }).where(eq(nftBidsTable.id, bid.id));
+    await db.update(nftBidsTable).set({ status: "cancelled" })
+      .where(and(eq(nftBidsTable.nftId, bid.nftId), eq(nftBidsTable.status, "active")));
+    await db.update(nftsTable).set({ owner: bid.bidder.toLowerCase() }).where(eq(nftsTable.id, bid.nftId));
+    await db.update(nftListingsTable).set({ status: "sold" })
+      .where(and(eq(nftListingsTable.nftId, bid.nftId), eq(nftListingsTable.status, "active")));
+
+    await db.insert(nftActivityTable).values({
+      id: uid(), nftId: bid.nftId, collectionId: bid.collectionId ?? "uncategorized",
+      type: "sale", fromAddress: seller, toAddress: bid.bidder,
+      price: bid.price, currency: bid.currency, priceUsd: bid.priceUsd ?? "0",
+      chain: bid.chain,
+    });
+
+    res.json({ success: true, bid, seller, buyer: bid.bidder, price: bid.price, currency: bid.currency });
   } catch (err: any) {
     res.status(500).json({ error: "Internal server error" });
   }
