@@ -73,8 +73,8 @@ export async function triggerStopOrders(): Promise<void> {
       );
 
       const sorted = counterOrders.sort((a, b) => {
-        const pa = parseFloat(a.price ?? "0");
-        const pb = parseFloat(b.price ?? "0");
+        const pa = parseFloat(a.price || "0") || 0;
+        const pb = parseFloat(b.price || "0") || 0;
         return order.side === "buy" ? pa - pb : pb - pa;
       });
 
