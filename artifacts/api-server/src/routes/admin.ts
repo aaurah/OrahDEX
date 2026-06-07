@@ -200,10 +200,9 @@ router.post("/auth", async (req, res) => {
     res.status(503).json({ error: "Admin credentials are not configured. Set ADMIN_EMAIL and ADMIN_PASSWORD secrets." });
     return;
   }
-  if (
-    !email || !password ||
-    email.trim().toLowerCase() !== validEmail.trim().toLowerCase() ||
-    password !== validPassword
+  const emailMatch    = !!email && email.trim().toLowerCase() === validEmail.trim().toLowerCase();
+  const passwordMatch = !!password && crypto.timingSafeEqual(Buffer.from(password), Buffer.from(validPassword));
+  if (!emailMatch || !passwordMatch
   ) {
     recordAuthFailure(req);
     res.status(401).json({ error: "Invalid email or password." });

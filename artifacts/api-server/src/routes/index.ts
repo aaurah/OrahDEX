@@ -58,6 +58,7 @@ import { getOrCreateBsvWallet, getBsvWallet } from "../lib/internalBsvWallet.js"
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
 import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { randomBytes } from "node:crypto";
 
 const router: IRouter = Router();
 
@@ -518,12 +519,16 @@ router.post("/passkey/transfer", async (req, res) => {
       res.status(400).json({ error: "credentialId, encryptedKey, iv and address are required" });
       return;
     }
-    // Generate 8-char alphanumeric code
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    // Generate 8-char alphanumeric code using rejection sampling (no modulo bias)
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 32 chars
+    const threshold = 256 - (256 % chars.length);      // 256 (no remainder, so threshold = 256 → accept all)
     let code = "";
-    const bytes = new Uint8Array(8);
-    crypto.getRandomValues(bytes);
-    for (const b of bytes) code += chars[b % chars.length];
+    while (code.length < 8) {
+      const buf = randomBytes(16);
+      for (let i = 0; i < buf.length && code.length < 8; i++) {
+        if (buf[i]! < threshold) code += chars[buf[i]! % chars.length];
+      }
+    }
     const key = `pk_tc:${code}`;
     const value = JSON.stringify({ credentialId, encryptedKey, iv, address, label: label ?? "Passkey Wallet", expiresAt: Date.now() + 10 * 60 * 1000 });
     await db.insert(platformSettingsTable)
@@ -744,9 +749,8 @@ router.get("/user/api-keys", (req, res) => {
 router.post("/user/api-keys", (req, res) => {
   const { wallet, name, permission = "read", rateLimit = 100 } = req.body as any;
   if (!wallet || !name) { res.status(400).json({ error: "wallet and name required" }); return; }
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  const rand = Array.from({ length: 20 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-  const id = `ukey_${Date.now().toString(36)}`;
+  const rand = randomBytes(15).toString("base64url");
+  const id = `ukey_${randomBytes(8).toString("hex")}`;
   const key = {
     id, wallet: wallet.toLowerCase(),
     name, permission, rateLimit: parseInt(rateLimit) || 100,
@@ -847,7 +851,7 @@ router.post("/user/bsv-wallet", async (req, res) => {
 
 /** POST /api/connect-session — desktop creates a pairing session */
 router.post("/connect-session", (_req, res) => {
-  const token = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+  const token = randomBytes(32).toString("hex");
   const now = Date.now();
   const session: ConnectSession = { token, status: "pending", createdAt: now, expiresAt: now + SESSION_TTL_MS };
   connectSessions.set(token, session);

@@ -20,29 +20,44 @@ import {
 import { pool } from "@workspace/db";
 import { getRequiredEnv } from "./requiredEnv.js";
 
-function deriveKey(): Buffer {
+// Format v2 (new): salt:iv:tag:ciphertext  — 4 hex parts, per-key random salt
+// Format v1 (legacy): iv:tag:ciphertext   — 3 hex parts, fixed salt (deprecated)
+const LEGACY_SALT = "orahdex-evm-salt-v1";
+
+function deriveKey(salt: Buffer | string): Buffer {
   return scryptSync(
     getRequiredEnv("EVM_WALLET_SECRET", "[FATAL] EVM_WALLET_SECRET is not set. Refusing to derive internal EVM wallet keys."),
-    "orahdex-evm-salt-v1",
+    salt,
     32,
   ) as Buffer;
 }
 
 function encrypt(plaintext: string): string {
-  const key = deriveKey();
-  const iv  = randomBytes(16);
+  const salt   = randomBytes(32);
+  const key    = deriveKey(salt);
+  const iv     = randomBytes(16);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const enc = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return [iv.toString("hex"), tag.toString("hex"), enc.toString("hex")].join(":");
+  const enc    = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const tag    = cipher.getAuthTag();
+  // v2: 4-part format: salt:iv:tag:ciphertext
+  return [salt.toString("hex"), iv.toString("hex"), tag.toString("hex"), enc.toString("hex")].join(":");
 }
 
 export function decrypt(stored: string): string {
-  const [ivHex, tagHex, encHex] = stored.split(":");
-  const key     = deriveKey();
-  const iv      = Buffer.from(ivHex, "hex");
-  const tag     = Buffer.from(tagHex, "hex");
-  const enc     = Buffer.from(encHex, "hex");
+  const parts = stored.split(":");
+  let key: Buffer, ivHex: string, tagHex: string, encHex: string;
+  if (parts.length === 4) {
+    const [saltHex, iv, tag, enc] = parts;
+    key = deriveKey(Buffer.from(saltHex!, "hex"));
+    ivHex = iv!; tagHex = tag!; encHex = enc!;
+  } else {
+    const [iv, tag, enc] = parts;
+    key = deriveKey(LEGACY_SALT);
+    ivHex = iv!; tagHex = tag!; encHex = enc!;
+  }
+  const iv  = Buffer.from(ivHex, "hex");
+  const tag = Buffer.from(tagHex, "hex");
+  const enc = Buffer.from(encHex, "hex");
   const d = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
   d.setAuthTag(tag);
   return Buffer.concat([d.update(enc), d.final()]).toString("utf8");

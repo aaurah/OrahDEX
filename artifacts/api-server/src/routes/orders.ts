@@ -361,17 +361,21 @@ router.post("/orders", async (req, res) => {
       recordConsumedOrderNonce(body.walletAddress, orderNonce, expiryUnixSec);
     }
 
-    // ── Validate and extract optional chainId (additive — existing clients unaffected) ──
+    // ── Validate and extract optional chainId ────────────────────────────────────
     // When provided, enables on-chain RPC balance verification in fundingVerifier
     // and allows the matching engine to reject cross-chain EVM mismatches.
-    // Must be a numeric value in the supported set; unknown values are silently ignored.
+    // Unknown chainId values are rejected (not silently dropped) to prevent
+    // orders from unrecognised chains slipping through without cross-chain protection.
     const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114, 11155111]);
-    const chainId = body.chainId != null
-      ? (() => {
-          const n = parseInt(String(body.chainId), 10);
-          return SUPPORTED_CHAIN_IDS.has(n) ? n : undefined;
-        })()
-      : undefined;
+    let chainId: number | undefined;
+    if (body.chainId != null) {
+      const n = parseInt(String(body.chainId), 10);
+      if (!SUPPORTED_CHAIN_IDS.has(n)) {
+        res.status(400).json({ error: `Unsupported chainId: ${n}. Supported: ${[...SUPPORTED_CHAIN_IDS].join(", ")}` });
+        return;
+      }
+      chainId = n;
+    }
 
     // Warn when an EVM external order arrives without chainId — the matching engine
     // can still handle it (legacy-compatible) but cannot reject cross-chain mismatches.
