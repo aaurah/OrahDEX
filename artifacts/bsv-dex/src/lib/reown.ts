@@ -6,13 +6,14 @@ import {
   type AppKitNetwork,
 } from "@reown/appkit/networks";
 
-// import.meta.env.VITE_REOWN_PROJECT_ID is baked in at build time via vite.config define.
-// The fallback to (window as any).__REOWN_PROJECT_ID__ allows run-time injection without
-// a full rebuild (e.g. set on window before the script loads in index.html).
+// Resolution order:
+//   1. Build-time: VITE_REOWN_PROJECT_ID baked in by vite.config define
+//   2. Run-time:   window.__REOWN_PROJECT_ID__ injected by Express into index.html
+//   3. Hardcoded fallback (public client-side identifier — safe to commit)
 const projectId: string =
   import.meta.env.VITE_REOWN_PROJECT_ID ||
   (typeof window !== "undefined" && (window as any).__REOWN_PROJECT_ID__) ||
-  "";
+  "04663615251cf13fb1b043d754e7a17f";
 
 const sepolia: AppKitNetwork = {
   id:             11155111,

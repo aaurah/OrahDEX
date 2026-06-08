@@ -26,7 +26,7 @@ const basePath = process.env.BASE_PATH ?? "/";
 const reownProjectId =
   process.env.VITE_REOWN_PROJECT_ID ||
   process.env.REOWN_PROJECT_ID ||
-  "";
+  "04663615251cf13fb1b043d754e7a17f";
 if (!reownProjectId) {
   console.warn(
     "[OrahDEX] VITE_REOWN_PROJECT_ID is not set — WalletConnect will not work. " +

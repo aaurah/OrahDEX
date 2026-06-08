@@ -378,7 +378,7 @@ if (process.env.NODE_ENV === "production") {
     const reownId =
       process.env.VITE_REOWN_PROJECT_ID ||
       process.env.REOWN_PROJECT_ID ||
-      "";
+      "04663615251cf13fb1b043d754e7a17f";
     let indexHtml = fs.existsSync(indexHtmlPath)
       ? fs.readFileSync(indexHtmlPath, "utf-8")
       : null;
