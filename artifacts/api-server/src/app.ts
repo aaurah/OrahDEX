@@ -371,10 +371,33 @@ if (process.env.NODE_ENV === "production") {
         res.setHeader("X-Robots-Tag", "index, follow");
       },
     }));
-    // SPA catch-all: any path not matched by /api or /v1 serves index.html
+    // SPA catch-all: any path not matched by /api or /v1 serves index.html.
+    // Inject window.__REOWN_PROJECT_ID__ so the frontend can use it at runtime
+    // even when the Vite build pre-dates the secret being added to the env.
+    const indexHtmlPath = path.join(frontendDist, "index.html");
+    const reownId =
+      process.env.VITE_REOWN_PROJECT_ID ||
+      process.env.REOWN_PROJECT_ID ||
+      "";
+    let indexHtml = fs.existsSync(indexHtmlPath)
+      ? fs.readFileSync(indexHtmlPath, "utf-8")
+      : null;
+    if (indexHtml && reownId) {
+      // Inject before closing </head> so the value is available before any script loads
+      indexHtml = indexHtml.replace(
+        "</head>",
+        `<script>window.__REOWN_PROJECT_ID__=${JSON.stringify(reownId)};</script></head>`,
+      );
+    }
     app.get(/^(?!\/api|\/v1).*$/, (_req: Request, res: Response) => {
       res.setHeader("X-Robots-Tag", "index, follow");
-      res.sendFile(path.join(frontendDist, "index.html"));
+      if (indexHtml) {
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.send(indexHtml);
+      } else {
+        res.sendFile(indexHtmlPath);
+      }
     });
   } else {
     logger.warn({ frontendDist }, "Frontend dist not found — skipping static serving");

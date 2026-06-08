@@ -21,6 +21,19 @@ const port = rawPort ? Number(rawPort) : 3000;
 
 const basePath = process.env.BASE_PATH ?? "/";
 
+// Accept VITE_REOWN_PROJECT_ID or the bare REOWN_PROJECT_ID so both naming
+// conventions work (Replit secrets often omit the VITE_ prefix).
+const reownProjectId =
+  process.env.VITE_REOWN_PROJECT_ID ||
+  process.env.REOWN_PROJECT_ID ||
+  "";
+if (!reownProjectId) {
+  console.warn(
+    "[OrahDEX] VITE_REOWN_PROJECT_ID is not set — WalletConnect will not work. " +
+    "Add this secret and rebuild."
+  );
+}
+
 export default defineConfig({
   base: basePath,
   optimizeDeps: {
@@ -32,7 +45,7 @@ export default defineConfig({
     ],
   },
   define: {
-    'import.meta.env.VITE_REOWN_PROJECT_ID': JSON.stringify(process.env.VITE_REOWN_PROJECT_ID ?? ''),
+    'import.meta.env.VITE_REOWN_PROJECT_ID': JSON.stringify(reownProjectId),
     'import.meta.env.VITE_API_BASE': JSON.stringify(process.env.VITE_API_BASE ?? ''),
   },
   plugins: [
