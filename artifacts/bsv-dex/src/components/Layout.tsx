@@ -1,6 +1,6 @@
 import { ReactNode, useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Link, useLocation } from "wouter";
-import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, BellOff, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target, Upload, Droplets, Headphones, MessageCircle, ArrowUpDown, TrendingUp, Search, Moon as MoonIcon, Filter, Bot, Code2 } from "lucide-react";
+import { Activity, Wallet, LayoutDashboard, LineChart, ArrowRightLeft, Menu, X, Sun, Moon, Monitor, Smartphone, Layers, Users, CreditCard, Bell, BellOff, CheckCheck, Info, AlertTriangle, Megaphone, Link2, ShoppingCart, Zap, Trash2, Copy, ExternalLink, Cpu, Waves, Gauge, Shield, Settings, RotateCcw, LogIn, LogOut, ChevronRight, Sparkles, Target, Upload, Download, Droplets, Headphones, MessageCircle, ArrowUpDown, TrendingUp, Search, Moon as MoonIcon, Filter, Bot, Code2 } from "lucide-react";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useThemeStore } from "@/store/useThemeStore";
@@ -95,6 +95,7 @@ const NOTIF_TYPE_ICON: Record<string, typeof Info> = {
   price_alert:        Activity,
   wallet_connected:   LogIn,
   wallet_disconnected: LogOut,
+  deposit:            Download,
   withdrawal:         Upload,
   liquidity:          Droplets,
   support:            Headphones,
@@ -114,6 +115,7 @@ const NOTIF_TYPE_COLOR: Record<string, string> = {
   price_alert:        "text-orange-400",
   wallet_connected:   "text-green-400",
   wallet_disconnected: "text-amber-400",
+  deposit:            "text-emerald-400",
   withdrawal:         "text-orange-400",
   liquidity:          "text-cyan-400",
   support:            "text-violet-400",
@@ -125,6 +127,7 @@ const NOTIF_TYPE_COLOR: Record<string, string> = {
 };
 
 const SEEN_ANN_KEY = "orahdex_announcements_seen_v1";
+const LAST_NOTIF_SINCE_KEY = "orahdex_last_notif_since_v1";
 
 function loadSeenAnnouncements(): Set<string> {
   try {
@@ -233,7 +236,11 @@ export function Layout({ children }: { children: ReactNode }) {
   const { notifs: announcements, unseenCount: announcementsUnseen, markAllSeen: markAnnouncementsSeen } = usePlatformAnnouncements();
   const { notifications, addNotification, markRead, markAllRead, clearAll, unreadCount } = useNotificationStore();
   const unread = unreadCount() + announcementsUnseen;
-  const lastPollRef = useRef<number>(0);
+  // Persisted across page reloads so we only fetch notifications newer than
+  // what we've already seen — prevents duplicate sounds/entries on reload.
+  const lastPollRef = useRef<number>(
+    Number(localStorage.getItem(LAST_NOTIF_SINCE_KEY) ?? "0") || 0,
+  );
 
   /* Poll /api/notifications every 20 s when wallet is connected */
   const pollNotifications = useCallback(async (addr: string) => {
@@ -243,7 +250,11 @@ export function Layout({ children }: { children: ReactNode }) {
       if (!r.ok) return;
       const { notifications: fresh } = await r.json() as { notifications: Array<{ id: string; type: string; title: string; body: string; timestamp: number; pair?: string; txid?: string; side?: string }> };
       if (fresh?.length) {
-        lastPollRef.current = Date.now();
+        // Use the server's max notification timestamp (not Date.now()) so
+        // in-flight notifications created during the round trip aren't missed.
+        const maxTs = Math.max(...fresh.map(n => n.timestamp));
+        lastPollRef.current = maxTs;
+        try { localStorage.setItem(LAST_NOTIF_SINCE_KEY, String(maxTs)); } catch { /* quota */ }
         fresh.forEach(n => addNotification({ type: n.type as any, title: n.title, body: n.body, pair: n.pair, txid: n.txid, side: n.side as any }));
       }
     } catch { /* network error — ignore */ }
