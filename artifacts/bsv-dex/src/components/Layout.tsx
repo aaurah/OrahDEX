@@ -281,19 +281,41 @@ export function Layout({ children }: { children: ReactNode }) {
   // Auto-sync Reown/EVM wallet into wallet store on page load (handles refresh reconnect)
   useEffect(() => {
     let sub: (() => void) | null = null;
-    import("@/lib/reown").then(({ subscribeReownAccount, fetchEvmBalance, parseChainFromCaip }) => {
+    import("@/lib/reown").then(({
+      subscribeReownAccount, fetchEvmBalance, parseChainFromCaip,
+      isEvmConnectRequested, setEvmConnectRequested, isUserDisconnecting,
+    }) => {
       sub = subscribeReownAccount(async (state) => {
         if (state.isConnected && state.address) {
-          const { address: current, chainId: currentChainId, connect, setBalance } = useWalletStore.getState();
+          const {
+            address: current, provider: currentProvider,
+            chainId: currentChainId, connect, setBalance,
+          } = useWalletStore.getState();
           const newChainId = parseChainFromCaip(state.caipAddress) ?? undefined;
-          if (!current) {
+
+          // Decide whether to update the store:
+          // 1. No wallet connected yet — always accept
+          // 2. User deliberately opened EVM modal (intent flag set) — override any existing wallet
+          // 3. Same Reown wallet but chain switched — update chainId
+          // Guard: Reown's auto-reconnect on page load must NOT override a non-Reown wallet.
+          const isIntentionalEvm = isEvmConnectRequested();
+          const isChainSwitch =
+            currentProvider === "reown" &&
+            current === state.address &&
+            newChainId !== undefined &&
+            newChainId !== currentChainId;
+
+          if (!current || isIntentionalEvm || isChainSwitch) {
+            if (isIntentionalEvm) setEvmConnectRequested(false);
             connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
             const bal = await fetchEvmBalance(state.address, newChainId ?? null);
             if (bal !== null) setBalance(bal);
-          } else if (newChainId && newChainId !== currentChainId) {
-            connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
-            const bal = await fetchEvmBalance(state.address, newChainId ?? null);
-            if (bal !== null) setBalance(bal);
+          }
+        } else if (!state.isConnected) {
+          // Reown externally disconnected (wallet extension revoked, not via our UI).
+          if (!isUserDisconnecting()) {
+            const { provider: currentProvider, disconnect } = useWalletStore.getState();
+            if (currentProvider === "reown") disconnect();
           }
         }
       });
