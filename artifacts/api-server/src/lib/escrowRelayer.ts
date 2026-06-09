@@ -37,7 +37,6 @@ import {
   sei,
   unichain, unichainSepolia,
 } from "viem/chains";
-import { getRequiredEnv } from "./requiredEnv.js";
 
 // ── Contract config ───────────────────────────────────────────────────────────
 
@@ -148,10 +147,8 @@ const EXPLORER: Record<number, string> = {
   43113:    "https://testnet.snowtrace.io/tx/",
 };
 
-const EVM_WALLET_SECRET = getRequiredEnv(
-  "EVM_WALLET_SECRET",
-  "[FATAL] EVM_WALLET_SECRET is not set. Refusing to start relayer.",
-);
+// Read lazily so the module loads even when EVM_WALLET_SECRET is absent.
+const EVM_WALLET_SECRET = process.env.EVM_WALLET_SECRET ?? "";
 
 export function escrowExplorerUrl(chainId: number, txHash: string): string {
   const base = EXPLORER[chainId] ?? EXPLORER[1]!;

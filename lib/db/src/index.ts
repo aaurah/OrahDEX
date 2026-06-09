@@ -4,12 +4,6 @@ import * as schema from "./schema";
 
 const { Pool } = pg;
 
-if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
-}
-
 // pg-connection-string warns that 'require', 'prefer', and 'verify-ca' will
 // change semantics in pg v9.  Explicitly upgrading to 'verify-full' adopts
 // the current (stricter) behaviour and silences the deprecation warning.
@@ -20,8 +14,25 @@ function resolvedDatabaseUrl(raw: string): string {
     .replace(/sslmode=verify-ca/g, "sslmode=verify-full");
 }
 
+const dbUrl = process.env.DATABASE_URL;
+
+if (!dbUrl) {
+  console.error(
+    "[OrahDEX] WARNING: DATABASE_URL is not set. " +
+    "The server will start but all database operations will fail. " +
+    "Provision a PostgreSQL database and set DATABASE_URL to enable full functionality."
+  );
+}
+
+// When DATABASE_URL is missing, use a placeholder URL. The pool will fail
+// at connection time (not at import time), so the server can start and serve
+// static files, health checks, and clearly-structured 503 responses.
+const _connectionString = dbUrl
+  ? resolvedDatabaseUrl(dbUrl)
+  : "postgresql://nodb:nodb@localhost:5432/nodb";
+
 export const pool = new Pool({
-  connectionString: resolvedDatabaseUrl(process.env.DATABASE_URL),
+  connectionString: _connectionString,
   // Keep TCP connections alive so the managed Postgres server does not silently
   // drop idle sockets. Without this the pool reuses dead connections and gets
   // "Authentication timed out" across all background workers simultaneously.
