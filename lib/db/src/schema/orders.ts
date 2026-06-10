@@ -7,7 +7,7 @@ export const ordersTable = pgTable("orders", {
   id: text("id").primaryKey(),
   symbol: text("symbol").notNull(),
   walletAddress: text("wallet_address").notNull(),
-  // "evm" = MetaMask/EVM wallet, "bsv" = BSV native wallet
+  // "evm" = MetaMask/EVM wallet, "bsv" = BSV native wallet, "sol" = Solana wallet
   networkType: text("network_type").default("evm"),
   side: text("side").notNull(),
   type: text("type").notNull(),
@@ -57,6 +57,7 @@ export const ordersTable = pgTable("orders", {
 }, (t) => [
   index("orders_symbol_status_idx").on(t.symbol, t.status),
   index("orders_wallet_status_idx").on(t.walletAddress, t.status),
+  index("orders_chain_status_idx").on(t.chainId, t.status),
   uniqueIndex("orders_wallet_nonce_uidx").on(sql`lower(${t.walletAddress})`, t.nonce),
 ]);
 
