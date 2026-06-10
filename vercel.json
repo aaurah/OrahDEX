@@ -1,6 +1,5 @@
 {
   "installCommand": "npm install -g pnpm@9 && pnpm install --frozen-lockfile",
   "buildCommand": "pnpm --filter @workspace/bsv-dex build",
-  "outputDirectory": "artifacts/bsv-dex/dist/public",
-  "framework": "vite"
+  "outputDirectory": "artifacts/bsv-dex/dist/public"
 }
