@@ -1,6 +1,7 @@
 import { useEffect, ReactNode, lazy, Suspense, Component } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import { Toaster } from "@/components/ui/toaster";
 import { PinPromptModal } from "@/components/PinPromptModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -532,6 +533,8 @@ function AppContent() {
       <PinPromptModal />
       {/* Wallet chooser — always mounted so it works across all layouts */}
       <WalletChooserDialog />
+      {/* Vercel Speed Insights */}
+      <SpeedInsights />
     </>
   );
 }
