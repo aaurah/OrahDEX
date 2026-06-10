@@ -21,7 +21,7 @@ import { logger } from "./logger.js";
 
 const LND_REST_URL  = process.env.LND_REST_URL?.replace(/\/$/, "") ?? "";
 const LND_MACAROON  = process.env.LND_MACAROON ?? "";
-const TLS_SKIP      = process.env.LND_TLS_SKIP_VERIFY === "true";
+const TLS_SKIP = process.env.LND_TLS_SKIP_VERIFY === "true" && process.env.NODE_ENV !== "production";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 

@@ -399,7 +399,7 @@ export async function closeFuturesPosition(
        WHERE wallet_address = $3 AND asset = 'USDT'`,
       [margin.toFixed(8), returnedMargin.toFixed(8), pos.wallet_address],
     );
-    if (!marginRows) throw new Error(`NO_MARGIN_ACCOUNT:${pos.wallet_address}`);
+    if ((marginRows ?? 0) < 1) throw new Error(`NO_MARGIN_ACCOUNT:${pos.wallet_address}`);
 
     await client.query(
       `UPDATE futures_positions

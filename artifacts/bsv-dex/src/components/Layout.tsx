@@ -424,7 +424,14 @@ export function Layout({ children }: { children: ReactNode }) {
     const dest = getNotifPath(n);
     if (!dest) return;
     setNotifOpen(false);
-    if (dest.startsWith("http")) {
+    const ALLOWED_EXTERNAL_ORIGINS = [
+      "https://whatsonchain.com", "https://etherscan.io", "https://basescan.org",
+      "https://arbiscan.io", "https://polygonscan.com", "https://bscscan.com",
+      "https://sepolia.etherscan.io", "https://solscan.io", "https://explorer.solana.com",
+    ];
+    const isSafeExternal = dest.startsWith("http") &&
+      ALLOWED_EXTERNAL_ORIGINS.some(o => dest.startsWith(o));
+    if (isSafeExternal) {
       window.open(dest, "_blank", "noopener,noreferrer");
     } else {
       navigate(dest);
