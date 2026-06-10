@@ -12,7 +12,7 @@ import { unlockFunds, getBalances } from "../lib/ledger.js";
 import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
 import { settleSpotFill }        from "../lib/spotSettlement.js";
 import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
-import { settleEscrowMatch, isEscrowChain, findEscrowChain } from "../lib/escrowRelayer.js";
+import { settleEscrowMatch, isEscrowChain, findEscrowChain, ESCROW_ADDRESSES } from "../lib/escrowRelayer.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
@@ -228,13 +228,21 @@ router.post("/orders", async (req, res) => {
       if (Number.isFinite(tf) && tf >= 0) feeRate = tf;
     } catch { /* fall back to default */ }
     const fee           = (total || 0) * feeRate;
-    const networkType   = body.networkType ?? (body.walletAddress.startsWith("0x") ? "evm" : "bsv");
 
     // Classify wallet source based on address format — explicit format detection
     // prevents clients from lying about their wallet type to bypass auth checks.
     const isEvmAddress = detectIsEvmAddress(body.walletAddress);
     const isBsvAddress = detectIsBsvAddress(body.walletAddress);
     const isSolAddress = detectIsSolAddress(body.walletAddress);
+
+    // Derive networkType from address format when not explicitly provided.
+    // Detection order matters: Solana addresses are base58 like BSV, so Sol must
+    // be checked before BSV; EVM is unambiguous (0x prefix + 40 hex chars).
+    const networkType = body.networkType ?? (
+      isEvmAddress ? "evm" :
+      isSolAddress ? "sol" :
+      "bsv"
+    );
 
     // Any recognized chain wallet format must be treated as external so clients
     // cannot spoof walletSource to bypass signature verification.
@@ -366,12 +374,17 @@ router.post("/orders", async (req, res) => {
     // and allows the matching engine to reject cross-chain EVM mismatches.
     // Unknown chainId values are rejected (not silently dropped) to prevent
     // orders from unrecognised chains slipping through without cross-chain protection.
-    const SUPPORTED_CHAIN_IDS = new Set([1, 56, 137, 8453, 42161, 10, 43114, 11155111]);
+    // Derive supported chain IDs from all registered EVM chains and escrow deployments.
+    // Adding a chain to EVM_CHAINS or ESCROW_ADDRESSES automatically allows it here.
+    const SUPPORTED_CHAIN_IDS = new Set([
+      ...Object.keys(EVM_CHAINS).map(Number),
+      ...Object.keys(ESCROW_ADDRESSES).map(Number),
+    ]);
     let chainId: number | undefined;
     if (body.chainId != null) {
       const n = parseInt(String(body.chainId), 10);
       if (!SUPPORTED_CHAIN_IDS.has(n)) {
-        res.status(400).json({ error: `Unsupported chainId: ${n}. Supported: ${[...SUPPORTED_CHAIN_IDS].join(", ")}` });
+        res.status(400).json({ error: `Unsupported chainId: ${n}. Supported: ${[...SUPPORTED_CHAIN_IDS].sort((a, b) => a - b).join(", ")}` });
         return;
       }
       chainId = n;
@@ -898,7 +911,7 @@ router.post("/orders", async (req, res) => {
                   escrowGated = true;
                 }
                 const friendly = result.skipReason.includes("cross-chain")
-                  ? "Match found on different chains — cross-chain settlement coming soon. Cancel to refund your locked funds."
+                  ? "Match found across different chains. Your funds are safe in escrow — cancel to refund and re-place matching your counterparty's chain."
                   : result.skipReason.includes("seller did not")
                     ? "Counterparty (seller) didn't complete on-chain lock. If you locked, your funds are safe — cancel to refund."
                     : result.skipReason.includes("buyer did not")
@@ -1035,10 +1048,19 @@ router.post("/orders", async (req, res) => {
             ? rawChainId : 1;
           const chainConfig = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
 
-          // Resolve token addresses from pair
+          // Resolve token addresses from pair — each stablecoin uses its own contract.
           const [base, quot] = symbol.split("/");
-          const baseIsNative = base === chainConfig.nativeSymbol || base === "ETH" || base === "BNB" || base === "MATIC";
-          const quoteIsUsdt  = quot === "USDT" || quot === "USDC";
+          const baseIsNative = base === chainConfig.nativeSymbol || base === "ETH" || base === "BNB" || base === "MATIC" || base === "AVAX";
+          // Resolve per-asset token contract address (null = native coin lock via lockETH).
+          const sellerToken =
+            baseIsNative                      ? null :
+            base === "USDT"                   ? (chainConfig.usdtAddress ?? null) :
+            base === "USDC"                   ? (chainConfig.usdcAddress ?? null) :
+            null;
+          const buyerToken =
+            quot === "USDT"                   ? (chainConfig.usdtAddress ?? null) :
+            quot === "USDC"                   ? (chainConfig.usdcAddress ?? null) :
+            null;
 
           // Amounts in smallest on-chain units
           const ETH_DECIMALS  = 18;
@@ -1055,10 +1077,10 @@ router.post("/orders", async (req, res) => {
               buyerAddress:  buyerAddress  as `0x${string}`,
               sellerAsset:   baseIsNative ? chainConfig.nativeSymbol : (base ?? "ETH"),
               sellerAmount:  fillWei.toString(),
-              sellerToken:   baseIsNative ? null : (chainConfig.usdtAddress ?? null),
-              buyerAsset:    quoteIsUsdt ? "USDT" : (quot ?? "USDT"),
+              sellerToken,
+              buyerAsset:    quot ?? "USDT",
               buyerAmount:   fillUsdt.toString(),
-              buyerToken:    quoteIsUsdt ? (chainConfig.usdtAddress ?? null) : null,
+              buyerToken,
             });
 
             req.log.info(
