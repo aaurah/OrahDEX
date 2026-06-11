@@ -14,3 +14,8 @@ Use `useRef<HTMLDivElement>` on the wrapper + `useEffect` that adds a `mousedown
 
 **swapChains with async token loading**
 Don't call `setFromToken/setToToken` in a swapChains function if `useEffect([fromChain])` / `useEffect([toChain])` already reload tokens on chain change — those effects will immediately overwrite the manually set tokens. Instead set tokens to `null` so the loading state is correct until the effect resolves.
+
+**Artifact port must match a .replit [[ports]] entry — CRITICAL**
+`restart_workflow` (and Replit's runtime health checker) requires the artifact's `localPort` in `artifact.toml` to have a matching `[[ports]]` entry in `.replit`. If the port is absent from `.replit [[ports]]`, the checker always fails with `DIDNT_OPEN_A_PORT` — even when the server IS binding to that port (confirmed by logs and direct curl).
+
+Fix: change `artifact.toml` `localPort` to a port that already has a `.replit [[ports]]` entry (e.g. 20180 mapped to externalPort 80), and update `[services.env] PORT` and `[services.production.run.env] PORT` to match. Apply via `verifyAndReplaceArtifactToml` — never edit artifact.toml directly. Kill any process holding that port first so the workflow can bind cleanly.
