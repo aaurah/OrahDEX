@@ -8,7 +8,7 @@ const ROOT = path.join(__dirname, "dist", "public");
 const PORT = Number(process.env.PORT ?? 3000);
 
 const MIME = {
-  ".html": "text/html",
+  ".html": "text/html; charset=utf-8",
   ".js":   "application/javascript",
   ".mjs":  "application/javascript",
   ".css":  "text/css",
@@ -26,10 +26,14 @@ const MIME = {
 
 const server = http.createServer((req, res) => {
   let urlPath = req.url.split("?")[0];
-
-  // Try the exact file first, then index.html for SPA routing
   let filePath = path.join(ROOT, urlPath);
-  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      filePath = path.join(ROOT, "index.html");
+    }
+  } catch {
     filePath = path.join(ROOT, "index.html");
   }
 
@@ -40,13 +44,19 @@ const server = http.createServer((req, res) => {
     const content = fs.readFileSync(filePath);
     res.writeHead(200, {
       "Content-Type": mime,
-      "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable",
+      "Cache-Control": ext === ".html" ? "no-cache, no-store, must-revalidate" : "public, max-age=31536000, immutable",
+      "X-Content-Type-Options": "nosniff",
     });
     res.end(content);
   } catch {
-    res.writeHead(404);
+    res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("Not found");
   }
+});
+
+server.on("error", (err) => {
+  console.error("Server error:", err.message);
+  process.exit(1);
 });
 
 server.listen(PORT, "0.0.0.0", () => {
