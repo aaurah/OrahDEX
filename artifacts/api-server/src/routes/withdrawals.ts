@@ -3,7 +3,7 @@ import { db, pool } from "@workspace/db";
 import { withdrawalRequestsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import crypto from "node:crypto";
-import { requireAdminToken } from "../middleware/adminAuth.js";
+import { requireAdminToken, isValidAdminToken } from "../middleware/adminAuth.js";
 import { processWithdrawal, EVM_USE_TESTNET } from "../lib/withdrawalProcessor.js";
 import { getEvmHotWalletAddress } from "../lib/exchangeHotWallet.js";
 import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
@@ -18,6 +18,27 @@ import {
 } from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
+
+// ── Per-wallet withdrawal rate limiter (5 requests / 60 s) ───────────────────
+const _withdrawRateMap = new Map<string, { count: number; resetAt: number }>();
+const WITHDRAW_RATE_WINDOW_MS = 60_000;
+const WITHDRAW_RATE_LIMIT = 5;
+
+function checkWithdrawRateLimit(req: import("express").Request, res: import("express").Response, key: string): boolean {
+  const now = Date.now();
+  const rec = _withdrawRateMap.get(key) ?? { count: 0, resetAt: now + WITHDRAW_RATE_WINDOW_MS };
+  if (now > rec.resetAt) {
+    _withdrawRateMap.set(key, { count: 1, resetAt: now + WITHDRAW_RATE_WINDOW_MS });
+    return true;
+  }
+  rec.count++;
+  _withdrawRateMap.set(key, rec);
+  if (rec.count > WITHDRAW_RATE_LIMIT) {
+    res.status(429).json({ error: "Too many withdrawal requests. Please wait 60 seconds before trying again." });
+    return false;
+  }
+  return true;
+}
 
 // ── POST /withdraw/challenge ───────────────────────────────────────────────────
 // Returns a server-issued nonce that the wallet must sign before calling
@@ -64,6 +85,7 @@ const BSV_ADDRESS_RE = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
 
 router.post("/withdrawals", async (req, res) => {
   const { walletAddress, asset, amount, network, networkLabel, recipient, fee, signature, bsvSignerAddress } = req.body;
+  if (walletAddress && !checkWithdrawRateLimit(req, res, String(walletAddress).toLowerCase())) return;
 
   if (!walletAddress || !asset || !amount || !network || !recipient) {
     res.status(400).json({ error: "Missing required fields: walletAddress, asset, amount, network, recipient" });
@@ -91,6 +113,12 @@ router.post("/withdrawals", async (req, res) => {
   const parsed = parseFloat(amount);
   if (isNaN(parsed) || parsed <= 0) {
     res.status(400).json({ error: "Amount must be a positive number" });
+    return;
+  }
+
+  const parsedFee = fee != null ? parseFloat(fee) : 0;
+  if (isNaN(parsedFee) || parsedFee < 0 || parsedFee >= parsed) {
+    res.status(400).json({ error: "Invalid fee: must be a non-negative number less than the withdrawal amount" });
     return;
   }
 
@@ -673,8 +701,19 @@ router.post("/admin/balance-adjust", requireAdminToken, async (req, res) => {
 });
 
 // ── GET /withdrawals/:walletAddress ──────────────────────────────────────────
-// Returns the full withdrawal history for a wallet, newest first.
+// Returns the full withdrawal history for a wallet.
+// Requires either a valid admin token or the X-Wallet-Address header matching
+// the URL param (so only the wallet owner or admins can see history).
 router.get("/withdrawals/:walletAddress", async (req, res) => {
+  const adminToken = req.headers["x-admin-token"] as string | undefined;
+  const callerHeader = (req.headers["x-wallet-address"] as string | undefined)?.toLowerCase();
+  const paramWallet = req.params.walletAddress?.toLowerCase();
+  const isAdmin = !!adminToken && isValidAdminToken(adminToken);
+  const isSelf = callerHeader && callerHeader === paramWallet;
+  if (!isAdmin && !isSelf) {
+    res.status(401).json({ error: "Authentication required. Include X-Wallet-Address header matching the requested wallet, or a valid admin token." });
+    return;
+  }
   try {
     const { walletAddress } = req.params;
     if (!walletAddress) {

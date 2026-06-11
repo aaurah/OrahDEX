@@ -10,7 +10,7 @@ import { Router } from "express";
 import { EVM_CHAINS } from "../lib/evmHtlc.js";
 import {
   isDepositAlreadyCredited,
-  recordVerifiedDeposit,
+  recordAndCreditDeposit,
 } from "../lib/depositAddresses.js";
 import { creditAvailable } from "../lib/ledger.js";
 import { pool } from "@workspace/db";
@@ -175,7 +175,7 @@ router.get("/deposit/bitcoin-address", async (req, res) => {
 // Verifies a BSV on-chain transaction and credits the internal ledger.
 // Body: { walletAddress, txHash }
 router.post("/deposit/bsv-verify", async (req, res) => {
-  const { walletAddress, txHash } = req.body ?? {};
+  const { walletAddress, txHash, bsvSignerAddress } = req.body ?? {};
 
   if (!walletAddress || !txHash) {
     res.status(400).json({ error: "walletAddress and txHash are required" });
@@ -211,23 +211,32 @@ router.post("/deposit/bsv-verify", async (req, res) => {
     }
 
     const tx = await txRes.json() as {
+      blockHeight?: number | null;
       vin?:  { addr?: string }[];
       vout?: { value: number; scriptPubKey?: { addresses?: string[] } }[];
     };
 
-    // Verify the transaction's sending address matches the claimed walletAddress.
-    // For BSV P2PKH wallets this is a direct address comparison. Skip the check
-    // for EVM addresses (0x…) since they identify the exchange account, not the
-    // BSV sending address.
-    if (!walletAddress.startsWith("0x")) {
-      const senderAddr = tx.vin?.[0]?.addr;
-      if (!senderAddr || senderAddr.toLowerCase() !== walletAddress.toLowerCase()) {
-        res.status(403).json({
-          error: "Transaction sender does not match walletAddress. " +
-                 "Only the owner of the BSV wallet that sent this transaction may claim the deposit.",
-        });
-        return;
-      }
+    // Require at least 1 on-chain confirmation to prevent double-spend attacks.
+    if (!tx.blockHeight || tx.blockHeight <= 0) {
+      res.status(400).json({ error: "Transaction is not yet confirmed. Please wait for at least 1 block confirmation and try again." });
+      return;
+    }
+
+    // Verify the transaction sender matches the account owner to prevent hijacking.
+    // BSV wallets: sender must match walletAddress directly.
+    // EVM wallets: require bsvSignerAddress to bind the BSV sender to the EVM account.
+    const expectedSender = walletAddress.startsWith("0x") ? bsvSignerAddress : walletAddress;
+    if (!expectedSender) {
+      res.status(400).json({ error: "bsvSignerAddress is required for EVM wallet BSV deposits" });
+      return;
+    }
+    const senderAddr = tx.vin?.[0]?.addr;
+    if (!senderAddr || senderAddr.toLowerCase() !== expectedSender.toLowerCase()) {
+      res.status(403).json({
+        error: "Transaction sender does not match the expected BSV address. " +
+               "Only the owner of the BSV wallet that sent this transaction may claim the deposit.",
+      });
+      return;
     }
 
     // Find output paying to deposit address
@@ -246,15 +255,19 @@ router.post("/deposit/bsv-verify", async (req, res) => {
       return;
     }
 
-    // Record first (prevents double-credit if credit step fails), then credit
-    await recordVerifiedDeposit({
+    // Atomically record the dedup row and credit the balance in one transaction.
+    // If the txHash was already credited (concurrent request or retry), credited=false.
+    const credited = await recordAndCreditDeposit({
       txHash,
       chainId:    0,
       userWallet: walletAddress,
       asset:      "BSV",
       amount:     String(bsvAmount),
     });
-    await creditAvailable(walletAddress, "BSV", String(bsvAmount));
+    if (!credited) {
+      res.status(409).json({ error: "This transaction has already been credited" });
+      return;
+    }
 
     req.log.info({ walletAddress, txHash, bsvAmount }, "BSV deposit credited");
     res.json({ success: true, asset: "BSV", amount: bsvAmount, txHash });
@@ -435,7 +448,7 @@ router.post("/deposit/solana-verify", async (req, res) => {
         method: "getTransaction",
         params: [
           txHash.trim(),
-          { encoding: "jsonParsed", maxSupportedTransactionVersion: 0 },
+          { encoding: "jsonParsed", maxSupportedTransactionVersion: 0, commitment: "finalized" },
         ],
       }),
     });
@@ -454,7 +467,7 @@ router.post("/deposit/solana-verify", async (req, res) => {
 
     const tx = rpcData.result;
     if (!tx) {
-      res.status(400).json({ error: "Transaction not found on Solana. Please wait for confirmation and try again." });
+      res.status(400).json({ error: "Transaction not yet finalized on Solana. Please wait for finalization (~30 seconds) and try again." });
       return;
     }
 
@@ -505,15 +518,18 @@ router.post("/deposit/solana-verify", async (req, res) => {
       return;
     }
 
-    // Record first (prevents double-credit if credit step fails), then credit
-    await recordVerifiedDeposit({
+    // Atomically record dedup row and credit in one transaction.
+    const solCredited = await recordAndCreditDeposit({
       txHash:     txHash.trim(),
       chainId:    -1,
       userWallet: walletAddress,
       asset:      "SOL",
       amount:     String(solAmount),
     });
-    await creditAvailable(walletAddress, "SOL", String(solAmount));
+    if (!solCredited) {
+      res.status(409).json({ error: "This transaction has already been credited" });
+      return;
+    }
 
     req.log.info({ walletAddress, txHash, solAmount }, "SOL deposit credited");
     res.json({ success: true, asset: "SOL", amount: solAmount, txHash });

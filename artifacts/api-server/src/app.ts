@@ -31,6 +31,8 @@ import { startAllReconcilers } from "./lib/selfHealingReconcilers.js";
 import { hydrateAlertsFromDB } from "./lib/alertBus.js";
 import { startExchangeApiRepairEngine } from "./lib/exchangeApiRepairEngine.js";
 import { startBsvIntentWatcher } from "./lib/bsvIntentWatcher.js";
+import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
+import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
 import { pool } from "@workspace/db";
 
 // Run the chain_id column migration at startup (idempotent — IF NOT EXISTS).
@@ -371,10 +373,33 @@ if (process.env.NODE_ENV === "production") {
         res.setHeader("X-Robots-Tag", "index, follow");
       },
     }));
-    // SPA catch-all: any path not matched by /api or /v1 serves index.html
+    // SPA catch-all: any path not matched by /api or /v1 serves index.html.
+    // Inject window.__REOWN_PROJECT_ID__ so the frontend can use it at runtime
+    // even when the Vite build pre-dates the secret being added to the env.
+    const indexHtmlPath = path.join(frontendDist, "index.html");
+    const reownId =
+      process.env.VITE_REOWN_PROJECT_ID ||
+      process.env.REOWN_PROJECT_ID ||
+      "04663615251cf13fb1b043d754e7a17f";
+    let indexHtml = fs.existsSync(indexHtmlPath)
+      ? fs.readFileSync(indexHtmlPath, "utf-8")
+      : null;
+    if (indexHtml && reownId) {
+      // Inject before closing </head> so the value is available before any script loads
+      indexHtml = indexHtml.replace(
+        "</head>",
+        `<script>window.__REOWN_PROJECT_ID__=${JSON.stringify(reownId)};</script></head>`,
+      );
+    }
     app.get(/^(?!\/api|\/v1).*$/, (_req: Request, res: Response) => {
       res.setHeader("X-Robots-Tag", "index, follow");
-      res.sendFile(path.join(frontendDist, "index.html"));
+      if (indexHtml) {
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.send(indexHtml);
+      } else {
+        res.sendFile(indexHtmlPath);
+      }
     });
   } else {
     logger.warn({ frontendDist }, "Frontend dist not found — skipping static serving");
@@ -431,6 +456,8 @@ _s(54_000, startOrderReconciler,      "startOrderReconciler");
 _s(60_000, startAllReconcilers,       "startAllReconcilers");
 _s(66_000, startExchangeApiRepairEngine, "startExchangeApiRepairEngine");
 _s(72_000, startBsvIntentWatcher,       "startBsvIntentWatcher");
+_s(78_000, startAdvancedOrderEngines,  "startAdvancedOrderEngines");
+_s(84_000, startFundingRateEngine,     "startFundingRateEngine");
 
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 

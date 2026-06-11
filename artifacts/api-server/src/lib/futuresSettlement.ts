@@ -186,14 +186,40 @@ export async function releaseFuturesMargin(
   amount:        number,
   asset:         string = "USDT",
 ): Promise<void> {
-  await pool.query(
-    `UPDATE futures_margin_accounts
-     SET locked     = GREATEST(locked - $1, 0),
-         available  = available + LEAST(locked, $1),
-         updated_at = now()
-     WHERE wallet_address = $2 AND asset = $3`,
-    [amount.toFixed(8), walletAddress, asset],
-  );
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error(`releaseFuturesMargin: invalid amount ${amount}`);
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ locked: string }>(
+      `SELECT locked FROM futures_margin_accounts
+       WHERE wallet_address = $1 AND asset = $2
+       FOR UPDATE`,
+      [walletAddress, asset],
+    );
+    const currentLocked = parseFloat(rows[0]?.locked ?? "0");
+    if (currentLocked < amount - 1e-8) {
+      throw new Error(
+        `releaseFuturesMargin: cannot release ${amount} ${asset} — only ${currentLocked} is locked for ${walletAddress}`,
+      );
+    }
+    const actualRelease = Math.min(amount, currentLocked);
+    await client.query(
+      `UPDATE futures_margin_accounts
+       SET locked     = locked - $1,
+           available  = available + $1,
+           updated_at = now()
+       WHERE wallet_address = $2 AND asset = $3`,
+      [actualRelease.toFixed(8), walletAddress, asset],
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -373,7 +399,7 @@ export async function closeFuturesPosition(
        WHERE wallet_address = $3 AND asset = 'USDT'`,
       [margin.toFixed(8), returnedMargin.toFixed(8), pos.wallet_address],
     );
-    if (!marginRows) throw new Error(`NO_MARGIN_ACCOUNT:${pos.wallet_address}`);
+    if ((marginRows ?? 0) < 1) throw new Error(`NO_MARGIN_ACCOUNT:${pos.wallet_address}`);
 
     await client.query(
       `UPDATE futures_positions

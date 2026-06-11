@@ -6,6 +6,12 @@ import { getCachedLEPrices, fetchLECoinPriceUSD } from "../lib/lePriceCache.js";
 
 const router: IRouter = Router();
 const ADDRESS_LIKE_RE = /^0x[0-9a-f]+$/i;
+const VALID_EVM_ADDR  = /^0x[0-9a-fA-F]{40}$/;
+const VALID_BSV_ADDR  = /^[1-9A-HJ-NP-Za-km-z]{25,34}$/;
+const VALID_TX_HASH   = /^0x[0-9a-fA-F]{64}$/;
+function isValidAddress(addr: string): boolean {
+  return VALID_EVM_ADDR.test(addr) || VALID_BSV_ADDR.test(addr);
+}
 
 function uid(): string { return crypto.randomUUID(); }
 
@@ -123,6 +129,10 @@ router.post("/social/posts", async (req, res) => {
   try {
     const { creator, creator_name, title, description, image_url, mint_price, mint_currency = "BSV", category = "art", max_supply, tags, chain: reqChain } = req.body as Record<string, any>;
     if (!creator || !title) { res.status(400).json({ error: "creator and title are required" }); return; }
+    if (!isValidAddress(creator)) {
+      res.status(400).json({ error: "creator must be a valid EVM (0x…) or BSV address" }); return;
+    }
+    if (title.length > 200) { res.status(400).json({ error: "title must be ≤ 200 characters" }); return; }
 
     const chain = (typeof reqChain === "string" && SUPPORTED_CHAINS.has(reqChain.toUpperCase()))
       ? reqChain.toUpperCase()
@@ -151,23 +161,43 @@ router.post("/social/posts/:id/mint", async (req, res) => {
   try {
     const { minter, tx_hash } = req.body as Record<string, string>;
     if (!minter) { res.status(400).json({ error: "minter is required" }); return; }
+    if (!isValidAddress(minter)) {
+      res.status(400).json({ error: "minter must be a valid EVM (0x…) or BSV address" }); return;
+    }
+    if (!tx_hash || !VALID_TX_HASH.test(tx_hash)) {
+      res.status(400).json({ error: "tx_hash (payment transaction hash, 0x + 64 hex chars) is required" }); return;
+    }
+
+    // Prevent double-mint with the same tx
+    const { rows: dupTx } = await pool.query(
+      "SELECT id FROM post_mints WHERE tx_hash = $1 LIMIT 1", [tx_hash],
+    );
+    if (dupTx.length > 0) {
+      res.status(409).json({ error: "This transaction has already been used to mint" }); return;
+    }
 
     const { rows: posts } = await pool.query("SELECT * FROM social_posts WHERE id = $1", [req.params.id]);
     if (!posts.length) { res.status(404).json({ error: "Post not found" }); return; }
     const post = posts[0];
 
-    if (post.max_supply && post.mint_count >= post.max_supply) {
+    // Atomic sold-out check: increment only if under max_supply
+    const updateResult = await pool.query(
+      `UPDATE social_posts
+          SET mint_count = mint_count + 1, updated_at = NOW()
+        WHERE id = $1
+          AND (max_supply IS NULL OR mint_count < max_supply)
+        RETURNING mint_count`,
+      [req.params.id],
+    );
+    if (updateResult.rows.length === 0) {
       res.status(409).json({ error: "Sold out" }); return;
     }
+    const newMintCount = updateResult.rows[0].mint_count;
 
     await pool.query(
       `INSERT INTO post_mints (id, post_id, minter, price, currency, tx_hash)
        VALUES ($1,$2,$3,$4,$5,$6)`,
-      [uid(), req.params.id, minter, post.mint_price, post.mint_currency, tx_hash ?? null],
-    );
-    await pool.query(
-      "UPDATE social_posts SET mint_count = mint_count + 1, updated_at = NOW() WHERE id = $1",
-      [req.params.id],
+      [uid(), req.params.id, minter, post.mint_price, post.mint_currency, tx_hash],
     );
 
     if (post.creator && minter && post.creator.toLowerCase() !== minter.toLowerCase()) {
@@ -179,7 +209,7 @@ router.post("/social/posts/:id/mint", async (req, res) => {
       });
     }
 
-    res.json({ success: true, mintCount: post.mint_count + 1, inscriptionId: post.inscription_id });
+    res.json({ success: true, mintCount: newMintCount, inscriptionId: post.inscription_id });
   } catch (err: any) {
     res.status(500).json({ error: "Internal server error" });
   }
@@ -190,6 +220,9 @@ router.post("/social/posts/:id/like", async (req, res) => {
   try {
     const { wallet_address } = req.body as Record<string, string>;
     if (!wallet_address) { res.status(400).json({ error: "wallet_address required" }); return; }
+    if (!isValidAddress(wallet_address)) {
+      res.status(400).json({ error: "wallet_address must be a valid EVM (0x…) or BSV address" }); return;
+    }
 
     const { rows: existing } = await pool.query(
       "SELECT id FROM post_likes WHERE post_id = $1 AND wallet_address = $2",
@@ -223,6 +256,10 @@ router.post("/social/posts/:id/comment", async (req, res) => {
   try {
     const { wallet_address, display_name, content } = req.body as Record<string, string>;
     if (!wallet_address || !content) { res.status(400).json({ error: "wallet_address and content required" }); return; }
+    if (!isValidAddress(wallet_address)) {
+      res.status(400).json({ error: "wallet_address must be a valid EVM (0x…) or BSV address" }); return;
+    }
+    if (content.length > 2000) { res.status(400).json({ error: "comment must be ≤ 2000 characters" }); return; }
 
     const { rows: creatorRows } = await pool.query(
       "SELECT username FROM creator_profiles WHERE LOWER(address) = LOWER($1) LIMIT 1",

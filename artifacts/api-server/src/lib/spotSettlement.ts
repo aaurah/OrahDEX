@@ -61,6 +61,10 @@ export interface SpotFillParams {
   sellerAddress: string;
   buyerNetwork:  string;    // "evm" | "bsv"
   sellerNetwork: string;
+  /** EVM chainId for buyer (undefined/null → same-chain or non-EVM) */
+  buyerChainId?:  number | null;
+  /** EVM chainId for seller (undefined/null → same-chain or non-EVM) */
+  sellerChainId?: number | null;
   /** True if the counter-order belongs to the liquidity bot */
   isBot:         boolean;
   /** Taker fee fraction for this market (e.g. 0.001 = 0.1%). Falls back to 0.1% if omitted. */
@@ -91,7 +95,7 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
   const {
     tradeId, newOrderId, matchOrder, pair,
     fillQty, fillPrice, buyerAddress, sellerAddress,
-    buyerNetwork, sellerNetwork, isBot, feePct, log,
+    buyerNetwork, sellerNetwork, buyerChainId, sellerChainId, isBot, feePct, log,
   } = params;
 
   const fillValue = fillQty * fillPrice;
@@ -99,8 +103,13 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
   const [baseAsset, quoteAsset = "USDT"] = pair.split("/");
 
   // ── 1. Cross-chain detection ─────────────────────────────────────────────
-  // Bot orders are always same-chain (the bot only operates on the internal ledger)
-  const isCrossChain = buyerNetwork !== sellerNetwork && !isBot;
+  // Bot orders are always same-chain (the bot only operates on the internal ledger).
+  // EVM↔EVM cross-chain: both parties on EVM but on different chain IDs.
+  const isEvmCrossChain =
+    buyerNetwork === "evm" && sellerNetwork === "evm" &&
+    buyerChainId != null && sellerChainId != null &&
+    buyerChainId !== sellerChainId;
+  const isCrossChain = (buyerNetwork !== sellerNetwork || isEvmCrossChain) && !isBot;
 
   // ── 2. HTLC generation (cross-chain only) ────────────────────────────────
   let htlcResult: Awaited<ReturnType<typeof buildHtlc>> | null = null;

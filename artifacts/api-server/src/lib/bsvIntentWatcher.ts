@@ -53,10 +53,13 @@ import {
 import {
   buildIntentClaimScriptSig,
   buildIntentRefundScriptSig,
+  canonicalizeIntent,
   verifyIntentSecret,
   verifyIntentPayload,
   INTENT_MIN_CONFIRMATIONS,
 } from "./bsvIntentSettlement.js";
+import { broadcastP2SHSpend } from "./bsvBroadcaster.js";
+import { getOrCreateWallet } from "./bsvWallet.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -92,54 +95,87 @@ async function queryFunding(htlcAddress: string, locktimeBlocks: number): Promis
   }
 }
 
-// ── Broadcast helpers (stub — plugs into existing broadcaster) ────────────
-// In production these call bsvBroadcaster.broadcastTx(rawHex).
-// For the initial integration the claim/refund logic is logged and the DB
-// transition is written; the actual broadcast wires in alongside the BSV
-// signing infrastructure already used by htlcWatcher.ts.
+// ── Broadcast helpers ─────────────────────────────────────────────────────
 
 async function broadcastClaim(intent: IntentRow): Promise<string | null> {
   try {
-    const claimSig = buildIntentClaimScriptSig(
-      intent.intentHash,   // intentHash is used as intentPayload proxy in watcher
-      intent.secret,
-      intent.redeemScript,
-    );
-    logger.info(
-      { intentId: intent.id, htlcAddress: intent.htlcAddress, scriptSigLen: claimSig.length },
-      "bsvIntentWatcher: claim scriptSig ready — broadcasting",
-    );
-    // TODO: wire to bsvBroadcaster.broadcastTx(buildRawClaimTx(intent, claimSig))
-    // WARNING: This returns a placeholder txid. No real BSV transaction is broadcast.
-    // User funds at htlcAddress are NOT being claimed on-chain until this is wired up.
-    logger.error(
-      { intentId: intent.id, htlcAddress: intent.htlcAddress },
-      "bsvIntentWatcher: CLAIM BROADCAST NOT WIRED — placeholder txid used, funds not moved on-chain",
-    );
-    return `claim-${intent.id.slice(0, 8)}`;
+    if (!intent.fundingTxid || intent.fundingVout == null || !intent.amountInSat) {
+      logger.error({ intentId: intent.id }, "bsvIntentWatcher: missing UTXO data for claim");
+      return null;
+    }
+
+    // Reconstruct canonical intent payload (same bytes committed in the redeem script)
+    const intentPayloadHex = canonicalizeIntent({
+      intentId:           intent.id,
+      nonce:              intent.nonce,
+      userAddress:        intent.userAddress,
+      solverAddress:      intent.solverAddress,
+      tokenIn:            intent.tokenIn,
+      tokenOut:           intent.tokenOut,
+      amountInSat:        intent.amountInSat,
+      minAmountOut:       intent.minAmountOut,
+      destinationChain:   intent.destinationChain,
+      destinationAddress: intent.destinationAddress,
+      deadlineTs:         intent.deadlineTs,
+      deadlineBlocks:     intent.deadlineBlocks,
+    }).toString("hex");
+
+    const claimSig = buildIntentClaimScriptSig(intentPayloadHex, intent.secret, intent.redeemScript);
+    const wallet   = await getOrCreateWallet();
+
+    const result = await broadcastP2SHSpend({
+      fundingTxid:   intent.fundingTxid,
+      fundingVout:   intent.fundingVout,
+      fundingSat:    intent.amountInSat,
+      scriptSigHex:  claimSig,
+      outputAddress: wallet.address,
+    });
+
+    if (result.broadcast) {
+      logger.info({ intentId: intent.id, txid: result.txid }, "bsvIntentWatcher: claim broadcast SUCCESS");
+      return result.txid;
+    }
+    logger.error({ intentId: intent.id, err: result.error }, "bsvIntentWatcher: claim broadcast failed");
+    return null;
   } catch (err) {
-    logger.error({ err, intentId: intent.id }, "bsvIntentWatcher: broadcastClaim failed");
+    logger.error({ err, intentId: intent.id }, "bsvIntentWatcher: broadcastClaim error");
     return null;
   }
 }
 
 async function broadcastRefund(intent: IntentRow): Promise<string | null> {
   try {
+    if (!intent.fundingTxid || intent.fundingVout == null || !intent.amountInSat) {
+      logger.error({ intentId: intent.id }, "bsvIntentWatcher: missing UTXO data for refund");
+      return null;
+    }
+
     const refundSig = buildIntentRefundScriptSig(intent.redeemScript);
-    logger.info(
-      { intentId: intent.id, htlcAddress: intent.htlcAddress, scriptSigLen: refundSig.length },
-      "bsvIntentWatcher: refund scriptSig ready — broadcasting",
-    );
-    // TODO: wire to bsvBroadcaster.broadcastTx(buildRawRefundTx(intent, refundSig))
-    // WARNING: This returns a placeholder txid. No real BSV transaction is broadcast.
-    // User funds at htlcAddress are NOT being refunded on-chain until this is wired up.
-    logger.error(
-      { intentId: intent.id, htlcAddress: intent.htlcAddress },
-      "bsvIntentWatcher: REFUND BROADCAST NOT WIRED — placeholder txid used, funds not moved on-chain",
-    );
-    return `refund-${intent.id.slice(0, 8)}`;
+
+    // Refund to user's BSV address; fall back to settlement wallet if address is not a valid BSV format
+    const isBsvAddress = /^[1-9A-HJ-NP-Za-km-z]{25,34}$/.test(intent.userAddress);
+    const refundAddress = isBsvAddress
+      ? intent.userAddress
+      : (await getOrCreateWallet()).address;
+
+    const result = await broadcastP2SHSpend({
+      fundingTxid:   intent.fundingTxid,
+      fundingVout:   intent.fundingVout,
+      fundingSat:    intent.amountInSat,
+      scriptSigHex:  refundSig,
+      outputAddress: refundAddress,
+      locktime:      intent.deadlineBlocks,  // CLTV: tx.nLockTime ≥ deadlineBlocks
+      sequence:      0,                      // must not be 0xffffffff for CLTV
+    });
+
+    if (result.broadcast) {
+      logger.info({ intentId: intent.id, txid: result.txid }, "bsvIntentWatcher: refund broadcast SUCCESS");
+      return result.txid;
+    }
+    logger.error({ intentId: intent.id, err: result.error }, "bsvIntentWatcher: refund broadcast failed");
+    return null;
   } catch (err) {
-    logger.error({ err, intentId: intent.id }, "bsvIntentWatcher: broadcastRefund failed");
+    logger.error({ err, intentId: intent.id }, "bsvIntentWatcher: broadcastRefund error");
     return null;
   }
 }

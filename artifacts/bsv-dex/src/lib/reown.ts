@@ -6,7 +6,14 @@ import {
   type AppKitNetwork,
 } from "@reown/appkit/networks";
 
-const projectId = import.meta.env.VITE_REOWN_PROJECT_ID || "";
+// Resolution order:
+//   1. Build-time: VITE_REOWN_PROJECT_ID baked in by vite.config define
+//   2. Run-time:   window.__REOWN_PROJECT_ID__ injected by Express into index.html
+//   3. Hardcoded fallback (public client-side identifier — safe to commit)
+const projectId: string =
+  import.meta.env.VITE_REOWN_PROJECT_ID ||
+  (typeof window !== "undefined" && (window as any).__REOWN_PROJECT_ID__) ||
+  "04663615251cf13fb1b043d754e7a17f";
 
 const sepolia: AppKitNetwork = {
   id:             11155111,
@@ -216,6 +223,24 @@ export async function disconnectReown(): Promise<void> {
     console.warn("[OrahDEX] Reown disconnect:", err);
   }
 }
+
+// Signals that the user deliberately opened the EVM connect modal.
+// Layout.tsx's subscribeReownAccount callback uses this to distinguish
+// intentional EVM connect (should override existing wallet) from Reown's
+// auto-reconnect on page load (should NOT override a non-Reown wallet).
+let _evmConnectRequested = false;
+let _evmConnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function setEvmConnectRequested(val: boolean): void {
+  _evmConnectRequested = val;
+  if (_evmConnectTimer) clearTimeout(_evmConnectTimer);
+  if (val) {
+    // Safety reset — flag consumed by callback or auto-clears after 2 min
+    _evmConnectTimer = setTimeout(() => { _evmConnectRequested = false; }, 120_000);
+  }
+}
+
+export function isEvmConnectRequested(): boolean { return _evmConnectRequested; }
 
 export async function switchReownChain(chainId: number): Promise<boolean> {
   const network = REOWN_NETWORKS.find(n => n.id === chainId);

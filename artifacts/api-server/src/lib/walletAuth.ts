@@ -32,6 +32,16 @@ import { sha512 } from "@noble/hashes/sha2.js";
 // We wire it here once at module load time using @noble/hashes/sha512.
 ed.etc.sha512Sync = (...msgs) => sha512(ed.etc.concatBytes(...msgs));
 
+// Timing-safe string equality — prevents nonce brute-force via response timing.
+function timingSafeStringEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) {
+    // Still run timingSafeEqual on padded buffers to avoid length-leak
+    crypto.timingSafeEqual(Buffer.alloc(1), Buffer.alloc(1));
+    return false;
+  }
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
+
 // ── EVM personal_sign recovery ────────────────────────────────────────────────
 
 function hashPersonalMessage(message: string): Uint8Array {
@@ -480,7 +490,7 @@ export function verifyExchangeSignature(
     );
   }
 
-  if (stored.nonce !== nonce) {
+  if (!timingSafeStringEqual(stored.nonce, nonce)) {
     throw new Error(
       "Exchange nonce mismatch. " +
       "Use the nonce returned by POST /trade/exchange/challenge.",
@@ -576,7 +586,7 @@ export function verifyLiquiditySignature(params: {
       "Request a fresh challenge via POST /liquidity/challenge.",
     );
   }
-  if (stored.nonce !== params.nonce) {
+  if (!timingSafeStringEqual(stored.nonce, params.nonce)) {
     throw new Error("Liquidity nonce mismatch.");
   }
   if (stored.action !== params.action) {
@@ -688,7 +698,7 @@ export function verifyP2PSignature(params: {
       "Request a fresh challenge via POST /p2p/challenge.",
     );
   }
-  if (stored.nonce !== params.nonce) {
+  if (!timingSafeStringEqual(stored.nonce, params.nonce)) {
     throw new Error("P2P nonce mismatch.");
   }
   if (stored.action !== params.action) {
@@ -777,7 +787,7 @@ export function verifyTradeSignature(params: {
   if (!stored || stored.expiresAt < Date.now()) {
     throw new Error("Trade challenge expired or not found. Request a fresh challenge.");
   }
-  if (stored.nonce !== params.nonce)               throw new Error("Trade nonce mismatch.");
+  if (!timingSafeStringEqual(stored.nonce, params.nonce)) throw new Error("Trade nonce mismatch.");
   if (stored.creator !== params.creator.toLowerCase()) throw new Error("Trade challenge creator mismatch.");
   if (stored.side !== params.side)                 throw new Error("Trade challenge side mismatch.");
   if (stored.amount !== params.amount)             throw new Error("Trade challenge amount mismatch.");

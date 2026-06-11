@@ -29,6 +29,7 @@ import {
   TOPIC_ESCROW_RELEASED,
   logTopics,
 } from "../lib/evmWebhook.js";
+import { getAllChains, saveCustomChain, removeCustomChain } from "../lib/chainRegistry.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
 export { serviceState } from "../lib/serviceState.js";
@@ -43,7 +44,7 @@ const router = Router();
 /* ─── EVM SIGNATURE RECOVERY ─────────────────────────────────────────────── */
 
 function hashPersonalMessage(message: string): Uint8Array {
-  const prefix = `\x19Ethereum Signed Message:\n${message.length}`;
+  const prefix = `\x19Ethereum Signed Message:\n${Buffer.byteLength(message, "utf8")}`;
   const buf = Buffer.concat([Buffer.from(prefix, "utf8"), Buffer.from(message, "utf8")]);
   return keccak_256(buf);
 }
@@ -200,10 +201,9 @@ router.post("/auth", async (req, res) => {
     res.status(503).json({ error: "Admin credentials are not configured. Set ADMIN_EMAIL and ADMIN_PASSWORD secrets." });
     return;
   }
-  if (
-    !email || !password ||
-    email.trim().toLowerCase() !== validEmail.trim().toLowerCase() ||
-    password !== validPassword
+  const emailMatch    = !!email && email.trim().toLowerCase() === validEmail.trim().toLowerCase();
+  const passwordMatch = !!password && crypto.timingSafeEqual(Buffer.from(password), Buffer.from(validPassword));
+  if (!emailMatch || !passwordMatch
   ) {
     recordAuthFailure(req);
     res.status(401).json({ error: "Invalid email or password." });
@@ -271,6 +271,7 @@ router.get("/auth/totp-uri", requireAdminToken, async (_req, res) => {
  * Returns a unique nonce + human-readable message for the wallet to sign.
  */
 router.post("/auth/wallet-challenge", (req, res) => {
+  if (!checkAuthRateLimit(req, res)) return;
   const { address } = req.body as { address?: string };
   if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
     res.status(400).json({ error: "Valid EVM address required (0x...)" });
@@ -332,14 +333,14 @@ router.post("/auth/wallet", async (req, res) => {
 /**
  * POST /admin/auth/logout — revoke all admin tokens (server-side sign-out).
  */
-router.post("/auth/logout", async (req, res) => {
+router.post("/auth/logout", requireAdminToken, async (req, res) => {
   await revokeAllAdminTokens();
   res.json({ success: true });
 });
 
 /* ─── WALLET WHITELIST ────────────────────────────────────────────────────── */
 
-router.get("/wallet-whitelist", async (_req, res) => {
+router.get("/wallet-whitelist", requireAdminToken, async (_req, res) => {
   try {
     const rows = await db.select().from(platformSettingsTable)
       .where(eq(platformSettingsTable.key, "admin_wallet_whitelist"));
@@ -348,7 +349,7 @@ router.get("/wallet-whitelist", async (_req, res) => {
   } catch { res.json({ addresses: [] }); }
 });
 
-router.put("/wallet-whitelist", async (req, res) => {
+router.put("/wallet-whitelist", requireAdminToken, async (req, res) => {
   try {
     const { addresses } = req.body as { addresses: string[] };
     const normalised = (addresses ?? []).map((a: string) => a.toLowerCase().trim()).filter(Boolean);
@@ -393,7 +394,7 @@ router.post("/security-vault/regenerate-bsv", async (_req, res) => {
     // Clear any custom address override since we have a fresh wallet
     await db.delete(platformSettingsTable)
       .where(eq(platformSettingsTable.key, "bsv_settlement_address_override"));
-    res.json({ address, wif, privKeyHex: privKey.toString("hex"), pubKeyHex });
+    res.json({ address, pubKeyHex });
   } catch { res.status(500).json({ error: "Failed to regenerate BSV wallet" }); }
 });
 
@@ -3617,6 +3618,74 @@ router.post("/bsv-intents/:id/force-expire", requireAdminToken, async (req, res)
   } catch (err) {
     logger.error({ err }, "admin: bsv-intent force-expire failed");
     return res.status(500).json({ error: err instanceof Error ? err.message : "Unknown error" });
+  }
+});
+
+/* ─── EVM CHAIN REGISTRY ─────────────────────────────────────────────────── */
+
+// GET /admin/chains — list all EVM chains (hardcoded + custom)
+router.get("/chains", requireAdminToken, async (_req, res) => {
+  try {
+    const chains = await getAllChains();
+    res.json([...chains.values()]);
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to load chains" });
+  }
+});
+
+// POST /admin/chains — add a new EVM chain
+router.post("/chains", requireAdminToken, async (req, res) => {
+  try {
+    const { chainId, name, rpcUrl, nativeSymbol, blockExplorer, usdtAddress, usdcAddress, escrowAddress } = req.body;
+
+    // Validate required fields
+    if (!chainId || !name || !rpcUrl || !nativeSymbol || !blockExplorer) {
+      res.status(400).json({ error: "chainId, name, rpcUrl, nativeSymbol, blockExplorer are required" });
+      return;
+    }
+    const parsedChainId = parseInt(chainId);
+    if (isNaN(parsedChainId)) {
+      res.status(400).json({ error: "chainId must be a number" });
+      return;
+    }
+
+    // Validate EVM address formats if provided
+    const EVM_ADDR = /^0x[0-9a-fA-F]{40}$/;
+    for (const [field, val] of [["usdtAddress", usdtAddress], ["usdcAddress", usdcAddress], ["escrowAddress", escrowAddress]] as [string, unknown][]) {
+      if (val && !EVM_ADDR.test(val as string)) {
+        res.status(400).json({ error: `Invalid ${field} format` });
+        return;
+      }
+    }
+
+    await saveCustomChain({
+      chainId:       parsedChainId,
+      name,
+      rpcUrl,
+      nativeSymbol,
+      blockExplorer,
+      usdtAddress:   usdtAddress   || undefined,
+      usdcAddress:   usdcAddress   || undefined,
+      escrowAddress: escrowAddress || undefined,
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to save chain" });
+  }
+});
+
+// DELETE /admin/chains/:chainId — remove a custom chain
+router.delete("/chains/:chainId", requireAdminToken, async (req, res) => {
+  try {
+    const chainId = parseInt(String(req.params.chainId));
+    if (isNaN(chainId)) {
+      res.status(400).json({ error: "Invalid chainId" });
+      return;
+    }
+    await removeCustomChain(chainId);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Failed to remove chain" });
   }
 });
 

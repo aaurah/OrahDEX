@@ -26,7 +26,12 @@ export const useWalletModalStore = create<WalletModalState>(() => ({
   close: () => useWalletModalStore.setState({ isOpen: false }),
 
   openEvm: () => {
-    import('@/lib/reown').then(({ modal }) => modal.open({ view: 'Connect' }));
+    import('@/lib/reown').then(({ modal, setEvmConnectRequested }) => {
+      // Signal intentional EVM connect so the subscribeReownAccount callback
+      // in Layout.tsx can safely override any currently-connected wallet.
+      setEvmConnectRequested(true);
+      modal.open({ view: 'Connect' });
+    });
   },
 
   openOrahWallet: () => useWalletModalStore.setState({ isOrahWalletOpen: true }),

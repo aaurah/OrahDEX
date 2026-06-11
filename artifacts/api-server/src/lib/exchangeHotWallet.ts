@@ -27,27 +27,45 @@ import { logger } from "./logger.js";
 import { getRequiredEnv } from "./requiredEnv.js";
 
 // ── Encryption (AES-256-GCM) ───────────────────────────────────────────────────
+// Format v2 (new): salt:iv:tag:ciphertext  — 4 hex parts, per-key random salt
+// Format v1 (legacy): iv:tag:ciphertext   — 3 hex parts, fixed salt (deprecated)
 
-function deriveKey(): Buffer {
+const LEGACY_SALT = "orahdex-hot-wallet-salt-v1";
+
+function deriveKey(salt: Buffer | string): Buffer {
   return scryptSync(
     getRequiredEnv("EVM_WALLET_SECRET", "[FATAL] EVM_WALLET_SECRET is not set. Refusing to derive hot-wallet encryption keys."),
-    "orahdex-hot-wallet-salt-v1",
+    salt,
     32,
   ) as Buffer;
 }
 
 function encrypt(plain: string): string {
-  const key  = deriveKey();
+  const salt = randomBytes(32);
+  const key  = deriveKey(salt);
   const iv   = randomBytes(16);
   const c    = createCipheriv("aes-256-gcm", key, iv);
   const enc  = Buffer.concat([c.update(plain, "utf8"), c.final()]);
   const tag  = c.getAuthTag();
-  return [iv.toString("hex"), tag.toString("hex"), enc.toString("hex")].join(":");
+  // v2: 4-part format: salt:iv:tag:ciphertext
+  return [salt.toString("hex"), iv.toString("hex"), tag.toString("hex"), enc.toString("hex")].join(":");
 }
 
 function decrypt(stored: string): string {
-  const [ivHex, tagHex, encHex] = stored.split(":");
-  const key = deriveKey();
+  const parts = stored.split(":");
+  let ivHex: string, tagHex: string, encHex: string;
+  let key: Buffer;
+  if (parts.length === 4) {
+    // v2: per-key random salt
+    const [saltHex, iv, tag, enc] = parts;
+    key = deriveKey(Buffer.from(saltHex!, "hex"));
+    ivHex = iv!; tagHex = tag!; encHex = enc!;
+  } else {
+    // v1 legacy: fixed salt
+    const [iv, tag, enc] = parts;
+    key = deriveKey(LEGACY_SALT);
+    ivHex = iv!; tagHex = tag!; encHex = enc!;
+  }
   const d   = createDecipheriv("aes-256-gcm", key, Buffer.from(ivHex, "hex"), { authTagLength: 16 });
   d.setAuthTag(Buffer.from(tagHex, "hex"));
   return Buffer.concat([d.update(Buffer.from(encHex, "hex")), d.final()]).toString("utf8");

@@ -490,6 +490,43 @@ router.post("/copy/vaults/:id/trade", async (req, res) => {
       .set({ totalTrades: newTrades, updatedAt: new Date() })
       .where(eq(copyVaultsTable.id, vault.id));
 
+    // Auto mark-to-market: on SELL trades, realize P&L into vault TVL + share price.
+    // Compute FIFO average cost from all historical BUY trades for this (vault, symbol).
+    if (side === "sell") {
+      try {
+        const buyHistory = await db
+          .select({ price: copyVaultTradesTable.price, quantity: copyVaultTradesTable.quantity })
+          .from(copyVaultTradesTable)
+          .where(and(
+            eq(copyVaultTradesTable.vaultId, vault.id),
+            eq(copyVaultTradesTable.symbol, symbol as string),
+            eq(copyVaultTradesTable.side, "buy"),
+            eq(copyVaultTradesTable.status, "executed"),
+          ));
+
+        const totalBuyQty  = buyHistory.reduce((s, t) => s + Number(t.quantity), 0);
+        const totalBuyCost = buyHistory.reduce((s, t) => s + Number(t.price) * Number(t.quantity), 0);
+        const avgBuyPrice  = totalBuyQty > 0 ? totalBuyCost / totalBuyQty : p;
+        const realizedPnl  = (p - avgBuyPrice) * q;
+
+        if (realizedPnl !== 0 && Number.isFinite(realizedPnl)) {
+          await pool.query(
+            `UPDATE copy_vaults
+                SET tvl         = GREATEST((tvl::numeric + $1)::text, '0'),
+                    share_price = CASE WHEN total_shares::numeric > 0
+                                       THEN GREATEST(tvl::numeric + $1, 0) / total_shares::numeric
+                                       ELSE 1 END,
+                    updated_at  = now()
+              WHERE id = $2`,
+            [realizedPnl.toFixed(8), vault.id],
+          );
+          logger.info({ vaultId: vault.id, symbol, realizedPnl }, "CopyVault: share price updated after trade");
+        }
+      } catch (pnlErr) {
+        logger.warn({ err: pnlErr, vaultId: vault.id }, "CopyVault: failed to auto-sync share price");
+      }
+    }
+
     res.json({ trade });
   } catch (err: any) {
     logger.error({ err: err?.message }, "copy vault trade error");

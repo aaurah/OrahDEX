@@ -10,7 +10,7 @@ import { Router } from "express";
 import { randomUUID } from "crypto";
 import { db } from "@workspace/db";
 import { htlcLocksTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { buildHtlc, verifySecret } from "../lib/htlc.js";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
@@ -40,6 +40,9 @@ const CCTP_CHAINS: Record<number, { name: string; domain: number }> = {
   137:   { name: "Polygon", domain: 7 },
 };
 const cctpIntents = new Map<string, CctpIntent>();
+
+const VALID_EVM_ADDR = /^0x[0-9a-fA-F]{40}$/;
+const VALID_BSV_ADDR = /^[1-9A-HJ-NP-Za-km-z]{26,35}$/;
 
 // ── Current BSV block height (reused from chain monitor) ──────────────────────
 async function getCurrentBlockHeight(): Promise<number> {
@@ -124,6 +127,22 @@ router.post("/htlc/create", async (req, res) => {
       res.status(400).json({ error: "Single bridge amount capped at 1,000 BSV." });
       return;
     }
+    if (senderBsvAddress !== undefined && senderBsvAddress !== null && senderBsvAddress !== "") {
+      if (!VALID_BSV_ADDR.test(senderBsvAddress)) {
+        res.status(400).json({ error: "Invalid senderBsvAddress format. Expected a valid BSV base58 address." });
+        return;
+      }
+    }
+    if (recipientEvmAddress !== undefined && recipientEvmAddress !== null && recipientEvmAddress !== "") {
+      if (!VALID_EVM_ADDR.test(recipientEvmAddress)) {
+        res.status(400).json({ error: "Invalid recipientEvmAddress format. Expected 0x followed by 40 hex characters." });
+        return;
+      }
+    }
+    if (!senderBsvAddress && !recipientEvmAddress) {
+      res.status(400).json({ error: "At least one of senderBsvAddress or recipientEvmAddress is required to credit the bridge deposit." });
+      return;
+    }
 
     // Get current block height to compute absolute locktime
     const currentBlock = await getCurrentBlockHeight();
@@ -195,15 +214,23 @@ router.get("/htlc/:id", async (req, res) => {
     if (lock.status === "pending") {
       const check = await checkHtlcFunding(lock.htlcAddress, parseFloat(lock.amountBsv));
       if (check.funded) {
-        // Update status to funded
-        await db.update(htlcLocksTable)
+        // Atomic conditional transition: only proceeds if status is still "pending".
+        // The AND status = 'pending' guard prevents double-credit when two concurrent
+        // requests both see the HTLC as funded before either has committed.
+        const fundedRows = await db.update(htlcLocksTable)
           .set({
             status:      "funded",
             fundingTxid: check.txid ?? null,
             updatedAt:   new Date(),
           })
-          .where(eq(htlcLocksTable.id, id));
+          .where(and(eq(htlcLocksTable.id, id), eq(htlcLocksTable.status, "pending")))
+          .returning({ id: htlcLocksTable.id });
 
+        if (fundedRows.length === 0) {
+          // Another request already transitioned this HTLC — re-read and return current state
+          const refreshed = await db.select().from(htlcLocksTable).where(eq(htlcLocksTable.id, id));
+          if (refreshed.length > 0) Object.assign(lock, refreshed[0]);
+        } else {
         lock.status      = "funded";
         lock.fundingTxid = check.txid ?? null;
 
@@ -239,6 +266,7 @@ router.get("/htlc/:id", async (req, res) => {
         } catch (e: any) {
           logger.error({ lockId: id, err: e?.message }, "Bridge: failed to credit BSV balance");
         }
+        } // end else (fundedRows.length > 0)
       }
     }
 

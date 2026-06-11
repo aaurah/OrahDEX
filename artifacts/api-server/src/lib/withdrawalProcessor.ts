@@ -28,6 +28,14 @@ import { getOrCreateWallet, fetchWalletBalance, buildAndBroadcastBsvTx } from ".
 import { getOrCreateEvmHotWallet } from "./exchangeHotWallet.js";
 import { isVaultConfigured, vaultWithdraw } from "./orahVault.js";
 import { logger } from "./logger.js";
+import {
+  getSolHotWallet,
+  getSolBalance,
+  getSolRecentBlockhash,
+  buildAndSignSolTransfer,
+  broadcastSolTx,
+  solKeypairAddress,
+} from "./solanaWallet.js";
 
 // ── EVM chain registry ─────────────────────────────────────────────────────────
 
@@ -280,6 +288,46 @@ async function processBsvWithdrawal(params: {
   return { txid: result.txid, explorer };
 }
 
+// ── SOL withdrawal ─────────────────────────────────────────────────────────────
+
+async function processSolWithdrawal(params: {
+  asset:     string;
+  amount:    number;
+  recipient: string;
+}): Promise<{ txid: string; explorer: string }> {
+  const wallet    = await getSolHotWallet();
+  const hotAddr   = solKeypairAddress(wallet);
+  const lamports  = BigInt(Math.round(params.amount * 1e9));
+
+  // Check the hot wallet's on-chain balance before attempting the transfer
+  const walletLamports = await getSolBalance(hotAddr);
+  const FEE_LAMPORTS   = 5000n; // ~0.000005 SOL standard fee
+  if (walletLamports < lamports + FEE_LAMPORTS) {
+    throw new Error(
+      `SOL hot wallet insufficient funds: has ${walletLamports} lamports, ` +
+      `need ${lamports + FEE_LAMPORTS} lamports (${params.amount} SOL + fee). ` +
+      `Fund address ${hotAddr} to enable auto-withdrawals.`,
+    );
+  }
+
+  const recentBlockhash = await getSolRecentBlockhash();
+  const signedTx = await buildAndSignSolTransfer({
+    fromKeypair:     wallet,
+    toPubkey:        params.recipient,
+    lamports,
+    recentBlockhash,
+  });
+
+  const txid    = await broadcastSolTx(signedTx);
+  const explorer = `https://solscan.io/tx/${txid}`;
+
+  logger.info(
+    { txid, asset: params.asset, amount: params.amount, recipient: params.recipient },
+    "SOL withdrawal broadcast",
+  );
+  return { txid, explorer };
+}
+
 // ── Public entry point ─────────────────────────────────────────────────────────
 
 export interface ProcessResult {
@@ -296,6 +344,7 @@ export interface ProcessResult {
  */
 const EVM_ADDRESS_RE  = /^0x[0-9a-fA-F]{40}$/;
 const BSV_ADDRESS_RE  = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$|^q[a-z0-9]{41,}$/;
+const SOL_ADDRESS_RE  = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 export async function processWithdrawal(params: {
   asset:     string;
@@ -332,6 +381,14 @@ export async function processWithdrawal(params: {
         throw new Error(`Invalid BSV/BCH recipient address: ${params.recipient}`);
       }
       const { txid, explorer } = await processBsvWithdrawal(params);
+      return { status: "completed", txid, explorer };
+    }
+
+    if (net === "sol" || net === "solana") {
+      if (!SOL_ADDRESS_RE.test(params.recipient)) {
+        throw new Error(`Invalid SOL recipient address: ${params.recipient}`);
+      }
+      const { txid, explorer } = await processSolWithdrawal(params);
       return { status: "completed", txid, explorer };
     }
 

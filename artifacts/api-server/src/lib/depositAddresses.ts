@@ -20,28 +20,46 @@ import {
   scryptSync,
 } from "node:crypto";
 import { pool } from "@workspace/db";
-import { getRequiredEnv } from "./requiredEnv.js";
 
-function deriveKey(): Buffer {
-  return scryptSync(
-    getRequiredEnv("EVM_WALLET_SECRET", "[FATAL] EVM_WALLET_SECRET is not set. Refusing to derive deposit wallet keys."),
-    "orahdex-deposit-addr-salt-v1",
-    32,
-  ) as Buffer;
+const EVM_SECRET = process.env.EVM_WALLET_SECRET ?? "";
+
+function deriveKeyV1(): Buffer {
+  // Legacy: fixed salt — shared AES key across all keys. Kept for decryption only.
+  return scryptSync(EVM_SECRET, "orahdex-deposit-addr-salt-v1", 32) as Buffer;
+}
+
+function deriveKeyV2(salt: Buffer): Buffer {
+  // v2: per-key random 32-byte salt — each key gets a unique derived AES key.
+  return scryptSync(EVM_SECRET, salt, 32) as Buffer;
 }
 
 function encrypt(plaintext: string): string {
-  const key = deriveKey();
-  const iv  = randomBytes(16);
+  // v2 format: salt:iv:tag:ciphertext (4 hex parts, per-key random salt)
+  const salt   = randomBytes(32);
+  const key    = deriveKeyV2(salt);
+  const iv     = randomBytes(16);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const enc = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return [iv.toString("hex"), tag.toString("hex"), enc.toString("hex")].join(":");
+  const enc    = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const tag    = cipher.getAuthTag();
+  return [salt.toString("hex"), iv.toString("hex"), tag.toString("hex"), enc.toString("hex")].join(":");
 }
 
 export function decryptDepositKey(stored: string): string {
-  const [ivHex, tagHex, encHex] = stored.split(":");
-  const key = deriveKey();
+  const parts = stored.split(":");
+  if (parts.length === 4) {
+    // v2: salt:iv:tag:ciphertext
+    const [saltHex, ivHex, tagHex, encHex] = parts;
+    const key = deriveKeyV2(Buffer.from(saltHex, "hex"));
+    const iv  = Buffer.from(ivHex, "hex");
+    const tag = Buffer.from(tagHex, "hex");
+    const enc = Buffer.from(encHex, "hex");
+    const d   = createDecipheriv("aes-256-gcm", key, iv, { authTagLength: 16 });
+    d.setAuthTag(tag);
+    return Buffer.concat([d.update(enc), d.final()]).toString("utf8");
+  }
+  // v1 legacy: iv:tag:ciphertext (fixed shared salt)
+  const [ivHex, tagHex, encHex] = parts;
+  const key = deriveKeyV1();
   const iv  = Buffer.from(ivHex, "hex");
   const tag = Buffer.from(tagHex, "hex");
   const enc = Buffer.from(encHex, "hex");

@@ -11,6 +11,9 @@
  * → buying $8,500 worth moves price by ~1%
  */
 import { Router } from "express";
+import { db } from "@workspace/db";
+import { platformSettingsTable } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 
 const GENESIS_DEPTH_USD = 8_500; // virtual depth target
@@ -96,6 +99,64 @@ function initMarkets() {
   }
 }
 initMarkets();
+
+/* ── DB persistence ─────────────────────────────────────────────────────── */
+
+const VAMM_STATE_KEY = "vamm_state_v1";
+
+type PersistedMarket = Pick<VammMarket,
+  "supply" | "treasury" | "basePrice" | "slope" | "seedPrice" | "volume24h" | "volumeResetAt"
+>;
+
+async function loadPersistedState(): Promise<void> {
+  const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, VAMM_STATE_KEY));
+  if (!rows[0]) return;
+  const saved = JSON.parse(rows[0].value) as Record<string, PersistedMarket>;
+  let restored = 0;
+  for (const [sym, s] of Object.entries(saved)) {
+    const m = markets.get(sym);
+    if (!m) continue;
+    m.supply        = s.supply;
+    m.treasury      = s.treasury;
+    m.basePrice     = s.basePrice;
+    m.slope         = s.slope;
+    m.seedPrice     = s.seedPrice;
+    m.volume24h     = s.volume24h;
+    m.volumeResetAt = s.volumeResetAt;
+    restored++;
+  }
+  logger.info({ restored }, "vAMM: restored persisted state");
+}
+
+async function saveVammState(): Promise<void> {
+  const state: Record<string, PersistedMarket> = {};
+  for (const [sym, m] of markets.entries()) {
+    state[sym] = {
+      supply:        m.supply,
+      treasury:      m.treasury,
+      basePrice:     m.basePrice,
+      slope:         m.slope,
+      seedPrice:     m.seedPrice,
+      volume24h:     m.volume24h,
+      volumeResetAt: m.volumeResetAt,
+    };
+  }
+  const value = JSON.stringify(state);
+  await db.insert(platformSettingsTable)
+    .values({ key: VAMM_STATE_KEY, value })
+    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+}
+
+// Best-effort state recovery on startup; markets are already seeded from SEED_PRICES
+(async () => {
+  try { await loadPersistedState(); }
+  catch (err) { logger.warn({ err }, "vAMM: failed to load persisted state, using seed prices"); }
+})();
+
+// Persist every 5 minutes
+setInterval(() => {
+  saveVammState().catch(err => logger.warn({ err }, "vAMM: failed to persist state"));
+}, 5 * 60_000);
 
 // Reset 24h volume daily
 setInterval(() => {
