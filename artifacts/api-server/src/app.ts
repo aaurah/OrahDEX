@@ -31,6 +31,7 @@ import { startAllReconcilers } from "./lib/selfHealingReconcilers.js";
 import { hydrateAlertsFromDB } from "./lib/alertBus.js";
 import { startExchangeApiRepairEngine } from "./lib/exchangeApiRepairEngine.js";
 import { startBsvIntentWatcher } from "./lib/bsvIntentWatcher.js";
+import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
 import { pool } from "@workspace/db";
 
 // Run the chain_id column migration at startup (idempotent — IF NOT EXISTS).
@@ -454,6 +455,7 @@ _s(54_000, startOrderReconciler,      "startOrderReconciler");
 _s(60_000, startAllReconcilers,       "startAllReconcilers");
 _s(66_000, startExchangeApiRepairEngine, "startExchangeApiRepairEngine");
 _s(72_000, startBsvIntentWatcher,       "startBsvIntentWatcher");
+_s(78_000, startAdvancedOrderEngines,  "startAdvancedOrderEngines");
 
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 

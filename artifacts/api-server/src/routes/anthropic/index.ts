@@ -1,9 +1,15 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { conversations, messages, marketsTable } from "@workspace/db/schema";
+import { conversations, messages, marketsTable, ordersTable } from "@workspace/db/schema";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { eq, asc, desc } from "drizzle-orm";
 import { logger } from "../../lib/logger.js";
+import { randomBytes, randomUUID } from "node:crypto";
+import {
+  parseNaturalLanguageOrder,
+  formatOrderConfirmation,
+  type ParsedOrderIntent,
+} from "../../lib/nlOrderParser.js";
 
 const router = Router();
 
