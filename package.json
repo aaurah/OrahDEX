@@ -23,6 +23,7 @@
       "axios": "1.16.1",
       "cookie": "0.7.2",
       "follow-redirects": "1.16.0",
+      "shell-quote": ">=1.8.4",
       "elliptic": "6.6.1",
       "@stablelib/ed25519": "2.1.0",
       "protobufjs": "^7.5.6",
