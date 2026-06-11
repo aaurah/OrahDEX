@@ -116,6 +116,12 @@ router.post("/withdrawals", async (req, res) => {
     return;
   }
 
+  const parsedFee = fee != null ? parseFloat(fee) : 0;
+  if (isNaN(parsedFee) || parsedFee < 0 || parsedFee >= parsed) {
+    res.status(400).json({ error: "Invalid fee: must be a non-negative number less than the withdrawal amount" });
+    return;
+  }
+
   // Require wallet ownership proof for all external wallet types.
   if (walletAddress.startsWith("0x")) {
     // EVM wallet.
