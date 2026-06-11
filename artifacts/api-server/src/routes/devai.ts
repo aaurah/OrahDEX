@@ -655,10 +655,27 @@ async function toolWriteProjectFile(args: { path: string; content: string; descr
   }
 }
 
+// Allowlist of safe executable names for the DevAI terminal tool.
+// Only these binaries may be invoked — args are passed separately via execFile
+// so the shell never interprets them, preventing command injection.
+const ALLOWED_DEVAI_COMMANDS = new Set([
+  "node", "npm", "npx", "pnpm", "tsc", "ts-node",
+  "git", "ls", "cat", "head", "tail", "grep", "find",
+  "echo", "pwd", "mkdir", "cp", "mv", "rm",
+  "curl", "wget", "ping",
+  "ps", "kill",
+  "bash", "sh",
+]);
+
 async function toolRunTerminal(args: { command: string; description?: string }): Promise<string> {
-  const BLOCKED_PATTERNS = [/rm\s+-rf\s+\//, /:\(\)\{.*\}/, /mkfs/, /dd\s+if=\/dev\/zero/];
-  if (BLOCKED_PATTERNS.some(p => p.test(args.command))) {
-    return "Command blocked for safety. Destructive system-level operations are not allowed.";
+  const parts = args.command.trim().split(/\s+/);
+  const bin = parts[0] ?? "";
+  if (!ALLOWED_DEVAI_COMMANDS.has(bin)) {
+    return `Command blocked: '${bin}' is not in the allowed command list. Permitted: ${[...ALLOWED_DEVAI_COMMANDS].sort().join(", ")}.`;
+  }
+  // Reject shell metacharacters that could chain or redirect commands
+  if (/[;&|`$<>\\]/.test(args.command)) {
+    return "Command blocked: shell metacharacters (;, &, |, `, $, <, >, \\) are not permitted.";
   }
   try {
     const { stdout, stderr } = await execAsync(args.command, WORKSPACE_ROOT, 60000);

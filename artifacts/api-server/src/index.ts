@@ -10,7 +10,7 @@ const REQUIRED_VARS: Array<{ name: string; fatal: boolean }> = [
   { name: "DATABASE_URL",        fatal: false }, // warn only — server starts without it, DB calls return 503
   { name: "API_KEY_HMAC_SECRET", fatal: false }, // warn only — API key auth disabled when missing
   { name: "EVM_WALLET_SECRET",   fatal: false }, // warn only — server runs without it
-  { name: "EVM_WEBHOOK_SECRET",  fatal: false },
+  { name: "EVM_WEBHOOK_SECRET",  fatal: true  }, // required — missing means ANY webhook is accepted
 ];
 
 for (const { name, fatal } of REQUIRED_VARS) {
