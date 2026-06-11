@@ -47,9 +47,11 @@ import coinbaseRouter from "./coinbase.js";
 import kycRouter from "./kyc.js";
 import walletRouter from "./wallet.js";
 import anthropicRouter from "./anthropic/index.js";
+import quantumAuthRouter from "./quantumAuth.js";
 import sorRouter from "./sor.js";
 import lightningRouter from "./lightning.js";
 import advancedOrdersRouter from "./advancedOrders.js";
+import optionsRouter from "./options.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
@@ -90,6 +92,7 @@ router.use(advancedOrdersRouter);
 router.use(tradesRouter);
 router.use(portfolioRouter);
 router.use(futuresRouter);
+router.use(optionsRouter);
 router.use(dexRouter);
 router.use(liquidityRouter);
 router.use(swapRouter);
@@ -142,6 +145,7 @@ router.use(coinbaseRouter);
 router.use(kycRouter);
 router.use("/wallet", walletRouter);
 router.use(anthropicRouter);
+router.use(quantumAuthRouter);
 
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */

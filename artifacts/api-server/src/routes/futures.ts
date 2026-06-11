@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { futuresPositionsTable, marketsTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { futuresPositionsTable, marketsTable, fundingRatesTable, fundingPaymentsTable } from "@workspace/db/schema";
+import { eq, and, desc } from "drizzle-orm";
 import crypto from "crypto";
 import {
   openFuturesPosition,
@@ -101,6 +101,126 @@ router.get("/futures/funding-rates", (_req, res) => {
       predictedFundingRate: r.fundingRate,
     }))
   );
+});
+
+// ── GET /futures/funding-rate/:symbol (dynamic — from DB) ─────────────────────
+router.get("/futures/funding-rate/:symbol", async (req, res) => {
+  try {
+    const symbol = decodeURIComponent(req.params.symbol).replace("-PERP", "").replace("-", "/");
+    const [latest] = await db
+      .select()
+      .from(fundingRatesTable)
+      .where(eq(fundingRatesTable.symbol, symbol))
+      .orderBy(desc(fundingRatesTable.createdAt))
+      .limit(1);
+
+    if (!latest) {
+      // Fall back to static data if the engine hasn't run yet
+      const staticRate = FUNDING_RATES.find((r) => r.symbol === symbol);
+      if (!staticRate) {
+        res.status(404).json({ error: "Symbol not found" });
+        return;
+      }
+      const now = new Date();
+      const nextFunding = new Date(now.getTime());
+      const hours = nextFunding.getHours();
+      const nextHour = hours < 8 ? 8 : hours < 16 ? 16 : 24;
+      nextFunding.setHours(nextHour % 24, 0, 0, 0);
+      if (nextHour === 24) nextFunding.setDate(nextFunding.getDate() + 1);
+      res.json({
+        symbol,
+        fundingRate:          staticRate.fundingRate,
+        fundingRatePct:       staticRate.fundingRate * 100,
+        markPrice:            null,
+        indexPrice:           null,
+        premium:              null,
+        nextFundingAt:        nextFunding.toISOString(),
+        lastFundingAt:        null,
+        source:               "static",
+      });
+      return;
+    }
+
+    res.json({
+      symbol:               latest.symbol,
+      fundingRate:          parseFloat(latest.rate),
+      fundingRatePct:       parseFloat(latest.rate) * 100,
+      markPrice:            parseFloat(latest.markPrice),
+      indexPrice:           parseFloat(latest.indexPrice),
+      premium:              parseFloat(latest.premium),
+      nextFundingAt:        latest.nextFundingAt.toISOString(),
+      lastFundingAt:        latest.createdAt.toISOString(),
+      source:               "dynamic",
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to get funding rate");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /futures/funding-history/:symbol ──────────────────────────────────────
+router.get("/futures/funding-history/:symbol", async (req, res) => {
+  try {
+    const symbol = decodeURIComponent(req.params.symbol).replace("-PERP", "").replace("-", "/");
+    const limit  = Math.min(parseInt((req.query.limit as string) ?? "100", 10), 500);
+
+    const rows = await db
+      .select()
+      .from(fundingRatesTable)
+      .where(eq(fundingRatesTable.symbol, symbol))
+      .orderBy(desc(fundingRatesTable.createdAt))
+      .limit(limit);
+
+    res.json(
+      rows.map((r) => ({
+        symbol:        r.symbol,
+        fundingRate:   parseFloat(r.rate),
+        fundingRatePct: parseFloat(r.rate) * 100,
+        markPrice:     parseFloat(r.markPrice),
+        indexPrice:    parseFloat(r.indexPrice),
+        premium:       parseFloat(r.premium),
+        nextFundingAt: r.nextFundingAt.toISOString(),
+        timestamp:     r.createdAt.toISOString(),
+      })),
+    );
+  } catch (err) {
+    req.log.error({ err }, "Failed to get funding history");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /futures/funding-payments ─────────────────────────────────────────────
+router.get("/futures/funding-payments", async (req, res) => {
+  try {
+    const walletAddress = req.query.walletAddress as string | undefined;
+    if (!walletAddress) {
+      res.status(400).json({ error: "walletAddress is required" });
+      return;
+    }
+
+    const payments = await db
+      .select()
+      .from(fundingPaymentsTable)
+      .where(eq(fundingPaymentsTable.walletAddress, walletAddress))
+      .orderBy(desc(fundingPaymentsTable.settledAt))
+      .limit(200);
+
+    res.json(
+      payments.map((p) => ({
+        id:           p.id,
+        positionId:   p.positionId,
+        symbol:       p.symbol,
+        fundingRate:  parseFloat(p.fundingRate),
+        positionSize: parseFloat(p.positionSize),
+        payment:      parseFloat(p.payment),
+        direction:    p.direction,
+        settledAt:    p.settledAt.toISOString(),
+      })),
+    );
+  } catch (err) {
+    req.log.error({ err }, "Failed to get funding payments");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.get("/futures/positions", async (req, res) => {

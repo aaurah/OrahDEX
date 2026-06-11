@@ -1,13 +1,18 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { marketsTable } from "@workspace/db/schema";
-import { inArray } from "drizzle-orm";
+import { marketsTable, futuresPositionsTable } from "@workspace/db/schema";
+import { inArray, eq, and } from "drizzle-orm";
 import { generateWalletTransactions } from "../lib/mockData.js";
 import {
   getBalances,
   getLpPositions,
 } from "../lib/ledger.js";
 import { pool } from "@workspace/db";
+import {
+  calculatePortfolioGreeks,
+  calculateParametricVaR,
+  calculateHistoricalVaR,
+} from "../lib/portfolioRisk.js";
 
 const router: IRouter = Router();
 
@@ -190,6 +195,179 @@ router.get("/wallet/transactions", (req, res) => {
   }
   const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
   res.json(generateWalletTransactions(walletAddress, limit));
+});
+
+// ── GET /portfolio/risk?walletAddress= ────────────────────────────────────────
+// Returns Greeks + parametric VaR for all open futures positions.
+
+router.get("/portfolio/risk", async (req, res) => {
+  const walletAddress = req.query.walletAddress as string;
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+
+  try {
+    const positions = await db
+      .select()
+      .from(futuresPositionsTable)
+      .where(
+        and(
+          eq(futuresPositionsTable.walletAddress, walletAddress.toLowerCase()),
+          eq(futuresPositionsTable.status, "open"),
+        ),
+      );
+
+    const allMarkets = await db
+      .select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
+      .from(marketsTable);
+
+    const marketPrices: Record<string, number> = {};
+    for (const m of allMarkets) {
+      marketPrices[m.symbol] = parseFloat(String(m.lastPrice ?? 0));
+    }
+
+    const greeks  = calculatePortfolioGreeks(positions, [], marketPrices);
+    const varResult = calculateParametricVaR(positions, marketPrices);
+
+    res.json({
+      walletAddress,
+      openPositionCount: positions.length,
+      greeks,
+      var: varResult,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    req.log.error({ err }, "GET /portfolio/risk failed");
+    res.status(500).json({ error: "Failed to compute portfolio risk" });
+  }
+});
+
+// ── GET /portfolio/Greeks?walletAddress= ─────────────────────────────────────
+// Returns Greeks only (faster, no VaR calculation).
+
+router.get("/portfolio/Greeks", async (req, res) => {
+  const walletAddress = req.query.walletAddress as string;
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+
+  try {
+    const positions = await db
+      .select()
+      .from(futuresPositionsTable)
+      .where(
+        and(
+          eq(futuresPositionsTable.walletAddress, walletAddress.toLowerCase()),
+          eq(futuresPositionsTable.status, "open"),
+        ),
+      );
+
+    const allMarkets = await db
+      .select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
+      .from(marketsTable);
+
+    const marketPrices: Record<string, number> = {};
+    for (const m of allMarkets) {
+      marketPrices[m.symbol] = parseFloat(String(m.lastPrice ?? 0));
+    }
+
+    const greeks = calculatePortfolioGreeks(positions, [], marketPrices);
+
+    res.json({
+      walletAddress,
+      openPositionCount: positions.length,
+      greeks,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    req.log.error({ err }, "GET /portfolio/Greeks failed");
+    res.status(500).json({ error: "Failed to compute portfolio Greeks" });
+  }
+});
+
+// ── GET /portfolio/scenario?walletAddress=&shockPercent=-20 ──────────────────
+// Stress test: simulate portfolio P&L under a uniform price shock.
+
+router.get("/portfolio/scenario", async (req, res) => {
+  const walletAddress = req.query.walletAddress as string;
+  const shockPercent  = parseFloat(req.query.shockPercent as string ?? "-20");
+
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+  if (isNaN(shockPercent) || shockPercent < -100 || shockPercent > 100) {
+    res.status(400).json({ error: "shockPercent must be a number between -100 and 100" });
+    return;
+  }
+
+  try {
+    const positions = await db
+      .select()
+      .from(futuresPositionsTable)
+      .where(
+        and(
+          eq(futuresPositionsTable.walletAddress, walletAddress.toLowerCase()),
+          eq(futuresPositionsTable.status, "open"),
+        ),
+      );
+
+    const allMarkets = await db
+      .select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
+      .from(marketsTable);
+
+    const marketPrices: Record<string, number> = {};
+    for (const m of allMarkets) {
+      marketPrices[m.symbol] = parseFloat(String(m.lastPrice ?? 0));
+    }
+
+    const shockFactor = 1 + shockPercent / 100;
+    let totalCurrentPnl  = 0;
+    let totalScenarioPnl = 0;
+
+    const scenarioPositions = positions.map((pos) => {
+      const qty         = parseFloat(String(pos.quantity ?? 0));
+      const entryPrice  = parseFloat(String(pos.entryPrice ?? 0));
+      const markPrice   = marketPrices[pos.symbol] ?? parseFloat(String(pos.markPrice ?? 0));
+      const scenarioPrice = markPrice * shockFactor;
+      const sign        = pos.side === "long" ? 1 : -1;
+
+      const currentPnl  = qty * (markPrice - entryPrice)   * sign;
+      const scenarioPnl = qty * (scenarioPrice - entryPrice) * sign;
+      const change      = scenarioPnl - currentPnl;
+
+      totalCurrentPnl  += currentPnl;
+      totalScenarioPnl += scenarioPnl;
+
+      return {
+        symbol:       pos.symbol,
+        side:         pos.side,
+        quantity:     qty,
+        entryPrice:   parseFloat(entryPrice.toFixed(6)),
+        currentPrice: parseFloat(markPrice.toFixed(6)),
+        scenarioPrice: parseFloat(scenarioPrice.toFixed(6)),
+        currentPnl:   parseFloat(currentPnl.toFixed(2)),
+        scenarioPnl:  parseFloat(scenarioPnl.toFixed(2)),
+        change:       parseFloat(change.toFixed(2)),
+      };
+    });
+
+    res.json({
+      walletAddress,
+      shockPercent,
+      openPositionCount:  positions.length,
+      positions:          scenarioPositions,
+      totalCurrentPnl:    parseFloat(totalCurrentPnl.toFixed(2)),
+      totalScenarioPnl:   parseFloat(totalScenarioPnl.toFixed(2)),
+      totalChange:        parseFloat((totalScenarioPnl - totalCurrentPnl).toFixed(2)),
+      timestamp:          new Date().toISOString(),
+    });
+  } catch (err) {
+    req.log.error({ err }, "GET /portfolio/scenario failed");
+    res.status(500).json({ error: "Failed to compute portfolio scenario" });
+  }
 });
 
 export default router;

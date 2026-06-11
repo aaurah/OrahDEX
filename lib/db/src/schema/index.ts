@@ -26,3 +26,5 @@ export * from "./staking";
 export * from "./liquidity";
 export * from "./bsvIntentSessions";
 export * from "./advancedOrders";
+export * from "./options";
+export * from "./fundingRates";

@@ -92,7 +92,7 @@ const PARSE_TRADE_INTENT_TOOL = {
     },
     required: ["type"],
   },
-} as const;
+};
 
 // ── Main parser ───────────────────────────────────────────────────────────────
 

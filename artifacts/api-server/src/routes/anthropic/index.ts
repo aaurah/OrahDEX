@@ -237,4 +237,215 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
   }
 });
 
+// ── POST /ai/trade — Natural language order execution ─────────────────────────
+//
+// Body: { walletAddress: string; message: string; execute?: boolean }
+//
+// In preview mode (execute !== true): returns intent + confirmation string.
+// In execute mode (execute === true):  places the order into ordersTable if
+//   the intent has sufficient parameters, then returns orderId.
+//
+// Flow:
+//   1. Fetch top-50 markets for price context
+//   2. Parse NL message via Anthropic tool_use
+//   3. Build confirmation string
+//   4. Optionally insert order row
+
+router.post("/ai/trade", async (req, res) => {
+  try {
+    const { walletAddress, message, execute } = req.body as {
+      walletAddress?: string;
+      message?: string;
+      execute?: boolean;
+    };
+
+    if (!walletAddress || typeof walletAddress !== "string") {
+      res.status(400).json({ error: "walletAddress is required" });
+      return;
+    }
+    if (!message || typeof message !== "string" || !message.trim()) {
+      res.status(400).json({ error: "message is required" });
+      return;
+    }
+
+    // 1. Fetch top-50 markets by volume for price context
+    const marketRows = await db
+      .select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
+      .from(marketsTable)
+      .orderBy(desc(marketsTable.volume24h))
+      .limit(50);
+
+    const marketContext = marketRows.map((m) => ({
+      symbol:    m.symbol,
+      lastPrice: parseFloat(String(m.lastPrice ?? 0)),
+    }));
+
+    // 2. Parse the natural language instruction
+    const intent: ParsedOrderIntent = await parseNaturalLanguageOrder(message.trim(), marketContext);
+
+    // 3. Build confirmation string
+    if (intent.type === "unknown") {
+      res.json({ intent, confirmation: intent.reason, executed: false });
+      return;
+    }
+
+    // Find the current price for this symbol (used in confirmation)
+    const symbolMatch = marketContext.find(
+      (m) => m.symbol.toUpperCase() === intent.symbol.toUpperCase(),
+    );
+    const currentPrice = symbolMatch?.lastPrice ?? 0;
+    const confirmation = formatOrderConfirmation(intent, currentPrice);
+
+    // 4. Execute if requested and we have enough params
+    if (execute === true) {
+      const canExecute = canPlaceOrder(intent);
+
+      if (!canExecute) {
+        // Not enough info to place — return as preview with a hint
+        res.json({
+          intent,
+          confirmation,
+          executed: false,
+          hint: "Specify quantity or amount to execute this order.",
+        });
+        return;
+      }
+
+      // Build order row
+      const orderId    = randomUUID();
+      const nonce      = randomBytes(16).toString("hex");
+      const now        = Date.now();
+      const expiryUnix = String(now + 24 * 60 * 60 * 1000); // 24 hours
+
+      const orderRow = buildOrderRow({
+        orderId,
+        nonce,
+        expiry: expiryUnix,
+        walletAddress,
+        intent,
+        currentPrice,
+      });
+
+      await db.insert(ordersTable).values(orderRow);
+
+      logger.info({ orderId, walletAddress, intent }, "AI trade order placed");
+
+      res.status(201).json({ intent, confirmation, executed: true, orderId });
+      return;
+    }
+
+    // Preview mode — return intent + confirmation only
+    res.json({ intent, confirmation, executed: false });
+  } catch (err) {
+    logger.error({ err }, "POST /ai/trade failed");
+    res.status(500).json({ error: "AI trade request failed" });
+  }
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Returns true if the intent has enough fields to place a real order
+ * (i.e. we know quantity or quoteAmount).
+ */
+function canPlaceOrder(intent: ParsedOrderIntent): boolean {
+  switch (intent.type) {
+    case "market":
+      return intent.quantity != null || intent.quoteAmount != null;
+    case "limit":
+      return (intent.quantity != null || intent.quoteAmount != null) && intent.price > 0;
+    case "stop_limit":
+      return intent.quantity > 0 && intent.stopPrice > 0 && intent.limitPrice > 0;
+    case "trailing_stop":
+      return intent.quantity > 0 && intent.trailPercent > 0;
+    case "twap":
+      return intent.totalAmount > 0 && intent.durationMinutes > 0 && intent.slices >= 2;
+    case "oco":
+      return intent.quantity > 0 && intent.limitPrice > 0 && intent.stopPrice > 0;
+    default:
+      return false;
+  }
+}
+
+interface OrderRowParams {
+  orderId:       string;
+  nonce:         string;
+  expiry:        string;
+  walletAddress: string;
+  intent:        Exclude<ParsedOrderIntent, { type: "unknown" }>;
+  currentPrice:  number;
+}
+
+/**
+ * Map a parsed order intent to an ordersTable insert row.
+ * Quantity defaults to 0 when only quoteAmount is specified (matching engine resolves it).
+ * Stop price is stored in the stopPrice column when present.
+ */
+function buildOrderRow(p: OrderRowParams) {
+  const { orderId, nonce, expiry, walletAddress, intent, currentPrice } = p;
+
+  // Resolve quantity: use explicit quantity if set; estimate from quoteAmount when possible
+  let quantity: string;
+  let price: string | undefined;
+  let stopPrice: string | undefined;
+
+  switch (intent.type) {
+    case "market": {
+      const qty = intent.quantity ?? (
+        intent.quoteAmount != null && currentPrice > 0
+          ? intent.quoteAmount / currentPrice
+          : 0
+      );
+      quantity = String(qty);
+      break;
+    }
+    case "limit": {
+      const limitQty = intent.quantity ?? (
+        intent.quoteAmount != null && intent.price > 0
+          ? intent.quoteAmount / intent.price
+          : 0
+      );
+      quantity = String(limitQty);
+      price    = String(intent.price);
+      break;
+    }
+    case "stop_limit":
+      quantity  = String(intent.quantity);
+      stopPrice = String(intent.stopPrice);
+      price     = String(intent.limitPrice);
+      break;
+    case "trailing_stop":
+      quantity = String(intent.quantity);
+      // Encode trailPercent in price field for now (exchange engine convention)
+      price    = String(intent.trailPercent);
+      break;
+    case "twap":
+      quantity = String(intent.totalAmount);   // quantity = total USD amount for TWAP
+      break;
+    case "oco":
+      quantity  = String(intent.quantity);
+      price     = String(intent.limitPrice);
+      stopPrice = String(intent.stopPrice);
+      break;
+  }
+
+  return {
+    id:                orderId,
+    symbol:            intent.symbol,
+    walletAddress:     walletAddress.toLowerCase(),
+    networkType:       walletAddress.startsWith("0x") ? "evm" : "bsv",
+    side:              intent.side,
+    type:              intent.type,
+    status:            "open",
+    price:             price ?? null,
+    stopPrice:         stopPrice ?? null,
+    quantity:          quantity || "0",
+    remainingQuantity: quantity || "0",
+    filledQuantity:    "0",
+    fee:               "0",
+    nonce,
+    expiry,
+  };
+}
+
 export default router;
