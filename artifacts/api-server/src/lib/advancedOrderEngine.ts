@@ -1,4 +1,4 @@
-import { pool } from "../lib/db.js";
+import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { randomUUID } from "node:crypto";
 
