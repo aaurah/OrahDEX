@@ -1,37 +1,12 @@
 #!/bin/bash
 cd /home/runner/workspace
 
-echo "=== Cleaning packed-refs of stale local branches ==="
-python3 - <<'PYEOF'
-path = ".git/packed-refs"
-keep_prefixes = (
-    "# pack-refs",
-    "refs/heads/Main",
-    "refs/remotes/origin/Main",
-    "refs/remotes/gitsafe-backup/",
-    "refs/notes/",
-    "refs/replit/",
-)
-with open(path) as f:
-    lines = f.readlines()
+echo "=== Deleting local replit-agent branch ==="
+rm -f .git/packed-refs.lock
+git branch -D replit-agent 2>&1 || echo "skipped"
 
-kept = [l for l in lines if any(l.strip().startswith(p) or l.strip().endswith(p) for p in keep_prefixes) or l.startswith("^")]
-# keep lines where the ref part matches
-kept = []
-for line in lines:
-    if line.startswith("#") or line.startswith("^"):
-        kept.append(line)
-        continue
-    ref = line.split(" ", 1)[1].strip() if " " in line else ""
-    if any(ref.startswith(p) or ref == p.rstrip("/") for p in keep_prefixes[1:]):
-        kept.append(line)
+echo "=== Deleting remote claude/audit-fix-problems-FcU9i ==="
+git push origin --delete "claude/audit-fix-problems-FcU9i" 2>&1 || echo "skipped"
 
-with open(path, "w") as f:
-    f.writelines(kept)
-
-print(f"Kept {len(kept)} lines, removed {len(lines)-len(kept)} stale entries")
-PYEOF
-
-echo ""
-echo "=== Remaining branches in Replit panel ==="
+echo "=== Done. Remaining branches ==="
 git --no-optional-locks branch -a | grep -v "gitsafe"
