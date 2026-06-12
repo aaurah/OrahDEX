@@ -562,6 +562,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         network:          (network as any) ?? "evm",
         address:          address ?? "",
         balanceLoading:   isEvm && (balancesLoading || balancesLastFetch === 0),
+        walletMode:       isEvm,
       });
       setPrecheckResult(result);
       precheckKeyRef.current = key;
@@ -670,12 +671,16 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         const serverMsg   = errData?.error ?? errData?.message ?? err?.data?.error ?? err?.data?.message ?? err?.message;
         const isInsufficient = code === "INSUFFICIENT_FUNDS" || serverMsg?.toLowerCase?.().includes("insufficient");
         const isNoLiquidity  = code === "NO_LIQUIDITY";
+        const isTimeout      = err?.name === "AbortError" || serverMsg?.toLowerCase?.().includes("aborted");
 
         toast({
-          title:       isNoLiquidity  ? "No Liquidity"
-                     : isInsufficient ? "Insufficient Balance"
-                     : "Order Failed",
-          description: isNoLiquidity
+          title: isTimeout      ? "Request Timed Out"
+               : isNoLiquidity  ? "No Liquidity"
+               : isInsufficient ? "Insufficient Balance"
+               : "Order Failed",
+          description: isTimeout
+            ? "The server took too long to respond. Your order may still be in the book — check the Orders tab."
+            : isNoLiquidity
             ? "No matching sellers found. Place a limit order to set your price instead."
             : isInsufficient
             ? (isEvm
@@ -686,10 +691,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         });
         addNotification({
           type: "error",
-          title: isNoLiquidity  ? "No Liquidity"
+          title: isTimeout      ? "Request Timed Out"
+               : isNoLiquidity  ? "No Liquidity"
                : isInsufficient ? "Insufficient Balance"
                : "Order Failed",
-          body:  isNoLiquidity
+          body: isTimeout
+            ? "Order submission timed out — check the order book to see if your order was accepted."
+            : isNoLiquidity
             ? "Market order rejected — no matching sellers. Use a limit order to join the book."
             : isInsufficient
             ? (isEvm
@@ -727,13 +735,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
     // ── Synchronous balance guard (runs before precheck, no debounce lag) ─────
     // Block immediately if the balance is clearly too low.
+    // EVM external wallets are skipped: the DEX never holds their funds and the
+    // server validates actual on-chain balance before executing any trade.
     const required     = parseFloat(amount);
     const effectivePrice = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
     const total        = effectivePrice > 0 ? effectivePrice * required : 0;
     // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
     // never falsely blocked by floating-point arithmetic.
-    if (side === "sell" && required > availableAmt + 1e-9
-        && !(isEvm && (balancesLoading || balancesLastFetch === 0))) {
+    if (!isEvm && side === "sell" && required > availableAmt + 1e-9) {
       toast({
         title:       "Insufficient Balance",
         description: `You only have ${availableAmt.toFixed(6)} ${availableSym}. Cannot sell ${amount} ${base}.`,
@@ -741,8 +750,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
       });
       return;
     }
-    if (side === "buy" && total > 0 && total > availableAmt + 1e-9
-        && !(isEvm && (balancesLoading || balancesLastFetch === 0))) {
+    if (!isEvm && side === "buy" && total > 0 && total > availableAmt + 1e-9) {
       toast({
         title:       "Insufficient Balance",
         description: `You need ${total.toFixed(2)} ${quote} but only have ${availableAmt.toFixed(2)} ${quote}.`,
@@ -767,6 +775,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         network:          (network as any) ?? "evm",
         address:          address ?? "",
         balanceLoading:   isEvm && (balancesLoading || balancesLastFetch === 0),
+        walletMode:       isEvm,
       });
       setPrecheckResult(check);
       precheckKeyRef.current = submitKey;
@@ -833,12 +842,48 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           });
           evmSignature = await account.signMessage!({ message: orderMsg });
         } else {
-          evmSignature = await signMessageAsync({ message: orderMsg });
+          // External wallet: tier-1 = wagmi/Reown (WalletConnect + injected via wagmi),
+          //                  tier-2 = direct window.ethereum (covers MetaMask/Rabby/etc.
+          //                           connected through OrahDEX native connect flow,
+          //                           which stores the address in the wallet store but
+          //                           may not have registered a wagmi connector).
+          const isUserRejection = (e: any) => {
+            const code = e?.code;
+            const msg  = (e?.message ?? "").toLowerCase();
+            return code === 4001 || code === "ACTION_REJECTED" ||
+              msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
+          };
+
+          if (evmConnected) {
+            try {
+              evmSignature = await signMessageAsync({ message: orderMsg });
+            } catch (wagmiErr: any) {
+              if (isUserRejection(wagmiErr)) throw wagmiErr;
+              // Wagmi signing failed for a non-rejection reason (connector mismatch,
+              // disconnected session, etc.) — fall through to direct provider below.
+            }
+          }
+
+          if (!evmSignature) {
+            // Build the hex-encoded message required by personal_sign
+            const hexMsg = "0x" + Array.from(new TextEncoder().encode(orderMsg))
+              .map(b => b.toString(16).padStart(2, "0")).join("");
+            const eth = (window as any).ethereum;
+            if (!eth) {
+              throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
+            }
+            evmSignature = await eth.request({
+              method: "personal_sign",
+              params: [hexMsg, address],
+            });
+          }
         }
       } catch (signErr: any) {
         setSigningOrder(false);
+        const code = signErr?.code;
         const msg: string = signErr?.message ?? "";
-        if (msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel") || msg.includes("4001")) {
+        if (code === 4001 || code === "ACTION_REJECTED" ||
+            msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel")) {
           toast({ title: "Signature rejected", description: "You must sign the order to proceed.", variant: "destructive" });
         } else {
           toast({ title: "Signing failed", description: msg || "Could not sign the order.", variant: "destructive" });
@@ -1560,6 +1605,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               `${side === "buy" ? "Buy" : "Sell"} ${base}`
             )}
           </button>
+
+          {/* Wallet signing hint — shown while waiting for MetaMask/WalletConnect popup */}
+          {signingOrder && (
+            <p className="text-center text-[11px] text-amber-400 animate-pulse -mt-1">
+              Check your wallet for a signing request
+            </p>
+          )}
 
           {/* Fee info & Keeper tier */}
           <div className="flex items-center justify-between px-1 text-[10px] text-muted-foreground">

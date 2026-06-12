@@ -53,6 +53,14 @@ export interface PrecheckParams {
   network:      "evm" | "bsv" | "btc" | "sol" | "tron";
   address:      string;
   balanceLoading?: boolean;
+  /**
+   * walletMode: true when the user has a non-custodial external EVM wallet
+   * (MetaMask, WalletConnect, etc.). In wallet mode the DEX never holds the
+   * user's funds — the server validates actual on-chain balance before
+   * executing, so the client-side balance check is advisory only (warning,
+   * never a hard block).
+   */
+  walletMode?: boolean;
 }
 
 export interface PrecheckResult {
@@ -176,9 +184,13 @@ export async function precheck(params: PrecheckParams): Promise<PrecheckResult> 
     : (price ?? currentPrice) > 0 ? (price ?? currentPrice) * amount : amount;
 
   if (availableBalance < requiredBalance * 0.9999) {
-    if (params.balanceLoading) {
+    if (params.walletMode) {
+      // External EVM wallet (MetaMask / WalletConnect): the DEX does not hold
+      // the user's funds. The server validates on-chain balance before executing.
+      // Never hard-block here — surface a warning only so the user can still submit.
+      warnings.push(makeWarning("BALANCE_LOADING"));
+    } else if (params.balanceLoading) {
       // On-chain balance data is still being fetched — don't hard-block.
-      // The server will validate actual funds before executing.
       warnings.push(makeWarning("BALANCE_LOADING"));
     } else {
       errors.push(makeError("INSUFFICIENT_BALANCE",

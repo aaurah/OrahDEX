@@ -1041,12 +1041,16 @@ router.post("/orders", async (req, res) => {
         // Running HTLC in those cases would create a parallel claim against
         // the same locked funds — the very bug the safety gate prevents.
         if (bothEvmExternal && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
-          // Determine chain — use incoming order's chainId if provided, else default to 1 (Ethereum).
-          // Validate chainId: must be a positive integer present in EVM_CHAINS.
-          const rawChainId = body.chainId ? Number(body.chainId) : 1;
+          // Determine chain — prefer incoming order's chainId, then counterparty's, then Ethereum.
+          const rawChainId = body.chainId
+            ? Number(body.chainId)
+            : (match.chainId ?? (side === "buy" ? (sellerChainId ?? 1) : (buyerChainId ?? 1)));
           const chainId = Number.isInteger(rawChainId) && rawChainId > 0 && rawChainId in EVM_CHAINS
             ? rawChainId : 1;
           const chainConfig = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
+
+          // Skip HTLC if no contract is deployed for this chain — fall through to ledger settlement.
+          const htlcEnabled = !!chainConfig.contractAddress;
 
           // Resolve token addresses from pair — each stablecoin uses its own contract.
           const [base, quot] = symbol.split("/");
@@ -1068,7 +1072,12 @@ router.post("/orders", async (req, res) => {
           const fillWei       = BigInt(Math.round(fillQty   * 10 ** ETH_DECIMALS));
           const fillUsdt      = BigInt(Math.round(fillValue * 10 ** USDT_DECIMALS));
 
+          if (!htlcEnabled) {
+            req.log.warn({ chainId, symbol }, "orders: HTLC skipped — no contract deployed for chain, using ledger settlement");
+          }
+
           try {
+            if (!htlcEnabled) throw new Error("no_contract");
             lastEvmHtlcSession = await initiateEvmHtlcSession({
               tradeId:       tradeId,
               pair:          symbol,
