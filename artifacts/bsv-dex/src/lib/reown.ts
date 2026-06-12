@@ -3,6 +3,7 @@ import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import {
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
   linea, zkSync, scroll, mantle, fantom, cronos,
+  blast, mode, boba, metis, taiko, gnosis, celo, moonbeam, sonic, sei, unichain,
   type AppKitNetwork,
 } from "@reown/appkit/networks";
 
@@ -27,8 +28,9 @@ const sepolia: AppKitNetwork = {
 };
 
 export const REOWN_NETWORKS: [AppKitNetwork, ...AppKitNetwork[]] = [
-  mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
-  linea, zkSync, scroll, mantle, fantom, cronos, sepolia,
+  mainnet, arbitrum, optimism, base, blast, mode, boba, unichain, linea, zkSync, scroll,
+  polygon, bsc, avalanche, mantle, fantom, cronos, gnosis, celo, moonbeam, sonic, sei, metis, taiko,
+  sepolia,
 ];
 
 export const wagmiAdapter = new WagmiAdapter({
