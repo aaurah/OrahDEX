@@ -859,17 +859,31 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           // Always try wagmi/Reown signing first — it handles both MetaMask (injected
           // connector) and WalletConnect. Skipping the evmConnected guard avoids the
           // race where wagmi's isConnected state hasn't updated yet after AppKit connect.
+          // Guard against WalletConnect sessions that drop when iOS Safari goes to
+          // background during the imToken handoff — the promise would hang forever
+          // without this timeout, leaving signingOrder=true permanently.
+          const SIGN_TIMEOUT_MS = 90_000; // 90 s — generous for slow mobile handoff
+          const makeSignTimeout = () =>
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error("Wallet signing timed out. Open your wallet app and try again.")),
+                SIGN_TIMEOUT_MS,
+              )
+            );
+
           try {
             // Kick off the signing request, then IMMEDIATELY open the AppKit
             // modal so the "Go to wallet" redirect overlay appears for
             // WalletConnect mobile users — before awaiting the promise.
             const _signPromise = signMessageAsync({ message: orderMsg });
             openReownModal();
-            evmSignature = await _signPromise;
+            evmSignature = await Promise.race([_signPromise, makeSignTimeout()]);
           } catch (wagmiErr: any) {
             if (isUserRejection(wagmiErr)) throw wagmiErr;
             // Wagmi signing failed for a non-rejection reason (connector mismatch,
             // disconnected session, etc.) — fall through to direct provider below.
+            // Re-throw timeout errors — they are not recoverable via fallback.
+            if ((wagmiErr?.message ?? "").includes("timed out")) throw wagmiErr;
           }
 
           if (!evmSignature) {
@@ -880,10 +894,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             if (!eth) {
               throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
             }
-            evmSignature = await eth.request({
-              method: "personal_sign",
-              params: [hexMsg, address],
-            });
+            evmSignature = await Promise.race([
+              eth.request({ method: "personal_sign", params: [hexMsg, address] }) as Promise<string>,
+              makeSignTimeout(),
+            ]);
           }
         }
       } catch (signErr: any) {

@@ -26,6 +26,9 @@ const MIME = {
 };
 
 function proxyToApi(req, res) {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    console.log(`[proxy] ${req.method} ${req.url} → localhost:${API_PORT}`);
+  }
   const options = {
     hostname: "127.0.0.1",
     port:     API_PORT,
