@@ -1112,13 +1112,18 @@ router.post("/orders", async (req, res) => {
         side === "buy" && type === "market" &&
         remainingQty <= 0.000001 && totalFilled > 0 && parseFloat(lockAmount) > 0
       ) {
-        const actualCost = totalFillValue;
-        const excess = parseFloat(lockAmount) - actualCost;
-        if (excess > 1e-9 && lockAsset) {
-          try {
-            await unlockFunds({ walletAddress: body.walletAddress, asset: lockAsset!, amount: excess.toFixed(18) });
-          } catch (excessErr: any) {
-            req.log.warn({ excessErr: excessErr?.message }, "orders: failed to release market-buy slippage buffer excess");
+        // EVM external wallets never lock internal balance — nothing to unlock.
+        const isEvmSigFunded = (fundingRef ?? "").startsWith("evm-sig:") ||
+                               (fundingRef ?? "").startsWith("evm-balance:");
+        if (!isEvmSigFunded) {
+          const actualCost = totalFillValue;
+          const excess = parseFloat(lockAmount) - actualCost;
+          if (excess > 1e-9 && lockAsset) {
+            try {
+              await unlockFunds({ walletAddress: body.walletAddress, asset: lockAsset!, amount: excess.toFixed(18) });
+            } catch (excessErr: any) {
+              req.log.warn({ excessErr: excessErr?.message }, "orders: failed to release market-buy slippage buffer excess");
+            }
           }
         }
       }
@@ -1301,7 +1306,12 @@ router.delete("/orders/:orderId", async (req, res) => {
           ? (lockPrice * remaining).toString()
           : remaining.toString();
 
-        if (parseFloat(lockAmount) > 0 && lockAsset) {
+        // EVM external wallets (evm-sig/evm-balance funding) are non-custodial:
+        // no internal balance was locked at order placement, so nothing to unlock.
+        const orderFundingRef = order.fundingRef ?? "";
+        const isEvmSigFunded = orderFundingRef.startsWith("evm-sig:") ||
+                               orderFundingRef.startsWith("evm-balance:");
+        if (!isEvmSigFunded && parseFloat(lockAmount) > 0 && lockAsset) {
           await unlockFunds({ walletAddress: order.walletAddress, asset: lockAsset, amount: lockAmount });
         }
       } catch (unlockErr) {
