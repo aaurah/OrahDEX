@@ -21,6 +21,8 @@ import {
   type LockInstruction,
 } from "../../hooks/useEvmHtlcSession";
 import { getPublicClient } from "../../lib/escrow";
+import { getWagmiConfig } from "../../lib/reown";
+import { sendTransaction as wagmiSendTransaction } from "@wagmi/core";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -122,8 +124,25 @@ function LockPanel({
   const needsApprove = !isNative;
 
   async function sendTx(params: object): Promise<string> {
+    // Try wagmi first — supports WalletConnect, Reown mobile wallets, and
+    // injected wallets registered via Reown AppKit.
+    const config = getWagmiConfig();
+    if (config) {
+      try {
+        const txHash = await wagmiSendTransaction(config, params as any);
+        return txHash;
+      } catch (wagmiErr: any) {
+        const isRejection =
+          wagmiErr?.code === 4001 ||
+          wagmiErr?.code === "ACTION_REJECTED" ||
+          /rejected|denied|cancel/i.test(wagmiErr?.message ?? "");
+        if (isRejection) throw new Error("Transaction rejected by user.");
+        // Non-rejection wagmi failure — fall through to injected provider.
+      }
+    }
+    // Fallback: directly injected provider (MetaMask, Rabby, etc.)
     const provider = (window as any).ethereum;
-    if (!provider) throw new Error("MetaMask not detected. Please install MetaMask.");
+    if (!provider) throw new Error("No wallet found. Please connect MetaMask or use WalletConnect.");
     return new Promise((resolve, reject) => {
       provider.request({ method: "eth_sendTransaction", params: [params] })
         .then((hash: string) => resolve(hash))

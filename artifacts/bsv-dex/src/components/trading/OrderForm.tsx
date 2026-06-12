@@ -562,6 +562,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         network:          (network as any) ?? "evm",
         address:          address ?? "",
         balanceLoading:   isEvm && (balancesLoading || balancesLastFetch === 0),
+        walletMode:       isEvm,
       });
       setPrecheckResult(result);
       precheckKeyRef.current = key;
@@ -734,13 +735,14 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
     // ── Synchronous balance guard (runs before precheck, no debounce lag) ─────
     // Block immediately if the balance is clearly too low.
+    // EVM external wallets are skipped: the DEX never holds their funds and the
+    // server validates actual on-chain balance before executing any trade.
     const required     = parseFloat(amount);
     const effectivePrice = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
     const total        = effectivePrice > 0 ? effectivePrice * required : 0;
     // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
     // never falsely blocked by floating-point arithmetic.
-    if (side === "sell" && required > availableAmt + 1e-9
-        && !(isEvm && (balancesLoading || balancesLastFetch === 0))) {
+    if (!isEvm && side === "sell" && required > availableAmt + 1e-9) {
       toast({
         title:       "Insufficient Balance",
         description: `You only have ${availableAmt.toFixed(6)} ${availableSym}. Cannot sell ${amount} ${base}.`,
@@ -748,8 +750,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
       });
       return;
     }
-    if (side === "buy" && total > 0 && total > availableAmt + 1e-9
-        && !(isEvm && (balancesLoading || balancesLastFetch === 0))) {
+    if (!isEvm && side === "buy" && total > 0 && total > availableAmt + 1e-9) {
       toast({
         title:       "Insufficient Balance",
         description: `You need ${total.toFixed(2)} ${quote} but only have ${availableAmt.toFixed(2)} ${quote}.`,
@@ -774,6 +775,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         network:          (network as any) ?? "evm",
         address:          address ?? "",
         balanceLoading:   isEvm && (balancesLoading || balancesLastFetch === 0),
+        walletMode:       isEvm,
       });
       setPrecheckResult(check);
       precheckKeyRef.current = submitKey;
@@ -1603,6 +1605,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               `${side === "buy" ? "Buy" : "Sell"} ${base}`
             )}
           </button>
+
+          {/* Wallet signing hint — shown while waiting for MetaMask/WalletConnect popup */}
+          {signingOrder && (
+            <p className="text-center text-[11px] text-amber-400 animate-pulse -mt-1">
+              Check your wallet for a signing request
+            </p>
+          )}
 
           {/* Fee info & Keeper tier */}
           <div className="flex items-center justify-between px-1 text-[10px] text-muted-foreground">
