@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { cn, formatPrice } from "@/lib/utils";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
-import { getNativeSymbol } from "@/lib/chainConfig";
+import { getNativeSymbol, getChainName } from "@/lib/chainConfig";
 import { useQuote, KEEPER_TIER_COLORS } from "@/hooks/useQuote";
 import { precheck, TradeTimer, reportTradeMetrics, getBadge, type PrecheckResult } from "@/lib/tradeEngine";
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
@@ -796,6 +796,59 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     }
 
     const addTx   = useWalletStore.getState().addPendingTx;
+
+    // ── Step 2b: Network guard for external EVM wallets ───────────────────────
+    // Catch wrong-network connections (testnet or wrong mainnet) before the
+    // user is sent to imToken/MetaMask to sign — giving instant feedback.
+    if (isEvm && !isOrahWallet) {
+      const TESTNET_CHAIN_IDS = new Set([
+        11155111, // Sepolia (ETH testnet)
+        80001,    // Polygon Mumbai
+        97,       // BSC Testnet
+        421613,   // Arbitrum Goerli
+        84532,    // Base Sepolia
+        11155420, // Optimism Sepolia
+        59141,    // Linea Sepolia
+        1442,     // Polygon zkEVM Testnet
+        80002,    // Polygon Amoy
+        943,      // PulseChain Testnet
+      ]);
+      if (TESTNET_CHAIN_IDS.has(chainId)) {
+        toast({
+          title: "Wrong Network — Testnet Detected",
+          description: `You're connected to ${getChainName(chainId)} (testnet). Open your wallet, switch to Ethereum mainnet or another supported network, then try again.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Quote-asset vs chain mismatch: e.g. trading a BNB pair while on Ethereum.
+      // ETH is native on multiple chains (mainnet + all L2s) so any ETH-native chain is fine.
+      const ETH_NATIVE_CHAINS  = new Set([1, 42161, 10, 8453, 59144, 324, 534352, 5, 167000]);
+      const QUOTE_NATIVE_CHAINS: Record<string, Set<number>> = {
+        BNB:  new Set([56]),
+        POL:  new Set([137]), MATIC: new Set([137]),
+        AVAX: new Set([43114]),
+        FTM:  new Set([250]),
+        CRO:  new Set([25]),
+        MNT:  new Set([5000]),
+        GLMR: new Set([1284]),
+        CELO: new Set([42220]),
+        ETH:  ETH_NATIVE_CHAINS,
+      };
+      const expectedChains = QUOTE_NATIVE_CHAINS[quote.toUpperCase()];
+      if (expectedChains && !expectedChains.has(chainId)) {
+        const networkLabel = quote === "ETH"
+          ? "Ethereum mainnet or an ETH L2 (Arbitrum, Optimism, Base…)"
+          : getChainName([...expectedChains][0]);
+        toast({
+          title: "Wrong Network",
+          description: `${quote} pairs require ${networkLabel}. You're on ${getChainName(chainId)}. Switch networks in your wallet and try again.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
 
     // ── Step 3: Order confirmation for limit/stop orders ─────────────────────
     // Limit and stop orders don't execute on-chain immediately — they sit in the
