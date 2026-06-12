@@ -86,12 +86,12 @@ const BALANCE_CHECK_TIMEOUT_MS = 4_000;
 
 /** Public JSON-RPC endpoints per chain ID. */
 const EVM_PUBLIC_RPCS: Record<number, string[]> = {
-  1:     ["https://eth.llamarpc.com", "https://cloudflare-eth.com"],
-  10:    ["https://mainnet.optimism.io"],
+  1:     [process.env.ETH_RPC_URL ?? "https://ethereum.publicnode.com", "https://eth.drpc.org"],
+  10:    ["https://optimism.publicnode.com", "https://mainnet.optimism.io"],
   56:    ["https://bsc-dataseed.binance.org"],
-  137:   ["https://polygon-rpc.com"],
-  8453:  ["https://mainnet.base.org"],
-  42161: ["https://arb1.arbitrum.io/rpc"],
+  137:   ["https://polygon.publicnode.com"],
+  8453:  ["https://base.publicnode.com", "https://mainnet.base.org"],
+  42161: ["https://arbitrum-one.publicnode.com", "https://arb1.arbitrum.io/rpc"],
 };
 
 /**
@@ -367,13 +367,10 @@ async function verifySpotFunding(
         };
       }
       if (balCheck.result === "skipped") {
-        logger.warn({ walletAddress, asset, chainId }, "fundingVerifier: EVM balance check failed (RPC timeout/unavailable) — rejecting order (fail-closed)");
-        return {
-          valid:      false,
-          fundingRef: "",
-          error:      "Unable to verify on-chain balance: all RPC endpoints timed out. Please try again in a moment.",
-          code:       "BALANCE_CHECK_FAILED",
-        };
+        // Fail-open: RPC unreachable/timeout — accept the order on signature alone.
+        // Balance is enforced on-chain at HTLC lock time; a bad actor gains nothing
+        // since settlement requires the actual on-chain transfer to complete.
+        logger.warn({ walletAddress, asset, chainId }, "fundingVerifier: EVM balance check skipped (RPC timeout/unavailable) — proceeding on signature proof");
       }
     }
 

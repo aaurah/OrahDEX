@@ -19,10 +19,19 @@ After returning from background (imToken app-switch), iOS Safari puts `fetch()` 
 
 **Why:** `setTimeout`-based Promise.race is immune to the iOS AbortController bug because it runs in the JS microtask queue, not the WebKit network layer.
 
-### Layer 3 — fundingVerifier.ts RPC balance check stalls (server-side)
-`verifyAndLockFunding` for EVM external wallets called `getBalance`/`readContract` via viem on public EVM RPC nodes. Public nodes stall TCP indefinitely; Node.js `AbortSignal.timeout()` does NOT reliably abort open sockets.
+### Layer 3 — fundingVerifier.ts RPC balance check blocks trades (server-side)
 
-**Fix:** Removed the RPC block entirely. EVM external wallets return `evm-sig:` immediately after 65-byte signature format validation. Balance enforcement happens on-chain at HTLC lock time.
+`fundingVerifier.ts` has its **own separate** `EVM_PUBLIC_RPCS` list (lines ~88-98) that is NOT shared with `subsystemProbe.ts` or `evmHtlc.ts`. When those two files were updated to use publicnode.com, `fundingVerifier.ts` kept the dead old URLs and silently timed out on every order.
+
+**Three sub-issues, all in fundingVerifier.ts:**
+1. `EVM_PUBLIC_RPCS` had dead fallbacks: `eth.llamarpc.com`, `cloudflare-eth.com`, `polygon-rpc.com`.
+2. `ETH_RPC_URL` env var was a Replit **secret** (not env var) pointing to an expired QuickNode node. `deleteEnvVars()` does NOT delete secrets — user must update/delete from Replit Secrets panel. The first entry of `EVM_PUBLIC_RPCS[1]` now reads `process.env.ETH_RPC_URL` so a configured secret is always preferred over the fallback.
+3. The `skipped` (RPC timeout) branch was **fail-closed** — blocking the trade with "all RPC endpoints timed out" — contradicting the comment that said fail-open. Balance enforcement happens on-chain at HTLC lock time, so fail-open is correct and safe.
+
+**Fix:**
+- Updated `EVM_PUBLIC_RPCS` to use publicnode.com (same as subsystemProbe + evmHtlc), added `eth.drpc.org` as ETH fallback #2.
+- Chain 1 primary slot now reads `process.env.ETH_RPC_URL` first.
+- Changed `skipped` branch from returning `{ valid: false, error: "..." }` to a `logger.warn` + fall-through, so the order proceeds on signature proof alone.
 
 ## Network mismatch guard (added in same session)
 
@@ -39,14 +48,10 @@ User was connected to Sepolia testnet (chainId 11155111) and placed a production
 - `orders.ts`: EVM external users match only against other EVM external wallet counterparties (bots excluded via `requiresDefiWalletToWallet`). `findEscrowChain` skipped when both orders have `evm-sig:`/`evm-balance:` refs.
 - `onError` handler in OrderForm: added `err?.name === "TimeoutError"` check alongside `AbortError` to correctly surface timeout toasts.
 
-## Diagnostic logs (can remove later)
-
-- `req.log.info(...)` "POST /api/orders: HANDLER ENTERED" fires at handler entry — confirms request reached server.
-- `console.log('[proxy] ...')` in `serve-static.mjs proxyToApi` for non-GET requests — confirms POST reached static proxy.
-
 ## How to apply
 
 - Any future hang on EVM order placement: check (1) whether `signingOrder` is stuck (WalletConnect session drop), (2) whether `placeOrder.isPending` is stuck (iOS fetch zombie), (3) whether fundingVerifier has new blocking async paths.
 - Any `customFetch` timeout must use `Promise.race` — never rely solely on AbortController for iOS Safari compatibility.
-- Any server RPC call in the order flow MUST have an explicit hard timeout. Never use bare `http(rpcUrl)` without `{ timeout }`.
+- **RPC URLs exist in THREE places:** `subsystemProbe.ts`, `evmHtlc.ts`, AND `fundingVerifier.ts`. Always update all three together when changing RPC endpoints.
+- `deleteEnvVars()` does NOT delete Replit secrets — use `requestEnvVar()` to ask the user to update the value.
 - Network guard must run BEFORE signing in `handleSubmit` so testnet/mismatch errors surface before the user switches apps.
