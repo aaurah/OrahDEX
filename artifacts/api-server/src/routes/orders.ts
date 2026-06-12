@@ -660,24 +660,43 @@ router.post("/orders", async (req, res) => {
         let prefetchedBuyerChain:  number | null = null;
         let escrowAnyDeposit = false;
         if (bothEvmExternal) {
-          try {
-            const buyerOrderId  = side === "buy"  ? id : match.id;
-            const sellerOrderId = side === "sell" ? id : match.id;
-            [prefetchedBuyerChain, prefetchedSellerChain] = await Promise.all([
-              findEscrowChain(buyerOrderId),
-              findEscrowChain(sellerOrderId),
-            ]);
-            escrowAnyDeposit =
-              prefetchedBuyerChain !== null || prefetchedSellerChain !== null;
-          } catch (err: any) {
-            // Fail-closed: if we can't read any escrow chain, assume the
-            // worst (deposit might exist) and gate the trade. Better to
-            // skip a match than to risk releasing locked funds blindly.
-            req.log.error(
-              { err: err?.message, incomingId: id, matchId: match.id },
-              "orders: escrow precheck RPC failure — failing closed (skipping match)",
+          // Orders funded via evm-sig: / evm-balance: are on the new non-custodial
+          // HTLC path — they NEVER have legacy escrow contract deposits.
+          // Skipping the RPC chain scan eliminates the main latency source
+          // (one readContract call per chain per order, with no timeout).
+          const incomingRef = fundingRef ?? "";
+          const incomingIsNewHtlc =
+            incomingRef.startsWith("evm-sig:") || incomingRef.startsWith("evm-balance:");
+          const matchIsNewHtlc =
+            matchFundingRef0.startsWith("evm-sig:") || matchFundingRef0.startsWith("evm-balance:");
+          const bothNewHtlcFlow = incomingIsNewHtlc && matchIsNewHtlc;
+
+          if (!bothNewHtlcFlow) {
+            // Legacy escrow path — must scan all chains to check for deposits.
+            try {
+              const buyerOrderId  = side === "buy"  ? id : match.id;
+              const sellerOrderId = side === "sell" ? id : match.id;
+              [prefetchedBuyerChain, prefetchedSellerChain] = await Promise.all([
+                findEscrowChain(buyerOrderId),
+                findEscrowChain(sellerOrderId),
+              ]);
+              escrowAnyDeposit =
+                prefetchedBuyerChain !== null || prefetchedSellerChain !== null;
+            } catch (err: any) {
+              // Fail-closed: if we can't read any escrow chain, assume the
+              // worst (deposit might exist) and gate the trade. Better to
+              // skip a match than to risk releasing locked funds blindly.
+              req.log.error(
+                { err: err?.message, incomingId: id, matchId: match.id },
+                "orders: escrow precheck RPC failure — failing closed (skipping match)",
+              );
+              continue;
+            }
+          } else {
+            req.log.debug(
+              { incomingId: id, matchId: match.id },
+              "orders: escrow precheck skipped — both orders on new HTLC flow (no legacy deposits possible)",
             );
-            continue;
           }
 
           if (escrowAnyDeposit) {
