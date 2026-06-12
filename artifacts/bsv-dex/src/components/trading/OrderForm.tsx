@@ -349,7 +349,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const nativeBal = balance ? parseFloat(balance) : 0;
 
   // Fetch real on-chain token balances for the connected EVM wallet
-  const { balances: tokenBalances, loading: balancesLoading, refresh: refreshBalances } = useEvmBalances(
+  const { balances: tokenBalances, loading: balancesLoading, refresh: refreshBalances, lastFetch: balancesLastFetch } = useEvmBalances(
     isEvm ? address : null,
     isEvm ? (chainId ?? 1) : null
   );
@@ -561,6 +561,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         currentPrice,
         network:          (network as any) ?? "evm",
         address:          address ?? "",
+        balanceLoading:   isEvm && (balancesLoading || balancesLastFetch === 0),
       });
       setPrecheckResult(result);
       precheckKeyRef.current = key;
@@ -731,7 +732,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     const total        = effectivePrice > 0 ? effectivePrice * required : 0;
     // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
     // never falsely blocked by floating-point arithmetic.
-    if (side === "sell" && required > availableAmt + 1e-9) {
+    if (side === "sell" && required > availableAmt + 1e-9
+        && !(isEvm && (balancesLoading || balancesLastFetch === 0))) {
       toast({
         title:       "Insufficient Balance",
         description: `You only have ${availableAmt.toFixed(6)} ${availableSym}. Cannot sell ${amount} ${base}.`,
@@ -739,7 +741,8 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
       });
       return;
     }
-    if (side === "buy" && total > 0 && total > availableAmt + 1e-9) {
+    if (side === "buy" && total > 0 && total > availableAmt + 1e-9
+        && !(isEvm && (balancesLoading || balancesLastFetch === 0))) {
       toast({
         title:       "Insufficient Balance",
         description: `You need ${total.toFixed(2)} ${quote} but only have ${availableAmt.toFixed(2)} ${quote}.`,
@@ -763,6 +766,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         currentPrice,
         network:          (network as any) ?? "evm",
         address:          address ?? "",
+        balanceLoading:   isEvm && (balancesLoading || balancesLastFetch === 0),
       });
       setPrecheckResult(check);
       precheckKeyRef.current = submitKey;

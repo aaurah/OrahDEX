@@ -40,7 +40,8 @@ export type TradeWarningCode =
   | "LOW_LIQUIDITY"
   | "HIGH_VOLATILITY"
   | "PRICE_IMPACT_MODERATE"
-  | "LARGE_ORDER";
+  | "LARGE_ORDER"
+  | "BALANCE_LOADING";
 
 export interface TradeWarning {
   code: TradeWarningCode;
@@ -71,6 +72,7 @@ const WARNING_MESSAGES: Record<TradeWarningCode, string> = {
   HIGH_VOLATILITY:        "This market is highly volatile right now. Price may move during execution.",
   PRICE_IMPACT_MODERATE:  "Your order will move the market price by more than 1%. Consider splitting.",
   LARGE_ORDER:            "Large order — consider splitting into smaller chunks for better fills.",
+  BALANCE_LOADING:        "Wallet balance is still loading — server will verify funds before executing.",
 };
 
 export function makeError(code: TradeErrorCode, detail?: string): TradeError {
