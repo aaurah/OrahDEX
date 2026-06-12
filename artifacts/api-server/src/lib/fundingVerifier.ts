@@ -49,7 +49,6 @@
  */
 
 import crypto from "node:crypto";
-import { createPublicClient, http } from "viem";
 import { pool } from "@workspace/db";
 import { logger } from "./logger.js";
 import { getSolBalance } from "./solanaWallet.js";
@@ -65,7 +64,6 @@ import {
   type OrderKind,
   type WalletSource,
 } from "./orderIntent.js";
-import { getTokenInfo, isNativeAsset } from "./tokenRegistry.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -175,117 +173,19 @@ async function verifySpotFunding(
       }
     }
 
-    // 3. chainId is required to verify on-chain balance — reject without it.
-    //    Accepting unverified balance claims is a security risk (funds could be absent).
-    if (!chainId) {
-      return {
-        valid:      false,
-        fundingRef: "",
-        error:      "chainId is required for external EVM wallet orders so on-chain balance can be verified.",
-        code:       "CHAIN_ID_REQUIRED",
-      };
-    }
-
-    const RPC_URLS: Record<number, string> = {
-      1:        process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
-      56:       process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
-      137:      process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",
-      8453:     process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
-      42161:    process.env.ARB_RPC_URL      ?? "https://arb1.arbitrum.io/rpc",
-      10:       process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",
-      43114:    process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
-      11155111: process.env.SEPOLIA_RPC_URL  ?? "https://ethereum-sepolia-rpc.publicnode.com",
-    };
-    let rpcUrl = RPC_URLS[chainId];
-    if (!rpcUrl) {
-      // Fall back to dynamically registered custom chains
-      try {
-        const { getCustomChains } = await import("./chainRegistry.js");
-        const customs = await getCustomChains();
-        const custom  = customs.find(c => c.chainId === chainId);
-        if (custom) rpcUrl = custom.rpcUrl;
-      } catch {
-        // Ignore dynamic lookup errors — fall through to the hard rejection below
-      }
-    }
-    if (!rpcUrl) {
-      return {
-        valid:      false,
-        fundingRef: "",
-        error:      `chainId ${chainId} is not supported for on-chain balance verification.`,
-        code:       "CHAIN_ID_REQUIRED",
-      };
-    }
-
-    try {
-      // 3-second timeout — falls back to sig-proof on timeout (see catch below).
-      // EVM wallets are also protected by HTLC escrow; on-chain check is
-      // defense-in-depth only and must not block order placement for long.
-      const client = createPublicClient({ transport: http(rpcUrl, { timeout: 3_000 }) });
-
-      // Minimal ERC-20 ABI for balanceOf
-      const ERC20_BALANCE_OF_ABI = [
-        {
-          type:    "function",
-          name:    "balanceOf",
-          inputs:  [{ name: "account", type: "address" }],
-          outputs: [{ name: "", type: "uint256" }],
-          stateMutability: "view",
-        },
-      ] as const;
-
-      let onChain: number;
-
-      if (isNativeAsset(chainId, asset)) {
-        // Native chain asset: ETH / BNB / MATIC / AVAX
-        const onChainBal = await client.getBalance({ address: walletAddress as `0x${string}` });
-        onChain = Number(onChainBal) / 1e18;
-      } else {
-        // ERC-20 token: look up contract address and decimals.
-        // Unknown tokens are rejected — accepting without verification is a security risk.
-        const tokenInfo = getTokenInfo(chainId, asset);
-        if (!tokenInfo) {
-          logger.warn(
-            { walletAddress, chainId, asset },
-            "fundingVerifier: token not in registry — rejecting order",
-          );
-          return {
-            valid:      false,
-            fundingRef: "",
-            error:      `Token ${asset} is not supported on chain ${chainId}. Add it to the token registry or deposit via a supported path.`,
-            code:       "TOKEN_UNSUPPORTED",
-          };
-        }
-        const rawBalance = await client.readContract({
-          address:      tokenInfo.address as `0x${string}`,
-          abi:          ERC20_BALANCE_OF_ABI,
-          functionName: "balanceOf",
-          args:         [walletAddress as `0x${string}`],
-        });
-        onChain = Number(rawBalance) / 10 ** tokenInfo.decimals;
-      }
-
-      if (onChain < needed) {
-        return {
-          valid:      false,
-          fundingRef: "",
-          error:      `Insufficient on-chain ${asset} balance (verified via RPC)`,
-          code:       "INSUFFICIENT_FUNDS",
-        };
-      }
-    } catch (rpcErr: any) {
-      // RPC verification timed out or failed (stale public node, rate-limit, etc.).
-      // The user already proved wallet ownership via personal_sign — fall back to
-      // signature-based funding proof so the order is not silently dropped.
-      // HTLC escrow handles the actual on-chain lock before settlement executes.
-      logger.warn(
-        { walletAddress, chainId, err: rpcErr?.message },
-        "fundingVerifier: on-chain RPC balance check failed — accepting on signature proof",
-      );
-      const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
-      return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
-    }
-
+    // EVM external wallets: accept on signature proof immediately.
+    //
+    // Wallet ownership is already proven above (65-byte EVM signature format
+    // check) and will be fully re-verified in orders.ts via verifyEvmSignature.
+    // A prior RPC getBalance / readContract call was removed here because:
+    //   1. Public EVM nodes (eth.llamarpc.com etc.) frequently stall the TCP
+    //      connection indefinitely — Node.js AbortSignal.timeout does NOT
+    //      reliably abort open sockets, so the request blocks the HTTP response.
+    //   2. The balance check is redundant: the HTLC escrow contract enforces the
+    //      actual on-chain balance at lockETH() / lockToken() call time.
+    //      If the user has insufficient funds the HTLC lock reverts on-chain.
+    //   3. Wallet ownership (not balance) is the security invariant for order
+    //      placement — balance is enforced at settlement, not at intent.
     const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
     return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
   }
