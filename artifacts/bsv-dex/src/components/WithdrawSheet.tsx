@@ -46,6 +46,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useAddressBookStore, WALLET_TYPE_META } from "@/store/useAddressBookStore";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { QRCodeCanvas } from "qrcode.react";
 
 // ── constants ────────────────────────────────────────────────────────────────
@@ -347,6 +348,16 @@ export function WithdrawSheet({
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const { isHardwareWallet, hardwareWalletType } = useWalletStore();
+  const customTokens = useCustomTokenStore(s => s.tokens);
+
+  const getTokensForChain = (chainId: number): WalletToken[] => {
+    const staticList = WALLET_TOKENS[chainId] ?? [];
+    const staticSymbols = new Set(staticList.map(t => t.symbol.toUpperCase()));
+    const custom: WalletToken[] = customTokens
+      .filter(t => t.chainId === chainId && !staticSymbols.has(t.symbol.toUpperCase()))
+      .map(t => ({ symbol: t.symbol, decimals: t.decimals, isNative: false, address: t.address, color: t.color }));
+    return [...staticList, ...custom];
+  };
 
   const isBitcoinFork = ["bsv", "btc", "bch"].includes(network.toLowerCase());
   const isSolana      = network.toLowerCase() === "sol";
@@ -432,9 +443,9 @@ export function WithdrawSheet({
         if (preChain) {
           setWalletSendChain(preChain);
           const preToken = initialTokenSymbol
-            ? (WALLET_TOKENS[initialChainId] ?? []).find(t => t.symbol.toUpperCase() === initialTokenSymbol.toUpperCase())
+            ? getTokensForChain(initialChainId).find(t => t.symbol.toUpperCase() === initialTokenSymbol.toUpperCase())
             : undefined;
-          setWalletSendToken(preToken ?? (WALLET_TOKENS[initialChainId]?.[0] ?? resolveWalletChainToken(asset).token));
+          setWalletSendToken(preToken ?? (getTokensForChain(initialChainId)[0] ?? resolveWalletChainToken(asset).token));
           setWalletSendBalance(null);
           return;
         }
@@ -1741,7 +1752,7 @@ export function WithdrawSheet({
                         key={ch.id}
                         onClick={() => {
                           setWalletSendChain(ch);
-                          setWalletSendToken(WALLET_TOKENS[ch.id][0]);
+                          setWalletSendToken(getTokensForChain(ch.id)[0]);
                           setWalletSendBalance(null);
                           setWalletSendAmount("");
                         }}
@@ -1763,7 +1774,7 @@ export function WithdrawSheet({
                         key={ch.id}
                         onClick={() => {
                           setWalletSendChain(ch);
-                          setWalletSendToken(WALLET_TOKENS[ch.id][0]);
+                          setWalletSendToken(getTokensForChain(ch.id)[0]);
                           setWalletSendBalance(null);
                           setWalletSendAmount("");
                         }}
@@ -1785,7 +1796,7 @@ export function WithdrawSheet({
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Token</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {(WALLET_TOKENS[walletSendChain.id] ?? []).map(tok => (
+                    {getTokensForChain(walletSendChain.id).map(tok => (
                       <button
                         key={tok.symbol}
                         onClick={() => { setWalletSendToken(tok); setWalletSendBalance(null); setWalletSendAmount(""); }}
