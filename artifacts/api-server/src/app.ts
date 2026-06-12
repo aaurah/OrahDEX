@@ -43,6 +43,17 @@ pool.query(`
     WHERE "chain_id" IS NOT NULL;
 `).catch((err: Error) => logger.warn({ err: err.message }, "chain_id migration failed (non-fatal)"));
 
+// Create the markets filter index if it doesn't exist.
+// The public markets query (WHERE enabled=true AND type!='letsexchange') does a
+// full sequential scan on 1M+ rows without this index, causing 20s+ timeouts.
+// CONCURRENTLY: builds without locking the table, safe to run on a live server.
+pool.connect().then(client =>
+  client.query(
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS markets_enabled_type_idx
+     ON markets (enabled, type)`
+  ).finally(() => client.release())
+).catch((err: Error) => logger.warn({ err: err.message }, "markets index migration failed (non-fatal)"));
+
 const app: Express = express();
 const middlewareRegistrationOrder: string[] = [];
 

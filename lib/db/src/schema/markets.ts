@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, timestamp, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, timestamp, boolean, jsonb, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -32,7 +32,11 @@ export const marketsTable = pgTable("markets", {
    */
   pinned: boolean("pinned").notNull().default(false),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (t) => [
+  // Critical for GET /api/markets — filters enabled=true AND type != 'letsexchange'
+  // on a 1M+ row table. Without this index every request does a full table scan.
+  index("markets_enabled_type_idx").on(t.enabled, t.type),
+]);
 
 export const insertMarketSchema = createInsertSchema(marketsTable);
 export type InsertMarket = z.infer<typeof insertMarketSchema>;
