@@ -366,20 +366,41 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  // Apply a request timeout unless the caller already supplies an AbortSignal
-  // or opts out by passing timeoutMs: 0.
+  // Apply a request timeout.
+  //
+  // We use Promise.race *in addition to* AbortController because iOS Safari
+  // (WebKit) has a known bug where fetch() does not respond to
+  // AbortController.abort() when the connection is in a "connecting" state
+  // after the page returns from background (stale mTLS connection to the
+  // Replit proxy).  Promise.race rejects independently of the fetch promise,
+  // so it is always reliable.
+  //
+  // The AbortController signal is still passed to fetch() so that the
+  // underlying TCP connection is cleaned up as soon as possible when the
+  // race resolves.
   let timeoutController: AbortController | undefined;
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   let signal = init.signal;
   if (timeoutMs > 0 && !signal) {
     timeoutController = new AbortController();
-    timeoutId = setTimeout(() => timeoutController!.abort(), timeoutMs);
     signal = timeoutController.signal;
   }
 
   let response: Response;
   try {
-    response = await fetch(input, { ...init, method, headers, signal });
+    const fetchPromise = fetch(input, { ...init, method, headers, signal });
+
+    if (timeoutMs > 0 && !init.signal) {
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          timeoutController?.abort();
+          reject(new DOMException(`Request timed out after ${timeoutMs}ms`, "TimeoutError"));
+        }, timeoutMs);
+      });
+      response = await Promise.race([fetchPromise, timeoutPromise]);
+    } else {
+      response = await fetchPromise;
+    }
   } finally {
     if (timeoutId != null) clearTimeout(timeoutId);
   }
