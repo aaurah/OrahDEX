@@ -3553,6 +3553,71 @@ router.get(["/evm/filter-fn", "/quicknode/filter-fn"], (req, res) => {
   });
 });
 
+// GET /api/admin/evm/chains-config — full EVM chain + contract address config
+router.get("/evm/chains-config", requireAdminToken, (_req, res) => {
+  const domain = process.env["REPLIT_DEV_DOMAIN"] ?? null;
+  const RPC_ENV: Record<number, string> = {
+    1:        "ETH_RPC_URL",
+    137:      "POLYGON_RPC_URL",
+    56:       "BSC_RPC_URL",
+    8453:     "BASE_RPC_URL",
+    42161:    "ARB_RPC_URL",
+    10:       "OP_RPC_URL",
+    43114:    "AVAX_RPC_URL",
+    324:      "ZKSYNC_RPC_URL",
+    59144:    "LINEA_RPC_URL",
+    534352:   "SCROLL_RPC_URL",
+    1329:     "SEI_RPC_URL",
+    130:      "UNICHAIN_RPC_URL",
+    25:       "CRONOS_RPC_URL",
+    100:      "GNOSIS_RPC_URL",
+    146:      "SONIC_RPC_URL",
+    250:      "FANTOM_RPC_URL",
+    288:      "BOBA_RPC_URL",
+    1088:     "METIS_RPC_URL",
+    1284:     "MOONBEAM_RPC_URL",
+    5000:     "MANTLE_RPC_URL",
+    34443:    "MODE_RPC_URL",
+    42220:    "CELO_RPC_URL",
+    81457:    "BLAST_RPC_URL",
+    167000:   "TAIKO_RPC_URL",
+    11155111: "SEPOLIA_RPC_URL",
+  };
+  const CONTRACT_ENV: Record<number, string> = {
+    1:        "EVM_HTLC_CONTRACT_ETH",
+    137:      "EVM_HTLC_CONTRACT_POLYGON",
+    56:       "EVM_HTLC_CONTRACT_BSC",
+    11155111: "EVM_HTLC_CONTRACT_SEPOLIA",
+  };
+
+  const chains = Object.values(EVM_CHAINS).map(c => ({
+    chainId:        c.chainId,
+    name:           c.name,
+    nativeSymbol:   c.nativeSymbol,
+    blockExplorer:  c.blockExplorer,
+    contractAddress: c.contractAddress,
+    contractEnvVar: CONTRACT_ENV[c.chainId] ?? null,
+    contractIsCustom: !!CONTRACT_ENV[c.chainId] && !!process.env[CONTRACT_ENV[c.chainId]!],
+    usdtAddress:    c.usdtAddress ?? null,
+    usdcAddress:    c.usdcAddress ?? null,
+    rpcEnvVar:      RPC_ENV[c.chainId] ?? null,
+    rpcConfigured:  !!(RPC_ENV[c.chainId] && process.env[RPC_ENV[c.chainId]!]),
+  }));
+
+  res.json({
+    chains,
+    webhookUrl: domain ? `https://${domain}/api/webhooks/evm` : null,
+    hmacConfigured: !!(process.env["EVM_WEBHOOK_SECRET"] ?? process.env["QUICKNODE_WEBHOOK_SECRET"]),
+    watchedContracts: WATCHED_CONTRACTS,
+    topics: {
+      HTLC_LOCKED:      TOPIC_HTLC_LOCKED,
+      HTLC_REVEALED:    TOPIC_HTLC_REVEALED,
+      HTLC_REFUNDED:    TOPIC_HTLC_REFUNDED,
+      ESCROW_RELEASED:  TOPIC_ESCROW_RELEASED,
+    },
+  });
+});
+
 /* ─── BSV INTENT SESSIONS (admin) ────────────────────────────────────────── */
 
 import { bsvIntentSessionsTable } from "@workspace/db/schema";
