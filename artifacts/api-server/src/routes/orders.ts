@@ -168,6 +168,10 @@ router.post("/orders/sol-challenge", (req, res) => {
 router.post("/orders", async (req, res) => {
   try {
     const body = req.body;
+    req.log.info(
+      { wallet: body?.walletAddress, symbol: body?.symbol, side: body?.side, type: body?.type },
+      "POST /api/orders: HANDLER ENTERED",
+    );
     if (!body.walletAddress || !body.symbol || !body.side || !body.type || !body.quantity) {
       res.status(400).json({ error: "Missing required fields" });
       return;
