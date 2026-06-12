@@ -803,6 +803,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     if (isEvm && !isOrahWallet) {
       const TESTNET_CHAIN_IDS = new Set([
         11155111, // Sepolia (ETH testnet)
+        5,        // Goerli (ETH testnet, deprecated)
         80001,    // Polygon Mumbai
         97,       // BSC Testnet
         421613,   // Arbitrum Goerli
@@ -812,6 +813,9 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         1442,     // Polygon zkEVM Testnet
         80002,    // Polygon Amoy
         943,      // PulseChain Testnet
+        168587773,// Blast Sepolia
+        919,      // Mode Sepolia
+        2357,     // Metis Sepolia
       ]);
       if (TESTNET_CHAIN_IDS.has(chainId)) {
         toast({
@@ -824,17 +828,34 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
       // Quote-asset vs chain mismatch: e.g. trading a BNB pair while on Ethereum.
       // ETH is native on multiple chains (mainnet + all L2s) so any ETH-native chain is fine.
-      const ETH_NATIVE_CHAINS  = new Set([1, 42161, 10, 8453, 59144, 324, 534352, 5, 167000]);
+      const ETH_NATIVE_CHAINS  = new Set([
+        1,      // Ethereum mainnet
+        42161,  // Arbitrum One
+        10,     // Optimism
+        8453,   // Base
+        59144,  // Linea
+        324,    // zkSync Era
+        534352, // Scroll
+        81457,  // Blast
+        34443,  // Mode
+        288,    // Boba Network
+        130,    // Unichain
+        167000, // Taiko
+      ]);
       const QUOTE_NATIVE_CHAINS: Record<string, Set<number>> = {
-        BNB:  new Set([56]),
-        POL:  new Set([137]), MATIC: new Set([137]),
-        AVAX: new Set([43114]),
-        FTM:  new Set([250]),
-        CRO:  new Set([25]),
-        MNT:  new Set([5000]),
-        GLMR: new Set([1284]),
-        CELO: new Set([42220]),
-        ETH:  ETH_NATIVE_CHAINS,
+        BNB:   new Set([56]),
+        POL:   new Set([137]), MATIC: new Set([137]),
+        AVAX:  new Set([43114]),
+        FTM:   new Set([250]),
+        CRO:   new Set([25]),
+        MNT:   new Set([5000]),
+        GLMR:  new Set([1284]),
+        CELO:  new Set([42220]),
+        SEI:   new Set([1329]),
+        xDAI:  new Set([100]),
+        S:     new Set([146]),
+        METIS: new Set([1088]),
+        ETH:   ETH_NATIVE_CHAINS,
       };
       const expectedChains = QUOTE_NATIVE_CHAINS[quote.toUpperCase()];
       if (expectedChains && !expectedChains.has(chainId)) {
