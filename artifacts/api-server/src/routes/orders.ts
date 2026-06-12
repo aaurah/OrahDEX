@@ -731,22 +731,19 @@ router.post("/orders", async (req, res) => {
         let fillResult: Awaited<ReturnType<typeof settleSpotFill>>;
 
         try {
-          if (bothEvmExternal) {
-            // ── On-chain EVM path: HTLC atomic settlement ──────────────────
-            // Both parties hold funds in their own wallets. Skip internal ledger
-            // settlement — funds are transferred directly on-chain via the HTLC
-            // contract (lockETH / lockToken → reveal). The HTLC watcher calls
-            // reveal() once both parties have locked, completing the trade.
+          if (bothEvmExternal && escrowAnyDeposit) {
+            // ── On-chain EVM path: escrow release ──────────────────────────
+            // At least one party pre-locked funds in OrahDEXEscrow. Skip
+            // internal ledger — the relayer will call release() for each leg.
             fillResult = {
-              // Placeholder txid until the HTLC reveal transaction settles on-chain.
-              // Prefixed so auditing tools can distinguish it from real broadcast txids.
               txid:           "htlc-pending-" + crypto.createHash("sha256").update(tradeId).digest("hex").slice(0, 32),
               broadcastAsync: true as const,
               settlementType: "evm_htlc",
               isCrossChain:   false,
             };
           } else {
-            // ── Standard path: BSV OP_RETURN + internal ledger settlement ──
+            // ── Standard path: internal ledger settlement ───────────────────
+            // Used for: non-EVM trades, EVM orders without escrow pre-locks, bots.
             // Architecture (per BSV Core DEX spec):
             //   1. UTXO-scripted swap contract: for cross-chain trades (EVM ↔ BSV),
             //      generate a P2SH HTLC — the secretHash is embedded in the OP_RETURN.
@@ -1063,7 +1060,7 @@ router.post("/orders", async (req, res) => {
         // we can't safely release (partial fill, one-sided lock, cross-chain).
         // Running HTLC in those cases would create a parallel claim against
         // the same locked funds — the very bug the safety gate prevents.
-        if (bothEvmExternal && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
+        if (bothEvmExternal && escrowAnyDeposit && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
           // Determine chain — prefer incoming order's chainId, then counterparty's, then Ethereum.
           const rawChainId = body.chainId
             ? Number(body.chainId)
