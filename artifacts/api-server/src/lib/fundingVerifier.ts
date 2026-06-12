@@ -218,9 +218,10 @@ async function verifySpotFunding(
     }
 
     try {
-      // 8-second timeout prevents public RPC stalls from blocking order placement.
-      // Public endpoints (llamarpc, infura free tier, etc.) can stall for 30s+.
-      const client = createPublicClient({ transport: http(rpcUrl, { timeout: 8_000 }) });
+      // 3-second timeout — falls back to sig-proof on timeout (see catch below).
+      // EVM wallets are also protected by HTLC escrow; on-chain check is
+      // defense-in-depth only and must not block order placement for long.
+      const client = createPublicClient({ transport: http(rpcUrl, { timeout: 3_000 }) });
 
       // Minimal ERC-20 ABI for balanceOf
       const ERC20_BALANCE_OF_ABI = [
