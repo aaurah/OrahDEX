@@ -441,6 +441,21 @@ router.get("/orders/advanced", async (req, res) => {
     res.status(400).json({ error: "walletAddress query parameter is required" });
     return;
   }
+  const signature = req.query.signature as string | undefined;
+  const nonce     = req.query.nonce     as string | undefined;
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: "signature and nonce are required. Request a challenge via GET /orders/advanced/challenge?walletAddress=<addr>",
+    });
+    return;
+  }
+  try {
+    verifyAdvancedOrderSignature(walletAddress, nonce, signature);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Signature verification failed";
+    res.status(401).json({ error: msg });
+    return;
+  }
 
   const client = await pool.connect();
   try {
@@ -470,6 +485,21 @@ router.delete("/orders/oco/:id", async (req, res) => {
   const walletAddress = (req.query.walletAddress as string | undefined) ?? (req.body?.walletAddress as string | undefined);
   if (!walletAddress) {
     res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+  const signature = (req.query.signature as string | undefined) ?? (req.body?.signature as string | undefined);
+  const nonce     = (req.query.nonce     as string | undefined) ?? (req.body?.nonce     as string | undefined);
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: "signature and nonce are required. Request a challenge via GET /orders/advanced/challenge?walletAddress=<addr>",
+    });
+    return;
+  }
+  try {
+    verifyAdvancedOrderSignature(walletAddress, nonce, signature);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Signature verification failed";
+    res.status(401).json({ error: msg });
     return;
   }
   const client = await pool.connect();
@@ -523,6 +553,21 @@ router.delete("/orders/trailing-stop/:id", async (req, res) => {
     res.status(400).json({ error: "walletAddress is required" });
     return;
   }
+  const signature = (req.query.signature as string | undefined) ?? (req.body?.signature as string | undefined);
+  const nonce     = (req.query.nonce     as string | undefined) ?? (req.body?.nonce     as string | undefined);
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: "signature and nonce are required. Request a challenge via GET /orders/advanced/challenge?walletAddress=<addr>",
+    });
+    return;
+  }
+  try {
+    verifyAdvancedOrderSignature(walletAddress, nonce, signature);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Signature verification failed";
+    res.status(401).json({ error: msg });
+    return;
+  }
   const client = await pool.connect();
   try {
     const { rows } = await client.query<{ status: string; wallet_address: string }>(
@@ -562,6 +607,21 @@ router.delete("/orders/twap/:id", async (req, res) => {
     res.status(400).json({ error: "walletAddress is required" });
     return;
   }
+  const signature = (req.query.signature as string | undefined) ?? (req.body?.signature as string | undefined);
+  const nonce     = (req.query.nonce     as string | undefined) ?? (req.body?.nonce     as string | undefined);
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: "signature and nonce are required. Request a challenge via GET /orders/advanced/challenge?walletAddress=<addr>",
+    });
+    return;
+  }
+  try {
+    verifyAdvancedOrderSignature(walletAddress, nonce, signature);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Signature verification failed";
+    res.status(401).json({ error: msg });
+    return;
+  }
   const client = await pool.connect();
   try {
     const { rows } = await client.query<{ status: string; wallet_address: string }>(
@@ -599,6 +659,21 @@ router.delete("/orders/iceberg/:id", async (req, res) => {
   const walletAddress = (req.query.walletAddress as string | undefined) ?? (req.body?.walletAddress as string | undefined);
   if (!walletAddress) {
     res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+  const signature = (req.query.signature as string | undefined) ?? (req.body?.signature as string | undefined);
+  const nonce     = (req.query.nonce     as string | undefined) ?? (req.body?.nonce     as string | undefined);
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: "signature and nonce are required. Request a challenge via GET /orders/advanced/challenge?walletAddress=<addr>",
+    });
+    return;
+  }
+  try {
+    verifyAdvancedOrderSignature(walletAddress, nonce, signature);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Signature verification failed";
+    res.status(401).json({ error: msg });
     return;
   }
   const client = await pool.connect();
