@@ -41,9 +41,10 @@ export const pool = new Pool({
   // Evict idle connections after 15 s — well below Replit Postgres's idle
   // timeout — so stale sockets are recycled before the server closes them.
   idleTimeoutMillis: 15_000,
-  // Wait up to 6 s for a free connection — fast-fail keeps background jobs from
-  // piling up and starving API requests during a slow cold-start.
-  connectionTimeoutMillis: 6_000,
+  // Wait up to 15 s for a free connection.  On cold-start 20+ background jobs
+  // fire at once; 6 s was too short and caused cascade "Connection terminated
+  // due to connection timeout" failures before any connections were established.
+  connectionTimeoutMillis: 15_000,
   // 25 connections: liquidity bot (2 seq) + price updater (1 bulk) + watchers (4)
   // + futures engine (1 seq) + user-facing headroom (17).
   max: 25,

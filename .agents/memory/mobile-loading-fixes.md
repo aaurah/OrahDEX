@@ -25,8 +25,16 @@ description: Static file server (server.mjs) must have gzip; large JS bundles ki
 1. `lib/db/src/schema/markets.ts` via Drizzle `index()`
 2. `artifacts/api-server/src/app.ts` startup migration: `CREATE INDEX CONCURRENTLY IF NOT EXISTS markets_enabled_type_idx ON markets(enabled, type)`
 
-## Pool timeout
+## Pool timeouts — critical split
 
-**Why:** Default pool `query_timeout: 20_000ms` means background jobs hold connections for 20s before failing, starving user-facing API requests.
+**Why:** On cold-start, 20+ background jobs fire simultaneously and all request DB connections. If `connectionTimeoutMillis` is too short (6s was tried), jobs that can't acquire a connection within that window die immediately with "Connection terminated due to connection timeout", causing a cascade that starves `/api/markets` too. `query_timeout` (how long a query can RUN) is separate from `connectionTimeoutMillis` (how long to WAIT for a free slot in the pool).
 
-**How to apply:** Keep `query_timeout` and `connectionTimeoutMillis` at **6000ms** in `lib/db/src/index.ts`. Background jobs catch and retry; API routes get fast-fail behavior.
+**How to apply:**
+- `query_timeout: 6_000` — kill runaway queries fast (keeps background jobs from holding connections forever)
+- `connectionTimeoutMillis: 15_000` — allow enough time to acquire a connection during busy startup; 6s caused cascade failures
+
+## Background job indexes also needed
+
+**Why:** `arbBot` does `SELECT ... WHERE status='active'` and `priceUpdater.seedMarketsIfNeeded` does `SELECT symbol FROM markets` — both full scans on 1.1M rows with the 6s `query_timeout` causing constant failures. Fix: add `markets_status_idx ON markets(status) WHERE enabled=true` partial index.
+
+**How to apply:** Added to `artifacts/api-server/src/app.ts` startup migration alongside `markets_enabled_type_idx`.
