@@ -156,16 +156,6 @@ export default defineConfig({
           if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/") || id.includes("node_modules/scheduler/")) {
             return "vendor-react";
           }
-          // Node polyfills needed at startup (keep tiny — buffer alone is ~30 KB)
-          if (
-            id.includes("node_modules/buffer/") ||
-            id.includes("node_modules/process/") ||
-            id.includes("node_modules/events/") ||
-            id.includes("node_modules/util/") ||
-            id.includes("node_modules/inherits/")
-          ) {
-            return "vendor-polyfills";
-          }
           // Routing + query
           if (id.includes("node_modules/@tanstack/") || id.includes("node_modules/wouter/")) {
             return "vendor-query";
@@ -173,14 +163,6 @@ export default defineConfig({
           // Chart library — heavy, only needed on trading pages
           if (id.includes("node_modules/lightweight-charts") || id.includes("node_modules/fancy-canvas")) {
             return "vendor-charts";
-          }
-          // Recharts + D3 — only used on lazy-loaded pages
-          if (
-            id.includes("node_modules/recharts/") ||
-            id.includes("node_modules/d3-") ||
-            id.includes("node_modules/victory-")
-          ) {
-            return "vendor-recharts";
           }
           // Crypto / wallet libs — heavy, only needed on wallet pages
           if (
@@ -197,7 +179,7 @@ export default defineConfig({
           if (id.includes("node_modules/@radix-ui/") || id.includes("node_modules/lucide-react")) {
             return "vendor-ui";
           }
-          // Reown / WalletConnect — loaded dynamically after React mounts (not critical path)
+          // Reown / WalletConnect — only needed when wallet modal opens
           if (id.includes("node_modules/@reown/") || id.includes("node_modules/@walletconnect/") || id.includes("node_modules/viem/") || id.includes("node_modules/wagmi/")) {
             return "vendor-walletconnect";
           }
