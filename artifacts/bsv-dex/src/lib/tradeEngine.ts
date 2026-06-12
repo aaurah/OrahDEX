@@ -52,6 +52,7 @@ export interface PrecheckParams {
   currentPrice: number;
   network:      "evm" | "bsv" | "btc" | "sol" | "tron";
   address:      string;
+  balanceLoading?: boolean;
 }
 
 export interface PrecheckResult {
@@ -175,8 +176,14 @@ export async function precheck(params: PrecheckParams): Promise<PrecheckResult> 
     : (price ?? currentPrice) > 0 ? (price ?? currentPrice) * amount : amount;
 
   if (availableBalance < requiredBalance * 0.9999) {
-    errors.push(makeError("INSUFFICIENT_BALANCE",
-      `Need ${requiredBalance.toFixed(6)} ${side === "sell" ? base : quote}, have ${availableBalance.toFixed(6)}`));
+    if (params.balanceLoading) {
+      // On-chain balance data is still being fetched — don't hard-block.
+      // The server will validate actual funds before executing.
+      warnings.push(makeWarning("BALANCE_LOADING"));
+    } else {
+      errors.push(makeError("INSUFFICIENT_BALANCE",
+        `Need ${requiredBalance.toFixed(6)} ${side === "sell" ? base : quote}, have ${availableBalance.toFixed(6)}`));
+    }
   }
 
   // ── 4. Slippage + price impact (via route cache or API precheck) ───────────
