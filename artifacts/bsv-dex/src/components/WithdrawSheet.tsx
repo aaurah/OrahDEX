@@ -47,6 +47,7 @@ import { useNotificationStore } from "@/store/useNotificationStore";
 import { useAddressBookStore, WALLET_TYPE_META } from "@/store/useAddressBookStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { QRCodeCanvas } from "qrcode.react";
 
 // ── constants ────────────────────────────────────────────────────────────────
@@ -358,6 +359,24 @@ export function WithdrawSheet({
       .map(t => ({ symbol: t.symbol, decimals: t.decimals, isNative: false, address: t.address, color: t.color }));
     return [...staticList, ...custom];
   };
+
+  const { balances: sendChainBalances } = useEvmBalances(walletAddress || null, walletSendChain.id);
+
+  const autoSendTokens: WalletToken[] = sendChainBalances.length > 0
+    ? sendChainBalances.map(b => ({
+        symbol:   b.symbol,
+        decimals: b.decimals,
+        isNative: b.isNative ?? false,
+        address:  b.contractAddress ?? null,
+        color:    b.color,
+      }))
+    : getTokensForChain(walletSendChain.id);
+
+  useEffect(() => {
+    if (sendChainBalances.length === 0) return;
+    const match = sendChainBalances.find(b => b.symbol === walletSendToken.symbol);
+    if (match !== undefined) setWalletSendBalance(match.amount);
+  }, [sendChainBalances, walletSendToken.symbol]);
 
   const isBitcoinFork = ["bsv", "btc", "bch"].includes(network.toLowerCase());
   const isSolana      = network.toLowerCase() === "sol";
@@ -1796,10 +1815,15 @@ export function WithdrawSheet({
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Token</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {getTokensForChain(walletSendChain.id).map(tok => (
+                    {autoSendTokens.map(tok => (
                       <button
                         key={tok.symbol}
-                        onClick={() => { setWalletSendToken(tok); setWalletSendBalance(null); setWalletSendAmount(""); }}
+                        onClick={() => {
+                          setWalletSendToken(tok);
+                          setWalletSendAmount("");
+                          const bal = sendChainBalances.find(b => b.symbol === tok.symbol);
+                          setWalletSendBalance(bal?.amount ?? null);
+                        }}
                         className={cn(
                           "px-3 py-1.5 rounded-lg text-xs font-bold border transition-all",
                           walletSendToken.symbol === tok.symbol
