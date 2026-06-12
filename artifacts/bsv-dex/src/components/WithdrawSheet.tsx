@@ -277,13 +277,21 @@ function shortAddr(a: string) {
 }
 
 // ── auto-select chain + token for a given asset symbol ───────────────────────
+// Preferred mainnet chain ID per native symbol (avoids L2s as the default)
+const NATIVE_MAINNET: Record<string, number> = {
+  ETH: 1, BNB: 56, AVAX: 43114, POL: 137, MATIC: 137,
+};
+
 function resolveWalletChainToken(asset: string): { chain: WalletChain; token: WalletToken } {
   const sym = asset.toUpperCase();
-  // 1. Check if the asset is a native token of any chain (e.g. ETH, BNB, AVAX, POL)
-  const nativeChain = WALLET_CHAINS.find(c => c.symbol.toUpperCase() === sym);
+  // 1. Check if the asset is a native token — prefer the canonical mainnet chain
+  const preferredId = NATIVE_MAINNET[sym];
+  const nativeChain = preferredId
+    ? (WALLET_CHAINS.find(c => c.id === preferredId) ?? WALLET_CHAINS.find(c => c.symbol.toUpperCase() === sym))
+    : WALLET_CHAINS.find(c => c.symbol.toUpperCase() === sym);
   if (nativeChain) {
-    const token = (WALLET_TOKENS[nativeChain.id] ?? []).find(t => t.isNative) ?? WALLET_TOKENS[nativeChain.id][0];
-    return { chain: nativeChain, token };
+    const token = (WALLET_TOKENS[nativeChain.id] ?? []).find(t => t.isNative) ?? WALLET_TOKENS[nativeChain.id]?.[0];
+    if (token) return { chain: nativeChain, token };
   }
   // 2. Check if the asset appears as an ERC-20 token on any chain (prefer chain with most liquidity)
   const CHAIN_PRIORITY = [1, 8453, 56, 42161, 10, 137, 43114, 11155111];
@@ -396,7 +404,7 @@ export function WithdrawSheet({
   const [walletSendTxHash,    setWalletSendTxHash]    = useState<string | null>(null);
   const [walletSendError,     setWalletSendError]     = useState<string | null>(null);
 
-  const { balances: sendChainBalances } = useEvmBalances(walletAddress || null, walletSendChain.id);
+  const { balances: sendChainBalances } = useEvmBalances(passkeyEvmAddress || walletAddress || null, walletSendChain.id);
 
   const autoSendTokens: WalletToken[] = sendChainBalances.length > 0
     ? sendChainBalances.map(b => ({
