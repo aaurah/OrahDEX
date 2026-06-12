@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "dist", "public");
 const PORT = Number(process.env.PORT ?? 3000);
+const API_PORT = Number(process.env.API_PORT ?? 8080);
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -24,8 +25,39 @@ const MIME = {
   ".wasm": "application/wasm",
 };
 
+function proxyToApi(req, res) {
+  const options = {
+    hostname: "127.0.0.1",
+    port:     API_PORT,
+    path:     req.url,
+    method:   req.method,
+    headers:  { ...req.headers, host: `localhost:${API_PORT}` },
+  };
+
+  const proxyReq = http.request(options, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    proxyRes.pipe(res, { end: true });
+  });
+
+  proxyReq.on("error", (err) => {
+    console.error("API proxy error:", err.message);
+    if (!res.headersSent) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "API unavailable", detail: err.message }));
+    }
+  });
+
+  req.pipe(proxyReq, { end: true });
+}
+
 const server = http.createServer((req, res) => {
-  let urlPath = req.url.split("?")[0];
+  const urlPath = req.url.split("?")[0];
+
+  if (urlPath.startsWith("/api") || urlPath.startsWith("/v1")) {
+    proxyToApi(req, res);
+    return;
+  }
+
   let filePath = path.join(ROOT, urlPath);
 
   try {
@@ -60,5 +92,5 @@ server.on("error", (err) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`OrahDEX static server running on http://0.0.0.0:${PORT}`);
+  console.log(`OrahDEX static server running on http://0.0.0.0:${PORT} — proxying /api → localhost:${API_PORT}`);
 });
