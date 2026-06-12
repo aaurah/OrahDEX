@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useSignMessage } from "wagmi";
+import { useSignMessage, useAccount } from "wagmi";
 import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle, ShieldCheck } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
@@ -303,6 +303,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress, internalXrpAddress, internalLtcAddress, internalDogeAddress, switchChain } = useWalletStore();
   const { signMessageAsync } = useSignMessage();
+  const { isConnected: evmConnected } = useAccount();
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
   const isExternalEvm = isEvm && !isOrahWallet;
@@ -1328,13 +1329,43 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           });
           evmSignature = await account.signMessage!({ message: orderMsg });
         } else {
-          evmSignature = await signMessageAsync({ message: orderMsg });
+          // External wallet: tier-1 = wagmi/Reown, tier-2 = direct window.ethereum
+          const isUserRejection = (e: any) => {
+            const code = e?.code;
+            const msg  = (e?.message ?? "").toLowerCase();
+            return code === 4001 || code === "ACTION_REJECTED" ||
+              msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
+          };
+
+          if (evmConnected) {
+            try {
+              evmSignature = await signMessageAsync({ message: orderMsg });
+            } catch (wagmiErr: any) {
+              if (isUserRejection(wagmiErr)) throw wagmiErr;
+              // Fall through to direct provider
+            }
+          }
+
+          if (!evmSignature) {
+            const hexMsg = "0x" + Array.from(new TextEncoder().encode(orderMsg))
+              .map(b => b.toString(16).padStart(2, "0")).join("");
+            const eth = (window as any).ethereum;
+            if (!eth) {
+              throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
+            }
+            evmSignature = await eth.request({
+              method: "personal_sign",
+              params: [hexMsg, address],
+            });
+          }
         }
       } catch (signErr: any) {
+        const code = signErr?.code;
         const msg: string = signErr?.message ?? "";
         toast({
           title: "Signature required",
-          description: msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel") || msg.includes("4001")
+          description: code === 4001 || code === "ACTION_REJECTED" ||
+            msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel")
             ? "You must sign the order in your wallet for on-chain settlement."
             : (msg || "Could not sign order in wallet."),
           variant: "destructive",
