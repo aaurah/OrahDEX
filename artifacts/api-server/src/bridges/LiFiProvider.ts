@@ -156,7 +156,7 @@ export async function buildLiFiTx(params: {
     throw new Error(`Li.Fi quote ${res.status}: ${text.slice(0, 300)}`);
   }
 
-  const data = await res.json();
+  const data = await res.json() as { transactionRequest?: LiFiTxRequest };
   const txReq: LiFiTxRequest | undefined = data.transactionRequest;
 
   if (!txReq?.to || !txReq?.data) {
