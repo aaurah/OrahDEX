@@ -37,6 +37,15 @@ import {
 import type { Observable } from "rxjs";
 import type { EvmTxParams, TypedDataPayload } from "./orahSigner";
 
+// ── Shared status type (used by LedgerConnectPanel) ───────────────────────────
+export type LedgerStatus =
+  | "idle"
+  | "connecting"
+  | "awaiting_app"
+  | "deriving"
+  | "ready"
+  | "error";
+
 // ── DMK singleton ─────────────────────────────────────────────────────────────
 // The DMK must be instantiated once per app lifetime.
 // Lazy-init on first use — keeps startup cost zero.

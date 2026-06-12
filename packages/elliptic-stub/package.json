@@ -1,0 +1,10 @@
+{
+  "name": "elliptic-stub",
+  "version": "7.0.0",
+  "description": "Elliptic EC compatibility shim backed by @noble/secp256k1. Replaces elliptic@<=6.6.1 to eliminate GHSA-848j-6mx2-7j84 (no upstream patch exists for the real package). Version 7.0.0 is outside the affected range (<= 6.6.1).",
+  "main": "index.js",
+  "license": "MIT",
+  "dependencies": {
+    "@noble/secp256k1": "3.0.0"
+  }
+}
