@@ -104,12 +104,12 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
 
   // ── 1. Cross-chain detection ─────────────────────────────────────────────
   // Bot orders are always same-chain (the bot only operates on the internal ledger).
-  // EVM↔EVM cross-chain: both parties on EVM but on different chain IDs.
-  const isEvmCrossChain =
-    buyerNetwork === "evm" && sellerNetwork === "evm" &&
-    buyerChainId != null && sellerChainId != null &&
-    buyerChainId !== sellerChainId;
-  const isCrossChain = (buyerNetwork !== sellerNetwork || isEvmCrossChain) && !isBot;
+  // BSV HTLC is only meaningful when one leg is on BSV.
+  // EVM↔EVM trades (same or different chainIds) must NOT generate a BSV HTLC —
+  // they either use the on-chain EVM HTLC path (escrow pre-lock) or fall through
+  // to internal ledger settlement. Creating a BSV HTLC here would produce a
+  // "dead" session: neither EVM party can interact with it.
+  const isCrossChain = buyerNetwork !== sellerNetwork && !isBot;
 
   // ── 2. HTLC generation (cross-chain only) ────────────────────────────────
   let htlcResult: Awaited<ReturnType<typeof buildHtlc>> | null = null;

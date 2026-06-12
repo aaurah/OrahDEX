@@ -676,26 +676,30 @@ router.post("/orders", async (req, res) => {
           const bothNewHtlcFlow = incomingIsNewHtlc && matchIsNewHtlc;
 
           if (!bothNewHtlcFlow) {
-            // Legacy escrow path — must scan all chains to check for deposits.
-            try {
-              const buyerOrderId  = side === "buy"  ? id : match.id;
-              const sellerOrderId = side === "sell" ? id : match.id;
-              [prefetchedBuyerChain, prefetchedSellerChain] = await Promise.all([
-                findEscrowChain(buyerOrderId),
-                findEscrowChain(sellerOrderId),
-              ]);
-              escrowAnyDeposit =
-                prefetchedBuyerChain !== null || prefetchedSellerChain !== null;
-            } catch (err: any) {
-              // Fail-closed: if we can't read any escrow chain, assume the
-              // worst (deposit might exist) and gate the trade. Better to
-              // skip a match than to risk releasing locked funds blindly.
-              req.log.error(
-                { err: err?.message, incomingId: id, matchId: match.id },
-                "orders: escrow precheck RPC failure — failing closed (skipping match)",
+            // Legacy escrow path — scan all chains to check for deposits.
+            // Use Promise.allSettled so a single slow/failing RPC out of N
+            // chains doesn't abort the entire match — any confirmed deposit
+            // still surfaces, and chains that are unreachable are skipped.
+            const buyerOrderId  = side === "buy"  ? id : match.id;
+            const sellerOrderId = side === "sell" ? id : match.id;
+            const [buyerScan, sellerScan] = await Promise.allSettled([
+              findEscrowChain(buyerOrderId),
+              findEscrowChain(sellerOrderId),
+            ]);
+            if (buyerScan.status === "fulfilled")  prefetchedBuyerChain  = buyerScan.value;
+            if (sellerScan.status === "fulfilled") prefetchedSellerChain = sellerScan.value;
+            if (buyerScan.status === "rejected" || sellerScan.status === "rejected") {
+              req.log.warn(
+                {
+                  buyerErr:  buyerScan.status  === "rejected" ? (buyerScan.reason  as Error)?.message : undefined,
+                  sellerErr: sellerScan.status === "rejected" ? (sellerScan.reason as Error)?.message : undefined,
+                  incomingId: id, matchId: match.id,
+                },
+                "orders: escrow chain scan partial RPC failure — proceeding with available results",
               );
-              continue;
             }
+            escrowAnyDeposit =
+              prefetchedBuyerChain !== null || prefetchedSellerChain !== null;
           } else {
             req.log.debug(
               { incomingId: id, matchId: match.id },
