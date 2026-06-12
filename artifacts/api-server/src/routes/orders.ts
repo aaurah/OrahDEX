@@ -736,10 +736,10 @@ router.post("/orders", async (req, res) => {
             fillResult = {
               // Placeholder txid until the HTLC reveal transaction settles on-chain.
               // Prefixed so auditing tools can distinguish it from real broadcast txids.
-              txid:             "htlc-pending-" + crypto.createHash("sha256").update(tradeId).digest("hex").slice(0, 32),
-              wasRealBroadcast: false,
-              settlementType:   "evm_htlc",
-              isCrossChain:     false,
+              txid:           "htlc-pending-" + crypto.createHash("sha256").update(tradeId).digest("hex").slice(0, 32),
+              broadcastAsync: true as const,
+              settlementType: "evm_htlc",
+              isCrossChain:   false,
             };
           } else {
             // ── Standard path: BSV OP_RETURN + internal ledger settlement ──
