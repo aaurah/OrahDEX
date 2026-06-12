@@ -4,3 +4,4 @@
 - [EVM order placement hang](evm-order-hang.md) — fundingVerifier RPC call had no timeout; public nodes stall 30s+; fix: 8s timeout + sig-proof fallback.
 - [Mobile loading fixes](mobile-loading-fixes.md) — server.mjs MUST have gzip (5.3MB→1.4MB, 74% savings); pool timeout must be 6s; markets table needs (enabled,type) index.
 - [EVM settlement dead HTLC](evm-settlement-htlc.md) — EVM↔EVM cross-chain trades must not use BSV HTLC; remove isEvmCrossChain from isCrossChain in spotSettlement.ts.
+- [Frontend critical path](frontend-critical-path.md) — entry chunk must have 0 static imports; isolate buffer→vendor-polyfills + lazy overlays is the key.
