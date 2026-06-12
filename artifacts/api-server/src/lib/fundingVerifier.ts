@@ -188,7 +188,7 @@ async function evmTokenBalance(
  * Returns:
  *   { result: "sufficient" }  — on-chain balance confirmed ≥ needed
  *   { result: "insufficient", balance } — on-chain balance confirmed < needed
- *   { result: "skipped" }     — RPC unavailable / timed out (fail-open)
+ *   { result: "skipped" }     — RPC unavailable / timed out (caller must reject — fail-closed)
  */
 async function evmBalanceCheck(
   walletAddress: string,
@@ -347,12 +347,12 @@ async function verifySpotFunding(
       };
     }
 
-    // ── Control 2: best-effort on-chain balance check ─────────────────────────
+    // ── Control 2: on-chain balance check ────────────────────────────────────
     // Uses raw JSON-RPC with Promise.race timeout to avoid the Node.js
     // AbortSignal.timeout TCP-stall bug on long-lived public RPC connections.
     // On confirmed insufficient balance → reject.
-    // On RPC timeout / unavailable node → fail-open (log warning, proceed).
-    // The HTLC escrow contract is the final enforcement point at settlement.
+    // On RPC timeout / unavailable node → reject (fail-closed: cannot accept
+    // an order whose funding cannot be verified).
     if (chainId !== undefined) {
       const balCheck = await evmBalanceCheck(walletAddress, asset, amount, chainId);
       if (balCheck.result === "insufficient") {
@@ -367,7 +367,13 @@ async function verifySpotFunding(
         };
       }
       if (balCheck.result === "skipped") {
-        logger.warn({ walletAddress, asset, chainId }, "fundingVerifier: EVM balance check skipped (RPC timeout/unavailable) — proceeding with rate-limit guarantee only");
+        logger.warn({ walletAddress, asset, chainId }, "fundingVerifier: EVM balance check failed (RPC timeout/unavailable) — rejecting order (fail-closed)");
+        return {
+          valid:      false,
+          fundingRef: "",
+          error:      "Unable to verify on-chain balance: all RPC endpoints timed out. Please try again in a moment.",
+          code:       "BALANCE_CHECK_FAILED",
+        };
       }
     }
 
