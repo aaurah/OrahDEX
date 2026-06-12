@@ -1,14 +1,18 @@
 #!/bin/bash
 cd /home/runner/workspace
 
-echo "=== Removing locks ==="
-rm -f .git/packed-refs.lock .git/index.lock
+echo "=== Wiping stale local remote-tracking refs ==="
+# Remove all origin/* ref files except Main
+find .git/refs/remotes/origin/ -type f ! -name "Main" -delete 2>/dev/null && echo "ref files cleared" || echo "no ref files found"
 
-echo "=== Force-pruning all stale remote branches ==="
-git fetch --prune origin
+# Rewrite packed-refs keeping only Main and non-origin lines
+if [ -f .git/packed-refs ]; then
+  grep -v "refs/remotes/origin/" .git/packed-refs > .git/packed-refs.tmp || true
+  grep "refs/remotes/origin/Main" .git/packed-refs >> .git/packed-refs.tmp 2>/dev/null || true
+  mv .git/packed-refs.tmp .git/packed-refs
+  echo "packed-refs cleaned"
+fi
 
-echo "=== Remaining remote branches ==="
-git branch -r | grep -v "HEAD\|gitsafe"
-
-echo "=== Local branches ==="
-git branch
+echo ""
+echo "=== Remote branches now visible locally ==="
+git --no-optional-locks branch -r | grep -v "HEAD\|gitsafe"
