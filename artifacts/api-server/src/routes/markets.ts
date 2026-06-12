@@ -177,7 +177,17 @@ router.get("/markets", async (req, res) => {
       ? and(eq(marketsTable.enabled, true), leExclude, inArray(marketsTable.type, types))
       : and(eq(marketsTable.enabled, true), leExclude);
 
-    const markets = await db.select().from(marketsTable).where(conditions);
+    // Race the DB query against an 8-second timeout.  On a slow cold-start the
+    // production DB can stall for 10-20 s, causing the response to be aborted by
+    // the proxy.  If the timeout fires first we return an empty array immediately
+    // (the client will retry) rather than hanging until the proxy kills the request.
+    const MARKET_QUERY_TIMEOUT_MS = 8_000;
+    const markets = await Promise.race([
+      db.select().from(marketsTable).where(conditions),
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(Object.assign(new Error("markets-db-timeout"), { isTimeout: true })), MARKET_QUERY_TIMEOUT_MS)
+      ),
+    ]);
 
     const result = markets.map((m) => ({
       symbol:                m.symbol,
@@ -223,9 +233,16 @@ router.get("/markets", async (req, res) => {
       return;
     }
     res.json(sliced(result));
-  } catch (err) {
-    req.log.error({ err }, "Failed to get markets");
-    res.status(500).json({ error: "Internal server error" });
+  } catch (err: any) {
+    if (err?.isTimeout) {
+      req.log.warn({ cacheKey }, "markets DB query timed out — returning empty list for fast response");
+      res.setHeader("X-Total-Count", "0");
+      res.setHeader("Cache-Control", "no-store");
+      res.json([]);
+    } else {
+      req.log.error({ err }, "Failed to get markets");
+      res.status(500).json({ error: "Internal server error" });
+    }
   }
 });
 
