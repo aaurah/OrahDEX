@@ -1182,3 +1182,84 @@ export function verifyStakeSignature(params: {
   verifyEvmSignature(params.walletAddress, stored.message, params.signature);
   stakeNonces.delete(addr);
 }
+
+// ── Advanced order nonce store ────────────────────────────────────────────────
+// Server-issued single-use challenges for advanced order creation.
+// Separate from the order/withdrawal/exchange nonce stores to prevent
+// cross-flow replay.
+// Key: walletAddress.toLowerCase()
+
+interface AdvancedOrderNonce {
+  nonce:     string;
+  message:   string;
+  expiresAt: number;
+}
+
+const advancedOrderNonces = new Map<string, AdvancedOrderNonce>();
+
+const ADVANCED_ORDER_NONCE_TTL_MS = 5 * 60 * 1_000;
+const ADVANCED_ORDER_NONCE_SWEEP  = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of advancedOrderNonces.entries()) {
+    if (v.expiresAt < now) advancedOrderNonces.delete(k);
+  }
+}, ADVANCED_ORDER_NONCE_SWEEP).unref();
+
+/**
+ * Issue a single-use, 5-minute challenge for an EVM wallet to authorize
+ * advanced order creation (OCO, trailing-stop, TWAP, iceberg).
+ *
+ * The client must sign the returned `message` with personal_sign (EIP-191)
+ * and include `signature` + `nonce` in the create request body.
+ */
+export function issueAdvancedOrderChallenge(
+  walletAddress: string,
+): { nonce: string; message: string } {
+  const nonce   = crypto.randomBytes(16).toString("hex");
+  const ts      = new Date().toISOString();
+  const message =
+    `Authorize OrahDEX advanced order creation\n\n` +
+    `Wallet: ${walletAddress}\n` +
+    `Nonce: ${nonce}\n` +
+    `Timestamp: ${ts}\n\n` +
+    `This request will not trigger a blockchain transaction.`;
+
+  advancedOrderNonces.set(walletAddress.toLowerCase(), {
+    nonce,
+    message,
+    expiresAt: Date.now() + ADVANCED_ORDER_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+/**
+ * Verify an advanced-order creation signature.
+ * The challenge is bound to `nonce` (single-use, server-issued).
+ * Consumes the nonce on success.
+ * Throws a descriptive Error on any failure — respond 401 to the client.
+ */
+export function verifyAdvancedOrderSignature(
+  walletAddress: string,
+  nonce:         string,
+  signature:     string,
+): void {
+  const addr   = walletAddress.toLowerCase();
+  const stored = advancedOrderNonces.get(addr);
+
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error(
+      "Advanced order challenge expired or not found. " +
+      "Request a fresh challenge via GET /orders/advanced/challenge?walletAddress=<addr>.",
+    );
+  }
+  if (!timingSafeStringEqual(stored.nonce, nonce)) {
+    throw new Error("Advanced order nonce mismatch.");
+  }
+  // verifyEvmSignature throws with a descriptive message on failure
+  verifyEvmSignature(walletAddress, stored.message, signature);
+  // Single-use: consume immediately after successful verification
+  advancedOrderNonces.delete(addr);
+}

@@ -1,10 +1,9 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { conversations, messages, marketsTable, ordersTable } from "@workspace/db/schema";
+import { conversations, messages, marketsTable } from "@workspace/db/schema";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { eq, asc, desc } from "drizzle-orm";
 import { logger } from "../../lib/logger.js";
-import { randomBytes, randomUUID } from "node:crypto";
 import {
   parseNaturalLanguageOrder,
   formatOrderConfirmation,
@@ -296,41 +295,22 @@ router.post("/ai/trade", async (req, res) => {
     const currentPrice = symbolMatch?.lastPrice ?? 0;
     const confirmation = formatOrderConfirmation(intent, currentPrice);
 
-    // 4. Execute if requested and we have enough params
+    // 4. Execute if requested — requires wallet-ownership proof (EIP-191 signature).
+    // Until a challenge/sign flow is wired up on this endpoint, execution is disabled
+    // to prevent IDOR: an unauthenticated caller could place orders attributed to any
+    // wallet address. Use POST /orders (spot) or POST /orders/oco|trailing-stop|twap|iceberg
+    // (advanced) which enforce wallet-signature auth.
     if (execute === true) {
-      const canExecute = canPlaceOrder(intent);
-
-      if (!canExecute) {
-        // Not enough info to place — return as preview with a hint
-        res.json({
-          intent,
-          confirmation,
-          executed: false,
-          hint: "Specify quantity or amount to execute this order.",
-        });
-        return;
-      }
-
-      // Build order row
-      const orderId    = randomUUID();
-      const nonce      = randomBytes(16).toString("hex");
-      const now        = Date.now();
-      const expiryUnix = String(now + 24 * 60 * 60 * 1000); // 24 hours
-
-      const orderRow = buildOrderRow({
-        orderId,
-        nonce,
-        expiry: expiryUnix,
-        walletAddress,
+      res.status(501).json({
+        error:
+          "Order execution via /ai/trade is not yet available. " +
+          "Parse the intent (omit `execute`) and submit the order via an authenticated " +
+          "order endpoint (POST /orders for spot, or POST /orders/oco|trailing-stop|twap|iceberg " +
+          "for advanced orders with wallet-signature auth).",
         intent,
-        currentPrice,
+        confirmation,
+        executed: false,
       });
-
-      await db.insert(ordersTable).values(orderRow);
-
-      logger.info({ orderId, walletAddress, intent }, "AI trade order placed");
-
-      res.status(201).json({ intent, confirmation, executed: true, orderId });
       return;
     }
 
@@ -343,109 +323,5 @@ router.post("/ai/trade", async (req, res) => {
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/**
- * Returns true if the intent has enough fields to place a real order
- * (i.e. we know quantity or quoteAmount).
- */
-function canPlaceOrder(intent: ParsedOrderIntent): boolean {
-  switch (intent.type) {
-    case "market":
-      return intent.quantity != null || intent.quoteAmount != null;
-    case "limit":
-      return (intent.quantity != null || intent.quoteAmount != null) && intent.price > 0;
-    case "stop_limit":
-      return intent.quantity > 0 && intent.stopPrice > 0 && intent.limitPrice > 0;
-    case "trailing_stop":
-      return intent.quantity > 0 && intent.trailPercent > 0;
-    case "twap":
-      return intent.totalAmount > 0 && intent.durationMinutes > 0 && intent.slices >= 2;
-    case "oco":
-      return intent.quantity > 0 && intent.limitPrice > 0 && intent.stopPrice > 0;
-    default:
-      return false;
-  }
-}
-
-interface OrderRowParams {
-  orderId:       string;
-  nonce:         string;
-  expiry:        string;
-  walletAddress: string;
-  intent:        Exclude<ParsedOrderIntent, { type: "unknown" }>;
-  currentPrice:  number;
-}
-
-/**
- * Map a parsed order intent to an ordersTable insert row.
- * Quantity defaults to 0 when only quoteAmount is specified (matching engine resolves it).
- * Stop price is stored in the stopPrice column when present.
- */
-function buildOrderRow(p: OrderRowParams) {
-  const { orderId, nonce, expiry, walletAddress, intent, currentPrice } = p;
-
-  // Resolve quantity: use explicit quantity if set; estimate from quoteAmount when possible
-  let quantity: string;
-  let price: string | undefined;
-  let stopPrice: string | undefined;
-
-  switch (intent.type) {
-    case "market": {
-      const qty = intent.quantity ?? (
-        intent.quoteAmount != null && currentPrice > 0
-          ? intent.quoteAmount / currentPrice
-          : 0
-      );
-      quantity = String(qty);
-      break;
-    }
-    case "limit": {
-      const limitQty = intent.quantity ?? (
-        intent.quoteAmount != null && intent.price > 0
-          ? intent.quoteAmount / intent.price
-          : 0
-      );
-      quantity = String(limitQty);
-      price    = String(intent.price);
-      break;
-    }
-    case "stop_limit":
-      quantity  = String(intent.quantity);
-      stopPrice = String(intent.stopPrice);
-      price     = String(intent.limitPrice);
-      break;
-    case "trailing_stop":
-      quantity = String(intent.quantity);
-      // Encode trailPercent in price field for now (exchange engine convention)
-      price    = String(intent.trailPercent);
-      break;
-    case "twap":
-      quantity = String(intent.totalAmount);   // quantity = total USD amount for TWAP
-      break;
-    case "oco":
-      quantity  = String(intent.quantity);
-      price     = String(intent.limitPrice);
-      stopPrice = String(intent.stopPrice);
-      break;
-  }
-
-  return {
-    id:                orderId,
-    symbol:            intent.symbol,
-    walletAddress:     walletAddress.toLowerCase(),
-    networkType:       walletAddress.startsWith("0x") ? "evm" : "bsv",
-    side:              intent.side,
-    type:              intent.type,
-    status:            "open",
-    price:             price ?? null,
-    stopPrice:         stopPrice ?? null,
-    quantity:          quantity || "0",
-    remainingQuantity: quantity || "0",
-    filledQuantity:    "0",
-    fee:               "0",
-    nonce,
-    expiry,
-  };
-}
 
 export default router;

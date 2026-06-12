@@ -2,11 +2,33 @@ import { Router, type IRouter } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { randomUUID } from "node:crypto";
+import {
+  issueAdvancedOrderChallenge,
+  verifyAdvancedOrderSignature,
+} from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
 
+// ── GET /orders/advanced/challenge ───────────────────────────────────────────
+// Issue a single-use wallet-ownership challenge that the client must sign with
+// personal_sign (EIP-191) before calling any advanced-order create endpoint.
+//
+// Query:  walletAddress — EVM wallet address (0x…)
+// Returns: { nonce: string; message: string }
+//   message is the exact string the wallet must sign.
+//   nonce   must be included in the subsequent create request.
+router.get("/orders/advanced/challenge", (req, res) => {
+  const walletAddress = req.query.walletAddress as string | undefined;
+  if (!walletAddress || typeof walletAddress !== "string" || !walletAddress.startsWith("0x")) {
+    res.status(400).json({ error: "walletAddress query parameter is required (0x… EVM address)" });
+    return;
+  }
+  const challenge = issueAdvancedOrderChallenge(walletAddress);
+  res.json(challenge);
+});
+
 router.post("/orders/oco", async (req, res) => {
-  const { walletAddress, symbol, side, quantity, limitPrice, stopPrice, networkType, chainId } = req.body as {
+  const { walletAddress, symbol, side, quantity, limitPrice, stopPrice, networkType, chainId, signature, nonce } = req.body as {
     walletAddress?: string;
     symbol?: string;
     side?: string;
@@ -15,10 +37,25 @@ router.post("/orders/oco", async (req, res) => {
     stopPrice?: string | number;
     networkType?: string;
     chainId?: number;
+    signature?: string;
+    nonce?: string;
   };
 
   if (!walletAddress || typeof walletAddress !== "string") {
     res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: "signature and nonce are required. Request a challenge via GET /orders/advanced/challenge?walletAddress=<addr>",
+    });
+    return;
+  }
+  try {
+    verifyAdvancedOrderSignature(walletAddress, nonce, signature);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Signature verification failed";
+    res.status(401).json({ error: msg });
     return;
   }
   if (!symbol || typeof symbol !== "string") {
@@ -86,7 +123,7 @@ router.post("/orders/oco", async (req, res) => {
 });
 
 router.post("/orders/trailing-stop", async (req, res) => {
-  const { walletAddress, symbol, side, quantity, trailPercent, activationPrice, networkType, chainId } = req.body as {
+  const { walletAddress, symbol, side, quantity, trailPercent, activationPrice, networkType, chainId, signature, nonce } = req.body as {
     walletAddress?: string;
     symbol?: string;
     side?: string;
@@ -95,10 +132,25 @@ router.post("/orders/trailing-stop", async (req, res) => {
     activationPrice?: string | number;
     networkType?: string;
     chainId?: number;
+    signature?: string;
+    nonce?: string;
   };
 
   if (!walletAddress || typeof walletAddress !== "string") {
     res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: "signature and nonce are required. Request a challenge via GET /orders/advanced/challenge?walletAddress=<addr>",
+    });
+    return;
+  }
+  try {
+    verifyAdvancedOrderSignature(walletAddress, nonce, signature);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Signature verification failed";
+    res.status(401).json({ error: msg });
     return;
   }
   if (!symbol || typeof symbol !== "string") {
@@ -190,6 +242,8 @@ router.post("/orders/twap", async (req, res) => {
     maxSlippagePercent,
     networkType,
     chainId,
+    signature,
+    nonce,
   } = req.body as {
     walletAddress?: string;
     symbol?: string;
@@ -200,10 +254,25 @@ router.post("/orders/twap", async (req, res) => {
     maxSlippagePercent?: string | number;
     networkType?: string;
     chainId?: number;
+    signature?: string;
+    nonce?: string;
   };
 
   if (!walletAddress || typeof walletAddress !== "string") {
     res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: "signature and nonce are required. Request a challenge via GET /orders/advanced/challenge?walletAddress=<addr>",
+    });
+    return;
+  }
+  try {
+    verifyAdvancedOrderSignature(walletAddress, nonce, signature);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Signature verification failed";
+    res.status(401).json({ error: msg });
     return;
   }
   if (!symbol || typeof symbol !== "string") {
@@ -269,7 +338,7 @@ router.post("/orders/twap", async (req, res) => {
 });
 
 router.post("/orders/iceberg", async (req, res) => {
-  const { walletAddress, symbol, side, price, totalQuantity, visibleQuantity, networkType, chainId } = req.body as {
+  const { walletAddress, symbol, side, price, totalQuantity, visibleQuantity, networkType, chainId, signature, nonce } = req.body as {
     walletAddress?: string;
     symbol?: string;
     side?: string;
@@ -278,10 +347,25 @@ router.post("/orders/iceberg", async (req, res) => {
     visibleQuantity?: string | number;
     networkType?: string;
     chainId?: number;
+    signature?: string;
+    nonce?: string;
   };
 
   if (!walletAddress || typeof walletAddress !== "string") {
     res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: "signature and nonce are required. Request a challenge via GET /orders/advanced/challenge?walletAddress=<addr>",
+    });
+    return;
+  }
+  try {
+    verifyAdvancedOrderSignature(walletAddress, nonce, signature);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Signature verification failed";
+    res.status(401).json({ error: msg });
     return;
   }
   if (!symbol || typeof symbol !== "string") {
