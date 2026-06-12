@@ -50,8 +50,11 @@ pool.query(`
 pool.connect().then(client =>
   client.query(
     `CREATE INDEX CONCURRENTLY IF NOT EXISTS markets_enabled_type_idx
-     ON markets (enabled, type)`
-  ).finally(() => client.release())
+     ON markets (enabled, type);`
+  ).then(() => client.query(
+    `CREATE INDEX CONCURRENTLY IF NOT EXISTS markets_status_idx
+     ON markets (status) WHERE enabled = true;`
+  )).finally(() => client.release())
 ).catch((err: Error) => logger.warn({ err: err.message }, "markets index migration failed (non-fatal)"));
 
 const app: Express = express();
