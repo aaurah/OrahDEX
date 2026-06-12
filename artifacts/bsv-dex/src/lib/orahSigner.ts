@@ -268,7 +268,7 @@ async function _softwareBsvSign(req: OrahSignRequest): Promise<OrahSignResponse>
 export function createLedgerSigner(
   address: string,
   path:    string,
-  eth:     import('@ledgerhq/hw-app-eth').default,
+  eth:     unknown,
   label =  'Ledger',
 ): OrahSigner {
   return {
