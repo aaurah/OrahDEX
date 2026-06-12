@@ -2,3 +2,4 @@
 - [Bridge agg patterns](bridge-agg-patterns.md) — Express async route safety, toWei edge case, dropdown click-outside pattern.
 - [Git merge conflict resolution](git-merge-resolution.md) — agent cannot git add/rm/commit/push; use a shell script the user runs manually.
 - [EVM order placement hang](evm-order-hang.md) — fundingVerifier RPC call had no timeout; public nodes stall 30s+; fix: 8s timeout + sig-proof fallback.
+- [Mobile loading fixes](mobile-loading-fixes.md) — serve-static.mjs had no gzip; 7MB raw JS killed mobile. Reown/WalletConnect must be in try-catch at module level.

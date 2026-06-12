@@ -1,6 +1,7 @@
 import http from "http";
 import fs from "fs";
 import path from "path";
+import zlib from "zlib";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -24,6 +25,23 @@ const MIME = {
   ".webp": "image/webp",
   ".wasm": "application/wasm",
 };
+
+// Extensions worth gzip-compressing (binary formats already compressed)
+const COMPRESSIBLE = new Set([".js", ".mjs", ".css", ".html", ".json", ".svg", ".xml", ".txt"]);
+
+// In-memory gzip cache — key = absolute file path, value = Buffer
+const gzipCache = new Map();
+
+function getGzipped(filePath, raw) {
+  if (gzipCache.has(filePath)) return gzipCache.get(filePath);
+  const compressed = zlib.gzipSync(raw, { level: 6 });
+  gzipCache.set(filePath, compressed);
+  return compressed;
+}
+
+function clientAcceptsGzip(req) {
+  return (req.headers["accept-encoding"] ?? "").includes("gzip");
+}
 
 function proxyToApi(req, res) {
   if (req.method !== "GET" && req.method !== "HEAD") {
@@ -74,15 +92,30 @@ const server = http.createServer((req, res) => {
 
   const ext = path.extname(filePath);
   const mime = MIME[ext] ?? "application/octet-stream";
+  const isHtml = ext === ".html";
 
   try {
-    const content = fs.readFileSync(filePath);
-    res.writeHead(200, {
+    const raw = fs.readFileSync(filePath);
+    const useGzip = COMPRESSIBLE.has(ext) && clientAcceptsGzip(req);
+
+    const headers = {
       "Content-Type": mime,
-      "Cache-Control": ext === ".html" ? "no-cache, no-store, must-revalidate" : "public, max-age=31536000, immutable",
+      "Cache-Control": isHtml ? "no-cache, no-store, must-revalidate" : "public, max-age=31536000, immutable",
       "X-Content-Type-Options": "nosniff",
-    });
-    res.end(content);
+      "Vary": "Accept-Encoding",
+    };
+
+    if (useGzip) {
+      const compressed = getGzipped(filePath, raw);
+      headers["Content-Encoding"] = "gzip";
+      headers["Content-Length"] = compressed.length;
+      res.writeHead(200, headers);
+      res.end(compressed);
+    } else {
+      headers["Content-Length"] = raw.length;
+      res.writeHead(200, headers);
+      res.end(raw);
+    }
   } catch {
     res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("Not found");
@@ -95,5 +128,5 @@ server.on("error", (err) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`OrahDEX static server running on http://0.0.0.0:${PORT} — proxying /api → localhost:${API_PORT}`);
+  console.log(`OrahDEX static server running on http://0.0.0.0:${PORT} — proxying /api → localhost:${API_PORT} (gzip enabled)`);
 });
