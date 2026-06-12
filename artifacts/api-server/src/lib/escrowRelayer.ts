@@ -202,23 +202,36 @@ export interface EscrowDeposit {
  * Scan every deployed escrow contract for a deposit matching this orderId.
  * Returns the chainId where the deposit lives, or null when no chain has it.
  *
- * This is what makes "auto-detect chain" work: users can lock on any chain
- * where escrow is deployed, and the relayer finds them without having to
- * trust the order metadata. Reads are parallel so total time is ~max(rpc).
+ * Fail-closed: if a deposit is NOT found but some chains were unreachable,
+ * throws so the caller (orders.ts precheck) skips the match — we cannot
+ * safely declare "no deposit" when some chains returned RPC errors.
+ * Exception: if a deposit IS found on any chain, we return it immediately
+ * without caring about other chains' RPC failures (deposit location is known).
  */
 export async function findEscrowChain(orderId: string): Promise<number | null> {
   const chainIds = Object.keys(ESCROW_ADDRESSES).map(Number);
-  // ── Fail-closed: any per-chain RPC error throws. ─────────────────────
-  // We intentionally do NOT use allSettled here — if even one chain we
-  // can't read, we can't tell whether the deposit is there. The caller
-  // (orders.ts precheck) catches this and skips the match.
-  const results = await Promise.all(
+  const settled = await Promise.allSettled(
     chainIds.map(async (cid) => {
       const dep = await getEscrowDeposit(orderId, cid);
       return dep && !dep.released ? cid : null;
     }),
   );
-  return results.find((c): c is number => c !== null) ?? null;
+  // If any chain has a confirmed deposit, return it (safe — we found the funds).
+  for (const r of settled) {
+    if (r.status === "fulfilled" && r.value !== null) return r.value;
+  }
+  // No deposit found. If any chain was unreachable, we can't be certain —
+  // throw to trigger fail-closed in the caller.
+  const anyFailed = settled.some((r) => r.status === "rejected");
+  if (anyFailed) {
+    const reasons = settled
+      .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+      .map((r) => (r.reason as Error)?.message ?? String(r.reason))
+      .slice(0, 3)
+      .join("; ");
+    throw new Error(`Escrow chain scan: ${settled.filter(r => r.status === "rejected").length} RPC(s) failed — ${reasons}`);
+  }
+  return null;
 }
 
 export async function getEscrowDeposit(
