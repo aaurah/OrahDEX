@@ -360,24 +360,6 @@ export function WithdrawSheet({
     return [...staticList, ...custom];
   };
 
-  const { balances: sendChainBalances } = useEvmBalances(walletAddress || null, walletSendChain.id);
-
-  const autoSendTokens: WalletToken[] = sendChainBalances.length > 0
-    ? sendChainBalances.map(b => ({
-        symbol:   b.symbol,
-        decimals: b.decimals,
-        isNative: b.isNative ?? false,
-        address:  b.contractAddress ?? null,
-        color:    b.color,
-      }))
-    : getTokensForChain(walletSendChain.id);
-
-  useEffect(() => {
-    if (sendChainBalances.length === 0) return;
-    const match = sendChainBalances.find(b => b.symbol === walletSendToken.symbol);
-    if (match !== undefined) setWalletSendBalance(match.amount);
-  }, [sendChainBalances, walletSendToken.symbol]);
-
   const isBitcoinFork = ["bsv", "btc", "bch"].includes(network.toLowerCase());
   const isSolana      = network.toLowerCase() === "sol";
   const isEvmNetwork  = !isBitcoinFork && !isSolana && (network.toLowerCase() === "evm" || network === "");
@@ -413,6 +395,24 @@ export function WithdrawSheet({
   const [walletSending,       setWalletSending]       = useState(false);
   const [walletSendTxHash,    setWalletSendTxHash]    = useState<string | null>(null);
   const [walletSendError,     setWalletSendError]     = useState<string | null>(null);
+
+  const { balances: sendChainBalances } = useEvmBalances(walletAddress || null, walletSendChain.id);
+
+  const autoSendTokens: WalletToken[] = sendChainBalances.length > 0
+    ? sendChainBalances.map(b => ({
+        symbol:   b.symbol,
+        decimals: b.decimals,
+        isNative: b.isNative ?? false,
+        address:  b.contractAddress ?? null,
+        color:    b.color,
+      }))
+    : getTokensForChain(walletSendChain.id);
+
+  useEffect(() => {
+    if (sendChainBalances.length === 0) return;
+    const match = sendChainBalances.find(b => b.symbol === walletSendToken.symbol);
+    if (match !== undefined) setWalletSendBalance(match.amount);
+  }, [sendChainBalances, walletSendToken.symbol]);
 
   // ── non-EVM wallet send state (BSV / LTC / XRP / etc.) ──────────────────
   const [nonEvmSendBalance,   setNonEvmSendBalance]   = useState<number | null>(null);
