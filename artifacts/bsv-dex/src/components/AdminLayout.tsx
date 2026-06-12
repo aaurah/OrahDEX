@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useRef, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, ShieldCheck, ArrowRightLeft,
@@ -7,7 +7,9 @@ import {
   Megaphone, ChevronDown, Layers, Copy, Check, ExternalLink, Rocket, Mail, Brain,
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, HelpCircle, Search, ArrowDownToLine,
   Landmark, Plug2, Printer, Database, CreditCard, Link2, Shuffle,
+  Bell, BellOff, Trash2, CheckCheck, Info, AlertTriangle, Zap,
 } from "lucide-react";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -290,6 +292,25 @@ function AdminWalletWidget() {
   );
 }
 
+// ── Notification bell icon per type ──────────────────────────────────────────
+function NotifIcon({ type }: { type: string }) {
+  if (type === "order_filled" || type === "trade")      return <Zap className="w-3.5 h-3.5 text-primary shrink-0" />;
+  if (type === "order_placed")                          return <CheckCheck className="w-3.5 h-3.5 text-blue-400 shrink-0" />;
+  if (type === "order_cancelled")                       return <X className="w-3.5 h-3.5 text-red-400 shrink-0" />;
+  if (type === "error" || type === "warning")           return <AlertTriangle className="w-3.5 h-3.5 text-yellow-400 shrink-0" />;
+  if (type === "support" || type === "support_reply")   return <Headphones className="w-3.5 h-3.5 text-violet-400 shrink-0" />;
+  if (type === "bridge")                                return <ArrowRightLeft className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
+  return <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0" />;
+}
+
+function timeSince(ts: number) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 60)   return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
 export function AdminLayout({ children }: { children: ReactNode }) {
   const [location, navigate] = useLocation();
   const { email, logout } = useAdminAuthStore();
@@ -297,6 +318,23 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
+
+  // ── Notification bell ──────────────────────────────────────────────────────
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+  const { notifications, markAllRead, clearAll, unreadCount } = useNotificationStore();
+  const unread = unreadCount();
+
+  useEffect(() => {
+    if (!notifOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+        setNotifOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [notifOpen]);
 
   const isActive = (item: NavItem) =>
     item.exact ? location === item.href : location.startsWith(item.href);
@@ -517,11 +555,93 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-green-500/10 border border-green-500/20">
               <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
               <span className="text-xs text-green-400 font-medium">Operational</span>
             </div>
+
+            {/* Notification bell */}
+            <div className="relative" ref={notifRef}>
+              <button
+                onClick={() => {
+                  setNotifOpen(o => !o);
+                  if (!notifOpen) markAllRead();
+                }}
+                className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
+                title="Notifications"
+              >
+                <Bell className="w-4 h-4" />
+                {unread > 0 && (
+                  <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[9px] font-black flex items-center justify-center leading-none">
+                    {unread > 9 ? "9+" : unread}
+                  </span>
+                )}
+              </button>
+
+              {notifOpen && (
+                <div className="absolute right-0 top-full mt-2 w-80 bg-card border border-border rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col" style={{ maxHeight: "420px" }}>
+                  {/* Header row */}
+                  <div className="px-4 py-2.5 border-b border-border bg-secondary/30 shrink-0 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-3.5 h-3.5 text-primary" />
+                      <span className="font-semibold text-sm">Notifications</span>
+                      {notifications.length > 0 && (
+                        <span className="text-[10px] text-muted-foreground">({notifications.length})</span>
+                      )}
+                    </div>
+                    {notifications.length > 0 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); clearAll(); }}
+                        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-red-400 transition-colors"
+                        title="Clear all"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Notification list */}
+                  <div className="overflow-y-auto flex-1">
+                    {notifications.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground px-4">
+                        <Bell className="w-7 h-7 opacity-20" />
+                        <p className="text-xs font-medium">No notifications</p>
+                        <p className="text-[10px] text-center text-muted-foreground/70">System events, trade fills, and alerts will appear here.</p>
+                      </div>
+                    ) : (
+                      notifications.slice(0, 30).map((n) => (
+                        <div
+                          key={n.id}
+                          className={cn(
+                            "flex items-start gap-3 px-4 py-3 border-b border-border/50 last:border-0 transition-colors",
+                            !n.read ? "bg-primary/[0.04]" : "hover:bg-white/[0.02]"
+                          )}
+                        >
+                          <div className="mt-0.5 w-6 h-6 rounded-full bg-muted/60 flex items-center justify-center shrink-0">
+                            <NotifIcon type={n.type} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className={cn("text-[12px] font-semibold truncate", !n.read ? "text-foreground" : "text-muted-foreground")}>
+                                {n.title}
+                              </p>
+                              <span className="text-[10px] text-muted-foreground/60 shrink-0">{timeSince(n.timestamp)}</span>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground leading-snug line-clamp-2 mt-0.5">{n.body}</p>
+                          </div>
+                          {!n.read && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0 mt-1.5" />
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <AdminWalletWidget />
           </div>
         </header>
