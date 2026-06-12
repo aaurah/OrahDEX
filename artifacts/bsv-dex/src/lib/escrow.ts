@@ -130,6 +130,82 @@ export function buildCancelCalldata(orderId: string): `0x${string}` {
   });
 }
 
+// ── Universal provider helper ─────────────────────────────────────────────────
+
+/**
+ * Try a raw `eth_sendTransaction` against a single EIP-1193 provider.
+ * Switches the provider to `chainId` first if needed.
+ * Returns the tx hash on success, null on non-rejection errors, throws on user rejection.
+ */
+async function tryTxWithProvider(
+  provider: any,
+  params: { from: string; to: string; value?: bigint; data: `0x${string}`; chainId: number },
+): Promise<string | null> {
+  try {
+    const chainHex = "0x" + params.chainId.toString(16);
+    const currentHex: string = await provider.request({ method: "eth_chainId" });
+    if (parseInt(currentHex, 16) !== params.chainId) {
+      await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainHex }] });
+    }
+    const tx: Record<string, string> = { from: params.from, to: params.to, data: params.data };
+    if (params.value !== undefined && params.value > 0n) {
+      tx.value = "0x" + params.value.toString(16);
+    }
+    const hash: string = await provider.request({ method: "eth_sendTransaction", params: [tx] });
+    return hash ?? null;
+  } catch (err: any) {
+    const msg = (err?.message ?? "").toLowerCase();
+    const isReject = err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
+      msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
+    if (isReject) throw err;
+    return null;
+  }
+}
+
+/**
+ * Send a transaction through ALL available wallet providers in order:
+ *   1. window.ethereum (MetaMask extension, Coinbase Wallet, MetaMask mobile browser)
+ *   2. All wagmi connectors (WalletConnect / Reown AppKit)
+ *
+ * Returns the tx hash. Throws user-rejection errors immediately.
+ * Falls through providers on non-rejection failures so a stale WalletConnect
+ * session can't permanently block an injected wallet (and vice-versa).
+ */
+async function sendTxUniversal(params: {
+  from:    string;
+  to:      string;
+  value?:  bigint;
+  data:    `0x${string}`;
+  chainId: number;
+}): Promise<string> {
+  const injected = (window as any).ethereum;
+  if (injected) {
+    const h = await tryTxWithProvider(injected, params);
+    if (h) return h;
+  }
+
+  const config = getWagmiConfig();
+  if (config) {
+    for (const connector of (config as any).connectors ?? []) {
+      try {
+        const provider = await (connector as any).getProvider?.();
+        if (!provider) continue;
+        const h = await tryTxWithProvider(provider, params);
+        if (h) return h;
+      } catch (err: any) {
+        const msg = (err?.message ?? "").toLowerCase();
+        const isReject = err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
+          msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
+        if (isReject) throw err;
+      }
+    }
+  }
+
+  throw new Error(
+    "No wallet found. Open MetaMask, connect via WalletConnect, or use the Orah Wallet.",
+  );
+}
+
 // ── Transaction senders ───────────────────────────────────────────────────────
 
 export interface EscrowTxResult {
@@ -249,6 +325,84 @@ export async function lockErc20ViaInjected(
       to:   escrow,
       data: buildLockErc20Calldata(orderId, tokenAddress, rawAmount),
     }],
+  });
+  return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
+}
+
+/**
+ * Lock native ETH in the escrow using any available wallet provider.
+ * Tries window.ethereum first, then all wagmi/WalletConnect connectors.
+ * Handles chain switching automatically.
+ */
+export async function lockEthUniversal(
+  orderId:   string,
+  rawAmount: bigint,
+  from:      string,
+  chainId:   number,
+): Promise<EscrowTxResult> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) throw new Error(`No escrow contract on chainId ${chainId}`);
+  const txHash = await sendTxUniversal({
+    from, to: escrow, value: rawAmount,
+    data: buildLockEthCalldata(orderId), chainId,
+  });
+  return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
+}
+
+/**
+ * Approve + lock an ERC-20 token in the escrow using any available wallet provider.
+ * Uses the same provider for both the approve tx and the lockERC20 tx to avoid
+ * cross-wallet nonce races.
+ */
+export async function lockErc20Universal(
+  orderId:      string,
+  tokenAddress: string,
+  rawAmount:    bigint,
+  from:         string,
+  chainId:      number,
+): Promise<EscrowTxResult> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) throw new Error(`No escrow contract on chainId ${chainId}`);
+
+  // Find a working provider to use for both approve + lock
+  async function getWorkingProvider(): Promise<any> {
+    const chainHex = "0x" + chainId.toString(16);
+    async function canUse(provider: any): Promise<boolean> {
+      try {
+        const currentHex: string = await provider.request({ method: "eth_chainId" });
+        if (parseInt(currentHex, 16) !== chainId) {
+          await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainHex }] });
+        }
+        return true;
+      } catch { return false; }
+    }
+    const injected = (window as any).ethereum;
+    if (injected && await canUse(injected)) return injected;
+    const config = getWagmiConfig();
+    if (config) {
+      for (const connector of (config as any).connectors ?? []) {
+        try {
+          const provider = await (connector as any).getProvider?.();
+          if (provider && await canUse(provider)) return provider;
+        } catch { /* try next */ }
+      }
+    }
+    throw new Error("No wallet found. Connect MetaMask or use WalletConnect.");
+  }
+
+  const provider = await getWorkingProvider();
+
+  // Step 1: approve
+  const approveTx: string = await provider.request({
+    method: "eth_sendTransaction",
+    params: [{ from, to: tokenAddress, data: buildApproveCalldata(escrow, rawAmount) }],
+  });
+  await getPublicClient(chainId).waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
+
+  // Step 2: lockERC20
+  const txHash: string = await provider.request({
+    method: "eth_sendTransaction",
+    params: [{ from, to: escrow, data: buildLockErc20Calldata(orderId, tokenAddress, rawAmount) }],
   });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
@@ -515,6 +669,20 @@ export async function cancelEscrowViaReown(
     chainId,
   } as any);
   await wagmiWaitForTxReceipt(config, { hash: txHash, chainId });
+  return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
+}
+
+/**
+ * Cancel (refund) an escrow lock via any available wallet provider.
+ */
+export async function cancelEscrowUniversal(
+  orderId: string,
+  from:    string,
+  chainId: number,
+): Promise<EscrowTxResult> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) throw new Error(`No escrow contract on chainId ${chainId}`);
+  const txHash = await sendTxUniversal({ from, to: escrow, data: buildCancelCalldata(orderId), chainId });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
