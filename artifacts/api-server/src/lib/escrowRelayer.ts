@@ -148,6 +148,8 @@ const EXPLORER: Record<number, string> = {
 };
 
 // Read lazily so the module loads even when EVM_WALLET_SECRET is absent.
+// getRelayerPrivateKey() returns null when the value is absent or not a valid hex key —
+// callers must check for null before attempting any signing operation.
 const EVM_WALLET_SECRET = process.env.EVM_WALLET_SECRET ?? "";
 
 export function escrowExplorerUrl(chainId: number, txHash: string): string {
