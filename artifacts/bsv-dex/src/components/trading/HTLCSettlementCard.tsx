@@ -22,7 +22,7 @@ import {
   type LockInstruction,
 } from "../../hooks/useEvmHtlcSession";
 import { getPublicClient } from "../../lib/escrow";
-import { getWagmiConfig } from "../../lib/reown";
+import { getWagmiConfig, openReownModal } from "../../lib/reown";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -199,6 +199,8 @@ function LockPanel({
           lock.amount,
           userAddress
         );
+        // Open AppKit BEFORE awaiting so WalletConnect users see "Go to wallet"
+        openReownModal();
         const approveTxHash = await sendTx(approveParams);
         // Wait for the approve confirmation so the allowance is on-chain
         // before lockERC20 executes (prevents "allowance too low" reverts).
@@ -214,6 +216,8 @@ function LockPanel({
 
       if (!lockParams) throw new Error("Contract not yet deployed on this chain.");
 
+      // Open AppKit BEFORE awaiting lock tx so WalletConnect users see "Go to wallet"
+      openReownModal();
       const hash = await sendTx(lockParams);
       setTxHash(hash);
       setStep("done");
@@ -289,12 +293,30 @@ function LockPanel({
               {verb}
             </button>
           ) : step === "approving" ? (
-            <div className="text-xs text-yellow-400 animate-pulse">
-              Confirm token approval in your wallet…
+            <div className="flex flex-col gap-1">
+              <div className="text-xs text-yellow-400 animate-pulse">
+                Confirm token approval in your wallet…
+              </div>
+              <button
+                type="button"
+                onClick={() => openReownModal()}
+                className="text-xs text-blue-400 underline hover:text-blue-300 transition-colors text-left"
+              >
+                Open wallet app →
+              </button>
             </div>
           ) : step === "locking" ? (
-            <div className="text-xs text-blue-400 animate-pulse">
-              Confirm lock transaction in your wallet…
+            <div className="flex flex-col gap-1">
+              <div className="text-xs text-blue-400 animate-pulse">
+                Confirm lock transaction in your wallet…
+              </div>
+              <button
+                type="button"
+                onClick={() => openReownModal()}
+                className="text-xs text-blue-400 underline hover:text-blue-300 transition-colors text-left"
+              >
+                Open wallet app →
+              </button>
             </div>
           ) : step === "done" ? (
             <div className="text-xs text-green-400">Lock submitted! Awaiting confirmation…</div>

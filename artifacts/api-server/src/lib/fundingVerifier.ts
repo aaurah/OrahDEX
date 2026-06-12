@@ -128,21 +128,30 @@ async function verifySpotFunding(
   }
 
   // ── External EVM / non-UTXO wallet ───────────────────────────────────────
-  // These wallets hold funds on-chain. They may also have accumulated internal
-  // exchange balance from previous trades (e.g. bought BSV, now selling).
-  // Strategy: try the internal ledger first (zero-friction if balance is there),
-  // then verify on-chain balance via RPC (chainId required). Fails closed:
-  // any unverifiable state is rejected rather than silently accepted.
+  // EVM external wallets (MetaMask / WalletConnect, 0x-prefixed) are fully
+  // non-custodial: their funds stay in their wallet until the HTLC escrow
+  // contract locks them at settlement. The internal ledger is NEVER touched
+  // for these wallets — doing so would deduct/lock internal balance on every
+  // order placement and every retry, draining funds incorrectly.
+  //
+  // Non-EVM external wallets (BSV/BTC/SOL) may accumulate internal balance
+  // from prior trades and can optionally use it for zero-friction settlement.
   if (walletSource === "external") {
-    // 1. Try internal ledger — covers exchange-accumulated balance
-    try {
-      await lockForOrder({ walletAddress, asset, amount });
-      return { valid: true, fundingRef: ledgerFundingRef(walletAddress, asset, amount) };
-    } catch {
-      // Not enough internal balance — fall through to on-chain check
-    }
+    const isEvmExternalWallet = walletAddress.startsWith("0x");
 
-    // 2. Require wallet signature (proof of identity).
+    if (!isEvmExternalWallet) {
+      // Non-EVM external: try internal ledger first for accumulated balance
+      try {
+        await lockForOrder({ walletAddress, asset, amount });
+        return { valid: true, fundingRef: ledgerFundingRef(walletAddress, asset, amount) };
+      } catch {
+        // Not enough internal balance — fall through to on-chain check
+      }
+    }
+    // EVM external wallets skip the internal ledger entirely and go straight
+    // to signature-based proof + optional RPC balance verification below.
+
+    // Require wallet signature (proof of identity).
     //    Without a signature the caller cannot prove they control walletAddress.
     if (!signature) {
       return {

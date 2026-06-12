@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useAccount, useSignMessage } from "wagmi";
+import { useAccount, useSignMessage, useConnectors } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -14,6 +14,7 @@ import { precheck, TradeTimer, reportTradeMetrics, getBadge, type PrecheckResult
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { SettlementExplorer } from "@/components/trading/SettlementExplorer";
 import { HTLCSettlementCard } from "@/components/trading/HTLCSettlementCard";
+import { openReownModal } from "@/lib/reown";
 
 import { type TradeErrorCode } from "@/lib/tradeErrors";
 import {
@@ -579,6 +580,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   }, [amount, price, side, type, slippage, runPrecheck]);
 
   const placeOrder = usePlaceOrder({
+    request: { timeoutMs: 12_000 } as any,
     mutation: {
       onSuccess: (data: any) => {
         const matched  = data?.matched ?? false;
@@ -858,7 +860,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           // connector) and WalletConnect. Skipping the evmConnected guard avoids the
           // race where wagmi's isConnected state hasn't updated yet after AppKit connect.
           try {
-            evmSignature = await signMessageAsync({ message: orderMsg });
+            // Kick off the signing request, then IMMEDIATELY open the AppKit
+            // modal so the "Go to wallet" redirect overlay appears for
+            // WalletConnect mobile users — before awaiting the promise.
+            const _signPromise = signMessageAsync({ message: orderMsg });
+            openReownModal();
+            evmSignature = await _signPromise;
           } catch (wagmiErr: any) {
             if (isUserRejection(wagmiErr)) throw wagmiErr;
             // Wagmi signing failed for a non-rejection reason (connector mismatch,
@@ -1607,11 +1614,20 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             )}
           </button>
 
-          {/* Wallet signing hint — shown while waiting for MetaMask/WalletConnect popup */}
+          {/* Wallet signing hint — shown while waiting for wallet popup */}
           {signingOrder && (
-            <p className="text-center text-[11px] text-amber-400 animate-pulse -mt-1">
-              Check your wallet for a signing request
-            </p>
+            <div className="flex flex-col items-center gap-1 -mt-1">
+              <p className="text-center text-[11px] text-amber-400 animate-pulse">
+                Check your wallet for a signing request
+              </p>
+              <button
+                type="button"
+                onClick={() => openReownModal()}
+                className="text-[11px] text-blue-400 underline hover:text-blue-300 transition-colors"
+              >
+                Open wallet app →
+              </button>
+            </div>
           )}
 
           {/* Fee info & Keeper tier */}
