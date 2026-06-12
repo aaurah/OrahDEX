@@ -64,6 +64,166 @@ import {
   type OrderKind,
   type WalletSource,
 } from "./orderIntent.js";
+import { TOKEN_REGISTRY } from "./tokenRegistry.js";
+
+// ── EVM external wallet anti-spam / funding controls ────────────────────────────
+//
+// Two layered controls protect against unfunded EVM external orders:
+//
+//   1. Rate limit (enforceable, no RPC needed):
+//      Max EVM_EXTERNAL_ORDER_LIMIT concurrent open orders per external EVM wallet.
+//      Tracked via the funding_ref pattern "evm-sig:%" in the orders table.
+//      Prevents large-scale false-liquidity attacks.
+//
+//   2. Best-effort on-chain balance check (fail-open on RPC timeout):
+//      Performs a raw JSON-RPC call against public nodes with a hard Promise.race
+//      timeout (no AbortController — immune to the Node.js TCP-stall bug).
+//      Rejects on confirmed insufficient balance; passes through on timeout/error.
+//      Uses eth_getBalance for native ETH; eth_call (balanceOf) for ERC20 tokens.
+
+const EVM_EXTERNAL_ORDER_LIMIT = 10;
+const BALANCE_CHECK_TIMEOUT_MS = 4_000;
+
+/** Public JSON-RPC endpoints per chain ID. */
+const EVM_PUBLIC_RPCS: Record<number, string[]> = {
+  1:     ["https://eth.llamarpc.com", "https://cloudflare-eth.com"],
+  10:    ["https://mainnet.optimism.io"],
+  56:    ["https://bsc-dataseed.binance.org"],
+  137:   ["https://polygon-rpc.com"],
+  8453:  ["https://mainnet.base.org"],
+  42161: ["https://arb1.arbitrum.io/rpc"],
+};
+
+/**
+ * Check how many open EVM-external orders this wallet already has.
+ * External EVM orders use funding refs that start with "evm-sig:".
+ */
+async function checkEvmExternalOrderLimit(
+  walletAddress: string,
+): Promise<{ allowed: boolean; count: number }> {
+  const { rows } = await pool.query<{ count: string }>(
+    `SELECT COUNT(*) AS count FROM orders
+     WHERE wallet_address = $1 AND status = 'open' AND funding_ref LIKE 'evm-sig:%'`,
+    [walletAddress.toLowerCase()],
+  );
+  const count = parseInt(rows[0]?.count ?? "0", 10);
+  return { allowed: count < EVM_EXTERNAL_ORDER_LIMIT, count };
+}
+
+interface RpcJsonResult { result?: string; error?: { message: string } }
+
+/** Single raw JSON-RPC POST to one node (no AbortController — uses Promise.race). */
+async function rpcPost(rpcUrl: string, method: string, params: unknown[]): Promise<string> {
+  const res  = await fetch(rpcUrl, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const json = await res.json() as RpcJsonResult;
+  if (json.error) throw new Error(json.error.message);
+  if (!json.result) throw new Error("Empty RPC result");
+  return json.result;
+}
+
+/**
+ * Fetch native (ETH) balance for `address` on `chainId`.
+ * Tries all configured public RPC URLs in parallel, takes the first to respond.
+ * Returns null if all RPCs fail.
+ */
+async function evmNativeBalance(address: string, chainId: number): Promise<bigint | null> {
+  const rpcs = EVM_PUBLIC_RPCS[chainId] ?? [];
+  if (rpcs.length === 0) return null;
+
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("timeout")), BALANCE_CHECK_TIMEOUT_MS),
+  );
+
+  try {
+    const hex = await Promise.race([
+      Promise.any(rpcs.map(url => rpcPost(url, "eth_getBalance", [address, "latest"]))),
+      timeout,
+    ]);
+    return BigInt(hex);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch ERC-20 token balance for `address` on `chainId` via eth_call (balanceOf).
+ * Returns null if balance cannot be fetched.
+ */
+async function evmTokenBalance(
+  address:         string,
+  contractAddress: string,
+  chainId:         number,
+): Promise<bigint | null> {
+  const rpcs = EVM_PUBLIC_RPCS[chainId] ?? [];
+  if (rpcs.length === 0) return null;
+
+  // ABI-encode balanceOf(address): selector 0x70a08231 + 32-byte padded address
+  const paddedAddr = address.slice(2).padStart(64, "0");
+  const callData   = "0x70a08231" + paddedAddr;
+
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("timeout")), BALANCE_CHECK_TIMEOUT_MS),
+  );
+
+  try {
+    const hex = await Promise.race([
+      Promise.any(rpcs.map(url =>
+        rpcPost(url, "eth_call", [{ to: contractAddress, data: callData }, "latest"]),
+      )),
+      timeout,
+    ]);
+    // eth_call returns 32-byte hex; parse as uint256
+    return hex === "0x" ? 0n : BigInt(hex);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best-effort EVM balance check.
+ * Returns:
+ *   { result: "sufficient" }  — on-chain balance confirmed ≥ needed
+ *   { result: "insufficient", balance } — on-chain balance confirmed < needed
+ *   { result: "skipped" }     — RPC unavailable / timed out (fail-open)
+ */
+async function evmBalanceCheck(
+  walletAddress: string,
+  asset:         string,
+  amountStr:     string,
+  chainId:       number,
+): Promise<{ result: "sufficient" | "insufficient" | "skipped"; balance?: bigint }> {
+  const chainTokens = TOKEN_REGISTRY[chainId as keyof typeof TOKEN_REGISTRY];
+
+  // Native ETH check
+  if (asset.toUpperCase() === "ETH") {
+    const weiNeeded = BigInt(Math.floor(parseFloat(amountStr) * 1e18));
+    const balance   = await evmNativeBalance(walletAddress, chainId);
+    if (balance === null) return { result: "skipped" };
+    return balance >= weiNeeded
+      ? { result: "sufficient", balance }
+      : { result: "insufficient", balance };
+  }
+
+  // ERC-20 token check
+  const tokenInfo = (chainTokens as Record<string, { address: string; decimals: number }> | undefined)
+    ?.[asset.toUpperCase()];
+  if (!tokenInfo) {
+    logger.debug({ asset, chainId }, "fundingVerifier: no token contract for asset — skipping balance check");
+    return { result: "skipped" };
+  }
+
+  const { address: contractAddress, decimals } = tokenInfo;
+  const needed  = BigInt(Math.round(parseFloat(amountStr) * 10 ** decimals));
+  const balance = await evmTokenBalance(walletAddress, contractAddress, chainId);
+  if (balance === null) return { result: "skipped" };
+  return balance >= needed
+    ? { result: "sufficient", balance }
+    : { result: "insufficient", balance };
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -173,19 +333,44 @@ async function verifySpotFunding(
       }
     }
 
-    // EVM external wallets: accept on signature proof immediately.
-    //
-    // Wallet ownership is already proven above (65-byte EVM signature format
-    // check) and will be fully re-verified in orders.ts via verifyEvmSignature.
-    // A prior RPC getBalance / readContract call was removed here because:
-    //   1. Public EVM nodes (eth.llamarpc.com etc.) frequently stall the TCP
-    //      connection indefinitely — Node.js AbortSignal.timeout does NOT
-    //      reliably abort open sockets, so the request blocks the HTTP response.
-    //   2. The balance check is redundant: the HTLC escrow contract enforces the
-    //      actual on-chain balance at lockETH() / lockToken() call time.
-    //      If the user has insufficient funds the HTLC lock reverts on-chain.
-    //   3. Wallet ownership (not balance) is the security invariant for order
-    //      placement — balance is enforced at settlement, not at intent.
+    // ── Control 1: open-order rate limit ─────────────────────────────────────
+    // Prevents an attacker from flooding the order book with unfunded orders.
+    // This check is enforceable without any RPC call — it only reads the DB.
+    const limitCheck = await checkEvmExternalOrderLimit(walletAddress);
+    if (!limitCheck.allowed) {
+      return {
+        valid:      false,
+        fundingRef: "",
+        error:      `Maximum ${EVM_EXTERNAL_ORDER_LIMIT} open orders are allowed per external EVM wallet. ` +
+                    `You currently have ${limitCheck.count} open orders. Cancel existing orders to place new ones.`,
+        code:       "OPEN_ORDER_LIMIT_EXCEEDED",
+      };
+    }
+
+    // ── Control 2: best-effort on-chain balance check ─────────────────────────
+    // Uses raw JSON-RPC with Promise.race timeout to avoid the Node.js
+    // AbortSignal.timeout TCP-stall bug on long-lived public RPC connections.
+    // On confirmed insufficient balance → reject.
+    // On RPC timeout / unavailable node → fail-open (log warning, proceed).
+    // The HTLC escrow contract is the final enforcement point at settlement.
+    if (chainId !== undefined) {
+      const balCheck = await evmBalanceCheck(walletAddress, asset, amount, chainId);
+      if (balCheck.result === "insufficient") {
+        const balEth = balCheck.balance !== undefined
+          ? ` (on-chain: ${(Number(balCheck.balance) / 1e18).toFixed(6)})`
+          : "";
+        return {
+          valid:      false,
+          fundingRef: "",
+          error:      `Insufficient on-chain ${asset} balance${balEth}. Please fund your wallet before placing this order.`,
+          code:       "INSUFFICIENT_FUNDS",
+        };
+      }
+      if (balCheck.result === "skipped") {
+        logger.warn({ walletAddress, asset, chainId }, "fundingVerifier: EVM balance check skipped (RPC timeout/unavailable) — proceeding with rate-limit guarantee only");
+      }
+    }
+
     const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
     return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
   }
