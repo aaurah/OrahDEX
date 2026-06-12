@@ -1,23 +1,40 @@
 ---
 name: EVM order placement hang
-description: fundingVerifier.ts on-chain RPC balance check stalls with no timeout, causing "Placing…" to hang
+description: Root-cause analysis and fixes for "Placing…" spinner hanging indefinitely on EVM external wallet (WalletConnect/imToken) orders.
 ---
 
-## The rule
-`fundingVerifier.ts` calls `createPublicClient` → `getBalance`/`readContract` via public RPC (llamarpc, etc.) with no timeout. Public nodes stall for 30s+ → order POST never returns → UI stuck on "Placing…".
+## Root cause (two layers)
 
-**Fix applied:** `http(rpcUrl, { timeout: 8_000 })` on the viem transport. On catch (timeout or failure), fall back to signature-based `evmSigFundingRef` — user already proved wallet ownership via `personal_sign`, and HTLC escrow handles actual fund lock at settlement.
+### Layer 1 — WalletConnect signing promise never resolves (frontend)
+When iOS Safari backgrounds the tab during the imToken signing handoff, WalletConnect can silently drop the signing response. `signMessageAsync()` then awaits indefinitely. `signingOrder` stays `true`. `isPending = placeOrder.isPending || signingOrder` is `true` forever — button shows "Placing…" and never clears.
 
-**Why:** Rejecting the order on RPC failure was wrong — the user already signed and HTLC enforces actual funds. Accepting on sig-proof is safe.
+**Fix:** Wrap `signMessageAsync()` and the `window.ethereum.request` fallback in `Promise.race([ signPromise, makeSignTimeout() ])` with a 90-second timeout in `OrderForm.tsx`. Timeout errors re-throw (not swallowed by the wagmi fallback path — guarded by `if (err.message.includes("timed out")) throw wagmiErr`).
 
-**How to apply:** Any future RPC calls in server-side order flow must have an explicit timeout. Never use bare `http(rpcUrl)` without `{ timeout }`.
+**Why 90s:** Generous enough for a slow iOS app-switch + biometric unlock, but always finite so signingOrder clears.
 
-## Second issue found in same session
-`OrderForm.tsx`: `signMessageAsync` was guarded by `if (evmConnected)` — wagmi's `isConnected` state lags Reown AppKit connection → signing skipped on fresh connect → fell through to `window.ethereum` which doesn't exist on WalletConnect mobile → silent failure.
+### Layer 2 — fundingVerifier.ts RPC balance check stalls (server-side)
+`verifyAndLockFunding` for EVM external wallets called `getBalance`/`readContract` via viem on public EVM RPC nodes with no reliable timeout. Public nodes frequently stall TCP indefinitely; Node.js `AbortSignal.timeout()` does NOT reliably abort open sockets.
 
-**Fix:** Remove `evmConnected` guard; always try `signMessageAsync` first unconditionally.
+**Fix:** Removed the RPC block entirely. EVM external wallets return `evm-sig:` immediately after 65-byte signature format validation. Balance enforcement happens on-chain at HTLC lock time.
 
-## Third issue
-`HTLCSettlementCard.tsx` LockPanel: used raw `eth_sendTransaction` via `window.ethereum` with `tryProvider` that swallowed all non-rejection errors → no wallet popup + silent "No wallet found". 
+**Why:** Balance check was redundant — HTLC contract reverts on insufficient funds. Wallet ownership (not balance) is the invariant at order-placement time.
 
-**Fix:** Use `useSendTransaction` from wagmi as primary sender in `LockPanel` (same pattern as `HtlcLockRecovery.tsx`), with `window.ethereum` and connector loop as fallbacks.
+## Other fixes in same session
+
+- `spotSettlement.ts → settleSpotFill`: BSV broadcast moved to fire-and-forget `void (async () => {...})()`. Returns immediately with `broadcastAsync: true`.
+- `orders.ts`: EVM external users match only against other EVM external wallet counterparties (bots excluded via `requiresDefiWalletToWallet`). `findEscrowChain` skipped when both orders have `evm-sig:`/`evm-balance:` refs.
+
+## Diagnostic logs (can remove later)
+
+- `req.log.info(...)` "POST /api/orders: HANDLER ENTERED" fires at handler entry before any async work — confirms request reached server.
+- `console.log('[proxy] ...')` in `serve-static.mjs proxyToApi` for non-GET requests — confirms POST reached static proxy.
+
+## Earlier issues in same project
+
+- `OrderForm.tsx`: `signMessageAsync` guarded by `if (evmConnected)` — wagmi `isConnected` lags AppKit → signing skipped. Fix: remove guard.
+- `HTLCSettlementCard.tsx` LockPanel: used raw `eth_sendTransaction` via `window.ethereum` with swallowed errors. Fix: use `useSendTransaction` from wagmi as primary.
+
+## How to apply
+
+Any future hang on EVM order placement: check (1) whether `signingOrder` is stuck (WalletConnect session drop), (2) whether fundingVerifier has new blocking async paths for EVM external wallets.
+Any server RPC call in the order flow MUST have an explicit hard timeout. Never use bare `http(rpcUrl)` without `{ timeout }`.
