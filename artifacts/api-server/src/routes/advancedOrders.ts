@@ -383,17 +383,27 @@ router.get("/orders/advanced", async (req, res) => {
 
 router.delete("/orders/oco/:id", async (req, res) => {
   const { id } = req.params;
+  const walletAddress = (req.query.walletAddress as string | undefined) ?? (req.body?.walletAddress as string | undefined);
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const { rows } = await client.query<{ limit_order_id: string; stop_order_id: string; status: string }>(
-      `SELECT limit_order_id, stop_order_id, status FROM oco_orders WHERE id = $1`,
+    const { rows } = await client.query<{ limit_order_id: string; stop_order_id: string; status: string; wallet_address: string }>(
+      `SELECT limit_order_id, stop_order_id, status, wallet_address FROM oco_orders WHERE id = $1`,
       [id]
     );
     if (!rows[0]) {
       await client.query("ROLLBACK");
       res.status(404).json({ error: "OCO order not found" });
+      return;
+    }
+    if (rows[0].wallet_address.toLowerCase() !== walletAddress.toLowerCase()) {
+      await client.query("ROLLBACK");
+      res.status(403).json({ error: "Forbidden: order does not belong to this wallet" });
       return;
     }
     if (rows[0].status === "cancelled") {
@@ -424,14 +434,23 @@ router.delete("/orders/oco/:id", async (req, res) => {
 
 router.delete("/orders/trailing-stop/:id", async (req, res) => {
   const { id } = req.params;
+  const walletAddress = (req.query.walletAddress as string | undefined) ?? (req.body?.walletAddress as string | undefined);
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
   const client = await pool.connect();
   try {
-    const { rows } = await client.query<{ status: string }>(
-      `SELECT status FROM trailing_stop_orders WHERE id = $1`,
+    const { rows } = await client.query<{ status: string; wallet_address: string }>(
+      `SELECT status, wallet_address FROM trailing_stop_orders WHERE id = $1`,
       [id]
     );
     if (!rows[0]) {
       res.status(404).json({ error: "Trailing stop order not found" });
+      return;
+    }
+    if (rows[0].wallet_address.toLowerCase() !== walletAddress.toLowerCase()) {
+      res.status(403).json({ error: "Forbidden: order does not belong to this wallet" });
       return;
     }
     if (rows[0].status === "cancelled") {
@@ -454,14 +473,23 @@ router.delete("/orders/trailing-stop/:id", async (req, res) => {
 
 router.delete("/orders/twap/:id", async (req, res) => {
   const { id } = req.params;
+  const walletAddress = (req.query.walletAddress as string | undefined) ?? (req.body?.walletAddress as string | undefined);
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
   const client = await pool.connect();
   try {
-    const { rows } = await client.query<{ status: string }>(
-      `SELECT status FROM twap_orders WHERE id = $1`,
+    const { rows } = await client.query<{ status: string; wallet_address: string }>(
+      `SELECT status, wallet_address FROM twap_orders WHERE id = $1`,
       [id]
     );
     if (!rows[0]) {
       res.status(404).json({ error: "TWAP order not found" });
+      return;
+    }
+    if (rows[0].wallet_address.toLowerCase() !== walletAddress.toLowerCase()) {
+      res.status(403).json({ error: "Forbidden: order does not belong to this wallet" });
       return;
     }
     if (rows[0].status === "cancelled") {
@@ -484,17 +512,27 @@ router.delete("/orders/twap/:id", async (req, res) => {
 
 router.delete("/orders/iceberg/:id", async (req, res) => {
   const { id } = req.params;
+  const walletAddress = (req.query.walletAddress as string | undefined) ?? (req.body?.walletAddress as string | undefined);
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const { rows } = await client.query<{ active_order_id: string | null; status: string }>(
-      `SELECT active_order_id, status FROM iceberg_orders WHERE id = $1`,
+    const { rows } = await client.query<{ active_order_id: string | null; status: string; wallet_address: string }>(
+      `SELECT active_order_id, status, wallet_address FROM iceberg_orders WHERE id = $1`,
       [id]
     );
     if (!rows[0]) {
       await client.query("ROLLBACK");
       res.status(404).json({ error: "Iceberg order not found" });
+      return;
+    }
+    if (rows[0].wallet_address.toLowerCase() !== walletAddress.toLowerCase()) {
+      await client.query("ROLLBACK");
+      res.status(403).json({ error: "Forbidden: order does not belong to this wallet" });
       return;
     }
     if (rows[0].status === "cancelled") {
