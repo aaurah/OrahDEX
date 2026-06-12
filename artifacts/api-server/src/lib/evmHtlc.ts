@@ -156,7 +156,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
   1: {
     chainId:         1,
     name:            "Ethereum Mainnet",
-    rpcUrl:          process.env.ETH_RPC_URL ?? "https://eth.llamarpc.com",
+    rpcUrl:          process.env.ETH_RPC_URL ?? "https://cloudflare-eth.com",
     contractAddress: (process.env.EVM_HTLC_CONTRACT_ETH as Address | undefined) ?? DEPLOYED_CONTRACT,
     nativeSymbol:    "ETH",
     blockExplorer:   "https://etherscan.io",
@@ -166,7 +166,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
   137: {
     chainId:         137,
     name:            "Polygon Mainnet",
-    rpcUrl:          process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",
+    rpcUrl:          process.env.POLYGON_RPC_URL ?? "https://rpc.ankr.com/polygon",
     contractAddress: (process.env.EVM_HTLC_CONTRACT_POLYGON as Address | undefined) ?? DEPLOYED_CONTRACT,
     nativeSymbol:    "MATIC",
     blockExplorer:   "https://polygonscan.com",

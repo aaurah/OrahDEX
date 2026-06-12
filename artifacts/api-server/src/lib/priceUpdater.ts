@@ -8,6 +8,7 @@ import { serviceState } from "./serviceState.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
 import { getCachedLEPrices, warmLEPriceCache, leRequest, fetchLEKeyPricesIfNeeded } from "./lePriceCache.js";
+import { recordPriceEngineRun } from "./subsystemProbe.js";
 
 /** Format a price with enough decimal places so sub-satoshi values aren't lost.
  *  e.g. 4.2e-12 → "0.0000000000042000" rather than "0.00000000"
@@ -1423,6 +1424,7 @@ export async function updateMarketPrices() {
         )
         .catch(err => logger.warn({ err }, "priceUpdater: bulk UPDATE failed"));
     }
+    recordPriceEngineRun(pendingUpdates.length);
     pendingUpdates.length = 0;
     // Release the large markets query result before proceeding
     (markets as unknown[]).length = 0;
