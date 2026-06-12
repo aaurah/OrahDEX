@@ -673,7 +673,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         const serverMsg   = errData?.error ?? errData?.message ?? err?.data?.error ?? err?.data?.message ?? err?.message;
         const isInsufficient = code === "INSUFFICIENT_FUNDS" || serverMsg?.toLowerCase?.().includes("insufficient");
         const isNoLiquidity  = code === "NO_LIQUIDITY";
-        const isTimeout      = err?.name === "AbortError" || serverMsg?.toLowerCase?.().includes("aborted");
+        const isTimeout      = err?.name === "AbortError" || err?.name === "TimeoutError" || serverMsg?.toLowerCase?.().includes("aborted") || serverMsg?.toLowerCase?.().includes("timed out");
 
         toast({
           title: isTimeout      ? "Request Timed Out"
