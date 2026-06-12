@@ -30,6 +30,7 @@ import {
   logTopics,
 } from "../lib/evmWebhook.js";
 import { getAllChains, saveCustomChain, removeCustomChain } from "../lib/chainRegistry.js";
+import { EVM_CHAINS } from "../lib/evmHtlc.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
 export { serviceState } from "../lib/serviceState.js";
