@@ -1,8 +1,9 @@
 #!/bin/bash
-set -e
 cd /home/runner/workspace
 
-BRANCHES=(
+echo "=== Deleting all remote branches except Main ==="
+
+REMOTE_BRANCHES=(
   "copilot/add-new-feature"
   "copilot/add-one-page-sovereign-overview"
   "copilot/audit-smart-contract-vulnerabilities"
@@ -17,19 +18,26 @@ BRANCHES=(
   "copilot/remove-quicknode-from-system"
   "copilot/task-239342488-1216613683-87f7054d-56ef-4866-8c36-7770b7530964"
   "copilot/task-239342488-1216613683-d142bf24-4b0b-4fea-93cf-41ce195df4ed"
+  "claude/audit-fix-problems-FcU9i"
+  "dependabot/npm_and_yarn/npm_and_yarn-91b74eecbb"
   "dependabot/npm_and_yarn/npm_and_yarn-f3ab4791df"
   "github-advanced-security/add-new-user-profile-feature"
   "main"
+  "master"
   "OrahDEX"
   "replit-agent"
   "revert-40-copilot/audit-trade-on-exchange"
   "vercel/install-vercel-web-analytics-ze2w0n"
 )
 
-for branch in "${BRANCHES[@]}"; do
-  echo "Deleting $branch..."
-  git push origin --delete "$branch" 2>&1 && echo "  ✓ deleted" || echo "  ✗ skipped (may not exist)"
+for branch in "${REMOTE_BRANCHES[@]}"; do
+  git push origin --delete "$branch" 2>&1 && echo "deleted: $branch" || echo "skipped: $branch"
 done
 
 echo ""
-echo "Done. Kept: claude/audit-fix-problems-FcU9i, dependabot/npm_and_yarn-91b74eecbb, master"
+echo "=== Deleting local replit-agent branch ==="
+git branch -D replit-agent 2>&1 || echo "skipped local replit-agent"
+
+echo ""
+echo "=== Done. Only Main remains ==="
+git --no-optional-locks branch -r | grep -v "HEAD\|gitsafe"
