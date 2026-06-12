@@ -854,14 +854,15 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
           };
 
-          if (evmConnected) {
-            try {
-              evmSignature = await signMessageAsync({ message: orderMsg });
-            } catch (wagmiErr: any) {
-              if (isUserRejection(wagmiErr)) throw wagmiErr;
-              // Wagmi signing failed for a non-rejection reason (connector mismatch,
-              // disconnected session, etc.) — fall through to direct provider below.
-            }
+          // Always try wagmi/Reown signing first — it handles both MetaMask (injected
+          // connector) and WalletConnect. Skipping the evmConnected guard avoids the
+          // race where wagmi's isConnected state hasn't updated yet after AppKit connect.
+          try {
+            evmSignature = await signMessageAsync({ message: orderMsg });
+          } catch (wagmiErr: any) {
+            if (isUserRejection(wagmiErr)) throw wagmiErr;
+            // Wagmi signing failed for a non-rejection reason (connector mismatch,
+            // disconnected session, etc.) — fall through to direct provider below.
           }
 
           if (!evmSignature) {
