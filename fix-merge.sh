@@ -1,18 +1,37 @@
 #!/bin/bash
 cd /home/runner/workspace
 
-echo "=== Wiping stale local remote-tracking refs ==="
-# Remove all origin/* ref files except Main
-find .git/refs/remotes/origin/ -type f ! -name "Main" -delete 2>/dev/null && echo "ref files cleared" || echo "no ref files found"
+echo "=== Cleaning packed-refs of stale local branches ==="
+python3 - <<'PYEOF'
+path = ".git/packed-refs"
+keep_prefixes = (
+    "# pack-refs",
+    "refs/heads/Main",
+    "refs/remotes/origin/Main",
+    "refs/remotes/gitsafe-backup/",
+    "refs/notes/",
+    "refs/replit/",
+)
+with open(path) as f:
+    lines = f.readlines()
 
-# Rewrite packed-refs keeping only Main and non-origin lines
-if [ -f .git/packed-refs ]; then
-  grep -v "refs/remotes/origin/" .git/packed-refs > .git/packed-refs.tmp || true
-  grep "refs/remotes/origin/Main" .git/packed-refs >> .git/packed-refs.tmp 2>/dev/null || true
-  mv .git/packed-refs.tmp .git/packed-refs
-  echo "packed-refs cleaned"
-fi
+kept = [l for l in lines if any(l.strip().startswith(p) or l.strip().endswith(p) for p in keep_prefixes) or l.startswith("^")]
+# keep lines where the ref part matches
+kept = []
+for line in lines:
+    if line.startswith("#") or line.startswith("^"):
+        kept.append(line)
+        continue
+    ref = line.split(" ", 1)[1].strip() if " " in line else ""
+    if any(ref.startswith(p) or ref == p.rstrip("/") for p in keep_prefixes[1:]):
+        kept.append(line)
+
+with open(path, "w") as f:
+    f.writelines(kept)
+
+print(f"Kept {len(kept)} lines, removed {len(lines)-len(kept)} stale entries")
+PYEOF
 
 echo ""
-echo "=== Remote branches now visible locally ==="
-git --no-optional-locks branch -r | grep -v "HEAD\|gitsafe"
+echo "=== Remaining branches in Replit panel ==="
+git --no-optional-locks branch -a | grep -v "gitsafe"
