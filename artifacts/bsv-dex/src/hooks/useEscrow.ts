@@ -15,15 +15,12 @@ import { useWalletStore } from "@/store/useWalletStore";
 import {
   hasEscrow,
   resolveEscrowAsset,
-  lockEthViaInjected,
-  lockErc20ViaInjected,
-  cancelEscrowViaInjected,
   lockEthViaOrah,
   lockErc20ViaOrah,
   cancelEscrowViaOrah,
-  lockEthViaReown,
-  lockErc20ViaReown,
-  cancelEscrowViaReown,
+  lockEthUniversal,
+  lockErc20Universal,
+  cancelEscrowUniversal,
   EscrowTxResult,
 } from "@/lib/escrow";
 
@@ -48,11 +45,6 @@ export function useEscrow() {
   const { address, chainId: walletChainId, provider } = useWalletStore();
   const isEvm        = !!address?.startsWith("0x");
   const isOrahWallet = provider === "orah-wallet";
-  const isReown      = provider === "reown";
-  // Injected wallets (MetaMask / Rabby browser ext): only when window.ethereum
-  // is present AND we aren't using Reown / Orah. Reown wallets often live on
-  // mobile via WalletConnect with no window.ethereum.
-  const hasInjected  = typeof window !== "undefined" && !!(window as any).ethereum;
   const chainId = walletChainId ?? 0;
   // Escrow is available for any EVM wallet (Orah self-custody OR external) on a
   // chain where the OrahDEX escrow contract is deployed.
@@ -80,25 +72,20 @@ export function useEscrow() {
       let result: EscrowTxResult;
 
       if (asset.address === null) {
-        // Native ETH
+        // Native ETH — Orah wallet uses viem; all others use universal provider fallback
         setStatus("locking");
         if (isOrahWallet) {
           result = await lockEthViaOrah(params.orderId, asset.rawAmount, address, chainId);
-        } else if (isReown || !hasInjected) {
-          // Reown/WalletConnect (mobile wallets like imToken) — no window.ethereum
-          result = await lockEthViaReown(params.orderId, asset.rawAmount, chainId);
         } else {
-          result = await lockEthViaInjected(params.orderId, asset.rawAmount, address, chainId);
+          result = await lockEthUniversal(params.orderId, asset.rawAmount, address, chainId);
         }
       } else {
         // ERC-20: approve then lock
         setStatus("approving");
         if (isOrahWallet) {
           result = await lockErc20ViaOrah(params.orderId, asset.address, asset.rawAmount, address, chainId);
-        } else if (isReown || !hasInjected) {
-          result = await lockErc20ViaReown(params.orderId, asset.address, asset.rawAmount, chainId);
         } else {
-          result = await lockErc20ViaInjected(params.orderId, asset.address, asset.rawAmount, address, chainId);
+          result = await lockErc20Universal(params.orderId, asset.address, asset.rawAmount, address, chainId);
         }
       }
 
@@ -107,15 +94,15 @@ export function useEscrow() {
       return result;
     } catch (err: any) {
       const msg: string = err?.message ?? "Escrow lock failed";
-      const userRejected = msg.includes("rejected") || msg.includes("denied") ||
-                           msg.includes("cancel") || msg.includes("4001");
+      const code = (err as any)?.code;
+      const userRejected = code === 4001 || code === "ACTION_REJECTED" ||
+        msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("denied") ||
+        msg.toLowerCase().includes("cancel");
       setErrorMsg(userRejected ? "Transaction cancelled" : msg);
       setStatus("error");
       return null;
     }
-  // provider is included so the wallet-path booleans (isOrahWallet / isReown /
-  // hasInjected) are never stale when the user changes their wallet connection.
-  }, [escrowAvailable, address, chainId, provider]);
+  }, [escrowAvailable, address, chainId, isOrahWallet]);
 
   const cancelOrder = useCallback(async (orderId: string): Promise<EscrowTxResult | null> => {
     if (!escrowAvailable || !address) return null;
@@ -126,10 +113,8 @@ export function useEscrow() {
       let result: EscrowTxResult;
       if (isOrahWallet) {
         result = await cancelEscrowViaOrah(orderId, address, chainId);
-      } else if (isReown || !hasInjected) {
-        result = await cancelEscrowViaReown(orderId, chainId);
       } else {
-        result = await cancelEscrowViaInjected(orderId, address, chainId);
+        result = await cancelEscrowUniversal(orderId, address, chainId);
       }
       setStatus("success");
       setTxResult(result);
@@ -140,9 +125,7 @@ export function useEscrow() {
       setStatus("error");
       return null;
     }
-  // provider is included so the wallet-path booleans (isOrahWallet / isReown /
-  // hasInjected) are never stale when the user changes their wallet connection.
-  }, [escrowAvailable, address, chainId, provider]);
+  }, [escrowAvailable, address, chainId, isOrahWallet]);
 
   const reset = useCallback(() => {
     setStatus("idle");

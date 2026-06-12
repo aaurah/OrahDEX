@@ -21,6 +21,7 @@ import {
   type LockInstruction,
 } from "../../hooks/useEvmHtlcSession";
 import { getPublicClient } from "../../lib/escrow";
+import { getWagmiConfig } from "../../lib/reown";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -122,13 +123,49 @@ function LockPanel({
   const needsApprove = !isNative;
 
   async function sendTx(params: object): Promise<string> {
-    const provider = (window as any).ethereum;
-    if (!provider) throw new Error("MetaMask not detected. Please install MetaMask.");
-    return new Promise((resolve, reject) => {
-      provider.request({ method: "eth_sendTransaction", params: [params] })
-        .then((hash: string) => resolve(hash))
-        .catch((e: any) => reject(new Error(e?.message ?? "Transaction rejected")));
-    });
+    const isUserRejection = (e: any) => {
+      const code = e?.code;
+      const msg  = (e?.message ?? "").toLowerCase();
+      return code === 4001 || code === "ACTION_REJECTED" ||
+        msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
+    };
+
+    async function tryProvider(provider: any): Promise<string | null> {
+      try {
+        const hash: string = await provider.request({
+          method: "eth_sendTransaction",
+          params: [params],
+        });
+        return hash ?? null;
+      } catch (e: any) {
+        if (isUserRejection(e)) throw e;
+        return null;
+      }
+    }
+
+    // 1. Try injected wallet (MetaMask extension, Coinbase Wallet)
+    const injected = (window as any).ethereum;
+    if (injected) {
+      const h = await tryProvider(injected);
+      if (h) return h;
+    }
+
+    // 2. Try all wagmi connectors (WalletConnect / Reown AppKit)
+    const config = getWagmiConfig();
+    if (config) {
+      for (const connector of (config as any).connectors ?? []) {
+        try {
+          const provider = await (connector as any).getProvider?.();
+          if (!provider) continue;
+          const h = await tryProvider(provider);
+          if (h) return h;
+        } catch (e: any) {
+          if (isUserRejection(e)) throw e;
+        }
+      }
+    }
+
+    throw new Error("No wallet found. Connect MetaMask or use WalletConnect.");
   }
 
   async function handleLock() {
@@ -233,11 +270,11 @@ function LockPanel({
             </button>
           ) : step === "approving" ? (
             <div className="text-xs text-yellow-400 animate-pulse">
-              Confirm token approval in MetaMask…
+              Confirm token approval in your wallet…
             </div>
           ) : step === "locking" ? (
             <div className="text-xs text-blue-400 animate-pulse">
-              Confirm lock transaction in MetaMask…
+              Confirm lock transaction in your wallet…
             </div>
           ) : step === "done" ? (
             <div className="text-xs text-green-400">Lock submitted! Awaiting confirmation…</div>
