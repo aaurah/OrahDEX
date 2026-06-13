@@ -1,0 +1,16 @@
+# Exported from Render on 2026-06-13T01:37:08Z
+version: "1"
+projects:
+- name: My project
+  environments:
+  - name: Production
+    services:
+    - type: web
+      name: OrahDEX
+      runtime: node
+      repo: https://github.com/aaurah/OrahDEX
+      plan: free
+      region: oregon
+      buildCommand: pnpm install --frozen-lockfile; pnpm run build
+      startCommand: pnpm start
+      autoDeployTrigger: commit
