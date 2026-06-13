@@ -1,0 +1,1 @@
+var e={letsexchange:`OrahRouter`,changenow:`OrahBridge`,simpleswap:`OrahSwap`,stealthex:`OrahLink`,changelly:`OrahPath`},t={letsexchange:`text-violet-400`,changenow:`text-sky-400`,simpleswap:`text-emerald-400`,stealthex:`text-orange-400`,changelly:`text-pink-400`};export{e as n,t};

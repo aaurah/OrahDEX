@@ -2,6 +2,7 @@
 
 # compiled output
 dist
+!artifacts/bsv-dex/dist
 tmp
 out-tsc
 *.tsbuildinfo
