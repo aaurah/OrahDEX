@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
+    "dev": "node serve-static.mjs",
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -79,11 +79,14 @@
   },
   "dependencies": {
     "@walletconnect/types": "^2.23.9",
+    "@keystonehq/bc-ur-registry-eth": "^0.22.1",
     "@ledgerhq/context-module": "^1.17.1",
     "@ledgerhq/device-management-kit": "^1.4.1",
     "@ledgerhq/device-signer-kit-ethereum": "^1.15.1",
     "@ledgerhq/device-transport-kit-web-hid": "^1.2.3",
     "@ledgerhq/errors": "^6.33.0",
+    "@ledgerhq/hw-app-eth": "^7.8.0",
+    "@ledgerhq/hw-transport-webhid": "^6.35.0",
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
     "@noble/secp256k1": "^3.0.0",

@@ -43,20 +43,6 @@ pool.query(`
     WHERE "chain_id" IS NOT NULL;
 `).catch((err: Error) => logger.warn({ err: err.message }, "chain_id migration failed (non-fatal)"));
 
-// Create the markets filter index if it doesn't exist.
-// The public markets query (WHERE enabled=true AND type!='letsexchange') does a
-// full sequential scan on 1M+ rows without this index, causing 20s+ timeouts.
-// CONCURRENTLY: builds without locking the table, safe to run on a live server.
-pool.connect().then(client =>
-  client.query(
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS markets_enabled_type_idx
-     ON markets (enabled, type);`
-  ).then(() => client.query(
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS markets_status_idx
-     ON markets (status) WHERE enabled = true;`
-  )).finally(() => client.release())
-).catch((err: Error) => logger.warn({ err: err.message }, "markets index migration failed (non-fatal)"));
-
 const app: Express = express();
 const middlewareRegistrationOrder: string[] = [];
 
@@ -482,13 +468,8 @@ async function healthHandler(_req: any, res: any) {
   const anyStuck = services.some(s => s.status === "stuck");
 
   let bsvChain: { online: boolean; blockHeight: number } | undefined;
-  try {
-    const bsv = await Promise.race([
-      getBsvChainStatus(),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("bsv-chain-timeout")), 3000)),
-    ]);
-    bsvChain = { online: bsv.online, blockHeight: bsv.blockHeight };
-  } catch { /* non-fatal — skip BSV chain data if DB is slow */ }
+  try { const bsv = await getBsvChainStatus(); bsvChain = { online: bsv.online, blockHeight: bsv.blockHeight }; }
+  catch { /* non-fatal */ }
 
   // Only CRITICAL services failing should degrade the public health signal.
   // Non-critical reconcilers (le-status-sync, ghost-order-detector, etc.) being

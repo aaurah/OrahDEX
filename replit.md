@@ -98,7 +98,6 @@ lib/
 - Do not modify `lib/api-spec` folder.
 - `artifacts/bsv-dex/src/lib/seedPhrase.ts` is safe to modify (XRP/LTC/DOGE derivation added).
 - Clear and concise communication.
-- **Trades must never break.** Every change — no matter how unrelated — must be verified not to affect the trade flow (order placement → matching → settlement). Trade functionality is the highest-priority invariant in the system.
 
 ## Recent changes (v4.8.0 · 16 May 2026)
 

@@ -1,7 +1,6 @@
 import http from "http";
 import fs from "fs";
 import path from "path";
-import zlib from "zlib";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -27,53 +26,28 @@ const MIME = {
   ".map":   "application/json",
 };
 
-const COMPRESSIBLE = new Set([".js", ".mjs", ".css", ".html", ".json", ".svg", ".xml", ".txt", ".map"]);
 const CACHE_ASSETS = "public, max-age=31536000, immutable";
 const CACHE_HTML   = "no-cache, no-store, must-revalidate";
-
-function acceptsGzip(req) {
-  return (req.headers["accept-encoding"] ?? "").includes("gzip");
-}
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
   const filePath = path.join(dist, url.pathname);
   const ext = path.extname(filePath).toLowerCase();
 
-  const serveFile = (fp, fallbackToIndex) => {
+  const tryFile = (fp, fallbackToIndex) => {
     fs.stat(fp, (err, stat) => {
       if (!err && stat.isFile()) {
-        const mime  = MIME[path.extname(fp).toLowerCase()] ?? "application/octet-stream";
+        const mime = MIME[path.extname(fp).toLowerCase()] ?? "application/octet-stream";
         const cache = fp.includes("/assets/") ? CACHE_ASSETS : CACHE_HTML;
-        const gz    = acceptsGzip(req) && COMPRESSIBLE.has(path.extname(fp).toLowerCase());
-
-        if (gz) {
-          res.writeHead(200, {
-            "Content-Type":     mime,
-            "Cache-Control":    cache,
-            "Content-Encoding": "gzip",
-            "Vary":             "Accept-Encoding",
-          });
-          fs.createReadStream(fp).pipe(zlib.createGzip()).pipe(res);
-        } else {
-          res.writeHead(200, { "Content-Type": mime, "Cache-Control": cache });
-          fs.createReadStream(fp).pipe(res);
-        }
+        res.writeHead(200, { "Content-Type": mime, "Cache-Control": cache });
+        fs.createReadStream(fp).pipe(res);
       } else if (fallbackToIndex) {
         const indexPath = path.join(dist, "index.html");
-        const gz = acceptsGzip(req);
-        if (gz) {
-          res.writeHead(200, {
-            "Content-Type":     "text/html; charset=utf-8",
-            "Cache-Control":    CACHE_HTML,
-            "Content-Encoding": "gzip",
-            "Vary":             "Accept-Encoding",
-          });
-          fs.createReadStream(indexPath).pipe(zlib.createGzip()).pipe(res);
-        } else {
-          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": CACHE_HTML });
-          fs.createReadStream(indexPath).pipe(res);
-        }
+        res.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": CACHE_HTML,
+        });
+        fs.createReadStream(indexPath).pipe(res);
       } else {
         res.writeHead(404, { "Content-Type": "text/plain" });
         res.end("Not found");
@@ -82,21 +56,19 @@ const server = http.createServer((req, res) => {
   };
 
   if (ext) {
-    serveFile(filePath, false);
+    tryFile(filePath, false);
   } else {
-    const htmlFile = filePath.endsWith("/")
-      ? path.join(filePath, "index.html")
-      : filePath + ".html";
+    const htmlFile = filePath.endsWith("/") ? path.join(filePath, "index.html") : filePath + ".html";
     fs.stat(htmlFile, (err, stat) => {
       if (!err && stat.isFile()) {
-        serveFile(htmlFile, false);
+        tryFile(htmlFile, false);
       } else {
-        serveFile(path.join(dist, "index.html"), true);
+        tryFile(path.join(dist, "index.html"), true);
       }
     });
   }
 });
 
 server.listen(Number(PORT), "0.0.0.0", () => {
-  console.log(`OrahDEX serving on port ${PORT} (gzip enabled)`);
+  console.log(`OrahDEX serving on port ${PORT}`);
 });

@@ -372,35 +372,6 @@ export const CHAINS: Record<number, ChainConfig> = {
     },
   },
 
-  130: {
-    chainId: 130,
-    name: "Unichain",
-    shortName: "UNI",
-    rpcUrl: "https://mainnet.unichain.org",
-    explorerUrl: "https://uniscan.xyz",
-    nativeSymbol: "ETH",
-    nativeName: "Ethereum",
-    nativeColor: "#FF007A",
-    router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488",
-    tokens: {
-      USDC: { symbol: "USDC", address: "0x078D782b760474a361dDA0AF3839290b0EbBD45c", decimals: 6 },
-    },
-  },
-  1329: {
-    chainId: 1329,
-    name: "Sei",
-    shortName: "SEI",
-    rpcUrl: "https://evm-rpc.sei-apis.com",
-    explorerUrl: "https://seitrace.com",
-    nativeSymbol: "SEI",
-    nativeName: "Sei",
-    nativeColor: "#9B59B6",
-    router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488",
-    tokens: {
-      USDC: { symbol: "USDC", address: "0x3894085Ef7Ff0f0aeDf52E2A2704928d1Ec074F1", decimals: 6 },
-    },
-  },
-
   // ── Sepolia testnet — OrahDEX native AMM (OrahRouter02) ───────────────────
   11155111: {
     chainId:      11155111,

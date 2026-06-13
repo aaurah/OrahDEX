@@ -1,22 +1,15 @@
 import { useEffect, ReactNode, lazy, Suspense, Component } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { SpeedInsights } from "@vercel/speed-insights/react";
+import { Analytics } from "@vercel/analytics/react";
 import { Toaster } from "@/components/ui/toaster";
+import { PinPromptModal } from "@/components/PinPromptModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { WalletChooserDialog } from "@/components/WalletChooserDialog";
 
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
-
-/* ─── Lazy-loaded overlay / analytics components ─────────────────────────────
-   These are NOT needed for the initial render — keeping them out of the
-   static import graph removes vendor-hardware-wallets (2.4 MB), vendor-ethers
-   (230 KB), and most of vendor-misc from the critical-path JS that must be
-   parsed before React mounts.  They are still browser-preloaded via Vite's
-   modulepreload hints once the first dynamic import is seen.              ─── */
-const PinPromptModal    = lazy(() => import("@/components/PinPromptModal").then(m => ({ default: m.PinPromptModal })));
-const WalletChooserDialog = lazy(() => import("@/components/WalletChooserDialog").then(m => ({ default: m.WalletChooserDialog })));
-const OraAIWidget       = lazy(() => import("@/components/OraAIWidget").then(m => ({ default: m.OraAIWidget })));
-const SpeedInsights     = lazy(() => import("@vercel/speed-insights/react").then(m => ({ default: m.SpeedInsights })));
-const Analytics         = lazy(() => import("@vercel/analytics/react").then(m => ({ default: m.Analytics })));
+import { OraAIWidget } from "@/components/OraAIWidget";
 import { applyStoredTheme, useThemeStore } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -523,7 +516,7 @@ function Router() {
 function OraAIWidgetGate() {
   const [location] = useLocation();
   if (location.startsWith("/devai") || location.startsWith("/admin")) return null;
-  return <Suspense fallback={null}><OraAIWidget /></Suspense>;
+  return <OraAIWidget />;
 }
 
 function AppContent() {
@@ -538,12 +531,11 @@ function AppContent() {
         <OraAIWidgetGate />
       </WouterRouter>
       <Toaster />
-      {/* Lazy overlays — Suspense fallback is null because these are hidden by
-          default; they'll be ready before the user can ever trigger them.    */}
-      <Suspense fallback={null}><PinPromptModal /></Suspense>
-      <Suspense fallback={null}><WalletChooserDialog /></Suspense>
+      <PinPromptModal />
+      {/* Wallet chooser — always mounted so it works across all layouts */}
+      <WalletChooserDialog />
       {/* Vercel Speed Insights */}
-      <Suspense fallback={null}><SpeedInsights /></Suspense>
+      <SpeedInsights />
     </>
   );
 }
@@ -554,7 +546,8 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AppContent />
-          <Suspense fallback={null}><Analytics /></Suspense>
+          <SpeedInsights />
+          <Analytics />
         </TooltipProvider>
       </QueryClientProvider>
     </AppErrorBoundary>

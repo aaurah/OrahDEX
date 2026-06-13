@@ -1,7 +1,3 @@
 - [Arb bot formula](arb-bot-formula.md) — triangular arb gross return formula was inverted; correct form documented in topic file.
 - [Bridge agg patterns](bridge-agg-patterns.md) — Express async route safety, toWei edge case, dropdown click-outside pattern.
 - [Git merge conflict resolution](git-merge-resolution.md) — agent cannot git add/rm/commit/push; use a shell script the user runs manually.
-- [EVM order placement hang](evm-order-hang.md) — fundingVerifier RPC call had no timeout; public nodes stall 30s+; fix: 8s timeout + sig-proof fallback.
-- [Mobile loading fixes](mobile-loading-fixes.md) — server.mjs MUST have gzip (5.3MB→1.4MB, 74% savings); pool timeout must be 6s; markets table needs (enabled,type) index.
-- [EVM settlement dead HTLC](evm-settlement-htlc.md) — EVM↔EVM cross-chain trades must not use BSV HTLC; remove isEvmCrossChain from isCrossChain in spotSettlement.ts.
-- [Frontend critical path](frontend-critical-path.md) — entry chunk must have 0 static imports; isolate buffer→vendor-polyfills + lazy overlays is the key.

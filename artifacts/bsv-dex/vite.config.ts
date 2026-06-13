@@ -156,33 +156,15 @@ export default defineConfig({
           if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/") || id.includes("node_modules/scheduler/")) {
             return "vendor-react";
           }
-          // Polyfills — tiny chunk, ONLY what polyfills.ts statically imports.
-          // CRITICAL: `buffer` must NOT be in vendor-misc.  polyfills.ts imports
-          // it at module level (required by main.tsx before any other code), so
-          // wherever `buffer` lands becomes a STATIC dependency of the entry
-          // chunk.  If it were in vendor-misc alongside @ledgerhq / @trezor /
-          // recharts / rxjs (5 MB+), every byte of vendor-misc would block
-          // React from mounting.  Isolating it here keeps this chunk tiny
-          // (~50 KB raw) and vendor-misc entirely lazy.
-          if (id.includes("node_modules/buffer/")) {
-            return "vendor-polyfills";
-          }
-          // Routing + query + state management (zustand, immer).
-          // zustand must be here (not vendor-misc) so that the store imports in
-          // App.tsx do NOT pull vendor-misc into the static import chain.
-          if (
-            id.includes("node_modules/@tanstack/") ||
-            id.includes("node_modules/wouter/") ||
-            id.includes("node_modules/zustand/") ||
-            id.includes("node_modules/immer/")
-          ) {
+          // Routing + query
+          if (id.includes("node_modules/@tanstack/") || id.includes("node_modules/wouter/")) {
             return "vendor-query";
           }
           // Chart library — heavy, only needed on trading pages
           if (id.includes("node_modules/lightweight-charts") || id.includes("node_modules/fancy-canvas")) {
             return "vendor-charts";
           }
-          // Crypto / wallet libs — statically required by viem (in vendor-walletconnect)
+          // Crypto / wallet libs — heavy, only needed on wallet pages
           if (
             id.includes("node_modules/@noble/") ||
             id.includes("node_modules/@scure/") ||
@@ -197,15 +179,11 @@ export default defineConfig({
           if (id.includes("node_modules/@radix-ui/") || id.includes("node_modules/lucide-react")) {
             return "vendor-ui";
           }
-          // Reown / WalletConnect — statically imported (main.tsx → reown.ts → wagmi)
+          // Reown / WalletConnect — only needed when wallet modal opens
           if (id.includes("node_modules/@reown/") || id.includes("node_modules/@walletconnect/") || id.includes("node_modules/viem/") || id.includes("node_modules/wagmi/")) {
             return "vendor-walletconnect";
           }
-          // Everything else in node_modules (ethers, @ledgerhq, @trezor, gridplus,
-          // recharts, rxjs, @stripe, @vercel, etc.) goes into vendor-misc.
-          // Because `buffer` is isolated above and overlay components (WalletChooserDialog,
-          // PinPromptModal, SpeedInsights, Analytics) are lazy, vendor-misc has NO
-          // static importer — it loads only when a wallet/payment page is first opened.
+          // Everything else in node_modules stays in a shared vendor chunk
           if (id.includes("node_modules/")) {
             return "vendor-misc";
           }
@@ -241,18 +219,6 @@ export default defineConfig({
     port,
     host: "0.0.0.0",
     allowedHosts: true,
-    proxy: {
-      "/api": {
-        target: "http://localhost:8080",
-        changeOrigin: true,
-        secure: false,
-      },
-      "/v1": {
-        target: "http://localhost:8080",
-        changeOrigin: true,
-        secure: false,
-      },
-    },
   },
   clearScreen: false,
   logLevel: "info",

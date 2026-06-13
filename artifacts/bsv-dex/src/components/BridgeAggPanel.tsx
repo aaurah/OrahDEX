@@ -46,43 +46,14 @@ interface BuiltTx {
 
 // ── Provider display map ──────────────────────────────────────────────────────
 
-const LIFI_TOOL_META: Record<string, { label: string; color: string }> = {
-  stargate:    { label: "Stargate",    color: "#facc15" },
-  stargatev2:  { label: "Stargate V2", color: "#facc15" },
-  across:      { label: "Across",      color: "#4ade80" },
-  acrossv3:    { label: "Across V3",   color: "#4ade80" },
-  socket:      { label: "Socket",      color: "#60a5fa" },
-  hop:         { label: "Hop",         color: "#f472b6" },
-  cbridge:     { label: "cBridge",     color: "#818cf8" },
-  connext:     { label: "Connext",     color: "#fb923c" },
-  synapse:     { label: "Synapse",     color: "#a78bfa" },
-  hyphen:      { label: "Hyphen",      color: "#34d399" },
-  mayan:       { label: "Mayan",       color: "#22d3ee" },
-  relay:       { label: "Relay",       color: "#94a3b8" },
-  owlto:       { label: "Owlto",       color: "#f9a8d4" },
-  orbiter:     { label: "Orbiter",     color: "#c084fc" },
-  polymer:     { label: "Polymer",     color: "#38bdf8" },
-  debridge:    { label: "deBridge",    color: "#f87171" },
-  allbridge:   { label: "Allbridge",   color: "#4ade80" },
-  symbiosis:   { label: "Symbiosis",   color: "#c084fc" },
-  squid:       { label: "Squid",       color: "#a3e635" },
+const PROVIDER_META: Record<string, { label: string; color: string; tag: string }> = {
+  "mock-cheap-slow":      { label: "Across V2",  color: "#4ade80", tag: "Cheapest"  },
+  "mock-fast-expensive":  { label: "Stargate V2", color: "#facc15", tag: "Fastest"  },
+  "mock-balanced":        { label: "Socket",      color: "#60a5fa", tag: "Balanced" },
 };
 
-const ROUTE_TAG_META: Record<string, { tag: string; color: string }> = {
-  RECOMMENDED: { tag: "Recommended", color: "#facc15" },
-  CHEAPEST:    { tag: "Cheapest",    color: "#4ade80"  },
-  FASTEST:     { tag: "Fastest",     color: "#fb923c"  },
-  SAFEST:      { tag: "Safest",      color: "#60a5fa"  },
-};
-
-function providerMeta(id: string, routeTags?: string[]) {
-  const tool = id.startsWith("lifi-") ? id.slice(5) : id;
-  const toolInfo = LIFI_TOOL_META[tool.toLowerCase()];
-  const label = toolInfo?.label ?? tool;
-  const color = toolInfo?.color ?? "#9ca3af";
-  const firstTag = routeTags?.find(t => ROUTE_TAG_META[t]);
-  const tag = firstTag ? ROUTE_TAG_META[firstTag].tag : "";
-  return { label, color, tag };
+function providerMeta(id: string) {
+  return PROVIDER_META[id] ?? { label: id, color: "#9ca3af", tag: "" };
 }
 
 function fmtTime(seconds: number): string {
@@ -258,7 +229,7 @@ function QuoteRow({
   onSelect: () => void;
   toToken: Token | null;
 }) {
-  const meta = providerMeta(quote.providerId, quote.routeMeta?.tags as string[] | undefined);
+  const meta = providerMeta(quote.providerId);
 
   return (
     <button
@@ -657,7 +628,7 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
           ) : (
             <>
               <ArrowRight size={14} />
-              Build Transaction via {providerMeta(selectedQuote.providerId, selectedQuote.routeMeta?.tags as string[] | undefined).label}
+              Build Transaction via {providerMeta(selectedQuote.providerId).label}
             </>
           )}
         </button>
