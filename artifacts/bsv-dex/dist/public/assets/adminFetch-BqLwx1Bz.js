@@ -1,0 +1,1 @@
+import{n as e,t}from"./useAdminAuthStore-CzspBhFr.js";var n=`/`?.replace(/\/$/,``)??``;async function r(r,i={}){let a=r.startsWith(`http`)?r:`${n}${r}`,o={...i.headers??{},...t()},s=await fetch(a,{...i,headers:o});return s.status===401&&(e.getState().logout(),window.location.href=`${n}/admin/login`),s}export{r as t};
