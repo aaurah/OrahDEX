@@ -367,29 +367,25 @@ app.use("/api", router);
 app.use("/v1", v1Router);
 startApiKeyCounterFlusher();
 
-/* ── Static frontend — served in production (Replit deployment) ──────────────
+/* ── Static frontend — always served (dev + production) ─────────────────────
    The Vite build outputs to artifacts/bsv-dex/dist/public.
    From the compiled server at artifacts/api-server/dist/, that is two levels up.
    Serving from the same Express process eliminates the need for a separate
    preview server and the /api proxy problem it creates.
 ── */
-if (process.env.NODE_ENV === "production") {
+{
   const __serverDir = path.dirname(fileURLToPath(import.meta.url));
   const frontendDist = path.resolve(__serverDir, "../../bsv-dex/dist/public");
   if (fs.existsSync(frontendDist)) {
-    logger.info({ frontendDist }, "Serving static frontend in production");
-    // Static assets — long-lived cache for hashed filenames
+    logger.info({ frontendDist }, "Serving static frontend");
     app.use(express.static(frontendDist, {
-      maxAge: "1y",
-      immutable: true,
+      maxAge: process.env.NODE_ENV === "production" ? "1y" : 0,
+      immutable: process.env.NODE_ENV === "production",
       index: false,
       setHeaders(res) {
         res.setHeader("X-Robots-Tag", "index, follow");
       },
     }));
-    // SPA catch-all: any path not matched by /api or /v1 serves index.html.
-    // Inject window.__REOWN_PROJECT_ID__ so the frontend can use it at runtime
-    // even when the Vite build pre-dates the secret being added to the env.
     const indexHtmlPath = path.join(frontendDist, "index.html");
     const reownId =
       process.env.VITE_REOWN_PROJECT_ID ||
@@ -399,7 +395,6 @@ if (process.env.NODE_ENV === "production") {
       ? fs.readFileSync(indexHtmlPath, "utf-8")
       : null;
     if (indexHtml && reownId) {
-      // Inject before closing </head> so the value is available before any script loads
       indexHtml = indexHtml.replace(
         "</head>",
         `<script>window.__REOWN_PROJECT_ID__=${JSON.stringify(reownId)};</script></head>`,

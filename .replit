@@ -10,7 +10,7 @@ id = "artifacts/bsv-dex"
 router = "application"
 deploymentTarget = "autoscale"
 build = ["sh", "-c", "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/bsv-dex run build"]
-run = ["sh", "-c", "PORT=3001 pnpm --filter @workspace/api-server run start & PORT=8080 API_PORT=3001 pnpm --filter @workspace/bsv-dex run start"]
+run = ["sh", "-c", "pnpm --filter @workspace/api-server run start"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
@@ -26,12 +26,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=3001 pnpm --filter @workspace/api-server run dev"
-waitForPort = 3001
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "test -f artifacts/bsv-dex/dist/public/index.html || pnpm --filter @workspace/bsv-dex run build && PORT=8080 API_PORT=3001 pnpm --filter @workspace/bsv-dex run dev"
+args = "pnpm --filter @workspace/api-server run dev"
 waitForPort = 8080
 
 [agent]
