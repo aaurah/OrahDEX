@@ -1,29 +1,42 @@
-run = "pnpm --filter mockup-sandbox dev"
-modules = ["nodejs-20"]
+modules = ["nodejs-24", "postgresql-16", "python-3.11"]
+
+[[artifacts]]
+id = "artifacts/api-server"
+
+[[artifacts]]
+id = "artifacts/bsv-dex"
 
 [deployment]
-<<<<<<< HEAD
-build = "BASE_PATH=/ PORT=3000 pnpm --filter mockup-sandbox build"
-run = ""
-deploymentTarget = "static"
-staticPublishPath = "artifacts/mockup-sandbox/dist"
-=======
 router = "application"
 deploymentTarget = "autoscale"
-build = ["sh", "-c", "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/bsv-dex run build"]
-run = ["sh", "-c", "pnpm --filter @workspace/api-server run start & PORT=20180 pnpm --filter @workspace/bsv-dex run start"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }
->>>>>>> 8e26b0e5492a97e8ac8fdbeed6a9021b61f7384e
 
-[[ports]]
-localPort = 3000
-externalPort = 80
-
-[nix]
-packages = ["zip"]
+[workflows]
+runButton = "Project"
 
 [agent]
+stack = "PNPM_WORKSPACE"
 expertMode = true
+integrations = ["github:1.0.0"]
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
+
+[nix]
+channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+VAULT_CONTRACT_ADDRESS = "0x67C7f23eE49B6417661748F23F743C0B274039e2"
+VAULT_CHAIN_ID = "8453"
+VITE_REOWN_PROJECT_ID = "04663615251cf13fb1b043d754e7a17f"
+"Changenow API" = "c61ed1326058e7f9855f23eb6436c4a1ffe83ef2be5a4fb52412e7031edc5d45"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
