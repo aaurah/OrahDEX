@@ -83,6 +83,7 @@ app.set("trust proxy", 1);
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
+  frameguard: false,
 }));
 
 /* ── Compression — gzip all API responses (typically 60-80% smaller) ──── */
