@@ -1,1 +1,0 @@
-import{s as e}from"./vendor-walletconnect-BZtnmab2.js";export{e as W3mTransactionsView};
