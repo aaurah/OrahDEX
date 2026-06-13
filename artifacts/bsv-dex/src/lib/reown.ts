@@ -3,7 +3,6 @@ import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import {
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
   linea, zkSync, scroll, mantle, fantom, cronos,
-  blast, mode, boba, metis, taiko, gnosis, celo, moonbeam, sonic, sei, unichain,
   type AppKitNetwork,
 } from "@reown/appkit/networks";
 
@@ -28,66 +27,46 @@ const sepolia: AppKitNetwork = {
 };
 
 export const REOWN_NETWORKS: [AppKitNetwork, ...AppKitNetwork[]] = [
-  mainnet, arbitrum, optimism, base, blast, mode, boba, unichain, linea, zkSync, scroll,
-  polygon, bsc, avalanche, mantle, fantom, cronos, gnosis, celo, moonbeam, sonic, sei, metis, taiko,
-  sepolia,
+  mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
+  linea, zkSync, scroll, mantle, fantom, cronos, sepolia,
 ];
 
-let _wagmiAdapter: WagmiAdapter;
-let _wagmiConfig: ReturnType<WagmiAdapter["wagmiConfig"]["getClient"]> extends never ? any : any;
-let _modal: ReturnType<typeof createAppKit>;
+export const wagmiAdapter = new WagmiAdapter({
+  networks: REOWN_NETWORKS,
+  projectId,
+});
 
-try {
-  _wagmiAdapter = new WagmiAdapter({
-    networks: REOWN_NETWORKS,
-    projectId,
-  });
-  _wagmiConfig = _wagmiAdapter.wagmiConfig;
+export const wagmiConfig = wagmiAdapter.wagmiConfig;
 
-  _modal = createAppKit({
-    adapters: [_wagmiAdapter],
-    networks: REOWN_NETWORKS,
-    projectId,
-    metadata: {
-      name: "OrahDEX",
-      description: "Trade means DEX — Multi-chain BSV DEX with instant on-chain settlement",
-      url: typeof window !== "undefined" ? window.location.origin : "https://orahdex.org",
-      icons: [
-        typeof window !== "undefined"
-          ? `${window.location.origin}/favicon.svg`
-          : "https://orahdex.org/favicon.svg",
-      ],
-    },
-    features: {
-      analytics: false,
-      email:     false,
-      socials:   [],
-      onramp:    true,
-      swaps:     false,
-    },
-    themeMode: "dark",
-    themeVariables: {
-      "--w3m-accent":               "#4ade80",
-      "--w3m-border-radius-master": "12px",
-      "--w3m-font-family":          "inherit",
-      "--w3m-z-index":              9999,
-    },
-  });
-} catch (err) {
-  console.warn("[OrahDEX] WalletConnect/Reown init failed — wallet features disabled:", err);
-  _wagmiAdapter = null as any;
-  _wagmiConfig  = null as any;
-  _modal        = {
-    open: () => {}, close: () => {}, setThemeMode: () => {},
-    setThemeVariables: () => {}, subscribeAccount: () => () => {},
-    getAccount: () => ({ isConnected: false }),
-    switchNetwork: async () => {}, disconnect: async () => {},
-  } as any;
-}
-
-export const wagmiAdapter = _wagmiAdapter;
-export const wagmiConfig  = _wagmiConfig;
-export const modal        = _modal;
+export const modal = createAppKit({
+  adapters: [wagmiAdapter],
+  networks: REOWN_NETWORKS,
+  projectId,
+  metadata: {
+    name: "OrahDEX",
+    description: "Trade means DEX — Multi-chain BSV DEX with instant on-chain settlement",
+    url: typeof window !== "undefined" ? window.location.origin : "https://orahdex.org",
+    icons: [
+      typeof window !== "undefined"
+        ? `${window.location.origin}/favicon.svg`
+        : "https://orahdex.org/favicon.svg",
+    ],
+  },
+  features: {
+    analytics: false,
+    email:     false,
+    socials:   [],
+    onramp:    true,
+    swaps:     false,
+  },
+  themeMode: "dark",
+  themeVariables: {
+    "--w3m-accent":               "#4ade80",
+    "--w3m-border-radius-master": "12px",
+    "--w3m-font-family":          "inherit",
+    "--w3m-z-index":              9999,
+  },
+});
 
 suppressThirdPartyBranding();
 

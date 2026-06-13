@@ -1,1 +1,0 @@
-import{a as e,i as t,n,s as r}from"./ledgerDMK-CL_gle-c.js";export{n as dmkConnect,t as dmkDisconnect,e as dmkErrMsg,r as dmkSignTransaction};

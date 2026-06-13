@@ -1,7 +1,0 @@
-{
-  "name": "browserify-sign-stub",
-  "version": "4.2.6",
-  "description": "Stub for browserify-sign that removes the elliptic/EC dependency (GHSA-848j-6mx2-7j84 has no upstream fix). Only SHA/RSA paths are needed in this browser build; EC paths throw with a clear message.",
-  "main": "index.js",
-  "license": "ISC"
-}

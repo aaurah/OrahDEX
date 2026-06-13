@@ -6,14 +6,8 @@ packages:
 
 allowBuilds:
   '@reown/appkit': true
-  '@stellar/stellar-sdk': set this to true or false
-  blake-hash: set this to true or false
   esbuild: true
   keccak: true
-  protobufjs: set this to true or false
-  secp256k1: set this to true or false
-  tiny-secp256k1: set this to true or false
-  usb: set this to true or false
 
 autoInstallPeers: false
 

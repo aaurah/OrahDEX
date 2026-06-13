@@ -43,20 +43,6 @@ pool.query(`
     WHERE "chain_id" IS NOT NULL;
 `).catch((err: Error) => logger.warn({ err: err.message }, "chain_id migration failed (non-fatal)"));
 
-// Create the markets filter index if it doesn't exist.
-// The public markets query (WHERE enabled=true AND type!='letsexchange') does a
-// full sequential scan on 1M+ rows without this index, causing 20s+ timeouts.
-// CONCURRENTLY: builds without locking the table, safe to run on a live server.
-pool.connect().then(client =>
-  client.query(
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS markets_enabled_type_idx
-     ON markets (enabled, type);`
-  ).then(() => client.query(
-    `CREATE INDEX CONCURRENTLY IF NOT EXISTS markets_status_idx
-     ON markets (status) WHERE enabled = true;`
-  )).finally(() => client.release())
-).catch((err: Error) => logger.warn({ err: err.message }, "markets index migration failed (non-fatal)"));
-
 const app: Express = express();
 const middlewareRegistrationOrder: string[] = [];
 
@@ -83,7 +69,6 @@ app.set("trust proxy", 1);
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
-  frameguard: false,
 }));
 
 /* ── Compression — gzip all API responses (typically 60-80% smaller) ──── */
@@ -368,25 +353,29 @@ app.use("/api", router);
 app.use("/v1", v1Router);
 startApiKeyCounterFlusher();
 
-/* ── Static frontend — always served (dev + production) ─────────────────────
+/* ── Static frontend — served in production (Replit deployment) ──────────────
    The Vite build outputs to artifacts/bsv-dex/dist/public.
    From the compiled server at artifacts/api-server/dist/, that is two levels up.
    Serving from the same Express process eliminates the need for a separate
    preview server and the /api proxy problem it creates.
 ── */
-{
+if (process.env.NODE_ENV === "production") {
   const __serverDir = path.dirname(fileURLToPath(import.meta.url));
   const frontendDist = path.resolve(__serverDir, "../../bsv-dex/dist/public");
   if (fs.existsSync(frontendDist)) {
-    logger.info({ frontendDist }, "Serving static frontend");
+    logger.info({ frontendDist }, "Serving static frontend in production");
+    // Static assets — long-lived cache for hashed filenames
     app.use(express.static(frontendDist, {
-      maxAge: process.env.NODE_ENV === "production" ? "1y" : 0,
-      immutable: process.env.NODE_ENV === "production",
+      maxAge: "1y",
+      immutable: true,
       index: false,
       setHeaders(res) {
         res.setHeader("X-Robots-Tag", "index, follow");
       },
     }));
+    // SPA catch-all: any path not matched by /api or /v1 serves index.html.
+    // Inject window.__REOWN_PROJECT_ID__ so the frontend can use it at runtime
+    // even when the Vite build pre-dates the secret being added to the env.
     const indexHtmlPath = path.join(frontendDist, "index.html");
     const reownId =
       process.env.VITE_REOWN_PROJECT_ID ||
@@ -396,6 +385,7 @@ startApiKeyCounterFlusher();
       ? fs.readFileSync(indexHtmlPath, "utf-8")
       : null;
     if (indexHtml && reownId) {
+      // Inject before closing </head> so the value is available before any script loads
       indexHtml = indexHtml.replace(
         "</head>",
         `<script>window.__REOWN_PROJECT_ID__=${JSON.stringify(reownId)};</script></head>`,
@@ -478,13 +468,8 @@ async function healthHandler(_req: any, res: any) {
   const anyStuck = services.some(s => s.status === "stuck");
 
   let bsvChain: { online: boolean; blockHeight: number } | undefined;
-  try {
-    const bsv = await Promise.race([
-      getBsvChainStatus(),
-      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("bsv-chain-timeout")), 3000)),
-    ]);
-    bsvChain = { online: bsv.online, blockHeight: bsv.blockHeight };
-  } catch { /* non-fatal — skip BSV chain data if DB is slow */ }
+  try { const bsv = await getBsvChainStatus(); bsvChain = { online: bsv.online, blockHeight: bsv.blockHeight }; }
+  catch { /* non-fatal */ }
 
   // Only CRITICAL services failing should degrade the public health signal.
   // Non-critical reconcilers (le-status-sync, ghost-order-detector, etc.) being

@@ -4,7 +4,7 @@ import { db, pool } from "@workspace/db";
 
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
 // Note: generateAdminToken and revokeAllAdminTokens are now async (DB-persisted)
-import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable, supportTicketsTable } from "@workspace/db/schema";
+import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable } from "@workspace/db/schema";
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
 import { eq, desc, and, sql, ne, isNotNull, or, like, ilike } from "drizzle-orm";
@@ -30,7 +30,6 @@ import {
   logTopics,
 } from "../lib/evmWebhook.js";
 import { getAllChains, saveCustomChain, removeCustomChain } from "../lib/chainRegistry.js";
-import { EVM_CHAINS } from "../lib/evmHtlc.js";
 
 /* ─── SERVICE STATE TRACKING ─────────────────────────────────────────────── */
 export { serviceState } from "../lib/serviceState.js";
@@ -1625,42 +1624,6 @@ router.put("/bsv-wallet", async (req, res) => {
     res.json({ customAddress, message: "Settlement address updated" });
   } catch (err) {
     res.status(500).json({ error: "Failed to update BSV wallet address" });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// NOTIFICATION COUNTS  (header bell badge)
-// ─────────────────────────────────────────────────────────────────────────────
-
-// GET /admin/notifications/counts — aggregated badge counts for the admin header bell
-router.get("/notifications/counts", requireAdminToken, async (_req, res) => {
-  try {
-    const [emailRow] = await db
-      .select({ cnt: sql<number>`count(*)::int` })
-      .from(adminEmailsTable)
-      .where(and(eq(adminEmailsTable.isRead, false), eq(adminEmailsTable.folder, "inbox")));
-
-    const [ticketRow] = await db
-      .select({ cnt: sql<number>`count(*)::int` })
-      .from(supportTicketsTable)
-      .where(ne(supportTicketsTable.status, "closed"));
-
-    const { rows: wdRows } = await pool.query<{ cnt: number }>(
-      `SELECT COUNT(*)::int AS cnt FROM withdrawal_requests WHERE status = 'pending'`,
-    );
-
-    const unreadEmails       = emailRow?.cnt  ?? 0;
-    const unreadTickets      = ticketRow?.cnt ?? 0;
-    const pendingWithdrawals = wdRows[0]?.cnt ?? 0;
-
-    res.json({
-      unreadEmails,
-      unreadTickets,
-      pendingWithdrawals,
-      total: unreadEmails + unreadTickets + pendingWithdrawals,
-    });
-  } catch {
-    res.status(500).json({ error: "Failed to fetch notification counts" });
   }
 });
 
@@ -3550,71 +3513,6 @@ router.get(["/evm/filter-fn", "/quicknode/filter-fn"], (req, res) => {
     contracts,
     filterFunction: filterFn,
     note: "Paste this filter function into your EVM log webhook provider's filter field. Add extra contract addresses via the ?contracts= query param.",
-  });
-});
-
-// GET /api/admin/evm/chains-config — full EVM chain + contract address config
-router.get("/evm/chains-config", requireAdminToken, (_req, res) => {
-  const domain = process.env["REPLIT_DEV_DOMAIN"] ?? null;
-  const RPC_ENV: Record<number, string> = {
-    1:        "ETH_RPC_URL",
-    137:      "POLYGON_RPC_URL",
-    56:       "BSC_RPC_URL",
-    8453:     "BASE_RPC_URL",
-    42161:    "ARB_RPC_URL",
-    10:       "OP_RPC_URL",
-    43114:    "AVAX_RPC_URL",
-    324:      "ZKSYNC_RPC_URL",
-    59144:    "LINEA_RPC_URL",
-    534352:   "SCROLL_RPC_URL",
-    1329:     "SEI_RPC_URL",
-    130:      "UNICHAIN_RPC_URL",
-    25:       "CRONOS_RPC_URL",
-    100:      "GNOSIS_RPC_URL",
-    146:      "SONIC_RPC_URL",
-    250:      "FANTOM_RPC_URL",
-    288:      "BOBA_RPC_URL",
-    1088:     "METIS_RPC_URL",
-    1284:     "MOONBEAM_RPC_URL",
-    5000:     "MANTLE_RPC_URL",
-    34443:    "MODE_RPC_URL",
-    42220:    "CELO_RPC_URL",
-    81457:    "BLAST_RPC_URL",
-    167000:   "TAIKO_RPC_URL",
-    11155111: "SEPOLIA_RPC_URL",
-  };
-  const CONTRACT_ENV: Record<number, string> = {
-    1:        "EVM_HTLC_CONTRACT_ETH",
-    137:      "EVM_HTLC_CONTRACT_POLYGON",
-    56:       "EVM_HTLC_CONTRACT_BSC",
-    11155111: "EVM_HTLC_CONTRACT_SEPOLIA",
-  };
-
-  const chains = Object.values(EVM_CHAINS).map(c => ({
-    chainId:        c.chainId,
-    name:           c.name,
-    nativeSymbol:   c.nativeSymbol,
-    blockExplorer:  c.blockExplorer,
-    contractAddress: c.contractAddress,
-    contractEnvVar: CONTRACT_ENV[c.chainId] ?? null,
-    contractIsCustom: !!CONTRACT_ENV[c.chainId] && !!process.env[CONTRACT_ENV[c.chainId]!],
-    usdtAddress:    c.usdtAddress ?? null,
-    usdcAddress:    c.usdcAddress ?? null,
-    rpcEnvVar:      RPC_ENV[c.chainId] ?? null,
-    rpcConfigured:  !!(RPC_ENV[c.chainId] && process.env[RPC_ENV[c.chainId]!]),
-  }));
-
-  res.json({
-    chains,
-    webhookUrl: domain ? `https://${domain}/api/webhooks/evm` : null,
-    hmacConfigured: !!(process.env["EVM_WEBHOOK_SECRET"] ?? process.env["QUICKNODE_WEBHOOK_SECRET"]),
-    watchedContracts: WATCHED_CONTRACTS,
-    topics: {
-      HTLC_LOCKED:      TOPIC_HTLC_LOCKED,
-      HTLC_REVEALED:    TOPIC_HTLC_REVEALED,
-      HTLC_REFUNDED:    TOPIC_HTLC_REFUNDED,
-      ESCROW_RELEASED:  TOPIC_ESCROW_RELEASED,
-    },
   });
 });
 

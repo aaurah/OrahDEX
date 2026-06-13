@@ -1,7 +1,0 @@
-{
-  "name": "create-ecdh-stub",
-  "version": "4.0.4",
-  "description": "Stub for create-ecdh that removes the transitive elliptic dependency (GHSA-848j-6mx2-7j84 has no upstream fix). ECDH key exchange is not used in this browser build; if called, throws with a clear message directing callers to Web Crypto API.",
-  "main": "index.js",
-  "license": "MIT"
-}

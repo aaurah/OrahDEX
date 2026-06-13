@@ -15,7 +15,7 @@ kind = "web"
   localPort = 20180
 
   [services.development]
-  run = "pnpm --filter @workspace/bsv-dex run dev"
+  run = "node serve-static.mjs"
 
   [services.production.build]
   args = ["pnpm", "--filter", "@workspace/bsv-dex", "run", "build"]

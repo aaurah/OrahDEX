@@ -7,9 +7,9 @@ import net from "node:net";
 // Variables that are not set here will cause silent runtime failures deep
 // in the first request that exercises that code path.
 const REQUIRED_VARS: Array<{ name: string; fatal: boolean }> = [
-  { name: "DATABASE_URL",        fatal: true  }, // fatal — DB routes hard-fail without a connection string
-  { name: "API_KEY_HMAC_SECRET", fatal: true  }, // fatal — API key auth cannot run without the HMAC pepper
-  { name: "EVM_WALLET_SECRET",   fatal: false }, // warn only — relayer/deposit features degrade gracefully
+  { name: "DATABASE_URL",        fatal: false }, // warn only — server starts without it, DB calls return 503
+  { name: "API_KEY_HMAC_SECRET", fatal: false }, // warn only — API key auth disabled when missing
+  { name: "EVM_WALLET_SECRET",   fatal: false }, // warn only — server runs without it
   { name: "EVM_WEBHOOK_SECRET",  fatal: false }, // warn only — set this in production to secure webhook endpoint
 ];
 

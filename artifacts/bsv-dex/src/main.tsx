@@ -2,8 +2,6 @@ import "./polyfills";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { WagmiProvider } from "wagmi";
-import { createConfig, http } from "wagmi";
-import { mainnet } from "wagmi/chains";
 import App from "./App";
 import "./index.css";
 import { applyStoredTheme } from "./store/useThemeStore";
@@ -15,13 +13,8 @@ migrateStaleDerivedAddresses();
 
 const root = createRoot(document.getElementById("root")!);
 
-const effectiveConfig = wagmiConfig ?? createConfig({
-  chains: [mainnet],
-  transports: { [mainnet.id]: http() },
-});
-
 root.render(
-  createElement(WagmiProvider, { config: effectiveConfig },
+  createElement(WagmiProvider, { config: wagmiConfig },
     createElement(App)
   )
 );

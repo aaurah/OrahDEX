@@ -41,17 +41,15 @@ export const pool = new Pool({
   // Evict idle connections after 15 s — well below Replit Postgres's idle
   // timeout — so stale sockets are recycled before the server closes them.
   idleTimeoutMillis: 15_000,
-  // Wait up to 15 s for a free connection.  On cold-start 20+ background jobs
-  // fire at once; 6 s was too short and caused cascade "Connection terminated
-  // due to connection timeout" failures before any connections were established.
-  connectionTimeoutMillis: 15_000,
+  // Wait up to 20 s for a free connection before erroring — long enough to ride
+  // out a burst from the liquidity bot cycle without cascading failures.
+  connectionTimeoutMillis: 20_000,
   // 25 connections: liquidity bot (2 seq) + price updater (1 bulk) + watchers (4)
   // + futures engine (1 seq) + user-facing headroom (17).
   max: 25,
-  // Kill any query that runs longer than 6 s on the client side.  Background
-  // jobs catch and retry; API routes respond with a graceful fallback instead
-  // of hanging until the proxy aborts the request.
-  query_timeout: 6_000,
+  // Kill any query that runs longer than 20 s on the client side so a single
+  // runaway query cannot hold a connection and starve the rest of the pool.
+  query_timeout: 20_000,
 });
 export const db = drizzle(pool, { schema });
 
