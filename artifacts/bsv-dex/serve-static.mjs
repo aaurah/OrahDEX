@@ -29,10 +29,15 @@ const MIME = {
 // Extensions worth gzip-compressing (binary formats already compressed)
 const COMPRESSIBLE = new Set([".js", ".mjs", ".css", ".html", ".json", ".svg", ".xml", ".txt"]);
 
-// In-memory gzip cache — key = absolute file path, value = Buffer
+// In-memory gzip cache for immutable assets only (keyed by file path)
+// HTML is excluded — it can change without a filename change, so we never cache it
+const CACHE_EXTENSIONS = new Set([".js", ".mjs", ".css", ".woff2", ".woff", ".ttf"]);
 const gzipCache = new Map();
 
-function getGzipped(filePath, raw) {
+function getGzipped(filePath, raw, ext) {
+  if (!CACHE_EXTENSIONS.has(ext)) {
+    return zlib.gzipSync(raw, { level: 6 });
+  }
   if (gzipCache.has(filePath)) return gzipCache.get(filePath);
   const compressed = zlib.gzipSync(raw, { level: 6 });
   gzipCache.set(filePath, compressed);
@@ -106,7 +111,7 @@ const server = http.createServer((req, res) => {
     };
 
     if (useGzip) {
-      const compressed = getGzipped(filePath, raw);
+      const compressed = getGzipped(filePath, raw, ext);
       headers["Content-Encoding"] = "gzip";
       headers["Content-Length"] = compressed.length;
       res.writeHead(200, headers);
