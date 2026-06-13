@@ -55,4 +55,4 @@ VITE_REOWN_PROJECT_ID = "04663615251cf13fb1b043d754e7a17f"
 
 [[ports]]
 localPort = 8080
-externalPort = 8080
+externalPort = 80
