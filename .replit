@@ -9,6 +9,8 @@ id = "artifacts/bsv-dex"
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
+build = ["sh", "-c", "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/bsv-dex run build"]
+run = ["sh", "-c", "pnpm --filter @workspace/api-server run start & PORT=20180 pnpm --filter @workspace/bsv-dex run start"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
