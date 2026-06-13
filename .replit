@@ -39,7 +39,7 @@ waitForPort = 8080
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=20180 pnpm --filter @workspace/bsv-dex run dev"
+args = "test -f artifacts/bsv-dex/dist/public/index.html || pnpm --filter @workspace/bsv-dex run build && PORT=20180 pnpm --filter @workspace/bsv-dex run dev"
 waitForPort = 20180
 
 [agent]
