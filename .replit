@@ -2,10 +2,21 @@ run = "pnpm --filter mockup-sandbox dev"
 modules = ["nodejs-20"]
 
 [deployment]
+<<<<<<< HEAD
 build = "BASE_PATH=/ PORT=3000 pnpm --filter mockup-sandbox build"
 run = ""
 deploymentTarget = "static"
 staticPublishPath = "artifacts/mockup-sandbox/dist"
+=======
+router = "application"
+deploymentTarget = "autoscale"
+build = ["sh", "-c", "pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/bsv-dex run build"]
+run = ["sh", "-c", "pnpm --filter @workspace/api-server run start & PORT=20180 pnpm --filter @workspace/bsv-dex run start"]
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+>>>>>>> 8e26b0e5492a97e8ac8fdbeed6a9021b61f7384e
 
 [[ports]]
 localPort = 3000

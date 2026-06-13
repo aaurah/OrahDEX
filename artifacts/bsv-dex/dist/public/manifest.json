@@ -1,0 +1,83 @@
+{
+  "id": "orahdex",
+  "name": "OrahDEX — Trade means DEX",
+  "short_name": "OrahDEX",
+  "description": "Multi-chain DEX with spot trading, perpetual futures, P2P markets, and on-chain BSV settlement. 900+ markets across EVM, TRON and BSV networks.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
+  "background_color": "#080d13",
+  "theme_color": "#4ade80",
+  "orientation": "any",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["finance", "productivity"],
+  "iarc_rating_id": "",
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Trade BTC/USDT",
+      "short_name": "BTC/USDT",
+      "description": "Open Bitcoin spot trading",
+      "url": "/trade/BTC-USDT",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Trade ETH/USDT",
+      "short_name": "ETH/USDT",
+      "description": "Open Ethereum spot trading",
+      "url": "/trade/ETH-USDT",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "P2P Market",
+      "short_name": "P2P",
+      "description": "Peer-to-peer trading",
+      "url": "/p2p",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "BTC Futures",
+      "short_name": "BTC Perp",
+      "description": "Bitcoin perpetual futures",
+      "url": "/futures/BTC-USDT-PERP",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "DevAI",
+      "short_name": "DevAI",
+      "description": "Developer AI — build bots and integrations on OrahDEX",
+      "url": "/devai",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false
+}
