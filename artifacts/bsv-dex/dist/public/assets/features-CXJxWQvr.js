@@ -1,1 +1,0 @@
-import{pt as e}from"./vendor-walletconnect-Dt65bswX.js";export{e as ReownAuthentication};

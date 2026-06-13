@@ -1,1 +1,0 @@
-import{a as e,i as t,n,s as r}from"./ledgerDMK-BaOL48l1.js";export{n as dmkConnect,t as dmkDisconnect,e as dmkErrMsg,r as dmkSignTransaction};
