@@ -8,8 +8,9 @@
  */
 
 import { Router, type Request, type Response } from "express";
-import { getQuotesAcrossProviders, getProvider } from "../services/quoteAggregator.js";
-import type { BridgeQuoteParams, BuildTxParams } from "../bridges/IBridgeProvider.js";
+import { getQuotesAcrossProviders } from "../services/quoteAggregator.js";
+import { buildLiFiTx } from "../bridges/LiFiProvider.js";
+import type { BridgeQuoteParams } from "../bridges/IBridgeProvider.js";
 
 const router = Router();
 
@@ -166,24 +167,20 @@ router.post("/build-tx", async (req: Request, res: Response) => {
       return;
     }
 
-    const provider = getProvider(providerId);
-    if (!provider) {
-      res.status(404).json({ error: `Unknown provider: ${providerId}` });
-      return;
-    }
-
     const fromToken = BRIDGE_TOKENS[fromChainId]?.find(t => t.address.toLowerCase() === fromTokenAddress.toLowerCase());
     const decimals  = fromToken?.decimals ?? 18;
     const amountInWei = amountIn.includes(".") ? toWei(amountIn, decimals) : amountIn;
 
-    const params: BuildTxParams = {
+    const preferredTool = typeof providerId === "string" && providerId.startsWith("lifi-")
+      ? providerId.slice(5)
+      : undefined;
+
+    const tx = await buildLiFiTx({
       fromChainId, toChainId, fromTokenAddress, toTokenAddress,
       amountIn: amountInWei, userAddress,
-      quote: quote as import("../bridges/IBridgeProvider.js").BridgeQuote,
-    };
-
-    const tx = await provider.buildTx(params);
-    res.json({ tx, warning: "This is a mock transaction — do not sign on mainnet." });
+      preferredTool,
+    });
+    res.json({ tx });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Internal server error";
     res.status(500).json({ error: msg });

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useAccount, useSignMessage } from "wagmi";
+import { useAccount, useSignMessage, useConnectors } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useSettingsStore } from "@/store/useSettingsStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -8,12 +8,13 @@ import { useToast } from "@/hooks/use-toast";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { cn, formatPrice } from "@/lib/utils";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
-import { getNativeSymbol } from "@/lib/chainConfig";
+import { getNativeSymbol, getChainName } from "@/lib/chainConfig";
 import { useQuote, KEEPER_TIER_COLORS } from "@/hooks/useQuote";
 import { precheck, TradeTimer, reportTradeMetrics, getBadge, type PrecheckResult } from "@/lib/tradeEngine";
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { SettlementExplorer } from "@/components/trading/SettlementExplorer";
 import { HTLCSettlementCard } from "@/components/trading/HTLCSettlementCard";
+import { openReownModal } from "@/lib/reown";
 
 import { type TradeErrorCode } from "@/lib/tradeErrors";
 import {
@@ -579,6 +580,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   }, [amount, price, side, type, slippage, runPrecheck]);
 
   const placeOrder = usePlaceOrder({
+    request: { timeoutMs: 12_000 } as any,
     mutation: {
       onSuccess: (data: any) => {
         const matched  = data?.matched ?? false;
@@ -671,7 +673,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
         const serverMsg   = errData?.error ?? errData?.message ?? err?.data?.error ?? err?.data?.message ?? err?.message;
         const isInsufficient = code === "INSUFFICIENT_FUNDS" || serverMsg?.toLowerCase?.().includes("insufficient");
         const isNoLiquidity  = code === "NO_LIQUIDITY";
-        const isTimeout      = err?.name === "AbortError" || serverMsg?.toLowerCase?.().includes("aborted");
+        const isTimeout      = err?.name === "AbortError" || err?.name === "TimeoutError" || serverMsg?.toLowerCase?.().includes("aborted") || serverMsg?.toLowerCase?.().includes("timed out");
 
         toast({
           title: isTimeout      ? "Request Timed Out"
@@ -795,6 +797,80 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
     const addTx   = useWalletStore.getState().addPendingTx;
 
+    // ── Step 2b: Network guard for external EVM wallets ───────────────────────
+    // Catch wrong-network connections (testnet or wrong mainnet) before the
+    // user is sent to imToken/MetaMask to sign — giving instant feedback.
+    if (isEvm && !isOrahWallet) {
+      const TESTNET_CHAIN_IDS = new Set([
+        11155111, // Sepolia (ETH testnet)
+        5,        // Goerli (ETH testnet, deprecated)
+        80001,    // Polygon Mumbai
+        97,       // BSC Testnet
+        421613,   // Arbitrum Goerli
+        84532,    // Base Sepolia
+        11155420, // Optimism Sepolia
+        59141,    // Linea Sepolia
+        1442,     // Polygon zkEVM Testnet
+        80002,    // Polygon Amoy
+        943,      // PulseChain Testnet
+        168587773,// Blast Sepolia
+        919,      // Mode Sepolia
+        2357,     // Metis Sepolia
+      ]);
+      if (TESTNET_CHAIN_IDS.has(chainId)) {
+        toast({
+          title: "Wrong Network — Testnet Detected",
+          description: `You're connected to ${getChainName(chainId)} (testnet). Open your wallet, switch to Ethereum mainnet or another supported network, then try again.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Quote-asset vs chain mismatch: e.g. trading a BNB pair while on Ethereum.
+      // ETH is native on multiple chains (mainnet + all L2s) so any ETH-native chain is fine.
+      const ETH_NATIVE_CHAINS  = new Set([
+        1,      // Ethereum mainnet
+        42161,  // Arbitrum One
+        10,     // Optimism
+        8453,   // Base
+        59144,  // Linea
+        324,    // zkSync Era
+        534352, // Scroll
+        81457,  // Blast
+        34443,  // Mode
+        288,    // Boba Network
+        130,    // Unichain
+        167000, // Taiko
+      ]);
+      const QUOTE_NATIVE_CHAINS: Record<string, Set<number>> = {
+        BNB:   new Set([56]),
+        POL:   new Set([137]), MATIC: new Set([137]),
+        AVAX:  new Set([43114]),
+        FTM:   new Set([250]),
+        CRO:   new Set([25]),
+        MNT:   new Set([5000]),
+        GLMR:  new Set([1284]),
+        CELO:  new Set([42220]),
+        SEI:   new Set([1329]),
+        xDAI:  new Set([100]),
+        S:     new Set([146]),
+        METIS: new Set([1088]),
+        ETH:   ETH_NATIVE_CHAINS,
+      };
+      const expectedChains = QUOTE_NATIVE_CHAINS[quote.toUpperCase()];
+      if (expectedChains && !expectedChains.has(chainId)) {
+        const networkLabel = quote === "ETH"
+          ? "Ethereum mainnet or an ETH L2 (Arbitrum, Optimism, Base…)"
+          : getChainName([...expectedChains][0]);
+        toast({
+          title: "Wrong Network",
+          description: `${quote} pairs require ${networkLabel}. You're on ${getChainName(chainId)}. Switch networks in your wallet and try again.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     // ── Step 3: Order confirmation for limit/stop orders ─────────────────────
     // Limit and stop orders don't execute on-chain immediately — they sit in the
     // order book. Limit and stop orders show a confirmation modal first.
@@ -854,14 +930,34 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
               msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
           };
 
-          if (evmConnected) {
-            try {
-              evmSignature = await signMessageAsync({ message: orderMsg });
-            } catch (wagmiErr: any) {
-              if (isUserRejection(wagmiErr)) throw wagmiErr;
-              // Wagmi signing failed for a non-rejection reason (connector mismatch,
-              // disconnected session, etc.) — fall through to direct provider below.
-            }
+          // Always try wagmi/Reown signing first — it handles both MetaMask (injected
+          // connector) and WalletConnect. Skipping the evmConnected guard avoids the
+          // race where wagmi's isConnected state hasn't updated yet after AppKit connect.
+          // Guard against WalletConnect sessions that drop when iOS Safari goes to
+          // background during the imToken handoff — the promise would hang forever
+          // without this timeout, leaving signingOrder=true permanently.
+          const SIGN_TIMEOUT_MS = 90_000; // 90 s — generous for slow mobile handoff
+          const makeSignTimeout = () =>
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () => reject(new Error("Wallet signing timed out. Open your wallet app and try again.")),
+                SIGN_TIMEOUT_MS,
+              )
+            );
+
+          try {
+            // Kick off the signing request, then IMMEDIATELY open the AppKit
+            // modal so the "Go to wallet" redirect overlay appears for
+            // WalletConnect mobile users — before awaiting the promise.
+            const _signPromise = signMessageAsync({ message: orderMsg });
+            openReownModal();
+            evmSignature = await Promise.race([_signPromise, makeSignTimeout()]);
+          } catch (wagmiErr: any) {
+            if (isUserRejection(wagmiErr)) throw wagmiErr;
+            // Wagmi signing failed for a non-rejection reason (connector mismatch,
+            // disconnected session, etc.) — fall through to direct provider below.
+            // Re-throw timeout errors — they are not recoverable via fallback.
+            if ((wagmiErr?.message ?? "").includes("timed out")) throw wagmiErr;
           }
 
           if (!evmSignature) {
@@ -872,10 +968,10 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             if (!eth) {
               throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
             }
-            evmSignature = await eth.request({
-              method: "personal_sign",
-              params: [hexMsg, address],
-            });
+            evmSignature = await Promise.race([
+              eth.request({ method: "personal_sign", params: [hexMsg, address] }) as Promise<string>,
+              makeSignTimeout(),
+            ]);
           }
         }
       } catch (signErr: any) {
@@ -1606,11 +1702,20 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             )}
           </button>
 
-          {/* Wallet signing hint — shown while waiting for MetaMask/WalletConnect popup */}
+          {/* Wallet signing hint — shown while waiting for wallet popup */}
           {signingOrder && (
-            <p className="text-center text-[11px] text-amber-400 animate-pulse -mt-1">
-              Check your wallet for a signing request
-            </p>
+            <div className="flex flex-col items-center gap-1 -mt-1">
+              <p className="text-center text-[11px] text-amber-400 animate-pulse">
+                Check your wallet for a signing request
+              </p>
+              <button
+                type="button"
+                onClick={() => openReownModal()}
+                className="text-[11px] text-blue-400 underline hover:text-blue-300 transition-colors"
+              >
+                Open wallet app →
+              </button>
+            </div>
           )}
 
           {/* Fee info & Keeper tier */}

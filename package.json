@@ -24,7 +24,7 @@
       "cookie": "0.7.2",
       "follow-redirects": "1.16.0",
       "shell-quote": ">=1.8.4",
-      "elliptic": "6.6.1",
+      "elliptic": "file:packages/elliptic-stub",
       "@stablelib/ed25519": "2.1.0",
       "protobufjs": "^7.5.6",
       "ip-address": ">=10.2.0",
@@ -37,7 +37,10 @@
       "fast-uri": ">=3.1.2",
       "@esbuild-kit/core-utils>esbuild": "0.25.12",
       "serialize-javascript": ">=7.0.3",
-      "undici": ">=6.24.0"
+      "undici": ">=6.24.0",
+      "browserify-sign": "file:packages/browserify-sign-stub",
+      "create-ecdh": "file:packages/create-ecdh-stub",
+      "tiny-secp256k1": "2.2.4"
     },
     "auditConfig": {
       "ignoreCves": [

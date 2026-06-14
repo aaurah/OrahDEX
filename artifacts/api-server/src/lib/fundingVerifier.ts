@@ -49,7 +49,6 @@
  */
 
 import crypto from "node:crypto";
-import { createPublicClient, http } from "viem";
 import { pool } from "@workspace/db";
 import { logger } from "./logger.js";
 import { getSolBalance } from "./solanaWallet.js";
@@ -65,7 +64,166 @@ import {
   type OrderKind,
   type WalletSource,
 } from "./orderIntent.js";
-import { getTokenInfo, isNativeAsset } from "./tokenRegistry.js";
+import { TOKEN_REGISTRY } from "./tokenRegistry.js";
+
+// ── EVM external wallet anti-spam / funding controls ────────────────────────────
+//
+// Two layered controls protect against unfunded EVM external orders:
+//
+//   1. Rate limit (enforceable, no RPC needed):
+//      Max EVM_EXTERNAL_ORDER_LIMIT concurrent open orders per external EVM wallet.
+//      Tracked via the funding_ref pattern "evm-sig:%" in the orders table.
+//      Prevents large-scale false-liquidity attacks.
+//
+//   2. Best-effort on-chain balance check (fail-open on RPC timeout):
+//      Performs a raw JSON-RPC call against public nodes with a hard Promise.race
+//      timeout (no AbortController — immune to the Node.js TCP-stall bug).
+//      Rejects on confirmed insufficient balance; passes through on timeout/error.
+//      Uses eth_getBalance for native ETH; eth_call (balanceOf) for ERC20 tokens.
+
+const EVM_EXTERNAL_ORDER_LIMIT = 10;
+const BALANCE_CHECK_TIMEOUT_MS = 4_000;
+
+/** Public JSON-RPC endpoints per chain ID. */
+const EVM_PUBLIC_RPCS: Record<number, string[]> = {
+  1:     ["https://eth.llamarpc.com", "https://cloudflare-eth.com"],
+  10:    ["https://mainnet.optimism.io"],
+  56:    ["https://bsc-dataseed.binance.org"],
+  137:   ["https://polygon-rpc.com"],
+  8453:  ["https://mainnet.base.org"],
+  42161: ["https://arb1.arbitrum.io/rpc"],
+};
+
+/**
+ * Check how many open EVM-external orders this wallet already has.
+ * External EVM orders use funding refs that start with "evm-sig:".
+ */
+async function checkEvmExternalOrderLimit(
+  walletAddress: string,
+): Promise<{ allowed: boolean; count: number }> {
+  const { rows } = await pool.query<{ count: string }>(
+    `SELECT COUNT(*) AS count FROM orders
+     WHERE wallet_address = $1 AND status = 'open' AND funding_ref LIKE 'evm-sig:%'`,
+    [walletAddress.toLowerCase()],
+  );
+  const count = parseInt(rows[0]?.count ?? "0", 10);
+  return { allowed: count < EVM_EXTERNAL_ORDER_LIMIT, count };
+}
+
+interface RpcJsonResult { result?: string; error?: { message: string } }
+
+/** Single raw JSON-RPC POST to one node (no AbortController — uses Promise.race). */
+async function rpcPost(rpcUrl: string, method: string, params: unknown[]): Promise<string> {
+  const res  = await fetch(rpcUrl, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const json = await res.json() as RpcJsonResult;
+  if (json.error) throw new Error(json.error.message);
+  if (!json.result) throw new Error("Empty RPC result");
+  return json.result;
+}
+
+/**
+ * Fetch native (ETH) balance for `address` on `chainId`.
+ * Tries all configured public RPC URLs in parallel, takes the first to respond.
+ * Returns null if all RPCs fail.
+ */
+async function evmNativeBalance(address: string, chainId: number): Promise<bigint | null> {
+  const rpcs = EVM_PUBLIC_RPCS[chainId] ?? [];
+  if (rpcs.length === 0) return null;
+
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("timeout")), BALANCE_CHECK_TIMEOUT_MS),
+  );
+
+  try {
+    const hex = await Promise.race([
+      Promise.any(rpcs.map(url => rpcPost(url, "eth_getBalance", [address, "latest"]))),
+      timeout,
+    ]);
+    return BigInt(hex);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch ERC-20 token balance for `address` on `chainId` via eth_call (balanceOf).
+ * Returns null if balance cannot be fetched.
+ */
+async function evmTokenBalance(
+  address:         string,
+  contractAddress: string,
+  chainId:         number,
+): Promise<bigint | null> {
+  const rpcs = EVM_PUBLIC_RPCS[chainId] ?? [];
+  if (rpcs.length === 0) return null;
+
+  // ABI-encode balanceOf(address): selector 0x70a08231 + 32-byte padded address
+  const paddedAddr = address.slice(2).padStart(64, "0");
+  const callData   = "0x70a08231" + paddedAddr;
+
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("timeout")), BALANCE_CHECK_TIMEOUT_MS),
+  );
+
+  try {
+    const hex = await Promise.race([
+      Promise.any(rpcs.map(url =>
+        rpcPost(url, "eth_call", [{ to: contractAddress, data: callData }, "latest"]),
+      )),
+      timeout,
+    ]);
+    // eth_call returns 32-byte hex; parse as uint256
+    return hex === "0x" ? 0n : BigInt(hex);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best-effort EVM balance check.
+ * Returns:
+ *   { result: "sufficient" }  — on-chain balance confirmed ≥ needed
+ *   { result: "insufficient", balance } — on-chain balance confirmed < needed
+ *   { result: "skipped" }     — RPC unavailable / timed out (caller must reject — fail-closed)
+ */
+async function evmBalanceCheck(
+  walletAddress: string,
+  asset:         string,
+  amountStr:     string,
+  chainId:       number,
+): Promise<{ result: "sufficient" | "insufficient" | "skipped"; balance?: bigint }> {
+  const chainTokens = TOKEN_REGISTRY[chainId as keyof typeof TOKEN_REGISTRY];
+
+  // Native ETH check
+  if (asset.toUpperCase() === "ETH") {
+    const weiNeeded = BigInt(Math.floor(parseFloat(amountStr) * 1e18));
+    const balance   = await evmNativeBalance(walletAddress, chainId);
+    if (balance === null) return { result: "skipped" };
+    return balance >= weiNeeded
+      ? { result: "sufficient", balance }
+      : { result: "insufficient", balance };
+  }
+
+  // ERC-20 token check
+  const tokenInfo = (chainTokens as Record<string, { address: string; decimals: number }> | undefined)
+    ?.[asset.toUpperCase()];
+  if (!tokenInfo) {
+    logger.debug({ asset, chainId }, "fundingVerifier: no token contract for asset — skipping balance check");
+    return { result: "skipped" };
+  }
+
+  const { address: contractAddress, decimals } = tokenInfo;
+  const needed  = BigInt(Math.round(parseFloat(amountStr) * 10 ** decimals));
+  const balance = await evmTokenBalance(walletAddress, contractAddress, chainId);
+  if (balance === null) return { result: "skipped" };
+  return balance >= needed
+    ? { result: "sufficient", balance }
+    : { result: "insufficient", balance };
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -128,21 +286,30 @@ async function verifySpotFunding(
   }
 
   // ── External EVM / non-UTXO wallet ───────────────────────────────────────
-  // These wallets hold funds on-chain. They may also have accumulated internal
-  // exchange balance from previous trades (e.g. bought BSV, now selling).
-  // Strategy: try the internal ledger first (zero-friction if balance is there),
-  // then verify on-chain balance via RPC (chainId required). Fails closed:
-  // any unverifiable state is rejected rather than silently accepted.
+  // EVM external wallets (MetaMask / WalletConnect, 0x-prefixed) are fully
+  // non-custodial: their funds stay in their wallet until the HTLC escrow
+  // contract locks them at settlement. The internal ledger is NEVER touched
+  // for these wallets — doing so would deduct/lock internal balance on every
+  // order placement and every retry, draining funds incorrectly.
+  //
+  // Non-EVM external wallets (BSV/BTC/SOL) may accumulate internal balance
+  // from prior trades and can optionally use it for zero-friction settlement.
   if (walletSource === "external") {
-    // 1. Try internal ledger — covers exchange-accumulated balance
-    try {
-      await lockForOrder({ walletAddress, asset, amount });
-      return { valid: true, fundingRef: ledgerFundingRef(walletAddress, asset, amount) };
-    } catch {
-      // Not enough internal balance — fall through to on-chain check
-    }
+    const isEvmExternalWallet = walletAddress.startsWith("0x");
 
-    // 2. Require wallet signature (proof of identity).
+    if (!isEvmExternalWallet) {
+      // Non-EVM external: try internal ledger first for accumulated balance
+      try {
+        await lockForOrder({ walletAddress, asset, amount });
+        return { valid: true, fundingRef: ledgerFundingRef(walletAddress, asset, amount) };
+      } catch {
+        // Not enough internal balance — fall through to on-chain check
+      }
+    }
+    // EVM external wallets skip the internal ledger entirely and go straight
+    // to signature-based proof + optional RPC balance verification below.
+
+    // Require wallet signature (proof of identity).
     //    Without a signature the caller cannot prove they control walletAddress.
     if (!signature) {
       return {
@@ -166,114 +333,48 @@ async function verifySpotFunding(
       }
     }
 
-    // 3. chainId is required to verify on-chain balance — reject without it.
-    //    Accepting unverified balance claims is a security risk (funds could be absent).
-    if (!chainId) {
+    // ── Control 1: open-order rate limit ─────────────────────────────────────
+    // Prevents an attacker from flooding the order book with unfunded orders.
+    // This check is enforceable without any RPC call — it only reads the DB.
+    const limitCheck = await checkEvmExternalOrderLimit(walletAddress);
+    if (!limitCheck.allowed) {
       return {
         valid:      false,
         fundingRef: "",
-        error:      "chainId is required for external EVM wallet orders so on-chain balance can be verified.",
-        code:       "CHAIN_ID_REQUIRED",
+        error:      `Maximum ${EVM_EXTERNAL_ORDER_LIMIT} open orders are allowed per external EVM wallet. ` +
+                    `You currently have ${limitCheck.count} open orders. Cancel existing orders to place new ones.`,
+        code:       "OPEN_ORDER_LIMIT_EXCEEDED",
       };
     }
 
-    const RPC_URLS: Record<number, string> = {
-      1:        process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
-      56:       process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
-      137:      process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",
-      8453:     process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
-      42161:    process.env.ARB_RPC_URL      ?? "https://arb1.arbitrum.io/rpc",
-      10:       process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",
-      43114:    process.env.AVAX_RPC_URL     ?? "https://api.avax.network/ext/bc/C/rpc",
-      11155111: process.env.SEPOLIA_RPC_URL  ?? "https://ethereum-sepolia-rpc.publicnode.com",
-    };
-    let rpcUrl = RPC_URLS[chainId];
-    if (!rpcUrl) {
-      // Fall back to dynamically registered custom chains
-      try {
-        const { getCustomChains } = await import("./chainRegistry.js");
-        const customs = await getCustomChains();
-        const custom  = customs.find(c => c.chainId === chainId);
-        if (custom) rpcUrl = custom.rpcUrl;
-      } catch {
-        // Ignore dynamic lookup errors — fall through to the hard rejection below
-      }
-    }
-    if (!rpcUrl) {
-      return {
-        valid:      false,
-        fundingRef: "",
-        error:      `chainId ${chainId} is not supported for on-chain balance verification.`,
-        code:       "CHAIN_ID_REQUIRED",
-      };
-    }
-
-    try {
-      const client = createPublicClient({ transport: http(rpcUrl) });
-
-      // Minimal ERC-20 ABI for balanceOf
-      const ERC20_BALANCE_OF_ABI = [
-        {
-          type:    "function",
-          name:    "balanceOf",
-          inputs:  [{ name: "account", type: "address" }],
-          outputs: [{ name: "", type: "uint256" }],
-          stateMutability: "view",
-        },
-      ] as const;
-
-      let onChain: number;
-
-      if (isNativeAsset(chainId, asset)) {
-        // Native chain asset: ETH / BNB / MATIC / AVAX
-        const onChainBal = await client.getBalance({ address: walletAddress as `0x${string}` });
-        onChain = Number(onChainBal) / 1e18;
-      } else {
-        // ERC-20 token: look up contract address and decimals.
-        // Unknown tokens are rejected — accepting without verification is a security risk.
-        const tokenInfo = getTokenInfo(chainId, asset);
-        if (!tokenInfo) {
-          logger.warn(
-            { walletAddress, chainId, asset },
-            "fundingVerifier: token not in registry — rejecting order",
-          );
-          return {
-            valid:      false,
-            fundingRef: "",
-            error:      `Token ${asset} is not supported on chain ${chainId}. Add it to the token registry or deposit via a supported path.`,
-            code:       "TOKEN_UNSUPPORTED",
-          };
-        }
-        const rawBalance = await client.readContract({
-          address:      tokenInfo.address as `0x${string}`,
-          abi:          ERC20_BALANCE_OF_ABI,
-          functionName: "balanceOf",
-          args:         [walletAddress as `0x${string}`],
-        });
-        onChain = Number(rawBalance) / 10 ** tokenInfo.decimals;
-      }
-
-      if (onChain < needed) {
+    // ── Control 2: on-chain balance check ────────────────────────────────────
+    // Uses raw JSON-RPC with Promise.race timeout to avoid the Node.js
+    // AbortSignal.timeout TCP-stall bug on long-lived public RPC connections.
+    // On confirmed insufficient balance → reject.
+    // On RPC timeout / unavailable node → reject (fail-closed: cannot accept
+    // an order whose funding cannot be verified).
+    if (chainId !== undefined) {
+      const balCheck = await evmBalanceCheck(walletAddress, asset, amount, chainId);
+      if (balCheck.result === "insufficient") {
+        const balEth = balCheck.balance !== undefined
+          ? ` (on-chain: ${(Number(balCheck.balance) / 1e18).toFixed(6)})`
+          : "";
         return {
           valid:      false,
           fundingRef: "",
-          error:      `Insufficient on-chain ${asset} balance (verified via RPC)`,
+          error:      `Insufficient on-chain ${asset} balance${balEth}. Please fund your wallet before placing this order.`,
           code:       "INSUFFICIENT_FUNDS",
         };
       }
-    } catch (rpcErr: any) {
-      // RPC verification failed — fail closed rather than proceeding unverified.
-      // Operators should monitor for repeated failures and check RPC health.
-      logger.warn(
-        { walletAddress, chainId, err: rpcErr?.message },
-        "fundingVerifier: on-chain RPC balance check failed",
-      );
-      return {
-        valid:      false,
-        fundingRef: "",
-        error:      "On-chain balance verification is temporarily unavailable. Please try again later.",
-        code:       "BALANCE_VERIFICATION_UNAVAILABLE",
-      };
+      if (balCheck.result === "skipped") {
+        logger.warn({ walletAddress, asset, chainId }, "fundingVerifier: EVM balance check failed (RPC timeout/unavailable) — rejecting order (fail-closed)");
+        return {
+          valid:      false,
+          fundingRef: "",
+          error:      "Unable to verify on-chain balance: all RPC endpoints timed out. Please try again in a moment.",
+          code:       "BALANCE_CHECK_FAILED",
+        };
+      }
     }
 
     const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);

@@ -46,6 +46,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useAddressBookStore, WALLET_TYPE_META } from "@/store/useAddressBookStore";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useCustomTokenStore } from "@/store/useCustomTokenStore";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { QRCodeCanvas } from "qrcode.react";
 
 // ── constants ────────────────────────────────────────────────────────────────
@@ -275,13 +277,21 @@ function shortAddr(a: string) {
 }
 
 // ── auto-select chain + token for a given asset symbol ───────────────────────
+// Preferred mainnet chain ID per native symbol (avoids L2s as the default)
+const NATIVE_MAINNET: Record<string, number> = {
+  ETH: 1, BNB: 56, AVAX: 43114, POL: 137, MATIC: 137,
+};
+
 function resolveWalletChainToken(asset: string): { chain: WalletChain; token: WalletToken } {
   const sym = asset.toUpperCase();
-  // 1. Check if the asset is a native token of any chain (e.g. ETH, BNB, AVAX, POL)
-  const nativeChain = WALLET_CHAINS.find(c => c.symbol.toUpperCase() === sym);
+  // 1. Check if the asset is a native token — prefer the canonical mainnet chain
+  const preferredId = NATIVE_MAINNET[sym];
+  const nativeChain = preferredId
+    ? (WALLET_CHAINS.find(c => c.id === preferredId) ?? WALLET_CHAINS.find(c => c.symbol.toUpperCase() === sym))
+    : WALLET_CHAINS.find(c => c.symbol.toUpperCase() === sym);
   if (nativeChain) {
-    const token = (WALLET_TOKENS[nativeChain.id] ?? []).find(t => t.isNative) ?? WALLET_TOKENS[nativeChain.id][0];
-    return { chain: nativeChain, token };
+    const token = (WALLET_TOKENS[nativeChain.id] ?? []).find(t => t.isNative) ?? WALLET_TOKENS[nativeChain.id]?.[0];
+    if (token) return { chain: nativeChain, token };
   }
   // 2. Check if the asset appears as an ERC-20 token on any chain (prefer chain with most liquidity)
   const CHAIN_PRIORITY = [1, 8453, 56, 42161, 10, 137, 43114, 11155111];
@@ -347,6 +357,16 @@ export function WithdrawSheet({
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const { isHardwareWallet, hardwareWalletType } = useWalletStore();
+  const customTokens = useCustomTokenStore(s => s.tokens);
+
+  const getTokensForChain = (chainId: number): WalletToken[] => {
+    const staticList = WALLET_TOKENS[chainId] ?? [];
+    const staticSymbols = new Set(staticList.map(t => t.symbol.toUpperCase()));
+    const custom: WalletToken[] = customTokens
+      .filter(t => t.chainId === chainId && !staticSymbols.has(t.symbol.toUpperCase()))
+      .map(t => ({ symbol: t.symbol, decimals: t.decimals, isNative: false, address: t.address, color: t.color }));
+    return [...staticList, ...custom];
+  };
 
   const isBitcoinFork = ["bsv", "btc", "bch"].includes(network.toLowerCase());
   const isSolana      = network.toLowerCase() === "sol";
@@ -383,6 +403,24 @@ export function WithdrawSheet({
   const [walletSending,       setWalletSending]       = useState(false);
   const [walletSendTxHash,    setWalletSendTxHash]    = useState<string | null>(null);
   const [walletSendError,     setWalletSendError]     = useState<string | null>(null);
+
+  const { balances: sendChainBalances } = useEvmBalances(passkeyEvmAddress || walletAddress || null, walletSendChain.id);
+
+  const autoSendTokens: WalletToken[] = sendChainBalances.length > 0
+    ? sendChainBalances.map(b => ({
+        symbol:   b.symbol,
+        decimals: b.decimals,
+        isNative: b.isNative ?? false,
+        address:  b.contractAddress ?? null,
+        color:    b.color,
+      }))
+    : getTokensForChain(walletSendChain.id);
+
+  useEffect(() => {
+    if (sendChainBalances.length === 0) return;
+    const match = sendChainBalances.find(b => b.symbol === walletSendToken.symbol);
+    if (match !== undefined) setWalletSendBalance(match.amount);
+  }, [sendChainBalances, walletSendToken.symbol]);
 
   // ── non-EVM wallet send state (BSV / LTC / XRP / etc.) ──────────────────
   const [nonEvmSendBalance,   setNonEvmSendBalance]   = useState<number | null>(null);
@@ -432,9 +470,9 @@ export function WithdrawSheet({
         if (preChain) {
           setWalletSendChain(preChain);
           const preToken = initialTokenSymbol
-            ? (WALLET_TOKENS[initialChainId] ?? []).find(t => t.symbol.toUpperCase() === initialTokenSymbol.toUpperCase())
+            ? getTokensForChain(initialChainId).find(t => t.symbol.toUpperCase() === initialTokenSymbol.toUpperCase())
             : undefined;
-          setWalletSendToken(preToken ?? (WALLET_TOKENS[initialChainId]?.[0] ?? resolveWalletChainToken(asset).token));
+          setWalletSendToken(preToken ?? (getTokensForChain(initialChainId)[0] ?? resolveWalletChainToken(asset).token));
           setWalletSendBalance(null);
           return;
         }
@@ -1741,7 +1779,7 @@ export function WithdrawSheet({
                         key={ch.id}
                         onClick={() => {
                           setWalletSendChain(ch);
-                          setWalletSendToken(WALLET_TOKENS[ch.id][0]);
+                          setWalletSendToken(getTokensForChain(ch.id)[0]);
                           setWalletSendBalance(null);
                           setWalletSendAmount("");
                         }}
@@ -1763,7 +1801,7 @@ export function WithdrawSheet({
                         key={ch.id}
                         onClick={() => {
                           setWalletSendChain(ch);
-                          setWalletSendToken(WALLET_TOKENS[ch.id][0]);
+                          setWalletSendToken(getTokensForChain(ch.id)[0]);
                           setWalletSendBalance(null);
                           setWalletSendAmount("");
                         }}
@@ -1785,10 +1823,15 @@ export function WithdrawSheet({
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Token</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {(WALLET_TOKENS[walletSendChain.id] ?? []).map(tok => (
+                    {autoSendTokens.map(tok => (
                       <button
                         key={tok.symbol}
-                        onClick={() => { setWalletSendToken(tok); setWalletSendBalance(null); setWalletSendAmount(""); }}
+                        onClick={() => {
+                          setWalletSendToken(tok);
+                          setWalletSendAmount("");
+                          const bal = sendChainBalances.find(b => b.symbol === tok.symbol);
+                          setWalletSendBalance(bal?.amount ?? null);
+                        }}
                         className={cn(
                           "px-3 py-1.5 rounded-lg text-xs font-bold border transition-all",
                           walletSendToken.symbol === tok.symbol

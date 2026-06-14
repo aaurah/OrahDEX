@@ -4,7 +4,7 @@ import { db, pool } from "@workspace/db";
 
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
 // Note: generateAdminToken and revokeAllAdminTokens are now async (DB-persisted)
-import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable } from "@workspace/db/schema";
+import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable, supportTicketsTable } from "@workspace/db/schema";
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
 import { eq, desc, and, sql, ne, isNotNull, or, like, ilike } from "drizzle-orm";
@@ -1624,6 +1624,42 @@ router.put("/bsv-wallet", async (req, res) => {
     res.json({ customAddress, message: "Settlement address updated" });
   } catch (err) {
     res.status(500).json({ error: "Failed to update BSV wallet address" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTIFICATION COUNTS  (header bell badge)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /admin/notifications/counts — aggregated badge counts for the admin header bell
+router.get("/notifications/counts", requireAdminToken, async (_req, res) => {
+  try {
+    const [emailRow] = await db
+      .select({ cnt: sql<number>`count(*)::int` })
+      .from(adminEmailsTable)
+      .where(and(eq(adminEmailsTable.isRead, false), eq(adminEmailsTable.folder, "inbox")));
+
+    const [ticketRow] = await db
+      .select({ cnt: sql<number>`count(*)::int` })
+      .from(supportTicketsTable)
+      .where(ne(supportTicketsTable.status, "closed"));
+
+    const { rows: wdRows } = await pool.query<{ cnt: number }>(
+      `SELECT COUNT(*)::int AS cnt FROM withdrawal_requests WHERE status = 'pending'`,
+    );
+
+    const unreadEmails       = emailRow?.cnt  ?? 0;
+    const unreadTickets      = ticketRow?.cnt ?? 0;
+    const pendingWithdrawals = wdRows[0]?.cnt ?? 0;
+
+    res.json({
+      unreadEmails,
+      unreadTickets,
+      pendingWithdrawals,
+      total: unreadEmails + unreadTickets + pendingWithdrawals,
+    });
+  } catch {
+    res.status(500).json({ error: "Failed to fetch notification counts" });
   }
 });
 

@@ -1,18 +1,7 @@
-import type { BridgeQuoteParams, BridgeQuote, BridgeQuoteWithScore } from "../bridges/IBridgeProvider.js";
-import type { IBridgeProvider } from "../bridges/IBridgeProvider.js";
-import { MockBridgeCheapSlow } from "../bridges/MockBridgeCheapSlow.js";
-import { MockBridgeFastExpensive } from "../bridges/MockBridgeFastExpensive.js";
-import { MockBridgeBalanced } from "../bridges/MockBridgeBalanced.js";
+import type { BridgeQuoteParams, BridgeQuoteWithScore } from "../bridges/IBridgeProvider.js";
+import { getLiFiQuotes } from "../bridges/LiFiProvider.js";
 import { scoreQuotes, DEFAULT_SCORING_CONFIG, type ScoringConfig } from "./routeScoring.js";
 import { logger } from "../lib/logger.js";
-
-// ── Provider registry — add real providers here later ─────────────────────────
-
-const PROVIDERS: IBridgeProvider[] = [
-  new MockBridgeCheapSlow(),
-  new MockBridgeFastExpensive(),
-  new MockBridgeBalanced(),
-];
 
 // ── Simple in-memory quote cache (30-second TTL) ──────────────────────────────
 
@@ -37,27 +26,9 @@ export async function getQuotesAcrossProviders(
     return { quotes: cached.quotes, bestQuote: cached.quotes[0] ?? null };
   }
 
-  // Fan out in parallel
-  const results = await Promise.allSettled(
-    PROVIDERS.map(p => p.getQuote(params)),
-  );
-
-  const valid: BridgeQuote[] = [];
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    if (r.status === "fulfilled" && r.value) {
-      valid.push(r.value);
-    } else {
-      logger.warn({ provider: PROVIDERS[i].id, err: r.status === "rejected" ? r.reason : "null" }, "bridge-agg: provider failed");
-    }
-  }
-
-  const scored = scoreQuotes(valid, config);
+  const quotes = await getLiFiQuotes(params);
+  const scored = scoreQuotes(quotes, config);
   CACHE.set(key, { quotes: scored, ts: Date.now() });
 
   return { quotes: scored, bestQuote: scored[0] ?? null };
-}
-
-export function getProvider(id: string): IBridgeProvider | undefined {
-  return PROVIDERS.find(p => p.id === id);
 }
