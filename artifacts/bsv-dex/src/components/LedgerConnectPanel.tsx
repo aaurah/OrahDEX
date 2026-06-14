@@ -10,7 +10,7 @@ import {
   dmkErrMsg, DMK_DEFAULT_PATHS,
   type DMKSession, type DMKAccount,
 } from "@/lib/ledgerDMK";
-import type { LedgerStatus } from "@/lib/ledgerDMK";
+import type { LedgerStatus } from "@/lib/ledgerHardware";
 
 interface LedgerConnectPanelProps {
   onConnected: (address: string, path: string) => void;

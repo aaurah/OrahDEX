@@ -168,10 +168,6 @@ router.post("/orders/sol-challenge", (req, res) => {
 router.post("/orders", async (req, res) => {
   try {
     const body = req.body;
-    req.log.info(
-      { wallet: body?.walletAddress, symbol: body?.symbol, side: body?.side, type: body?.type },
-      "POST /api/orders: HANDLER ENTERED",
-    );
     if (!body.walletAddress || !body.symbol || !body.side || !body.type || !body.quantity) {
       res.status(400).json({ error: "Missing required fields" });
       return;
@@ -664,43 +660,24 @@ router.post("/orders", async (req, res) => {
         let prefetchedBuyerChain:  number | null = null;
         let escrowAnyDeposit = false;
         if (bothEvmExternal) {
-          // Orders funded via evm-sig: / evm-balance: are on the new non-custodial
-          // HTLC path — they NEVER have legacy escrow contract deposits.
-          // Skipping the RPC chain scan eliminates the main latency source
-          // (one readContract call per chain per order, with no timeout).
-          const incomingRef = fundingRef ?? "";
-          const incomingIsNewHtlc =
-            incomingRef.startsWith("evm-sig:") || incomingRef.startsWith("evm-balance:");
-          const matchIsNewHtlc =
-            matchFundingRef0.startsWith("evm-sig:") || matchFundingRef0.startsWith("evm-balance:");
-          const bothNewHtlcFlow = incomingIsNewHtlc && matchIsNewHtlc;
-
-          if (!bothNewHtlcFlow) {
-            // Legacy escrow path — must scan all chains to check for deposits.
-            try {
-              const buyerOrderId  = side === "buy"  ? id : match.id;
-              const sellerOrderId = side === "sell" ? id : match.id;
-              [prefetchedBuyerChain, prefetchedSellerChain] = await Promise.all([
-                findEscrowChain(buyerOrderId),
-                findEscrowChain(sellerOrderId),
-              ]);
-              escrowAnyDeposit =
-                prefetchedBuyerChain !== null || prefetchedSellerChain !== null;
-            } catch (err: any) {
-              // Fail-closed: if we can't read any escrow chain, assume the
-              // worst (deposit might exist) and gate the trade. Better to
-              // skip a match than to risk releasing locked funds blindly.
-              req.log.error(
-                { err: err?.message, incomingId: id, matchId: match.id },
-                "orders: escrow precheck RPC failure — failing closed (skipping match)",
-              );
-              continue;
-            }
-          } else {
-            req.log.debug(
-              { incomingId: id, matchId: match.id },
-              "orders: escrow precheck skipped — both orders on new HTLC flow (no legacy deposits possible)",
+          try {
+            const buyerOrderId  = side === "buy"  ? id : match.id;
+            const sellerOrderId = side === "sell" ? id : match.id;
+            [prefetchedBuyerChain, prefetchedSellerChain] = await Promise.all([
+              findEscrowChain(buyerOrderId),
+              findEscrowChain(sellerOrderId),
+            ]);
+            escrowAnyDeposit =
+              prefetchedBuyerChain !== null || prefetchedSellerChain !== null;
+          } catch (err: any) {
+            // Fail-closed: if we can't read any escrow chain, assume the
+            // worst (deposit might exist) and gate the trade. Better to
+            // skip a match than to risk releasing locked funds blindly.
+            req.log.error(
+              { err: err?.message, incomingId: id, matchId: match.id },
+              "orders: escrow precheck RPC failure — failing closed (skipping match)",
             );
+            continue;
           }
 
           if (escrowAnyDeposit) {
@@ -731,19 +708,22 @@ router.post("/orders", async (req, res) => {
         let fillResult: Awaited<ReturnType<typeof settleSpotFill>>;
 
         try {
-          if (bothEvmExternal && escrowAnyDeposit) {
-            // ── On-chain EVM path: escrow release ──────────────────────────
-            // At least one party pre-locked funds in OrahDEXEscrow. Skip
-            // internal ledger — the relayer will call release() for each leg.
+          if (bothEvmExternal) {
+            // ── On-chain EVM path: HTLC atomic settlement ──────────────────
+            // Both parties hold funds in their own wallets. Skip internal ledger
+            // settlement — funds are transferred directly on-chain via the HTLC
+            // contract (lockETH / lockToken → reveal). The HTLC watcher calls
+            // reveal() once both parties have locked, completing the trade.
             fillResult = {
-              txid:           "htlc-pending-" + crypto.createHash("sha256").update(tradeId).digest("hex").slice(0, 32),
-              broadcastAsync: true as const,
-              settlementType: "evm_htlc",
-              isCrossChain:   false,
+              // Placeholder txid until the HTLC reveal transaction settles on-chain.
+              // Prefixed so auditing tools can distinguish it from real broadcast txids.
+              txid:             "htlc-pending-" + crypto.createHash("sha256").update(tradeId).digest("hex").slice(0, 32),
+              wasRealBroadcast: false,
+              settlementType:   "evm_htlc",
+              isCrossChain:     false,
             };
           } else {
-            // ── Standard path: internal ledger settlement ───────────────────
-            // Used for: non-EVM trades, EVM orders without escrow pre-locks, bots.
+            // ── Standard path: BSV OP_RETURN + internal ledger settlement ──
             // Architecture (per BSV Core DEX spec):
             //   1. UTXO-scripted swap contract: for cross-chain trades (EVM ↔ BSV),
             //      generate a P2SH HTLC — the secretHash is embedded in the OP_RETURN.
@@ -1060,7 +1040,7 @@ router.post("/orders", async (req, res) => {
         // we can't safely release (partial fill, one-sided lock, cross-chain).
         // Running HTLC in those cases would create a parallel claim against
         // the same locked funds — the very bug the safety gate prevents.
-        if (bothEvmExternal && escrowAnyDeposit && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
+        if (bothEvmExternal && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
           // Determine chain — prefer incoming order's chainId, then counterparty's, then Ethereum.
           const rawChainId = body.chainId
             ? Number(body.chainId)
@@ -1132,18 +1112,13 @@ router.post("/orders", async (req, res) => {
         side === "buy" && type === "market" &&
         remainingQty <= 0.000001 && totalFilled > 0 && parseFloat(lockAmount) > 0
       ) {
-        // EVM external wallets never lock internal balance — nothing to unlock.
-        const isEvmSigFunded = (fundingRef ?? "").startsWith("evm-sig:") ||
-                               (fundingRef ?? "").startsWith("evm-balance:");
-        if (!isEvmSigFunded) {
-          const actualCost = totalFillValue;
-          const excess = parseFloat(lockAmount) - actualCost;
-          if (excess > 1e-9 && lockAsset) {
-            try {
-              await unlockFunds({ walletAddress: body.walletAddress, asset: lockAsset!, amount: excess.toFixed(18) });
-            } catch (excessErr: any) {
-              req.log.warn({ excessErr: excessErr?.message }, "orders: failed to release market-buy slippage buffer excess");
-            }
+        const actualCost = totalFillValue;
+        const excess = parseFloat(lockAmount) - actualCost;
+        if (excess > 1e-9 && lockAsset) {
+          try {
+            await unlockFunds({ walletAddress: body.walletAddress, asset: lockAsset!, amount: excess.toFixed(18) });
+          } catch (excessErr: any) {
+            req.log.warn({ excessErr: excessErr?.message }, "orders: failed to release market-buy slippage buffer excess");
           }
         }
       }
@@ -1326,12 +1301,7 @@ router.delete("/orders/:orderId", async (req, res) => {
           ? (lockPrice * remaining).toString()
           : remaining.toString();
 
-        // EVM external wallets (evm-sig/evm-balance funding) are non-custodial:
-        // no internal balance was locked at order placement, so nothing to unlock.
-        const orderFundingRef = order.fundingRef ?? "";
-        const isEvmSigFunded = orderFundingRef.startsWith("evm-sig:") ||
-                               orderFundingRef.startsWith("evm-balance:");
-        if (!isEvmSigFunded && parseFloat(lockAmount) > 0 && lockAsset) {
+        if (parseFloat(lockAmount) > 0 && lockAsset) {
           await unlockFunds({ walletAddress: order.walletAddress, asset: lockAsset, amount: lockAmount });
         }
       } catch (unlockErr) {

@@ -21,21 +21,16 @@ import {
 } from "node:crypto";
 import { pool } from "@workspace/db";
 
-const EVM_SECRET = process.env.EVM_WALLET_SECRET;
-
-function requireSecret(): string {
-  if (!EVM_SECRET) throw new Error("EVM_WALLET_SECRET is required for deposit-address encryption but is not set");
-  return EVM_SECRET;
-}
+const EVM_SECRET = process.env.EVM_WALLET_SECRET ?? "";
 
 function deriveKeyV1(): Buffer {
   // Legacy: fixed salt — shared AES key across all keys. Kept for decryption only.
-  return scryptSync(requireSecret(), "orahdex-deposit-addr-salt-v1", 32) as Buffer;
+  return scryptSync(EVM_SECRET, "orahdex-deposit-addr-salt-v1", 32) as Buffer;
 }
 
 function deriveKeyV2(salt: Buffer): Buffer {
   // v2: per-key random 32-byte salt — each key gets a unique derived AES key.
-  return scryptSync(requireSecret(), salt, 32) as Buffer;
+  return scryptSync(EVM_SECRET, salt, 32) as Buffer;
 }
 
 function encrypt(plaintext: string): string {

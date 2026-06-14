@@ -10,7 +10,6 @@
 
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useSendTransaction } from "wagmi";
 import {
   useEvmHtlcSession,
   buildEthLockTxParams,
@@ -22,7 +21,7 @@ import {
   type LockInstruction,
 } from "../../hooks/useEvmHtlcSession";
 import { getPublicClient } from "../../lib/escrow";
-import { getWagmiConfig, openReownModal } from "../../lib/reown";
+import { getWagmiConfig } from "../../lib/reown";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -120,65 +119,46 @@ function LockPanel({
   const [txHash,  setTxHash]  = useState<string | null>(lockTxid ?? null);
   const [errMsg,  setErrMsg]  = useState<string | null>(null);
 
-  // wagmi hook — correctly routes to whichever wallet the user connected with
-  // (MetaMask injected connector, WalletConnect, Coinbase Wallet, etc.)
-  const { sendTransactionAsync } = useSendTransaction();
-
   const isNative  = lock.tokenAddress === null;
   const needsApprove = !isNative;
 
-  const isUserRejection = (e: any) => {
-    const code = e?.code;
-    const msg  = (e?.message ?? "").toLowerCase();
-    return code === 4001 || code === "ACTION_REJECTED" ||
-      msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
-  };
+  async function sendTx(params: object): Promise<string> {
+    const isUserRejection = (e: any) => {
+      const code = e?.code;
+      const msg  = (e?.message ?? "").toLowerCase();
+      return code === 4001 || code === "ACTION_REJECTED" ||
+        msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
+    };
 
-  async function sendTx(params: { from: string; to: string; value: string; data: string }): Promise<string> {
-    // Primary path: wagmi's sendTransactionAsync — correctly opens MetaMask,
-    // WalletConnect, or any Reown AppKit connector popup without needing to know
-    // which provider the user connected with.
-    try {
-      const hash = await sendTransactionAsync({
-        to:    params.to    as `0x${string}`,
-        value: BigInt(params.value),
-        data:  params.data  as `0x${string}`,
-      });
-      return hash;
-    } catch (wagmiErr: any) {
-      if (isUserRejection(wagmiErr)) throw wagmiErr;
-      // wagmi failed for a non-rejection reason (e.g. connector not fully initialised).
-      // Fall through to the direct provider path below.
-    }
-
-    // Fallback: try window.ethereum directly (MetaMask / injected wallet that
-    // may not have gone through the wagmi connector registration path).
-    const injected = (window as any).ethereum;
-    if (injected) {
+    async function tryProvider(provider: any): Promise<string | null> {
       try {
-        const hash: string = await injected.request({
+        const hash: string = await provider.request({
           method: "eth_sendTransaction",
           params: [params],
         });
-        if (hash) return hash;
+        return hash ?? null;
       } catch (e: any) {
         if (isUserRejection(e)) throw e;
-        // Continue to WalletConnect connector loop below.
+        return null;
       }
     }
 
-    // Last resort: iterate wagmi connectors and try each provider directly.
+    // 1. Try injected wallet (MetaMask extension, Coinbase Wallet)
+    const injected = (window as any).ethereum;
+    if (injected) {
+      const h = await tryProvider(injected);
+      if (h) return h;
+    }
+
+    // 2. Try all wagmi connectors (WalletConnect / Reown AppKit)
     const config = getWagmiConfig();
     if (config) {
       for (const connector of (config as any).connectors ?? []) {
         try {
           const provider = await (connector as any).getProvider?.();
           if (!provider) continue;
-          const hash: string = await provider.request({
-            method: "eth_sendTransaction",
-            params: [params],
-          });
-          if (hash) return hash;
+          const h = await tryProvider(provider);
+          if (h) return h;
         } catch (e: any) {
           if (isUserRejection(e)) throw e;
         }
@@ -199,8 +179,6 @@ function LockPanel({
           lock.amount,
           userAddress
         );
-        // Open AppKit BEFORE awaiting so WalletConnect users see "Go to wallet"
-        openReownModal();
         const approveTxHash = await sendTx(approveParams);
         // Wait for the approve confirmation so the allowance is on-chain
         // before lockERC20 executes (prevents "allowance too low" reverts).
@@ -216,8 +194,6 @@ function LockPanel({
 
       if (!lockParams) throw new Error("Contract not yet deployed on this chain.");
 
-      // Open AppKit BEFORE awaiting lock tx so WalletConnect users see "Go to wallet"
-      openReownModal();
       const hash = await sendTx(lockParams);
       setTxHash(hash);
       setStep("done");
@@ -293,30 +269,12 @@ function LockPanel({
               {verb}
             </button>
           ) : step === "approving" ? (
-            <div className="flex flex-col gap-1">
-              <div className="text-xs text-yellow-400 animate-pulse">
-                Confirm token approval in your wallet…
-              </div>
-              <button
-                type="button"
-                onClick={() => openReownModal()}
-                className="text-xs text-blue-400 underline hover:text-blue-300 transition-colors text-left"
-              >
-                Open wallet app →
-              </button>
+            <div className="text-xs text-yellow-400 animate-pulse">
+              Confirm token approval in your wallet…
             </div>
           ) : step === "locking" ? (
-            <div className="flex flex-col gap-1">
-              <div className="text-xs text-blue-400 animate-pulse">
-                Confirm lock transaction in your wallet…
-              </div>
-              <button
-                type="button"
-                onClick={() => openReownModal()}
-                className="text-xs text-blue-400 underline hover:text-blue-300 transition-colors text-left"
-              >
-                Open wallet app →
-              </button>
+            <div className="text-xs text-blue-400 animate-pulse">
+              Confirm lock transaction in your wallet…
             </div>
           ) : step === "done" ? (
             <div className="text-xs text-green-400">Lock submitted! Awaiting confirmation…</div>

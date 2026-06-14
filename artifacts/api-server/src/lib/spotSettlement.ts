@@ -74,7 +74,7 @@ export interface SpotFillParams {
 
 export interface SpotFillResult {
   txid:               string;
-  broadcastAsync:     true;
+  wasRealBroadcast:   boolean;
   settlementType:     string;
   isCrossChain:       boolean;
   htlcAddress?:       string;
@@ -188,53 +188,53 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
     throw err;
   }
 
-  // ── 5. Attempt real BSV broadcast (fire-and-forget, best-effort) ──────────
-  // The ledger (step 4) is the authoritative source of truth for balances.
-  // BSV broadcast is an on-chain audit record only — it MUST NOT block the
-  // HTTP response.  fetchWalletBalance + broadcastSettlement together can
-  // stall for 36 s on public BSV nodes (8 s × 2 UTXOs + 20 s broadcast).
-  // We fire the broadcast in the background and return the deterministic
-  // fallback txid immediately so the order response is not delayed.
-  const broadcastTxid = `local:${fallback.txid}`;
+  // ── 5. Attempt real BSV broadcast (best-effort) ──────────────────────────
+  // Only broadcast AFTER the ledger is committed.  If broadcast fails the
+  // deterministic txid is used as the audit reference; the ledger is already
+  // settled so user balances are correct regardless.
+  let broadcastTxid    = fallback.txid;
+  let wasRealBroadcast = false;
 
-  void (async () => {
-    try {
-      const wallet  = await getOrCreateWallet();
-      const balance = await fetchWalletBalance(wallet.address);
-      if (balance.funded && balance.utxos.length > 0) {
-        const best    = balance.utxos.sort((a, b) => b.satoshis - a.satoshis)[0]!;
-        const FEE_SAT = 500;
-        const maxHtlcSat  = best.satoshis - FEE_SAT - DUST_SAT;
-        const safeHtlcSat = Math.max(HTLC_MIN_SAT, DUST_SAT + 1);
-        const canAddHtlc  = isCrossChain && !!htlcP2SHScriptHex && maxHtlcSat >= safeHtlcSat;
-        const htlcSat     = canAddHtlc ? Math.min(safeHtlcSat, maxHtlcSat) : undefined;
+  try {
+    const wallet  = await getOrCreateWallet();
+    const balance = await fetchWalletBalance(wallet.address);
+    if (balance.funded && balance.utxos.length > 0) {
+      const best    = balance.utxos.sort((a, b) => b.satoshis - a.satoshis)[0]!;
+      const FEE_SAT = 500;
+      const maxHtlcSat  = best.satoshis - FEE_SAT - DUST_SAT;
+      const safeHtlcSat = Math.max(HTLC_MIN_SAT, DUST_SAT + 1);
+      const canAddHtlc  = isCrossChain && !!htlcP2SHScriptHex && maxHtlcSat >= safeHtlcSat;
+      const htlcSat     = canAddHtlc ? Math.min(safeHtlcSat, maxHtlcSat) : undefined;
 
-        if (isCrossChain && htlcP2SHScriptHex && !canAddHtlc) {
-          log.warn(
-            { utxoSat: best.satoshis, maxHtlcSat, safeHtlcSat },
-            "spotSettlement: HTLC output skipped — UTXO too small"
-          );
-        }
-
-        const result = await broadcastSettlement({
-          privKeyHex:        wallet.privKeyHex,
-          changeAddress:     wallet.address,
-          utxo:              best,
-          opReturnPayload:   fallback.opReturnData,
-          htlcP2SHScriptHex: canAddHtlc ? htlcP2SHScriptHex : undefined,
-          htlcSatoshis:      htlcSat,
-        });
-        if (result.broadcast) {
-          log.info(
-            { txid: result.txid, tradeId, pair },
-            "spotSettlement: BSV broadcast succeeded (background) ✓"
-          );
-        }
+      if (isCrossChain && htlcP2SHScriptHex && !canAddHtlc) {
+        log.warn(
+          { utxoSat: best.satoshis, maxHtlcSat, safeHtlcSat },
+          "spotSettlement: HTLC output skipped — UTXO too small"
+        );
       }
-    } catch (err) {
-      log.warn({ err, tradeId }, "spotSettlement: BSV broadcast failed (background) — deterministic txid already committed");
+
+      const result = await broadcastSettlement({
+        privKeyHex:        wallet.privKeyHex,
+        changeAddress:     wallet.address,
+        utxo:              best,
+        opReturnPayload:   fallback.opReturnData,
+        htlcP2SHScriptHex: canAddHtlc ? htlcP2SHScriptHex : undefined,
+        htlcSatoshis:      htlcSat,
+      });
+      if (result.broadcast) {
+        broadcastTxid    = result.txid;
+        wasRealBroadcast = true;
+      }
     }
-  })();
+  } catch (err) {
+    log.warn({ err }, "spotSettlement: BSV broadcast failed — using deterministic txid (ledger already settled)");
+  }
+
+  // Mark unbroadcast (local-only) settlement txids so the UI doesn't link
+  // them to WhatsOnChain (which would 404). Real broadcasts stay un-prefixed.
+  if (!wasRealBroadcast && !broadcastTxid.startsWith("local:")) {
+    broadcastTxid = `local:${broadcastTxid}`;
+  }
 
   log.info(
     {
@@ -242,11 +242,13 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
       fillQty,
       fillPrice,
       isBot,
-      broadcastAsync: true,
+      realBroadcast:  wasRealBroadcast,
       settlementType: fallback.settlementType,
       crossChain:     isCrossChain,
     },
-    `spotSettlement: ledger settled, BSV broadcast dispatched async (${fallback.settlementType})`
+    wasRealBroadcast
+      ? `spotSettlement: BROADCAST to mainnet ✓ (${fallback.settlementType})`
+      : `spotSettlement: deterministic txid committed (${fallback.settlementType})`
   );
 
   // ── 5b. CopyVault hook: mirror this trade into any vault led by buyer/seller ─
@@ -283,7 +285,7 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
 
   return {
     txid:               broadcastTxid,
-    broadcastAsync:     true as const,
+    wasRealBroadcast,
     settlementType:     fallback.settlementType,
     isCrossChain,
     htlcAddress:        htlcResult?.htlcAddress,

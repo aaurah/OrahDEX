@@ -111,20 +111,41 @@ function uncompressPublicKey(compressed: Uint8Array): Uint8Array {
 /* ── UR payload → EVM address ───────────────────────────────────────────── */
 
 export async function decodeURPayload(urString: string): Promise<KeystoneResult> {
-  // Plain xpub strings work without any external library
+  try {
+    const { CryptoHDKey, CryptoAccount } = await import("@keystonehq/bc-ur-registry-eth");
+
+    const lower = urString.toLowerCase();
+
+    if (lower.includes("crypto-hdkey") || lower.includes("hdkey")) {
+      const hdKey = CryptoHDKey.fromCBOR(Buffer.from(extractPayloadBytes(urString)));
+      const xpub = hdKey.getBip32Key();
+      const address = await xpubToEvmAddress(xpub);
+      return { address, xpub };
+    }
+
+    if (lower.includes("crypto-account") || lower.includes("account")) {
+      const account = CryptoAccount.fromCBOR(Buffer.from(extractPayloadBytes(urString)));
+      const outputDescriptors = account.getOutputDescriptors();
+      for (const descriptor of outputDescriptors) {
+        try {
+          const hdKey = descriptor.getCryptoKey();
+          const xpub = (hdKey as any).getBip32Key?.();
+          if (xpub) {
+            const address = await xpubToEvmAddress(xpub);
+            return { address, xpub };
+          }
+        } catch { continue; }
+      }
+    }
+  } catch { /* fall through to xpub parse */ }
+
+  // If the raw string looks like an xpub, try direct derivation
   if (/^[xyz]pub[a-zA-Z0-9]{100,}$/.test(urString.trim())) {
     const address = await xpubToEvmAddress(urString.trim());
     return { address, xpub: urString.trim() };
   }
 
-  // CBOR-encoded crypto-hdkey / crypto-account QR decoding previously required
-  // @keystonehq/bc-ur-registry-eth, which carries a transitive vulnerability
-  // (elliptic ≤ 6.6.1, GHSA-848j-6mx2-7j84, no upstream patch available).
-  // That package has been removed. Plain xpub QR codes still work via the path above.
-  throw new Error(
-    "Keystone CBOR QR decoding is temporarily unavailable. " +
-    "Use the 'Show XPUB' option on your Keystone device to display a plain xpub QR instead."
-  );
+  throw new Error("Could not decode QR data. Ensure your Keystone shows a crypto-hdkey or crypto-account QR.");
 }
 
 function extractPayloadBytes(urString: string): Uint8Array {
