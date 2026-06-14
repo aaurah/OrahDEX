@@ -145,7 +145,7 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
-    chunkSizeWarningLimit: 3000,
+    chunkSizeWarningLimit: 6000,
     /* Let Rolldown do automatic code splitting — manualChunks was causing
        the entry chunk to statically import 4 MB of JS (modals + pages chunks),
        blocking the app from mounting on mobile. */
