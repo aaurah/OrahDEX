@@ -1,3 +1,4 @@
 - [Arb bot formula](arb-bot-formula.md) — triangular arb gross return formula was inverted; correct form documented in topic file.
 - [Bridge agg patterns](bridge-agg-patterns.md) — Express async route safety, toWei edge case, dropdown click-outside pattern.
 - [Git merge conflict resolution](git-merge-resolution.md) — agent cannot git add/rm/commit/push; use a shell script the user runs manually.
+- [OrahDEX Replit migration](orahdex-migration.md) — pnpm install times out; use per-package filter installs + pnpm store symlinks for bsv-dex build.
