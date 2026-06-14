@@ -400,8 +400,9 @@ router.get("/options/positions", async (req, res) => {
     const contractIds = [...new Set(positions.map((p) => p.contractId))];
     const contracts: Record<string, typeof optionsContractsTable.$inferSelect> = {};
     for (const cid of contractIds) {
-      const [c] = await db.select().from(optionsContractsTable).where(eq(optionsContractsTable.id, cid));
-      if (c) contracts[cid] = c;
+      const cidStr = cid as string;
+      const [c] = await db.select().from(optionsContractsTable).where(eq(optionsContractsTable.id, cidStr));
+      if (c) contracts[cidStr] = c;
     }
 
     const spotCache: Record<string, number | null> = {};

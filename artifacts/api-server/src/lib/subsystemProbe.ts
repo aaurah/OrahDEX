@@ -176,7 +176,7 @@ export async function probeDatabase(): Promise<ProbeResult> {
     async () => {
       const { pool } = await import("@workspace/db");
       const start = Date.now();
-      const { rows } = await pool.query<{ version: string }>("SELECT version() AS version");
+      const { rows } = await pool.query("SELECT version() AS version") as { rows: { version: string }[] };
       const latencyMs = Date.now() - start;
       const ver = rows[0]?.version?.split(" ").slice(0, 2).join(" ") ?? "unknown";
       const quality = latencyMs < 50 ? "fast" : latencyMs < 200 ? "normal" : "slow";
@@ -255,9 +255,9 @@ export async function probeSwapRouter(): Promise<ProbeResult> {
     "Swap Router (LE Pairs in DB)",
     async () => {
       const { pool } = await import("@workspace/db");
-      const { rows } = await pool.query<{ cnt: string }>(
+      const { rows } = await pool.query(
         "SELECT COUNT(*) AS cnt FROM markets WHERE type = 'letsexchange' AND status = 'active'",
-      );
+      ) as { rows: { cnt: string }[] };
       const cnt = parseInt(rows[0]?.cnt ?? "0", 10);
       if (cnt === 0) throw new Error("No LE pairs seeded — run POST /api/admin/le-sync");
       if (cnt < 1000) return `${cnt.toLocaleString()} LE pairs seeded (partial — run le-sync for full catalog)`;

@@ -409,7 +409,7 @@ router.get("/copy/my-positions", async (req, res) => {
       )
       .orderBy(desc(copyVaultPositionsTable.createdAt));
 
-    const enriched = positions.map(({ position, vault }) => {
+    const enriched = (positions as any[]).map(({ position, vault }) => {
       const sharePrice = Number(vault.sharePrice) || 1;
       const currentValue = Number(position.sharesOwned) * sharePrice;
       const entry = Number(position.depositAmountUsdt);
