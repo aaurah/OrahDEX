@@ -166,7 +166,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
   137: {
     chainId:         137,
     name:            "Polygon Mainnet",
-    rpcUrl:          process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",
+    rpcUrl:          process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com",
     contractAddress: (process.env.EVM_HTLC_CONTRACT_POLYGON as Address | undefined) ?? DEPLOYED_CONTRACT,
     nativeSymbol:    "MATIC",
     blockExplorer:   "https://polygonscan.com",
@@ -256,7 +256,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
   1329: {
     chainId:         1329,
     name:            "Sei",
-    rpcUrl:          process.env.SEI_RPC_URL ?? "https://evm-rpc.sei-apis.com",
+    rpcUrl:          process.env.SEI_RPC_URL ?? "https://sei-evm-rpc.publicnode.com",
     contractAddress: DEPLOYED_CONTRACT,
     nativeSymbol:    "SEI",
     blockExplorer:   "https://seitrace.com",

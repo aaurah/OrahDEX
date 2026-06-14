@@ -2750,7 +2750,7 @@ router.get("/exchange-wallet", requireAdminToken, async (req, res) => {
     const [ethBal, bnbBal, maticBal] = await Promise.all([
       fetchNative(process.env.ETH_RPC_URL ?? "https://eth.llamarpc.com",         "ETH"),
       fetchNative(process.env.BSC_RPC_URL ?? "https://bsc-dataseed.binance.org", "BNB"),
-      fetchNative(process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",      "MATIC"),
+      fetchNative(process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com", "MATIC"),
     ]);
 
     const bsvWallet  = await getOrCreateWallet();

@@ -66,7 +66,7 @@ const EVM_CHAINS: Array<{ id: string; label: string; envVar: string; fallback: s
   { id: "arbitrum", label: "Arbitrum One",       envVar: "ARB_RPC_URL",      fallback: "https://arbitrum-one.publicnode.com" },
   { id: "optimism", label: "Optimism",           envVar: "OP_RPC_URL",       fallback: "https://optimism.publicnode.com" },
   { id: "bnb",      label: "BNB Smart Chain",    envVar: "BSC_RPC_URL",      fallback: "https://bsc-dataseed.binance.org" },
-  { id: "polygon",  label: "Polygon",            envVar: "POLYGON_RPC_URL",  fallback: "https://polygon-rpc.com" },
+  { id: "polygon",  label: "Polygon",            envVar: "POLYGON_RPC_URL",  fallback: "https://polygon-bor-rpc.publicnode.com" },
   { id: "avax",     label: "Avalanche C-Chain",  envVar: "AVAX_RPC_URL",     fallback: "https://api.avax.network/ext/bc/C/rpc" },
   { id: "sepolia",  label: "Sepolia Testnet",    envVar: "SEPOLIA_RPC_URL",  fallback: "https://sepolia.publicnode.com" },
 ];
