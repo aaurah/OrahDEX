@@ -28,7 +28,7 @@ function start(label, cmd, args, cwd, env = {}) {
 }
 
 const API_PORT  = process.env.API_PORT  || "8080";
-const FRONTEND_PORT = process.env.PORT || "5000";
+const FRONTEND_PORT = process.env.FRONTEND_PORT || process.env.PORT || "20180";
 
 console.log(`Starting OrahDEX — API :${API_PORT}  Frontend :${FRONTEND_PORT}`);
 
