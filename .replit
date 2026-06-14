@@ -15,6 +15,9 @@ args = ["pnpm", "store", "prune"]
 env = { "CI" = "true" }
 
 [[ports]]
+localPort = 8080
+
+[[ports]]
 localPort = 20180
 
 [workflows]
