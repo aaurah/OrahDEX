@@ -24,6 +24,10 @@ externalPort = 3000
 localPort = 20180
 externalPort = 80
 
+[[ports]]
+localPort = 5000
+externalPort = 80
+
 [workflows]
 runButton = "Project"
 
@@ -70,6 +74,7 @@ outputType = "webview"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=5000 node artifacts/bsv-dex/serve-static.mjs"
+waitForPort = 5000
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
