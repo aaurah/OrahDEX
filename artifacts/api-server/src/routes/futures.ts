@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { futuresPositionsTable, marketsTable, fundingRatesTable, fundingPaymentsTable } from "@workspace/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import crypto from "crypto";
 import {
   openFuturesPosition,
@@ -42,9 +42,9 @@ const PERP_SYMBOLS = [
 
 router.get("/futures/markets", async (_req, res) => {
   try {
-    const allMarkets = await db.select().from(marketsTable);
-    const priceMap: Record<string, (typeof allMarkets)[0]> = {};
-    for (const m of allMarkets) priceMap[m.symbol] = m;
+    const perpMarkets = await db.select().from(marketsTable).where(inArray(marketsTable.symbol, PERP_SYMBOLS));
+    const priceMap: Record<string, (typeof perpMarkets)[0]> = {};
+    for (const m of perpMarkets) priceMap[m.symbol] = m;
 
     const markets = PERP_SYMBOLS.map((sym) => {
       const m      = priceMap[sym];

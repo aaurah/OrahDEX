@@ -112,7 +112,7 @@ router.get("/ai/conversations/:id", async (req, res) => {
   try {
     const [conv] = await db.select().from(conversations).where(eq(conversations.id, id));
     if (!conv) { res.status(404).json({ error: "Conversation not found" }); return; }
-    const msgs = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(asc(messages.createdAt));
+    const msgs = await db.select().from(messages).where(eq(messages.conversationId, id)).orderBy(asc(messages.createdAt)).limit(500);
     res.json({ ...conv, messages: msgs });
   } catch {
     res.status(500).json({ error: "Internal server error" });
