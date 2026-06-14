@@ -1,4 +1,4 @@
-modules = ["nodejs-24", "python-3.11", "postgresql-16"]
+modules = ["nodejs-20", "web", "python-3.12"]
 
 [[artifacts]]
 id = "artifacts/api-server"
@@ -41,7 +41,7 @@ args = "PORT=20180 pnpm --filter @workspace/bsv-dex run dev"
 waitForPort = 20180
 
 [agent]
-stack = "PNPM_WORKSPACE"
+stack = "BEST_EFFORT_FALLBACK"
 expertMode = true
 integrations = ["github:1.0.0"]
 
