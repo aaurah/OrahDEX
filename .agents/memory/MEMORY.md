@@ -3,3 +3,5 @@
 - [Git merge conflict resolution](git-merge-resolution.md) — agent cannot git add/rm/commit/push; use a shell script the user runs manually.
 - [OrahDEX Replit migration](orahdex-migration.md) — pnpm install times out; use per-package filter installs + pnpm store symlinks for bsv-dex build.
 - [WalletConnect logger bindings crash](wc-logger-bindings-fix.md) — `e.bindings is not a function` from logger@2 hitting a pino-v10 logger inlined in logger@3.
+- [Reown appkit subpath alias](reown-appkit-subpath.md) — Rolldown (Vite 8) can't resolve @reown/appkit/* subpaths via symlinks; must add explicit resolve.alias entries.
+- [ThirdWeb wallet store sync](thirdweb-wallet-sync.md) — ThirdwebMobilePanel.handleConnect must extract account from wallet.connect() and call useWalletStore.getState().connect() to update OrahDEX state.
