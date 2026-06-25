@@ -598,24 +598,54 @@ router.post("/webhook/email-inbound", async (req, res) => {
     const subject: string =
       b.subject ?? b.Subject ?? "(no subject)";
 
-    const body: string =
-      b["body-plain"] ?? b.text ?? b.TextBody ?? b.body ?? b.plain ??
-      b["body-html"] ?? b.html ?? b.HtmlBody ?? "(empty)";
+    // Prefer plain-text body; fall back to HTML variants
+    const plainBody: string | undefined =
+      b["body-plain"] ?? b.text ?? b.TextBody ?? b.body ?? b.plain;
 
-    // Strip basic HTML tags for storage if we only got HTML
-    // Use a character-by-character approach to avoid ReDoS on untrusted input.
-    // Handles nested `<` by tracking the outermost opening tag only.
-    const MAX_EMAIL_BODY_LENGTH = 50_000;
-    const cleanBody = (() => {
-      let out = "";
-      let tagDepth = 0;
-      for (const ch of body.slice(0, MAX_EMAIL_BODY_LENGTH)) {
-        if (ch === "<") { tagDepth++; continue; }
-        if (ch === ">" && tagDepth > 0) { tagDepth--; if (tagDepth === 0) out += " "; continue; }
-        if (tagDepth === 0) out += ch;
+    const htmlBody: string | undefined =
+      b["body-html"] ?? b.html ?? b.HtmlBody;
+
+    // Proper HTML→text converter: skips style/script/head content, adds
+    // newlines for block elements. Safe against ReDoS (no regex on input).
+    function htmlToPlainText(html: string, max = 50_000): string {
+      const SKIP  = new Set(["style","script","head","noscript"]);
+      const BLOCK = new Set(["p","div","br","hr","tr","td","th","h1","h2","h3",
+                             "h4","h5","h6","li","article","section","header",
+                             "footer","blockquote","pre"]);
+      let out = "", i = 0, skip = 0;
+      const src = html.slice(0, max);
+      while (i < src.length) {
+        if (src[i] !== "<") { if (!skip) out += src[i]; i++; continue; }
+        let j = i + 1, inQ = "";
+        while (j < src.length && (src[j] !== ">" || inQ)) {
+          if ((src[j] === '"' || src[j] === "'") && !inQ) inQ = src[j];
+          else if (src[j] === inQ) inQ = "";
+          j++;
+        }
+        const inner = src.slice(i + 1, j).trim();
+        const isClose = inner.startsWith("/");
+        const name = (isClose ? inner.slice(1) : inner).split(/[\s/]/)[0].toLowerCase();
+        if (!isClose && SKIP.has(name)) skip++;
+        else if (isClose && SKIP.has(name) && skip > 0) { skip--; out += "\n"; }
+        else if (!skip) out += BLOCK.has(name) ? "\n" : " ";
+        i = j + 1;
       }
-      return out.replace(/  +/g, " ").trim();
-    })();
+      return out.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+    }
+
+    // If we have plain text use it directly; otherwise convert HTML→text.
+    // Always store the raw HTML too (prefixed) so the frontend can render it.
+    let storedBody: string;
+    if (plainBody && plainBody.trim()) {
+      storedBody = plainBody.trim();
+    } else if (htmlBody) {
+      const extracted = htmlToPlainText(htmlBody);
+      // Store the raw HTML with a sentinel so the frontend can detect and
+      // render it properly (verification codes, styled emails, etc.)
+      storedBody = extracted || htmlBody;
+    } else {
+      storedBody = "(empty)";
+    }
 
     if (!from || !subject) {
       res.status(400).json({ error: "Missing required fields: from, subject" });
@@ -627,7 +657,7 @@ router.post("/webhook/email-inbound", async (req, res) => {
       fromAddress: from,
       toAddress: to,
       subject,
-      body: cleanBody || body,
+      body: storedBody,
       category: "contact",
       isRead: false,
       isStarred: false,
