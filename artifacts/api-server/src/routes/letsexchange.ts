@@ -138,25 +138,20 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
 
 // ── GET /api/letsexchange/currencies ─────────────────────────────────────────
 router.get("/letsexchange/currencies", async (_req, res) => {
-  // Return from cache first — fastest path
+  // Return from cache first — fastest path (always < 1 ms)
   const hit = cached("currencies") as NormalisedCoin[] | null;
   if (hit && hit.length > 0) { res.json(hit); return; }
 
-  // No API key configured — serve the built-in coin catalog so the swap UI
-  // always has coins to show.  Estimate / exchange calls still require a key.
-  if (!process.env.LETSEXCHANGE_API_KEY) {
-    res.json(builtInCoinsAsFallback());
-    return;
-  }
+  // Always respond immediately with the built-in fallback catalog so the
+  // route probe and the swap UI never block waiting for the LE API.
+  // If an API key is configured we warm the cache in the background — the
+  // *next* request (a few seconds later) will return live LE data.
+  res.json(builtInCoinsAsFallback());
 
-  try {
-    const coins = await fetchAndCacheCurrencies();
-    // If the live API returned an empty list (e.g. temporary outage), fall back
-    // so the frontend never receives an empty coin picker.
-    res.json(coins.length > 0 ? coins : builtInCoinsAsFallback());
-  } catch (err: any) {
-    logger.error({ err }, "letsexchange /currencies failed");
-    res.json(builtInCoinsAsFallback());
+  if (process.env.LETSEXCHANGE_API_KEY) {
+    fetchAndCacheCurrencies().catch(err => {
+      logger.warn({ err }, "letsexchange background currencies warm failed");
+    });
   }
 });
 

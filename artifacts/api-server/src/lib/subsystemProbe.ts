@@ -68,7 +68,7 @@ const EVM_CHAINS: Array<{ id: string; label: string; envVar: string; fallback: s
   { id: "bnb",      label: "BNB Smart Chain",    envVar: "BSC_RPC_URL",      fallback: "https://bsc-dataseed.binance.org" },
   { id: "polygon",  label: "Polygon",            envVar: "POLYGON_RPC_URL",  fallback: "https://polygon-bor-rpc.publicnode.com" },
   { id: "avax",     label: "Avalanche C-Chain",  envVar: "AVAX_RPC_URL",     fallback: "https://api.avax.network/ext/bc/C/rpc" },
-  { id: "sepolia",  label: "Sepolia Testnet",    envVar: "SEPOLIA_RPC_URL",  fallback: "https://sepolia.publicnode.com" },
+  { id: "sepolia",  label: "Sepolia Testnet",    envVar: "SEPOLIA_RPC_URL",  fallback: "https://ethereum-sepolia-rpc.publicnode.com" },
 ];
 
 async function probeRpc(chain: (typeof EVM_CHAINS)[number]): Promise<ProbeResult> {

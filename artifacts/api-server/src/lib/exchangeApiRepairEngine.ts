@@ -519,7 +519,7 @@ const PROBE_ROUTES = [
   { path: "/api/dex/prices",                  method: "GET", maxMs: 3_000 },
   { path: "/api/ai/insights",                 method: "GET", maxMs: 5_000 },
   { path: "/api/staking/providers",           method: "GET", maxMs: 3_000 },
-  { path: "/api/letsexchange/currencies",     method: "GET", maxMs: 5_000 },
+  { path: "/api/letsexchange/currencies",     method: "GET", maxMs: 3_000 },
   { path: "/api/coinbase/onramp-config",      method: "GET", maxMs: 3_000 },
 ];
 
