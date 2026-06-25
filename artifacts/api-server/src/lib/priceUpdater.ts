@@ -149,6 +149,7 @@ export const COINGECKO_IDS: Record<string, string> = {
   METIS: "metis-token",
   // Gaming / Metaverse
   APE:   "apecoin",
+  A8:    "ancient8",
   AXS:   "axie-infinity",
   ENJ:   "enjincoin",
   GALA:  "gala",
@@ -718,7 +719,7 @@ export const FALLBACK_PRICES: Record<string, number> = {
   ORAI:4.82,CTXC:0.142,WLD:2.84,ALT:0.18,
   HNT:8.42,IOTX:0.042,GLM:0.28,STORJ:0.45,POWR:0.22,LPT:7.5,
   // ── Gaming / Metaverse ───────────────────────────────────────────────────────
-  APE:1.25,AXS:6.82,ENJ:0.18,GALA:0.022,ILV:35,ALICE:0.82,TLM:0.012,SLP:0.0028,
+  APE:1.25,A8:0.12,AXS:6.82,ENJ:0.18,GALA:0.022,ILV:35,ALICE:0.82,TLM:0.012,SLP:0.0028,
   WAXP:0.042,PIXEL:0.14,BIGTIME:0.082,BEAM:0.018,PRIME:2.8,RON:2.42,
   MC:0.12,GODS:0.082,
   // ── Cosmos ecosystem ─────────────────────────────────────────────────────────

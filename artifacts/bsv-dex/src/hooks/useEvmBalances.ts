@@ -234,6 +234,23 @@ const NATIVE_TOKENS: Record<number, { symbol: string; name: string; color: strin
 
 const STABLECOINS = new Set(["USDT","USDC","USDbC","USDCe","USDC.e","DAI","BUSD","TUSD","USDD","FDUSD","FRAX","LUSD","USDB","GUSD","USDP","PYUSD"]);
 
+// CoinGecko platform slugs used for contract-address price lookups
+const COINGECKO_PLATFORM: Record<number, string> = {
+  1:      "ethereum",
+  56:     "binance-smart-chain",
+  137:    "polygon-pos",
+  42161:  "arbitrum-one",
+  10:     "optimistic-ethereum",
+  8453:   "base",
+  43114:  "avalanche",
+  250:    "fantom",
+  324:    "zksync",
+  534352: "scroll",
+  59144:  "linea",
+  5000:   "mantle",
+  25:     "cronos",
+};
+
 const BASE_URL = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 function balanceOfCalldata(address: string): string {
@@ -349,6 +366,34 @@ async function fetchMarketPrices(): Promise<Record<string, number>> {
   if (!prices["MATIC"])prices["MATIC"]= 0.32;
 
   return prices;
+}
+
+/**
+ * For tokens with balance > 0 but no price in our feed, look them up by
+ * contract address via CoinGecko's free simple/token_price API.
+ * Returns a map of lowercased-address → USD price.
+ */
+async function fetchContractPrices(
+  addresses: string[],
+  chainId: number,
+): Promise<Record<string, number>> {
+  const platform = COINGECKO_PLATFORM[chainId];
+  if (!platform || addresses.length === 0) return {};
+  try {
+    const addrList = addresses.join(",");
+    const url = `https://api.coingecko.com/api/v3/simple/token_price/${platform}?contract_addresses=${addrList}&vs_currencies=usd`;
+    const res = await globalThis.fetch(url, {
+      headers: { "Accept": "application/json" },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return {};
+    const data: Record<string, { usd?: number }> = await res.json();
+    const out: Record<string, number> = {};
+    for (const [addr, val] of Object.entries(data)) {
+      if (val?.usd && val.usd > 0) out[addr.toLowerCase()] = val.usd;
+    }
+    return out;
+  } catch { return {}; }
 }
 
 /* ─── Auto-discovery via Transfer event logs ──────────────────────────────── */
@@ -568,6 +613,28 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
 
       // Background: discover any other ERC-20s the user holds via Transfer logs
       discoverNewTokens(address, chainId, knownAddresses);
+
+      // Background: for tokens with balance > 0 but unknown price, look up via
+      // CoinGecko contract-address API (covers newly discovered / niche tokens)
+      const unpriced = result.filter(t => !t.isNative && t.amount > 0 && t.price === 0 && t.contractAddress);
+      if (unpriced.length > 0) {
+        fetchContractPrices(
+          unpriced.map(t => t.contractAddress!.toLowerCase()),
+          chainId,
+        ).then(cgPrices => {
+          if (Object.keys(cgPrices).length === 0) return;
+          setBalances(prev => {
+            const updated = prev.map(t => {
+              if (!t.contractAddress || t.price > 0) return t;
+              const p = cgPrices[t.contractAddress.toLowerCase()];
+              if (!p) return t;
+              return { ...t, price: p, usdValue: t.amount * p };
+            });
+            updated.sort((a, b) => b.usdValue - a.usdValue);
+            return updated;
+          });
+        }).catch(() => { /* non-fatal */ });
+      }
     } catch (err) {
       console.error("EVM balance fetch error:", err);
     } finally {
