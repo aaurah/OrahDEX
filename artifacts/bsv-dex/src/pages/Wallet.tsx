@@ -19,7 +19,7 @@ import {
   getImportedWallet, getDerivedAddresses, saveDerivedAddresses,
   type DerivedAddresses,
 } from "@/lib/walletPin";
-import { listPasskeyWallets, loginWithPasskey } from "@/lib/passkeyWallet";
+import { listPasskeyWallets, loginWithPasskey, sendBsvWithPasskey } from "@/lib/passkeyWallet";
 import { ReceiveModal } from "@/components/ReceiveModal";
 import { RevealSecretSheet } from "@/components/wallet/RevealSecretSheet";
 import { ChainReceiveSheet } from "@/components/wallet/ChainReceiveSheet";
@@ -29,6 +29,157 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+/* ─── BSV Send Sheet ─────────────────────────────────────────────────────── */
+
+function BsvSendSheet({
+  open, onClose, fromAddress, evmAddress,
+}: {
+  open: boolean;
+  onClose: () => void;
+  fromAddress: string;
+  evmAddress: string | null;
+}) {
+  const { toast } = useToast();
+  const { native: balance } = useNativeChainBalance("bsv", fromAddress || null);
+  const [recipient, setRecipient] = useState("");
+  const [amount,    setAmount]    = useState("");
+  const [sending,   setSending]   = useState(false);
+  const [txid,      setTxid]      = useState<string | null>(null);
+  const [error,     setError]     = useState<string | null>(null);
+
+  const reset = () => { setRecipient(""); setAmount(""); setTxid(null); setError(null); };
+  const handleClose = () => { reset(); onClose(); };
+
+  const parsedAmt = parseFloat(amount);
+  const canSend   = recipient.trim().length > 20 && parsedAmt > 0 && parsedAmt <= balance && !sending;
+
+  const handleSend = async () => {
+    if (!canSend) return;
+    setSending(true);
+    setError(null);
+    try {
+      const ref = evmAddress ?? "";
+      const result = await sendBsvWithPasskey(ref, fromAddress, recipient.trim(), parsedAmt);
+      setTxid(result.txid);
+      toast({
+        title:       "BSV sent",
+        description: `${parsedAmt} BSV → ${recipient.slice(0, 12)}… · Fee: ${result.feeSat} sat`,
+      });
+    } catch (err: any) {
+      setError(err?.message ?? "Send failed");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={v => { if (!v) handleClose(); }}>
+      <SheetContent side="bottom" className="rounded-t-2xl max-h-[90vh] overflow-y-auto pb-8">
+        <SheetHeader className="mb-5">
+          <SheetTitle className="flex items-center gap-2">
+            <Send size={16} className="text-primary" /> Send BSV
+          </SheetTitle>
+          <SheetDescription className="font-mono text-xs truncate">
+            From: {fromAddress}
+          </SheetDescription>
+        </SheetHeader>
+
+        {txid ? (
+          <div className="space-y-4">
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/15 flex items-center justify-center">
+                <Check size={24} className="text-emerald-400" />
+              </div>
+              <p className="font-semibold text-foreground">Sent!</p>
+              <p className="text-xs text-muted-foreground font-mono break-all">{txid}</p>
+            </div>
+            <a
+              href={`https://whatsonchain.com/tx/${txid}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 text-xs text-primary hover:underline"
+            >
+              <ExternalLink size={12} /> View on WhatsOnChain
+            </a>
+            <Button className="w-full" variant="outline" onClick={handleClose}>Done</Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+              <span>Available</span>
+              <span className="font-mono font-semibold text-foreground">
+                {balance > 0 ? `${balance.toFixed(8)} BSV` : "0 BSV"}
+              </span>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Recipient BSV address</label>
+              <Input
+                placeholder="1A1zP1eP5QGefi2DMPTf..."
+                value={recipient}
+                onChange={e => setRecipient(e.target.value)}
+                className="font-mono text-sm"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Amount (BSV)</label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  placeholder="0.00010000"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  className="font-mono text-sm"
+                  min={0}
+                  step={0.00000001}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 text-xs"
+                  onClick={() => setAmount(Math.max(0, balance - 0.00005).toFixed(8))}
+                  disabled={balance <= 0}
+                >
+                  MAX
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">Network fee (~5 000 sat) deducted from remaining balance</p>
+            </div>
+
+            {error && (
+              <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+                <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <Button
+              className="w-full"
+              disabled={!canSend}
+              onClick={handleSend}
+            >
+              {sending
+                ? <><Loader2 size={14} className="animate-spin mr-2" />Sending…</>
+                : <><Send size={14} className="mr-2" />Send {parsedAmt > 0 ? `${parsedAmt} BSV` : "BSV"}</>}
+            </Button>
+
+            <p className="text-center text-[10px] text-muted-foreground">
+              Requires your OrahDEX passkey to sign the transaction
+            </p>
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 
 /** Sums balances across all 8 live EVM chains for a given address. */
 function useAllEvmBalances(address: string | null) {
@@ -107,7 +258,7 @@ function addressForChain(
 // ─── Chain row shell (imToken / MetaMask hybrid style) ───────────────────────
 
 function ChainRowShell({
-  chain, chainAddr, balanceSlot, onReceive, onImport,
+  chain, chainAddr, balanceSlot, onReceive, onImport, onSend,
   expandable, expanded, onToggleExpand, extra,
 }: {
   chain: ChainRow;
@@ -115,6 +266,7 @@ function ChainRowShell({
   balanceSlot: ReactNode;
   onReceive: () => void;
   onImport: () => void;
+  onSend?: () => void;
   expandable?: boolean;
   expanded?: boolean;
   onToggleExpand?: () => void;
@@ -196,6 +348,16 @@ function ChainRowShell({
               )}
             >
               {hasAddr ? <Link2 size={13} /> : <Link2Off size={13} />}
+            </button>
+          )}
+
+          {onSend && chainAddr && (
+            <button
+              onClick={e => { e.stopPropagation(); onSend(); }}
+              className="w-8 h-8 rounded-lg bg-secondary/60 hover:bg-secondary flex items-center justify-center transition-colors shrink-0"
+              title="Send BSV"
+            >
+              <ArrowUpRight size={14} />
             </button>
           )}
 
@@ -605,13 +767,14 @@ function EvmChainRow({
 // ─── Native (non-EVM) row ─────────────────────────────────────────────────────
 
 function NativeChainRow({
-  chain, chainAddr, quoteCurrency, onReceive, onImport,
+  chain, chainAddr, quoteCurrency, onReceive, onImport, onSend,
 }: {
   chain: ChainRow;
   chainAddr: string | null;
   quoteCurrency: string;
   onReceive: () => void;
   onImport: () => void;
+  onSend?: () => void;
 }) {
   const family = chain.family as any;
   const { native, usd, loading } = useNativeChainBalance(family, chainAddr);
@@ -638,6 +801,7 @@ function NativeChainRow({
       balanceSlot={balanceSlot}
       onReceive={onReceive}
       onImport={onImport}
+      onSend={onSend}
     />
   );
 }
@@ -646,7 +810,7 @@ function NativeChainRow({
 
 function ChainBalanceRow({
   chain, address, evmAddress, network, derived, quoteCurrency,
-  onReceive, onImport, onAddToken, onSendToken, onTokenReceive,
+  onReceive, onImport, onAddToken, onSendToken, onTokenReceive, onSendBsv,
 }: {
   chain: ChainRow;
   address: string | null;
@@ -659,6 +823,7 @@ function ChainBalanceRow({
   onAddToken: (chainId: number) => void;
   onSendToken: (chainId: number, symbol: string) => void;
   onTokenReceive: (symbol: string, chainName: string, address: string) => void;
+  onSendBsv?: (addr: string) => void;
 }) {
   const chainAddr    = addressForChain(chain, evmAddress, address, network, derived);
   const handleReceive = () => onReceive(chain);
@@ -686,6 +851,7 @@ function ChainBalanceRow({
       quoteCurrency={quoteCurrency}
       onReceive={handleReceive}
       onImport={handleImport}
+      onSend={chain.family === "bsv" && chainAddr && onSendBsv ? () => onSendBsv(chainAddr) : undefined}
     />
   );
 }
@@ -785,6 +951,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const [refreshing, setRefreshing]           = useState(false);
   const [importChain, setImportChain]         = useState<ChainRow | null>(null);
   const [addTokenChainId, setAddTokenChainId] = useState<number | null>(null);
+  const [bsvSend, setBsvSend] = useState<{ open: boolean; addr: string }>({ open: false, addr: "" });
 
   const hasMissingChains = canBackup && (!derived?.btc || !derived?.bch || !derived?.tron || !derived?.xrp || !derived?.ltc || !derived?.doge);
 
@@ -1073,6 +1240,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
               onAddToken={(chainId) => setAddTokenChainId(chainId)}
               onSendToken={(chainId, symbol) => setSendTokenConfig({ chainId, symbol })}
               onTokenReceive={(symbol, chainName, addr) => setTokenReceive({ symbol, chainName, address: addr })}
+              onSendBsv={(addr) => setBsvSend({ open: true, addr })}
             />
           ))}
         </div>
@@ -1144,6 +1312,13 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       />
 
       <RevealSecretSheet open={revealOpen} onClose={() => setRevealOpen(false)} address={address} />
+
+      <BsvSendSheet
+        open={bsvSend.open}
+        onClose={() => setBsvSend({ open: false, addr: "" })}
+        fromAddress={bsvSend.addr}
+        evmAddress={evmAddress}
+      />
 
       <ManualImportSheet
         open={!!importChain}
