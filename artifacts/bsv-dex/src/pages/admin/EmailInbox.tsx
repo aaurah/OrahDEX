@@ -811,7 +811,7 @@ export function AdminEmailInbox() {
                             {email.subject}
                           </p>
                           <p className="text-xs text-muted-foreground/70 truncate mt-0.5">
-                            {email.body.slice(0, 80)}
+                            {email.body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 80)}
                           </p>
                         </div>
                       </div>
@@ -895,22 +895,31 @@ export function AdminEmailInbox() {
                     </div>
                   </div>
 
-                  {/(<html[\s>]|<!DOCTYPE\s+html|<body[\s>]|<div\s|<table[\s>])/i.test(selected.body) ? (
-                    /* HTML email — render in sandboxed iframe so styles/images work */
-                    <iframe
-                      srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;font-family:sans-serif;font-size:14px;background:#fff;color:#111;}</style></head><body>${selected.body}</body></html>`}
-                      sandbox="allow-same-origin"
-                      title="Email content"
-                      className="w-full rounded-xl bg-white border border-border/30"
-                      style={{ minHeight: 240, border: "none", colorScheme: "light" }}
-                      onLoad={(e) => {
-                        const doc = (e.currentTarget as HTMLIFrameElement).contentDocument;
-                        if (doc?.body) {
-                          (e.currentTarget as HTMLIFrameElement).style.height =
-                            `${doc.body.scrollHeight + 32}px`;
-                        }
-                      }}
-                    />
+                  {/(<html[\s>]|<!DOCTYPE\s+html|<body[\s>]|<div[\s>]|<table[\s>]|<img[\s>])/i.test(selected.body) ? (
+                    /* HTML email — render in sandboxed iframe so images & styles work */
+                    (() => {
+                      const isFullDoc = /^[\s\S]{0,100}<!DOCTYPE\s+html|^[\s\S]{0,100}<html[\s>]/i.test(selected.body);
+                      const srcDoc = isFullDoc
+                        ? selected.body
+                        : `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:8px 12px;font-family:Arial,sans-serif;font-size:14px;background:#fff;color:#111;}img{max-width:100%;height:auto;}</style></head><body>${selected.body}</body></html>`;
+                      return (
+                        <iframe
+                          srcDoc={srcDoc}
+                          sandbox="allow-same-origin"
+                          title="Email content"
+                          referrerPolicy="no-referrer"
+                          className="w-full rounded-xl bg-white border border-border/30"
+                          style={{ minHeight: 240, border: "none", colorScheme: "light" }}
+                          onLoad={(e) => {
+                            const doc = (e.currentTarget as HTMLIFrameElement).contentDocument;
+                            if (doc?.documentElement) {
+                              (e.currentTarget as HTMLIFrameElement).style.height =
+                                `${doc.documentElement.scrollHeight + 16}px`;
+                            }
+                          }}
+                        />
+                      );
+                    })()
                   ) : (
                     <div className="prose prose-invert prose-sm max-w-none">
                       {selected.body.split("\n").map((line, i) => (

@@ -633,16 +633,14 @@ router.post("/webhook/email-inbound", async (req, res) => {
       return out.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
     }
 
-    // If we have plain text use it directly; otherwise convert HTML→text.
-    // Always store the raw HTML too (prefixed) so the frontend can render it.
+    // Store raw HTML when available so the frontend can render images,
+    // branded layouts, and styled verification codes via sandboxed iframe.
+    // Fall back to plain text, then "(empty)".
     let storedBody: string;
-    if (plainBody && plainBody.trim()) {
+    if (htmlBody && htmlBody.trim()) {
+      storedBody = htmlBody.trim();
+    } else if (plainBody && plainBody.trim()) {
       storedBody = plainBody.trim();
-    } else if (htmlBody) {
-      const extracted = htmlToPlainText(htmlBody);
-      // Store the raw HTML with a sentinel so the frontend can detect and
-      // render it properly (verification codes, styled emails, etc.)
-      storedBody = extracted || htmlBody;
     } else {
       storedBody = "(empty)";
     }
