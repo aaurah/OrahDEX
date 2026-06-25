@@ -441,7 +441,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (escrowAvailable && walletChainId) {
         let hasDeposit = false;
         try {
-          const dep = await checkEscrowDeposit(orderId, walletChainId);
+          // 4-second timeout: a slow RPC shouldn't stall the cancel button.
+          const dep = await Promise.race([
+            checkEscrowDeposit(orderId, walletChainId),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+          ]);
           hasDeposit = !!dep && !dep.released;
         } catch { /* RPC failure — err on the side of not sending a bad tx */ }
 
@@ -466,6 +470,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ walletAddress: orderWalletAddress }),
       });
+      // 404 means the order is already cancelled (desired state) — treat as success.
+      // This handles double-tap, stale cache, and races gracefully.
+      if (res.status === 404) return { id: orderId, status: "cancelled" };
       if (!res.ok) throw new Error("Failed to cancel");
       return res.json();
     },
