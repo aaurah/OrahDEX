@@ -841,6 +841,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [stopPrice, setStopPrice] = useState("");
   const [trailingRate, setTrailingRate] = useState("");
   const [amount, setAmount] = useState("");
+
+  // Clear order form fields whenever the trading pair changes.
+  // MobileTrade is a keep-alive tab component (no key prop) — the same instance
+  // is reused across all pair navigations, so state does NOT reset automatically.
+  // Without this, a price like "4421" from ETH/USDT persists on the next pair
+  // and produces a wildly out-of-market limit order that confuses users.
+  useEffect(() => {
+    setPrice("");
+    setAmount("");
+    setStopPrice("");
+    setTrailingRate("");
+  }, [rawSymbol]);
   const [showOrderForm, setShowOrderForm] = useState(false);
   const [swapMode, setSwapMode] = useState(false);
   const scrollBodyRef  = useRef<HTMLDivElement>(null);
@@ -1370,12 +1382,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       } catch (signErr: any) {
         const code = signErr?.code;
         const msg: string = signErr?.message ?? "";
+        const isRejection = code === 4001 || code === "ACTION_REJECTED" ||
+          msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("denied") ||
+          msg.toLowerCase().includes("user cancelled") || msg.toLowerCase().includes("user canceled");
         toast({
-          title: "Signature required",
-          description: code === 4001 || code === "ACTION_REJECTED" ||
-            msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel")
-            ? "You must sign the order in your wallet for on-chain settlement."
-            : (msg || "Could not sign order in wallet."),
+          title: isRejection ? "Wallet signature declined" : "Wallet signing failed",
+          description: isRejection
+            ? `Tap ${side === "buy" ? "Buy" : "Sell"} again and approve the signing request in your wallet to place the order.`
+            : (msg || "Could not sign order. Please reconnect your wallet and try again."),
           variant: "destructive",
         });
         isSubmittingRef.current = false;
