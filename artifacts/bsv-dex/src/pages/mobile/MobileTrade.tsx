@@ -698,16 +698,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       // escrow is deployed, and only when self-custody escrow is available.
       if (!matched && tradeId && escrowAvailable && hasEscrow(walletChainId ?? 0)) {
         const usePrice = Number(ordPriceDisplay) > 0 ? Number(ordPriceDisplay) : lastPrice;
-        setPendingLockParams({
-          orderId:  tradeId,
-          side:     ordSide as "buy" | "sell",
-          base:     ordBase,
-          quote:    ordQuote,
-          quantity: Number(ordQtyDisplay) || 0,
-          price:    usePrice,
-        });
-        resetEscrow();
-        setLockDialogOpen(true);
+        const useQty   = Number(ordQtyDisplay) || 0;
+        // For a buy order the lock amount = quantity × price. If price is still
+        // 0 (market order placed before the price feed loads) we can't compute
+        // a valid lock amount. Skip the auto-popup — the manual "Lock funds"
+        // button will remain available once the price feed arrives.
+        const lockAmountKnown = ordSide === "sell" ? useQty > 0 : (useQty > 0 && usePrice > 0);
+        if (lockAmountKnown) {
+          setPendingLockParams({
+            orderId:  tradeId,
+            side:     ordSide as "buy" | "sell",
+            base:     ordBase,
+            quote:    ordQuote,
+            quantity: useQty,
+            price:    usePrice,
+          });
+          resetEscrow();
+          setLockDialogOpen(true);
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: ["orders", address] });

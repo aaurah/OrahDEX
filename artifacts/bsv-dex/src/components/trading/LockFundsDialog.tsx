@@ -139,6 +139,12 @@ export function LockFundsDialog({
               </Row>
             </div>
 
+            {!asset && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-300">
+                Lock amount couldn't be determined — the price feed may still be loading. Close this dialog and try again in a moment.
+              </div>
+            )}
+
             <div className="flex flex-col gap-2 pt-1">
               <button
                 onClick={handleConfirm}
