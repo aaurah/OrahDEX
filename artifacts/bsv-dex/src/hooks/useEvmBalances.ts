@@ -230,6 +230,7 @@ const NATIVE_TOKENS: Record<number, { symbol: string; name: string; color: strin
   5000:   { symbol: "MNT",  name: "Mantle",         color: "#00A3FF", cgId: "mantle" },
   250:    { symbol: "FTM",  name: "Fantom",         color: "#3B82F6", cgId: "fantom" },
   25:     { symbol: "CRO",  name: "Cronos",         color: "#3B82F6", cgId: "crypto-com-chain" },
+  33139:  { symbol: "APE",  name: "ApeChain",       color: "#0054FA", cgId: "apecoin" },
 };
 
 const STABLECOINS = new Set(["USDT","USDC","USDbC","USDCe","USDC.e","DAI","BUSD","TUSD","USDD","FDUSD","FRAX","LUSD","USDB","GUSD","USDP","PYUSD"]);

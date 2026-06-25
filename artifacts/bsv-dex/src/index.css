@@ -251,13 +251,13 @@ wcm-footer {
   display: none !important;
 }
 
-/* ThirdWeb SwapWidget — strip outer EmbedContainer card so it blends with the page */
+/* ThirdWeb SwapWidget — strip outer EmbedContainer card so it blends with the page.
+   Only override visual properties; leave overflow/padding intact so ThirdWeb's
+   internal screen transitions (signing, confirmation) keep working. */
 .tw-widget-wrap > div {
   background: transparent !important;
   border: none !important;
   border-radius: 0 !important;
-  overflow: visible !important;
   max-width: 100% !important;
   width: 100% !important;
-  padding: 0 !important;
 }
