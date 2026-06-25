@@ -7,7 +7,7 @@
  * Contract:  OrahDEXEscrow @ Sepolia 0x4deb6023abD9E1C640aDa35201be8ff591d21cF2
  */
 
-import { encodeFunctionData, keccak256, toBytes, erc20Abi, createWalletClient, createPublicClient, http } from "viem";
+import { encodeFunctionData, keccak256, toBytes, erc20Abi, createWalletClient, createPublicClient, http, parseUnits } from "viem";
 import {
   sendTransaction as wagmiSendTransaction,
   waitForTransactionReceipt as wagmiWaitForTxReceipt,
@@ -70,12 +70,28 @@ export function resolveEscrowAsset(
     ? quantity * price   // quote spent
     : quantity;          // base sold
 
-  const decimals = TOKEN_DECIMALS[assetSymbol] ?? 18;
-  const rawAmount = BigInt(Math.round(assetAmount * 10 ** decimals));
+  // Guard: a zero or negative amount cannot be locked in the contract.
+  // This happens for market buy orders when the price feed hasn't loaded yet
+  // (price = 0) — returning null disables the lock button instead of sending
+  // a tx that will revert with "OrahDEXEscrow: zero ETH / zero amount".
+  if (assetAmount <= 0) return null;
 
-  // Determine on-chain token address (null = native ETH)
-  const nativeSymbol = assetSymbol === "ETH" || assetSymbol === "BNB" || assetSymbol === "MATIC";
-  if (nativeSymbol) {
+  const decimals = TOKEN_DECIMALS[assetSymbol] ?? 18;
+
+  // Use parseUnits (viem) instead of float arithmetic so that amounts like
+  // 0.123 ETH produce the exact 18-decimal bigint representation.
+  // Floating-point multiplication (assetAmount * 10 ** 18) overflows
+  // Number.MAX_SAFE_INTEGER for most ETH-scale amounts and silently
+  // produces wrong wei counts.
+  const rawAmount = parseUnits(assetAmount.toFixed(decimals), decimals);
+
+  // Final guard: parseUnits can still produce 0n when assetAmount rounds to
+  // sub-wei precision; treat that as unresolvable to prevent a reverted tx.
+  if (rawAmount === 0n) return null;
+
+  // Determine on-chain token address (null = native ETH/BNB/MATIC/AVAX/SEI…)
+  const nativeSymbols = new Set(["ETH", "BNB", "MATIC", "AVAX", "SEI", "OP"]);
+  if (nativeSymbols.has(assetSymbol)) {
     return { symbol: assetSymbol, address: null, rawAmount, decimals };
   }
 
