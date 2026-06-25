@@ -229,7 +229,7 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
     const paymentIntent = await stripe.paymentIntents.create({
       amount: fiatAmountCents,
       currency: "usd",
-      automatic_payment_methods: { enabled: true },
+      payment_method_types: ["card"],
       description: `OrahDEX: Buy ${cryptoAmount.toFixed(6)} ${coinSymbol}`,
       metadata: {
         orderId,
