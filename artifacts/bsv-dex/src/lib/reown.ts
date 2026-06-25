@@ -27,9 +27,19 @@ const sepolia: AppKitNetwork = {
   testnet:        true,
 };
 
+const apeChain: AppKitNetwork = {
+  id:             33139,
+  name:           "ApeChain",
+  caipNetworkId:  "eip155:33139",
+  chainNamespace: "eip155",
+  nativeCurrency: { name: "ApeCoin", symbol: "APE", decimals: 18 },
+  rpcUrls:        { default: { http: ["https://rpc.apechain.com/http"] } },
+  blockExplorers: { default: { name: "ApeChain Explorer", url: "https://explorer.apechain.com" } },
+};
+
 export const REOWN_NETWORKS: [AppKitNetwork, ...AppKitNetwork[]] = [
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
-  linea, zkSync, scroll, mantle, fantom, cronos, sepolia,
+  linea, zkSync, scroll, mantle, fantom, cronos, sepolia, apeChain,
 ];
 
 export const wagmiAdapter = new WagmiAdapter({
@@ -287,6 +297,7 @@ export const CHAIN_RPC_URLS: Record<number, string> = {
   288:     "https://mainnet.boba.network",
   1088:    "https://andromeda.metis.io/?owner=1088",
   167000:  "https://rpc.mainnet.taiko.xyz",
+  33139:   "https://rpc.apechain.com/http",
 };
 
 export const CHAIN_RPC_FALLBACKS: Record<number, string> = {
@@ -298,6 +309,7 @@ export const CHAIN_RPC_FALLBACKS: Record<number, string> = {
   8453:    "https://mainnet.base.org",
   43114:   "https://api.avax.network/ext/bc/C/rpc",
   11155111:"https://eth-sepolia.public.blastapi.io",
+  33139:   "https://apechain.calderachain.xyz/http",
 };
 
 export async function fetchEvmBalance(
