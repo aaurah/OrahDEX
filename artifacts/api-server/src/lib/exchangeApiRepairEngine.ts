@@ -563,12 +563,24 @@ async function probeRoutes(): Promise<void> {
     } else {
       existing.consecutiveOk++;
       if (existing.consecutive5xx > 0) {
-        // Route recovered
+        // Route recovered (in same server lifecycle)
         if (existing.consecutive5xx >= 3) {
           addRepair({ type: "route-recovered", target: route.path, detail: `Recovered after ${existing.consecutive5xx} failures` });
           alertInfo("system", `[AutoRepair] Route recovered: ${route.path}`);
         }
         existing.consecutive5xx = 0;
+      }
+      // Auto-resolve any stale "Route failing" critical alerts for this path
+      // (covers alerts created before a server restart when in-memory state resets).
+      if (existing.consecutiveOk === 3) {
+        import("./alertBus.js").then(({ getAlerts, resolveAlert }) => {
+          const stale = getAlerts({ severity: "critical", unresolvedOnly: true })
+            .filter(a => a.message.includes(route.path));
+          stale.forEach(a => resolveAlert(a.id).catch(() => {}));
+          if (stale.length > 0) {
+            addRepair({ type: "route-recovered", target: route.path, detail: `Auto-resolved ${stale.length} stale alert(s) from before restart` });
+          }
+        }).catch(() => {});
       }
     }
 

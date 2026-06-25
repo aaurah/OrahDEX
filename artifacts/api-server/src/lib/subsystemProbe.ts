@@ -231,13 +231,15 @@ export async function probeWebhookReceiver(): Promise<ProbeResult> {
   const domain          = process.env["REPLIT_DEV_DOMAIN"] ?? "unknown";
 
   const parts = [
-    `EVM HMAC: ${hasHmacSecret ? "configured" : "⚠ not set (webhook requests rejected)"}`,
+    `EVM HMAC: ${hasHmacSecret ? "configured" : "not set (optional — EVM webhooks disabled)"}`,
     `Stripe sig: ${hasStripeSecret ? "configured" : "⚠ not set (insecure)"}`,
     hasDomain ? `domain: ${domain}` : "domain: unknown",
   ];
 
-  const status: ProbeStatus =
-    (!hasHmacSecret || !hasStripeSecret) ? "degraded" : "ok";
+  // EVM HMAC is optional — the system falls back to RPC polling without it.
+  // Only flag degraded when the Stripe webhook secret is missing, since that
+  // allows payment events to arrive without signature verification.
+  const status: ProbeStatus = !hasStripeSecret ? "degraded" : "ok";
 
   return {
     name: "webhook", label: "Webhook Receiver",
