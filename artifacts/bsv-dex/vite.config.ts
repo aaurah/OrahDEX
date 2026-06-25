@@ -215,19 +215,9 @@ export default defineConfig({
       enforce: "pre",
       async resolveId(id: string, importer: string | undefined) {
         // ── 1. Explicit stubs: @emotion and ThirdWeb UI-only deps ──────────
+        // @emotion/* packages are resolved directly from ThirdWeb's own pnpm
+        // dependency tree (thirdweb@*/node_modules/@emotion/) — no stub needed.
         if (
-          id === "@emotion/styled" ||
-          id === "@emotion/react" ||
-          id === "@emotion/cache" ||
-          id === "@emotion/serialize" ||
-          id === "@emotion/sheet" ||
-          id === "@emotion/unitless" ||
-          id === "@emotion/hash" ||
-          id === "@emotion/memoize" ||
-          id === "@emotion/is-prop-valid" ||
-          id === "@emotion/use-insertion-effect-with-fallbacks" ||
-          id === "@emotion/utils" ||
-          id === "@emotion/weak-memoize" ||
           id === "@radix-ui/react-icons" ||
           id === "fuse.js" ||
           id === "uqr"
@@ -369,6 +359,11 @@ function makeStyledProxy(tag) {
       if (prop === 'attrs' || prop === 'withConfig' || prop === 'extend') return (_a) => makeStyledProxy(tag);
       // withComponent → new proxy wrapping the new tag
       if (prop === 'withComponent') return (newTag) => makeStyledProxy(newTag);
+      // CRITICAL: return the real fn.prototype so React's class-component check
+      // (typeof Component.prototype.render === 'function') sees 'undefined', not
+      // another proxy-function.  Without this, React treats every styled proxy as
+      // a class component and crashes with "a.render is not a function".
+      if (prop === 'prototype') return fn.prototype;
       // HTML tag shorthand: styled.button → proxy for 'button'
       return makeStyledProxy(prop);
     },
