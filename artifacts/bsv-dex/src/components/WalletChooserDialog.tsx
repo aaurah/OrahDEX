@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useWalletStore } from "@/store/useWalletStore";
+import { connectCoinbaseWallet } from "@/lib/coinbaseWallet";
 import {
   registerPasskeyWallet,
   importPasskeyWallet,
@@ -913,7 +914,7 @@ type TwWalletId = "walletConnect" | "io.metamask" | "com.coinbase.wallet" | "io.
 const TW_WALLETS: { id: TwWalletId; label: string; sub: string; emoji: string; color: string }[] = [
   { id: "walletConnect",       label: "WalletConnect",    sub: "Any WalletConnect wallet — scan QR", emoji: "🔗", color: "bg-blue-500/10 border-blue-500/20 text-blue-400" },
   { id: "io.metamask",         label: "MetaMask Mobile",  sub: "Open MetaMask app on your phone",    emoji: "🦊", color: "bg-orange-500/10 border-orange-500/20 text-orange-400" },
-  { id: "com.coinbase.wallet", label: "Coinbase Wallet",  sub: "Connect via Coinbase Wallet app",    emoji: "🔵", color: "bg-sky-500/10 border-sky-500/20 text-sky-400" },
+  { id: "com.coinbase.wallet", label: "Coinbase Wallet",  sub: "Extension · mobile QR · Smart Wallet", emoji: "🔵", color: "bg-sky-500/10 border-sky-500/20 text-sky-400" },
   { id: "io.zerion.wallet",    label: "imToken / Zerion",  sub: "DeFi portfolio wallets",             emoji: "💎", color: "bg-violet-500/10 border-violet-500/20 text-violet-400" },
 ];
 
@@ -927,6 +928,19 @@ function ThirdwebMobilePanel({ onDone }: { onDone: () => void }) {
     setConnecting(walletId);
     setError(null);
     try {
+      if (walletId === "com.coinbase.wallet") {
+        const { address, chainId } = await connectCoinbaseWallet();
+        useWalletStore.getState().connect({
+          address,
+          provider: "coinbase-sdk",
+          network: "evm",
+          chainId,
+        });
+        toast({ title: "Coinbase Wallet connected", description: `${address.slice(0, 6)}…${address.slice(-4)} · chain ${chainId}` });
+        onDone();
+        return;
+      }
+
       await connect(async () => {
         const wallet = createWallet(walletId);
         const account = await wallet.connect({ client: thirdwebClient, chain: defineChain(1) });
