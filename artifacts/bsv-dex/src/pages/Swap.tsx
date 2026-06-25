@@ -41,7 +41,7 @@ import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { FiatBuySellPanel } from "@/components/FiatBuySellPanel";
 import { SwapWidget } from "thirdweb/react";
 import { thirdwebClient } from "@/lib/thirdweb-client";
-import { orahDexSwapTheme } from "@/lib/thirdweb-theme";
+import { useSwapWidgetTheme } from "@/lib/thirdweb-theme";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
@@ -2197,6 +2197,7 @@ function BuyCryptoPanel({
 
 export function Swap() {
   useSEO({ title: "Buy · Swap · Bridge · DEX — OrahDEX", description: "Buy crypto with card, swap 6,000+ coins across 30+ chains, bridge between networks, or trade on-chain DEX — all in one place." });
+  const swapWidgetTheme = useSwapWidgetTheme();
   const [, setLocation] = useLocation();
   const searchStr = useSearch();
   const searchParams = new URLSearchParams(searchStr);
@@ -2576,7 +2577,7 @@ export function Swap() {
             <div className="tw-widget-wrap">
               <SwapWidget
                 client={thirdwebClient}
-                theme={orahDexSwapTheme}
+                theme={swapWidgetTheme}
                 showThirdwebBranding={false}
               />
             </div>

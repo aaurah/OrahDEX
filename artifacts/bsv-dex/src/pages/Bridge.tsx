@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useSearch, useLocation } from "wouter";
 import { SwapWidget } from "thirdweb/react";
 import { thirdwebClient } from "@/lib/thirdweb-client";
-import { orahDexSwapTheme } from "@/lib/thirdweb-theme";
+import { useSwapWidgetTheme } from "@/lib/thirdweb-theme";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowRight, ArrowLeftRight, ChevronDown, Shield, Zap, Clock,
@@ -1624,6 +1624,7 @@ function BsvQuickSwap({ onSwapDone }: { onSwapDone?: () => void }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function BridgePage() {
+  const swapWidgetTheme = useSwapWidgetTheme();
   useSEO({
     title: "Buy · Swap · Bridge · DEX — OrahDEX",
     description: "Buy crypto with card, swap 6,000+ coins across 30+ chains, bridge between L1 & L2 networks, or trade on-chain DEX — all in one place on OrahDEX.",
@@ -1993,7 +1994,7 @@ export function BridgePage() {
           <div className="tw-widget-wrap">
             <SwapWidget
               client={thirdwebClient}
-              theme={orahDexSwapTheme}
+              theme={swapWidgetTheme}
               showThirdwebBranding={false}
             />
           </div>
