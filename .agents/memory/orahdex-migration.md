@@ -57,6 +57,47 @@ entry=$(ls "$PNPM" | grep "^@walletconnect+universal-provider@2.21" | tail -1)
 ln -sfn "$PNPM/$entry/node_modules/@walletconnect/universal-provider" "$BSV_NM/@walletconnect/universal-provider"
 ```
 
+### Symlink durability — pnpm install wipes manual symlinks
+Every time a workflow restarts and runs `pnpm install --frozen-lockfile`, it removes any manually-created symlinks in `artifacts/bsv-dex/node_modules` that aren't in the lockfile. The fix is a `buildStart` plugin hook in `vite.config.ts` (plugin name: `bsv-dex-symlinks`) that re-creates all required symlinks before every build. If new packages need to be added, update the `REQUIRED` dict in that plugin.
+
+The manual recovery command when symlinks get wiped:
+```bash
+python3 - << 'PYEOF'
+import os, json
+from pathlib import Path
+WORKSPACE = "/home/runner/workspace"
+PNPM = f"{WORKSPACE}/node_modules/.pnpm"
+BSV_NM = f"{WORKSPACE}/artifacts/bsv-dex/node_modules"
+pkg = json.load(open(f"{WORKSPACE}/artifacts/bsv-dex/package.json"))
+all_deps = {**pkg.get("dependencies",{}), **pkg.get("devDependencies",{})}
+pnpm_entries = os.listdir(PNPM)
+def find_entry(name, v=""):
+    safe = name.lstrip("@").replace("/","+")
+    m = [e for e in pnpm_entries if e.startswith(safe+"@")]
+    if not m: return None
+    if v:
+        major = v.lstrip("^~>=").split(".")[0]
+        for c in m:
+            if c[len(safe)+1:].split("_")[0].startswith(major+"."): return c
+    return m[0]
+for name, ver in sorted(all_deps.items()):
+    nm = os.path.join(BSV_NM, name)
+    if os.path.lexists(nm): continue
+    e = find_entry(name, ver)
+    if not e: print(f"NOT IN STORE: {name}"); continue
+    src = os.path.join(PNPM, e, "node_modules", name)
+    if not os.path.exists(src): print(f"MISSING TARGET: {name}"); continue
+    os.makedirs(os.path.dirname(nm), exist_ok=True)
+    os.symlink(src, nm); print(f"linked: {name}")
+PYEOF
+```
+
+### Shared lib openai resolution
+The `openai` package is imported by `lib/integrations-openai-ai-server/src/` (a shared lib), not `artifacts/api-server/src/`. esbuild resolves from the importer's location, so openai must be symlinked into `lib/integrations-openai-ai-server/node_modules/`, not `artifacts/api-server/node_modules/`.
+
+### THIRDWEB_SECRET_KEY
+Server-side ThirdWeb client lives at `artifacts/api-server/src/lib/thirdwebServer.ts`. Uses `THIRDWEB_SECRET_KEY` env var. The frontend client at `artifacts/bsv-dex/src/lib/thirdweb-client.ts` uses `VITE_THIRDWEB_CLIENT_ID`.
+
 ### Build command (do NOT use pnpm install — it times out)
 ```bash
 cd /home/runner/workspace/artifacts/bsv-dex && node_modules/.bin/vite build --config vite.config.ts
