@@ -47,6 +47,7 @@ export default defineConfig({
   define: {
     'import.meta.env.VITE_REOWN_PROJECT_ID': JSON.stringify(reownProjectId),
     'import.meta.env.VITE_API_BASE': JSON.stringify(process.env.VITE_API_BASE ?? ''),
+    'import.meta.env.VITE_THIRDWEB_CLIENT_ID': JSON.stringify(process.env.VITE_THIRDWEB_CLIENT_ID ?? ''),
   },
   plugins: [
     // ─────────────────────────────────────────────────────────────────────────
@@ -284,21 +285,59 @@ export default defineConfig({
           return `
 import React from 'react';
 const NO_OP_CSS = () => '';
-const makeStyled = (tag) => {
-  return (_template, ..._args) => {
-    const C = React.forwardRef(function StyledEl(props, ref) {
-      const { children, ...rest } = props;
-      return React.createElement(tag, { ref, ...rest }, children);
-    });
-    C.displayName = 'styled.' + (typeof tag === 'string' ? tag : tag.displayName || tag.name || '?');
-    C.attrs = () => C;
-    C.withConfig = () => C;
-    return C;
+// Proxy-based @emotion/styled stub.
+// ThirdWeb v5 calls styled components in many patterns:
+//   styled.button\`...\`          → tag from property name
+//   styled(Component)\`...\`     → tag from call arg
+//   Component.withComponent('a') → new tag
+//   Component(props)             → render (direct function call, no JSX)
+// A Proxy intercepts all of these uniformly without needing to enumerate patterns.
+function makeStyledProxy(tag) {
+  // The proxy wraps a plain function so typeof proxy === 'function' passes.
+  const fn = function styledFn(first, ...rest) {
+    // Tagged template literal: first arg is an array of strings
+    if (Array.isArray(first)) {
+      return makeStyledProxy(tag);
+    }
+    if (first == null) return makeStyledProxy(tag);
+    if (typeof first === 'function') {
+      // styled(SomeComponent) — function component
+      return makeStyledProxy(first);
+    }
+    if (typeof first === 'object') {
+      // Distinguish React special objects (forwardRef, memo, context, etc.)
+      // from plain render-props objects by checking $$typeof / render / type.
+      if (first.$$typeof != null || first.render != null || first.type != null) {
+        // React special object acting as a component → new template proxy
+        return makeStyledProxy(first);
+      }
+      // Plain props object → render call
+      const { children, ...others } = first;
+      const clean = {};
+      for (const k in others) { if (k[0] !== '$') clean[k] = others[k]; }
+      const t = (typeof tag === 'string' || typeof tag === 'function' || (tag && typeof tag === 'object')) ? tag : 'div';
+      return React.createElement(t, clean, children);
+    }
+    // String (HTML tag name): styled('div')
+    return makeStyledProxy(first);
   };
-};
-const htmlTags = 'div,span,p,a,button,input,form,img,ul,li,ol,nav,header,footer,section,article,main,aside,h1,h2,h3,h4,h5,h6,label,select,textarea,table,tr,td,th,thead,tbody,tfoot,figure,figcaption,blockquote,pre,code,strong,em,small,hr,br,i,b,s,u'.split(',');
-const styled = (tag) => makeStyled(tag)([], '');
-for (const t of htmlTags) styled[t] = styled(t);
+  return new Proxy(fn, {
+    get(_target, prop) {
+      if (prop === 'displayName') return 'styled.' + (typeof tag === 'string' ? tag : (tag && tag.displayName) || '?');
+      if (prop === '__emotion_base' || prop === '__emotion_styles') return tag;
+      if (prop === '__emotion_forwardProp') return undefined;
+      if (prop === 'toString') return () => '';
+      if (typeof prop === 'symbol') return undefined;
+      // attrs / withConfig / extend → return a function that produces another proxy (same tag)
+      if (prop === 'attrs' || prop === 'withConfig' || prop === 'extend') return (_a) => makeStyledProxy(tag);
+      // withComponent → new proxy wrapping the new tag
+      if (prop === 'withComponent') return (newTag) => makeStyledProxy(newTag);
+      // HTML tag shorthand: styled.button → proxy for 'button'
+      return makeStyledProxy(prop);
+    },
+  });
+}
+const styled = makeStyledProxy('div');
 export default styled;
 export const css = NO_OP_CSS;
 export const keyframes = NO_OP_CSS;

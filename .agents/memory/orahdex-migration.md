@@ -57,6 +57,24 @@ entry=$(ls "$PNPM" | grep "^@walletconnect+universal-provider@2.21" | tail -1)
 ln -sfn "$PNPM/$entry/node_modules/@walletconnect/universal-provider" "$BSV_NM/@walletconnect/universal-provider"
 ```
 
+### @emotion/styled stub — ThirdWeb v5 runtime crash fix
+ThirdWeb v5 calls `@emotion/styled` in patterns that break naive stubs:
+- `styled.button\`...\`` — tagged template (first arg is array) → return new proxy
+- `styled(Component)\`...\`` — where Component can be a plain function OR a `React.forwardRef` object
+- `styled(Component)(themeCallback)` — second arg is a function (NOT tagged template)
+- `StyledComponent(props)` — direct function call during render
+
+**Critical bug**: `React.forwardRef(...)` returns an object (not a function), so checking `typeof first === 'function'` misses it. Must also check `first.$$typeof != null` to identify React special objects.
+
+**The fix**: Proxy-based stub in `vite.config.ts` (`thirdweb-ui-shim` plugin, `@emotion/styled` case) where:
+1. `Array.isArray(first)` → tagged template → return `makeStyledProxy(tag)` 
+2. `typeof first === 'function'` → component → return `makeStyledProxy(first)`
+3. `first.$$typeof != null || first.render != null || first.type != null` → React special object → return `makeStyledProxy(first)`
+4. plain object → render: `React.createElement(tag, cleanProps, children)`
+5. string → HTML tag → `makeStyledProxy(first)`
+
+**Why**: ThirdWeb creates styled components at module level (not just render time), so any stub that returns a non-callable value crashes the entire module during initialization.
+
 ### Symlink durability — pnpm install wipes manual symlinks
 Every time a workflow restarts and runs `pnpm install --frozen-lockfile`, it removes any manually-created symlinks in `artifacts/bsv-dex/node_modules` that aren't in the lockfile. The fix is a `buildStart` plugin hook in `vite.config.ts` (plugin name: `bsv-dex-symlinks`) that re-creates all required symlinks before every build. If new packages need to be added, update the `REQUIRED` dict in that plugin.
 
