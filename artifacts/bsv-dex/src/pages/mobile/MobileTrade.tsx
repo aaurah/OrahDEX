@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSignMessage, useAccount } from "wagmi";
+import { useActiveAccount as useThirdwebAccount } from "thirdweb/react";
 import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle, ShieldCheck } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
@@ -304,6 +305,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress, internalXrpAddress, internalLtcAddress, internalDogeAddress, switchChain } = useWalletStore();
   const { signMessageAsync } = useSignMessage();
   const { isConnected: evmConnected } = useAccount();
+  const thirdwebAccount = useThirdwebAccount();
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
   const isExternalEvm = isEvm && !isOrahWallet;
@@ -1385,7 +1387,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
           };
 
-          if (evmConnected) {
+          if (provider === "thirdweb" && thirdwebAccount) {
+            evmSignature = await thirdwebAccount.signMessage({ message: orderMsg });
+          } else if (evmConnected) {
             try {
               evmSignature = await signMessageAsync({ message: orderMsg });
             } catch (wagmiErr: any) {
@@ -1394,7 +1398,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             }
           }
 
-          if (!evmSignature) {
+          if (!evmSignature && provider !== "thirdweb") {
             const hexMsg = "0x" + Array.from(new TextEncoder().encode(orderMsg))
               .map(b => b.toString(16).padStart(2, "0")).join("");
             const eth = (window as any).ethereum;
