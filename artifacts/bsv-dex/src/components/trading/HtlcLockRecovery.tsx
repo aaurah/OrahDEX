@@ -10,7 +10,7 @@
  */
 
 import { useState } from "react";
-import { useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
+import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
 import { AlertCircle, CheckCircle2, Clock, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -52,15 +52,20 @@ function formatExpiry(unix: number) {
 }
 
 export function HtlcLockRecovery({ chainId }: { chainId?: number }) {
-  const [txHash,  setTxHash]  = useState("");
-  const [loading, setLoading] = useState(false);
-  const [info,    setInfo]    = useState<LockInfo | null>(null);
-  const [error,   setError]   = useState<string | null>(null);
-  const [open,    setOpen]    = useState(false);
+  const [txHash,          setTxHash]          = useState("");
+  const [loading,         setLoading]         = useState(false);
+  const [info,            setInfo]            = useState<LockInfo | null>(null);
+  const [error,           setError]           = useState<string | null>(null);
+  const [open,            setOpen]            = useState(false);
+  const [fallbackTxHash,  setFallbackTxHash]  = useState<string | null>(null);
+  const [fallbackSending, setFallbackSending] = useState(false);
 
-  const { sendTransaction, data: refundTxHash, isPending: sending } = useSendTransaction();
+  const { address: wagmiAddress } = useAccount();
+  const { sendTransaction, data: refundTxHash, isPending: wagmiSending } = useSendTransaction();
   const { isLoading: confirming, isSuccess: confirmed } =
     useWaitForTransactionReceipt({ hash: refundTxHash });
+
+  const sending = wagmiSending || fallbackSending;
 
   async function lookup() {
     const hash = txHash.trim();
@@ -85,12 +90,45 @@ export function HtlcLockRecovery({ chainId }: { chainId?: number }) {
     }
   }
 
-  function doRefund() {
+  async function doRefund() {
     if (!info) return;
-    sendTransaction({
-      to:   info.contractAddress as `0x${string}`,
-      data: info.refundCalldata  as `0x${string}`,
-    });
+    setError(null);
+
+    // Path 1: user connected through Reown/wagmi adapter — use wagmi hook
+    if (wagmiAddress) {
+      sendTransaction({
+        to:   info.contractAddress as `0x${string}`,
+        data: info.refundCalldata  as `0x${string}`,
+      });
+      return;
+    }
+
+    // Path 2: injected wallet (MetaMask, Coinbase Wallet, etc.) — use window.ethereum
+    const eth = (window as any).ethereum;
+    if (!eth) {
+      setError("No wallet detected. Connect via 'EVM Wallets' first, or install MetaMask.");
+      return;
+    }
+    setFallbackSending(true);
+    try {
+      let accounts: string[] = await eth.request({ method: "eth_accounts" });
+      if (!accounts?.length) {
+        accounts = await eth.request({ method: "eth_requestAccounts" });
+      }
+      const from = accounts?.[0];
+      if (!from) { setError("Wallet returned no accounts."); return; }
+      const hash: string = await eth.request({
+        method: "eth_sendTransaction",
+        params: [{ from, to: info.contractAddress, data: info.refundCalldata }],
+      });
+      setFallbackTxHash(hash);
+    } catch (err: any) {
+      const msg: string = err?.message ?? "Transaction failed";
+      const isUserReject = /reject|cancel|denied|user refused/i.test(msg);
+      if (!isUserReject) setError("Refund failed: " + msg.slice(0, 160));
+    } finally {
+      setFallbackSending(false);
+    }
   }
 
   if (!open) {
@@ -199,7 +237,24 @@ export function HtlcLockRecovery({ chainId }: { chainId?: number }) {
             </div>
           )}
 
-          {info.canRefund && !confirmed && (
+          {fallbackTxHash && !confirmed && (
+            <div className="flex items-start gap-1.5 text-green-400 text-[10px] font-semibold break-all">
+              <CheckCircle2 size={12} className="shrink-0 mt-0.5" />
+              <span>
+                Refund submitted — waiting for on-chain confirmation.{" "}
+                <a
+                  href={`https://etherscan.io/tx/${fallbackTxHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline opacity-70 hover:opacity-100"
+                >
+                  View on Etherscan
+                </a>
+              </span>
+            </div>
+          )}
+
+          {info.canRefund && !confirmed && !fallbackTxHash && (
             <button
               onClick={doRefund}
               disabled={sending || confirming}
