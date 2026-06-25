@@ -84,6 +84,7 @@ export const CHAIN_TOKEN_ADDRESSES: Record<number, Partial<Record<string, string
     MATIC:   "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0",
     CELR:    "0x4F9254C83eb525f9FCf346490bBB3ed28a81C667",
     // Gaming / metaverse
+    A8:      "0x3e5a19c91266ad8ce2477b91585d1856b84062df",
     MANA:    "0x0F5D2fB29fb7d3CFeE444a200298f468908cC942",
     SAND:    "0x3845badAde8e6dFF049820680d1F14Bd3903a5d0",
     AXS:     "0xBB0E17EF65F82Ab018d8EDd776e8DD940327B28b",
@@ -308,6 +309,7 @@ export const TOKEN_DECIMALS: Record<string, number> = {
   // L2 / infra
   ARB:     18, OP:     18, IMX:    18, CELR:   18,
   // Gaming / metaverse
+  A8:      18,
   MANA:    18, SAND:   18, AXS:    18, APE:    18,
   CHZ:     18, ENJ:    18, GALA:   8,  ILV:    18,
   GHST:    18, BRETT:  18, TOSHI:  18,
