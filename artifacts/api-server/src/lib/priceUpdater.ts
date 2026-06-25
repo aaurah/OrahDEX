@@ -1225,7 +1225,12 @@ export async function updateMarketPrices() {
     const prices = await fetchSovereignPrices();
     serviceState.priceEngineLastRunAt = Date.now();
     serviceState.priceEngineRuns++;
-    logger.info({ symbols: Object.keys(prices).length }, "Market prices updated (sovereign engine)");
+    const priceCount = Object.keys(prices).length;
+    logger.info({ symbols: priceCount }, "Market prices updated (sovereign engine)");
+    // Notify the subsystem probe so the Price Engine health check shows OK
+    import("./subsystemProbe.js")
+      .then(m => m.recordPriceEngineRun(priceCount))
+      .catch(() => {});
 
     // Wrapped / synthetic BTC tokens should always track BTC 1:1.
     // If Binance / CoinGecko doesn't provide an independent price, copy BTC.
