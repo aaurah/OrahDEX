@@ -5,3 +5,4 @@
 - [WalletConnect logger bindings crash](wc-logger-bindings-fix.md) — `e.bindings is not a function` from logger@2 hitting a pino-v10 logger inlined in logger@3.
 - [Reown appkit subpath alias](reown-appkit-subpath.md) — Rolldown (Vite 8) can't resolve @reown/appkit/* subpaths via symlinks; must add explicit resolve.alias entries.
 - [ThirdWeb wallet store sync](thirdweb-wallet-sync.md) — ThirdwebMobilePanel.handleConnect must extract account from wallet.connect() and call useWalletStore.getState().connect() to update OrahDEX state.
+- [ThirdWeb Bridge integration](thirdweb-bridge-integration.md) — Bridge.Buy.prepare multi-step execution; ThirdwebBridgePanel in OrderForm funds trades from any EVM chain/token.

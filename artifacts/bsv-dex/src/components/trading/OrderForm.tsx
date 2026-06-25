@@ -29,6 +29,11 @@ import {
   CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
   getAssetNativeChain, walletCanReceive,
 } from "@/lib/crossChain";
+import { CHAIN_TOKEN_ADDRESSES } from "@/lib/onChainLiquidity";
+import { ThirdwebBridgePanel } from "@/components/trading/ThirdwebBridgePanel";
+
+const NATIVE_SYMBOLS_EVM = new Set(["ETH", "BNB", "MATIC", "AVAX", "SEI", "OP", "POL"]);
+const TW_NATIVE_ADDR = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
@@ -1062,18 +1067,33 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           </div>
         )}
 
-        {/* Low balance hint */}
+        {/* Low balance hint + ThirdWeb Universal Bridge */}
         {availableAmt <= 0 && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-amber-500/8 border border-amber-500/20">
             <span className="text-amber-400/80">
-              No {availableSym} in wallet — get it via{" "}
+              No {availableSym} in wallet — bridge from any chain below, or{" "}
               <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold hover:text-cyan-300">
-                Bridge
+                swap
               </a>
-              {" "}or swap for more.
+              {" "}for more.
             </span>
           </div>
         )}
+        {isEvm && availableAmt <= 0 && (() => {
+          const bridgeDestAddr = NATIVE_SYMBOLS_EVM.has(availableSym)
+            ? TW_NATIVE_ADDR
+            : ((CHAIN_TOKEN_ADDRESSES[chainId] ?? {})[availableSym] ?? TW_NATIVE_ADDR);
+          const TOKEN_DEC: Record<string, number> = { USDT: 6, USDC: 6, USDCE: 6, USDBC: 6 };
+          const bridgeDestDecimals = TOKEN_DEC[availableSym] ?? 18;
+          return (
+            <ThirdwebBridgePanel
+              destinationChainId={chainId}
+              destinationTokenAddress={bridgeDestAddr}
+              destinationTokenSymbol={availableSym}
+              destinationTokenDecimals={bridgeDestDecimals}
+            />
+          );
+        })()}
 
         {/* Locked-in-orders row */}
         {apiLockedAmt > 0 && (
