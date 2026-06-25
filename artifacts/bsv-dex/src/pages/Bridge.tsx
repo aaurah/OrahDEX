@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useSearch, useLocation } from "wouter";
 import { SwapWidget } from "thirdweb/react";
 import { thirdwebClient } from "@/lib/thirdweb-client";
+import { orahDexSwapTheme } from "@/lib/thirdweb-theme";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowRight, ArrowLeftRight, ChevronDown, Shield, Zap, Clock,
@@ -1986,12 +1987,13 @@ export function BridgePage() {
               Universal Swap
             </h2>
             <p className="text-sm text-muted-foreground">
-              Swap any token across any EVM chain — powered by ThirdWeb Universal Bridge.
+              Swap any token across any EVM chain — universal bridge, best routes.
             </p>
           </div>
           <SwapWidget
             client={thirdwebClient}
-            theme="dark"
+            theme={orahDexSwapTheme}
+            showThirdwebBranding={false}
           />
         </div>
       )}
