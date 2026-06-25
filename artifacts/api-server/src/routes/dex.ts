@@ -15,6 +15,9 @@ import { marketsTable } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { getCachedLEPrices } from "../lib/lePriceCache.js";
+import { getCachedLECurrencies } from "./letsexchange.js";
+import { SS_COIN_TICKER } from "../lib/simpleswap.js";
 
 const router: IRouter = Router();
 
@@ -269,89 +272,189 @@ router.get("/dex/exchanges", async (_req, res) => {
   res.json(result);
 });
 
+/* ── Shared helper: build CG/OrahDB coin list (populates coinsCache) ────────── */
+async function buildCgCoins(): Promise<any[]> {
+  if (coinsCache && Date.now() - coinsCache.ts < COINS_CACHE_MS) return coinsCache.data;
+
+  const markets     = await db.select().from(marketsTable).orderBy(desc(marketsTable.volume24h));
+  const spotMarkets = markets.filter(m => m.type === "spot");
+
+  const STABLE_QUOTES = new Set(["USDT", "USDC", "TUSD", "BUSD", "USDD", "USD"]);
+  const usdPriceMap   = new Map<string, { market: typeof spotMarkets[0]; usdPrice: number }>();
+
+  for (const m of spotMarkets) {
+    if (!STABLE_QUOTES.has(m.quoteAsset)) continue;
+    const p = parseFloat(m.lastPrice ?? "0");
+    if (!p || !Number.isFinite(p)) continue;
+    const vol = parseFloat(m.volume24h ?? "0");
+    const ex  = usdPriceMap.get(m.baseAsset);
+    if (!ex || vol > parseFloat(ex.market.volume24h ?? "0"))
+      usdPriceMap.set(m.baseAsset, { market: m, usdPrice: p });
+  }
+  for (const m of spotMarkets) {
+    if (usdPriceMap.has(m.baseAsset)) continue;
+    const p = parseFloat(m.lastPrice ?? "0");
+    if (!p || !Number.isFinite(p)) continue;
+    const vol = parseFloat(m.volume24h ?? "0");
+    const ex  = usdPriceMap.get(m.baseAsset);
+    if (!ex || vol > parseFloat(ex.market.volume24h ?? "0"))
+      usdPriceMap.set(m.baseAsset, { market: m, usdPrice: p });
+  }
+
+  const sorted = [...usdPriceMap.values()].sort(
+    (a, b) => parseFloat(b.market.volume24h ?? "0") - parseFloat(a.market.volume24h ?? "0"),
+  );
+
+  const coins: any[] = [];
+  let rank = 1;
+  for (const { market: m, usdPrice } of sorted) {
+    coins.push({
+      id:                `orah-${m.baseAsset.toLowerCase()}`,
+      rank:              rank++,
+      name:              m.baseAsset,
+      symbol:            m.baseAsset,
+      image:             null,
+      price:             usdPrice,
+      marketCap:         parseFloat(m.marketCap ?? "0") || usdPrice * 10_000_000,
+      volume24h:         parseFloat(m.volume24h ?? "0"),
+      change24h:         parseFloat(m.priceChangePercent24h ?? "0"),
+      high24h:           parseFloat(m.high24h ?? "0") || usdPrice * 1.02,
+      low24h:            parseFloat(m.low24h  ?? "0") || usdPrice * 0.98,
+      circulatingSupply: 0,
+      source:            "cg",
+    });
+  }
+
+  coinsCache = { data: coins, ts: Date.now() };
+  return coins;
+}
+
 /* ── GET /api/coins/markets ────────────────────────────────────────────────── */
 router.get("/coins/markets", async (req, res) => {
   const page    = Math.max(1, parseInt(String(req.query.page     ?? "1")));
   const perPage = Math.min(250, Math.max(1, parseInt(String(req.query.per_page ?? "250"))));
-
-  if (coinsCache && Date.now() - coinsCache.ts < COINS_CACHE_MS) {
-    const start = (page - 1) * perPage;
-    return res.json(coinsCache.data.slice(start, start + perPage));
-  }
-
   try {
-    const markets = await db
-      .select()
-      .from(marketsTable)
-      .orderBy(desc(marketsTable.volume24h));
-
-    const spotMarkets = markets.filter(m => m.type === "spot");
-
-    // ── Step 1: Build a USD-price map preferring USDT/USDC-quoted markets ──────
-    // This ensures that e.g. BTC shows ~$83k, not the BTC/CRO cross-rate in CRO.
-    const STABLE_QUOTES = new Set(["USDT", "USDC", "TUSD", "BUSD", "USDD", "USD"]);
-    const usdPriceMap = new Map<string, { market: typeof spotMarkets[0]; usdPrice: number }>();
-
-    // Pass 1: stable-quoted markets are canonical USD prices
-    for (const m of spotMarkets) {
-      if (!STABLE_QUOTES.has(m.quoteAsset)) continue;
-      const p = parseFloat(m.lastPrice ?? "0");
-      if (!p || !Number.isFinite(p)) continue;
-      const existing = usdPriceMap.get(m.baseAsset);
-      const vol = parseFloat(m.volume24h ?? "0");
-      if (!existing || vol > parseFloat(existing.market.volume24h ?? "0")) {
-        usdPriceMap.set(m.baseAsset, { market: m, usdPrice: p });
-      }
-    }
-
-    // Pass 2: for coins with no stable quote, fall back to highest-volume market
-    for (const m of spotMarkets) {
-      if (usdPriceMap.has(m.baseAsset)) continue;
-      const p = parseFloat(m.lastPrice ?? "0");
-      if (!p || !Number.isFinite(p)) continue;
-      const existing = usdPriceMap.get(m.baseAsset);
-      const vol = parseFloat(m.volume24h ?? "0");
-      if (!existing || vol > parseFloat(existing.market.volume24h ?? "0")) {
-        usdPriceMap.set(m.baseAsset, { market: m, usdPrice: p });
-      }
-    }
-
-    // ── Step 2: Build coin list sorted by volume of the representative market ──
-    const sorted = [...usdPriceMap.values()].sort(
-      (a, b) => parseFloat(b.market.volume24h ?? "0") - parseFloat(a.market.volume24h ?? "0")
-    );
-
-    const coins: any[] = [];
-    let rank = 1;
-    for (const { market: m, usdPrice } of sorted) {
-      const change24h = parseFloat(m.priceChangePercent24h ?? "0");
-      const vol24h    = parseFloat(m.volume24h ?? "0");
-      const high24h   = parseFloat(m.high24h ?? "0");
-      const low24h    = parseFloat(m.low24h  ?? "0");
-
-      coins.push({
-        id:            `orah-${m.baseAsset.toLowerCase()}`,
-        rank,
-        name:          m.baseAsset,
-        symbol:        m.baseAsset,
-        image:         null,
-        price:         usdPrice,
-        marketCap:     parseFloat(m.marketCap ?? "0") || usdPrice * 10_000_000,
-        volume24h:     vol24h,
-        change24h,
-        high24h:       high24h || usdPrice * 1.02,
-        low24h:        low24h  || usdPrice * 0.98,
-        circulatingSupply: 0,
-        source:        "orahdex",
-      });
-      rank++;
-    }
-
-    coinsCache = { data: coins, ts: Date.now() };
+    const coins = await buildCgCoins();
     const start = (page - 1) * perPage;
     return res.json(coins.slice(start, start + perPage));
   } catch (err: any) {
     req.log.error({ err }, "Failed to build coins/markets from own DB");
+    return res.status(502).json({ error: "Failed to fetch coin data" });
+  }
+});
+
+/* ── GET /api/coins/all-sources ─────────────────────────────────────────────
+ * Returns every known coin merged across all provider sources:
+ *   - "cg"  — OrahDEX sovereign market data (full price / volume / change)
+ *   - "le"  — LetsExchange coin catalogue  (price from LE cache when available)
+ *   - "ss"  — SimpleSwap supported tickers
+ *
+ * Each coin has:
+ *   source      — primary data source ("cg" | "le" | "ss")
+ *   availableOn — all sources that support this coin
+ * ──────────────────────────────────────────────────────────────────────────── */
+let allSourcesCache: Cache<any[]> | null = null;
+const ALL_SOURCES_CACHE_MS = 2 * 60 * 1000;
+
+router.get("/coins/all-sources", async (req, res) => {
+  if (allSourcesCache && Date.now() - allSourcesCache.ts < ALL_SOURCES_CACHE_MS) {
+    return res.json(allSourcesCache.data);
+  }
+
+  try {
+    // ── 1. Build CG coin list (reuse coinsCache if fresh, else rebuild from DB) ──
+    const cgCoins: any[] = await buildCgCoins();
+
+    // ── 2. LE currencies + cached prices ─────────────────────────────────────
+    const leCurrencies = getCachedLECurrencies();
+    const lePrices     = getCachedLEPrices();
+
+    // ── 3. SS ticker set ──────────────────────────────────────────────────────
+    const ssSymbols = new Set(Object.keys(SS_COIN_TICKER).map(s => s.toUpperCase()));
+
+    // ── 4. Determine which symbols each source covers ─────────────────────────
+    const cgSymbols = new Set(cgCoins.map((c: any) => String(c.symbol).toUpperCase()));
+
+    // De-dupe LE by symbol — first occurrence wins
+    const leSymbols = new Set<string>();
+    const leBySym   = new Map<string, typeof leCurrencies[0]>();
+    for (const c of leCurrencies) {
+      const sym = String(c.symbol).toUpperCase();
+      if (!leSymbols.has(sym)) { leSymbols.add(sym); leBySym.set(sym, c); }
+    }
+
+    // ── 5. Tag CG coins with availableOn ─────────────────────────────────────
+    const taggedCg = cgCoins.map((c: any) => {
+      const sym = String(c.symbol).toUpperCase();
+      const availableOn: string[] = ["cg"];
+      if (leSymbols.has(sym)) availableOn.push("le");
+      if (ssSymbols.has(sym)) availableOn.push("ss");
+      const leCoin = leBySym.get(sym);
+      return {
+        ...c,
+        source: "cg",
+        availableOn,
+        image: c.image ?? leCoin?.image ?? null,
+      };
+    });
+
+    // ── 6. LE-only coins (not already in CG) ─────────────────────────────────
+    let leRank = cgCoins.length + 1;
+    const leOnlyCoins: any[] = [];
+    for (const [sym, c] of leBySym) {
+      if (cgSymbols.has(sym)) continue;
+      const price = lePrices[sym] ?? 0;
+      const availableOn: string[] = ["le"];
+      if (ssSymbols.has(sym)) availableOn.push("ss");
+      leOnlyCoins.push({
+        id:               `le-${sym.toLowerCase()}`,
+        rank:             leRank++,
+        name:             c.name || sym,
+        symbol:           sym,
+        image:            c.image ?? null,
+        price,
+        marketCap:        0,
+        volume24h:        0,
+        change24h:        0,
+        high24h:          0,
+        low24h:           0,
+        circulatingSupply:0,
+        network:          c.network    ?? null,
+        networkName:      c.networkName ?? null,
+        source:           "le",
+        availableOn,
+      });
+    }
+
+    // ── 7. SS-only coins (not in CG or LE) ───────────────────────────────────
+    let ssRank = leRank;
+    const ssOnlyCoins: any[] = [];
+    for (const sym of ssSymbols) {
+      if (cgSymbols.has(sym) || leSymbols.has(sym)) continue;
+      const price = lePrices[sym] ?? 0;
+      ssOnlyCoins.push({
+        id:               `ss-${sym.toLowerCase()}`,
+        rank:             ssRank++,
+        name:             sym,
+        symbol:           sym,
+        image:            null,
+        price,
+        marketCap:        0,
+        volume24h:        0,
+        change24h:        0,
+        high24h:          0,
+        low24h:           0,
+        circulatingSupply:0,
+        source:           "ss",
+        availableOn:      ["ss"],
+      });
+    }
+
+    const result = [...taggedCg, ...leOnlyCoins, ...ssOnlyCoins];
+    allSourcesCache = { data: result, ts: Date.now() };
+    return res.json(result);
+  } catch (err: any) {
+    req.log.error({ err }, "Failed to build coins/all-sources");
     return res.status(502).json({ error: "Failed to fetch coin data" });
   }
 });
