@@ -50,6 +50,85 @@ export default defineConfig({
   },
   plugins: [
     // ─────────────────────────────────────────────────────────────────────────
+    // Self-healing symlinker: pnpm install --frozen-lockfile wipes any manually
+    // created symlinks in artifacts/bsv-dex/node_modules. This buildStart hook
+    // re-creates the required symlinks before every build so the process is
+    // idempotent regardless of workflow restarts.
+    {
+      name: "bsv-dex-symlinks",
+      buildStart() {
+        const bsvNm = path.resolve(import.meta.dirname, "node_modules");
+        const pnpmRoot = path.resolve(import.meta.dirname, "../../node_modules/.pnpm");
+        if (!fs.existsSync(pnpmRoot)) return;
+        const pnpmEntries = fs.readdirSync(pnpmRoot);
+
+        function findEntry(pkgName: string, versionHint = "") {
+          const safe = pkgName.replace(/^@/, "").replace("/", "+");
+          const candidates = pnpmEntries.filter(e => e.startsWith(safe + "@"));
+          if (!candidates.length) return null;
+          if (versionHint) {
+            const major = versionHint.replace(/^[^~>=]*/, "").split(".")[0];
+            const match = candidates.find(c => {
+              const ver = c.slice(safe.length + 1).split("_")[0];
+              return ver.startsWith(major + ".");
+            });
+            if (match) return match;
+          }
+          return candidates[0];
+        }
+
+        function ensureLink(pkgName: string, entry: string) {
+          const dest = path.join(bsvNm, pkgName);
+          if (fs.existsSync(dest)) return;
+          const src = path.join(pnpmRoot, entry, "node_modules", pkgName);
+          if (!fs.existsSync(src)) return;
+          fs.mkdirSync(path.dirname(dest), { recursive: true });
+          fs.symlinkSync(src, dest);
+        }
+
+        // Packages that must be present but are often wiped by pnpm install
+        const REQUIRED: Record<string, string> = {
+          "@reown/appkit": "1.8",
+          "@reown/appkit-utils": "1.8",
+          "@reown/appkit-scaffold-ui": "1.8",
+          "@reown/appkit-ui": "1.8",
+          "@reown/appkit-wallet": "1.8",
+          "@reown/appkit-controllers": "1.8",
+          "@reown/appkit-common": "1.8",
+          "@reown/appkit-polyfills": "1.8",
+          "@reown/appkit-pay": "1.8",
+          "@reown/appkit-adapter-wagmi": "1.8",
+          "@walletconnect/universal-provider": "2.21",
+          "@walletconnect/core": "2.",
+          "@walletconnect/web3wallet": "1.",
+          "@wagmi/core": "3.",
+          "@wagmi/connectors": "8.",
+          "wagmi": "3.",
+          "viem": "2.",
+          "framer-motion": "12.",
+          "gridplus-sdk": "4.",
+          "@ledgerhq/device-management-kit": "1.",
+          "@ledgerhq/device-signer-kit-ethereum": "1.",
+          "@ledgerhq/device-transport-kit-web-hid": "1.",
+          "@ledgerhq/context-module": "1.",
+          "@trezor/connect-web": "9.",
+          "big.js": "6.",
+          "bs58": "4.",
+          "dayjs": "1.",
+          "eventemitter3": "5.",
+          "semver": "5.",
+          "use-sync-external-store": "1.",
+          "valtio": "1.",
+        };
+
+        for (const [pkg, hint] of Object.entries(REQUIRED)) {
+          const entry = findEntry(pkg, hint);
+          if (entry) ensureLink(pkg, entry);
+        }
+      },
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
     // pnpm-chain redirect: @reown/* and @walletconnect/universal-provider live
     // ONLY in artifacts/bsv-dex/node_modules (symlinked).  Any pnpm-store
     // importer (ThirdWeb 1.7.8 chain, etc.) can't reach them through normal
