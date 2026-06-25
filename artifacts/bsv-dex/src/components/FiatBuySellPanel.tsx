@@ -281,21 +281,16 @@ export function FiatBuySellPanel() {
     ) ?? PROVIDERS[0];
   }, [payMethod, coin.symbol, mode, numAmt]);
 
-  function launch() {
-    if (!provider) return;
-    const addr = address ?? "";
-    let url: string;
-    if (mode === "buy") {
-      url = provider.buyUrl(coin.symbol, fiat.code, String(numAmt), payMethod, addr);
-    } else {
-      url = provider.sellUrl
-        ? provider.sellUrl(coin.symbol, fiat.code, addr)
-        : provider.buyUrl(coin.symbol, fiat.code, String(numAmt), payMethod, addr);
-    }
-    window.open(url, "_blank", "noopener");
-  }
-
   const canLaunch = numAmt >= (mode === "buy" ? 5 : 0);
+
+  const launchUrl = useMemo(() => {
+    if (!provider || !canLaunch) return "";
+    const addr = address ?? "";
+    if (mode === "buy") return provider.buyUrl(coin.symbol, fiat.code, String(numAmt), payMethod, addr);
+    return provider.sellUrl
+      ? provider.sellUrl(coin.symbol, fiat.code, addr)
+      : provider.buyUrl(coin.symbol, fiat.code, String(numAmt), payMethod, addr);
+  }, [provider, canLaunch, address, mode, coin.symbol, fiat.code, numAmt, payMethod]);
 
   return (
     <div className="flex flex-col gap-2">
@@ -431,20 +426,23 @@ export function FiatBuySellPanel() {
       </p>
 
       {/* ── CTA button ── */}
-      <button type="button" disabled={!canLaunch} onClick={launch}
-        className={cn(
-          "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 mt-0.5",
-          canLaunch
-            ? "bg-foreground text-background hover:opacity-90 active:scale-[0.99]"
-            : "bg-muted/50 text-muted-foreground/40 cursor-not-allowed"
-        )}>
-        {!canLaunch
-          ? "Enter amount"
-          : mode === "buy"
-            ? <><ExternalLink className="w-4 h-4" /> Buy {coin.symbol} with {PAY_METHODS.find(p => p.id === payMethod)?.label ?? "Card"}</>
-            : <><ExternalLink className="w-4 h-4" /> Sell {coin.symbol} for {fiat.code}</>
-        }
-      </button>
+      {canLaunch ? (
+        <a
+          href={launchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 mt-0.5 bg-foreground text-background hover:opacity-90 active:scale-[0.99]"
+        >
+          <ExternalLink className="w-4 h-4" />
+          {mode === "buy"
+            ? `Buy ${coin.symbol} with ${PAY_METHODS.find(p => p.id === payMethod)?.label ?? "Card"}`
+            : `Sell ${coin.symbol} for ${fiat.code}`}
+        </a>
+      ) : (
+        <div className="w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 mt-0.5 bg-muted/50 text-muted-foreground/40 cursor-not-allowed">
+          Enter amount
+        </div>
+      )}
 
       {/* ── Provider row ── */}
       {canLaunch && (
