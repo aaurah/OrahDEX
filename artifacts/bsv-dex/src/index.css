@@ -250,3 +250,14 @@ w3m-footer,
 wcm-footer {
   display: none !important;
 }
+
+/* ThirdWeb SwapWidget — strip outer EmbedContainer card so it blends with the page */
+.tw-widget-wrap > div {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  overflow: visible !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  padding: 0 !important;
+}

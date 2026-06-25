@@ -1990,11 +1990,13 @@ export function BridgePage() {
               Swap any token across any EVM chain — universal bridge, best routes.
             </p>
           </div>
-          <SwapWidget
-            client={thirdwebClient}
-            theme={orahDexSwapTheme}
-            showThirdwebBranding={false}
-          />
+          <div className="tw-widget-wrap">
+            <SwapWidget
+              client={thirdwebClient}
+              theme={orahDexSwapTheme}
+              showThirdwebBranding={false}
+            />
+          </div>
         </div>
       )}
 
