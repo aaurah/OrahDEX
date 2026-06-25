@@ -2570,16 +2570,16 @@ export function Swap() {
         {/* ═══════════════ BRIDGE TAB — ThirdWeb Universal Bridge ═══════════════ */}
         {activeTab === "bridge" && (
           <div className="space-y-3">
-            <div>
-              <p className="text-xs text-muted-foreground">
-                Swap any token across any EVM chain — best routes, all networks.
-              </p>
+            <p className="text-xs text-muted-foreground">
+              Swap any token across any EVM chain — best routes, all networks.
+            </p>
+            <div className="tw-widget-wrap">
+              <SwapWidget
+                client={thirdwebClient}
+                theme={orahDexSwapTheme}
+                showThirdwebBranding={false}
+              />
             </div>
-            <SwapWidget
-              client={thirdwebClient}
-              theme={orahDexSwapTheme}
-              showThirdwebBranding={false}
-            />
           </div>
         )}
 

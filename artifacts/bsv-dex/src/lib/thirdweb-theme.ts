@@ -2,7 +2,7 @@ import { darkTheme } from "thirdweb/react";
 
 export const orahDexSwapTheme = darkTheme({
   colors: {
-    modalBg:                 "hsl(216 15% 9%)",
+    modalBg:                 "hsl(216 20% 5%)",
     primaryText:             "hsl(210 20% 90%)",
     secondaryText:           "hsl(215 16% 55%)",
     borderColor:             "hsl(216 15% 16%)",
@@ -23,7 +23,7 @@ export const orahDexSwapTheme = darkTheme({
     inputAutofillBg:         "hsl(216 15% 9%)",
     skeletonBg:              "hsl(216 15% 16%)",
     scrollbarBg:             "hsl(216 15% 16%)",
-    tertiaryBg:              "hsl(216 20% 5% / 50%)",
+    tertiaryBg:              "hsl(216 15% 16% / 0.6)",
     tooltipBg:               "hsl(216 15% 9%)",
     tooltipText:             "hsl(210 20% 90%)",
     selectedTextBg:          "hsl(142 71% 58%)",
