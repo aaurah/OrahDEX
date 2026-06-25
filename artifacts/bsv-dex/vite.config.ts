@@ -68,10 +68,10 @@ export default defineConfig({
           const candidates = pnpmEntries.filter(e => e.startsWith(safe + "@"));
           if (!candidates.length) return null;
           if (versionHint) {
-            const major = versionHint.replace(/^[^~>=]*/, "").split(".")[0];
+            // versionHint is a plain version prefix like "2.21.1" or "2.21" or "1.8"
             const match = candidates.find(c => {
               const ver = c.slice(safe.length + 1).split("_")[0];
-              return ver.startsWith(major + ".");
+              return ver === versionHint || ver.startsWith(versionHint + ".");
             });
             if (match) return match;
           }
@@ -100,7 +100,8 @@ export default defineConfig({
           "@reown/appkit-pay": "1.8",
           "@reown/appkit-adapter-wagmi": "1.8",
           "@walletconnect/universal-provider": "2.21",
-          "@walletconnect/core": "2.",
+          "@walletconnect/sign-client": "2.21.1",
+          "@walletconnect/core": "2.21.1",
           "@walletconnect/web3wallet": "1.",
           "@wagmi/core": "3.",
           "@wagmi/connectors": "8.",
@@ -126,6 +127,30 @@ export default defineConfig({
           const entry = findEntry(pkg, hint);
           if (entry) ensureLink(pkg, entry);
         }
+      },
+    },
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // @walletconnect/logger compat: logger@2 (used by sign-client@2.21.1) has
+    // a getLoggerContext that calls `e.bindings()` as a function.  AppKit
+    // creates its root logger via logger@3 which has pino@10 *inlined* in its
+    // dist — pino@10 sets `child.bindings = bindingsObject` (plain object, not
+    // a function).  When AppKit passes that pino-v10 logger to our symlinked
+    // universal-provider@2.21.1, logger@2's getLoggerContext crashes.  We
+    // transform logger@2's dist at build time so that getLoggerContext handles
+    // both a function bindings() and a plain-object bindings.
+    {
+      name: "walletconnect-logger-compat",
+      enforce: "pre",
+      transform(code: string, id: string) {
+        if (!id.includes("@walletconnect/logger") || !id.includes("2.1.2")) return null;
+        // logger@2 getLoggerContext:
+        //   typeof r.bindings>"u" ? t=v(r,e) : t=r.bindings().context||""
+        // Fix: also handle plain-object bindings (from pino v10 child loggers).
+        const OLD = `typeof r.bindings>"u"?t=v(r,e):t=r.bindings().context||""`;
+        const NEW = `typeof r.bindings>"u"?t=v(r,e):t=(typeof r.bindings==="function"?r.bindings().context:(r.bindings&&r.bindings.context))||""`;
+        if (!code.includes(OLD)) return null;
+        return { code: code.replace(OLD, NEW), map: null };
       },
     },
 
@@ -220,7 +245,6 @@ export default defineConfig({
           "@react-native-async-storage/async-storage",
           "@thirdweb-dev/engine",
           "@thirdweb/extensions/common",
-          "@walletconnect/sign-client",
           "cross-spawn",
           "expo-web-browser",
           "express",
@@ -279,6 +303,19 @@ export default defineConfig({
         return null;
       },
       load(id: string) {
+        // Intercept pino loaded from the pnpm store (any version) by absolute path.
+        // Rolldown pre-resolves bare "pino" specifiers to their absolute pnpm-store
+        // path BEFORE alias matching, so the resolve.alias for "pino" only catches
+        // some importers. We must also intercept at the load stage by path.
+        // pino v10 browser.js sets `this.bindings = obj` (plain object on child
+        // loggers) but @walletconnect/logger@3.0.2 calls `e.bindings()` expecting a
+        // function — our stub fixes this by always exposing bindings() as a method.
+        if (!id.startsWith("\0") && id.includes("/node_modules/pino/")) {
+          return fs.readFileSync(
+            path.resolve(import.meta.dirname, "src/stubs/pino.js"),
+            "utf-8",
+          );
+        }
         if (!id.startsWith("\0emotion-stub:")) return null;
         const pkg = id.replace("\0emotion-stub:", "");
         if (pkg === "@emotion/styled") {
@@ -487,26 +524,43 @@ export const signTypedData=${noop};
 export const searchTransactions=${noop};
 export const isSuccessResponse=()=>false;`;
         }
-        // WalletConnect sign-client (web3wallet + universal-provider import from here)
-        if (pkg === "@walletconnect/sign-client") {
+        // @walletconnect/sign-client — real package is symlinked; no stub needed
+        // pino — used by @walletconnect/logger.  Pino v7 browser mode stores
+        // child bindings as `this.bindings = obj` (a plain object), but
+        // @walletconnect/logger@2.1.2 calls `logger.bindings()` as a function.
+        // Provide a thin stub where bindings() is always a callable method.
+        if (pkg === "pino") {
           return `
-export class SessionStore { constructor(){} getAll(){ return []; } set(){} delete(){} }
-export class SignClient {
-  static init(){ return Promise.resolve(new SignClient()); }
-  connect(){ return Promise.resolve({}); }
-  disconnect(){ return Promise.resolve(); }
-  approve(){ return Promise.resolve({}); }
-  reject(){ return Promise.resolve(); }
-  respond(){ return Promise.resolve(); }
-  emit(){ return Promise.resolve(); }
-  extend(){ return Promise.resolve(); }
-  update(){ return Promise.resolve(); }
-  ping(){ return Promise.resolve(); }
-  on(){ return this; } off(){ return this; }
-  session = { getAll(){ return []; }, get(){ return null; } };
-  proposal = { getAll(){ return []; } };
+const LEVELS = {
+  values: {trace:10,debug:20,info:30,warn:40,error:50,fatal:60,silent:Infinity},
+  labels: {10:'trace',20:'debug',30:'info',40:'warn',50:'error',60:'fatal'},
+};
+function makeLogger(opts, storedBindings) {
+  opts = opts || {};
+  storedBindings = storedBindings || {};
+  const lvl = opts.level || 'info';
+  const write = opts.browser && opts.browser.write;
+  const logger = {
+    level: lvl,
+    levels: LEVELS,
+    pino: '7.11.0',
+    bindings() { return Object.assign({}, storedBindings); },
+    child(b) { return makeLogger(opts, Object.assign({}, storedBindings, b)); },
+    isLevelEnabled() { return false; },
+    flush(cb) { if (cb) cb(); },
+    trace() {}, debug() {}, silent() {},
+    info(...a)  { if (write) write(JSON.stringify({level:30,...storedBindings,...(typeof a[0]==='object'?a[0]:{}),msg:typeof a[0]==='string'?a[0]:a[1]||'',time:Date.now()})); },
+    warn(...a)  { console.warn('[WC]',...a); if (write) write(JSON.stringify({level:40,...storedBindings,msg:typeof a[0]==='string'?a[0]:a[1]||'',time:Date.now()})); },
+    error(...a) { console.error('[WC]',...a); if (write) write(JSON.stringify({level:50,...storedBindings,msg:typeof a[0]==='string'?a[0]:a[1]||'',time:Date.now()})); },
+    fatal(...a) { console.error('[WC fatal]',...a); },
+  };
+  return logger;
 }
-export default SignClient;
+const pino = function(opts, s) { return makeLogger(opts); };
+pino.levels = LEVELS;
+pino.version = '7.11.0';
+export default pino;
+export const levels = LEVELS;
 `;
         }
         // Node.js CLI tools — no-op in browser
@@ -711,6 +765,11 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
+      // pino is used by @walletconnect/logger. Pino's browser bundle stores
+      // child bindings as a plain object (this.bindings = obj) but
+      // @walletconnect/logger@2.1.2 calls logger.bindings() as a function.
+      // Alias to our stub that always has bindings() as a callable method.
+      "pino": path.resolve(import.meta.dirname, "src/stubs/pino.js"),
     },
     dedupe: ["react", "react-dom"],
   },
