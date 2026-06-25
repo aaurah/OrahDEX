@@ -48,6 +48,8 @@ import {
   sendDogeWithPasskey,
   sendXrpWithPasskey,
   sendTrxWithPasskey,
+  sendBchWithPasskey,
+  sendSolWithPasskey,
   listPasskeyWallets,
   loginWithPasskey,
 } from "@/lib/passkeyWallet";
@@ -332,6 +334,8 @@ export interface WithdrawSheetProps {
   initialChainId?:     number;
   /** Pre-select a specific token symbol when opened from a token row */
   initialTokenSymbol?: string;
+  /** Pre-select a non-EVM chain when opened from a chain row (e.g. "btc", "bch", "sol") */
+  initialNonEvmChain?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -353,6 +357,7 @@ export function WithdrawSheet({
   nonEvmAddresses,
   initialChainId,
   initialTokenSymbol,
+  initialNonEvmChain,
 }: WithdrawSheetProps) {
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
@@ -407,7 +412,7 @@ export function WithdrawSheet({
 
   // ── withdraw chain selector (overrides network prop inside withdraw tab) ──
   const [withdrawChainMode, setWithdrawChainMode] = useState<string>(
-    isEvmNetwork ? "evm" : network.toLowerCase()
+    initialNonEvmChain?.toLowerCase() ?? (isEvmNetwork ? "evm" : network.toLowerCase())
   );
   // Reset non-EVM form when user switches chain
   useEffect(() => {
@@ -738,6 +743,36 @@ export function WithdrawSheet({
           const sun = d?.data?.[0]?.balance;
           if (sun != null) setNonEvmSendBalance(Number(sun) / 1_000_000);
         }
+      } else if (net === "bch") {
+        const addrKey = chainAddr.startsWith("bitcoincash:") ? chainAddr : `bitcoincash:${chainAddr}`;
+        const r = await fetch(
+          `https://api.blockchair.com/bitcoin-cash/dashboards/address/${encodeURIComponent(addrKey)}`,
+        );
+        if (r.ok) {
+          const d   = await r.json();
+          const key = Object.keys(d?.data ?? {})[0];
+          const bal = d?.data?.[key]?.address?.balance;
+          if (bal != null) setNonEvmSendBalance(Number(bal) / 1e8);
+        }
+      } else if (net === "sol") {
+        const r = await fetch("https://api.mainnet-beta.solana.com", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [chainAddr] }),
+        });
+        if (r.ok) {
+          const d = await r.json();
+          const lamports = d?.result?.value;
+          if (lamports != null) setNonEvmSendBalance(Number(lamports) / 1_000_000_000);
+        }
+      } else if (net === "btc") {
+        const r = await fetch(`https://mempool.space/api/address/${chainAddr}`);
+        if (r.ok) {
+          const d = await r.json();
+          const funded = d.chain_stats?.funded_txo_sum ?? 0;
+          const spent  = d.chain_stats?.spent_txo_sum  ?? 0;
+          setNonEvmSendBalance((funded - spent) / 1e8);
+        }
       }
     } catch {
       setNonEvmSendBalance(null);
@@ -893,7 +928,41 @@ export function WithdrawSheet({
         return;
       }
 
-      // ── BCH: exchange withdrawal path (no native signing implemented) ────────
+      // ── BCH: direct on-chain BIP143+FORKID transaction ──────────────────────
+      if (activeChain === "bch") {
+        const bchAddr = nonEvmAddresses?.["bch"] ?? nonEvmAddresses?.["BCH"];
+        if (!bchAddr) throw new Error("No BCH address found for this wallet.");
+        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
+          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
+        const result = await sendBchWithPasskey(
+          passkeyEvmAddress ?? "", bchAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        );
+        setNonEvmSendTxHash(result.txid);
+        toast({ title: "BCH sent", description: `${parsedAmt} BCH sent on-chain. Fee: ${result.feeSat} sat. TXID: ${result.txid.slice(0, 16)}…` });
+        addNotification({ type: "withdrawal", title: "BCH Sent", body: `${parsedAmt} BCH sent from wallet (fee: ${result.feeSat} sat).`, txid: result.txid, href: `https://blockchair.com/bitcoin-cash/transaction/${result.txid}` });
+        refetchHistory?.();
+        setTimeout(() => fetchNonEvmBalance(), 8_000);
+        return;
+      }
+
+      // ── SOL: direct on-chain ed25519 SystemProgram.transfer ─────────────────
+      if (activeChain === "sol") {
+        const solAddr = nonEvmAddresses?.["sol"] ?? nonEvmAddresses?.["SOL"];
+        if (!solAddr) throw new Error("No SOL address found for this wallet.");
+        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
+          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
+        const result = await sendSolWithPasskey(
+          passkeyEvmAddress ?? "", solAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        );
+        setNonEvmSendTxHash(result.txid);
+        toast({ title: "SOL sent", description: `${parsedAmt} SOL sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
+        addNotification({ type: "withdrawal", title: "SOL Sent", body: `${parsedAmt} SOL sent from wallet.`, txid: result.txid, href: `https://solscan.io/tx/${result.txid}` });
+        refetchHistory?.();
+        setTimeout(() => fetchNonEvmBalance(), 8_000);
+        return;
+      }
+
+      // ── Exchange withdrawal path (fallback for any remaining chains) ─────────
       if (isBitcoinForkChain) {
         const challengeRes = await fetch(`${API_BASE}/withdraw/challenge`, {
           method:  "POST",
