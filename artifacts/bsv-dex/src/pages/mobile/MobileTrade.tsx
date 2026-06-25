@@ -434,21 +434,30 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const cancelMutation = useMutation({
     mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
       // Step 1 (best-effort): release any on-chain escrow lock so the user
-      // gets their coins back. This prompts the wallet to sign cancel(orderId).
-      // If the order has no on-chain deposit (older orders, off-chain only),
-      // the contract reverts with "no deposit" — we swallow that and continue.
-      if (escrowAvailable) {
+      // gets their coins back. Only send the on-chain cancel tx if there is
+      // actually a deposit in escrow — calling cancel() on an order that was
+      // never locked causes "OrahDEXEscrow: no deposit" to revert, which
+      // triggers a confusing "Gas fee estimation failed" prompt in the wallet.
+      if (escrowAvailable && walletChainId) {
+        let hasDeposit = false;
         try {
-          await cancelOrderOnChain(orderId);
-        } catch (e: any) {
-          const msg = String(e?.message ?? "").toLowerCase();
-          // Only swallow "nothing to refund" errors — surface real failures
-          // (user rejection, network issue, etc) so funds aren't lost silently.
-          const isMissingDeposit =
-            msg.includes("no deposit") ||
-            msg.includes("already settled") ||
-            msg.includes("already released");
-          if (!isMissingDeposit) throw e;
+          const dep = await checkEscrowDeposit(orderId, walletChainId);
+          hasDeposit = !!dep && !dep.released;
+        } catch { /* RPC failure — err on the side of not sending a bad tx */ }
+
+        if (hasDeposit) {
+          try {
+            await cancelOrderOnChain(orderId);
+          } catch (e: any) {
+            const msg = String(e?.message ?? "").toLowerCase();
+            // Swallow "nothing to refund" errors (race: deposit released between
+            // our check and the tx) — surface real failures (user rejection, etc).
+            const isMissingDeposit =
+              msg.includes("no deposit") ||
+              msg.includes("already settled") ||
+              msg.includes("already released");
+            if (!isMissingDeposit) throw e;
+          }
         }
       }
       // Step 2: tell the server to remove the order from the orderbook.
@@ -714,6 +723,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           ordSide as "buy" | "sell",
           ordBase, ordQuote, useQty, usePrice,
         );
+        // Always reset stale escrow state when a new order is placed so the
+        // previous cancel/lock error doesn't bleed through to the new order card.
+        resetEscrow();
         if (lockAssetResolvable) {
           setPendingLockParams({
             orderId:  tradeId,
@@ -723,7 +735,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             quantity: useQty,
             price:    usePrice,
           });
-          resetEscrow();
           setLockDialogOpen(true);
         }
       }
