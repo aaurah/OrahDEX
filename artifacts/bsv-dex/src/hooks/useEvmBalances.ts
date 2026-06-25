@@ -342,28 +342,36 @@ async function batchFetchBalances(
   return results.map(r => r.status === "fulfilled" ? r.value : 0);
 }
 
-async function fetchMarketPrices(): Promise<Record<string, number>> {
-  const prices: Record<string, number> = {};
-  for (const sym of STABLECOINS) prices[sym] = 1;
+export interface PriceTick { usd: number; change24h: number }
+
+async function fetchMarketPrices(): Promise<Record<string, PriceTick>> {
+  const prices: Record<string, PriceTick> = {};
+  for (const sym of STABLECOINS) prices[sym] = { usd: 1, change24h: 0 };
 
   try {
-    const res = await globalThis.fetch(`${BASE_URL}/api/prices`, { cache: "no-store" });
+    const res = await globalThis.fetch(`${BASE_URL}/api/prices-full`, { cache: "no-store" });
     if (res.ok) {
-      const data: Record<string, number> = await res.json();
-      for (const [sym, usd] of Object.entries(data)) {
-        if (sym && usd > 0) prices[sym] = usd;
+      const data: Record<string, { usd?: number; change24h?: number } | number> = await res.json();
+      for (const [sym, val] of Object.entries(data)) {
+        if (!sym) continue;
+        if (typeof val === "number") {
+          if (val > 0) prices[sym] = { usd: val, change24h: 0 };
+        } else if (val && typeof val.usd === "number" && val.usd > 0) {
+          prices[sym] = { usd: val.usd, change24h: val.change24h ?? 0 };
+        }
       }
     }
   } catch { /* use hardcoded fallbacks only */ }
 
-  if (!prices["ETH"])  prices["ETH"]  = 2400;
-  if (!prices["BNB"])  prices["BNB"]  = 580;
-  if (!prices["AVAX"]) prices["AVAX"] = 18;
-  if (!prices["FTM"])  prices["FTM"]  = 0.2;
-  if (!prices["CRO"])  prices["CRO"]  = 0.09;
-  if (!prices["MNT"])  prices["MNT"]  = 1.02;
-  if (!prices["POL"])  prices["POL"]  = 0.32;
-  if (!prices["MATIC"])prices["MATIC"]= 0.32;
+  const def = (sym: string, usd: number) => { if (!prices[sym]) prices[sym] = { usd, change24h: 0 }; };
+  def("ETH",  2400);
+  def("BNB",  580);
+  def("AVAX", 18);
+  def("FTM",  0.2);
+  def("CRO",  0.09);
+  def("MNT",  1.02);
+  def("POL",  0.32);
+  def("MATIC",0.32);
 
   return prices;
 }
@@ -545,8 +553,10 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
         fetchNativeAmount(),
       ]);
 
-      const nativeDef = NATIVE_TOKENS[chainId] ?? { symbol: "ETH", name: "Ethereum", color: "#8B5CF6", cgId: "ethereum" };
-      const nativePrice = usdPrices[nativeDef.symbol] ?? usdPrices["ETH"] ?? 0;
+      const nativeDef   = NATIVE_TOKENS[chainId] ?? { symbol: "ETH", name: "Ethereum", color: "#8B5CF6", cgId: "ethereum" };
+      const nativeTick  = usdPrices[nativeDef.symbol] ?? usdPrices["ETH"] ?? { usd: 0, change24h: 0 };
+      const nativePrice = typeof nativeTick === "number" ? nativeTick : nativeTick.usd;
+      const nativeChange = typeof nativeTick === "number" ? 0 : nativeTick.change24h;
 
       const result: TokenBalance[] = [];
       result.push({
@@ -555,7 +565,7 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
         amount:    nativeAmount,
         usdValue:  nativeAmount * nativePrice,
         price:     nativePrice,
-        change24h: 0,
+        change24h: nativeChange,
         color:     nativeDef.color,
         decimals:  18,
         isNative:  true,
@@ -591,14 +601,16 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
         const amount = amounts[i] ?? 0;
         if (amount <= 0 && !token.isCustom) continue;
 
-        const price = usdPrices[token.symbol] ?? 0;
+        const tick  = usdPrices[token.symbol];
+        const price = tick ? (typeof tick === "number" ? tick : tick.usd) : 0;
+        const ch24  = tick ? (typeof tick === "number" ? 0   : tick.change24h) : 0;
         result.push({
           symbol:          token.symbol,
           name:            token.name,
           amount,
           usdValue:        amount * price,
           price,
-          change24h:       0,
+          change24h:       ch24,
           color:           token.color,
           decimals:        STABLECOINS.has(token.symbol) ? 2
                            : (token.symbol === "WBTC" || token.symbol === "cbBTC") ? 6 : 4,
