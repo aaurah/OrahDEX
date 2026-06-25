@@ -23,7 +23,7 @@ import { useEscrow } from "@/hooks/useEscrow";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
 import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
-import { hasEscrow, chainLabel, checkEscrowDeposit } from "@/lib/escrow";
+import { hasEscrow, chainLabel, checkEscrowDeposit, resolveEscrowAsset } from "@/lib/escrow";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 
 /* ── Notifications drawer — backed by the real notification store ── */
@@ -704,7 +704,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         // a valid lock amount. Skip the auto-popup — the manual "Lock funds"
         // button will remain available once the price feed arrives.
         const lockAmountKnown = ordSide === "sell" ? useQty > 0 : (useQty > 0 && usePrice > 0);
-        if (lockAmountKnown) {
+        // Also verify the token is resolvable to an on-chain address before
+        // opening the dialog — tokens not in CHAIN_TOKEN_ADDRESSES would show
+        // Amount "—" with the button permanently disabled. The order was already
+        // accepted server-side with sig-only proof, so skip the lock dialog
+        // gracefully for unlisted tokens instead of showing a broken popup.
+        const lockAssetResolvable = lockAmountKnown && !!resolveEscrowAsset(
+          walletChainId ?? 0,
+          ordSide as "buy" | "sell",
+          ordBase, ordQuote, useQty, usePrice,
+        );
+        if (lockAssetResolvable) {
           setPendingLockParams({
             orderId:  tradeId,
             side:     ordSide as "buy" | "sell",
@@ -2584,8 +2594,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </a>
                 )}
 
-                {/* On-chain escrow lock — only for open orders on chains where escrow is deployed */}
-                {!orderResult.matched && escrowAvailable && hasEscrow(walletChainId ?? 0) && orderResult.tradeId && !escrowTx && (
+                {/* On-chain escrow lock — only for open orders on chains where escrow is deployed,
+                    and only when the token address is known (unlisted tokens use sig-only proof). */}
+                {!orderResult.matched && escrowAvailable && hasEscrow(walletChainId ?? 0) && orderResult.tradeId && !escrowTx && !!resolveEscrowAsset(
+                  walletChainId ?? 0,
+                  orderResult.side as "buy" | "sell",
+                  orderResult.base,
+                  orderResult.quoteSymbol,
+                  orderResult.quantity || orderResult.filledQty || 0,
+                  orderResult.price > 0 ? orderResult.price : lastPrice,
+                ) && (
                   <div className="pt-1.5 border-t border-blue-500/20 space-y-1.5">
                     <p className="text-[11px] text-blue-300/80">
                       Lock funds on-chain so your balance shows in Rabby, imToken &amp; other DeFi wallets.
