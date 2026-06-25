@@ -2,3 +2,4 @@
 - [Bridge agg patterns](bridge-agg-patterns.md) — Express async route safety, toWei edge case, dropdown click-outside pattern.
 - [Git merge conflict resolution](git-merge-resolution.md) — agent cannot git add/rm/commit/push; use a shell script the user runs manually.
 - [OrahDEX Replit migration](orahdex-migration.md) — pnpm install times out; use per-package filter installs + pnpm store symlinks for bsv-dex build.
+- [WalletConnect logger bindings crash](wc-logger-bindings-fix.md) — `e.bindings is not a function` from logger@2 hitting a pino-v10 logger inlined in logger@3.
