@@ -66,7 +66,7 @@ const EVM_CHAINS: Array<{ id: string; label: string; envVar: string; fallback: s
   { id: "arbitrum", label: "Arbitrum One",       envVar: "ARB_RPC_URL",      fallback: "https://arbitrum-one.publicnode.com" },
   { id: "optimism", label: "Optimism",           envVar: "OP_RPC_URL",       fallback: "https://optimism.publicnode.com" },
   { id: "bnb",      label: "BNB Smart Chain",    envVar: "BSC_RPC_URL",      fallback: "https://bsc-dataseed.binance.org" },
-  { id: "polygon",  label: "Polygon",            envVar: "POLYGON_RPC_URL",  fallback: "https://polygon-rpc.com" },
+  { id: "polygon",  label: "Polygon",            envVar: "POLYGON_RPC_URL",  fallback: "https://polygon-bor-rpc.publicnode.com" },
   { id: "avax",     label: "Avalanche C-Chain",  envVar: "AVAX_RPC_URL",     fallback: "https://api.avax.network/ext/bc/C/rpc" },
   { id: "sepolia",  label: "Sepolia Testnet",    envVar: "SEPOLIA_RPC_URL",  fallback: "https://sepolia.publicnode.com" },
 ];
@@ -176,7 +176,7 @@ export async function probeDatabase(): Promise<ProbeResult> {
     async () => {
       const { pool } = await import("@workspace/db");
       const start = Date.now();
-      const { rows } = await pool.query<{ version: string }>("SELECT version() AS version");
+      const { rows } = await pool.query("SELECT version() AS version") as { rows: { version: string }[] };
       const latencyMs = Date.now() - start;
       const ver = rows[0]?.version?.split(" ").slice(0, 2).join(" ") ?? "unknown";
       const quality = latencyMs < 50 ? "fast" : latencyMs < 200 ? "normal" : "slow";
@@ -255,9 +255,9 @@ export async function probeSwapRouter(): Promise<ProbeResult> {
     "Swap Router (LE Pairs in DB)",
     async () => {
       const { pool } = await import("@workspace/db");
-      const { rows } = await pool.query<{ cnt: string }>(
+      const { rows } = await pool.query(
         "SELECT COUNT(*) AS cnt FROM markets WHERE type = 'letsexchange' AND status = 'active'",
-      );
+      ) as { rows: { cnt: string }[] };
       const cnt = parseInt(rows[0]?.cnt ?? "0", 10);
       if (cnt === 0) throw new Error("No LE pairs seeded — run POST /api/admin/le-sync");
       if (cnt < 1000) return `${cnt.toLocaleString()} LE pairs seeded (partial — run le-sync for full catalog)`;

@@ -607,7 +607,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
         });
         return;
       }
-      res.status(404).json({ error: `No rate available for ${from}→${to}`, detail: errDetails }); return;
+      res.status(503).json({ error: `No rate available for ${from}→${to}`, detail: errDetails }); return;
     }
 
     // For LetsExchange winner: fetch rate_id for optional fixed-rate locking

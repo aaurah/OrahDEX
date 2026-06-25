@@ -448,7 +448,6 @@ router.get("/evm-lock-info", async (req, res) => {
     1: [
       process.env.ETH_RPC_URL ?? "",
       "https://ethereum.publicnode.com",
-      "https://cloudflare-eth.com",
       "https://eth.llamarpc.com",
       "https://1rpc.io/eth",
     ].filter(Boolean),
@@ -461,7 +460,7 @@ router.get("/evm-lock-info", async (req, res) => {
     ].filter(Boolean),
     137: [
       process.env.POLYGON_RPC_URL ?? "",
-      "https://polygon-rpc.com",
+      "https://polygon-bor-rpc.publicnode.com",
       "https://polygon.publicnode.com",
     ].filter(Boolean),
     56: [

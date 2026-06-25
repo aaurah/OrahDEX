@@ -442,7 +442,7 @@ async function buildRealUserList(): Promise<any[]> {
     const verified = userMeta.get(w.address.toLowerCase())?.verified  ?? (w.verified === "true");
     const balOvr   = userMeta.get(w.address.toLowerCase())?.balanceOverride;
 
-    const stats = statsMap.get(w.address.toLowerCase());
+    const stats = statsMap.get(w.address.toLowerCase()) as any;
     return {
       id:           `usr_${w.address.replace("0x", "").slice(0, 8)}`,
       walletAddress: w.address,
@@ -644,7 +644,7 @@ router.get("/trade-analytics", async (_req, res) => {
         if (o.side === "sell") bucket.sell += 1;
         return acc;
       }, {} as Record<string, { symbol: string; total: number; open: number; filled: number; cancelled: number; buy: number; sell: number; volume: number }>)
-    ).sort((a, b) => b.volume - a.volume).slice(0, 20);
+    ).sort((a: any, b: any) => b.volume - a.volume).slice(0, 20);
 
     const limitBreakdown = Object.values(
       allOrders.reduce((acc, o) => {
@@ -654,7 +654,7 @@ router.get("/trade-analytics", async (_req, res) => {
         acc[key].volume += Number(o.total ?? 0);
         return acc;
       }, {} as Record<string, { type: string; count: number; volume: number }>)
-    ).sort((a, b) => b.volume - a.volume);
+    ).sort((a: any, b: any) => b.volume - a.volume);
 
     res.json({
       summary: {
@@ -1409,7 +1409,7 @@ router.get("/bot-profit", async (_req, res) => {
           );
           const wrMap = new Map(wrRows.map(r => [r.id, r]));
           history = historyBase.map((h: any) => {
-            const wr = wrMap.get(h.id);
+            const wr = wrMap.get(h.id) as any;
             if (!wr) return h;
             return {
               ...h,
@@ -2750,7 +2750,7 @@ router.get("/exchange-wallet", requireAdminToken, async (req, res) => {
     const [ethBal, bnbBal, maticBal] = await Promise.all([
       fetchNative(process.env.ETH_RPC_URL ?? "https://eth.llamarpc.com",         "ETH"),
       fetchNative(process.env.BSC_RPC_URL ?? "https://bsc-dataseed.binance.org", "BNB"),
-      fetchNative(process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",      "MATIC"),
+      fetchNative(process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com", "MATIC"),
     ]);
 
     const bsvWallet  = await getOrCreateWallet();

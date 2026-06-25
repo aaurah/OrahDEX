@@ -1,16 +1,14 @@
 #!/bin/bash
-set -e
 cd /home/runner/workspace
 
-echo "=== Setting Main as default branch on GitHub ==="
-curl -s -X PATCH \
-  -H "Authorization: token $GITHUB_TOKEN" \
-  -H "Accept: application/vnd.github+json" \
-  "https://api.github.com/repos/aaurah/OrahDEX" \
-  -d '{"default_branch":"Main"}' \
-  | python3 -c "import sys,json; d=json.load(sys.stdin); print('Default branch:', d.get('default_branch','ERROR'), '|', d.get('message','OK'))"
+echo "=== Removing stale locks ==="
+rm -f .git/packed-refs.lock .git/index.lock
 
-echo ""
-echo "=== Local branch status ==="
-git --no-optional-locks status
-git --no-optional-locks branch -vv
+echo "=== Pruning stale remote-tracking refs ==="
+git remote prune origin
+
+echo "=== Deleting local replit-agent branch ==="
+git branch -D replit-agent 2>&1 || echo "skipped"
+
+echo "=== Remaining remote branches ==="
+git branch -r | grep -v "HEAD\|gitsafe"

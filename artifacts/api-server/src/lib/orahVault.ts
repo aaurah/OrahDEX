@@ -87,7 +87,7 @@ const TOKEN_REGISTRY: Record<string, Record<number, TokenInfo>> = {
 const CHAIN_RPC: Record<number, { name: string; rpcUrl: string; explorer: string }> = {
   1:      { name: "Ethereum",   rpcUrl: process.env.ETH_RPC_URL    ?? "https://eth.llamarpc.com",             explorer: "https://etherscan.io"              },
   56:     { name: "BNB Chain",  rpcUrl: process.env.BSC_RPC_URL    ?? "https://bsc-dataseed.binance.org",     explorer: "https://bscscan.com"               },
-  137:    { name: "Polygon",    rpcUrl: process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",             explorer: "https://polygonscan.com"           },
+  137:    { name: "Polygon",    rpcUrl: process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com", explorer: "https://polygonscan.com"           },
   8453:   { name: "Base",       rpcUrl: process.env.BASE_RPC_URL   ?? "https://mainnet.base.org",             explorer: "https://basescan.org"              },
   42161:  { name: "Arbitrum",   rpcUrl: process.env.ARB_RPC_URL    ?? "https://arb1.arbitrum.io/rpc",         explorer: "https://arbiscan.io"               },
   10:     { name: "Optimism",   rpcUrl: process.env.OP_RPC_URL     ?? "https://mainnet.optimism.io",          explorer: "https://optimistic.etherscan.io"   },
