@@ -815,7 +815,7 @@ function NativeChainRow({
 
 function ChainBalanceRow({
   chain, address, evmAddress, network, derived, quoteCurrency,
-  onReceive, onImport, onAddToken, onSendToken, onTokenReceive, onSendBsv,
+  onReceive, onImport, onAddToken, onSendToken, onTokenReceive, onSendBsv, onSendChain,
 }: {
   chain: ChainRow;
   address: string | null;
@@ -829,6 +829,7 @@ function ChainBalanceRow({
   onSendToken: (chainId: number, symbol: string) => void;
   onTokenReceive: (symbol: string, chainName: string, address: string) => void;
   onSendBsv?: (addr: string) => void;
+  onSendChain?: (chain: ChainRow, addr: string) => void;
 }) {
   const chainAddr    = addressForChain(chain, evmAddress, address, network, derived);
   const handleReceive = () => onReceive(chain);
@@ -849,6 +850,14 @@ function ChainBalanceRow({
     );
   }
 
+  const handleSend = chainAddr && chain.live
+    ? (chain.family === "bsv" && onSendBsv
+        ? () => onSendBsv(chainAddr)
+        : onSendChain
+          ? () => onSendChain(chain, chainAddr)
+          : undefined)
+    : undefined;
+
   return (
     <NativeChainRow
       chain={chain}
@@ -856,7 +865,7 @@ function ChainBalanceRow({
       quoteCurrency={quoteCurrency}
       onReceive={handleReceive}
       onImport={handleImport}
-      onSend={chain.family === "bsv" && chainAddr && onSendBsv ? () => onSendBsv(chainAddr) : undefined}
+      onSend={handleSend}
     />
   );
 }
@@ -948,6 +957,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const [tab, setTab]                         = useState<"portfolio" | "addresses" | "dapps">(_initialTab);
   const [receiveOpen, setReceiveOpen]         = useState(false);
   const [sendOpen, setSendOpen]               = useState(false);
+  const [nonEvmSendChain, setNonEvmSendChain] = useState<string | null>(null);
   const [sendTokenConfig, setSendTokenConfig] = useState<{ chainId: number; symbol: string } | null>(null);
   const [tokenReceive, setTokenReceive]       = useState<{ symbol: string; chainName: string; address: string } | null>(null);
   const [chainReceive, setChainReceive]       = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
@@ -1246,6 +1256,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
               onSendToken={(chainId, symbol) => setSendTokenConfig({ chainId, symbol })}
               onTokenReceive={(symbol, chainName, addr) => setTokenReceive({ symbol, chainName, address: addr })}
               onSendBsv={(addr) => setBsvSend({ open: true, addr })}
+              onSendChain={(c, _addr) => { setNonEvmSendChain(c.id); setSendOpen(true); }}
             />
           ))}
         </div>
@@ -1268,8 +1279,9 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
 
       <WithdrawSheet
+        key={nonEvmSendChain ?? "evm"}
         open={sendOpen || !!sendTokenConfig}
-        onClose={() => { setSendOpen(false); setSendTokenConfig(null); }}
+        onClose={() => { setSendOpen(false); setSendTokenConfig(null); setNonEvmSendChain(null); }}
         walletAddress={evmAddress ?? address ?? ""}
         asset="ETH"
         available={0}
@@ -1280,6 +1292,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         isOrahWallet={canBackup}
         initialChainId={sendTokenConfig?.chainId}
         initialTokenSymbol={sendTokenConfig?.symbol}
+        initialNonEvmChain={nonEvmSendChain ?? undefined}
         passkeyEvmAddress={
           passkeyOwned
             ? (address ?? undefined)

@@ -950,6 +950,87 @@ export async function sendTrxWithPasskey(
   return { txid: result.txid };
 }
 
+// ─── BCH on-chain send ────────────────────────────────────────────────────────
+
+export async function sendBchWithPasskey(
+  evmAddress:       string,
+  senderBchAddress: string,
+  recipientAddress: string,
+  amountBch:        number,
+): Promise<{ txid: string; feeSat: number }> {
+  const { buildSignBroadcastBchTx } = await import("./bchTx.js");
+  const privateKey = await deriveChainPrivKey(evmAddress, "m/44'/145'/0'/0/0");
+  const amountSat  = Math.round(amountBch * 1e8);
+  const result     = await buildSignBroadcastBchTx(senderBchAddress, recipientAddress, amountSat, privateKey);
+  return { txid: result.txid, feeSat: result.feeSat };
+}
+
+// ─── SOL on-chain send (SLIP-0010 ed25519) ────────────────────────────────────
+
+/**
+ * Authenticate with a passkey wallet and return the raw decrypted mnemonic.
+ * Used by chains that need non-secp256k1 key derivation (e.g. Solana ed25519).
+ */
+async function getMnemonicFromPasskey(evmAddress: string): Promise<string> {
+  const wallets  = listPasskeyWallets();
+  const matching = wallets.filter(w => w.address.toLowerCase() === evmAddress.toLowerCase());
+  if (matching.length === 0 && wallets.length === 0)
+    throw new Error("OrahWallet not found on this device. Please create or restore your passkey wallet first.");
+
+  const allowCredentials = matching.length > 0
+    ? matching.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }))
+    : wallets.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }));
+
+  let assertion: PublicKeyCredential | null;
+  try {
+    assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge:        new TextEncoder().encode("send-sol"),
+        allowCredentials,
+        userVerification: "required",
+        timeout:          60_000,
+      },
+    }) as PublicKeyCredential | null;
+  } catch (err: any) {
+    const msg: string = err?.message ?? "";
+    if (msg.includes("not allowed") || msg.includes("denied") || msg.includes("cancel") || err?.name === "NotAllowedError")
+      throw new Error('Wrong passkey selected. Please choose "OrahDEX Wallet" when prompted.');
+    throw err;
+  }
+  if (!assertion) throw new Error("Passkey authentication cancelled");
+
+  const rawId        = assertion.rawId;
+  const credentialId = b642url(buf2b64(rawId));
+  let wallet = wallets.find(w => w.credentialId === credentialId);
+  if (!wallet) {
+    const restored = await tryRestoreFromServer(credentialId, rawId);
+    if (!restored) throw new Error('Wrong passkey selected — wallet data not found. Please choose "OrahDEX Wallet".');
+    wallet = restored;
+  }
+
+  const secret = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, rawId);
+  const isMnemonic = secret.trim().split(/\s+/).length >= 12 && !secret.startsWith("0x");
+  if (!isMnemonic)
+    throw new Error("Legacy wallet format does not support Solana signing. Please re-import your seed phrase.");
+  return secret.trim();
+}
+
+export async function sendSolWithPasskey(
+  evmAddress:       string,
+  senderSolAddress: string,
+  recipientAddress: string,
+  amountSol:        number,
+): Promise<{ txid: string; feeSol: number }> {
+  const { deriveSolPrivKey, buildSignBroadcastSolTx } = await import("./solanaTx.js");
+  const { mnemonicToSeed } = await import("@scure/bip39");
+
+  const mnemonic   = await getMnemonicFromPasskey(evmAddress);
+  const seed       = await mnemonicToSeed(mnemonic);
+  const privateKey = await deriveSolPrivKey(seed);
+  const result     = await buildSignBroadcastSolTx(senderSolAddress, recipientAddress, amountSol, privateKey);
+  return { txid: result.txid, feeSol: result.feeSol };
+}
+
 /**
  * Sign arbitrary data with a passkey wallet.
  * Prompts biometric authentication, then decrypts the private key in-memory.
