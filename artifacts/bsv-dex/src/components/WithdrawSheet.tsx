@@ -40,7 +40,17 @@ import { validateAltChainAddress } from "@/lib/addressValidation";
 import { isAddress as isEvmAddress } from "viem";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, fetchEvmBalance } from "@/lib/reown";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
-import { signBsvChallengeWithPasskey, sendBsvWithPasskey, listPasskeyWallets, loginWithPasskey } from "@/lib/passkeyWallet";
+import {
+  signBsvChallengeWithPasskey,
+  sendBsvWithPasskey,
+  sendBtcWithPasskey,
+  sendLtcWithPasskey,
+  sendDogeWithPasskey,
+  sendXrpWithPasskey,
+  sendTrxWithPasskey,
+  listPasskeyWallets,
+  loginWithPasskey,
+} from "@/lib/passkeyWallet";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
@@ -712,6 +722,22 @@ export function WithdrawSheet({
           const xrpEntry = (d.balances ?? []).find((b: any) => b.currency === "XRP");
           if (xrpEntry) setNonEvmSendBalance(parseFloat(xrpEntry.value));
         }
+      } else if (net === "doge") {
+        const r = await fetch(
+          `https://api.blockchair.com/dogecoin/dashboards/address/${chainAddr}`,
+        );
+        if (r.ok) {
+          const d = await r.json();
+          const bal = d?.data?.[chainAddr]?.address?.balance;
+          if (bal != null) setNonEvmSendBalance(Number(bal) / 1e8);
+        }
+      } else if (net === "trx") {
+        const r = await fetch(`https://api.trongrid.io/v1/accounts/${chainAddr}`);
+        if (r.ok) {
+          const d = await r.json();
+          const sun = d?.data?.[0]?.balance;
+          if (sun != null) setNonEvmSendBalance(Number(sun) / 1_000_000);
+        }
       }
     } catch {
       setNonEvmSendBalance(null);
@@ -782,57 +808,128 @@ export function WithdrawSheet({
         return;
       }
 
-      // ── Other Bitcoin-fork chains (BTC, BCH): exchange withdrawal path ──────
-      // 1. Request withdrawal challenge
-      const challengeRes = await fetch(`${API_BASE}/withdraw/challenge`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          walletAddress,
-          ...(isBitcoinForkChain && chainAddress ? { bsvAddress: chainAddress } : {}),
-        }),
-      });
-      if (!challengeRes.ok) {
-        const err = await challengeRes.json().catch(() => ({}));
-        throw new Error(err.error ?? "Failed to get withdrawal challenge");
+      // ── BTC: direct on-chain P2WPKH native-segwit ───────────────────────────
+      if (activeChain === "btc") {
+        const btcAddr = nonEvmAddresses?.["btc"] ?? nonEvmAddresses?.["BTC"];
+        if (!btcAddr) throw new Error("No BTC address found for this wallet.");
+        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
+          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
+        const result = await sendBtcWithPasskey(
+          passkeyEvmAddress ?? "", btcAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        );
+        setNonEvmSendTxHash(result.txid);
+        toast({ title: "BTC sent", description: `${parsedAmt} BTC sent on-chain. Fee: ${result.feeSat} sat. TXID: ${result.txid.slice(0, 16)}…` });
+        addNotification({ type: "withdrawal", title: "BTC Sent", body: `${parsedAmt} BTC sent from wallet (fee: ${result.feeSat} sat).`, txid: result.txid, href: `https://mempool.space/tx/${result.txid}` });
+        refetchHistory?.();
+        setTimeout(() => fetchNonEvmBalance(), 8_000);
+        return;
       }
-      const { message } = await challengeRes.json();
 
-      // 2. Sign with passkey-derived chain key
-      let signature: string;
+      // ── LTC: direct on-chain P2PKH legacy ───────────────────────────────────
+      if (activeChain === "ltc") {
+        const ltcAddr = nonEvmAddresses?.["ltc"] ?? nonEvmAddresses?.["LTC"];
+        if (!ltcAddr) throw new Error("No LTC address found for this wallet.");
+        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
+          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
+        const result = await sendLtcWithPasskey(
+          passkeyEvmAddress ?? "", ltcAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        );
+        setNonEvmSendTxHash(result.txid);
+        toast({ title: "LTC sent", description: `${parsedAmt} LTC sent on-chain. Fee: ${result.feeSat} lit. TXID: ${result.txid.slice(0, 16)}…` });
+        addNotification({ type: "withdrawal", title: "LTC Sent", body: `${parsedAmt} LTC sent from wallet.`, txid: result.txid, href: `https://litecoinspace.org/tx/${result.txid}` });
+        refetchHistory?.();
+        setTimeout(() => fetchNonEvmBalance(), 8_000);
+        return;
+      }
+
+      // ── DOGE: direct on-chain P2PKH legacy ──────────────────────────────────
+      if (activeChain === "doge") {
+        const dogeAddr = nonEvmAddresses?.["doge"] ?? nonEvmAddresses?.["DOGE"];
+        if (!dogeAddr) throw new Error("No DOGE address found for this wallet.");
+        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
+          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
+        const result = await sendDogeWithPasskey(
+          passkeyEvmAddress ?? "", dogeAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        );
+        setNonEvmSendTxHash(result.txid);
+        toast({ title: "DOGE sent", description: `${parsedAmt} DOGE sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
+        addNotification({ type: "withdrawal", title: "DOGE Sent", body: `${parsedAmt} DOGE sent from wallet.`, txid: result.txid });
+        refetchHistory?.();
+        setTimeout(() => fetchNonEvmBalance(), 8_000);
+        return;
+      }
+
+      // ── XRP: direct on-chain Payment ────────────────────────────────────────
+      if (activeChain === "xrp") {
+        const xrpAddr = nonEvmAddresses?.["xrp"] ?? nonEvmAddresses?.["XRP"];
+        if (!xrpAddr) throw new Error("No XRP address found for this wallet.");
+        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
+          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
+        const result = await sendXrpWithPasskey(
+          passkeyEvmAddress ?? "", xrpAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        );
+        setNonEvmSendTxHash(result.txid);
+        toast({ title: "XRP sent", description: `${parsedAmt} XRP sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
+        addNotification({ type: "withdrawal", title: "XRP Sent", body: `${parsedAmt} XRP sent from wallet.`, txid: result.txid, href: `https://xrpscan.com/tx/${result.txid}` });
+        refetchHistory?.();
+        setTimeout(() => fetchNonEvmBalance(), 8_000);
+        return;
+      }
+
+      // ── TRX: direct on-chain transfer ────────────────────────────────────────
+      if (activeChain === "trx") {
+        const trxAddr = nonEvmAddresses?.["tron"] ?? nonEvmAddresses?.["trx"] ?? nonEvmAddresses?.["TRX"];
+        if (!trxAddr) throw new Error("No TRX address found for this wallet.");
+        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
+          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
+        const result = await sendTrxWithPasskey(
+          passkeyEvmAddress ?? "", trxAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        );
+        setNonEvmSendTxHash(result.txid);
+        toast({ title: "TRX sent", description: `${parsedAmt} TRX sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
+        addNotification({ type: "withdrawal", title: "TRX Sent", body: `${parsedAmt} TRX sent from wallet.`, txid: result.txid, href: `https://tronscan.org/#/transaction/${result.txid}` });
+        refetchHistory?.();
+        setTimeout(() => fetchNonEvmBalance(), 8_000);
+        return;
+      }
+
+      // ── BCH: exchange withdrawal path (no native signing implemented) ────────
       if (isBitcoinForkChain) {
-        if (!passkeyEvmAddress && listPasskeyWallets().length === 0) {
-          throw new Error("No passkey wallet found on this device. Please create or restore your OrahWallet first.");
+        const challengeRes = await fetch(`${API_BASE}/withdraw/challenge`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ walletAddress, ...(chainAddress ? { bsvAddress: chainAddress } : {}) }),
+        });
+        if (!challengeRes.ok) {
+          const err = await challengeRes.json().catch(() => ({}));
+          throw new Error(err.error ?? "Failed to get withdrawal challenge");
         }
-        signature = await signBsvChallengeWithPasskey(passkeyEvmAddress ?? "", message);
-      } else {
-        throw new Error(`On-chain signing not yet supported for ${activeChain.toUpperCase()}`);
+        const { message } = await challengeRes.json();
+        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
+          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
+        const signature = await signBsvChallengeWithPasskey(passkeyEvmAddress ?? "", message);
+        const wAsset = withdrawChainMode.toUpperCase();
+        const withdrawRes = await fetch(`${API_BASE}/withdrawals`, {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            walletAddress, asset: wAsset, amount: parsedAmt,
+            network: withdrawChainMode, networkLabel: wAsset,
+            recipient: nonEvmSendRecipient.trim(), signature,
+            ...(chainAddress ? { bsvSignerAddress: chainAddress } : {}),
+          }),
+        });
+        const data = await withdrawRes.json().catch(() => ({}));
+        if (!withdrawRes.ok) throw new Error(data.error ?? "Withdrawal failed");
+        setNonEvmSendTxHash(data.txid ?? "submitted");
+        toast({ title: "Withdrawal submitted", description: `${parsedAmt} ${wAsset} withdrawal is processing.` });
+        addNotification({ type: "withdrawal", title: "Withdrawal Processing", body: `${parsedAmt} ${wAsset} sent from wallet.` });
+        refetchHistory?.();
+        setTimeout(() => fetchNonEvmBalance(), 6_000);
+        return;
       }
 
-      // 3. Submit to exchange withdrawal endpoint
-      const wAsset = withdrawChainMode.toUpperCase();
-      const withdrawRes = await fetch(`${API_BASE}/withdrawals`, {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          walletAddress,
-          asset:        wAsset,
-          amount:       parsedAmt,
-          network:      withdrawChainMode,
-          networkLabel: wAsset,
-          recipient:    nonEvmSendRecipient.trim(),
-          signature,
-          ...(isBitcoinForkChain && chainAddress ? { bsvSignerAddress: chainAddress } : {}),
-        }),
-      });
-      const data = await withdrawRes.json().catch(() => ({}));
-      if (!withdrawRes.ok) throw new Error(data.error ?? "Withdrawal failed");
-
-      setNonEvmSendTxHash(data.txid ?? "submitted");
-      toast({ title: "Withdrawal submitted", description: `${parsedAmt} ${wAsset} withdrawal is processing.` });
-      addNotification({ type: "withdrawal", title: "Withdrawal Processing", body: `${parsedAmt} ${wAsset} sent from wallet.` });
-      refetchHistory?.();
-      setTimeout(() => fetchNonEvmBalance(), 6_000);
+      throw new Error(`On-chain signing not supported for ${activeChain.toUpperCase()}`);
     } catch (err: any) {
       const msg = err?.message ?? "Transaction failed";
       setNonEvmSendError(msg);

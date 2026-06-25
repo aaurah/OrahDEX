@@ -815,6 +815,141 @@ export async function signBsvChallengeWithPasskey(
   return btoa(String.fromCharCode(...sigBytes));
 }
 
+// ─── Shared helper: authenticate + derive chain private key ──────────────────
+
+/**
+ * Authenticate a passkey wallet and derive the secp256k1 private key for the
+ * given BIP44 derivation path. Used by all non-EVM on-chain send functions.
+ */
+async function deriveChainPrivKey(
+  evmAddress:  string,
+  derivePath:  string,
+): Promise<Uint8Array> {
+  const wallets  = listPasskeyWallets();
+  const matching = wallets.filter(w => w.address.toLowerCase() === evmAddress.toLowerCase());
+  if (matching.length === 0 && wallets.length === 0)
+    throw new Error("OrahWallet not found on this device. Please create or restore your passkey wallet first.");
+
+  const allowCredentials = matching.length > 0
+    ? matching.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }))
+    : wallets.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }));
+
+  let assertion: PublicKeyCredential | null;
+  try {
+    assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge:        new TextEncoder().encode("send-" + derivePath),
+        allowCredentials,
+        userVerification: "required",
+        timeout:          60_000,
+      },
+    }) as PublicKeyCredential | null;
+  } catch (err: any) {
+    const msg: string = err?.message ?? "";
+    if (msg.includes("not allowed") || msg.includes("denied") || msg.includes("cancel") || err?.name === "NotAllowedError")
+      throw new Error('Wrong passkey selected. Please choose "OrahDEX Wallet" when prompted.');
+    throw err;
+  }
+  if (!assertion) throw new Error("Passkey authentication cancelled");
+
+  const rawId        = assertion.rawId;
+  const credentialId = b642url(buf2b64(rawId));
+  let wallet = wallets.find(w => w.credentialId === credentialId);
+  if (!wallet) {
+    const restored = await tryRestoreFromServer(credentialId, rawId);
+    if (!restored) throw new Error('Wrong passkey selected — wallet data not found. Please choose "OrahDEX Wallet".');
+    wallet = restored;
+  }
+
+  const secret = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, rawId);
+  const { HDKey }          = await import("@scure/bip32");
+  const { mnemonicToSeed } = await import("@scure/bip39");
+  const isMnemonic = secret.trim().split(/\s+/).length >= 12 && !secret.startsWith("0x");
+
+  if (!isMnemonic)
+    throw new Error("Legacy wallet format does not support multi-chain signing. Please re-import your seed phrase.");
+
+  const seed    = await mnemonicToSeed(secret.trim());
+  const root    = HDKey.fromMasterSeed(seed);
+  const derived = root.derive(derivePath);
+  if (!derived.privateKey) throw new Error(`Key derivation failed for path ${derivePath}`);
+  return derived.privateKey;
+}
+
+// ─── BTC on-chain send ────────────────────────────────────────────────────────
+
+export async function sendBtcWithPasskey(
+  evmAddress:       string,
+  senderBtcAddress: string,
+  recipientAddress: string,
+  amountBtc:        number,
+): Promise<{ txid: string; feeSat: number }> {
+  const { buildSignBroadcastBtcTx } = await import("./btcUtxoTx.js");
+  const privateKey = await deriveChainPrivKey(evmAddress, "m/84'/0'/0'/0/0");
+  const amountSat  = Math.round(amountBtc * 1e8);
+  const result     = await buildSignBroadcastBtcTx(senderBtcAddress, recipientAddress, amountSat, privateKey);
+  return { txid: result.txid, feeSat: result.feeSat };
+}
+
+// ─── LTC on-chain send ────────────────────────────────────────────────────────
+
+export async function sendLtcWithPasskey(
+  evmAddress:       string,
+  senderLtcAddress: string,
+  recipientAddress: string,
+  amountLtc:        number,
+): Promise<{ txid: string; feeSat: number }> {
+  const { buildSignBroadcastLegacyUtxoTx } = await import("./btcUtxoTx.js");
+  const privateKey = await deriveChainPrivKey(evmAddress, "m/44'/2'/0'/0/0");
+  const amountSat  = Math.round(amountLtc * 1e8);
+  const result     = await buildSignBroadcastLegacyUtxoTx("ltc", senderLtcAddress, recipientAddress, amountSat, privateKey);
+  return { txid: result.txid, feeSat: result.feeSat };
+}
+
+// ─── DOGE on-chain send ───────────────────────────────────────────────────────
+
+export async function sendDogeWithPasskey(
+  evmAddress:        string,
+  senderDogeAddress: string,
+  recipientAddress:  string,
+  amountDoge:        number,
+): Promise<{ txid: string; feeSat: number }> {
+  const { buildSignBroadcastLegacyUtxoTx } = await import("./btcUtxoTx.js");
+  const privateKey = await deriveChainPrivKey(evmAddress, "m/44'/3'/0'/0/0");
+  const amountSat  = Math.round(amountDoge * 1e8);
+  const result     = await buildSignBroadcastLegacyUtxoTx("doge", senderDogeAddress, recipientAddress, amountSat, privateKey);
+  return { txid: result.txid, feeSat: result.feeSat };
+}
+
+// ─── XRP on-chain send ────────────────────────────────────────────────────────
+
+export async function sendXrpWithPasskey(
+  evmAddress:       string,
+  senderXrpAddress: string,
+  recipientAddress: string,
+  amountXrp:        number,
+): Promise<{ txid: string }> {
+  const { buildSignBroadcastXrpTx } = await import("./xrpTx.js");
+  const privateKey = await deriveChainPrivKey(evmAddress, "m/44'/144'/0'/0/0");
+  const result     = await buildSignBroadcastXrpTx(senderXrpAddress, recipientAddress, amountXrp, privateKey);
+  return { txid: result.txid };
+}
+
+// ─── TRX on-chain send ────────────────────────────────────────────────────────
+
+export async function sendTrxWithPasskey(
+  evmAddress:       string,
+  senderTrxAddress: string,
+  recipientAddress: string,
+  amountTrx:        number,
+): Promise<{ txid: string }> {
+  const { buildSignBroadcastTrxTx } = await import("./tronTx.js");
+  // TRX uses the same secp256k1 key as EVM (m/44'/60'/0'/0/0)
+  const privateKey = await deriveChainPrivKey(evmAddress, "m/44'/60'/0'/0/0");
+  const result     = await buildSignBroadcastTrxTx(senderTrxAddress, recipientAddress, amountTrx, privateKey);
+  return { txid: result.txid };
+}
+
 /**
  * Sign arbitrary data with a passkey wallet.
  * Prompts biometric authentication, then decrypts the private key in-memory.
