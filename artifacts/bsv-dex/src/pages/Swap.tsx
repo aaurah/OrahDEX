@@ -39,7 +39,8 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { FiatBuySellPanel } from "@/components/FiatBuySellPanel";
-import { BridgeAggPanel } from "@/components/BridgeAggPanel";
+import { SwapWidget } from "thirdweb/react";
+import { thirdwebClient } from "@/lib/thirdweb-client";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
@@ -2565,9 +2566,19 @@ export function Swap() {
           </div>
         )}
 
-        {/* ═══════════════ BRIDGE TAB ═══════════════ */}
+        {/* ═══════════════ BRIDGE TAB — ThirdWeb Universal Bridge ═══════════════ */}
         {activeTab === "bridge" && (
-          <BridgeAggPanel walletAddress={address ?? undefined} />
+          <div className="space-y-3">
+            <div>
+              <p className="text-xs text-muted-foreground">
+                Swap any token across any EVM chain — powered by ThirdWeb Universal Bridge.
+              </p>
+            </div>
+            <SwapWidget
+              client={thirdwebClient}
+              theme="dark"
+            />
+          </div>
         )}
 
         {/* ═══════════════ DEX TAB (on-chain Uniswap V3 / PancakeSwap) ═══════════════ */}
