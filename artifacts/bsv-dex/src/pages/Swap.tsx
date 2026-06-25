@@ -41,6 +41,7 @@ import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { FiatBuySellPanel } from "@/components/FiatBuySellPanel";
 import { SwapWidget } from "thirdweb/react";
 import { thirdwebClient } from "@/lib/thirdweb-client";
+import { orahDexSwapTheme } from "@/lib/thirdweb-theme";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
@@ -2571,12 +2572,13 @@ export function Swap() {
           <div className="space-y-3">
             <div>
               <p className="text-xs text-muted-foreground">
-                Swap any token across any EVM chain — powered by ThirdWeb Universal Bridge.
+                Swap any token across any EVM chain — best routes, all networks.
               </p>
             </div>
             <SwapWidget
               client={thirdwebClient}
-              theme="dark"
+              theme={orahDexSwapTheme}
+              showThirdwebBranding={false}
             />
           </div>
         )}
