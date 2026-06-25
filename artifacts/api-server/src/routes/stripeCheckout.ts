@@ -275,7 +275,43 @@ router.post("/stripe/create-payment-intent", async (req, res) => {
     });
   } catch (err: any) {
     logger.error({ err: err?.message }, "Failed to create payment intent");
-    res.status(500).json({ error: "Failed to create order" });
+    res.status(500).json({ error: err?.message || "Failed to create order — please try again." });
+  }
+});
+
+/* ── GET /api/stripe/le-quote — live LE rate for a coin+fiat amount ────────
+   Query params: coin (e.g. ETH), fiatUsd (e.g. 50)
+   Returns: { coinAmount, ratePerCoin, source }
+   Max wait: 6 s — falls through to DB/fallback prices on timeout ──────────── */
+router.get("/stripe/le-quote", async (req, res) => {
+  try {
+    const coin    = (req.query.coin    as string ?? "").toUpperCase();
+    const fiatUsd = parseFloat(req.query.fiatUsd as string ?? "0");
+    if (!coin || !(fiatUsd > 0)) {
+      res.status(400).json({ error: "coin and fiatUsd required" });
+      return;
+    }
+    const FEE_RATE = 0.015;
+    const netUsd   = fiatUsd * (1 - FEE_RATE);
+
+    // Race LE quote against a 6-second fallback so the modal never waits too long
+    const quote = await Promise.race([
+      quoteFromLE(coin, netUsd),
+      new Promise<null>(resolve => setTimeout(() => resolve(null), 6000)),
+    ]);
+
+    if (quote && quote.coinAmount > 0) {
+      res.json({ coinAmount: quote.coinAmount.toFixed(8), ratePerCoin: quote.ratePerCoin, source: "letsexchange" });
+      return;
+    }
+    const fallback = await getFallbackUsdPrice(coin);
+    if (fallback.price > 0) {
+      res.json({ coinAmount: (netUsd / fallback.price).toFixed(8), ratePerCoin: fallback.price, source: fallback.source });
+      return;
+    }
+    res.status(422).json({ error: `Rate unavailable for ${coin}` });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Quote failed" });
   }
 });
 

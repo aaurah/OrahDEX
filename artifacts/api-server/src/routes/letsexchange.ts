@@ -24,7 +24,7 @@ import { db } from "@workspace/db";
 import { marketsTable, leSwapsTable } from "@workspace/db/schema";
 import { eq, and, ne, inArray, sql } from "drizzle-orm";
 import {
-  leRequest, fetchLEPricesUSD, getCachedLEPrices, AFFILIATE_ID,
+  leRequest, fetchLEPricesUSD, getCachedLEPrices, fetchLEKeyPricesIfNeeded, AFFILIATE_ID,
   type NormalisedCoin,
 } from "../lib/lePriceCache.js";
 import { getCoinChangeMap } from "../lib/priceUpdater.js";
@@ -150,6 +150,20 @@ router.get("/letsexchange/currencies", async (_req, res) => {
   } catch (err: any) {
     logger.error({ err }, "letsexchange /currencies failed");
     res.json(builtInCoinsAsFallback());
+  }
+});
+
+// ── GET /api/letsexchange/usd-prices — coin→USD price map from LE cache ──────
+// Returns { ETH: 2500, BTC: 95000, ... } from the shared LE price cache.
+// Always responds immediately — never blocks on a live LE API call.
+// A background refresh is kicked off when the cache is cold so the next
+// request (after ~8-10 s) will get fresh data.
+router.get("/letsexchange/usd-prices", (_req, res) => {
+  const cached = getCachedLEPrices();
+  res.json(cached);
+  // If cache is cold, warm it in the background — fire and forget
+  if (Object.keys(cached).length === 0) {
+    fetchLEKeyPricesIfNeeded().catch(() => {});
   }
 });
 
