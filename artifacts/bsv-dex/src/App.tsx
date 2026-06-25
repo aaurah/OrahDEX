@@ -1,4 +1,4 @@
-import { useEffect, ReactNode, lazy, Suspense, Component } from "react";
+import { useEffect, useRef, ReactNode, lazy, Suspense, Component } from "react";
 import { useActiveAccount, useActiveWalletChain } from "thirdweb/react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -516,13 +516,22 @@ function Router() {
 function ThirdwebSync() {
   const account = useActiveAccount();
   const chain = useActiveWalletChain();
+  // Guard: only auto-disconnect after we've confirmed a ThirdWeb account at least once.
+  // WalletConnect-based wallets (Coinbase Wallet, MetaMask Mobile) on iOS briefly
+  // report null from useActiveAccount() during session init, causing a spurious
+  // disconnect that wipes the store right after the "Wallet connected" toast.
+  const hadAccountRef = useRef(false);
 
   useEffect(() => {
     if (!account) {
-      const { provider: current } = useWalletStore.getState();
-      if (current === "thirdweb") useWalletStore.getState().disconnect();
+      if (hadAccountRef.current) {
+        // Real disconnect: user revoked the session in their wallet app.
+        const { provider: current } = useWalletStore.getState();
+        if (current === "thirdweb") useWalletStore.getState().disconnect();
+      }
       return;
     }
+    hadAccountRef.current = true;
     const chainId = chain?.id ?? 1;
     useWalletStore.getState().connect({
       address: account.address,
