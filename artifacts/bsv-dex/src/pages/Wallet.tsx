@@ -706,6 +706,11 @@ function EvmChainRow({
               {tok.usdValue > 0 && (
                 <p className="text-[10px] text-muted-foreground">{formatQuoteAmount(tok.usdValue, quoteCurrency)}</p>
               )}
+              {tok.price > 0 && (
+                <p className={`text-[10px] font-medium tabular-nums ${tok.change24h >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  {tok.change24h >= 0 ? "+" : ""}{tok.change24h.toFixed(2)}%
+                </p>
+              )}
             </div>
             {/* Per-token Send / Receive actions */}
             <div className="flex items-center gap-1 shrink-0">

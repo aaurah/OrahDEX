@@ -619,10 +619,11 @@ router.get("/markets/:symbol/trades", async (req, res) => {
 });
 
 // ─── /api/prices — live USD spot prices ──────────────────────────────────────
-// BTC/ETH/BSV come from Coinbase (with Binance fallback) via fetchKeyPrices();
+// BTC/ETH/BSV come from Coinbase (with Binance batch fallback) via fetchKeyPrices();
 // every other tracked symbol falls back to FALLBACK_PRICES so the response stays
 // fully populated for callers that iterate the full coin list.
-const pricesCache = new TtlCache<Record<string, number>>(60_000); // 60 s
+const pricesCache     = new TtlCache<Record<string, number>>(60_000); // 60 s
+const pricesFullCache = new TtlCache<Record<string, { usd: number; change24h: number }>>(60_000);
 
 router.get("/prices", async (_req, res) => {
   const cached = pricesCache.get("all");
@@ -638,6 +639,27 @@ router.get("/prices", async (_req, res) => {
     }
   } catch { /* fall through to FALLBACK_PRICES already populated */ }
   pricesCache.set("all", out);
+  res.json(out);
+});
+
+// ─── /api/prices-full — live USD prices + 24h change ─────────────────────────
+// Returns { [symbol]: { usd: number; change24h: number } } sourced from
+// Binance batch feed (data-api.binance.vision) with Coinbase + FALLBACK_PRICES
+// fallbacks.  Cache TTL: 60 s.
+router.get("/prices-full", async (_req, res) => {
+  const cached = pricesFullCache.get("all");
+  if (cached) { res.json(cached); return; }
+  const out: Record<string, { usd: number; change24h: number }> = {};
+  for (const [sym, usd] of Object.entries(FALLBACK_PRICES)) {
+    if (usd > 0) out[sym] = { usd, change24h: 0 };
+  }
+  try {
+    const live = await fetchKeyPrices();
+    for (const [sym, v] of Object.entries(live)) {
+      if (v && typeof v.usd === "number" && v.usd > 0) out[sym] = v;
+    }
+  } catch { /* fall through to FALLBACK_PRICES already populated */ }
+  pricesFullCache.set("all", out);
   res.json(out);
 });
 

@@ -71,6 +71,42 @@ const STATIC_EXCHANGES = [
   { id:"bithumb",       name:"Bithumb",           url:"https://www.bithumb.com",         image: favicon("bithumb.com"),              chain:null,        type:"cex", rank:15, trustScore:7, vol24hUsd:350_000_000 },
 ];
 
+/* ── Symbols to batch-fetch live from Binance ─────────────────────────────── */
+const BINANCE_BATCH_SYMS = [
+  "BTC","ETH","BNB","SOL","XRP","ADA","DOGE","DOT","MATIC","POL",
+  "LINK","UNI","AAVE","LDO","CRV","MKR","SNX","COMP","GRT","ENS",
+  "RNDR","FET","IMX","SHIB","PEPE","SAND","MANA","AXS","OCEAN",
+  "YFI","BAL","SUSHI","CVX","CAKE","OP","ARB","AVAX","INJ","APE",
+  "LTC","BCH","NEAR","FIL","TON","LDO","PENDLE","ONDO","FXS","DYDX",
+  "1INCH","A8","TRUMP","FLOKI","WIF","JUP","BONK","RAY","PYTH","JTO",
+  "SEI","TIA","KAS","TAO","WLD","ARKM","EIGEN","RPL","AERO","BRETT",
+  "DEGEN","VIRTUAL","MORPHO","ZRO","ZK","STRK","IMX","ALT","NOT",
+  "DOGS","NEIRO","POPCAT","MEW","TURBO","MOG","BOME","W","TNSR",
+];
+
+/**
+ * Batch-fetch live USD prices + 24h change for all major tokens from Binance's
+ * public data mirror (data-api.binance.vision — not geo-restricted).
+ */
+async function fetchBinanceBatch(): Promise<Record<string, { usd: number; change24h: number }>> {
+  const symbolsJson = "[" + BINANCE_BATCH_SYMS.map(s => `%22${s}USDT%22`).join(",") + "]";
+  const url = `https://data-api.binance.vision/api/v3/ticker/24hr?symbols=${symbolsJson}`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+    if (!res.ok) return {};
+    const tickers = await res.json() as Array<{ symbol: string; lastPrice: string; priceChangePercent: string }>;
+    if (!Array.isArray(tickers)) return {};
+    const out: Record<string, { usd: number; change24h: number }> = {};
+    for (const t of tickers) {
+      const sym = t.symbol.slice(0, -4); // strip "USDT"
+      const usd      = parseFloat(t.lastPrice ?? "0");
+      const change24h = parseFloat(t.priceChangePercent ?? "0");
+      if (usd > 0) out[sym] = { usd, change24h };
+    }
+    return out;
+  } catch { return {}; }
+}
+
 /* ── Last-known-good price cache for WOC-sourced assets ───────────────────── */
 let _lastKnownBsvUsd = 16;
 
@@ -125,7 +161,21 @@ export async function fetchKeyPrices() {
   const results: Record<string, { usd: number; change24h: number }> = {
     USDT: { usd: 1, change24h: 0 },
     USDC: { usd: 1, change24h: 0 },
+    DAI:  { usd: 1, change24h: 0 },
+    BUSD: { usd: 1, change24h: 0 },
+    TUSD: { usd: 1, change24h: 0 },
   };
+
+  // 1. Batch-fetch all major tokens from Binance data mirror (one HTTP call)
+  try {
+    const batch = await fetchBinanceBatch();
+    for (const [sym, v] of Object.entries(batch)) {
+      results[sym] = v;
+    }
+  } catch { /* fall through to per-asset fallbacks below */ }
+
+  // 2. Override BTC/ETH with higher-precision Coinbase stats (includes 24h change)
+  //    Run alongside BSV/WoC fetch in parallel
   try {
     const [btc, eth, bsvRes] = await Promise.allSettled([
       fetchSpotPair("BTC"),
@@ -137,23 +187,23 @@ export async function fetchKeyPrices() {
     if (bsvRes.status === "fulfilled" && bsvRes.value.ok) {
       const d = await bsvRes.value.json() as { rate?: number };
       if (d.rate && d.rate > 0) {
-        _lastKnownBsvUsd = d.rate; // persist for next call
+        _lastKnownBsvUsd = d.rate;
         results["BSV"] = { usd: d.rate, change24h: 0 };
       }
     }
   } catch {}
-  if (!results["BTC"]) results["BTC"] = { usd: FALLBACK_PRICES["BTC"] ?? 70000, change24h: 0 };
-  if (!results["ETH"]) results["ETH"] = { usd: FALLBACK_PRICES["ETH"] ?? 2152,  change24h: 0 };
-  // Use last-known-good BSV price rather than hardcoded fallback when WOC is unreachable
+
+  // 3. Hard fallbacks for anything still missing
+  if (!results["BTC"]) results["BTC"] = { usd: FALLBACK_PRICES["BTC"] ?? 95000, change24h: 0 };
+  if (!results["ETH"]) results["ETH"] = { usd: FALLBACK_PRICES["ETH"] ?? 2400,  change24h: 0 };
   if (!results["BSV"]) results["BSV"] = { usd: _lastKnownBsvUsd, change24h: 0 };
 
-  // Ensure full cross-asset coverage for all tracked markets.
+  // 4. Fill any remaining tracked symbols from static fallback table
   for (const [symbol, usd] of Object.entries(FALLBACK_PRICES)) {
-    if (usd <= 0) continue;
-    if (!results[symbol]) {
-      results[symbol] = { usd, change24h: 0 };
-    }
+    if (usd <= 0 || results[symbol]) continue;
+    results[symbol] = { usd, change24h: 0 };
   }
+
   return results;
 }
 
