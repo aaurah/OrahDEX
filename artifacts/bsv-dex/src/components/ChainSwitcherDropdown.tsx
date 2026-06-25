@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { ChevronDown, CheckCircle2, PlusCircle } from "lucide-react";
+import { ChevronDown, CheckCircle2, PlusCircle, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useToast } from "@/hooks/use-toast";
 import { switchReownChain, fetchEvmBalance, CHAIN_RPC_URLS } from "@/lib/reown";
+import { useCustomChainStore } from "@/store/useCustomChainStore";
+import { AddNetworkDialog } from "@/components/AddNetworkDialog";
 
 interface ChainDef {
   id: number;
@@ -258,6 +260,19 @@ const EVM_CHAINS: ChainDef[] = [
     nativeName: "Ether",
     nativeDecimals: 18,
   },
+  {
+    id: 33139,
+    key: "apechain",
+    name: "ApeChain",
+    symbol: "APE",
+    badge: "L3",
+    icon: "🦍",
+    color: "text-blue-400",
+    rpcUrl: "https://rpc.apechain.com/http",
+    blockExplorerUrl: "https://explorer.apechain.com",
+    nativeName: "ApeCoin",
+    nativeDecimals: 18,
+  },
   /* ─── L1 — Alt L1s ──────────────────────────────────────────── */
   {
     id: 100,
@@ -380,6 +395,27 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
   const { toast } = useToast();
   const [open, setOpen] = useState(startOpen);
   const [switching, setSwitching] = useState<number | null>(null);
+  const [addNetworkOpen, setAddNetworkOpen] = useState(false);
+
+  const customChains = useCustomChainStore(s => s.chains);
+  const removeCustomChain = useCustomChainStore(s => s.remove);
+
+  const switchCustomChain = (cc: (typeof customChains)[0]) => {
+    const synthetic: ChainDef = {
+      id: cc.id,
+      key: `custom_${cc.id}`,
+      name: cc.name,
+      symbol: cc.symbol,
+      badge: "L1",
+      icon: "◈",
+      color: "text-primary",
+      rpcUrl: cc.rpcUrl,
+      blockExplorerUrl: cc.blockExplorerUrl,
+      nativeName: cc.nativeName,
+      nativeDecimals: 18,
+    };
+    switchEvmChain(synthetic);
+  };
 
   const currentEvmChain = EVM_CHAINS.find(c => c.id === chainId);
   const currentOther    = [...OTHER_CHAINS_MAINNET, ...OTHER_CHAINS_TESTNET].find(c => c.network === network);
@@ -685,9 +721,57 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
                 })}
               </div>
             </div>
+
+            {/* Custom Networks */}
+            {(customChains.length > 0 || true) && (
+              <div className="border-t border-border">
+                <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-3 pt-2 pb-1">
+                  Custom Networks
+                </p>
+                <div className="px-1.5 pb-1 space-y-0.5">
+                  {customChains.map(cc => {
+                    const active = network === "evm" && chainId === cc.id;
+                    return (
+                      <div key={cc.id} className="flex items-center gap-1">
+                        <button
+                          onClick={() => switchCustomChain(cc)}
+                          disabled={active || !!switching}
+                          className={cn("flex-1 flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left",
+                            active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
+                        >
+                          <span className="text-sm w-5 text-center text-primary shrink-0">◈</span>
+                          <span className="flex-1 truncate">{cc.name}</span>
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded border bg-primary/15 text-primary border-primary/30 shrink-0">CUSTOM</span>
+                          {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                        </button>
+                        <button
+                          onClick={() => removeCustomChain(cc.id)}
+                          className="p-1.5 rounded-md hover:bg-destructive/15 text-muted-foreground/40 hover:text-destructive transition-colors shrink-0"
+                          title="Remove network"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button
+                    onClick={() => setAddNetworkOpen(true)}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                    <span>Add Custom Network</span>
+                  </button>
+                </div>
+              </div>
+            )}
             </div>{/* end scrollable */}
           </div>
         )}
+      <AddNetworkDialog
+        open={addNetworkOpen}
+        onClose={() => setAddNetworkOpen(false)}
+        onAdded={(id) => { switchCustomChain(useCustomChainStore.getState().getById(id)!); }}
+      />
       </div>
     );
   }
@@ -795,10 +879,56 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
                   })}
                 </div>
               </div>
+
+              {/* Custom Networks */}
+              <div className="border-t border-border pt-2 mt-1">
+                <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-2 py-1.5">
+                  Custom Networks
+                </p>
+                <div className="space-y-0.5">
+                  {customChains.map(cc => {
+                    const active = network === "evm" && chainId === cc.id;
+                    return (
+                      <div key={cc.id} className="flex items-center gap-1">
+                        <button
+                          onClick={() => switchCustomChain(cc)}
+                          disabled={active || !!switching}
+                          className={cn("flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                            active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
+                        >
+                          <span className="text-base w-6 text-center text-primary shrink-0 font-bold">◈</span>
+                          <span className="flex-1 truncate">{cc.name}</span>
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded border bg-primary/15 text-primary border-primary/30 shrink-0">CUSTOM</span>
+                          {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                        </button>
+                        <button
+                          onClick={() => removeCustomChain(cc.id)}
+                          className="p-2 rounded-lg hover:bg-destructive/15 text-muted-foreground/40 hover:text-destructive transition-colors shrink-0"
+                          title="Remove network"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button
+                    onClick={() => { setOpen(false); setAddNetworkOpen(true); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+                  >
+                    <Plus className="w-4 h-4 shrink-0" />
+                    <span>Add Custom Network</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </>
       )}
+      <AddNetworkDialog
+        open={addNetworkOpen}
+        onClose={() => setAddNetworkOpen(false)}
+        onAdded={(id) => { switchCustomChain(useCustomChainStore.getState().getById(id)!); }}
+      />
     </div>
   );
 }
