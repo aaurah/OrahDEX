@@ -78,7 +78,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "@walletconnect/types": "^2.23.9",
+    "@coinbase/wallet-sdk": "^4.3.7",
     "@keystonehq/bc-ur-registry-eth": "^0.22.1",
     "@ledgerhq/context-module": "^1.17.1",
     "@ledgerhq/device-management-kit": "^1.4.1",
@@ -101,6 +101,7 @@
     "@vercel/speed-insights": "^2.0.0",
     "@wagmi/core": "^3.4.1",
     "@walletconnect/core": "^2.23.9",
+    "@walletconnect/types": "^2.23.9",
     "@walletconnect/utils": "^2.23.9",
     "@walletconnect/web3wallet": "^1.16.1",
     "@workspace/integrations-openai-ai-react": "workspace:*",
