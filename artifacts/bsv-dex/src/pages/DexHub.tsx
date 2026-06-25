@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment, useEffect, useRef } from "react";
+import { useState, useMemo, Fragment, useEffect, useRef, useCallback } from "react";
 import { useSEO } from "@/hooks/useSEO";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -454,6 +454,18 @@ export function DexHub() {
   const [coinSortDir, setCoinSortDir]     = useState<"asc"|"desc">("asc");
   const [coinPage, setCoinPage]           = useState(0);
   const [coinSource, setCoinSource]       = useState<CoinSource>("all");
+  /* Infinite scroll — callback ref so it works with conditional rendering */
+  const scrollObserver = useRef<IntersectionObserver | null>(null);
+  const setSentinelRef = useCallback((node: HTMLDivElement | null) => {
+    scrollObserver.current?.disconnect();
+    scrollObserver.current = null;
+    if (!node) return;
+    scrollObserver.current = new IntersectionObserver(
+      entries => { if (entries[0]?.isIntersecting) setCoinPage(p => p + 1); },
+      { rootMargin: "300px" },
+    );
+    scrollObserver.current.observe(node);
+  }, []);
   const [copiedAddr, setCopiedAddr]       = useState<string | null>(null);
   const [vammCoin, setVammCoin]           = useState<any | null>(null);
   const [showZora, setShowZora]           = useState(false);
@@ -1118,19 +1130,18 @@ export function DexHub() {
               </table>
             </div>
 
-            {/* Footer: count + Load More */}
+            {/* Footer: count + infinite-scroll sentinel */}
             {!coinsLoading && filteredCoins.length > 0 && (
               <div className="px-4 py-3 border-t border-border bg-secondary/20 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
                 <span>Showing {pagedCoins.length} of {filteredCoins.length} coins</span>
                 {pagedCoins.length < filteredCoins.length && (
-                  <button
-                    onClick={() => setCoinPage(p => p + 1)}
-                    className="px-4 py-1.5 rounded-lg bg-card border border-border hover:border-primary/40 text-sm font-semibold text-foreground transition-colors"
-                  >
-                    Load more ({filteredCoins.length - pagedCoins.length} remaining)
-                  </button>
+                  <span className="text-muted-foreground/60 text-[11px]">Scroll to load more…</span>
                 )}
               </div>
+            )}
+            {/* Sentinel — observed by IntersectionObserver to trigger next page */}
+            {!coinsLoading && pagedCoins.length < filteredCoins.length && (
+              <div ref={setSentinelRef} className="h-10" aria-hidden="true" />
             )}
           </div>
 
