@@ -113,10 +113,24 @@ function CexBadge() {
   );
 }
 
-type View    = "exchanges" | "coins";
-type ExType  = "all" | "cex" | "dex";
-type SortKey = "rank" | "volume" | "marketcap" | "trust" | "name";
-type CoinSort = "rank" | "base" | "price" | "chg" | "vol";
+type View       = "exchanges" | "coins";
+type ExType     = "all" | "cex" | "dex";
+type SortKey    = "rank" | "volume" | "marketcap" | "trust" | "name";
+type CoinSort   = "rank" | "base" | "price" | "chg" | "vol";
+type CoinSource = "all" | "cg" | "le" | "ss";
+
+const SOURCE_META: Record<CoinSource, { label: string; cls: string; activeCls: string }> = {
+  all: { label: "All", cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-primary/15 border-primary/40 text-primary" },
+  cg:  { label: "Market Data", cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-orange-500/15 border-orange-500/40 text-orange-400" },
+  le:  { label: "LetsExchange", cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-green-500/15 border-green-500/40 text-green-400" },
+  ss:  { label: "SimpleSwap", cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-blue-500/15 border-blue-500/40 text-blue-400" },
+};
+
+const COIN_SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
+  cg: { label: "Market", cls: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
+  le: { label: "LE",     cls: "bg-green-500/10  text-green-400  border-green-500/20"  },
+  ss: { label: "SS",     cls: "bg-blue-500/10   text-blue-400   border-blue-500/20"   },
+};
 
 const SORT_LABELS: Record<SortKey, string> = {
   rank:      "Rank",
@@ -439,6 +453,7 @@ export function DexHub() {
   const [coinSort, setCoinSort]           = useState<CoinSort>("rank");
   const [coinSortDir, setCoinSortDir]     = useState<"asc"|"desc">("asc");
   const [coinPage, setCoinPage]           = useState(0);
+  const [coinSource, setCoinSource]       = useState<CoinSource>("all");
   const [copiedAddr, setCopiedAddr]       = useState<string | null>(null);
   const [vammCoin, setVammCoin]           = useState<any | null>(null);
   const [showZora, setShowZora]           = useState(false);
@@ -457,11 +472,11 @@ export function DexHub() {
 
   const allExchanges: any[] = data?.exchanges ?? [];
 
-  /* ── World coins ── */
+  /* ── All coins — merged from OrahDB, LetsExchange, SimpleSwap ── */
   const { data: coinsRaw, isLoading: coinsLoading } = useQuery({
-    queryKey: ["coins-markets-world"],
+    queryKey: ["coins-all-sources"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/coins/markets?per_page=250`);
+      const r = await fetch(`${BASE}/api/coins/all-sources`);
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
@@ -477,6 +492,13 @@ export function DexHub() {
 
   const filteredCoins = useMemo(() => {
     let rows = allCoins;
+    // Source filter
+    if (coinSource !== "all") {
+      rows = rows.filter(c => {
+        const on: string[] = c.availableOn ?? [c.source];
+        return on.includes(coinSource);
+      });
+    }
     if (coinSearch) {
       const q = coinSearch.toLowerCase();
       rows = rows.filter(m =>
@@ -499,7 +521,7 @@ export function DexHub() {
       if (coinSort === "vol")   v = a.volume24h - b.volume24h;
       return coinSortDir === "asc" ? v : -v;
     });
-  }, [allCoins, coinSearch, coinSort, coinSortDir]);
+  }, [allCoins, coinSource, coinSearch, coinSort, coinSortDir]);
 
   const pagedCoins = filteredCoins.slice(0, (coinPage + 1) * COIN_PAGE_SIZE);
 
@@ -744,7 +766,7 @@ export function DexHub() {
           All Coins
           {allCoins.length > 0 && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">
-              {allCoins.length}
+              {allCoins.length.toLocaleString()}+
             </span>
           )}
         </button>
@@ -913,8 +935,42 @@ export function DexHub() {
             )}
           </div>
 
-          {/* Search: name/symbol + contract address */}
+          {/* Source filter + Search */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
+            {/* Source tabs */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(["all", "cg", "le", "ss"] as CoinSource[]).map(src => {
+                const m = SOURCE_META[src];
+                const isActive = coinSource === src;
+                const count = src === "all"
+                  ? allCoins.length
+                  : allCoins.filter(c => (c.availableOn ?? [c.source]).includes(src)).length;
+                return (
+                  <button
+                    key={src}
+                    onClick={() => { setCoinSource(src); setCoinPage(0); }}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5",
+                      isActive ? m.activeCls : cn("bg-card", m.cls)
+                    )}
+                  >
+                    {m.label}
+                    {count > 0 && (
+                      <span className={cn(
+                        "text-[9px] font-bold px-1 py-0.5 rounded-full",
+                        isActive ? "bg-white/15" : "bg-muted/60"
+                      )}>
+                        {count.toLocaleString()}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="h-5 w-px bg-border hidden sm:block" />
+
+            {/* Search */}
             <div className="relative flex-1 min-w-[160px] max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
@@ -939,7 +995,7 @@ export function DexHub() {
               />
             </div>
             <span className="text-xs text-muted-foreground">
-              {coinsLoading ? "Loading…" : `${filteredCoins.length} coins · tap a row to see all exchanges`}
+              {coinsLoading ? "Loading…" : `${filteredCoins.length.toLocaleString()} coins · tap a row to see exchanges`}
             </span>
           </div>
 
@@ -996,7 +1052,14 @@ export function DexHub() {
                               : <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">{coin.symbol[0]}</div>
                             }
                             <div>
-                              <p className="text-sm font-bold text-foreground leading-tight">{coin.name}</p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-bold text-foreground leading-tight">{coin.name}</p>
+                                {coin.source && COIN_SOURCE_BADGE[coin.source] && (
+                                  <span className={cn("text-[9px] px-1 py-0.5 rounded border font-bold leading-none shrink-0", COIN_SOURCE_BADGE[coin.source].cls)}>
+                                    {COIN_SOURCE_BADGE[coin.source].label}
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-[10px] text-muted-foreground font-semibold">{coin.symbol}</p>
                             </div>
                           </div>

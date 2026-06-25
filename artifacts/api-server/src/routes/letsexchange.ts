@@ -91,6 +91,13 @@ export async function warmCurrenciesCache(): Promise<void> {
   catch (err) { logger.warn({ err }, "LE currencies warm-up failed (non-fatal)"); }
 }
 
+/** Non-blocking read of the LE currencies cache. Returns built-in fallback if not yet loaded. */
+export function getCachedLECurrencies(): NormalisedCoin[] {
+  const hit = cached("currencies") as NormalisedCoin[] | null;
+  if (hit && hit.length > 0) return hit;
+  return builtInCoinsAsFallback();
+}
+
 // ── Coin normalisation ─────────────────────────────────────────────────────────
 
 function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
