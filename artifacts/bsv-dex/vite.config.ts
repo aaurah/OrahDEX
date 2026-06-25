@@ -770,6 +770,11 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
       // @walletconnect/logger@2.1.2 calls logger.bindings() as a function.
       // Alias to our stub that always has bindings() as a callable method.
       "pino": path.resolve(import.meta.dirname, "src/stubs/pino.js"),
+      // Rolldown (Vite 8) cannot resolve @reown/appkit subpath exports through
+      // symlinks created by bsv-dex-symlinks buildStart. Point directly to the
+      // dist files so rolldown never needs to follow the symlink for subpaths.
+      "@reown/appkit/react":    path.resolve(import.meta.dirname, "node_modules/@reown/appkit/dist/esm/exports/react.js"),
+      "@reown/appkit/networks": path.resolve(import.meta.dirname, "node_modules/@reown/appkit/dist/esm/exports/networks.js"),
     },
     dedupe: ["react", "react-dom"],
   },

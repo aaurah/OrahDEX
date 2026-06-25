@@ -928,7 +928,15 @@ function ThirdwebMobilePanel({ onDone }: { onDone: () => void }) {
     try {
       await connect(async () => {
         const wallet = createWallet(walletId);
-        await wallet.connect({ client: thirdwebClient });
+        const account = await wallet.connect({ client: thirdwebClient });
+        if (account?.address) {
+          useWalletStore.getState().connect({
+            address: account.address,
+            provider: "thirdweb",
+            network: "evm",
+            chainId: 1,
+          });
+        }
         return wallet;
       });
       toast({ title: "Wallet connected", description: "Mobile wallet linked to OrahDEX." });
