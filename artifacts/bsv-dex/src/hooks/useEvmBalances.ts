@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, getWagmiConfig } from "@/lib/reown";
 import { useCustomTokenStore, type CustomToken } from "@/store/useCustomTokenStore";
+import { useCustomChainStore } from "@/store/useCustomChainStore";
 
 export interface TokenBalance {
   symbol: string;
@@ -260,7 +261,8 @@ function balanceOfCalldata(address: string): string {
 }
 
 async function rpcCall(method: string, params: any[], chainId: number): Promise<any> {
-  const urls = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter(Boolean);
+  const customRpc = useCustomChainStore.getState().getById(chainId)?.rpcUrl;
+  const urls = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId], customRpc].filter(Boolean);
   for (const rpcUrl of urls) {
     try {
       const res = await globalThis.fetch(rpcUrl, {
@@ -554,7 +556,8 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
         fetchNativeAmount(),
       ]);
 
-      const nativeDef   = NATIVE_TOKENS[chainId] ?? { symbol: "ETH", name: "Ethereum", color: "#8B5CF6", cgId: "ethereum" };
+      const customChain = useCustomChainStore.getState().getById(chainId);
+      const nativeDef   = NATIVE_TOKENS[chainId] ?? (customChain ? { symbol: customChain.symbol, name: customChain.nativeName, color: "#22C55E", cgId: customChain.symbol.toLowerCase() } : { symbol: "ETH", name: "Ethereum", color: "#8B5CF6", cgId: "ethereum" });
       const nativeTick  = usdPrices[nativeDef.symbol] ?? usdPrices["ETH"] ?? { usd: 0, change24h: 0 };
       const nativePrice = typeof nativeTick === "number" ? nativeTick : nativeTick.usd;
       const nativeChange = typeof nativeTick === "number" ? 0 : nativeTick.change24h;
