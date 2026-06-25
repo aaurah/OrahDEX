@@ -750,7 +750,13 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
     };
     const hasStore = Object.values(storeAddrs).some(Boolean);
     if (!storedDerived && !hasStore) return null;
-    return { ...storeAddrs, ...storedDerived };
+    // Server-provisioned internal addresses (storeAddrs) take priority over
+    // HD-derived local derivations (storedDerived) so every view shows the
+    // same address as the header. Only override where storeAddrs has a value.
+    const storeNonNull = Object.fromEntries(
+      Object.entries(storeAddrs).filter(([, v]) => v != null),
+    ) as Partial<DerivedAddresses>;
+    return { ...storedDerived, ...storeNonNull };
   }, [
     storedDerived, evmAddress,
     internalBsvAddress, internalBtcAddress, internalBchAddress,
