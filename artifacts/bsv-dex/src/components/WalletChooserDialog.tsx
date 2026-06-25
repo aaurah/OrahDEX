@@ -35,6 +35,7 @@ import {
   GridPlusPanel,
   type HWDevice,
 } from "@/components/HardwareWalletPanels";
+import { defineChain } from "thirdweb";
 import { useConnect } from "thirdweb/react";
 import { createWallet } from "thirdweb/wallets";
 import { thirdwebClient } from "@/lib/thirdweb-client";
@@ -928,7 +929,7 @@ function ThirdwebMobilePanel({ onDone }: { onDone: () => void }) {
     try {
       await connect(async () => {
         const wallet = createWallet(walletId);
-        const account = await wallet.connect({ client: thirdwebClient });
+        const account = await wallet.connect({ client: thirdwebClient, chain: defineChain(1) });
         if (account?.address) {
           useWalletStore.getState().connect({
             address: account.address,

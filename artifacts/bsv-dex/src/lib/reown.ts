@@ -588,7 +588,7 @@ export function getEvmProvider(walletId: string): any {
   switch (walletId) {
     case "metamask":  return w.ethereum?.isMetaMask && !w.ethereum?.isRabby ? w.ethereum : w.ethereum?.providers?.find((p: any) => p.isMetaMask && !p.isRabby) ?? null;
     case "rabby":     return w.rabby ?? (w.ethereum?.isRabby ? w.ethereum : null);
-    case "coinbase":  return w.coinbaseWalletExtension ?? w.ethereum?.isCoinbaseWallet ? w.ethereum : null;
+    case "coinbase":  return w.coinbaseWalletExtension ?? (w.ethereum?.isCoinbaseWallet ? w.ethereum : null);
     case "trust":     return w.trustwallet ?? (w.ethereum?.isTrust ? w.ethereum : null);
     case "okx":       return w.okxwallet ?? null;
     case "bybit":     return w.bybitWallet ?? null;
