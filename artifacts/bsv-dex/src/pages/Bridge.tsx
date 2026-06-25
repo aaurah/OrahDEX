@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useSearch, useLocation } from "wouter";
+import { SwapWidget } from "thirdweb/react";
+import { thirdwebClient } from "@/lib/thirdweb-client";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowRight, ArrowLeftRight, ChevronDown, Shield, Zap, Clock,
@@ -1634,10 +1636,10 @@ export function BridgePage() {
   const [, setLocation] = useLocation();
 
   const { data: bsvChain } = useBsvChain();
-  const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw" | "history">(() => {
+  const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw" | "history" | "twswap">(() => {
     const params = new URLSearchParams(searchStr);
     const t = params.get("tab");
-    if (t === "deposit" || t === "withdraw" || t === "swap" || t === "history" || t === "bsvswap") return t;
+    if (t === "deposit" || t === "withdraw" || t === "swap" || t === "history" || t === "bsvswap" || t === "twswap") return t;
     return "deposit";
   });
   const [historyCount, setHistoryCount] = useState(() => loadSwapHistory().length);
@@ -1881,11 +1883,12 @@ export function BridgePage() {
       <div className="w-full max-w-xl mb-8">
         <div className="flex gap-1 p-1 bg-secondary rounded-2xl overflow-x-auto scrollbar-none">
           {([
-            { id: "deposit",  icon: <ArrowDown className="w-3.5 h-3.5" />,      label: "Deposit"   },
-            { id: "withdraw", icon: <ArrowUp className="w-3.5 h-3.5" />,        label: "Withdraw"  },
-            { id: "swap",     icon: <ArrowLeftRight className="w-3.5 h-3.5" />, label: "Cross-chain" },
-            { id: "bsvswap",  icon: <ArrowRight className="w-3.5 h-3.5" />,     label: "BSV→Any"  },
-            { id: "history",  icon: <Clock className="w-3.5 h-3.5" />,          label: "History"   },
+            { id: "deposit",  icon: <ArrowDown className="w-3.5 h-3.5" />,      label: "Deposit"        },
+            { id: "withdraw", icon: <ArrowUp className="w-3.5 h-3.5" />,        label: "Withdraw"       },
+            { id: "twswap",   icon: <Zap className="w-3.5 h-3.5" />,            label: "Universal Swap" },
+            { id: "swap",     icon: <ArrowLeftRight className="w-3.5 h-3.5" />, label: "Cross-chain"    },
+            { id: "bsvswap",  icon: <ArrowRight className="w-3.5 h-3.5" />,     label: "BSV→Any"        },
+            { id: "history",  icon: <Clock className="w-3.5 h-3.5" />,          label: "History"        },
           ] as const).map(tab => (
             <button
               key={tab.id}
@@ -1973,6 +1976,26 @@ export function BridgePage() {
       {pageTab === "deposit"  && <CanonicalPanel mode="deposit"  />}
       {pageTab === "withdraw" && <CanonicalPanel mode="withdraw" />}
       {pageTab === "history"  && <SwapHistory />}
+
+      {/* ── ThirdWeb Universal Swap Widget ── */}
+      {pageTab === "twswap" && (
+        <div className="max-w-[480px] mx-auto">
+          <div className="mb-4">
+            <h2 className="text-lg font-bold text-foreground mb-1 flex items-center gap-2">
+              <Zap className="w-5 h-5 text-violet-400" />
+              Universal Swap
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Swap any token across any EVM chain — powered by ThirdWeb Universal Bridge.
+            </p>
+          </div>
+          <SwapWidget
+            client={thirdwebClient}
+            theme="dark"
+          />
+        </div>
+      )}
+
       {pageTab !== "swap" && pageTab !== "bsvswap" && null}
 
       {pageTab === "swap" && (
