@@ -895,13 +895,31 @@ export function AdminEmailInbox() {
                     </div>
                   </div>
 
-                  <div className="prose prose-invert prose-sm max-w-none">
-                    {selected.body.split("\n").map((line, i) => (
-                      <p key={i} className={cn("text-sm leading-relaxed", line === "" ? "mt-3" : "text-foreground/85")}>
-                        {line || "\u00a0"}
-                      </p>
-                    ))}
-                  </div>
+                  {/(<html[\s>]|<!DOCTYPE\s+html|<body[\s>]|<div\s|<table[\s>])/i.test(selected.body) ? (
+                    /* HTML email — render in sandboxed iframe so styles/images work */
+                    <iframe
+                      srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;padding:0;font-family:sans-serif;font-size:14px;background:#fff;color:#111;}</style></head><body>${selected.body}</body></html>`}
+                      sandbox="allow-same-origin"
+                      title="Email content"
+                      className="w-full rounded-xl bg-white border border-border/30"
+                      style={{ minHeight: 240, border: "none", colorScheme: "light" }}
+                      onLoad={(e) => {
+                        const doc = (e.currentTarget as HTMLIFrameElement).contentDocument;
+                        if (doc?.body) {
+                          (e.currentTarget as HTMLIFrameElement).style.height =
+                            `${doc.body.scrollHeight + 32}px`;
+                        }
+                      }}
+                    />
+                  ) : (
+                    <div className="prose prose-invert prose-sm max-w-none">
+                      {selected.body.split("\n").map((line, i) => (
+                        <p key={i} className={cn("text-sm leading-relaxed", line === "" ? "mt-3" : "text-foreground/85")}>
+                          {line || "\u00a0"}
+                        </p>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Quick reply */}
                   <div className="mt-8 p-4 bg-secondary/30 border border-border rounded-2xl">
