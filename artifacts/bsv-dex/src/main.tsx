@@ -2,6 +2,7 @@ import "./polyfills";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { WagmiProvider } from "wagmi";
+import { ThirdwebProvider } from "thirdweb/react";
 import App from "./App";
 import "./index.css";
 import { applyStoredTheme } from "./store/useThemeStore";
@@ -14,8 +15,11 @@ migrateStaleDerivedAddresses();
 const root = createRoot(document.getElementById("root")!);
 
 root.render(
-  createElement(WagmiProvider, { config: wagmiConfig },
-    createElement(App)
+  createElement(ThirdwebProvider,
+    {},
+    createElement(WagmiProvider, { config: wagmiConfig },
+      createElement(App)
+    )
   )
 );
 

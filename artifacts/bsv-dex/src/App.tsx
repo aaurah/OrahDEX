@@ -1,4 +1,5 @@
 import { useEffect, ReactNode, lazy, Suspense, Component } from "react";
+import { useActiveAccount, useActiveWalletChain } from "thirdweb/react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -331,6 +332,7 @@ function Router() {
     import("@/lib/reown").then(({ subscribeReownAccount, fetchEvmBalance, parseChainFromCaip, isUserDisconnecting, setUserDisconnecting }) => {
       reownUnsub = subscribeReownAccount(async (state) => {
         const { provider: current } = useWalletStore.getState();
+        if (current === "thirdweb") return;
         if (state.isConnected && state.address) {
           if (isUserDisconnecting()) return;
           const chainId = parseChainFromCaip(state.caipAddress) ?? 1;
@@ -511,6 +513,33 @@ function Router() {
   );
 }
 
+function ThirdwebSync() {
+  const account = useActiveAccount();
+  const chain = useActiveWalletChain();
+
+  useEffect(() => {
+    if (!account) {
+      const { provider: current } = useWalletStore.getState();
+      if (current === "thirdweb") useWalletStore.getState().disconnect();
+      return;
+    }
+    const chainId = chain?.id ?? 1;
+    useWalletStore.getState().connect({
+      address: account.address,
+      provider: "thirdweb",
+      network: "evm",
+      chainId,
+    });
+    import("@/lib/reown").then(({ fetchEvmBalance }) => {
+      fetchEvmBalance(account.address, chainId).then(bal => {
+        if (bal !== null) useWalletStore.getState().setBalance(bal);
+      });
+    });
+  }, [account?.address, chain?.id]);
+
+  return null;
+}
+
 function OraAIWidgetGate() {
   const [location] = useLocation();
   if (location.startsWith("/devai") || location.startsWith("/admin")) return null;
@@ -523,6 +552,7 @@ function AppContent() {
 
   return (
     <>
+      <ThirdwebSync />
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <Router />
         {/* Ora AI floating chat widget — hidden on DevAI and admin pages */}

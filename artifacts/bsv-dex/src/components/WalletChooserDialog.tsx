@@ -35,6 +35,9 @@ import {
   GridPlusPanel,
   type HWDevice,
 } from "@/components/HardwareWalletPanels";
+import { useConnect } from "thirdweb/react";
+import { createWallet } from "thirdweb/wallets";
+import { thirdwebClient } from "@/lib/thirdweb-client";
 
 const srOnly: React.CSSProperties = {
   position: "absolute", width: 1, height: 1, padding: 0,
@@ -54,7 +57,8 @@ type Tab =
   | "trezor"
   | "keystone"
   | "gridplus"
-  | "mobile-qr";
+  | "mobile-qr"
+  | "thirdweb";
 
 function applyOrahWallet(address: string, chains?: PasskeyChainAddresses) {
   const store = useWalletStore.getState();
@@ -901,6 +905,84 @@ const HW_META: Record<HWDevice, { emoji: string; title: string; description: str
   gridplus: { emoji: "⚡", title: "GridPlus Lattice1", description: "Wi-Fi — connects via the GridPlus relay." },
 };
 
+/* ─── ThirdWeb Mobile Wallet Panel (headless) ───────────────────────────── */
+
+type TwWalletId = "walletConnect" | "io.metamask" | "com.coinbase.wallet" | "io.zerion.wallet";
+
+const TW_WALLETS: { id: TwWalletId; label: string; sub: string; emoji: string; color: string }[] = [
+  { id: "walletConnect",       label: "WalletConnect",    sub: "Any WalletConnect wallet — scan QR", emoji: "🔗", color: "bg-blue-500/10 border-blue-500/20 text-blue-400" },
+  { id: "io.metamask",         label: "MetaMask Mobile",  sub: "Open MetaMask app on your phone",    emoji: "🦊", color: "bg-orange-500/10 border-orange-500/20 text-orange-400" },
+  { id: "com.coinbase.wallet", label: "Coinbase Wallet",  sub: "Connect via Coinbase Wallet app",    emoji: "🔵", color: "bg-sky-500/10 border-sky-500/20 text-sky-400" },
+  { id: "io.zerion.wallet",    label: "imToken / Zerion",  sub: "DeFi portfolio wallets",             emoji: "💎", color: "bg-violet-500/10 border-violet-500/20 text-violet-400" },
+];
+
+function ThirdwebMobilePanel({ onDone }: { onDone: () => void }) {
+  const { connect, isConnecting } = useConnect();
+  const { toast } = useToast();
+  const [connecting, setConnecting] = useState<TwWalletId | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConnect = async (walletId: TwWalletId) => {
+    setConnecting(walletId);
+    setError(null);
+    try {
+      await connect(async () => {
+        const wallet = createWallet(walletId);
+        await wallet.connect({ client: thirdwebClient });
+        return wallet;
+      });
+      toast({ title: "Wallet connected", description: "Mobile wallet linked to OrahDEX." });
+      onDone();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "Connection failed";
+      if (!msg.toLowerCase().includes("cancel") && !msg.toLowerCase().includes("abort")) {
+        setError(msg);
+      }
+    } finally {
+      setConnecting(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2 pt-1">
+      {TW_WALLETS.map(({ id, label, sub, emoji, color }) => {
+        const isBusy = connecting === id || (isConnecting && connecting === id);
+        return (
+          <button
+            key={id}
+            onClick={() => handleConnect(id)}
+            disabled={!!connecting}
+            className={`group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all duration-200 text-left disabled:opacity-60 disabled:cursor-not-allowed hover:shadow-sm ${color} bg-transparent`}
+          >
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 text-xl border ${color}`}>
+              {isBusy ? <Loader2 className="w-5 h-5 animate-spin" /> : emoji}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-foreground">{label}</div>
+              <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-muted-foreground/80 group-hover:translate-x-0.5 transition-all shrink-0" />
+          </button>
+        );
+      })}
+
+      {error && (
+        <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-3 text-[11px] text-destructive">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div className="flex items-start gap-2 pt-1 px-1">
+        <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Connects via WalletConnect v2. Signing stays in your mobile wallet — keys never leave your device.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Mobile QR Panel ──────────────────────────────────────────────────── */
 
 function MobileQRPanel({ onDone }: { onDone: () => void }) {
@@ -1106,6 +1188,19 @@ export function WalletChooserDialog() {
                 />
 
                 <OptionCard
+                  onClick={() => setTab("thirdweb")}
+                  iconBg="bg-indigo-500/10 border border-indigo-500/20 group-hover:bg-indigo-500/15 group-hover:border-indigo-500/30"
+                  icon={<Smartphone className="w-5 h-5 text-indigo-400" />}
+                  title="Mobile Wallet"
+                  sub="imToken · MetaMask Mobile · WalletConnect · Coinbase"
+                  badge={
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 tracking-wider">
+                      MOBILE
+                    </span>
+                  }
+                />
+
+                <OptionCard
                   onClick={handleEvmClick}
                   iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
                   icon={<span className="text-xl leading-none text-blue-400">⟠</span>}
@@ -1271,6 +1366,23 @@ export function WalletChooserDialog() {
             />
             <MobileQRPanel onDone={handleClose} />
           </>
+        )}
+
+        {/* ══════════════════════════════════════
+            THIRDWEB MOBILE WALLET
+        ══════════════════════════════════════ */}
+        {tab === "thirdweb" && (
+          <div className="flex flex-col min-h-0 flex-1">
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<Smartphone className="w-5 h-5 text-indigo-400" />}
+              title="Mobile Wallet"
+              description="imToken · MetaMask Mobile · WalletConnect · Coinbase Wallet"
+            />
+            <div className="flex-1 overflow-y-auto overscroll-contain px-6 pb-5">
+              <ThirdwebMobilePanel onDone={handleClose} />
+            </div>
+          </div>
         )}
 
       </DialogContent>
