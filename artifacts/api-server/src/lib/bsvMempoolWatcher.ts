@@ -122,8 +122,12 @@ async function mempoolTick(): Promise<void> {
     for (const t of targets) {
       const history = await fetchAddressHistory(t.bsv_address);
       for (const entry of history) {
-        if (entry.height !== 0) continue;  // only mempool (unconfirmed) txs
-
+        // Capture mempool txs (height=0) AND recently confirmed txs.
+        // If an address is first scanned after a tx confirms, height > 0 here;
+        // we still ingest it so Phase 2 can run the merkle-proof fast path
+        // rather than waiting for the 60 s balance poller.
+        // WoC /address/history typically returns the last ~50 txs, so very old
+        // confirmed txs won't appear and we avoid stale re-ingestion.
         const { rows: dup } = await pool.query(
           `SELECT txid FROM bsv_pending_deposits WHERE txid = $1 AND bsv_address = $2`,
           [entry.tx_hash, t.bsv_address],
@@ -133,6 +137,8 @@ async function mempoolTick(): Promise<void> {
         const amountSat = await fetchTxAmountToAddress(entry.tx_hash, t.bsv_address);
         if (amountSat <= 0) continue;
 
+        // Insert as 'mempool' regardless; Phase 2 will immediately attempt
+        // merkle proof for confirmed txs (height > 0) on the next evaluation.
         await pool.query(
           `INSERT INTO bsv_pending_deposits (txid, bsv_address, user_wallet, amount_sat, status)
            VALUES ($1, $2, $3, $4, 'mempool')
@@ -141,8 +147,16 @@ async function mempoolTick(): Promise<void> {
         );
         newMempool++;
         logger.info(
-          { txid: entry.tx_hash, bsvAddress: t.bsv_address, user: t.evm_address, amountSat },
-          "BSV SPV: mempool deposit detected",
+          {
+            txid:       entry.tx_hash,
+            height:     entry.height,
+            bsvAddress: t.bsv_address,
+            user:       t.evm_address,
+            amountSat,
+          },
+          entry.height === 0
+            ? "BSV SPV: mempool deposit detected"
+            : "BSV SPV: confirmed deposit ingested for SPV fast-path",
         );
       }
     }
