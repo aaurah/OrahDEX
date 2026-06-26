@@ -16,6 +16,8 @@ import { sendTransaction, prepareTransaction, waitForReceipt } from "thirdweb";
 import { defineChain } from "thirdweb/chains";
 import { thirdwebClient } from "@/lib/thirdweb-client";
 import { useWalletStore } from "@/store/useWalletStore";
+import { getAccount as wagmiGetAccount } from "@wagmi/core";
+import { getWagmiConfig } from "@/lib/reown";
 import {
   hasEscrow,
   resolveEscrowAsset,
@@ -23,6 +25,9 @@ import {
   lockEthViaOrah,
   lockErc20ViaOrah,
   cancelEscrowViaOrah,
+  lockEthViaReown,
+  lockErc20ViaReown,
+  cancelEscrowViaReown,
   lockEthUniversal,
   lockErc20Universal,
   cancelEscrowUniversal,
@@ -146,6 +151,18 @@ export function useEscrow() {
   // chain where the OrahDEX escrow contract is deployed.
   const escrowAvailable = isEvm && hasEscrow(chainId);
 
+  // Detect whether the underlying connection is actually Reown/WalletConnect.
+  // When a user connects via Reown, useThirdwebWalletSync syncs the wallet into
+  // ThirdWeb's active state and ThirdwebSync then sets provider = "thirdweb" in
+  // the store — but the signing MUST still go through wagmi/Reown because that
+  // is the only path that sends a proper WalletConnect deep-link on mobile.
+  function isReownConnected(): boolean {
+    const config = getWagmiConfig();
+    if (!config) return false;
+    const acct = wagmiGetAccount(config);
+    return !!acct?.isConnected && !!acct?.address;
+  }
+
   const [status,    setStatus]    = useState<EscrowStatus>("idle");
   const [txResult,  setTxResult]  = useState<EscrowTxResult | null>(null);
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null);
@@ -163,6 +180,14 @@ export function useEscrow() {
       return null;
     }
 
+    // Routing priority:
+    //   1. Orah in-app wallet (local key)
+    //   2. Reown/WalletConnect — wagmi path triggers the mobile deep-link properly
+    //   3. Native ThirdWeb connection (ThirdWeb UI → ThirdWeb SDK sendTransaction)
+    //   4. Universal fallback (window.ethereum / wagmi connector scan)
+    const useReown = !isOrahWallet && isReownConnected();
+    const useTw    = !isOrahWallet && !useReown && isThirdweb && !!thirdwebAccount;
+
     try {
       setErrorMsg(null);
       let result: EscrowTxResult;
@@ -172,8 +197,10 @@ export function useEscrow() {
         setStatus("locking");
         if (isOrahWallet) {
           result = await lockEthViaOrah(params.orderId, asset.rawAmount, address, chainId);
-        } else if (isThirdweb && thirdwebAccount) {
-          result = await lockEthViaThirdweb(params.orderId, asset.rawAmount, thirdwebAccount, chainId);
+        } else if (useReown) {
+          result = await lockEthViaReown(params.orderId, asset.rawAmount, chainId);
+        } else if (useTw) {
+          result = await lockEthViaThirdweb(params.orderId, asset.rawAmount, thirdwebAccount!, chainId);
         } else {
           result = await lockEthUniversal(params.orderId, asset.rawAmount, address, chainId);
         }
@@ -182,8 +209,10 @@ export function useEscrow() {
         setStatus("approving");
         if (isOrahWallet) {
           result = await lockErc20ViaOrah(params.orderId, asset.address, asset.rawAmount, address, chainId);
-        } else if (isThirdweb && thirdwebAccount) {
-          result = await lockErc20ViaThirdweb(params.orderId, asset.address, asset.rawAmount, thirdwebAccount, chainId);
+        } else if (useReown) {
+          result = await lockErc20ViaReown(params.orderId, asset.address, asset.rawAmount, chainId);
+        } else if (useTw) {
+          result = await lockErc20ViaThirdweb(params.orderId, asset.address, asset.rawAmount, thirdwebAccount!, chainId);
         } else {
           result = await lockErc20Universal(params.orderId, asset.address, asset.rawAmount, address, chainId);
         }
@@ -202,10 +231,13 @@ export function useEscrow() {
       setStatus("error");
       return null;
     }
-  }, [escrowAvailable, address, chainId, isOrahWallet]);
+  }, [escrowAvailable, address, chainId, isOrahWallet, isThirdweb, thirdwebAccount]);
 
   const cancelOrder = useCallback(async (orderId: string): Promise<EscrowTxResult | null> => {
     if (!escrowAvailable || !address) return null;
+
+    const useReown = !isOrahWallet && isReownConnected();
+    const useTw    = !isOrahWallet && !useReown && isThirdweb && !!thirdwebAccount;
 
     try {
       setErrorMsg(null);
@@ -213,8 +245,10 @@ export function useEscrow() {
       let result: EscrowTxResult;
       if (isOrahWallet) {
         result = await cancelEscrowViaOrah(orderId, address, chainId);
-      } else if (isThirdweb && thirdwebAccount) {
-        result = await cancelEscrowViaThirdweb(orderId, thirdwebAccount, chainId);
+      } else if (useReown) {
+        result = await cancelEscrowViaReown(orderId, chainId);
+      } else if (useTw) {
+        result = await cancelEscrowViaThirdweb(orderId, thirdwebAccount!, chainId);
       } else {
         result = await cancelEscrowUniversal(orderId, address, chainId);
       }
@@ -227,7 +261,7 @@ export function useEscrow() {
       setStatus("error");
       return null;
     }
-  }, [escrowAvailable, address, chainId, isOrahWallet]);
+  }, [escrowAvailable, address, chainId, isOrahWallet, isThirdweb, thirdwebAccount]);
 
   const reset = useCallback(() => {
     setStatus("idle");
