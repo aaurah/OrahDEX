@@ -3037,8 +3037,8 @@ router.post("/retry-pending-withdrawals", requireAdminToken, async (req, res) =>
         });
         if (result.status === "completed") {
           await pool.query(
-            `UPDATE withdrawal_requests SET status = 'completed', txid = $1, processed_at = now(), note = 'Auto-retried by admin' WHERE id = $2`,
-            [result.txid, row.id],
+            `UPDATE withdrawal_requests SET status = 'completed', txid = $1, processed_at = now(), note = 'Auto-retried by admin', arc_txid = $3, arc_status = $4 WHERE id = $2`,
+            [result.txid, row.id, result.arcTxid ?? null, result.arcStatus ?? null],
           );
           succeeded++;
           results.push({ id: row.id, status: "completed", txid: result.txid });
