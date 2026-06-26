@@ -12,6 +12,7 @@ import { OrderBook } from "@/components/trading/OrderBook";
 import type { ExternalFlash } from "@/components/trading/OrderBook";
 import { OrderForm } from "@/components/trading/OrderForm";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
+import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
 import { useLetsExchangeCoins } from "@/hooks/useLetsExchangeCoins";
 import { useLetsExchangeRate } from "@/hooks/useLetsExchangeRate";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
@@ -168,6 +169,7 @@ export function SpotTrading() {
   type TradeMode = "order" | "swap";
   const [tradeMode, setTradeMode] = useState<TradeMode>("order");
   const [tradeModeLockedByUser, setTradeModeLockedByUser] = useState(false);
+  const [atomicSwapOpen, setAtomicSwapOpen] = useState(false);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -448,6 +450,7 @@ export function SpotTrading() {
   }, [allMarkets, dropQuote, dropSearch]);
 
   return (
+    <>
     <div className="flex flex-col h-[calc(100vh-5.75rem)] bg-background overflow-hidden">
       {/* Ticker Header */}
       <div className="flex items-center gap-6 px-4 py-3 border-b border-border bg-card shrink-0">
@@ -1080,6 +1083,16 @@ export function SpotTrading() {
                 <ArrowLeftRight className="w-3 h-3" />
                 Cross-chain Swap
               </button>
+              <button
+                onClick={() => setAtomicSwapOpen(true)}
+                className={cn(
+                  "flex-1 flex items-center justify-center gap-1.5 py-1.5 text-[11px] font-semibold transition-all border-l border-border",
+                  "text-muted-foreground hover:text-violet-300 hover:bg-violet-500/10"
+                )}
+              >
+                <Zap className="w-3 h-3" />
+                BSV Atomic
+              </button>
             </div>
           </div>
 
@@ -1230,5 +1243,8 @@ export function SpotTrading() {
       </div>
 
     </div>
+
+    <CrossChainSwapPanel open={atomicSwapOpen} onOpenChange={setAtomicSwapOpen} />
+    </>
   );
 }
