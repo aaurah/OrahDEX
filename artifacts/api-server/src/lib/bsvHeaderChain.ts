@@ -53,13 +53,19 @@ function expandTarget(nBits: number): Buffer {
   const target = Buffer.alloc(32, 0);
   const exp    = nBits >> 24;
   const coeff  = nBits & 0x7fffff;
-  // The exponent encodes the byte position of the most-significant byte.
-  // offset = 32 - exp positions the coefficient at the right place.
-  const offset = 32 - exp;
-  if (offset >= 0 && offset + 2 < 32) {
-    target[offset]     = (coeff >> 16) & 0xff;
-    target[offset + 1] = (coeff >> 8)  & 0xff;
-    target[offset + 2] = coeff         & 0xff;
+  // SHA256d returns bytes in little-endian (internal Bitcoin) order: byte 0 = LSB.
+  // In this representation target = coeff * 256^(exp-3), so:
+  //   byte[exp-3] = coeff LSB
+  //   byte[exp-2] = coeff middle
+  //   byte[exp-1] = coeff MSB
+  // (NOT 32-exp, which is the big-endian slot — that would be wrong here.)
+  if (exp >= 3 && exp <= 32) {
+    const lsb = exp - 3;
+    if (lsb + 2 < 32) {
+      target[lsb]     = coeff & 0xff;
+      target[lsb + 1] = (coeff >> 8)  & 0xff;
+      target[lsb + 2] = (coeff >> 16) & 0xff;
+    }
   }
   return target;
 }
