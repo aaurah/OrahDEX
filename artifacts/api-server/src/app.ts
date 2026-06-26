@@ -73,6 +73,22 @@ pool.query(`
     ON bsv_pending_deposits (user_wallet, status);
 `).catch((err: Error) => logger.warn({ err: err.message }, "bsv_pending_deposits migration failed (non-fatal)"));
 
+// SPV block header chain — stores PoW-validated BSV block headers.
+pool.query(`
+  CREATE TABLE IF NOT EXISTS bsv_block_headers (
+    hash         TEXT    PRIMARY KEY,
+    height       INT     NOT NULL,
+    prev_hash    TEXT    NOT NULL,
+    merkle_root  TEXT    NOT NULL,
+    bits         BIGINT  NOT NULL,
+    nonce        BIGINT  NOT NULL,
+    block_time   INT     NOT NULL,
+    source       TEXT    NOT NULL DEFAULT 'woc',
+    indexed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS bsv_block_headers_height_idx ON bsv_block_headers (height);
+`).catch((err: Error) => logger.warn({ err: err.message }, "bsv_block_headers migration failed (non-fatal)"));
+
 const app: Express = express();
 const middlewareRegistrationOrder: string[] = [];
 
