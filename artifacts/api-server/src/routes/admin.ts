@@ -3689,5 +3689,22 @@ router.delete("/chains/:chainId", requireAdminToken, async (req, res) => {
   }
 });
 
+/* ── Overlay Stats ─────────────────────────────────────────────────────────── */
+
+/**
+ * GET /admin/overlay/stats
+ * Returns total indexed overlay records, latest block scanned, and recent records.
+ */
+router.get("/overlay/stats", requireAdminToken, async (_req, res) => {
+  try {
+    const { getOverlayStats } = await import("../lib/overlayScanner.js");
+    const stats = await getOverlayStats();
+    res.json(stats);
+  } catch (err: any) {
+    logger.warn({ err }, "GET /admin/overlay/stats error");
+    res.status(500).json({ error: "Failed to fetch overlay stats" });
+  }
+});
+
 export default router;
 

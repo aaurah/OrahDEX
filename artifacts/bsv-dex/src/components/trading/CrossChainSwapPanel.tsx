@@ -411,6 +411,22 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
   // displayIntent: use polling data or the initial fundingData returned on creation
   const displayIntent: BsvIntentData | null = intentData ?? fundingData;
 
+  // ── Overlay record (on-chain OP_RETURN verification) ──────────────────────
+  const overlayOrderId = intentId ? intentId.replace(/-/g, "").slice(0, 16) : null;
+  const { data: overlayData } = useQuery({
+    queryKey:        ["overlay-record", overlayOrderId],
+    queryFn:         async () => {
+      if (!overlayOrderId) return null;
+      const r = await fetch(`${BASE}/api/overlay/intents/${overlayOrderId}`);
+      if (!r.ok) return null;
+      return r.json() as Promise<{ found: boolean; record: { explorerUrl: string; txid: string } } | null>;
+    },
+    enabled:         !!overlayOrderId && step === "tracking" && isBsvToEvm,
+    refetchInterval: 60_000,
+    staleTime:       30_000,
+  });
+  const overlayRecord = (overlayData as any)?.found ? (overlayData as any).record : null;
+
   // Auto-advance to tracking after BSV tx or non-PENDING status
   useEffect(() => {
     if (step === "funding" && displayIntent) {
@@ -922,6 +938,19 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
                     <Row label="Deposit tx">
                       <TxLink href={`https://whatsonchain.com/tx/${displayIntent.fundingTxid}`}
                         txid={displayIntent.fundingTxid} />
+                    </Row>
+                  )}
+                  {overlayRecord && (
+                    <Row label="On-chain record">
+                      <a
+                        href={overlayRecord.explorerUrl ?? `https://whatsonchain.com/tx/${overlayRecord.txid}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-emerald-400 hover:text-emerald-300 text-xs font-medium"
+                      >
+                        <CheckCircle2 size={10} />
+                        Verified on-chain ✓
+                      </a>
                     </Row>
                   )}
                   {displayIntent.claimTxid && (

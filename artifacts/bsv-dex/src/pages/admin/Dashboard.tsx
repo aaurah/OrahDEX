@@ -5,6 +5,7 @@ import {
   Cpu, Key, Activity, ShieldCheck, AlertTriangle,
   RefreshCw, Flame, MessageCircle, Zap,
   ChevronRight, Shield, Link2, BarChart3, HeartPulse,
+  Database, CheckCircle2, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -12,7 +13,8 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const fetchStats    = () => adminFetch(`/api/admin/stats`).then(r => r.json());
 const fetchActivity = () => adminFetch(`/api/admin/activity?limit=12`).then(r => r.json());
 const fetchApiKeys  = () => adminFetch(`/api/admin/api-keys`).then(r => r.json());
-const fetchChatChannels = () => fetch(`${BASE}/api/chat/channels`).then(r => r.json()).catch(() => []);
+const fetchChatChannels  = () => fetch(`${BASE}/api/chat/channels`).then(r => r.json()).catch(() => []);
+const fetchOverlayStats  = () => adminFetch(`/api/admin/overlay/stats`).then(r => r.json()).catch(() => null);
 
 function StatCard({ icon: Icon, label, value, sub, color = "primary", live = false }: {
   icon: any; label: string; value: string; sub?: string; color?: string; live?: boolean;
@@ -91,6 +93,13 @@ export function AdminDashboard() {
     staleTime:       25_000,
   });
 
+  const { data: overlayStats } = useQuery({
+    queryKey: ["admin-overlay-stats"],
+    queryFn: fetchOverlayStats,
+    refetchInterval: 60_000,
+    staleTime:       50_000,
+  });
+
   const activity: typeof FALLBACK_ACTIVITY = Array.isArray(activityRaw) && activityRaw.length > 0
     ? activityRaw
     : FALLBACK_ACTIVITY;
@@ -162,6 +171,10 @@ export function AdminDashboard() {
         <StatCard live icon={MessageCircle} label="Live Chat"
           value={`${channels.length || "—"} channels`}
           sub={`${totalChatMessages} msgs · ${totalChatSubs} live`} color="blue" />
+        <StatCard live icon={Database} label="Overlay Records"
+          value={(overlayStats as any)?.total != null ? String((overlayStats as any).total) : "—"}
+          sub={(overlayStats as any)?.latestBlockScanned ? `block ${(overlayStats as any).latestBlockScanned}` : "BSV on-chain audit trail"}
+          color="violet" />
       </div>
 
       {/* Platform Updates */}
