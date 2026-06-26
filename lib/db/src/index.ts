@@ -33,14 +33,16 @@ const _connectionString = dbUrl
 
 export const pool = new Pool({
   connectionString: _connectionString,
-  // Keep TCP connections alive so the managed Postgres server does not silently
-  // drop idle sockets. Without this the pool reuses dead connections and gets
-  // "Authentication timed out" across all background workers simultaneously.
+  // Send TCP keepalive probes immediately when a connection becomes idle.
+  // Setting the initial delay to 0 means the kernel sends the first probe as
+  // soon as the socket is idle rather than waiting 10+ seconds — this prevents
+  // Replit's managed Postgres (which drops idle sockets after ~5–8 s) from
+  // killing connections that are still in the pool but not yet evicted.
   keepAlive: true,
-  keepAliveInitialDelayMillis: 10_000,
-  // Evict idle connections after 15 s — well below Replit Postgres's idle
-  // timeout — so stale sockets are recycled before the server closes them.
-  idleTimeoutMillis: 15_000,
+  keepAliveInitialDelayMillis: 0,
+  // Evict idle connections after 8 s — well below the network's idle-drop
+  // window — so stale sockets are recycled before the server closes them.
+  idleTimeoutMillis: 8_000,
   // Wait up to 20 s for a free connection before erroring — long enough to ride
   // out a burst from the liquidity bot cycle without cascading failures.
   connectionTimeoutMillis: 20_000,
@@ -51,6 +53,14 @@ export const pool = new Pool({
   // runaway query cannot hold a connection and starve the rest of the pool.
   query_timeout: 20_000,
 });
+
+// Catch errors on idle clients in the pool (e.g. a connection dropped by the
+// server while sitting unused). Without this handler Node.js would emit an
+// unhandled 'error' event and potentially crash the process.
+pool.on("error", (err, _client) => {
+  console.error("[pg-pool] idle client error — connection will be discarded:", err.message);
+});
+
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";
