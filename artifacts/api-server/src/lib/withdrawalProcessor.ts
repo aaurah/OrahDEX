@@ -256,7 +256,7 @@ async function processBsvWithdrawal(params: {
   asset:     string;
   amount:    number;
   recipient: string;
-}): Promise<{ txid: string; explorer: string }> {
+}): Promise<{ txid: string; explorer: string; arcTxid: string | null; arcStatus: string | null }> {
   const wallet = await getOrCreateWallet();
   const balance = await fetchWalletBalance(wallet.address);
 
@@ -382,8 +382,8 @@ export async function processWithdrawal(params: {
       if (!BSV_ADDRESS_RE.test(params.recipient)) {
         throw new Error(`Invalid BSV/BCH recipient address: ${params.recipient}`);
       }
-      const { txid, explorer } = await processBsvWithdrawal(params);
-      return { status: "completed", txid, explorer };
+      const result = await processBsvWithdrawal(params);
+      return { status: "completed", txid: result.txid, explorer: result.explorer, arcTxid: result.arcTxid, arcStatus: result.arcStatus };
     }
 
     if (net === "sol" || net === "solana") {
