@@ -16,6 +16,7 @@ import { creditAvailable } from "../lib/ledger.js";
 import { pool } from "@workspace/db";
 import { getOrCreateWallet } from "../lib/bsvWallet.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { getBsvChainStatus } from "../lib/bsvChainMonitor.js";
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
@@ -550,36 +551,45 @@ router.get("/deposit/bsv-pending", async (req, res) => {
   }
 
   try {
-    const { rows } = await pool.query<{
-      txid:         string;
-      bsv_address:  string;
-      amount_sat:   string;
-      status:       string;
-      block_height: number | null;
-      detected_at:  Date;
-      confirmed_at: Date | null;
-    }>(
-      `SELECT txid, bsv_address, amount_sat::text, status, block_height,
-              detected_at, confirmed_at
-       FROM bsv_pending_deposits
-       WHERE user_wallet = $1
-         AND status IN ('mempool', 'confirmed')
-         AND detected_at > NOW() - INTERVAL '48 hours'
-       ORDER BY detected_at DESC
-       LIMIT 20`,
-      [walletAddress],
-    );
+    const [chainStatus, { rows }] = await Promise.all([
+      getBsvChainStatus(),
+      pool.query<{
+        txid:         string;
+        bsv_address:  string;
+        amount_sat:   string;
+        status:       string;
+        block_height: number | null;
+        detected_at:  Date;
+        confirmed_at: Date | null;
+      }>(
+        `SELECT txid, bsv_address, amount_sat::text, status, block_height,
+                detected_at, confirmed_at
+         FROM bsv_pending_deposits
+         WHERE user_wallet = $1
+           AND status IN ('mempool', 'confirmed')
+           AND detected_at > NOW() - INTERVAL '48 hours'
+         ORDER BY detected_at DESC
+         LIMIT 20`,
+        [walletAddress],
+      ),
+    ]);
+
+    const chainHeight = chainStatus.blockHeight > 0 ? chainStatus.blockHeight : null;
 
     const items = rows.map(r => ({
-      txid:        r.txid,
-      bsvAddress:  r.bsv_address,
-      amountSat:   Number(r.amount_sat),
-      amountBsv:   (Number(r.amount_sat) / 1e8).toFixed(8),
-      status:      r.status,
-      blockHeight: r.block_height,
-      detectedAt:  r.detected_at.toISOString(),
-      confirmedAt: r.confirmed_at?.toISOString() ?? null,
-      explorerUrl: `${BSV_NET.explorer}/tx/${r.txid}`,
+      txid:         r.txid,
+      bsvAddress:   r.bsv_address,
+      amountSat:    Number(r.amount_sat),
+      amountBsv:    (Number(r.amount_sat) / 1e8).toFixed(8),
+      status:       r.status,
+      blockHeight:  r.block_height,
+      chainHeight,
+      confirmations: (r.block_height && chainHeight)
+        ? Math.max(0, chainHeight - r.block_height + 1)
+        : null,
+      detectedAt:   r.detected_at.toISOString(),
+      confirmedAt:  r.confirmed_at?.toISOString() ?? null,
+      explorerUrl:  `${BSV_NET.explorer}/tx/${r.txid}`,
     }));
 
     res.json(items);

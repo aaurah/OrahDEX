@@ -265,15 +265,17 @@ interface AltChainDepositResponse {
 }
 
 interface PendingBsvDeposit {
-  txid:        string;
-  bsvAddress:  string;
-  amountSat:   number;
-  amountBsv:   string;
-  status:      "mempool" | "confirmed" | "stale";
-  blockHeight: number | null;
-  detectedAt:  string;
-  confirmedAt: string | null;
-  explorerUrl: string;
+  txid:          string;
+  bsvAddress:    string;
+  amountSat:     number;
+  amountBsv:     string;
+  status:        "mempool" | "confirmed" | "stale";
+  blockHeight:   number | null;
+  chainHeight:   number | null;
+  confirmations: number | null;
+  detectedAt:    string;
+  confirmedAt:   string | null;
+  explorerUrl:   string;
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -1394,12 +1396,16 @@ export function WithdrawSheet({
                                 <div className="flex items-center gap-2 min-w-0">
                                   {dep.status === "mempool" ? (
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-yellow-400 bg-yellow-400/10 rounded-full px-2 py-0.5 shrink-0">
-                                      <Clock className="w-2.5 h-2.5" /> Mempool
+                                      <Clock className="w-2.5 h-2.5" /> Pending
                                     </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-400 bg-green-400/10 rounded-full px-2 py-0.5 shrink-0">
                                       <CheckCircle2 className="w-2.5 h-2.5" />
-                                      {dep.blockHeight ? `Block ${dep.blockHeight}` : "Confirmed"}
+                                      {dep.confirmations !== null
+                                        ? `${dep.confirmations} conf.`
+                                        : dep.blockHeight
+                                          ? `Block ${dep.blockHeight}`
+                                          : "Confirmed"}
                                     </span>
                                   )}
                                   <span className="font-mono text-[11px] text-muted-foreground truncate">
