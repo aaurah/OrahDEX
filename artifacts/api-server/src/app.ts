@@ -34,6 +34,7 @@ import { startBsvIntentWatcher } from "./lib/bsvIntentWatcher.js";
 import { startArcStatusPoller } from "./lib/arcStatusPoller.js";
 import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
 import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
+import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
 import { pool } from "@workspace/db";
 
 // Run the chain_id column migration at startup (idempotent — IF NOT EXISTS).
@@ -53,6 +54,24 @@ pool.query(`
     ADD COLUMN IF NOT EXISTS "arc_txid"   text,
     ADD COLUMN IF NOT EXISTS "arc_status" text;
 `).catch((err: Error) => logger.warn({ err: err.message }, "ARC columns migration failed (non-fatal)"));
+
+// SPV pending deposits table — tracks mempool-detected BSV deposits.
+pool.query(`
+  CREATE TABLE IF NOT EXISTS bsv_pending_deposits (
+    txid          TEXT    NOT NULL,
+    bsv_address   TEXT    NOT NULL,
+    user_wallet   TEXT    NOT NULL,
+    amount_sat    BIGINT  NOT NULL DEFAULT 0,
+    status        TEXT    NOT NULL DEFAULT 'mempool',
+    block_height  INT,
+    detected_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    confirmed_at  TIMESTAMPTZ,
+    proof_tries   INT     NOT NULL DEFAULT 0,
+    PRIMARY KEY (txid, bsv_address)
+  );
+  CREATE INDEX IF NOT EXISTS bsv_pending_deposits_wallet_status_idx
+    ON bsv_pending_deposits (user_wallet, status);
+`).catch((err: Error) => logger.warn({ err: err.message }, "bsv_pending_deposits migration failed (non-fatal)"));
 
 const app: Express = express();
 const middlewareRegistrationOrder: string[] = [];
@@ -463,6 +482,7 @@ _s(72_000, startBsvIntentWatcher,       "startBsvIntentWatcher");
 _s(78_000, startArcStatusPoller,        "startArcStatusPoller");
 _s(84_000, startAdvancedOrderEngines,  "startAdvancedOrderEngines");
 _s(90_000, startFundingRateEngine,     "startFundingRateEngine");
+_s(96_000, startBsvMempoolWatcher,    "startBsvMempoolWatcher");
 
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 

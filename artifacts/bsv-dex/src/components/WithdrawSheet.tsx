@@ -264,6 +264,18 @@ interface AltChainDepositResponse {
   message?:         string;
 }
 
+interface PendingBsvDeposit {
+  txid:        string;
+  bsvAddress:  string;
+  amountSat:   number;
+  amountBsv:   string;
+  status:      "mempool" | "confirmed" | "stale";
+  blockHeight: number | null;
+  detectedAt:  string;
+  confirmedAt: string | null;
+  explorerUrl: string;
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 function summariseNote(raw: string): string {
   if (!raw) return raw;
@@ -489,6 +501,23 @@ export function WithdrawSheet({
       },
       enabled: isBitcoinFork && open && tab === "deposit",
       staleTime: 300_000,
+    });
+
+  // ── BSV SPV pending deposits (auto-detected via mempool watcher) ──────────
+  const { data: bsvPendingDeposits = [] } =
+    useQuery<PendingBsvDeposit[]>({
+      queryKey: ["bsv-pending-deposits", walletAddress],
+      queryFn: async () => {
+        if (!walletAddress) return [];
+        const r = await fetch(
+          `${API_BASE}/deposit/bsv-pending?walletAddress=${encodeURIComponent(walletAddress)}`,
+        );
+        if (!r.ok) return [];
+        return r.json();
+      },
+      enabled: network.toLowerCase() === "bsv" && !!walletAddress && open && tab === "deposit",
+      refetchInterval: 15_000,
+      staleTime: 5_000,
     });
 
   // ── Solana deposit address ───────────────────────────────────────────────
@@ -1350,6 +1379,48 @@ export function WithdrawSheet({
                             Paste the transaction ID from your BSV wallet after sending. Funds are credited instantly upon confirmation.
                           </p>
                         </div>
+
+                        {/* ── SPV Pending Deposits ─────────────────────────── */}
+                        {bsvPendingDeposits.length > 0 && (
+                          <div className="space-y-2 pt-2 border-t border-orange-500/20">
+                            <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+                              Auto-Detected Deposits
+                            </p>
+                            {bsvPendingDeposits.map(dep => (
+                              <div
+                                key={dep.txid}
+                                className="flex items-center justify-between gap-2 rounded-lg bg-background/50 px-3 py-2 border border-border/40"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {dep.status === "mempool" ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-yellow-400 bg-yellow-400/10 rounded-full px-2 py-0.5 shrink-0">
+                                      <Clock className="w-2.5 h-2.5" /> Mempool
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-400 bg-green-400/10 rounded-full px-2 py-0.5 shrink-0">
+                                      <CheckCircle2 className="w-2.5 h-2.5" />
+                                      {dep.blockHeight ? `Block ${dep.blockHeight}` : "Confirmed"}
+                                    </span>
+                                  )}
+                                  <span className="font-mono text-[11px] text-muted-foreground truncate">
+                                    {dep.txid.slice(0, 10)}…
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className="text-xs font-bold">{dep.amountBsv} BSV</span>
+                                  <a
+                                    href={dep.explorerUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-orange-400 hover:text-orange-300 transition-colors"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
 
                         {bitcoinDepositData.explorerAddress && (
                           <a href={bitcoinDepositData.explorerAddress} target="_blank" rel="noopener noreferrer"
