@@ -610,7 +610,9 @@ async function estimateGasForReown(
       value:   params.value,
       data:    params.data,
     });
-    return (estimated * 130n) / 100n;
+    // 200% padding — WalletConnect signs at a later block than estimation,
+    // so state-dependent gas costs can spike. Double the estimate is safer.
+    return (estimated * 200n) / 100n;
   } catch {
     return staticFallback;
   }
@@ -702,7 +704,7 @@ export async function lockEthViaReown(
   const data = buildLockEthCalldata(orderId);
   const gas  = await estimateGasForReown(
     { from: acct.address, to: escrow, value: rawAmount, data },
-    chainId, 150000n,
+    chainId, 300000n,
   );
 
   const txHash = await sendRawViaReown({
@@ -730,7 +732,7 @@ export async function lockErc20ViaReown(
   const approveData = buildApproveCalldata(escrow, rawAmount);
   const approveGas  = await estimateGasForReown(
     { from: acct.address, to: tokenAddress, data: approveData },
-    chainId, 100000n,
+    chainId, 200000n,
   );
   const approveTx = await sendRawViaReown({
     from: acct.address, to: tokenAddress, data: approveData, gas: approveGas, chainId,
@@ -741,7 +743,7 @@ export async function lockErc20ViaReown(
   const lockData = buildLockErc20Calldata(orderId, tokenAddress, rawAmount);
   const lockGas  = await estimateGasForReown(
     { from: acct.address, to: escrow, data: lockData },
-    chainId, 200000n,
+    chainId, 350000n,
   );
   const txHash = await sendRawViaReown({
     from: acct.address, to: escrow, data: lockData, gas: lockGas, chainId,
@@ -765,7 +767,7 @@ export async function cancelEscrowViaReown(
   const data = buildCancelCalldata(orderId);
   const gas  = await estimateGasForReown(
     { from: acct.address, to: escrow, data },
-    chainId, 100000n,
+    chainId, 200000n,
   );
   const txHash = await sendRawViaReown({
     from: acct.address, to: escrow, data, gas, chainId,
