@@ -26,6 +26,7 @@ import { ChainReceiveSheet } from "@/components/wallet/ChainReceiveSheet";
 import { ManualImportSheet, type ImportChain } from "@/components/wallet/ManualImportSheet";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { BrandLogo } from "@/components/BrandLogo";
+import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
@@ -957,6 +958,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const [tab, setTab]                         = useState<"portfolio" | "addresses" | "dapps">(_initialTab);
   const [receiveOpen, setReceiveOpen]         = useState(false);
   const [sendOpen, setSendOpen]               = useState(false);
+  const [buyCryptoOpen, setBuyCryptoOpen]     = useState(false);
   const [nonEvmSendChain, setNonEvmSendChain] = useState<string | null>(null);
   const [sendTokenConfig, setSendTokenConfig] = useState<{ chainId: number; symbol: string } | null>(null);
   const [tokenReceive, setTokenReceive]       = useState<{ symbol: string; chainName: string; address: string } | null>(null);
@@ -1121,7 +1123,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
           <ActionButton icon={Download}    label="Receive" onClick={() => setReceiveOpen(true)} />
           <ActionButton icon={Send}        label="Send"    onClick={() => setSendOpen(true)} />
           <ActionButton icon={ArrowDownUp} label="Swap"    onClick={() => navigate("/swap")} />
-          <ActionButton icon={Sparkles}    label="Buy"     onClick={() => navigate("/swap")} />
+          <ActionButton icon={Sparkles}    label="Buy"     onClick={() => setBuyCryptoOpen(true)} />
         </div>
       </div>
 
@@ -1276,6 +1278,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       {/* ── end portfolio tab ── */}
 
       {/* ── Modals & sheets (always mounted so state persists) ── */}
+      <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
 
       <WithdrawSheet
