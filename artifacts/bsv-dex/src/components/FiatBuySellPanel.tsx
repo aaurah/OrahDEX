@@ -123,13 +123,6 @@ const PROVIDERS: Provider[] = [
     sellUrl: (c,f)   => `https://paybis.com/sell-cryptocurrency/?${qs({ from:c, to:f })}`,
   },
   {
-    id: "transak", name: "Transak", fee: "0.99–2.5%", minUSD: 15, maxUSD: 25000,
-    methods: ["card","apple","google","bank"],
-    coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","ATOM","LTC","UNI","NEAR","ARB","APT","USDT","USDC"],
-    buyUrl:  (c,f,a,_m,addr) => `https://global.transak.com?${qs({ cryptoCurrencyCode:c, defaultFiatCurrency:f, fiatAmount:a, network:"mainnet", ...(addr?{walletAddress:addr}:{}) })}`,
-    sellUrl: (c,f,addr)      => `https://global.transak.com?${qs({ cryptoCurrencyCode:c, defaultFiatCurrency:f, productsAvailed:"SELL", ...(addr?{walletAddress:addr}:{}) })}`,
-  },
-  {
     id: "ramp", name: "Ramp Network", fee: "0.49–2.9%", minUSD: 5, maxUSD: 10000,
     methods: ["card","apple","google","bank"],
     coins: ["BTC","ETH","SOL","MATIC","AVAX","DOT","UNI","LINK","ARB","OP","APT","NEAR","DOGE","USDT","USDC"],
