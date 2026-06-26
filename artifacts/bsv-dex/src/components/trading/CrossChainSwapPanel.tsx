@@ -4,16 +4,13 @@
  * Direction: BSV → EVM  (user funds BSV HTLC, receives EVM token)
  *            EVM → BSV  (user locks EVM token via escrow, receives BSV)
  *
- * BSV→EVM flow:
- *   Configure → POST /api/bsv-intent → PENDING_FUNDING (show P2SH funding address)
- *   → FUNDED → CONFIRMED → FILLED → CLAIMED ✓
- *
- * EVM→BSV flow:
- *   Configure → Lock EVM token (lockEthUniversal / lockErc20Universal)
- *   → PENDING_BSV_DELIVERY → COMPLETE ✓
+ * BSV→EVM flow  POST /api/bsv-intent → fund BSV P2SH → poll status
+ * EVM→BSV flow  POST /api/evm-to-bsv-intent → lockEthUniversal/lockErc20Universal
+ *               → PUT /api/evm-to-bsv-intent/:id/lock → poll GET every 5s
  */
 
 import { useState, useCallback, useEffect } from "react";
+import { parseUnits } from "viem";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
@@ -49,10 +46,14 @@ const BSV_OUT_TOKENS = [
   { symbol: "BNB",  decimals: 18 },
 ];
 
-const EVM_IN_TOKENS: { symbol: string; decimals: number; address: Record<number, string | "native"> }[] = [
+const EVM_IN_TOKENS: {
+  symbol:   string;
+  decimals: number;
+  address:  Record<number, string | "native">;
+}[] = [
   {
     symbol: "ETH", decimals: 18,
-    address: { 1: "native", 11155111: "native", 8453: "native", 42161: "native", 137: "native" },
+    address: { 1: "native", 11155111: "native", 8453: "native", 42161: "native" },
   },
   {
     symbol: "USDT", decimals: 6,
@@ -83,7 +84,7 @@ const EVM_IN_TOKENS: { symbol: string; decimals: number; address: Record<number,
 ];
 
 const MIN_BSV_SAT = 2000;
-const SLIPPAGE     = 0.02;
+const SLIPPAGE    = 0.02;
 
 // ── BSV intent types ──────────────────────────────────────────────────────────
 
@@ -126,37 +127,45 @@ const BSV_STATUS_LABELS: Record<BsvSwapStatus, string> = {
   CANCELLED:       "Cancelled",
 };
 
-const BSV_ACTIVE_STEPS: BsvSwapStatus[] = ["PENDING_FUNDING", "FUNDED", "CONFIRMED", "FILLED", "CLAIMED"];
+const BSV_ACTIVE_STEPS: BsvSwapStatus[] = [
+  "PENDING_FUNDING", "FUNDED", "CONFIRMED", "FILLED", "CLAIMED",
+];
 
 function bsvStepIndex(s: BsvSwapStatus): number {
   const i = BSV_ACTIVE_STEPS.indexOf(s);
-  if (i !== -1) return i;
-  if (s === "CLAIMING") return 4;
-  return 0;
+  return i !== -1 ? i : s === "CLAIMING" ? 4 : 0;
 }
 
-// ── EVM→BSV local swap state ───────────────────────────────────────────────────
+// ── EVM→BSV API types ─────────────────────────────────────────────────────────
 
-type EvmBsvStatus = "CONFIGURING" | "LOCKING" | "LOCKED" | "AWAITING_BSV" | "COMPLETE" | "FAILED";
+type EvmBsvApiStatus =
+  | "PENDING_LOCK" | "LOCKED" | "AWAITING_BSV"
+  | "BSV_SENT" | "COMPLETE" | "FAILED" | "REFUNDED";
 
-interface EvmBsvSwap {
-  swapId:     string;
-  chainId:    number;
-  evmToken:   string;
-  evmAmount:  string;
-  bsvAddress: string;
-  txHash:     string | null;
-  status:     EvmBsvStatus;
-  error:      string | null;
+interface EvmBsvSwapData {
+  swapId:          string;
+  status:          EvmBsvApiStatus;
+  userEvmAddress:  string;
+  bsvReceiveAddr:  string;
+  tokenIn:         string;
+  amountInHuman:   string;
+  chainId:         number;
+  estimatedBsvOut: string | null;
+  evmLockTxHash:   string | null;
+  solverBsvTxid:   string | null;
+  expiresAt:       string;
 }
 
-const EVM_STATUS_LABELS: Record<EvmBsvStatus, string> = {
-  CONFIGURING:  "Configuring swap",
-  LOCKING:      "Locking EVM tokens…",
+const EVM_BSV_TERMINAL = new Set<EvmBsvApiStatus>(["COMPLETE", "FAILED", "REFUNDED"]);
+
+const EVM_STATUS_LABELS: Record<EvmBsvApiStatus, string> = {
+  PENDING_LOCK: "Registering swap…",
   LOCKED:       "EVM tokens locked",
-  AWAITING_BSV: "Awaiting BSV delivery from solver",
+  AWAITING_BSV: "Solver delivering BSV…",
+  BSV_SENT:     "BSV broadcast — awaiting confirmation",
   COMPLETE:     "Swap complete!",
-  FAILED:       "Lock failed",
+  FAILED:       "Swap failed",
+  REFUNDED:     "EVM tokens refunded",
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -173,7 +182,9 @@ function CopyButton({ text }: { text: string }) {
       className="p-1 rounded text-zinc-400 hover:text-zinc-200 transition-colors shrink-0"
       title="Copy"
     >
-      {copied ? <CheckCircle2 size={12} className="text-emerald-400" /> : <Copy size={12} />}
+      {copied
+        ? <CheckCircle2 size={12} className="text-emerald-400" />
+        : <Copy size={12} />}
     </button>
   );
 }
@@ -187,9 +198,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-function StatusStep({
-  labels, currentIndex,
-}: { labels: string[]; currentIndex: number }) {
+function StatusStep({ labels, currentIndex }: { labels: string[]; currentIndex: number }) {
   return (
     <div className="flex items-start justify-between gap-1 pb-1">
       {labels.map((lbl, i) => {
@@ -217,6 +226,68 @@ function StatusStep({
   );
 }
 
+function ErrorBox({ msg }: { msg: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs text-red-300">
+      <AlertCircle size={13} className="shrink-0" /> {msg}
+    </div>
+  );
+}
+
+function TxLink({
+  href, txid, className,
+}: { href: string; txid: string; className?: string }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer"
+      className={cn("flex items-center gap-1 hover:underline", className ?? "text-violet-300")}>
+      {txid.slice(0, 10)}… <ExternalLink size={9} />
+    </a>
+  );
+}
+
+function StatusBadge({
+  label, isComplete, isFailed, isWarning, sub,
+}: {
+  label: string; isComplete: boolean; isFailed: boolean; isWarning: boolean; sub?: string;
+}) {
+  return (
+    <div className={cn(
+      "flex items-center gap-2 rounded-lg border px-3 py-2.5",
+      isComplete ? "border-emerald-500/30 bg-emerald-500/10"
+        : isFailed  ? "border-zinc-700 bg-zinc-900"
+        : isWarning ? "border-amber-500/30 bg-amber-500/10"
+        : "border-violet-500/20 bg-violet-500/8",
+    )}>
+      {isComplete
+        ? <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
+        : isFailed
+        ? <X size={15} className="text-zinc-500 shrink-0" />
+        : isWarning
+        ? <AlertCircle size={15} className="text-amber-400 shrink-0" />
+        : <Loader2 size={15} className="animate-spin text-violet-400 shrink-0" />}
+      <div className="flex-1 min-w-0">
+        <p className={cn(
+          "text-sm font-semibold",
+          isComplete ? "text-emerald-300" : isWarning ? "text-amber-300" : "text-violet-300"
+        )}>{label}</p>
+        {sub && <p className="text-[10px] text-zinc-400">{sub}</p>}
+      </div>
+    </div>
+  );
+}
+
+function explorerTx(chainId: number, txHash: string): string {
+  const bases: Record<number, string> = {
+    1:        "https://etherscan.io",
+    8453:     "https://basescan.org",
+    42161:    "https://arbiscan.io",
+    137:      "https://polygonscan.com",
+    56:       "https://bscscan.com",
+    11155111: "https://sepolia.etherscan.io",
+  };
+  return `${bases[chainId] ?? "https://etherscan.io"}/tx/${txHash}`;
+}
+
 // ── Panel shell ────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -228,19 +299,20 @@ type Direction = "bsv-to-evm" | "evm-to-bsv";
 type PanelStep = "configure" | "funding" | "locking" | "tracking";
 
 export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
-  const { address, internalBsvAddress, provider, walletChainId } = useWalletStore();
-  const { prices }    = useWalletPrices();
-  const isOrahWallet  = provider === "orah-wallet";
-  const bsvUsd        = prices.BSV?.usd ?? 16;
+  // Pull `chainId` (not `walletChainId`) from the store — the store field is chainId.
+  const { address, internalBsvAddress, provider, chainId: walletChainId } = useWalletStore();
+  const { prices } = useWalletPrices();
+  const isOrahWallet = provider === "orah-wallet";
+  const bsvUsd       = prices.BSV?.usd ?? 16;
 
   // ── Direction ──────────────────────────────────────────────────────────────
   const [direction, setDirection] = useState<Direction>("bsv-to-evm");
 
   // ── BSV→EVM form ───────────────────────────────────────────────────────────
-  const [amtBsv,   setAmtBsv]   = useState("");
-  const [tokenOut, setTokenOut]  = useState("ETH");
-  const [chainId,  setChainId]   = useState(11155111);
-  const [destAddr, setDestAddr]  = useState("");
+  const [amtBsv,   setAmtBsv]  = useState("");
+  const [tokenOut, setTokenOut] = useState("ETH");
+  const [chainId,  setChainId]  = useState(11155111);
+  const [destAddr, setDestAddr] = useState("");
 
   // ── EVM→BSV form ───────────────────────────────────────────────────────────
   const [evmToken,    setEvmToken]    = useState("ETH");
@@ -248,23 +320,26 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
   const [bsvRecvAddr, setBsvRecvAddr] = useState("");
   const [evmChainId,  setEvmChainId]  = useState<number>(() => walletChainId ?? 11155111);
 
-  // ── Panel step ─────────────────────────────────────────────────────────────
-  const [step,       setStep]       = useState<PanelStep>("configure");
-  const [formErr,    setFormErr]    = useState<string | null>(null);
-  const [actionMsg,  setActionMsg]  = useState<string | null>(null);
+  // ── Step ───────────────────────────────────────────────────────────────────
+  const [step,      setStep]      = useState<PanelStep>("configure");
+  const [formErr,   setFormErr]   = useState<string | null>(null);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
 
-  // BSV→EVM intent state
-  const [intentId,    setIntentId]    = useState<string | null>(null);
-  const [creating,    setCreating]    = useState(false);
-  const [sending,     setSending]     = useState(false);
-  const [bsvTxid,     setBsvTxid]     = useState<string | null>(null);
-  const [sendErr,     setSendErr]     = useState<string | null>(null);
-  const [refunding,   setRefunding]   = useState(false);
-  const [cancelling,  setCancelling]  = useState(false);
+  // BSV→EVM intent
+  const [intentId,   setIntentId]   = useState<string | null>(null);
+  const [creating,   setCreating]   = useState(false);
+  const [sending,    setSending]    = useState(false);
+  const [bsvTxid,    setBsvTxid]    = useState<string | null>(null);
+  const [sendErr,    setSendErr]    = useState<string | null>(null);
+  const [refunding,  setRefunding]  = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [fundingData, setFundingData] = useState<BsvIntentData | null>(null);
 
-  // EVM→BSV swap state
-  const [evmSwap, setEvmSwap] = useState<EvmBsvSwap | null>(null);
+  // EVM→BSV swap
+  const [evmSwapId,     setEvmSwapId]     = useState<string | null>(null);
+  const [lockingEvm,    setLockingEvm]    = useState(false);
+  const [lockErr,       setLockErr]       = useState<string | null>(null);
+  const [localLockHash, setLocalLockHash] = useState<string | null>(null);
 
   // ── Reset on open ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -276,7 +351,10 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
     setFormErr(null);
     setActionMsg(null);
     setFundingData(null);
-    setEvmSwap(null);
+    setEvmSwapId(null);
+    setLockingEvm(false);
+    setLockErr(null);
+    setLocalLockHash(null);
   }, [open]);
 
   // ── BSV→EVM derived values ─────────────────────────────────────────────────
@@ -287,11 +365,13 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
     if (tokenOut === "BNB")  return prices.BNB?.usd  ?? 580;
     return prices.ETH?.usd ?? 2400;
   })();
-  const bsvValueUsd   = amtSat > 0 ? (amtSat / 1e8) * bsvUsd : 0;
-  const estimatedOut  = tokenUsd > 0 && bsvValueUsd > 0
+  const bsvValueUsd  = amtSat > 0 ? (amtSat / 1e8) * bsvUsd : 0;
+  const estimatedOut = tokenUsd > 0 && bsvValueUsd > 0
     ? (bsvValueUsd * (1 - SLIPPAGE)) / tokenUsd : 0;
-  const minAmountOut  = estimatedOut > 0
-    ? estimatedOut.toFixed(Math.min(BSV_OUT_TOKENS.find(t => t.symbol === tokenOut)?.decimals ?? 18, 8))
+  const minAmountOut = estimatedOut > 0
+    ? estimatedOut.toFixed(
+        Math.min(BSV_OUT_TOKENS.find(t => t.symbol === tokenOut)?.decimals ?? 18, 8)
+      )
     : "0";
   const chainName = CHAINS.find(c => c.id === chainId)?.name ?? "Sepolia";
 
@@ -309,15 +389,15 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
   const tokenAddrOnChain = evmTokenMeta?.address[evmChainId] ?? null;
   const evmChainName     = CHAINS.find(c => c.id === evmChainId)?.name ?? "";
 
-  // ── Poll BSV intent status ─────────────────────────────────────────────────
+  // ── Poll BSV intent (BSV→EVM) ─────────────────────────────────────────────
   const { data: intentData, refetch: refetchIntent } = useQuery<BsvIntentData>({
-    queryKey: ["cross-chain-swap-bsv", intentId],
+    queryKey: ["cross-chain-bsv-intent", intentId],
     queryFn:  async () => {
       const r = await fetch(`${BASE}/api/bsv-intent/${intentId}`, { cache: "no-store" });
       if (!r.ok) throw new Error("Failed to fetch intent");
       return r.json();
     },
-    enabled:         !!intentId && step === "tracking",
+    enabled:         !!intentId && step === "tracking" && direction === "bsv-to-evm",
     refetchInterval: query => {
       const d = query.state.data as BsvIntentData | undefined;
       if (!d || BSV_TERMINAL.has(d.status)) return false;
@@ -326,7 +406,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
     staleTime: 0,
   });
 
-  // The intent data to display (either from polling or from funding fetch)
+  // displayIntent: use polling data or the initial fundingData returned on creation
   const displayIntent: BsvIntentData | null = intentData ?? fundingData;
 
   // Auto-advance to tracking after BSV tx or non-PENDING status
@@ -338,7 +418,27 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
     }
   }, [displayIntent, step, bsvTxid]);
 
-  // ── Deadline clock ─────────────────────────────────────────────────────────
+  // ── Poll EVM→BSV swap status ───────────────────────────────────────────────
+  const { data: evmSwapData, refetch: refetchEvmSwap } = useQuery<EvmBsvSwapData>({
+    queryKey: ["cross-chain-evm-to-bsv", evmSwapId],
+    queryFn:  async () => {
+      const r = await fetch(
+        `${BASE}/api/evm-to-bsv-intent/${evmSwapId}`,
+        { cache: "no-store" }
+      );
+      if (!r.ok) throw new Error("Failed to fetch EVM→BSV swap");
+      return r.json();
+    },
+    enabled:         !!evmSwapId && step === "tracking" && direction === "evm-to-bsv",
+    refetchInterval: query => {
+      const d = query.state.data as EvmBsvSwapData | undefined;
+      if (!d || EVM_BSV_TERMINAL.has(d.status)) return false;
+      return 5000;
+    },
+    staleTime: 0,
+  });
+
+  // ── Deadline clock (BSV→EVM) ─────────────────────────────────────────────
   const [timeLeft, setTimeLeft] = useState("");
   useEffect(() => {
     if (!displayIntent?.deadlineTs) return;
@@ -347,7 +447,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
       const h = Math.floor(s / 3600);
       const m = Math.floor((s % 3600) / 60);
       const sec = s % 60;
-      setTimeLeft(`${h}h ${m.toString().padStart(2,"0")}m ${sec.toString().padStart(2,"0")}s`);
+      setTimeLeft(`${h}h ${m.toString().padStart(2, "0")}m ${sec.toString().padStart(2, "0")}s`);
     };
     tick();
     const t = setInterval(tick, 1000);
@@ -356,7 +456,8 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
 
   const refundable = !!displayIntent &&
     (displayIntent.status === "EXPIRED" ||
-     (Date.now() / 1000 > displayIntent.deadlineTs && !BSV_TERMINAL.has(displayIntent.status)));
+      (Date.now() / 1000 > displayIntent.deadlineTs &&
+        !BSV_TERMINAL.has(displayIntent.status)));
 
   // ── BSV→EVM: Create intent ─────────────────────────────────────────────────
   const handleCreateBsvIntent = useCallback(async () => {
@@ -384,7 +485,6 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Failed to create swap");
       setIntentId(json.intentId);
-      // Pre-load the intent data so the funding step has htlcAddress immediately
       setFundingData(json as BsvIntentData);
       setStep("funding");
     } catch (err: any) {
@@ -394,10 +494,10 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
     }
   }, [address, amtSat, tokenOut, chainId, destAddr, minAmountOut]);
 
-  // ── BSV→EVM: Send BSV with Orah passkey ───────────────────────────────────
-  // CRITICAL: always use displayIntent (fundingData or intentData), NOT intentData
-  // alone — intentData is only loaded while step==="tracking", but passkey send
-  // happens in step==="funding" before the polling query is enabled.
+  // ── BSV→EVM: Passkey send ─────────────────────────────────────────────────
+  // CRITICAL: use displayIntent (fundingData ?? intentData) — intentData is only
+  // populated when step==="tracking", so in step==="funding" we must use
+  // fundingData (set synchronously on intent creation) to have htlcAddress.
   const handleSendWithPasskey = useCallback(async () => {
     const htlcAddress = displayIntent?.htlcAddress;
     const amountSat   = displayIntent?.amountInSat;
@@ -421,7 +521,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
     }
   }, [displayIntent, internalBsvAddress, address]);
 
-  // ── BSV→EVM: Reclaim CLTV refund ─────────────────────────────────────────
+  // ── BSV→EVM: Reclaim ──────────────────────────────────────────────────────
   const handleRefund = useCallback(async () => {
     if (!intentId) return;
     setRefunding(true); setActionMsg(null);
@@ -438,7 +538,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
     finally  { setRefunding(false); }
   }, [intentId, refetchIntent]);
 
-  // ── BSV→EVM: Cancel PENDING_FUNDING ──────────────────────────────────────
+  // ── BSV→EVM: Cancel ──────────────────────────────────────────────────────
   const handleCancel = useCallback(async () => {
     if (!intentId || !address) return;
     setCancelling(true); setActionMsg(null);
@@ -448,72 +548,104 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
         body: JSON.stringify({ userAddress: address }),
       });
       const json = await r.json();
-      if (!r.ok) { setActionMsg(json.error ?? "Cancel failed"); }
+      if (!r.ok) setActionMsg(json.error ?? "Cancel failed");
       else { setStep("configure"); setIntentId(null); setFundingData(null); }
     } catch { setActionMsg("Network error."); }
     finally  { setCancelling(false); }
   }, [intentId, address]);
 
-  // ── EVM→BSV: Lock EVM tokens ───────────────────────────────────────────────
+  // ── EVM→BSV: Lock + register ───────────────────────────────────────────────
   const handleEvmLock = useCallback(async () => {
     setFormErr(null);
     if (evmAmtNum <= 0) { setFormErr("Enter a valid EVM amount."); return; }
-    if (!/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$|^[qp][a-z0-9]{41}$/.test(bsvRecvAddr.trim()) &&
-        !/^1[a-zA-Z0-9]{24,33}$/.test(bsvRecvAddr.trim())) {
-      // lenient BSV address check — just ensure non-empty and plausible
-      if (bsvRecvAddr.trim().length < 20) {
-        setFormErr("Enter a valid BSV receive address."); return;
-      }
+    if (bsvRecvAddr.trim().length < 20) {
+      setFormErr("Enter a valid BSV receive address."); return;
     }
     if (!address) { setFormErr("Connect your EVM wallet first."); return; }
     if (!tokenAddrOnChain) {
       setFormErr(`${evmToken} is not supported on ${evmChainName}.`); return;
     }
 
-    const swapId = crypto.randomUUID();
-    const swap: EvmBsvSwap = {
-      swapId, chainId: evmChainId, evmToken, evmAmount: evmAmtStr,
-      bsvAddress: bsvRecvAddr.trim(), txHash: null,
-      status: "LOCKING", error: null,
-    };
-    setEvmSwap(swap);
+    setLockingEvm(true); setLockErr(null);
     setStep("locking");
 
     try {
-      const decimals = evmTokenMeta?.decimals ?? 18;
-      const rawAmt   = BigInt(Math.round(evmAmtNum * 10 ** decimals));
-      let result: { txHash: string };
+      // 1. Register intent with backend to get a stable swap ID
+      const regResp = await fetch(`${BASE}/api/evm-to-bsv-intent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userEvmAddress:  address,
+          bsvReceiveAddr:  bsvRecvAddr.trim(),
+          tokenIn:         evmToken,
+          tokenAddress:    tokenAddrOnChain === "native" ? "native" : tokenAddrOnChain,
+          amountInRaw:     parseUnits(evmAmtStr, evmTokenMeta?.decimals ?? 18).toString(),
+          amountInHuman:   evmAmtStr,
+          chainId:         evmChainId,
+          estimatedBsvOut: estimatedBsvOut > 0 ? estimatedBsvOut.toFixed(8) : undefined,
+        }),
+      });
+      const regJson = await regResp.json();
+      if (!regResp.ok) throw new Error(regJson.error ?? "Failed to register swap");
+
+      const swapId: string = regJson.swapId;
+      setEvmSwapId(swapId);
+
+      // 2. Lock EVM tokens on-chain (use swapId as the escrow orderId)
+      //    parseUnits (viem) avoids floating-point precision loss.
+      const rawAmt = parseUnits(evmAmtStr, evmTokenMeta?.decimals ?? 18);
+      let txHash: string;
 
       if (tokenAddrOnChain === "native") {
-        result = await lockEthUniversal(swapId, rawAmt, address, evmChainId);
+        const r = await lockEthUniversal(swapId, rawAmt, address, evmChainId);
+        txHash = r.txHash;
       } else {
-        result = await lockErc20Universal(swapId, tokenAddrOnChain, rawAmt, address, evmChainId);
+        const r = await lockErc20Universal(swapId, tokenAddrOnChain, rawAmt, address, evmChainId);
+        txHash = r.txHash;
       }
 
-      setEvmSwap(prev => prev ? { ...prev, txHash: result.txHash, status: "LOCKED" } : prev);
+      setLocalLockHash(txHash);
+
+      // 3. Record the lock tx hash in the backend → transitions status to LOCKED
+      const lockResp = await fetch(
+        `${BASE}/api/evm-to-bsv-intent/${swapId}/lock`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ evmLockTxHash: txHash, userEvmAddress: address }),
+        }
+      );
+      if (!lockResp.ok) {
+        // Non-fatal — the lock already happened on-chain; just surface a note
+        console.warn("Failed to record lock tx on backend:", await lockResp.text());
+      }
+
       setStep("tracking");
     } catch (err: any) {
-      setEvmSwap(prev => prev
-        ? { ...prev, status: "FAILED", error: err?.message ?? "Lock failed" }
-        : prev);
-      setStep("locking");
+      setLockErr(err?.message ?? "Lock failed");
+      setStep("locking"); // stay on locking step to show error
+    } finally {
+      setLockingEvm(false);
     }
-  }, [address, evmAmtNum, evmAmtStr, evmToken, evmTokenMeta, evmChainId, bsvRecvAddr, tokenAddrOnChain, evmChainName]);
+  }, [
+    address, evmAmtNum, evmAmtStr, evmToken, evmTokenMeta,
+    evmChainId, bsvRecvAddr, tokenAddrOnChain, evmChainName, estimatedBsvOut,
+  ]);
 
-  // ── Explorers ──────────────────────────────────────────────────────────────
-  function explorerTx(chainId: number, txHash: string): string {
-    const bases: Record<number, string> = {
-      1: "https://etherscan.io", 8453: "https://basescan.org",
-      42161: "https://arbiscan.io", 137: "https://polygonscan.com",
-      56: "https://bscscan.com", 11155111: "https://sepolia.etherscan.io",
-    };
-    return `${bases[chainId] ?? "https://etherscan.io"}/tx/${txHash}`;
-  }
+  // ── Render ────────────────────────────────────────────────────────────────
+  const isBsvToEvm = direction === "bsv-to-evm";
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-  const isBsvToEvm   = direction === "bsv-to-evm";
-  const isComplete   = displayIntent?.status === "CLAIMED" || evmSwap?.status === "COMPLETE";
-  const isRefunded   = displayIntent?.status === "REFUNDED" || displayIntent?.status === "CANCELLED";
+  const bsvComplete  = displayIntent?.status === "CLAIMED";
+  const bsvRefunded  = displayIntent?.status === "REFUNDED" || displayIntent?.status === "CANCELLED";
+  const evmComplete  = evmSwapData?.status === "COMPLETE";
+  const evmFailed    = evmSwapData?.status === "FAILED" || evmSwapData?.status === "REFUNDED";
+
+  const activeEvmStatus: EvmBsvApiStatus =
+    evmSwapData?.status ?? (evmSwapId ? "PENDING_LOCK" : "PENDING_LOCK");
+
+  const evmStepIndex = {
+    PENDING_LOCK: 0, LOCKED: 1, AWAITING_BSV: 2, BSV_SENT: 2, COMPLETE: 3, FAILED: 3, REFUNDED: 3,
+  }[activeEvmStatus] ?? 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -529,7 +661,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
 
         <div className="px-5 pb-5 pt-4 flex flex-col gap-4 max-h-[80vh] overflow-y-auto">
 
-          {/* ── Direction toggle (only on configure step) ──────────────────── */}
+          {/* Direction toggle — only shown in configure step */}
           {step === "configure" && (
             <div className="flex rounded-lg overflow-hidden border border-zinc-800">
               {(["bsv-to-evm", "evm-to-bsv"] as Direction[]).map(d => (
@@ -551,9 +683,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
             </div>
           )}
 
-          {/* ══════════════ BSV → EVM FLOWS ══════════════════════════════════ */}
-
-          {/* ── Configure (BSV→EVM) ───────────────────────────────────────── */}
+          {/* ══ BSV → EVM: CONFIGURE ══════════════════════════════════════════ */}
           {step === "configure" && isBsvToEvm && (
             <>
               <div className="flex flex-col gap-1.5">
@@ -561,10 +691,8 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
                   BSV amount to send
                 </label>
                 <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900 overflow-hidden focus-within:border-violet-500/50">
-                  <input
-                    type="number" min="0" step="0.0001" placeholder="0.01"
-                    value={amtBsv}
-                    onChange={e => setAmtBsv(e.target.value)}
+                  <input type="number" min="0" step="0.0001" placeholder="0.01"
+                    value={amtBsv} onChange={e => setAmtBsv(e.target.value)}
                     className="flex-1 bg-transparent px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600"
                   />
                   <span className="px-3 text-xs font-bold text-zinc-400">BSV</span>
@@ -581,7 +709,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
                   <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Receive token</label>
                   <select value={tokenOut} onChange={e => setTokenOut(e.target.value)}
                     className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-violet-500/50">
-                    {BSV_OUT_TOKENS.map(t => <option key={t.symbol} value={t.symbol}>{t.symbol}</option>)}
+                    {BSV_OUT_TOKENS.map(t => <option key={t.symbol}>{t.symbol}</option>)}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
@@ -594,14 +722,15 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Receive address (EVM)</label>
+                <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">EVM receive address</label>
                 <input type="text"
                   placeholder={address?.startsWith("0x") ? address : "0x…"}
                   value={destAddr} onChange={e => setDestAddr(e.target.value)}
                   className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-xs font-mono text-zinc-100 outline-none focus:border-violet-500/50 placeholder:text-zinc-600"
                 />
                 {address?.startsWith("0x") && !destAddr && (
-                  <button onClick={() => setDestAddr(address)} className="text-[10px] text-violet-400 hover:text-violet-300 self-start">
+                  <button onClick={() => setDestAddr(address)}
+                    className="text-[10px] text-violet-400 hover:text-violet-300 self-start">
                     Use connected wallet address
                   </button>
                 )}
@@ -615,58 +744,79 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
                     <ArrowRight size={13} className="text-violet-400" />
                     <span className="text-violet-300">≥ {estimatedOut.toFixed(4)} {tokenOut}</span>
                   </div>
-                  <p className="text-[9px] text-zinc-600">{SLIPPAGE * 100}% slippage · ~48h HTLC · Trustless on-chain script</p>
+                  <p className="text-[9px] text-zinc-600">
+                    {SLIPPAGE * 100}% slippage · 48h HTLC · Trustless on-chain script
+                  </p>
                 </div>
               )}
 
               {formErr && <ErrorBox msg={formErr} />}
 
-              <button onClick={handleCreateBsvIntent} disabled={creating || amtSat < MIN_BSV_SAT || !destAddr.trim()}
+              <button onClick={handleCreateBsvIntent}
+                disabled={creating || amtSat < MIN_BSV_SAT || !destAddr.trim()}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold bg-violet-600 text-white hover:bg-violet-500 active:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
-                {creating ? <><Loader2 size={14} className="animate-spin" /> Creating HTLC…</> : <><Zap size={14} /> Initiate BSV→EVM Swap</>}
+                {creating
+                  ? <><Loader2 size={14} className="animate-spin" /> Creating HTLC…</>
+                  : <><Zap size={14} /> Initiate BSV→EVM Swap</>}
               </button>
             </>
           )}
 
-          {/* ── Fund HTLC (BSV→EVM) ──────────────────────────────────────── */}
+          {/* ══ BSV → EVM: FUNDING ════════════════════════════════════════════ */}
           {step === "funding" && displayIntent && isBsvToEvm && (
             <>
               <div className="flex flex-col gap-1">
-                <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Send exactly this amount:</p>
+                <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                  Send exactly this amount:
+                </p>
                 <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/8 px-3 py-2">
                   <span className="font-mono font-bold text-amber-300 text-base">
                     {(displayIntent.amountInSat / 1e8).toFixed(8)} BSV
                   </span>
-                  <span className="text-xs text-amber-400/70 ml-1">({displayIntent.amountInSat.toLocaleString()} sat)</span>
+                  <span className="text-xs text-amber-400/70 ml-1">
+                    ({displayIntent.amountInSat.toLocaleString()} sat)
+                  </span>
                 </div>
               </div>
 
               <div className="flex flex-col gap-1">
-                <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">HTLC P2SH address (BSV)</p>
+                <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                  HTLC P2SH address (BSV)
+                </p>
                 <div className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2.5">
-                  <span className="font-mono text-[11px] text-violet-300 flex-1 break-all select-all">{displayIntent.htlcAddress}</span>
+                  <span className="font-mono text-[11px] text-violet-300 flex-1 break-all select-all">
+                    {displayIntent.htlcAddress}
+                  </span>
                   <CopyButton text={displayIntent.htlcAddress} />
                 </div>
                 <p className="text-[9px] text-zinc-600 leading-relaxed">
-                  Time-locked smart contract address. Send the exact amount above. Excess goes to miner fees on the refund tx.
+                  Time-locked smart contract address. Send the exact amount. Excess is consumed by the refund tx fee.
                 </p>
               </div>
 
               {isOrahWallet && internalBsvAddress && !bsvTxid && (
                 <button onClick={handleSendWithPasskey} disabled={sending}
                   className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
-                  {sending ? <><Loader2 size={14} className="animate-spin" /> Sending BSV…</> : <><Zap size={14} /> Send with Passkey (Orah Wallet)</>}
+                  {sending
+                    ? <><Loader2 size={14} className="animate-spin" /> Sending BSV…</>
+                    : <><Zap size={14} /> Send with Passkey (Orah Wallet)</>}
                 </button>
               )}
+
               {bsvTxid && (
                 <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 space-y-1">
                   <p className="text-xs font-semibold text-emerald-400">BSV sent!</p>
                   <div className="flex items-center gap-1.5">
                     <span className="font-mono text-[10px] text-emerald-300 break-all">{bsvTxid}</span>
-                    <a href={`https://whatsonchain.com/tx/${bsvTxid}`} target="_blank" rel="noopener noreferrer" className="shrink-0 text-emerald-400 hover:text-emerald-300"><ExternalLink size={11} /></a>
+                    <a href={`https://whatsonchain.com/tx/${bsvTxid}`}
+                      target="_blank" rel="noopener noreferrer"
+                      className="shrink-0 text-emerald-400 hover:text-emerald-300">
+                      <ExternalLink size={11} />
+                    </a>
                   </div>
                 </div>
               )}
+
               {sendErr && <ErrorBox msg={sendErr} />}
               {!bsvTxid && (
                 <p className="text-[10px] text-zinc-500 text-center">
@@ -678,7 +828,8 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
 
               {displayIntent.deadlineTs && (
                 <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-                  <Clock size={11} /> HTLC expires in: <span className="font-mono text-zinc-300">{timeLeft}</span>
+                  <Clock size={11} /> HTLC expires in:
+                  <span className="font-mono text-zinc-300">{timeLeft}</span>
                 </div>
               )}
 
@@ -689,14 +840,17 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
                 </button>
                 <button onClick={handleCancel} disabled={cancelling}
                   className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-red-500/30 text-xs text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
-                  {cancelling ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />} Cancel swap
+                  {cancelling ? <Loader2 size={12} className="animate-spin" /> : <X size={12} />}
+                  Cancel swap
                 </button>
               </div>
-              {actionMsg && <p className="text-[10px] text-zinc-400 text-center">{actionMsg}</p>}
+              {actionMsg && (
+                <p className="text-[10px] text-zinc-400 text-center">{actionMsg}</p>
+              )}
             </>
           )}
 
-          {/* ── Tracking (BSV→EVM) ───────────────────────────────────────── */}
+          {/* ══ BSV → EVM: TRACKING ═══════════════════════════════════════════ */}
           {step === "tracking" && isBsvToEvm && (
             <>
               {displayIntent && !BSV_TERMINAL.has(displayIntent.status) && (
@@ -712,10 +866,13 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
                   isComplete={displayIntent.status === "CLAIMED"}
                   isFailed={displayIntent.status === "REFUNDED" || displayIntent.status === "CANCELLED"}
                   isWarning={refundable}
-                  sub={displayIntent.status === "FUNDED" && displayIntent.confirmations != null
-                    ? `${displayIntent.confirmations} of 3 confirmations`
-                    : !BSV_TERMINAL.has(displayIntent.status) && !refundable
-                    ? `HTLC expires in ${timeLeft}` : undefined}
+                  sub={
+                    displayIntent.status === "FUNDED" && displayIntent.confirmations != null
+                      ? `${displayIntent.confirmations} of 3 confirmations`
+                      : !BSV_TERMINAL.has(displayIntent.status) && !refundable
+                      ? `HTLC expires in ${timeLeft}`
+                      : undefined
+                  }
                 />
               )}
 
@@ -725,27 +882,44 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
                     <span className="flex items-center gap-1">
                       {displayIntent.htlcAddress.slice(0, 10)}…{displayIntent.htlcAddress.slice(-6)}
                       <CopyButton text={displayIntent.htlcAddress} />
-                      <a href={`https://whatsonchain.com/address/${displayIntent.htlcAddress}`} target="_blank" rel="noopener noreferrer" className="text-violet-400 hover:text-violet-300"><ExternalLink size={9} /></a>
+                      <a href={`https://whatsonchain.com/address/${displayIntent.htlcAddress}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="text-violet-400 hover:text-violet-300">
+                        <ExternalLink size={9} />
+                      </a>
                     </span>
                   </Row>
                   <Row label="Swap">
-                    {(displayIntent.amountInSat / 1e8).toFixed(8)} BSV → ≥{parseFloat(displayIntent.minAmountOut).toFixed(4)} {displayIntent.tokenOut}
+                    {(displayIntent.amountInSat / 1e8).toFixed(8)} BSV →
+                    ≥{parseFloat(displayIntent.minAmountOut).toFixed(4)} {displayIntent.tokenOut}
                   </Row>
                   <Row label="Chain">{chainName} ({displayIntent.destinationChain})</Row>
-                  <Row label="Receive">{displayIntent.destinationAddress.slice(0,10)}…{displayIntent.destinationAddress.slice(-4)}</Row>
+                  <Row label="Receive">
+                    {displayIntent.destinationAddress.slice(0, 10)}…{displayIntent.destinationAddress.slice(-4)}
+                  </Row>
                   {displayIntent.fundingTxid && (
                     <Row label="Deposit tx">
-                      <TxLink href={`https://whatsonchain.com/tx/${displayIntent.fundingTxid}`} txid={displayIntent.fundingTxid} />
+                      <TxLink href={`https://whatsonchain.com/tx/${displayIntent.fundingTxid}`}
+                        txid={displayIntent.fundingTxid} />
                     </Row>
                   )}
                   {displayIntent.claimTxid && (
-                    <Row label="Claim tx"><TxLink href={`https://whatsonchain.com/tx/${displayIntent.claimTxid}`} txid={displayIntent.claimTxid} className="text-emerald-300" /></Row>
+                    <Row label="Claim tx">
+                      <TxLink href={`https://whatsonchain.com/tx/${displayIntent.claimTxid}`}
+                        txid={displayIntent.claimTxid} className="text-emerald-300" />
+                    </Row>
                   )}
                   {displayIntent.solverPaymentTxid && (
-                    <Row label="EVM payment"><TxLink href={`https://etherscan.io/tx/${displayIntent.solverPaymentTxid}`} txid={displayIntent.solverPaymentTxid} className="text-emerald-300" /></Row>
+                    <Row label="EVM payment">
+                      <TxLink href={`https://etherscan.io/tx/${displayIntent.solverPaymentTxid}`}
+                        txid={displayIntent.solverPaymentTxid} className="text-emerald-300" />
+                    </Row>
                   )}
                   {displayIntent.refundTxid && (
-                    <Row label="Refund tx"><TxLink href={`https://whatsonchain.com/tx/${displayIntent.refundTxid}`} txid={displayIntent.refundTxid} className="text-amber-300" /></Row>
+                    <Row label="Refund tx">
+                      <TxLink href={`https://whatsonchain.com/tx/${displayIntent.refundTxid}`}
+                        txid={displayIntent.refundTxid} className="text-amber-300" />
+                    </Row>
                   )}
                 </div>
               )}
@@ -753,42 +927,56 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
               {refundable && !BSV_TERMINAL.has(displayIntent?.status ?? "CANCELLED") && (
                 <button onClick={handleRefund} disabled={refunding}
                   className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold bg-amber-600/80 text-white hover:bg-amber-500 disabled:opacity-50 transition-all">
-                  {refunding ? <><Loader2 size={14} className="animate-spin" /> Initiating…</> : <><RotateCcw size={14} /> Reclaim funds (CLTV refund)</>}
+                  {refunding
+                    ? <><Loader2 size={14} className="animate-spin" /> Initiating…</>
+                    : <><RotateCcw size={14} /> Reclaim funds (CLTV refund)</>}
                 </button>
               )}
 
-              {actionMsg && <div className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-300">{actionMsg}</div>}
+              {actionMsg && (
+                <div className="rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs text-zinc-300">
+                  {actionMsg}
+                </div>
+              )}
 
-              {(isComplete || isRefunded) && (
-                <button onClick={() => { setStep("configure"); setIntentId(null); setFundingData(null); setBsvTxid(null); setAmtBsv(""); setDestAddr(""); setActionMsg(null); }}
+              {(bsvComplete || bsvRefunded) && (
+                <button
+                  onClick={() => {
+                    setStep("configure"); setIntentId(null);
+                    setFundingData(null); setBsvTxid(null);
+                    setAmtBsv(""); setDestAddr(""); setActionMsg(null);
+                  }}
                   className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-zinc-700 text-sm text-zinc-300 hover:bg-zinc-800 transition-colors">
                   <ArrowLeftRight size={14} /> Start new swap
                 </button>
               )}
 
-              {!isComplete && !isRefunded && (
-                <button onClick={() => refetchIntent()} className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors">
+              {!bsvComplete && !bsvRefunded && (
+                <button onClick={() => refetchIntent()}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors">
                   <RotateCcw size={10} /> Refresh status
                 </button>
               )}
             </>
           )}
 
-          {/* ══════════════ EVM → BSV FLOWS ══════════════════════════════════ */}
-
-          {/* ── Configure (EVM→BSV) ───────────────────────────────────────── */}
+          {/* ══ EVM → BSV: CONFIGURE ══════════════════════════════════════════ */}
           {step === "configure" && !isBsvToEvm && (
             <>
               <div className="grid grid-cols-2 gap-2">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">EVM token to send</label>
+                  <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                    EVM token to send
+                  </label>
                   <select value={evmToken} onChange={e => setEvmToken(e.target.value)}
                     className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-violet-500/50">
-                    {EVM_IN_TOKENS.map(t => <option key={t.symbol} value={t.symbol}>{t.symbol}</option>)}
+                    {EVM_IN_TOKENS.map(t => <option key={t.symbol}>{t.symbol}</option>)}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">EVM chain</label>
+                  <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                    EVM chain
+                  </label>
                   <select value={evmChainId} onChange={e => setEvmChainId(Number(e.target.value))}
                     className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-violet-500/50">
                     {CHAINS.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -797,24 +985,31 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Amount ({evmToken})</label>
+                <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                  Amount ({evmToken})
+                </label>
                 <div className="flex items-center rounded-lg border border-zinc-800 bg-zinc-900 overflow-hidden focus-within:border-violet-500/50">
                   <input type="number" min="0" step="0.001" placeholder="0.1"
                     value={evmAmtStr} onChange={e => setEvmAmtStr(e.target.value)}
                     className="flex-1 bg-transparent px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600" />
                   <span className="px-3 text-xs font-bold text-zinc-400">{evmToken}</span>
                 </div>
-                {evmValueUsd > 0 && <p className="text-[10px] text-zinc-500">≈ ${evmValueUsd.toFixed(2)} USD</p>}
+                {evmValueUsd > 0 && (
+                  <p className="text-[10px] text-zinc-500">≈ ${evmValueUsd.toFixed(2)} USD</p>
+                )}
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">BSV receive address</label>
+                <label className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
+                  BSV receive address
+                </label>
                 <input type="text" placeholder="1YourBSVAddress…"
                   value={bsvRecvAddr} onChange={e => setBsvRecvAddr(e.target.value)}
                   className="rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-xs font-mono text-zinc-100 outline-none focus:border-violet-500/50 placeholder:text-zinc-600"
                 />
                 {internalBsvAddress && !bsvRecvAddr && (
-                  <button onClick={() => setBsvRecvAddr(internalBsvAddress)} className="text-[10px] text-violet-400 hover:text-violet-300 self-start">
+                  <button onClick={() => setBsvRecvAddr(internalBsvAddress)}
+                    className="text-[10px] text-violet-400 hover:text-violet-300 self-start">
                     Use my OrahDEX BSV address
                   </button>
                 )}
@@ -823,111 +1018,158 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
               {!tokenAddrOnChain && evmToken !== "ETH" && (
                 <div className="flex items-center gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/8 px-3 py-2 text-xs text-yellow-300">
                   <AlertCircle size={12} className="shrink-0" />
-                  {evmToken} is not yet supported on {evmChainName}. Switch chain.
+                  {evmToken} is not supported on {evmChainName}. Switch chain.
                 </div>
               )}
 
               {estimatedBsvOut > 0 && (
                 <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-1.5">
-                  <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">Estimated swap</p>
+                  <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                    Estimated swap
+                  </p>
                   <div className="flex items-center gap-2 text-sm font-bold">
                     <span className="text-zinc-200">{evmAmtNum.toFixed(4)} {evmToken}</span>
                     <ArrowRight size={13} className="text-violet-400" />
                     <span className="text-violet-300">≥ {estimatedBsvOut.toFixed(4)} BSV</span>
                   </div>
-                  <p className="text-[9px] text-zinc-600">{SLIPPAGE * 100}% slippage · Escrow lock on {evmChainName} · Solver delivers BSV</p>
+                  <p className="text-[9px] text-zinc-600">
+                    {SLIPPAGE * 100}% slippage · Escrow lock on {evmChainName} · Solver delivers BSV
+                  </p>
                 </div>
               )}
 
               {formErr && <ErrorBox msg={formErr} />}
 
               <button onClick={handleEvmLock}
-                disabled={!evmAmtNum || evmAmtNum <= 0 || !bsvRecvAddr.trim() || !address || (!tokenAddrOnChain && evmToken !== "ETH")}
+                disabled={
+                  !evmAmtNum || evmAmtNum <= 0 ||
+                  !bsvRecvAddr.trim() || !address ||
+                  (!tokenAddrOnChain)
+                }
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold bg-violet-600 text-white hover:bg-violet-500 active:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
                 <Lock size={14} /> Lock {evmToken} & Request BSV
               </button>
             </>
           )}
 
-          {/* ── Locking (EVM→BSV) ────────────────────────────────────────── */}
-          {step === "locking" && evmSwap && (
-            <>
-              <div className="flex flex-col items-center py-6 gap-3">
-                {evmSwap.status === "LOCKING" ? (
-                  <>
-                    <Loader2 size={32} className="animate-spin text-violet-400" />
-                    <p className="text-sm font-semibold text-violet-300">Locking {evmSwap.evmToken} on {evmChainName}…</p>
-                    <p className="text-xs text-zinc-500 text-center">Approve the transaction in your wallet. Do not close this window.</p>
-                  </>
-                ) : evmSwap.status === "FAILED" ? (
-                  <>
-                    <AlertCircle size={28} className="text-red-400" />
-                    <p className="text-sm font-semibold text-red-300">Lock failed</p>
-                    <p className="text-xs text-zinc-400 text-center">{evmSwap.error}</p>
-                    <button onClick={() => { setStep("configure"); setEvmSwap(null); }}
-                      className="mt-2 px-4 py-2 rounded-lg border border-zinc-700 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors">
-                      Back to configure
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </>
+          {/* ══ EVM → BSV: LOCKING ════════════════════════════════════════════ */}
+          {step === "locking" && !isBsvToEvm && (
+            <div className="flex flex-col items-center py-6 gap-3">
+              {lockingEvm && !lockErr ? (
+                <>
+                  <Loader2 size={32} className="animate-spin text-violet-400" />
+                  <p className="text-sm font-semibold text-violet-300">
+                    Locking {evmToken} on {evmChainName}…
+                  </p>
+                  <p className="text-xs text-zinc-500 text-center">
+                    Approve the transaction in your wallet. Do not close this window.
+                  </p>
+                </>
+              ) : lockErr ? (
+                <>
+                  <AlertCircle size={28} className="text-red-400" />
+                  <p className="text-sm font-semibold text-red-300">Lock failed</p>
+                  <p className="text-xs text-zinc-400 text-center">{lockErr}</p>
+                  <button
+                    onClick={() => { setStep("configure"); setEvmSwapId(null); setLockErr(null); }}
+                    className="mt-2 px-4 py-2 rounded-lg border border-zinc-700 text-xs text-zinc-300 hover:bg-zinc-800 transition-colors">
+                    Back to configure
+                  </button>
+                </>
+              ) : null}
+            </div>
           )}
 
-          {/* ── Tracking (EVM→BSV) ───────────────────────────────────────── */}
-          {step === "tracking" && !isBsvToEvm && evmSwap && (
+          {/* ══ EVM → BSV: TRACKING ═══════════════════════════════════════════ */}
+          {step === "tracking" && !isBsvToEvm && (
             <>
               <StatusStep
-                labels={["Lock EVM", "Locked", "Solver fills", "Done"]}
-                currentIndex={
-                  evmSwap.status === "LOCKING"      ? 0
-                  : evmSwap.status === "LOCKED"      ? 1
-                  : evmSwap.status === "AWAITING_BSV"? 2
-                  : evmSwap.status === "COMPLETE"    ? 3
-                  : 1
-                }
+                labels={["Lock EVM", "Locked", "Solver delivers", "Done"]}
+                currentIndex={evmStepIndex}
               />
 
               <StatusBadge
-                label={EVM_STATUS_LABELS[evmSwap.status]}
-                isComplete={evmSwap.status === "COMPLETE"}
-                isFailed={evmSwap.status === "FAILED"}
+                label={EVM_STATUS_LABELS[activeEvmStatus]}
+                isComplete={activeEvmStatus === "COMPLETE"}
+                isFailed={activeEvmStatus === "FAILED" || activeEvmStatus === "REFUNDED"}
                 isWarning={false}
-                sub={evmSwap.status === "LOCKED"
-                  ? "Solver is detecting your lock. BSV delivery typically takes 1–5 minutes."
-                  : evmSwap.status === "AWAITING_BSV"
-                  ? "Lock confirmed. BSV will be delivered to your receive address."
-                  : undefined}
+                sub={
+                  activeEvmStatus === "LOCKED"
+                    ? "Lock confirmed. Solver detecting — BSV delivery takes 1–5 min."
+                    : activeEvmStatus === "AWAITING_BSV" || activeEvmStatus === "BSV_SENT"
+                    ? "BSV is on its way to your receive address."
+                    : undefined
+                }
               />
 
               <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3 space-y-2">
-                <Row label="Swap">
-                  {evmSwap.evmAmount} {evmSwap.evmToken} → ≥ {estimatedBsvOut.toFixed(4)} BSV
-                </Row>
-                <Row label="Chain">{evmChainName}</Row>
-                <Row label="BSV receive">{evmSwap.bsvAddress.slice(0, 12)}…{evmSwap.bsvAddress.slice(-6)}</Row>
-                {evmSwap.txHash && (
+                {evmSwapData && (
+                  <>
+                    <Row label="Swap">
+                      {evmSwapData.amountInHuman} {evmSwapData.tokenIn}
+                      {evmSwapData.estimatedBsvOut
+                        ? ` → ≥ ${parseFloat(evmSwapData.estimatedBsvOut).toFixed(4)} BSV`
+                        : " → BSV"}
+                    </Row>
+                    <Row label="Chain">{evmChainName}</Row>
+                    <Row label="BSV receive">
+                      {evmSwapData.bsvReceiveAddr.slice(0, 12)}…{evmSwapData.bsvReceiveAddr.slice(-6)}
+                    </Row>
+                  </>
+                )}
+                {(evmSwapData?.evmLockTxHash ?? localLockHash) && (
                   <Row label="Lock tx">
-                    <TxLink href={explorerTx(evmSwap.chainId, evmSwap.txHash)} txid={evmSwap.txHash} />
+                    <TxLink
+                      href={explorerTx(evmChainId, (evmSwapData?.evmLockTxHash ?? localLockHash)!)}
+                      txid={(evmSwapData?.evmLockTxHash ?? localLockHash)!}
+                    />
                   </Row>
                 )}
-                <Row label="Swap ID"><span className="text-zinc-600 text-[10px]">{evmSwap.swapId.slice(0, 18)}…</span></Row>
+                {evmSwapData?.solverBsvTxid && (
+                  <Row label="BSV delivery tx">
+                    <TxLink
+                      href={`https://whatsonchain.com/tx/${evmSwapData.solverBsvTxid}`}
+                      txid={evmSwapData.solverBsvTxid}
+                      className="text-emerald-300"
+                    />
+                  </Row>
+                )}
+                {evmSwapId && (
+                  <Row label="Swap ID">
+                    <span className="text-zinc-600 text-[10px]">{evmSwapId.slice(0, 18)}…</span>
+                  </Row>
+                )}
               </div>
 
               <div className="rounded-lg border border-zinc-700/50 bg-zinc-900/30 px-3 py-2.5 text-[10px] text-zinc-400 leading-relaxed space-y-1">
                 <p className="font-semibold text-zinc-300">What happens next?</p>
-                <p>A solver monitors the escrow contract and delivers BSV to your address once your lock is confirmed. If BSV is not delivered within the escrow timeout, you can request a refund via the escrow contract.</p>
+                <p>
+                  A solver monitors the escrow contract and delivers BSV to your address once
+                  your lock is confirmed. If BSV is not delivered within the escrow timeout,
+                  you can reclaim via the escrow contract.
+                </p>
               </div>
 
-              <button onClick={() => { setStep("configure"); setEvmSwap(null); setEvmAmtStr(""); setBsvRecvAddr(""); }}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-zinc-700 text-sm text-zinc-300 hover:bg-zinc-800 transition-colors">
-                <ArrowLeftRight size={14} /> Start new swap
-              </button>
+              {(evmComplete || evmFailed) ? (
+                <button
+                  onClick={() => {
+                    setStep("configure"); setEvmSwapId(null);
+                    setEvmAmtStr(""); setBsvRecvAddr(""); setLocalLockHash(null);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-zinc-700 text-sm text-zinc-300 hover:bg-zinc-800 transition-colors">
+                  <ArrowLeftRight size={14} /> Start new swap
+                </button>
+              ) : (
+                <button onClick={() => refetchEvmSwap()}
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors">
+                  <RotateCcw size={10} /> Refresh status
+                </button>
+              )}
             </>
           )}
 
-          {/* Loading placeholder */}
-          {step !== "configure" && step !== "locking" && !displayIntent && !evmSwap && (
+          {/* Loading */}
+          {step !== "configure" && step !== "locking" && !displayIntent && !evmSwapData && !evmSwapId && (
             <div className="flex items-center justify-center py-6 gap-2 text-zinc-500">
               <Loader2 size={14} className="animate-spin" /> Loading…
             </div>
@@ -935,53 +1177,5 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// ── Small shared sub-components ───────────────────────────────────────────────
-
-function ErrorBox({ msg }: { msg: string }) {
-  return (
-    <div className="flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs text-red-300">
-      <AlertCircle size={13} className="shrink-0" /> {msg}
-    </div>
-  );
-}
-
-function TxLink({ href, txid, className }: { href: string; txid: string; className?: string }) {
-  return (
-    <a href={href} target="_blank" rel="noopener noreferrer"
-      className={cn("flex items-center gap-1 hover:underline", className ?? "text-violet-300")}>
-      {txid.slice(0, 10)}… <ExternalLink size={9} />
-    </a>
-  );
-}
-
-function StatusBadge({ label, isComplete, isFailed, isWarning, sub }: {
-  label: string; isComplete: boolean; isFailed: boolean; isWarning: boolean; sub?: string;
-}) {
-  return (
-    <div className={cn(
-      "flex items-center gap-2 rounded-lg border px-3 py-2.5",
-      isComplete ? "border-emerald-500/30 bg-emerald-500/10"
-        : isFailed ? "border-zinc-700 bg-zinc-900"
-        : isWarning ? "border-amber-500/30 bg-amber-500/10"
-        : "border-violet-500/20 bg-violet-500/8",
-    )}>
-      {isComplete
-        ? <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
-        : isFailed
-        ? <X size={15} className="text-zinc-500 shrink-0" />
-        : isWarning
-        ? <AlertCircle size={15} className="text-amber-400 shrink-0" />
-        : <Loader2 size={15} className="animate-spin text-violet-400 shrink-0" />}
-      <div className="flex-1 min-w-0">
-        <p className={cn(
-          "text-sm font-semibold",
-          isComplete ? "text-emerald-300" : isWarning ? "text-amber-300" : "text-violet-300"
-        )}>{label}</p>
-        {sub && <p className="text-[10px] text-zinc-400">{sub}</p>}
-      </div>
-    </div>
   );
 }
