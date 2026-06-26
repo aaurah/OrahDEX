@@ -62,6 +62,7 @@ import { getOrCreateBsvWallet, getBsvWallet } from "../lib/internalBsvWallet.js"
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
 import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { arcBroadcast } from "../lib/arcBroadcaster.js";
 import { randomBytes } from "node:crypto";
 
 const router: IRouter = Router();
@@ -450,22 +451,11 @@ router.post("/bsv/broadcast", async (req, res) => {
     return;
   }
   try {
-    const ctrl  = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15_000);
-    const wocRes = await fetch(BSV_NET.wocBroadcast, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
-      body:    JSON.stringify({ txhex: rawHex }),
-      signal:  ctrl.signal,
-    });
-    clearTimeout(timer);
-    const text = await wocRes.text();
-    if (wocRes.ok && text) {
-      // WoC returns the txid as plain or JSON-quoted text
-      const txid = text.trim().replace(/^"|"$/g, "");
-      res.json({ txid, explorerUrl: `${BSV_NET.explorer}/tx/${txid}` });
+    const result = await arcBroadcast(rawHex);
+    if (result.txid) {
+      res.json({ txid: result.txid, arcStatus: result.arcStatus, explorerUrl: `${BSV_NET.explorer}/tx/${result.txid}` });
     } else {
-      res.status(wocRes.status).json({ error: text || "Broadcast failed" });
+      res.status(400).json({ error: result.error ?? "Broadcast failed" });
     }
   } catch (err: any) {
     logger.warn({ err: err?.message }, "BSV broadcast failed");

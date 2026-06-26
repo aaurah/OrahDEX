@@ -32,6 +32,7 @@ export interface ArcBroadcastResult {
   arcTxid:   string | null;
   arcStatus: string | null;
   usedArc:   boolean;
+  error?:    string;
 }
 
 /** ARC raw-tx submission response */

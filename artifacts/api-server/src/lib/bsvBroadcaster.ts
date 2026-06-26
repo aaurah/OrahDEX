@@ -200,7 +200,7 @@ export async function broadcastP2SHSpend(params: P2SHSpendParams): Promise<P2SHS
   if (outSat <= DUST_SAT) {
     const msg = `P2SH spend: output ${outSat} sat is at or below dust — skipping`;
     logger.warn({ fundingSat, fee }, msg);
-    return { success: false, txid: "", rawTxHex: "", broadcast: false, error: msg };
+    return { success: false, txid: "", rawTxHex: "", broadcast: false, arcTxid: null, arcStatus: null, error: msg };
   }
 
   let outputScript: Buffer;
@@ -209,7 +209,7 @@ export async function broadcastP2SHSpend(params: P2SHSpendParams): Promise<P2SHS
   } catch (decErr) {
     const msg = `P2SH spend: cannot decode output address ${outputAddress}: ${decErr}`;
     logger.warn(msg);
-    return { success: false, txid: "", rawTxHex: "", broadcast: false, error: msg };
+    return { success: false, txid: "", rawTxHex: "", broadcast: false, arcTxid: null, arcStatus: null, error: msg };
   }
 
   const scriptSig = Buffer.from(scriptSigHex, "hex");
