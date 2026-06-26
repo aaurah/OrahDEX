@@ -11,7 +11,6 @@ import { encodeFunctionData, keccak256, toBytes, erc20Abi, createWalletClient, c
 import {
   sendTransaction as wagmiSendTransaction,
   waitForTransactionReceipt as wagmiWaitForTxReceipt,
-  getTransactionCount as wagmiGetTxCount,
   switchChain as wagmiSwitchChain,
   getAccount as wagmiGetAccount,
 } from "@wagmi/core";
@@ -600,6 +599,31 @@ async function ensureWagmiChain(chainId: number) {
   return config;
 }
 
+/**
+ * Estimate gas using our own public RPC (not the wallet's potentially rate-limited
+ * node) and return it padded by 30% so the wallet never needs to call eth_estimateGas.
+ * Falls back to a conservative static limit on any RPC error.
+ */
+async function estimateGasForReown(
+  params: { from: string; to: string; value?: bigint; data: `0x${string}` },
+  chainId: number,
+  staticFallback: bigint,
+): Promise<bigint> {
+  try {
+    const pub = getPublicClient(chainId);
+    const estimated = await pub.estimateGas({
+      account: params.from as `0x${string}`,
+      to:      params.to as `0x${string}`,
+      value:   params.value,
+      data:    params.data,
+    });
+    // Pad by 30% to give the wallet headroom
+    return (estimated * 130n) / 100n;
+  } catch {
+    return staticFallback;
+  }
+}
+
 export async function lockEthViaReown(
   orderId:   string,
   rawAmount: bigint,
@@ -611,18 +635,15 @@ export async function lockEthViaReown(
   const acct = wagmiGetAccount(config);
   if (!acct.address) throw new Error("No connected wallet");
 
-  const nonce = await wagmiGetTxCount(config, {
-    address: acct.address,
-    blockTag: "pending",
-    chainId,
-  });
+  const data = buildLockEthCalldata(orderId);
+  const gas = await estimateGasForReown(
+    { from: acct.address, to: escrow, value: rawAmount, data },
+    chainId, 150000n,
+  );
+
   const txHash = await wagmiSendTransaction(config, {
-    to:    escrow,
-    value: rawAmount,
-    data:  buildLockEthCalldata(orderId),
-    nonce,
-    chainId,
-  } as any);
+    to: escrow, value: rawAmount, data, gas,
+  });
   await wagmiWaitForTxReceipt(config, { hash: txHash, chainId });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
@@ -640,27 +661,25 @@ export async function lockErc20ViaReown(
   if (!acct.address) throw new Error("No connected wallet");
 
   // Step 1: approve
-  const approveNonce = await wagmiGetTxCount(config, {
-    address: acct.address, blockTag: "pending", chainId,
-  });
+  const approveData = buildApproveCalldata(escrow, rawAmount);
+  const approveGas  = await estimateGasForReown(
+    { from: acct.address, to: tokenAddress, data: approveData },
+    chainId, 100000n,
+  );
   const approveTx = await wagmiSendTransaction(config, {
-    to:   tokenAddress as `0x${string}`,
-    data: buildApproveCalldata(escrow, rawAmount),
-    nonce: approveNonce,
-    chainId,
-  } as any);
+    to: tokenAddress as `0x${string}`, data: approveData, gas: approveGas,
+  });
   await wagmiWaitForTxReceipt(config, { hash: approveTx, chainId });
 
-  // Step 2: lockERC20 — re-fetch nonce after approve confirms
-  const lockNonce = await wagmiGetTxCount(config, {
-    address: acct.address, blockTag: "pending", chainId,
-  });
+  // Step 2: lockERC20
+  const lockData = buildLockErc20Calldata(orderId, tokenAddress, rawAmount);
+  const lockGas  = await estimateGasForReown(
+    { from: acct.address, to: escrow, data: lockData },
+    chainId, 200000n,
+  );
   const txHash = await wagmiSendTransaction(config, {
-    to:   escrow,
-    data: buildLockErc20Calldata(orderId, tokenAddress, rawAmount),
-    nonce: lockNonce,
-    chainId,
-  } as any);
+    to: escrow, data: lockData, gas: lockGas,
+  });
   await wagmiWaitForTxReceipt(config, { hash: txHash, chainId });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
@@ -675,15 +694,14 @@ export async function cancelEscrowViaReown(
   const acct = wagmiGetAccount(config);
   if (!acct.address) throw new Error("No connected wallet");
 
-  const nonce = await wagmiGetTxCount(config, {
-    address: acct.address, blockTag: "pending", chainId,
-  });
+  const data = buildCancelCalldata(orderId);
+  const gas  = await estimateGasForReown(
+    { from: acct.address, to: escrow, data },
+    chainId, 100000n,
+  );
   const txHash = await wagmiSendTransaction(config, {
-    to:   escrow,
-    data: buildCancelCalldata(orderId),
-    nonce,
-    chainId,
-  } as any);
+    to: escrow, data, gas,
+  });
   await wagmiWaitForTxReceipt(config, { hash: txHash, chainId });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
