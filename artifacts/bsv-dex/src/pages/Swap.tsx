@@ -39,9 +39,7 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { FiatBuySellPanel } from "@/components/FiatBuySellPanel";
-import { SwapWidget } from "thirdweb/react";
-import { thirdwebClient } from "@/lib/thirdweb-client";
-import { useSwapWidgetTheme } from "@/lib/thirdweb-theme";
+import { BridgeAggPanel } from "@/components/BridgeAggPanel";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
@@ -2197,7 +2195,6 @@ function BuyCryptoPanel({
 
 export function Swap() {
   useSEO({ title: "Buy · Swap · Bridge · DEX — OrahDEX", description: "Buy crypto with card, swap 6,000+ coins across 30+ chains, bridge between networks, or trade on-chain DEX — all in one place." });
-  const swapWidgetTheme = useSwapWidgetTheme();
   const [, setLocation] = useLocation();
   const searchStr = useSearch();
   const searchParams = new URLSearchParams(searchStr);
@@ -2568,20 +2565,9 @@ export function Swap() {
           </div>
         )}
 
-        {/* ═══════════════ BRIDGE TAB — ThirdWeb Universal Bridge ═══════════════ */}
+        {/* ═══════════════ BRIDGE TAB — Cross-chain bridge aggregator ═══════════════ */}
         {activeTab === "bridge" && (
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">
-              Swap any token across any EVM chain — best routes, all networks.
-            </p>
-            <div className="tw-widget-wrap">
-              <SwapWidget
-                client={thirdwebClient}
-                theme={swapWidgetTheme}
-                showThirdwebBranding={false}
-              />
-            </div>
-          </div>
+          <BridgeAggPanel walletAddress={address ?? undefined} />
         )}
 
         {/* ═══════════════ DEX TAB (on-chain Uniswap V3 / PancakeSwap) ═══════════════ */}
