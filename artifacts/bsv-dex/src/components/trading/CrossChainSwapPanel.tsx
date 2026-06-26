@@ -23,7 +23,7 @@ import {
   ExternalLink, Zap, Shield, RotateCcw, X, Clock,
   ArrowLeftRight, Lock,
 } from "lucide-react";
-import { lockEthUniversal, lockErc20Universal } from "@/lib/escrow";
+import { lockEthUniversal, lockErc20Universal, escrowAddress } from "@/lib/escrow";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -639,6 +639,8 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
   const bsvRefunded  = displayIntent?.status === "REFUNDED" || displayIntent?.status === "CANCELLED";
   const evmComplete  = evmSwapData?.status === "COMPLETE";
   const evmFailed    = evmSwapData?.status === "FAILED" || evmSwapData?.status === "REFUNDED";
+  const evmIsExpired = !evmComplete && !evmFailed &&
+    !!evmSwapData?.expiresAt && new Date(evmSwapData.expiresAt) < new Date();
 
   const activeEvmStatus: EvmBsvApiStatus =
     evmSwapData?.status ?? (evmSwapId ? "PENDING_LOCK" : "PENDING_LOCK");
@@ -1141,14 +1143,72 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
                 )}
               </div>
 
-              <div className="rounded-lg border border-zinc-700/50 bg-zinc-900/30 px-3 py-2.5 text-[10px] text-zinc-400 leading-relaxed space-y-1">
-                <p className="font-semibold text-zinc-300">What happens next?</p>
-                <p>
-                  A solver monitors the escrow contract and delivers BSV to your address once
-                  your lock is confirmed. If BSV is not delivered within the escrow timeout,
-                  you can reclaim via the escrow contract.
-                </p>
-              </div>
+              {!evmFailed && !evmIsExpired && (
+                <div className="rounded-lg border border-zinc-700/50 bg-zinc-900/30 px-3 py-2.5 text-[10px] text-zinc-400 leading-relaxed space-y-1">
+                  <p className="font-semibold text-zinc-300">What happens next?</p>
+                  <p>
+                    A solver monitors the escrow contract and delivers BSV to your address once
+                    your lock is confirmed. If BSV is not delivered within the escrow timeout,
+                    you can reclaim via the escrow contract.
+                  </p>
+                </div>
+              )}
+
+              {/* ── EVM → BSV reclaim panel ───────────────────────────────────── */}
+              {(evmFailed || evmIsExpired) && !evmComplete && (() => {
+                const contractAddr = escrowAddress(evmSwapData?.chainId ?? null);
+                const cid = evmSwapData?.chainId;
+                const explorerBase: Record<number, string> = {
+                  1:        "https://etherscan.io",
+                  11155111: "https://sepolia.etherscan.io",
+                  56:       "https://bscscan.com",
+                  97:       "https://testnet.bscscan.com",
+                };
+                const explorerRoot = (cid && explorerBase[cid]) ?? "https://etherscan.io";
+                const writeUrl = contractAddr
+                  ? `${explorerRoot}/address/${contractAddr}#writeContract`
+                  : null;
+                return (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/8 p-3 space-y-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <RotateCcw size={12} className="text-amber-400 shrink-0" />
+                      <p className="text-xs font-semibold text-amber-300">Reclaim your EVM funds</p>
+                    </div>
+                    <p className="text-[10px] text-amber-200/70 leading-relaxed">
+                      {evmFailed
+                        ? "This swap failed before BSV was delivered."
+                        : "The swap window has expired without BSV delivery."}{" "}
+                      Call{" "}
+                      <code className="bg-zinc-800 px-1 rounded text-amber-300">refund(orderId)</code>{" "}
+                      on the escrow contract to recover your locked tokens.
+                    </p>
+                    {contractAddr && (
+                      <div className="space-y-1">
+                        <p className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">Escrow contract</p>
+                        <div className="flex items-center gap-2">
+                          <code className="text-[10px] font-mono text-zinc-300 flex-1 break-all">{contractAddr}</code>
+                          <CopyButton text={contractAddr} />
+                        </div>
+                      </div>
+                    )}
+                    {evmSwapId && (
+                      <div className="space-y-1">
+                        <p className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold">Order ID (refund argument)</p>
+                        <div className="flex items-center gap-2">
+                          <code className="text-[10px] font-mono text-zinc-300 flex-1 break-all">{evmSwapId}</code>
+                          <CopyButton text={evmSwapId} />
+                        </div>
+                      </div>
+                    )}
+                    {writeUrl && (
+                      <a href={writeUrl} target="_blank" rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-amber-400 hover:text-amber-300 transition-colors">
+                        <ExternalLink size={10} /> Open Write Contract on Explorer
+                      </a>
+                    )}
+                  </div>
+                );
+              })()}
 
               {(evmComplete || evmFailed) ? (
                 <button
