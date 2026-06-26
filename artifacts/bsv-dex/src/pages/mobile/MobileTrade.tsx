@@ -24,6 +24,7 @@ import { useEscrow } from "@/hooks/useEscrow";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
 import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
+import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
 import { hasEscrow, chainLabel, checkEscrowDeposit, resolveEscrowAsset } from "@/lib/escrow";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 
@@ -885,6 +886,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   }, [rawSymbol]);
   const [showOrderForm, setShowOrderForm] = useState(false);
   const [swapMode, setSwapMode] = useState(false);
+  const [atomicSwapOpen, setAtomicSwapOpen] = useState(false);
   const scrollBodyRef  = useRef<HTMLDivElement>(null);
   const orderFormRef   = useRef<HTMLDivElement>(null);
   const [receiveAddress, setReceiveAddress] = useState("");
@@ -2993,6 +2995,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <ArrowLeftRight size={14} />
               Swap
             </button>
+
+            {/* BSV Atomic Swap button */}
+            <button
+              onClick={() => setAtomicSwapOpen(true)}
+              className="flex-1 py-3 rounded-xl text-sm font-bold transition-all active:opacity-80 flex items-center justify-center gap-1 bg-violet-600/15 border border-violet-500/30 text-violet-300"
+            >
+              <ShieldCheck size={14} />
+              Atomic
+            </button>
           </>
         )}
       </div>
@@ -3126,6 +3137,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       <ShareToast visible={shareToastVisible} copied={shareCopied} />
 
       {/* ── LOCK FUNDS DIALOG (confirmation + live status) ── */}
+      <CrossChainSwapPanel open={atomicSwapOpen} onOpenChange={setAtomicSwapOpen} />
+
       <LockFundsDialog
         open={lockDialogOpen}
         onOpenChange={setLockDialogOpen}
