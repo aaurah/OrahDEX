@@ -6,3 +6,4 @@
 - [Reown appkit subpath alias](reown-appkit-subpath.md) — Rolldown (Vite 8) can't resolve @reown/appkit/* subpaths via symlinks; must add explicit resolve.alias entries.
 - [ThirdWeb wallet store sync](thirdweb-wallet-sync.md) — ThirdwebMobilePanel.handleConnect must extract account from wallet.connect() and call useWalletStore.getState().connect() to update OrahDEX state.
 - [ThirdWeb Bridge integration](thirdweb-bridge-integration.md) — Bridge.Buy.prepare multi-step execution; ThirdwebBridgePanel in OrderForm funds trades from any EVM chain/token.
+- [Reown raw eth_sendTransaction](reown-raw-send.md) — viem@2.47.x wagmiSendTransaction throws "method not supported" on WalletConnect; must call eth_sendTransaction directly on the connector's EIP-1193 provider.

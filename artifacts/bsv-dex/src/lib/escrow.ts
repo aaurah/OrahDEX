@@ -9,8 +9,6 @@
 
 import { encodeFunctionData, keccak256, toBytes, erc20Abi, createWalletClient, createPublicClient, http, parseUnits } from "viem";
 import {
-  sendTransaction as wagmiSendTransaction,
-  waitForTransactionReceipt as wagmiWaitForTxReceipt,
   switchChain as wagmiSwitchChain,
   getAccount as wagmiGetAccount,
 } from "@wagmi/core";
@@ -584,20 +582,15 @@ export async function cancelEscrowViaOrah(
 }
 
 // ── Reown / WalletConnect path (mobile wallets like imToken / Rabby Mobile) ──
-// These wallets connect via WalletConnect and DO NOT inject window.ethereum,
-// so eth_sendTransaction calls have to go through wagmi-core against the
-// Reown AppKit's wagmiConfig.
-
-/** Ensure the wagmi connector is on the right chain before sending a tx. */
-async function ensureWagmiChain(chainId: number) {
-  const config = getWagmiConfig();
-  if (!config) throw new Error("Wallet connector not initialized");
-  const acct = wagmiGetAccount(config);
-  if (acct.chainId !== chainId) {
-    await wagmiSwitchChain(config, { chainId });
-  }
-  return config;
-}
+// These wallets connect via WalletConnect and DO NOT inject window.ethereum.
+//
+// IMPORTANT: wagmiSendTransaction / viem's sendTransaction throw
+// "this request method is not supported" (EIP-1193 error 4200) on some
+// WalletConnect sessions because viem@2.47.x internally calls extra
+// JSON-RPC methods (wallet type detection, EIP-1559 fee estimation) that the
+// WalletConnect relay doesn't proxy.  The fix is to call eth_sendTransaction
+// directly on the connector's raw EIP-1193 provider, exactly as sendTxUniversal
+// does for the injected-wallet path.
 
 /**
  * Estimate gas using our own public RPC (not the wallet's potentially rate-limited
@@ -617,11 +610,80 @@ async function estimateGasForReown(
       value:   params.value,
       data:    params.data,
     });
-    // Pad by 30% to give the wallet headroom
     return (estimated * 130n) / 100n;
   } catch {
     return staticFallback;
   }
+}
+
+/**
+ * Send a raw eth_sendTransaction via the Reown/WalletConnect connector's
+ * EIP-1193 provider, bypassing viem's sendTransaction wrapper which calls
+ * internal methods not supported by WalletConnect relays.
+ *
+ * Switches the connector to the target chain first.
+ * Returns the tx hash on success, throws on user rejection.
+ */
+async function sendRawViaReown(params: {
+  from:    string;
+  to:      string;
+  value?:  bigint;
+  data:    `0x${string}`;
+  gas:     bigint;
+  chainId: number;
+}): Promise<string> {
+  const config = getWagmiConfig();
+  if (!config) throw new Error("Wallet connector not initialized");
+
+  // Switch chain via wagmi (this path works fine — the issue is only sendTransaction)
+  const acct = wagmiGetAccount(config);
+  if (acct.chainId !== params.chainId) {
+    await wagmiSwitchChain(config, { chainId: params.chainId });
+  }
+
+  const chainHex = "0x" + params.chainId.toString(16);
+  const gasHex   = "0x" + params.gas.toString(16);
+
+  const txObj: Record<string, string> = {
+    from: params.from,
+    to:   params.to,
+    data: params.data,
+    gas:  gasHex,
+  };
+  if (params.value !== undefined && params.value > 0n) {
+    txObj.value = "0x" + params.value.toString(16);
+  }
+
+  // Try each wagmi connector in order
+  for (const connector of (config as any).connectors ?? []) {
+    try {
+      const provider = await (connector as any).getProvider?.();
+      if (!provider) continue;
+
+      // Ensure the provider is on the right chain
+      const currentHex: string = await provider.request({ method: "eth_chainId" });
+      if (parseInt(currentHex, 16) !== params.chainId) {
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: chainHex }],
+        });
+      }
+
+      const hash: string = await provider.request({
+        method: "eth_sendTransaction",
+        params: [txObj],
+      });
+      if (hash) return hash;
+    } catch (err: any) {
+      const msg = (err?.message ?? "").toLowerCase();
+      const isReject = err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
+        msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
+      if (isReject) throw err;
+      // Non-rejection error from this connector → try next
+    }
+  }
+
+  throw new Error("No WalletConnect session found. Please reconnect your wallet.");
 }
 
 export async function lockEthViaReown(
@@ -631,20 +693,22 @@ export async function lockEthViaReown(
 ): Promise<EscrowTxResult> {
   const escrow = escrowAddress(chainId);
   if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
-  const config = await ensureWagmiChain(chainId);
+
+  const config = getWagmiConfig();
+  if (!config) throw new Error("Wallet connector not initialized");
   const acct = wagmiGetAccount(config);
   if (!acct.address) throw new Error("No connected wallet");
 
   const data = buildLockEthCalldata(orderId);
-  const gas = await estimateGasForReown(
+  const gas  = await estimateGasForReown(
     { from: acct.address, to: escrow, value: rawAmount, data },
     chainId, 150000n,
   );
 
-  const txHash = await wagmiSendTransaction(config, {
-    to: escrow, value: rawAmount, data, gas,
+  const txHash = await sendRawViaReown({
+    from: acct.address, to: escrow, value: rawAmount, data, gas, chainId,
   });
-  await wagmiWaitForTxReceipt(config, { hash: txHash, chainId });
+  await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash as `0x${string}` });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -656,7 +720,9 @@ export async function lockErc20ViaReown(
 ): Promise<EscrowTxResult> {
   const escrow = escrowAddress(chainId);
   if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
-  const config = await ensureWagmiChain(chainId);
+
+  const config = getWagmiConfig();
+  if (!config) throw new Error("Wallet connector not initialized");
   const acct = wagmiGetAccount(config);
   if (!acct.address) throw new Error("No connected wallet");
 
@@ -666,10 +732,10 @@ export async function lockErc20ViaReown(
     { from: acct.address, to: tokenAddress, data: approveData },
     chainId, 100000n,
   );
-  const approveTx = await wagmiSendTransaction(config, {
-    to: tokenAddress as `0x${string}`, data: approveData, gas: approveGas,
+  const approveTx = await sendRawViaReown({
+    from: acct.address, to: tokenAddress, data: approveData, gas: approveGas, chainId,
   });
-  await wagmiWaitForTxReceipt(config, { hash: approveTx, chainId });
+  await getPublicClient(chainId).waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
 
   // Step 2: lockERC20
   const lockData = buildLockErc20Calldata(orderId, tokenAddress, rawAmount);
@@ -677,10 +743,10 @@ export async function lockErc20ViaReown(
     { from: acct.address, to: escrow, data: lockData },
     chainId, 200000n,
   );
-  const txHash = await wagmiSendTransaction(config, {
-    to: escrow, data: lockData, gas: lockGas,
+  const txHash = await sendRawViaReown({
+    from: acct.address, to: escrow, data: lockData, gas: lockGas, chainId,
   });
-  await wagmiWaitForTxReceipt(config, { hash: txHash, chainId });
+  await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash as `0x${string}` });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -690,7 +756,9 @@ export async function cancelEscrowViaReown(
 ): Promise<EscrowTxResult> {
   const escrow = escrowAddress(chainId);
   if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
-  const config = await ensureWagmiChain(chainId);
+
+  const config = getWagmiConfig();
+  if (!config) throw new Error("Wallet connector not initialized");
   const acct = wagmiGetAccount(config);
   if (!acct.address) throw new Error("No connected wallet");
 
@@ -699,10 +767,10 @@ export async function cancelEscrowViaReown(
     { from: acct.address, to: escrow, data },
     chainId, 100000n,
   );
-  const txHash = await wagmiSendTransaction(config, {
-    to: escrow, data, gas,
+  const txHash = await sendRawViaReown({
+    from: acct.address, to: escrow, data, gas, chainId,
   });
-  await wagmiWaitForTxReceipt(config, { hash: txHash, chainId });
+  await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash as `0x${string}` });
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
