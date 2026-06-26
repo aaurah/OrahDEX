@@ -179,7 +179,15 @@ export function SettlementExplorer({
             <cfg.Icon className={cn("w-4 h-4", cfg.color)} />
           </div>
           <div>
-            <div className="text-xs font-semibold text-foreground">Settlement Explorer</div>
+            <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+              Settlement Explorer
+              {opReturnPayload?.startsWith("ORAH|") && (
+                <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-400 bg-emerald-400/10 border border-emerald-400/25 px-1.5 py-0.5 rounded-full">
+                  <CheckCircle2 className="w-2.5 h-2.5" />
+                  Verified on-chain ✓
+                </span>
+              )}
+            </div>
             <div className="text-[10px] text-muted-foreground">BSV Core DEX v2 — HTLC Status</div>
           </div>
         </div>
