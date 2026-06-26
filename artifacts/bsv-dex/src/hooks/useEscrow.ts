@@ -168,7 +168,16 @@ export function useEscrow() {
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null);
 
   const lockOrder = useCallback(async (params: LockOrderParams): Promise<EscrowTxResult | null> => {
-    if (!escrowAvailable || !address) return null;
+    if (!address) {
+      setErrorMsg("Wallet not connected. Please connect your wallet and try again.");
+      setStatus("error");
+      return null;
+    }
+    if (!escrowAvailable) {
+      setErrorMsg(`Escrow contract not available on this network (chain ${chainId}). Please switch to a supported EVM chain.`);
+      setStatus("error");
+      return null;
+    }
 
     const asset = resolveEscrowAsset(
       chainId, params.side, params.base, params.quote,
@@ -234,7 +243,16 @@ export function useEscrow() {
   }, [escrowAvailable, address, chainId, isOrahWallet, isThirdweb, thirdwebAccount]);
 
   const cancelOrder = useCallback(async (orderId: string): Promise<EscrowTxResult | null> => {
-    if (!escrowAvailable || !address) return null;
+    if (!address) {
+      setErrorMsg("Wallet not connected. Please connect your wallet and try again.");
+      setStatus("error");
+      return null;
+    }
+    if (!escrowAvailable) {
+      setErrorMsg(`Escrow contract not available on this network (chain ${chainId}). Please switch to a supported EVM chain.`);
+      setStatus("error");
+      return null;
+    }
 
     const useReown = !isOrahWallet && isReownConnected();
     const useTw    = !isOrahWallet && !useReown && isThirdweb && !!thirdwebAccount;
