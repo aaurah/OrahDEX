@@ -161,13 +161,6 @@ const PROVIDERS: ProviderDef[] = [
       paymentMethod:m==="card"?"credit_debit_card":m==="bank"?"sepa_bank_transfer":m, ...(addr?{walletAddress:addr}:{}) }),
   },
   {
-    id:"transak", name:"Transak", badge:"⚡", color:"text-cyan-400", fee:"0.99–2.5%", minUSD:15, maxUSD:25000, rating:4.6, kycLevel:"light",
-    methods:["card","apple","google","bank"],
-    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","ATOM","LTC","UNI","NEAR","ARB","APT","INJ"],
-    baseUrl:"https://global.transak.com",
-    params:(coin,fiat,amt,_m,addr)=>({ cryptoCurrencyCode:coin, defaultFiatCurrency:fiat, fiatAmount:amt, network:"mainnet", ...(addr?{walletAddress:addr}:{}) }),
-  },
-  {
     id:"ramp", name:"Ramp Network", badge:"🔵", color:"text-blue-300", fee:"0.49–2.9%", minUSD:5, maxUSD:10000, rating:4.7, kycLevel:"light",
     methods:["card","apple","google","bank"],
     coins:["BTC","ETH","SOL","MATIC","AVAX","DOT","UNI","LINK","ARB","OP","APT","NEAR","DOGE"],
