@@ -19,6 +19,7 @@
 
 import { Router } from "express";
 import { randomUUID } from "node:crypto";
+import { verifyMessage } from "viem";
 import { db } from "@workspace/db";
 import { evmToBsvSwapsTable } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
@@ -123,18 +124,41 @@ router.post("/evm-to-bsv-intent", async (req, res) => {
 
 router.put("/evm-to-bsv-intent/:id/lock", async (req, res) => {
   const { id } = req.params;
-  const { evmLockTxHash, userEvmAddress } = req.body as {
+  const { evmLockTxHash, userEvmAddress, signature } = req.body as {
     evmLockTxHash:  string;
     userEvmAddress: string;
+    signature:      string;
   };
 
-  // Both fields mandatory for security
+  // All three fields mandatory
   if (!userEvmAddress || !EVM_ADDRESS_RE.test(userEvmAddress)) {
     res.status(400).json({ error: "userEvmAddress required (must be 0x EVM address)" });
     return;
   }
   if (!evmLockTxHash || !TX_HASH_RE.test(evmLockTxHash)) {
     res.status(400).json({ error: "evmLockTxHash must be a valid 0x-prefixed 32-byte tx hash" });
+    return;
+  }
+  if (!signature || !/^0x[0-9a-fA-F]+$/.test(signature)) {
+    res.status(400).json({ error: "signature required (EIP-191 personal_sign over lock message)" });
+    return;
+  }
+
+  // Verify EIP-191 signature: message = "OrahDEX: Authorize EVM lock\nSwap: {id}\nTx: {evmLockTxHash}"
+  // This proves the caller controls the private key of userEvmAddress.
+  const sigMessage = `OrahDEX: Authorize EVM lock\nSwap: ${id}\nTx: ${evmLockTxHash}`;
+  try {
+    const sigValid = await verifyMessage({
+      address:   userEvmAddress as `0x${string}`,
+      message:   sigMessage,
+      signature: signature as `0x${string}`,
+    });
+    if (!sigValid) {
+      res.status(401).json({ error: "Invalid signature: does not recover to userEvmAddress" });
+      return;
+    }
+  } catch {
+    res.status(400).json({ error: "Signature verification failed — malformed signature" });
     return;
   }
 
@@ -149,7 +173,7 @@ router.put("/evm-to-bsv-intent/:id/lock", async (req, res) => {
       return;
     }
 
-    // Strict ownership check — always enforced, not optional
+    // Ownership check — always enforced
     if (row.userEvmAddress !== userEvmAddress.toLowerCase()) {
       res.status(403).json({ error: "Unauthorized: userEvmAddress does not match the swap owner" });
       return;
@@ -160,13 +184,12 @@ router.put("/evm-to-bsv-intent/:id/lock", async (req, res) => {
       return;
     }
 
-    // Idempotency: if already LOCKED with the same tx hash, return success
+    // Idempotency: same tx hash + same owner already locked → return success
     if (row.status === "LOCKED" && row.evmLockTxHash === evmLockTxHash) {
       res.json({ swapId: id, status: "LOCKED", evmLockTxHash });
       return;
     }
 
-    // Transition: PENDING_LOCK → LOCKED → AWAITING_BSV (solver will be notified)
     await db
       .update(evmToBsvSwapsTable)
       .set({
