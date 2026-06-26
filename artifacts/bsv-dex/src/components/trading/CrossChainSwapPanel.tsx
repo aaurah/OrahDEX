@@ -10,6 +10,7 @@
  */
 
 import { useState, useCallback, useEffect } from "react";
+import { useSignMessage } from "wagmi";
 import { parseUnits } from "viem";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
@@ -302,6 +303,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
   // Pull `chainId` (not `walletChainId`) from the store — the store field is chainId.
   const { address, internalBsvAddress, provider, chainId: walletChainId } = useWalletStore();
   const { prices } = useWalletPrices();
+  const { signMessageAsync } = useSignMessage();
   const isOrahWallet = provider === "orah-wallet";
   const bsvUsd       = prices.BSV?.usd ?? 16;
 
@@ -470,7 +472,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
     }
     setCreating(true);
     try {
-      const r = await fetch(`${BASE}/api/bsv-intent`, {
+      const r = await fetch(`${BASE}/api/swaps/bsv-evm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -484,7 +486,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
       });
       const json = await r.json();
       if (!r.ok) throw new Error(json.error ?? "Failed to create swap");
-      setIntentId(json.intentId);
+      setIntentId(json.intentId ?? json.id ?? json.swapId);
       setFundingData(json as BsvIntentData);
       setStep("funding");
     } catch (err: any) {
@@ -606,18 +608,35 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
 
       setLocalLockHash(txHash);
 
-      // 3. Record the lock tx hash in the backend → transitions status to LOCKED
+      // 3. Sign the lock authorisation (EIP-191 personal_sign) — proves wallet ownership.
+      //    Message must match the format verified server-side in PUT /lock.
+      const sigMessage = `OrahDEX: Authorize EVM lock\nSwap: ${swapId}\nTx: ${txHash}`;
+      let signature: string;
+      try {
+        signature = await signMessageAsync({ message: sigMessage });
+      } catch (sigErr: any) {
+        throw new Error(
+          `Wallet declined signing the lock authorisation: ${sigErr?.message ?? "user rejected"}. ` +
+          `Your ${evmToken} is locked on-chain (tx: ${txHash}). Contact support with swap ID: ${swapId}.`
+        );
+      }
+
+      // 4. Record the lock tx hash + signature in the backend → transitions status to LOCKED.
+      //    This is mandatory: if it fails the solver cannot detect or fulfil the swap.
       const lockResp = await fetch(
         `${BASE}/api/evm-to-bsv-intent/${swapId}/lock`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ evmLockTxHash: txHash, userEvmAddress: address }),
+          body: JSON.stringify({ evmLockTxHash: txHash, userEvmAddress: address, signature }),
         }
       );
       if (!lockResp.ok) {
-        // Non-fatal — the lock already happened on-chain; just surface a note
-        console.warn("Failed to record lock tx on backend:", await lockResp.text());
+        const errBody = await lockResp.json().catch(() => ({ error: lockResp.statusText }));
+        throw new Error(
+          `Lock recorded on-chain (tx: ${txHash}) but the server rejected the record: ` +
+          `${errBody.error ?? lockResp.status}. Contact support with swap ID: ${swapId}.`
+        );
       }
 
       setStep("tracking");

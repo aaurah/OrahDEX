@@ -157,6 +157,8 @@ router.post("/swaps/bsv-evm", async (req, res) => {
     logger.info({ intentId, htlcAddress: settlement.htlcAddress }, "swaps/bsv-evm intent created");
 
     res.status(201).json({
+      // id + swapId + intentId all aliased — BsvIntentData.id + creation state machine
+      id:                 intentId,
       swapId:             intentId,
       intentId,
       htlcAddress:        settlement.htlcAddress,
@@ -168,8 +170,16 @@ router.post("/swaps/bsv-evm", async (req, res) => {
       deadlineTs:         resolvedDeadline,
       deadlineBlocks,
       redeemScript:       settlement.redeemScript,
+      secretHash:         settlement.secretHash,
       status:             "PENDING_FUNDING",
       direction:          "bsv-to-evm",
+      // null fields so BsvIntentData cast works on the creation response
+      confirmations:      null,
+      fundingTxid:        null,
+      fundingConfirmed:   false,
+      claimTxid:          null,
+      refundTxid:         null,
+      solverPaymentTxid:  null,
     });
   } catch (err) {
     logger.error({ err }, "Failed to create swaps/bsv-evm intent");
