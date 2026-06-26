@@ -90,6 +90,16 @@ interface Provider {
   sellUrl?: (coin: string, fiat: string, addr: string) => string;
 }
 
+interface FeaturedProvider extends Provider {
+  badge: string;
+  color: string;
+  accentBg: string;
+  accentBorder: string;
+  kycLevel: "none" | "light" | "full";
+  sellSupported: boolean;
+  tagline: string;
+}
+
 const PROVIDERS: Provider[] = [
   {
     id: "moonpay", name: "MoonPay", fee: "1–4.5%", minUSD: 30, maxUSD: 50000,
@@ -97,6 +107,20 @@ const PROVIDERS: Provider[] = [
     coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","LTC","BCH","UNI","NEAR","ARB","OP","SUI","BSV","USDT","USDC"],
     buyUrl:  (c,f,a,m,addr) => `https://buy.moonpay.com?${qs({ currencyCode:c.toLowerCase(), baseCurrencyCode:f.toLowerCase(), baseCurrencyAmount:a, paymentMethod:m==="card"?"credit_debit_card":m==="bank"?"sepa_bank_transfer":m, ...(addr?{walletAddress:addr}:{}) })}`,
     sellUrl: (c,f,addr)     => `https://sell.moonpay.com?${qs({ baseCurrencyCode:c.toLowerCase(), quoteCurrencyCode:f.toLowerCase(), ...(addr?{walletAddress:addr}:{}) })}`,
+  },
+  {
+    id: "banxa", name: "Banxa", fee: "1–3%", minUSD: 50, maxUSD: 100000,
+    methods: ["card","bank"],
+    coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LTC","BCH","DOT","LINK","USDT","USDC"],
+    buyUrl:  (c,f,a,_m,addr) => `https://checkout.banxa.com?${qs({ coinType:c, fiatType:f, fiatAmount:a, ...(addr?{walletAddress:addr}:{}) })}`,
+    sellUrl: (c,f,addr)      => `https://checkout.banxa.com?${qs({ coinType:c, fiatType:f, orderType:"SELL", ...(addr?{walletAddress:addr}:{}) })}`,
+  },
+  {
+    id: "paybis", name: "Paybis", fee: "1.5–4%", minUSD: 50, maxUSD: 20000,
+    methods: ["card","bank"],
+    coins: ["BTC","ETH","XRP","BNB","LTC","BCH","DOGE","MATIC","DOT","USDT","USDC"],
+    buyUrl:  (c,f,a) => `https://paybis.com/buy-cryptocurrency/?${qs({ from:f, to:c, amount:a })}`,
+    sellUrl: (c,f)   => `https://paybis.com/sell-cryptocurrency/?${qs({ from:c, to:f })}`,
   },
   {
     id: "transak", name: "Transak", fee: "0.99–2.5%", minUSD: 15, maxUSD: 25000,
@@ -125,6 +149,33 @@ const PROVIDERS: Provider[] = [
     buyUrl:  (c,f,a,_m,addr) => `https://guardarian.com/calculator/v1?${qs({ from_currency:f, to_currency:c, amount:a, ...(addr?{to_wallet_address:addr}:{}) })}`,
   },
 ];
+
+const FEATURED: FeaturedProvider[] = [
+  {
+    ...PROVIDERS.find(p => p.id === "moonpay")!,
+    badge: "🌙", color: "text-violet-400",
+    accentBg: "bg-violet-500/10", accentBorder: "border-violet-500/30",
+    kycLevel: "light", sellSupported: true,
+    tagline: "Most popular · 160+ countries",
+  },
+  {
+    ...PROVIDERS.find(p => p.id === "banxa")!,
+    badge: "🏦", color: "text-emerald-400",
+    accentBg: "bg-emerald-500/10", accentBorder: "border-emerald-500/30",
+    kycLevel: "full", sellSupported: true,
+    tagline: "Bank-grade · High limits",
+  },
+  {
+    ...PROVIDERS.find(p => p.id === "paybis")!,
+    badge: "💳", color: "text-pink-400",
+    accentBg: "bg-pink-500/10", accentBorder: "border-pink-500/30",
+    kycLevel: "light", sellSupported: true,
+    tagline: "Fast card payments",
+  },
+];
+
+const KYC_LABEL: Record<string, string>  = { none: "No KYC", light: "Light KYC", full: "Full KYC" };
+const KYC_COLOR: Record<string, string>  = { none: "text-green-400", light: "text-yellow-400", full: "text-red-400" };
 
 function qs(obj: Record<string,string>): string {
   return Object.entries(obj).map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
@@ -268,6 +319,7 @@ export function FiatBuySellPanel() {
   const [coin, setCoin]             = useState(COINS[0]);         // BTC
   const [amount, setAmount]         = useState("250");
   const [payMethod, setPayMethod]   = useState<PayMethod>("card");
+  const [selectedId, setSelectedId] = useState<string>("moonpay");
 
   const numAmt  = parseFloat(amount) || 0;
   const receive = estimateReceive(numAmt, fiat.code, coin.symbol);
@@ -281,16 +333,24 @@ export function FiatBuySellPanel() {
     ) ?? PROVIDERS[0];
   }, [payMethod, coin.symbol, mode, numAmt]);
 
+  const selectedFeatured = useMemo(() =>
+    FEATURED.find(p => p.id === selectedId) ?? FEATURED[0],
+  [selectedId]);
+
   const canLaunch = numAmt >= (mode === "buy" ? 5 : 0);
 
-  const launchUrl = useMemo(() => {
-    if (!provider || !canLaunch) return "";
+  function buildUrl(p: Provider) {
     const addr = address ?? "";
-    if (mode === "buy") return provider.buyUrl(coin.symbol, fiat.code, String(numAmt), payMethod, addr);
-    return provider.sellUrl
-      ? provider.sellUrl(coin.symbol, fiat.code, addr)
-      : provider.buyUrl(coin.symbol, fiat.code, String(numAmt), payMethod, addr);
-  }, [provider, canLaunch, address, mode, coin.symbol, fiat.code, numAmt, payMethod]);
+    if (mode === "buy") return p.buyUrl(coin.symbol, fiat.code, String(numAmt), payMethod, addr);
+    return p.sellUrl ? p.sellUrl(coin.symbol, fiat.code, addr)
+      : p.buyUrl(coin.symbol, fiat.code, String(numAmt), payMethod, addr);
+  }
+
+  const launchUrl = useMemo(() => {
+    if (!canLaunch) return "";
+    return buildUrl(selectedFeatured);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFeatured, canLaunch, address, mode, coin.symbol, fiat.code, numAmt, payMethod]);
 
   return (
     <div className="flex flex-col gap-2">
@@ -425,18 +485,60 @@ export function FiatBuySellPanel() {
         Estimate only · Final rate confirmed by provider · {mode === "buy" ? "Non-custodial" : "KYC may be required"}
       </p>
 
+      {/* ── Featured provider selector ── */}
+      <div>
+        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-0.5">Choose provider</p>
+        <div className="grid grid-cols-3 gap-2">
+          {FEATURED.map(fp => {
+            const supported = fp.coins.includes(coin.symbol);
+            const sel = selectedId === fp.id;
+            return (
+              <button
+                key={fp.id}
+                type="button"
+                disabled={!supported}
+                onClick={() => setSelectedId(fp.id)}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 py-3 px-2 rounded-2xl border text-center transition-all",
+                  sel
+                    ? `${fp.accentBg} ${fp.accentBorder} shadow-sm`
+                    : "bg-secondary/40 border-border/40 hover:border-border",
+                  !supported && "opacity-30 cursor-not-allowed saturate-0"
+                )}
+              >
+                <span className="text-2xl leading-none">{fp.badge}</span>
+                <span className={cn("text-[11px] font-bold leading-tight", sel ? fp.color : "text-foreground")}>{fp.name}</span>
+                <span className="text-[9px] text-muted-foreground leading-tight">{fp.fee}</span>
+                <span className={cn("text-[9px] font-semibold", KYC_COLOR[fp.kycLevel])}>{KYC_LABEL[fp.kycLevel]}</span>
+              </button>
+            );
+          })}
+        </div>
+        {selectedFeatured && !selectedFeatured.coins.includes(coin.symbol) && (
+          <p className="text-[10px] text-yellow-400 mt-1.5 px-1">
+            {selectedFeatured.name} doesn't support {coin.symbol} — pick another provider or coin.
+          </p>
+        )}
+      </div>
+
       {/* ── CTA button ── */}
       {canLaunch ? (
         <a
           href={launchUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 mt-0.5 bg-foreground text-background hover:opacity-90 active:scale-[0.99]"
+          className={cn(
+            "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 mt-0.5 hover:opacity-90 active:scale-[0.99]",
+            selectedFeatured.accentBg.replace("/10","/80"),
+            "text-white border",
+            selectedFeatured.accentBorder
+          )}
         >
-          <ExternalLink className="w-4 h-4" />
+          <span className="text-lg">{selectedFeatured.badge}</span>
           {mode === "buy"
-            ? `Buy ${coin.symbol} with ${PAY_METHODS.find(p => p.id === payMethod)?.label ?? "Card"}`
-            : `Sell ${coin.symbol} for ${fiat.code}`}
+            ? `Buy ${coin.symbol} via ${selectedFeatured.name}`
+            : `Sell ${coin.symbol} via ${selectedFeatured.name}`}
+          <ExternalLink className="w-4 h-4 opacity-70" />
         </a>
       ) : (
         <div className="w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 mt-0.5 bg-muted/50 text-muted-foreground/40 cursor-not-allowed">
@@ -444,17 +546,28 @@ export function FiatBuySellPanel() {
         </div>
       )}
 
-      {/* ── Provider row ── */}
-      {canLaunch && (
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[10px] text-muted-foreground/50">Powered by</span>
-          <div className="flex items-center gap-2">
-            {PROVIDERS.filter(p => p.methods.includes(payMethod) && p.coins.includes(coin.symbol)).slice(0, 4).map(p => (
-              <span key={p.id} className="text-[10px] text-muted-foreground/40 font-medium">{p.name}</span>
-            ))}
-          </div>
+      {/* ── Other providers row ── */}
+      <div className="flex items-center justify-between px-1">
+        <span className="text-[10px] text-muted-foreground/50">Also available:</span>
+        <div className="flex items-center gap-2">
+          {PROVIDERS.filter(p =>
+            !FEATURED.some(f => f.id === p.id) &&
+            p.methods.includes(payMethod) &&
+            p.coins.includes(coin.symbol)
+          ).slice(0, 3).map(p => (
+            <a
+              key={p.id}
+              href={canLaunch ? buildUrl(p) : "#"}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => !canLaunch && e.preventDefault()}
+              className="text-[10px] text-muted-foreground/50 hover:text-primary transition-colors font-medium underline-offset-2 hover:underline"
+            >
+              {p.name}
+            </a>
+          ))}
         </div>
-      )}
+      </div>
 
     </div>
   );
