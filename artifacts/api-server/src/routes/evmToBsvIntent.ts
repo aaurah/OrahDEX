@@ -193,14 +193,19 @@ router.put("/evm-to-bsv-intent/:id/lock", async (req, res) => {
 router.post("/evm-to-bsv-intent/:id/fill", async (req, res) => {
   const { id } = req.params;
 
-  // API key guard
+  // API key guard — fail-closed: if SOLVER_API_KEY is not configured the
+  // endpoint is disabled entirely (returns 503) to prevent open state mutation.
   const solverKey = process.env.SOLVER_API_KEY;
-  if (solverKey) {
-    const suppliedKey = req.headers["x-solver-key"];
-    if (!suppliedKey || suppliedKey !== solverKey) {
-      res.status(403).json({ error: "Unauthorized: valid X-Solver-Key header required" });
-      return;
-    }
+  if (!solverKey) {
+    res.status(503).json({
+      error: "Solver integration not configured. Set SOLVER_API_KEY to enable this endpoint.",
+    });
+    return;
+  }
+  const suppliedKey = req.headers["x-solver-key"];
+  if (!suppliedKey || suppliedKey !== solverKey) {
+    res.status(403).json({ error: "Unauthorized: valid X-Solver-Key header required" });
+    return;
   }
 
   const { solverBsvTxid, status: nextStatus } = req.body as {

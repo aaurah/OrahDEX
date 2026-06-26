@@ -393,7 +393,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
   const { data: intentData, refetch: refetchIntent } = useQuery<BsvIntentData>({
     queryKey: ["cross-chain-bsv-intent", intentId],
     queryFn:  async () => {
-      const r = await fetch(`${BASE}/api/bsv-intent/${intentId}`, { cache: "no-store" });
+      const r = await fetch(`${BASE}/api/swaps/${intentId}`, { cache: "no-store" });
       if (!r.ok) throw new Error("Failed to fetch intent");
       return r.json();
     },
@@ -423,7 +423,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
     queryKey: ["cross-chain-evm-to-bsv", evmSwapId],
     queryFn:  async () => {
       const r = await fetch(
-        `${BASE}/api/evm-to-bsv-intent/${evmSwapId}`,
+        `${BASE}/api/swaps/${evmSwapId}`,
         { cache: "no-store" }
       );
       if (!r.ok) throw new Error("Failed to fetch EVM→BSV swap");

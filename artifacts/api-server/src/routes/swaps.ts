@@ -33,6 +33,23 @@ function sanitize(err: unknown): string {
   return "Unknown error";
 }
 
+/** Escrow contract addresses per EVM chainId — keep in sync with escrowConfig.ts */
+const ESCROW_ADDRESSES: Record<number, string> = {
+  1:        "0xeE234cEb85697b64800E696699b7841e00413B4f",  // Ethereum
+  10:       "0xeE234cEb85697b64800E696699b7841e00413B4f",  // Optimism
+  56:       "0xeE234cEb85697b64800E696699b7841e00413B4f",  // BSC
+  130:      "0xeE234cEb85697b64800E696699b7841e00413B4f",  // Unichain
+  137:      "0xeE234cEb85697b64800E696699b7841e00413B4f",  // Polygon
+  324:      "0xeE234cEb85697b64800E696699b7841e00413B4f",  // zkSync Era
+  1329:     "0xeE234cEb85697b64800E696699b7841e00413B4f",  // Sei
+  8453:     "0xeE234cEb85697b64800E696699b7841e00413B4f",  // Base
+  42161:    "0xeE234cEb85697b64800E696699b7841e00413B4f",  // Arbitrum
+  43114:    "0xeE234cEb85697b64800E696699b7841e00413B4f",  // Avalanche
+  59144:    "0xeE234cEb85697b64800E696699b7841e00413B4f",  // Linea
+  534352:   "0xeE234cEb85697b64800E696699b7841e00413B4f",  // Scroll
+  11155111: "0x4deb6023abD9E1C640aDa35201be8ff591d21cF2",  // Sepolia (testnet)
+};
+
 // ── POST /swaps/bsv-evm — create BSV → EVM intent ────────────────────────────
 
 router.post("/swaps/bsv-evm", async (req, res) => {
@@ -174,6 +191,8 @@ router.get("/swaps/:swapId", async (req, res) => {
 
     if (bsvRow) {
       res.json({
+        // Core identity — `id` satisfies BsvIntentData.id; `swapId` is the unified alias
+        id:                 bsvRow.id,
         swapId:             bsvRow.id,
         direction:          "bsv-to-evm",
         status:             bsvRow.status,
@@ -182,11 +201,16 @@ router.get("/swaps/:swapId", async (req, res) => {
         amountInSat:        bsvRow.amountInSat,
         minAmountOut:       bsvRow.minAmountOut,
         htlcAddress:        bsvRow.htlcAddress,
+        // HTLC cryptographic material
+        secretHash:         bsvRow.secretHash,
+        redeemScript:       bsvRow.redeemScript,
         destinationChain:   bsvRow.destinationChain,
         destinationAddress: bsvRow.destinationAddress,
         deadlineTs:         bsvRow.deadlineTs,
+        deadlineBlocks:     bsvRow.deadlineBlocks,
         confirmations:      bsvRow.confirmations,
         fundingTxid:        bsvRow.fundingTxid,
+        fundingConfirmed:   bsvRow.fundingConfirmed,
         claimTxid:          bsvRow.claimTxid,
         refundTxid:         bsvRow.refundTxid,
         solverPaymentTxid:  bsvRow.solverPaymentTxid,
@@ -204,19 +228,24 @@ router.get("/swaps/:swapId", async (req, res) => {
 
     if (evmRow) {
       res.json({
-        swapId:          evmRow.id,
-        direction:       "evm-to-bsv",
-        status:          evmRow.status,
-        tokenIn:         evmRow.tokenIn,
-        tokenOut:        "BSV",
-        amountInHuman:   evmRow.amountInHuman,
-        chainId:         evmRow.chainId,
-        bsvReceiveAddr:  evmRow.bsvReceiveAddr,
-        estimatedBsvOut: evmRow.estimatedBsvOut,
-        evmLockTxHash:   evmRow.evmLockTxHash,
-        solverBsvTxid:   evmRow.solverBsvTxid,
-        expiresAt:       evmRow.expiresAt,
-        createdAt:       evmRow.createdAt,
+        swapId:                  evmRow.id,
+        direction:               "evm-to-bsv",
+        status:                  evmRow.status,
+        userEvmAddress:          evmRow.userEvmAddress,
+        tokenIn:                 evmRow.tokenIn,
+        tokenAddress:            evmRow.tokenAddress,
+        tokenOut:                "BSV",
+        amountInRaw:             evmRow.amountInRaw,
+        amountInHuman:           evmRow.amountInHuman,
+        chainId:                 evmRow.chainId,
+        // Escrow contract address for this chain (for reclaim / self-refund)
+        escrowContractAddress:   evmRow.chainId ? (ESCROW_ADDRESSES[evmRow.chainId] ?? null) : null,
+        bsvReceiveAddr:          evmRow.bsvReceiveAddr,
+        estimatedBsvOut:         evmRow.estimatedBsvOut,
+        evmLockTxHash:           evmRow.evmLockTxHash,
+        solverBsvTxid:           evmRow.solverBsvTxid,
+        expiresAt:               evmRow.expiresAt,
+        createdAt:               evmRow.createdAt,
       });
       return;
     }
