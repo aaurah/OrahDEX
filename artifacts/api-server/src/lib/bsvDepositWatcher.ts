@@ -54,7 +54,7 @@ async function ensureTable(): Promise<void> {
   `);
 }
 
-async function fetchBalance(addr: string): Promise<WocBalance | null> {
+export async function fetchBalance(addr: string): Promise<WocBalance | null> {
   try {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
@@ -75,7 +75,7 @@ async function fetchBalance(addr: string): Promise<WocBalance | null> {
  * If the on-chain confirmed balance has not increased since the last tick, no
  * credit is applied. Returns the credited delta in satoshis (0 = no-op).
  */
-async function applyDeltaCredit(params: {
+export async function applyDeltaCredit(params: {
   userWallet:   string;
   bsvAddress:   string;
   confirmedSat: number;
