@@ -371,6 +371,8 @@ router.get("/admin/withdrawals", requireAdminToken, async (req, res) => {
       status:       r.status,
       txid:         r.txid,
       note:         r.note,
+      arcTxid:      r.arc_txid,
+      arcStatus:    r.arc_status,
       createdAt:    r.created_at,
       processedAt:  r.processed_at,
     })));
@@ -741,6 +743,8 @@ router.get("/withdrawals/:walletAddress", async (req, res) => {
       status:       r.status,
       txid:         r.txid,
       note:         r.note,
+      arcTxid:      r.arcTxid,
+      arcStatus:    r.arcStatus,
       createdAt:    r.createdAt,
       processedAt:  r.processedAt,
     })));
