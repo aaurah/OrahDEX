@@ -773,6 +773,14 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
       // dist files so rolldown never needs to follow the symlink for subpaths.
       "@reown/appkit/react":    path.resolve(import.meta.dirname, "node_modules/@reown/appkit/dist/esm/exports/react.js"),
       "@reown/appkit/networks": path.resolve(import.meta.dirname, "node_modules/@reown/appkit/dist/esm/exports/networks.js"),
+      // @emotion/react is aliased to a standalone stub to prevent Rolldown from
+      // deriving the same "import_react" namespace identifier for both `react`
+      // and `@emotion/react` (both end in "react"). Without this alias, the
+      // real @emotion/react package (symlinked in bsv-dex/node_modules) causes
+      // a namespace collision where ThirdWeb's `keyframes` call resolves to
+      // React's namespace (where it is undefined) → TypeError on app load.
+      "@emotion/react":   path.resolve(import.meta.dirname, "src/stubs/emotion-react.js"),
+      "@emotion/styled":  path.resolve(import.meta.dirname, "src/stubs/emotion-styled.js"),
     },
     dedupe: ["react", "react-dom"],
   },
