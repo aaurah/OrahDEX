@@ -258,9 +258,12 @@ export default defineConfig({
         // thirdweb_tmp_10452 we re-resolve the import from bsv-dex's context
         // (using a fake importer inside bsv-dex/src), or stub it if it's truly
         // unavailable.
+        const isThirdwebImporter = !!(importer && (
+          importer.includes("thirdweb_tmp_10452") ||
+          /\/node_modules\/\.pnpm\/thirdweb@/.test(importer)
+        ));
         if (
-          importer &&
-          importer.includes("thirdweb_tmp_10452") &&
+          isThirdwebImporter &&
           !id.startsWith(".") && !id.startsWith("/") && !id.startsWith("\0") &&
           !id.startsWith("react") && !id.startsWith("node:") && !id.startsWith("viem")
         ) {
@@ -782,6 +785,10 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
        the entry chunk to statically import 4 MB of JS (modals + pages chunks),
        blocking the app from mounting on mobile. */
     rollupOptions: {
+      onwarn(warning, warn) {
+        if (warning.code === "INVALID_ANNOTATION") return;
+        warn(warning);
+      },
       output: {
         manualChunks(id) {
           // Core React runtime — always tiny, loads first
