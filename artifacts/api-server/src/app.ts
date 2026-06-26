@@ -35,6 +35,7 @@ import { startArcStatusPoller } from "./lib/arcStatusPoller.js";
 import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
 import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
 import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
+import { startOverlayScanner } from "./lib/overlayScanner.js";
 import { pool } from "@workspace/db";
 
 // Run the chain_id column migration at startup (idempotent — IF NOT EXISTS).
@@ -88,6 +89,25 @@ pool.query(`
   );
   CREATE INDEX IF NOT EXISTS bsv_block_headers_height_idx ON bsv_block_headers (height);
 `).catch((err: Error) => logger.warn({ err: err.message }, "bsv_block_headers migration failed (non-fatal)"));
+
+// BSV overlay records — OP_RETURN indexed records for on-chain audit trail.
+pool.query(`
+  CREATE TABLE IF NOT EXISTS overlay_records (
+    id           TEXT         PRIMARY KEY,
+    txid         TEXT         NOT NULL,
+    block_height INTEGER,
+    order_id     TEXT,
+    secret_hash  TEXT,
+    amounts_json TEXT,
+    evm_address  TEXT,
+    raw_payload  TEXT,
+    indexed_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT overlay_records_txid_unique UNIQUE (txid)
+  );
+  CREATE INDEX IF NOT EXISTS overlay_records_order_id_idx     ON overlay_records (order_id);
+  CREATE INDEX IF NOT EXISTS overlay_records_block_height_idx ON overlay_records (block_height);
+  CREATE INDEX IF NOT EXISTS overlay_records_indexed_at_idx   ON overlay_records (indexed_at DESC);
+`).catch((err: Error) => logger.warn({ err: err.message }, "overlay_records migration failed (non-fatal)"));
 
 const app: Express = express();
 const middlewareRegistrationOrder: string[] = [];
@@ -499,6 +519,7 @@ _s(78_000, startArcStatusPoller,        "startArcStatusPoller");
 _s(84_000, startAdvancedOrderEngines,  "startAdvancedOrderEngines");
 _s(90_000, startFundingRateEngine,     "startFundingRateEngine");
 _s(96_000, startBsvMempoolWatcher,    "startBsvMempoolWatcher");
+_s(102_000, startOverlayScanner,     "startOverlayScanner");
 
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 

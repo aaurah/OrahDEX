@@ -54,6 +54,7 @@ import sorRouter from "./sor.js";
 import lightningRouter from "./lightning.js";
 import advancedOrdersRouter from "./advancedOrders.js";
 import optionsRouter from "./options.js";
+import overlayRouter from "./overlay.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
@@ -151,6 +152,7 @@ router.use(kycRouter);
 router.use("/wallet", walletRouter);
 router.use(anthropicRouter);
 router.use(quantumAuthRouter);
+router.use("/overlay", overlayRouter);
 
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */

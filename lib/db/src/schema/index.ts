@@ -29,3 +29,4 @@ export * from "./advancedOrders";
 export * from "./options";
 export * from "./fundingRates";
 export * from "./evmToBsvSwaps";
+export * from "./overlayRecords";
