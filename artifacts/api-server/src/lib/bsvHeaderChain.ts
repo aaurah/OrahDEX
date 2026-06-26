@@ -268,6 +268,12 @@ async function fetchAndValidateFromWoc(blockHash: string): Promise<ValidatedHead
  * Extend the local header chain with any new blocks from the P2P network.
  * Skips if the local tip is null (bootstraps via on-demand WoC fetches instead).
  *
+ * Chain integrity guarantees applied to every batch from peers:
+ *  1. PoW validation — SHA256d(80-byte header) ≤ expandTarget(nBits).
+ *  2. prevHash linkage — each header's prevHash must equal the preceding
+ *     accepted header's hash.  The first header in the batch must chain onto
+ *     our stored tip.  The entire batch is discarded on first mismatch.
+ *
  * @returns  Number of new headers stored.
  */
 export async function syncNewHeaders(): Promise<number> {
@@ -287,19 +293,34 @@ export async function syncNewHeaders(): Promise<number> {
     return 0; // already at tip
   }
 
-  let stored  = 0;
+  let stored     = 0;
   let nextHeight = tip.height + 1;
+  // Chain-linkage cursor: the first peer header's prevHash must equal this.
+  let expectPrevHash = tip.hash;
 
   for (const raw of peerRaw) {
     const parsed = parseAndValidateRawHeader(raw);
     if (!parsed) {
       logger.warn(
         { at: nextHeight },
-        "bsvHeaderChain: P2P header failed PoW validation — stopping batch",
+        "bsvHeaderChain: P2P header failed PoW — stopping batch",
       );
       break;
     }
+
+    // ── Chain linkage check ────────────────────────────────────────────────
+    // Each header must reference exactly the preceding accepted header.
+    // If a peer feeds a non-contiguous or forked batch, we stop immediately.
+    if (parsed.prevHash !== expectPrevHash) {
+      logger.warn(
+        { at: nextHeight, expected: expectPrevHash, got: parsed.prevHash },
+        "bsvHeaderChain: P2P chain linkage broken — discarding rest of batch",
+      );
+      break;
+    }
+
     await storeHeader({ ...parsed, height: nextHeight, source: "peer" });
+    expectPrevHash = parsed.hash;   // next header must chain onto this one
     nextHeight++;
     stored++;
   }
