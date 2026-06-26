@@ -31,6 +31,7 @@ import { startAllReconcilers } from "./lib/selfHealingReconcilers.js";
 import { hydrateAlertsFromDB } from "./lib/alertBus.js";
 import { startExchangeApiRepairEngine } from "./lib/exchangeApiRepairEngine.js";
 import { startBsvIntentWatcher } from "./lib/bsvIntentWatcher.js";
+import { startArcStatusPoller } from "./lib/arcStatusPoller.js";
 import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
 import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
 import { pool } from "@workspace/db";
@@ -42,6 +43,16 @@ pool.query(`
     ON "orders" ("chain_id")
     WHERE "chain_id" IS NOT NULL;
 `).catch((err: Error) => logger.warn({ err: err.message }, "chain_id migration failed (non-fatal)"));
+
+// ARC broadcaster columns — added for BSV transaction status tracking.
+pool.query(`
+  ALTER TABLE "withdrawal_requests"
+    ADD COLUMN IF NOT EXISTS "arc_txid"   text,
+    ADD COLUMN IF NOT EXISTS "arc_status" varchar(64);
+  ALTER TABLE "bsv_intent_sessions"
+    ADD COLUMN IF NOT EXISTS "arc_txid"   text,
+    ADD COLUMN IF NOT EXISTS "arc_status" text;
+`).catch((err: Error) => logger.warn({ err: err.message }, "ARC columns migration failed (non-fatal)"));
 
 const app: Express = express();
 const middlewareRegistrationOrder: string[] = [];
@@ -449,8 +460,9 @@ _s(54_000, startOrderReconciler,      "startOrderReconciler");
 _s(60_000, startAllReconcilers,       "startAllReconcilers");
 _s(66_000, startExchangeApiRepairEngine, "startExchangeApiRepairEngine");
 _s(72_000, startBsvIntentWatcher,       "startBsvIntentWatcher");
-_s(78_000, startAdvancedOrderEngines,  "startAdvancedOrderEngines");
-_s(84_000, startFundingRateEngine,     "startFundingRateEngine");
+_s(78_000, startArcStatusPoller,        "startArcStatusPoller");
+_s(84_000, startAdvancedOrderEngines,  "startAdvancedOrderEngines");
+_s(90_000, startFundingRateEngine,     "startFundingRateEngine");
 
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 

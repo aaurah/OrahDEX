@@ -256,11 +256,12 @@ router.post("/withdrawals", async (req, res) => {
         if (result.status === "completed" && result.txid) {
           await pool.query(
             `UPDATE withdrawal_requests
-             SET status = 'completed', txid = $1, note = $2, processed_at = now()
-             WHERE id = $3`,
-            [result.txid, result.explorer ?? null, id],
+             SET status = 'completed', txid = $1, note = $2, processed_at = now(),
+                 arc_txid = $3, arc_status = $4
+             WHERE id = $5`,
+            [result.txid, result.explorer ?? null, result.arcTxid ?? null, result.arcStatus ?? null, id],
           );
-          req.log.info({ id, txid: result.txid }, "withdrawals: auto-processed on-chain");
+          req.log.info({ id, txid: result.txid, arcStatus: result.arcStatus }, "withdrawals: auto-processed on-chain");
         } else if (result.note) {
           await pool.query(
             `UPDATE withdrawal_requests SET note = $1 WHERE id = $2`,
@@ -453,9 +454,10 @@ router.post("/admin/withdrawals/:id/retry", requireAdminToken, async (req, res) 
         if (result.status === "completed" && result.txid) {
           await pool.query(
             `UPDATE withdrawal_requests
-                SET status = 'completed', txid = $1, note = $2, processed_at = now()
-              WHERE id = $3`,
-            [result.txid, result.explorer ?? null, id],
+                SET status = 'completed', txid = $1, note = $2, processed_at = now(),
+                    arc_txid = $3, arc_status = $4
+              WHERE id = $5`,
+            [result.txid, result.explorer ?? null, result.arcTxid ?? null, result.arcStatus ?? null, id],
           );
         } else {
           await pool.query(
