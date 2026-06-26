@@ -228,8 +228,9 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
       return r.json();
     },
     enabled:         !!intentId && step === "tracking",
-    refetchInterval: data => {
-      if (!data || TERMINAL_STATUSES.has(data.status)) return false;
+    refetchInterval: query => {
+      const d = query.state.data as IntentData | undefined;
+      if (!d || TERMINAL_STATUSES.has(d.status)) return false;
       return 5000;
     },
     staleTime: 0,
