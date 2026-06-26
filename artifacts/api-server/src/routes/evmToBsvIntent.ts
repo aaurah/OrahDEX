@@ -35,7 +35,7 @@ const TX_HASH_RE     = /^0x[0-9a-fA-F]{64}$/;
 
 // ── POST /api/evm-to-bsv-intent ─────────────────────────────────────────────
 
-router.post("/api/evm-to-bsv-intent", async (req, res) => {
+router.post("/evm-to-bsv-intent", async (req, res) => {
   try {
     const {
       userEvmAddress,
@@ -113,7 +113,7 @@ router.post("/api/evm-to-bsv-intent", async (req, res) => {
 
 // ── PUT /api/evm-to-bsv-intent/:id/lock ──────────────────────────────────────
 
-router.put("/api/evm-to-bsv-intent/:id/lock", async (req, res) => {
+router.put("/evm-to-bsv-intent/:id/lock", async (req, res) => {
   const { id } = req.params;
   const { evmLockTxHash, userEvmAddress } = req.body as {
     evmLockTxHash:  string;
@@ -166,7 +166,7 @@ router.put("/api/evm-to-bsv-intent/:id/lock", async (req, res) => {
 
 // ── GET /api/evm-to-bsv-intent/:id ───────────────────────────────────────────
 
-router.get("/api/evm-to-bsv-intent/:id", async (req, res) => {
+router.get("/evm-to-bsv-intent/:id", async (req, res) => {
   const { id } = req.params;
   try {
     const [row] = await db
@@ -203,7 +203,7 @@ router.get("/api/evm-to-bsv-intent/:id", async (req, res) => {
 
 // ── GET /api/evm-to-bsv-intent ────────────────────────────────────────────────
 
-router.get("/api/evm-to-bsv-intent", async (req, res) => {
+router.get("/evm-to-bsv-intent", async (req, res) => {
   const userEvmAddress = (req.query.userAddress as string | undefined)?.toLowerCase();
   if (!userEvmAddress || !EVM_ADDRESS_RE.test(userEvmAddress)) {
     res.status(400).json({ error: "userAddress query param required (0x address)" });
