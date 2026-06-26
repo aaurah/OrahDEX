@@ -225,6 +225,54 @@ export function AdminDashboard() {
         </div>
       </div>
 
+      {/* BSV Overlay Records Widget */}
+      {overlayStats && (
+        <div className="bg-card border border-border rounded-2xl p-5">
+          <h3 className="font-semibold mb-4 flex items-center gap-2">
+            <Database className="w-4 h-4 text-violet-400" />
+            BSV Overlay Index
+            <span className="ml-auto text-[10px] font-bold text-violet-400 bg-violet-400/10 border border-violet-400/20 px-2 py-0.5 rounded-full">
+              {(overlayStats as any).total} records
+            </span>
+          </h3>
+          {(overlayStats as any).recent?.length > 0 ? (
+            <div className="space-y-1.5">
+              {((overlayStats as any).recent as any[]).slice(0, 6).map((rec: any, i: number) => (
+                <div key={rec.txid + i}
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg bg-secondary/40 border border-border/50 text-xs">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-mono text-foreground/80 truncate block">
+                      {rec.txid.slice(0, 12)}…{rec.txid.slice(-6)}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {rec.orderId ? `order ${rec.orderId}` : "no orderId"}
+                      {rec.blockHeight ? ` · block ${rec.blockHeight}` : " · unconfirmed"}
+                    </span>
+                  </div>
+                  <a
+                    href={`https://whatsonchain.com/tx/${rec.txid}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="text-violet-400 hover:text-violet-300 shrink-0"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No overlay records yet — the scanner indexes OP_RETURN outputs from funded BSV intents.
+            </p>
+          )}
+          {(overlayStats as any).latestBlockScanned && (
+            <p className="text-xs text-muted-foreground mt-3">
+              Latest indexed block: <span className="font-mono">{(overlayStats as any).latestBlockScanned}</span>
+            </p>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Live Activity Feed */}
         <div className="bg-card border border-border rounded-2xl p-5">

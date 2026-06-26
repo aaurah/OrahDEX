@@ -41,7 +41,7 @@ function formatRecord(r: typeof overlayRecordsTable.$inferSelect) {
  *   limit  — 1–100 (default 20)
  *   offset — page offset (default 0)
  */
-router.get("/overlay/intents", async (req, res) => {
+router.get("/intents", async (req, res) => {
   try {
     const limit  = Math.min(100, Math.max(1, parseInt(String(req.query.limit  ?? "20"))));
     const offset = Math.max(0,               parseInt(String(req.query.offset ?? "0")));
@@ -73,7 +73,7 @@ router.get("/overlay/intents", async (req, res) => {
  * GET /api/overlay/intents/:orderId
  * Look up a single overlay record by its orderId (the first 16 chars of the UUID).
  */
-router.get("/overlay/intents/:orderId", async (req, res) => {
+router.get("/intents/:orderId", async (req, res) => {
   const orderId = (req.params.orderId ?? "").trim().slice(0, 32);
   if (!orderId) {
     res.status(400).json({ error: "orderId is required" });
