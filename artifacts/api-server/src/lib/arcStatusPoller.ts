@@ -15,7 +15,7 @@
 
 import { db } from "@workspace/db";
 import { withdrawalRequestsTable, bsvIntentSessionsTable } from "@workspace/db/schema";
-import { eq, and, isNotNull, notInArray } from "drizzle-orm";
+import { eq, and, isNotNull, isNull, notInArray, or } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
 import { pollArcStatus } from "./arcBroadcaster.js";
@@ -29,7 +29,10 @@ async function pollWithdrawals(): Promise<void> {
     .where(
       and(
         isNotNull(withdrawalRequestsTable.arcTxid),
-        notInArray(withdrawalRequestsTable.arcStatus, TERMINAL_ARC_STATUSES),
+        or(
+          isNull(withdrawalRequestsTable.arcStatus),
+          notInArray(withdrawalRequestsTable.arcStatus, TERMINAL_ARC_STATUSES),
+        ),
       ),
     )
     .limit(50);
@@ -55,7 +58,10 @@ async function pollIntentSessions(): Promise<void> {
     .where(
       and(
         isNotNull(bsvIntentSessionsTable.arcTxid),
-        notInArray(bsvIntentSessionsTable.arcStatus, TERMINAL_ARC_STATUSES),
+        or(
+          isNull(bsvIntentSessionsTable.arcStatus),
+          notInArray(bsvIntentSessionsTable.arcStatus, TERMINAL_ARC_STATUSES),
+        ),
       ),
     )
     .limit(50);
