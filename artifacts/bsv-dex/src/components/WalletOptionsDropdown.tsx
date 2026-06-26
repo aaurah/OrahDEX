@@ -40,6 +40,10 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
+      const target = e.target as Element;
+      // Don't close when clicking inside a Radix portal/dialog (e.g. AddNetworkDialog).
+      // Those render outside ref.current in document.body but are still "inside" the UI.
+      if (target?.closest?.('[role="dialog"]')) return;
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener('mousedown', handler);
