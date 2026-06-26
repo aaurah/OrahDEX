@@ -19,6 +19,7 @@ import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
+import { arcBroadcast } from "./arcBroadcaster.js";
 
 /* ── Base-58 alphabet (Bitcoin / BSV) ──────────────────────────────────── */
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -276,7 +277,12 @@ function derEncode(compact64: Uint8Array): Buffer {
   return Buffer.concat([Buffer.from([0x30, inner.length]), inner]);
 }
 
-export interface BroadcastResult { txid: string; hex: string }
+export interface BroadcastResult {
+  txid:      string;
+  hex:       string;
+  arcTxid:   string | null;
+  arcStatus: string | null;
+}
 
 /**
  * Build a BSV P2PKH transaction from UTXOs, sign, and broadcast via WhatsOnChain.
@@ -349,19 +355,10 @@ export async function buildAndBroadcastBsvTx(
     u32LE(0),
   ]).toString("hex");
 
-  // Broadcast
-  const broadRes = await fetch(BSV_NET.wocBroadcast, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ txhex: txHex }),
-    signal:  AbortSignal.timeout(20_000),
-  });
-  const text = await broadRes.text();
-  if (!broadRes.ok) throw new Error(`Broadcast failed (${broadRes.status}): ${text}`);
-
-  const txid = text.replace(/"/g, "").trim();
-  logger.info({ txid, satoshis, toAddress }, "BSV transaction broadcast");
-  return { txid, hex: txHex };
+  // Broadcast via ARC (with automatic WoC fallback)
+  const arcResult = await arcBroadcast(txHex);
+  logger.info({ txid: arcResult.txid, arcStatus: arcResult.arcStatus, satoshis, toAddress }, "BSV transaction broadcast");
+  return { txid: arcResult.txid, hex: txHex, arcTxid: arcResult.arcTxid, arcStatus: arcResult.arcStatus };
 }
 
 export async function fetchWalletBalance(address: string): Promise<WalletBalance> {

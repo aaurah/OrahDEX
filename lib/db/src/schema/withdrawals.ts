@@ -16,4 +16,7 @@ export const withdrawalRequestsTable = pgTable("withdrawal_requests", {
   note:          text("note"),
   createdAt:     timestamp("created_at").notNull().defaultNow(),
   processedAt:   timestamp("processed_at"),
+  // ARC broadcaster fields — populated for BSV transactions only
+  arcTxid:       text("arc_txid"),
+  arcStatus:     varchar("arc_status", { length: 64 }),
 });

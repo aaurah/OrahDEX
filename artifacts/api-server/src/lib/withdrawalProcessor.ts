@@ -284,8 +284,8 @@ async function processBsvWithdrawal(params: {
     ? `https://whatsonchain.com/tx/${result.txid}`
     : `https://test.whatsonchain.com/tx/${result.txid}`;
 
-  logger.info({ txid: result.txid, asset: params.asset, amount: params.amount, recipient: params.recipient }, "BSV withdrawal broadcast");
-  return { txid: result.txid, explorer };
+  logger.info({ txid: result.txid, arcStatus: result.arcStatus, asset: params.asset, amount: params.amount, recipient: params.recipient }, "BSV withdrawal broadcast");
+  return { txid: result.txid, explorer, arcTxid: result.arcTxid, arcStatus: result.arcStatus };
 }
 
 // ── SOL withdrawal ─────────────────────────────────────────────────────────────
@@ -331,10 +331,12 @@ async function processSolWithdrawal(params: {
 // ── Public entry point ─────────────────────────────────────────────────────────
 
 export interface ProcessResult {
-  status:   "completed" | "pending";
-  txid?:    string;
+  status:    "completed" | "pending";
+  txid?:     string;
   explorer?: string;
-  note?:    string;
+  note?:     string;
+  arcTxid?:  string | null;
+  arcStatus?: string | null;
 }
 
 /**

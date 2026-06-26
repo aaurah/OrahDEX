@@ -74,6 +74,10 @@ export const bsvIntentSessionsTable = pgTable("bsv_intent_sessions", {
   refundTxid:         text("refund_txid"),
   auditTxid:          text("audit_txid"),
 
+  // ARC broadcaster fields — populated when claim or refund tx is broadcast via ARC
+  arcTxid:            text("arc_txid"),
+  arcStatus:          text("arc_status"),
+
   status:             text("status").notNull().default("PENDING_FUNDING"),
   terminalAt:         timestamp("terminal_at"),
 

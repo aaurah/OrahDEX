@@ -18,10 +18,10 @@ import crypto from "node:crypto";
 import { hash160, type Utxo } from "./bsvWallet.js";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
+import { arcBroadcast } from "./arcBroadcaster.js";
 
-const WOC_BROADCAST = BSV_NET.wocBroadcast;
-const FEE_SAT       = BSV_NET.feeSat;
-const DUST_SAT      = BSV_NET.dustSat;
+const FEE_SAT  = BSV_NET.feeSat;
+const DUST_SAT = BSV_NET.dustSat;
 
 /* ── Buffer / encoding helpers ──────────────────────────────────────────── */
 
@@ -180,6 +180,8 @@ export interface P2SHSpendResult {
   txid:      string;
   rawTxHex:  string;
   broadcast: boolean;
+  arcTxid:   string | null;
+  arcStatus: string | null;
   error?:    string;
 }
 
@@ -236,26 +238,27 @@ export async function broadcastP2SHSpend(params: P2SHSpendParams): Promise<P2SHS
   const txid     = dsha256(rawTx).reverse().toString("hex");
 
   try {
-    const res = await fetch(WOC_BROADCAST, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
-      body:    JSON.stringify({ txhex: rawTxHex }),
-      signal:  AbortSignal.timeout(15_000),
-    });
-
-    if (res.ok) {
-      const body = await res.text();
-      const broadcastedTxid = body.replace(/"/g, "").trim();
-      logger.info({ txid: broadcastedTxid || txid, fundingTxid }, "BSV P2SH spend broadcast SUCCESS");
-      return { success: true, txid: broadcastedTxid || txid, rawTxHex, broadcast: true };
-    }
-
-    const errText = await res.text().catch(() => "unknown");
-    logger.warn({ status: res.status, errText }, "BSV P2SH spend rejected by WoC");
-    return { success: false, txid, rawTxHex, broadcast: false, error: `WoC HTTP ${res.status}: ${errText}` };
+    const arcResult = await arcBroadcast(rawTxHex);
+    logger.info({ txid: arcResult.txid, arcStatus: arcResult.arcStatus, fundingTxid }, "BSV P2SH spend broadcast SUCCESS");
+    return {
+      success:   true,
+      txid:      arcResult.txid,
+      rawTxHex,
+      broadcast: true,
+      arcTxid:   arcResult.arcTxid,
+      arcStatus: arcResult.arcStatus,
+    };
   } catch (err) {
-    logger.warn({ err }, "BSV P2SH spend network error");
-    return { success: false, txid, rawTxHex, broadcast: false, error: err instanceof Error ? err.message : String(err) };
+    logger.warn({ err }, "BSV P2SH spend broadcast error");
+    return {
+      success:   false,
+      txid,
+      rawTxHex,
+      broadcast: false,
+      arcTxid:   null,
+      arcStatus: null,
+      error:     err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -277,6 +280,8 @@ export interface BroadcastResult {
   txid:      string;
   rawTxHex:  string;
   broadcast: boolean;          // true if actually sent to BSV network
+  arcTxid:   string | null;
+  arcStatus: string | null;
   error?:    string;
 }
 
@@ -361,29 +366,22 @@ export async function broadcastSettlement(params: BroadcastParams): Promise<Broa
   // ── Compute txid (double-SHA256, reversed) ────────────────────────────────
   const txid = dsha256(rawTx).reverse().toString("hex");
 
-  // ── Broadcast to WhatsOnChain ─────────────────────────────────────────────
+  // ── Broadcast via ARC (with automatic WoC fallback) ──────────────────────
   try {
-    const res = await fetch(WOC_BROADCAST, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
-      body:    JSON.stringify({ txhex: rawTxHex }),
-      signal:  AbortSignal.timeout(15_000),
-    });
-
-    if (res.ok) {
-      const body = await res.text();
-      const broadcastedTxid = body.replace(/"/g, "").trim();
-      logger.info({ txid: broadcastedTxid || txid, utxo: utxo.txid }, "BSV settlement broadcast SUCCESS");
-      return { success: true, txid: broadcastedTxid || txid, rawTxHex, broadcast: true };
-    }
-
-    const errText = await res.text().catch(() => "unknown");
-    logger.warn({ status: res.status, errText }, "BSV broadcast rejected by WoC — falling back to deterministic txid");
-    return { success: false, txid, rawTxHex, broadcast: false, error: `WoC HTTP ${res.status}: ${errText}` };
-  } catch (err) {
-    logger.warn({ err }, "BSV broadcast network error — falling back to deterministic txid");
+    const arcResult = await arcBroadcast(rawTxHex);
+    logger.info({ txid: arcResult.txid, arcStatus: arcResult.arcStatus, utxo: utxo.txid }, "BSV settlement broadcast SUCCESS");
     return {
-      success: false, txid, rawTxHex, broadcast: false,
+      success:   true,
+      txid:      arcResult.txid,
+      rawTxHex,
+      broadcast: true,
+      arcTxid:   arcResult.arcTxid,
+      arcStatus: arcResult.arcStatus,
+    };
+  } catch (err) {
+    logger.warn({ err }, "BSV broadcast error — falling back to deterministic txid");
+    return {
+      success: false, txid, rawTxHex, broadcast: false, arcTxid: null, arcStatus: null,
       error: err instanceof Error ? err.message : String(err),
     };
   }
