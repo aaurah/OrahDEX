@@ -17,6 +17,7 @@ import { useTxTracker } from "@/hooks/useTxTracker";
 import { useInternalEvmWallet } from "@/hooks/useInternalEvmWallet";
 import { useInternalBsvWallet } from "@/hooks/useInternalBsvWallet";
 import { useInactivityLock } from "@/hooks/useInactivityLock";
+import { useThirdwebWalletSync } from "@/hooks/useThirdwebWalletSync";
 
 const AdminLayout  = lazy(() => import("@/components/AdminLayout").then(m => ({ default: m.AdminLayout })));
 const MobileLayout = lazy(() => import("@/components/mobile/MobileLayout").then(m => ({ default: m.MobileLayout })));
@@ -558,6 +559,7 @@ function OraAIWidgetGate() {
 function AppContent() {
   useInternalEvmWallet();
   useInternalBsvWallet();
+  useThirdwebWalletSync();
 
   return (
     <>
