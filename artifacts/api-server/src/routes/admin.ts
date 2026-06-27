@@ -4,10 +4,10 @@ import { db, pool } from "@workspace/db";
 
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
 // Note: generateAdminToken and revokeAllAdminTokens are now async (DB-persisted)
-import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable } from "@workspace/db/schema";
+import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable, keeperEarningsTable } from "@workspace/db/schema";
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
-import { eq, desc, and, sql, ne, isNotNull, or, like, ilike } from "drizzle-orm";
+import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
 import { decrypt as decryptEvmKey } from "../lib/internalEvmWallet.js";
@@ -3708,6 +3708,99 @@ router.get("/overlay/stats", requireAdminToken, async (_req, res) => {
   } catch (err: any) {
     logger.warn({ err }, "GET /admin/overlay/stats error");
     res.status(500).json({ error: "Failed to fetch overlay stats" });
+  }
+});
+
+// ── GET /api/admin/profits ────────────────────────────────────────────────────
+// Unified platform profit dashboard — all revenue streams in one response.
+router.get("/profits", requireAdminToken, async (_req, res) => {
+  try {
+    const leSwaps = leSwapsTable;
+    const TREASURY = "EXCHANGE_TREASURY";
+
+    function since(days: number) {
+      const d = new Date();
+      d.setDate(d.getDate() - days);
+      return d;
+    }
+
+    async function feesByPeriod(since: Date) {
+      const rows = await db
+        .select({ source: keeperEarningsTable.source, total: sum(keeperEarningsTable.amount) })
+        .from(keeperEarningsTable)
+        .where(and(eq(keeperEarningsTable.walletAddress, TREASURY), gte(keeperEarningsTable.earnedAt, since)))
+        .groupBy(keeperEarningsTable.source);
+      return Object.fromEntries(rows.map(r => [r.source, parseFloat(r.total ?? "0")]));
+    }
+
+    const ALL_SOURCES = ["orderbook", "swap", "bridge", "p2p", "lp_spread", "copy_trade", "withdrawal", "buy"] as const;
+
+    const [f24h, f7d, f30d, fall] = await Promise.all([
+      feesByPeriod(since(1)),
+      feesByPeriod(since(7)),
+      feesByPeriod(since(30)),
+      feesByPeriod(new Date(0)),
+    ]);
+
+    function buildBreakdown(map: Record<string, number>) {
+      return ALL_SOURCES.map(s => ({
+        source: s,
+        label: { orderbook: "Spot Orderbook", swap: "AMM Swap", bridge: "Bridge / Exchange",
+                  p2p: "P2P Trade", lp_spread: "LP Spread", copy_trade: "Copy Trading",
+                  withdrawal: "Withdrawal Fees", buy: "Buy Orders" }[s] ?? s,
+        amount: map[s] ?? 0,
+      }));
+    }
+
+    function total(map: Record<string, number>) {
+      return Object.values(map).reduce((a, b) => a + b, 0);
+    }
+
+    // Historical trade fees from tradesTable (before feeCollector was active)
+    const [tradeRow] = await db.select({ total: sum(tradesTable.fee) }).from(tradesTable);
+    const historicalTrades = parseFloat(tradeRow?.total ?? "0");
+
+    // LE swap stats for bridge volume context
+    const [leStats] = await db
+      .select({
+        total:    sql<string>`count(*)`,
+        finished: sql<string>`count(*) filter (where status = 'finished')`,
+        volUsd:   sum(leSwaps.depositAmountUsd),
+        finUsd:   sql<string>`sum(deposit_amount_usd::numeric) filter (where status = 'finished')`,
+      })
+      .from(leSwaps);
+
+    const totalSwaps     = parseInt(leStats?.total    ?? "0");
+    const finishedSwaps  = parseInt(leStats?.finished ?? "0");
+    const finishedVolUsd = parseFloat(leStats?.finUsd ?? "0");
+    const totalVolUsd    = parseFloat(leStats?.volUsd ?? "0");
+
+    res.json({
+      breakdown: {
+        "24h": buildBreakdown(f24h),
+        "7d":  buildBreakdown(f7d),
+        "30d": buildBreakdown(f30d),
+        "all": buildBreakdown(fall),
+      },
+      totals: {
+        "24h":  total(f24h),
+        "7d":   total(f7d),
+        "30d":  total(f30d),
+        "all":  total(fall) + historicalTrades,
+      },
+      bridge: {
+        totalSwaps,
+        finishedSwaps,
+        totalVolumeUsd:    totalVolUsd,
+        finishedVolumeUsd: finishedVolUsd,
+        estimatedCommissionUsd: finishedVolUsd * 0.003,
+        commissionRatePct: "0.30",
+      },
+      currency: "USD-equivalent",
+    });
+  } catch (err: any) {
+    logger.warn({ err }, "GET /admin/profits error");
+    res.status(500).json({ error: "Failed to aggregate profits" });
   }
 });
 
