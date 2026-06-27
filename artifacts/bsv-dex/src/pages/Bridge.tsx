@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useSearch, useLocation } from "wouter";
-import { SwapWidget } from "thirdweb/react";
 import { thirdwebClient } from "@/lib/thirdweb-client";
 import { useSwapWidgetTheme } from "@/lib/thirdweb-theme";
+import { ThirdwebSwapPanel } from "@/components/ThirdwebSwapPanel";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowRight, ArrowLeftRight, ChevronDown, Shield, Zap, Clock,
@@ -1979,25 +1979,10 @@ export function BridgePage() {
       {pageTab === "withdraw" && <CanonicalPanel mode="withdraw" />}
       {pageTab === "history"  && <SwapHistory />}
 
-      {/* ── ThirdWeb Universal Swap Widget ── */}
+      {/* ── Universal Swap ── */}
       {pageTab === "twswap" && (
         <div className="max-w-[480px] mx-auto">
-          <div className="mb-4">
-            <h2 className="text-lg font-bold text-foreground mb-1 flex items-center gap-2">
-              <Zap className="w-5 h-5 text-violet-400" />
-              Universal Swap
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Swap any token across any EVM chain — universal bridge, best routes.
-            </p>
-          </div>
-          <div className="tw-widget-wrap">
-            <SwapWidget
-              client={thirdwebClient}
-              theme={swapWidgetTheme}
-              showThirdwebBranding={false}
-            />
-          </div>
+          <ThirdwebSwapPanel />
         </div>
       )}
 
