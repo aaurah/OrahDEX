@@ -71,7 +71,7 @@ export async function leRequest(
     "Accept":       "application/json",
   };
   if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`;
-  const opts: RequestInit = { method, headers, signal: AbortSignal.timeout(8000) };
+  const opts: RequestInit = { method, headers, signal: AbortSignal.timeout(15_000) };
   if (body && method === "POST") opts.body = JSON.stringify(body);
   const res = await fetch(url, opts);
   let data: unknown;
