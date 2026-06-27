@@ -347,11 +347,11 @@ export function ThirdwebSwapPanel() {
       <div className="flex items-center justify-between">
         <div className="space-y-0.5">
           <div className="flex items-center gap-2 text-sm font-bold text-foreground">
-            <Zap className="w-4 h-4 text-cyan-400" />
-            ThirdWeb Universal Bridge
+            <Zap className="w-4 h-4 text-orange-400" />
+            OrahDEX Swap
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Swap any EVM token across any chain — powered by ThirdWeb Bridge
+            Swap any token across any chain — instant, non-custodial
           </p>
         </div>
         {done && (
@@ -366,7 +366,7 @@ export function ThirdwebSwapPanel() {
         <div className="rounded-xl border border-green-500/25 bg-green-500/5 p-4 space-y-3">
           <div className="flex items-center gap-2 text-green-400 text-sm font-semibold">
             <CheckCircle2 size={16} />
-            Bridge submitted!
+            Swap submitted!
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed">
             Your {dstTok?.symbol ?? "tokens"} are on their way to {CHAIN_NAME[dstChain]}.
@@ -492,22 +492,15 @@ export function ThirdwebSwapPanel() {
             ) : (
               <><Zap size={15} />
                 {receiveAmt && parseFloat(receiveAmt) > 0
-                  ? `Bridge ${receiveAmt} ${dstTok?.symbol ?? ""} →`
-                  : "Enter amount to bridge"}
+                  ? `Swap ${receiveAmt} ${dstTok?.symbol ?? ""} →`
+                  : "Enter amount to swap"}
               </>
             )}
           </button>
 
-          {!account && (
-            <p className="text-[10px] text-muted-foreground/60 text-center">
-              Uses your connected EVM wallet. For ThirdWeb accounts, connect via the wallet button above.
-            </p>
-          )}
-
           {/* Info footer */}
           <div className="text-[10px] text-muted-foreground/60 text-center leading-relaxed">
-            Routes through ThirdWeb Universal Bridge — aggregates Across, Stargate, and more.
-            No custodial risk.
+            Secure · Non-custodial · Best rates across 9 EVM chains
           </div>
         </>
       )}
