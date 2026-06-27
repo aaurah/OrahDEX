@@ -2212,7 +2212,6 @@ export function Swap() {
   const [activeTab, setActiveTab] = useState<"swap" | "buysell" | "bridge" | "dex">(
     urlTab === "buysell" || urlTab === "bridge" || urlTab === "dex" ? urlTab : "swap"
   );
-  const [swapProvider, setSwapProvider] = useState<"letsexchange" | "simpleswap">("letsexchange");
   const [buySellMode, setBuySellMode] = useState<"buy" | "sell">("buy");
 
   const [fiatModalOpen, setFiatModalOpen]           = useState(false);
@@ -2561,42 +2560,12 @@ export function Swap() {
 
         {/* ═══════════════ SWAP TAB ═══════════════ */}
         {activeTab === "swap" && (
-          <div className="space-y-3">
-            {/* Provider switcher */}
-            <div className="flex items-center gap-1 p-1 bg-muted/20 rounded-xl border border-border/30">
-              <button
-                onClick={() => setSwapProvider("letsexchange")}
-                className={cn(
-                  "flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-150",
-                  swapProvider === "letsexchange"
-                    ? "bg-card text-foreground shadow-sm border border-border/40"
-                    : "text-muted-foreground hover:text-foreground/80",
-                )}
-              >
-                LetsExchange
-              </button>
-              <button
-                onClick={() => setSwapProvider("simpleswap")}
-                className={cn(
-                  "flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-150",
-                  swapProvider === "simpleswap"
-                    ? "bg-card text-emerald-400 shadow-sm border border-emerald-500/30"
-                    : "text-muted-foreground hover:text-foreground/80",
-                )}
-              >
-                SimpleSwap
-              </button>
-            </div>
-
-            <LetsExchangePanel
-              key={swapProvider}
-              walletAddress={address}
-              onConnectWallet={openWalletModal}
-              initialFrom={leFrom}
-              initialTo={leTo}
-              forceVenue={swapProvider}
-            />
-          </div>
+          <LetsExchangePanel
+            walletAddress={address}
+            onConnectWallet={openWalletModal}
+            initialFrom={leFrom}
+            initialTo={leTo}
+          />
         )}
 
         {/* ═══════════════ BRIDGE TAB — Cross-chain bridge aggregator ═══════════════ */}
