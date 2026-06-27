@@ -151,22 +151,34 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
 }
 
 // ── GET /api/letsexchange/currencies ─────────────────────────────────────────
+// Returns the full LE coin list (1 000+ entries with network variants).
+// On cold cache AND with an API key configured, waits up to 5 s for the live
+// data so the first response after a restart carries the full list instead of
+// the 331-coin built-in fallback.
 router.get("/letsexchange/currencies", async (_req, res) => {
   // Return from cache first — fastest path (always < 1 ms)
   const hit = cached("currencies") as NormalisedCoin[] | null;
   if (hit && hit.length > 0) { res.json(hit); return; }
 
-  // Always respond immediately with the built-in fallback catalog so the
-  // route probe and the swap UI never block waiting for the LE API.
-  // If an API key is configured we warm the cache in the background — the
-  // *next* request (a few seconds later) will return live LE data.
-  res.json(builtInCoinsAsFallback());
-
+  // Cache is cold — if an API key is set, try to get live data within 5 s.
+  // This prevents the published app from serving stale 331-coin fallback data
+  // on the first load after a deploy or restart.
   if (process.env.LETSEXCHANGE_API_KEY) {
-    fetchAndCacheCurrencies().catch(err => {
-      logger.warn({ err }, "letsexchange background currencies warm failed");
-    });
+    try {
+      const coins = await Promise.race([
+        fetchAndCacheCurrencies(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), 5000)
+        ),
+      ]);
+      res.json(coins);
+      return;
+    } catch (err) {
+      logger.warn({ err }, "letsexchange currencies live fetch timed out — serving built-in fallback");
+    }
   }
+
+  res.json(builtInCoinsAsFallback());
 });
 
 // ── GET /api/letsexchange/usd-prices — coin→USD price map from LE cache ──────
