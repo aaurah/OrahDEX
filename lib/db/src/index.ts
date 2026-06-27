@@ -40,15 +40,20 @@ export const pool = new Pool({
   // killing connections that are still in the pool but not yet evicted.
   keepAlive: true,
   keepAliveInitialDelayMillis: 0,
-  // Evict idle connections after 8 s — well below the network's idle-drop
+  // Evict idle connections after 6 s — well below the network's idle-drop
   // window — so stale sockets are recycled before the server closes them.
-  idleTimeoutMillis: 8_000,
+  idleTimeoutMillis: 6_000,
   // Wait up to 20 s for a free connection before erroring — long enough to ride
   // out a burst from the liquidity bot cycle without cascading failures.
   connectionTimeoutMillis: 20_000,
-  // 25 connections: liquidity bot (2 seq) + price updater (1 bulk) + watchers (4)
-  // + futures engine (1 seq) + user-facing headroom (17).
-  max: 25,
+  // 10 connections: conservative cap for Replit managed Postgres which enforces
+  // a connection limit. The liquidity bot's bulk INSERTs were exhausting a pool
+  // of 25, starving background services and causing "Connection terminated
+  // unexpectedly" across watchers, engines, and the price updater.
+  max: 10,
+  // Keep the pool alive even between scheduled tick cycles so background
+  // services don't race to re-establish connections on every tick.
+  allowExitOnIdle: false,
   // Kill any query that runs longer than 20 s on the client side so a single
   // runaway query cannot hold a connection and starve the rest of the pool.
   query_timeout: 20_000,
