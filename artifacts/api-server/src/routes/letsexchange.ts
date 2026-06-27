@@ -34,8 +34,22 @@ import { createCNExchange, getCNExchange } from "../lib/changenow.js";
 import { createSXExchange, getSXExchange } from "../lib/stealthex.js";
 import { createSsExchangePair, getSsExchange } from "../lib/simpleswap.js";
 import { createChangellyExchange, getChangellyExchange, isChangellyConfigured } from "../lib/changelly.js";
+import { recordPlatformFee } from "../lib/feeCollector.js";
 
 const router: IRouter = Router();
+
+const BRIDGE_COMMISSION_RATE = 0.003; // 0.3% of deposit USD — estimated affiliate commission
+
+function recordBridgeFee(amt: number, fromCoin: string, txRef: string) {
+  const leUsd = getCachedLEPrices();
+  const fromUsdPrice = leUsd[fromCoin.toUpperCase()] ?? 0;
+  if (fromUsdPrice <= 0) return;
+  const depositUsd = amt * fromUsdPrice;
+  const commission = depositUsd * BRIDGE_COMMISSION_RATE;
+  if (commission > 0) {
+    recordPlatformFee({ source: "bridge", amount: commission, asset: "USD", txRef }).catch(() => {});
+  }
+}
 
 /**
  * Returns the built-in coin catalog as NormalisedCoin[] stubs.
@@ -729,6 +743,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
+          recordBridgeFee(amt, fromU, ex.id ?? "changenow");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -762,6 +777,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
+          recordBridgeFee(amt, fromU, ex.id ?? "stealthex");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -795,6 +811,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
+          recordBridgeFee(amt, fromU, ex.id ?? "simpleswap");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -833,6 +850,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
+          recordBridgeFee(amt, fromU, ex.id ?? "changelly");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -887,6 +905,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
       if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: "letsexchange" }, "exchange: fell back to alternate venue");
       const d = leData as Record<string, unknown>;
       if (d?.transaction_id) {
+        recordBridgeFee(amt, fromU, String(d.transaction_id));
         const leUsd = getCachedLEPrices();
         const fromUsd = leUsd[fromU] ?? 0;
         const depositUsd = fromUsd > 0 ? (amt * fromUsd).toFixed(4) : null;

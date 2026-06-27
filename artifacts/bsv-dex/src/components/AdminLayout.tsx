@@ -122,6 +122,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "Finance",
     items: [
+      { href: "/admin/profits",      label: "All Profits",        icon: TrendingUp, badge: "NEW" },
       { href: "/admin/db-sync",      label: "DB Sync & Health",   icon: ShieldCheck },
       { href: "/admin/ledger",       label: "Ledger Manager",     icon: Database },
       { href: "/admin/withdrawals",  label: "Withdrawals",        icon: ArrowDownToLine },
