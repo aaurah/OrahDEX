@@ -111,13 +111,16 @@ export async function probeLetsExchange(): Promise<ProbeResult> {
       if (hasKey) headers["Authorization"] = `Bearer ${process.env["LETSEXCHANGE_API_KEY"]}`;
       const r = await fetch("https://api.letsexchange.io/api/v2/coins", {
         headers,
-        signal: AbortSignal.timeout(6_000),
+        // Match lePriceCache.ts request timeout — 8 s so the outer probe wrapper
+        // (9 s) fires last, keeping "degraded" vs "down" classification accurate.
+        signal: AbortSignal.timeout(8_000),
       });
       if (r.status === 403) return `Reachable (API key required for full access)`;
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json() as unknown[];
       return `${data.length} coins available · key ${hasKey ? "configured" : "not set"}`;
     },
+    9_000, // outer wrapper timeout > inner AbortSignal so abort fires first
   );
 }
 
@@ -187,13 +190,24 @@ export async function probeDatabase(): Promise<ProbeResult> {
 
 /* ── Price engine freshness ───────────────────────────────────────────────── */
 
-let _lastPriceCheck = 0;
-let _priceCount     = 0;
+let _lastPriceCheck    = 0;
+let _priceCount        = 0;
+let _engineStartedAt   = 0; // set by notifyPriceEngineStarted()
+
+/** Call this immediately when startPriceUpdater() fires so the probe knows the
+ *  engine is warming up and won't misreport "No price run recorded" during the
+ *  initial 35-second startup delay. */
+export function notifyPriceEngineStarted() {
+  _engineStartedAt = Date.now();
+}
 
 export function recordPriceEngineRun(count: number) {
   _lastPriceCheck = Date.now();
   _priceCount     = count;
 }
+
+// First price run is deferred 35 s; allow 90 s before treating "no run" as degraded.
+const WARMUP_GRACE_MS = 90_000;
 
 export async function probePriceEngine(): Promise<ProbeResult> {
   const staleSec = _lastPriceCheck ? Math.floor((Date.now() - _lastPriceCheck) / 1000) : null;
@@ -202,8 +216,17 @@ export async function probePriceEngine(): Promise<ProbeResult> {
   let detail: string;
 
   if (staleSec === null) {
-    status = "degraded";
-    detail = "No price run recorded since startup";
+    const uptimeMs  = _engineStartedAt ? Date.now() - _engineStartedAt : 0;
+    const remaining = Math.max(0, Math.ceil((WARMUP_GRACE_MS - uptimeMs) / 1000));
+    if (_engineStartedAt && uptimeMs < WARMUP_GRACE_MS) {
+      status = "ok";
+      detail = remaining > 0
+        ? `Warming up — first price run in ~${remaining}s`
+        : "First price run completing…";
+    } else {
+      status = "degraded";
+      detail = "No price run recorded since startup";
+    }
   } else if (staleSec > 300) {
     status = "down";
     detail = `Last price update ${staleSec}s ago (>${Math.floor(staleSec / 60)}m)`;

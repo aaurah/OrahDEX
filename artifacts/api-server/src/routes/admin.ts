@@ -1935,8 +1935,13 @@ router.get("/health", async (_req, res) => {
 
     const [openCount] = await db.select({ cnt: sql<number>`count(*)::int` })
       .from(ordersTable).where(and(eq(ordersTable.status, "open"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
-    const allMarkets   = await db.select().from(marketsTable);
-    const activeMarkets= allMarkets.filter(m => m.status === "active").length;
+    // Use aggregate COUNT queries — never load all market rows into memory (1M+ rows = OOM on 5s poll)
+    const [marketCounts] = await db.select({
+      active: sql<number>`count(*) filter (where status = 'active')::int`,
+      total:  sql<number>`count(*)::int`,
+    }).from(marketsTable);
+    const activeMarkets = marketCounts?.active ?? 0;
+    const totalMarkets  = marketCounts?.total  ?? 0;
 
     // Determine degraded vs operational
     const priceEngineStaleSec = (now - serviceState.priceEngineLastRunAt) / 1000;
@@ -1955,7 +1960,7 @@ router.get("/health", async (_req, res) => {
       dbConnections:            10,
       openOrders:               openCount?.cnt ?? 0,
       activeMarkets,
-      totalMarkets:             allMarkets.length,
+      totalMarkets,
       avgOrderbookLatencyMs:    dbLatency + 5,
       avgTradesLatencyMs:       dbLatency + 8,
       nodeVersion:              process.version,

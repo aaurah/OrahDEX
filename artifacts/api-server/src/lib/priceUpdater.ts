@@ -1450,6 +1450,12 @@ export async function updateMarketPrices() {
 let _stopPriceUpdater: (() => void) | null = null;
 
 export function startPriceUpdater() {
+  // Notify the subsystem probe immediately so it shows "warming up" instead of
+  // "No price run recorded" during the 35-second initial delay.
+  import("./subsystemProbe.js")
+    .then(m => m.notifyPriceEngineStarted())
+    .catch(() => { /* non-critical */ });
+
   // Warm the LE price cache at 90 s (price lookups only — no pair sync).
   // syncAllLEPairs() is intentionally NOT called at startup: the DB already
   // holds 36K+ LE pairs from a previous run, and inserting them again while
