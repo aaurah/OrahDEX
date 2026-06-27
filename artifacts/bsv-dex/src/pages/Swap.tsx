@@ -40,6 +40,7 @@ import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { FiatBuySellPanel } from "@/components/FiatBuySellPanel";
 import { BridgeAggPanel } from "@/components/BridgeAggPanel";
+import { ThirdwebSwapPanel } from "@/components/ThirdwebSwapPanel";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { DirectBuyModal } from "@/components/DirectBuyModal";
 import { KycModal } from "@/components/KycModal";
@@ -2212,6 +2213,7 @@ export function Swap() {
   const [activeTab, setActiveTab] = useState<"swap" | "buysell" | "bridge" | "dex">(
     urlTab === "buysell" || urlTab === "bridge" || urlTab === "dex" ? urlTab : "swap"
   );
+  const [bridgeProvider, setBridgeProvider] = useState<"agg" | "universal">("agg");
   const [buySellMode, setBuySellMode] = useState<"buy" | "sell">("buy");
 
   const [fiatModalOpen, setFiatModalOpen]           = useState(false);
@@ -2568,9 +2570,36 @@ export function Swap() {
           />
         )}
 
-        {/* ═══════════════ BRIDGE TAB — Cross-chain bridge aggregator ═══════════════ */}
+        {/* ═══════════════ BRIDGE TAB ═══════════════ */}
         {activeTab === "bridge" && (
-          <BridgeAggPanel walletAddress={address ?? undefined} />
+          <div className="space-y-3">
+            <div className="flex items-center gap-1 p-1 bg-muted/20 rounded-xl border border-border/30">
+              <button
+                onClick={() => setBridgeProvider("agg")}
+                className={cn(
+                  "flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-150",
+                  bridgeProvider === "agg"
+                    ? "bg-card text-foreground shadow-sm border border-border/40"
+                    : "text-muted-foreground hover:text-foreground/80",
+                )}
+              >
+                Cross-Chain Bridge
+              </button>
+              <button
+                onClick={() => setBridgeProvider("universal")}
+                className={cn(
+                  "flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-150",
+                  bridgeProvider === "universal"
+                    ? "bg-card text-foreground shadow-sm border border-border/40"
+                    : "text-muted-foreground hover:text-foreground/80",
+                )}
+              >
+                Universal Swap
+              </button>
+            </div>
+            {bridgeProvider === "agg" && <BridgeAggPanel walletAddress={address ?? undefined} />}
+            {bridgeProvider === "universal" && <ThirdwebSwapPanel />}
+          </div>
         )}
 
         {/* ═══════════════ DEX TAB (on-chain Uniswap V3 / PancakeSwap) ═══════════════ */}
