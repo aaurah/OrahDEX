@@ -29,7 +29,7 @@ import {
 } from "../lib/lePriceCache.js";
 import { getCoinChangeMap } from "../lib/priceUpdater.js";
 import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
-import { getBestExternalQuote } from "../lib/metaRouter.js";
+import { getBestExternalQuote, type ExternalVenue } from "../lib/metaRouter.js";
 import { createCNExchange, getCNExchange } from "../lib/changenow.js";
 import { createSXExchange, getSXExchange } from "../lib/stealthex.js";
 import { createSsExchangePair, getSsExchange } from "../lib/simpleswap.js";
@@ -606,7 +606,15 @@ router.post("/letsexchange/estimate", async (req, res) => {
     const inUsd  = lePrices[from]  ?? 1;
     const outUsd = lePrices[to]    ?? 1;
 
-    const { best, errors, lowestMin } = await getBestExternalQuote(from, to, amt, inUsd, outUsd);
+    // When force_venue is provided, pin to that single provider only
+    const forceVenue = typeof body.force_venue === "string" ? body.force_venue as ExternalVenue : null;
+    const ALL_VENUES: ExternalVenue[] = ["letsexchange", "simpleswap", "changenow", "stealthex", "changelly"];
+    const routePrefs = forceVenue ? {
+      preferredVenues: [forceVenue],
+      blacklistVenues: ALL_VENUES.filter(v => v !== forceVenue),
+    } : undefined;
+
+    const { best, errors, lowestMin } = await getBestExternalQuote(from, to, amt, inUsd, outUsd, routePrefs);
     if (!best) {
       const errDetails = Object.entries(errors)
         .filter(([, v]) => v !== null)

@@ -384,12 +384,13 @@ function Countdown({ seconds, onEnd }: { seconds: number; onEnd: () => void }) {
 
 // ─── Step 1: Amount ───────────────────────────────────────────────────────────
 
-function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }: {
+function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, forceVenue }: {
   coins: LeCoin[];
   onContinue: (from: LeCoin, to: LeCoin, amount: string, estimate: Estimate|null) => void;
   initialFrom?: string;
   initialTo?: string;
   walletAddress?: string | null;
+  forceVenue?: string;
 }) {
   const [fromCoin, setFromCoin] = useState<LeCoin|null>(null);
   const [toCoin,   setToCoin]   = useState<LeCoin|null>(null);
@@ -489,6 +490,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
           network_to:   toCoin.network   ?? toCoin.symbol,
           amount:       parseFloat(amount),
           float:        true,
+          ...(forceVenue ? { force_venue: forceVenue } : {}),
         }),
       });
       const d = await r.json();
@@ -1507,12 +1509,14 @@ export function LetsExchangePanel({
   walletAddress,
   onConnectWallet,
   onExchangeCreated,
+  forceVenue,
 }: {
   initialFrom?: string;
   initialTo?: string;
   walletAddress?: string | null;
   onConnectWallet?: () => void;
   onExchangeCreated?: (fill: { price: number; side: "buy" | "sell" }) => void;
+  forceVenue?: string;
 } = {}) {
   const [coins,    setCoins]    = useState<LeCoin[]>([]);
   const [coinsErr, setCoinsErr] = useState(false);
@@ -1653,7 +1657,7 @@ export function LetsExchangePanel({
               </div>
             )}
 
-            {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} walletAddress={walletAddress} />}
+            {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} walletAddress={walletAddress} forceVenue={forceVenue} />}
             {step === 2 && fromCoin && toCoin && (
               <StepAddress fromCoin={fromCoin} toCoin={toCoin} amount={sendAmount} estimate={estimate}
                 onBack={() => setStep(1)} onContinue={handleAddressContinue}
