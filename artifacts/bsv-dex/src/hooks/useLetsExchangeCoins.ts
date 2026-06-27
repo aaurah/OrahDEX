@@ -19,7 +19,11 @@ export interface LeCoin {
   maxAmount: string | null;
 }
 
-// Module-level cache so multiple hook instances share one fetch
+// Module-level cache so multiple hook instances share one fetch.
+// We only treat a result as authoritative when it exceeds the built-in
+// fallback size (331 coins). If we got the fallback, we retry after a delay
+// so the live 1 000+ coin list is picked up once the server warms its cache.
+const LIVE_COIN_THRESHOLD = 400;
 let coinsCache: LeCoin[] | null = null;
 let fetchPromise: Promise<LeCoin[]> | null = null;
 
@@ -57,17 +61,37 @@ export function useLetsExchangeCoins() {
   const [loading, setLoading] = useState(!validCache);
 
   useEffect(() => {
-    // Re-check on every mount: if cache is empty, always retry
-    if (coinsCache && coinsCache.length > 0) { setCoins(coinsCache); setLoading(false); return; }
+    // Re-check on every mount: if cache has live data, use it immediately
+    if (coinsCache && coinsCache.length >= LIVE_COIN_THRESHOLD) {
+      setCoins(coinsCache); setLoading(false); return;
+    }
     if (!fetchPromise) {
       fetchPromise = fetchCoins().then(c => {
-        if (c.length > 0) coinsCache = c; // only persist a non-empty result
-        fetchPromise = null;              // clear so next empty-cache mount retries
+        // Only persist as authoritative if it's the full live list
+        if (c.length >= LIVE_COIN_THRESHOLD) coinsCache = c;
+        fetchPromise = null;
         return c;
       }).catch(() => { fetchPromise = null; return [] as LeCoin[]; });
     }
     let cancelled = false;
-    fetchPromise.then(c => { if (!cancelled) { setCoins(c); setLoading(false); } });
+    fetchPromise.then(c => {
+      if (cancelled) return;
+      setCoins(c);
+      setLoading(false);
+      // Got the fallback (< 400 coins) — schedule a retry in 5 s to pick up
+      // the live list once the server's background warm-up completes.
+      if (c.length > 0 && c.length < LIVE_COIN_THRESHOLD) {
+        setTimeout(() => {
+          if (cancelled) return;
+          fetchCoins().then(fresh => {
+            if (!cancelled && fresh.length >= LIVE_COIN_THRESHOLD) {
+              coinsCache = fresh;
+              setCoins(fresh);
+            }
+          }).catch(() => {});
+        }, 5000);
+      }
+    });
     return () => { cancelled = true; };
   }, []);
 

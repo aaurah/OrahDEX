@@ -478,11 +478,11 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 /* ── Background services — each wrapped so one failure can't crash others ──── */
 hydrateAdminTokens().catch(e => logger.warn({ err: e }, "hydrateAdminTokens failed (non-fatal)"));
 startCopyOrchestrator();
-// Delay the LE currencies warm-up by 60 s so it doesn't add to the boot-time
-// memory spike caused by other concurrent startup tasks.
+// Warm the LE currencies cache shortly after boot so the first user request
+// gets the live 1 000+ coin list rather than the 331-coin built-in fallback.
 setTimeout(() => {
   warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
-}, 60_000);
+}, 3_000);
 
 // syncAllLEPairs() is intentionally NOT called at startup.
 // The DB already holds LE pairs from a previous run (36 K+ rows).

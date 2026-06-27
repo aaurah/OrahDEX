@@ -134,14 +134,19 @@ let _coinsCache: LeCoin[] | null = null;
 let _coinsCacheTs = 0;
 let _coinsInflight: Promise<LeCoin[]> | null = null;
 
+// Only treat a response as authoritative once it exceeds the built-in fallback
+// size (331 coins). Anything smaller is likely the cold-cache fallback and
+// should not be cached — the next call will re-fetch and get the live list.
+const LIVE_COIN_THRESHOLD = 400;
+
 async function fetchCoins(): Promise<LeCoin[]> {
-  // Only use cache when it has real data — never cache an empty list
-  if (_coinsCache && _coinsCache.length > 0 && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
+  // Only use cache when it has the full live list (> 400 coins)
+  if (_coinsCache && _coinsCache.length >= LIVE_COIN_THRESHOLD && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
   if (_coinsInflight) return _coinsInflight;
   _coinsInflight = fetch(`${API}/letsexchange/currencies`)
     .then(r => { if (!r.ok) throw new Error("currencies failed"); return r.json(); })
     .then((d: LeCoin[]) => {
-      if (d.length > 0) {         // only cache a real non-empty response
+      if (d.length >= LIVE_COIN_THRESHOLD) { // only cache the full live list
         _coinsCache = d;
         _coinsCacheTs = Date.now();
       }

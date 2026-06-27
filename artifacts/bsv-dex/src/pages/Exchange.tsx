@@ -100,15 +100,19 @@ let _coinsCache: Coin[] | null = null;
 let _coinsCacheTs = 0;
 let _coinsInflight: Promise<Coin[]> | null = null;
 
+// Only treat a response as authoritative once it exceeds the built-in fallback
+// size (331 coins). Anything smaller is likely the cold-cache fallback.
+const LIVE_COIN_THRESHOLD = 400;
+
 async function fetchCoins(): Promise<Coin[]> {
-  if (_coinsCache && _coinsCache.length > 0 && Date.now() - _coinsCacheTs < COIN_CACHE_TTL) {
+  if (_coinsCache && _coinsCache.length >= LIVE_COIN_THRESHOLD && Date.now() - _coinsCacheTs < COIN_CACHE_TTL) {
     return _coinsCache;
   }
   if (_coinsInflight) return _coinsInflight;
   _coinsInflight = fetch(`${API_BASE}/letsexchange/currencies`)
     .then(r => { if (!r.ok) throw new Error("currencies failed"); return r.json(); })
     .then((d: Coin[]) => {
-      if (d.length > 0) { _coinsCache = d; _coinsCacheTs = Date.now(); }
+      if (d.length >= LIVE_COIN_THRESHOLD) { _coinsCache = d; _coinsCacheTs = Date.now(); }
       _coinsInflight = null;
       return d;
     })
