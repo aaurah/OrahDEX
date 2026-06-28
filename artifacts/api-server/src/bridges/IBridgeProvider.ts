@@ -39,6 +39,10 @@ export interface BuiltTx {
 
 export interface IBridgeProvider {
   id: string;
-  getQuote(params: BridgeQuoteParams): Promise<BridgeQuote | null>;
+  /**
+   * Return one or more quotes from this provider.
+   * Returns [] if the provider is unavailable or the route is unsupported.
+   */
+  getQuotes(params: BridgeQuoteParams): Promise<BridgeQuote[]>;
   buildTx(params: BuildTxParams): Promise<BuiltTx>;
 }
