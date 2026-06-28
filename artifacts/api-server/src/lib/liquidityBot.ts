@@ -308,13 +308,23 @@ async function runCycle(): Promise<void> {
       for (const o of marketOrders) allOrders.push(o);
     }
 
-    // Single DELETE wipes all stale bot orders in one round-trip
-    await db.delete(ordersTable).where(
-      and(
-        eq(ordersTable.walletAddress, BOT_ADDRESS),
-        eq(ordersTable.status, "open"),
-      ),
-    );
+    // Chunked DELETE — avoids a single 48k-row operation that exceeds the
+    // query_timeout on the production DB (large table + 4 indexes + WAL).
+    // Each chunk deletes ≤5 000 rows, completing in < 500 ms per round-trip.
+    const DELETE_CHUNK = 5_000;
+    let deletedCount: number;
+    do {
+      const result = await pool.query<{ id: string }>(
+        `DELETE FROM orders
+         WHERE id IN (
+           SELECT id FROM orders
+           WHERE wallet_address = $1 AND status = $2
+           LIMIT $3
+         )`,
+        [BOT_ADDRESS, "open", DELETE_CHUNK],
+      );
+      deletedCount = result.rowCount ?? 0;
+    } while (deletedCount >= DELETE_CHUNK);
 
     // Bulk INSERT in chunks of 2,000 orders
     // (2,000 orders × 27 columns = 54,000 parameters — under PG's 65,535 limit)
