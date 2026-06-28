@@ -262,12 +262,6 @@ export function SpotTrading() {
   const [tradeModeLockedByUser, setTradeModeLockedByUser] = useState(false);
   const [atomicSwapOpen, setAtomicSwapOpen] = useState(false);
 
-  // Keep pair-selector chain filter in sync with the wallet's active chain.
-  // Runs whenever the user switches chains in ChainSwitcherDropdown or any wallet UI.
-  // If the new chain is not a recognised EVM chain in our map, resets to "All chains".
-  useEffect(() => {
-    setDropChain(walletChainId && CHAIN_NET_CODES[walletChainId] ? walletChainId : null);
-  }, [walletChainId]);
 
 
   useEffect(() => {
