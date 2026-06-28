@@ -16,6 +16,7 @@ import {
   DEPIN_MARKETS, BRC20_MARKETS, UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { useSSPairs } from "@/hooks/useSSPairs";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
 import { useZoraCoins } from "@/hooks/useZoraCoins";
 import { useBaseTokenList } from "@/hooks/useBaseTokenList";
@@ -357,7 +358,7 @@ function getRows(
     case "zk":        return chainFromDB("ZK",    cat, ZK_MARKETS);
     case "scr":       return chainFromDB("SCR",   cat, SCR_MARKETS);
     case "linea":     return chainFromDB("LINEA", cat, LINEA_MARKETS);
-    case "base":      return chainRows(BASE_MARKETS, cat);
+    case "base":      return []; // Driven by live LE+SS pairs via baseChainRows memo
     case "zora":      return chainRows(ZORA_MARKETS, cat);
     // ── Category/topic tabs: static enrich + AOS ──────────────────────────────
     case "ai":        return chainRows(AI_MARKETS,       cat);
@@ -498,6 +499,8 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
   // AOS pairs from LetsExchange — available to trade via Swap tab
   const { pairs: rawAosPairs } = useLetsExchangePairs({ all: true });
+  // SimpleSwap pairs — combined with LE for chain-specific tabs
+  const { pairs: rawSsPairs } = useSSPairs({ all: true });
 
   const aosPairs = useMemo<NormRow[]>(() => {
     const all = (rawAosPairs ?? []).map(p => ({
@@ -525,6 +528,48 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     () => (Array.isArray(apiData) ? apiData : []).map(normalise),
     [apiData]
   );
+
+  // Base chain tab: purely live LE + SS pairs on the Base network.
+  // Uses rawAosPairs (pre-global-dedup) so chain-specific filtering is accurate.
+  const baseChainRows = useMemo<NormRow[]>(() => {
+    if (cat !== "base") return [];
+    const keywords     = CAT_NETWORKS["base"] ?? [];
+    const quotePriority = CAT_PREFERRED_QUOTE["base"] ?? ["ETH", "USDT", "USDC"];
+    const toRow = (p: { symbol: string; baseAsset: string; quoteAsset: string; lastPrice: number; priceChangePercent24h: number; network?: string | null; networkName?: string | null }): NormRow => ({
+      symbol:   p.symbol,
+      base:     p.baseAsset,
+      quote:    p.quoteAsset,
+      price:    p.lastPrice ?? 0,
+      chg:      p.priceChangePercent24h ?? 0,
+      type:     "spot" as const,
+      network:  (p.network ?? p.networkName ?? undefined) as string | undefined,
+      swapOnly: true as const,
+    });
+    const all = [
+      ...(rawAosPairs ?? []).map(toRow),
+      ...(rawSsPairs ?? []).map(p => toRow({ ...p, lastPrice: p.lastPrice, priceChangePercent24h: p.priceChangePercent24h })),
+    ].filter(p => {
+      const net = (p.network ?? "").toLowerCase();
+      return keywords.some(kw => net.includes(kw)) && p.price > 0;
+    });
+    // Group by base, pick preferred quote, then fallback to highest price
+    const byBase = new Map<string, NormRow[]>();
+    for (const p of all) {
+      if (!byBase.has(p.base)) byBase.set(p.base, []);
+      byBase.get(p.base)!.push(p);
+    }
+    const result: NormRow[] = [];
+    for (const [, pairs] of byBase) {
+      let best: NormRow | undefined;
+      for (const q of quotePriority) {
+        best = pairs.find(p => p.quote === q);
+        if (best) break;
+      }
+      if (!best) best = pairs.reduce((a, b) => b.price > a.price ? b : a);
+      if (best) result.push(best);
+    }
+    return result.sort((a, b) => a.base.localeCompare(b.base));
+  }, [cat, rawAosPairs, rawSsPairs]);
 
   const livePrice = useMemo(() => new Map(
     apiRows.map((m: NormRow) => [m.symbol, m])
@@ -556,6 +601,11 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   let rows: NormRow[] = search
     ? globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search))
     : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
+
+  // Base tab: replace static rows with live LE+SS pairs for Base network
+  if (!search && cat === "base" && baseChainRows.length > 0) {
+    rows = baseChainRows;
+  }
 
   // Merge GeckoTerminal live data: update prices for known tokens, append new ones
   if (!search && geckoRows.length > 0) {
