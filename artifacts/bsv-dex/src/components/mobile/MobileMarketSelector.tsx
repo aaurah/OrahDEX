@@ -16,6 +16,7 @@ import {
   DEPIN_MARKETS, BRC20_MARKETS, UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
 import { cn, marketMatchesQuery } from "@/lib/utils";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 
@@ -513,9 +514,26 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     return Array.from(merged.values());
   }, [search, apiRows, aosPairs]);
 
+  // Live on-chain data from GeckoTerminal (chain tabs only, cached 90s)
+  const { data: geckoRows } = useGeckoTerminalPools(cat);
+
   let rows: NormRow[] = search
     ? globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search))
     : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
+
+  // Merge GeckoTerminal live data: update prices for known tokens, append new ones
+  if (!search && geckoRows.length > 0) {
+    const geckoByBase = new Map(geckoRows.map(g => [g.base, g]));
+    rows = rows.map(r => {
+      const g = geckoByBase.get(r.base);
+      return g && g.price > 0 ? { ...r, price: g.price, chg: g.chg } : r;
+    });
+    const existingBases = new Set(rows.map(r => r.base));
+    const newRows: NormRow[] = geckoRows
+      .filter(g => !existingBases.has(g.base) && g.price > 0)
+      .map(g => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, type: "spot" as const, network: g.network, swapOnly: true }));
+    rows = [...rows, ...newRows];
+  }
 
   rows = [...rows].sort((a, b) => {
     let v = 0;
