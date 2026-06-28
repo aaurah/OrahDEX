@@ -181,7 +181,7 @@ export function AdminDashboard() {
       <div className="bg-card border border-border rounded-2xl p-5">
         <h3 className="font-semibold mb-4 flex items-center gap-2">
           <Zap className="w-4 h-4 text-primary" /> Recent Updates
-          <span className="ml-auto text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">v4.8.0 · 16 May 2026</span>
+          <span className="ml-auto text-[10px] font-black text-primary uppercase tracking-widest bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">v4.9.0 · 28 Jun 2026</span>
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {[
