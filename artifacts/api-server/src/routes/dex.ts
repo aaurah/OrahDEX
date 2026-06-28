@@ -578,6 +578,77 @@ router.get("/coins/:symbol/detail", async (req, res) => {
   }
 });
 
+// ─── Contract address → token lookup (GeckoTerminal multi-chain) ─────────────
+const contractLookupCache = new Map<string, Cache<any>>();
+const CONTRACT_LOOKUP_CACHE_MS = 5 * 60 * 1000;
+
+router.get("/coins/by-contract", async (req, res) => {
+  const address = ((req.query.address as string) ?? "").trim().toLowerCase();
+  if (!address.match(/^0x[0-9a-f]{10,}/)) {
+    return res.json({ found: false, reason: "invalid_address" });
+  }
+
+  const cached = contractLookupCache.get(address);
+  if (cached && Date.now() - cached.ts < CONTRACT_LOOKUP_CACHE_MS) return res.json(cached.data);
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+
+    const url = `https://api.geckoterminal.com/api/v2/search/pools?query=${address}&include=base_token%2Cquote_token%2Cnetwork&page=1`;
+    const gtRes = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { Accept: "application/json;version=20230302", "User-Agent": "OrahDEX/1.0" },
+    });
+    clearTimeout(timer);
+
+    if (!gtRes.ok) { res.json({ found: false, reason: "upstream_error" }); return; }
+
+    const data = await gtRes.json() as any;
+    const pools: any[] = data?.data ?? [];
+    const included: any[] = data?.included ?? [];
+
+    if (!pools.length) {
+      const r = { found: false, reason: "not_found" };
+      contractLookupCache.set(address, { data: r, ts: Date.now() });
+      return res.json(r);
+    }
+
+    // Prefer the included token whose address matches; fall back to base token of top pool
+    let matchedToken = included.find((item: any) =>
+      item.type === "token" && item.attributes?.address?.toLowerCase() === address
+    );
+    if (!matchedToken) {
+      const baseId = pools[0]?.relationships?.base_token?.data?.id;
+      matchedToken = included.find((i: any) => i.id === baseId);
+    }
+    if (!matchedToken) { res.json({ found: false, reason: "token_not_in_pool" }); return; }
+
+    const attrs = matchedToken.attributes;
+    const networkId = pools[0]?.relationships?.network?.data?.id ?? "unknown";
+    const networkObj = included.find((i: any) => i.type === "network" && i.id === networkId);
+    const chainName = networkObj?.attributes?.name ?? networkId;
+
+    const result = {
+      found: true,
+      symbol:    (attrs.symbol ?? "?").toUpperCase(),
+      name:      attrs.name ?? attrs.symbol ?? "Unknown Token",
+      address:   attrs.address ?? address,
+      chain:     chainName,
+      price:     attrs.price_usd != null ? parseFloat(attrs.price_usd) : null,
+      imageUrl:  attrs.image_url && !String(attrs.image_url).includes("missing") ? attrs.image_url : null,
+      poolCount: pools.length,
+      source:    "geckoterminal",
+    };
+
+    contractLookupCache.set(address, { data: result, ts: Date.now() });
+    return res.json(result);
+  } catch (err: any) {
+    req.log.warn({ err: err?.message, address }, "by-contract lookup failed");
+    return res.json({ found: false, reason: "fetch_failed" });
+  }
+});
+
 // ─── OpenOcean aggregator proxy (free, no API key) ────────────────────────────
 // Routes through 1inch, PancakeSwap, Uniswap, Curve, Balancer, and 100+ DEXes
 
