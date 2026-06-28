@@ -567,14 +567,8 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       if (!best) best = pairs.reduce((a, b) => b.price > a.price ? b : a);
       if (best) result.push(best);
     }
-    // If baseTokenList has loaded, restrict to tokens with real Base contracts only.
-    // While it's still loading (length 0) show all pairs so tab isn't blank.
-    if (baseTokenList.length > 0) {
-      const contractSet = new Set(baseTokenList.map(t => t.symbol.toUpperCase()));
-      return result.filter(r => contractSet.has(r.base.toUpperCase())).sort((a, b) => a.base.localeCompare(b.base));
-    }
     return result.sort((a, b) => a.base.localeCompare(b.base));
-  }, [cat, rawAosPairs, rawSsPairs, baseTokenList]);
+  }, [cat, rawAosPairs, rawSsPairs]);
 
   // ETH tab supplement: all LE+SS Base-network pairs appended to the ETH tab
   // (Base is an ETH L2 — tokens without a Base contract route through ETH swaps)
