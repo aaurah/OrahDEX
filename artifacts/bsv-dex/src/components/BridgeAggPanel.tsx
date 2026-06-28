@@ -45,16 +45,44 @@ interface BuiltTx {
   chainId: number;
 }
 
-// ── Provider display map ──────────────────────────────────────────────────────
+// ── Provider display helpers ──────────────────────────────────────────────────
 
-const PROVIDER_META: Record<string, { label: string; color: string; tag: string }> = {
-  "mock-cheap-slow":      { label: "Across V2",  color: "#4ade80", tag: "Cheapest"  },
-  "mock-fast-expensive":  { label: "Stargate V2", color: "#facc15", tag: "Fastest"  },
-  "mock-balanced":        { label: "Socket",      color: "#60a5fa", tag: "Balanced" },
+const BRIDGE_COLORS: Record<string, string> = {
+  "across":   "#4ade80",
+  "stargate": "#facc15",
+  "hop":      "#f97316",
+  "connext":  "#a78bfa",
+  "cbridge":  "#38bdf8",
+  "synapse":  "#e879f9",
+  "socket":   "#60a5fa",
 };
 
-function providerMeta(id: string) {
-  return PROVIDER_META[id] ?? { label: id, color: "#9ca3af", tag: "" };
+function bridgeColor(name: string): string {
+  const slug = name.toLowerCase().replace(/\s+/g, "").replace(/[^a-z]/g, "");
+  for (const [key, color] of Object.entries(BRIDGE_COLORS)) {
+    if (slug.includes(key)) return color;
+  }
+  const h = [...name].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 0);
+  const hue = Math.abs(h) % 360;
+  return `hsl(${hue},70%,60%)`;
+}
+
+function providerMeta(id: string, routeMeta?: Record<string, unknown>) {
+  const bridgeName = (routeMeta?.["bridgeName"] as string | undefined)
+    ?? id.split(":")[1]?.split("-").map(w => w[0]?.toUpperCase() + w.slice(1)).join(" ")
+    ?? id;
+  return { label: bridgeName, color: bridgeColor(bridgeName), tag: "" };
+}
+
+function computeTags(quotes: BridgeQuote[]): Map<string, string> {
+  const tags = new Map<string, string>();
+  if (quotes.length < 2) return tags;
+  const fastest  = quotes.reduce((a, b) => a.estimatedTimeSeconds < b.estimatedTimeSeconds ? a : b);
+  tags.set(fastest.providerId, "Fastest");
+  const byFee    = [...quotes].sort((a, b) => (BigInt(a.fee) < BigInt(b.fee) ? -1 : 1));
+  const cheapest = byFee[0];
+  if (cheapest && !tags.has(cheapest.providerId)) tags.set(cheapest.providerId, "Cheapest");
+  return tags;
 }
 
 function fmtTime(seconds: number): string {
@@ -223,14 +251,16 @@ function QuoteRow({
   isSelected,
   onSelect,
   toToken,
+  tag,
 }: {
   quote: BridgeQuote;
   isBest: boolean;
   isSelected: boolean;
   onSelect: () => void;
   toToken: Token | null;
+  tag?: string;
 }) {
-  const meta = providerMeta(quote.providerId);
+  const meta = providerMeta(quote.providerId, quote.routeMeta);
 
   return (
     <button
@@ -244,12 +274,12 @@ function QuoteRow({
       {/* Provider */}
       <div className="flex flex-col min-w-[90px]">
         <span className="text-sm font-semibold text-foreground">{meta.label}</span>
-        {meta.tag && (
+        {tag && (
           <span
             className="text-[10px] font-medium px-1.5 py-0.5 rounded-full w-fit mt-0.5"
             style={{ background: meta.color + "22", color: meta.color }}
           >
-            {meta.tag}
+            {tag}
           </span>
         )}
       </div>
@@ -407,6 +437,7 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
           fromTokenAddress: fromToken.address,
           toTokenAddress: toToken.address,
           amountIn: amount,
+          userAddress: walletAddress,
         }),
       });
       const data = await res.json();
@@ -646,16 +677,20 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
             <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wide text-right">Score</span>
           </div>
 
-          {quotes.map((q, i) => (
-            <QuoteRow
-              key={q.providerId}
-              quote={q}
-              isBest={i === 0}
-              isSelected={selectedQuote?.providerId === q.providerId}
-              onSelect={() => { setSelectedQuote(q); setBuiltTx(null); }}
-              toToken={toToken}
-            />
-          ))}
+          {(() => {
+            const tags = computeTags(quotes);
+            return quotes.map((q, i) => (
+              <QuoteRow
+                key={q.providerId}
+                quote={q}
+                isBest={i === 0}
+                isSelected={selectedQuote?.providerId === q.providerId}
+                onSelect={() => { setSelectedQuote(q); setBuiltTx(null); }}
+                toToken={toToken}
+                tag={tags.get(q.providerId)}
+              />
+            ));
+          })()}
         </div>
       )}
 

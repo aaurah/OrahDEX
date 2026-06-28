@@ -13,3 +13,4 @@
 - [LE markets full-table scan](le-markets-scan-pattern.md) — 36K LE rows in markets table; every background service SELECT must filter type != 'letsexchange' or use symbol list.
 - [GeckoTerminal live integration](gecko-terminal-integration.md) — live pool data merges over static mock-data at render time in MobileMarketSelector; lib + hook pattern documented.
 - [SS pairs normalization](ss-pairs-normalization.md) — SS uses network-specific tickers (usdterc20, pol, avaxc, bnb-bsc); must map to canonical symbols before building pairs; dedup by normalized symbol first.
+- [Socket bridge integration](socket-bridge-integration.md) — IBridgeProvider.getQuotes() returns BridgeQuote[]; SocketBridgeProvider stores full route in routeMeta.socketRoute for buildTx; getProvider() uses prefix match for socket:* IDs.
