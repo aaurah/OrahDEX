@@ -68,6 +68,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { logger } from "./logger.js";
+import { isDbConnError } from "./dbErrors.js";
 
 // ── HTLC secret encryption (AES-256-GCM) ─────────────────────────────────────
 // Secrets are encrypted at rest to prevent DB dump / read-replica disclosure.
@@ -667,7 +668,9 @@ export async function startEvmHtlcWatcher(): Promise<void> {
     if (pollRunning) return;
     pollRunning = true;
     pollEvmHtlcSessions()
-      .catch(err => logger.warn({ err }, "evmHtlc: poll cycle error"))
+      .catch(err => isDbConnError(err)
+        ? logger.debug({ err }, "evmHtlc: poll cycle DB connect error (already handled)")
+        : logger.warn({ err }, "evmHtlc: poll cycle error"))
       .finally(() => { pollRunning = false; });
   }, 30_000);
 }
@@ -675,14 +678,20 @@ export async function startEvmHtlcWatcher(): Promise<void> {
 async function pollEvmHtlcSessions(): Promise<void> {
   const now = new Date();
 
-  const sessions = await db
-    .select()
-    .from(evmHtlcSessionsTable)
-    .where(
-      and(
-        notInArray(evmHtlcSessionsTable.status, TERMINAL_STATUSES),
-      )
-    );
+  let sessions: (typeof evmHtlcSessionsTable.$inferSelect)[];
+  try {
+    sessions = await db
+      .select()
+      .from(evmHtlcSessionsTable)
+      .where(and(notInArray(evmHtlcSessionsTable.status, TERMINAL_STATUSES)));
+  } catch (err) {
+    if (isDbConnError(err)) {
+      logger.warn("evmHtlc: DB unavailable, skipping poll cycle");
+    } else {
+      logger.error({ err }, "evmHtlc: unexpected DB error in poll cycle");
+    }
+    return;
+  }
 
   for (const session of sessions) {
     // Check expiry
