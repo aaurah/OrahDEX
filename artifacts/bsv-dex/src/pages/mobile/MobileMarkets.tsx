@@ -161,7 +161,7 @@ function getCatRows(
 
   /** All DB pairs matching a category tag, priced > 0 — same logic as desktop */
   const dbByCat = (tag: string): MktRow[] =>
-    apiRows.filter(m => m.type !== "futures" && m.price > 0 && hasCategory(m, tag));
+    apiRows.filter(m => m.type !== "futures" && m.price > 0 && hasCategory(m.base, tag));
 
   switch (cat) {
     case "all":       return enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures" && m.price > 0);
