@@ -649,6 +649,25 @@ export function DexHub() {
   const [coinDetailInterval, setCoinDetailInterval] = useState("1d");
   useEffect(() => { if (selectedCoin) setCoinDetailTab("overview"); }, [selectedCoin?.id]);
 
+  /* Intercept browser back button so it closes the sheet instead of navigating away */
+  const popHandledRef = useRef(false);
+  useEffect(() => {
+    if (!selectedCoin) return;
+    popHandledRef.current = false;
+    window.history.pushState({ coinDetailOpen: true }, "");
+    const handlePop = () => {
+      popHandledRef.current = true;
+      setSelectedCoin(null);
+    };
+    window.addEventListener("popstate", handlePop);
+    return () => {
+      window.removeEventListener("popstate", handlePop);
+      if (!popHandledRef.current && window.history.state?.coinDetailOpen) {
+        window.history.back();
+      }
+    };
+  }, [selectedCoin?.id]);
+
   const { data: coinDetail, isLoading: detailLoading } = useQuery({
     queryKey: ["coin-detail", selectedCoin?.symbol],
     enabled: !!selectedCoin?.symbol,
