@@ -699,7 +699,7 @@ export function Markets() {
           {tab === "base" && (
             <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-xl">
               <span className="text-base leading-none">🔵</span>
-              <span className="text-xs font-bold text-blue-400">Base L2 — Curated Pairs Only</span>
+              <span className="text-xs font-bold text-blue-400">Base L2 — 2300+ Tokens · Live Prices via DexScreener</span>
             </div>
           )}
           {tab === "zora" && (

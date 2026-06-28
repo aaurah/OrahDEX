@@ -27,6 +27,9 @@ import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { VENUE_LABELS, VENUE_COLORS } from "@/lib/venues";
+import { useBaseTokenList } from "@/hooks/useBaseTokenList";
+import { useBaseTokenPrices } from "@/hooks/useBaseTokenPrices";
+import { useZoraCoins } from "@/hooks/useZoraCoins";
 
 type BottomTab = "open" | "history" | "trades" | "liquidity";
 type QuoteTab =
@@ -329,6 +332,12 @@ export function SpotTrading() {
   // SimpleSwap pairs — additional coins not covered by LE; SS fills gaps, LE wins on overlap.
   const { pairs: ssPairs  } = useSSPairs({ all: true });
 
+  // Full Base chain token catalog + live DexScreener prices (cached 1h / 60s)
+  const { data: baseTokenList } = useBaseTokenList(true);
+  const basePrices = useBaseTokenPrices(baseTokenList, baseTokenList.length > 0);
+  // All Zora coins from Zora Coins API (cached 90s)
+  const { data: zoraRows } = useZoraCoins(true);
+
   // Get primary LE coin entries for the current pair (null if not supported)
   const fromLECoin = useMemo(() => getLECoin(base),  [getLECoin, base]);
   const toLECoin   = useMemo(() => getLECoin(quote), [getLECoin, quote]);
@@ -523,9 +532,33 @@ export function SpotTrading() {
       }
     });
 
+    // Merge all Base chain catalog tokens (CoinGecko list + DexScreener prices)
+    baseTokenList.forEach(t => {
+      const sym = `${t.symbol}/USDC`;
+      if (!deduped.has(sym)) {
+        const dp = basePrices.get(t.symbol);
+        deduped.set(sym, normalise({
+          symbol: sym, baseAsset: t.symbol, quoteAsset: "USDC",
+          lastPrice: dp?.price ?? 0, priceChangePercent24h: dp?.chg ?? 0,
+          network: "base-network", type: "spot",
+        }));
+      }
+    });
+
+    // Merge all Zora coins
+    zoraRows.forEach(z => {
+      if (!deduped.has(z.symbol)) {
+        deduped.set(z.symbol, normalise({
+          symbol: z.symbol, baseAsset: z.base, quoteAsset: z.quote,
+          lastPrice: z.price, priceChangePercent24h: z.chg,
+          network: "zora-network", type: "spot",
+        }));
+      }
+    });
+
     return Array.from(deduped.values());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiMarkets, lePairs, ssPairs]);
+  }, [apiMarkets, lePairs, ssPairs, baseTokenList, basePrices, zoraRows]);
 
   const currentMarket = useMemo(
     () => allMarkets.find(m => m.baseAsset === base && m.quoteAsset === quote) ?? null,
