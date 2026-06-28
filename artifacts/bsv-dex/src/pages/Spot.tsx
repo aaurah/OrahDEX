@@ -13,8 +13,9 @@ import type { ExternalFlash } from "@/components/trading/OrderBook";
 import { OrderForm } from "@/components/trading/OrderForm";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
+import { PriceCompareBar } from "@/components/trading/PriceCompareBar";
 import { useLetsExchangeCoins } from "@/hooks/useLetsExchangeCoins";
-import { useLetsExchangeRate } from "@/hooks/useLetsExchangeRate";
+import { usePairPrices } from "@/hooks/usePairPrices";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades, generateTickerForSymbol, ALL_SPOT_MOCK } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume, marketMatchesQuery } from "@/lib/utils";
@@ -238,11 +239,22 @@ export function SpotTrading() {
   const fromLECoin = useMemo(() => getLECoin(base),  [getLECoin, base]);
   const toLECoin   = useMemo(() => getLECoin(quote), [getLECoin, quote]);
 
-  // Live LE rate for the current pair — null when pair unsupported on LE
-  const { rate: leRateData } = useLetsExchangeRate(
+  // Live venue prices for the current pair (LE + SS in one call)
+  const { letsexchange: leVenuePrice, simpleswap: ssVenuePrice, bestVenue, loading: pricesLoading } = usePairPrices(
     fromLECoin ? { symbol: fromLECoin.symbol, network: fromLECoin.network } : null,
     toLECoin   ? { symbol: toLECoin.symbol,   network: toLECoin.network   } : null,
   );
+
+  // Derive leRateData shape expected by OrderBook + swap nudge
+  const leRateData = leVenuePrice ? {
+    rate:       String(leVenuePrice.rate),
+    minAmount:  leVenuePrice.minAmount != null ? String(leVenuePrice.minAmount) : "0",
+    maxAmount:  leVenuePrice.maxAmount != null ? String(leVenuePrice.maxAmount) : "999999",
+    rateId:     null as string | null,
+    rateExpiry: null as number | null,
+    fromNetwork: fromLECoin?.network ?? fromLECoin?.symbol ?? "",
+    toNetwork:   toLECoin?.network   ?? toLECoin?.symbol   ?? "",
+  } : null;
 
   // Callback for OrderBook LE rows — switch to swap mode and remount LE panel
   const handleLeSwap = useCallback(() => {
@@ -634,6 +646,17 @@ export function SpotTrading() {
           <span className="sm:hidden text-[10px] font-bold text-green-400">BSV</span>
         </div>
       </div>
+
+      {/* Price comparison bar — orderbook / LetsExchange / SimpleSwap */}
+      <PriceCompareBar
+        base={base}
+        quote={quote}
+        orderbookPrice={ticker.lastPrice}
+        lePrice={leVenuePrice ?? null}
+        ssPrice={ssVenuePrice ?? null}
+        bestVenue={bestVenue ?? null}
+        loading={pricesLoading}
+      />
 
       {/* Main Trading Area — Poloniex-style: Pairs | Chart | OrderBook+Form */}
       <div className="flex-1 flex overflow-hidden">
