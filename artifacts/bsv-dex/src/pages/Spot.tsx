@@ -269,19 +269,6 @@ export function SpotTrading() {
     setDropChain(walletChainId && CHAIN_NET_CODES[walletChainId] ? walletChainId : null);
   }, [walletChainId]);
 
-  // Auto-switch quote when chain changes if the current quote has 0 pairs.
-  // Uses chainMarkets (already memoized) — no extra filtering work here.
-  useEffect(() => {
-    setDropQuote(prev => {
-      if (chainMarkets.some(m => m.quoteAsset === prev)) return prev; // still has pairs
-      const counts: Record<string, number> = {};
-      for (const m of chainMarkets) counts[m.quoteAsset] = (counts[m.quoteAsset] ?? 0) + 1;
-      const best = QUOTE_TABS
-        .filter(t => (counts[t.id] ?? 0) > 0)
-        .sort((a, b) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0))[0];
-      return (best?.id ?? prev) as QuoteTab;
-    });
-  }, [chainMarkets]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
