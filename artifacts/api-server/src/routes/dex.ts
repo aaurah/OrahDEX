@@ -30,6 +30,11 @@ const EXCHANGE_CACHE_MS = 10 * 60 * 1000;
 const PRICE_CACHE_MS    = 60 * 1000;
 const COINS_CACHE_MS    = 2 * 60 * 1000;
 
+// Persistent last-known-good copies — survive DB timeouts and cold-start errors.
+// Cleared only on server restart, never on individual request failures.
+let lastGoodCoins:      any[] | null = null;
+let lastGoodAllSources: any[] | null = null;
+
 /* ── Static curated exchange list ─────────────────────────────────────────── */
 /* Google favicon CDN — reliable 64px icons for well-known domains */
 function favicon(domain: string) {
@@ -275,6 +280,7 @@ router.get("/dex/exchanges", async (_req, res) => {
 /* ── Shared helper: build CG/OrahDB coin list (populates coinsCache) ────────── */
 async function buildCgCoins(): Promise<any[]> {
   if (coinsCache && Date.now() - coinsCache.ts < COINS_CACHE_MS) return coinsCache.data;
+  // If DB query below fails, fall through to lastGoodCoins rather than throwing.
 
   const markets     = await db.select().from(marketsTable).orderBy(desc(marketsTable.volume24h));
   const spotMarkets = markets.filter(m => m.type === "spot");
@@ -326,6 +332,7 @@ async function buildCgCoins(): Promise<any[]> {
   }
 
   coinsCache = { data: coins, ts: Date.now() };
+  lastGoodCoins = coins;
   return coins;
 }
 
@@ -363,9 +370,10 @@ router.get("/coins/all-sources", async (req, res) => {
 
   try {
     // ── 1. Build CG coin list (reuse coinsCache if fresh, else rebuild from DB) ──
-    // Fault-tolerant: if DB is temporarily unavailable, still serve LE/SS coins
+    // Fault-tolerant: if DB is temporarily unavailable, serve last-known-good CG
+    // coins (prices from prior successful build) rather than returning an empty list.
     let cgCoins: any[] = [];
-    try { cgCoins = await buildCgCoins(); } catch (_) { cgCoins = []; }
+    try { cgCoins = await buildCgCoins(); } catch (_) { cgCoins = lastGoodCoins ?? []; }
 
     // ── 2. LE currencies + cached prices ─────────────────────────────────────
     const leCurrencies = getCachedLECurrencies();
@@ -454,9 +462,13 @@ router.get("/coins/all-sources", async (req, res) => {
 
     const result = [...taggedCg, ...leOnlyCoins, ...ssOnlyCoins];
     allSourcesCache = { data: result, ts: Date.now() };
+    lastGoodAllSources = result;
     return res.json(result);
   } catch (err: any) {
     req.log.error({ err }, "Failed to build coins/all-sources");
+    // Serve last-known-good data so the Market Hub shows prices during transient
+    // DB or network failures rather than blowing up with an empty/error response.
+    if (lastGoodAllSources) return res.json(lastGoodAllSources);
     return res.status(502).json({ error: "Failed to fetch coin data" });
   }
 });

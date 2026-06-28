@@ -647,12 +647,20 @@ function FeaturedMarkets({ markets, totalCount }: { markets: any[]; totalCount: 
   const [tab, setTab] = useState<MktTab>("ALL");
 
   const filtered = useMemo(() => {
-    const QUOTE_PREF: Record<string, number> = { USDT: 0, USDC: 1, BTC: 2, ETH: 3, BSV: 4 };
+    const QUOTE_PREF: Record<string, number> = { USDT: 0, USDC: 1, TUSD: 2, USDD: 3, BTC: 4, ETH: 5, BSV: 6 };
+    // Only these quote assets have prices in a known, displayable denomination.
+    // Stablecoins (USDT/USDC/TUSD/USDD) display as USD. BTC/ETH/BSV display in
+    // their own unit. All others (CRO/MATIC/ARB…) are excluded in the ALL tab
+    // to avoid e.g. BTC/CRO "$1,105,399" appearing as a dollar price.
+    const DISPLAY_QUOTES = new Set(Object.keys(QUOTE_PREF));
     let list = markets.filter(m => m.status === "active");
     if (tab === "BSV") {
       list = list.filter(m => m.baseAsset === "BSV" || m.quoteAsset === "BSV");
     } else if (tab !== "ALL") {
       list = list.filter(m => m.quoteAsset === tab);
+    } else {
+      // ALL tab: only include markets with a known display quote so prices make sense
+      list = list.filter(m => DISPLAY_QUOTES.has(m.quoteAsset));
     }
     // Deduplicate: keep one pair per baseAsset — prefer preferred quotes, then highest volume
     const seen = new Map<string, any>();
@@ -773,7 +781,7 @@ export function LandingPage() {
   const { theme, setTheme } = useThemeStore();
   const lowMotionMode = useLowMotionLandingMode();
   const MARKET_COUNT_PLACEHOLDER = 1000; // startup placeholder until live total is fetched
-  const MARKETS_PREVIEW_LIMIT = 50;
+  const MARKETS_PREVIEW_LIMIT = 200; // fetch more so preferred-quote pairs (USDT/BTC/BSV) are included
 
   useSEO({
     title: "OrahDEX — Trade means DEX | Spot, Futures & P2P Crypto Exchange",
@@ -817,7 +825,7 @@ export function LandingPage() {
       const [leCountRes, countRes, marketsRes] = await Promise.allSettled([
         fetch(`${API_BASE}/letsexchange/pairs/count?all=true`, { cache: "no-store" }),
         fetch(`${API_BASE}/markets/count`, { cache: "no-store" }),
-        fetch(`${API_BASE}/markets?limit=${MARKETS_PREVIEW_LIMIT}`, { cache: "no-store" }),
+        fetch(`${API_BASE}/markets?type=spot&quoteAssets=USDT,USDC,TUSD,USDD,BTC,ETH,BSV&limit=${MARKETS_PREVIEW_LIMIT}`, { cache: "no-store" }),
       ]);
       if (leCountRes.status !== "fulfilled") console.warn("Landing market count fetch: LetsExchange count failed", leCountRes.reason);
       if (countRes.status !== "fulfilled") console.warn("Landing market count fetch: Markets count failed", countRes.reason);

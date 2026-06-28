@@ -141,20 +141,28 @@ router.get("/markets", async (req, res) => {
   // remaining ~35 000 stream in afterwards. The full sorted list is built
   // and cached once; ?limit / ?offset just slice it. Order is stable:
   //   pinned DESC, hasPrice DESC, volume24h DESC.
-  const rawLimit  = req.query.limit  as string | undefined;
-  const rawOffset = req.query.offset as string | undefined;
+  const rawLimit      = req.query.limit       as string | undefined;
+  const rawOffset     = req.query.offset      as string | undefined;
+  const rawQuoteAssets = req.query.quoteAssets as string | undefined;
   const limit     = rawLimit  ? Math.max(1, Math.min(50_000, parseInt(rawLimit,  10) || 0)) : null;
   const offset    = rawOffset ? Math.max(0,                  parseInt(rawOffset, 10) || 0)  : 0;
+  // Optional post-filter by quote asset(s). Applied to the in-memory sorted list
+  // so it never triggers an extra DB query or pollutes the base cache.
+  const quoteFilter: Set<string> | null = rawQuoteAssets
+    ? new Set(rawQuoteAssets.split(",").map(q => q.trim().toUpperCase()).filter(Boolean))
+    : null;
 
   const baseKey  = types.length ? `filtered:${types.sort().join(",")}` : "all";
   const cacheKey = baseKey; // we cache the full sorted list once and slice from it
 
-  const sliced = (full: any[]) =>
-    limit == null ? full : full.slice(offset, offset + limit);
+  const applyFilters = (full: any[]) => {
+    const filtered = quoteFilter ? full.filter(m => quoteFilter.has(m.quoteAsset)) : full;
+    return limit == null ? filtered : filtered.slice(offset, offset + limit);
+  };
 
   const cached = marketsCache.get(cacheKey);
   if (cached) {
-    const out  = sliced(cached);
+    const out  = applyFilters(cached);
     const etag = (marketsETag.get(cacheKey) ?? "").replace(/"$/, `:${offset}:${limit ?? "*"}"`);
     if (etag) {
       res.setHeader("ETag", etag);
@@ -163,7 +171,7 @@ router.get("/markets", async (req, res) => {
         return;
       }
     }
-    res.setHeader("X-Total-Count", String(cached.length));
+    res.setHeader("X-Total-Count", String(out.length));
     res.json(out);
     return;
   }
@@ -215,14 +223,15 @@ router.get("/markets", async (req, res) => {
     const etag = makeETag(result);
     marketsCache.set(cacheKey, result);
     marketsETag.set(cacheKey, etag);
+    const out = applyFilters(result);
     const sliceEtag = etag.replace(/"$/, `:${offset}:${limit ?? "*"}"`);
     res.setHeader("ETag", sliceEtag);
-    res.setHeader("X-Total-Count", String(result.length));
+    res.setHeader("X-Total-Count", String(out.length));
     if (req.headers["if-none-match"] === sliceEtag) {
       res.status(304).end();
       return;
     }
-    res.json(sliced(result));
+    res.json(out);
   } catch (err) {
     req.log.error({ err }, "Failed to get markets");
     res.status(500).json({ error: "Internal server error" });
