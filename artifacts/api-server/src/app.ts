@@ -37,6 +37,7 @@ import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
 import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
 import { startOverlayScanner } from "./lib/overlayScanner.js";
 import { startSelfDiagnostic } from "./lib/selfDiagnostic.js";
+import { startErrorWatcher } from "./lib/errorWatcher.js";
 import { pool } from "@workspace/db";
 
 // Run the chain_id column migration at startup (idempotent — IF NOT EXISTS).
@@ -508,6 +509,9 @@ setTimeout(() => {
 const _s = (ms: number, fn: () => void, label: string) =>
   setTimeout(() => { try { fn(); } catch (e) { logger.error({ err: e }, `${label} failed to init`); } }, ms);
 
+// Hook logger.error / logger.warn immediately so all service errors are captured.
+startErrorWatcher();
+
 _s(    0, startPriceUpdater,          "startPriceUpdater");
 _s(6_000, startLiquidityBot,          "startLiquidityBot");
 _s(12_000, startArbBot,               "startArbBot");
@@ -530,6 +534,7 @@ _s(90_000, startFundingRateEngine,     "startFundingRateEngine");
 _s(96_000, startBsvMempoolWatcher,    "startBsvMempoolWatcher");
 _s(102_000, startOverlayScanner,     "startOverlayScanner");
 _s(108_000, startSelfDiagnostic,    "startSelfDiagnostic");
+
 
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 
