@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, Fragment, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { useSEO } from "@/hooks/useSEO";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -14,6 +14,7 @@ import { BrandLogo, OrahInline, OrahO } from "@/components/BrandLogo";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, formatQuoteAmount } from "@/store/useSettingsStore";
+const Chart = lazy(() => import("@/components/trading/Chart").then(m => ({ default: m.Chart })));
 
 /* ── Known token contracts: symbol → { contract, chain } ── */
 const KNOWN_CONTRACTS: Record<string, { contract: string; chain: string }> = {
@@ -76,6 +77,53 @@ const KNOWN_CONTRACTS: Record<string, { contract: string; chain: string }> = {
   DOGINME: { contract: "0x6921B130D297cc43754afba22e5EAc0FBf8Db75b", chain: "Base" },
   MFER:    { contract: "0xe3086852A4B125803C815a158249ae468A3254Ca", chain: "Base" },
 };
+
+/* ── CoinGecko / CMC slug helpers ── */
+const CG_SLUG_OVERRIDES: Record<string, string> = {
+  BTC:"bitcoin", ETH:"ethereum", BNB:"binancecoin", XRP:"ripple",
+  ADA:"cardano", SOL:"solana", DOGE:"dogecoin", DOT:"polkadot",
+  TRX:"tron", MATIC:"matic-network", POL:"matic-network",
+  LTC:"litecoin", BCH:"bitcoin-cash", AVAX:"avalanche-2",
+  LINK:"chainlink", UNI:"uniswap", ATOM:"cosmos", ALGO:"algorand",
+  VET:"vechain", FIL:"filecoin", EOS:"eos", NEAR:"near",
+  ICP:"internet-computer", SAND:"the-sandbox", MANA:"decentraland",
+  AXS:"axie-infinity", THETA:"theta-token", FTM:"fantom",
+  AAVE:"aave", GRT:"the-graph", KSM:"kusama", SHIB:"shiba-inu",
+  USDT:"tether", USDC:"usd-coin", DAI:"dai", BSV:"bitcoin-sv",
+  CAKE:"pancakeswap-token", RUNE:"thorchain", CRV:"curve-dao-token",
+  MKR:"maker", SNX:"synthetix-network-token", COMP:"compound-governance-token",
+  ETC:"ethereum-classic", EGLD:"elrond-erd-2", HNT:"helium",
+  YFI:"yearn-finance", SUSHI:"sushi", BAL:"balancer", LDO:"lido-dao",
+  ARB:"arbitrum", OP:"optimism", ENS:"ethereum-name-service",
+  FET:"fetch-ai", WLD:"worldcoin-wld", IMX:"immutable-x",
+  PEPE:"pepe", BRETT:"brett", DEGEN:"degen-base",
+};
+const CMC_SLUG_OVERRIDES: Record<string, string> = {
+  BTC:"bitcoin", ETH:"ethereum", BNB:"bnb", XRP:"xrp",
+  ADA:"cardano", SOL:"solana", DOGE:"dogecoin", DOT:"polkadot",
+  TRX:"tron", MATIC:"polygon", POL:"polygon",
+  LTC:"litecoin", BCH:"bitcoin-cash", AVAX:"avalanche",
+  LINK:"chainlink", UNI:"uniswap", ATOM:"cosmos", ALGO:"algorand",
+  VET:"vechain", FIL:"filecoin", EOS:"eos", NEAR:"near-protocol",
+  ICP:"internet-computer", SAND:"the-sandbox", MANA:"decentraland",
+  AXS:"axie-infinity", THETA:"theta-network", FTM:"fantom",
+  AAVE:"aave", GRT:"the-graph", SHIB:"shiba-inu",
+  USDT:"tether", USDC:"usd-coin", DAI:"multi-collateral-dai",
+  BSV:"bitcoin-sv", CAKE:"pancakeswap", RUNE:"thorchain",
+  CRV:"curve-dao-token", MKR:"maker", SNX:"synthetix-network-token",
+  COMP:"compound", ETC:"ethereum-classic", YFI:"yearn-finance",
+  SUSHI:"sushiswap", LDO:"lido-dao", ARB:"arbitrum", OP:"optimism",
+  ENS:"ethereum-name-service", FET:"fetch", WLD:"worldcoin",
+  IMX:"immutable", PEPE:"pepe",
+};
+function cgSlug(symbol: string, name: string) {
+  return CG_SLUG_OVERRIDES[symbol.toUpperCase()]
+    ?? (name || symbol).toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
+function cmcSlug(symbol: string, name: string) {
+  return CMC_SLUG_OVERRIDES[symbol.toUpperCase()]
+    ?? (name || symbol).toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
 
 /* kept for backward-compat (coin detail modal uses zoraContractFor) */
 const ZORA_COINS = Object.entries(KNOWN_CONTRACTS).map(([symbol, v]) => ({
@@ -598,6 +646,7 @@ export function DexHub() {
   /* ── Selected coin detail ── */
   const [selectedCoin, setSelectedCoin] = useState<any | null>(null);
   const [coinDetailTab, setCoinDetailTab] = useState<"overview"|"markets"|"trade">("overview");
+  const [coinDetailInterval, setCoinDetailInterval] = useState("1d");
   useEffect(() => { if (selectedCoin) setCoinDetailTab("overview"); }, [selectedCoin?.id]);
 
   const { data: tickersData, isLoading: tickersLoading } = useQuery({
@@ -1227,14 +1276,15 @@ export function DexHub() {
                     <div className="p-4 space-y-4">
 
                       {/* Price chart */}
-                      <div className="rounded-xl overflow-hidden border border-border bg-secondary/20" style={{ height: 220 }}>
-                        <iframe
-                          key={selectedCoin.symbol}
-                          src={`https://s.tradingview.com/widgetembed/?frameElementId=tv_${selectedCoin.symbol}&symbol=BINANCE:${selectedCoin.symbol}USDT&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=161b22&studies=[]&theme=dark&style=1&timezone=Etc%2FUTC&locale=en&hide_top_toolbar=0&allow_symbol_change=0`}
-                          style={{ width: "100%", height: "100%", border: "none" }}
-                          title={`${selectedCoin.symbol} chart`}
-                          sandbox="allow-scripts allow-same-origin allow-popups"
-                        />
+                      <div className="rounded-xl overflow-hidden border border-border bg-secondary/20" style={{ height: 260 }}>
+                        <Suspense fallback={<div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">Loading chart…</div>}>
+                          <Chart
+                            key={selectedCoin.symbol}
+                            symbol={selectedCoin.symbol}
+                            interval={coinDetailInterval}
+                            onIntervalChange={setCoinDetailInterval}
+                          />
+                        </Suspense>
                       </div>
 
                       {/* 24h range bar */}
@@ -1287,11 +1337,11 @@ export function DexHub() {
                             const btnCls = "flex items-center gap-1.5 px-3 py-2 rounded-lg bg-secondary active:bg-secondary/60 text-xs font-semibold transition-colors border border-border cursor-pointer select-none";
                             return (
                               <>
-                                <button type="button" onClick={() => open(`https://www.coingecko.com/en/search?query=${encodeURIComponent(selectedCoin.symbol)}`)} className={btnCls}>
+                                <button type="button" onClick={() => open(`https://www.coingecko.com/en/coins/${cgSlug(selectedCoin.symbol, selectedCoin.name)}`)} className={btnCls}>
                                   <img src="https://www.google.com/s2/favicons?domain=coingecko.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
                                   CoinGecko
                                 </button>
-                                <button type="button" onClick={() => open(`https://coinmarketcap.com/search/?q=${encodeURIComponent(selectedCoin.symbol)}`)} className={btnCls}>
+                                <button type="button" onClick={() => open(`https://coinmarketcap.com/currencies/${cmcSlug(selectedCoin.symbol, selectedCoin.name)}/`)} className={btnCls}>
                                   <img src="https://www.google.com/s2/favicons?domain=coinmarketcap.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
                                   CoinMarketCap
                                 </button>
@@ -1303,7 +1353,7 @@ export function DexHub() {
                                   <img src="https://www.google.com/s2/favicons?domain=binance.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
                                   Binance
                                 </button>
-                                <button type="button" onClick={() => open(`https://coinpaprika.com/search/?q=${encodeURIComponent(selectedCoin.symbol)}`)} className={btnCls}>
+                                <button type="button" onClick={() => open(`https://coinpaprika.com/coin/${cmcSlug(selectedCoin.symbol, selectedCoin.name)}-${selectedCoin.symbol.toLowerCase()}/`)} className={btnCls}>
                                   <img src="https://www.google.com/s2/favicons?domain=coinpaprika.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
                                   CoinPaprika
                                 </button>
