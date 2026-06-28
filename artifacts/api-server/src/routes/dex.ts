@@ -474,29 +474,33 @@ router.get("/coins/:id/tickers", async (req, res) => {
     // Strip any provider prefix (orah-, le-, ss-, cg-) to get raw symbol
     const symbol = id.replace(/^(?:orah|le|ss|cg)-/i, "").toUpperCase();
 
-    // 1. OrahDEX sovereign DB
+    // 1. OrahDEX sovereign DB — only major-quote pairs with real volume to avoid
+    //    cross-rate noise (e.g. A8/OCEAN, A8/OKB are synthetic and not tradeable)
+    const MAJOR_QUOTES = new Set(["USDT", "USDC", "BTC", "ETH", "BNB", "BSV", "USD", "BUSD", "DAI"]);
     const markets = await db
       .select()
       .from(marketsTable)
       .where(eq(marketsTable.baseAsset, symbol));
 
-    const orahTickers = markets.map(m => ({
-      exchangeId:    "orahdex",
-      exchangeName:  "OrahDEX",
-      exchangeLogo:  null,
-      base:          m.baseAsset,
-      target:        m.quoteAsset,
-      price:         parseFloat(m.lastPrice ?? "0"),
-      volume:        parseFloat(m.volume24h ?? "0"),
-      spread:        null,
-      trustScore:    "green",
-      tradeUrl:      `https://orahdex.org/spot/${m.baseAsset}-${m.quoteAsset}`,
-      convertedLast: parseFloat(m.lastPrice ?? "0"),
-      convertedVol:  parseFloat(m.volume24h ?? "0"),
-      isAnomaly:     false,
-      isStale:       false,
-      swapOnly:      false,
-    }));
+    const orahTickers = markets
+      .filter(m => MAJOR_QUOTES.has(m.quoteAsset) && parseFloat(m.volume24h ?? "0") > 0)
+      .map(m => ({
+        exchangeId:    "orahdex",
+        exchangeName:  "OrahDEX",
+        exchangeLogo:  null,
+        base:          m.baseAsset,
+        target:        m.quoteAsset,
+        price:         parseFloat(m.lastPrice ?? "0"),
+        volume:        parseFloat(m.volume24h ?? "0"),
+        spread:        null,
+        trustScore:    "green",
+        tradeUrl:      `/trade/${m.baseAsset}-${m.quoteAsset}`,
+        convertedLast: parseFloat(m.lastPrice ?? "0"),
+        convertedVol:  parseFloat(m.volume24h ?? "0"),
+        isAnomaly:     false,
+        isStale:       false,
+        swapOnly:      false,
+      }));
 
     // 2. LetsExchange — check if coin is swappable
     const leCurrencies = getCachedLECurrencies();
