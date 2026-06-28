@@ -468,7 +468,6 @@ export function DexHub() {
   }, []);
   const [copiedAddr, setCopiedAddr]       = useState<string | null>(null);
   const [vammCoin, setVammCoin]           = useState<any | null>(null);
-  const [showZora, setShowZora]           = useState(false);
   const COIN_PAGE_SIZE = 50;
 
   const { data, isLoading, refetch, isFetching } = useQuery({
@@ -883,70 +882,6 @@ export function DexHub() {
       {/* ══════════════ ALL COINS VIEW ══════════════ */}
       {view === "coins" && (
         <div>
-          {/* ── Zora / Base section ── */}
-          <div className="mb-5">
-            <button
-              onClick={() => setShowZora(v => !v)}
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left",
-                showZora
-                  ? "border-primary/40 bg-primary/5"
-                  : "border-border bg-card hover:border-primary/30"
-              )}
-            >
-              <div className="w-9 h-9 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center shrink-0">
-                <span className="text-base font-black text-blue-400">⬡</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-sm text-foreground">Base & Zora Ecosystem</div>
-                <div className="text-xs text-muted-foreground">Zora.co tokens · ZORA · DEGEN · BRETT · HIGHER + more</div>
-              </div>
-              <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", showZora && "rotate-180")} />
-            </button>
-
-            {showZora && (
-              <div className="mt-2 bg-card border border-border rounded-2xl overflow-hidden">
-                <div className="px-4 py-2 border-b border-border/60 bg-secondary/30">
-                  <p className="text-[11px] text-muted-foreground font-medium">Tap any coin to copy its Base contract address for trading</p>
-                </div>
-                {ZORA_COINS.map(coin => (
-                  <div key={coin.id} className="flex items-center gap-3 px-4 py-3 border-b border-border/40 last:border-0">
-                    <div className="w-9 h-9 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0 overflow-hidden">
-                      {coin.image
-                        ? <img src={coin.image} alt={coin.symbol} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                        : <span className="text-xs font-bold text-blue-400">{coin.symbol[0]}</span>
-                      }
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-foreground">{coin.symbol}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold">{coin.chain}</span>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground font-mono truncate">{coin.contract}</p>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        await navigator.clipboard.writeText(coin.contract).catch(() => {});
-                        setCopiedAddr(coin.contract);
-                        setTimeout(() => setCopiedAddr(null), 2000);
-                      }}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                      title="Copy contract address"
-                    >
-                      {copiedAddr === coin.contract ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-                    </button>
-                    <button
-                      onClick={() => navigate(`/trade/${coin.symbol}-USDT`)}
-                      className="px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30 text-primary text-xs font-bold hover:bg-primary/25 transition-colors shrink-0"
-                    >
-                      Trade
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
           {/* Source filter + Search */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
             {/* Source tabs */}
@@ -999,10 +934,7 @@ export function DexHub() {
                 type="text"
                 placeholder="Contract address 0x…"
                 value={contractSearch}
-                onChange={e => {
-                  setContractSearch(e.target.value);
-                  if (e.target.value.length > 5) setShowZora(true);
-                }}
+                onChange={e => { setContractSearch(e.target.value); }}
                 className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2 text-sm font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
               />
             </div>
