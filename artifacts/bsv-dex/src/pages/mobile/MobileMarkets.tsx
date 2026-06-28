@@ -19,7 +19,7 @@ import {
   LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
-  GAMING_MARKETS, COSMOS_MARKETS, L1_MARKETS, L2_MARKETS,
+  GAMING_MARKETS, COSMOS_MARKETS,
   RWA_MARKETS, EXCHANGE_MARKETS, DEPIN_MARKETS, BRC20_MARKETS,
   UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
@@ -77,7 +77,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "vote",      label: "🗳️ Vote" },
@@ -107,8 +107,6 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "defi",      label: "DEFI" },
   { id: "gaming",    label: "GAMING" },
   { id: "cosmos",    label: "COSMOS" },
-  { id: "l1",        label: "LAYER 1" },
-  { id: "l2",        label: "LAYER 2" },
   { id: "rwa",       label: "RWA" },
   { id: "exchange",  label: "EXCHANGE" },
   { id: "brc20",     label: "BRC-20" },
@@ -129,7 +127,7 @@ const _ALL_POOL_RAW = [
   ...OP_MARKETS, ...FTM_MARKETS, ...CRO_MARKETS,
   ...LINEA_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...MNT_MARKETS,
   ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
-  ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
+  ...GAMING_MARKETS, ...COSMOS_MARKETS,
   ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...DEPIN_MARKETS, ...BRC20_MARKETS,
   ...UNISWAP_MARKETS, ...PANCAKE_MARKETS,
   ...NEW_MARKETS, ...FUTURES_MARKETS,
@@ -237,8 +235,6 @@ function getCatRows(
     case "defi":     { const db = dbByCat("defi");     return db.length > 0 ? db : enrich(DEFI_MARKETS);     }
     case "gaming":   { const db = dbByCat("gaming");   return db.length > 0 ? db : enrich(GAMING_MARKETS);   }
     case "cosmos":   { const db = dbByCat("cosmos");   return db.length > 0 ? db : enrich(COSMOS_MARKETS);   }
-    case "l1":       { const db = dbByCat("l1");       return db.length > 0 ? db : enrich(L1_MARKETS);       }
-    case "l2":       { const db = dbByCat("l2");       return db.length > 0 ? db : enrich(L2_MARKETS);       }
     case "rwa":      { const db = dbByCat("rwa");      return db.length > 0 ? db : enrich(RWA_MARKETS);      }
     case "exchange": { const db = dbByCat("exchange"); return db.length > 0 ? db : enrich(EXCHANGE_MARKETS); }
     case "brc20":    { const db = dbByCat("brc20");    return db.length > 0 ? db : enrich(BRC20_MARKETS);    }
