@@ -1,4 +1,5 @@
 const ZORA_API = "https://api-sdk.zora.engineering";
+const ZORA_KEY = import.meta.env.VITE_ZORA_API_KEY as string | undefined;
 
 export type ZoraCoinRow = {
   symbol:   string;
@@ -55,9 +56,11 @@ export async function fetchZoraCoins(count = 50): Promise<ZoraCoinRow[]> {
   await Promise.all(
     LIST_TYPES.map(async (listType) => {
       try {
+        const headers: Record<string, string> = { Accept: "application/json" };
+        if (ZORA_KEY) headers["X-API-Key"] = ZORA_KEY;
         const r = await fetch(
           `${ZORA_API}/explore?listType=${listType}&count=${count}`,
-          { headers: { Accept: "application/json" } }
+          { headers }
         );
         if (!r.ok) return;
         const data = await r.json();
