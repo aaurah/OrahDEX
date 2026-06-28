@@ -446,11 +446,11 @@ router.get("/admin/stripe-orders", requireAdminToken, async (req, res) => {
 
     const where: string[] = [];
     const params: any[] = [];
-    if (status && status !== "all") { params.push(status); where.push(`LOWER(status) = $${params.length}`); }
+    if (status && status !== "all") { params.push(status); where.push(`LOWER(co.status) = $${params.length}`); }
     if (q) {
       params.push(`%${q}%`);
       const i = params.length;
-      where.push(`(LOWER(id) LIKE $${i} OR LOWER(stripe_payment_intent_id) LIKE $${i} OR LOWER(wallet_address) LIKE $${i} OR LOWER(user_wallet) LIKE $${i} OR LOWER(coin_symbol) LIKE $${i})`);
+      where.push(`(LOWER(co.id) LIKE $${i} OR LOWER(co.stripe_payment_intent_id) LIKE $${i} OR LOWER(co.wallet_address) LIKE $${i} OR LOWER(co.user_wallet) LIKE $${i} OR LOWER(co.coin_symbol) LIKE $${i})`);
     }
     params.push(limit);
     const sql = `
