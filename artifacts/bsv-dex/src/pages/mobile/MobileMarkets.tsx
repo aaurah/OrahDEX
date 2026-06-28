@@ -26,6 +26,7 @@ import {
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
 import { useZoraCoins } from "@/hooks/useZoraCoins";
+import { useBaseTokenList } from "@/hooks/useBaseTokenList";
 import { cn } from "@/lib/utils";
 import { hasCategory } from "@/lib/market-categories";
 
@@ -366,6 +367,8 @@ export function MobileMarkets() {
   const { data: geckoRows } = useGeckoTerminalPools(cat);
   // Live Zora Coins API data (zora tab only)
   const { data: zoraRows } = useZoraCoins(cat === "zora");
+  // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
+  const { data: baseTokenList } = useBaseTokenList(cat === "base");
 
   const globalRows = useMemo(() => Array.from(new Map(
     [
@@ -388,6 +391,14 @@ export function MobileMarkets() {
   if (!search && geckoRows.length > 0) rows = applyLiveMerge(rows, geckoRows);
   // Merge Zora Coins API data for zora tab
   if (!search && cat === "zora" && zoraRows.length > 0) rows = applyLiveMerge(rows, zoraRows);
+  // Merge Base token list: append all ~2300 Base chain catalog tokens for base tab
+  if (!search && cat === "base" && baseTokenList.length > 0) {
+    const existingBases = new Set(rows.map(r => r.base));
+    const listExtra: MktRow[] = baseTokenList
+      .filter(t => !existingBases.has(t.symbol))
+      .map(t => ({ symbol: `${t.symbol}/USDC`, base: t.symbol, quote: "USDC", price: 0, chg: 0, vol: 0, cap: 0, type: "spot" as const }));
+    rows = [...rows, ...listExtra];
+  }
 
   if (search) {
     const q = search.toUpperCase();
