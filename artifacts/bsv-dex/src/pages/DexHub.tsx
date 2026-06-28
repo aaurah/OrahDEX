@@ -1282,40 +1282,36 @@ export function DexHub() {
                       <div>
                         <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">External Links</p>
                         <div className="flex flex-wrap gap-2">
-                          {selectedCoin.source === "cg" && (
-                            <a
-                              href={`https://www.coingecko.com/en/coins/${selectedCoin.id}`}
-                              target="_blank" rel="noopener noreferrer"
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/60 text-xs font-semibold transition-colors border border-border"
-                            >
-                              <img src="https://www.google.com/s2/favicons?domain=coingecko.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
-                              CoinGecko
-                            </a>
-                          )}
-                          <a
-                            href={`https://coinmarketcap.com/currencies/${selectedCoin.name.toLowerCase().replace(/[\s.]+/g, "-")}/`}
-                            target="_blank" rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/60 text-xs font-semibold transition-colors border border-border"
-                          >
-                            <img src="https://www.google.com/s2/favicons?domain=coinmarketcap.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
-                            CoinMarketCap
-                          </a>
-                          <a
-                            href={`https://dexscreener.com/search?q=${selectedCoin.symbol}`}
-                            target="_blank" rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/60 text-xs font-semibold transition-colors border border-border"
-                          >
-                            <img src="https://www.google.com/s2/favicons?domain=dexscreener.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
-                            DexScreener
-                          </a>
-                          <a
-                            href={`https://www.binance.com/en/trade/${selectedCoin.symbol}_USDT`}
-                            target="_blank" rel="noopener noreferrer"
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/60 text-xs font-semibold transition-colors border border-border"
-                          >
-                            <img src="https://www.google.com/s2/favicons?domain=binance.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
-                            Binance
-                          </a>
+                          {(() => {
+                            const open = (url: string) => { window.open(url, "_blank", "noopener,noreferrer"); };
+                            const btnCls = "flex items-center gap-1.5 px-3 py-2 rounded-lg bg-secondary active:bg-secondary/60 text-xs font-semibold transition-colors border border-border cursor-pointer select-none";
+                            return (
+                              <>
+                                {selectedCoin.source === "cg" && (
+                                  <button type="button" onClick={() => open(`https://www.coingecko.com/en/coins/${selectedCoin.id}`)} className={btnCls}>
+                                    <img src="https://www.google.com/s2/favicons?domain=coingecko.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
+                                    CoinGecko
+                                  </button>
+                                )}
+                                <button type="button" onClick={() => open(`https://coinmarketcap.com/currencies/${selectedCoin.name.toLowerCase().replace(/[\s.]+/g, "-")}/`)} className={btnCls}>
+                                  <img src="https://www.google.com/s2/favicons?domain=coinmarketcap.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
+                                  CoinMarketCap
+                                </button>
+                                <button type="button" onClick={() => open(`https://dexscreener.com/search?q=${selectedCoin.symbol}`)} className={btnCls}>
+                                  <img src="https://www.google.com/s2/favicons?domain=dexscreener.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
+                                  DexScreener
+                                </button>
+                                <button type="button" onClick={() => open(`https://www.binance.com/en/trade/${selectedCoin.symbol}_USDT`)} className={btnCls}>
+                                  <img src="https://www.google.com/s2/favicons?domain=binance.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
+                                  Binance
+                                </button>
+                                <button type="button" onClick={() => open(`https://coinpaprika.com/coin/${selectedCoin.id ?? selectedCoin.symbol.toLowerCase()}/`)} className={btnCls}>
+                                  <img src="https://www.google.com/s2/favicons?domain=coinpaprika.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
+                                  CoinPaprika
+                                </button>
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     </div>
