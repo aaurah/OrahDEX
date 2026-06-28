@@ -549,8 +549,9 @@ export function DexHub() {
   const [exSortDir, setExSortDir] = useState<"asc" | "desc">("asc");
 
   /* ── Coin sort / search state ── */
-  const [coinSearch, setCoinSearch]       = useState("");
-  const [contractSearch, setContractSearch] = useState("");
+  const [coinSearch, setCoinSearch]             = useState("");
+  const [contractSearch, setContractSearch]     = useState("");
+  const [debouncedContract, setDebouncedContract] = useState("");
   const [coinSort, setCoinSort]           = useState<CoinSort>("rank");
   const [coinSortDir, setCoinSortDir]     = useState<"asc"|"desc">("asc");
   const [coinPage, setCoinPage]           = useState(0);
@@ -598,6 +599,28 @@ export function DexHub() {
 
   const allCoins: any[] = Array.isArray(coinsRaw) ? coinsRaw : [];
 
+  /* ── Contract address debounce + live lookup ── */
+  const IS_CONTRACT_RE = /^0x[0-9a-fA-F]{38,42}$/;
+  const isContractAddr = IS_CONTRACT_RE.test(contractSearch.trim());
+
+  useEffect(() => {
+    if (!isContractAddr) { setDebouncedContract(""); return; }
+    const t = setTimeout(() => setDebouncedContract(contractSearch.trim().toLowerCase()), 600);
+    return () => clearTimeout(t);
+  }, [contractSearch, isContractAddr]);
+
+  const { data: contractResult, isFetching: contractFetching } = useQuery<any>({
+    queryKey: ["by-contract", debouncedContract],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/coins/by-contract?address=${debouncedContract}`);
+      if (!r.ok) throw new Error("lookup failed");
+      return r.json();
+    },
+    enabled: IS_CONTRACT_RE.test(debouncedContract),
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+
   /* Look up Zora contract for a given symbol */
   const zoraContractFor = (symbol: string) =>
     ZORA_COINS.find(z => z.symbol.toLowerCase() === symbol.toLowerCase())?.contract ?? null;
@@ -620,15 +643,22 @@ export function DexHub() {
     }
     if (contractSearch.trim().length > 5) {
       const q = contractSearch.trim().toLowerCase();
-      const matchedSymbols = new Set(
-        Object.entries(KNOWN_CONTRACTS)
-          .filter(([, v]) => v.contract.toLowerCase().includes(q))
-          .map(([sym]) => sym.toLowerCase())
-      );
-      if (matchedSymbols.size > 0) {
-        rows = rows.filter(m => matchedSymbols.has(m.symbol.toLowerCase()));
+      // If the live lookup resolved a symbol, filter to that coin
+      if (contractResult?.found) {
+        const resolvedSym = contractResult.symbol.toLowerCase();
+        rows = rows.filter(m => m.symbol.toLowerCase() === resolvedSym);
+      } else {
+        // Fallback: try local KNOWN_CONTRACTS (partial match for shorter addresses)
+        const matchedSymbols = new Set(
+          Object.entries(KNOWN_CONTRACTS)
+            .filter(([, v]) => v.contract.toLowerCase().includes(q))
+            .map(([sym]) => sym.toLowerCase())
+        );
+        if (matchedSymbols.size > 0) {
+          rows = rows.filter(m => matchedSymbols.has(m.symbol.toLowerCase()));
+        }
+        // full EVM address still fetching → keep full list while spinner shows
       }
-      // no match → keep full list; UI shows a hint below the input
     }
     return [...rows].sort((a, b) => {
       let v = 0;
@@ -639,7 +669,7 @@ export function DexHub() {
       if (coinSort === "vol")   v = a.volume24h - b.volume24h;
       return coinSortDir === "asc" ? v : -v;
     });
-  }, [allCoins, coinSource, coinSearch, contractSearch, coinSort, coinSortDir]);
+  }, [allCoins, coinSource, coinSearch, contractSearch, contractResult, coinSort, coinSortDir]);
 
   const pagedCoins = filteredCoins.slice(0, (coinPage + 1) * COIN_PAGE_SIZE);
 
@@ -1069,28 +1099,86 @@ export function DexHub() {
                 className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
               />
             </div>
-            <div className="flex-1 min-w-[160px] max-w-xs">
+            <div className="flex-1 min-w-[180px] max-w-sm">
               <div className="relative">
-                <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                {contractFetching
+                  ? <RefreshCw className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary animate-spin" />
+                  : contractResult?.found
+                    ? <CheckCircle2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-400" />
+                    : isContractAddr && contractResult && !contractResult.found
+                      ? <AlertTriangle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400" />
+                      : <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                }
                 <input
                   type="text"
-                  placeholder="Contract address 0x…"
+                  placeholder="Paste contract address 0x…"
                   value={contractSearch}
-                  onChange={e => { setContractSearch(e.target.value); }}
+                  onChange={e => { setContractSearch(e.target.value); setCoinSearch(""); setCoinPage(0); }}
                   className={cn(
-                    "w-full bg-card border rounded-xl pl-9 pr-4 py-2 text-sm font-mono focus:outline-none transition-all",
-                    contractSearch.trim().length > 5 &&
-                      !Object.values(KNOWN_CONTRACTS).some(v => v.contract.toLowerCase().includes(contractSearch.trim().toLowerCase()))
-                      ? "border-amber-500/50 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30"
-                      : "border-border focus:border-primary focus:ring-1 focus:ring-primary"
+                    "w-full bg-card border rounded-xl pl-9 pr-8 py-2 text-sm font-mono focus:outline-none transition-all",
+                    contractResult?.found
+                      ? "border-green-500/50 focus:border-green-500 focus:ring-1 focus:ring-green-500/30"
+                      : isContractAddr && contractResult && !contractResult.found
+                        ? "border-amber-500/50 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30"
+                        : "border-border focus:border-primary focus:ring-1 focus:ring-primary"
                   )}
                 />
+                {contractSearch && (
+                  <button
+                    onClick={() => { setContractSearch(""); setDebouncedContract(""); setCoinPage(0); }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
-              {contractSearch.trim().length > 5 &&
-                !Object.values(KNOWN_CONTRACTS).some(v => v.contract.toLowerCase().includes(contractSearch.trim().toLowerCase())) && (
-                <p className="mt-1 text-[11px] text-amber-400/80 px-1">
-                  Contract not in local index — search by coin name instead
-                </p>
+
+              {/* Resolved token card */}
+              {contractResult?.found && (() => {
+                const cr = contractResult;
+                const listed = allCoins.find(c => c.symbol.toLowerCase() === cr.symbol.toLowerCase());
+                const dsLink = `https://dexscreener.com/search?q=${cr.address}`;
+                return (
+                  <div
+                    className={cn(
+                      "mt-2 rounded-xl border p-3 flex items-center gap-3 cursor-pointer transition-colors",
+                      listed
+                        ? "border-primary/30 bg-primary/5 hover:bg-primary/10"
+                        : "border-border bg-card hover:bg-secondary/60"
+                    )}
+                    onClick={() => {
+                      if (listed) { setSelectedCoin(listed); setCoinDetailTab("overview"); }
+                      else window.open(dsLink, "_blank", "noopener");
+                    }}
+                  >
+                    {cr.imageUrl
+                      ? <img src={cr.imageUrl} alt={cr.symbol} className="w-8 h-8 rounded-full object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      : <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0 text-xs font-bold">{cr.symbol.slice(0, 2)}</div>
+                    }
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold leading-none">{cr.symbol} <span className="font-normal text-muted-foreground text-xs">· {cr.chain}</span></p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{cr.name}</p>
+                      {cr.price != null && (
+                        <p className="text-[11px] text-green-400 mt-0.5 font-mono">${cr.price < 0.0001 ? cr.price.toExponential(2) : cr.price.toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      {listed
+                        ? <span className="text-[10px] text-primary font-semibold uppercase tracking-wider">Listed ↗</span>
+                        : <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1">DexScreener <ExternalLink className="w-3 h-3" /></span>
+                      }
+                      {cr.poolCount > 1 && <p className="text-[10px] text-muted-foreground mt-0.5">{cr.poolCount} pools</p>}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Not found hint */}
+              {isContractAddr && contractResult && !contractResult.found && !contractFetching && (
+                <p className="mt-1 text-[11px] text-amber-400/80 px-1">Token not found on any supported chain</p>
+              )}
+              {isContractAddr && !contractResult && !contractFetching && (
+                <p className="mt-1 text-[11px] text-muted-foreground px-1">Searching across all EVM chains…</p>
               )}
             </div>
             <span className="text-xs text-muted-foreground">
