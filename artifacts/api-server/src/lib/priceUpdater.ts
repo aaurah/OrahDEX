@@ -2,7 +2,7 @@ import { db, pool } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { eq, desc, gte, inArray, notInArray, and, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
-import { guardedInterval } from "./selfHealing.js";
+import { guardedInterval, withRetry } from "./selfHealing.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
 import { serviceState } from "./serviceState.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
@@ -454,10 +454,14 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
   const out: Record<string, CoinGeckoPrice> = {};
 
   // ── 1. Binance public 24h ticker (all USDT pairs) ──────────────────────────
+  // Retried once on timeout before falling through to the LetsExchange fallback.
   try {
-    const res = await fetch("https://api.binance.com/api/v3/ticker/24hr", {
-      signal: AbortSignal.timeout(10_000),
-    });
+    const res = await withRetry(
+      () => fetch("https://api.binance.com/api/v3/ticker/24hr", {
+        signal: AbortSignal.timeout(12_000),
+      }),
+      { maxAttempts: 2, baseDelayMs: 1_500, maxDelayMs: 3_000 },
+    );
     if (res.ok) {
       const tickers = await res.json() as Array<{
         symbol: string;
