@@ -680,10 +680,11 @@ async function pollEvmHtlcSessions(): Promise<void> {
 
   let sessions: (typeof evmHtlcSessionsTable.$inferSelect)[];
   try {
-    sessions = await db
-      .select()
-      .from(evmHtlcSessionsTable)
-      .where(and(notInArray(evmHtlcSessionsTable.status, TERMINAL_STATUSES)));
+    sessions = await withDbRetry(() =>
+      db.select()
+        .from(evmHtlcSessionsTable)
+        .where(and(notInArray(evmHtlcSessionsTable.status, TERMINAL_STATUSES)))
+    );
   } catch (err) {
     if (isDbConnError(err)) {
       logger.warn("evmHtlc: DB unavailable, skipping poll cycle");
@@ -696,10 +697,11 @@ async function pollEvmHtlcSessions(): Promise<void> {
   for (const session of sessions) {
     // Check expiry
     if (session.expiresAt < now) {
-      await db
-        .update(evmHtlcSessionsTable)
-        .set({ status: "EXPIRED", updatedAt: new Date() })
-        .where(eq(evmHtlcSessionsTable.id, session.id));
+      await withDbRetry(() =>
+        db.update(evmHtlcSessionsTable)
+          .set({ status: "EXPIRED", updatedAt: new Date() })
+          .where(eq(evmHtlcSessionsTable.id, session.id))
+      );
       logger.info({ sessionId: session.id, tradeId: session.tradeId }, "evmHtlc: session expired");
       continue;
     }
