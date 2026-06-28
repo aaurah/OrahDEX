@@ -28,6 +28,7 @@ import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
 import { useZoraCoins } from "@/hooks/useZoraCoins";
 import { useBaseTokenList } from "@/hooks/useBaseTokenList";
+import { useBaseTokenPrices } from "@/hooks/useBaseTokenPrices";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -247,6 +248,8 @@ export function Markets() {
   const { data: zoraRows } = useZoraCoins(tab === "zora");
   // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
   const { data: baseTokenList } = useBaseTokenList(tab === "base");
+  // DexScreener prices for catalog tokens not covered by GeckoTerminal (cached 60s)
+  const basePrices = useBaseTokenPrices(baseTokenList, tab === "base" && baseTokenList.length > 0);
 
   /** Enrich a mock pair list with live prices from the API where available. */
   const enrich = (mock: any[]): any[] =>
@@ -356,7 +359,10 @@ export function Markets() {
           const existingBases = new Set(all.map((r: any) => r.baseAsset));
           const listExtra = baseTokenList
             .filter(t => !existingBases.has(t.symbol))
-            .map(t => normalise({ symbol: `${t.symbol}/USDC`, baseAsset: t.symbol, quoteAsset: "USDC", lastPrice: 0, priceChangePercent24h: 0, type: "spot" }));
+            .map(t => {
+              const dp = basePrices.get(t.symbol);
+              return normalise({ symbol: `${t.symbol}/USDC`, baseAsset: t.symbol, quoteAsset: "USDC", lastPrice: dp?.price ?? 0, priceChangePercent24h: dp?.chg ?? 0, volume24h: dp?.vol ?? 0, type: "spot" });
+            });
           all = [...all, ...listExtra];
         }
         return all;

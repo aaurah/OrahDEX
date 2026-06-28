@@ -17,15 +17,17 @@ export function useGeckoTerminalPools(cat: string): { data: GeckoRow[]; isLoadin
   const { data = [], isLoading } = useQuery<GeckoRow[]>({
     queryKey:  ["gecko-pools", cat],
     queryFn:   () => {
+      // Fetch more pages for Base — it has thousands of active pools
+      const pages = networkSlug === "base" ? 15 : 5;
       if (hasBoth) {
         return Promise.all([
-          fetchGeckoPools(networkSlug!),
+          fetchGeckoPools(networkSlug!, pages),
           fetchGeckoCategory(categorySlug!),
         ]).then(([net, cat]) => mergeGeckoRows(net, cat));
       }
       return categorySlug
         ? fetchGeckoCategory(categorySlug)
-        : fetchGeckoPools(networkSlug!);
+        : fetchGeckoPools(networkSlug!, pages);
     },
     enabled,
     staleTime: 90_000,
