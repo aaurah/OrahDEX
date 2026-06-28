@@ -502,22 +502,28 @@ router.get("/coins/:id/tickers", async (req, res) => {
         swapOnly:      false,
       }));
 
-    // 2. LetsExchange — add if coin is swappable
+    // 2. OrahSwap — single branded entry backed by LetsExchange or SimpleSwap
     const leCurrencies = getCachedLECurrencies();
-    const lePrices = getCachedLEPrices();
-    const leMatch = leCurrencies.find((c: any) => String(c.symbol).toUpperCase() === symbol);
-    const lePrice = lePrices[symbol] ?? 0;
-    const leTicker = leMatch ? [{
-      exchangeId:    "letsexchange",
-      exchangeName:  "LetsExchange",
-      exchangeLogo:  "https://letsexchange.io/favicon.ico",
+    const lePrices     = getCachedLEPrices();
+    const leMatch      = leCurrencies.find((c: any) => String(c.symbol).toUpperCase() === symbol);
+    const lePrice      = lePrices[symbol] ?? 0;
+    const ssKey        = Object.keys(SS_COIN_TICKER).find(k => k.toUpperCase() === symbol);
+    const swappable    = !!(leMatch || ssKey);
+    // Prefer LE trade URL; fall back to SS
+    const swapUrl      = leMatch
+      ? `https://letsexchange.io/?to=${symbol}`
+      : `https://simpleswap.io/exchange?to=${symbol.toLowerCase()}`;
+    const orahSwapTicker = swappable ? [{
+      exchangeId:    "orahswap",
+      exchangeName:  "OrahSwap",
+      exchangeLogo:  "/favicon.ico",
       base:          symbol,
       target:        "ANY",
       price:         lePrice,
       volume:        0,
       spread:        null,
       trustScore:    "green",
-      tradeUrl:      `https://letsexchange.io/?to=${symbol}`,
+      tradeUrl:      swapUrl,
       convertedLast: lePrice,
       convertedVol:  0,
       isAnomaly:     false,
@@ -525,27 +531,7 @@ router.get("/coins/:id/tickers", async (req, res) => {
       swapOnly:      true,
     }] : [];
 
-    // 3. SimpleSwap — add if coin is swappable
-    const ssKey = Object.keys(SS_COIN_TICKER).find(k => k.toUpperCase() === symbol);
-    const ssTicker = ssKey ? [{
-      exchangeId:    "simpleswap",
-      exchangeName:  "SimpleSwap",
-      exchangeLogo:  "https://simpleswap.io/favicon.ico",
-      base:          symbol,
-      target:        "ANY",
-      price:         lePrice,
-      volume:        0,
-      spread:        null,
-      trustScore:    "yellow",
-      tradeUrl:      `https://simpleswap.io/exchange?to=${symbol.toLowerCase()}`,
-      convertedLast: lePrice,
-      convertedVol:  0,
-      isAnomaly:     false,
-      isStale:       false,
-      swapOnly:      true,
-    }] : [];
-
-    const tickers = [...orahTickers, ...leTicker, ...ssTicker];
+    const tickers = [...orahTickers, ...orahSwapTicker];
     const result = { coinId: id, name: symbol, tickers, source: "orahdex-sovereign" };
     tickerCache.set(id, { data: result, ts: Date.now() });
     return res.json(result);
