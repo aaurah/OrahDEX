@@ -58,12 +58,12 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
 type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "base" | "zora" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
-  { id: "favorites", label: "Favorites" },
+  { id: "favorites", label: "Favs"      },
   { id: "all",       label: "All"       },
-  { id: "usd",       label: "USD"       },
   { id: "new",       label: "NEW"       },
+  { id: "usd",       label: "USD"       },
   { id: "btc",       label: "BTC"       },
-  { id: "bsv",       label: "BSV"       },
+  { id: "bsv",       label: "⚡ BSV"    },
   { id: "eth",       label: "ETH"       },
   { id: "bnb",       label: "BNB"       },
   { id: "matic",     label: "MATIC"     },
@@ -74,18 +74,16 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "cro",       label: "CRO"       },
   { id: "base",      label: "⬡ Base"    },
   { id: "zora",      label: "ZORA"      },
-  { id: "mnt",       label: "MNT"       },
+  { id: "linea",     label: "LINEA"     },
   { id: "zk",        label: "ZK"        },
   { id: "scr",       label: "SCROLL"    },
-  { id: "linea",     label: "LINEA"     },
-  { id: "bch",       label: "BCH"       },
+  { id: "mnt",       label: "MNT"       },
   { id: "sol",       label: "SOL"       },
+  { id: "bch",       label: "BCH"       },
   { id: "ai",        label: "AI"        },
   { id: "depin",     label: "DePIN"     },
   { id: "meme",      label: "MEME"      },
   { id: "defi",      label: "DEFI"      },
-  { id: "uniswap",   label: "UNISWAP"   },
-  { id: "pancake",   label: "PANCAKE"   },
   { id: "gaming",    label: "GAMING"    },
   { id: "cosmos",    label: "COSMOS"    },
   { id: "l1",        label: "LAYER 1"   },
@@ -93,6 +91,8 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "rwa",       label: "RWA"       },
   { id: "exchange",  label: "EXCHANGE"  },
   { id: "brc20",     label: "BRC-20"    },
+  { id: "uniswap",   label: "UNISWAP"   },
+  { id: "pancake",   label: "PANCAKE"   },
   { id: "futures",   label: "Futures"   },
 ];
 
@@ -716,55 +716,23 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
             ))}
           </div>
         ) : (
-          /* Spot mode — two rows: Chains on top, Categories below */
-          <div className="shrink-0 border-b border-border/40">
-            {/* Row 1: Chain filter pills */}
-            <div className="px-2 pt-1.5 pb-0.5">
-              <p className="px-1 text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1">Chain</p>
-              <div className="flex overflow-x-auto no-scrollbar gap-1 pb-1.5">
-                {CHAIN_TABS.map(c => {
-                  const active = cat === c.id;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => { setCat(c.id); setSearch(""); setSortKey("base"); setSortDir("asc"); }}
-                      className={cn(
-                        "shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all",
-                        active
-                          ? "bg-primary text-primary-foreground shadow-sm"
-                          : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
-                      )}
-                    >
-                      <span>{c.icon}</span>
-                      <span>{c.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            {/* Row 2: Topic/category tabs */}
-            <div className="px-2 pb-1">
-              <p className="px-1 text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1">Category</p>
-              <div className="flex overflow-x-auto no-scrollbar gap-0.5 pb-1">
-                {TOPIC_TABS.map(c => {
-                  const active = cat === c.id;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => { setCat(c.id); setSearch(""); setSortKey("base"); setSortDir("asc"); }}
-                      className={cn(
-                        "shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-all",
-                        active
-                          ? "bg-primary/15 text-primary font-semibold"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      {c.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+          /* Spot mode — single flat scrollable tab row matching Markets tab order */
+          <div className="flex overflow-x-auto no-scrollbar px-2 border-b border-border/40 shrink-0">
+            {effectiveCats.map(c => (
+              <button
+                key={c.id}
+                onClick={() => { setCat(c.id); setSearch(""); setSortKey("base"); setSortDir("asc"); }}
+                className={cn(
+                  "shrink-0 px-3 py-2.5 text-[12px] font-medium whitespace-nowrap relative transition-colors",
+                  cat === c.id ? "text-foreground font-bold" : "text-muted-foreground"
+                )}
+              >
+                {c.label}
+                {cat === c.id && (
+                  <span className="absolute bottom-0 left-1 right-1 h-[2px] bg-primary rounded-full" />
+                )}
+              </button>
+            ))}
           </div>
         )}
 
