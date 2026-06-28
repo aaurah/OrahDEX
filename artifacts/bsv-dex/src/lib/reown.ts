@@ -298,6 +298,7 @@ export const CHAIN_RPC_URLS: Record<number, string> = {
   1088:    "https://andromeda.metis.io/?owner=1088",
   167000:  "https://rpc.mainnet.taiko.xyz",
   33139:   "https://rpc.apechain.com/http",
+  1329:    "https://evm-rpc.sei-apis.com",
 };
 
 export const CHAIN_RPC_FALLBACKS: Record<number, string> = {

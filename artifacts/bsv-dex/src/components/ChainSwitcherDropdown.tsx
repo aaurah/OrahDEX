@@ -275,6 +275,19 @@ const EVM_CHAINS: ChainDef[] = [
   },
   /* ─── L1 — Alt L1s ──────────────────────────────────────────── */
   {
+    id: 1329,
+    key: "sei",
+    name: "Sei",
+    symbol: "SEI",
+    badge: "L1",
+    icon: "🔴",
+    color: "text-red-400",
+    rpcUrl: "https://evm-rpc.sei-apis.com",
+    blockExplorerUrl: "https://seitrace.com",
+    nativeName: "Sei",
+    nativeDecimals: 18,
+  },
+  {
     id: 100,
     key: "gnosis",
     name: "Gnosis",
