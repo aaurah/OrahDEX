@@ -17,6 +17,7 @@ import { marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, and, ne } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
+import { isDbConnError } from "./dbErrors.js";
 
 export const ARB_BOT_ADDRESS = "BOT_ARB_ENGINE";
 
@@ -200,7 +201,8 @@ async function runArbCycle() {
       await setSetting("arb_bot_start_time", new Date().toISOString());
     }
   } catch (err) {
-    logger.error({ err }, "ArbBot: cycle error");
+    if (isDbConnError(err)) logger.warn("ArbBot: cycle skipped — DB unavailable");
+    else logger.error({ err }, "ArbBot: cycle error");
   }
 }
 

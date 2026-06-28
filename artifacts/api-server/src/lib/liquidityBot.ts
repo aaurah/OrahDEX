@@ -10,7 +10,7 @@
  * so it can be excluded from real-user analytics.
  */
 
-import { db, pool } from "@workspace/db";
+import { db, pool, withDbRetry } from "@workspace/db";
 import { ordersTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, and, notInArray } from "drizzle-orm";
 import crypto from "node:crypto";
@@ -27,15 +27,19 @@ const STABLECOINS = new Set(["USDT","USDC","TUSD","USDD","BUSD","DAI"]);
 
 async function getSetting(key: string): Promise<string | null> {
   try {
-    const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+    const rows = await withDbRetry(() =>
+      db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key))
+    );
     return rows[0]?.value ?? null;
   } catch { return null; }
 }
 
 async function setSetting(key: string, value: string) {
-  await db.insert(platformSettingsTable)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+  await withDbRetry(() =>
+    db.insert(platformSettingsTable)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } })
+  );
 }
 
 /**
@@ -208,16 +212,18 @@ function buildMarketOrders(
 /* ── Full cycle: iterate all active markets ─────────────────────────────── */
 async function runCycle(): Promise<void> {
   try {
-    const markets = await db.select({
-      symbol:     marketsTable.symbol,
-      baseAsset:  marketsTable.baseAsset,
-      quoteAsset: marketsTable.quoteAsset,
-      lastPrice:  marketsTable.lastPrice,
-      volume24h:  marketsTable.volume24h,
-      type:       marketsTable.type,
-      status:     marketsTable.status,
-    }).from(marketsTable)
-      .where(notInArray(marketsTable.type, ["letsexchange"]));
+    const markets = await withDbRetry(() =>
+      db.select({
+        symbol:     marketsTable.symbol,
+        baseAsset:  marketsTable.baseAsset,
+        quoteAsset: marketsTable.quoteAsset,
+        lastPrice:  marketsTable.lastPrice,
+        volume24h:  marketsTable.volume24h,
+        type:       marketsTable.type,
+        status:     marketsTable.status,
+      }).from(marketsTable)
+        .where(notInArray(marketsTable.type, ["letsexchange"]))
+    );
     const active = markets.filter(m => m.status === "active");
 
     // ── Step 1: Build the master USD price map from live USDT spot markets ──
