@@ -36,11 +36,13 @@ export const pool = new Pool({
   // Send TCP keepalive probes immediately when a connection becomes idle.
   keepAlive: true,
   keepAliveInitialDelayMillis: 0,
-  // Hold idle connections for 2 min — longer than the longest service tick
-  // interval (90 s). Evicting too aggressively forces a cold TCP reconnect at
-  // the start of every tick, which is the main source of "Connection
-  // terminated unexpectedly" errors under load.
-  idleTimeoutMillis: 120_000,
+  // Evict idle connections after 10 s. Replit/Neon Postgres terminates idle
+  // connections server-side in well under 2 minutes; holding them longer than
+  // the server-side cutoff causes "Connection terminated due to connection
+  // timeout" errors when the pool hands out a dead connection. 10 s is short
+  // enough to evict stale connections before Neon kills them, while still
+  // amortising the reconnect cost across same-tick multi-query bursts.
+  idleTimeoutMillis: 10_000,
   // Allow up to 15 s for a slot to free up when all connections are busy.
   // With 12+ concurrent background services the old 5 s limit caused a cascade
   // of "timeout exceeded when trying to connect" across every engine.

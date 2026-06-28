@@ -101,16 +101,32 @@ export async function emit(
                               logger.info.bind(logger);
   logFn({ severity, category, detail }, `[Alert] ${message}`);
 
-  // Persist to DB for critical/high
+  // Persist to DB for critical/high — one-shot retry on connection errors
   if (severity === "critical" || severity === "high") {
-    ensureTable().then(() => {
-      pool.query(
-        `INSERT INTO alert_events (id, severity, category, message, detail, ts, resolved)
+    const SQL = `INSERT INTO alert_events (id, severity, category, message, detail, ts, resolved)
          VALUES ($1, $2, $3, $4, $5, $6, false)
-         ON CONFLICT (id) DO NOTHING`,
-        [id, severity, category, message, detail ?? null, alert.ts],
-      ).catch(err => logger.warn({ err: err?.message }, "[AlertBus] DB persist failed"));
-    }).catch(() => {});
+         ON CONFLICT (id) DO NOTHING`;
+    const params = [id, severity, category, message, detail ?? null, alert.ts];
+    const isConnErr = (e: any) =>
+      typeof e?.message === "string" &&
+      (e.message.includes("Connection terminated") ||
+       e.message.includes("connection timeout") ||
+       e.message.includes("Client was closed") ||
+       e.message.includes("ECONNRESET"));
+    ensureTable()
+      .then(() => pool.query(SQL, params))
+      .catch(async (err) => {
+        if (!isConnErr(err)) {
+          logger.warn({ err: err?.message }, "[AlertBus] DB persist failed");
+          return;
+        }
+        // Connection was stale — wait briefly for pool to surface a fresh one
+        await new Promise(r => setTimeout(r, 500));
+        pool.query(SQL, params).catch(e =>
+          logger.warn({ err: e?.message }, "[AlertBus] DB persist failed after retry"),
+        );
+      })
+      .catch(() => {});
   }
 }
 
