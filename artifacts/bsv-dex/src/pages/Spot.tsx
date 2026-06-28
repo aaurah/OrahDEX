@@ -234,28 +234,19 @@ export function SpotTrading() {
     setDropChain(walletChainId && CHAIN_NET_CODES[walletChainId] ? walletChainId : null);
   }, [walletChainId]);
 
-  // When the chain filter changes, auto-switch the quote tab to the one with the
-  // most pairs on that chain (if the current quote has 0 pairs after filtering).
-  // LE/SS pairs are BSV-quoted, so for EVM chains BSV usually wins.
+  // Auto-switch quote when chain changes if the current quote has 0 pairs.
+  // Uses chainMarkets (already memoized) — no extra filtering work here.
   useEffect(() => {
     setDropQuote(prev => {
-      const codes = dropChain ? (CHAIN_NET_CODES[dropChain] ?? []) : [];
-      const chainMkts = dropChain
-        ? allMarkets.filter(m => {
-            const net = String((m as any).network ?? "").toLowerCase();
-            if (!net) return true;
-            return codes.some(c => net.includes(c));
-          })
-        : allMarkets;
-      const currentHasPairs = chainMkts.some(m => m.quoteAsset === prev);
-      if (currentHasPairs) return prev; // keep the user's choice
+      if (chainMarkets.some(m => m.quoteAsset === prev)) return prev; // still has pairs
+      const counts: Record<string, number> = {};
+      for (const m of chainMarkets) counts[m.quoteAsset] = (counts[m.quoteAsset] ?? 0) + 1;
       const best = QUOTE_TABS
-        .map(t => ({ id: t.id, n: chainMkts.filter(m => m.quoteAsset === t.id).length }))
-        .filter(q => q.n > 0)
-        .sort((a, b) => b.n - a.n)[0];
+        .filter(t => (counts[t.id] ?? 0) > 0)
+        .sort((a, b) => (counts[b.id] ?? 0) - (counts[a.id] ?? 0))[0];
       return (best?.id ?? prev) as QuoteTab;
     });
-  }, [dropChain, allMarkets]);
+  }, [chainMarkets]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -536,43 +527,36 @@ export function SpotTrading() {
     return allMarkets.filter(m => m.quoteAsset === quoteTab);
   }, [allMarkets, quoteTab, marketSearch]);
 
-  // Chain-aware quote counts: when a chain pill is active, counts reflect only
-  // markets on that chain (native pairs with no network always count on every chain).
+  // Single shared chain-filtered view — both quoteCounts and dropFiltered read
+  // from here so the chain-matching loop runs exactly once per chain/data change.
+  const chainMarkets = useMemo(() => {
+    if (!dropChain) return allMarkets;
+    const codes = CHAIN_NET_CODES[dropChain] ?? [];
+    return allMarkets.filter(m => {
+      const net = String((m as any).network ?? "").toLowerCase();
+      return !net || codes.some(c => net.includes(c)); // no-network → always in
+    });
+  }, [allMarkets, dropChain]);
+
+  // Single O(N) pass — no per-tab filter loops.
   const quoteCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    const chainMkts = dropChain
-      ? allMarkets.filter(m => {
-          const net = String((m as any).network ?? "").toLowerCase();
-          if (!net) return true; // native pair — always visible
-          const codes = CHAIN_NET_CODES[dropChain] ?? [];
-          return codes.some(c => net.includes(c));
-        })
-      : allMarkets;
-    QUOTE_TABS.forEach(t => {
-      counts[t.id] = chainMkts.filter(m => m.quoteAsset === t.id).length;
-    });
+    const valid = new Set(QUOTE_TABS.map(t => t.id));
+    for (const m of chainMarkets) {
+      if (valid.has(m.quoteAsset)) counts[m.quoteAsset] = (counts[m.quoteAsset] ?? 0) + 1;
+    }
     return counts;
-  }, [allMarkets, dropChain]);
+  }, [chainMarkets]);
 
   const dropFiltered = useMemo(() => {
     const q = dropSearch.trim();
+    // chainMarkets is already filtered by chain — no second pass needed here.
     const base = q
-      ? allMarkets.filter(m => marketMatchesQuery(m.baseAsset, m.quoteAsset, m.symbol, q))
-      : allMarkets.filter(m => m.quoteAsset === dropQuote);
-
-    // Chain filter: narrow to pairs whose SS/LE network code matches the chosen chain.
-    // Native pairs (network == null) always pass through so core pairs stay visible.
-    const chainFiltered = dropChain
-      ? base.filter(m => {
-          const net = String((m as any).network ?? "").toLowerCase();
-          if (!net) return true; // native pair — always include
-          const codes = CHAIN_NET_CODES[dropChain] ?? [];
-          return codes.some(c => net.includes(c));
-        })
-      : base;
+      ? chainMarkets.filter(m => marketMatchesQuery(m.baseAsset, m.quoteAsset, m.symbol, q))
+      : chainMarkets.filter(m => m.quoteAsset === dropQuote);
 
     // Sort: native DEX first (real liquidity), then LE, then SS, all by volume → lastPrice
-    return [...chainFiltered].sort((a, b) => {
+    return [...base].sort((a, b) => {
       const aExt = (a as any).leSource === true || (a as any).ssSource === true;
       const bExt = (b as any).leSource === true || (b as any).ssSource === true;
       if (!aExt && bExt) return -1;  // native beats external
