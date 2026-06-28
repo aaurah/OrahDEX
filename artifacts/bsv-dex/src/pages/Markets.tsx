@@ -27,6 +27,7 @@ import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
 import { useZoraCoins } from "@/hooks/useZoraCoins";
+import { useBaseTokenList } from "@/hooks/useBaseTokenList";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -244,6 +245,8 @@ export function Markets() {
   const { data: geckoRows } = useGeckoTerminalPools(tab);
   // Live Zora Coins API data (zora tab only)
   const { data: zoraRows } = useZoraCoins(tab === "zora");
+  // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
+  const { data: baseTokenList } = useBaseTokenList(tab === "base");
 
   /** Enrich a mock pair list with live prices from the API where available. */
   const enrich = (mock: any[]): any[] =>
@@ -339,13 +342,24 @@ export function Markets() {
       case "ftm":     return dbByQuote("FTM");
       case "cro":     return dbByQuote("CRO");
       case "base": {
-        const all = enrich(BASE_MARKETS.map(normalise));
-        if (!geckoRows.length) return all;
-        const geckoByBase = new Map(geckoRows.map((g: any) => [g.base, g]));
-        const updated = all.map((r: any) => { const g = geckoByBase.get(r.baseAsset); return g && g.price > 0 ? { ...r, lastPrice: g.price, priceChangePercent24h: g.chg } : r; });
-        const existingBases = new Set(updated.map((r: any) => r.baseAsset));
-        const extra = geckoRows.filter((g: any) => !existingBases.has(g.base) && g.price > 0).map((g: any) => normalise({ symbol: g.symbol, baseAsset: g.base, quoteAsset: g.quote, lastPrice: g.price, priceChangePercent24h: g.chg, volume24h: g.vol, type: "spot" }));
-        return [...updated, ...extra];
+        let all = enrich(BASE_MARKETS.map(normalise));
+        // Gecko merge: update prices + append priced tokens not in the static list
+        if (geckoRows.length) {
+          const geckoByBase = new Map(geckoRows.map((g: any) => [g.base, g]));
+          const updated = all.map((r: any) => { const g = geckoByBase.get(r.baseAsset); return g && g.price > 0 ? { ...r, lastPrice: g.price, priceChangePercent24h: g.chg } : r; });
+          const existingBases = new Set(updated.map((r: any) => r.baseAsset));
+          const extra = geckoRows.filter((g: any) => !existingBases.has(g.base) && g.price > 0).map((g: any) => normalise({ symbol: g.symbol, baseAsset: g.base, quoteAsset: g.quote, lastPrice: g.price, priceChangePercent24h: g.chg, volume24h: g.vol, type: "spot" }));
+          all = [...updated, ...extra];
+        }
+        // Base token list: append all ~2300 Base chain catalog tokens not already shown
+        if (baseTokenList.length) {
+          const existingBases = new Set(all.map((r: any) => r.baseAsset));
+          const listExtra = baseTokenList
+            .filter(t => !existingBases.has(t.symbol))
+            .map(t => normalise({ symbol: `${t.symbol}/USDC`, baseAsset: t.symbol, quoteAsset: "USDC", lastPrice: 0, priceChangePercent24h: 0, type: "spot" }));
+          all = [...all, ...listExtra];
+        }
+        return all;
       }
       case "linea":   return dbByQuote("LINEA");
       case "zk":      return dbByQuote("ZK");
