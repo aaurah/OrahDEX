@@ -180,7 +180,18 @@ function getCatRows(
     }
     case "eth":       return dbByQuote("ETH").length > 0 ? dbByQuote("ETH") : enrich(ETH_MARKETS);
     case "bnb":       return dbByQuote("BNB").length > 0 ? dbByQuote("BNB") : enrich(BNB_MARKETS);
-    case "sol":       return enrich(SOL_MARKETS);
+    case "sol": {
+      const leSolPairs = leAllPairs.filter(p => {
+        const net = String((p as any).network ?? "").toLowerCase();
+        return net.includes("sol");
+      });
+      if (leSolPairs.length > 0) {
+        const mockBases = new Set(enrich(SOL_MARKETS).map(r => r.base));
+        const extraSol = leSolPairs.filter(p => !mockBases.has(p.base) && p.price > 0);
+        return [...enrich(SOL_MARKETS), ...extraSol];
+      }
+      return enrich(SOL_MARKETS);
+    }
     case "bch":       return enrich(BCH_MARKETS);
     case "matic":     return enrich(MATIC_MARKETS);
     case "avax":      return enrich(AVAX_MARKETS);
@@ -296,15 +307,16 @@ export function MobileMarkets() {
   const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true });
   const leAllPairs = useMemo<MktRow[]>(() =>
     (rawLeAllPairs ?? []).map(p => ({
-      symbol: p.symbol,
-      base:   p.baseAsset,
-      quote:  p.quoteAsset,
-      price:  p.lastPrice ?? 0,
-      chg:    p.priceChangePercent24h ?? 0,
-      vol:    p.volume ?? 0,
-      cap:    0,
-      type:   "spot",
-    })),
+      symbol:  p.symbol,
+      base:    p.baseAsset,
+      quote:   p.quoteAsset,
+      price:   p.lastPrice ?? 0,
+      chg:     p.priceChangePercent24h ?? 0,
+      vol:     p.volume ?? 0,
+      cap:     0,
+      type:    "spot",
+      network: (p as any).network ?? null,
+    } as MktRow)),
   [rawLeAllPairs]);
 
   // LetsExchange BSV-quoted pairs — provides all 800+ coins tradeable vs BSV
