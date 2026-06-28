@@ -48,13 +48,15 @@ const server = http.createServer((req, res) => currentHandler(req, res));
 await new Promise<void>((resolve, reject) => {
   server.once("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "EADDRINUSE") {
-      // Port held by old deployment — wait 2 s and retry once.
-      console.warn(`[startup] Port ${port} in use, retrying in 2 s…`);
+      // Port held by old deployment — old process exits fast via closeAllConnections()
+      // on SIGTERM, so 200 ms is sufficient. The 2 s window previously caused 6
+      // healthcheck 500s at every rolling deploy (connection refused during the gap).
+      console.warn(`[startup] Port ${port} in use, retrying in 200 ms…`);
       setTimeout(() => {
         server.removeAllListeners("error");
         server.once("error", reject);
         server.listen(port, "0.0.0.0", resolve);
-      }, 2_000);
+      }, 200);
     } else {
       reject(err);
     }
