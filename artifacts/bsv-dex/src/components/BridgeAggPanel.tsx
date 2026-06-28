@@ -319,7 +319,7 @@ function QuoteRow({
 
 // ── Built-tx JSON viewer ──────────────────────────────────────────────────────
 
-function TxViewer({ tx, warning }: { tx: BuiltTx; warning?: string }) {
+function TxViewer({ tx, warning, bridgeName }: { tx: BuiltTx; warning?: string; bridgeName?: string }) {
   const [copied, setCopied] = useState(false);
   const json = JSON.stringify(tx, null, 2);
 
@@ -332,7 +332,9 @@ function TxViewer({ tx, warning }: { tx: BuiltTx; warning?: string }) {
   return (
     <div className="bg-background border border-border/50 rounded-xl overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
-        <span className="text-xs font-semibold text-primary uppercase tracking-wide">Transaction Payload</span>
+        <span className="text-xs font-semibold text-primary uppercase tracking-wide">
+          Transaction Payload{bridgeName ? ` · via ${bridgeName}` : ""}
+        </span>
         <button
           onClick={copy}
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -369,7 +371,7 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
   const [selectedQuote, setSelectedQuote] = useState<BridgeQuote | null>(null);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
   const [quoteError, setQuoteError]       = useState<string | null>(null);
-  const [builtTx, setBuiltTx]       = useState<{ tx: BuiltTx; warning?: string } | null>(null);
+  const [builtTx, setBuiltTx]       = useState<{ tx: BuiltTx; warning?: string; bridgeName?: string } | null>(null);
   const [buildingTx, setBuildingTx] = useState(false);
   const [buildTxError, setBuildTxError] = useState<string | null>(null);
 
@@ -451,30 +453,69 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
     }
   }, [fromChain, toChain, fromToken, toToken, amount]);
 
-  // Build tx
+  // Client-side wei conversion (mirrors the server helper)
+  function clientToWei(val: string, decimals: number): string {
+    try {
+      const parts = val.split(".");
+      const whole = parts[0] || "0";
+      const frac  = (parts[1] ?? "").padEnd(decimals, "0").slice(0, decimals);
+      return (BigInt(whole) * 10n ** BigInt(decimals) + BigInt(frac || "0")).toString();
+    } catch { return "0"; }
+  }
+
+  // Build tx — calls LiFi directly from the browser so the user's IP is used,
+  // avoiding the server-side IP blocks that most bridge APIs enforce on shared hosting.
   async function buildTx() {
     if (!selectedQuote || !fromChain || !toChain || !fromToken || !toToken) return;
     setBuildingTx(true);
     setBuiltTx(null);
     setBuildTxError(null);
     try {
-      const res = await fetch(`${API_BASE}/bridge-agg/build-tx`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          providerId: selectedQuote.providerId,
-          fromChainId: fromChain.id,
-          toChainId: toChain.id,
-          fromTokenAddress: fromToken.address,
-          toTokenAddress: toToken.address,
-          amountIn: amount,
-          userAddress: walletAddress ?? "0x0000000000000000000000000000000000000001",
-          quote: selectedQuote,
-        }),
-      });
+      const amountWei = clientToWei(amount, fromToken.decimals);
+      const url = new URL("https://li.quest/v1/quote");
+      url.searchParams.set("fromChain",  String(fromChain.id));
+      url.searchParams.set("toChain",    String(toChain.id));
+      url.searchParams.set("fromToken",  fromToken.address);
+      url.searchParams.set("toToken",    toToken.address);
+      url.searchParams.set("fromAmount", amountWei);
+      url.searchParams.set("order",      "RECOMMENDED");
+      if (walletAddress) {
+        url.searchParams.set("fromAddress", walletAddress);
+        url.searchParams.set("toAddress",   walletAddress);
+      }
+
+      const res = await fetch(url.toString());
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Build tx failed");
-      setBuiltTx({ tx: data.tx, warning: data.warning });
+
+      if (!res.ok) {
+        const msg: string = data.message ?? "No bridge route available";
+        const isSmall = /amount|small|minimum|low/i.test(msg);
+        throw new Error(isSmall
+          ? "Amount too small — try a higher amount (most bridges require ≥ $5 equivalent)."
+          : msg);
+      }
+
+      const txr = data.transactionRequest as {
+        to?: string; data?: string; value?: string; chainId?: number
+      } | undefined;
+      if (!txr?.to || !txr?.data) {
+        throw new Error("No transaction data in LiFi response — try a larger amount or different route.");
+      }
+
+      const bridgeName: string =
+        (data.toolDetails as { name?: string } | undefined)?.name
+        ?? (data.tool as string | undefined)
+        ?? "Bridge";
+
+      setBuiltTx({
+        tx: {
+          to:      txr.to,
+          data:    txr.data,
+          value:   txr.value ? BigInt(txr.value).toString() : "0",
+          chainId: txr.chainId ?? fromChain.id,
+        },
+        bridgeName,
+      });
     } catch (e: unknown) {
       setBuildTxError(e instanceof Error ? e.message : "Build transaction failed");
     } finally {
@@ -726,7 +767,7 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
       {/* ── Built transaction viewer ─────────────────────────────── */}
       {builtTx && (
         <div className="space-y-2">
-          <TxViewer tx={builtTx.tx} warning={builtTx.warning} />
+          <TxViewer tx={builtTx.tx} warning={builtTx.warning} bridgeName={builtTx.bridgeName} />
           <button
             onClick={() => setBuiltTx(null)}
             className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
