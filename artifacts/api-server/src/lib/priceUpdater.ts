@@ -456,7 +456,7 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
   // ── 1. Binance public 24h ticker (all USDT pairs) ──────────────────────────
   try {
     const res = await fetch("https://api.binance.com/api/v3/ticker/24hr", {
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(10_000),
     });
     if (res.ok) {
       const tickers = await res.json() as Array<{

@@ -70,10 +70,15 @@ const BINANCE_USDT_PAIRS = new Set([
   "FET","RNDR","TAO","WLD","GLM","STORJ","LPT",
   "APE","AXS","ENJ","GALA","RON","CAKE","GMX","DYDX","PENDLE",
   "TON","KAS","SEI","TIA","KAVA","NEO","ZIL","WAVES","ICX",
-  "OSMO","LUNA","LUNC","BAND","ONDO","OKB","KCS","BGB","ORDI",
+  "OSMO","LUNA","LUNC","BAND","ONDO","OKB","KCS","ORDI",
   "KSM","TRUMP","STX","FLOKI","TURBO","EIGEN","ZRO","MNT",
   "STRK","IMX","METIS","AERO","BEAM","PRIME","PIXEL",
 ]);
+
+/* ── Tokens not listed on OKX — skip straight to Binance/Gate.io ───────────
+   OKX returns "Instrument ID doesn't exist" for these, generating noisy warn
+   logs and an unnecessary extra RTT on every candle request.               ── */
+const OKX_SKIP_PAIRS = new Set(["BSV", "BB", "BGB"]);
 
 /* ── Poloniex symbol overrides (BSV → BCHSV etc.) ─────────────────────────── */
 const POLONIEX_SYMBOL_MAP: Record<string, string> = {
@@ -379,7 +384,7 @@ export async function fetchRealCandles(
   }
 
   // ── 2. OKX (primary real-data source — global, not geo-blocked) ────────────
-  if (isUsdtPair) {
+  if (isUsdtPair && !OKX_SKIP_PAIRS.has(base)) {
     try {
       const candles = await fetchOkxCandles(base, interval, limit);
       if (isValidCandleSet(candles, minRequired)) {
