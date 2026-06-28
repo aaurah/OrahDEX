@@ -649,7 +649,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
       blacklistVenues: ALL_VENUES.filter(v => v !== forceVenue),
     } : undefined;
 
-    const { best, errors, lowestMin } = await getBestExternalQuote(from, to, amt, inUsd, outUsd, routePrefs);
+    const { best, all, errors, lowestMin } = await getBestExternalQuote(from, to, amt, inUsd, outUsd, routePrefs);
     if (!best) {
       const errDetails = Object.entries(errors)
         .filter(([, v]) => v !== null)
@@ -693,6 +693,17 @@ router.post("/letsexchange/estimate", async (req, res) => {
     // so the UI always shows a real minimum (never "0" or blank).
     const resolvedMin = best.minAmount ?? lowestMin;
     const resolvedMax = best.maxAmount ?? null;
+
+    // Per-venue quotes for price comparison UI (LE + SS shown side by side)
+    const venue_quotes = all.map(q => ({
+      venue:      q.venue,
+      rate:       q.inputAmount > 0 ? String(q.expectedOutput / q.inputAmount) : null,
+      output:     String(q.expectedOutput),
+      minAmount:  q.minAmount != null ? String(q.minAmount) : null,
+      maxAmount:  q.maxAmount != null ? String(q.maxAmount) : null,
+      canExecute: q.canExecute,
+    }));
+
     res.json({
       amount:             String(estimatedOutput),
       rate:               String(rate),
@@ -702,6 +713,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
       rate_id_expired_at,
       withdrawal_fee:     "0",
       best_venue:         best.venue,
+      venue_quotes,
     });
   } catch (err: any) {
     logger.error({ err }, "letsexchange /estimate failed");
