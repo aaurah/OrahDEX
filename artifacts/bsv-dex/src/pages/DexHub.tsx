@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   TrendingUp, Globe, ArrowUpRight, Search, RefreshCw,
   BarChart2, ShieldCheck, Layers, ExternalLink, Coins,
-  ArrowUpDown, ChevronDown, Droplets, Zap, X, ChevronUp,
+  ArrowUpDown, ChevronDown, Droplets, Zap, X, ChevronUp, ChevronLeft,
   Shield, Link2, Copy, Check, FlaskConical, Receipt, AlertTriangle, CheckCircle2, Info,
   Cpu, Waves, Activity, Gauge,
 } from "lucide-react";
@@ -1219,26 +1219,34 @@ export function DexHub() {
               <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedCoin(null)} />
               <div className="fixed inset-x-0 bottom-0 z-50 h-[93vh] flex flex-col bg-background rounded-t-2xl border-t border-border shadow-2xl overflow-hidden lg:inset-auto lg:top-1/2 lg:left-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[680px] lg:h-[86vh] lg:rounded-2xl lg:border">
 
+                {/* ── Drag handle ── */}
+                <div className="flex justify-center pt-2.5 pb-1 shrink-0">
+                  <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+                </div>
+
                 {/* ── Header ── */}
-                <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border shrink-0">
+                <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border shrink-0">
+                  <button onClick={() => setSelectedCoin(null)} className="p-2 rounded-xl bg-secondary border border-border active:opacity-60 shrink-0" aria-label="Back">
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
                   {selectedCoin.image
-                    ? <img src={selectedCoin.image} alt={selectedCoin.symbol} className="w-11 h-11 rounded-full shrink-0 border border-border" />
-                    : <div className="w-11 h-11 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-base font-black text-primary">{selectedCoin.symbol[0]}</div>
+                    ? <img src={selectedCoin.image} alt={selectedCoin.symbol} className="w-9 h-9 rounded-full shrink-0 border border-border" />
+                    : <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-sm font-black text-primary">{selectedCoin.symbol[0]}</div>
                   }
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-base leading-tight truncate">{selectedCoin.name}</span>
-                      <span className="text-[11px] font-mono bg-secondary border border-border px-1.5 py-0.5 rounded text-muted-foreground shrink-0">{selectedCoin.symbol}</span>
-                      {selectedCoin.rank && <span className="text-[11px] text-muted-foreground shrink-0">#{selectedCoin.rank}</span>}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-sm leading-tight truncate">{selectedCoin.name}</span>
+                      <span className="text-[10px] font-mono bg-secondary border border-border px-1.5 py-0.5 rounded text-muted-foreground shrink-0">{selectedCoin.symbol}</span>
+                      {selectedCoin.rank && <span className="text-[10px] text-muted-foreground shrink-0">#{selectedCoin.rank}</span>}
                     </div>
                     <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-lg font-bold font-mono tabular-nums">{qSym}{fmtPrice(selectedCoin.price)}</span>
-                      <span className={cn("text-sm font-semibold", selectedCoin.change24h >= 0 ? "text-green-400" : "text-red-400")}>
+                      <span className="text-base font-bold font-mono tabular-nums">{qSym}{fmtPrice(selectedCoin.price)}</span>
+                      <span className={cn("text-xs font-semibold", selectedCoin.change24h >= 0 ? "text-green-400" : "text-red-400")}>
                         {selectedCoin.change24h >= 0 ? "▲" : "▼"} {Math.abs(selectedCoin.change24h).toFixed(2)}%
                       </span>
                     </div>
                   </div>
-                  <button onClick={() => setSelectedCoin(null)} className="p-2 rounded-lg hover:bg-secondary transition-colors shrink-0">
+                  <button onClick={() => setSelectedCoin(null)} className="p-2 rounded-xl bg-secondary border border-border active:opacity-60 shrink-0" aria-label="Close">
                     <X className="w-5 h-5" />
                   </button>
                 </div>
@@ -1292,7 +1300,7 @@ export function DexHub() {
                         <Suspense fallback={<div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">Loading chart…</div>}>
                           <Chart
                             key={selectedCoin.symbol}
-                            symbol={selectedCoin.symbol}
+                            symbol={`${selectedCoin.symbol}/USDT`}
                             interval={coinDetailInterval}
                             onIntervalChange={setCoinDetailInterval}
                           />
