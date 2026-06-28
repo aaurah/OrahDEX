@@ -1,19 +1,7 @@
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { randomUUID } from "node:crypto";
-
-/** Returns true for transient DB-connection errors (timeout, ECONNREFUSED, etc.)
- *  so engines can skip a cycle gracefully instead of logging a full ERROR. */
-function isDbConnError(err: unknown): boolean {
-  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return (
-    msg.includes("timeout exceeded when trying to connect") ||
-    msg.includes("connection terminated unexpectedly") ||
-    msg.includes("connection refused") ||
-    msg.includes("econnrefused") ||
-    msg.includes("query read timeout")
-  );
-}
+import { isDbConnError } from "./dbErrors.js";
 
 async function runTrailingStopEngine(): Promise<void> {
   let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
