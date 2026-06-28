@@ -2021,7 +2021,21 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
                 {/* You send */}
                 <div className="flex flex-col gap-1">
-                  <span className="text-[11px] text-muted-foreground font-medium px-0.5">You send</span>
+                  <div className="flex items-center justify-between px-0.5">
+                    <span className="text-[11px] text-muted-foreground font-medium">You send</span>
+                    {address && available > 0 && (
+                      <button
+                        onClick={() => setAmount(available.toFixed(6))}
+                        className="text-[10px] text-primary font-semibold active:opacity-70"
+                      >
+                        {available < 0.0001
+                          ? available.toFixed(8)
+                          : available < 1
+                            ? available.toFixed(6)
+                            : available.toFixed(4)} {availableSym} MAX
+                      </button>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1.5 h-12 bg-card border border-border rounded-xl overflow-hidden">
                     <button onClick={() => setAmount(a => String(Math.max(0, parseFloat(a || "0") - 1)))} className="w-10 h-full flex items-center justify-center text-muted-foreground border-r border-border shrink-0 active:bg-border/40"><Minus size={14} /></button>
                     <input
@@ -2034,6 +2048,37 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     />
                     <span className="text-sm font-semibold text-foreground mr-3 shrink-0">{side === "sell" ? base : quote}</span>
                   </div>
+                  {/* Min / Max bar */}
+                  {leMinRaw > 0 && (
+                    <div className="flex items-center justify-between text-[10px] px-1 mt-0.5">
+                      <span className={cn("font-semibold", amtNum > 0 && amtNum < leMinRaw ? "text-red-400" : "text-muted-foreground/55")}>
+                        Min: {leMinRaw < 0.0001
+                          ? leMinRaw.toFixed(8)
+                          : leMinRaw < 1
+                            ? leMinRaw.toFixed(6)
+                            : leMinRaw.toFixed(4)} {side === "sell" ? base : quote}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {leMaxRaw > 0 && (
+                          <span className={cn("font-semibold", amtNum > 0 && amtNum > leMaxRaw ? "text-red-400" : "text-muted-foreground/40")}>
+                            Max: {leMaxRaw < 1 ? leMaxRaw.toFixed(4) : leMaxRaw.toFixed(2)} {side === "sell" ? base : quote}
+                          </span>
+                        )}
+                        {leMinData?.best_venue && (
+                          <span className={cn(
+                            "px-1 py-0.5 rounded text-[9px] font-bold border",
+                            VENUE_COLORS[leMinData.best_venue] ?? "text-muted-foreground",
+                            leMinData.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/25" :
+                            leMinData.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/25" :
+                            leMinData.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/25" :
+                            "bg-violet-500/10 border-violet-500/25"
+                          )}>
+                            {VENUE_LABELS[leMinData.best_venue] ?? leMinData.best_venue}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Arrow */}
