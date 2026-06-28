@@ -137,17 +137,12 @@ export function Markets() {
   });
 
   const { address, network, chainId } = useWalletStore();
-  const [tab, setTab] = useState<Tab>(() => {
-    const s = useWalletStore.getState();
-    const { tab: wTab, isAutoSelected } = getWalletMarketTab(s.address, s.network, s.chainId);
-    return isAutoSelected ? (wTab as Tab) : "usd";
-  });
+  const [tab, setTab] = useState<Tab>("usd");
   const [usdSub, setUsdSub] = useState<UsdSub>("USDT");
   const [search, setSearch] = useState("");
   const [stars, setStars] = useState<Set<string>>(new Set());
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
   const [selectedCoin, setSelectedCoin] = useState<MarketRow | null>(null);
-  const prevAddressRef = useRef<string | null>(null);
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const [tabCanScrollLeft, setTabCanScrollLeft] = useState(false);
   const [tabCanScrollRight, setTabCanScrollRight] = useState(true);
@@ -176,24 +171,8 @@ export function Markets() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  /* Auto-switch to the correct market tab when wallet connects or changes chain */
-  useEffect(() => {
-    const prev = prevAddressRef.current;
-    prevAddressRef.current = address;
-    const { tab: walletTab, isAutoSelected } = getWalletMarketTab(address, network, chainId);
-    if (isAutoSelected) {
-      setTab(walletTab as Tab);
-      setWalletBannerDismissed(false);
-    } else if (!address && prev) {
-      // wallet disconnected — go back to USD
-      setTab("usd");
-      setWalletBannerDismissed(false);
-    }
-  }, [address, network, chainId]);
-
-  const { tab: walletTab, label: walletChainLabel, isAutoSelected: isWalletTab } = getWalletMarketTab(address, network, chainId);
-  /* Show banner only when the visible tab is the wallet's auto-selected tab */
-  const showWalletBanner = isWalletTab && !walletBannerDismissed && tab === walletTab;
+  const showWalletBanner = false;
+  const walletChainLabel = "";
 
   const [, navigate] = useLocation();
 

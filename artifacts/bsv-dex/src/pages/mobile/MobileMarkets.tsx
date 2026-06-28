@@ -252,11 +252,7 @@ function getCatRows(
 export function MobileMarkets() {
   const [, navigate] = useLocation();
   const [search, setSearch]       = useState("");
-  const [cat, setCat]             = useState<Cat>(() => {
-    const s = useWalletStore.getState();
-    const { tab: wTab, isAutoSelected } = getWalletMarketTab(s.address, s.network, s.chainId);
-    return isAutoSelected ? (wTab as Cat) : "usd";
-  });
+  const [cat, setCat]             = useState<Cat>("usd");
   const [usdSub, setUsdSub]       = useState<UsdSub>("USDT");
   const [sortKey, setSortKey]     = useState<SortKey>("base");
   const [sortDir, setSortDir]     = useState<SortDir>("asc");
@@ -267,7 +263,6 @@ export function MobileMarkets() {
     } catch { return new Set<string>(); }
   });
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
-  const prevAddressRef = useRef<string | null>(null);
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
 
@@ -296,23 +291,8 @@ export function MobileMarkets() {
     MNT:   crossPrices.MNT?.usd   || 1.02,
   };
 
-  /* Auto-switch to correct market category when wallet connects / chain changes */
-  useEffect(() => {
-    const prev = prevAddressRef.current;
-    prevAddressRef.current = address;
-    const { tab: walletCat, isAutoSelected } = getWalletMarketTab(address, network, chainId);
-    if (isAutoSelected) {
-      setCat(walletCat as Cat);
-      setWalletBannerDismissed(false);
-    } else if (!address && prev) {
-      setCat("usd");
-      setWalletBannerDismissed(false);
-    }
-  }, [address, network, chainId]);
-
-  const { tab: walletCatTab, label: walletChainLabel, isAutoSelected: isWalletCat } = getWalletMarketTab(address, network, chainId);
-  /* Show banner only when the visible tab is the wallet's auto-selected category */
-  const showWalletBanner = isWalletCat && !walletBannerDismissed && cat === walletCatTab;
+  const showWalletBanner = false;
+  const walletChainLabel = "";
 
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
