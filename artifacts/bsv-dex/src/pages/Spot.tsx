@@ -452,13 +452,19 @@ export function SpotTrading() {
 
   const dropFiltered = useMemo(() => {
     const q = dropSearch.trim();
-    if (q) {
-      // When actively searching, ignore the quote tab and search ALL markets
-      return allMarkets.filter(m =>
-        marketMatchesQuery(m.baseAsset, m.quoteAsset, m.symbol, q)
-      );
-    }
-    return allMarkets.filter(m => m.quoteAsset === dropQuote);
+    const base = q
+      ? allMarkets.filter(m => marketMatchesQuery(m.baseAsset, m.quoteAsset, m.symbol, q))
+      : allMarkets.filter(m => m.quoteAsset === dropQuote);
+    // Sort: native DEX pairs first (real liquidity), then LE pairs by volume desc → lastPrice desc
+    return [...base].sort((a, b) => {
+      const aLE = (a as any).leSource === true;
+      const bLE = (b as any).leSource === true;
+      if (!aLE && bLE) return -1;
+      if (aLE && !bLE) return 1;
+      const volDiff = ((b as any).volume ?? 0) - ((a as any).volume ?? 0);
+      if (volDiff !== 0) return volDiff;
+      return ((b as any).lastPrice ?? 0) - ((a as any).lastPrice ?? 0);
+    });
   }, [allMarkets, dropQuote, dropSearch]);
 
   return (
@@ -551,12 +557,12 @@ export function SpotTrading() {
                 <span className="w-20 text-right">Price</span>
                 <span className="w-14 text-right">24h %</span>
               </div>
-              {/* Pair list — cap at 200 rows per tab to keep the DOM fast */}
+              {/* Pair list — all LE pairs rendered; container is scroll-bounded */}
               <div className="overflow-y-auto max-h-64 min-h-0">
                 {dropFiltered.length === 0 ? (
                   <div className="flex items-center justify-center h-16 text-xs text-muted-foreground">No pairs found</div>
                 ) : (
-                  dropFiltered.slice(0, 200).map(m => {
+                  dropFiltered.map(m => {
                     const urlSymbol = m.symbol.replace('/', '-');
                     const isActive = m.symbol === symbol;
                     const isUp = m.priceChangePercent24h >= 0;
@@ -594,11 +600,10 @@ export function SpotTrading() {
                     );
                   })
                 )}
-                {dropFiltered.length > 200 && (
+                {dropFiltered.length > 0 && !dropSearch.trim() && (
                   <div className="flex items-center justify-center gap-1.5 py-2 border-t border-border/50 bg-secondary/20">
-                    <Search className="w-3 h-3 text-muted-foreground/60" />
                     <span className="text-[10px] text-muted-foreground">
-                      Showing 200 of {dropFiltered.length.toLocaleString()} — search to find more
+                      {dropFiltered.length.toLocaleString()} pairs · search to filter
                     </span>
                   </div>
                 )}
