@@ -499,8 +499,8 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   // AOS pairs from LetsExchange — available to trade via Swap tab
   const { pairs: rawAosPairs } = useLetsExchangePairs({ all: true });
 
-  const aosPairs = useMemo<NormRow[]>(() =>
-    (rawAosPairs ?? []).map(p => ({
+  const aosPairs = useMemo<NormRow[]>(() => {
+    const all = (rawAosPairs ?? []).map(p => ({
       symbol:   p.symbol,
       base:     p.baseAsset,
       quote:    p.quoteAsset,
@@ -508,9 +508,18 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       chg:      p.priceChangePercent24h ?? 0,
       type:     "spot" as const,
       network:  p.network ?? p.networkName ?? undefined,
-      swapOnly: true,
-    })),
-  [rawAosPairs]);
+      swapOnly: true as const,
+    }));
+    // Deduplicate at source: same base+quote on multiple chains → keep highest price.
+    // Using uppercase keys so case inconsistencies in LE data don't slip through.
+    const best = new Map<string, NormRow>();
+    for (const p of all) {
+      const key = `${p.base.toUpperCase()}:${p.quote.toUpperCase()}`;
+      const ex = best.get(key);
+      if (!ex || p.price > ex.price) best.set(key, p);
+    }
+    return [...best.values()];
+  }, [rawAosPairs]);
 
   const apiRows = useMemo<NormRow[]>(
     () => (Array.isArray(apiData) ? apiData : []).map(normalise),
