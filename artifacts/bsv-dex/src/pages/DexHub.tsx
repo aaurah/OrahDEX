@@ -1389,7 +1389,7 @@ export function DexHub() {
                       )}
                     >
                       {tab === "markets"
-                        ? `Markets${!tickersLoading && tickersData ? ` · ${tickersData.tickers?.filter((t: any) => !t.swapOnly).length ?? 0}` : ""}`
+                        ? `Markets${!tickersLoading && tickersData ? ` · ${tickersData.tickers?.length ?? 0}` : ""}`
                         : tab.charAt(0).toUpperCase() + tab.slice(1)}
                     </button>
                   ))}
@@ -1548,20 +1548,16 @@ export function DexHub() {
 
                   {/* MARKETS */}
                   {coinDetailTab === "markets" && (() => {
-                    const allTickers: any[] = tickersData?.tickers ?? [];
-                    const cexTickers  = allTickers.filter((t: any) => !t.isAnomaly && !t.isStale && !t.swapOnly);
-                    const swapTickers = allTickers.filter((t: any) => !t.isAnomaly && !t.isStale && t.swapOnly);
+                    const tickers: any[] = (tickersData?.tickers ?? []).filter((t: any) => !t.isAnomaly && !t.isStale);
                     return (
                       <div className="divide-y divide-border/40">
                         <div className="px-4 py-2 bg-secondary/30">
                           <p className="text-xs text-muted-foreground">
                             {tickersLoading
                               ? "Loading markets…"
-                              : cexTickers.length > 0
-                                ? `${cexTickers.length} exchange${cexTickers.length !== 1 ? "s" : ""} list ${selectedCoin.symbol}`
-                                : swapTickers.length > 0
-                                  ? `${swapTickers.length} swap service${swapTickers.length !== 1 ? "s" : ""} support ${selectedCoin.symbol}`
-                                  : `No listings found for ${selectedCoin.symbol}`
+                              : tickers.length > 0
+                                ? `${tickers.length} market${tickers.length !== 1 ? "s" : ""} · ${selectedCoin.symbol}`
+                                : `No active markets for ${selectedCoin.symbol}`
                             }
                           </p>
                         </div>
@@ -1577,8 +1573,7 @@ export function DexHub() {
                           </div>
                         ))}
 
-                        {/* CEX listings */}
-                        {!tickersLoading && cexTickers.map((t: any, i: number) => {
+                        {!tickersLoading && tickers.map((t: any, i: number) => {
                           const tsColor = t.trustScore === "green" ? "bg-green-500" : t.trustScore === "yellow" ? "bg-yellow-400" : "bg-red-400";
                           return (
                             <a key={i} href={t.tradeUrl ?? "#"} target="_blank" rel="noopener noreferrer"
@@ -1604,47 +1599,11 @@ export function DexHub() {
                           );
                         })}
 
-                        {/* Swap-only venues */}
-                        {!tickersLoading && swapTickers.length > 0 && (
-                          <>
-                            {cexTickers.length > 0 && (
-                              <div className="px-4 py-1.5 bg-secondary/20">
-                                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Swap Services</p>
-                              </div>
-                            )}
-                            {swapTickers.map((t: any, i: number) => (
-                              <a key={i} href={t.tradeUrl ?? "#"} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors"
-                              >
-                                {t.exchangeLogo
-                                  ? <img src={t.exchangeLogo} alt={t.exchangeName} className="w-8 h-8 rounded-full shrink-0 bg-secondary border border-border" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                                  : <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-[11px] font-bold shrink-0">{t.exchangeName?.[0] ?? "?"}</div>
-                                }
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5">
-                                    <p className="text-sm font-semibold truncate">{t.exchangeName}</p>
-                                    <span className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-violet-500/15 text-violet-400 border border-violet-500/20 shrink-0">SWAP</span>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground">Instant swap · no order book</p>
-                                </div>
-                                <div className="text-right shrink-0">
-                                  {t.price > 0
-                                    ? <p className="text-sm font-mono font-semibold tabular-nums">{qSym}{fmtPrice(t.price)}</p>
-                                    : <p className="text-xs text-muted-foreground">Market rate</p>
-                                  }
-                                </div>
-                                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 ml-1" />
-                              </a>
-                            ))}
-                          </>
-                        )}
-
-                        {/* Truly empty */}
-                        {!tickersLoading && allTickers.length === 0 && (
+                        {!tickersLoading && tickers.length === 0 && (
                           <div className="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground">
                             <Globe className="w-8 h-8 opacity-30" />
-                            <p className="text-sm">No listings found</p>
-                            <p className="text-xs opacity-60">Try the Trade tab to swap on OrahDEX</p>
+                            <p className="text-sm">No active markets found</p>
+                            <p className="text-xs opacity-60">Use the Trade tab to trade on OrahDEX</p>
                           </div>
                         )}
                       </div>
