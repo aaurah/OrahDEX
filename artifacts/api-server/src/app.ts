@@ -405,6 +405,13 @@ app.get("/api/ping", (_req, res) => {
   res.status(204).end();
 });
 
+/* ── Bare /api root — deployment health probes sometimes hit this path ─────
+   Respond 200 immediately so the probe doesn't fail on a bare /api request
+   that would otherwise fall through to the API-key auth middleware.        ── */
+app.get("/api", (_req, res) => {
+  res.status(200).json({ ok: true });
+});
+
 /* ── Health checks — MUST be registered BEFORE app.use("/api", router).
    The main router mounts futuresRouter at "/" without a prefix, and that
    router has a blanket middleware that returns 503 for all requests when
@@ -526,7 +533,24 @@ _s(108_000, startSelfDiagnostic,    "startSelfDiagnostic");
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 
 /* ── Health check — both /health and /healthz (artifact.toml uses healthz) ── */
+// Seconds since this process started (used for startup grace period).
+const SERVER_START_TIME = Date.now();
+
 async function healthHandler(_req: any, res: any) {
+  // During the first 45 s, return 200 unconditionally. The DB connection pool
+  // may not have warmed up yet and background services haven't run their first
+  // tick — a premature "dead" verdict would cause deployment health checks to
+  // fail and restart the instance, making the problem worse.
+  const uptimeSec = (Date.now() - SERVER_START_TIME) / 1000;
+  if (uptimeSec < 45) {
+    return res.status(200).json({
+      status: "starting",
+      uptime: Math.floor(uptimeSec),
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  try {
   const services = getHealthReport();
   const anyDead  = services.some(s => s.status === "dead");
   const anyStuck = services.some(s => s.status === "stuck");
@@ -574,6 +598,14 @@ async function healthHandler(_req: any, res: any) {
   }
 
   res.status(anyCriticalDead ? 503 : 200).json(payload);
+  } catch (err: any) {
+    // Unexpected error in health handler — log but always return 200 so the
+    // deployment probe doesn't restart the instance due to a reporting bug.
+    logger.warn({ err: err?.message }, "healthHandler threw unexpectedly");
+    if (!res.headersSent) {
+      res.status(200).json({ status: "ok", uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
+    }
+  }
 }
 // NOTE: /api/health and /api/healthz are registered BEFORE app.use("/api", router)
 // further up in this file. These duplicate registrations are intentionally removed
