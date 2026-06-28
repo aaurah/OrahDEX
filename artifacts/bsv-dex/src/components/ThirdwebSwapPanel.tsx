@@ -12,6 +12,7 @@ import { useActiveAccount } from "thirdweb/react";
 import { parseUnits, formatUnits } from "viem";
 import { thirdwebClient } from "@/lib/thirdweb-client";
 import { wagmiConfig } from "@/lib/reown";
+import { switchChain as wagmiSwitchChain, getAccount as wagmiGetAccount } from "@wagmi/core";
 import { useWalletStore } from "@/store/useWalletStore";
 import {
   ArrowDown, Loader2, CheckCircle2, AlertCircle, ExternalLink, RefreshCw, Zap,
@@ -292,8 +293,16 @@ export function ThirdwebSwapPanel() {
       if (!accs?.length) accs = await eth.request({ method: "eth_requestAccounts" });
       sender = accs?.[0] ?? null;
     } else if (storeAddress) {
-      // Wallet connected via Reown/WalletConnect — address is already in the store
+      // Wallet connected via Reown/WalletConnect — address is already in the store.
+      // wagmiSwitchChain "wakes up" the WalletConnect session so the provider
+      // responds to requests (mirrors escrow.ts sendRawViaReown pattern).
       sender = storeAddress;
+      try {
+        const acct = wagmiGetAccount(wagmiConfig);
+        if (acct.chainId !== srcChain) {
+          await wagmiSwitchChain(wagmiConfig, { chainId: srcChain });
+        }
+      } catch {}
       for (const connector of (wagmiConfig as any).connectors ?? []) {
         try {
           const p = await (connector as any).getProvider?.();
