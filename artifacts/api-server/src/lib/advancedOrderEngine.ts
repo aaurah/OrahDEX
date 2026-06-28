@@ -2,10 +2,13 @@ import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { randomUUID } from "node:crypto";
 import { isDbConnError } from "./dbErrors.js";
+import { guardedInterval, withRetry } from "./selfHealing.js";
 
 async function runTrailingStopEngine(): Promise<void> {
   let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
-  try { client = await pool.connect(); } catch (err) {
+  try {
+    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 1_000 });
+  } catch (err) {
     logger.warn({ err }, "Trailing stop engine: DB connect failed, skipping cycle");
     return;
   }
@@ -119,7 +122,9 @@ async function runTrailingStopEngine(): Promise<void> {
 
 async function runIcebergEngine(): Promise<void> {
   let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
-  try { client = await pool.connect(); } catch (err) {
+  try {
+    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 1_000 });
+  } catch (err) {
     logger.warn({ err }, "Iceberg engine: DB connect failed, skipping cycle");
     return;
   }
@@ -222,7 +227,9 @@ async function runIcebergEngine(): Promise<void> {
 
 async function runTwapEngine(): Promise<void> {
   let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
-  try { client = await pool.connect(); } catch (err) {
+  try {
+    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 1_000 });
+  } catch (err) {
     logger.warn({ err }, "TWAP engine: DB connect failed, skipping cycle");
     return;
   }
@@ -338,46 +345,20 @@ async function runTwapEngine(): Promise<void> {
 }
 
 export function startAdvancedOrderEngines(): void {
-  // Each engine runs every 30 s and is staggered 10 s apart so they never
-  // compete for pool connections simultaneously. "Already running" guards
-  // prevent overlap when a cycle takes longer than the interval.
-  let trailingRunning = false;
-  let icebergRunning  = false;
-  let twapRunning     = false;
+  // guardedInterval replaces the raw setInterval + busy-flag pattern.
+  // Engines are staggered 10 s apart so they never compete for pool connections.
+  guardedInterval("trailing-stop-engine", runTrailingStopEngine, 30_000, {
+    timeoutMs: 25_000,
+    initialDelayMs: 0,
+  });
+  guardedInterval("iceberg-engine", runIcebergEngine, 30_000, {
+    timeoutMs: 25_000,
+    initialDelayMs: 10_000,
+  });
+  guardedInterval("twap-engine", runTwapEngine, 30_000, {
+    timeoutMs: 25_000,
+    initialDelayMs: 20_000,
+  });
 
-  setInterval(() => {
-    if (trailingRunning) return;
-    trailingRunning = true;
-    runTrailingStopEngine()
-      .catch(err => isDbConnError(err)
-        ? logger.warn({ err }, "Trailing stop engine: DB unavailable, skipping cycle")
-        : logger.error({ err }, "Trailing stop engine uncaught error"))
-      .finally(() => { trailingRunning = false; });
-  }, 30_000);
-
-  setTimeout(() => {
-    setInterval(() => {
-      if (icebergRunning) return;
-      icebergRunning = true;
-      runIcebergEngine()
-        .catch(err => isDbConnError(err)
-        ? logger.warn({ err }, "Iceberg engine: DB unavailable, skipping cycle")
-        : logger.error({ err }, "Iceberg engine uncaught error"))
-        .finally(() => { icebergRunning = false; });
-    }, 30_000);
-  }, 10_000);
-
-  setTimeout(() => {
-    setInterval(() => {
-      if (twapRunning) return;
-      twapRunning = true;
-      runTwapEngine()
-        .catch(err => isDbConnError(err)
-        ? logger.warn({ err }, "TWAP engine: DB unavailable, skipping cycle")
-        : logger.error({ err }, "TWAP engine uncaught error"))
-        .finally(() => { twapRunning = false; });
-    }, 30_000);
-  }, 20_000);
-
-  logger.info("Advanced order engines started (trailing stop 30 s, iceberg 30 s +10 s offset, TWAP 30 s +20 s offset)");
+  logger.info("Advanced order engines started (trailing-stop / iceberg / TWAP — 30 s intervals, staggered)");
 }

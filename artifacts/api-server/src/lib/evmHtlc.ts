@@ -54,7 +54,7 @@ import crypto, {
   randomBytes,
 } from "node:crypto";
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { db } from "@workspace/db";
+import { db, withDbRetry } from "@workspace/db";
 import { evmHtlcSessionsTable } from "@workspace/db/schema";
 import { eq, and, lt, notInArray } from "drizzle-orm";
 import {
