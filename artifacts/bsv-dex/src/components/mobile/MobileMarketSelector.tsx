@@ -11,15 +11,13 @@ import {
   MNT_MARKETS, ZK_MARKETS, SCR_MARKETS, LINEA_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
-  BASE_MARKETS, GAMING_MARKETS, COSMOS_MARKETS,
+  GAMING_MARKETS, COSMOS_MARKETS,
   L1_MARKETS, L2_MARKETS, RWA_MARKETS, EXCHANGE_MARKETS,
   DEPIN_MARKETS, BRC20_MARKETS, UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { useSSPairs } from "@/hooks/useSSPairs";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
-import { useBaseTokenList } from "@/hooks/useBaseTokenList";
-import { useBaseTokenPrices } from "@/hooks/useBaseTokenPrices";
 import { cn, marketMatchesQuery } from "@/lib/utils";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 
@@ -55,7 +53,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "base" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favs"      },
@@ -72,7 +70,6 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "op",        label: "OP"        },
   { id: "ftm",       label: "FTM"       },
   { id: "cro",       label: "CRO"       },
-  { id: "base",      label: "⬡ Base"    },
   { id: "linea",     label: "LINEA"     },
   { id: "zk",        label: "ZK"        },
   { id: "scr",       label: "SCROLL"    },
@@ -107,7 +104,6 @@ const CHAIN_TABS: { id: Cat; icon: string; name: string }[] = [
   { id: "avax",  icon: "🔺", name: "AVAX"     },
   { id: "arb",   icon: "🔷", name: "Arbitrum" },
   { id: "op",    icon: "🔴", name: "Optimism" },
-  { id: "base",  icon: "🔵", name: "Base"     },
   { id: "zk",    icon: "⚡", name: "zkSync"   },
   { id: "linea", icon: "⬛", name: "Linea"    },
   { id: "scr",   icon: "📜", name: "Scroll"   },
@@ -182,7 +178,6 @@ const CAT_NETWORKS: Partial<Record<Cat, string[]>> = {
   zk:      ["zksync"],
   scr:     ["scroll"],
   linea:   ["linea"],
-  base:    ["base", "base-mainnet"],
   cosmos:  ["cosmos", "ibc", "cosmoshub"],
   brc20:   ["bitcoin", "btc"],
   uniswap: ["ethereum", "eth", "erc20"],
@@ -207,7 +202,6 @@ const CAT_PREFERRED_QUOTE: Partial<Record<Cat, string[]>> = {
   zk:      ["ETH",  "USDT", "USDC"],
   scr:     ["ETH",  "USDT", "USDC"],
   linea:   ["ETH",  "USDT", "USDC"],
-  base:    ["ETH",  "USDT", "USDC"],
   cosmos:  ["ATOM", "USDT", "USDC"],
   brc20:   ["BTC",  "USDT", "USDC"],
   uniswap: ["ETH",  "USDT", "USDC"],
@@ -353,7 +347,6 @@ function getRows(
     case "zk":        return chainFromDB("ZK",    cat, ZK_MARKETS);
     case "scr":       return chainFromDB("SCR",   cat, SCR_MARKETS);
     case "linea":     return chainFromDB("LINEA", cat, LINEA_MARKETS);
-    case "base":      return []; // Driven by live LE+SS pairs via baseChainRows memo
     // ── Category/topic tabs: static enrich + AOS ──────────────────────────────
     case "ai":        return chainRows(AI_MARKETS,       cat);
     case "meme":      return chainRows(MEME_MARKETS,     cat);
@@ -523,58 +516,11 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     [apiData]
   );
 
-  // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
-  const { data: baseTokenList } = useBaseTokenList(cat === "base");
-  // DexScreener prices for catalog tokens not covered by GeckoTerminal (cached 60s)
-  const basePrices = useBaseTokenPrices(baseTokenList, cat === "base" && baseTokenList.length > 0);
-
-  // Base chain tab: purely live LE + SS pairs on the Base network.
-  // Uses rawAosPairs (pre-global-dedup) so chain-specific filtering is accurate.
-  const baseChainRows = useMemo<NormRow[]>(() => {
-    if (cat !== "base") return [];
-    const keywords     = CAT_NETWORKS["base"] ?? [];
-    const quotePriority = CAT_PREFERRED_QUOTE["base"] ?? ["ETH", "USDT", "USDC"];
-    const toRow = (p: { symbol: string; baseAsset: string; quoteAsset: string; lastPrice: number; priceChangePercent24h: number; network?: string | null; networkName?: string | null }): NormRow => ({
-      symbol:   p.symbol,
-      base:     p.baseAsset,
-      quote:    p.quoteAsset,
-      price:    p.lastPrice ?? 0,
-      chg:      p.priceChangePercent24h ?? 0,
-      type:     "spot" as const,
-      network:  (p.network ?? p.networkName ?? undefined) as string | undefined,
-      swapOnly: true as const,
-    });
-    const all = [
-      ...(rawAosPairs ?? []).map(toRow),
-      ...(rawSsPairs ?? []).map(p => toRow({ ...p, lastPrice: p.lastPrice, priceChangePercent24h: p.priceChangePercent24h })),
-    ].filter(p => {
-      const net = (p.network ?? "").toLowerCase();
-      return keywords.some(kw => net.includes(kw)) && p.price > 0;
-    });
-    // Group by base, pick preferred quote, then fallback to highest price
-    const byBase = new Map<string, NormRow[]>();
-    for (const p of all) {
-      if (!byBase.has(p.base)) byBase.set(p.base, []);
-      byBase.get(p.base)!.push(p);
-    }
-    const result: NormRow[] = [];
-    for (const [, pairs] of byBase) {
-      let best: NormRow | undefined;
-      for (const q of quotePriority) {
-        best = pairs.find(p => p.quote === q);
-        if (best) break;
-      }
-      if (!best) best = pairs.reduce((a, b) => b.price > a.price ? b : a);
-      if (best) result.push(best);
-    }
-    return result.sort((a, b) => a.base.localeCompare(b.base));
-  }, [cat, rawAosPairs, rawSsPairs]);
-
   // ETH tab supplement: all LE+SS Base-network pairs appended to the ETH tab
   // (Base is an ETH L2 — tokens without a Base contract route through ETH swaps)
   const baseOnEthRows = useMemo<NormRow[]>(() => {
     if (cat !== "eth") return [];
-    const keywords = CAT_NETWORKS["base"] ?? [];
+    const keywords = ["base", "base-mainnet"];
     const toRow = (p: { symbol: string; baseAsset: string; quoteAsset: string; lastPrice: number; priceChangePercent24h: number; network?: string | null; networkName?: string | null }): NormRow => ({
       symbol:   p.symbol,
       base:     p.baseAsset,
@@ -630,11 +576,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     ? globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search))
     : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
 
-  // Base tab: replace static rows with live LE+SS pairs for Base network
-  if (!search && cat === "base" && baseChainRows.length > 0) {
-    rows = baseChainRows;
-  }
-
   // ETH tab: append Base-network LE+SS pairs (Base is ETH L2)
   if (!search && cat === "eth" && baseOnEthRows.length > 0) {
     const existingBases = new Set(rows.map(r => r.base));
@@ -653,15 +594,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       .filter(g => !existingBases.has(g.base) && g.price > 0)
       .map(g => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, type: "spot" as const, network: g.network, swapOnly: true }));
     rows = [...rows, ...newRows];
-  }
-
-  // Merge Base token list: append all ~2300 Base chain catalog tokens for base tab
-  if (!search && cat === "base" && baseTokenList.length > 0) {
-    const existingBases = new Set(rows.map(r => r.base));
-    const newBase: NormRow[] = baseTokenList
-      .filter(t => !existingBases.has(t.symbol))
-      .map(t => { const dp = basePrices.get(t.symbol); return { symbol: `${t.symbol}/ETH`, base: t.symbol, quote: "ETH", price: dp?.price ? dp.price / 2420 : 0, chg: dp?.chg ?? 0, type: "spot" as const, network: "base-network", swapOnly: true as const }; });
-    rows = [...rows, ...newBase];
   }
 
   rows = [...rows].sort((a, b) => {
