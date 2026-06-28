@@ -52,8 +52,10 @@ export const pool = new Pool({
   max: 20,
   // Keep the pool alive between tick cycles.
   allowExitOnIdle: false,
-  // Kill runaway queries after 8 s so a slow query releases its slot quickly.
-  query_timeout: 8_000,
+  // Kill runaway queries after 30 s. The liquidity bot's bulk DELETE of 48 k
+  // bot orders is a legitimate long operation that exceeds the old 8 s limit on
+  // the production DB (large table + 4 indexes to update + WAL overhead).
+  query_timeout: 30_000,
 });
 
 // Catch errors on idle clients in the pool (e.g. a connection dropped by the
