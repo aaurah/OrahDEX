@@ -357,8 +357,8 @@ function getRows(
     case "zk":        return chainFromDB("ZK",    cat, ZK_MARKETS);
     case "scr":       return chainFromDB("SCR",   cat, SCR_MARKETS);
     case "linea":     return chainFromDB("LINEA", cat, LINEA_MARKETS);
-    case "base":      return chainRows(BASE_MARKETS,      cat);
-    case "zora":      return chainRows(ZORA_MARKETS,     cat);
+    case "base":      return chainFromDB("ETH", cat, BASE_MARKETS);
+    case "zora":      return chainFromDB("ETH", cat, ZORA_MARKETS);
     // ── Category/topic tabs: static enrich + AOS ──────────────────────────────
     case "ai":        return chainRows(AI_MARKETS,       cat);
     case "meme":      return chainRows(MEME_MARKETS,     cat);
@@ -587,7 +587,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     const existingBases = new Set(rows.map(r => r.base));
     const newBase: NormRow[] = baseTokenList
       .filter(t => !existingBases.has(t.symbol))
-      .map(t => { const dp = basePrices.get(t.symbol); return { symbol: `${t.symbol}/USDC`, base: t.symbol, quote: "USDC", price: dp?.price ?? 0, chg: dp?.chg ?? 0, type: "spot" as const, network: "base-network", swapOnly: true as const }; });
+      .map(t => { const dp = basePrices.get(t.symbol); return { symbol: `${t.symbol}/ETH`, base: t.symbol, quote: "ETH", price: dp?.price ? dp.price / 2420 : 0, chg: dp?.chg ?? 0, type: "spot" as const, network: "base-network", swapOnly: true as const }; });
     rows = [...rows, ...newBase];
   }
 
