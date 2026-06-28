@@ -1955,9 +1955,29 @@ If any authority requests user identity data:
             {/* ── 20. ROADMAP ── */}
             <Section id="roadmap" title="21. Roadmap">
 
-              {/* v4.8.0 Changelog */}
+              {/* v4.9.0 Changelog */}
               <div className="p-4 rounded-xl border border-primary/30 bg-primary/5 space-y-3 mb-2">
-                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.8.0 · 16 May 2026</p>
+                <p className="text-xs font-black text-primary uppercase tracking-widest">What's New — v4.9.0 · 28 Jun 2026</p>
+                <ul className="space-y-1.5 text-xs text-muted-foreground">
+                  {[
+                    "Markets list infinite scroll — replaced hard 300-row cap with page-based rendering (150 rows/page). IntersectionObserver sentinel at the bottom of the list automatically loads the next page as the user scrolls. Filter, sort, or category changes reset the scroll position and render count.",
+                    "Pull-to-refresh on Markets list — touch-down-from-top gesture shows an animated refresh indicator ('Pull to refresh' → 'Release to refresh' → 'Refreshing…') and triggers a live price refetch on release. A refresh button in the Markets header provides the same one-tap refresh.",
+                    "OrahSwap branding in Markets tab — LetsExchange and SimpleSwap swap venues unified under a single 'OrahSwap' entry per coin. Backed by LetsExchange (preferred) or SimpleSwap; displays the animated OrahDEX 'O' brand glyph with green pulse inside a soft green circle. Tapping opens the in-app Swap tab instead of an external site.",
+                    "Swap / Bridge tab pills centred — fixed left-alignment of the Swap and Bridge segment-control on the Bridge page by adding mx-auto to the pill container.",
+                    "Contract address lookup in Market Hub — GET /api/coins/by-contract queries GeckoTerminal across all EVM chains; frontend debounces input and shows a resolved token card.",
+                    "Markets tab for LE/SS-only coins — fixed symbol prefix stripping in the tickers endpoint (le-a8 → A8), filtered OrahDEX cross-rate noise (major quotes + volume > 0 only). Coins only available via swap services now show an OrahSwap row with correct header copy.",
+                  ].map(item => (
+                    <li key={item} className="flex items-start gap-2">
+                      <span className="shrink-0 text-primary font-bold mt-0.5">→</span>
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* v4.8.0 Changelog */}
+              <div className="p-4 rounded-xl border border-border/40 bg-muted/20 space-y-3 mb-2">
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">v4.8.0 · 16 May 2026</p>
                 <ul className="space-y-1.5 text-xs text-muted-foreground">
                   {[
                     "BSV withdrawal signing fixed — @noble/curves v2.0.1 changed secp256k1.sign() to return a raw 64-byte compact Uint8Array (r‖s) directly instead of a Signature object. Removed the stale .toCompactRawBytes() call in bsvTx.ts; withdrawal transactions now broadcast and confirm on-chain successfully.",
