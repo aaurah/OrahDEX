@@ -32,7 +32,7 @@ import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
 import { getBestExternalQuote, type ExternalVenue } from "../lib/metaRouter.js";
 import { createCNExchange, getCNExchange } from "../lib/changenow.js";
 import { createSXExchange, getSXExchange } from "../lib/stealthex.js";
-import { createSsExchangePair, getSsExchange } from "../lib/simpleswap.js";
+import { createSsExchangePair, getSsExchange, fetchSSCurrencies } from "../lib/simpleswap.js";
 import { createChangellyExchange, getChangellyExchange, isChangellyConfigured } from "../lib/changelly.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 
@@ -503,6 +503,105 @@ router.get("/letsexchange/pairs", async (req, res) => {
   }
 
   res.set("Cache-Control", "public, max-age=60");
+  res.json(result);
+});
+
+// ── GET /api/simpleswap/pairs ─────────────────────────────────────────────────
+// Returns all SimpleSwap coins expressed as OrahDEX pair objects using the same
+// quote currencies as the LE pairs endpoint.  Deduplication against LE happens
+// on the frontend (LE wins when both sources carry the same base symbol).
+router.get("/simpleswap/pairs", async (req, res) => {
+  const filterQuote = typeof req.query.quote === "string" ? req.query.quote.toUpperCase() : null;
+  const returnAll   = req.query.all === "true" || req.query.all === "1";
+
+  // SS ticker → canonical OrahDEX symbol (network-specific tickers collapse to base symbol)
+  const SS_TO_SYMBOL: Record<string, string> = {
+    usdterc20: "USDT",  usdttrc20: "USDT", usdtbsc:   "USDT", usdtsol:   "USDT",
+    usdtmatic: "USDT",  usdtton:   "USDT", usdtop:    "USDT", usdtarb:   "USDT",
+    usdtavax:  "USDT",  usdtalgo:  "USDT", usdtkava:  "USDT", usdtcelo:  "USDT",
+    usdcerc20: "USDC",  usdcbsc:   "USDC", usdcsol:   "USDC", usdcmatic: "USDC",
+    usdcop:    "USDC",  usdcarb:   "USDC", usdcbase:  "USDC", usdcavax:  "USDC",
+    usdcton:   "USDC",
+    "bnb-bsc": "BNB",   bnbbsc:    "BNB",
+    pol:       "MATIC",
+    avaxc:     "AVAX",
+    etharb:    "ETH",   ethop:     "ETH",  ethbase:   "ETH",  ethlinea:  "ETH",
+    ethscroll: "ETH",   ethbsc:    "ETH",
+    wbtcerc20: "WBTC",  wbtcbsc:   "WBTC",
+    daierc20:  "DAI",   daibsc:    "DAI",  daimatic:  "DAI",  daiarb:    "DAI",
+    linkbsc:   "LINK",  unibsc:    "UNI",
+  };
+
+  function normalizeSsSymbol(ticker: string): string | null {
+    if (!ticker) return null;
+    const mapped = SS_TO_SYMBOL[ticker.toLowerCase()];
+    if (mapped) return mapped;
+    const cleaned = ticker.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (cleaned.length < 1 || cleaned.length > 12) return null;
+    return cleaned;
+  }
+
+  const SS_PAIRS_TTL = 60 * 60 * 1000; // 1 hour
+  const cacheKey = "ss_pairs_v1";
+  let builtPairs = cached(cacheKey, SS_PAIRS_TTL) as Record<string, unknown>[] | null;
+
+  if (!builtPairs) {
+    const currencies = await fetchSSCurrencies();
+
+    if (currencies.length === 0) {
+      res.status(503).json({ error: "SimpleSwap currencies unavailable" });
+      return;
+    }
+
+    // Dedup by normalized symbol (first network variant wins)
+    const seenSymbols = new Set<string>();
+    const uniqueCoins: { symbol: string; name: string; network: string | null; image: string | null; hasExtraId: boolean }[] = [];
+    for (const c of currencies) {
+      const sym = normalizeSsSymbol(c.symbol);
+      if (!sym || seenSymbols.has(sym)) continue;
+      seenSymbols.add(sym);
+      uniqueCoins.push({ symbol: sym, name: c.name, network: c.network, image: c.image, hasExtraId: c.hasExtraId });
+    }
+
+    const QUOTES_SET = new Set(LE_PAIR_QUOTES);
+    const pairs: Record<string, unknown>[] = [];
+    for (const coin of uniqueCoins) {
+      if (QUOTES_SET.has(coin.symbol)) continue; // quote-only coins skip as base
+      for (const q of LE_PAIR_QUOTES) {
+        if (coin.symbol === q) continue;
+        pairs.push({
+          symbol:                `${coin.symbol}/${q}`,
+          baseAsset:             coin.symbol,
+          quoteAsset:            q,
+          network:               coin.network,
+          networkName:           null,
+          image:                 coin.image,
+          hasExtraId:            coin.hasExtraId,
+          minAmount:             null,
+          maxAmount:             null,
+          lastPrice:             0,
+          priceChangePercent24h: 0,
+          volume:                0,
+          type:                  "simpleswap",
+          ssSource:              true,
+          leSource:              false,
+        });
+      }
+    }
+
+    builtPairs = pairs;
+    if (pairs.length > 0) setCache(cacheKey, pairs);
+    logger.info({ coins: uniqueCoins.length, pairs: pairs.length }, "simpleswap /pairs: built");
+  }
+
+  let result = builtPairs;
+  if (!returnAll && filterQuote) {
+    result = builtPairs.filter((p: Record<string, unknown>) => p.quoteAsset === filterQuote);
+  } else if (!returnAll) {
+    result = builtPairs.filter((p: Record<string, unknown>) => p.quoteAsset === "BSV");
+  }
+
+  res.set("Cache-Control", "public, max-age=300");
   res.json(result);
 });
 

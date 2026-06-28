@@ -17,6 +17,7 @@ import { PriceCompareBar } from "@/components/trading/PriceCompareBar";
 import { useLetsExchangeCoins } from "@/hooks/useLetsExchangeCoins";
 import { usePairPrices } from "@/hooks/usePairPrices";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { useSSPairs } from "@/hooks/useSSPairs";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades, generateTickerForSymbol, ALL_SPOT_MOCK } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume, marketMatchesQuery } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -234,6 +235,8 @@ export function SpotTrading() {
   // Server-provided pairs — all LE coins against all supported quote assets.
   // Fetched once per quote tab on demand; falls back to [] while loading.
   const { pairs: lePairs } = useLetsExchangePairs({ all: true });
+  // SimpleSwap pairs — additional coins not covered by LE; SS fills gaps, LE wins on overlap.
+  const { pairs: ssPairs  } = useSSPairs({ all: true });
 
   // Get primary LE coin entries for the current pair (null if not supported)
   const fromLECoin = useMemo(() => getLECoin(base),  [getLECoin, base]);
@@ -422,9 +425,16 @@ export function SpotTrading() {
       }
     });
 
+    // Merge SimpleSwap pairs — only fills gaps not covered by native or LE
+    ssPairs.forEach(p => {
+      if (!deduped.has(p.symbol)) {
+        deduped.set(p.symbol, normalise(p as any));
+      }
+    });
+
     return Array.from(deduped.values());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiMarkets, lePairs]);
+  }, [apiMarkets, lePairs, ssPairs]);
 
   const currentMarket = useMemo(
     () => allMarkets.find(m => m.baseAsset === base && m.quoteAsset === quote) ?? null,
@@ -455,12 +465,17 @@ export function SpotTrading() {
     const base = q
       ? allMarkets.filter(m => marketMatchesQuery(m.baseAsset, m.quoteAsset, m.symbol, q))
       : allMarkets.filter(m => m.quoteAsset === dropQuote);
-    // Sort: native DEX pairs first (real liquidity), then LE pairs by volume desc → lastPrice desc
+    // Sort: native DEX first (real liquidity), then LE, then SS, all by volume → lastPrice
     return [...base].sort((a, b) => {
+      const aExt = (a as any).leSource === true || (a as any).ssSource === true;
+      const bExt = (b as any).leSource === true || (b as any).ssSource === true;
+      if (!aExt && bExt) return -1;  // native beats external
+      if (aExt && !bExt) return 1;
+      // Among externals: LE before SS (LE has more accurate pricing)
       const aLE = (a as any).leSource === true;
       const bLE = (b as any).leSource === true;
-      if (!aLE && bLE) return -1;
-      if (aLE && !bLE) return 1;
+      if (aLE && !bLE) return -1;
+      if (!aLE && bLE) return 1;
       const volDiff = ((b as any).volume ?? 0) - ((a as any).volume ?? 0);
       if (volDiff !== 0) return volDiff;
       return ((b as any).lastPrice ?? 0) - ((a as any).lastPrice ?? 0);
@@ -566,7 +581,12 @@ export function SpotTrading() {
                     const urlSymbol = m.symbol.replace('/', '-');
                     const isActive = m.symbol === symbol;
                     const isUp = m.priceChangePercent24h >= 0;
-                    const isLEPair = (m as any).leSource === true || (m as any).type === "letsexchange";
+                    const isLEPair  = (m as any).leSource  === true || (m as any).type === "letsexchange";
+                    const isSsPair  = (m as any).ssSource  === true || (m as any).type === "simpleswap";
+                    const isBridge  = !isLEPair && !isSsPair
+                      ? false
+                      : new Set(["ETH","WETH","BNB","MATIC","POL","AVAX","SEI","WBTC","ARB","OP","MNT","LINK","UNI","DAI","USDC","USDT","CRO","ZK"]).has(m.baseAsset.toUpperCase());
+                    const isExternal = isLEPair || isSsPair;
                     return (
                       <Link
                         key={m.symbol}
@@ -579,22 +599,28 @@ export function SpotTrading() {
                       >
                         <CoinLogo symbol={m.baseAsset} size={24} />
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 flex-wrap">
                             <span className="text-xs font-semibold text-foreground">{m.baseAsset}</span>
                             <span className="text-[10px] text-muted-foreground">/{m.quoteAsset}</span>
                             {isLEPair && (
-                              <span className="text-[8px] px-1 py-px rounded bg-yellow-500/20 text-yellow-400 font-bold leading-none">⚡ SWAP</span>
+                              <span className="text-[8px] px-1 py-px rounded bg-yellow-500/20 text-yellow-400 font-bold leading-none">⚡ LE</span>
+                            )}
+                            {isSsPair && (
+                              <span className="text-[8px] px-1 py-px rounded bg-blue-500/20 text-blue-400 font-bold leading-none">SS</span>
+                            )}
+                            {isBridge && (
+                              <span className="text-[8px] px-1 py-px rounded bg-purple-500/20 text-purple-400 font-bold leading-none">🌉</span>
                             )}
                           </div>
                         </div>
                         <span className="w-20 text-right text-[11px] font-mono text-foreground tabular-nums">
-                          {isLEPair && m.lastPrice === 0 ? "—" : formatPrice(m.lastPrice)}
+                          {isExternal && m.lastPrice === 0 ? "—" : formatPrice(m.lastPrice)}
                         </span>
                         <span className={cn(
                           "w-14 text-right text-[10px] font-bold tabular-nums",
                           isUp ? "text-buy" : "text-sell"
                         )}>
-                          {isLEPair && m.priceChangePercent24h === 0 ? "—" : `${isUp ? "+" : ""}${m.priceChangePercent24h.toFixed(2)}%`}
+                          {isExternal && m.priceChangePercent24h === 0 ? "—" : `${isUp ? "+" : ""}${m.priceChangePercent24h.toFixed(2)}%`}
                         </span>
                       </Link>
                     );
