@@ -26,7 +26,10 @@ export function useInternalEvmWallet() {
 
   useEffect(() => {
     if (!address || (network !== "bsv" && network !== "bsv-test")) {
-      if (!address) setInternalEvm(null);
+      // Do NOT clear internalEvmAddress here — it belongs to the user's seed phrase
+      // and must survive disconnects / network switches so the NFT profile stays
+      // on the same address ("one seed, one profile").  It is only cleared by
+      // connect() when a genuinely new Orah seed phrase is detected.
       return;
     }
 
