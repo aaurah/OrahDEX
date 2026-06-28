@@ -523,6 +523,11 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     [apiData]
   );
 
+  // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
+  const { data: baseTokenList } = useBaseTokenList(cat === "base");
+  // DexScreener prices for catalog tokens not covered by GeckoTerminal (cached 60s)
+  const basePrices = useBaseTokenPrices(baseTokenList, cat === "base" && baseTokenList.length > 0);
+
   // Base chain tab: purely live LE + SS pairs on the Base network.
   // Uses rawAosPairs (pre-global-dedup) so chain-specific filtering is accurate.
   const baseChainRows = useMemo<NormRow[]>(() => {
@@ -627,11 +632,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
   // Live on-chain data from GeckoTerminal (chain tabs only, cached 90s)
   const { data: geckoRows } = useGeckoTerminalPools(cat);
-  // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
-  const { data: baseTokenList } = useBaseTokenList(cat === "base");
-  // DexScreener prices for catalog tokens not covered by GeckoTerminal (cached 60s)
-  const basePrices = useBaseTokenPrices(baseTokenList, cat === "base" && baseTokenList.length > 0);
-
   let rows: NormRow[] = search
     ? globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search))
     : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
