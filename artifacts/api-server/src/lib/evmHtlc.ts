@@ -662,10 +662,13 @@ export async function startEvmHtlcWatcher(): Promise<void> {
 
   logger.info("evmHtlc: EVM HTLC watcher starting (30 s poll interval)");
 
+  let pollRunning = false;
   setInterval(() => {
-    pollEvmHtlcSessions().catch(err =>
-      logger.warn({ err }, "evmHtlc: poll cycle error")
-    );
+    if (pollRunning) return;
+    pollRunning = true;
+    pollEvmHtlcSessions()
+      .catch(err => logger.warn({ err }, "evmHtlc: poll cycle error"))
+      .finally(() => { pollRunning = false; });
   }, 30_000);
 }
 
