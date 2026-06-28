@@ -69,4 +69,34 @@ pool.on("error", (err, _client) => {
 
 export const db = drizzle(pool, { schema });
 
+/** Return true for transient network-level Postgres errors that are safe to retry. */
+function isTransientPgError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes("Connection terminated") ||
+    msg.includes("connection timeout") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("ECONNREFUSED") ||
+    msg.includes("read ETIMEDOUT")
+  );
+}
+
+/**
+ * Run `fn` and, if it throws a transient pg connection error, wait 250 ms and
+ * try once more.  Use this around critical background-service writes that must
+ * not silently drop data when Neon prunes an idle socket mid-query.
+ *
+ * @example
+ *   await withDbRetry(() => db.insert(t).values(row).onConflictDoUpdate(...));
+ */
+export async function withDbRetry<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isTransientPgError(err)) throw err;
+    await new Promise(r => setTimeout(r, 250));
+    return fn(); // one retry — if this throws, let it propagate
+  }
+}
+
 export * from "./schema";
