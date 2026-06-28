@@ -357,8 +357,8 @@ function getRows(
     case "zk":        return chainFromDB("ZK",    cat, ZK_MARKETS);
     case "scr":       return chainFromDB("SCR",   cat, SCR_MARKETS);
     case "linea":     return chainFromDB("LINEA", cat, LINEA_MARKETS);
-    case "base":      return chainFromDB("ETH", cat, BASE_MARKETS);
-    case "zora":      return chainFromDB("ETH", cat, ZORA_MARKETS);
+    case "base":      return chainRows(BASE_MARKETS, cat);
+    case "zora":      return chainRows(ZORA_MARKETS, cat);
     // ── Category/topic tabs: static enrich + AOS ──────────────────────────────
     case "ai":        return chainRows(AI_MARKETS,       cat);
     case "meme":      return chainRows(MEME_MARKETS,     cat);
