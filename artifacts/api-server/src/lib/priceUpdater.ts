@@ -1427,8 +1427,7 @@ export async function updateMarketPrices() {
         u.low24h,
         u.marketCap ?? null,
       ]);
-      await pool
-        .query(
+      await withRetry(() => pool.query(
           `UPDATE markets AS m
              SET last_price              = v.lp,
                  price_change_24h        = v.pc,
@@ -1441,7 +1440,7 @@ export async function updateMarketPrices() {
              AS v(sym, lp, pc, pcp, vol, hi, lo, mc)
            WHERE m.symbol = v.sym`,
           params,
-        )
+        ), { maxAttempts: 2, baseDelayMs: 500 })
         .catch(err => logger.warn({ err }, "priceUpdater: bulk UPDATE failed"));
     }
     pendingUpdates.length = 0;
