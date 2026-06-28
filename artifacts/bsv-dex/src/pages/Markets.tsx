@@ -203,14 +203,17 @@ export function Markets() {
   // LetsExchange all quoted pairs — complete external pair universe
   const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true });
   const leAllPairs = useMemo(
-    () => (rawLeAllPairs ?? []).map(p => normalise({
-      symbol:               p.symbol,
-      baseAsset:            p.baseAsset,
-      quoteAsset:           p.quoteAsset,
-      lastPrice:            p.lastPrice,
-      priceChangePercent24h: p.priceChangePercent24h,
-      volume24h:            p.volume,
-      type:                 "spot",
+    () => (rawLeAllPairs ?? []).map(p => ({
+      ...normalise({
+        symbol:               p.symbol,
+        baseAsset:            p.baseAsset,
+        quoteAsset:           p.quoteAsset,
+        lastPrice:            p.lastPrice,
+        priceChangePercent24h: p.priceChangePercent24h,
+        volume24h:            p.volume,
+        type:                 "spot",
+      }),
+      network: (p as any).network ?? null,
     })).filter(m => m.lastPrice > 0),
     [rawLeAllPairs],
   );
@@ -351,7 +354,16 @@ export function Markets() {
       case "mnt":     return dbByQuote("MNT");
       case "bch":     return dbByQuote("BCH");
       case "zora":    return dbBySymbols(ZORA_MARKETS.map(normalise));
-      case "sol":     return dbByCategory("sol_eco");
+      case "sol": {
+        const dbSol = dbByCategory("sol_eco");
+        const leSolPairs = leAllPairs.filter(m => {
+          const net = String((m as any).network ?? "").toLowerCase();
+          return net.includes("sol");
+        });
+        const dbBases = new Set(dbSol.map((m: any) => m.baseAsset));
+        const leSolExtra = leSolPairs.filter(m => !dbBases.has(m.baseAsset));
+        return [...dbSol, ...leSolExtra];
+      }
       case "ai":      return dbByCategory("ai");
       case "depin":   return dbByCategory("depin");
       case "meme":    return dbByCategory("meme");
@@ -402,7 +414,15 @@ export function Markets() {
       case "mnt":       return dbQ("MNT");
       case "bch":       return dbQ("BCH");
       case "zora":      return dbS(ZORA_MARKETS);
-      case "sol":       return dbByCategory("sol_eco").length;
+      case "sol": {
+        const dbSolC = dbByCategory("sol_eco");
+        const leSolC = leAllPairs.filter(m => {
+          const net = String((m as any).network ?? "").toLowerCase();
+          return net.includes("sol");
+        });
+        const dbBasesC = new Set(dbSolC.map((m: any) => m.baseAsset));
+        return dbSolC.length + leSolC.filter(m => !dbBasesC.has(m.baseAsset)).length;
+      }
       case "ai":        return dbByCategory("ai").length;
       case "depin":     return dbByCategory("depin").length;
       case "meme":      return dbByCategory("meme").length;
