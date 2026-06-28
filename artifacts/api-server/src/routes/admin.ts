@@ -1,6 +1,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { db, pool } from "@workspace/db";
+import { getWatcherState, getWatcherSummary } from "../lib/errorWatcher.js";
 
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
 // Note: generateAdminToken and revokeAllAdminTokens are now async (DB-persisted)
@@ -3801,6 +3802,22 @@ router.get("/profits", requireAdminToken, async (_req, res) => {
   } catch (err: any) {
     logger.warn({ err }, "GET /admin/profits error");
     res.status(500).json({ error: "Failed to aggregate profits" });
+  }
+});
+
+// ── GET /admin/error-watcher ──────────────────────────────────────────────
+// Returns the live state of every error-pattern the error watcher tracks:
+// hit counts, remediation counts, circuit-breaker status, last outcome.
+
+router.get("/error-watcher", requireAdminToken, (_req, res) => {
+  try {
+    res.json({
+      summary:  getWatcherSummary(),
+      patterns: getWatcherState(),
+    });
+  } catch (err: any) {
+    logger.warn({ err }, "GET /admin/error-watcher error");
+    res.status(500).json({ error: "Failed to retrieve error watcher state" });
   }
 });
 
