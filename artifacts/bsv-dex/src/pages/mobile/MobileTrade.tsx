@@ -2900,15 +2900,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         className="shrink-0 flex items-center gap-2 px-4 py-3 border-t border-border bg-background/95 backdrop-blur"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
       >
-        {/* Order type quick selector */}
-        <button
-          onClick={() => { setOrderTypeOpen(true); setShowOrderForm(true); }}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border bg-card border-border text-foreground shrink-0"
-        >
-          {ORDER_TYPE_LABELS[orderType]}
-          <ChevronDown size={11} className="text-muted-foreground" />
-        </button>
-
         {!address ? (
           /* Connect Wallet CTA */
           <button
