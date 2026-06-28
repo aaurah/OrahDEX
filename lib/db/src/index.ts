@@ -36,15 +36,20 @@ export const pool = new Pool({
   // Send TCP keepalive probes immediately when a connection becomes idle.
   keepAlive: true,
   keepAliveInitialDelayMillis: 0,
-  // Evict idle connections after 6 s — well below Replit's idle-drop window.
-  idleTimeoutMillis: 6_000,
-  // Fail fast (5 s) when the pool is exhausted so the backlog clears quickly
-  // rather than stacking up 20 s waits that overwhelm all available slots.
-  connectionTimeoutMillis: 5_000,
-  // 6 connections: tighter cap prevents background engines from exhausting the
-  // pool. With 5-min liquidity bot bursts and 3 order engines running every
-  // 30 s each, 6 slots is sufficient and leaves headroom for HTTP requests.
-  max: 6,
+  // Hold idle connections for 2 min — longer than the longest service tick
+  // interval (90 s). Evicting too aggressively forces a cold TCP reconnect at
+  // the start of every tick, which is the main source of "Connection
+  // terminated unexpectedly" errors under load.
+  idleTimeoutMillis: 120_000,
+  // Allow up to 15 s for a slot to free up when all connections are busy.
+  // With 12+ concurrent background services the old 5 s limit caused a cascade
+  // of "timeout exceeded when trying to connect" across every engine.
+  connectionTimeoutMillis: 15_000,
+  // 20 connections: enough for 12+ background engines + HTTP handlers to run
+  // concurrently without queuing. Replit's hosted PostgreSQL comfortably
+  // supports this; the previous cap of 6 was the primary cause of pool
+  // exhaustion under the current service load.
+  max: 20,
   // Keep the pool alive between tick cycles.
   allowExitOnIdle: false,
   // Kill runaway queries after 8 s so a slow query releases its slot quickly.
