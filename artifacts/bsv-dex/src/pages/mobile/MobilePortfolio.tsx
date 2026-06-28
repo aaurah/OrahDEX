@@ -3,7 +3,7 @@ import {
   ArrowDownToLine,
   Copy, Check, RefreshCw, Info,
   LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
-  ArrowDownLeft, ArrowUpRight, History, Upload, ChevronDown, X, Search, Loader2,
+  ArrowDownLeft, ArrowUpRight, History, Upload, ChevronDown, X, Search, Loader2, Trash2,
 } from "lucide-react";
 
 import { useOnChainTxHistory } from "@/hooks/useOnChainTxHistory";
@@ -262,6 +262,17 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
     try { return JSON.parse(localStorage.getItem("orah_swap_history") ?? "[]"); } catch { return []; }
   });
   const [liveLeStatuses, setLiveLeStatuses] = useState<Record<string, any>>({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const removeBridgeEntry = useCallback((id: string) => {
+    setBridgeHistory(prev => {
+      const next = prev.filter((e: any) => e.transaction_id !== id);
+      try { localStorage.setItem("le_swap_history", JSON.stringify(next.slice(0, 50))); } catch {}
+      return next;
+    });
+    setLiveLeStatuses(prev => { const n = { ...prev }; delete n[id]; return n; });
+    setConfirmDeleteId(null);
+  }, []);
 
   // ── Transaction lookup tool ──────────────────────────────────────────────
   const [lookupId,     setLookupId]     = useState("");
@@ -1757,6 +1768,15 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                                 {dateStr && <span className="text-muted-foreground/40"> · {dateStr}</span>}
                               </p>
                             </div>
+                            {isPending && (
+                              <button
+                                onClick={() => setConfirmDeleteId(prev => prev === e.transaction_id ? null : e.transaction_id)}
+                                className="shrink-0 p-2 -mr-1 rounded-xl hover:bg-red-500/10 active:bg-red-500/20 transition-colors"
+                                aria-label="Remove transaction"
+                              >
+                                <Trash2 size={15} className={confirmDeleteId === e.transaction_id ? "text-red-400" : "text-muted-foreground/35"} />
+                              </button>
+                            )}
                           </div>
 
                           {/* Deposit address — shown for pending swaps */}
@@ -1810,6 +1830,25 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                               <Copy size={10} />
                             </button>
                           </div>
+
+                          {/* Delete confirmation — shown when trash icon is tapped */}
+                          {isPending && confirmDeleteId === e.transaction_id && (
+                            <div className="flex items-center gap-2 px-4 pb-3 pt-2 border-t border-red-500/15 bg-red-500/5">
+                              <span className="flex-1 text-[11px] text-muted-foreground">Remove this entry?</span>
+                              <button
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="text-[11px] px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:bg-white/5 active:opacity-60 transition"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => removeBridgeEntry(e.transaction_id)}
+                                className="text-[11px] px-3 py-1.5 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500/25 active:opacity-60 transition font-semibold"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
