@@ -86,32 +86,67 @@ const CHAIN_NET_CODES: Record<number, string[]> = {
   288:     ["boba"],
   1088:    ["metis"],
   167000:  ["taiko"],
+  // Non-EVM chains — negative pseudo-IDs (never matched by walletChainId)
+  [-1]:  ["sol","solana"],
+  [-2]:  ["trx","tron"],
+  [-3]:  ["xrp","ripple","xrpl"],
+  [-4]:  ["ton"],
+  [-5]:  ["near"],
+  [-6]:  ["sui"],
+  [-7]:  ["apt","aptos"],
+  [-8]:  ["ada","cardano"],
+  [-9]:  ["doge"],
+  [-10]: ["ltc","litecoin"],
+  [-11]: ["bch"],
+  [-12]: ["xlm","stellar"],
+  [-13]: ["atom","cosmos"],
+  [-14]: ["dot","polkadot"],
+  [-15]: ["algo"],
+  [-16]: ["xmr","monero"],
 };
 
 const CHAIN_PILLS = [
-  { id: 1,       name: "ETH",      icon: "⟠" },
-  { id: 56,      name: "BNB",      icon: "🟡" },
-  { id: 43114,   name: "AVAX",     icon: "🔺" },
-  { id: 137,     name: "Polygon",  icon: "🟣" },
-  { id: 42161,   name: "Arbitrum", icon: "🔷" },
-  { id: 10,      name: "Optimism", icon: "🔴" },
-  { id: 8453,    name: "Base",     icon: "🔵" },
-  { id: 59144,   name: "Linea",    icon: "⬛" },
-  { id: 534352,  name: "Scroll",   icon: "📜" },
-  { id: 1329,    name: "Sei",      icon: "🌊" },
-  { id: 324,     name: "zkSync",   icon: "⚡" },
-  { id: 250,     name: "Fantom",   icon: "👻" },
-  { id: 25,      name: "Cronos",   icon: "⬡"  },
-  { id: 5000,    name: "Mantle",   icon: "🟢" },
-  { id: 100,     name: "Gnosis",   icon: "🦉" },
-  { id: 42220,   name: "Celo",     icon: "🌿" },
-  { id: 1284,    name: "Moonbeam", icon: "🌙" },
-  { id: 146,     name: "Sonic",    icon: "🎵" },
-  { id: 81457,   name: "Blast",    icon: "💥" },
-  { id: 34443,   name: "Mode",     icon: "◈"  },
-  { id: 288,     name: "Boba",     icon: "○"  },
-  { id: 1088,    name: "Metis",    icon: "⬡"  },
-  { id: 167000,  name: "Taiko",    icon: "🥁" },
+  // ── EVM ──────────────────────────────────────────────────────────────────
+  { id: 1,       name: "ETH",      icon: "⟠",  group: "evm" },
+  { id: 56,      name: "BNB",      icon: "🟡", group: "evm" },
+  { id: 43114,   name: "AVAX",     icon: "🔺", group: "evm" },
+  { id: 137,     name: "Polygon",  icon: "🟣", group: "evm" },
+  { id: 42161,   name: "Arbitrum", icon: "🔷", group: "evm" },
+  { id: 10,      name: "Optimism", icon: "🔴", group: "evm" },
+  { id: 8453,    name: "Base",     icon: "🔵", group: "evm" },
+  { id: 59144,   name: "Linea",    icon: "⬛", group: "evm" },
+  { id: 534352,  name: "Scroll",   icon: "📜", group: "evm" },
+  { id: 1329,    name: "Sei",      icon: "🌊", group: "evm" },
+  { id: 324,     name: "zkSync",   icon: "⚡", group: "evm" },
+  { id: 250,     name: "Fantom",   icon: "👻", group: "evm" },
+  { id: 25,      name: "Cronos",   icon: "⬡",  group: "evm" },
+  { id: 5000,    name: "Mantle",   icon: "🟢", group: "evm" },
+  { id: 100,     name: "Gnosis",   icon: "🦉", group: "evm" },
+  { id: 42220,   name: "Celo",     icon: "🌿", group: "evm" },
+  { id: 1284,    name: "Moonbeam", icon: "🌙", group: "evm" },
+  { id: 146,     name: "Sonic",    icon: "🎵", group: "evm" },
+  { id: 81457,   name: "Blast",    icon: "💥", group: "evm" },
+  { id: 34443,   name: "Mode",     icon: "◈",  group: "evm" },
+  { id: 288,     name: "Boba",     icon: "○",  group: "evm" },
+  { id: 1088,    name: "Metis",    icon: "⬡",  group: "evm" },
+  { id: 167000,  name: "Taiko",    icon: "🥁", group: "evm" },
+  // ── Non-EVM ──────────────────────────────────────────────────────────────
+  { id: -1,      name: "Solana",   icon: "◎",  group: "l1"  },
+  { id: -2,      name: "Tron",     icon: "⊕",  group: "l1"  },
+  { id: -3,      name: "XRP",      icon: "✕",  group: "l1"  },
+  { id: -4,      name: "TON",      icon: "💎", group: "l1"  },
+  { id: -5,      name: "NEAR",     icon: "Ⓝ",  group: "l1"  },
+  { id: -6,      name: "SUI",      icon: "💧", group: "l1"  },
+  { id: -7,      name: "Aptos",    icon: "Ⓐ",  group: "l1"  },
+  { id: -8,      name: "Cardano",  icon: "₳",  group: "l1"  },
+  { id: -9,      name: "DOGE",     icon: "Ð",  group: "l1"  },
+  { id: -10,     name: "LTC",      icon: "Ł",  group: "l1"  },
+  { id: -11,     name: "BCH",      icon: "₿",  group: "l1"  },
+  { id: -12,     name: "Stellar",  icon: "✦",  group: "l1"  },
+  { id: -13,     name: "Cosmos",   icon: "⚛",  group: "l1"  },
+  { id: -14,     name: "Polkadot", icon: "●",  group: "l1"  },
+  { id: -15,     name: "Algorand", icon: "Ⓐ",  group: "l1"  },
+  { id: -16,     name: "Monero",   icon: "ɱ",  group: "l1"  },
 ];
 
 const POOL_MAP: Record<string, { tvl: number; vol24: number; fee: number; farmApr: number }> = {
@@ -656,9 +691,9 @@ export function SpotTrading() {
                   ))}
                 </div>
               )}
-              {/* Chain filter row — one pill per supported EVM chain */}
+              {/* Chain filter row — EVM chains + major L1s */}
               {!dropSearch.trim() && (
-                <div className="flex gap-0.5 px-3 py-1.5 border-b border-border shrink-0 overflow-x-auto scrollbar-hide">
+                <div className="flex items-center gap-0.5 px-3 py-1.5 border-b border-border shrink-0 overflow-x-auto scrollbar-hide">
                   <button
                     onClick={() => setDropChain(null)}
                     className={cn(
@@ -668,7 +703,8 @@ export function SpotTrading() {
                   >
                     All chains
                   </button>
-                  {CHAIN_PILLS.map(c => (
+                  {/* EVM chains */}
+                  {CHAIN_PILLS.filter(c => c.group === "evm").map(c => (
                     <button
                       key={c.id}
                       onClick={() => setDropChain(prev => prev === c.id ? null : c.id)}
@@ -677,6 +713,24 @@ export function SpotTrading() {
                         dropChain === c.id
                           ? "bg-primary/15 text-primary"
                           : (walletChainId === c.id ? "text-yellow-400 hover:text-foreground" : "text-muted-foreground hover:text-foreground")
+                      )}
+                      title={c.name}
+                    >
+                      {c.icon} {c.name}
+                    </button>
+                  ))}
+                  {/* Divider between EVM and L1 groups */}
+                  <span className="shrink-0 w-px h-3 bg-border/60 mx-0.5 self-center" />
+                  {/* Non-EVM L1 chains */}
+                  {CHAIN_PILLS.filter(c => c.group === "l1").map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => setDropChain(prev => prev === c.id ? null : c.id)}
+                      className={cn(
+                        "shrink-0 px-2 py-0.5 rounded text-[10px] font-bold transition-all whitespace-nowrap",
+                        dropChain === c.id
+                          ? "bg-primary/15 text-primary"
+                          : "text-muted-foreground hover:text-foreground"
                       )}
                       title={c.name}
                     >
