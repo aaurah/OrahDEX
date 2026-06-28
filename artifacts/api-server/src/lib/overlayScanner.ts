@@ -28,6 +28,7 @@ import { overlayRecordsTable } from "@workspace/db/schema";
 import { isNotNull, or, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
+import { isDbConnError } from "./dbErrors.js";
 
 const WOC_BASE         = BSV_NET.wocBase;
 const SCAN_INTERVAL_MS = 5 * 60 * 1000;   // 5 minutes
@@ -335,7 +336,8 @@ async function scanTick(): Promise<void> {
       await blockScanTick(currentHeight);
     }
   } catch (err) {
-    logger.warn({ err }, "Overlay scanner tick error (non-fatal)");
+    if (isDbConnError(err)) logger.warn("Overlay scanner: DB unavailable, skipping tick");
+    else logger.warn({ err }, "Overlay scanner tick error (non-fatal)");
   }
 }
 
