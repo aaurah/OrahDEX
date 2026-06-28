@@ -120,16 +120,16 @@ type CoinSort   = "rank" | "base" | "price" | "chg" | "vol";
 type CoinSource = "all" | "cg" | "le" | "ss";
 
 const SOURCE_META: Record<CoinSource, { label: string; cls: string; activeCls: string }> = {
-  all: { label: "All", cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-primary/15 border-primary/40 text-primary" },
-  cg:  { label: "Market Data", cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-orange-500/15 border-orange-500/40 text-orange-400" },
-  le:  { label: "LetsExchange", cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-green-500/15 border-green-500/40 text-green-400" },
-  ss:  { label: "SimpleSwap", cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-blue-500/15 border-blue-500/40 text-blue-400" },
+  all: { label: "All",           cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-primary/15 border-primary/40 text-primary" },
+  cg:  { label: "Market Data",   cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-orange-500/15 border-orange-500/40 text-orange-400" },
+  le:  { label: "Swap Network",  cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-green-500/15 border-green-500/40 text-green-400" },
+  ss:  { label: "Bridge Coins",  cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-blue-500/15 border-blue-500/40 text-blue-400" },
 };
 
 const COIN_SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   cg: { label: "Market", cls: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
-  le: { label: "LE",     cls: "bg-green-500/10  text-green-400  border-green-500/20"  },
-  ss: { label: "SS",     cls: "bg-blue-500/10   text-blue-400   border-blue-500/20"   },
+  le: { label: "Swap",   cls: "bg-green-500/10  text-green-400  border-green-500/20"  },
+  ss: { label: "Bridge", cls: "bg-blue-500/10   text-blue-400   border-blue-500/20"   },
 };
 
 const SORT_LABELS: Record<SortKey, string> = {
@@ -484,7 +484,7 @@ export function DexHub() {
 
   const allExchanges: any[] = data?.exchanges ?? [];
 
-  /* ── All coins — merged from OrahDB, LetsExchange, SimpleSwap ── */
+  /* ── All coins — merged from OrahDB, Swap Network, Bridge Coins ── */
   const { data: coinsRaw, isLoading: coinsLoading } = useQuery({
     queryKey: ["coins-all-sources"],
     queryFn: async () => {

@@ -363,7 +363,9 @@ router.get("/coins/all-sources", async (req, res) => {
 
   try {
     // ── 1. Build CG coin list (reuse coinsCache if fresh, else rebuild from DB) ──
-    const cgCoins: any[] = await buildCgCoins();
+    // Fault-tolerant: if DB is temporarily unavailable, still serve LE/SS coins
+    let cgCoins: any[] = [];
+    try { cgCoins = await buildCgCoins(); } catch (_) { cgCoins = []; }
 
     // ── 2. LE currencies + cached prices ─────────────────────────────────────
     const leCurrencies = getCachedLECurrencies();
