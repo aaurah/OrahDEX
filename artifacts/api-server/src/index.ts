@@ -18,8 +18,9 @@ for (const { name, fatal } of REQUIRED_VARS) {
     if (fatal) {
       throw new Error(`[FATAL] ${name} is not set. Refusing to start.`);
     }
-    // Use console.warn here — logger may not be initialised yet
-    console.warn(`[WARN] ${name} is not set — related features will be unavailable.`);
+    // Non-fatal vars are optional features — log at INFO so they don't
+    // appear as alarming WARN lines in every deployment restart cycle.
+    console.info(`[INFO] ${name} is not set — related features will be unavailable.`);
   }
 }
 
