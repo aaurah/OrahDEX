@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
+import { db, withDbRetry } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
 import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
@@ -185,7 +185,7 @@ router.get("/markets", async (req, res) => {
       ? and(eq(marketsTable.enabled, true), leExclude, inArray(marketsTable.type, types))
       : and(eq(marketsTable.enabled, true), leExclude);
 
-    const markets = await db.select().from(marketsTable).where(conditions);
+    const markets = await withDbRetry(() => db.select().from(marketsTable).where(conditions));
 
     const result = markets.map((m) => ({
       symbol:                m.symbol,
@@ -313,7 +313,9 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
     // Wrap DB lookup so a transient DB failure falls through to FALLBACK_PRICES
     let market: (typeof marketsTable.$inferSelect) | undefined;
     try {
-      [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+      [market] = await withDbRetry(() =>
+        db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol))
+      );
     } catch (dbErr) {
       logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
       market = undefined;
@@ -433,7 +435,9 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
     // Fetch market price (fast single-row lookup — fall through on DB failure)
     let market: (typeof marketsTable.$inferSelect) | undefined;
     try {
-      [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
+      [market] = await withDbRetry(() =>
+        db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol))
+      );
     } catch (dbErr) {
       logger.warn({ err: dbErr, symbol }, "markets: DB lookup failed, using FALLBACK_PRICES");
       market = undefined;
