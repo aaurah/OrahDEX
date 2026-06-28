@@ -103,13 +103,20 @@ const PATTERNS: ErrorPattern[] = [
   },
   {
     id:          "db-terminated",
-    description: "DB connection terminated unexpectedly",
+    description: "DB connection terminated unexpectedly — drain stale connections",
     keywords:    ["connection terminated unexpectedly", "connection terminated due to"],
     category:    "db",
     severity:    "warning",
     cooldownMs:  30_000,
     maxPerHour:  20,
-    remediate:   () => pingDbPool(),
+    remediate:   async () => {
+      // Drain the pool so stale/dead connections are evicted, then verify
+      // connectivity with a fresh connection.
+      try {
+        await (pool as any).drain?.();
+      } catch { /* drain is best-effort */ }
+      return pingDbPool();
+    },
   },
 
   // ── Advanced order engines ──────────────────────────────────────────────

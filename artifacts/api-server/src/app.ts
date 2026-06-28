@@ -512,19 +512,47 @@ const _s = (ms: number, fn: () => void, label: string) =>
 // Hook logger.error / logger.warn immediately so all service errors are captured.
 startErrorWatcher();
 
+// ── Process-level crash guards ────────────────────────────────────────────────
+// Node.js 18+ terminates the process on unhandled rejections. Catch them here
+// so we can log the cause before the watchdog restarts the server.
+process.on("uncaughtException", (err) => {
+  try {
+    logger.error({ err: { message: err?.message, stack: err?.stack } },
+      "UNCAUGHT EXCEPTION — process will exit and watchdog will restart");
+  } catch { /* logger may be broken — stderr fallback */ }
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  try {
+    logger.error({ reason: msg }, "UNHANDLED REJECTION — logged, continuing");
+  } catch { /* ignore */ }
+  // Do not exit — unhandled rejections in background tasks should not crash the server.
+});
+
 // ── Heap watchdog ────────────────────────────────────────────────────────────
-// Logs heap usage every 5 minutes so we can track memory trends across
-// restarts and identify whether usage is growing linearly (= leak) or stable.
-// Emits an alert when heap exceeds 512 MB so we know before the OOM.
+// Logs heap usage every 5 minutes. Thresholds are calibrated for this
+// container (~300–400 MB RSS). Triggers GC when heap exceeds 65% of total
+// so we reclaim memory before the container OOM-kills the process.
 {
-  const HEAP_WARN_MB = 512;
-  const HEAP_ALERT_MB = 768;
+  const HEAP_GC_PCT   = 0.65;  // trigger GC above this fraction of heapTotal
+  const HEAP_WARN_MB  = 180;   // log warn
+  const HEAP_ALERT_MB = 260;   // log error (imminent OOM for this container)
   setInterval(() => {
     const { heapUsed, heapTotal, rss } = process.memoryUsage();
     const usedMB  = Math.round(heapUsed  / 1024 / 1024);
     const totalMB = Math.round(heapTotal / 1024 / 1024);
     const rssMB   = Math.round(rss       / 1024 / 1024);
     const uptimeH = (process.uptime() / 3600).toFixed(2);
+
+    // Proactive GC — reclaim memory before the OOM killer strikes
+    if (heapUsed / heapTotal > HEAP_GC_PCT && typeof (global as any).gc === "function") {
+      (global as any).gc();
+      logger.info({ heapUsedMB: usedMB, heapTotalMB: totalMB },
+        "Heap watchdog: triggered GC (heap >65%)");
+    }
+
     if (usedMB >= HEAP_ALERT_MB) {
       logger.error({ heapUsedMB: usedMB, heapTotalMB: totalMB, rssMB, uptimeH },
         "HEAP CRITICAL — approaching OOM; restart may be imminent");
@@ -535,7 +563,7 @@ startErrorWatcher();
       logger.info({ heapUsedMB: usedMB, heapTotalMB: totalMB, rssMB, uptimeH },
         "Heap report");
     }
-  }, 5 * 60 * 1000).unref(); // .unref() so this timer never prevents clean shutdown
+  }, 5 * 60 * 1000).unref();
 }
 
 _s(    0, startPriceUpdater,          "startPriceUpdater");
@@ -597,13 +625,13 @@ async function healthHandler(_req: any, res: any) {
   } catch { /* non-fatal — DB may be under load */ }
 
   // Only CRITICAL services failing should degrade the public health signal.
-  // Non-critical reconcilers (le-status-sync, ghost-order-detector, etc.) being
-  // stuck or dead should not cause the logo pulse to go red or load-balancers to
-  // pull the instance — the core exchange still works fine without them.
+  // Non-critical reconcilers being stuck or dead should not cause healthcheck
+  // failures that trigger deployment restarts — the core exchange still works.
+  // price-updater is the only truly indispensable background service.
+  // NOTE: Even when degraded we return 200 — returning 503 causes the deployment
+  // platform to kill and restart the process, making the problem worse.
   const CRITICAL_SERVICES = new Set([
     "price-updater",
-    "db-watchdog",
-    "liquidity-bot",
   ]);
   const anyCriticalDead = services.some(
     s => s.status === "dead" && CRITICAL_SERVICES.has(s.name),
@@ -634,7 +662,9 @@ async function healthHandler(_req: any, res: any) {
     logger.warn({ alerts: payload.alerts }, "Health check: degraded services detected");
   }
 
-  res.status(anyCriticalDead ? 503 : 200).json(payload);
+  // Always return 200 — the deployment platform kills on 503, making any
+  // transient issue permanent. Status field in the body carries the real signal.
+  res.status(200).json(payload);
   } catch (err: any) {
     // Unexpected error in health handler — log but always return 200 so the
     // deployment probe doesn't restart the instance due to a reporting bug.
