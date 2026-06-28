@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowLeftRight, RefreshCw, ChevronDown, ChevronUp,
-  CheckCircle2, Clock, XCircle, ExternalLink, Copy, Check,
+  CheckCircle2, Clock, XCircle, ExternalLink, Copy, Check, Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { API_BASE } from "@/lib/api";
@@ -80,9 +80,10 @@ function statusMeta(status: string) {
   };
 }
 
-function Row({ entry, liveStatus }: { entry: BridgeEntry; liveStatus?: any }) {
-  const [expanded, setExpanded] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
+function Row({ entry, liveStatus, onRemove }: { entry: BridgeEntry; liveStatus?: any; onRemove?: () => void }) {
+  const [expanded,   setExpanded]   = useState(false);
+  const [copied,     setCopied]     = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
   const status = liveStatus?.status ?? entry.status ?? "wait";
   const meta = statusMeta(status);
   const dateStr = fmtDate(entry.createdAt ?? entry.created_at);
@@ -211,6 +212,36 @@ function Row({ entry, liveStatus }: { entry: BridgeEntry; liveStatus?: any }) {
               {copied === "id" ? "Copied" : "Copy ID"}
             </button>
           </div>
+
+          {onRemove && (
+            <div className="pt-1 border-t border-border/40">
+              {confirming ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground flex-1">Remove this entry?</span>
+                  <button
+                    onClick={() => setConfirming(false)}
+                    className="text-[11px] px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-white/5 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => { onRemove(); setConfirming(false); }}
+                    className="text-[11px] px-2.5 py-1 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500/25 transition font-semibold"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirming(true)}
+                  className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60 hover:text-red-400 transition py-0.5"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Remove from history
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -228,6 +259,19 @@ export function BridgeHistory() {
   liveRef.current    = liveStatuses;
 
   const refreshFromStorage = useCallback(() => setEntries(loadHistory()), []);
+
+  const removeEntry = useCallback((id: string) => {
+    setEntries(prev => {
+      const next = prev.filter(e => e.transaction_id !== id);
+      saveHistory(next);
+      return next;
+    });
+    setLiveStatuses(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => { if (e.key === LS_KEY) refreshFromStorage(); };
@@ -358,7 +402,12 @@ export function BridgeHistory() {
           ) : (
             <div className="space-y-2 mt-3">
               {entries.map(e => (
-                <Row key={e.transaction_id} entry={e} liveStatus={liveStatuses[e.transaction_id]} />
+                <Row
+                  key={e.transaction_id}
+                  entry={e}
+                  liveStatus={liveStatuses[e.transaction_id]}
+                  onRemove={() => removeEntry(e.transaction_id)}
+                />
               ))}
             </div>
           )}
