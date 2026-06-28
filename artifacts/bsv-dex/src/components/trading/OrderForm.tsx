@@ -755,10 +755,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
       });
       return;
     }
-    if (!isEvm && side === "buy" && total > 0 && total > availableAmt + 1e-9) {
+    // Market buy orders lock qty * price * 1.005 (0.5% slippage buffer); account for
+    // it here so the guard fires before the server rejects the order.
+    const lockRequired = (side === "buy" && type === "market") ? total * 1.005 : total;
+    if (!isEvm && side === "buy" && lockRequired > 0 && lockRequired > availableAmt + 1e-9) {
       toast({
         title:       "Insufficient Balance",
-        description: `You need ${total.toFixed(2)} ${quote} but only have ${availableAmt.toFixed(2)} ${quote}.`,
+        description: `You need ${lockRequired.toFixed(2)} ${quote} (incl. fees) but only have ${availableAmt.toFixed(2)} ${quote}.`,
         variant:     "destructive",
       });
       return;
@@ -1268,9 +1271,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                   }
                   const portion = opt === "MAX" ? availableAmt : availableAmt * (opt / 100);
                   if (side === "buy") {
-                    // available is in quote (USDT) — divide by price to get base token qty
+                    // available is in quote (USDT) — divide by price to get base token qty.
+                    // Market buy orders carry a 0.5% slippage buffer in the backend lock amount;
+                    // divide it out here so the locked amount never exceeds available balance.
                     const px = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
-                    if (px > 0) setAmount((portion / px).toFixed(6));
+                    const slipFactor = type === "market" ? 1.005 : 1;
+                    if (px > 0) setAmount((portion / (px * slipFactor)).toFixed(6));
                   } else {
                     // available is already in base tokens
                     setAmount(portion > 0 ? portion.toFixed(6) : "");
@@ -1693,12 +1699,16 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
       {/* ── Order Confirmation Modal ─────────────────────────────────────────── */}
       {showConfirm && (() => {
-        const qty    = parseFloat(amount) || 0;
-        const px     = parseFloat(price)  || currentPrice;
-        const total  = qty * px;
-        const fee    = total * 0.003;
-        const isBuy  = side === "buy";
-        const locked = isBuy ? total : qty;
+        const FEE_RATE   = 0.001;   // 0.1% taker fee (matches backend default)
+        const qty        = parseFloat(amount) || 0;
+        const px         = parseFloat(price)  || currentPrice;
+        const total      = qty * px;
+        const fee        = total * FEE_RATE;
+        const isBuy      = side === "buy";
+        // Market buy orders lock qty × price × 1.005 (0.5% slippage buffer).
+        // Use the real lock amount so the insufficient-balance warning is accurate.
+        const slipFactor = (isBuy && type === "market") ? 1.005 : 1;
+        const locked     = isBuy ? total * slipFactor : qty;
         return (
           <div
             className="fixed inset-0 z-[999] flex items-end justify-center bg-black/60 backdrop-blur-sm"
@@ -1745,7 +1755,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                   <span className="font-mono font-semibold">{total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {quote}</span>
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground/70">
-                  <span>Est. Fee ({liveQuote ? `${(liveQuote.feeBps / 100).toFixed(2)}%` : "0.30%"})</span>
+                  <span>Est. Fee ({liveQuote ? `${(liveQuote.feeBps / 100).toFixed(2)}%` : "0.10%"})</span>
                   <span className="font-mono">{fee.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} {quote}</span>
                 </div>
                 <div className="border-t border-border/50 pt-2 flex justify-between text-xs">
