@@ -186,7 +186,7 @@ export function Markets() {
   const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
 
   // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
-  const needAllPairs = tab === "sol" || tab === "favorites" || search.length > 0;
+  const needAllPairs = tab === "sol" || tab === "eth" || tab === "favorites" || search.length > 0;
   const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
   const leAllPairs = useMemo(() => {
     const mapped = (rawLeAllPairs ?? []).map(p => ({
@@ -344,7 +344,20 @@ export function Markets() {
         const leOnlyBtc = leBtcPairs.filter(m => !dbBtcSymbols.has(m.symbol) && !dbBtcBases.has(m.baseAsset));
         return [...dbBtc, ...leOnlyBtc];
       }
-      case "eth":     return dbByQuote("ETH");
+      case "eth": {
+        const dbEth = dbByQuote("ETH");
+        const dbBases = new Set(dbEth.map((m: any) => m.baseAsset));
+        const baseKw = ["base", "base-mainnet"];
+        const baseLeByBase = new Map<string, any>();
+        for (const m of leAllPairs) {
+          const net = String((m as any).network ?? "").toLowerCase();
+          if (!baseKw.some(kw => net.includes(kw))) continue;
+          if (dbBases.has(m.baseAsset)) continue;
+          const ex = baseLeByBase.get(m.baseAsset);
+          if (!ex || m.lastPrice > ex.lastPrice) baseLeByBase.set(m.baseAsset, m);
+        }
+        return [...dbEth, ...baseLeByBase.values()];
+      }
       case "bnb":     return dbByQuote("BNB");
       case "matic":   return dbByQuote("MATIC");
       case "avax":    return dbByQuote("AVAX");
