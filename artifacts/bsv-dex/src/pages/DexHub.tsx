@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   TrendingUp, Globe, ArrowUpRight, Search, RefreshCw,
   BarChart2, ShieldCheck, Layers, ExternalLink, Coins,
-  ArrowUpDown, ChevronDown, Droplets, Zap, X, ChevronUp, ChevronLeft,
+  ArrowUpDown, ArrowLeftRight, ChevronDown, Droplets, Zap, X, ChevronUp, ChevronLeft,
   Shield, Link2, Copy, Check, FlaskConical, Receipt, AlertTriangle, CheckCircle2, Info,
   Cpu, Waves, Activity, Gauge,
 } from "lucide-react";
@@ -1609,8 +1609,9 @@ export function DexHub() {
                               </div>
                             )}
                             {swaps.map((t: any, i: number) => (
-                              <a key={i} href={t.tradeUrl ?? "#"} target="_blank" rel="noopener noreferrer"
-                                className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors"
+                              <button key={i}
+                                onClick={() => { setSelectedCoin(null); navigate("/swap"); }}
+                                className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors w-full text-left"
                               >
                                 {t.exchangeLogo
                                   ? <img src={t.exchangeLogo} alt={t.exchangeName} className="w-8 h-8 rounded-full shrink-0 bg-secondary border border-border" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -1629,8 +1630,8 @@ export function DexHub() {
                                     : <p className="text-xs text-muted-foreground">Market rate</p>
                                   }
                                 </div>
-                                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 ml-1" />
-                              </a>
+                                <ArrowLeftRight className="w-3.5 h-3.5 text-primary/50 shrink-0 ml-1" />
+                              </button>
                             ))}
                           </>
                         )}
