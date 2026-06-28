@@ -14,7 +14,7 @@
 
 import { db } from "@workspace/db";
 import { marketsTable, platformSettingsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { logger } from "./logger.js";
 
 export const ARB_BOT_ADDRESS = "BOT_ARB_ENGINE";
@@ -146,6 +146,8 @@ async function runArbCycle() {
     const enabled = await getSetting("arb_bot_enabled");
     if (enabled !== "true") return;
 
+    // Exclude LE markets — arb operates on internal order-book pairs only.
+    // Before this fix, all 36K+ active LE markets were loaded on every cycle.
     const markets: MarketRow[] = await db.select({
       symbol:     marketsTable.symbol,
       baseAsset:  marketsTable.baseAsset,
@@ -153,7 +155,9 @@ async function runArbCycle() {
       lastPrice:  marketsTable.lastPrice,
       updatedAt:  marketsTable.updatedAt,
       status:     marketsTable.status,
-    }).from(marketsTable).where(eq(marketsTable.status, "active"));
+    }).from(marketsTable).where(
+      and(eq(marketsTable.status, "active"), ne(marketsTable.type, "letsexchange"))
+    );
 
     if (markets.length === 0) return;
 

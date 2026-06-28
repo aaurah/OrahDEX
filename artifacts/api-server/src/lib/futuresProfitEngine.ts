@@ -14,7 +14,7 @@
 
 import { pool, db } from "@workspace/db";
 import { futuresPositionsTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
 import { liquidateFuturesPosition } from "./futuresSettlement.js";
@@ -162,7 +162,11 @@ async function runFundingCycle(): Promise<void> {
 
 async function runLiquidationCycle(): Promise<void> {
   try {
-    const markets   = await db.select().from(marketsTable);
+    // Exclude LE markets (36K rows) — only spot/perp prices needed for position mark-to-market.
+    const markets   = await db
+      .select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
+      .from(marketsTable)
+      .where(ne(marketsTable.type, "letsexchange"));
     const positions = await db.select().from(futuresPositionsTable)
       .where(eq(futuresPositionsTable.status, "open"));
 
