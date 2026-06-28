@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
 import { liquidateFuturesPosition } from "./futuresSettlement.js";
+import { isDbConnError } from "./dbErrors.js";
 
 const INTEREST_RATE_PER_8H = 0.0001 / 8;       // 0.01% / 8 intervals = 0.00125% per interval
 const MAX_FUNDING_RATE     = 0.0075;             // 0.75%
@@ -130,7 +131,11 @@ export async function settleFundingPayments(symbol: string): Promise<void> {
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
-    logger.error({ err, symbol }, "Funding settlement transaction failed");
+    if (isDbConnError(err)) {
+      logger.warn({ symbol }, "Funding settlement: DB unavailable, skipping");
+    } else {
+      logger.error({ err, symbol }, "Funding settlement transaction failed");
+    }
     throw err;
   } finally {
     client.release();
@@ -161,7 +166,11 @@ export async function settleFundingPayments(symbol: string): Promise<void> {
       try {
         await liquidateFuturesPosition(pos.id, markPrice);
       } catch (err) {
-        logger.error({ err, positionId: pos.id }, "Liquidation failed during funding settlement");
+        if (isDbConnError(err)) {
+          logger.warn({ positionId: pos.id }, "Liquidation skipped: DB unavailable during funding settlement");
+        } else {
+          logger.error({ err, positionId: pos.id }, "Liquidation failed during funding settlement");
+        }
       }
     }
   }
@@ -196,7 +205,11 @@ export function startFundingRateEngine(): void {
       try {
         await updateFundingRate(symbol, markPrice, indexPrice);
       } catch (err) {
-        logger.error({ err, symbol }, "Failed to update funding rate");
+        if (isDbConnError(err)) {
+          logger.warn({ symbol }, "Funding rate update skipped: DB unavailable");
+        } else {
+          logger.error({ err, symbol }, "Failed to update funding rate");
+        }
       }
 
       // Settle every 8h: check if it has been at least 8h since last settlement
@@ -207,7 +220,11 @@ export function startFundingRateEngine(): void {
           await settleFundingPayments(symbol);
           logger.info({ symbol }, "Funding payments settled");
         } catch (err) {
-          logger.error({ err, symbol }, "Failed to settle funding payments");
+          if (isDbConnError(err)) {
+            logger.warn({ symbol }, "Funding settlement skipped: DB unavailable");
+          } else {
+            logger.error({ err, symbol }, "Failed to settle funding payments");
+          }
         }
       }
     }
