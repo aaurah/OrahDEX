@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { X, Search, Star, ChevronUp, ChevronDown, ArrowLeftRight, Info } from "lucide-react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { X, Search, Star, ChevronUp, ChevronDown, ArrowLeftRight, Info, RefreshCw } from "lucide-react";
 import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
 import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -323,8 +323,11 @@ interface Props {
 const SPOT_CATS    = CATS.filter(c => c.id !== "futures");
 const FUTURES_CATS: { id: Cat; label: string }[] = [{ id: "futures", label: "Futures" }];
 
+const PAGE = 150; // rows per infinite-scroll page
+
 export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat, mode }: Props) {
   const [, navigate]  = useLocation();
+  const queryClient   = useQueryClient();
   const effectiveCats = mode === "futures" ? FUTURES_CATS : mode === "spot" ? SPOT_CATS : CATS;
   const resolvedDefault: Cat = mode === "futures" ? "futures" : (defaultCat ?? "usd");
 
@@ -334,6 +337,13 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const [sortKey, setSortKey] = useState<"base"|"price"|"chg">("base");
   const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
   const [infoCoin, setInfoCoin] = useState<string | null>(null);
+  const [renderCount, setRenderCount] = useState(PAGE);
+  const [pulling, setPulling]   = useState(false);
+  const [pullDist, setPullDist] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const scrollRef   = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const touchStartY = useRef(0);
   const [favorites, setFavorites] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem("market_favorites");
@@ -357,6 +367,56 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       setCat(mode === "futures" ? "futures" : (defaultCat ?? "usd"));
     }
   }, [mode, defaultCat]);
+
+  // Reset render count whenever filters change so the list starts from the top
+  useEffect(() => {
+    setRenderCount(PAGE);
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [cat, usdSub, search, sortKey, sortDir]);
+
+  // Infinite scroll — grow render window when sentinel comes into view
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setRenderCount(n => n + PAGE); },
+      { root: scrollRef.current, rootMargin: "200px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [cat, usdSub, search, sortKey, sortDir]);
+
+  // Pull-to-refresh handlers
+  const doRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await queryClient.invalidateQueries({ queryKey: ["markets"] });
+    await queryClient.refetchQueries({ queryKey: ["markets"] });
+    setRefreshing(false);
+  }, [queryClient]);
+
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    if ((scrollRef.current?.scrollTop ?? 0) === 0) {
+      touchStartY.current = e.touches[0].clientY;
+    } else {
+      touchStartY.current = -1;
+    }
+  }, []);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    if (touchStartY.current < 0) return;
+    const delta = e.touches[0].clientY - touchStartY.current;
+    if (delta > 0) {
+      setPulling(true);
+      setPullDist(Math.min(delta * 0.45, 72));
+    }
+  }, []);
+
+  const onTouchEnd = useCallback(() => {
+    if (pullDist >= 52 && !refreshing) doRefresh();
+    setPulling(false);
+    setPullDist(0);
+    touchStartY.current = -1;
+  }, [pullDist, refreshing, doRefresh]);
 
   // Native market data (prices / changes)
   const { data: apiData } = useQuery({
@@ -421,13 +481,10 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     return sortDir === "asc" ? v : -v;
   });
 
-  // Mobile Safari cannot render thousands of rows without crashing
-  // ("a problem repeatedly occurred"). Cap the visible list and surface a
-  // hint when there are more results than we drew.
-  const MAX_RENDER = 300;
-  const totalRows  = rows.length;
-  const truncated  = totalRows > MAX_RENDER;
-  if (truncated) rows = rows.slice(0, MAX_RENDER);
+  // Infinite-scroll window — render PAGE rows at a time; sentinel triggers more
+  const totalRows = rows.length;
+  const hasMore   = totalRows > renderCount;
+  if (hasMore) rows = rows.slice(0, renderCount);
 
   const toggleSort = (k: "base"|"price"|"chg") => {
     if (sortKey === k) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -481,9 +538,19 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
         {/* Header */}
         <div className="flex items-center justify-between px-4 pt-safe-top pt-4 pb-3 border-b border-border shrink-0">
           <span className="text-base font-bold">{mode === "futures" ? "Futures Pairs" : "Markets"}</span>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={doRefresh}
+              disabled={refreshing}
+              className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+              aria-label="Refresh markets"
+            >
+              <RefreshCw size={15} className={refreshing ? "animate-spin text-primary" : "text-muted-foreground"} />
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Search */}
@@ -565,7 +632,34 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
         </div>
 
         {/* Market rows */}
-        <div className="flex-1 overflow-y-auto overscroll-contain">
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto overscroll-contain"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          {/* Pull-to-refresh indicator */}
+          <div
+            style={{
+              height: pulling || refreshing ? `${Math.max(pullDist, refreshing ? 44 : 0)}px` : "0px",
+              transition: pulling ? "none" : "height 0.2s ease",
+              overflow: "hidden",
+            }}
+            className="flex items-center justify-center"
+          >
+            <RefreshCw
+              size={18}
+              className={cn(
+                "transition-transform",
+                refreshing ? "animate-spin text-primary" : "text-muted-foreground"
+              )}
+              style={{ transform: refreshing ? undefined : `rotate(${(pullDist / 72) * 360}deg)` }}
+            />
+            <span className="text-[11px] text-muted-foreground ml-2">
+              {refreshing ? "Refreshing…" : pullDist >= 52 ? "Release to refresh" : "Pull to refresh"}
+            </span>
+          </div>
           {rows.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
               {cat === "favorites" ? "No favorites yet" : search ? "No results" : "Loading…"}
@@ -699,12 +793,19 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
               );
             });
           })()}
-          {truncated && (
+          {/* Infinite-scroll sentinel */}
+          <div ref={sentinelRef} className="h-px" />
+
+          {/* Footer: progress or end-of-list */}
+          {hasMore ? (
             <div className="px-4 py-3 text-center text-[11px] text-muted-foreground border-t border-border/30">
-              Showing first {MAX_RENDER} of {totalRows} matches.
-              {search ? " Refine your search to narrow results." : " Pick a category tab to narrow results."}
+              Showing {renderCount} of {totalRows} · scroll for more
             </div>
-          )}
+          ) : totalRows > PAGE ? (
+            <div className="px-4 py-3 text-center text-[11px] text-muted-foreground/50 border-t border-border/20">
+              All {totalRows} pairs loaded
+            </div>
+          ) : null}
         </div>
       </div>
       <CoinInfoSheet symbol={infoCoin} onClose={() => setInfoCoin(null)} />
