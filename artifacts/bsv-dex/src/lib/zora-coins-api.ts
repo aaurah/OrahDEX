@@ -52,12 +52,14 @@ function edgeToRow(node: any): ZoraCoinRow | null {
 const LIST_TYPES = ["TOP_VOLUME_24H", "MOST_VALUABLE", "TOP_GAINERS", "NEW"] as const;
 
 export async function fetchZoraCoins(count = 50): Promise<ZoraCoinRow[]> {
+  // Build auth header — SDK source confirms key name is "api-key" (not X-API-Key)
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (ZORA_KEY) headers["api-key"] = ZORA_KEY;
+
   const byAddress = new Map<string, ZoraCoinRow>();
   await Promise.all(
     LIST_TYPES.map(async (listType) => {
       try {
-        const headers: Record<string, string> = { Accept: "application/json" };
-        if (ZORA_KEY) headers["X-API-Key"] = ZORA_KEY;
         const r = await fetch(
           `${ZORA_API}/explore?listType=${listType}&count=${count}`,
           { headers }
@@ -70,7 +72,7 @@ export async function fetchZoraCoins(count = 50): Promise<ZoraCoinRow[]> {
           const row = edgeToRow(node);
           if (row) byAddress.set(node.address, row);
         }
-      } catch { /* CORS / network fail — silently skip */ }
+      } catch { /* network / CORS fail — silently skip */ }
     })
   );
   return [...byAddress.values()].sort((a, b) => b.vol - a.vol);
