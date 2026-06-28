@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   fetchGeckoPools,
   fetchGeckoCategory,
+  mergeGeckoRows,
   CAT_GECKO_NETWORK,
   CAT_GECKO_CATEGORY,
   type GeckoRow,
@@ -10,14 +11,22 @@ import {
 export function useGeckoTerminalPools(cat: string): { data: GeckoRow[]; isLoading: boolean } {
   const networkSlug  = CAT_GECKO_NETWORK[cat];
   const categorySlug = CAT_GECKO_CATEGORY[cat];
+  const hasBoth = !!(networkSlug && categorySlug);
   const enabled = !!(networkSlug || categorySlug);
 
   const { data = [], isLoading } = useQuery<GeckoRow[]>({
     queryKey:  ["gecko-pools", cat],
-    queryFn:   () =>
-      categorySlug
+    queryFn:   () => {
+      if (hasBoth) {
+        return Promise.all([
+          fetchGeckoPools(networkSlug!),
+          fetchGeckoCategory(categorySlug!),
+        ]).then(([net, cat]) => mergeGeckoRows(net, cat));
+      }
+      return categorySlug
         ? fetchGeckoCategory(categorySlug)
-        : fetchGeckoPools(networkSlug!),
+        : fetchGeckoPools(networkSlug!);
+    },
     enabled,
     staleTime: 90_000,
     gcTime:    5 * 60_000,

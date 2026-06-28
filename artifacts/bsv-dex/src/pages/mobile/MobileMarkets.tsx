@@ -24,6 +24,7 @@ import {
   UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
 import { cn } from "@/lib/utils";
 import { hasCategory } from "@/lib/market-categories";
 
@@ -360,6 +361,9 @@ export function MobileMarkets() {
     apiRows.map((m: MktRow) => [m.symbol, m])
   ), [apiRows]);
 
+  // Live on-chain data from GeckoTerminal (chain/category tabs, cached 90s)
+  const { data: geckoRows } = useGeckoTerminalPools(cat);
+
   const globalRows = useMemo(() => Array.from(new Map(
     [
       ...apiRows,
@@ -368,6 +372,17 @@ export function MobileMarkets() {
   ).values()), [apiRows, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs]);
 
   let rows = getCatRows(cat, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs, apiRows);
+
+  // Merge live GeckoTerminal data for chain/category tabs
+  if (!search && geckoRows.length > 0) {
+    const geckoByBase = new Map(geckoRows.map((g: any) => [g.base, g]));
+    rows = rows.map(r => { const g = geckoByBase.get(r.base); return g && g.price > 0 ? { ...r, price: g.price, chg: g.chg } : r; });
+    const existingBases = new Set(rows.map(r => r.base));
+    const newRows: MktRow[] = geckoRows
+      .filter((g: any) => !existingBases.has(g.base) && g.price > 0)
+      .map((g: any) => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, vol: g.vol, cap: g.fdv, type: "spot" as const }));
+    rows = [...rows, ...newRows];
+  }
 
   if (search) {
     const q = search.toUpperCase();
