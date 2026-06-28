@@ -227,6 +227,13 @@ export function SpotTrading() {
   const [tradeModeLockedByUser, setTradeModeLockedByUser] = useState(false);
   const [atomicSwapOpen, setAtomicSwapOpen] = useState(false);
 
+  // Keep pair-selector chain filter in sync with the wallet's active chain.
+  // Runs whenever the user switches chains in ChainSwitcherDropdown or any wallet UI.
+  // If the new chain is not a recognised EVM chain in our map, resets to "All chains".
+  useEffect(() => {
+    setDropChain(walletChainId && CHAIN_NET_CODES[walletChainId] ? walletChainId : null);
+  }, [walletChainId]);
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (pairDropRef.current && !pairDropRef.current.contains(e.target as Node)) {
@@ -557,7 +564,7 @@ export function SpotTrading() {
         <div className="relative shrink-0" ref={pairDropRef}>
           <div className="flex flex-col gap-0.5">
             <button
-              onClick={() => { setPairDropOpen(v => { if (!v) { setDropSearch(""); setDropChain(walletChainId && CHAIN_NET_CODES[walletChainId] ? walletChainId : null); } return !v; }); }}
+              onClick={() => { setPairDropOpen(v => { if (!v) { setDropSearch(""); } return !v; }); }}
               className="flex items-center gap-2 group"
             >
               {/* Overlapping base + quote logos */}
