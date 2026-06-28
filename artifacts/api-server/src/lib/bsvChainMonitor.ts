@@ -61,7 +61,9 @@ async function setSettings(pairs: Record<string, string>) {
 
 async function getSetting(key: string): Promise<string | null> {
   try {
-    const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+    const rows = await withDbRetry(() =>
+      db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key))
+    );
     return rows[0]?.value ?? null;
   } catch { return null; }
 }
@@ -69,10 +71,12 @@ async function getSetting(key: string): Promise<string | null> {
 async function getSettings(keys: string[]): Promise<Record<string, string | null>> {
   const map: Record<string, string | null> = Object.fromEntries(keys.map(k => [k, null]));
   try {
-    const rows = await db
-      .select({ key: platformSettingsTable.key, value: platformSettingsTable.value })
-      .from(platformSettingsTable)
-      .where(inArray(platformSettingsTable.key, keys));
+    const rows = await withDbRetry(() =>
+      db
+        .select({ key: platformSettingsTable.key, value: platformSettingsTable.value })
+        .from(platformSettingsTable)
+        .where(inArray(platformSettingsTable.key, keys))
+    );
     for (const row of rows) map[row.key] = row.value;
   } catch { /* return nulls for all keys */ }
   return map;
