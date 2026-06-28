@@ -22,10 +22,10 @@
  */
 
 import crypto from "node:crypto";
-import { db, pool } from "@workspace/db";
+import { db, pool, withDbRetry } from "@workspace/db";
 import { bsvIntentSessionsTable, platformSettingsTable } from "@workspace/db/schema";
 import { overlayRecordsTable } from "@workspace/db/schema";
-import { isNotNull, or, sql } from "drizzle-orm";
+import { inArray, isNotNull, or, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { isDbConnError } from "./dbErrors.js";
@@ -277,43 +277,49 @@ async function blockScanTick(currentHeight: number): Promise<void> {
 // ── DB-targeted scan path ────────────────────────────────────────────────────
 
 async function dbTargetedScan(): Promise<void> {
-  // Collect all txids already indexed
-  const existingRows = await db
-    .select({ txid: overlayRecordsTable.txid })
-    .from(overlayRecordsTable);
-  const knownTxids = new Set(existingRows.map(r => r.txid));
-
-  // Query claimTxid, auditTxid, and fundingTxid from intent sessions
-  const sessions = await db
-    .select({
-      claimTxid:  bsvIntentSessionsTable.claimTxid,
-      auditTxid:  bsvIntentSessionsTable.auditTxid,
-      fundingTxid: bsvIntentSessionsTable.fundingTxid,
-    })
-    .from(bsvIntentSessionsTable)
-    .where(
-      or(
-        isNotNull(bsvIntentSessionsTable.claimTxid),
-        isNotNull(bsvIntentSessionsTable.auditTxid),
-        isNotNull(bsvIntentSessionsTable.fundingTxid),
+  // Step 1: fetch sessions with pending txids (bounded, no full scan)
+  const sessions = await withDbRetry(() =>
+    db
+      .select({
+        claimTxid:   bsvIntentSessionsTable.claimTxid,
+        auditTxid:   bsvIntentSessionsTable.auditTxid,
+        fundingTxid: bsvIntentSessionsTable.fundingTxid,
+      })
+      .from(bsvIntentSessionsTable)
+      .where(
+        or(
+          isNotNull(bsvIntentSessionsTable.claimTxid),
+          isNotNull(bsvIntentSessionsTable.auditTxid),
+          isNotNull(bsvIntentSessionsTable.fundingTxid),
+        )
       )
-    )
-    .limit(DB_BATCH_SIZE * 3);
+      .limit(DB_BATCH_SIZE * 3)
+  );
 
-  // Collect unique unindexed txids; prioritise claim > audit > funding
-  const toScan: string[] = [];
+  // Collect unique candidate txids from sessions
+  const candidates: string[] = [];
   const seen = new Set<string>();
-
   for (const s of sessions) {
     for (const txid of [s.claimTxid, s.auditTxid, s.fundingTxid]) {
-      if (txid && !knownTxids.has(txid) && !seen.has(txid)) {
+      if (txid && !seen.has(txid)) {
         seen.add(txid);
-        toScan.push(txid);
-        if (toScan.length >= DB_BATCH_SIZE) break;
+        candidates.push(txid);
       }
     }
-    if (toScan.length >= DB_BATCH_SIZE) break;
   }
+  if (candidates.length === 0) return;
+
+  // Step 2: check only those specific txids against overlay_records (indexed lookup, not full scan)
+  const existingRows = await withDbRetry(() =>
+    db
+      .select({ txid: overlayRecordsTable.txid })
+      .from(overlayRecordsTable)
+      .where(inArray(overlayRecordsTable.txid, candidates))
+  );
+  const knownTxids = new Set(existingRows.map(r => r.txid));
+
+  // Filter to unindexed txids only
+  const toScan = candidates.filter(txid => !knownTxids.has(txid)).slice(0, DB_BATCH_SIZE);
 
   if (toScan.length === 0) return;
 
