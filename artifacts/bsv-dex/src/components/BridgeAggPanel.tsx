@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ChevronDown, ArrowRight, ArrowUpDown, RefreshCw, Zap, Clock, AlertCircle, CheckCircle2, Copy } from "lucide-react";
 import { API_BASE } from "@/lib/api";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -342,6 +343,15 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
   const [buildingTx, setBuildingTx] = useState(false);
   const [buildTxError, setBuildTxError] = useState<string | null>(null);
 
+  // Wallet balance for the from-token
+  const { balances: evmBals, loading: evmBalsLoading } = useEvmBalances(
+    walletAddress ?? null,
+    fromChain?.id ?? null,
+  );
+  const fromTokenBal = fromToken
+    ? (evmBals.find(t => t.symbol.toUpperCase() === fromToken.symbol.toUpperCase())?.amount ?? 0)
+    : 0;
+
   // Load chains on mount
   useEffect(() => {
     fetch(`${API_BASE}/bridge-agg/chains`)
@@ -476,6 +486,26 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
           excludeId={toChain?.id}
         />
 
+        {/* Balance row */}
+        {walletAddress && fromToken && (
+          <div className="flex items-center justify-between text-[11px] px-0.5 -mb-1">
+            <span className="text-muted-foreground">Available</span>
+            {evmBalsLoading && evmBals.length === 0
+              ? <span className="text-muted-foreground/50 animate-pulse">loading…</span>
+              : <button
+                  onClick={() => fromTokenBal > 0 ? setAmount(fromTokenBal.toFixed(6)) : undefined}
+                  className={fromTokenBal > 0 ? "text-primary font-semibold" : "text-muted-foreground/60 pointer-events-none"}
+                >
+                  {fromTokenBal < 0.0001 && fromTokenBal > 0
+                    ? fromTokenBal.toFixed(8)
+                    : fromTokenBal < 1
+                      ? fromTokenBal.toFixed(6)
+                      : fromTokenBal.toFixed(4)} {fromToken.symbol}{fromTokenBal > 0 ? " MAX" : ""}
+                </button>
+            }
+          </div>
+        )}
+
         <div className="flex items-center gap-3">
           <div className="flex-1 relative">
             <input
@@ -495,6 +525,22 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
             label="Token"
           />
         </div>
+
+        {/* Min/Max from quotes */}
+        {quotes.length > 0 && fromToken && (
+          <div className="flex items-center justify-between text-[10px] px-1 -mt-1">
+            <span className="text-muted-foreground/55">
+              Min: {parseFloat(quotes[quotes.length - 1]?.amountInHuman ?? "0") > 0
+                ? parseFloat(quotes[quotes.length - 1].amountInHuman).toFixed(4)
+                : "—"} {fromToken.symbol}
+            </span>
+            <span className="text-muted-foreground/40">
+              Max: {parseFloat(quotes[0]?.amountInHuman ?? "0") > 0
+                ? parseFloat(quotes[0].amountInHuman).toFixed(4)
+                : "—"} {fromToken.symbol}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── Swap direction button ────────────────────────────────── */}
