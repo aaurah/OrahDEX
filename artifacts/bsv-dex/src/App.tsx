@@ -7,7 +7,6 @@ import { PinPromptModal } from "@/components/PinPromptModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { WalletChooserDialog } from "@/components/WalletChooserDialog";
 
-import { ApiConnectionBanner } from "@/components/ApiConnectionBanner";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme, useThemeStore } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -568,7 +567,6 @@ function AppContent() {
 
   return (
     <>
-      <ApiConnectionBanner />
       <ThirdwebSync />
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <Router />
