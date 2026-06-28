@@ -366,10 +366,25 @@ export function SpotTrading() {
     setTradeModeLockedByUser(true);
   }, []);
 
+  // Real price for catalog tokens (Base chain DexScreener / Zora Coins API)
+  // Used when the API has no stored ticker for the pair.
+  const catalogPrice = useMemo(() => {
+    const dp = basePrices.get(base);
+    if (dp?.price > 0) return { price: dp.price, chg: dp.chg };
+    const zr = (zoraRows ?? []).find((z: any) => z.base === base);
+    if (zr?.price > 0) return { price: zr.price, chg: zr.chg ?? 0 };
+    return null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [base, basePrices, zoraRows]);
+
+  const _genTicker = generateTickerForSymbol(base, quote);
   const ticker     = (apiTicker?.lastPrice && apiTicker.lastPrice > 0 ? apiTicker : null)
     ?? MOCK_TICKER[rawSymbol]
-    ?? generateTickerForSymbol(base, quote);
-  const isPositive = ticker.priceChangePercent >= 0;
+    ?? (catalogPrice
+      ? { ..._genTicker, lastPrice: catalogPrice.price,
+          priceChangePercent: catalogPrice.chg, priceChangePercent24h: catalogPrice.chg }
+      : _genTicker);
+  const isPositive = (ticker.priceChangePercent ?? ticker.priceChangePercent24h ?? 0) >= 0;
 
   /* ── Cross-rate: USD equivalent of the quoted price ── */
   const { prices: crossRates } = useWalletPrices();
