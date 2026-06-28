@@ -7,6 +7,7 @@ import { PinPromptModal } from "@/components/PinPromptModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { WalletChooserDialog } from "@/components/WalletChooserDialog";
 
+import { ApiConnectionBanner } from "@/components/ApiConnectionBanner";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { applyStoredTheme, useThemeStore } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -157,15 +158,24 @@ class AppErrorBoundary extends Component<
   }
 }
 
-/* ─── QueryClient — aggressive caching so API is hit far less often ─── */
+/* ─── QueryClient — aggressive caching + smart retry with exponential back-off ─── */
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
-      retryDelay: 1000,
+      retry: (failureCount, error) => {
+        // 4xx errors (bad request, auth, not found) will not self-heal — skip retries
+        const status = (error as { status?: number })?.status;
+        if (status !== undefined && status >= 400 && status < 500) return false;
+        // Network failures and 5xx get up to 3 retries
+        return failureCount < 3;
+      },
+      retryDelay: (attempt) =>
+        // Exponential back-off: 1 s → 2 s → 4 s, capped at 30 s, with ±500 ms jitter
+        Math.min(1_000 * 2 ** attempt + Math.random() * 500, 30_000),
       refetchOnWindowFocus: false,
-      staleTime: 30_000,       // 30 s — data considered fresh; no re-fetch during this window
-      gcTime: 5 * 60_000,      // 5 min — keep unused data in memory cache
+      refetchOnReconnect: true,   // Re-fetch stale data automatically when API comes back
+      staleTime: 30_000,          // 30 s — data considered fresh; no re-fetch during this window
+      gcTime: 5 * 60_000,         // 5 min — keep unused data in memory cache
     },
   },
 });
@@ -558,6 +568,7 @@ function AppContent() {
 
   return (
     <>
+      <ApiConnectionBanner />
       <ThirdwebSync />
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <Router />
