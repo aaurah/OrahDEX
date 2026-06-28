@@ -405,12 +405,11 @@ app.get("/api/ping", (_req, res) => {
   res.status(204).end();
 });
 
-/* ── Bare /api root — deployment health probes sometimes hit this path ─────
-   Respond 200 immediately so the probe doesn't fail on a bare /api request
-   that would otherwise fall through to the API-key auth middleware.        ── */
-app.get("/api", (_req, res) => {
-  res.status(200).json({ ok: true });
-});
+/* ── Bare /api and /v1 roots — deployment health probes sometimes hit these ─
+   Respond 200 immediately so the probe doesn't fail on a bare request that
+   would otherwise fall through to the API-key auth middleware.             ── */
+app.get("/api", (_req, res) => { res.status(200).json({ ok: true }); });
+app.get("/v1",  (_req, res) => { res.status(200).json({ ok: true, version: 1 }); });
 
 /* ── Health checks — MUST be registered BEFORE app.use("/api", router).
    The main router mounts futuresRouter at "/" without a prefix, and that
@@ -420,6 +419,8 @@ app.get("/api", (_req, res) => {
    middleware, so the health pulse stays green when futures are disabled. ── */
 app.get("/api/health",  healthHandler);
 app.get("/api/healthz", healthHandler);
+app.get("/v1/health",   healthHandler);
+app.get("/v1/healthz",  healthHandler);
 
 app.use("/api", apiKeyAuth);
 app.use("/v1", apiKeyAuth);

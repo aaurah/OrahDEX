@@ -27,8 +27,11 @@ function start(label, cmd, args, cwd, env = {}) {
   return proc;
 }
 
-const API_PORT  = process.env.API_PORT  || "8080";
-const FRONTEND_PORT = process.env.FRONTEND_PORT || process.env.PORT || "20180";
+// API runs on an internal port; the frontend binds the external-facing port
+// (8080 by default, or whatever PORT Replit assigns) so the deployment probe
+// always gets an instant response even before the API has finished booting.
+const API_PORT      = process.env.API_PORT      || "8081";
+const FRONTEND_PORT = process.env.FRONTEND_PORT || process.env.PORT || "8080";
 
 console.log(`Starting OrahDEX — API :${API_PORT}  Frontend :${FRONTEND_PORT}`);
 
