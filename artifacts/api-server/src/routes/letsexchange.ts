@@ -83,6 +83,11 @@ function setCache(k: string, d: unknown) { cache.set(k, { data: d, ts: Date.now(
 // Stampede guard — only one in-flight fetch for currencies at a time
 let currenciesInflight: Promise<NormalisedCoin[]> | null = null;
 
+// Stale-backup for LE currencies: set on first successful fetch, kept forever.
+// Eliminates the "timed out — serving built-in fallback" warning after the
+// first load; stale data is served silently while a background refresh runs.
+let leCurrenciesBackup: NormalisedCoin[] | null = null;
+
 // Stale-backup for SS pairs: once successfully built, kept forever so pairs
 // never vanish from the list if the SS API is temporarily down.
 // Only the admin hidden-pairs list can suppress individual symbols.
@@ -100,6 +105,7 @@ async function fetchAndCacheCurrencies(): Promise<NormalisedCoin[]> {
       if (!ok) throw new Error(`LE /v2/coins returned ${status}`);
       const coins = normaliseV2Coins(Array.isArray(data) ? data : []);
       setCache("currencies", coins);
+      leCurrenciesBackup = coins; // persist beyond TTL — never go back to built-in fallback
       return coins;
     } finally {
       currenciesInflight = null;
@@ -171,28 +177,38 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
 let _timedCurrencyRace: Promise<NormalisedCoin[]> | null = null;
 
 router.get("/letsexchange/currencies", async (_req, res) => {
-  // Return from cache first — fastest path (always < 1 ms)
+  // 1. Hot cache hit — fastest path (< 1 ms)
   const hit = cached("currencies") as NormalisedCoin[] | null;
   if (hit && hit.length > 0) { res.json(hit); return; }
 
-  // Cache is cold — if an API key is set, try to get live data within 5 s.
-  // This prevents the published app from serving stale 331-coin fallback data
-  // on the first load after a deploy or restart.
+  // 2. Cache expired but we have a stale backup from a previous successful
+  //    fetch — serve it immediately (no timeout, no warning) and refresh in bg.
+  if (leCurrenciesBackup && leCurrenciesBackup.length > 0) {
+    res.json(leCurrenciesBackup);
+    // Background refresh so next request gets a fresh TTL entry
+    if (process.env.LETSEXCHANGE_API_KEY) {
+      fetchAndCacheCurrencies().catch(() => { /* silent — backup still valid */ });
+    }
+    return;
+  }
+
+  // 3. True cold-start (first boot, no backup yet) — try live data within 12 s.
   if (process.env.LETSEXCHANGE_API_KEY) {
     try {
       if (!_timedCurrencyRace) {
         _timedCurrencyRace = Promise.race([
           fetchAndCacheCurrencies(),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("timeout")), 5000)
+            setTimeout(() => reject(new Error("timeout")), 12000)
           ),
         ]).finally(() => { _timedCurrencyRace = null; });
       }
       const coins = await _timedCurrencyRace;
       res.json(coins);
       return;
-    } catch (err) {
-      logger.warn({ err }, "letsexchange currencies live fetch timed out — serving built-in fallback");
+    } catch {
+      // Only reaches here on very first boot if LE API is unreachable for >12 s
+      logger.warn("letsexchange cold-start fetch timed out — serving built-in fallback");
     }
   }
 
