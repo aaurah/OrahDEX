@@ -19,15 +19,29 @@ import { cn } from "@/lib/utils";
 // ── Chains ────────────────────────────────────────────────────────────────────
 
 const CHAINS = [
-  { id: 1,       name: "Ethereum",  nativeSym: "ETH",  color: "#627EEA" },
-  { id: 8453,    name: "Base",      nativeSym: "ETH",  color: "#0052FF" },
-  { id: 42161,   name: "Arbitrum",  nativeSym: "ETH",  color: "#28A0F0" },
-  { id: 10,      name: "Optimism",  nativeSym: "ETH",  color: "#FF0420" },
-  { id: 137,     name: "Polygon",   nativeSym: "POL",  color: "#8247E5" },
-  { id: 56,      name: "BNB Chain", nativeSym: "BNB",  color: "#F0B90B" },
-  { id: 43114,   name: "Avalanche", nativeSym: "AVAX", color: "#E84142" },
-  { id: 59144,   name: "Linea",     nativeSym: "ETH",  color: "#61DFFF" },
-  { id: 534352,  name: "Scroll",    nativeSym: "ETH",  color: "#FFEEDA" },
+  { id: 1,       name: "Ethereum",     nativeSym: "ETH",   color: "#627EEA" },
+  { id: 8453,    name: "Base",         nativeSym: "ETH",   color: "#0052FF" },
+  { id: 42161,   name: "Arbitrum",     nativeSym: "ETH",   color: "#28A0F0" },
+  { id: 10,      name: "Optimism",     nativeSym: "ETH",   color: "#FF0420" },
+  { id: 137,     name: "Polygon",      nativeSym: "POL",   color: "#8247E5" },
+  { id: 56,      name: "BNB Chain",    nativeSym: "BNB",   color: "#F0B90B" },
+  { id: 43114,   name: "Avalanche",    nativeSym: "AVAX",  color: "#E84142" },
+  { id: 59144,   name: "Linea",        nativeSym: "ETH",   color: "#61DFFF" },
+  { id: 534352,  name: "Scroll",       nativeSym: "ETH",   color: "#FFEEDA" },
+  { id: 1329,    name: "Sei",          nativeSym: "SEI",   color: "#9D1C1C" },
+  { id: 324,     name: "zkSync Era",   nativeSym: "ETH",   color: "#8C8DFC" },
+  { id: 250,     name: "Fantom",       nativeSym: "FTM",   color: "#1969FF" },
+  { id: 25,      name: "Cronos",       nativeSym: "CRO",   color: "#002D74" },
+  { id: 5000,    name: "Mantle",       nativeSym: "MNT",   color: "#00B6A8" },
+  { id: 100,     name: "Gnosis",       nativeSym: "xDAI",  color: "#04795B" },
+  { id: 42220,   name: "Celo",         nativeSym: "CELO",  color: "#35D07F" },
+  { id: 1284,    name: "Moonbeam",     nativeSym: "GLMR",  color: "#53CBC9" },
+  { id: 146,     name: "Sonic",        nativeSym: "S",     color: "#FF6B2B" },
+  { id: 81457,   name: "Blast",        nativeSym: "ETH",   color: "#FCFC03" },
+  { id: 34443,   name: "Mode",         nativeSym: "ETH",   color: "#DFFE00" },
+  { id: 288,     name: "Boba Network", nativeSym: "ETH",   color: "#CBFF00" },
+  { id: 1088,    name: "Metis",        nativeSym: "METIS", color: "#00DACC" },
+  { id: 167000,  name: "Taiko",        nativeSym: "ETH",   color: "#FC0FC0" },
 ] as const;
 
 type ChainId = (typeof CHAINS)[number]["id"];
@@ -35,11 +49,18 @@ type ChainId = (typeof CHAINS)[number]["id"];
 const CHAIN_NAME: Record<number, string> = Object.fromEntries(CHAINS.map(c => [c.id, c.name]));
 const CHAIN_NATIVE: Record<number, string> = Object.fromEntries(CHAINS.map(c => [c.id, c.nativeSym]));
 const CHAIN_EXPLORER: Record<number, string> = {
-  1: "https://etherscan.io", 8453: "https://basescan.org",
-  42161: "https://arbiscan.io", 10: "https://optimistic.etherscan.io",
-  137: "https://polygonscan.com", 56: "https://bscscan.com",
-  43114: "https://snowtrace.io", 59144: "https://lineascan.build",
-  534352: "https://scrollscan.com",
+  1: "https://etherscan.io",        8453: "https://basescan.org",
+  42161: "https://arbiscan.io",     10: "https://optimistic.etherscan.io",
+  137: "https://polygonscan.com",   56: "https://bscscan.com",
+  43114: "https://snowtrace.io",    59144: "https://lineascan.build",
+  534352: "https://scrollscan.com", 1329: "https://seitrace.com",
+  324: "https://explorer.zksync.io",250: "https://ftmscan.com",
+  25: "https://cronoscan.com",      5000: "https://explorer.mantle.xyz",
+  100: "https://gnosisscan.io",     42220: "https://explorer.celo.org/mainnet",
+  1284: "https://moonscan.io",      146: "https://sonicscan.org",
+  81457: "https://blastscan.io",    34443: "https://explorer.mode.network",
+  288: "https://bobascan.com",      1088: "https://andromeda-explorer.metis.io",
+  167000: "https://taikoscan.io",
 };
 
 // ── Types ─────────────────────────────────────────────────────────────────────

@@ -20,16 +20,29 @@ import { cn } from "@/lib/utils";
 // ── Supported source chains ────────────────────────────────────────────────────
 
 const SOURCE_CHAINS = [
-  { id: 1,      name: "Ethereum",   nativeSym: "ETH"  },
-  { id: 137,    name: "Polygon",    nativeSym: "POL"  },
-  { id: 42161,  name: "Arbitrum",   nativeSym: "ETH"  },
-  { id: 8453,   name: "Base",       nativeSym: "ETH"  },
-  { id: 10,     name: "Optimism",   nativeSym: "ETH"  },
-  { id: 56,     name: "BNB Chain",  nativeSym: "BNB"  },
-  { id: 43114,  name: "Avalanche",  nativeSym: "AVAX" },
-  { id: 59144,  name: "Linea",      nativeSym: "ETH"  },
-  { id: 534352, name: "Scroll",     nativeSym: "ETH"  },
-  { id: 1329,   name: "Sei",        nativeSym: "SEI"  },
+  { id: 1,       name: "Ethereum",     nativeSym: "ETH"   },
+  { id: 137,     name: "Polygon",      nativeSym: "POL"   },
+  { id: 42161,   name: "Arbitrum",     nativeSym: "ETH"   },
+  { id: 8453,    name: "Base",         nativeSym: "ETH"   },
+  { id: 10,      name: "Optimism",     nativeSym: "ETH"   },
+  { id: 56,      name: "BNB Chain",    nativeSym: "BNB"   },
+  { id: 43114,   name: "Avalanche",    nativeSym: "AVAX"  },
+  { id: 59144,   name: "Linea",        nativeSym: "ETH"   },
+  { id: 534352,  name: "Scroll",       nativeSym: "ETH"   },
+  { id: 1329,    name: "Sei",          nativeSym: "SEI"   },
+  { id: 324,     name: "zkSync Era",   nativeSym: "ETH"   },
+  { id: 250,     name: "Fantom",       nativeSym: "FTM"   },
+  { id: 25,      name: "Cronos",       nativeSym: "CRO"   },
+  { id: 5000,    name: "Mantle",       nativeSym: "MNT"   },
+  { id: 100,     name: "Gnosis",       nativeSym: "xDAI"  },
+  { id: 42220,   name: "Celo",         nativeSym: "CELO"  },
+  { id: 1284,    name: "Moonbeam",     nativeSym: "GLMR"  },
+  { id: 146,     name: "Sonic",        nativeSym: "S"     },
+  { id: 81457,   name: "Blast",        nativeSym: "ETH"   },
+  { id: 34443,   name: "Mode",         nativeSym: "ETH"   },
+  { id: 288,     name: "Boba Network", nativeSym: "ETH"   },
+  { id: 1088,    name: "Metis",        nativeSym: "METIS" },
+  { id: 167000,  name: "Taiko",        nativeSym: "ETH"   },
 ] as const;
 
 const CHAIN_NAME: Record<number, string> = Object.fromEntries(
@@ -282,12 +295,20 @@ export function ThirdwebBridgePanel({
   // ── Done state ────────────────────────────────────────────────────────────
 
   if (bridgeDone) {
-    const explorerBase = {
-      1: "https://etherscan.io", 137: "https://polygonscan.com",
-      42161: "https://arbiscan.io", 8453: "https://basescan.org",
+    const explorerBase: Record<number, string> = {
+      1: "https://etherscan.io",        137: "https://polygonscan.com",
+      42161: "https://arbiscan.io",     8453: "https://basescan.org",
       10: "https://optimistic.etherscan.io", 56: "https://bscscan.com",
-      43114: "https://snowtrace.io",
-    } as Record<number, string>;
+      43114: "https://snowtrace.io",    59144: "https://lineascan.build",
+      534352: "https://scrollscan.com", 1329: "https://seitrace.com",
+      324: "https://explorer.zksync.io",250: "https://ftmscan.com",
+      25: "https://cronoscan.com",      5000: "https://explorer.mantle.xyz",
+      100: "https://gnosisscan.io",     42220: "https://explorer.celo.org/mainnet",
+      1284: "https://moonscan.io",      146: "https://sonicscan.org",
+      81457: "https://blastscan.io",    34443: "https://explorer.mode.network",
+      288: "https://bobascan.com",      1088: "https://andromeda-explorer.metis.io",
+      167000: "https://taikoscan.io",
+    };
     const explorer = explorerBase[srcChainId] ?? "https://etherscan.io";
 
     return (
