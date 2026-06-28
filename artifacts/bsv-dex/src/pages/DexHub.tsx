@@ -1287,17 +1287,15 @@ export function DexHub() {
                             const btnCls = "flex items-center gap-1.5 px-3 py-2 rounded-lg bg-secondary active:bg-secondary/60 text-xs font-semibold transition-colors border border-border cursor-pointer select-none";
                             return (
                               <>
-                                {selectedCoin.source === "cg" && (
-                                  <button type="button" onClick={() => open(`https://www.coingecko.com/en/coins/${selectedCoin.id}`)} className={btnCls}>
-                                    <img src="https://www.google.com/s2/favicons?domain=coingecko.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
-                                    CoinGecko
-                                  </button>
-                                )}
-                                <button type="button" onClick={() => open(`https://coinmarketcap.com/currencies/${selectedCoin.name.toLowerCase().replace(/[\s.]+/g, "-")}/`)} className={btnCls}>
+                                <button type="button" onClick={() => open(`https://www.coingecko.com/en/search?query=${encodeURIComponent(selectedCoin.symbol)}`)} className={btnCls}>
+                                  <img src="https://www.google.com/s2/favicons?domain=coingecko.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
+                                  CoinGecko
+                                </button>
+                                <button type="button" onClick={() => open(`https://coinmarketcap.com/search/?q=${encodeURIComponent(selectedCoin.symbol)}`)} className={btnCls}>
                                   <img src="https://www.google.com/s2/favicons?domain=coinmarketcap.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
                                   CoinMarketCap
                                 </button>
-                                <button type="button" onClick={() => open(`https://dexscreener.com/search?q=${selectedCoin.symbol}`)} className={btnCls}>
+                                <button type="button" onClick={() => open(`https://dexscreener.com/search?q=${encodeURIComponent(selectedCoin.symbol)}`)} className={btnCls}>
                                   <img src="https://www.google.com/s2/favicons?domain=dexscreener.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
                                   DexScreener
                                 </button>
@@ -1305,7 +1303,7 @@ export function DexHub() {
                                   <img src="https://www.google.com/s2/favicons?domain=binance.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
                                   Binance
                                 </button>
-                                <button type="button" onClick={() => open(`https://coinpaprika.com/coin/${selectedCoin.id ?? selectedCoin.symbol.toLowerCase()}/`)} className={btnCls}>
+                                <button type="button" onClick={() => open(`https://coinpaprika.com/search/?q=${encodeURIComponent(selectedCoin.symbol)}`)} className={btnCls}>
                                   <img src="https://www.google.com/s2/favicons?domain=coinpaprika.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
                                   CoinPaprika
                                 </button>
