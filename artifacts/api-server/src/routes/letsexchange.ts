@@ -155,6 +155,12 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
 // On cold cache AND with an API key configured, waits up to 5 s for the live
 // data so the first response after a restart carries the full list instead of
 // the 331-coin built-in fallback.
+//
+// Both the underlying fetch and the timed Promise.race are deduplicated so that
+// N concurrent cold-cache requests produce exactly one API call and one timeout
+// timer instead of N separate timers all firing simultaneously.
+let _timedCurrencyRace: Promise<NormalisedCoin[]> | null = null;
+
 router.get("/letsexchange/currencies", async (_req, res) => {
   // Return from cache first — fastest path (always < 1 ms)
   const hit = cached("currencies") as NormalisedCoin[] | null;
@@ -165,12 +171,15 @@ router.get("/letsexchange/currencies", async (_req, res) => {
   // on the first load after a deploy or restart.
   if (process.env.LETSEXCHANGE_API_KEY) {
     try {
-      const coins = await Promise.race([
-        fetchAndCacheCurrencies(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("timeout")), 5000)
-        ),
-      ]);
+      if (!_timedCurrencyRace) {
+        _timedCurrencyRace = Promise.race([
+          fetchAndCacheCurrencies(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("timeout")), 5000)
+          ),
+        ]).finally(() => { _timedCurrencyRace = null; });
+      }
+      const coins = await _timedCurrencyRace;
       res.json(coins);
       return;
     } catch (err) {
