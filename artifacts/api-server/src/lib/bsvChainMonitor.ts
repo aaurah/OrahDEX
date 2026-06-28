@@ -248,7 +248,12 @@ export async function queryHtlcStatus(
 export function startBsvChainMonitor(): void {
   logger.info("BSV chain monitor starting — polling WhatsOnChain every 60 s");
   let _busy = false;
-  fetchChainInfo();
+  // Guard the first call so a DB error doesn't become an unhandledRejection,
+  // and set _busy so the 60 s interval doesn't fire concurrently if it's slow.
+  _busy = true;
+  fetchChainInfo()
+    .catch(err => logger.warn({ err }, "BSV chain monitor: initial fetch failed (non-fatal)"))
+    .finally(() => { _busy = false; });
   setInterval(async () => {
     if (_busy) { logger.warn("BSV chain monitor: previous fetch still running, skipping"); return; }
     _busy = true;
