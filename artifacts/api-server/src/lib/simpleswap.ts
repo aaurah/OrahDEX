@@ -308,3 +308,29 @@ export async function getSsExchange(id: string): Promise<{
     txTo:   d.tx_to ? String(d.tx_to) : null,
   };
 }
+
+// ─── Coin catalog ─────────────────────────────────────────────────────────────
+
+export interface SsCurrency {
+  symbol:     string;
+  name:       string;
+  network:    string | null;
+  image:      string | null;
+  hasExtraId: boolean;
+}
+
+/**
+ * Fetch the full SimpleSwap coin catalog (~3 000+ currencies).
+ * Returns [] when SIMPLESWAP_API_KEY is not configured or the request fails.
+ */
+export async function fetchSSCurrencies(): Promise<SsCurrency[]> {
+  const { ok, data } = await ssRequest("/get_all_currencies");
+  if (!ok || !Array.isArray(data)) return [];
+  return (data as Record<string, unknown>[]).map(c => ({
+    symbol:     String(c.symbol  ?? ""),
+    name:       String(c.name    ?? ""),
+    network:    c.network  ? String(c.network)  : null,
+    image:      c.image    ? String(c.image)    : null,
+    hasExtraId: !!(c.has_extra_id),
+  }));
+}
