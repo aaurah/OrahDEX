@@ -277,6 +277,36 @@ router.get("/dex/exchanges", async (_req, res) => {
   res.json(result);
 });
 
+/* ── Known circulating supplies for major coins ──────────────────────────────
+   Updated figures; used when the DB market_cap column is NULL so we can still
+   show a real Supply value in the coin detail panel instead of "–".           */
+const KNOWN_SUPPLY: Record<string, number> = {
+  BTC:    19_800_000,          WBTC:   153_000,
+  ETH:    120_300_000,         WSTETH: 4_100_000,    RETH:   410_000,
+  CBBTC:  2_800,               PAXG:   325_000,       XAUT:   250_000,
+  BNB:    145_000_000,         SOL:    468_000_000,
+  XRP:    57_000_000_000,      ADA:    35_700_000_000,
+  DOGE:   147_000_000_000,     TRX:    87_500_000_000,
+  TON:    5_100_000_000,       AVAX:   412_000_000,
+  MATIC:  9_900_000_000,       DOT:    1_410_000_000,
+  LINK:   609_000_000,         SHIB:   589_000_000_000_000,
+  LTC:    74_800_000,          BCH:    19_760_000,
+  UNI:    754_000_000,         ATOM:   391_000_000,
+  XLM:    28_500_000_000,      ETC:    147_500_000,
+  FIL:    578_000_000,         VET:    72_700_000_000,
+  HBAR:   38_500_000_000,      ICP:    472_000_000,
+  APT:    524_000_000,         ARB:    3_400_000_000,
+  OP:     1_100_000_000,       MKR:    879_000,
+  AAVE:   15_000_000,          CRV:    1_950_000_000,
+  INJ:    99_000_000,          RNDR:   397_000_000,
+  BSV:    19_800_000,          YFI:    36_666,
+  USDT:   119_000_000_000,     USDC:   43_000_000_000,
+  TUSD:   495_000_000,         USDD:   730_000_000,
+  SUI:    3_100_000_000,       SEI:    5_500_000_000,
+  WIF:    998_000_000,         BONK:   93_000_000_000_000,
+  PEPE:   420_000_000_000_000, FLOKI:  9_600_000_000_000,
+};
+
 /* ── Shared helper: build CG/OrahDB coin list (populates coinsCache) ────────── */
 async function buildCgCoins(): Promise<any[]> {
   if (coinsCache && Date.now() - coinsCache.ts < COINS_CACHE_MS) return coinsCache.data;
@@ -314,6 +344,13 @@ async function buildCgCoins(): Promise<any[]> {
   const coins: any[] = [];
   let rank = 1;
   for (const { market: m, usdPrice } of sorted) {
+    const dbMarketCap = parseFloat(m.marketCap ?? "0");
+    const marketCap   = dbMarketCap || usdPrice * 10_000_000;
+    // Prefer the known-supply table; fall back to deriving from real DB market cap.
+    // Never derive from the synthetic usdPrice * 10_000_000 fallback — it's not real data.
+    const circulatingSupply =
+      KNOWN_SUPPLY[m.baseAsset] ??
+      (dbMarketCap > 0 && usdPrice > 0 ? Math.round(dbMarketCap / usdPrice) : 0);
     coins.push({
       id:                `orah-${m.baseAsset.toLowerCase()}`,
       rank:              rank++,
@@ -321,12 +358,12 @@ async function buildCgCoins(): Promise<any[]> {
       symbol:            m.baseAsset,
       image:             null,
       price:             usdPrice,
-      marketCap:         parseFloat(m.marketCap ?? "0") || usdPrice * 10_000_000,
+      marketCap,
       volume24h:         parseFloat(m.volume24h ?? "0"),
       change24h:         parseFloat(m.priceChangePercent24h ?? "0"),
       high24h:           parseFloat(m.high24h ?? "0") || usdPrice * 1.02,
       low24h:            parseFloat(m.low24h  ?? "0") || usdPrice * 0.98,
-      circulatingSupply: 0,
+      circulatingSupply,
       source:            "cg",
     });
   }
