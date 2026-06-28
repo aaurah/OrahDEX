@@ -12,10 +12,11 @@
  * Enabled/disabled via platform_settings key: arb_bot_enabled = "true"|"false"
  */
 
-import { db } from "@workspace/db";
+import { db, withDbRetry } from "@workspace/db";
 import { marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, and, ne } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { guardedInterval } from "./selfHealing.js";
 
 export const ARB_BOT_ADDRESS = "BOT_ARB_ENGINE";
 
@@ -30,15 +31,19 @@ const INTERVAL_MS     = 60_000;  // run every 60 s
 
 async function getSetting(key: string): Promise<string | null> {
   try {
-    const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+    const rows = await withDbRetry(() =>
+      db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key))
+    );
     return rows[0]?.value ?? null;
   } catch { return null; }
 }
 
 async function setSetting(key: string, value: string) {
-  await db.insert(platformSettingsTable)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+  await withDbRetry(() =>
+    db.insert(platformSettingsTable)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } })
+  );
 }
 
 interface MarketRow {
@@ -148,15 +153,17 @@ async function runArbCycle() {
 
     // Exclude LE markets — arb operates on internal order-book pairs only.
     // Before this fix, all 36K+ active LE markets were loaded on every cycle.
-    const markets: MarketRow[] = await db.select({
-      symbol:     marketsTable.symbol,
-      baseAsset:  marketsTable.baseAsset,
-      quoteAsset: marketsTable.quoteAsset,
-      lastPrice:  marketsTable.lastPrice,
-      updatedAt:  marketsTable.updatedAt,
-      status:     marketsTable.status,
-    }).from(marketsTable).where(
-      and(eq(marketsTable.status, "active"), ne(marketsTable.type, "letsexchange"))
+    const markets: MarketRow[] = await withDbRetry(() =>
+      db.select({
+        symbol:     marketsTable.symbol,
+        baseAsset:  marketsTable.baseAsset,
+        quoteAsset: marketsTable.quoteAsset,
+        lastPrice:  marketsTable.lastPrice,
+        updatedAt:  marketsTable.updatedAt,
+        status:     marketsTable.status,
+      }).from(marketsTable).where(
+        and(eq(marketsTable.status, "active"), ne(marketsTable.type, "letsexchange"))
+      )
     );
 
     if (markets.length === 0) return;
@@ -204,7 +211,7 @@ let _timer: ReturnType<typeof setInterval> | null = null;
 export function startArbBot() {
   if (_timer) return;
   runArbCycle();
-  _timer = setInterval(runArbCycle, INTERVAL_MS);
+  _timer = guardedInterval(runArbCycle, INTERVAL_MS, "ArbBot");
   logger.info("ArbBot: started (60 s interval)");
 }
 
