@@ -12,6 +12,7 @@ import { Bridge, NATIVE_TOKEN_ADDRESS, sendTransaction } from "thirdweb";
 import { useActiveAccount } from "thirdweb/react";
 import { parseUnits, formatUnits } from "viem";
 import { thirdwebClient } from "@/lib/thirdweb-client";
+import { wagmiConfig } from "@/lib/reown";
 import {
   Zap, X, Loader2, CheckCircle2, AlertCircle, ArrowRight, ChevronDown,
 } from "lucide-react";
@@ -197,20 +198,32 @@ export function ThirdwebBridgePanel({
     if (!srcToken || !destAmount || parseFloat(destAmount) <= 0) return;
 
     const eth = (window as any).ethereum;
-    if (!thirdwebAccount && !eth) {
+
+    // Resolve wallet: ThirdWeb account → window.ethereum → Reown/WalletConnect connector
+    let senderAddress: string | null = null;
+    let reownProvider: any = null;
+
+    if (thirdwebAccount) {
+      senderAddress = thirdwebAccount.address;
+    } else if (eth) {
+      let accounts: string[] = await eth.request({ method: "eth_accounts" });
+      if (!accounts?.length) accounts = await eth.request({ method: "eth_requestAccounts" });
+      senderAddress = accounts?.[0] ?? null;
+    } else {
+      for (const connector of (wagmiConfig as any).connectors ?? []) {
+        try {
+          const p = await (connector as any).getProvider?.();
+          if (!p) continue;
+          const accounts: string[] = await p.request({ method: "eth_accounts" });
+          if (accounts?.length) { senderAddress = accounts[0]; reownProvider = p; break; }
+        } catch {}
+      }
+    }
+
+    if (!senderAddress) {
       setBridgeError("No wallet connected. Connect a wallet first.");
       return;
     }
-
-    let senderAddress: string;
-    if (thirdwebAccount) {
-      senderAddress = thirdwebAccount.address;
-    } else {
-      let accounts: string[] = await eth.request({ method: "eth_accounts" });
-      if (!accounts?.length) accounts = await eth.request({ method: "eth_requestAccounts" });
-      senderAddress = accounts[0];
-    }
-    if (!senderAddress) { setBridgeError("No wallet account found."); return; }
 
     setBridging(true);
     setBridgeError(null);
@@ -242,16 +255,16 @@ export function ThirdwebBridgePanel({
           const result = await sendTransaction({ transaction: tx, account: thirdwebAccount });
           if (i === 0) firstHash = result.transactionHash;
         } else {
-          // Injected wallet path — switch chain if needed
+          const eip1193 = reownProvider ?? eth;
           const chainHex = "0x" + tx.chainId.toString(16);
-          const curChain: string = await eth.request({ method: "eth_chainId" });
+          const curChain: string = await eip1193.request({ method: "eth_chainId" });
           if (curChain.toLowerCase() !== chainHex.toLowerCase()) {
-            await eth.request({
+            await eip1193.request({
               method: "wallet_switchEthereumChain",
               params: [{ chainId: chainHex }],
             });
           }
-          const hash: string = await eth.request({
+          const hash: string = await eip1193.request({
             method: "eth_sendTransaction",
             params: [{
               from:  senderAddress,
