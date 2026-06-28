@@ -6,7 +6,7 @@ import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
-  BASE_MARKETS, ZORA_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
+  BASE_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
   GAMING_MARKETS, COSMOS_MARKETS, L1_MARKETS, L2_MARKETS,
@@ -26,7 +26,6 @@ import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
-import { useZoraCoins } from "@/hooks/useZoraCoins";
 import { useBaseTokenList } from "@/hooks/useBaseTokenList";
 import { useBaseTokenPrices } from "@/hooks/useBaseTokenPrices";
 
@@ -50,7 +49,7 @@ interface MarketRow {
 }
 
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
-type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "uniswap" | "pancake" | "futures" | "l1" | "l2" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20";
+type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "uniswap" | "pancake" | "futures" | "l1" | "l2" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20";
 
 const USD_SUBS: { id: UsdSub; label: string }[] = [
   { id: "USDT", label: "USDT" },
@@ -75,8 +74,7 @@ const TAB_META: TabMeta[] = [
   { id: "op",        label: "OP",           color: "text-red-400",     desc: "All pairs quoted in OP · Optimism" },
   { id: "ftm",       label: "FTM",          color: "text-blue-400",    desc: "All pairs quoted in FTM · Fantom" },
   { id: "cro",       label: "CRO",          color: "text-indigo-400",  desc: "All pairs quoted in CRO · Cronos" },
-  { id: "base",      label: "BASE",         color: "text-blue-400",    desc: "Curated Base L2 pairs · Excludes Zora social coins" },
-  { id: "zora",      label: "ZORA",         color: "text-pink-400",    desc: "Zora social / creator coins · Every post is a coin" },
+  { id: "base",      label: "BASE",         color: "text-blue-400",    desc: "Curated Base L2 pairs · Live prices via DexScreener" },
   { id: "linea",     label: "LINEA",        color: "text-violet-400",  desc: "All pairs quoted in LINEA · MetaMask L2" },
   { id: "zk",        label: "ZK",           color: "text-indigo-300",  desc: "All pairs quoted in ZK · zkSync Era" },
   { id: "scr",       label: "SCROLL",       color: "text-orange-300",  desc: "All pairs quoted in SCR · Scroll L2" },
@@ -120,7 +118,7 @@ const ALL_MOCK = () => [
   ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
   ...AI_MARKETS, ...DEPIN_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
   ...UNISWAP_MARKETS, ...PANCAKE_MARKETS,
-  ...BASE_MARKETS, ...ZORA_MARKETS,
+  ...BASE_MARKETS,
   ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
   ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...BRC20_MARKETS,
 ].map(normalise);
@@ -256,8 +254,6 @@ export function Markets() {
 
   // Live on-chain data from GeckoTerminal (chain/category tabs, cached 90s)
   const { data: geckoRows } = useGeckoTerminalPools(tab);
-  // Live Zora Coins API data (zora tab only)
-  const { data: zoraRows } = useZoraCoins(tab === "zora");
   // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
   const { data: baseTokenList } = useBaseTokenList(tab === "base");
   // DexScreener prices for catalog tokens not covered by GeckoTerminal (cached 60s)
@@ -384,19 +380,6 @@ export function Markets() {
       case "scr":     return dbByQuote("SCR");
       case "mnt":     return dbByQuote("MNT");
       case "bch":     return dbByQuote("BCH");
-      case "zora": {
-        let all = enrich(ZORA_MARKETS.map(normalise));
-        const applyMerge = (rows: any[], src: any[], getBase: (s: any) => string) => {
-          const byBase = new Map(src.map(s => [getBase(s), s]));
-          const updated = rows.map((r: any) => { const s = byBase.get(r.baseAsset); return s && s.price > 0 ? { ...r, lastPrice: s.price, priceChangePercent24h: s.chg } : r; });
-          const existing = new Set(updated.map((r: any) => r.baseAsset));
-          const extra = src.filter(s => !existing.has(getBase(s)) && s.price > 0).map((s: any) => normalise({ symbol: s.symbol, baseAsset: getBase(s), quoteAsset: s.quote, lastPrice: s.price, priceChangePercent24h: s.chg, volume24h: s.vol, type: "spot" }));
-          return [...updated, ...extra];
-        };
-        if (geckoRows.length) all = applyMerge(all, geckoRows, (g: any) => g.base);
-        if (zoraRows.length)  all = applyMerge(all, zoraRows,  (z: any) => z.base);
-        return all;
-      }
       case "sol": {
         const dbSol = dbByCategory("sol_eco");
         const leSolPairs = leAllPairs.filter(m => {
@@ -462,7 +445,6 @@ export function Markets() {
       case "scr":       return dbQ("SCR");
       case "mnt":       return dbQ("MNT");
       case "bch":       return dbQ("BCH");
-      case "zora":      return dbS(ZORA_MARKETS);
       case "sol": {
         const dbSolC = dbByCategory("sol_eco");
         const leSolC = leAllPairs.filter(m => {
@@ -718,13 +700,6 @@ export function Markets() {
             <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-xl">
               <span className="text-base leading-none">🔵</span>
               <span className="text-xs font-bold text-blue-400">Base L2 — 2300+ Tokens · Live Prices via DexScreener</span>
-            </div>
-          )}
-          {tab === "zora" && (
-            <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-pink-500/10 border border-pink-500/30 rounded-xl">
-              <span className="text-base leading-none">🎨</span>
-              <span className="text-xs font-bold text-pink-400">Zora Social Coins</span>
-              <span className="ml-auto px-1.5 py-0.5 rounded bg-pink-500/20 border border-pink-500/30 text-[10px] font-bold text-pink-400 uppercase">High Risk</span>
             </div>
           )}
       </div>
