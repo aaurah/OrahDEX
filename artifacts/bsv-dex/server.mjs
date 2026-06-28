@@ -88,6 +88,35 @@ const server = http.createServer((req, res) => {
   }
 });
 
+// Prevent a port-binding failure from producing an unhandled exception crash.
+server.on("error", (err) => {
+  console.error("OrahDEX static server error:", err.message);
+  if (err.code === "EADDRINUSE") {
+    console.error(`Port ${PORT} already in use — exiting so the supervisor can reassign.`);
+  }
+  process.exit(1);
+});
+
 server.listen(Number(PORT), "0.0.0.0", () => {
   console.log(`OrahDEX serving on port ${PORT}`);
 });
+
+// Graceful shutdown on SIGTERM / SIGINT.
+// Stops accepting new connections, waits up to 5 s for in-flight requests
+// to complete, then exits cleanly — avoids abrupt connection cuts when
+// the deployment platform recycles the process.
+function gracefulShutdown(signal) {
+  console.log(`OrahDEX static server: received ${signal}, shutting down gracefully`);
+  server.close((err) => {
+    if (err) console.error("Error during server close:", err.message);
+    process.exit(err ? 1 : 0);
+  });
+  // Hard-kill safety net: if connections don't drain within 5 s, exit anyway.
+  setTimeout(() => {
+    console.warn("OrahDEX static server: drain timeout, forcing exit");
+    process.exit(0);
+  }, 5_000).unref();
+}
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT",  () => gracefulShutdown("SIGINT"));
