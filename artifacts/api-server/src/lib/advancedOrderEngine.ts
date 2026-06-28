@@ -322,17 +322,40 @@ async function runTwapEngine(): Promise<void> {
 }
 
 export function startAdvancedOrderEngines(): void {
-  setInterval(() => {
-    runTrailingStopEngine().catch(err => logger.error({ err }, "Trailing stop engine uncaught error"));
-  }, 5_000);
+  // Each engine runs every 30 s and is staggered 10 s apart so they never
+  // compete for pool connections simultaneously. "Already running" guards
+  // prevent overlap when a cycle takes longer than the interval.
+  let trailingRunning = false;
+  let icebergRunning  = false;
+  let twapRunning     = false;
 
   setInterval(() => {
-    runIcebergEngine().catch(err => logger.error({ err }, "Iceberg engine uncaught error"));
-  }, 5_000);
+    if (trailingRunning) return;
+    trailingRunning = true;
+    runTrailingStopEngine()
+      .catch(err => logger.error({ err }, "Trailing stop engine uncaught error"))
+      .finally(() => { trailingRunning = false; });
+  }, 30_000);
 
-  setInterval(() => {
-    runTwapEngine().catch(err => logger.error({ err }, "TWAP engine uncaught error"));
-  }, 5_000);
+  setTimeout(() => {
+    setInterval(() => {
+      if (icebergRunning) return;
+      icebergRunning = true;
+      runIcebergEngine()
+        .catch(err => logger.error({ err }, "Iceberg engine uncaught error"))
+        .finally(() => { icebergRunning = false; });
+    }, 30_000);
+  }, 10_000);
 
-  logger.info("Advanced order engines started (trailing stop, iceberg, TWAP)");
+  setTimeout(() => {
+    setInterval(() => {
+      if (twapRunning) return;
+      twapRunning = true;
+      runTwapEngine()
+        .catch(err => logger.error({ err }, "TWAP engine uncaught error"))
+        .finally(() => { twapRunning = false; });
+    }, 30_000);
+  }, 20_000);
+
+  logger.info("Advanced order engines started (trailing stop 30 s, iceberg 30 s +10 s offset, TWAP 30 s +20 s offset)");
 }

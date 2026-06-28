@@ -34,29 +34,21 @@ const _connectionString = dbUrl
 export const pool = new Pool({
   connectionString: _connectionString,
   // Send TCP keepalive probes immediately when a connection becomes idle.
-  // Setting the initial delay to 0 means the kernel sends the first probe as
-  // soon as the socket is idle rather than waiting 10+ seconds — this prevents
-  // Replit's managed Postgres (which drops idle sockets after ~5–8 s) from
-  // killing connections that are still in the pool but not yet evicted.
   keepAlive: true,
   keepAliveInitialDelayMillis: 0,
-  // Evict idle connections after 6 s — well below the network's idle-drop
-  // window — so stale sockets are recycled before the server closes them.
+  // Evict idle connections after 6 s — well below Replit's idle-drop window.
   idleTimeoutMillis: 6_000,
-  // Wait up to 20 s for a free connection before erroring — long enough to ride
-  // out a burst from the liquidity bot cycle without cascading failures.
-  connectionTimeoutMillis: 20_000,
-  // 10 connections: conservative cap for Replit managed Postgres which enforces
-  // a connection limit. The liquidity bot's bulk INSERTs were exhausting a pool
-  // of 25, starving background services and causing "Connection terminated
-  // unexpectedly" across watchers, engines, and the price updater.
-  max: 10,
-  // Keep the pool alive even between scheduled tick cycles so background
-  // services don't race to re-establish connections on every tick.
+  // Fail fast (5 s) when the pool is exhausted so the backlog clears quickly
+  // rather than stacking up 20 s waits that overwhelm all available slots.
+  connectionTimeoutMillis: 5_000,
+  // 6 connections: tighter cap prevents background engines from exhausting the
+  // pool. With 5-min liquidity bot bursts and 3 order engines running every
+  // 30 s each, 6 slots is sufficient and leaves headroom for HTTP requests.
+  max: 6,
+  // Keep the pool alive between tick cycles.
   allowExitOnIdle: false,
-  // Kill any query that runs longer than 20 s on the client side so a single
-  // runaway query cannot hold a connection and starve the rest of the pool.
-  query_timeout: 20_000,
+  // Kill runaway queries after 8 s so a slow query releases its slot quickly.
+  query_timeout: 8_000,
 });
 
 // Catch errors on idle clients in the pool (e.g. a connection dropped by the
