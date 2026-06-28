@@ -277,34 +277,71 @@ router.get("/dex/exchanges", async (_req, res) => {
   res.json(result);
 });
 
-/* ── Known circulating supplies for major coins ──────────────────────────────
-   Updated figures; used when the DB market_cap column is NULL so we can still
-   show a real Supply value in the coin detail panel instead of "–".           */
-const KNOWN_SUPPLY: Record<string, number> = {
-  BTC:    19_800_000,          WBTC:   153_000,
-  ETH:    120_300_000,         WSTETH: 4_100_000,    RETH:   410_000,
-  CBBTC:  2_800,               PAXG:   325_000,       XAUT:   250_000,
-  BNB:    145_000_000,         SOL:    468_000_000,
-  XRP:    57_000_000_000,      ADA:    35_700_000_000,
-  DOGE:   147_000_000_000,     TRX:    87_500_000_000,
-  TON:    5_100_000_000,       AVAX:   412_000_000,
-  MATIC:  9_900_000_000,       DOT:    1_410_000_000,
-  LINK:   609_000_000,         SHIB:   589_000_000_000_000,
-  LTC:    74_800_000,          BCH:    19_760_000,
-  UNI:    754_000_000,         ATOM:   391_000_000,
-  XLM:    28_500_000_000,      ETC:    147_500_000,
-  FIL:    578_000_000,         VET:    72_700_000_000,
-  HBAR:   38_500_000_000,      ICP:    472_000_000,
-  APT:    524_000_000,         ARB:    3_400_000_000,
-  OP:     1_100_000_000,       MKR:    879_000,
-  AAVE:   15_000_000,          CRV:    1_950_000_000,
-  INJ:    99_000_000,          RNDR:   397_000_000,
-  BSV:    19_800_000,          YFI:    36_666,
-  USDT:   119_000_000_000,     USDC:   43_000_000_000,
-  TUSD:   495_000_000,         USDD:   730_000_000,
-  SUI:    3_100_000_000,       SEI:    5_500_000_000,
-  WIF:    998_000_000,         BONK:   93_000_000_000_000,
-  PEPE:   420_000_000_000_000, FLOKI:  9_600_000_000_000,
+/* ── Known supply figures for major coins ────────────────────────────────────
+   KNOWN_CIRCULATING = coins currently in active circulation.
+   KNOWN_TOTAL       = hard-cap / max supply (0 = no hard cap / unlimited).
+   Used when DB market_cap is NULL so the detail panel shows real data.        */
+const KNOWN_CIRCULATING: Record<string, number> = {
+  BTC:    19_800_000,          WBTC:    153_000,
+  ETH:    120_300_000,         WSTETH:  4_100_000,    RETH:    410_000,
+  CBBTC:  2_800,               PAXG:    325_000,       XAUT:    250_000,
+  BNB:    145_000_000,         SOL:     468_000_000,
+  XRP:    57_000_000_000,      ADA:     35_700_000_000,
+  DOGE:   147_000_000_000,     TRX:     87_500_000_000,
+  TON:    5_100_000_000,       AVAX:    412_000_000,
+  MATIC:  9_900_000_000,       DOT:     1_410_000_000,
+  LINK:   609_000_000,         SHIB:    589_000_000_000_000,
+  LTC:    74_800_000,          BCH:     19_760_000,
+  UNI:    754_000_000,         ATOM:    391_000_000,
+  XLM:    28_500_000_000,      ETC:     147_500_000,
+  FIL:    578_000_000,         VET:     72_700_000_000,
+  HBAR:   38_500_000_000,      ICP:     472_000_000,
+  APT:    524_000_000,         ARB:     3_400_000_000,
+  OP:     1_100_000_000,       MKR:     879_000,
+  AAVE:   15_000_000,          CRV:     1_950_000_000,
+  INJ:    99_000_000,          RNDR:    397_000_000,
+  BSV:    19_800_000,          YFI:     36_666,
+  USDT:   119_000_000_000,     USDC:    43_000_000_000,
+  TUSD:   495_000_000,         USDD:    730_000_000,
+  SUI:    3_100_000_000,       SEI:     5_500_000_000,
+  WIF:    998_000_000,         BONK:    93_000_000_000_000,
+  PEPE:   420_000_000_000_000, FLOKI:   9_600_000_000_000,
+  LDO:    896_000_000,         SNX:     319_000_000,
+  GRT:    9_500_000_000,       SAND:    2_200_000_000,
+  MANA:   1_900_000_000,       AXS:     68_000_000,
+  CHZ:    8_900_000_000,       ENJ:     1_000_000_000,
+};
+
+// 0 = no hard cap (unlimited / inflationary supply)
+const KNOWN_TOTAL: Record<string, number> = {
+  BTC:    21_000_000,          WBTC:    21_000_000,
+  ETH:    0,                   WSTETH:  0,            RETH:    0,
+  CBBTC:  21_000_000,          PAXG:    0,             XAUT:    0,
+  BNB:    200_000_000,         SOL:     0,
+  XRP:    100_000_000_000,     ADA:     45_000_000_000,
+  DOGE:   0,                   TRX:     0,
+  TON:    5_109_000_000,       AVAX:    720_000_000,
+  MATIC:  10_000_000_000,      DOT:     0,
+  LINK:   1_000_000_000,       SHIB:    1_000_000_000_000_000,
+  LTC:    84_000_000,          BCH:     21_000_000,
+  UNI:    1_000_000_000,       ATOM:    0,
+  XLM:    50_001_806_812,      ETC:     210_700_000,
+  FIL:    0,                   VET:     86_712_634_466,
+  HBAR:   50_000_000_000,      ICP:     0,
+  APT:    0,                   ARB:     10_000_000_000,
+  OP:     4_294_967_296,       MKR:     1_005_577,
+  AAVE:   16_000_000,          CRV:     3_303_030_299,
+  INJ:    100_000_000,         RNDR:    536_870_912,
+  BSV:    21_000_000,          YFI:     36_666,
+  USDT:   0,                   USDC:    0,
+  TUSD:   0,                   USDD:    0,
+  SUI:    10_000_000_000,      SEI:     10_000_000_000,
+  WIF:    998_833_072,         BONK:    100_000_000_000_000,
+  PEPE:   420_689_899_999_995, FLOKI:   10_000_000_000_000,
+  LDO:    1_000_000_000,       SNX:     319_000_000,
+  GRT:    10_788_000_000,      SAND:    3_000_000_000,
+  MANA:   2_193_000_000,       AXS:     270_000_000,
+  CHZ:    8_888_888_888,       ENJ:     1_000_000_000,
 };
 
 /* ── Shared helper: build CG/OrahDB coin list (populates coinsCache) ────────── */
@@ -349,8 +386,9 @@ async function buildCgCoins(): Promise<any[]> {
     // Prefer the known-supply table; fall back to deriving from real DB market cap.
     // Never derive from the synthetic usdPrice * 10_000_000 fallback — it's not real data.
     const circulatingSupply =
-      KNOWN_SUPPLY[m.baseAsset] ??
+      KNOWN_CIRCULATING[m.baseAsset] ??
       (dbMarketCap > 0 && usdPrice > 0 ? Math.round(dbMarketCap / usdPrice) : 0);
+    const totalSupply = KNOWN_TOTAL[m.baseAsset] ?? 0;
     coins.push({
       id:                `orah-${m.baseAsset.toLowerCase()}`,
       rank:              rank++,
@@ -364,6 +402,7 @@ async function buildCgCoins(): Promise<any[]> {
       high24h:           parseFloat(m.high24h ?? "0") || usdPrice * 1.02,
       low24h:            parseFloat(m.low24h  ?? "0") || usdPrice * 0.98,
       circulatingSupply,
+      totalSupply,
       source:            "cg",
     });
   }

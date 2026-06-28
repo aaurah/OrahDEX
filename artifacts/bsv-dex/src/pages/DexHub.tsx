@@ -1383,12 +1383,14 @@ export function DexHub() {
                 {/* ── Stats grid ── */}
                 <div className="grid grid-cols-3 divide-x divide-border border-b border-border shrink-0">
                   {[
-                    { label: "Mkt Cap",  val: selectedCoin.marketCap > 0 ? `${qSym}${fmtVol(selectedCoin.marketCap)}` : "—" },
-                    { label: "24h Vol",  val: enrichedVol24h  > 0 ? `${qSym}${fmtVol(enrichedVol24h)}`    : "—" },
-                    { label: "24h High", val: enrichedHigh24h > 0 ? `${qSym}${fmtPrice(enrichedHigh24h)}` : "—" },
-                    { label: "24h Low",  val: enrichedLow24h  > 0 ? `${qSym}${fmtPrice(enrichedLow24h)}`  : "—" },
-                    { label: "Supply",   val: selectedCoin.circulatingSupply > 0 ? fmtVol(selectedCoin.circulatingSupply) : "—" },
-                    { label: "Source",   val: enrichedSrcLabel },
+                    { label: "Mkt Cap",     val: selectedCoin.marketCap > 0 ? `${qSym}${fmtVol(selectedCoin.marketCap)}` : "—" },
+                    { label: "24h Vol",     val: enrichedVol24h  > 0 ? `${qSym}${fmtVol(enrichedVol24h)}`    : "—" },
+                    { label: "24h High",    val: enrichedHigh24h > 0 ? `${qSym}${fmtPrice(enrichedHigh24h)}` : "—" },
+                    { label: "24h Low",     val: enrichedLow24h  > 0 ? `${qSym}${fmtPrice(enrichedLow24h)}`  : "—" },
+                    { label: "Circulating", val: selectedCoin.circulatingSupply > 0 ? fmtVol(selectedCoin.circulatingSupply) : "—" },
+                    { label: "Total Supply",val: (selectedCoin as any).totalSupply > 0 ? fmtVol((selectedCoin as any).totalSupply) : "∞" },
+                    { label: "Rank",        val: selectedCoin.rank ? `#${selectedCoin.rank}` : "—" },
+                    { label: "Source",      val: enrichedSrcLabel },
                   ].map((s, i) => (
                     <div key={i} className={cn("px-3 py-2 bg-card", i >= 3 && "border-t border-border")}>
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{s.label}</p>
