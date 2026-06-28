@@ -36,6 +36,7 @@ import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
 import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
 import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
 import { startOverlayScanner } from "./lib/overlayScanner.js";
+import { startSelfDiagnostic } from "./lib/selfDiagnostic.js";
 import { pool } from "@workspace/db";
 
 // Run the chain_id column migration at startup (idempotent — IF NOT EXISTS).
@@ -520,6 +521,7 @@ _s(84_000, startAdvancedOrderEngines,  "startAdvancedOrderEngines");
 _s(90_000, startFundingRateEngine,     "startFundingRateEngine");
 _s(96_000, startBsvMempoolWatcher,    "startBsvMempoolWatcher");
 _s(102_000, startOverlayScanner,     "startOverlayScanner");
+_s(108_000, startSelfDiagnostic,    "startSelfDiagnostic");
 
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
 
