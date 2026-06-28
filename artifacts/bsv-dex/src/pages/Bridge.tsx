@@ -1855,7 +1855,7 @@ export function BridgePage() {
       )}
 
       {/* Swap / Bridge tab selector */}
-      <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-xl border border-border/40 mb-6 max-w-md">
+      <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-xl border border-border/40 mb-6 max-w-md mx-auto">
         <button
           onClick={() => setLocation("/swap")}
           className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
