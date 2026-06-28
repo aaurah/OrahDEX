@@ -331,7 +331,7 @@ export function Markets() {
       case "op":      return dbByQuote("OP");
       case "ftm":     return dbByQuote("FTM");
       case "cro":     return dbByQuote("CRO");
-      case "base":    return dbByQuote("BASE");
+      case "base":    return dbBySymbols(BASE_MARKETS.map(normalise));
       case "linea":   return dbByQuote("LINEA");
       case "zk":      return dbByQuote("ZK");
       case "scr":     return dbByQuote("SCR");
@@ -391,7 +391,7 @@ export function Markets() {
       case "op":        return dbQ("OP");
       case "ftm":       return dbQ("FTM");
       case "cro":       return dbQ("CRO");
-      case "base":      return dbQ("BASE");
+      case "base":      return dbS(BASE_MARKETS);
       case "linea":     return dbQ("LINEA");
       case "zk":        return dbQ("ZK");
       case "scr":       return dbQ("SCR");
