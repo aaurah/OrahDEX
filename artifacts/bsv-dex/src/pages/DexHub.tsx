@@ -595,8 +595,10 @@ export function DexHub() {
 
   const pagedCoins = filteredCoins.slice(0, (coinPage + 1) * COIN_PAGE_SIZE);
 
-  /* ── Selected coin for exchange modal ── */
+  /* ── Selected coin detail ── */
   const [selectedCoin, setSelectedCoin] = useState<any | null>(null);
+  const [coinDetailTab, setCoinDetailTab] = useState<"overview"|"markets"|"trade">("overview");
+  useEffect(() => { if (selectedCoin) setCoinDetailTab("overview"); }, [selectedCoin?.id]);
 
   const { data: tickersData, isLoading: tickersLoading } = useQuery({
     queryKey: ["coin-tickers", selectedCoin?.id],
@@ -1150,135 +1152,253 @@ export function DexHub() {
             )}
           </div>
 
-          {/* ── Exchange listings modal ── */}
+          {/* ── Coin detail sheet ── */}
           {selectedCoin && (
             <>
-              {/* Backdrop */}
-              <div
-                className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm"
-                onClick={() => setSelectedCoin(null)}
-              />
-              {/* Drawer */}
-              <div className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] flex flex-col bg-background rounded-t-2xl border-t border-border shadow-2xl overflow-hidden lg:inset-auto lg:top-1/2 lg:left-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[700px] lg:max-h-[80vh] lg:rounded-2xl lg:border">
+              <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedCoin(null)} />
+              <div className="fixed inset-x-0 bottom-0 z-50 h-[93vh] flex flex-col bg-background rounded-t-2xl border-t border-border shadow-2xl overflow-hidden lg:inset-auto lg:top-1/2 lg:left-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[680px] lg:h-[86vh] lg:rounded-2xl lg:border">
 
-                {/* Modal header */}
-                <div className="flex items-center gap-3 px-4 py-4 border-b border-border shrink-0">
-                  {selectedCoin.image && (
-                    <img src={selectedCoin.image} alt={selectedCoin.symbol} className="w-9 h-9 rounded-full shrink-0" />
-                  )}
+                {/* ── Header ── */}
+                <div className="flex items-center gap-3 px-4 py-3.5 border-b border-border shrink-0">
+                  {selectedCoin.image
+                    ? <img src={selectedCoin.image} alt={selectedCoin.symbol} className="w-11 h-11 rounded-full shrink-0 border border-border" />
+                    : <div className="w-11 h-11 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-base font-black text-primary">{selectedCoin.symbol[0]}</div>
+                  }
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-base leading-tight">{selectedCoin.name}
-                      <span className="ml-2 text-xs font-semibold text-muted-foreground">{selectedCoin.symbol}</span>
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {qSym}{fmtPrice(selectedCoin.price)}
-                      <span className={cn("ml-2 text-xs font-semibold", selectedCoin.change24h >= 0 ? "text-green-400" : "text-red-400")}>
-                        {selectedCoin.change24h >= 0 ? "+" : ""}{selectedCoin.change24h.toFixed(2)}%
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-base leading-tight truncate">{selectedCoin.name}</span>
+                      <span className="text-[11px] font-mono bg-secondary border border-border px-1.5 py-0.5 rounded text-muted-foreground shrink-0">{selectedCoin.symbol}</span>
+                      {selectedCoin.rank && <span className="text-[11px] text-muted-foreground shrink-0">#{selectedCoin.rank}</span>}
+                    </div>
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className="text-lg font-bold font-mono tabular-nums">{qSym}{fmtPrice(selectedCoin.price)}</span>
+                      <span className={cn("text-sm font-semibold", selectedCoin.change24h >= 0 ? "text-green-400" : "text-red-400")}>
+                        {selectedCoin.change24h >= 0 ? "▲" : "▼"} {Math.abs(selectedCoin.change24h).toFixed(2)}%
                       </span>
-                    </p>
+                    </div>
                   </div>
                   <button onClick={() => setSelectedCoin(null)} className="p-2 rounded-lg hover:bg-secondary transition-colors shrink-0">
                     <X className="w-5 h-5" />
                   </button>
                 </div>
 
-                {/* Contract address row (if known) */}
-                {(() => {
-                  const ca = zoraContractFor(selectedCoin.symbol);
-                  if (!ca) return null;
-                  return (
-                    <div className="px-4 py-2 border-b border-border/40 shrink-0 flex items-center gap-2 bg-blue-500/5">
-                      <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wide shrink-0">Base</span>
-                      <p className="text-[11px] text-muted-foreground font-mono truncate flex-1">{ca}</p>
-                      <button
-                        onClick={async () => {
-                          await navigator.clipboard.writeText(ca).catch(() => {});
-                          setCopiedAddr(ca);
-                          setTimeout(() => setCopiedAddr(null), 2000);
-                        }}
-                        className="shrink-0 flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
-                      >
-                        {copiedAddr === ca ? <Check size={12} /> : <Copy size={12} />}
-                        {copiedAddr === ca ? "Copied!" : "Copy"}
-                      </button>
-                    </div>
-                  );
-                })()}
-
-                <div className="px-4 py-2 border-b border-border/40 shrink-0">
-                  <p className="text-xs text-muted-foreground">
-                    {tickersLoading ? "Loading exchanges…" : `${tickersData?.tickers?.length ?? 0} exchanges list ${selectedCoin.symbol} · tap to trade`}
-                  </p>
-                </div>
-
-                {/* Exchange list */}
-                <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-border/40">
-                  {tickersLoading && Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-3 px-4 py-3">
-                      <div className="w-8 h-8 rounded-full bg-muted animate-pulse shrink-0" />
-                      <div className="flex-1 space-y-1.5">
-                        <div className="h-3.5 bg-muted animate-pulse rounded w-32" />
-                        <div className="h-3 bg-muted animate-pulse rounded w-20" />
-                      </div>
-                      <div className="h-4 bg-muted animate-pulse rounded w-20" />
+                {/* ── Stats grid ── */}
+                <div className="grid grid-cols-3 divide-x divide-border border-b border-border shrink-0">
+                  {[
+                    { label: "Mkt Cap",  val: selectedCoin.marketCap  > 0 ? `${qSym}${fmtVol(selectedCoin.marketCap)}`  : "—" },
+                    { label: "24h Vol",  val: selectedCoin.volume24h  > 0 ? `${qSym}${fmtVol(selectedCoin.volume24h)}`  : "—" },
+                    { label: "24h High", val: selectedCoin.high24h    > 0 ? `${qSym}${fmtPrice(selectedCoin.high24h)}`  : "—" },
+                    { label: "24h Low",  val: selectedCoin.low24h     > 0 ? `${qSym}${fmtPrice(selectedCoin.low24h)}`   : "—" },
+                    { label: "Supply",   val: selectedCoin.circulatingSupply > 0 ? fmtVol(selectedCoin.circulatingSupply) : "—" },
+                    { label: "Source",   val: selectedCoin.source === "cg" ? "OrahDEX" : selectedCoin.source === "le" ? "Swap Net" : "Bridge" },
+                  ].map((s, i) => (
+                    <div key={i} className={cn("px-3 py-2 bg-card", i >= 3 && "border-t border-border")}>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{s.label}</p>
+                      <p className="text-xs font-semibold tabular-nums font-mono truncate">{s.val}</p>
                     </div>
                   ))}
+                </div>
 
-                  {!tickersLoading && (tickersData?.tickers ?? [])
-                    .filter((t: any) => !t.isAnomaly && !t.isStale)
-                    .map((t: any, i: number) => {
-                      const tsColor = t.trustScore === "green" ? "bg-green-500" : t.trustScore === "yellow" ? "bg-green-500" : "bg-red-400";
-                      return (
-                        <a
-                          key={i}
-                          href={t.tradeUrl ?? "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors"
-                        >
-                          {/* Exchange logo */}
-                          {t.exchangeLogo
-                            ? <img src={t.exchangeLogo} alt={t.exchangeName} className="w-8 h-8 rounded-full shrink-0 bg-secondary" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                            : <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary shrink-0">{t.exchangeName?.[0] ?? "?"}</div>
-                          }
+                {/* ── Tab bar ── */}
+                <div className="flex border-b border-border shrink-0 bg-card">
+                  {(["overview", "markets", "trade"] as const).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setCoinDetailTab(tab)}
+                      className={cn(
+                        "flex-1 py-2.5 text-sm font-semibold transition-colors capitalize",
+                        coinDetailTab === tab
+                          ? "text-primary border-b-2 border-primary bg-background"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {tab === "markets"
+                        ? `Markets${!tickersLoading && tickersData ? ` · ${tickersData.tickers?.length ?? 0}` : ""}`
+                        : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    </button>
+                  ))}
+                </div>
 
-                          {/* Exchange name + pair */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-sm font-semibold text-foreground truncate">{t.exchangeName}</p>
-                              {t.trustScore && (
-                                <span className={cn("w-2 h-2 rounded-full shrink-0", tsColor)} title={`Trust: ${t.trustScore}`} />
-                              )}
+                {/* ── Tab content ── */}
+                <div className="flex-1 overflow-y-auto overscroll-contain">
+
+                  {/* OVERVIEW */}
+                  {coinDetailTab === "overview" && (
+                    <div className="p-4 space-y-4">
+
+                      {/* Price chart */}
+                      <div className="rounded-xl overflow-hidden border border-border bg-secondary/20" style={{ height: 220 }}>
+                        <iframe
+                          key={selectedCoin.symbol}
+                          src={`https://s.tradingview.com/widgetembed/?frameElementId=tv_${selectedCoin.symbol}&symbol=BINANCE:${selectedCoin.symbol}USDT&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=161b22&studies=[]&theme=dark&style=1&timezone=Etc%2FUTC&locale=en&hide_top_toolbar=0&allow_symbol_change=0`}
+                          style={{ width: "100%", height: "100%", border: "none" }}
+                          title={`${selectedCoin.symbol} chart`}
+                          sandbox="allow-scripts allow-same-origin allow-popups"
+                        />
+                      </div>
+
+                      {/* 24h range bar */}
+                      {selectedCoin.high24h > 0 && selectedCoin.low24h > 0 && (
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-[11px] text-muted-foreground">
+                            <span>24h Low  {qSym}{fmtPrice(selectedCoin.low24h)}</span>
+                            <span>24h High  {qSym}{fmtPrice(selectedCoin.high24h)}</span>
+                          </div>
+                          <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-red-500 via-yellow-400 to-green-500 rounded-full"
+                              style={{ width: `${Math.min(100, Math.max(2, ((selectedCoin.price - selectedCoin.low24h) / Math.max(selectedCoin.high24h - selectedCoin.low24h, 0.0001)) * 100))}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Contract address */}
+                      {(() => {
+                        const entry = KNOWN_CONTRACTS[selectedCoin.symbol.toUpperCase()];
+                        if (!entry) return null;
+                        return (
+                          <div className="rounded-xl border border-border bg-card p-3 flex items-center gap-3">
+                            <div className="shrink-0">
+                              <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">{entry.chain}</span>
                             </div>
-                            <p className="text-xs text-muted-foreground">{t.base}/{t.target}</p>
+                            <p className="text-[11px] font-mono text-muted-foreground truncate flex-1">{entry.contract}</p>
+                            <button
+                              onClick={async () => {
+                                await navigator.clipboard.writeText(entry.contract).catch(() => {});
+                                setCopiedAddr(entry.contract);
+                                setTimeout(() => setCopiedAddr(null), 2000);
+                              }}
+                              className="shrink-0 flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+                            >
+                              {copiedAddr === entry.contract ? <Check size={12} /> : <Copy size={12} />}
+                              {copiedAddr === entry.contract ? "Copied!" : "Copy"}
+                            </button>
                           </div>
+                        );
+                      })()}
 
-                          {/* Price + volume */}
-                          <div className="text-right shrink-0">
-                            <p className="text-sm font-mono font-semibold tabular-nums">{qSym}{fmtPrice(t.convertedLast || t.price)}</p>
-                            <p className="text-[10px] text-muted-foreground tabular-nums">{qSym}{fmtVol(t.convertedVol)} vol</p>
-                          </div>
-
-                          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 ml-1" />
-                        </a>
-                      );
-                    })
-                  }
-
-                  {!tickersLoading && tickersData?.tickers?.length === 0 && (
-                    <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-                      No exchange listings found
+                      {/* External links */}
+                      <div>
+                        <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">External Links</p>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedCoin.source === "cg" && (
+                            <a
+                              href={`https://www.coingecko.com/en/coins/${selectedCoin.id}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/60 text-xs font-semibold transition-colors border border-border"
+                            >
+                              <img src="https://www.google.com/s2/favicons?domain=coingecko.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
+                              CoinGecko
+                            </a>
+                          )}
+                          <a
+                            href={`https://coinmarketcap.com/currencies/${selectedCoin.name.toLowerCase().replace(/[\s.]+/g, "-")}/`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/60 text-xs font-semibold transition-colors border border-border"
+                          >
+                            <img src="https://www.google.com/s2/favicons?domain=coinmarketcap.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
+                            CoinMarketCap
+                          </a>
+                          <a
+                            href={`https://dexscreener.com/search?q=${selectedCoin.symbol}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/60 text-xs font-semibold transition-colors border border-border"
+                          >
+                            <img src="https://www.google.com/s2/favicons?domain=dexscreener.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
+                            DexScreener
+                          </a>
+                          <a
+                            href={`https://www.binance.com/en/trade/${selectedCoin.symbol}_USDT`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary hover:bg-secondary/60 text-xs font-semibold transition-colors border border-border"
+                          >
+                            <img src="https://www.google.com/s2/favicons?domain=binance.com&sz=16" className="w-3.5 h-3.5 rounded-sm" alt="" />
+                            Binance
+                          </a>
+                        </div>
+                      </div>
                     </div>
                   )}
+
+                  {/* MARKETS */}
+                  {coinDetailTab === "markets" && (
+                    <div className="divide-y divide-border/40">
+                      <div className="px-4 py-2 bg-secondary/30">
+                        <p className="text-xs text-muted-foreground">
+                          {tickersLoading ? "Loading exchanges…" : `${tickersData?.tickers?.length ?? 0} exchanges list ${selectedCoin.symbol} · tap to trade`}
+                        </p>
+                      </div>
+
+                      {tickersLoading && Array.from({ length: 8 }).map((_, i) => (
+                        <div key={i} className="flex items-center gap-3 px-4 py-3">
+                          <div className="w-8 h-8 rounded-full bg-muted animate-pulse shrink-0" />
+                          <div className="flex-1 space-y-1.5">
+                            <div className="h-3.5 bg-muted animate-pulse rounded w-32" />
+                            <div className="h-3 bg-muted animate-pulse rounded w-20" />
+                          </div>
+                          <div className="h-4 bg-muted animate-pulse rounded w-20" />
+                        </div>
+                      ))}
+
+                      {!tickersLoading && (tickersData?.tickers ?? [])
+                        .filter((t: any) => !t.isAnomaly && !t.isStale)
+                        .map((t: any, i: number) => {
+                          const tsColor = t.trustScore === "green" ? "bg-green-500" : t.trustScore === "yellow" ? "bg-yellow-400" : "bg-red-400";
+                          return (
+                            <a
+                              key={i}
+                              href={t.tradeUrl ?? "#"}
+                              target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors"
+                            >
+                              {t.exchangeLogo
+                                ? <img src={t.exchangeLogo} alt={t.exchangeName} className="w-8 h-8 rounded-full shrink-0 bg-secondary" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                                : <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary shrink-0">{t.exchangeName?.[0] ?? "?"}</div>
+                              }
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-sm font-semibold text-foreground truncate">{t.exchangeName}</p>
+                                  {t.trustScore && <span className={cn("w-2 h-2 rounded-full shrink-0", tsColor)} title={`Trust: ${t.trustScore}`} />}
+                                </div>
+                                <p className="text-xs text-muted-foreground">{t.base}/{t.target}</p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="text-sm font-mono font-semibold tabular-nums">{qSym}{fmtPrice(t.convertedLast || t.price)}</p>
+                                <p className="text-[10px] text-muted-foreground tabular-nums">{qSym}{fmtVol(t.convertedVol)} vol</p>
+                              </div>
+                              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 ml-1" />
+                            </a>
+                          );
+                        })
+                      }
+
+                      {!tickersLoading && (tickersData?.tickers?.length ?? 0) === 0 && (
+                        <div className="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground">
+                          <p className="text-sm">No exchange listings found</p>
+                          <p className="text-xs opacity-60">Try trading directly on OrahDEX below</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* TRADE */}
+                  {coinDetailTab === "trade" && (
+                    <div className="p-4 space-y-4">
+                      <div className="rounded-xl border border-border bg-card p-4">
+                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-3">VAMM Instant Swap</p>
+                        <VammSwapPanel symbol={selectedCoin.symbol} />
+                      </div>
+                      <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-3">
+                        <p className="text-[11px] text-yellow-400/80">VAMM uses a virtual bonding curve for instant fills. For limit orders and full order book depth, use the Trade page.</p>
+                      </div>
+                    </div>
+                  )}
+
                 </div>
 
-                {/* VAMM Quick Swap inside modal */}
-                <div className="shrink-0 border-t border-border px-4 pt-4 pb-2">
-                  <VammSwapPanel symbol={selectedCoin.symbol} />
-                </div>
-
-                {/* Footer CTA */}
-                <div className="shrink-0 border-t border-border px-4 py-3">
+                {/* ── Footer CTA ── */}
+                <div className="shrink-0 border-t border-border px-4 py-3 bg-card">
                   <button
                     onClick={() => { navigate(`/trade/${selectedCoin.symbol}-USDT`); setSelectedCoin(null); }}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors"
