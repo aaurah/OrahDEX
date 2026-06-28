@@ -9,3 +9,4 @@
 - [Reown raw eth_sendTransaction](reown-raw-send.md) — viem@2.47.x wagmiSendTransaction throws "method not supported" on WalletConnect; must call eth_sendTransaction directly on the connector's EIP-1193 provider.
 - [ARC broadcaster pattern](arc-broadcaster-pattern.md) — ARC body is {rawTx} not {txhex}; drizzle-kit push needs TTY so use pool.query IF NOT EXISTS for migrations in app.ts instead.
 - [Emotion stubs for ThirdWeb/Rolldown](emotion-stubs.md) — Rolldown namespace collisions fixed via alias stubs; Proxy target MUST be plain function (not forwardRef) or apply trap won't fire.
+- [LiquidityBot concurrent cycle bug](liquidity-bot-cycle-bug.md) — unguarded first runCycle() outside guardedInterval causes stacking cycles and pool exhaustion; fix via initialDelayMs.

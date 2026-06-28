@@ -246,7 +246,7 @@ async function runCycle(): Promise<void> {
     }
 
     if (crossUpdates.length > 0) {
-      const BULK_CHUNK = 1000;
+      const BULK_CHUNK = 10_000;
       for (let ci = 0; ci < crossUpdates.length; ci += BULK_CHUNK) {
         const chunk       = crossUpdates.slice(ci, ci + BULK_CHUNK);
         const placeholders = chunk
@@ -316,10 +316,10 @@ async function runCycle(): Promise<void> {
       ),
     );
 
-    // Bulk INSERT in chunks of 400 orders
-    // (400 orders × ~19 columns = 7,600 parameters — well under PG's 65,535 limit)
+    // Bulk INSERT in chunks of 2,000 orders
+    // (2,000 orders × 27 columns = 54,000 parameters — under PG's 65,535 limit)
     if (allOrders.length > 0) {
-      const INSERT_CHUNK = 400;
+      const INSERT_CHUNK = 2_000;
       for (let ci = 0; ci < allOrders.length; ci += INSERT_CHUNK) {
         await db.insert(ordersTable)
           .values(allOrders.slice(ci, ci + INSERT_CHUNK))
@@ -366,14 +366,21 @@ async function runCycle(): Promise<void> {
 /* ── Public start function ──────────────────────────────────────────────── */
 export function startLiquidityBot(): void {
   logger.info("Liquidity bot starting — seeding order books…");
-  let _busy = false;
 
-  // Await market seeding before the first cycle so the bot always
-  // sees the complete, stable set of active markets from the start.
-  // Subsequent calls to seedMarketsIfNeeded() are near-instant no-ops.
+  // Seed markets (fast no-op after first run) then hand full control to
+  // guardedInterval.  The previous pattern called runCycle() directly before
+  // guardedInterval started, which meant guardedInterval's busy-lock was never
+  // set for that first run.  When the first cycle ran long (many chunks × pool
+  // wait), guardedInterval fired a second concurrent cycle at T+120 s, stacking
+  // multiple cycles and exhausting the connection pool.
+  //
+  // Fix: seed fire-and-forget, then guardedInterval owns ALL cycles starting at
+  // initialDelayMs=500 ms (seed completes well within that window).
   seedMarketsIfNeeded()
-    .then(() => runCycle())
-    .catch(err => logger.warn({ err }, "Liquidity bot: seed-then-first-cycle failed"));
+    .catch(err => logger.warn({ err }, "Liquidity bot: market seed failed (non-fatal)"));
 
-  guardedInterval("liquidity-bot", runCycle, 120_000, { timeoutMs: 110_000 });
+  guardedInterval("liquidity-bot", runCycle, 120_000, {
+    timeoutMs:     110_000,
+    initialDelayMs: 500,
+  });
 }
