@@ -13,6 +13,7 @@ import { useActiveAccount } from "thirdweb/react";
 import { parseUnits, formatUnits } from "viem";
 import { thirdwebClient } from "@/lib/thirdweb-client";
 import { wagmiConfig } from "@/lib/reown";
+import { useWalletStore } from "@/store/useWalletStore";
 import {
   Zap, X, Loader2, CheckCircle2, AlertCircle, ArrowRight, ChevronDown,
 } from "lucide-react";
@@ -95,6 +96,7 @@ export function ThirdwebBridgePanel({
   onBridgeComplete,
 }: ThirdwebBridgePanelProps) {
   const thirdwebAccount = useActiveAccount();
+  const storeAddress = useWalletStore(s => s.address);
 
   const [open,          setOpen]          = useState(false);
   const [srcChainId,    setSrcChainId]    = useState<number>(
@@ -209,13 +211,13 @@ export function ThirdwebBridgePanel({
       let accounts: string[] = await eth.request({ method: "eth_accounts" });
       if (!accounts?.length) accounts = await eth.request({ method: "eth_requestAccounts" });
       senderAddress = accounts?.[0] ?? null;
-    } else {
+    } else if (storeAddress) {
+      // Wallet connected via Reown/WalletConnect — address is already in the store
+      senderAddress = storeAddress;
       for (const connector of (wagmiConfig as any).connectors ?? []) {
         try {
           const p = await (connector as any).getProvider?.();
-          if (!p) continue;
-          const accounts: string[] = await p.request({ method: "eth_accounts" });
-          if (accounts?.length) { senderAddress = accounts[0]; reownProvider = p; break; }
+          if (p) { reownProvider = p; break; }
         } catch {}
       }
     }

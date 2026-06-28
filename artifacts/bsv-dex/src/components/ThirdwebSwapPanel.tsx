@@ -12,6 +12,7 @@ import { useActiveAccount } from "thirdweb/react";
 import { parseUnits, formatUnits } from "viem";
 import { thirdwebClient } from "@/lib/thirdweb-client";
 import { wagmiConfig } from "@/lib/reown";
+import { useWalletStore } from "@/store/useWalletStore";
 import {
   ArrowDown, Loader2, CheckCircle2, AlertCircle, ExternalLink, RefreshCw, Zap,
 } from "lucide-react";
@@ -176,6 +177,7 @@ function TokenSelect({ tokens, loading, value, onChange }: {
 
 export function ThirdwebSwapPanel() {
   const account = useActiveAccount();
+  const storeAddress = useWalletStore(s => s.address);
 
   // Source
   const [srcChain, setSrcChain] = useState<number>(1);
@@ -289,13 +291,13 @@ export function ThirdwebSwapPanel() {
       let accs: string[] = await eth.request({ method: "eth_accounts" });
       if (!accs?.length) accs = await eth.request({ method: "eth_requestAccounts" });
       sender = accs?.[0] ?? null;
-    } else {
+    } else if (storeAddress) {
+      // Wallet connected via Reown/WalletConnect — address is already in the store
+      sender = storeAddress;
       for (const connector of (wagmiConfig as any).connectors ?? []) {
         try {
           const p = await (connector as any).getProvider?.();
-          if (!p) continue;
-          const accs: string[] = await p.request({ method: "eth_accounts" });
-          if (accs?.length) { sender = accs[0]; reownProvider = p; break; }
+          if (p) { reownProvider = p; break; }
         } catch {}
       }
     }
