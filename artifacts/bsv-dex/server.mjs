@@ -29,25 +29,44 @@ const MIME = {
 const CACHE_ASSETS = "public, max-age=31536000, immutable";
 const CACHE_HTML   = "no-cache, no-store, must-revalidate";
 
+const START_TIME = Date.now();
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://localhost");
+
+  // Health probe — always 200, no file I/O, no API dependency.
+  if (url.pathname === "/health" || url.pathname === "/healthz") {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ status: "ok", uptime: Math.floor((Date.now() - START_TIME) / 1000) }));
+    return;
+  }
+
   const filePath = path.join(dist, url.pathname);
   const ext = path.extname(filePath).toLowerCase();
+
+  function pipeFile(fp, mime, cache) {
+    const stream = fs.createReadStream(fp);
+    stream.on("error", (err) => {
+      if (!res.headersSent) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "file unavailable", detail: err.message }));
+      } else {
+        res.destroy();
+      }
+    });
+    res.writeHead(200, { "Content-Type": mime, "Cache-Control": cache });
+    stream.pipe(res);
+  }
 
   const tryFile = (fp, fallbackToIndex) => {
     fs.stat(fp, (err, stat) => {
       if (!err && stat.isFile()) {
         const mime = MIME[path.extname(fp).toLowerCase()] ?? "application/octet-stream";
         const cache = fp.includes("/assets/") ? CACHE_ASSETS : CACHE_HTML;
-        res.writeHead(200, { "Content-Type": mime, "Cache-Control": cache });
-        fs.createReadStream(fp).pipe(res);
+        pipeFile(fp, mime, cache);
       } else if (fallbackToIndex) {
         const indexPath = path.join(dist, "index.html");
-        res.writeHead(200, {
-          "Content-Type": "text/html; charset=utf-8",
-          "Cache-Control": CACHE_HTML,
-        });
-        fs.createReadStream(indexPath).pipe(res);
+        pipeFile(indexPath, "text/html; charset=utf-8", CACHE_HTML);
       } else {
         res.writeHead(404, { "Content-Type": "text/plain" });
         res.end("Not found");

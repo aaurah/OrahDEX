@@ -512,6 +512,32 @@ const _s = (ms: number, fn: () => void, label: string) =>
 // Hook logger.error / logger.warn immediately so all service errors are captured.
 startErrorWatcher();
 
+// ── Heap watchdog ────────────────────────────────────────────────────────────
+// Logs heap usage every 5 minutes so we can track memory trends across
+// restarts and identify whether usage is growing linearly (= leak) or stable.
+// Emits an alert when heap exceeds 512 MB so we know before the OOM.
+{
+  const HEAP_WARN_MB = 512;
+  const HEAP_ALERT_MB = 768;
+  setInterval(() => {
+    const { heapUsed, heapTotal, rss } = process.memoryUsage();
+    const usedMB  = Math.round(heapUsed  / 1024 / 1024);
+    const totalMB = Math.round(heapTotal / 1024 / 1024);
+    const rssMB   = Math.round(rss       / 1024 / 1024);
+    const uptimeH = (process.uptime() / 3600).toFixed(2);
+    if (usedMB >= HEAP_ALERT_MB) {
+      logger.error({ heapUsedMB: usedMB, heapTotalMB: totalMB, rssMB, uptimeH },
+        "HEAP CRITICAL — approaching OOM; restart may be imminent");
+    } else if (usedMB >= HEAP_WARN_MB) {
+      logger.warn({ heapUsedMB: usedMB, heapTotalMB: totalMB, rssMB, uptimeH },
+        "Heap usage elevated — possible memory leak");
+    } else {
+      logger.info({ heapUsedMB: usedMB, heapTotalMB: totalMB, rssMB, uptimeH },
+        "Heap report");
+    }
+  }, 5 * 60 * 1000).unref(); // .unref() so this timer never prevents clean shutdown
+}
+
 _s(    0, startPriceUpdater,          "startPriceUpdater");
 _s(6_000, startLiquidityBot,          "startLiquidityBot");
 _s(12_000, startArbBot,               "startArbBot");
