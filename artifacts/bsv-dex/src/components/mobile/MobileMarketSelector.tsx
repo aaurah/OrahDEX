@@ -12,7 +12,7 @@ import {
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
   GAMING_MARKETS, COSMOS_MARKETS,
-  L1_MARKETS, L2_MARKETS, RWA_MARKETS, EXCHANGE_MARKETS,
+  RWA_MARKETS, EXCHANGE_MARKETS,
   DEPIN_MARKETS, BRC20_MARKETS, UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
@@ -53,7 +53,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favs"      },
@@ -82,8 +82,6 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "defi",      label: "DEFI"      },
   { id: "gaming",    label: "GAMING"    },
   { id: "cosmos",    label: "COSMOS"    },
-  { id: "l1",        label: "LAYER 1"   },
-  { id: "l2",        label: "LAYER 2"   },
   { id: "rwa",       label: "RWA"       },
   { id: "exchange",  label: "EXCHANGE"  },
   { id: "brc20",     label: "BRC-20"    },
@@ -124,8 +122,6 @@ const TOPIC_TABS: { id: Cat; label: string }[] = [
   { id: "depin",     label: "📡 DePIN"   },
   { id: "gaming",    label: "🎮 Gaming"  },
   { id: "rwa",       label: "🏛 RWA"     },
-  { id: "l1",        label: "L1"         },
-  { id: "l2",        label: "L2"         },
   { id: "cosmos",    label: "⚛ Cosmos"  },
   { id: "brc20",     label: "BRC-20"     },
   { id: "exchange",  label: "Exchange"   },
@@ -142,7 +138,7 @@ const ALL_POOL = [
   ...MNT_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...LINEA_MARKETS,
   ...AI_MARKETS, ...DEPIN_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
   ...UNISWAP_MARKETS, ...PANCAKE_MARKETS,
-  ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
+  ...GAMING_MARKETS, ...COSMOS_MARKETS,
   ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...BRC20_MARKETS,
   ...NEW_MARKETS, ...FUTURES_MARKETS,
 ];
@@ -352,8 +348,6 @@ function getRows(
     case "defi":      return chainRows(DEFI_MARKETS,     cat);
     case "gaming":    return chainRows(GAMING_MARKETS,   cat);
     case "cosmos":    return chainRows(COSMOS_MARKETS,   cat);
-    case "l1":        return enrich(L1_MARKETS);
-    case "l2":        return enrich(L2_MARKETS);
     case "rwa":       return enrich(RWA_MARKETS);
     case "exchange":  return enrich(EXCHANGE_MARKETS);
     case "depin":     return chainRows(DEPIN_MARKETS,    cat);
