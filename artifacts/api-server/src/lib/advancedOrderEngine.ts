@@ -2,8 +2,25 @@ import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { randomUUID } from "node:crypto";
 
+/** Returns true for transient DB-connection errors (timeout, ECONNREFUSED, etc.)
+ *  so engines can skip a cycle gracefully instead of logging a full ERROR. */
+function isDbConnError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("timeout exceeded when trying to connect") ||
+    msg.includes("connection terminated unexpectedly") ||
+    msg.includes("connection refused") ||
+    msg.includes("econnrefused") ||
+    msg.includes("query read timeout")
+  );
+}
+
 async function runTrailingStopEngine(): Promise<void> {
-  const client = await pool.connect();
+  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  try { client = await pool.connect(); } catch (err) {
+    logger.warn({ err }, "Trailing stop engine: DB connect failed, skipping cycle");
+    return;
+  }
   try {
     const { rows: activeStops } = await client.query<{
       id: string;
@@ -105,14 +122,19 @@ async function runTrailingStopEngine(): Promise<void> {
       }
     }
   } catch (err) {
-    logger.error({ err }, "runTrailingStopEngine error");
+    if (isDbConnError(err)) logger.warn({ err }, "runTrailingStopEngine: DB error, skipping cycle");
+    else logger.error({ err }, "runTrailingStopEngine error");
   } finally {
-    client.release();
+    client!.release();
   }
 }
 
 async function runIcebergEngine(): Promise<void> {
-  const client = await pool.connect();
+  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  try { client = await pool.connect(); } catch (err) {
+    logger.warn({ err }, "Iceberg engine: DB connect failed, skipping cycle");
+    return;
+  }
   try {
     const { rows: icebergs } = await client.query<{
       id: string;
@@ -203,14 +225,19 @@ async function runIcebergEngine(): Promise<void> {
       }
     }
   } catch (err) {
-    logger.error({ err }, "runIcebergEngine error");
+    if (isDbConnError(err)) logger.warn({ err }, "runIcebergEngine: DB error, skipping cycle");
+    else logger.error({ err }, "runIcebergEngine error");
   } finally {
-    client.release();
+    client!.release();
   }
 }
 
 async function runTwapEngine(): Promise<void> {
-  const client = await pool.connect();
+  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  try { client = await pool.connect(); } catch (err) {
+    logger.warn({ err }, "TWAP engine: DB connect failed, skipping cycle");
+    return;
+  }
   try {
     const { rows: twaps } = await client.query<{
       id: string;
@@ -315,9 +342,10 @@ async function runTwapEngine(): Promise<void> {
       );
     }
   } catch (err) {
-    logger.error({ err }, "runTwapEngine error");
+    if (isDbConnError(err)) logger.warn({ err }, "runTwapEngine: DB error, skipping cycle");
+    else logger.error({ err }, "runTwapEngine error");
   } finally {
-    client.release();
+    client!.release();
   }
 }
 
@@ -333,7 +361,9 @@ export function startAdvancedOrderEngines(): void {
     if (trailingRunning) return;
     trailingRunning = true;
     runTrailingStopEngine()
-      .catch(err => logger.error({ err }, "Trailing stop engine uncaught error"))
+      .catch(err => isDbConnError(err)
+        ? logger.warn({ err }, "Trailing stop engine: DB unavailable, skipping cycle")
+        : logger.error({ err }, "Trailing stop engine uncaught error"))
       .finally(() => { trailingRunning = false; });
   }, 30_000);
 
@@ -342,7 +372,9 @@ export function startAdvancedOrderEngines(): void {
       if (icebergRunning) return;
       icebergRunning = true;
       runIcebergEngine()
-        .catch(err => logger.error({ err }, "Iceberg engine uncaught error"))
+        .catch(err => isDbConnError(err)
+        ? logger.warn({ err }, "Iceberg engine: DB unavailable, skipping cycle")
+        : logger.error({ err }, "Iceberg engine uncaught error"))
         .finally(() => { icebergRunning = false; });
     }, 30_000);
   }, 10_000);
@@ -352,7 +384,9 @@ export function startAdvancedOrderEngines(): void {
       if (twapRunning) return;
       twapRunning = true;
       runTwapEngine()
-        .catch(err => logger.error({ err }, "TWAP engine uncaught error"))
+        .catch(err => isDbConnError(err)
+        ? logger.warn({ err }, "TWAP engine: DB unavailable, skipping cycle")
+        : logger.error({ err }, "TWAP engine uncaught error"))
         .finally(() => { twapRunning = false; });
     }, 30_000);
   }, 20_000);
