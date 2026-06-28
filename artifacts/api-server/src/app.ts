@@ -588,8 +588,13 @@ async function healthHandler(_req: any, res: any) {
   const anyStuck = services.some(s => s.status === "stuck");
 
   let bsvChain: { online: boolean; blockHeight: number } | undefined;
-  try { const bsv = await getBsvChainStatus(); bsvChain = { online: bsv.online, blockHeight: bsv.blockHeight }; }
-  catch { /* non-fatal */ }
+  try {
+    const bsv = await Promise.race([
+      getBsvChainStatus(),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("bsv-status timeout")), 3_000)),
+    ]);
+    bsvChain = { online: bsv.online, blockHeight: bsv.blockHeight };
+  } catch { /* non-fatal — DB may be under load */ }
 
   // Only CRITICAL services failing should degrade the public health signal.
   // Non-critical reconcilers (le-status-sync, ghost-order-detector, etc.) being

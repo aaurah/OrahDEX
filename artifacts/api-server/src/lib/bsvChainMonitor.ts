@@ -13,7 +13,7 @@
 
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { serviceState } from "./serviceState.js";
@@ -56,6 +56,18 @@ async function getSetting(key: string): Promise<string | null> {
     const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
     return rows[0]?.value ?? null;
   } catch { return null; }
+}
+
+async function getSettings(keys: string[]): Promise<Record<string, string | null>> {
+  const map: Record<string, string | null> = Object.fromEntries(keys.map(k => [k, null]));
+  try {
+    const rows = await db
+      .select({ key: platformSettingsTable.key, value: platformSettingsTable.value })
+      .from(platformSettingsTable)
+      .where(inArray(platformSettingsTable.key, keys));
+    for (const row of rows) map[row.key] = row.value;
+  } catch { /* return nulls for all keys */ }
+  return map;
 }
 
 async function safeFetch(url: string): Promise<Record<string, unknown> | null> {
@@ -138,17 +150,23 @@ async function fetchChainInfo(): Promise<void> {
 }
 
 export async function getBsvChainStatus(): Promise<BsvChainStatus> {
-  const online           = (await getSetting("bsv_chain_online"))      === "true";
-  const blockHeight      = parseInt((await getSetting("bsv_block_height"))    ?? "0") || 0;
-  const bestBlockHash    = (await getSetting("bsv_best_block_hash"))   ?? "";
-  const difficulty       = parseFloat((await getSetting("bsv_difficulty"))    ?? "0") || 0;
-  const medianTime       = parseInt((await getSetting("bsv_median_time"))     ?? "0") || 0;
-  const lastChecked      = (await getSetting("bsv_last_checked"))      ?? new Date().toISOString();
-  const hashrateEHs      = parseFloat((await getSetting("bsv_hashrate_ehs"))  ?? "0") || 0;
-  const mempoolTxCount   = parseInt((await getSetting("bsv_mempool_tx_count")) ?? "0") || 0;
-  const mempoolBytes     = parseInt((await getSetting("bsv_mempool_bytes"))   ?? "0") || 0;
-  const feeRateSatPerByte= parseInt((await getSetting("bsv_fee_rate_sat"))    ?? "1") || 1;
-  const bsvUsd           = parseFloat((await getSetting("bsv_usd"))           ?? "0") || 0;
+  const s = await getSettings([
+    "bsv_chain_online", "bsv_block_height", "bsv_best_block_hash",
+    "bsv_difficulty", "bsv_median_time", "bsv_last_checked",
+    "bsv_hashrate_ehs", "bsv_mempool_tx_count", "bsv_mempool_bytes",
+    "bsv_fee_rate_sat", "bsv_usd",
+  ]);
+  const online           = s["bsv_chain_online"]      === "true";
+  const blockHeight      = parseInt(s["bsv_block_height"]      ?? "0") || 0;
+  const bestBlockHash    = s["bsv_best_block_hash"]   ?? "";
+  const difficulty       = parseFloat(s["bsv_difficulty"]      ?? "0") || 0;
+  const medianTime       = parseInt(s["bsv_median_time"]       ?? "0") || 0;
+  const lastChecked      = s["bsv_last_checked"]      ?? new Date().toISOString();
+  const hashrateEHs      = parseFloat(s["bsv_hashrate_ehs"]    ?? "0") || 0;
+  const mempoolTxCount   = parseInt(s["bsv_mempool_tx_count"]  ?? "0") || 0;
+  const mempoolBytes     = parseInt(s["bsv_mempool_bytes"]     ?? "0") || 0;
+  const feeRateSatPerByte= parseInt(s["bsv_fee_rate_sat"]      ?? "1") || 1;
+  const bsvUsd           = parseFloat(s["bsv_usd"]             ?? "0") || 0;
 
   return {
     online,
