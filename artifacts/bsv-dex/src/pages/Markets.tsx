@@ -190,8 +190,8 @@ export function Markets() {
   // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
   const needAllPairs = tab === "sol" || tab === "favorites" || search.length > 0;
   const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
-  const leAllPairs = useMemo(
-    () => (rawLeAllPairs ?? []).map(p => ({
+  const leAllPairs = useMemo(() => {
+    const mapped = (rawLeAllPairs ?? []).map(p => ({
       ...normalise({
         symbol:               p.symbol,
         baseAsset:            p.baseAsset,
@@ -202,14 +202,21 @@ export function Markets() {
         type:                 "spot",
       }),
       network: (p as any).network ?? null,
-    })).filter(m => m.lastPrice > 0),
-    [rawLeAllPairs],
-  );
+    })).filter(m => m.lastPrice > 0);
+    // LE lists the same coin on multiple chains — keep one per base:quote (best price)
+    const best = new Map<string, typeof mapped[0]>();
+    for (const m of mapped) {
+      const key = `${m.baseAsset}:${m.quoteAsset}`;
+      const ex = best.get(key);
+      if (!ex || m.lastPrice > ex.lastPrice) best.set(key, m);
+    }
+    return [...best.values()];
+  }, [rawLeAllPairs]);
 
   // LE BSV-quoted pairs — only needed for BSV tab
   const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV", enabled: tab === "bsv" });
-  const leBsvPairs = useMemo(
-    () => (rawLePairs ?? []).map(p => normalise({
+  const leBsvPairs = useMemo(() => {
+    const all = (rawLePairs ?? []).map(p => normalise({
       symbol:               p.symbol,
       baseAsset:            p.baseAsset,
       quoteAsset:           p.quoteAsset,
@@ -217,14 +224,16 @@ export function Markets() {
       priceChangePercent24h: p.priceChangePercent24h,
       volume24h:            p.volume,
       type:                 "spot",
-    })).filter(m => m.lastPrice > 0),
-    [rawLePairs],
-  );
+    })).filter(m => m.lastPrice > 0);
+    const best = new Map<string, typeof all[0]>();
+    for (const m of all) { const ex = best.get(m.baseAsset); if (!ex || m.lastPrice > ex.lastPrice) best.set(m.baseAsset, m); }
+    return [...best.values()];
+  }, [rawLePairs]);
 
   // LE BTC-quoted pairs — only needed for BTC tab
   const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC", enabled: tab === "btc" });
-  const leBtcPairs = useMemo(
-    () => (rawLeBtcPairs ?? []).map(p => normalise({
+  const leBtcPairs = useMemo(() => {
+    const all = (rawLeBtcPairs ?? []).map(p => normalise({
       symbol:               p.symbol,
       baseAsset:            p.baseAsset,
       quoteAsset:           p.quoteAsset,
@@ -232,8 +241,11 @@ export function Markets() {
       priceChangePercent24h: p.priceChangePercent24h,
       volume24h:            p.volume,
       type:                 "spot",
-    })).filter(m => m.lastPrice > 0),
-    [rawLeBtcPairs],
+    })).filter(m => m.lastPrice > 0);
+    const best = new Map<string, typeof all[0]>();
+    for (const m of all) { const ex = best.get(m.baseAsset); if (!ex || m.lastPrice > ex.lastPrice) best.set(m.baseAsset, m); }
+    return [...best.values()];
+  }, [rawLeBtcPairs],
   );
 
   /**
@@ -392,8 +404,14 @@ export function Markets() {
           return net.includes("sol");
         });
         const dbBases = new Set(dbSol.map((m: any) => m.baseAsset));
-        const leSolExtra = leSolPairs.filter(m => !dbBases.has(m.baseAsset));
-        return [...dbSol, ...leSolExtra];
+        // Dedup within leSolPairs too — same coin on multiple SOL-related networks
+        const leSolByBase = new Map<string, typeof leSolPairs[0]>();
+        for (const m of leSolPairs) {
+          if (dbBases.has(m.baseAsset)) continue;
+          const ex = leSolByBase.get(m.baseAsset);
+          if (!ex || m.lastPrice > ex.lastPrice) leSolByBase.set(m.baseAsset, m);
+        }
+        return [...dbSol, ...leSolByBase.values()];
       }
       case "ai":      return dbByCategory("ai");
       case "depin":   return dbByCategory("depin");
