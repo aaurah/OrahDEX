@@ -252,7 +252,11 @@ function getCatRows(
 export function MobileMarkets() {
   const [, navigate] = useLocation();
   const [search, setSearch]       = useState("");
-  const [cat, setCat]             = useState<Cat>("usd");
+  const [cat, setCat]             = useState<Cat>(() => {
+    const s = useWalletStore.getState();
+    const { tab: wTab, isAutoSelected } = getWalletMarketTab(s.address, s.network, s.chainId);
+    return isAutoSelected ? (wTab as Cat) : "usd";
+  });
   const [usdSub, setUsdSub]       = useState<UsdSub>("USDT");
   const [sortKey, setSortKey]     = useState<SortKey>("base");
   const [sortDir, setSortDir]     = useState<SortDir>("asc");
