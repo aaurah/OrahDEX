@@ -65,12 +65,15 @@ export function getWalletMarketTab(
 ): WalletMarketResult {
   if (!address) return { tab: "usd", label: "", isAutoSelected: false };
 
-  // BSV UTXO wallet
-  if (network === "bsv") return { tab: "bsv", label: "BSV", isAutoSelected: true };
-  // Solana wallet
-  if (network === "sol") return { tab: "sol", label: "Solana", isAutoSelected: true };
-  // Bitcoin wallet
-  if (network === "btc") return { tab: "btc", label: "Bitcoin", isAutoSelected: true };
+  // Native UTXO / non-EVM wallets supported by Orah wallet
+  if (network === "bsv" || network === "bsv-test") return { tab: "bsv",  label: "BSV",          isAutoSelected: true };
+  if (network === "sol")                            return { tab: "sol",  label: "Solana",        isAutoSelected: true };
+  if (network === "btc")                            return { tab: "btc",  label: "Bitcoin",       isAutoSelected: true };
+  if (network === "bch")                            return { tab: "bch",  label: "Bitcoin Cash",  isAutoSelected: true };
+  // Networks without a dedicated Markets tab — leave user on current tab
+  if (network === "tron" || network === "xrp" || network === "ltc" || network === "doge") {
+    return { tab: "usd", label: "", isAutoSelected: false };
+  }
 
   // EVM wallet — look up chainId
   if (chainId && CHAIN_TAB[chainId]) {

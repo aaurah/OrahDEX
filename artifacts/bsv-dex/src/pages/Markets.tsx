@@ -137,7 +137,11 @@ export function Markets() {
   });
 
   const { address, network, chainId } = useWalletStore();
-  const [tab, setTab] = useState<Tab>("usd");
+  const [tab, setTab] = useState<Tab>(() => {
+    const s = useWalletStore.getState();
+    const { tab: wTab, isAutoSelected } = getWalletMarketTab(s.address, s.network, s.chainId);
+    return isAutoSelected ? (wTab as Tab) : "usd";
+  });
   const [usdSub, setUsdSub] = useState<UsdSub>("USDT");
   const [search, setSearch] = useState("");
   const [stars, setStars] = useState<Set<string>>(new Set());
