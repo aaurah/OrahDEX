@@ -11,6 +11,7 @@ import { Bridge, NATIVE_TOKEN_ADDRESS, sendTransaction } from "thirdweb";
 import { useActiveAccount } from "thirdweb/react";
 import { parseUnits, formatUnits } from "viem";
 import { thirdwebClient } from "@/lib/thirdweb-client";
+import { wagmiConfig } from "@/lib/reown";
 import {
   ArrowDown, Loader2, CheckCircle2, AlertCircle, ExternalLink, RefreshCw, Zap,
 } from "lucide-react";
@@ -277,20 +278,32 @@ export function ThirdwebSwapPanel() {
     if (!srcTok || !dstTok || !receiveAmt || parseFloat(receiveAmt) <= 0) return;
 
     const eth = (window as any).ethereum;
-    if (!account && !eth) {
+
+    // Resolve wallet: ThirdWeb account → window.ethereum → Reown/WalletConnect connector
+    let sender: string | null = null;
+    let reownProvider: any = null;
+
+    if (account) {
+      sender = account.address;
+    } else if (eth) {
+      let accs: string[] = await eth.request({ method: "eth_accounts" });
+      if (!accs?.length) accs = await eth.request({ method: "eth_requestAccounts" });
+      sender = accs?.[0] ?? null;
+    } else {
+      for (const connector of (wagmiConfig as any).connectors ?? []) {
+        try {
+          const p = await (connector as any).getProvider?.();
+          if (!p) continue;
+          const accs: string[] = await p.request({ method: "eth_accounts" });
+          if (accs?.length) { sender = accs[0]; reownProvider = p; break; }
+        } catch {}
+      }
+    }
+
+    if (!sender) {
       setExecError("No wallet connected. Connect a wallet first.");
       return;
     }
-
-    let sender: string;
-    if (account) {
-      sender = account.address;
-    } else {
-      let accs: string[] = await eth.request({ method: "eth_accounts" });
-      if (!accs?.length) accs = await eth.request({ method: "eth_requestAccounts" });
-      sender = accs[0];
-    }
-    if (!sender) { setExecError("No wallet account found."); return; }
 
     setBridging(true);
     setExecError(null);
@@ -323,12 +336,13 @@ export function ThirdwebSwapPanel() {
           const result = await sendTransaction({ transaction: tx, account });
           if (i === 0) firstHash = result.transactionHash;
         } else {
+          const eip1193 = reownProvider ?? eth;
           const chainHex = "0x" + tx.chainId.toString(16);
-          const curChain: string = await eth.request({ method: "eth_chainId" });
+          const curChain: string = await eip1193.request({ method: "eth_chainId" });
           if (curChain.toLowerCase() !== chainHex.toLowerCase()) {
-            await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainHex }] });
+            await eip1193.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainHex }] });
           }
-          const hash: string = await eth.request({
+          const hash: string = await eip1193.request({
             method: "eth_sendTransaction",
             params: [{ from: sender, to: tx.to, data: tx.data, value: tx.value ? "0x" + tx.value.toString(16) : "0x0" }],
           });
