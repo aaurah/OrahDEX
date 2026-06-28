@@ -25,6 +25,7 @@ import {
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { cn } from "@/lib/utils";
+import { hasCategory } from "@/lib/market-categories";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -158,6 +159,10 @@ function getCatRows(
   const dbByQuote = (quote: string): MktRow[] =>
     apiRows.filter(m => m.quote === quote && m.type !== "futures" && m.price > 0);
 
+  /** All DB pairs matching a category tag, priced > 0 — same logic as desktop */
+  const dbByCat = (tag: string): MktRow[] =>
+    apiRows.filter(m => m.type !== "futures" && m.price > 0 && hasCategory(m, tag));
+
   switch (cat) {
     case "all":       return enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures" && m.price > 0);
     case "favorites": return [
@@ -165,11 +170,17 @@ function getCatRows(
       ...leAllPairs.filter(p => favorites.has(p.symbol)),
     ];
     case "new":       return NEW_MARKETS.map(normalise);
-    case "usd":       return enrich(STABLE_MOCK[usdSub]);
+    case "usd": {
+      const dbUsd = dbByQuote(usdSub);
+      return dbUsd.length > 0 ? dbUsd : enrich(STABLE_MOCK[usdSub]);
+    }
     case "btc": {
       const dbBtc = dbByQuote("BTC");
-      if (dbBtc.length > 0) return dbBtc;
-      // Fallback: static list enriched with live prices + LE extras
+      if (dbBtc.length > 0) {
+        const dbBtcBases = new Set(dbBtc.map(r => r.base));
+        const leBtcExtra = leBtcPairs.filter(p => !dbBtcBases.has(p.base) && p.price > 0);
+        return [...dbBtc, ...leBtcExtra];
+      }
       const native = enrich(BTC_MARKETS);
       const seenBtcBases = new Set(native.map(r => r.base));
       const seenBtcSymbols = new Set(native.map(r => r.symbol));
@@ -178,34 +189,29 @@ function getCatRows(
         .sort((a, b) => a.base.localeCompare(b.base));
       return [...native, ...extraBtc];
     }
-    case "eth":       return dbByQuote("ETH").length > 0 ? dbByQuote("ETH") : enrich(ETH_MARKETS);
-    case "bnb":       return dbByQuote("BNB").length > 0 ? dbByQuote("BNB") : enrich(BNB_MARKETS);
-    case "sol": {
-      const leSolPairs = leAllPairs.filter(p => {
-        const net = String((p as any).network ?? "").toLowerCase();
-        return net.includes("sol");
-      });
-      if (leSolPairs.length > 0) {
-        const mockBases = new Set(enrich(SOL_MARKETS).map(r => r.base));
-        const extraSol = leSolPairs.filter(p => !mockBases.has(p.base) && p.price > 0);
-        return [...enrich(SOL_MARKETS), ...extraSol];
-      }
-      return enrich(SOL_MARKETS);
-    }
-    case "bch":       return enrich(BCH_MARKETS);
-    case "matic":     return enrich(MATIC_MARKETS);
-    case "avax":      return enrich(AVAX_MARKETS);
-    case "arb":       return enrich(ARB_MARKETS);
-    case "op":        return enrich(OP_MARKETS);
-    case "ftm":       return enrich(FTM_MARKETS);
-    case "cro":       return enrich(CRO_MARKETS);
-    case "base":      return enrich(BASE_MARKETS);
-    case "zora":      return enrich(ZORA_MARKETS);
-    case "linea":     return enrich(LINEA_MARKETS);
-    case "zk":        return enrich(ZK_MARKETS);
-    case "scr":       return enrich(SCR_MARKETS);
-    case "mnt":       return enrich(MNT_MARKETS);
+    case "eth":   return dbByQuote("ETH").length   > 0 ? dbByQuote("ETH")   : enrich(ETH_MARKETS);
+    case "bnb":   return dbByQuote("BNB").length   > 0 ? dbByQuote("BNB")   : enrich(BNB_MARKETS);
+    case "matic": return dbByQuote("MATIC").length > 0 ? dbByQuote("MATIC") : enrich(MATIC_MARKETS);
+    case "avax":  return dbByQuote("AVAX").length  > 0 ? dbByQuote("AVAX")  : enrich(AVAX_MARKETS);
+    case "arb":   return dbByQuote("ARB").length   > 0 ? dbByQuote("ARB")   : enrich(ARB_MARKETS);
+    case "op":    return dbByQuote("OP").length    > 0 ? dbByQuote("OP")    : enrich(OP_MARKETS);
+    case "ftm":   return dbByQuote("FTM").length   > 0 ? dbByQuote("FTM")   : enrich(FTM_MARKETS);
+    case "cro":   return dbByQuote("CRO").length   > 0 ? dbByQuote("CRO")   : enrich(CRO_MARKETS);
+    case "base":  return dbByQuote("BASE").length  > 0 ? dbByQuote("BASE")  : enrich(BASE_MARKETS);
+    case "zora":  return dbByQuote("ZORA").length  > 0 ? dbByQuote("ZORA")  : enrich(ZORA_MARKETS);
+    case "linea": return dbByQuote("LINEA").length > 0 ? dbByQuote("LINEA") : enrich(LINEA_MARKETS);
+    case "zk":    return dbByQuote("ZK").length    > 0 ? dbByQuote("ZK")    : enrich(ZK_MARKETS);
+    case "scr":   return dbByQuote("SCR").length   > 0 ? dbByQuote("SCR")   : enrich(SCR_MARKETS);
+    case "mnt":   return dbByQuote("MNT").length   > 0 ? dbByQuote("MNT")   : enrich(MNT_MARKETS);
+    case "bch":   return dbByQuote("BCH").length   > 0 ? dbByQuote("BCH")   : enrich(BCH_MARKETS);
     case "bsv": {
+      const dbBsv = dbByQuote("BSV");
+      const dbBsvBases  = new Set(dbBsv.map(r => r.base));
+      const dbBsvSymbols = new Set(dbBsv.map(r => r.symbol));
+      if (dbBsv.length > 0) {
+        const leExtra = lePairs.filter(p => !dbBsvBases.has(p.base) && !dbBsvSymbols.has(p.symbol) && p.price > 0);
+        return [...dbBsv, ...leExtra];
+      }
       const native = enrich(BSV_MARKETS).filter(m => m.price > 0);
       const seenBases = new Set(native.map(r => r.base));
       const seenSymbols = new Set(native.map(r => r.symbol));
@@ -214,21 +220,32 @@ function getCatRows(
         .sort((a, b) => a.base.localeCompare(b.base));
       return [...native, ...extra];
     }
-    case "ai":        return enrich(AI_MARKETS);
-    case "depin":     return enrich(DEPIN_MARKETS);
-    case "meme":      return enrich(MEME_MARKETS);
-    case "defi":      return enrich(DEFI_MARKETS);
-    case "gaming":    return enrich(GAMING_MARKETS);
-    case "cosmos":    return enrich(COSMOS_MARKETS);
-    case "l1":        return enrich(L1_MARKETS);
-    case "l2":        return enrich(L2_MARKETS);
-    case "rwa":       return enrich(RWA_MARKETS);
-    case "exchange":  return enrich(EXCHANGE_MARKETS);
-    case "brc20":     return enrich(BRC20_MARKETS);
-    case "uniswap":   return enrich(UNISWAP_MARKETS);
-    case "pancake":   return enrich(PANCAKE_MARKETS);
-    case "futures":   return enrich(FUTURES_MARKETS);
-    default:          return [];
+    case "sol": {
+      const dbSol = dbByCat("sol_eco");
+      const leSolPairs = leAllPairs.filter(p => {
+        const net = String((p as any).network ?? "").toLowerCase();
+        return net.includes("sol");
+      });
+      const base = dbSol.length > 0 ? dbSol : enrich(SOL_MARKETS);
+      const baseBases = new Set(base.map(r => r.base));
+      const extraSol = leSolPairs.filter(p => !baseBases.has(p.base) && p.price > 0);
+      return [...base, ...extraSol];
+    }
+    case "ai":       { const db = dbByCat("ai");       return db.length > 0 ? db : enrich(AI_MARKETS);       }
+    case "depin":    { const db = dbByCat("depin");    return db.length > 0 ? db : enrich(DEPIN_MARKETS);    }
+    case "meme":     { const db = dbByCat("meme");     return db.length > 0 ? db : enrich(MEME_MARKETS);     }
+    case "defi":     { const db = dbByCat("defi");     return db.length > 0 ? db : enrich(DEFI_MARKETS);     }
+    case "gaming":   { const db = dbByCat("gaming");   return db.length > 0 ? db : enrich(GAMING_MARKETS);   }
+    case "cosmos":   { const db = dbByCat("cosmos");   return db.length > 0 ? db : enrich(COSMOS_MARKETS);   }
+    case "l1":       { const db = dbByCat("l1");       return db.length > 0 ? db : enrich(L1_MARKETS);       }
+    case "l2":       { const db = dbByCat("l2");       return db.length > 0 ? db : enrich(L2_MARKETS);       }
+    case "rwa":      { const db = dbByCat("rwa");      return db.length > 0 ? db : enrich(RWA_MARKETS);      }
+    case "exchange": { const db = dbByCat("exchange"); return db.length > 0 ? db : enrich(EXCHANGE_MARKETS); }
+    case "brc20":    { const db = dbByCat("brc20");    return db.length > 0 ? db : enrich(BRC20_MARKETS);    }
+    case "uniswap":  return enrich(UNISWAP_MARKETS);
+    case "pancake":  return enrich(PANCAKE_MARKETS);
+    case "futures":  return enrich(FUTURES_MARKETS);
+    default:         return [];
   }
 }
 
