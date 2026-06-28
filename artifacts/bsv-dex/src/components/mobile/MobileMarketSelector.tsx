@@ -294,9 +294,15 @@ function getRows(
     const native = db.length > 0 ? db : enrich(fallbackMock).filter(m => m.price > 0);
     const seenSymbols = new Set(native.map(r => r.symbol));
     const seenBases   = new Set(native.map(r => r.base));
-    const aos = aosPairs
-      .filter(p => p.quote === quote && p.price > 0 && !seenBases.has(p.base) && !seenSymbols.has(p.symbol))
-      .sort((a, b) => a.base.localeCompare(b.base));
+    // Deduplicate within AOS pairs by base — same coin on multiple chains → show once (best price)
+    const aosByBase = new Map<string, NormRow>();
+    for (const p of aosPairs) {
+      if (p.quote !== quote || p.price <= 0) continue;
+      if (seenBases.has(p.base) || seenSymbols.has(p.symbol)) continue;
+      const cur = aosByBase.get(p.base);
+      if (!cur || p.price > cur.price) aosByBase.set(p.base, p);
+    }
+    const aos = Array.from(aosByBase.values()).sort((a, b) => a.base.localeCompare(b.base));
     return [...native, ...aos];
   };
 
@@ -311,7 +317,19 @@ function getRows(
 
   // "All" pool = all native spot + AOS pairs not already native (priced only)
   const nativeSymbols = new Set(ALL_POOL_DEDUPED.map((m: any) => normalise(m).symbol));
-  const aosOnly = aosPairs.filter(p => !nativeSymbols.has(p.symbol) && p.price > 0);
+  const nativeBases   = new Set(ALL_POOL_DEDUPED.map((m: any) => normalise(m).base));
+  // Deduplicate AOS by base coin — LE lists the same coin on multiple chains.
+  // Keep one entry per base (highest price = most liquid network).
+  const aosOnly = (() => {
+    const bestByBase = new Map<string, NormRow>();
+    for (const p of aosPairs) {
+      if (p.price <= 0) continue;
+      if (nativeSymbols.has(p.symbol) || nativeBases.has(p.base)) continue;
+      const cur = bestByBase.get(p.base);
+      if (!cur || p.price > cur.price) bestByBase.set(p.base, p);
+    }
+    return Array.from(bestByBase.values());
+  })();
   const allSpot = () => [
     ...enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures" && m.price > 0),
     ...aosOnly,
