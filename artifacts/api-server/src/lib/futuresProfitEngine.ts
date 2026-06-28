@@ -12,26 +12,30 @@
  *     and charged a 0.5 % liquidation fee that goes to the platform.
  */
 
-import { pool, db } from "@workspace/db";
+import { pool, db, withDbRetry } from "@workspace/db";
 import { futuresPositionsTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, and, ne } from "drizzle-orm";
 import { logger } from "./logger.js";
-import { guardedInterval } from "./selfHealing.js";
+import { guardedInterval, withRetry } from "./selfHealing.js";
 import { liquidateFuturesPosition } from "./futuresSettlement.js";
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
 
 async function getSetting(key: string): Promise<string | null> {
   try {
-    const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+    const rows = await withDbRetry(() =>
+      db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key))
+    );
     return rows[0]?.value ?? null;
   } catch { return null; }
 }
 
 async function setSetting(key: string, value: string) {
-  await db.insert(platformSettingsTable)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+  await withDbRetry(() =>
+    db.insert(platformSettingsTable)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } })
+  );
 }
 
 async function rebuildTotal() {
@@ -59,8 +63,10 @@ const OI_TO_VOL_RATIO = 0.15;   // estimated open-interest / 24h-volume ratio
 
 async function runFundingCycle(): Promise<void> {
   try {
-    const positions = await db.select().from(futuresPositionsTable)
-      .where(eq(futuresPositionsTable.status, "open"));
+    const positions = await withDbRetry(() =>
+      db.select().from(futuresPositionsTable)
+        .where(eq(futuresPositionsTable.status, "open"))
+    );
 
     let cycleIncome    = 0;   // total platform revenue this cycle
     let appliedCount   = 0;   // positions that actually paid
@@ -85,12 +91,12 @@ async function runFundingCycle(): Promise<void> {
         // fundingFee field so the UI shows the rebate accrual.
         const credit = Math.abs(payment);
         if (credit > 0) {
-          await pool.query(
+          await withRetry(() => pool.query(
             `UPDATE futures_positions
              SET funding_fee = (COALESCE(funding_fee::numeric, 0) - $1)::text
              WHERE id = $2 AND status = 'open'`,
             [credit.toFixed(8), pos.id],
-          );
+          ), { maxAttempts: 2, baseDelayMs: 500 });
         }
         continue;
       }
@@ -98,7 +104,7 @@ async function runFundingCycle(): Promise<void> {
       // Atomically debit from locked margin (capped to what's available so a
       // funding payment can never push margin below zero — that would be the
       // job of the liquidation engine on the next tick).
-      const client = await pool.connect();
+      const client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 1_000 });
       try {
         await client.query("BEGIN");
 
@@ -163,12 +169,15 @@ async function runFundingCycle(): Promise<void> {
 async function runLiquidationCycle(): Promise<void> {
   try {
     // Exclude LE markets (36K rows) — only spot/perp prices needed for position mark-to-market.
-    const markets   = await db
-      .select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
-      .from(marketsTable)
-      .where(ne(marketsTable.type, "letsexchange"));
-    const positions = await db.select().from(futuresPositionsTable)
-      .where(eq(futuresPositionsTable.status, "open"));
+    const markets   = await withDbRetry(() =>
+      db.select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
+        .from(marketsTable)
+        .where(ne(marketsTable.type, "letsexchange"))
+    );
+    const positions = await withDbRetry(() =>
+      db.select().from(futuresPositionsTable)
+        .where(eq(futuresPositionsTable.status, "open"))
+    );
 
     /* build a price map from live market data */
     const priceMap: Record<string, number> = {};
@@ -189,14 +198,14 @@ async function runLiquidationCycle(): Promise<void> {
       const upnl     = dirMult * priceDiff * qty;
       const upnlPct  = (upnl / margin) * 100;
       try {
-        await pool.query(
+        await withRetry(() => pool.query(
           `UPDATE futures_positions
            SET mark_price            = $1,
                unrealized_pnl        = $2,
                unrealized_pnl_percent = $3
            WHERE id = $4 AND status = 'open'`,
           [markPrice.toFixed(8), upnl.toFixed(8), upnlPct.toFixed(4), pos.id],
-        );
+        ), { maxAttempts: 2, baseDelayMs: 500 });
       } catch { /* non-fatal */ }
     }
 

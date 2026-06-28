@@ -217,11 +217,16 @@ export async function fetchKeyPrices() {
 
 /* ── GET /api/dex/prices ───────────────────────────────────────────────────── */
 router.get("/dex/prices", async (_req, res) => {
-  if (priceCache && Date.now() - priceCache.ts < PRICE_CACHE_MS) { res.json(priceCache.data); return; }
-  const p  = await fetchKeyPrices();
-  const data = p;
-  priceCache = { data, ts: Date.now() };
-  res.json(data);
+  try {
+    if (priceCache && Date.now() - priceCache.ts < PRICE_CACHE_MS) { res.json(priceCache.data); return; }
+    const data = await fetchKeyPrices();
+    priceCache = { data, ts: Date.now() };
+    if (!res.headersSent) res.json(data);
+  } catch (err) {
+    if (!res.headersSent) {
+      res.status(503).json({ error: "Price service temporarily unavailable" });
+    }
+  }
 });
 
 /* ── GET /api/dex/exchanges ────────────────────────────────────────────────── */
