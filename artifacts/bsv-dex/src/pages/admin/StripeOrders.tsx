@@ -83,7 +83,7 @@ export function AdminStripeOrders() {
   const [kycModal, setKycModal] = useState<StripeOrder | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     queryKey: ["admin", "stripe-orders", statusFilter, q],
     queryFn: async () => {
       const params = new URLSearchParams();
@@ -277,7 +277,16 @@ export function AdminStripeOrders() {
                   <Loader2 className="w-5 h-5 animate-spin inline-block mr-2" /> Loading orders…
                 </td></tr>
               )}
-              {!isLoading && orders.length === 0 && (
+              {isError && !isLoading && (
+                <tr><td colSpan={8} className="px-3 py-10 text-center">
+                  <div className="flex flex-col items-center gap-2 text-red-400">
+                    <AlertTriangle className="w-5 h-5" />
+                    <span className="text-sm">Failed to load orders: {(error as Error)?.message ?? "Unknown error"}</span>
+                    <button onClick={() => refetch()} className="text-xs underline text-muted-foreground hover:text-foreground">Retry</button>
+                  </div>
+                </td></tr>
+              )}
+              {!isLoading && !isError && orders.length === 0 && (
                 <tr><td colSpan={8} className="px-3 py-10 text-center text-muted-foreground">
                   No Stripe orders match the current filter.
                 </td></tr>
@@ -372,6 +381,14 @@ export function AdminStripeOrders() {
                             <Copy className="w-3 h-3" /> Address
                           </button>
                         )}
+                        <button
+                          disabled={isBusy}
+                          onClick={() => withBusy(o.id, () => deleteM.mutateAsync(o.id), "Delete this order from the local database? Stripe is not affected.")}
+                          className="px-2 py-1 rounded bg-red-500/10 border border-red-500/30 text-red-300 text-[11px] hover:bg-red-500/20 disabled:opacity-50 flex items-center gap-1"
+                          title="Clear from local DB"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                         <div className="relative">
                           <button
                             onClick={() => setOpenMenuId(openMenuId === o.id ? null : o.id)}
