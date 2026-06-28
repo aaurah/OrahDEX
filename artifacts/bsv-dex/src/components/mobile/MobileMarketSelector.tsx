@@ -17,6 +17,7 @@ import {
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
+import { useZoraCoins } from "@/hooks/useZoraCoins";
 import { cn, marketMatchesQuery } from "@/lib/utils";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 
@@ -516,6 +517,8 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
   // Live on-chain data from GeckoTerminal (chain tabs only, cached 90s)
   const { data: geckoRows } = useGeckoTerminalPools(cat);
+  // Live Zora Coins API data (zora tab only, fetches 4 list types in parallel)
+  const { data: zoraRows } = useZoraCoins(cat === "zora");
 
   let rows: NormRow[] = search
     ? globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search))
@@ -533,6 +536,17 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       .filter(g => !existingBases.has(g.base) && g.price > 0)
       .map(g => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, type: "spot" as const, network: g.network, swapOnly: true }));
     rows = [...rows, ...newRows];
+  }
+
+  // Merge Zora Coins API data for zora tab
+  if (!search && cat === "zora" && zoraRows.length > 0) {
+    const zoraByBase = new Map(zoraRows.map(z => [z.base, z]));
+    rows = rows.map(r => { const z = zoraByBase.get(r.base); return z && z.price > 0 ? { ...r, price: z.price, chg: z.chg } : r; });
+    const existingBases = new Set(rows.map(r => r.base));
+    const newZora: NormRow[] = zoraRows
+      .filter(z => !existingBases.has(z.base) && z.price > 0)
+      .map(z => ({ symbol: z.symbol, base: z.base, quote: z.quote, price: z.price, chg: z.chg, type: "spot" as const, network: "zora-network", swapOnly: true as const }));
+    rows = [...rows, ...newZora];
   }
 
   rows = [...rows].sort((a, b) => {

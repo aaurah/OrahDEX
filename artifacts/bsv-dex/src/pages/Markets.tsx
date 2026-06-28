@@ -26,6 +26,7 @@ import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
+import { useZoraCoins } from "@/hooks/useZoraCoins";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -241,6 +242,8 @@ export function Markets() {
 
   // Live on-chain data from GeckoTerminal (chain/category tabs, cached 90s)
   const { data: geckoRows } = useGeckoTerminalPools(tab);
+  // Live Zora Coins API data (zora tab only)
+  const { data: zoraRows } = useZoraCoins(tab === "zora");
 
   /** Enrich a mock pair list with live prices from the API where available. */
   const enrich = (mock: any[]): any[] =>
@@ -350,13 +353,17 @@ export function Markets() {
       case "mnt":     return dbByQuote("MNT");
       case "bch":     return dbByQuote("BCH");
       case "zora": {
-        const all = enrich(ZORA_MARKETS.map(normalise));
-        if (!geckoRows.length) return all;
-        const geckoByBase = new Map(geckoRows.map((g: any) => [g.base, g]));
-        const updated = all.map((r: any) => { const g = geckoByBase.get(r.baseAsset); return g && g.price > 0 ? { ...r, lastPrice: g.price, priceChangePercent24h: g.chg } : r; });
-        const existingBases = new Set(updated.map((r: any) => r.baseAsset));
-        const extra = geckoRows.filter((g: any) => !existingBases.has(g.base) && g.price > 0).map((g: any) => normalise({ symbol: g.symbol, baseAsset: g.base, quoteAsset: g.quote, lastPrice: g.price, priceChangePercent24h: g.chg, volume24h: g.vol, type: "spot" }));
-        return [...updated, ...extra];
+        let all = enrich(ZORA_MARKETS.map(normalise));
+        const applyMerge = (rows: any[], src: any[], getBase: (s: any) => string) => {
+          const byBase = new Map(src.map(s => [getBase(s), s]));
+          const updated = rows.map((r: any) => { const s = byBase.get(r.baseAsset); return s && s.price > 0 ? { ...r, lastPrice: s.price, priceChangePercent24h: s.chg } : r; });
+          const existing = new Set(updated.map((r: any) => r.baseAsset));
+          const extra = src.filter(s => !existing.has(getBase(s)) && s.price > 0).map((s: any) => normalise({ symbol: s.symbol, baseAsset: getBase(s), quoteAsset: s.quote, lastPrice: s.price, priceChangePercent24h: s.chg, volume24h: s.vol, type: "spot" }));
+          return [...updated, ...extra];
+        };
+        if (geckoRows.length) all = applyMerge(all, geckoRows, (g: any) => g.base);
+        if (zoraRows.length)  all = applyMerge(all, zoraRows,  (z: any) => z.base);
+        return all;
       }
       case "sol": {
         const dbSol = dbByCategory("sol_eco");

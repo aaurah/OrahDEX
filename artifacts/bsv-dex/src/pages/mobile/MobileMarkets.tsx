@@ -25,6 +25,7 @@ import {
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
+import { useZoraCoins } from "@/hooks/useZoraCoins";
 import { cn } from "@/lib/utils";
 import { hasCategory } from "@/lib/market-categories";
 
@@ -363,6 +364,8 @@ export function MobileMarkets() {
 
   // Live on-chain data from GeckoTerminal (chain/category tabs, cached 90s)
   const { data: geckoRows } = useGeckoTerminalPools(cat);
+  // Live Zora Coins API data (zora tab only)
+  const { data: zoraRows } = useZoraCoins(cat === "zora");
 
   const globalRows = useMemo(() => Array.from(new Map(
     [
@@ -373,16 +376,18 @@ export function MobileMarkets() {
 
   let rows = getCatRows(cat, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs, apiRows);
 
+  const applyLiveMerge = (rows: MktRow[], src: any[]): MktRow[] => {
+    const byBase = new Map(src.map((s: any) => [s.base, s]));
+    const updated = rows.map(r => { const s = byBase.get(r.base); return s && s.price > 0 ? { ...r, price: s.price, chg: s.chg } : r; });
+    const existing = new Set(updated.map(r => r.base));
+    const extra: MktRow[] = src.filter((s: any) => !existing.has(s.base) && s.price > 0).map((s: any) => ({ symbol: s.symbol, base: s.base, quote: s.quote, price: s.price, chg: s.chg, vol: s.vol, cap: s.fdv ?? 0, type: "spot" as const }));
+    return [...updated, ...extra];
+  };
+
   // Merge live GeckoTerminal data for chain/category tabs
-  if (!search && geckoRows.length > 0) {
-    const geckoByBase = new Map(geckoRows.map((g: any) => [g.base, g]));
-    rows = rows.map(r => { const g = geckoByBase.get(r.base); return g && g.price > 0 ? { ...r, price: g.price, chg: g.chg } : r; });
-    const existingBases = new Set(rows.map(r => r.base));
-    const newRows: MktRow[] = geckoRows
-      .filter((g: any) => !existingBases.has(g.base) && g.price > 0)
-      .map((g: any) => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, vol: g.vol, cap: g.fdv, type: "spot" as const }));
-    rows = [...rows, ...newRows];
-  }
+  if (!search && geckoRows.length > 0) rows = applyLiveMerge(rows, geckoRows);
+  // Merge Zora Coins API data for zora tab
+  if (!search && cat === "zora" && zoraRows.length > 0) rows = applyLiveMerge(rows, zoraRows);
 
   if (search) {
     const q = search.toUpperCase();
