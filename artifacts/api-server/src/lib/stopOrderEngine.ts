@@ -34,11 +34,11 @@ export async function triggerStopOrders(): Promise<void> {
     );
     if (openStops.length === 0) return;
 
-    // Fetch all markets into a quick lookup map
+    // Fetch non-LE markets into a quick lookup map (stop orders only use internal pairs).
     const markets = await db.select({
       symbol:    marketsTable.symbol,
       lastPrice: marketsTable.lastPrice,
-    }).from(marketsTable);
+    }).from(marketsTable).where(ne(marketsTable.type, "letsexchange"));
     const priceMap = new Map<string, number>(
       markets.map(m => [m.symbol, parseFloat(m.lastPrice)])
     );

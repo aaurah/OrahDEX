@@ -349,8 +349,10 @@ async function buildCgCoins(): Promise<any[]> {
   if (coinsCache && Date.now() - coinsCache.ts < COINS_CACHE_MS) return coinsCache.data;
   // If DB query below fails, fall through to lastGoodCoins rather than throwing.
 
-  const markets     = await db.select().from(marketsTable).orderBy(desc(marketsTable.volume24h));
-  const spotMarkets = markets.filter(m => m.type === "spot");
+  // Filter to spot markets in SQL — avoids loading all 36K LE pairs into JS.
+  const spotMarkets = await db.select().from(marketsTable)
+    .where(eq(marketsTable.type, "spot"))
+    .orderBy(desc(marketsTable.volume24h));
 
   const STABLE_QUOTES = new Set(["USDT", "USDC", "TUSD", "BUSD", "USDD", "USD"]);
   const usdPriceMap   = new Map<string, { market: typeof spotMarkets[0]; usdPrice: number }>();
