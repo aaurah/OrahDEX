@@ -1,6 +1,6 @@
 import { db, pool } from "@workspace/db";
 import { futuresPositionsTable, marketsTable, fundingRatesTable, fundingPaymentsTable } from "@workspace/db/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
 import { liquidateFuturesPosition } from "./futuresSettlement.js";
@@ -166,7 +166,11 @@ export function startFundingRateEngine(): void {
   const run = async () => {
     tick++;
     try {
-      const markets = await db.select().from(marketsTable);
+      // Only fetch the 18 PERP symbols we actually need — not all 36K markets rows.
+      const markets = await db
+        .select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
+        .from(marketsTable)
+        .where(inArray(marketsTable.symbol, PERP_SYMBOLS));
       const priceMap: Record<string, number> = {};
       for (const m of markets) {
         priceMap[m.symbol] = parseFloat(m.lastPrice) || 0;
