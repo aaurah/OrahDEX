@@ -505,6 +505,79 @@ router.get("/coins/:id/tickers", async (req, res) => {
   }
 });
 
+// ─── Coin detail: description, social links, ATH, categories ─────────────────
+const detailCache = new Map<string, Cache<any>>();
+const DETAIL_CACHE_MS = 10 * 60 * 1000;
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
+}
+
+router.get("/coins/:symbol/detail", async (req, res) => {
+  const symbol = req.params.symbol.toUpperCase();
+  const cached = detailCache.get(symbol);
+  if (cached && Date.now() - cached.ts < DETAIL_CACHE_MS) return res.json(cached.data);
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
+
+    // Step 1: search CoinGecko for this symbol
+    const searchRes = await fetch(
+      `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`,
+      { signal: ctrl.signal, headers: { Accept: "application/json" } },
+    );
+    clearTimeout(timer);
+    if (!searchRes.ok) { res.json({ error: "not_found" }); return; }
+
+    const searchData = await searchRes.json() as any;
+    const coins: any[] = searchData?.coins ?? [];
+
+    // Find best match: exact symbol match first, then name contains symbol
+    const exact = coins.find((c: any) => c.symbol?.toUpperCase() === symbol);
+    const best  = exact ?? coins[0];
+    if (!best?.id) { res.json({ error: "not_found" }); return; }
+
+    // Step 2: fetch full coin detail
+    const ctrl2 = new AbortController();
+    const timer2 = setTimeout(() => ctrl2.abort(), 8000);
+    const detailRes = await fetch(
+      `https://api.coingecko.com/api/v3/coins/${best.id}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=true&sparkline=false`,
+      { signal: ctrl2.signal, headers: { Accept: "application/json" } },
+    );
+    clearTimeout(timer2);
+    if (!detailRes.ok) { res.json({ error: "not_found" }); return; }
+
+    const d = await detailRes.json() as any;
+    const md = d?.market_data ?? {};
+
+    const result = {
+      cgId:        d.id,
+      name:        d.name,
+      symbol:      (d.symbol ?? symbol).toUpperCase(),
+      description: d.description?.en ? stripHtml(d.description.en).slice(0, 800) : null,
+      categories:  (d.categories ?? []).filter(Boolean).slice(0, 6),
+      homepage:    (d.links?.homepage ?? []).find((u: string) => u?.startsWith("http")) ?? null,
+      twitter:     d.links?.twitter_screen_name ? `https://twitter.com/${d.links.twitter_screen_name}` : null,
+      reddit:      d.links?.subreddit_url ?? null,
+      github:      (d.links?.repos_url?.github ?? [])[0] ?? null,
+      ath:         md.ath?.usd ?? null,
+      athDate:     md.ath_date?.usd ?? null,
+      atl:         md.atl?.usd ?? null,
+      atlDate:     md.atl_date?.usd ?? null,
+      marketCapRank: d.market_cap_rank ?? null,
+      image:       d.image?.large ?? d.image?.small ?? null,
+      genesisDate: d.genesis_date ?? null,
+    };
+
+    detailCache.set(symbol, { data: result, ts: Date.now() });
+    return res.json(result);
+  } catch (err: any) {
+    req.log.warn({ err: err?.message, symbol }, "coin detail fetch failed");
+    return res.json({ error: "fetch_failed" });
+  }
+});
+
 // ─── OpenOcean aggregator proxy (free, no API key) ────────────────────────────
 // Routes through 1inch, PancakeSwap, Uniswap, Curve, Balancer, and 100+ DEXes
 
