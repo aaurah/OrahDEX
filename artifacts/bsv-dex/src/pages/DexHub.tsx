@@ -1548,17 +1548,17 @@ export function DexHub() {
 
                   {/* MARKETS */}
                   {coinDetailTab === "markets" && (() => {
-                    const tickers: any[] = (tickersData?.tickers ?? []).filter((t: any) => !t.isAnomaly && !t.isStale);
+                    const all: any[]  = (tickersData?.tickers ?? []).filter((t: any) => !t.isAnomaly && !t.isStale);
+                    const cex   = all.filter((t: any) => !t.swapOnly);
+                    const swaps = all.filter((t: any) => t.swapOnly);
                     return (
                       <div className="divide-y divide-border/40">
                         <div className="px-4 py-2 bg-secondary/30">
                           <p className="text-xs text-muted-foreground">
-                            {tickersLoading
-                              ? "Loading markets…"
-                              : tickers.length > 0
-                                ? `${tickers.length} market${tickers.length !== 1 ? "s" : ""} · ${selectedCoin.symbol}`
-                                : `No active markets for ${selectedCoin.symbol}`
-                            }
+                            {tickersLoading ? "Loading markets…"
+                              : cex.length > 0 ? `${cex.length} market${cex.length !== 1 ? "s" : ""} · ${selectedCoin.symbol}`
+                              : swaps.length > 0 ? `Available on ${swaps.length} swap service${swaps.length !== 1 ? "s" : ""}`
+                              : `No markets found for ${selectedCoin.symbol}`}
                           </p>
                         </div>
 
@@ -1573,7 +1573,8 @@ export function DexHub() {
                           </div>
                         ))}
 
-                        {!tickersLoading && tickers.map((t: any, i: number) => {
+                        {/* Order-book markets */}
+                        {!tickersLoading && cex.map((t: any, i: number) => {
                           const tsColor = t.trustScore === "green" ? "bg-green-500" : t.trustScore === "yellow" ? "bg-yellow-400" : "bg-red-400";
                           return (
                             <a key={i} href={t.tradeUrl ?? "#"} target="_blank" rel="noopener noreferrer"
@@ -1586,7 +1587,7 @@ export function DexHub() {
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-1.5">
                                   <p className="text-sm font-semibold truncate">{t.exchangeName}</p>
-                                  {t.trustScore && <span className={cn("w-2 h-2 rounded-full shrink-0", tsColor)} title={`Trust: ${t.trustScore}`} />}
+                                  {t.trustScore && <span className={cn("w-2 h-2 rounded-full shrink-0", tsColor)} />}
                                 </div>
                                 <p className="text-xs text-muted-foreground">{t.base}/{t.target}</p>
                               </div>
@@ -1599,10 +1600,45 @@ export function DexHub() {
                           );
                         })}
 
-                        {!tickersLoading && tickers.length === 0 && (
+                        {/* Swap services */}
+                        {!tickersLoading && swaps.length > 0 && (
+                          <>
+                            {cex.length > 0 && (
+                              <div className="px-4 py-1.5 bg-secondary/20">
+                                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Swap Services</p>
+                              </div>
+                            )}
+                            {swaps.map((t: any, i: number) => (
+                              <a key={i} href={t.tradeUrl ?? "#"} target="_blank" rel="noopener noreferrer"
+                                className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors"
+                              >
+                                {t.exchangeLogo
+                                  ? <img src={t.exchangeLogo} alt={t.exchangeName} className="w-8 h-8 rounded-full shrink-0 bg-secondary border border-border" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                                  : <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-[11px] font-bold shrink-0">{t.exchangeName?.[0] ?? "?"}</div>
+                                }
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-sm font-semibold truncate">{t.exchangeName}</p>
+                                    <span className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-violet-500/15 text-violet-400 border border-violet-500/20 shrink-0">SWAP</span>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">Instant swap · any pair</p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  {t.price > 0
+                                    ? <p className="text-sm font-mono font-semibold tabular-nums">{qSym}{fmtPrice(t.price)}</p>
+                                    : <p className="text-xs text-muted-foreground">Market rate</p>
+                                  }
+                                </div>
+                                <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 ml-1" />
+                              </a>
+                            ))}
+                          </>
+                        )}
+
+                        {!tickersLoading && all.length === 0 && (
                           <div className="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground">
                             <Globe className="w-8 h-8 opacity-30" />
-                            <p className="text-sm">No active markets found</p>
+                            <p className="text-sm">No markets found</p>
                             <p className="text-xs opacity-60">Use the Trade tab to trade on OrahDEX</p>
                           </div>
                         )}
