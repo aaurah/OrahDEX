@@ -154,20 +154,48 @@ export async function probeStripe(): Promise<ProbeResult> {
 
 /* ── BSV / WhatsOnChain ───────────────────────────────────────────────────── */
 
+let _wocCachedDetail: string | null = null;
+let _wocCachedAt    = 0;
+const WOC_CACHE_TTL_MS = 10 * 60_000; // serve cache for up to 10 min on 429
+
 export async function probeBsvChain(): Promise<ProbeResult> {
-  return probe(
-    "bsv",
-    "BSV / WhatsOnChain",
-    async () => {
-      const r = await fetch("https://api.whatsonchain.com/v1/bsv/main/chain/info", {
-        signal: AbortSignal.timeout(5_000),
-        headers: { "User-Agent": "OrahDEX/1.0" },
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json() as { blocks?: number; headers?: number };
-      return `block ${(j.blocks ?? j.headers ?? 0).toLocaleString()}`;
-    },
-  );
+  const start = Date.now();
+  try {
+    const r = await fetch("https://api.whatsonchain.com/v1/bsv/main/chain/info", {
+      signal: AbortSignal.timeout(5_000),
+      headers: { "User-Agent": "OrahDEX/1.0" },
+    });
+
+    if (r.status === 429) {
+      const latencyMs = Date.now() - start;
+      const retryAfter = r.headers.get("Retry-After");
+      const cached = _wocCachedDetail && (Date.now() - _wocCachedAt < WOC_CACHE_TTL_MS)
+        ? ` (cached: ${_wocCachedDetail})`
+        : "";
+      return {
+        name: "bsv", label: "BSV / WhatsOnChain",
+        status: "degraded", latencyMs,
+        detail: `Rate limited by WoC${retryAfter ? ` — retry after ${retryAfter}s` : ""}${cached}`,
+        checkedAt: new Date().toISOString(),
+      };
+    }
+
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json() as { blocks?: number; headers?: number };
+    const detail = `block ${(j.blocks ?? j.headers ?? 0).toLocaleString()}`;
+    _wocCachedDetail = detail;
+    _wocCachedAt     = Date.now();
+    const latencyMs  = Date.now() - start;
+    return { name: "bsv", label: "BSV / WhatsOnChain", status: "ok", latencyMs, detail, checkedAt: new Date().toISOString() };
+  } catch (err: any) {
+    const latencyMs = Date.now() - start;
+    const status: ProbeStatus = latencyMs >= 4_900 ? "degraded" : "down";
+    return {
+      name: "bsv", label: "BSV / WhatsOnChain", status, latencyMs,
+      detail: "—", error: err?.message ?? String(err),
+      checkedAt: new Date().toISOString(),
+    };
+  }
 }
 
 /* ── Database ─────────────────────────────────────────────────────────────── */

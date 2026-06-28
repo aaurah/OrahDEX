@@ -208,16 +208,16 @@ async function runArbCycle() {
 
 /* ── start / stop ────────────────────────────────────────────────────────── */
 
-let _timer: ReturnType<typeof setInterval> | null = null;
+let _stopArbBot: (() => void) | null = null;
 
 export function startArbBot() {
-  if (_timer) return;
+  if (_stopArbBot) return;
   runArbCycle();
-  _timer = guardedInterval(runArbCycle, INTERVAL_MS, "ArbBot");
+  _stopArbBot = guardedInterval("ArbBot", runArbCycle, INTERVAL_MS);
   logger.info("ArbBot: started (60 s interval)");
 }
 
 export function stopArbBot() {
-  if (_timer) { clearInterval(_timer); _timer = null; }
+  if (_stopArbBot) { _stopArbBot(); _stopArbBot = null; }
   logger.info("ArbBot: stopped");
 }
