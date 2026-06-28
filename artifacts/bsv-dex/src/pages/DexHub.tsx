@@ -679,6 +679,28 @@ export function DexHub() {
   const [coinDetailInterval, setCoinDetailInterval] = useState("1d");
   useEffect(() => { if (selectedCoin) setCoinDetailTab("overview"); }, [selectedCoin?.id]);
 
+  /* Live ticker for the selected coin — enriches missing high24h / low24h / volume24h
+     when the coin record comes from LE/SS (no DB market data on those rows). */
+  const { data: selectedTicker } = useQuery({
+    queryKey: ["coin-ticker", selectedCoin?.symbol],
+    queryFn: async () => {
+      const sym = encodeURIComponent(`${selectedCoin!.symbol}/USDT`);
+      const r = await fetch(`${BASE}/api/markets/${sym}/ticker`);
+      if (!r.ok) return null;
+      return r.json();
+    },
+    enabled: !!selectedCoin,
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+  });
+
+  /* Enriched stat values — fall back to live ticker when coin row has no data */
+  const enrichedHigh24h  = (selectedCoin?.high24h   ?? 0) > 0 ? selectedCoin!.high24h   : (selectedTicker?.high24h   ?? 0);
+  const enrichedLow24h   = (selectedCoin?.low24h    ?? 0) > 0 ? selectedCoin!.low24h    : (selectedTicker?.low24h    ?? 0);
+  const enrichedVol24h   = (selectedCoin?.volume24h ?? 0) > 0 ? selectedCoin!.volume24h : (selectedTicker?.volume24h ?? 0);
+  const enrichedSrcLabel = selectedCoin?.source === "le" || selectedCoin?.source === "ss"
+    ? "OrahSwap" : "OrahDEX";
+
   /* Intercept browser back button so it closes the sheet instead of navigating away */
   const popHandledRef = useRef(false);
   useEffect(() => {
@@ -1361,12 +1383,12 @@ export function DexHub() {
                 {/* ── Stats grid ── */}
                 <div className="grid grid-cols-3 divide-x divide-border border-b border-border shrink-0">
                   {[
-                    { label: "Mkt Cap",  val: selectedCoin.marketCap  > 0 ? `${qSym}${fmtVol(selectedCoin.marketCap)}`  : "—" },
-                    { label: "24h Vol",  val: selectedCoin.volume24h  > 0 ? `${qSym}${fmtVol(selectedCoin.volume24h)}`  : "—" },
-                    { label: "24h High", val: selectedCoin.high24h    > 0 ? `${qSym}${fmtPrice(selectedCoin.high24h)}`  : "—" },
-                    { label: "24h Low",  val: selectedCoin.low24h     > 0 ? `${qSym}${fmtPrice(selectedCoin.low24h)}`   : "—" },
+                    { label: "Mkt Cap",  val: selectedCoin.marketCap > 0 ? `${qSym}${fmtVol(selectedCoin.marketCap)}` : "—" },
+                    { label: "24h Vol",  val: enrichedVol24h  > 0 ? `${qSym}${fmtVol(enrichedVol24h)}`    : "—" },
+                    { label: "24h High", val: enrichedHigh24h > 0 ? `${qSym}${fmtPrice(enrichedHigh24h)}` : "—" },
+                    { label: "24h Low",  val: enrichedLow24h  > 0 ? `${qSym}${fmtPrice(enrichedLow24h)}`  : "—" },
                     { label: "Supply",   val: selectedCoin.circulatingSupply > 0 ? fmtVol(selectedCoin.circulatingSupply) : "—" },
-                    { label: "Source",   val: selectedCoin.source === "cg" ? "OrahDEX" : selectedCoin.source === "le" ? "Swap Net" : "Bridge" },
+                    { label: "Source",   val: enrichedSrcLabel },
                   ].map((s, i) => (
                     <div key={i} className={cn("px-3 py-2 bg-card", i >= 3 && "border-t border-border")}>
                       <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{s.label}</p>
@@ -1442,16 +1464,16 @@ export function DexHub() {
                       </div>
 
                       {/* 24h range bar */}
-                      {selectedCoin.high24h > 0 && selectedCoin.low24h > 0 && (
+                      {enrichedHigh24h > 0 && enrichedLow24h > 0 && (
                         <div className="space-y-1.5">
                           <div className="flex justify-between text-[11px] text-muted-foreground">
-                            <span>24h Low  {qSym}{fmtPrice(selectedCoin.low24h)}</span>
-                            <span>24h High  {qSym}{fmtPrice(selectedCoin.high24h)}</span>
+                            <span>24h Low  {qSym}{fmtPrice(enrichedLow24h)}</span>
+                            <span>24h High  {qSym}{fmtPrice(enrichedHigh24h)}</span>
                           </div>
                           <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
                             <div
                               className="h-full bg-gradient-to-r from-red-500 via-yellow-400 to-green-500 rounded-full"
-                              style={{ width: `${Math.min(100, Math.max(2, ((selectedCoin.price - selectedCoin.low24h) / Math.max(selectedCoin.high24h - selectedCoin.low24h, 0.0001)) * 100))}%` }}
+                              style={{ width: `${Math.min(100, Math.max(2, ((selectedCoin.price - enrichedLow24h) / Math.max(enrichedHigh24h - enrichedLow24h, 0.0001)) * 100))}%` }}
                             />
                           </div>
                         </div>
@@ -1718,10 +1740,10 @@ export function DexHub() {
                             {selectedCoin.change24h >= 0 ? "+" : ""}{selectedCoin.change24h.toFixed(2)}%
                           </p>
                         </div>
-                        {selectedCoin.volume24h > 0 && (
+                        {enrichedVol24h > 0 && (
                           <div>
                             <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">24h Volume</p>
-                            <p className="text-sm font-semibold tabular-nums">{qSym}{fmtVol(selectedCoin.volume24h)}</p>
+                            <p className="text-sm font-semibold tabular-nums">{qSym}{fmtVol(enrichedVol24h)}</p>
                           </div>
                         )}
                         {selectedCoin.marketCap > 0 && (
