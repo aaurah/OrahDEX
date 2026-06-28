@@ -11,9 +11,9 @@
  *   GET ${BSV_NET.wocBase}/mempool/info
  */
 
-import { db } from "@workspace/db";
+import { db, withDbRetry } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { serviceState } from "./serviceState.js";
@@ -45,10 +45,18 @@ export interface BsvChainStatus {
   bsvUsd: number;
 }
 
-async function setSetting(key: string, value: string) {
-  await db.insert(platformSettingsTable)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+/** Batch-upsert multiple platform_settings in a single round-trip. */
+async function setSettings(pairs: Record<string, string>) {
+  const entries = Object.entries(pairs).map(([key, value]) => ({ key, value }));
+  if (entries.length === 0) return;
+  await withDbRetry(() =>
+    db.insert(platformSettingsTable)
+      .values(entries)
+      .onConflictDoUpdate({
+        target: platformSettingsTable.key,
+        set: { value: sql`excluded.value`, updatedAt: new Date() },
+      })
+  );
 }
 
 async function getSetting(key: string): Promise<string | null> {
@@ -136,17 +144,19 @@ async function fetchChainInfo(): Promise<void> {
     : 0;
 
   const now = new Date().toISOString();
-  await setSetting("bsv_chain_online",       String(online));
-  await setSetting("bsv_block_height",       String(blockHeight));
-  await setSetting("bsv_best_block_hash",    bestBlockHash);
-  await setSetting("bsv_difficulty",         String(difficulty));
-  await setSetting("bsv_median_time",        String(medianTime));
-  await setSetting("bsv_last_checked",       now);
-  await setSetting("bsv_hashrate_ehs",       String(hashrateEHs));
-  await setSetting("bsv_mempool_tx_count",   String(mempoolTxCount));
-  await setSetting("bsv_mempool_bytes",      String(mempoolBytes));
-  await setSetting("bsv_fee_rate_sat",       String(feeRateSatPerByte));
-  await setSetting("bsv_usd",               String(bsvUsd));
+  await setSettings({
+    bsv_chain_online:     String(online),
+    bsv_block_height:     String(blockHeight),
+    bsv_best_block_hash:  bestBlockHash,
+    bsv_difficulty:       String(difficulty),
+    bsv_median_time:      String(medianTime),
+    bsv_last_checked:     now,
+    bsv_hashrate_ehs:     String(hashrateEHs),
+    bsv_mempool_tx_count: String(mempoolTxCount),
+    bsv_mempool_bytes:    String(mempoolBytes),
+    bsv_fee_rate_sat:     String(feeRateSatPerByte),
+    bsv_usd:              String(bsvUsd),
+  });
 }
 
 export async function getBsvChainStatus(): Promise<BsvChainStatus> {
