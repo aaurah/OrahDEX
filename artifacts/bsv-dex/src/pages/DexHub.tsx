@@ -15,19 +15,72 @@ import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, formatQuoteAmount } from "@/store/useSettingsStore";
 
-/* ── Curated Base / Zora ecosystem tokens ── */
-const ZORA_COINS = [
-  { id: "zora-network",  symbol: "ZORA",   name: "Zora",          chain: "Base",  contract: "0x1111111111166B7FE7bd91CA18A7FE55b40B963", image: "https://assets.coingecko.com/coins/images/35552/small/zora.png" },
-  { id: "degen-base",    symbol: "DEGEN",  name: "Degen",         chain: "Base",  contract: "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed", image: "https://assets.coingecko.com/coins/images/34515/small/android-chrome-512x512.png" },
-  { id: "brett-base",    symbol: "BRETT",  name: "Brett",         chain: "Base",  contract: "0x532f27101965dd16442E59d40670FaF5eBB142E4", image: "https://assets.coingecko.com/coins/images/35529/small/1000048322.png" },
-  { id: "higher-base",   symbol: "HIGHER", name: "Higher",        chain: "Base",  contract: "0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe", image: "" },
-  { id: "enjoy-zora",    symbol: "ENJOY",  name: "Enjoy",         chain: "Zora",  contract: "0xa6B280B42CB0b7c4a4F789eC6cCC3a7609A1Bc39", image: "" },
-  { id: "mochi-base",    symbol: "MOCHI",  name: "Mochi",         chain: "Base",  contract: "0xF6e932Ca12afa26665dC4dDE7e27be02A7c02e50", image: "" },
-  { id: "toshi-base",    symbol: "TOSHI",  name: "Toshi",         chain: "Base",  contract: "0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4", image: "" },
-  { id: "normie-base",   symbol: "NORMIE", name: "Normie",        chain: "Base",  contract: "0x7F12d13B34F5F4f0a9449c16Bcd42f0da47AF200", image: "" },
-  { id: "doginme-base",  symbol: "DOGINME",name: "Doginme",       chain: "Base",  contract: "0x6921B130D297cc43754afba22e5EAc0FBf8Db75b", image: "" },
-  { id: "mfer-base",     symbol: "MFER",   name: "mfer",          chain: "Base",  contract: "0xe3086852A4B125803C815a158249ae468A3254Ca", image: "" },
-];
+/* ── Known token contracts: symbol → { contract, chain } ── */
+const KNOWN_CONTRACTS: Record<string, { contract: string; chain: string }> = {
+  // Ethereum mainnet ERC-20
+  WBTC:    { contract: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", chain: "ETH" },
+  WETH:    { contract: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", chain: "ETH" },
+  USDT:    { contract: "0xdAC17F958D2ee523a2206206994597C13D831ec7", chain: "ETH" },
+  USDC:    { contract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", chain: "ETH" },
+  DAI:     { contract: "0x6B175474E89094C44Da98b954EedeAC495271d0F", chain: "ETH" },
+  PAXG:    { contract: "0x45804880De22913dAFE09f4980848ECE6EcbAf78", chain: "ETH" },
+  XAUT:    { contract: "0x68749665FF8D2d112Fa859AA293F07A622782F38", chain: "ETH" },
+  YFI:     { contract: "0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e", chain: "ETH" },
+  LINK:    { contract: "0x514910771AF9Ca656af840dff83E8264EcF986CA", chain: "ETH" },
+  UNI:     { contract: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", chain: "ETH" },
+  AAVE:    { contract: "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9", chain: "ETH" },
+  SHIB:    { contract: "0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE", chain: "ETH" },
+  PEPE:    { contract: "0x6982508145454Ce325dDbE47a25d4ec3d2311933", chain: "ETH" },
+  MATIC:   { contract: "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0", chain: "ETH" },
+  POL:     { contract: "0x455e53CBB86018Ac2B8092FdCd39d8444aFFC3F6", chain: "ETH" },
+  CRV:     { contract: "0xD533a949740bb3306d119CC777fa900bA034cd52", chain: "ETH" },
+  SNX:     { contract: "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F", chain: "ETH" },
+  MKR:     { contract: "0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2", chain: "ETH" },
+  COMP:    { contract: "0xc00e94Cb662C3520282E6f5717214004A7f26888", chain: "ETH" },
+  BAL:     { contract: "0xba100000625a3754423978a60c9317c58a424e3D", chain: "ETH" },
+  LDO:     { contract: "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32", chain: "ETH" },
+  RPL:     { contract: "0xD33526068D116cE69F19A9ee46F0bd304F21A51f", chain: "ETH" },
+  "1INCH": { contract: "0x111111111117dC0aa78b770fA6A738034120C302", chain: "ETH" },
+  GRT:     { contract: "0xc944E90C64B2c07662A292be6244BDf05Cda44a7", chain: "ETH" },
+  FET:     { contract: "0xaea46A60368A7bD060eec7DF8CBa43b7EF41Ad85", chain: "ETH" },
+  WLD:     { contract: "0x163f8C2467924be0ae7B5347228CABF260318753", chain: "ETH" },
+  ENS:     { contract: "0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72", chain: "ETH" },
+  IMX:     { contract: "0xF57e7e7C23978C3cAEC3C3548E3D615c346e79fF", chain: "ETH" },
+  SAND:    { contract: "0x3845badAde8e6dFF049820680d1F14bD3903a5d0", chain: "ETH" },
+  MANA:    { contract: "0x0F5D2fB29fb7d3CFeE444a200298f468908cC942", chain: "ETH" },
+  AXS:     { contract: "0xBB0E17EF65F82Ab018d8EDd776e8DD940327B28b", chain: "ETH" },
+  CHZ:     { contract: "0x3506424F91fD33084466F402d5D97f05F8e3b4AF", chain: "ETH" },
+  SUSHI:   { contract: "0x6B3595068778DD592e39A122f4f5a5cF09C90fE2", chain: "ETH" },
+  ZRX:     { contract: "0xE41d2489571d322189246DaFA5ebDe1F4699F498", chain: "ETH" },
+  BAT:     { contract: "0x0D8775F648430679A709E98d2b0Cb6250d2887EF", chain: "ETH" },
+  HOT:     { contract: "0x6c6EE5e31d828De241282B9606C8e98Ea48526E2", chain: "ETH" },
+  FTT:     { contract: "0x50D1c9771902476076eCFc8B2A83Ad6b9355a4c9", chain: "ETH" },
+  OCEAN:   { contract: "0x967da4048cD07aB37855c090aAF366e4ce1b9F48", chain: "ETH" },
+  // Arbitrum
+  ARB:     { contract: "0x912CE59144191C1204E64559FE8253a0e49E6548", chain: "Arbitrum" },
+  GMX:     { contract: "0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a", chain: "Arbitrum" },
+  // Optimism
+  OP:      { contract: "0x4200000000000000000000000000000000000042", chain: "Optimism" },
+  // BSC
+  BUSD:    { contract: "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56", chain: "BSC" },
+  CAKE:    { contract: "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82", chain: "BSC" },
+  // Base / Zora ecosystem
+  ZORA:    { contract: "0x1111111111166B7FE7bd91CA18A7FE55b40B963", chain: "Base" },
+  DEGEN:   { contract: "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed", chain: "Base" },
+  BRETT:   { contract: "0x532f27101965dd16442E59d40670FaF5eBB142E4", chain: "Base" },
+  HIGHER:  { contract: "0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe", chain: "Base" },
+  ENJOY:   { contract: "0xa6B280B42CB0b7c4a4F789eC6cCC3a7609A1Bc39", chain: "Zora" },
+  MOCHI:   { contract: "0xF6e932Ca12afa26665dC4dDE7e27be02A7c02e50", chain: "Base" },
+  TOSHI:   { contract: "0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4", chain: "Base" },
+  NORMIE:  { contract: "0x7F12d13B34F5F4f0a9449c16Bcd42f0da47AF200", chain: "Base" },
+  DOGINME: { contract: "0x6921B130D297cc43754afba22e5EAc0FBf8Db75b", chain: "Base" },
+  MFER:    { contract: "0xe3086852A4B125803C815a158249ae468A3254Ca", chain: "Base" },
+};
+
+/* kept for backward-compat (coin detail modal uses zoraContractFor) */
+const ZORA_COINS = Object.entries(KNOWN_CONTRACTS).map(([symbol, v]) => ({
+  id: symbol.toLowerCase(), symbol, name: symbol, chain: v.chain, contract: v.contract, image: "",
+}));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -519,9 +572,15 @@ export function DexHub() {
     }
     if (contractSearch.trim().length > 5) {
       const q = contractSearch.trim().toLowerCase();
-      const matched = ZORA_COINS.filter(z => z.contract.toLowerCase().includes(q));
-      const matchedSymbols = new Set(matched.map(z => z.symbol.toLowerCase()));
-      rows = rows.filter(m => matchedSymbols.has(m.symbol.toLowerCase()));
+      const matchedSymbols = new Set(
+        Object.entries(KNOWN_CONTRACTS)
+          .filter(([, v]) => v.contract.toLowerCase().includes(q))
+          .map(([sym]) => sym.toLowerCase())
+      );
+      if (matchedSymbols.size > 0) {
+        rows = rows.filter(m => matchedSymbols.has(m.symbol.toLowerCase()));
+      }
+      // no match → keep full list; UI shows a hint below the input
     }
     return [...rows].sort((a, b) => {
       let v = 0;
@@ -928,15 +987,29 @@ export function DexHub() {
                 className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
               />
             </div>
-            <div className="relative flex-1 min-w-[160px] max-w-xs">
-              <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Contract address 0x…"
-                value={contractSearch}
-                onChange={e => { setContractSearch(e.target.value); }}
-                className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2 text-sm font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-              />
+            <div className="flex-1 min-w-[160px] max-w-xs">
+              <div className="relative">
+                <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  type="text"
+                  placeholder="Contract address 0x…"
+                  value={contractSearch}
+                  onChange={e => { setContractSearch(e.target.value); }}
+                  className={cn(
+                    "w-full bg-card border rounded-xl pl-9 pr-4 py-2 text-sm font-mono focus:outline-none transition-all",
+                    contractSearch.trim().length > 5 &&
+                      !Object.values(KNOWN_CONTRACTS).some(v => v.contract.toLowerCase().includes(contractSearch.trim().toLowerCase()))
+                      ? "border-amber-500/50 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30"
+                      : "border-border focus:border-primary focus:ring-1 focus:ring-primary"
+                  )}
+                />
+              </div>
+              {contractSearch.trim().length > 5 &&
+                !Object.values(KNOWN_CONTRACTS).some(v => v.contract.toLowerCase().includes(contractSearch.trim().toLowerCase())) && (
+                <p className="mt-1 text-[11px] text-amber-400/80 px-1">
+                  Contract not in local index — search by coin name instead
+                </p>
+              )}
             </div>
             <span className="text-xs text-muted-foreground">
               {coinsLoading ? "Loading…" : `${filteredCoins.length.toLocaleString()} coins · tap a row to see exchanges`}
