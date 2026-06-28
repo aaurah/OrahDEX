@@ -32,36 +32,39 @@ import { useBaseTokenPrices } from "@/hooks/useBaseTokenPrices";
 import { useZoraCoins } from "@/hooks/useZoraCoins";
 
 type BottomTab = "open" | "history" | "trades" | "liquidity";
-type QuoteTab =
-  | "USDT" | "USDC" | "BTC" | "ETH" | "BSV" | "BCH" | "BNB"
-  | "ARB"  | "OP"   | "MATIC" | "AVAX" | "SOL" | "TRX"
-  | "XRP"  | "DOGE" | "LTC"
-  | "FTM"  | "CRO"  | "MNT"  | "ZK"  | "SCR" | "LINEA";
+// Markets-style category tabs — same structure as the Markets page
+type SideTab =
+  | "all" | "usd" | "bsv" | "btc" | "eth" | "bnb"
+  | "base" | "zora" | "sol" | "le";
 
-const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
-  { id: "USDT",  label: "USDT",  color: "text-green-400"  },
-  { id: "USDC",  label: "USDC",  color: "text-blue-400"   },
-  { id: "BTC",   label: "BTC",   color: "text-orange-400" },
-  { id: "ETH",   label: "ETH",   color: "text-violet-400" },
-  { id: "BSV",   label: "BSV",   color: "text-yellow-400" },
-  { id: "BCH",   label: "BCH",   color: "text-emerald-400"},
-  { id: "BNB",   label: "BNB",   color: "text-yellow-500" },
-  { id: "XRP",   label: "XRP",   color: "text-sky-400"    },
-  { id: "SOL",   label: "SOL",   color: "text-cyan-400"   },
-  { id: "DOGE",  label: "DOGE",  color: "text-yellow-300" },
-  { id: "LTC",   label: "LTC",   color: "text-slate-300"  },
-  { id: "TRX",   label: "TRX",   color: "text-red-500"    },
-  { id: "AVAX",  label: "AVAX",  color: "text-red-400"    },
-  { id: "MATIC", label: "MATIC", color: "text-violet-400" },
-  { id: "ARB",   label: "ARB",   color: "text-blue-400"   },
-  { id: "OP",    label: "OP",    color: "text-red-400"    },
-  { id: "FTM",   label: "FTM",   color: "text-blue-500"   },
-  { id: "CRO",   label: "CRO",   color: "text-indigo-400" },
-  { id: "MNT",   label: "MNT",   color: "text-teal-400"   },
-  { id: "ZK",    label: "ZK",    color: "text-purple-400" },
-  { id: "SCR",   label: "SCR",   color: "text-orange-300" },
-  { id: "LINEA", label: "LINEA", color: "text-sky-400"    },
+const SIDE_TABS: { id: SideTab; label: string; color: string }[] = [
+  { id: "all",  label: "All",   color: "text-foreground"  },
+  { id: "usd",  label: "USD",   color: "text-blue-400"    },
+  { id: "bsv",  label: "⚡BSV", color: "text-yellow-400"  },
+  { id: "btc",  label: "BTC",   color: "text-orange-400"  },
+  { id: "eth",  label: "ETH",   color: "text-violet-400"  },
+  { id: "bnb",  label: "BNB",   color: "text-yellow-500"  },
+  { id: "base", label: "BASE",  color: "text-blue-400"    },
+  { id: "zora", label: "ZORA",  color: "text-pink-400"    },
+  { id: "sol",  label: "SOL",   color: "text-cyan-400"    },
+  { id: "le",   label: "LE",    color: "text-yellow-400"  },
 ];
+
+const STABLES = new Set(["USDT","USDC","DAI","TUSD","USDD","FDUSD","BUSD"]);
+function matchSideTab(m: any, tab: SideTab): boolean {
+  switch (tab) {
+    case "usd":  return STABLES.has(m.quoteAsset);
+    case "bsv":  return m.quoteAsset === "BSV";
+    case "btc":  return m.quoteAsset === "BTC";
+    case "eth":  return m.quoteAsset === "ETH";
+    case "bnb":  return m.quoteAsset === "BNB";
+    case "base": return String(m.network ?? "") === "base-network";
+    case "zora": return String(m.network ?? "") === "zora-network";
+    case "sol":  return m.quoteAsset === "SOL" || String(m.network ?? "").includes("sol");
+    case "le":   return (m as any).leSource === true || (m as any).type === "letsexchange";
+    default:     return true; // "all"
+  }
+}
 
 
 // Maps EVM chain ID → SS / LE network-code substrings used to filter pairs
@@ -230,14 +233,7 @@ export function SpotTrading() {
       ? internalBsvAddress
       : null;
   const [bottomTab, setBottomTab] = useState<BottomTab>("open");
-  // Resolve the current pair's quote asset from the URL for smart tab initialisation
-  const urlQuote = (() => {
-    const raw = rawSymbol?.replace(/-/g, '/') ?? "BSV/USDT";
-    const q = raw.split('/')[1] ?? "USDT";
-    return (QUOTE_TABS.some(t => t.id === q) ? q : "USDT") as QuoteTab;
-  })();
-
-  const [quoteTab, setQuoteTab] = useState<QuoteTab>(urlQuote);
+  const [sideTab, setSideTab] = useState<SideTab>("usd");
   const [candleInterval, setCandleInterval] = useState(() => {
     const saved = localStorage.getItem('orahdex-spot-interval');
     const valid = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','12h','1d','3d','1w','1M','1Y','2Y','5Y','10Y','All'];
@@ -248,7 +244,6 @@ export function SpotTrading() {
   const [obFlash, setObFlash] = useState<ExternalFlash | null>(null);
   const [pairDropOpen, setPairDropOpen] = useState(false);
   const [dropSearch, setDropSearch] = useState("");
-  const [dropQuote, setDropQuote] = useState<QuoteTab>(urlQuote);
   const [dropChain, setDropChain] = useState<number | null>(null);
   const [hideOtherPairs, setHideOtherPairs] = useState(false);
   const [cancelPairOnly, setCancelPairOnly] = useState(false);
@@ -278,11 +273,6 @@ export function SpotTrading() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [pairDropOpen]);
 
-  // When navigating to a pair whose quote isn't in the current tab, auto-switch
-  useEffect(() => {
-    setDropQuote(urlQuote);
-    setQuoteTab(urlQuote);
-  }, [urlQuote]);
 
   // Persist candle interval across page refreshes
   useEffect(() => { localStorage.setItem('orahdex-spot-interval', candleInterval); }, [candleInterval]);
@@ -588,14 +578,9 @@ export function SpotTrading() {
 
   const filteredMarkets = useMemo(() => {
     const q = marketSearch.trim();
-    if (q) {
-      // When actively searching, drop the quoteTab filter and search ALL markets
-      return allMarkets.filter(m =>
-        marketMatchesQuery(m.baseAsset, m.quoteAsset, m.symbol, q)
-      );
-    }
-    return allMarkets.filter(m => m.quoteAsset === quoteTab);
-  }, [allMarkets, quoteTab, marketSearch]);
+    if (q) return allMarkets.filter(m => marketMatchesQuery(m.baseAsset, m.quoteAsset, m.symbol, q));
+    return allMarkets.filter(m => matchSideTab(m, sideTab));
+  }, [allMarkets, sideTab, marketSearch]);
 
   // Single shared chain-filtered view — both quoteCounts and dropFiltered read
   // from here so the chain-matching loop runs exactly once per chain/data change.
@@ -608,30 +593,31 @@ export function SpotTrading() {
     });
   }, [allMarkets, dropChain]);
 
-  // Single O(N) pass — no per-tab filter loops.
-  const quoteCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    const valid = new Set(QUOTE_TABS.map(t => t.id));
+  // Count per SideTab so only non-empty tabs are shown
+  const sideCounts = useMemo(() => {
+    const counts: Record<SideTab, number> = {} as any;
+    for (const t of SIDE_TABS) counts[t.id] = 0;
     for (const m of chainMarkets) {
-      if (valid.has(m.quoteAsset)) counts[m.quoteAsset] = (counts[m.quoteAsset] ?? 0) + 1;
+      for (const t of SIDE_TABS) {
+        if (t.id !== "all" && matchSideTab(m, t.id)) counts[t.id]++;
+      }
     }
+    counts["all"] = chainMarkets.length;
     return counts;
   }, [chainMarkets]);
 
   const dropFiltered = useMemo(() => {
     const q = dropSearch.trim();
-    // chainMarkets is already filtered by chain — no second pass needed here.
     const base = q
       ? chainMarkets.filter(m => marketMatchesQuery(m.baseAsset, m.quoteAsset, m.symbol, q))
-      : chainMarkets.filter(m => m.quoteAsset === dropQuote);
+      : chainMarkets.filter(m => matchSideTab(m, sideTab));
 
     // Sort: native DEX first (real liquidity), then LE, then SS, all by volume → lastPrice
     return [...base].sort((a, b) => {
       const aExt = (a as any).leSource === true || (a as any).ssSource === true;
       const bExt = (b as any).leSource === true || (b as any).ssSource === true;
-      if (!aExt && bExt) return -1;  // native beats external
+      if (!aExt && bExt) return -1;
       if (aExt && !bExt) return 1;
-      // Among externals: LE before SS (LE has more accurate pricing)
       const aLE = (a as any).leSource === true;
       const bLE = (b as any).leSource === true;
       if (aLE && !bLE) return -1;
@@ -640,7 +626,7 @@ export function SpotTrading() {
       if (volDiff !== 0) return volDiff;
       return ((b as any).lastPrice ?? 0) - ((a as any).lastPrice ?? 0);
     });
-  }, [allMarkets, dropQuote, dropSearch, dropChain]);
+  }, [chainMarkets, sideTab, dropSearch]);
 
   return (
     <>
@@ -699,7 +685,7 @@ export function SpotTrading() {
                   />
                 </div>
               </div>
-              {/* Quote tabs — collapse to "All markets" pill when searching */}
+              {/* Category tabs — same categories as Markets page */}
               {dropSearch.trim() ? (
                 <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border shrink-0">
                   <span className="text-[10px] font-bold text-primary bg-primary/15 px-2 py-0.5 rounded-full">
@@ -709,19 +695,19 @@ export function SpotTrading() {
                 </div>
               ) : (
                 <div className="flex gap-0.5 px-3 py-1.5 border-b border-border shrink-0 overflow-x-auto scrollbar-hide">
-                  {QUOTE_TABS.filter(t => (quoteCounts[t.id] ?? 0) > 0).map(t => (
+                  {SIDE_TABS.filter(t => sideCounts[t.id] > 0).map(t => (
                     <button
                       key={t.id}
-                      onClick={() => setDropQuote(t.id)}
+                      onClick={() => setSideTab(t.id)}
                       className={cn(
                         "shrink-0 px-2.5 py-0.5 rounded text-[10px] font-bold transition-all",
-                        dropQuote === t.id
+                        sideTab === t.id
                           ? "bg-primary/15 text-primary"
-                          : "text-muted-foreground hover:text-foreground"
+                          : `${t.color} opacity-70 hover:opacity-100`
                       )}
                     >
-                      {t.id === "BSV" ? "⚡BSV" : t.label}
-                      <span className="ml-1 text-[9px] opacity-60">{quoteCounts[t.id]}</span>
+                      {t.label}
+                      <span className="ml-1 text-[9px] opacity-50">{sideCounts[t.id]?.toLocaleString()}</span>
                     </button>
                   ))}
                 </div>
@@ -899,6 +885,93 @@ export function SpotTrading() {
 
       {/* Main Trading Area — Poloniex-style: Pairs | Chart | OrderBook+Form */}
       <div className="flex-1 flex overflow-hidden">
+
+        {/* LEFT: Market Pairs Sidebar — same categories as Markets page */}
+        <div className="hidden xl:flex w-[185px] shrink-0 border-r border-border flex-col min-h-0 bg-card">
+          {/* Search */}
+          <div className="px-2 py-1.5 border-b border-border shrink-0">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Search…"
+                value={marketSearch}
+                onChange={e => setMarketSearch(e.target.value)}
+                className="w-full pl-6 pr-2 py-1 text-[10px] bg-secondary/60 border border-border rounded outline-none focus:border-primary/60 placeholder:text-muted-foreground/50"
+              />
+            </div>
+          </div>
+          {/* Category tabs */}
+          <div className="flex flex-wrap gap-0.5 px-2 py-1.5 border-b border-border shrink-0">
+            {SIDE_TABS.filter(t => sideCounts[t.id] > 0).map(t => (
+              <button
+                key={t.id}
+                onClick={() => { setSideTab(t.id); setMarketSearch(""); }}
+                className={cn(
+                  "px-1.5 py-0.5 rounded text-[9px] font-bold transition-all whitespace-nowrap",
+                  sideTab === t.id
+                    ? "bg-primary/15 text-primary"
+                    : `${t.color} opacity-60 hover:opacity-100`
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          {/* Column headers */}
+          <div className="flex items-center px-2 py-0.5 text-[8px] font-medium text-muted-foreground border-b border-border/50 shrink-0">
+            <span className="flex-1">Pair</span>
+            <span className="w-16 text-right">Price</span>
+            <span className="w-10 text-right">24h%</span>
+          </div>
+          {/* Pair list */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {filteredMarkets.length === 0 ? (
+              <div className="flex items-center justify-center h-16 text-[10px] text-muted-foreground">No pairs</div>
+            ) : (
+              filteredMarkets.map(m => {
+                const urlSym = m.symbol.replace('/', '-');
+                const isActive = m.symbol === symbol;
+                const isUp = m.priceChangePercent24h >= 0;
+                const isBase = String((m as any).network ?? "") === "base-network";
+                const isZora = String((m as any).network ?? "") === "zora-network";
+                return (
+                  <Link
+                    key={m.symbol}
+                    href={`/trade/${urlSym}`}
+                    className={cn(
+                      "flex items-center px-2 py-1.5 gap-1.5 hover:bg-white/5 cursor-pointer transition-colors border-b border-border/20",
+                      isActive && "bg-primary/10 border-l-2 border-l-primary"
+                    )}
+                  >
+                    <CoinLogo symbol={m.baseAsset} size={18} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-0.5 flex-wrap">
+                        <span className="text-[10px] font-semibold text-foreground truncate">{m.baseAsset}</span>
+                        {isBase && <span className="text-[7px] px-0.5 rounded bg-blue-500/20 text-blue-400 font-bold leading-none">B</span>}
+                        {isZora && <span className="text-[7px] px-0.5 rounded bg-pink-500/20 text-pink-400 font-bold leading-none">Z</span>}
+                      </div>
+                      <div className="text-[8px] text-muted-foreground">/{m.quoteAsset}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-[9px] font-mono text-foreground tabular-nums">
+                        {m.lastPrice > 0 ? formatPrice(m.lastPrice) : "—"}
+                      </div>
+                      <div className={cn("text-[8px] font-bold tabular-nums", isUp ? "text-buy" : "text-sell")}>
+                        {m.priceChangePercent24h !== 0
+                          ? `${isUp ? "+" : ""}${m.priceChangePercent24h.toFixed(1)}%`
+                          : "—"}
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })
+            )}
+            <div className="py-2 text-center text-[8px] text-muted-foreground">
+              {filteredMarkets.length.toLocaleString()} pairs
+            </div>
+          </div>
+        </div>
 
         {/* CENTER: Chart & Bottom Tabs */}
         <div className="flex-1 flex flex-col min-w-0">
