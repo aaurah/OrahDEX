@@ -92,6 +92,50 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "futures",   label: "Futures"   },
 ];
 
+/** Chain tabs shown in the top "by network" row — ordered by importance */
+const CHAIN_TABS: { id: Cat; icon: string; name: string }[] = [
+  { id: "bsv",   icon: "⚡", name: "BSV"      },
+  { id: "btc",   icon: "₿",  name: "BTC"      },
+  { id: "eth",   icon: "⟠",  name: "ETH"      },
+  { id: "sol",   icon: "◎",  name: "SOL"      },
+  { id: "bnb",   icon: "🟡", name: "BNB"      },
+  { id: "bch",   icon: "🔶", name: "BCH"      },
+  { id: "matic", icon: "🟣", name: "Polygon"  },
+  { id: "avax",  icon: "🔺", name: "AVAX"     },
+  { id: "arb",   icon: "🔷", name: "Arbitrum" },
+  { id: "op",    icon: "🔴", name: "Optimism" },
+  { id: "base",  icon: "🔵", name: "Base"     },
+  { id: "zk",    icon: "⚡", name: "zkSync"   },
+  { id: "linea", icon: "⬛", name: "Linea"    },
+  { id: "scr",   icon: "📜", name: "Scroll"   },
+  { id: "mnt",   icon: "🟢", name: "Mantle"   },
+  { id: "ftm",   icon: "👻", name: "Fantom"   },
+  { id: "cro",   icon: "⬡",  name: "Cronos"   },
+  { id: "zora",  icon: "✦",  name: "Zora"     },
+];
+
+/** Topic/theme tabs shown in the bottom "by category" row */
+const TOPIC_TABS: { id: Cat; label: string }[] = [
+  { id: "favorites", label: "⭐ Favs"    },
+  { id: "all",       label: "All"        },
+  { id: "usd",       label: "💵 USD"     },
+  { id: "new",       label: "🆕 NEW"     },
+  { id: "ai",        label: "🤖 AI"      },
+  { id: "meme",      label: "🐸 MEME"    },
+  { id: "defi",      label: "🏦 DeFi"    },
+  { id: "depin",     label: "📡 DePIN"   },
+  { id: "gaming",    label: "🎮 Gaming"  },
+  { id: "rwa",       label: "🏛 RWA"     },
+  { id: "l1",        label: "L1"         },
+  { id: "l2",        label: "L2"         },
+  { id: "cosmos",    label: "⚛ Cosmos"  },
+  { id: "brc20",     label: "BRC-20"     },
+  { id: "exchange",  label: "Exchange"   },
+  { id: "uniswap",   label: "🦄 Uni"     },
+  { id: "pancake",   label: "🥞 Cake"    },
+  { id: "futures",   label: "📈 Futures" },
+];
+
 const ALL_POOL = [
   ...USDT_MARKETS, ...USDC_MARKETS, ...TUSD_MARKETS, ...USDD_MARKETS,
   ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
@@ -570,7 +614,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
           </div>
         </div>
 
-        {/* Category tabs — replaced by result count pill when searching */}
+        {/* Filter rows — replaced by result count pill when searching */}
         {search ? (
           <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 shrink-0">
             <span className="text-[11px] font-bold text-primary bg-primary/15 px-2.5 py-1 rounded-full">
@@ -578,7 +622,8 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
             </span>
             <span className="text-[10px] text-muted-foreground">Every chain &amp; quote asset</span>
           </div>
-        ) : (
+        ) : mode === "futures" ? (
+          /* Futures mode — single flat tab row */
           <div className="flex overflow-x-auto no-scrollbar px-2 border-b border-border/40 shrink-0">
             {effectiveCats.map(c => (
               <button
@@ -595,6 +640,57 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                 )}
               </button>
             ))}
+          </div>
+        ) : (
+          /* Spot mode — two rows: Chains on top, Categories below */
+          <div className="shrink-0 border-b border-border/40">
+            {/* Row 1: Chain filter pills */}
+            <div className="px-2 pt-1.5 pb-0.5">
+              <p className="px-1 text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1">Chain</p>
+              <div className="flex overflow-x-auto no-scrollbar gap-1 pb-1.5">
+                {CHAIN_TABS.map(c => {
+                  const active = cat === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => { setCat(c.id); setSearch(""); setSortKey("base"); setSortDir("asc"); }}
+                      className={cn(
+                        "shrink-0 flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition-all",
+                        active
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary"
+                      )}
+                    >
+                      <span>{c.icon}</span>
+                      <span>{c.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {/* Row 2: Topic/category tabs */}
+            <div className="px-2 pb-1">
+              <p className="px-1 text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider mb-1">Category</p>
+              <div className="flex overflow-x-auto no-scrollbar gap-0.5 pb-1">
+                {TOPIC_TABS.map(c => {
+                  const active = cat === c.id;
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => { setCat(c.id); setSearch(""); setSortKey("base"); setSortDir("asc"); }}
+                      className={cn(
+                        "shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-all",
+                        active
+                          ? "bg-primary/15 text-primary font-semibold"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {c.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
