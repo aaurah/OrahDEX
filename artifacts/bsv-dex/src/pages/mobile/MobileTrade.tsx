@@ -317,7 +317,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Default to chainId 1 (Ethereum mainnet) when wallet hasn't reported a chain yet,
   // matching Portfolio behavior — otherwise the balance fetch never starts and Trade
   // shows 0 even though the wallet holds funds.
-  const { balances: evmTokenBalances, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, isEvm ? (walletChainId ?? 1) : null);
+  const { balances: evmTokenBalances, loading: evmBalancesLoading, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, isEvm ? (walletChainId ?? 1) : null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -2023,17 +2023,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex flex-col gap-1">
                   <div className="flex items-center justify-between px-0.5">
                     <span className="text-[11px] text-muted-foreground font-medium">You send</span>
-                    {address && available > 0 && (
-                      <button
-                        onClick={() => setAmount(available.toFixed(6))}
-                        className="text-[10px] text-primary font-semibold active:opacity-70"
-                      >
-                        {available < 0.0001
-                          ? available.toFixed(8)
-                          : available < 1
-                            ? available.toFixed(6)
-                            : available.toFixed(4)} {availableSym} MAX
-                      </button>
+                    {address && (
+                      isEvm && evmBalancesLoading && evmTokenBalances.length === 0
+                        ? <span className="text-[10px] text-muted-foreground/50 animate-pulse">loading…</span>
+                        : <button
+                            onClick={() => available > 0 ? setAmount(available.toFixed(6)) : undefined}
+                            className={cn("text-[10px] font-semibold", available > 0 ? "text-primary active:opacity-70" : "text-muted-foreground/60 pointer-events-none")}
+                          >
+                            {available < 0.0001 && available > 0
+                              ? available.toFixed(8)
+                              : available < 1
+                                ? available.toFixed(6)
+                                : available.toFixed(4)} {availableSym}{available > 0 ? " MAX" : ""}
+                          </button>
                     )}
                   </div>
                   <div className="flex items-center gap-1.5 h-12 bg-card border border-border rounded-xl overflow-hidden">
