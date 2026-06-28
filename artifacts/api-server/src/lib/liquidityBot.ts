@@ -316,7 +316,16 @@ async function runCycle(): Promise<void> {
       for (let ci = 0; ci < allOrders.length; ci += INSERT_CHUNK) {
         await db.insert(ordersTable)
           .values(allOrders.slice(ci, ci + INSERT_CHUNK))
-          .catch(err => logger.warn({ err, offset: ci }, "Bot: bulk insert chunk failed"));
+          .onConflictDoNothing()
+          .catch(err => {
+            const cause = (err as any)?.cause;
+            logger.warn({
+              pgCode:    cause?.code,
+              pgDetail:  cause?.detail,
+              pgMessage: cause?.message,
+              offset: ci,
+            }, "Bot: bulk insert chunk failed");
+          });
       }
     }
 
