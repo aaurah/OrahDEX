@@ -328,7 +328,7 @@ function getRows(
     // ── Chain-quote tabs: DB-backed ────────────────────────────────────────────
     case "btc":       return quoteAllPairs("BTC",   BTC_MARKETS);
     case "bsv":       return quoteAllPairs("BSV",   BSV_MARKETS);
-    case "eth":       return chainFromDB("ETH",   cat, ETH_MARKETS);
+    case "eth":       return quoteAllPairs("ETH",  ETH_MARKETS);
     case "bnb":       return chainFromDB("BNB",   cat, BNB_MARKETS);
     case "sol":       return chainFromDB("SOL",   cat, SOL_MARKETS);
     case "bch":       return chainFromDB("BCH",   cat, BCH_MARKETS);
@@ -509,42 +509,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     [apiData]
   );
 
-  // ETH tab supplement: all LE+SS Base-network pairs appended to the ETH tab
-  // (Base is an ETH L2 — tokens without a Base contract route through ETH swaps)
-  const baseOnEthRows = useMemo<NormRow[]>(() => {
-    if (cat !== "eth") return [];
-    const keywords = ["base", "base-mainnet"];
-    const toRow = (p: { symbol: string; baseAsset: string; quoteAsset: string; lastPrice: number; priceChangePercent24h: number; network?: string | null; networkName?: string | null }): NormRow => ({
-      symbol:   p.symbol,
-      base:     p.baseAsset,
-      quote:    p.quoteAsset,
-      price:    p.lastPrice ?? 0,
-      chg:      p.priceChangePercent24h ?? 0,
-      type:     "spot" as const,
-      network:  (p.network ?? p.networkName ?? undefined) as string | undefined,
-      swapOnly: true as const,
-    });
-    const all = [
-      ...(rawAosPairs ?? []).map(toRow),
-      ...(rawSsPairs ?? []).map(p => toRow({ ...p, lastPrice: p.lastPrice, priceChangePercent24h: p.priceChangePercent24h })),
-    ].filter(p => {
-      const net = (p.network ?? "").toLowerCase();
-      return keywords.some(kw => net.includes(kw)) && p.price > 0;
-    });
-    // One entry per base coin, prefer ETH quote
-    const byBase = new Map<string, NormRow[]>();
-    for (const p of all) {
-      if (!byBase.has(p.base)) byBase.set(p.base, []);
-      byBase.get(p.base)!.push(p);
-    }
-    const result: NormRow[] = [];
-    for (const [, pairs] of byBase) {
-      const best = pairs.find(p => p.quote === "ETH") ?? pairs.reduce((a, b) => b.price > a.price ? b : a);
-      if (best) result.push({ ...best, quote: "ETH" });
-    }
-    return result;
-  }, [cat, rawAosPairs, rawSsPairs]);
-
   const livePrice = useMemo(() => new Map(
     apiRows.map((m: NormRow) => [m.symbol, m])
   ), [apiRows]);
@@ -568,12 +532,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   let rows: NormRow[] = search
     ? globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search))
     : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
-
-  // ETH tab: append Base-network LE+SS pairs (Base is ETH L2)
-  if (!search && cat === "eth" && baseOnEthRows.length > 0) {
-    const existingBases = new Set(rows.map(r => r.base));
-    rows = [...rows, ...baseOnEthRows.filter(r => !existingBases.has(r.base))];
-  }
 
   // Merge GeckoTerminal live data: update prices for known tokens, append new ones
   if (!search && geckoRows.length > 0) {

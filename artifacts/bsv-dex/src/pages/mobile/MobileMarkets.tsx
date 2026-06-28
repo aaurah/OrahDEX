@@ -189,7 +189,22 @@ function getCatRows(
         .sort((a, b) => a.base.localeCompare(b.base));
       return [...native, ...extraBtc];
     }
-    case "eth":   return dbByQuote("ETH").length   > 0 ? dbByQuote("ETH")   : enrich(ETH_MARKETS);
+    case "eth": {
+      const dbEth = dbByQuote("ETH");
+      const leEthPairs = leAllPairs.filter(p => p.quote === "ETH" && p.price > 0);
+      if (dbEth.length > 0) {
+        const seenBases = new Set(dbEth.map(r => r.base));
+        const leExtra = leEthPairs.filter(p => !seenBases.has(p.base)).sort((a, b) => a.base.localeCompare(b.base));
+        return [...dbEth, ...leExtra];
+      }
+      const native = enrich(ETH_MARKETS);
+      const seenBases = new Set(native.map(r => r.base));
+      const seenSymbols = new Set(native.map(r => r.symbol));
+      const extra = leEthPairs
+        .filter(p => !seenBases.has(p.base) && !seenSymbols.has(p.symbol))
+        .sort((a, b) => a.base.localeCompare(b.base));
+      return [...native, ...extra];
+    }
     case "bnb":   return dbByQuote("BNB").length   > 0 ? dbByQuote("BNB")   : enrich(BNB_MARKETS);
     case "matic": return dbByQuote("MATIC").length > 0 ? dbByQuote("MATIC") : enrich(MATIC_MARKETS);
     case "avax":  return dbByQuote("AVAX").length  > 0 ? dbByQuote("AVAX")  : enrich(AVAX_MARKETS);
@@ -301,7 +316,7 @@ export function MobileMarkets() {
   });
 
   // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
-  const needAllPairs = cat === "sol" || cat === "favorites" || search.length > 0;
+  const needAllPairs = cat === "eth" || cat === "sol" || cat === "favorites" || search.length > 0;
   const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
   const leAllPairs = useMemo<MktRow[]>(() =>
     (rawLeAllPairs ?? []).map(p => ({
