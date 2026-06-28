@@ -200,8 +200,9 @@ export function Markets() {
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } as any });
   const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
 
-  // LetsExchange all quoted pairs — complete external pair universe
-  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true });
+  // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
+  const needAllPairs = tab === "sol" || tab === "favorites" || search.length > 0;
+  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
   const leAllPairs = useMemo(
     () => (rawLeAllPairs ?? []).map(p => ({
       ...normalise({
@@ -218,8 +219,8 @@ export function Markets() {
     [rawLeAllPairs],
   );
 
-  // LetsExchange BSV-quoted pairs — all 800+ coins tradeable vs BSV
-  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
+  // LE BSV-quoted pairs — only needed for BSV tab
+  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV", enabled: tab === "bsv" });
   const leBsvPairs = useMemo(
     () => (rawLePairs ?? []).map(p => normalise({
       symbol:               p.symbol,
@@ -233,8 +234,8 @@ export function Markets() {
     [rawLePairs],
   );
 
-  // LetsExchange BTC-quoted pairs — all 800+ coins tradeable vs BTC
-  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC" });
+  // LE BTC-quoted pairs — only needed for BTC tab
+  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC", enabled: tab === "btc" });
   const leBtcPairs = useMemo(
     () => (rawLeBtcPairs ?? []).map(p => normalise({
       symbol:               p.symbol,

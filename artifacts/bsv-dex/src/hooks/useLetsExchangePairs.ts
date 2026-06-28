@@ -55,18 +55,21 @@ function getValidCached(key: string): LEPair[] | null {
   return e.data.length > 0 ? e.data : null; // never return empty cached list
 }
 
-export function useLetsExchangePairs(opts: { quote?: string; all?: boolean } = {}) {
+export function useLetsExchangePairs(opts: { quote?: string; all?: boolean; enabled?: boolean } = {}) {
+  const enabled = opts.enabled !== false;          // default: enabled
   const query = opts.all
     ? "?all=true"
     : opts.quote
       ? `?quote=${encodeURIComponent(opts.quote)}`
       : "";                                    // defaults to BSV on the server
 
-  const hit = getValidCached(query);
+  const hit = enabled ? getValidCached(query) : null;
   const [pairs, setPairs]     = useState<LEPair[]>(hit ?? []);
-  const [loading, setLoading] = useState(!hit);
+  const [loading, setLoading] = useState(enabled && !hit);
 
   useEffect(() => {
+    if (!enabled) { setPairs([]); setLoading(false); return; }
+
     const cached = getValidCached(query);
     if (cached) { setPairs(cached); setLoading(false); return; }
 
@@ -88,7 +91,7 @@ export function useLetsExchangePairs(opts: { quote?: string; all?: boolean } = {
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
+  }, [query, enabled]);
 
   return { pairs, loading };
 }

@@ -303,8 +303,9 @@ export function MobileMarkets() {
     refetchInterval: 30_000,
   });
 
-  // LetsExchange all quoted pairs — complete exchange pair universe
-  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true });
+  // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
+  const needAllPairs = cat === "sol" || cat === "favorites" || search.length > 0;
+  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
   const leAllPairs = useMemo<MktRow[]>(() =>
     (rawLeAllPairs ?? []).map(p => ({
       symbol:  p.symbol,
@@ -319,8 +320,8 @@ export function MobileMarkets() {
     } as MktRow)),
   [rawLeAllPairs]);
 
-  // LetsExchange BSV-quoted pairs — provides all 800+ coins tradeable vs BSV
-  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
+  // LE BSV-quoted pairs — only needed for BSV tab
+  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV", enabled: cat === "bsv" });
   const lePairs = useMemo<MktRow[]>(() =>
     (rawLePairs ?? []).map(p => ({
       symbol: p.symbol,
@@ -334,8 +335,8 @@ export function MobileMarkets() {
     })),
   [rawLePairs]);
 
-  // LetsExchange BTC-quoted pairs — provides all 800+ coins tradeable vs BTC
-  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC" });
+  // LE BTC-quoted pairs — only needed for BTC tab
+  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC", enabled: cat === "btc" });
   const leBtcPairs = useMemo<MktRow[]>(() =>
     (rawLeBtcPairs ?? []).map(p => ({
       symbol: p.symbol,
