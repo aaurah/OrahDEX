@@ -13,7 +13,7 @@
  *   - Auto-remediates where safe (e.g. resets phantom arb counters)
  */
 
-import { db, pool } from "@workspace/db";
+import { db, pool, withDbRetry } from "@workspace/db";
 import { marketsTable, ordersTable, platformSettingsTable } from "@workspace/db/schema";
 import { eq, and, lt, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
@@ -27,15 +27,19 @@ const ARB_PHANTOM_PPT   = 50;    // if >50% of arb trades were at >500% gross �
 
 async function getSetting(key: string): Promise<string | null> {
   try {
-    const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+    const rows = await withDbRetry(() =>
+      db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key))
+    );
     return rows[0]?.value ?? null;
   } catch { return null; }
 }
 
 async function setSetting(key: string, value: string) {
-  await db.insert(platformSettingsTable)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+  await withDbRetry(() =>
+    db.insert(platformSettingsTable)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } })
+  );
 }
 
 /* ── individual checks ───────────────────────────────────────────────────── */
