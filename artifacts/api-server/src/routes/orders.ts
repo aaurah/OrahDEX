@@ -16,6 +16,7 @@ import { settleEscrowMatch, isEscrowChain, findEscrowChain, ESCROW_ADDRESSES } f
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
+import { attemptLeAutoRoute } from "../lib/leAutoRoute.js";
 import {
   buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
   verifyBsvWithdrawSignature, verifySolWithdrawSignature,
@@ -1160,12 +1161,70 @@ router.post("/orders", async (req, res) => {
       }
     }
 
-    // ── Market orders are Immediate-Or-Cancel: if nothing filled, delete and reject ──
-    // A market order that finds no eligible counter-party should never stay open.
-    // Leaving it open creates zombie orders that confuse the user (they have to
-    // manually cancel something that will never fill).
+    // ── Market orders are Immediate-Or-Cancel: if nothing filled, try LE auto-route ──
+    // When the DEX order book has no matching counter-orders, route the trade
+    // through the best external swap venue (LetsExchange / SimpleSwap / etc.)
+    // transparently. The order is marked "filled" at the venue's quoted rate —
+    // the user sees a normal filled trade in their order log, not a swap.
+    // Only applies to custodial (internal-ledger) users; external wallet users
+    // fall through to the standard NO_LIQUIDITY error.
     if ((isMarket || isStopTriggered) && totalFilled === 0) {
-      // Remove the order — it never matched; no funds were moved.
+      const leRoute = await attemptLeAutoRoute({
+        orderId:       id,
+        walletAddress: body.walletAddress,
+        symbol,
+        side,
+        quantity,
+        lockAmount:    parseFloat(lockAmount),
+        fundingRef:    fundingRef ?? "",
+        feeRate,
+      });
+
+      if (leRoute.ok) {
+        // Record platform fee on the fill value
+        const routeFee       = (leRoute.fillValue * feeRate).toFixed(18);
+        const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
+        recordPlatformFee({ source: "le_autoroute", amount: routeFee, asset: feeAssetSymbol, txRef: id });
+
+        // Mark the order as filled at the venue-quoted rate
+        await db.update(ordersTable).set({
+          status:            "filled",
+          filledQuantity:    leRoute.filledQty.toFixed(18),
+          remainingQuantity: "0",
+          price:             leRoute.fillPrice.toFixed(18),
+          total:             leRoute.fillValue.toFixed(18),
+          fee:               routeFee,
+          txid:              leRoute.leTransactionId ?? null,
+          updatedAt:         new Date(),
+        }).where(eq(ordersTable.id, id));
+
+        // Push filled notification
+        const fillBase = symbol.split("/")[0] ?? symbol;
+        pushNotification(body.walletAddress, {
+          type:  "order_filled",
+          title: "Order Filled ✓",
+          body:  `${leRoute.filledQty.toFixed(4)} ${fillBase} @ $${leRoute.fillPrice.toFixed(4)} avg`,
+          pair:  symbol,
+          txid:  leRoute.leTransactionId ?? undefined,
+          side,
+        });
+
+        const [created]  = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+        const quoteSymbol = (symbol.split("/")[1] ?? "USDT").replace("-PERP", "");
+        res.status(201).json({
+          ...serializeOrder(created),
+          matched:        true,
+          settlementTxid: leRoute.leTransactionId ?? null,
+          quoteSymbol,
+          explorerUrl:    null,
+          settlement:     null,
+        });
+        return;
+      }
+
+      req.log.info({ orderId: id, leError: leRoute.error }, "orders: LE auto-route unavailable — returning NO_LIQUIDITY");
+
+      // No venue could fill it — clean up the order and reject
       await db.delete(ordersTable).where(eq(ordersTable.id, id));
       res.status(422).json({
         error: "No matching sellers found for this market order. Place a limit order to set your price, or try again when liquidity is available.",
