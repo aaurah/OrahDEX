@@ -197,8 +197,8 @@ function getCatRows(
     case "op":    return dbByQuote("OP").length    > 0 ? dbByQuote("OP")    : enrich(OP_MARKETS);
     case "ftm":   return dbByQuote("FTM").length   > 0 ? dbByQuote("FTM")   : enrich(FTM_MARKETS);
     case "cro":   return dbByQuote("CRO").length   > 0 ? dbByQuote("CRO")   : enrich(CRO_MARKETS);
-    case "base":  return dbByQuote("BASE").length  > 0 ? dbByQuote("BASE")  : enrich(BASE_MARKETS);
-    case "zora":  return dbByQuote("ZORA").length  > 0 ? dbByQuote("ZORA")  : enrich(ZORA_MARKETS);
+    case "base":  return enrich(BASE_MARKETS);
+    case "zora":  return enrich(ZORA_MARKETS);
     case "linea": return dbByQuote("LINEA").length > 0 ? dbByQuote("LINEA") : enrich(LINEA_MARKETS);
     case "zk":    return dbByQuote("ZK").length    > 0 ? dbByQuote("ZK")    : enrich(ZK_MARKETS);
     case "scr":   return dbByQuote("SCR").length   > 0 ? dbByQuote("SCR")   : enrich(SCR_MARKETS);
