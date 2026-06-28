@@ -109,7 +109,8 @@ async function runTrailingStopEngine(): Promise<void> {
           [newHigh.toString(), newLow.toString(), newStopPrice.toString(), stop.id]
         );
       } catch (err) {
-        logger.error({ err, stopId: stop.id }, "Error processing trailing stop");
+        if (isDbConnError(err)) logger.warn({ stopId: stop.id }, "Trailing stop: DB unavailable, skipping order");
+        else logger.error({ err, stopId: stop.id }, "Error processing trailing stop");
       }
     }
   } catch (err) {
@@ -214,7 +215,8 @@ async function runIcebergEngine(): Promise<void> {
 
         logger.info({ icebergId: iceberg.id, orderId, sliceQty }, "Iceberg slice placed");
       } catch (err) {
-        logger.error({ err, icebergId: iceberg.id }, "Error processing iceberg order");
+        if (isDbConnError(err)) logger.warn({ icebergId: iceberg.id }, "Iceberg: DB unavailable, skipping order");
+        else logger.error({ err, icebergId: iceberg.id }, "Error processing iceberg order");
       }
     }
   } catch (err) {
@@ -323,7 +325,8 @@ async function runTwapEngine(): Promise<void> {
           logger.info({ twapId: twap.id }, "TWAP order completed");
         }
       } catch (err) {
-        logger.error({ err, twapId: twap.id }, "Error processing TWAP order");
+        if (isDbConnError(err)) logger.warn({ twapId: twap.id }, "TWAP: DB unavailable, skipping order");
+        else logger.error({ err, twapId: twap.id }, "Error processing TWAP order");
       }
     }
 

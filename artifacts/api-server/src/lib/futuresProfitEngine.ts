@@ -18,6 +18,7 @@ import { eq, and, ne } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { guardedInterval, withRetry } from "./selfHealing.js";
 import { liquidateFuturesPosition } from "./futuresSettlement.js";
+import { isDbConnError } from "./dbErrors.js";
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
 
@@ -158,7 +159,8 @@ async function runFundingCycle(): Promise<void> {
       "Futures profit engine: funding cycle complete",
     );
   } catch (err) {
-    logger.error({ err }, "Futures profit engine: funding cycle failed");
+    if (isDbConnError(err)) logger.warn("Futures profit engine: funding cycle skipped — DB unavailable");
+    else logger.error({ err }, "Futures profit engine: funding cycle failed");
   }
 }
 
@@ -248,7 +250,8 @@ async function runLiquidationCycle(): Promise<void> {
     await rebuildTotal();
 
   } catch (err) {
-    logger.error({ err }, "Futures profit engine: liquidation cycle failed");
+    if (isDbConnError(err)) logger.warn("Futures profit engine: liquidation cycle skipped — DB unavailable");
+    else logger.error({ err }, "Futures profit engine: liquidation cycle failed");
   }
 }
 
