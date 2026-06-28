@@ -366,16 +366,22 @@ export function SpotTrading() {
     setTradeModeLockedByUser(true);
   }, []);
 
-  // Real price for catalog tokens (Base chain DexScreener / Zora Coins API)
+  // Real price for catalog tokens (Base chain DexScreener / Zora Coins API / LE-SS rate)
   // Used when the API has no stored ticker for the pair.
+  // Priority: DexScreener live price → Zora Coins API → LE exchange rate → SS exchange rate
   const catalogPrice = useMemo(() => {
     const dp = basePrices.get(base);
     if (dp?.price > 0) return { price: dp.price, chg: dp.chg };
     const zr = (zoraRows ?? []).find((z: any) => z.base === base);
     if (zr?.price > 0) return { price: zr.price, chg: zr.chg ?? 0 };
+    // LE/SS rate: "rate" = how many quote tokens you receive per 1 base token (= price in quote)
+    const leRate = Number(leVenuePrice?.rate);
+    if (leRate > 0) return { price: leRate, chg: 0 };
+    const ssRate = Number(ssVenuePrice?.rate);
+    if (ssRate > 0) return { price: ssRate, chg: 0 };
     return null;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [base, basePrices, zoraRows]);
+  }, [base, basePrices, zoraRows, leVenuePrice, ssVenuePrice]);
 
   const _genTicker = generateTickerForSymbol(base, quote);
   const ticker     = (apiTicker?.lastPrice && apiTicker.lastPrice > 0 ? apiTicker : null)
