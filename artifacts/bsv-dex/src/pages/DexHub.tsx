@@ -1521,13 +1521,61 @@ export function DexHub() {
 
                   {/* TRADE */}
                   {coinDetailTab === "trade" && (
-                    <div className="p-4 space-y-4">
-                      <div className="rounded-xl border border-border bg-card p-4">
-                        <p className="text-xs text-muted-foreground uppercase tracking-wider font-semibold mb-3">VAMM Instant Swap</p>
-                        <VammSwapPanel symbol={selectedCoin.symbol} />
-                      </div>
-                      <div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-3">
-                        <p className="text-[11px] text-yellow-400/80">VAMM uses a virtual bonding curve for instant fills. For limit orders and full order book depth, use the Trade page.</p>
+                    <div className="p-4 space-y-3">
+                      {/* Spot trading */}
+                      <button
+                        onClick={() => { setSelectedCoin(null); navigate(`/trade/${selectedCoin.symbol}-USDT`); }}
+                        className="w-full rounded-2xl border border-primary/30 bg-primary/5 p-5 flex items-center gap-4 active:bg-primary/10 transition-colors text-left"
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+                          <BarChart2 className="w-6 h-6 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-base">{selectedCoin.symbol}/USDT</p>
+                          <p className="text-sm text-muted-foreground mt-0.5">Spot · Order Book · Limit &amp; Market orders</p>
+                        </div>
+                        <ArrowUpRight className="w-5 h-5 text-primary shrink-0" />
+                      </button>
+
+                      {/* Futures */}
+                      <button
+                        onClick={() => { setSelectedCoin(null); navigate(`/futures/${selectedCoin.symbol}-USDT`); }}
+                        className="w-full rounded-2xl border border-border bg-card p-5 flex items-center gap-4 active:bg-secondary/60 transition-colors text-left"
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+                          <Zap className="w-6 h-6 text-yellow-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-base">{selectedCoin.symbol}/USDT Perp</p>
+                          <p className="text-sm text-muted-foreground mt-0.5">Futures · Up to 100× leverage</p>
+                        </div>
+                        <ArrowUpRight className="w-5 h-5 text-muted-foreground shrink-0" />
+                      </button>
+
+                      {/* Current price snapshot */}
+                      <div className="rounded-2xl border border-border bg-card p-4 grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Current Price</p>
+                          <p className="text-lg font-bold tabular-nums font-mono">{qSym}{fmtPrice(selectedCoin.price)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">24h Change</p>
+                          <p className={cn("text-lg font-bold", selectedCoin.change24h >= 0 ? "text-green-400" : "text-red-400")}>
+                            {selectedCoin.change24h >= 0 ? "+" : ""}{selectedCoin.change24h.toFixed(2)}%
+                          </p>
+                        </div>
+                        {selectedCoin.volume24h > 0 && (
+                          <div>
+                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">24h Volume</p>
+                            <p className="text-sm font-semibold tabular-nums">{qSym}{fmtVol(selectedCoin.volume24h)}</p>
+                          </div>
+                        )}
+                        {selectedCoin.marketCap > 0 && (
+                          <div>
+                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Market Cap</p>
+                            <p className="text-sm font-semibold tabular-nums">{qSym}{fmtVol(selectedCoin.marketCap)}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
