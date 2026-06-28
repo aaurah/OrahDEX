@@ -533,7 +533,7 @@ export function DexHub() {
       if (coinSort === "vol")   v = a.volume24h - b.volume24h;
       return coinSortDir === "asc" ? v : -v;
     });
-  }, [allCoins, coinSource, coinSearch, coinSort, coinSortDir]);
+  }, [allCoins, coinSource, coinSearch, contractSearch, coinSort, coinSortDir]);
 
   const pagedCoins = filteredCoins.slice(0, (coinPage + 1) * COIN_PAGE_SIZE);
 
