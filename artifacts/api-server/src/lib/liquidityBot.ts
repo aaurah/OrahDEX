@@ -18,6 +18,7 @@ import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
 import { FALLBACK_PRICES, seedMarketsIfNeeded } from "./priceUpdater.js";
 import { serviceState } from "./serviceState.js";
+import { isDbConnError } from "./dbErrors.js";
 
 /** Stablecoin quote assets — treated as 1:1 with USD for cross-price math */
 const STABLECOINS = new Set(["USDT","USDC","TUSD","USDD","BUSD","DAI"]);
@@ -260,7 +261,13 @@ async function runCycle(): Promise<void> {
              WHERE m.symbol = v.symbol`,
             params,
           )
-          .catch(err => logger.warn({ err }, "Bot: bulk cross-price update failed"));
+          .catch(err => {
+            if (isDbConnError(err)) {
+              logger.warn("liquidityBot: bulk cross-price update skipped — transient DB connection error");
+            } else {
+              logger.error({ err }, "Bot: bulk cross-price update failed");
+            }
+          });
       }
     }
 
@@ -318,13 +325,17 @@ async function runCycle(): Promise<void> {
           .values(allOrders.slice(ci, ci + INSERT_CHUNK))
           .onConflictDoNothing()
           .catch(err => {
-            const cause = (err as any)?.cause;
-            logger.warn({
-              pgCode:    cause?.code,
-              pgDetail:  cause?.detail,
-              pgMessage: cause?.message,
-              offset: ci,
-            }, "Bot: bulk insert chunk failed");
+            if (isDbConnError(err)) {
+              logger.warn("liquidityBot: bulk insert chunk skipped — transient DB connection error");
+            } else {
+              const cause = (err as any)?.cause;
+              logger.warn({
+                pgCode:    cause?.code,
+                pgDetail:  cause?.detail,
+                pgMessage: cause?.message,
+                offset: ci,
+              }, "Bot: bulk insert chunk failed");
+            }
           });
       }
     }
@@ -344,7 +355,11 @@ async function runCycle(): Promise<void> {
     serviceState.botCycles++;
     logger.info({ markets: activeLen, orders: ordersLen }, "Liquidity bot cycle complete");
   } catch (err) {
-    logger.error({ err }, "Liquidity bot cycle failed");
+    if (isDbConnError(err)) {
+      logger.warn("liquidityBot: cycle skipped — transient DB connection error");
+    } else {
+      logger.error({ err }, "Liquidity bot cycle failed");
+    }
   }
 }
 
