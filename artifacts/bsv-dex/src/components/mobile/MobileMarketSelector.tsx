@@ -19,6 +19,7 @@ import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
 import { useZoraCoins } from "@/hooks/useZoraCoins";
 import { useBaseTokenList } from "@/hooks/useBaseTokenList";
+import { useBaseTokenPrices } from "@/hooks/useBaseTokenPrices";
 import { cn, marketMatchesQuery } from "@/lib/utils";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 
@@ -522,6 +523,8 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const { data: zoraRows } = useZoraCoins(cat === "zora");
   // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
   const { data: baseTokenList } = useBaseTokenList(cat === "base");
+  // DexScreener prices for catalog tokens not covered by GeckoTerminal (cached 60s)
+  const basePrices = useBaseTokenPrices(baseTokenList, cat === "base" && baseTokenList.length > 0);
 
   let rows: NormRow[] = search
     ? globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search))
@@ -557,7 +560,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     const existingBases = new Set(rows.map(r => r.base));
     const newBase: NormRow[] = baseTokenList
       .filter(t => !existingBases.has(t.symbol))
-      .map(t => ({ symbol: `${t.symbol}/USDC`, base: t.symbol, quote: "USDC", price: 0, chg: 0, type: "spot" as const, network: "base-network", swapOnly: true as const }));
+      .map(t => { const dp = basePrices.get(t.symbol); return { symbol: `${t.symbol}/USDC`, base: t.symbol, quote: "USDC", price: dp?.price ?? 0, chg: dp?.chg ?? 0, type: "spot" as const, network: "base-network", swapOnly: true as const }; });
     rows = [...rows, ...newBase];
   }
 
