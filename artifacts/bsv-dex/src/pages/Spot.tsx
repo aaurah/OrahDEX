@@ -61,6 +61,59 @@ const QUOTE_TABS: { id: QuoteTab; label: string; color: string }[] = [
 ];
 
 
+// Maps EVM chain ID → SS / LE network-code substrings used to filter pairs
+const CHAIN_NET_CODES: Record<number, string[]> = {
+  1:       ["eth","erc20"],
+  56:      ["bsc","bnb"],
+  43114:   ["avaxc","avax"],
+  137:     ["matic","polygon"],
+  42161:   ["arb"],
+  10:      ["op","optimism"],
+  8453:    ["base"],
+  59144:   ["linea"],
+  534352:  ["scroll"],
+  1329:    ["sei"],
+  324:     ["zksync","zk"],
+  250:     ["ftm","fantom"],
+  25:      ["cro","cronos"],
+  5000:    ["mantle","mnt"],
+  100:     ["xdai","gnosis"],
+  42220:   ["celo"],
+  1284:    ["moonbeam","glmr"],
+  146:     ["sonic"],
+  81457:   ["blast"],
+  34443:   ["mode"],
+  288:     ["boba"],
+  1088:    ["metis"],
+  167000:  ["taiko"],
+};
+
+const CHAIN_PILLS = [
+  { id: 1,       name: "ETH",      icon: "⟠" },
+  { id: 56,      name: "BNB",      icon: "🟡" },
+  { id: 43114,   name: "AVAX",     icon: "🔺" },
+  { id: 137,     name: "Polygon",  icon: "🟣" },
+  { id: 42161,   name: "Arbitrum", icon: "🔷" },
+  { id: 10,      name: "Optimism", icon: "🔴" },
+  { id: 8453,    name: "Base",     icon: "🔵" },
+  { id: 59144,   name: "Linea",    icon: "⬛" },
+  { id: 534352,  name: "Scroll",   icon: "📜" },
+  { id: 1329,    name: "Sei",      icon: "🌊" },
+  { id: 324,     name: "zkSync",   icon: "⚡" },
+  { id: 250,     name: "Fantom",   icon: "👻" },
+  { id: 25,      name: "Cronos",   icon: "⬡"  },
+  { id: 5000,    name: "Mantle",   icon: "🟢" },
+  { id: 100,     name: "Gnosis",   icon: "🦉" },
+  { id: 42220,   name: "Celo",     icon: "🌿" },
+  { id: 1284,    name: "Moonbeam", icon: "🌙" },
+  { id: 146,     name: "Sonic",    icon: "🎵" },
+  { id: 81457,   name: "Blast",    icon: "💥" },
+  { id: 34443,   name: "Mode",     icon: "◈"  },
+  { id: 288,     name: "Boba",     icon: "○"  },
+  { id: 1088,    name: "Metis",    icon: "⬡"  },
+  { id: 167000,  name: "Taiko",    icon: "🥁" },
+];
+
 const POOL_MAP: Record<string, { tvl: number; vol24: number; fee: number; farmApr: number }> = {
   "BTC/USDT":  { tvl: 423_600_000, vol24: 98_200_000,  fee: 0.3,  farmApr: 4.2  },
   "ETH/USDT":  { tvl: 187_400_000, vol24: 44_100_000,  fee: 0.3,  farmApr: 6.1  },
@@ -127,7 +180,7 @@ function normalise(m: any) {
 
 export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
-  const { address, internalBsvAddress, internalEvmAddress } = useWalletStore();
+  const { address, internalBsvAddress, internalEvmAddress, chainId: walletChainId } = useWalletStore();
   const { open: openWalletModal } = useWalletModalStore();
   // Alt address: Orah wallet users have both a BSV and an EVM address.
   // Orders placed on the BSV network are stored against the BSV address, and
@@ -158,6 +211,7 @@ export function SpotTrading() {
   const [pairDropOpen, setPairDropOpen] = useState(false);
   const [dropSearch, setDropSearch] = useState("");
   const [dropQuote, setDropQuote] = useState<QuoteTab>(urlQuote);
+  const [dropChain, setDropChain] = useState<number | null>(null);
   const [hideOtherPairs, setHideOtherPairs] = useState(false);
   const [cancelPairOnly, setCancelPairOnly] = useState(false);
   // Track whether to highlight the LE panel (set when user clicks LE orderbook rows)
@@ -465,8 +519,20 @@ export function SpotTrading() {
     const base = q
       ? allMarkets.filter(m => marketMatchesQuery(m.baseAsset, m.quoteAsset, m.symbol, q))
       : allMarkets.filter(m => m.quoteAsset === dropQuote);
+
+    // Chain filter: narrow to pairs whose SS/LE network code matches the chosen chain.
+    // Native pairs (network == null) always pass through so core pairs stay visible.
+    const chainFiltered = dropChain
+      ? base.filter(m => {
+          const net = String((m as any).network ?? "").toLowerCase();
+          if (!net) return true; // native pair — always include
+          const codes = CHAIN_NET_CODES[dropChain] ?? [];
+          return codes.some(c => net.includes(c));
+        })
+      : base;
+
     // Sort: native DEX first (real liquidity), then LE, then SS, all by volume → lastPrice
-    return [...base].sort((a, b) => {
+    return [...chainFiltered].sort((a, b) => {
       const aExt = (a as any).leSource === true || (a as any).ssSource === true;
       const bExt = (b as any).leSource === true || (b as any).ssSource === true;
       if (!aExt && bExt) return -1;  // native beats external
@@ -480,7 +546,7 @@ export function SpotTrading() {
       if (volDiff !== 0) return volDiff;
       return ((b as any).lastPrice ?? 0) - ((a as any).lastPrice ?? 0);
     });
-  }, [allMarkets, dropQuote, dropSearch]);
+  }, [allMarkets, dropQuote, dropSearch, dropChain]);
 
   return (
     <>
@@ -491,7 +557,7 @@ export function SpotTrading() {
         <div className="relative shrink-0" ref={pairDropRef}>
           <div className="flex flex-col gap-0.5">
             <button
-              onClick={() => { setPairDropOpen(v => !v); setDropSearch(""); }}
+              onClick={() => { setPairDropOpen(v => { if (!v) { setDropSearch(""); setDropChain(walletChainId && CHAIN_NET_CODES[walletChainId] ? walletChainId : null); } return !v; }); }}
               className="flex items-center gap-2 group"
             >
               {/* Overlapping base + quote logos */}
@@ -562,6 +628,35 @@ export function SpotTrading() {
                     >
                       {t.id === "BSV" ? "⚡BSV" : t.label}
                       <span className="ml-1 text-[9px] opacity-60">{quoteCounts[t.id]}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* Chain filter row — one pill per supported EVM chain */}
+              {!dropSearch.trim() && (
+                <div className="flex gap-0.5 px-3 py-1.5 border-b border-border shrink-0 overflow-x-auto scrollbar-hide">
+                  <button
+                    onClick={() => setDropChain(null)}
+                    className={cn(
+                      "shrink-0 px-2 py-0.5 rounded text-[10px] font-bold transition-all whitespace-nowrap",
+                      dropChain === null ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    All chains
+                  </button>
+                  {CHAIN_PILLS.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => setDropChain(prev => prev === c.id ? null : c.id)}
+                      className={cn(
+                        "shrink-0 px-2 py-0.5 rounded text-[10px] font-bold transition-all whitespace-nowrap",
+                        dropChain === c.id
+                          ? "bg-primary/15 text-primary"
+                          : (walletChainId === c.id ? "text-yellow-400 hover:text-foreground" : "text-muted-foreground hover:text-foreground")
+                      )}
+                      title={c.name}
+                    >
+                      {c.icon} {c.name}
                     </button>
                   ))}
                 </div>
