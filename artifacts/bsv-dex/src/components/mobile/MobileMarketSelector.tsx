@@ -11,14 +11,13 @@ import {
   MNT_MARKETS, ZK_MARKETS, SCR_MARKETS, LINEA_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
-  BASE_MARKETS, ZORA_MARKETS, GAMING_MARKETS, COSMOS_MARKETS,
+  BASE_MARKETS, GAMING_MARKETS, COSMOS_MARKETS,
   L1_MARKETS, L2_MARKETS, RWA_MARKETS, EXCHANGE_MARKETS,
   DEPIN_MARKETS, BRC20_MARKETS, UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { useSSPairs } from "@/hooks/useSSPairs";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
-import { useZoraCoins } from "@/hooks/useZoraCoins";
 import { useBaseTokenList } from "@/hooks/useBaseTokenList";
 import { useBaseTokenPrices } from "@/hooks/useBaseTokenPrices";
 import { cn, marketMatchesQuery } from "@/lib/utils";
@@ -56,7 +55,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "base" | "zora" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "base" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favs"      },
@@ -74,7 +73,6 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "ftm",       label: "FTM"       },
   { id: "cro",       label: "CRO"       },
   { id: "base",      label: "⬡ Base"    },
-  { id: "zora",      label: "ZORA"      },
   { id: "linea",     label: "LINEA"     },
   { id: "zk",        label: "ZK"        },
   { id: "scr",       label: "SCROLL"    },
@@ -116,7 +114,6 @@ const CHAIN_TABS: { id: Cat; icon: string; name: string }[] = [
   { id: "mnt",   icon: "🟢", name: "Mantle"   },
   { id: "ftm",   icon: "👻", name: "Fantom"   },
   { id: "cro",   icon: "⬡",  name: "Cronos"   },
-  { id: "zora",  icon: "✦",  name: "Zora"     },
 ];
 
 /** Topic/theme tabs shown in the bottom "by category" row */
@@ -146,7 +143,7 @@ const ALL_POOL = [
   ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
   ...BNB_MARKETS, ...MATIC_MARKETS, ...AVAX_MARKETS, ...ARB_MARKETS,
   ...OP_MARKETS, ...FTM_MARKETS, ...CRO_MARKETS,
-  ...BASE_MARKETS, ...ZORA_MARKETS,
+  ...BASE_MARKETS,
   ...MNT_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...LINEA_MARKETS,
   ...AI_MARKETS, ...DEPIN_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
   ...UNISWAP_MARKETS, ...PANCAKE_MARKETS,
@@ -186,7 +183,6 @@ const CAT_NETWORKS: Partial<Record<Cat, string[]>> = {
   scr:     ["scroll"],
   linea:   ["linea"],
   base:    ["base", "base-mainnet"],
-  zora:    ["zora"],
   cosmos:  ["cosmos", "ibc", "cosmoshub"],
   brc20:   ["bitcoin", "btc"],
   uniswap: ["ethereum", "eth", "erc20"],
@@ -212,7 +208,6 @@ const CAT_PREFERRED_QUOTE: Partial<Record<Cat, string[]>> = {
   scr:     ["ETH",  "USDT", "USDC"],
   linea:   ["ETH",  "USDT", "USDC"],
   base:    ["ETH",  "USDT", "USDC"],
-  zora:    ["ETH",  "USDT", "USDC"],
   cosmos:  ["ATOM", "USDT", "USDC"],
   brc20:   ["BTC",  "USDT", "USDC"],
   uniswap: ["ETH",  "USDT", "USDC"],
@@ -359,7 +354,6 @@ function getRows(
     case "scr":       return chainFromDB("SCR",   cat, SCR_MARKETS);
     case "linea":     return chainFromDB("LINEA", cat, LINEA_MARKETS);
     case "base":      return []; // Driven by live LE+SS pairs via baseChainRows memo
-    case "zora":      return chainRows(ZORA_MARKETS, cat);
     // ── Category/topic tabs: static enrich + AOS ──────────────────────────────
     case "ai":        return chainRows(AI_MARKETS,       cat);
     case "meme":      return chainRows(MEME_MARKETS,     cat);
@@ -591,8 +585,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
   // Live on-chain data from GeckoTerminal (chain tabs only, cached 90s)
   const { data: geckoRows } = useGeckoTerminalPools(cat);
-  // Live Zora Coins API data (zora tab only, fetches 4 list types in parallel)
-  const { data: zoraRows } = useZoraCoins(cat === "zora");
   // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
   const { data: baseTokenList } = useBaseTokenList(cat === "base");
   // DexScreener prices for catalog tokens not covered by GeckoTerminal (cached 60s)
@@ -619,17 +611,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       .filter(g => !existingBases.has(g.base) && g.price > 0)
       .map(g => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, type: "spot" as const, network: g.network, swapOnly: true }));
     rows = [...rows, ...newRows];
-  }
-
-  // Merge Zora Coins API data for zora tab
-  if (!search && cat === "zora" && zoraRows.length > 0) {
-    const zoraByBase = new Map(zoraRows.map(z => [z.base, z]));
-    rows = rows.map(r => { const z = zoraByBase.get(r.base); return z && z.price > 0 ? { ...r, price: z.price, chg: z.chg } : r; });
-    const existingBases = new Set(rows.map(r => r.base));
-    const newZora: NormRow[] = zoraRows
-      .filter(z => !existingBases.has(z.base) && z.price > 0)
-      .map(z => ({ symbol: z.symbol, base: z.base, quote: z.quote, price: z.price, chg: z.chg, type: "spot" as const, network: "zora-network", swapOnly: true as const }));
-    rows = [...rows, ...newZora];
   }
 
   // Merge Base token list: append all ~2300 Base chain catalog tokens for base tab
