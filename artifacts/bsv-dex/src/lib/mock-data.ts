@@ -511,105 +511,123 @@ export const FTM_MARKETS: any[] = [
 // ─── BASE PAIRS (Base L2 · Coinbase) — curated, excludes Zora social coins ───
 // Only Base-native blue-chips + established bridged assets. Creator coins → ZORA tab.
 export const BASE_MARKETS: any[] = [
-  // ── Majors bridged to Base ─────────────────────────────────────────────────
-  spot("WETH",    "USDC",  3415,       2.15, 2_100_000_000),
-  spot("WBTC",    "USDC",  68400,     -1.42,   820_000_000),
-  spot("CBBTC",   "USDC",  68380,     -1.38,   410_000_000), // Coinbase BTC
-  spot("CBETH",   "USDC",  3596,       2.04,   420_000_000), // Coinbase staked ETH
-  spot("WSTETH",  "USDC",  3985,       2.08,   380_000_000), // Lido wrapped staked ETH
-  spot("RETH",    "USDC",  3742,       2.11,   210_000_000), // Rocket Pool ETH
-  spot("WEETH",   "USDC",  3780,       2.06,   185_000_000), // wrapped eETH (ether.fi)
-  spot("EZETH",   "USDC",  3695,       1.98,   142_000_000), // Renzo restaked ETH
+  // ── Wrapped majors on Base ────────────────────────────────────────────────
+  spot("WETH",     "USDC",  2420,        1.85, 2_100_000_000),
+  spot("CBBTC",    "USDC",  68380,      -1.38,   410_000_000), // Coinbase BTC
+  spot("WBTC",     "USDC",  68250,      -1.52,   280_000_000),
+  spot("CBETH",    "USDC",  2685,        1.94,   195_000_000), // Coinbase staked ETH
+  spot("WSTETH",   "USDC",  2820,        1.92,   148_000_000), // Lido wstETH
+  spot("RETH",     "USDC",  2658,        1.88,    95_000_000), // Rocket Pool ETH
+  spot("WEETH",    "USDC",  2640,        1.82,    88_000_000), // ether.fi
+  spot("EZETH",    "USDC",  2530,        1.75,    62_000_000), // Renzo
+  spot("MSETH",    "USDC",  2430,        1.87, 3_580_000_000), // Metastable ETH
   // ── Stablecoins ───────────────────────────────────────────────────────────
-  spot("USDC",    "USDT",  1.0001,     0.01, 1_820_000_000),
-  spot("USDBC",   "USDT",  0.9999,     0.00,   680_000_000), // bridged USDC on Base
-  spot("DAI",     "USDC",  0.9998,     0.02,   480_000_000),
-  spot("GHO",     "USDC",  0.9995,    -0.05,   120_000_000), // Aave GHO on Base
-  spot("EURC",    "USDC",  1.085,      0.12,    85_000_000), // Circle Euro Coin
-  // ── DeFi Blue Chips ───────────────────────────────────────────────────────
-  spot("AERO",    "USDC",  2.84,      12.45,   285_000_000), // Aerodrome #1 Base DEX
-  spot("MORPHO",  "USDC",  1.82,       5.21,    48_000_000),
-  spot("MOONWELL","USDC",  0.182,      4.85,    28_000_000),
-  spot("SEAM",    "USDC",  4.82,       7.42,    22_000_000), // Seamless Protocol
-  spot("WELL",    "USDC",  0.082,      3.15,    18_000_000),
-  spot("COMP",    "USDC",  52.5,       0.62,    15_000_000),
-  spot("SNX",     "USDC",  2.82,      -1.32,    12_000_000),
-  spot("CRV",     "USDC",  0.482,     -2.14,    32_000_000),
-  spot("BAL",     "USDC",  3.82,      -1.85,    18_000_000),
-  spot("RDNT",    "USDC",  0.0842,    -3.42,    14_000_000), // Radiant Capital
-  spot("SUSHI",   "USDC",  1.142,     -0.84,    12_000_000),
-  spot("UNI",     "USDC",  8.42,       1.82,    95_000_000),
-  spot("LINK",    "USDC",  14.52,      3.64,    82_000_000),
-  spot("MKR",     "USDC",  1842,      -0.85,    42_000_000),
-  spot("SAFE",    "USDC",  0.982,     -1.15,    22_000_000),
-  spot("PRIME",   "USDC",  8.42,       5.85,    38_000_000), // Echelon Prime
-  // ── AI & Tech ─────────────────────────────────────────────────────────────
-  spot("VIRTUAL", "USDC",  3.84,      28.42,   485_000_000), // Virtuals Protocol
-  spot("AIXBT",   "USDC",  0.182,     18.50,   142_000_000), // AI trading agent
-  spot("LUNA",    "USDC",  0.00842,   15.82,    42_000_000), // Luna on Base
+  spot("USDC",     "USDT",  1.0001,      0.01, 1_820_000_000),
+  spot("USDBC",    "USDT",  0.9999,      0.00,   680_000_000), // bridged USDC
+  spot("DAI",      "USDC",  0.9998,      0.02,   480_000_000),
+  spot("MSUSD",    "USDC",  1.0002,      0.02, 3_572_000_000), // Metastable USD
+  spot("GHO",      "USDC",  0.9995,     -0.05,   120_000_000),
+  spot("EURC",     "USDC",  1.085,       0.12,    85_000_000), // Circle Euro
+  // ── Top DEX & DeFi ────────────────────────────────────────────────────────
+  spot("AERO",     "USDC",  0.4815,      0.80, 2_140_000_000), // Aerodrome (real price)
+  spot("VELVET",   "USDC",  0.000736,   20.42,   736_000_000), // Velvet AI DeFi
+  spot("VIRTUAL",  "USDC",  4.055,      28.42, 4_055_000_000), // Virtuals Protocol
+  spot("LBM",      "VIRTUAL",0.00285,   14.82,   485_000_000), // LBM/VIRTUAL
+  spot("MORPHO",   "USDC",  1.82,        5.21,    48_000_000),
+  spot("MOONWELL", "USDC",  0.182,       4.85,    28_000_000),
+  spot("SEAM",     "USDC",  4.82,        7.42,    22_000_000),
+  spot("WELL",     "USDC",  0.082,       3.15,    18_000_000),
+  spot("COMP",     "USDC",  52.5,        0.62,    15_000_000),
+  spot("CRV",      "USDC",  0.482,      -2.14,    32_000_000),
+  spot("UNI",      "USDC",  8.42,        1.82,    95_000_000),
+  spot("LINK",     "USDC",  14.52,       3.64,    82_000_000),
+  spot("MKR",      "USDC",  1842,       -0.85,    42_000_000),
+  spot("SUSHI",    "USDC",  1.142,      -0.84,    12_000_000),
+  spot("SNX",      "USDC",  2.82,       -1.32,    12_000_000),
+  spot("BAL",      "USDC",  3.82,       -1.85,    18_000_000),
+  spot("RDNT",     "USDC",  0.0842,     -3.42,    14_000_000),
+  spot("SAFE",     "USDC",  0.982,      -1.15,    22_000_000),
+  spot("PRIME",    "USDC",  8.42,        5.85,    38_000_000),
+  spot("BERRY",    "WETH",  0.00485,    12.42,    18_000_000),
+  spot("VVV",      "USDC",  0.00285,     8.15, 1_442_000_000),
+  spot("RAVE",     "USDC",  0.00382,     4.85,   888_000_000),
+  // ── AI Agents ────────────────────────────────────────────────────────────
+  spot("CLAUDE",   "USDC",  0.009994,   98.36,   999_000_000), // AI Claude meme (real)
+  spot("AIXBT",    "USDC",  0.182,      18.50,   142_000_000),
+  spot("SLEUTH",   "USDC",  0.00285,    22.42,    85_000_000),
+  spot("SURPLUS",  "USDC",  0.000842,   15.82,    42_000_000),
+  spot("PRXVT",    "VIRTUAL",0.00621,  -10.40,  3_870_000_000), // Virtuals Agent (real)
+  spot("TOSHI",    "USDC",  0.00001188, 22.15,   283_000_000), // real price from GeckoTerminal
+  // ── Prediction & Social ───────────────────────────────────────────────────
+  spot("POLY",     "USDC",  0.009174,   91.13,   162_000_000), // Polymarket (real)
+  spot("JESSE",    "ZORA",  0.001069,   42.23,    28_000_000), // Jesse Pollak meme
+  spot("DRB",      "USDC",  0.0003894,   1.50,    13_100_000), // DebtReliefBot (real)
+  // ── High-volume trending ──────────────────────────────────────────────────
+  spot("B18",      "USDC",  0.00385,    24.85, 3_844_000_000),
+  spot("YAPPR",    "USDC",  0.000485,   18.42, 3_640_000_000),
+  spot("PROS",     "USDC",  0.00285,    12.15, 3_589_000_000),
+  spot("ASOS",     "USDC",  0.000842,   22.85, 2_785_000_000),
+  spot("SOSO",     "USDC",  0.00142,    15.82, 2_146_000_000),
+  spot("ANSEM",    "USDC",  0.00182,    18.42, 1_591_000_000),
+  spot("CHECK",    "USDC",  0.000285,   24.85, 1_761_000_000),
+  spot("TICK",     "USDC",  0.000182,   12.15, 1_217_000_000),
+  spot("SPECTER",  "USDC",  0.000382,    8.42,   896_000_000),
+  spot("SAOS",     "USDC",  0.000142,   14.85, 1_379_000_000),
   // ── Meme & Culture ────────────────────────────────────────────────────────
-  spot("BRETT",   "USDC",  0.1142,    18.42,   242_000_000),
-  spot("TOSHI",   "USDC",  0.000185,  22.15,   168_000_000),
-  spot("DEGEN",   "USDC",  0.00842,   14.82,   138_000_000), // Farcaster
-  spot("HIGHER",  "USDC",  0.00215,    9.64,    82_000_000),
-  spot("MOCHI",   "USDC",  0.00142,   11.25,    58_000_000),
-  spot("BALD",    "USDC",  0.00284,    8.42,    42_000_000),
-  spot("NORMIE",  "USDC",  0.00182,   13.10,    38_000_000),
-  spot("DOGINME", "USDC",  0.0000945, 12.84,    18_000_000),
-  spot("SPX",     "USDC",  1.482,     42.85,   182_000_000), // SPX6900
-  spot("TURBO",   "USDC",  0.00682,   22.42,    85_000_000),
-  spot("MIGGLES", "USDC",  0.00285,   18.15,    42_000_000),
-  spot("KEYCAT",  "USDC",  0.000482,  15.82,    28_000_000),
-  spot("MFER",    "USDC",  0.00182,    8.42,    22_000_000),
-  spot("BENJI",   "USDC",  0.000385,  12.85,    18_000_000), // Benji Bananas
-  spot("PEPE",    "USDC",  0.00001285, 8.42,    65_000_000), // PEPE on Base
-  spot("SHIB",    "USDC",  0.0000242, -2.85,    28_000_000), // SHIB on Base
-  spot("BONK",    "USDC",  0.0000285,  5.42,    22_000_000), // BONK on Base
-  spot("WIF",     "USDC",  2.842,      8.15,    48_000_000), // WIF on Base
-  spot("MOXIE",   "USDC",  0.00482,   24.85,    35_000_000), // Moxie social
-  spot("LUM",     "USDC",  0.00185,   18.42,    22_000_000),
-  spot("YOINK",   "USDC",  0.000285,  32.15,    12_000_000),
+  spot("BRETT",    "USDC",  0.1142,     18.42,   242_000_000),
+  spot("DEGEN",    "USDC",  0.00842,    14.82,   138_000_000), // Farcaster
+  spot("HIGHER",   "USDC",  0.00215,     9.64,    82_000_000),
+  spot("SPX",      "USDC",  1.482,      42.85,   182_000_000), // SPX6900
+  spot("TURBO",    "USDC",  0.00682,    22.42,    85_000_000),
+  spot("MOCHI",    "USDC",  0.00142,    11.25,    58_000_000),
+  spot("MIGGLES",  "USDC",  0.00285,    18.15,    42_000_000),
+  spot("NORMIE",   "USDC",  0.00182,    13.10,    38_000_000),
+  spot("PEPE",     "USDC",  0.00001285,  8.42,    65_000_000),
+  spot("BALD",     "USDC",  0.00284,     8.42,    42_000_000),
+  spot("MFER",     "USDC",  0.00182,     8.42,    22_000_000),
+  spot("KEYCAT",   "USDC",  0.000482,   15.82,    28_000_000),
+  spot("DOGINME",  "USDC",  0.0000945,  12.84,    18_000_000),
+  spot("BENJI",    "USDC",  0.000385,   12.85,    18_000_000),
+  spot("BONK",     "USDC",  0.0000285,   5.42,    22_000_000),
+  spot("WIF",      "USDC",  2.842,       8.15,    48_000_000),
+  spot("MOXIE",    "USDC",  0.00482,    24.85,    35_000_000),
+  spot("LUM",      "USDC",  0.00185,    18.42,    22_000_000),
+  spot("YOINK",    "USDC",  0.000285,   32.15,    12_000_000),
+  spot("DOT",      "USDC",  0.001927,   -4.30,     1_600_000), // Base DOT (real)
 ];
 
-// ─── ZORA MARKETS — creator / social coins (Zora Network + Base social layer) ─
-// On Zora, every post creates a tradeable ERC-20. Sorted by 24h volume.
+// ─── ZORA MARKETS — real Zora content coins (GeckoTerminal /category/zora-content) ─
+// Tokens tokenized on Zora for social content. Every post = a tradeable ERC-20.
 export const ZORA_MARKETS: any[] = [
-  // ── Protocol tokens ───────────────────────────────────────────────────────
-  spot("ZORA",    "USDC",  0.00182,   24.82,   142_000_000), // Zora Protocol token
-  spot("ENJOY",   "USDC",  0.000042,  31.50,    62_000_000), // ENJOY — Zora OG social
-  spot("BUILD",   "USDC",  0.000285,  42.15,    32_000_000), // BUILD ecosystem
-  spot("MOXIE",   "USDC",  0.00482,   24.85,    58_000_000), // Moxie social protocol
-  // ── Creator & cultural coins ──────────────────────────────────────────────
-  spot("IMAGINE", "USDC",  0.0000182, 18.42,    28_000_000),
-  spot("ONCHAIN", "USDC",  0.0000842, 15.42,    24_000_000),
-  spot("BASED",   "USDC",  0.000142,  19.10,    22_000_000),
-  spot("FRIEND",  "USDC",  0.00482,    6.84,    18_000_000),
-  spot("NOMAD",   "USDC",  0.000182,  22.84,    16_000_000),
-  spot("COINAGE", "USDC",  0.00182,    8.42,    14_000_000), // Coinage media
-  spot("RAINBOW", "USDC",  0.0000285, 11.25,    12_000_000), // Rainbow wallet social
-  spot("ALFA",    "USDC",  0.000882,  28.42,    10_000_000),
-  spot("NOTES",   "USDC",  0.0000482, 14.85,     8_500_000),
-  spot("POST",    "USDC",  0.0000185,  9.42,     7_200_000),
-  spot("VIRAL",   "USDC",  0.000242,  35.84,     6_800_000),
-  spot("MINT",    "USDC",  0.00142,    4.15,     5_400_000),
-  // ── Farcaster / social layer ──────────────────────────────────────────────
-  spot("CAST",    "USDC",  0.000082,  18.42,     8_200_000), // Farcaster cast coin
-  spot("FRAME",   "USDC",  0.000485,  22.15,     6_800_000), // Farcaster Frames token
-  spot("CHANNEL", "USDC",  0.0000382, 14.85,     5_400_000), // channel coin
-  spot("COLLECT", "USDC",  0.000285,   9.42,     4_800_000), // collect-to-earn
-  spot("CREATOR", "USDC",  0.0000842, 12.15,     4_200_000),
-  spot("DROP",    "USDC",  0.000182,  16.42,     3_800_000), // NFT drop token
-  spot("MOMENT",  "USDC",  0.0000485,  8.85,     3_400_000), // Zora moment coin
-  spot("GALLERY", "USDC",  0.00142,    5.42,     3_200_000), // gallery.so token
-  spot("VERSE",   "USDC",  0.000085,  10.85,     2_800_000), // Verse protocol
-  spot("ORBS",    "USDC",  0.0000285, 14.42,     2_400_000), // Orbs social
-  spot("HEY",     "USDC",  0.000382,   8.15,     2_200_000), // hey.xyz token
-  spot("LENS",    "USDC",  0.00482,    3.85,    18_000_000), // Lens Protocol
-  spot("MAGIC",   "USDC",  0.000142,  11.42,     1_800_000), // creator magic
-  spot("RARE",    "USDC",  0.000285,   6.85,     1_600_000), // SuperRare token
-  spot("ART",     "USDC",  0.0000182,  9.42,     1_400_000), // art coin
-  spot("SOCIAL",  "USDC",  0.000042,  18.85,     1_200_000),
-  spot("YOINK",   "USDC",  0.000285,  32.15,     1_000_000), // Yoink game token
+  // ── Established Zora protocol tokens ──────────────────────────────────────
+  spot("ZORA",    "USDC",  0.00182,    24.82,   142_000_000), // Zora Protocol
+  spot("ENJOY",   "USDC",  0.000023,   31.50,    62_000_000), // ENJOY — Zora OG
+  spot("BUILD",   "USDC",  0.000285,   42.15,    32_000_000), // BUILD ecosystem
+  // ── Real Zora content tokens (from GeckoTerminal, sorted by holders/activity) ──
+  spot("HPOB",    "USDC",  0.01311,     6.60,    13_110_000), // Harry Potter Obamanator
+  spot("IHODL",   "USDC",  0.000454,   -2.40,       453_950), // IHODL content coin
+  spot("USOROIL", "USDC",  0.000462,   -0.50,       462_030), // U.S. Oil Reserves coin
+  spot("SHX",     "WETH",  0.000406,   -5.30,       405_810), // SHX content coin
+  spot("SINBAD",  "USDC",  0.0000849,  -2.30,        84_860), // Sinbad Crew Base
+  spot("MUSHY",   "USDC",  0.000203,   -2.60,        52_030), // Mushroom content coin
+  spot("MOON",    "USDC",  0.0000419,  15.30,        41_940), // mr_lightspeed Moon
+  spot("ARMSTRONG","USDC", 0.0000342,  12.90,        34_230), // Armstrong content
+  spot("IRVUS",   "USDC",  0.0000273,   0.40,        27_340), // IRVUS social coin
+  spot("SNG",     "USDC",  0.0000253,  31.40,        25_340), // $SNG content coin
+  spot("LNOB",    "ZORA",  0.0001146,   8.00,        11_450), // latenightonbase
+  spot("YUGEDIP", "WETH",  0.003281,  256.50,         1_020), // YUGE DIP (nicktess)
+  // ── Zora network native + social layer ────────────────────────────────────
+  spot("IMAGINE", "USDC",  0.0000265,  18.42,        28_000),
+  spot("ONCHAIN", "USDC",  0.0000842,  15.42,        24_000),
+  spot("BASED",   "USDC",  0.000142,   19.10,        22_000),
+  spot("FRIEND",  "USDC",  0.00482,     6.84,        18_000),
+  spot("COINAGE", "USDC",  0.00182,     8.42,        14_000),
+  spot("RAINBOW", "USDC",  0.0000285,  11.25,        12_000),
+  spot("NOTES",   "USDC",  0.0000482,  14.85,         8_500),
+  spot("VIRAL",   "USDC",  0.000242,   35.84,         6_800),
+  spot("MINT",    "USDC",  0.00142,     4.15,         5_400),
+  spot("LENS",    "USDC",  0.00482,     3.85,        18_000),
+  spot("RARE",    "USDC",  0.000285,    6.85,         1_600),
 ];
 
 // ─── CRO PAIRS (Cronos) ───────────────────────────────────────────────────────
