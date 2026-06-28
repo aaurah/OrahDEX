@@ -38,11 +38,14 @@ Guidelines:
 
 Today is approximately March 2026. BSV settlement is the backbone of OrahDEX's sovereign identity.`;
 
-// ── Circuit breaker — trips on 401/403 and skips AI calls until reset ─────────
+// ── Circuit breaker — trips on auth errors AND repeated timeouts ───────────────
 
 let aiUnavailable = false;
 let aiUnavailableUntil = 0;
-const AI_BACKOFF_MS = 5 * 60 * 1000; // retry AI after 5 min
+let consecutiveTimeouts = 0;
+const AI_AUTH_BACKOFF_MS    = 5 * 60 * 1000;  // 5 min for auth errors
+const AI_TIMEOUT_BACKOFF_MS = 2 * 60 * 1000;  // 2 min after 3 consecutive timeouts
+const AI_TIMEOUT_THRESHOLD  = 3;               // timeouts before backing off
 
 function isAuthError(err: unknown): boolean {
   if (!err) return false;
@@ -50,18 +53,35 @@ function isAuthError(err: unknown): boolean {
   return msg.includes("401") || msg.includes("403") || msg.includes("restricted") || msg.includes("Unauthorized");
 }
 
+function isAbortError(err: unknown): boolean {
+  if (!err) return false;
+  const name = (err as any)?.name ?? "";
+  const msg  = String((err as any)?.message ?? "");
+  return name === "AbortError" || msg.includes("aborted") || msg.includes("This operation was aborted");
+}
+
 function isAiAvailable(): boolean {
   if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) return false;
   if (aiUnavailable && Date.now() < aiUnavailableUntil) return false;
-  if (Date.now() >= aiUnavailableUntil) aiUnavailable = false; // reset after backoff
+  if (Date.now() >= aiUnavailableUntil) { aiUnavailable = false; consecutiveTimeouts = 0; }
   return true;
 }
 
 function tripCircuitBreaker(err: unknown) {
   if (isAuthError(err)) {
-    aiUnavailable = true;
-    aiUnavailableUntil = Date.now() + AI_BACKOFF_MS;
-    logger.warn("AI provider unavailable (auth error) — falling back for 5 min");
+    aiUnavailable      = true;
+    aiUnavailableUntil = Date.now() + AI_AUTH_BACKOFF_MS;
+    consecutiveTimeouts = 0;
+    logger.warn("AI provider unavailable (auth error) — backing off 5 min");
+  } else if (isAbortError(err)) {
+    consecutiveTimeouts++;
+    if (consecutiveTimeouts >= AI_TIMEOUT_THRESHOLD) {
+      aiUnavailable      = true;
+      aiUnavailableUntil = Date.now() + AI_TIMEOUT_BACKOFF_MS;
+      logger.warn({ consecutiveTimeouts }, "AI provider repeatedly timing out — backing off 2 min");
+    }
+  } else {
+    consecutiveTimeouts = 0;
   }
 }
 
@@ -238,14 +258,19 @@ Keep it under 200 words. Use plain markdown. No financial advice disclaimer need
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-    }, { signal: AbortSignal.timeout(25_000) });
+    }, { signal: AbortSignal.timeout(15_000) });
 
     const content = response.choices[0]?.message?.content || fallbackAnalysis(symbol);
     analysisCache.set(symbol, { content, ts: Date.now() });
+    consecutiveTimeouts = 0;
     if (!res.headersSent) res.json({ symbol, analysis: content, cached: false });
   } catch (err: any) {
     tripCircuitBreaker(err);
-    logger.error({ err: err?.message }, "AI market analysis error");
+    if (isAbortError(err)) {
+      logger.warn({ symbol }, "AI market analysis timeout — serving fallback");
+    } else {
+      logger.error({ err: err?.message }, "AI market analysis error");
+    }
     if (!res.headersSent) res.json({ symbol, analysis: fallbackAnalysis(symbol), cached: false });
   }
 });
@@ -265,8 +290,10 @@ router.get("/ai/insights", async (_req, res) => {
     return;
   }
 
+  // Serve stale cache immediately if AI is unavailable — don't make the user wait
   if (!isAiAvailable()) {
-    if (!res.headersSent) res.json({ insights: FALLBACK_INSIGHTS, cached: false });
+    const stale = insightsCache.content ? JSON.parse(insightsCache.content) : FALLBACK_INSIGHTS;
+    if (!res.headersSent) res.json({ insights: stale, cached: true });
     return;
   }
 
@@ -281,7 +308,7 @@ router.get("/ai/insights", async (_req, res) => {
           content: `Give 3 brief, sharp market insights for crypto traders as of March 2026. Each insight should be 1-2 sentences. Format as a JSON array of strings. Focus on actionable trends across DeFi, L2s, and BSV ecosystem. Return only valid JSON, no markdown wrapping.`
         },
       ],
-    }, { signal: AbortSignal.timeout(25_000) });
+    }, { signal: AbortSignal.timeout(15_000) });  // 15s — insights are lightweight
 
     const raw = response.choices[0]?.message?.content || "[]";
     let parsed: string[];
@@ -294,11 +321,18 @@ router.get("/ai/insights", async (_req, res) => {
     const content = JSON.stringify(parsed);
     insightsCache.content = content;
     insightsCache.ts = Date.now();
+    consecutiveTimeouts = 0;  // success — reset timeout counter
     if (!res.headersSent) res.json({ insights: parsed, cached: false });
   } catch (err: any) {
     tripCircuitBreaker(err);
-    logger.error({ err: err?.message }, "AI insights error");
-    if (!res.headersSent) res.json({ insights: FALLBACK_INSIGHTS, cached: false });
+    // Serve stale cache on error — don't return empty hands to the client
+    const stale = insightsCache.content ? JSON.parse(insightsCache.content) : FALLBACK_INSIGHTS;
+    if (isAbortError(err)) {
+      logger.warn({ timeouts: consecutiveTimeouts }, "AI insights timeout — serving stale/fallback");
+    } else {
+      logger.error({ err: err?.message }, "AI insights error");
+    }
+    if (!res.headersSent) res.json({ insights: stale, cached: true });
   }
 });
 
@@ -336,17 +370,22 @@ router.get("/ai/trade-signal", async (req, res) => {
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
-    }, { signal: AbortSignal.timeout(25_000) });
+    }, { signal: AbortSignal.timeout(15_000) });
 
     const signal = response.choices[0]?.message?.content || fallbackSignal(symbol).signal;
     const sentiment = signal.toLowerCase().includes("bullish") ? "bullish"
       : signal.toLowerCase().includes("bearish") ? "bearish" : "neutral";
 
     signalCache.set(cacheKey, { signal, sentiment, ts: Date.now() });
+    consecutiveTimeouts = 0;
     if (!res.headersSent) res.json({ symbol, signal, sentiment });
   } catch (err: any) {
     tripCircuitBreaker(err);
-    logger.error({ err: err?.message }, "AI trade signal error");
+    if (isAbortError(err)) {
+      logger.warn({ symbol }, "AI trade signal timeout — serving fallback");
+    } else {
+      logger.error({ err: err?.message }, "AI trade signal error");
+    }
     const fb = fallbackSignal(symbol);
     if (!res.headersSent) res.json({ symbol, ...fb, cached: false });
   }
