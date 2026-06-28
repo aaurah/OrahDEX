@@ -8,7 +8,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { WalletChooserDialog } from "@/components/WalletChooserDialog";
 
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
-import { OraAIWidget } from "@/components/OraAIWidget";
 import { applyStoredTheme, useThemeStore } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -552,12 +551,6 @@ function ThirdwebSync() {
   return null;
 }
 
-function OraAIWidgetGate() {
-  const [location] = useLocation();
-  if (location.startsWith("/devai") || location.startsWith("/admin")) return null;
-  return <OraAIWidget />;
-}
-
 function AppContent() {
   useInternalEvmWallet();
   useInternalBsvWallet();
@@ -568,8 +561,6 @@ function AppContent() {
       <ThirdwebSync />
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <Router />
-        {/* Ora AI floating chat widget — hidden on DevAI and admin pages */}
-        <OraAIWidgetGate />
       </WouterRouter>
       <Toaster />
       <PinPromptModal />

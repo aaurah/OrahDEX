@@ -19,6 +19,7 @@ import { CATEGORY_OF, ALL_CATEGORIES, CATEGORY_META, type NotifCategory } from "
 
 /* ── Heavy modals — loaded only when first opened ── */
 const AiAssistant = lazy(() => import("./AiAssistant").then(m => ({ default: m.AiAssistant })));
+const ChatWidget = lazy(() => import("./ChatWidget").then(m => ({ default: m.ChatWidget })));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -216,6 +217,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showMoreNav, setShowMoreNav] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [notifFilter, setNotifFilter] = useState<"all" | "unread" | NotifCategory>("all");
   const [notifSearch, setNotifSearch] = useState("");
   const dndUntil = useSettingsStore((s) => s.dndUntil);
@@ -824,6 +826,15 @@ export function Layout({ children }: { children: ReactNode }) {
             )}
           </div>
 
+          {/* Support / Ora AI chat button */}
+          <button
+            onClick={() => setChatOpen(o => !o)}
+            className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
+            title="Support & Ora AI"
+          >
+            <MessageCircle className="w-4 h-4" />
+          </button>
+
           {/* BSV LIVE badge — clickable popover with full on-chain details */}
           {!address && (
             <div className="relative hidden sm:block" ref={bsvPopoverRef}>
@@ -1044,6 +1055,12 @@ export function Layout({ children }: { children: ReactNode }) {
         <Suspense fallback={null}><AiAssistant /></Suspense>
       )}
 
+      {/* Support / Ora AI chat widget — opened via header MessageCircle button */}
+      {chatOpen && (
+        <Suspense fallback={null}>
+          <ChatWidget open={chatOpen} onClose={() => setChatOpen(false)} />
+        </Suspense>
+      )}
 
     </div>
   );

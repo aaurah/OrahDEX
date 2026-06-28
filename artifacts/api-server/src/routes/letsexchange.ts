@@ -83,6 +83,15 @@ function setCache(k: string, d: unknown) { cache.set(k, { data: d, ts: Date.now(
 // Stampede guard — only one in-flight fetch for currencies at a time
 let currenciesInflight: Promise<NormalisedCoin[]> | null = null;
 
+// Stale-backup for SS pairs: once successfully built, kept forever so pairs
+// never vanish from the list if the SS API is temporarily down.
+// Only the admin hidden-pairs list can suppress individual symbols.
+let ssPairsBackup: Record<string, unknown>[] | null = null;
+
+// Admin-managed set of suppressed pair base symbols (e.g. "SCAM").
+// Populated via POST /api/admin/hidden-pairs; cleared via DELETE.
+const hiddenPairSymbols = new Set<string>();
+
 async function fetchAndCacheCurrencies(): Promise<NormalisedCoin[]> {
   if (currenciesInflight) return currenciesInflight;
   currenciesInflight = (async () => {
@@ -590,19 +599,60 @@ router.get("/simpleswap/pairs", async (req, res) => {
     }
 
     builtPairs = pairs;
-    if (pairs.length > 0) setCache(cacheKey, pairs);
+    if (pairs.length > 0) {
+      setCache(cacheKey, pairs);
+      ssPairsBackup = pairs; // persist beyond TTL — pairs never auto-delete
+    }
     logger.info({ coins: uniqueCoins.length, pairs: pairs.length }, "simpleswap /pairs: built");
   }
 
-  let result = builtPairs;
+  // If live fetch returned nothing but we have a stale backup, serve it
+  const source = (builtPairs && builtPairs.length > 0) ? builtPairs : ssPairsBackup;
+  if (!source) {
+    res.status(503).json({ error: "SimpleSwap currencies unavailable" });
+    return;
+  }
+
+  // Filter admin-hidden symbols
+  const visible = hiddenPairSymbols.size > 0
+    ? source.filter((p: Record<string, unknown>) => !hiddenPairSymbols.has(String(p.baseAsset ?? "")))
+    : source;
+
+  let result = visible;
   if (!returnAll && filterQuote) {
-    result = builtPairs.filter((p: Record<string, unknown>) => p.quoteAsset === filterQuote);
+    result = visible.filter((p: Record<string, unknown>) => p.quoteAsset === filterQuote);
   } else if (!returnAll) {
-    result = builtPairs.filter((p: Record<string, unknown>) => p.quoteAsset === "BSV");
+    result = visible.filter((p: Record<string, unknown>) => p.quoteAsset === "BSV");
   }
 
   res.set("Cache-Control", "public, max-age=300");
   res.json(result);
+});
+
+// ── Admin: hidden pairs management ───────────────────────────────────────────
+// POST /api/admin/hidden-pairs        { symbol: "SCAM" }  → hides the pair
+// DELETE /api/admin/hidden-pairs/:sym                    → unhides the pair
+// GET  /api/admin/hidden-pairs                           → list hidden symbols
+router.get("/admin/hidden-pairs", (_req, res) => {
+  res.json({ hidden: Array.from(hiddenPairSymbols) });
+});
+
+router.post("/admin/hidden-pairs", (req, res) => {
+  const sym = typeof req.body?.symbol === "string" ? req.body.symbol.trim().toUpperCase() : null;
+  if (!sym) { res.status(400).json({ error: "symbol required" }); return; }
+  hiddenPairSymbols.add(sym);
+  // Invalidate SS cache so next request rebuilds without hidden coin
+  cache.delete("ss_pairs_v1");
+  logger.info({ sym }, "admin: pair hidden");
+  res.json({ hidden: sym, total: hiddenPairSymbols.size });
+});
+
+router.delete("/admin/hidden-pairs/:sym", (req, res) => {
+  const sym = req.params.sym?.toUpperCase() ?? "";
+  hiddenPairSymbols.delete(sym);
+  cache.delete("ss_pairs_v1");
+  logger.info({ sym }, "admin: pair unhidden");
+  res.json({ unhidden: sym, total: hiddenPairSymbols.size });
 });
 
 // ── GET /api/letsexchange/pairs/count ─────────────────────────────────────────
