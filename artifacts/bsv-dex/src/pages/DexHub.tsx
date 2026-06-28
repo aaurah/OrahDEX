@@ -1403,6 +1403,32 @@ export function DexHub() {
                     <div className="p-4 space-y-4">
 
                       {/* Price chart */}
+                      {/* Timeframe selector */}
+                      <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                        {([
+                          { id: "1h",  label: "1H"  },
+                          { id: "4h",  label: "4H"  },
+                          { id: "1d",  label: "1D"  },
+                          { id: "3d",  label: "3D"  },
+                          { id: "1w",  label: "1W"  },
+                          { id: "1M",  label: "1M"  },
+                          { id: "1Y",  label: "1Y"  },
+                          { id: "All", label: "All" },
+                        ] as const).map(tf => (
+                          <button
+                            key={tf.id}
+                            onClick={() => setCoinDetailInterval(tf.id)}
+                            className={cn(
+                              "shrink-0 px-3 py-1 rounded-full text-[11px] font-semibold transition-all",
+                              coinDetailInterval === tf.id
+                                ? "bg-green-500/20 text-green-400 border border-green-500/40"
+                                : "text-muted-foreground hover:text-foreground bg-secondary/40 hover:bg-secondary/80"
+                            )}
+                          >
+                            {tf.label}
+                          </button>
+                        ))}
+                      </div>
                       <div className="rounded-xl overflow-hidden border border-border bg-secondary/20" style={{ height: 260 }}>
                         <Suspense fallback={<div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">Loading chart…</div>}>
                           <Chart
@@ -1410,6 +1436,7 @@ export function DexHub() {
                             symbol={`${selectedCoin.symbol}/USDT`}
                             interval={coinDetailInterval}
                             onIntervalChange={setCoinDetailInterval}
+                            hideIntervalBar
                           />
                         </Suspense>
                       </div>
