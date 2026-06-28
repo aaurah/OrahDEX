@@ -29,6 +29,7 @@ export const CAT_GECKO_NETWORK: Record<string, string> = {
   zk:    "zksync",
   scr:   "scroll",
   mnt:   "mantle",
+  zora:  "zora-network",
 };
 
 export const CAT_GECKO_CATEGORY: Record<string, string> = {
@@ -78,7 +79,7 @@ async function fetchPages(url: (page: number) => string, maxPages: number, label
   return rows;
 }
 
-export function fetchGeckoPools(networkSlug: string, maxPages = 3): Promise<GeckoRow[]> {
+export function fetchGeckoPools(networkSlug: string, maxPages = 5): Promise<GeckoRow[]> {
   return fetchPages(
     p => `${GT_BASE}/networks/${networkSlug}/pools?sort=h24_volume_usd_desc&page=${p}`,
     maxPages,
@@ -86,10 +87,16 @@ export function fetchGeckoPools(networkSlug: string, maxPages = 3): Promise<Geck
   );
 }
 
-export function fetchGeckoCategory(category: string, maxPages = 3): Promise<GeckoRow[]> {
+export function fetchGeckoCategory(category: string, maxPages = 5): Promise<GeckoRow[]> {
   return fetchPages(
     p => `${GT_BASE}/categories/${category}/pools?sort=h24_volume_usd_desc&page=${p}`,
     maxPages,
     category,
   );
+}
+
+/** Merge two GeckoRow arrays, deduplicating by base ticker (first wins). */
+export function mergeGeckoRows(a: GeckoRow[], b: GeckoRow[]): GeckoRow[] {
+  const seen = new Set(a.map(r => r.base));
+  return [...a, ...b.filter(r => !seen.has(r.base))];
 }
