@@ -2051,6 +2051,7 @@ router.post("/le-sync", requireAdminToken, async (_req, res) => {
       coins:    result.coins,
       quotes:   result.quotes,
       rows:     result.inserted,
+      deleted:  result.deleted,
       elapsed,
     });
   } catch (err: any) {

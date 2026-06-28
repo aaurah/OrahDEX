@@ -1110,7 +1110,7 @@ export async function seedLEPairsIfNeeded() {
  *   3. For every (base, quote) pair where base ≠ quote, compute price = baseUSD / quoteUSD.
  *   4. Upsert in 500-row DB chunks (no giant transactions).
  */
-export async function syncAllLEPairs(): Promise<{ coins: number; inserted: number; updated: number; quotes: number }> {
+export async function syncAllLEPairs(): Promise<{ coins: number; inserted: number; updated: number; deleted: number; quotes: number }> {
   const { getBuiltInLeCoins } = await import("./leAllCoins.js");
 
   // 1. Determine coin list — live API preferred, built-in fallback
@@ -1208,11 +1208,22 @@ export async function syncAllLEPairs(): Promise<{ coins: number; inserted: numbe
     }
   }
 
+  // ── Tombstone: remove LE markets whose base or quote coin was dropped from LE ─
+  // Pass the live coin ticker list as a PostgreSQL text[] array so PostgreSQL can
+  // evaluate != ALL(array) inline without a gigantic IN(...) clause.
+  const delResult = await pool.query<{ rowcount: number }>(
+    `DELETE FROM markets
+     WHERE type = 'letsexchange'
+       AND (base_asset != ALL($1::text[]) OR quote_asset != ALL($1::text[]))`,
+    [coinTickers],
+  );
+  const deleted = delResult.rowCount ?? 0;
+
   logger.info(
-    { coins: coinTickers.length, totalPairs, inserted, source },
+    { coins: coinTickers.length, totalPairs, inserted, deleted, source },
     "LE all-to-all pairs sync complete",
   );
-  return { coins: coinTickers.length, inserted, updated, quotes: coinTickers.length - 1 };
+  return { coins: coinTickers.length, inserted, updated, deleted, quotes: coinTickers.length - 1 };
 }
 
 // Shared in-memory map of coin → 24h change percent (populated each sovereign cycle)
