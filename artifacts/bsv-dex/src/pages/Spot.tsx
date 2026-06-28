@@ -234,6 +234,29 @@ export function SpotTrading() {
     setDropChain(walletChainId && CHAIN_NET_CODES[walletChainId] ? walletChainId : null);
   }, [walletChainId]);
 
+  // When the chain filter changes, auto-switch the quote tab to the one with the
+  // most pairs on that chain (if the current quote has 0 pairs after filtering).
+  // LE/SS pairs are BSV-quoted, so for EVM chains BSV usually wins.
+  useEffect(() => {
+    setDropQuote(prev => {
+      const codes = dropChain ? (CHAIN_NET_CODES[dropChain] ?? []) : [];
+      const chainMkts = dropChain
+        ? allMarkets.filter(m => {
+            const net = String((m as any).network ?? "").toLowerCase();
+            if (!net) return true;
+            return codes.some(c => net.includes(c));
+          })
+        : allMarkets;
+      const currentHasPairs = chainMkts.some(m => m.quoteAsset === prev);
+      if (currentHasPairs) return prev; // keep the user's choice
+      const best = QUOTE_TABS
+        .map(t => ({ id: t.id, n: chainMkts.filter(m => m.quoteAsset === t.id).length }))
+        .filter(q => q.n > 0)
+        .sort((a, b) => b.n - a.n)[0];
+      return (best?.id ?? prev) as QuoteTab;
+    });
+  }, [dropChain, allMarkets]);
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (pairDropRef.current && !pairDropRef.current.contains(e.target as Node)) {
@@ -513,13 +536,23 @@ export function SpotTrading() {
     return allMarkets.filter(m => m.quoteAsset === quoteTab);
   }, [allMarkets, quoteTab, marketSearch]);
 
+  // Chain-aware quote counts: when a chain pill is active, counts reflect only
+  // markets on that chain (native pairs with no network always count on every chain).
   const quoteCounts = useMemo(() => {
     const counts: Record<string, number> = {};
+    const chainMkts = dropChain
+      ? allMarkets.filter(m => {
+          const net = String((m as any).network ?? "").toLowerCase();
+          if (!net) return true; // native pair — always visible
+          const codes = CHAIN_NET_CODES[dropChain] ?? [];
+          return codes.some(c => net.includes(c));
+        })
+      : allMarkets;
     QUOTE_TABS.forEach(t => {
-      counts[t.id] = allMarkets.filter(m => m.quoteAsset === t.id).length;
+      counts[t.id] = chainMkts.filter(m => m.quoteAsset === t.id).length;
     });
     return counts;
-  }, [allMarkets]);
+  }, [allMarkets, dropChain]);
 
   const dropFiltered = useMemo(() => {
     const q = dropSearch.trim();
