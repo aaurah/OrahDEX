@@ -45,7 +45,7 @@
  *   maintenanceMarginRate = 0.005 (0.5%)
  */
 
-import { pool, db } from "@workspace/db";
+import { pool, db, withDbRetry } from "@workspace/db";
 import { futuresPositionsTable, marketsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
@@ -61,7 +61,9 @@ export const MAX_FUTURES_LEVERAGE = 100;
 async function getTakerFeeRate(symbol: string): Promise<number> {
   try {
     const baseSym = symbol.replace("-PERP", "");
-    const [m] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, baseSym));
+    const [m] = await withDbRetry(() =>
+      db.select().from(marketsTable).where(eq(marketsTable.symbol, baseSym))
+    );
     const fee = m ? parseFloat(m.takerFee) : NaN;
     return Number.isFinite(fee) && fee >= 0 ? fee : DEFAULT_TAKER_FEE_RATE;
   } catch {
