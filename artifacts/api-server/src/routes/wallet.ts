@@ -234,4 +234,36 @@ router.post("/derive-from-key", async (req, res) => {
   }
 });
 
+// ─── Solana balance proxy ─────────────────────────────────────────────────────
+// Browser → our API (server-side) → Solana RPC
+// Avoids CORS / outbound-POST restrictions in the Replit preview iframe.
+
+const SOL_RPCS = [
+  "https://api.mainnet-beta.solana.com",
+  "https://rpc.ankr.com/solana",
+];
+
+router.get("/sol-balance/:address", async (req, res) => {
+  const { address } = req.params;
+  if (!address || address.length < 32) return res.status(400).json({ error: "invalid address" });
+
+  for (const rpc of SOL_RPCS) {
+    try {
+      const r = await fetch(rpc, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [address] }),
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!r.ok) continue;
+      const json = await r.json() as any;
+      const lamports = json?.result?.value;
+      if (typeof lamports === "number") {
+        return res.json({ lamports, sol: lamports / 1e9 });
+      }
+    } catch { /* try next */ }
+  }
+  return res.status(502).json({ error: "All Solana RPCs failed" });
+});
+
 export default router;
