@@ -456,11 +456,18 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
   // ── 1. Binance public 24h ticker (all USDT pairs) ──────────────────────────
   // Retried once on timeout before falling through to the LetsExchange fallback.
   try {
+    // Single attempt with a 5 s timeout.
+    // In the Replit environment Binance is network-blocked so a connection
+    // error is immediate; a short timeout burns minimal time before the LE
+    // fallback path runs.  In production Binance responds in < 2 s so the
+    // cap never triggers.  Two attempts (the old setting) wasted ~25 s per
+    // cycle in dev and caused the price-updater to reliably exceed its 55 s
+    // timeout, marking it Dead after every run.
     const res = await withRetry(
       () => fetch("https://api.binance.com/api/v3/ticker/24hr", {
-        signal: AbortSignal.timeout(12_000),
+        signal: AbortSignal.timeout(5_000),
       }),
-      { maxAttempts: 2, baseDelayMs: 1_500, maxDelayMs: 3_000 },
+      { maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
     );
     if (res.ok) {
       const tickers = await res.json() as Array<{
@@ -1491,7 +1498,10 @@ export function startPriceUpdater() {
   // After the first run, the guarded interval takes over every 60 s.
   _stopPriceUpdater = guardedInterval(
     "price-updater", updateMarketPrices, 60_000,
-    { timeoutMs: 55_000, initialDelayMs: 35_000 },
+    // 70 s timeout: Binance now fails fast (≤ 5 s), so the critical path is
+    // the LE fallback (≤ 15 s parallel) + DB bulk update (≤ 15 s).
+    // 70 s gives ~35 s of margin over the expected worst-case runtime.
+    { timeoutMs: 70_000, initialDelayMs: 35_000 },
   );
   logger.info("Live price updater started (interval: 60s, self-healing)");
 }
