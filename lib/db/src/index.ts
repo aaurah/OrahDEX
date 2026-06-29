@@ -67,6 +67,20 @@ pool.on("error", (err, _client) => {
   console.error("[pg-pool] idle client error — connection will be discarded:", err.message);
 });
 
+// Attach an error handler to every client the moment it is created.
+// This covers the gap where pg emits an 'error' event on the underlying
+// socket of a CHECKED-OUT client (i.e. one actively running a query).
+// That error is NOT caught by the pool's own 'error' event — it propagates
+// to the EventEmitter as an uncaughtException, which our app.ts handler
+// treats as fatal and calls process.exit(1).  By registering a listener
+// here we silence it; the query's rejected Promise already surfaces the
+// error to the caller, so no information is lost.
+pool.on("connect", (client) => {
+  client.on("error", (err) => {
+    console.error("[pg-client] socket error on checked-out client (non-fatal):", err.message);
+  });
+});
+
 export const db = drizzle(pool, { schema });
 
 /** Return true for transient network-level Postgres errors that are safe to retry. */
