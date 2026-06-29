@@ -493,6 +493,7 @@ async function fetchBlockscoutTokens(
         if (!tok?.address || tok.type !== "ERC-20") continue;
         const decimals = parseInt(tok.decimals ?? "18", 10) || 18;
         const rawVal = BigInt(item.value ?? "0");
+        if (rawVal === 0n) continue; // skip tokens with no current balance
         const balance = Number(rawVal) / Math.pow(10, decimals);
         results.push({
           address:  tok.address.toLowerCase(),
@@ -562,12 +563,27 @@ export async function scanTokensFromExplorer(
 ): Promise<number> {
   let tokens = await fetchBlockscoutTokens(walletAddress, chainId);
 
-  // Fallback to Etherscan-compatible API if Blockscout returned nothing
+  // Fallback to Etherscan-compatible API if Blockscout returned nothing.
+  // Etherscan tokentx only gives transfer history — must verify current balance
+  // via on-chain balanceOf so we don't add zero-balance tokens that get hidden.
   if (tokens.length === 0) {
-    tokens = await fetchEtherscanTokens(walletAddress, chainId);
+    const candidates = await fetchEtherscanTokens(walletAddress, chainId);
+    if (candidates.length > 0) {
+      const amounts = await batchFetchBalances(
+        walletAddress,
+        candidates.map(t => ({ address: t.address, decimals: t.decimals })),
+        chainId,
+      );
+      tokens = candidates
+        .map((t, i) => ({ ...t, balance: amounts[i] ?? 0 }))
+        .filter(t => t.balance > 0);
+    }
   }
 
   if (tokens.length === 0) return 0;
+
+  const store = useCustomTokenStore.getState();
+  const prevCount = store.getByChainId(chainId).length;
 
   const toDiscover: Omit<CustomToken, "id" | "addedAt">[] = tokens.map(t => ({
     chainId,
@@ -579,8 +595,11 @@ export async function scanTokensFromExplorer(
     isAutoDiscovered: true,
   }));
 
-  useCustomTokenStore.getState().addAutoDiscovered(toDiscover);
-  return toDiscover.length;
+  store.addAutoDiscovered(toDiscover);
+
+  // Return how many tokens were actually new (not already in store)
+  const newCount = useCustomTokenStore.getState().getByChainId(chainId).length;
+  return newCount - prevCount;
 }
 
 /* ─── Auto-discovery via Transfer event logs ──────────────────────────────── */
