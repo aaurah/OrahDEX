@@ -515,7 +515,34 @@ startErrorWatcher();
 // ── Process-level crash guards ────────────────────────────────────────────────
 // Node.js 18+ terminates the process on unhandled rejections. Catch them here
 // so we can log the cause before the watchdog restarts the server.
+
+/** True for transient TCP/pg errors that the pool self-heals — never worth crashing for. */
+function isTransientNetworkError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes("Connection terminated") ||
+    msg.includes("ECONNRESET") ||
+    msg.includes("ECONNREFUSED") ||
+    msg.includes("read ETIMEDOUT") ||
+    msg.includes("connection timeout") ||
+    msg.includes("Connection ended unexpectedly") ||
+    msg.includes("ssl routines") ||
+    msg.includes("socket hang up")
+  );
+}
+
 process.on("uncaughtException", (err) => {
+  // Transient pg/TCP errors reach uncaughtException when the underlying socket
+  // fires 'error' on a checked-out client that has no per-client error handler.
+  // The pool discards the connection automatically; the rejected query Promise
+  // already surfaced the error to the caller.  Exiting here would restart the
+  // whole server for what is a recoverable network blip.
+  if (isTransientNetworkError(err)) {
+    try {
+      logger.warn({ err: err?.message }, "Transient network error (non-fatal, process continues)");
+    } catch { /* ignore */ }
+    return;
+  }
   try {
     logger.error({ err: { message: err?.message, stack: err?.stack } },
       "UNCAUGHT EXCEPTION — process will exit and watchdog will restart");

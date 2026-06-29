@@ -41,11 +41,17 @@ function proxyToApi(req, res) {
 
   proxyReq.on("error", (err) => {
     if (!res.headersSent) {
-      // Return 200 for health/ping probes and the bare /v1 path that the
-      // deployment platform checks — the API is still booting, not broken.
-      const isHealth = req.url.includes("health") || req.url.includes("ping")
-        || req.url === "/v1" || req.url === "/v1/";
-      if (isHealth) {
+      // Return 200 for deployment health probes even when the API is
+      // temporarily unreachable (booting, restarting after a deploy, etc.).
+      // Paths checked by the platform: /, /healthz, /health, /api, /api/,
+      // /v1, /v1/ — all must return 2xx or the artifact is terminated.
+      const url = req.url ?? "/";
+      const isHealthProbe =
+        url.includes("health") ||
+        url.includes("ping") ||
+        url === "/api"  || url === "/api/"  ||
+        url === "/v1"   || url === "/v1/";
+      if (isHealthProbe) {
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ status: "starting" }));
       } else {
