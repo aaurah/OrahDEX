@@ -246,6 +246,10 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   const [directBuyUsd, setDirectBuyUsd] = useState<string | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [dismissedOrders, setDismissedOrders] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("orah_dismissed_orders") ?? "[]")); }
+    catch { return new Set(); }
+  });
   const [chainSheetOpen, setChainSheetOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
   const [historySubTab, setHistorySubTab] = useState<"onchain" | "trades" | "bridge" | "swaps" | "buys">(
@@ -430,6 +434,15 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
     }
     return Object.entries(groups).map(([label, trades]) => ({ label, trades }));
   })();
+
+  function dismissOrder(id: string) {
+    setDismissedOrders(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      try { localStorage.setItem("orah_dismissed_orders", JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }
 
   const cancelMutation = useMutation({
     mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
@@ -1279,18 +1292,19 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
           )}
 
           {/* Orders tab */}
-          {tab === "orders" && (
-            myOrders.length === 0 ? (
+          {tab === "orders" && (() => {
+            const visibleOrders = myOrders.filter(o => !dismissedOrders.has(String(o.id)));
+            return visibleOrders.length === 0 ? (
               <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
                 <p className="text-sm font-medium">No orders yet</p>
                 <p className="text-xs opacity-60 text-center">Your open and past orders will appear here</p>
               </div>
             ) : (
               <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
-                {myOrders.map((o: any, i: number) => (
+                {visibleOrders.map((o: any, i: number) => (
                   <div
                     key={o.id}
-                    className={`flex items-center gap-3 px-4 py-3.5 ${i < myOrders.length - 1 ? "border-b border-border" : ""}`}
+                    className={`flex items-center gap-3 px-4 py-3.5 ${i < visibleOrders.length - 1 ? "border-b border-border" : ""}`}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
@@ -1309,7 +1323,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                         {o.type ?? "limit"} · {Number(o.quantity).toFixed(4)} @ ${Number(o.price).toLocaleString()}
                       </p>
                     </div>
-                    {o.status === "open" ? (
+                    {o.status === "open" || o.status === "pending" ? (
                       <button
                         onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || ledgerAddress || "") })}
                         disabled={cancellingId === String(o.id)}
@@ -1318,20 +1332,29 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                         {cancellingId === String(o.id) ? "…" : "Cancel"}
                       </button>
                     ) : (
-                      <div className="text-right shrink-0">
-                        <p className="text-xs font-semibold capitalize" style={{ color: STATUS_COLOR[o.status] ?? "#6b7280" }}>
-                          {o.status}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          {new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </p>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-right">
+                          <p className="text-xs font-semibold capitalize" style={{ color: STATUS_COLOR[o.status] ?? "#6b7280" }}>
+                            {o.status}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => dismissOrder(String(o.id))}
+                          className="p-1.5 rounded-lg text-muted-foreground/40 hover:text-red-400 hover:bg-red-500/10 active:bg-red-500/20 transition-all"
+                          aria-label="Remove"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                     )}
                   </div>
                 ))}
               </div>
-            )
-          )}
+            );
+          })()}
 
           {/* History tab */}
           {tab === "history" && (
