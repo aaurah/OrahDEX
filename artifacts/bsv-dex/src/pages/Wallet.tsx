@@ -12,7 +12,7 @@ import { SmartAccountPanel } from "@/components/wallet/SmartAccountPanel";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { useEvmBalances, discoverNewTokens } from "@/hooks/useEvmBalances";
+import { useEvmBalances, scanTokensFromExplorer } from "@/hooks/useEvmBalances";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useNativeChainBalance } from "@/hooks/useNativeChainBalance";
 import {
@@ -626,17 +626,25 @@ function EvmChainRow({
   const [expanded, setExpanded] = useState(false);
   const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const { toast } = useToast();
 
   const handleScan = useCallback(async () => {
     if (!evmAddress || !chain.evmChainId || scanning) return;
     setScanning(true);
     try {
-      await discoverNewTokens(evmAddress, chain.evmChainId, new Set(), true);
+      const found = await scanTokensFromExplorer(evmAddress, chain.evmChainId);
       await refresh();
+      if (found > 0) {
+        toast({ title: `Found ${found} token${found === 1 ? "" : "s"}`, description: "Balances are loading now." });
+      } else {
+        toast({ title: "No new tokens found", description: "All your tokens are already listed." });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Scan failed", description: "Could not reach the explorer. Try again." });
     } finally {
       setScanning(false);
     }
-  }, [evmAddress, chain.evmChainId, scanning, refresh]);
+  }, [evmAddress, chain.evmChainId, scanning, refresh, toast]);
 
   const native     = balances.find(b => b.isNative);
   const nativeAmt  = native?.amount ?? 0;

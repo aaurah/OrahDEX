@@ -425,6 +425,164 @@ async function fetchContractPrices(
   } catch { return {}; }
 }
 
+/* ─── Explorer-based token scanner (Blockscout + Etherscan/Basescan) ─────── */
+
+/**
+ * Blockscout v2 API base URLs — no API key required.
+ * Covers the major EVM chains.
+ */
+const BLOCKSCOUT_URLS: Record<number, string> = {
+  1:      "https://eth.blockscout.com",
+  56:     "https://bsc.blockscout.com",
+  137:    "https://polygon.blockscout.com",
+  42161:  "https://arbitrum.blockscout.com",
+  10:     "https://optimism.blockscout.com",
+  8453:   "https://base.blockscout.com",
+  43114:  "https://avalanche.blockscout.com",
+  59144:  "https://explorer.linea.build",
+  324:    "https://zksync.blockscout.com",
+  534352: "https://scroll.blockscout.com",
+};
+
+/**
+ * Etherscan-compatible explorer API URLs (fallback for chains where Blockscout
+ * isn't available or times out). No API key needed for basic access.
+ */
+const ETHERSCAN_URLS: Record<number, string> = {
+  1:     "https://api.etherscan.io/api",
+  8453:  "https://api.basescan.org/api",
+  56:    "https://api.bscscan.com/api",
+  137:   "https://api.polygonscan.com/api",
+  42161: "https://api.arbiscan.io/api",
+  10:    "https://api-optimistic.etherscan.io/api",
+  43114: "https://api.snowtrace.io/api",
+};
+
+interface ExplorerToken {
+  address: string;
+  symbol:  string;
+  name:    string;
+  decimals: number;
+  balance: number;
+}
+
+/**
+ * Fetches all ERC-20 tokens held by an address using Blockscout v2 API.
+ * Handles pagination automatically (up to 500 tokens).
+ */
+async function fetchBlockscoutTokens(
+  walletAddress: string,
+  chainId: number,
+): Promise<ExplorerToken[]> {
+  const base = BLOCKSCOUT_URLS[chainId];
+  if (!base) return [];
+
+  const results: ExplorerToken[] = [];
+  let pageParams = "";
+
+  for (let page = 0; page < 10; page++) {
+    const url = `${base}/api/v2/addresses/${walletAddress}/tokens?type=ERC-20${pageParams}`;
+    try {
+      const res = await globalThis.fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) break;
+      const data = await res.json();
+      if (!Array.isArray(data.items)) break;
+
+      for (const item of data.items) {
+        const tok = item.token;
+        if (!tok?.address || tok.type !== "ERC-20") continue;
+        const decimals = parseInt(tok.decimals ?? "18", 10) || 18;
+        const rawVal = BigInt(item.value ?? "0");
+        const balance = Number(rawVal) / Math.pow(10, decimals);
+        results.push({
+          address:  tok.address.toLowerCase(),
+          symbol:   (tok.symbol  ?? "???").slice(0, 20),
+          name:     (tok.name    ?? tok.symbol ?? "Unknown").slice(0, 64),
+          decimals,
+          balance,
+        });
+      }
+
+      if (!data.next_page_params) break;
+      // Build query string from next_page_params
+      const qs = new URLSearchParams(
+        Object.entries(data.next_page_params).map(([k, v]) => [k, String(v)])
+      ).toString();
+      pageParams = `&${qs}`;
+    } catch { break; }
+  }
+
+  return results;
+}
+
+/**
+ * Fetches token transfer history from Etherscan-compatible APIs to derive
+ * unique token addresses, then returns them as ExplorerToken stubs
+ * (balance will be re-fetched via RPC).
+ */
+async function fetchEtherscanTokens(
+  walletAddress: string,
+  chainId: number,
+): Promise<ExplorerToken[]> {
+  const apiUrl = ETHERSCAN_URLS[chainId];
+  if (!apiUrl) return [];
+
+  try {
+    const url = `${apiUrl}?module=account&action=tokentx&address=${walletAddress}&startblock=0&endblock=99999999&sort=desc&offset=200`;
+    const res = await globalThis.fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return [];
+    const data = await res.json();
+    if (data.status !== "1" || !Array.isArray(data.result)) return [];
+
+    const seen = new Map<string, ExplorerToken>();
+    for (const tx of data.result) {
+      const addr = (tx.contractAddress ?? "").toLowerCase();
+      if (!addr || seen.has(addr)) continue;
+      const decimals = parseInt(tx.tokenDecimal ?? "18", 10) || 18;
+      seen.set(addr, {
+        address:  addr,
+        symbol:   (tx.tokenSymbol ?? "???").slice(0, 20),
+        name:     (tx.tokenName   ?? tx.tokenSymbol ?? "Unknown").slice(0, 64),
+        decimals,
+        balance:  0, // will be re-fetched via RPC
+      });
+    }
+    return [...seen.values()];
+  } catch { return []; }
+}
+
+/**
+ * Main entry point for the "Scan tokens" button.
+ * Tries Blockscout first (has balances + metadata), falls back to Etherscan.
+ * Saves discovered tokens to useCustomTokenStore and returns count added.
+ */
+export async function scanTokensFromExplorer(
+  walletAddress: string,
+  chainId: number,
+): Promise<number> {
+  let tokens = await fetchBlockscoutTokens(walletAddress, chainId);
+
+  // Fallback to Etherscan-compatible API if Blockscout returned nothing
+  if (tokens.length === 0) {
+    tokens = await fetchEtherscanTokens(walletAddress, chainId);
+  }
+
+  if (tokens.length === 0) return 0;
+
+  const toDiscover: Omit<CustomToken, "id" | "addedAt">[] = tokens.map(t => ({
+    chainId,
+    address:          t.address,
+    symbol:           t.symbol,
+    name:             t.name,
+    decimals:         t.decimals,
+    color:            "#6B7280",
+    isAutoDiscovered: true,
+  }));
+
+  useCustomTokenStore.getState().addAutoDiscovered(toDiscover);
+  return toDiscover.length;
+}
+
 /* ─── Auto-discovery via Transfer event logs ──────────────────────────────── */
 
 const TRANSFER_TOPIC  = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -646,8 +804,16 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
       setBalances(result);
       setLastFetch(Date.now());
 
-      // Background: discover any other ERC-20s the user holds via Transfer logs
-      discoverNewTokens(address, chainId, knownAddresses);
+      // Background: auto-discover tokens the user holds.
+      // Prefer the Blockscout/explorer API (full history, like MetaMask).
+      // Fall back to Transfer-log scanning for unsupported chains.
+      if (BLOCKSCOUT_URLS[chainId] || ETHERSCAN_URLS[chainId]) {
+        scanTokensFromExplorer(address, chainId).catch(() => {
+          discoverNewTokens(address, chainId, knownAddresses);
+        });
+      } else {
+        discoverNewTokens(address, chainId, knownAddresses);
+      }
 
       // Background: for tokens with balance > 0 but unknown price, look up via
       // CoinGecko contract-address API (covers newly discovered / niche tokens)
