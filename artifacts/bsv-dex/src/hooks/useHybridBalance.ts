@@ -74,16 +74,28 @@ export async function fetchBtcNative(address: string): Promise<number> {
   } catch { return 0; }
 }
 
+const SOL_RPCS = [
+  "https://api.mainnet-beta.solana.com",
+  "https://rpc.ankr.com/solana",
+  "https://solana-api.projectserum.com",
+];
+
 export async function fetchSolNative(address: string): Promise<number> {
-  try {
-    const res = await fetch("https://api.mainnet-beta.solana.com", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [address] }),
-    });
-    const json = await res.json();
-    return (json?.result?.value ?? 0) / 1e9;
-  } catch { return 0; }
+  for (const rpc of SOL_RPCS) {
+    try {
+      const res = await fetch(rpc, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [address] }),
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!res.ok) continue;
+      const json = await res.json();
+      const lamports = json?.result?.value;
+      if (typeof lamports === "number") return lamports / 1e9;
+    } catch { /* try next */ }
+  }
+  return 0;
 }
 
 export async function fetchBchNative(address: string): Promise<number> {

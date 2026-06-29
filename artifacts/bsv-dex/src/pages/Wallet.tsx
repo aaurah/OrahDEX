@@ -825,7 +825,7 @@ function NativeChainRow({
         {loading
           ? <span className="inline-block w-16 h-3.5 bg-muted/40 rounded animate-pulse" />
           : native > 0
-            ? `${native < 0.0001 ? native.toExponential(2) : native.toFixed(4)} ${chain.symbol}`
+            ? `${native < 0.001 ? native.toPrecision(4) : native < 1 ? native.toFixed(6) : native.toFixed(4)} ${chain.symbol}`
             : `0 ${chain.symbol}`}
       </p>
       <p className="text-[10px] text-muted-foreground">
