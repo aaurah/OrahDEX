@@ -465,7 +465,10 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     // timeout, marking it Dead after every run.
     const res = await withRetry(
       () => fetch("https://api.binance.com/api/v3/ticker/24hr", {
-        signal: AbortSignal.timeout(5_000),
+        // 2 s: Binance responds in <2 s when reachable; anything longer means
+        // the host is blocked or dropping packets, so cut losses and fall through
+        // to the LetsExchange fallback instead of burning 5 s per cycle.
+        signal: AbortSignal.timeout(2_000),
       }),
       { maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
     );
