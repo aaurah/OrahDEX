@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ChevronDown, ArrowRight, ArrowUpDown, RefreshCw, Zap, Clock, AlertCircle, CheckCircle2, Copy } from "lucide-react";
+import { ChevronDown, ArrowRight, ArrowUpDown, RefreshCw, Zap, Clock, AlertCircle, CheckCircle2, Copy, ExternalLink, Loader2 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useWalletStore } from "@/store/useWalletStore";
+import { wagmiConfig } from "@/lib/reown";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -104,6 +106,16 @@ function trimAmount(s: string): string {
 const CHAIN_COLORS: Record<number, string> = {
   1: "#627EEA", 8453: "#0052FF", 42161: "#28A0F0",
   10: "#FF0420", 137: "#8247E5", 56: "#F0B90B", 43114: "#E84142",
+};
+
+const EXPLORER_TX: Record<number, string> = {
+  1:     "https://etherscan.io/tx/",
+  8453:  "https://basescan.org/tx/",
+  42161: "https://arbiscan.io/tx/",
+  10:    "https://optimistic.etherscan.io/tx/",
+  137:   "https://polygonscan.com/tx/",
+  56:    "https://bscscan.com/tx/",
+  43114: "https://snowtrace.io/tx/",
 };
 
 function ChainBadge({ chain }: { chain: Chain }) {
@@ -359,6 +371,9 @@ function TxViewer({ tx, warning, bridgeName }: { tx: BuiltTx; warning?: string; 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
+  const storeAddress = useWalletStore(s => s.address);
+  const effectiveWallet = walletAddress ?? storeAddress ?? undefined;
+
   const [chains, setChains] = useState<Chain[]>([]);
   const [fromChain, setFromChain] = useState<Chain | null>(null);
   const [toChain, setToChain]     = useState<Chain | null>(null);
@@ -374,6 +389,79 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
   const [builtTx, setBuiltTx]       = useState<{ tx: BuiltTx; warning?: string; bridgeName?: string } | null>(null);
   const [buildingTx, setBuildingTx] = useState(false);
   const [buildTxError, setBuildTxError] = useState<string | null>(null);
+
+  // Execute state
+  const [executing,      setExecuting]      = useState(false);
+  const [executeTxHash,  setExecuteTxHash]  = useState<string | null>(null);
+  const [executeError,   setExecuteError]   = useState<string | null>(null);
+  const [executeDone,    setExecuteDone]    = useState(false);
+
+  async function handleExecute() {
+    if (!builtTx) return;
+    setExecuting(true);
+    setExecuteError(null);
+    setExecuteTxHash(null);
+    try {
+      // Resolve EIP-1193 provider: window.ethereum → Reown/WalletConnect connectors
+      const eth = (window as any).ethereum;
+      let provider: any = eth ?? null;
+
+      if (!provider) {
+        for (const connector of (wagmiConfig as any).connectors ?? []) {
+          try {
+            const p = await (connector as any).getProvider?.();
+            if (p) { provider = p; break; }
+          } catch {}
+        }
+      }
+      if (!provider) throw new Error("No wallet connected. Please connect a wallet first.");
+
+      // Switch to the source chain the bridge tx needs to run on
+      const targetHex = "0x" + builtTx.tx.chainId.toString(16);
+      const currentChain: string = await provider.request({ method: "eth_chainId" });
+      if (currentChain.toLowerCase() !== targetHex.toLowerCase()) {
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: targetHex }],
+        });
+      }
+
+      // Resolve from-address
+      const accounts: string[] = await provider.request({ method: "eth_accounts" });
+      const from = accounts[0] ?? effectiveWallet;
+      if (!from) throw new Error("No account found — connect your wallet.");
+
+      const txHash: string = await provider.request({
+        method: "eth_sendTransaction",
+        params: [{
+          from,
+          to:    builtTx.tx.to,
+          data:  builtTx.tx.data,
+          value: builtTx.tx.value && builtTx.tx.value !== "0"
+                   ? "0x" + BigInt(builtTx.tx.value).toString(16)
+                   : "0x0",
+        }],
+      });
+      setExecuteTxHash(txHash);
+      setExecuteDone(true);
+    } catch (e: any) {
+      const msg: string = e?.message ?? "Transaction failed";
+      const isReject = /reject|cancel|denied|user refused/i.test(msg);
+      if (!isReject) setExecuteError(msg.slice(0, 240));
+    } finally {
+      setExecuting(false);
+    }
+  }
+
+  function resetExecute() {
+    setExecuteDone(false);
+    setExecuteTxHash(null);
+    setExecuteError(null);
+    setBuiltTx(null);
+    setQuotes([]);
+    setSelectedQuote(null);
+    setBuildTxError(null);
+  }
 
   // Wallet balance for the from-token
   const { balances: evmBals, loading: evmBalsLoading } = useEvmBalances(
@@ -764,15 +852,81 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
         </div>
       )}
 
-      {/* ── Built transaction viewer ─────────────────────────────── */}
-      {builtTx && (
+      {/* ── Execute Bridge ────────────────────────────────────────── */}
+      {builtTx && !executeDone && (
         <div className="space-y-2">
-          <TxViewer tx={builtTx.tx} warning={builtTx.warning} bridgeName={builtTx.bridgeName} />
+          {/* Execute button */}
           <button
-            onClick={() => setBuiltTx(null)}
+            onClick={handleExecute}
+            disabled={executing}
+            className="w-full flex items-center justify-center gap-2.5 bg-primary text-primary-foreground font-bold rounded-xl py-3.5 text-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {executing ? (
+              <>
+                <Loader2 size={15} className="animate-spin" />
+                Sign in wallet…
+              </>
+            ) : (
+              <>
+                <ArrowRight size={15} />
+                Execute Bridge via {builtTx.bridgeName ?? "LiFi"}
+              </>
+            )}
+          </button>
+
+          {/* Execute error */}
+          {executeError && (
+            <div className="flex items-center gap-2.5 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+              <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+              <span className="text-sm text-red-300">{executeError}</span>
+            </div>
+          )}
+
+          {/* Collapsible tx details for power users */}
+          <details className="group">
+            <summary className="text-[11px] text-muted-foreground/60 cursor-pointer hover:text-muted-foreground select-none px-1">
+              Show raw transaction ▸
+            </summary>
+            <div className="mt-2">
+              <TxViewer tx={builtTx.tx} warning={builtTx.warning} bridgeName={builtTx.bridgeName} />
+            </div>
+          </details>
+
+          <button
+            onClick={() => { setBuiltTx(null); setExecuteError(null); }}
             className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
           >
-            Clear
+            ← Back to quotes
+          </button>
+        </div>
+      )}
+
+      {/* ── Bridge success ────────────────────────────────────────── */}
+      {executeDone && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-4 space-y-3">
+          <div className="flex items-center gap-2 text-green-400 font-semibold text-sm">
+            <CheckCircle2 size={16} />
+            Bridge submitted! Tokens are on their way.
+          </div>
+          {executeTxHash && (
+            <a
+              href={`${EXPLORER_TX[builtTx?.tx.chainId ?? fromChain?.id ?? 1] ?? "https://etherscan.io/tx/"}${executeTxHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 underline"
+            >
+              <ExternalLink size={11} />
+              View on explorer
+            </a>
+          )}
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            Settlement time varies by bridge. Your balance will update once confirmed on the destination chain.
+          </p>
+          <button
+            onClick={resetExecute}
+            className="text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            Make another bridge
           </button>
         </div>
       )}
