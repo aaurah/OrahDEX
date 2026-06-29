@@ -432,8 +432,9 @@ const SYMBOL_SEL      = "0x95d89b41";
 const NAME_SEL        = "0x06fdde03";
 const DECIMALS_SEL    = "0x313ce567";
 
-/** Sessions already scanned this page-load — avoid duplicate network calls. */
-const discoverySessions = new Set<string>();
+/** Sessions already scanned — stores timestamp of last scan per address+chainId. */
+const discoverySessions = new Map<string, number>();
+const DISCOVERY_COOLDOWN_MS = 5 * 60 * 1000; // re-allow after 5 minutes
 
 function padTopic(addr: string): string {
   return "0x" + addr.toLowerCase().replace("0x", "").padStart(64, "0");
@@ -459,20 +460,20 @@ function decodeUint8(hex: string): number {
 }
 
 /**
- * Scans the last ~5 000 blocks for ERC-20 Transfer events sent TO the wallet,
- * fetches metadata for unknown contracts, and persists them in useCustomTokenStore
- * so they show up automatically on next balance refresh.
- *
- * Runs once per address+chainId session (module-level cache).
+ * Scans Transfer event logs for ERC-20 tokens received by this wallet,
+ * fetches metadata for unknown contracts, and persists them in useCustomTokenStore.
+ * Re-runs after DISCOVERY_COOLDOWN_MS (5 min). Pass forceRescan=true to bypass cooldown.
  */
-async function discoverNewTokens(
+export async function discoverNewTokens(
   walletAddress: string,
   chainId: number,
   knownAddressSet: Set<string>,
+  forceRescan = false,
 ): Promise<void> {
   const key = `${walletAddress.toLowerCase()}_${chainId}`;
-  if (discoverySessions.has(key)) return;
-  discoverySessions.add(key);
+  const lastScan = discoverySessions.get(key) ?? 0;
+  if (!forceRescan && Date.now() - lastScan < DISCOVERY_COOLDOWN_MS) return;
+  discoverySessions.set(key, Date.now());
 
   try {
     let blockHex: string;
@@ -489,11 +490,11 @@ async function discoverNewTokens(
       }], chainId);
     };
 
-    let logs: any[];
-    try { logs = await tryGetLogs(5000); }
-    catch {
-      try { logs = await tryGetLogs(1000); }
-      catch { return; }
+    // Try progressively smaller ranges until the RPC accepts the request
+    let logs: any[] = [];
+    for (const range of [50_000, 10_000, 2_000]) {
+      try { logs = await tryGetLogs(range); break; }
+      catch { /* try smaller range */ }
     }
 
     if (!Array.isArray(logs) || logs.length === 0) return;
@@ -504,7 +505,7 @@ async function discoverNewTokens(
           .map((l: any) => l.address?.toLowerCase())
           .filter((a): a is string => !!a && !knownAddressSet.has(a)),
       ),
-    ].slice(0, 25);
+    ].slice(0, 50);
 
     if (newContracts.length === 0) return;
 
