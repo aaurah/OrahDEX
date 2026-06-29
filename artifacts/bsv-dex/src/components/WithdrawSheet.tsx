@@ -58,6 +58,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useAddressBookStore, WALLET_TYPE_META } from "@/store/useAddressBookStore";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { QRCodeCanvas } from "qrcode.react";
 
 // ── constants ────────────────────────────────────────────────────────────────
@@ -460,9 +461,17 @@ export function WithdrawSheet({
         const preChain = WALLET_CHAINS.find(c => c.id === initialChainId);
         if (preChain) {
           setWalletSendChain(preChain);
-          const preToken = initialTokenSymbol
+          let preToken: WalletToken | undefined = initialTokenSymbol
             ? (WALLET_TOKENS[initialChainId] ?? []).find(t => t.symbol.toUpperCase() === initialTokenSymbol.toUpperCase())
             : undefined;
+          // Fall back to custom token store for user-added tokens (e.g. A8, APE)
+          if (!preToken && initialTokenSymbol) {
+            const ct = useCustomTokenStore.getState().getByChainId(initialChainId)
+              .find(c => c.symbol.toUpperCase() === initialTokenSymbol.toUpperCase());
+            if (ct) {
+              preToken = { symbol: ct.symbol, decimals: ct.decimals, isNative: false, address: ct.address, color: ct.color };
+            }
+          }
           setWalletSendToken(preToken ?? (WALLET_TOKENS[initialChainId]?.[0] ?? resolveWalletChainToken(asset).token));
           setWalletSendBalance(null);
           return;
@@ -2027,21 +2036,28 @@ export function WithdrawSheet({
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Token</label>
                   <div className="flex flex-wrap gap-1.5">
-                    {(WALLET_TOKENS[walletSendChain.id] ?? []).map(tok => (
-                      <button
-                        key={tok.symbol}
-                        onClick={() => { setWalletSendToken(tok); setWalletSendBalance(null); setWalletSendAmount(""); }}
-                        className={cn(
-                          "px-3 py-1.5 rounded-lg text-xs font-bold border transition-all",
-                          walletSendToken.symbol === tok.symbol
-                            ? "text-white border-2"
-                            : "border-border bg-secondary/30 text-muted-foreground hover:text-foreground"
-                        )}
-                        style={walletSendToken.symbol === tok.symbol ? { borderColor: tok.color, backgroundColor: tok.color + "22", color: tok.color } : {}}
-                      >
-                        {tok.symbol}
-                      </button>
-                    ))}
+                    {(() => {
+                      const builtIn = WALLET_TOKENS[walletSendChain.id] ?? [];
+                      const customRaw = useCustomTokenStore.getState().getByChainId(walletSendChain.id);
+                      const customTokens: WalletToken[] = customRaw
+                        .filter(ct => !builtIn.some(b => b.symbol.toUpperCase() === ct.symbol.toUpperCase()))
+                        .map(ct => ({ symbol: ct.symbol, decimals: ct.decimals, isNative: false, address: ct.address, color: ct.color }));
+                      return [...builtIn, ...customTokens].map(tok => (
+                        <button
+                          key={tok.symbol}
+                          onClick={() => { setWalletSendToken(tok); setWalletSendBalance(null); setWalletSendAmount(""); }}
+                          className={cn(
+                            "px-3 py-1.5 rounded-lg text-xs font-bold border transition-all",
+                            walletSendToken.symbol === tok.symbol
+                              ? "text-white border-2"
+                              : "border-border bg-secondary/30 text-muted-foreground hover:text-foreground"
+                          )}
+                          style={walletSendToken.symbol === tok.symbol ? { borderColor: tok.color, backgroundColor: tok.color + "22", color: tok.color } : {}}
+                        >
+                          {tok.symbol}
+                        </button>
+                      ));
+                    })()}
                   </div>
                 </div>
 
