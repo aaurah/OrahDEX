@@ -1251,10 +1251,9 @@ export function WithdrawSheet({
               className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm border shrink-0"
               style={{ backgroundColor: color + "22", borderColor: color + "44", color }}
             >
-              {asset[0]}
+              {(withdrawChainMode !== "evm" ? withdrawChainMode.toUpperCase() : asset)[0]}
             </div>
             <span>
-              {asset} —{" "}
               {!visibleTabs || visibleTabs.length === 3
                 ? "Deposit & Withdraw"
                 : visibleTabs.includes("deposit") && !visibleTabs.includes("withdraw")
