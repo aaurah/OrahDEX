@@ -14,6 +14,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances, scanTokensFromExplorer } from "@/hooks/useEvmBalances";
 import { useOnChainTxHistory, type OnChainTx } from "@/hooks/useOnChainTxHistory";
+import { useIncomingTxWatcher } from "@/hooks/useIncomingTxWatcher";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useNativeChainBalance } from "@/hooks/useNativeChainBalance";
 import {
@@ -29,6 +30,7 @@ import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { BrandLogo } from "@/components/BrandLogo";
 import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { useToast } from "@/hooks/use-toast";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import { cn } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
@@ -46,6 +48,7 @@ function BsvSendSheet({
   evmAddress: string | null;
 }) {
   const { toast } = useToast();
+  const { addNotification } = useNotificationStore();
   const { native: balance } = useNativeChainBalance("bsv", fromAddress || null);
   const [recipient, setRecipient] = useState("");
   const [amount,    setAmount]    = useState("");
@@ -70,6 +73,13 @@ function BsvSendSheet({
       toast({
         title:       "BSV sent",
         description: `${parsedAmt} BSV → ${recipient.slice(0, 12)}… · Fee: ${result.feeSat} sat`,
+      });
+      addNotification({
+        type:  "withdrawal",
+        title: "BSV Sent",
+        body:  `${parsedAmt} BSV sent to ${recipient.slice(0, 12)}… (fee: ${result.feeSat} sat)`,
+        txid:  result.txid,
+        href:  `https://whatsonchain.com/tx/${result.txid}`,
       });
     } catch (err: any) {
       setError(err?.message ?? "Send failed");
@@ -996,6 +1006,9 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const { data: onchainTxs = [], isLoading: txLoading } = useOnChainTxHistory(
     tab === "activity" ? (evmAddress ?? null) : null,
   );
+
+  // Watch for new incoming EVM transactions and fire notifications automatically
+  useIncomingTxWatcher(evmAddress ?? null);
   const [receiveOpen, setReceiveOpen]         = useState(false);
   const [sendOpen, setSendOpen]               = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen]     = useState(false);

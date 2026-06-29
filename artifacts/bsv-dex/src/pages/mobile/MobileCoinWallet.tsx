@@ -21,10 +21,12 @@ import {
 import { QRCodeCanvas } from "qrcode.react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useOnChainTxHistory, type OnChainTx } from "@/hooks/useOnChainTxHistory";
+import { useIncomingTxWatcher } from "@/hooks/useIncomingTxWatcher";
 import { useAddressBookStore, WALLET_TYPE_META, type WalletType } from "@/store/useAddressBookStore";
 import { API_BASE } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import { validateAltChainAddress } from "@/lib/addressValidation";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -230,6 +232,9 @@ export function MobileCoinWallet({ coin }: Props) {
   const { address, network: walletNetwork, evmAddress } = useWalletStore();
   const { toast } = useToast();
 
+  // Watch for new incoming EVM transactions and fire notifications automatically
+  useIncomingTxWatcher(evmAddress ?? null);
+
   const coinUpper = coin.toUpperCase();
   const color     = ASSET_COLORS[coinUpper] ?? "#6B7280";
   const assetNet  = getAssetNet(coinUpper);
@@ -424,6 +429,8 @@ export function MobileCoinWallet({ coin }: Props) {
   }, [sendAddress, activeSendNet.networkKey]);
 
   // ── send submit ───────────────────────────────────────────────────────────────
+  const { addNotification } = useNotificationStore();
+
   const handleSendConfirm = async () => {
     if (!address || sendSubmitting) return;
     setSendSubmitting(true);
@@ -452,6 +459,11 @@ export function MobileCoinWallet({ coin }: Props) {
         });
       }
       toast({ title: "Withdrawal submitted", description: `${sendAmount} ${coinUpper} withdrawal is being processed.` });
+      addNotification({
+        type:  "withdrawal",
+        title: `${coinUpper} Sent`,
+        body:  `${sendAmount} ${coinUpper} withdrawal submitted to ${sendAddress.trim().slice(0, 14)}…`,
+      });
       setSendOpen(false);
       setSendStep(1);
       setSendAddress("");
