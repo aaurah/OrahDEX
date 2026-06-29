@@ -292,7 +292,7 @@ async function rpcCall(method: string, params: any[], chainId: number): Promise<
 }
 
 /**
- * Batch JSON-RPC: send all balanceOf calls in a single HTTP request.
+ * Batch JSON-RPC: send all balanceOf calls in chunked HTTP requests (max 10 per batch).
  * Falls back to individual calls if the RPC doesn't support batching.
  */
 async function batchFetchBalances(
@@ -302,37 +302,55 @@ async function batchFetchBalances(
 ): Promise<number[]> {
   if (tokens.length === 0) return [];
 
+  const CHUNK = 10;
   const rpcUrls = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter(Boolean);
-  const batch = tokens.map((token, i) => ({
-    jsonrpc: "2.0",
-    id: i,
-    method: "eth_call",
-    params: [{ to: token.address, data: balanceOfCalldata(walletAddress) }, "latest"],
-  }));
 
-  for (const rpcUrl of rpcUrls) {
-    try {
-      const res = await globalThis.fetch(rpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(batch),
-      });
-      if (!res.ok) continue;
-      const results: Array<{ id: number; result?: string; error?: any }> = await res.json();
-      if (!Array.isArray(results)) continue;
-      const byId = new Map(results.map(r => [r.id, r.result]));
-      return tokens.map((token, i) => {
-        const hex = byId.get(i);
-        if (!hex || hex.length <= 2) return 0;
-        try { return Number(BigInt(hex)) / Math.pow(10, token.decimals); }
-        catch { return 0; }
-      });
-    } catch { /* try fallback */ }
+  // Split into chunks of CHUNK to avoid large-batch rejection by public RPCs
+  const chunks: Array<typeof tokens> = [];
+  for (let i = 0; i < tokens.length; i += CHUNK) chunks.push(tokens.slice(i, i + CHUNK));
+
+  async function fetchChunk(chunk: typeof tokens, baseId: number): Promise<(number | null)[]> {
+    const batch = chunk.map((token, j) => ({
+      jsonrpc: "2.0",
+      id: baseId + j,
+      method: "eth_call",
+      params: [{ to: token.address, data: balanceOfCalldata(walletAddress) }, "latest"],
+    }));
+    for (const rpcUrl of rpcUrls) {
+      try {
+        const res = await globalThis.fetch(rpcUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(batch),
+        });
+        if (!res.ok) continue;
+        const results: Array<{ id: number; result?: string; error?: any }> = await res.json();
+        if (!Array.isArray(results)) continue;
+        const byId = new Map(results.map(r => [r.id, r.result]));
+        return chunk.map((token, j) => {
+          const hex = byId.get(baseId + j);
+          if (!hex || hex.length <= 2) return 0;
+          try { return Number(BigInt(hex)) / Math.pow(10, token.decimals); }
+          catch { return 0; }
+        });
+      } catch { /* try next rpc */ }
+    }
+    return new Array(chunk.length).fill(null); // signal fallback needed
   }
 
-  // Final fallback: individual calls
-  const results = await Promise.allSettled(
-    tokens.map(async (token) => {
+  // Run all chunks in parallel
+  const chunkResults = await Promise.all(
+    chunks.map((chunk, ci) => fetchChunk(chunk, ci * CHUNK))
+  );
+
+  // Flatten, falling back to individual rpcCall for any null entries
+  const flat = chunkResults.flat();
+  const fallbackNeeded = flat.some(v => v === null);
+  if (!fallbackNeeded) return flat as number[];
+
+  const individual = await Promise.allSettled(
+    tokens.map(async (token, i) => {
+      if (flat[i] !== null) return flat[i] as number;
       try {
         const hex = await rpcCall("eth_call", [
           { to: token.address, data: balanceOfCalldata(walletAddress) },
@@ -342,7 +360,7 @@ async function batchFetchBalances(
       } catch { return 0; }
     })
   );
-  return results.map(r => r.status === "fulfilled" ? r.value : 0);
+  return individual.map(r => r.status === "fulfilled" ? (r.value ?? 0) : 0);
 }
 
 export interface PriceTick { usd: number; change24h: number }
@@ -664,6 +682,21 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
     const id = setInterval(fetch, 30_000);
     return () => clearInterval(id);
   }, [fetch]);
+
+  // Re-fetch immediately when a custom token is added/removed for this chain
+  // so the balance list updates without waiting for the next 30s tick.
+  useEffect(() => {
+    if (!address || !chainId) return;
+    let prevCount = useCustomTokenStore.getState().getByChainId(chainId).length;
+    const unsub = useCustomTokenStore.subscribe(state => {
+      const count = state.getByChainId(chainId).length;
+      if (count !== prevCount) {
+        prevCount = count;
+        fetch();
+      }
+    });
+    return unsub;
+  }, [address, chainId, fetch]);
 
   return { balances, loading, refresh: fetch, lastFetch };
 }
