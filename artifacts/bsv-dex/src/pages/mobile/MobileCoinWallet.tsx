@@ -13,13 +13,14 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft, Bell, Star, ChevronRight, X, Copy, Check,
   TrendingUp, TrendingDown, Loader2, ArrowDownLeft, ArrowUpRight,
-  Info, AlertCircle, CheckCircle2,
+  Info, AlertCircle, CheckCircle2, History, ExternalLink, RefreshCw, Zap,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip,
 } from "recharts";
 import { QRCodeCanvas } from "qrcode.react";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useOnChainTxHistory, type OnChainTx } from "@/hooks/useOnChainTxHistory";
 import { useAddressBookStore, WALLET_TYPE_META, type WalletType } from "@/store/useAddressBookStore";
 import { API_BASE } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -226,7 +227,7 @@ interface Props { coin: string; }
 
 export function MobileCoinWallet({ coin }: Props) {
   const [, setLocation] = useLocation();
-  const { address, network: walletNetwork } = useWalletStore();
+  const { address, network: walletNetwork, evmAddress } = useWalletStore();
   const { toast } = useToast();
 
   const coinUpper = coin.toUpperCase();
@@ -324,6 +325,13 @@ export function MobileCoinWallet({ coin }: Props) {
   const chartMin   = useMemo(() => Math.min(...chartData.map(d => d.price)) * 0.998, [chartData]);
   const chartMax   = useMemo(() => Math.max(...chartData.map(d => d.price)) * 1.002, [chartData]);
   const chartColor = change24h >= 0 ? "#22C55E" : "#EF4444";
+
+  // ── on-chain EVM history (EVM coins only) ────────────────────────────────────
+  const isEvmCoin = assetNet.network === "evm";   // used before isEvmNet is declared
+  const { data: onchainTxs = [], isLoading: onchainLoading, refetch: refetchOnchain } = useOnChainTxHistory(
+    tab === "history" && isEvmCoin ? (evmAddress ?? null) : null,
+  );
+  // isEvmNet defined below at deposit-address section; isEvmCoin is the same value
 
   // ── withdrawal history ────────────────────────────────────────────────────────
   const { data: history = [] } = useQuery<Array<{
@@ -666,42 +674,159 @@ export function MobileCoinWallet({ coin }: Props) {
 
         {/* HISTORY TAB */}
         {tab === "history" && (
-          <div className="p-4 space-y-3">
-            {!address ? (
-              <div className="text-center py-16 text-white/40">
-                <p className="text-sm">Connect your wallet to see history</p>
-              </div>
-            ) : history.length === 0 ? (
-              <div className="text-center py-16 text-white/40">
-                <p className="text-2xl mb-2">📭</p>
-                <p className="text-sm font-medium">No {coinUpper} transactions yet</p>
-                <p className="text-xs mt-1 opacity-60">Deposits and withdrawals appear here</p>
-              </div>
-            ) : (
-              history.map(tx => (
-                <div key={tx.id} className="bg-[#1a1a1a] rounded-2xl p-4 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center shrink-0">
-                    <ArrowUpRight className="w-5 h-5 text-white/60" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold">Withdrawal</p>
-                    <p className="text-xs text-white/40 truncate font-mono mt-0.5">{tx.recipient}</p>
-                    <p className="text-xs text-white/40 mt-0.5">{new Date(tx.createdAt).toLocaleDateString()}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm font-bold text-red-400">-{tx.amount} {coinUpper}</p>
-                    <span className={cn(
-                      "text-[10px] px-2 py-0.5 rounded-full font-semibold",
-                      tx.status === "completed" ? "bg-green-500/20 text-green-400" :
-                      tx.status === "pending"   ? "bg-yellow-500/20 text-yellow-400" :
-                      "bg-red-500/20 text-red-400"
-                    )}>
-                      {tx.status}
-                    </span>
-                  </div>
+          <div className="p-4 space-y-4">
+
+            {/* ── On-chain EVM activity (EVM coins only) ── */}
+            {isEvmCoin && (
+              <div>
+                {/* Section header */}
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold text-white/60 uppercase tracking-wider flex items-center gap-1.5">
+                    <History size={11} /> Account activity
+                  </p>
+                  <button
+                    onClick={() => refetchOnchain()}
+                    disabled={onchainLoading}
+                    className="flex items-center gap-1 text-[11px] text-white/40 active:opacity-60"
+                  >
+                    <RefreshCw size={11} className={onchainLoading ? "animate-spin" : ""} />
+                    {onchainLoading ? "Loading…" : "Refresh"}
+                  </button>
                 </div>
-              ))
+
+                {!evmAddress ? (
+                  <div className="bg-white/5 rounded-2xl p-8 flex flex-col items-center gap-2 text-white/30">
+                    <History size={24} className="mb-1 opacity-50" />
+                    <p className="text-sm font-medium">Connect EVM wallet</p>
+                    <p className="text-xs text-center opacity-70">Connect to view on-chain activity</p>
+                  </div>
+                ) : onchainLoading && onchainTxs.length === 0 ? (
+                  <div className="bg-white/5 rounded-2xl p-8 flex flex-col items-center gap-2 text-white/30">
+                    <RefreshCw size={20} className="animate-spin mb-1" />
+                    <p className="text-sm">Fetching activity…</p>
+                    <p className="text-xs opacity-60">Scanning EVM chains</p>
+                  </div>
+                ) : onchainTxs.length === 0 ? (
+                  <div className="bg-white/5 rounded-2xl p-8 flex flex-col items-center gap-2 text-white/30">
+                    <History size={24} className="mb-1 opacity-50" />
+                    <p className="text-sm font-medium">No on-chain activity</p>
+                    <p className="text-xs opacity-60 text-center">Transactions will appear here</p>
+                  </div>
+                ) : (
+                  <div className="bg-[#1a1a1a] rounded-2xl overflow-hidden divide-y divide-white/5">
+                    {onchainTxs.map((tx: OnChainTx, i: number) => {
+                      const isContract = !!tx.functionName && !tx.isTokenTransfer;
+                      const label = tx.isTokenTransfer
+                        ? (tx.isIncoming ? `Receive ${tx.tokenSymbol ?? "Token"}` : `Send ${tx.tokenSymbol ?? "Token"}`)
+                        : tx.functionName
+                          ? tx.functionName.split("(")[0].replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim()
+                          : (tx.isIncoming ? `Receive ${tx.nativeSymbol}` : `Send ${tx.nativeSymbol}`);
+                      const counterpart = tx.isIncoming ? tx.from : tx.to;
+                      const prefix = isContract ? "On" : tx.isIncoming ? "From" : "To";
+                      const shortAddr = (a: string) => a ? `${a.slice(0,8)}…${a.slice(-6)}` : "";
+                      const d = new Date(tx.timeStamp * 1000);
+                      const dateStr = `${d.getMonth()+1}-${String(d.getDate()).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+
+                      return (
+                        <a
+                          key={`${tx.hash}-${i}`}
+                          href={tx.explorerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-3 px-4 py-3.5 active:bg-white/5 transition-colors"
+                        >
+                          {/* Icon */}
+                          {tx.isError ? (
+                            <div className="w-10 h-10 rounded-full bg-red-500/15 flex items-center justify-center shrink-0">
+                              <AlertCircle size={18} className="text-red-400" />
+                            </div>
+                          ) : isContract ? (
+                            <div className="w-10 h-10 rounded-full bg-blue-500/15 border border-blue-500/25 flex items-center justify-center shrink-0">
+                              <Zap size={16} className="text-blue-400" />
+                            </div>
+                          ) : tx.isIncoming ? (
+                            <div className="w-10 h-10 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
+                              <ArrowDownLeft size={18} className="text-green-400" />
+                            </div>
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-white/8 flex items-center justify-center shrink-0">
+                              <ArrowUpRight size={18} className="text-white/50" />
+                            </div>
+                          )}
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <p className={`text-[13px] font-semibold truncate ${tx.isError ? "text-red-400" : "text-white"}`}>
+                                {label}
+                              </p>
+                              {tx.isError && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-400 font-bold shrink-0">FAILED</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: tx.chainColor }} />
+                              <p className="text-[11px] text-white/40 truncate">
+                                <span className="opacity-70">{prefix} </span>
+                                <span className="font-mono">{shortAddr(counterpart)}</span>
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Date + link */}
+                          <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
+                            <span className="text-[11px] text-white/50">{dateStr}</span>
+                            <ExternalLink size={10} className="text-white/20 mt-0.5" />
+                          </div>
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             )}
+
+            {/* ── Exchange withdrawal history ── */}
+            <div>
+              <p className="text-xs font-semibold text-white/60 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <ArrowUpRight size={11} /> Exchange withdrawals
+              </p>
+              {!address ? (
+                <div className="text-center py-8 text-white/30">
+                  <p className="text-sm">Connect wallet to see history</p>
+                </div>
+              ) : history.length === 0 ? (
+                <div className="text-center py-8 text-white/30">
+                  <p className="text-sm">No {coinUpper} withdrawals yet</p>
+                </div>
+              ) : (
+                <div className="bg-[#1a1a1a] rounded-2xl overflow-hidden divide-y divide-white/5">
+                  {history.map(tx => (
+                    <div key={tx.id} className="flex items-center gap-3 px-4 py-3.5">
+                      <div className="w-10 h-10 rounded-full bg-white/8 flex items-center justify-center shrink-0">
+                        <ArrowUpRight className="w-5 h-5 text-white/50" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-semibold text-white">Withdrawal</p>
+                        <p className="text-[11px] text-white/40 truncate font-mono mt-0.5">{tx.recipient}</p>
+                        <p className="text-[11px] text-white/30 mt-0.5">{new Date(tx.createdAt).toLocaleDateString()}</p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[13px] font-bold text-red-400">-{tx.amount} {coinUpper}</p>
+                        <span className={cn(
+                          "text-[10px] px-2 py-0.5 rounded-full font-semibold",
+                          tx.status === "completed" ? "bg-green-500/20 text-green-400" :
+                          tx.status === "pending"   ? "bg-yellow-500/20 text-yellow-400" :
+                          "bg-red-500/20 text-red-400"
+                        )}>
+                          {tx.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
