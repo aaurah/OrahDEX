@@ -103,7 +103,9 @@ function isTransientPgError(err: unknown): boolean {
  * @example
  *   await withDbRetry(() => db.insert(t).values(row).onConflictDoUpdate(...));
  */
-const RETRY_BASE_MS  = 500;
+// 2 s base gives the pool time to re-establish fresh Neon connections after a
+// mass termination event before we retry.  Retries fire at ~2 s, ~4 s, ~8 s.
+const RETRY_BASE_MS  = 2_000;
 const RETRY_MAX      = 3;
 
 export async function withDbRetry<T>(fn: () => Promise<T>): Promise<T> {
