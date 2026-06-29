@@ -4,7 +4,7 @@ import {
   ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles,
   RefreshCw, Link2, Link2Off, Send, TrendingUp, ChevronDown, ChevronUp,
   Coins, Trash2, Loader2, ExternalLink, Cpu, Globe,
-  ArrowUpRight, ArrowDownLeft, ScanSearch,
+  ArrowUpRight, ArrowDownLeft, ScanSearch, History, Filter, Zap,
 } from "lucide-react";
 import { WalletAddresses } from "@/components/wallet/WalletAddresses";
 import { WalletDApps } from "@/components/wallet/WalletDApps";
@@ -13,6 +13,7 @@ import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useEvmBalances, scanTokensFromExplorer } from "@/hooks/useEvmBalances";
+import { useOnChainTxHistory, type OnChainTx } from "@/hooks/useOnChainTxHistory";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useNativeChainBalance } from "@/hooks/useNativeChainBalance";
 import {
@@ -981,14 +982,20 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const { quoteCurrency } = useSettingsStore();
   const totalUsd = useAllEvmBalances(evmAddress);
 
+  // On-chain tx history — only fetches when Activity tab is open
+  const { data: onchainTxs = [], isLoading: txLoading } = useOnChainTxHistory(
+    tab === "activity" ? (evmAddress ?? null) : null,
+  );
+
   // Count linked non-EVM chains
   const linkedChains = CHAINS.filter(c => c.family !== "evm" && !!addressForChain(c, evmAddress, address, network, derived)).length;
   const totalNonEvm  = CHAINS.filter(c => c.family !== "evm").length;
 
   const _qs = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const _initialTab = (_qs?.get("tab") === "dapps" ? "dapps" : "portfolio") as "portfolio" | "addresses" | "dapps";
+  const _qs2 = _qs?.get("tab");
+  const _initialTab = (_qs2 === "dapps" ? "dapps" : _qs2 === "activity" ? "activity" : "portfolio") as "portfolio" | "addresses" | "dapps" | "activity";
   const _initialUri = _qs?.get("uri") ?? "";
-  const [tab, setTab]                         = useState<"portfolio" | "addresses" | "dapps">(_initialTab);
+  const [tab, setTab]                         = useState<"portfolio" | "addresses" | "dapps" | "activity">(_initialTab);
   const [receiveOpen, setReceiveOpen]         = useState(false);
   const [sendOpen, setSendOpen]               = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen]     = useState(false);
@@ -1164,9 +1171,10 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       <div className="flex bg-card border border-border rounded-2xl p-1 mb-4 gap-1">
         {(
           [
-            { id: "portfolio", label: "Portfolio",   icon: WalletIcon },
-            { id: "addresses", label: "All Addresses", icon: Cpu },
-            { id: "dapps",     label: "dApps",       icon: Globe },
+            { id: "portfolio", label: "Portfolio",    icon: WalletIcon },
+            { id: "activity",  label: "Activity",     icon: History },
+            { id: "addresses", label: "Addresses",    icon: Cpu },
+            { id: "dapps",     label: "dApps",        icon: Globe },
           ] as const
         ).map(t => (
           <button
@@ -1201,6 +1209,11 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       {/* ── dApps tab ── */}
       {tab === "dapps" && (
         <WalletDApps evmAddress={evmAddress} initialUri={_initialUri} />
+      )}
+
+      {/* ── Activity tab ── */}
+      {tab === "activity" && (
+        <ActivityTab txs={onchainTxs} loading={txLoading} evmAddress={evmAddress} />
       )}
 
       {/* ── Portfolio tab ── */}
@@ -1388,6 +1401,188 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         chainId={addTokenChainId}
         onClose={() => setAddTokenChainId(null)}
       />
+    </div>
+  );
+}
+
+// ── Helpers shared by ActivityTab ────────────────────────────────────────────
+
+function activityShortAddr(addr: string) {
+  if (!addr) return "";
+  return `${addr.slice(0, 8)}…${addr.slice(-6)}`;
+}
+
+function activityFmtDate(ts: number) {
+  const d = new Date(ts * 1000);
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const dy = String(d.getDate()).padStart(2, "0");
+  const hr = String(d.getHours()).padStart(2, "0");
+  const mn = String(d.getMinutes()).padStart(2, "0");
+  return { date: `${mo}-${dy}`, time: `${hr}:${mn}` };
+}
+
+function activityLabel(tx: OnChainTx) {
+  if (tx.isTokenTransfer) {
+    return tx.isIncoming
+      ? `Receive ${tx.tokenSymbol ?? "Token"}`
+      : `Send ${tx.tokenSymbol ?? "Token"}`;
+  }
+  if (tx.functionName) {
+    const raw = tx.functionName.split("(")[0];
+    return raw.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim();
+  }
+  return tx.isIncoming ? `Receive ${tx.nativeSymbol}` : `Send ${tx.nativeSymbol}`;
+}
+
+function ActivityTxIcon({ tx }: { tx: OnChainTx }) {
+  if (tx.isError)
+    return (
+      <div className="w-10 h-10 rounded-full bg-red-500/15 flex items-center justify-center shrink-0">
+        <AlertCircle size={18} className="text-red-400" />
+      </div>
+    );
+  if (!tx.functionName && tx.isIncoming)
+    return (
+      <div className="w-10 h-10 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
+        <ArrowDownLeft size={18} className="text-green-400" />
+      </div>
+    );
+  if (!tx.functionName && !tx.isIncoming)
+    return (
+      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center shrink-0">
+        <ArrowUpRight size={18} className="text-muted-foreground" />
+      </div>
+    );
+  return (
+    <div className="w-10 h-10 rounded-full bg-blue-500/15 flex items-center justify-center shrink-0" style={{ border: "2px solid #3B82F640" }}>
+      <Zap size={16} className="text-blue-400" />
+    </div>
+  );
+}
+
+function ActivityTab({
+  txs,
+  loading,
+  evmAddress,
+}: {
+  txs: OnChainTx[];
+  loading: boolean;
+  evmAddress?: string;
+}) {
+  const [chainFilter, setChainFilter] = useState<number | null>(null);
+
+  const chains = [...new Set(txs.map(t => t.chainId))];
+  const filtered = chainFilter ? txs.filter(t => t.chainId === chainFilter) : txs;
+
+  return (
+    <div>
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <History size={15} className="text-primary" />
+          Account activity
+        </h3>
+        {loading && <RefreshCw size={13} className="animate-spin text-muted-foreground" />}
+      </div>
+
+      {/* Chain filter pills */}
+      {chains.length > 1 && (
+        <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar mb-3">
+          <button
+            onClick={() => setChainFilter(null)}
+            className={`shrink-0 px-3 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+              !chainFilter
+                ? "bg-primary/15 border-primary/40 text-primary"
+                : "bg-card border-border text-muted-foreground"
+            }`}
+          >
+            All
+          </button>
+          {chains.map(cid => {
+            const sample = txs.find(t => t.chainId === cid)!;
+            return (
+              <button
+                key={cid}
+                onClick={() => setChainFilter(chainFilter === cid ? null : cid)}
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+                  chainFilter === cid
+                    ? "bg-primary/15 border-primary/40 text-primary"
+                    : "bg-card border-border text-muted-foreground"
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: sample.chainColor }} />
+                {sample.chainName}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Empty / loading */}
+      {!evmAddress ? (
+        <div className="bg-card border border-border rounded-2xl p-10 flex flex-col items-center gap-2 text-muted-foreground">
+          <History size={28} className="opacity-20 mb-1" />
+          <p className="text-sm font-medium">Connect your wallet</p>
+          <p className="text-xs opacity-60 text-center">Connect an EVM wallet to view on-chain activity</p>
+        </div>
+      ) : loading && filtered.length === 0 ? (
+        <div className="bg-card border border-border rounded-2xl p-10 flex flex-col items-center gap-2 text-muted-foreground">
+          <RefreshCw size={24} className="animate-spin opacity-40 mb-1" />
+          <p className="text-sm">Fetching on-chain activity…</p>
+          <p className="text-xs opacity-50">Scanning 8 EVM chains</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-card border border-border rounded-2xl p-10 flex flex-col items-center gap-2 text-muted-foreground">
+          <History size={28} className="opacity-20 mb-1" />
+          <p className="text-sm font-medium">No transactions found</p>
+          <p className="text-xs opacity-60 text-center">On-chain activity will appear here</p>
+        </div>
+      ) : (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
+          {filtered.map((tx, i) => {
+            const label = activityLabel(tx);
+            const { date, time } = activityFmtDate(tx.timeStamp);
+            const isContract = !!tx.functionName && !tx.isTokenTransfer;
+            const counterpart = tx.isIncoming ? tx.from : tx.to;
+            const prefix = isContract ? "On" : tx.isIncoming ? "From" : "To";
+            return (
+              <a
+                key={`${tx.hash}-${i}`}
+                href={tx.explorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/40 transition-colors group"
+              >
+                <ActivityTxIcon tx={tx} />
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <p className={`text-[13px] font-semibold truncate ${tx.isError ? "text-red-400" : "text-foreground"}`}>
+                      {label}
+                    </p>
+                    {tx.isError && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-bold shrink-0">FAILED</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: tx.chainColor }} />
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      <span className="opacity-60">{prefix} </span>
+                      <span className="font-mono">{activityShortAddr(counterpart)}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
+                  <span className="text-[11px] font-semibold text-muted-foreground">{date}</span>
+                  <span className="text-[11px] text-muted-foreground/60">{time}</span>
+                  <ExternalLink size={10} className="text-muted-foreground/30 group-hover:text-muted-foreground/60 mt-0.5" />
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
