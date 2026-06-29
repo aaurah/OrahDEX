@@ -74,27 +74,30 @@ export async function fetchBtcNative(address: string): Promise<number> {
   } catch { return 0; }
 }
 
-const SOL_RPCS = [
-  "https://api.mainnet-beta.solana.com",
-  "https://rpc.ankr.com/solana",
-  "https://solana-api.projectserum.com",
-];
-
 export async function fetchSolNative(address: string): Promise<number> {
-  for (const rpc of SOL_RPCS) {
-    try {
-      const res = await fetch(rpc, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [address] }),
-        signal: AbortSignal.timeout(6000),
-      });
-      if (!res.ok) continue;
+  try {
+    // Proxy through our API server — avoids browser CORS / outbound-POST
+    // restrictions in the Replit preview iframe.
+    const res = await fetch(`/api/wallet/sol-balance/${encodeURIComponent(address)}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (typeof json?.sol === "number") return json.sol;
+    }
+  } catch { /* fall through */ }
+  // Direct fallback (works in production / non-proxied environments)
+  try {
+    const res = await fetch("https://api.mainnet-beta.solana.com", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [address] }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (res.ok) {
       const json = await res.json();
       const lamports = json?.result?.value;
       if (typeof lamports === "number") return lamports / 1e9;
-    } catch { /* try next */ }
-  }
+    }
+  } catch { /* give up */ }
   return 0;
 }
 
