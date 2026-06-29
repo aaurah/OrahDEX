@@ -36,13 +36,11 @@ export const pool = new Pool({
   // Send TCP keepalive probes immediately when a connection becomes idle.
   keepAlive: true,
   keepAliveInitialDelayMillis: 0,
-  // Evict idle connections after 10 s. Replit/Neon Postgres terminates idle
-  // connections server-side in well under 2 minutes; holding them longer than
-  // the server-side cutoff causes "Connection terminated due to connection
-  // timeout" errors when the pool hands out a dead connection. 10 s is short
-  // enough to evict stale connections before Neon kills them, while still
-  // amortising the reconnect cost across same-tick multi-query bursts.
-  idleTimeoutMillis: 10_000,
+  // Evict idle connections after 5 s. Neon kills idle sockets server-side
+  // within ~60 s; 5 s gives us comfortable headroom to evict stale entries
+  // before Neon beats us to it, which eliminates "Connection terminated
+  // unexpectedly" errors when the pool hands out a dead connection.
+  idleTimeoutMillis: 5_000,
   // Allow up to 15 s for a slot to free up when all connections are busy.
   // With 12+ concurrent background services the old 5 s limit caused a cascade
   // of "timeout exceeded when trying to connect" across every engine.
@@ -96,21 +94,33 @@ function isTransientPgError(err: unknown): boolean {
 }
 
 /**
- * Run `fn` and, if it throws a transient pg connection error, wait 250 ms and
- * try once more.  Use this around critical background-service writes that must
- * not silently drop data when Neon prunes an idle socket mid-query.
+ * Run `fn` with up to MAX_RETRIES retries on transient pg connection errors.
+ * Uses exponential backoff with ±25 % jitter so simultaneous background
+ * services don't all hammer the pool in lock-step after a Neon blip.
+ *
+ * Delays: ~500 ms, ~1 s, ~2 s  (base × 2^attempt  ± jitter)
  *
  * @example
  *   await withDbRetry(() => db.insert(t).values(row).onConflictDoUpdate(...));
  */
+const RETRY_BASE_MS  = 500;
+const RETRY_MAX      = 3;
+
 export async function withDbRetry<T>(fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn();
-  } catch (err) {
-    if (!isTransientPgError(err)) throw err;
-    await new Promise(r => setTimeout(r, 250));
-    return fn(); // one retry — if this throws, let it propagate
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= RETRY_MAX; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isTransientPgError(err)) throw err;
+      lastErr = err;
+      if (attempt === RETRY_MAX) break;
+      const base  = RETRY_BASE_MS * Math.pow(2, attempt);   // 500, 1000, 2000
+      const jitter = base * 0.25 * (Math.random() * 2 - 1); // ±25 %
+      await new Promise(r => setTimeout(r, Math.round(base + jitter)));
+    }
   }
+  throw lastErr;
 }
 
 export * from "./schema";

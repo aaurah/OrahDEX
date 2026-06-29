@@ -11,7 +11,7 @@
  * counter-order exactly like a market order.
  */
 
-import { db } from "@workspace/db";
+import { db, withDbRetry } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
 import { eq, and, ne, lte, gte } from "drizzle-orm";
 import crypto from "node:crypto";
@@ -26,19 +26,23 @@ import { pushNotification } from "./notifQueue.js";
 export async function triggerStopOrders(): Promise<void> {
   try {
     // Fetch all open stop orders
-    const openStops = await db.select().from(ordersTable).where(
-      and(
-        eq(ordersTable.type, "stop"),
-        eq(ordersTable.status, "open"),
+    const openStops = await withDbRetry(() =>
+      db.select().from(ordersTable).where(
+        and(
+          eq(ordersTable.type, "stop"),
+          eq(ordersTable.status, "open"),
+        )
       )
     );
     if (openStops.length === 0) return;
 
     // Fetch non-LE markets into a quick lookup map (stop orders only use internal pairs).
-    const markets = await db.select({
-      symbol:    marketsTable.symbol,
-      lastPrice: marketsTable.lastPrice,
-    }).from(marketsTable).where(ne(marketsTable.type, "letsexchange"));
+    const markets = await withDbRetry(() =>
+      db.select({
+        symbol:    marketsTable.symbol,
+        lastPrice: marketsTable.lastPrice,
+      }).from(marketsTable).where(ne(marketsTable.type, "letsexchange"))
+    );
     const priceMap = new Map<string, number>(
       markets.map(m => [m.symbol, parseFloat(m.lastPrice)])
     );

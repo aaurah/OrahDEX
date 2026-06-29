@@ -10,7 +10,7 @@
  * on the hot path.
  */
 
-import { db } from "@workspace/db";
+import { db, withDbRetry } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { inArray } from "drizzle-orm";
 
@@ -100,8 +100,9 @@ function buildQuote(base: string, quote: string, priceUsd: number, quoteUsd: num
 export async function refreshHotRoutes(): Promise<void> {
   try {
     const symbols = HOT_PAIRS;
-    const markets = await db.select().from(marketsTable)
-      .where(inArray(marketsTable.symbol, symbols));
+    const markets = await withDbRetry(() =>
+      db.select().from(marketsTable).where(inArray(marketsTable.symbol, symbols))
+    );
 
     const priceMap = new Map<string, number>();
     for (const m of markets) {

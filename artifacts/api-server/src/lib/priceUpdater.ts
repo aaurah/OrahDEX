@@ -1,4 +1,4 @@
-import { db, pool } from "@workspace/db";
+import { db, pool, withDbRetry } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
 import { eq, desc, gte, inArray, notInArray, and, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
@@ -777,7 +777,9 @@ export async function seedMarketsIfNeeded() {
     }
 
     // Fetch only the symbol column so we don't load full rows for 36K+ LE pairs
-    const existingRows = await db.select({ symbol: marketsTable.symbol }).from(marketsTable);
+    const existingRows = await withDbRetry(() =>
+      db.select({ symbol: marketsTable.symbol }).from(marketsTable)
+    );
     const existingSymbols = new Set(existingRows.map(m => m.symbol));
 
     const toInsert: any[] = [];
@@ -1007,7 +1009,9 @@ export async function seedLEPairsIfNeeded() {
     const bnbUSD  = lePrices["BNB"]  ?? FALLBACK_PRICES["BNB"]  ?? 600;
 
     // Existing DB symbols (to avoid duplicates)
-    const existing = await db.select({ symbol: marketsTable.symbol }).from(marketsTable);
+    const existing = await withDbRetry(() =>
+      db.select({ symbol: marketsTable.symbol }).from(marketsTable)
+    );
     const existingSymbols = new Set(existing.map(r => r.symbol));
 
     const toInsert: any[] = [];
