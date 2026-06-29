@@ -4,7 +4,7 @@ import {
   ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles,
   RefreshCw, Link2, Link2Off, Send, TrendingUp, ChevronDown, ChevronUp,
   Coins, Trash2, Loader2, ExternalLink, Cpu, Globe,
-  ArrowUpRight, ArrowDownLeft,
+  ArrowUpRight, ArrowDownLeft, ScanSearch,
 } from "lucide-react";
 import { WalletAddresses } from "@/components/wallet/WalletAddresses";
 import { WalletDApps } from "@/components/wallet/WalletDApps";
@@ -12,7 +12,7 @@ import { SmartAccountPanel } from "@/components/wallet/SmartAccountPanel";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useEvmBalances, discoverNewTokens } from "@/hooks/useEvmBalances";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useNativeChainBalance } from "@/hooks/useNativeChainBalance";
 import {
@@ -621,10 +621,22 @@ function EvmChainRow({
   onSendToken: (chainId: number, symbol: string) => void;
   onTokenReceive: (symbol: string, chainName: string, address: string) => void;
 }) {
-  const { balances, loading } = useEvmBalances(evmAddress, chain.evmChainId ?? null);
+  const { balances, loading, refresh } = useEvmBalances(evmAddress, chain.evmChainId ?? null);
   const { remove }            = useCustomTokenStore();
   const [expanded, setExpanded] = useState(false);
   const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  const handleScan = useCallback(async () => {
+    if (!evmAddress || !chain.evmChainId || scanning) return;
+    setScanning(true);
+    try {
+      await discoverNewTokens(evmAddress, chain.evmChainId, new Set(), true);
+      await refresh();
+    } finally {
+      setScanning(false);
+    }
+  }, [evmAddress, chain.evmChainId, scanning, refresh]);
 
   const native     = balances.find(b => b.isNative);
   const nativeAmt  = native?.amount ?? 0;
@@ -745,13 +757,26 @@ function EvmChainRow({
         ))}
       </div>
 
-      {/* Add token button */}
-      <button
-        onClick={() => onAddToken(chainId)}
-        className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-primary/30 text-xs font-semibold text-primary/70 hover:text-primary hover:border-primary/60 hover:bg-primary/5 transition-colors"
-      >
-        <Plus size={12} /> Add custom token
-      </button>
+      {/* Add token + Scan buttons */}
+      <div className="mt-2 flex gap-2">
+        <button
+          onClick={() => onAddToken(chainId)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-primary/30 text-xs font-semibold text-primary/70 hover:text-primary hover:border-primary/60 hover:bg-primary/5 transition-colors"
+        >
+          <Plus size={12} /> Add token
+        </button>
+        <button
+          onClick={handleScan}
+          disabled={scanning || !evmAddress}
+          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-amber-500/30 text-xs font-semibold text-amber-500/70 hover:text-amber-400 hover:border-amber-500/60 hover:bg-amber-500/5 transition-colors disabled:opacity-40"
+          title="Scan blockchain for tokens you hold"
+        >
+          {scanning
+            ? <Loader2 size={12} className="animate-spin" />
+            : <ScanSearch size={12} />}
+          {scanning ? "Scanning…" : "Scan tokens"}
+        </button>
+      </div>
     </div>
   ) : null;
 
