@@ -234,82 +234,72 @@ router.post("/derive-from-key", async (req, res) => {
   }
 });
 
-// ─── EVM on-chain tx history proxy ───────────────────────────────────────────
-// Browser → our API → Etherscan-compatible explorers (avoids CORS/mobile block)
+// ─── EVM on-chain tx history proxy (via Reown BlockchainAPI) ─────────────────
+// Same data source Reown AppKit modal uses — browser → our server → rpc.walletconnect.org
 
-// Blockscout — open-source, no API key needed, same Etherscan-compatible query format
-const EVM_EXPLORERS: Record<number, { api: string; url: string; name: string; symbol: string; color: string }> = {
-  1:     { api: "https://eth.blockscout.com/api",      url: "https://eth.blockscout.com/tx/",      name: "Ethereum",  symbol: "ETH",  color: "#8B5CF6" },
-  56:    { api: "https://bsc.blockscout.com/api",      url: "https://bsc.blockscout.com/tx/",      name: "BNB Chain", symbol: "BNB",  color: "#F59E0B" },
-  137:   { api: "https://polygon.blockscout.com/api",  url: "https://polygon.blockscout.com/tx/",  name: "Polygon",   symbol: "MATIC",color: "#8B5CF6" },
-  42161: { api: "https://arbitrum.blockscout.com/api", url: "https://arbitrum.blockscout.com/tx/", name: "Arbitrum",  symbol: "ETH",  color: "#3B82F6" },
-  10:    { api: "https://optimism.blockscout.com/api", url: "https://optimism.blockscout.com/tx/", name: "Optimism",  symbol: "ETH",  color: "#EF4444" },
-  8453:  { api: "https://base.blockscout.com/api",     url: "https://base.blockscout.com/tx/",     name: "Base",      symbol: "ETH",  color: "#3B82F6" },
-  43114: { api: "https://avalanche.blockscout.com/api",url: "https://avalanche.blockscout.com/tx/",name: "Avalanche", symbol: "AVAX", color: "#EF4444" },
-  59144: { api: "https://explorer.linea.build/api",    url: "https://explorer.linea.build/tx/",    name: "Linea",     symbol: "ETH",  color: "#22C55E" },
+// Public project ID (same one used client-side in lib/reown.ts — safe to include here)
+const REOWN_PROJECT_ID = "04663615251cf13fb1b043d754e7a17f";
+const REOWN_API = "https://rpc.walletconnect.org";
+
+const CHAIN_META: Record<string, { chainId: number; name: string; symbol: string; color: string; explorerUrl: string }> = {
+  "eip155:1":     { chainId: 1,     name: "Ethereum",  symbol: "ETH",  color: "#8B5CF6", explorerUrl: "https://etherscan.io/tx/" },
+  "eip155:56":    { chainId: 56,    name: "BNB Chain", symbol: "BNB",  color: "#F59E0B", explorerUrl: "https://bscscan.com/tx/" },
+  "eip155:137":   { chainId: 137,   name: "Polygon",   symbol: "MATIC",color: "#8B5CF6", explorerUrl: "https://polygonscan.com/tx/" },
+  "eip155:42161": { chainId: 42161, name: "Arbitrum",  symbol: "ETH",  color: "#3B82F6", explorerUrl: "https://arbiscan.io/tx/" },
+  "eip155:10":    { chainId: 10,    name: "Optimism",  symbol: "ETH",  color: "#EF4444", explorerUrl: "https://optimistic.etherscan.io/tx/" },
+  "eip155:8453":  { chainId: 8453,  name: "Base",      symbol: "ETH",  color: "#3B82F6", explorerUrl: "https://basescan.org/tx/" },
+  "eip155:43114": { chainId: 43114, name: "Avalanche", symbol: "AVAX", color: "#EF4444", explorerUrl: "https://snowtrace.io/tx/" },
+  "eip155:59144": { chainId: 59144, name: "Linea",     symbol: "ETH",  color: "#22C55E", explorerUrl: "https://lineascan.build/tx/" },
 };
 
-async function fetchEvmChainTxs(address: string, chainId: number): Promise<any[]> {
-  const explorer = EVM_EXPLORERS[chainId];
-  if (!explorer) return [];
+async function fetchReownChainTxs(address: string, caipChainId: string): Promise<any[]> {
+  const meta = CHAIN_META[caipChainId];
+  if (!meta) return [];
   const addrLower = address.toLowerCase();
-  const txs: any[] = [];
 
-  const [nativeRes, tokenRes] = await Promise.allSettled([
-    fetch(`${explorer.api}?module=account&action=txlist&address=${address}&sort=desc&page=1&offset=25`, { signal: AbortSignal.timeout(10000) }),
-    fetch(`${explorer.api}?module=account&action=tokentx&address=${address}&sort=desc&page=1&offset=15`, { signal: AbortSignal.timeout(10000) }),
-  ]);
+  try {
+    const url = `${REOWN_API}/v1/account/${address}/history?projectId=${REOWN_PROJECT_ID}&chainId=${caipChainId}&st=c&sv=html-wagmi-1.8.0`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return [];
+    const json = await res.json() as any;
+    const items: any[] = Array.isArray(json.data) ? json.data : [];
 
-  if (nativeRes.status === "fulfilled" && nativeRes.value.ok) {
-    try {
-      const json = await nativeRes.value.json() as any;
-      if (json.status === "1" && Array.isArray(json.result)) {
-        for (const tx of json.result) {
-          const valueEth = Number(BigInt(tx.value || "0")) / 1e18;
-          txs.push({
-            hash: tx.hash, chainId,
-            chainName: explorer.name, chainColor: explorer.color,
-            from: tx.from ?? "", to: tx.to ?? "",
-            valueEth, nativeSymbol: explorer.symbol,
-            timeStamp: parseInt(tx.timeStamp, 10),
-            isError: tx.isError === "1",
-            isIncoming: (tx.to ?? "").toLowerCase() === addrLower,
-            functionName: tx.functionName ?? "",
-            isTokenTransfer: false,
-            explorerUrl: explorer.url + tx.hash,
-          });
-        }
-      }
-    } catch { /* skip */ }
-  }
+    return items.map((tx: any) => {
+      const hash   = tx.metadata?.hash ?? tx.id ?? "";
+      const sentFrom = (tx.metadata?.sentFrom ?? "").toLowerCase();
+      const sentTo   = (tx.metadata?.sentTo   ?? "").toLowerCase();
+      const minedAt  = tx.metadata?.minedAt ? new Date(tx.metadata.minedAt).getTime() / 1000 : 0;
+      const isIncoming = sentTo === addrLower;
 
-  if (tokenRes.status === "fulfilled" && tokenRes.value.ok) {
-    try {
-      const json = await tokenRes.value.json() as any;
-      if (json.status === "1" && Array.isArray(json.result)) {
-        for (const tx of json.result) {
-          if (txs.some((t: any) => t.hash === tx.hash && !t.isTokenTransfer)) continue;
-          const decimals = parseInt(tx.tokenDecimal ?? "18", 10);
-          const tokenValue = Number(BigInt(tx.value || "0")) / Math.pow(10, decimals);
-          txs.push({
-            hash: tx.hash, chainId,
-            chainName: explorer.name, chainColor: explorer.color,
-            from: tx.from ?? "", to: tx.to ?? "",
-            valueEth: 0, nativeSymbol: explorer.symbol,
-            timeStamp: parseInt(tx.timeStamp, 10),
-            isError: false,
-            isIncoming: (tx.to ?? "").toLowerCase() === addrLower,
-            functionName: "",
-            isTokenTransfer: true,
-            tokenSymbol: tx.tokenSymbol,
-            tokenValue,
-            explorerUrl: explorer.url + tx.hash,
-          });
-        }
-      }
-    } catch { /* skip */ }
-  }
-  return txs;
+      // Pull value from first transfer
+      const transfer   = Array.isArray(tx.transfers) ? tx.transfers[0] : null;
+      const isToken    = transfer?.fungible_info?.symbol && transfer.fungible_info.symbol !== meta.symbol;
+      const tokenSym   = transfer?.fungible_info?.symbol ?? "";
+      const qty        = parseFloat(transfer?.quantity?.numeric ?? "0");
+      const valueEth   = isToken ? 0 : qty;
+      const tokenValue = isToken ? qty : undefined;
+      const funcName   = tx.metadata?.operationType ?? "";
+
+      return {
+        hash,
+        chainId:        meta.chainId,
+        chainName:      meta.name,
+        chainColor:     meta.color,
+        from:           tx.metadata?.sentFrom ?? "",
+        to:             tx.metadata?.sentTo   ?? "",
+        valueEth,
+        nativeSymbol:   meta.symbol,
+        timeStamp:      Math.round(minedAt),
+        isError:        tx.metadata?.status === "failed",
+        isIncoming,
+        functionName:   funcName,
+        isTokenTransfer: !!isToken,
+        tokenSymbol:    isToken ? tokenSym : undefined,
+        tokenValue,
+        explorerUrl:    meta.explorerUrl + hash,
+      };
+    });
+  } catch { return []; }
 }
 
 router.get("/evm-tx-history/:address", async (req, res) => {
@@ -317,14 +307,22 @@ router.get("/evm-tx-history/:address", async (req, res) => {
   if (!address || !address.startsWith("0x")) return res.status(400).json({ error: "invalid address" });
 
   const results = await Promise.allSettled(
-    Object.keys(EVM_EXPLORERS).map(id => fetchEvmChainTxs(address, parseInt(id, 10)))
+    Object.keys(CHAIN_META).map(caipId => fetchReownChainTxs(address, caipId))
   );
   const all: any[] = [];
   for (const r of results) {
     if (r.status === "fulfilled") all.push(...r.value);
   }
-  all.sort((a, b) => b.timeStamp - a.timeStamp);
-  return res.json(all);
+  // Deduplicate by hash+chainId
+  const seen = new Set<string>();
+  const deduped = all.filter(tx => {
+    const key = `${tx.chainId}:${tx.hash}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  deduped.sort((a, b) => b.timeStamp - a.timeStamp);
+  return res.json(deduped);
 });
 
 // ─── Solana balance proxy ─────────────────────────────────────────────────────
