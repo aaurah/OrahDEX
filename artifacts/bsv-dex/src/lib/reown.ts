@@ -278,7 +278,7 @@ export const CHAIN_RPC_URLS: Record<number, string> = {
   137:     "https://polygon.llamarpc.com",
   42161:   "https://arbitrum.llamarpc.com",
   10:      "https://optimism.llamarpc.com",
-  8453:    "https://base.llamarpc.com",
+  8453:    "https://base-rpc.publicnode.com",
   59144:   "https://rpc.linea.build",
   324:     "https://mainnet.era.zksync.io",
   534352:  "https://rpc.scroll.io",
