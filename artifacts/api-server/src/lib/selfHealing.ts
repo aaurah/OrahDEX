@@ -173,19 +173,37 @@ export function guardedInterval(
     }
   };
 
-  let handle: ReturnType<typeof setInterval>;
+  // Self-rescheduling setTimeout with ±20% random jitter applied to every
+  // interval — including the first one.  This permanently prevents multiple
+  // services from re-aligning on their LCM after the startup-stagger window
+  // fades, which would otherwise exhaust the DB connection pool simultaneously.
+  //
+  // Unlike setInterval the next tick is only scheduled after the current tick
+  // fully completes, which is fine because the `busy` flag already prevents
+  // re-entrant execution.  Effective period = intervalMs ± 20% + tick_duration.
+  let handle: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
+
+  const scheduleNext = () => {
+    if (stopped) return;
+    const jitter = (Math.random() - 0.5) * 0.4 * intervalMs; // ±20 %
+    handle = setTimeout(async () => {
+      await tick();
+      scheduleNext();
+    }, Math.max(1_000, intervalMs + jitter));
+  };
 
   if (initialDelayMs > 0) {
-    setTimeout(() => {
-      tick();
-      handle = setInterval(tick, intervalMs);
-    }, initialDelayMs);
+    // Fire the very first tick after the requested delay, then self-schedule.
+    handle = setTimeout(() => { void tick().finally(scheduleNext); }, initialDelayMs);
   } else {
-    handle = setInterval(tick, intervalMs);
+    // No initial delay — first tick fires after one jittered interval,
+    // matching the original setInterval(tick, intervalMs) behaviour.
+    scheduleNext();
   }
 
   logger.info({ service: name, intervalMs, timeoutMs }, `[SelfHeal] ${name}: registered`);
-  return () => { if (handle) clearInterval(handle); };
+  return () => { stopped = true; if (handle) clearTimeout(handle); };
 }
 
 /* ── withRetry ───────────────────────────────────────────────────────────── */

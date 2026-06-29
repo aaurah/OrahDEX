@@ -15,3 +15,4 @@
 - [SS pairs normalization](ss-pairs-normalization.md) — SS uses network-specific tickers (usdterc20, pol, avaxc, bnb-bsc); must map to canonical symbols before building pairs; dedup by normalized symbol first.
 - [Socket bridge integration](socket-bridge-integration.md) — IBridgeProvider.getQuotes() returns BridgeQuote[]; SocketBridgeProvider stores full route in routeMeta.socketRoute for buildTx; getProvider() uses prefix match for socket:* IDs.
 - [pg ECONNRESET crash pattern](pg-econnreset-crash.md) — dual uncaughtException handlers + missing client error listener caused pg drops to kill API server; three-part fix documented.
+- [guardedInterval thundering herd](guarded-interval-jitter.md) — setInterval causes all background services to re-align on LCM boundaries (~6 min); fix is ±20% jitter via self-rescheduling setTimeout.

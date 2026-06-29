@@ -47,11 +47,11 @@ export const pool = new Pool({
   // With 12+ concurrent background services the old 5 s limit caused a cascade
   // of "timeout exceeded when trying to connect" across every engine.
   connectionTimeoutMillis: 15_000,
-  // 20 connections: enough for 12+ background engines + HTTP handlers to run
-  // concurrently without queuing. Replit's hosted PostgreSQL comfortably
-  // supports this; the previous cap of 6 was the primary cause of pool
-  // exhaustion under the current service load.
-  max: 20,
+  // 25 connections: 20 was sufficient under normal staggered load, but the
+  // thundering-herd burst at LCM alignment points (every ~6 min) could spike
+  // to 12+ simultaneous checkouts.  The extra 5 slots provide headroom for
+  // those bursts while the ±20 % jitter in guardedInterval prevents recurrence.
+  max: 25,
   // Keep the pool alive between tick cycles.
   allowExitOnIdle: false,
   // Kill runaway queries after 30 s. The liquidity bot's bulk DELETE of 48 k
