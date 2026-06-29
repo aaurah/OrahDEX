@@ -982,11 +982,6 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const { quoteCurrency } = useSettingsStore();
   const totalUsd = useAllEvmBalances(evmAddress);
 
-  // On-chain tx history — only fetches when Activity tab is open
-  const { data: onchainTxs = [], isLoading: txLoading } = useOnChainTxHistory(
-    tab === "activity" ? (evmAddress ?? null) : null,
-  );
-
   // Count linked non-EVM chains
   const linkedChains = CHAINS.filter(c => c.family !== "evm" && !!addressForChain(c, evmAddress, address, network, derived)).length;
   const totalNonEvm  = CHAINS.filter(c => c.family !== "evm").length;
@@ -996,6 +991,11 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const _initialTab = (_qs2 === "dapps" ? "dapps" : _qs2 === "activity" ? "activity" : "portfolio") as "portfolio" | "addresses" | "dapps" | "activity";
   const _initialUri = _qs?.get("uri") ?? "";
   const [tab, setTab]                         = useState<"portfolio" | "addresses" | "dapps" | "activity">(_initialTab);
+
+  // On-chain tx history — must come AFTER tab is declared (tab is read in the arg)
+  const { data: onchainTxs = [], isLoading: txLoading } = useOnChainTxHistory(
+    tab === "activity" ? (evmAddress ?? null) : null,
+  );
   const [receiveOpen, setReceiveOpen]         = useState(false);
   const [sendOpen, setSendOpen]               = useState(false);
   const [buyCryptoOpen, setBuyCryptoOpen]     = useState(false);
