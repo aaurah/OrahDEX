@@ -234,6 +234,99 @@ router.post("/derive-from-key", async (req, res) => {
   }
 });
 
+// ─── EVM on-chain tx history proxy ───────────────────────────────────────────
+// Browser → our API → Etherscan-compatible explorers (avoids CORS/mobile block)
+
+// Blockscout — open-source, no API key needed, same Etherscan-compatible query format
+const EVM_EXPLORERS: Record<number, { api: string; url: string; name: string; symbol: string; color: string }> = {
+  1:     { api: "https://eth.blockscout.com/api",      url: "https://eth.blockscout.com/tx/",      name: "Ethereum",  symbol: "ETH",  color: "#8B5CF6" },
+  56:    { api: "https://bsc.blockscout.com/api",      url: "https://bsc.blockscout.com/tx/",      name: "BNB Chain", symbol: "BNB",  color: "#F59E0B" },
+  137:   { api: "https://polygon.blockscout.com/api",  url: "https://polygon.blockscout.com/tx/",  name: "Polygon",   symbol: "MATIC",color: "#8B5CF6" },
+  42161: { api: "https://arbitrum.blockscout.com/api", url: "https://arbitrum.blockscout.com/tx/", name: "Arbitrum",  symbol: "ETH",  color: "#3B82F6" },
+  10:    { api: "https://optimism.blockscout.com/api", url: "https://optimism.blockscout.com/tx/", name: "Optimism",  symbol: "ETH",  color: "#EF4444" },
+  8453:  { api: "https://base.blockscout.com/api",     url: "https://base.blockscout.com/tx/",     name: "Base",      symbol: "ETH",  color: "#3B82F6" },
+  43114: { api: "https://avalanche.blockscout.com/api",url: "https://avalanche.blockscout.com/tx/",name: "Avalanche", symbol: "AVAX", color: "#EF4444" },
+  59144: { api: "https://explorer.linea.build/api",    url: "https://explorer.linea.build/tx/",    name: "Linea",     symbol: "ETH",  color: "#22C55E" },
+};
+
+async function fetchEvmChainTxs(address: string, chainId: number): Promise<any[]> {
+  const explorer = EVM_EXPLORERS[chainId];
+  if (!explorer) return [];
+  const addrLower = address.toLowerCase();
+  const txs: any[] = [];
+
+  const [nativeRes, tokenRes] = await Promise.allSettled([
+    fetch(`${explorer.api}?module=account&action=txlist&address=${address}&sort=desc&page=1&offset=25`, { signal: AbortSignal.timeout(10000) }),
+    fetch(`${explorer.api}?module=account&action=tokentx&address=${address}&sort=desc&page=1&offset=15`, { signal: AbortSignal.timeout(10000) }),
+  ]);
+
+  if (nativeRes.status === "fulfilled" && nativeRes.value.ok) {
+    try {
+      const json = await nativeRes.value.json() as any;
+      if (json.status === "1" && Array.isArray(json.result)) {
+        for (const tx of json.result) {
+          const valueEth = Number(BigInt(tx.value || "0")) / 1e18;
+          txs.push({
+            hash: tx.hash, chainId,
+            chainName: explorer.name, chainColor: explorer.color,
+            from: tx.from ?? "", to: tx.to ?? "",
+            valueEth, nativeSymbol: explorer.symbol,
+            timeStamp: parseInt(tx.timeStamp, 10),
+            isError: tx.isError === "1",
+            isIncoming: (tx.to ?? "").toLowerCase() === addrLower,
+            functionName: tx.functionName ?? "",
+            isTokenTransfer: false,
+            explorerUrl: explorer.url + tx.hash,
+          });
+        }
+      }
+    } catch { /* skip */ }
+  }
+
+  if (tokenRes.status === "fulfilled" && tokenRes.value.ok) {
+    try {
+      const json = await tokenRes.value.json() as any;
+      if (json.status === "1" && Array.isArray(json.result)) {
+        for (const tx of json.result) {
+          if (txs.some((t: any) => t.hash === tx.hash && !t.isTokenTransfer)) continue;
+          const decimals = parseInt(tx.tokenDecimal ?? "18", 10);
+          const tokenValue = Number(BigInt(tx.value || "0")) / Math.pow(10, decimals);
+          txs.push({
+            hash: tx.hash, chainId,
+            chainName: explorer.name, chainColor: explorer.color,
+            from: tx.from ?? "", to: tx.to ?? "",
+            valueEth: 0, nativeSymbol: explorer.symbol,
+            timeStamp: parseInt(tx.timeStamp, 10),
+            isError: false,
+            isIncoming: (tx.to ?? "").toLowerCase() === addrLower,
+            functionName: "",
+            isTokenTransfer: true,
+            tokenSymbol: tx.tokenSymbol,
+            tokenValue,
+            explorerUrl: explorer.url + tx.hash,
+          });
+        }
+      }
+    } catch { /* skip */ }
+  }
+  return txs;
+}
+
+router.get("/evm-tx-history/:address", async (req, res) => {
+  const { address } = req.params;
+  if (!address || !address.startsWith("0x")) return res.status(400).json({ error: "invalid address" });
+
+  const results = await Promise.allSettled(
+    Object.keys(EVM_EXPLORERS).map(id => fetchEvmChainTxs(address, parseInt(id, 10)))
+  );
+  const all: any[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled") all.push(...r.value);
+  }
+  all.sort((a, b) => b.timeStamp - a.timeStamp);
+  return res.json(all);
+});
+
 // ─── Solana balance proxy ─────────────────────────────────────────────────────
 // Browser → our API (server-side) → Solana RPC
 // Avoids CORS / outbound-POST restrictions in the Replit preview iframe.

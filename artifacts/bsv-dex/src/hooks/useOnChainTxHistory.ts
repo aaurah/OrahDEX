@@ -19,6 +19,7 @@ export interface OnChainTx {
   explorerUrl: string;
 }
 
+// Blockscout — free, no API key, same Etherscan-compatible format
 const CHAIN_EXPLORERS: Record<number, {
   api: string;
   url: string;
@@ -26,14 +27,14 @@ const CHAIN_EXPLORERS: Record<number, {
   symbol: string;
   color: string;
 }> = {
-  1:     { api: "https://api.etherscan.io/api",            url: "https://etherscan.io/tx/",            name: "Ethereum",  symbol: "ETH",  color: "#8B5CF6" },
-  56:    { api: "https://api.bscscan.com/api",             url: "https://bscscan.com/tx/",             name: "BNB Chain", symbol: "BNB",  color: "#F59E0B" },
-  137:   { api: "https://api.polygonscan.com/api",         url: "https://polygonscan.com/tx/",         name: "Polygon",   symbol: "MATIC",color: "#8B5CF6" },
-  42161: { api: "https://api.arbiscan.io/api",             url: "https://arbiscan.io/tx/",             name: "Arbitrum",  symbol: "ETH",  color: "#3B82F6" },
-  10:    { api: "https://api-optimistic.etherscan.io/api", url: "https://optimistic.etherscan.io/tx/", name: "Optimism",  symbol: "ETH",  color: "#EF4444" },
-  8453:  { api: "https://api.basescan.org/api",            url: "https://basescan.org/tx/",            name: "Base",      symbol: "ETH",  color: "#3B82F6" },
-  43114: { api: "https://api.snowtrace.io/api",            url: "https://snowtrace.io/tx/",            name: "Avalanche", symbol: "AVAX", color: "#EF4444" },
-  59144: { api: "https://api.lineascan.build/api",         url: "https://lineascan.build/tx/",         name: "Linea",     symbol: "ETH",  color: "#22C55E" },
+  1:     { api: "https://eth.blockscout.com/api",       url: "https://eth.blockscout.com/tx/",       name: "Ethereum",  symbol: "ETH",  color: "#8B5CF6" },
+  56:    { api: "https://bsc.blockscout.com/api",       url: "https://bsc.blockscout.com/tx/",       name: "BNB Chain", symbol: "BNB",  color: "#F59E0B" },
+  137:   { api: "https://polygon.blockscout.com/api",   url: "https://polygon.blockscout.com/tx/",   name: "Polygon",   symbol: "MATIC",color: "#8B5CF6" },
+  42161: { api: "https://arbitrum.blockscout.com/api",  url: "https://arbitrum.blockscout.com/tx/",  name: "Arbitrum",  symbol: "ETH",  color: "#3B82F6" },
+  10:    { api: "https://optimism.blockscout.com/api",  url: "https://optimism.blockscout.com/tx/",  name: "Optimism",  symbol: "ETH",  color: "#EF4444" },
+  8453:  { api: "https://base.blockscout.com/api",      url: "https://base.blockscout.com/tx/",      name: "Base",      symbol: "ETH",  color: "#3B82F6" },
+  43114: { api: "https://avalanche.blockscout.com/api", url: "https://avalanche.blockscout.com/tx/", name: "Avalanche", symbol: "AVAX", color: "#EF4444" },
+  59144: { api: "https://explorer.linea.build/api",     url: "https://explorer.linea.build/tx/",     name: "Linea",     symbol: "ETH",  color: "#22C55E" },
 };
 
 async function fetchChainTxs(address: string, chainId: number): Promise<OnChainTx[]> {
@@ -117,6 +118,17 @@ export function useOnChainTxHistory(address: string | null) {
     gcTime:    5 * 60 * 1000,
     queryFn: async () => {
       if (!address) return [];
+
+      // Try server-side proxy first (avoids CORS/mobile browser blocks)
+      try {
+        const res = await fetch(`/api/wallet/evm-tx-history/${encodeURIComponent(address)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length >= 0) return data as OnChainTx[];
+        }
+      } catch { /* fall through to direct */ }
+
+      // Direct fallback for non-proxied environments
       const results = await Promise.allSettled(
         Object.keys(CHAIN_EXPLORERS).map(id => fetchChainTxs(address, parseInt(id, 10)))
       );
