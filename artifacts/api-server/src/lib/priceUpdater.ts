@@ -35,7 +35,7 @@ export const COINGECKO_IDS: Record<string, string> = {
   DOGE:  "dogecoin",
   DOT:   "polkadot",
   AVAX:  "avalanche-2",
-  MATIC: "matic-network",
+  MATIC: "polygon-ecosystem-token", // renamed from matic-network after POL rebrand
   LINK:  "chainlink",
   UNI:   "uniswap",
   ATOM:  "cosmos",
@@ -134,7 +134,7 @@ export const COINGECKO_IDS: Record<string, string> = {
   MEME:  "memecoin-2",
   NOT:   "notcoin",
   HMSTR: "hamster-kombat",
-  DOGS:  "dogs",
+  DOGS:  "dogs-2", // CoinGecko canonical ID post-rebrand
   EIGEN: "eigenlayer",
   LMWR:  "limewire-token",
   // L2 / bridge tokens
@@ -432,6 +432,45 @@ interface CoinGeckoPrice {
   usd_market_cap: number;
 }
 
+/* ── CoinGecko free-tier batch price fetch ─────────────────────────────────
+ * Works in all cloud environments including Replit (unlike Binance).
+ * Fetches prices + real 24h change for every symbol in COINGECKO_IDS in one
+ * HTTP call. Results cached for 55 s so concurrent callers share the response.
+ */
+let _cgCacheTs = 0;
+let _cgCache: Record<string, CoinGeckoPrice> = {};
+const CG_CACHE_MS = 55_000;
+
+export async function fetchCoinGeckoPrices(): Promise<Record<string, CoinGeckoPrice>> {
+  if (Date.now() - _cgCacheTs < CG_CACHE_MS && Object.keys(_cgCache).length > 0) {
+    return _cgCache;
+  }
+  const ids = Object.values(COINGECKO_IDS).join(",");
+  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+  if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
+  const data = await res.json() as Record<string, { usd?: number; usd_24h_change?: number; usd_24h_vol?: number }>;
+
+  // Reverse-map: geckoId → our symbol
+  const idToSym: Record<string, string> = {};
+  for (const [sym, id] of Object.entries(COINGECKO_IDS)) idToSym[id] = sym;
+
+  const out: Record<string, CoinGeckoPrice> = {};
+  for (const [id, v] of Object.entries(data)) {
+    const sym = idToSym[id];
+    if (!sym || !v.usd || v.usd <= 0) continue;
+    out[sym] = {
+      usd:            v.usd,
+      usd_24h_change: v.usd_24h_change ?? 0,
+      usd_24h_vol:    v.usd_24h_vol   ?? v.usd * 500_000,
+      usd_market_cap: 0,
+    };
+  }
+  _cgCache = out;
+  _cgCacheTs = Date.now();
+  return out;
+}
+
 /**
  * Last-known-good BSV price from WhatsOnChain.
  * Persists across fetchSovereignPrices() calls so a WOC timeout uses the
@@ -520,6 +559,26 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     } catch (err) {
       logger.warn({ err }, "LetsExchange key-coin direct fetch failed");
     }
+  }
+
+  // ── 1c. CoinGecko — live prices + real 24h change for 150+ coins ─────────
+  // Works in all cloud environments (Binance blocked in Replit).
+  // Fills symbols that LE didn't cover and upgrades zero-change entries.
+  try {
+    const cgPrices = await fetchCoinGeckoPrices();
+    let cgNew = 0;
+    for (const [sym, data] of Object.entries(cgPrices)) {
+      if (!out[sym]) {
+        out[sym] = data;
+        cgNew++;
+      } else if (out[sym].usd_24h_change === 0 && data.usd_24h_change !== 0) {
+        out[sym].usd_24h_change = data.usd_24h_change;
+        if (out[sym].usd <= 0 && data.usd > 0) out[sym].usd = data.usd;
+      }
+    }
+    logger.info({ new: cgNew, total: Object.keys(cgPrices).length }, "CoinGecko prices loaded");
+  } catch (err) {
+    logger.warn({ err }, "CoinGecko price fetch failed — continuing with LE + FALLBACK");
   }
 
   // ── 2. BSV via WhatsOnChain exchange rate ─────────────────────────────────
@@ -669,7 +728,7 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
  *   Mid-caps:     ±8%         (DeFi, L2, gaming, …)
  *   Small/meme:   ±15%        (DOGE, SHIB, PEPE, BOME, DOGS, …)
  */
-function simulateDailyChange(symbol: string): number {
+export function simulateDailyChange(symbol: string): number {
   // Stablecoins never move
   const STABLES = new Set(["USDT","USDC","BUSD","TUSD","USDD","DAI","FDUSD","USDP","GUSD","LUSD","FRAX","CRVUSD","PYUSD"]);
   if (STABLES.has(symbol)) return 0;
@@ -701,66 +760,67 @@ function simulateDailyChange(symbol: string): number {
   return Math.max(-vol, Math.min(vol, parseFloat(raw.toFixed(2))));
 }
 
-// Default fallback prices (approximate) when Binance is down — updated Apr 2026
+// Default fallback prices — last resort when all live APIs are unavailable.
+// Updated Jun 2026. CoinGecko / LE / WhatsOnChain take priority at runtime.
 export const FALLBACK_PRICES: Record<string, number> = {
   // ── Top L1s ─────────────────────────────────────────────────────────────────
-  BSV:16,BTC:95000,ETH:2400,SOL:150,XRP:0.60,BNB:600,ADA:0.45,
-  DOGE:0.12,DOT:6.8,AVAX:18,MATIC:0.32,LINK:14.5,UNI:6.2,ATOM:4.2,
-  LTC:82,BCH:320,TRX:0.24,ETC:18,NEAR:2.4,ICP:7.5,VET:0.022,FIL:3.5,
-  SAND:0.25,MANA:0.25,APT:5.0,ARB:0.42,OP:0.70,SUI:2.2,INJ:16,
-  PEPE:0.0000085,SHIB:0.0000110,
+  BSV:12,BTC:59000,ETH:1577,SOL:73,XRP:1.04,BNB:547,ADA:0.144,
+  DOGE:0.072,DOT:0.81,AVAX:6.55,MATIC:0.14,LINK:7.24,UNI:3.80,ATOM:1.51,
+  LTC:42,BCH:200,TRX:0.11,ETC:6.98,NEAR:1.84,ICP:2.12,VET:0.0044,FIL:0.72,
+  SAND:0.047,MANA:0.062,APT:0.565,ARB:0.074,OP:0.40,SUI:1.50,INJ:4.59,
+  PEPE:0.0000068,SHIB:0.0000088,
   // ── DeFi ─────────────────────────────────────────────────────────────────────
-  MKR:1800,AAVE:130,CRV:0.27,ENS:17,LDO:0.90,SUSHI:0.60,COMP:43,
-  GRT:0.12,SNX:1.5,YFI:5500,RUNE:1.5,BAL:3.2,GMX:25,DYDX:1.24,
-  PENDLE:3.5,CVX:2.8,FXS:2.1,SPELL:0.00082,PERP:0.42,CAKE:2.24,ALPACA:0.00046,
+  MKR:1236,AAVE:89,CRV:0.187,ENS:12,LDO:0.248,SUSHI:0.45,COMP:15.52,
+  GRT:0.0177,SNX:0.209,YFI:1614,RUNE:1.20,BAL:0.089,GMX:5.51,DYDX:0.162,
+  PENDLE:1.31,CVX:1.07,FXS:0.233,SPELL:0.00055,PERP:0.30,CAKE:1.30,ALPACA:0.00030,
   // ── L1 alts ──────────────────────────────────────────────────────────────────
-  FTM:0.20,ALGO:0.14,XLM:0.11,HBAR:0.17,EGLD:25,THETA:0.90,EOS:0.60,
-  ZEC:30,DASH:27,XMR:155,CRO:0.09,AERO:1.2,
-  KAVA:0.48,ONE:0.012,ZIL:0.012,ICX:0.16,WAVES:1.5,NEO:8.5,
-  CFX:0.10,ROSE:0.048,FLR:0.014,CELO:0.48,CKB:0.012,CORE:0.85,
-  BTT:0.00000085,XDC:0.042,GLMR:0.14,MOVR:8.5,KDA:0.75,ZEN:9.5,
-  TON:2.8,KAS:0.085,SEI:0.24,TIA:3.5,
+  FTM:0.0275,ALGO:0.085,XLM:0.178,HBAR:0.070,EGLD:2.55,THETA:0.129,EOS:0.061,
+  ZEC:390,DASH:33,XMR:308,CRO:0.054,AERO:0.60,
+  KAVA:0.32,ONE:0.009,ZIL:0.009,ICX:0.10,WAVES:0.80,NEO:5.0,
+  CFX:0.07,ROSE:0.030,FLR:0.009,CELO:0.35,CKB:0.008,CORE:0.50,
+  BTT:0.00000060,XDC:0.030,GLMR:0.08,MOVR:4.0,KDA:0.40,ZEN:7.0,
+  TON:2.60,KAS:0.031,SEI:0.049,TIA:0.368,
   // ── L2 / Scaling ─────────────────────────────────────────────────────────────
-  BASE:0.85,LINEA:0.05,ZK:0.15,SCR:0.52,MNT:1.02,
-  STRK:0.42,IMX:1.85,BOBA:0.18,METIS:28,
-  "1INCH":0.35,ZRO:2.52,RETH:3980,
-  DAI:1.00,WBTC:83000,WSTETH:3200,
+  BASE:0.50,LINEA:0.03,ZK:0.08,SCR:0.027,MNT:0.421,
+  STRK:0.029,IMX:0.117,BOBA:0.020,METIS:2.65,
+  "1INCH":0.067,ZRO:0.794,RETH:1690,
+  DAI:1.00,WBTC:59000,WSTETH:1845,
   // ── Solana ecosystem ─────────────────────────────────────────────────────────
-  BONK:0.0000248,WIF:0.892,JUP:0.842,PYTH:0.382,JTO:2.42,ORCA:2.84,
-  BOME:0.00842,RAY:2.12,MSOL:172,W:0.24,TNSR:0.35,
+  BONK:0.0000145,WIF:0.50,JUP:0.45,PYTH:0.20,JTO:1.20,ORCA:1.40,
+  BOME:0.0040,RAY:1.20,MSOL:80,W:0.12,TNSR:0.18,
   // ── AI / DePIN ───────────────────────────────────────────────────────────────
-  FET:1.82,AGIX:0.892,OCEAN:0.612,RNDR:7.42,TAO:482,ARKM:1.84,NMR:18.2,
-  ORAI:4.82,CTXC:0.142,WLD:2.84,ALT:0.18,
-  HNT:8.42,IOTX:0.042,GLM:0.28,STORJ:0.45,POWR:0.22,LPT:7.5,
+  FET:0.170,AGIX:0.45,OCEAN:0.30,RNDR:2.80,TAO:203,ARKM:0.90,NMR:10,
+  ORAI:2.40,CTXC:0.07,WLD:1.00,ALT:0.09,
+  HNT:4.0,IOTX:0.020,GLM:0.14,STORJ:0.20,POWR:0.10,LPT:3.50,
   // ── Gaming / Metaverse ───────────────────────────────────────────────────────
-  APE:1.25,A8:0.12,AXS:6.82,ENJ:0.18,GALA:0.022,ILV:35,ALICE:0.82,TLM:0.012,SLP:0.0028,
-  WAXP:0.042,PIXEL:0.14,BIGTIME:0.082,BEAM:0.018,PRIME:2.8,RON:2.42,
-  MC:0.12,GODS:0.082,
+  APE:0.145,A8:0.06,AXS:0.965,ENJ:0.09,GALA:0.012,ILV:2.93,ALICE:0.119,TLM:0.006,SLP:0.000456,
+  WAXP:0.025,PIXEL:0.0046,BIGTIME:0.035,BEAM:0.008,PRIME:0.238,RON:1.20,
+  MC:0.012,GODS:0.040,
   // ── Cosmos ecosystem ─────────────────────────────────────────────────────────
-  OSMO:0.48,STARS:0.0085,JUNO:0.28,EVMOS:0.018,STRD:0.82,
-  AKT:2.8,SCRT:0.38,LUNA:0.42,LUNC:0.000085,DYM:2.1,NTRN:0.42,BAND:1.2,
+  OSMO:0.036,STARS:0.000069,JUNO:0.024,EVMOS:0.008,STRD:0.30,
+  AKT:1.20,SCRT:0.20,LUNA:0.047,LUNC:0.0000592,DYM:0.015,NTRN:0.00098,BAND:0.140,
   // ── RWA ──────────────────────────────────────────────────────────────────────
-  ONDO:0.85,PAXG:2182,XAUT:2182,CFG:0.42,MPL:14,
+  ONDO:0.309,PAXG:4023,XAUT:4019,CFG:0.20,MPL:8.0,
   // ── Exchange tokens ──────────────────────────────────────────────────────────
-  OKB:42,GT:6.5,KCS:8.5,HT:2.8,BGB:3.5,WBT:22,
+  OKB:78,GT:6.45,KCS:6.92,HT:0.081,BGB:1.61,WBT:47,
   // ── BRC-20 / Ordinals ────────────────────────────────────────────────────────
-  ORDI:28,SATS:0.00000035,"1000SATS":0.00000035,RATS:0.00000042,
+  ORDI:3.65,SATS:0.00000020,"1000SATS":0.00000020,RATS:0.00000025,
   // ── Polkadot ecosystem ───────────────────────────────────────────────────────
-  KSM:22,ACA:0.052,ASTR:0.042,PHA:0.082,
+  KSM:12,ACA:0.030,ASTR:0.025,PHA:0.040,
   // ── Meme / culture ───────────────────────────────────────────────────────────
-  TRUMP:15,STX:1.52,FLOKI:0.000152,TURBO:0.0082,MOG:0.0000082,
-  POPCAT:0.84,MEW:0.0058,NEIRO:0.00048,BABYDOGE:0.0000000018,
-  MEME:0.012,NOT:0.0082,HMSTR:0.0014,DOGS:0.00048,EIGEN:2.42,LMWR:0.021,
+  TRUMP:8,STX:0.60,FLOKI:0.0000850,TURBO:0.0040,MOG:0.0000042,
+  POPCAT:0.35,MEW:0.0030,NEIRO:0.00022,BABYDOGE:0.0000000010,
+  MEME:0.005,NOT:0.0035,HMSTR:0.00060,DOGS:0.00020,EIGEN:1.10,LMWR:0.010,
   // ── Polygon ecosystem tokens ─────────────────────────────────────────────────
-  GHST:1.42,QUICK:0.042,DFYN:0.048,DQUICK:82.4,
+  GHST:0.60,QUICK:0.020,DFYN:0.020,DQUICK:45,
   // ── Stablecoins / other ──────────────────────────────────────────────────────
   USDT:1,USDC:1,TUSD:1,USDD:1,BUSD:1,
   // ── Base chain assets ────────────────────────────────────────────────────────
-  CBBTC:95000,CBETH:2400,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
-  HIGHER:0.00215,MORPHO:1.82,MOONWELL:0.182,SEAM:4.82,
-  BALD:0.00284,NORMIE:0.00182,
+  CBBTC:59000,CBETH:1577,BRETT:0.060,TOSHI:0.000090,DEGEN:0.0040,
+  HIGHER:0.00100,MORPHO:0.80,MOONWELL:0.080,SEAM:2.00,
+  BALD:0.00120,NORMIE:0.00080,
   // ── Zora ecosystem ───────────────────────────────────────────────────────────
-  ZORA:0.00182,ENJOY:0.000042,BUILD:0.000285,
+  ZORA:0.00090,ENJOY:0.000020,BUILD:0.000140,
 };
 
 export async function seedMarketsIfNeeded() {

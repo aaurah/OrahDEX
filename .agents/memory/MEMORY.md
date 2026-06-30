@@ -17,3 +17,4 @@
 - [pg ECONNRESET crash pattern](pg-econnreset-crash.md) — dual uncaughtException handlers + missing client error listener caused pg drops to kill API server; three-part fix documented.
 - [guardedInterval thundering herd](guarded-interval-jitter.md) — setInterval causes all background services to re-align on LCM boundaries (~6 min); fix is ±20% jitter via self-rescheduling setTimeout.
 - [Escrow wallet routing bugs](escrow-wallet-routing.md) — three root causes made escrow MetaMask-only; fixes: remove undeployed chain addresses, check provider==="reown" before connector.id, read wallet.getChain() after ThirdWeb connect.
+- [CoinGecko price feed](coingecko-price-feed.md) — Binance blocked in Replit; CoinGecko free API works (no key), covers 150+ coins with real change24h; MATIC needs "polygon-ecosystem-token" not "matic-network"; DOGS needs "dogs-2".
