@@ -45,11 +45,11 @@ export const pool = new Pool({
   // With 12+ concurrent background services the old 5 s limit caused a cascade
   // of "timeout exceeded when trying to connect" across every engine.
   connectionTimeoutMillis: 15_000,
-  // 25 connections: 20 was sufficient under normal staggered load, but the
-  // thundering-herd burst at LCM alignment points (every ~6 min) could spike
-  // to 12+ simultaneous checkouts.  The extra 5 slots provide headroom for
-  // those bursts while the ±20 % jitter in guardedInterval prevents recurrence.
-  max: 25,
+  // 40 connections: production load with 12+ background services firing
+  // concurrently can saturate a 25-slot pool, causing "timeout exceeded when
+  // trying to connect" on API routes when background services hold all slots.
+  // 40 gives enough headroom for simultaneous background ticks + HTTP requests.
+  max: 40,
   // Keep the pool alive between tick cycles.
   allowExitOnIdle: false,
   // Kill runaway queries after 30 s. The liquidity bot's bulk DELETE of 48 k
