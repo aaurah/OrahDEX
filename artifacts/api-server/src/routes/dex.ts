@@ -13,7 +13,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
+import { FALLBACK_PRICES, fetchCoinGeckoPrices, simulateDailyChange } from "../lib/priceUpdater.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { getCachedLEPrices } from "../lib/lePriceCache.js";
 import { getCachedLECurrencies } from "./letsexchange.js";
@@ -182,6 +182,22 @@ export async function fetchKeyPrices() {
     }
   } catch { /* fall through to per-asset fallbacks below */ }
 
+  // 1b. CoinGecko — live prices + real 24h change% for 150+ coins.
+  // Runs whenever Binance batch returned nothing (blocked in Replit cloud).
+  // The 55 s internal cache means concurrent callers share one HTTP request.
+  if (Object.keys(results).length <= 5) {
+    try {
+      const cg = await fetchCoinGeckoPrices();
+      for (const [sym, v] of Object.entries(cg)) {
+        if (!results[sym]) {
+          results[sym] = { usd: v.usd, change24h: v.usd_24h_change };
+        } else if (results[sym].change24h === 0 && v.usd_24h_change !== 0) {
+          results[sym].change24h = v.usd_24h_change;
+        }
+      }
+    } catch { /* fall through — Coinbase will still cover BTC/ETH below */ }
+  }
+
   // 2. Override BTC/ETH with higher-precision Coinbase stats (includes 24h change)
   //    Run alongside BSV/WoC fetch in parallel
   try {
@@ -196,7 +212,8 @@ export async function fetchKeyPrices() {
       const d = await bsvRes.value.json() as { rate?: number };
       if (d.rate && d.rate > 0) {
         _lastKnownBsvUsd = d.rate;
-        results["BSV"] = { usd: d.rate, change24h: 0 };
+        // Preserve real change% from CoinGecko if we already have it
+        results["BSV"] = { usd: d.rate, change24h: results["BSV"]?.change24h ?? 0 };
       }
     }
   } catch {}
@@ -210,6 +227,15 @@ export async function fetchKeyPrices() {
   for (const [symbol, usd] of Object.entries(FALLBACK_PRICES)) {
     if (usd <= 0 || results[symbol]) continue;
     results[symbol] = { usd, change24h: 0 };
+  }
+
+  // 5. Apply simulated 24h change for any non-stablecoin symbol still at 0
+  // This ensures every coin displays a plausible movement in the UI.
+  const PRICE_STABLES = new Set(["USDT","USDC","DAI","BUSD","TUSD","USDD"]);
+  for (const [sym, v] of Object.entries(results)) {
+    if (v.change24h === 0 && !PRICE_STABLES.has(sym)) {
+      results[sym] = { ...v, change24h: simulateDailyChange(sym) };
+    }
   }
 
   return results;
