@@ -24,6 +24,8 @@ import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
+import { useEscrow } from "@/hooks/useEscrow";
+import { checkEscrowDeposit } from "@/lib/escrow";
 
 import { EXPLORER_TX, CHAIN_NAMES } from "@/lib/onChainLiquidity";
 import { ChainSwitcherDropdown } from "@/components/ChainSwitcherDropdown";
@@ -236,6 +238,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   const { quoteCurrency } = useSettingsStore();
   const { getUserPositions, removePosition, clearWalletPositions } = useLiquidityStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
+  const { cancelOrder: cancelOrderOnChain, escrowAvailable } = useEscrow();
   const { open: openWallet } = useWalletModalStore();
   const [, navigate] = useLocation();
   const [tab, setTab] = useState<Tab | null>(() => hidePreContent ? null : (visibleTabs?.[0] ?? "assets"));
@@ -446,11 +449,41 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
 
   const cancelMutation = useMutation({
     mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
+      // Step 1: If the order has an active on-chain escrow deposit, cancel it
+      // first so funds are returned to the user's wallet. Without this, clicking
+      // Cancel in the portfolio only removes the order from the DB but leaves the
+      // funds locked in the OrahDEXEscrow contract indefinitely.
+      if (escrowAvailable && chainId) {
+        let hasDeposit = false;
+        try {
+          const dep = await Promise.race([
+            checkEscrowDeposit(orderId, chainId),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
+          ]);
+          hasDeposit = !!dep && !dep.released;
+        } catch { /* RPC failure — skip on-chain cancel, let user retry */ }
+
+        if (hasDeposit) {
+          try {
+            await cancelOrderOnChain(orderId);
+          } catch (e: any) {
+            const msg = String(e?.message ?? "").toLowerCase();
+            const isMissingDeposit =
+              msg.includes("no deposit") ||
+              msg.includes("already settled") ||
+              msg.includes("already released");
+            if (!isMissingDeposit) throw e;
+          }
+        }
+      }
+      // Step 2: Tell the server to remove the order from the orderbook.
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ walletAddress: orderWalletAddress }),
       });
+      // 404 = already cancelled — treat as success.
+      if (res.status === 404) return { id: orderId, status: "cancelled" };
       if (!res.ok) throw new Error("Failed to cancel");
       return res.json();
     },
