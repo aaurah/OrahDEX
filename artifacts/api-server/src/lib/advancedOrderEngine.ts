@@ -7,7 +7,7 @@ import { guardedInterval, withRetry } from "./selfHealing.js";
 async function runTrailingStopEngine(): Promise<void> {
   let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
   try {
-    client = await withRetry(() => pool.connect(), { maxAttempts: 4, baseDelayMs: 2_000 });
+    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
   } catch (err) {
     logger.warn({ err }, "Trailing stop engine: DB connect failed, skipping cycle");
     return;
@@ -124,7 +124,7 @@ async function runTrailingStopEngine(): Promise<void> {
 async function runIcebergEngine(): Promise<void> {
   let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
   try {
-    client = await withRetry(() => pool.connect(), { maxAttempts: 4, baseDelayMs: 2_000 });
+    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
   } catch (err) {
     logger.warn({ err }, "Iceberg engine: DB connect failed, skipping cycle");
     return;
@@ -230,7 +230,7 @@ async function runIcebergEngine(): Promise<void> {
 async function runTwapEngine(): Promise<void> {
   let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
   try {
-    client = await withRetry(() => pool.connect(), { maxAttempts: 4, baseDelayMs: 2_000 });
+    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
   } catch (err) {
     logger.warn({ err }, "TWAP engine: DB connect failed, skipping cycle");
     return;
