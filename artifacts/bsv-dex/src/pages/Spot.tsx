@@ -22,6 +22,8 @@ import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTr
 import { formatPrice, formatPercent, cn, formatVolume, marketMatchesQuery } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { useEscrow } from "@/hooks/useEscrow";
+import { checkEscrowDeposit } from "@/lib/escrow";
 import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown, ArrowLeftRight, BookOpen, RefreshCw } from "lucide-react";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
@@ -223,6 +225,7 @@ export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
   const { address, internalBsvAddress, internalEvmAddress, chainId: walletChainId } = useWalletStore();
   const { open: openWalletModal } = useWalletModalStore();
+  const { cancelOrder: cancelOrderOnChain, escrowAvailable } = useEscrow();
   // Alt address: Orah wallet users have both a BSV and an EVM address.
   // Orders placed on the BSV network are stored against the BSV address, and
   // orders placed on the EVM network are stored against the EVM address.
@@ -455,11 +458,40 @@ export function SpotTrading() {
   const cancelOrder = useMutation({
     mutationFn: async ({ orderId, walletAddress: ownerWallet }: { orderId: string; walletAddress: string }) => {
       const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+      // Step 1: If the order has an active on-chain escrow deposit, cancel it
+      // first so the user's funds are returned to their wallet before we remove
+      // the order from the orderbook.
+      if (escrowAvailable && walletChainId) {
+        let hasDeposit = false;
+        try {
+          const dep = await Promise.race([
+            checkEscrowDeposit(orderId, walletChainId),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
+          ]);
+          hasDeposit = !!dep && !dep.released;
+        } catch { /* RPC failure — skip on-chain cancel, let user retry */ }
+
+        if (hasDeposit) {
+          try {
+            await cancelOrderOnChain(orderId);
+          } catch (e: any) {
+            const msg = String(e?.message ?? "").toLowerCase();
+            const isMissingDeposit =
+              msg.includes("no deposit") ||
+              msg.includes("already settled") ||
+              msg.includes("already released");
+            if (!isMissingDeposit) throw e;
+          }
+        }
+      }
+      // Step 2: Tell the server to remove the order from the orderbook.
       const res = await fetch(`${baseUrl}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ walletAddress: ownerWallet }),
       });
+      // 404 = already cancelled — treat as success.
+      if (res.status === 404) return { id: orderId, status: "cancelled" };
       if (!res.ok) throw new Error((await res.json().catch(() => ({})))?.error ?? "Failed to cancel order");
       return res.json();
     },

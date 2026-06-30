@@ -156,11 +156,17 @@ export function useEscrow() {
   // ThirdWeb's active state and ThirdwebSync then sets provider = "thirdweb" in
   // the store — but the signing MUST still go through wagmi/Reown because that
   // is the only path that sends a proper WalletConnect deep-link on mobile.
+  //
+  // IMPORTANT: ThirdWeb also syncs a connected wallet into wagmi state, so a
+  // broad `isConnected` check would route ThirdWeb users through sendRawViaReown
+  // instead of the ThirdWeb SDK path. We must check the connector ID specifically.
   function isReownConnected(): boolean {
     const config = getWagmiConfig();
     if (!config) return false;
     const acct = wagmiGetAccount(config);
-    return !!acct?.isConnected && !!acct?.address;
+    if (!acct?.isConnected || !acct?.address) return false;
+    const connectorId = ((acct as any).connector?.id ?? "").toLowerCase();
+    return connectorId.includes("walletconnect") || connectorId.includes("reown");
   }
 
   const [status,    setStatus]    = useState<EscrowStatus>("idle");
