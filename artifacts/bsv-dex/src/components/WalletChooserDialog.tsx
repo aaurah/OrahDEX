@@ -945,11 +945,15 @@ function ThirdwebMobilePanel({ onDone }: { onDone: () => void }) {
         const wallet = createWallet(walletId);
         const account = await wallet.connect({ client: thirdwebClient, chain: defineChain(1) });
         if (account?.address) {
+          // Read the actual chain the wallet is on instead of hardcoding mainnet.
+          // wallet.getChain() is populated after connect(); falls back to 1 only
+          // when the wallet doesn't report its active chain.
+          const connectedChainId = wallet.getChain()?.id ?? 1;
           useWalletStore.getState().connect({
             address: account.address,
             provider: "thirdweb",
             network: "evm",
-            chainId: 1,
+            chainId: connectedChainId,
           });
         }
         return wallet;
