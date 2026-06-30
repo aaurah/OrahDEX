@@ -122,7 +122,7 @@ function safePrice(v: unknown, decimals = 4) {
 }
 function getNftProfileAddress({
   address,
-  provider: _provider,
+  provider,
   network: _network,
   internalEvmAddress,
 }: {
@@ -131,12 +131,14 @@ function getNftProfileAddress({
   network: string | null;
   internalEvmAddress: string | null;
 }) {
-  // If the user has a fixed, internally-derived EVM address (seed phrase, passkey,
-  // or server-side provisioning), ALWAYS use it as their NFT profile identity.
-  // internalEvmAddress is explicitly preserved by every chain-switch path and is
-  // only cleared when a genuinely different wallet connects.
-  if (internalEvmAddress) return internalEvmAddress;
-  // For external-only wallets (MetaMask, WalletConnect, etc.) use the connected address.
+  // For Orah wallet users, use the stable internally-derived EVM address so
+  // chain switches never change their NFT profile identity ("one seed, one profile").
+  // internalEvmAddress persists through disconnect intentionally, so we must
+  // gate on the active provider — otherwise it leaks into MetaMask/WalletConnect
+  // sessions and shows the wrong address.
+  if (provider === "orah-wallet" && internalEvmAddress) return internalEvmAddress;
+  // For all external wallets (MetaMask, WalletConnect, ThirdWeb, etc.) use
+  // whichever address they actually connected with.
   if (!address) return null;
   return address;
 }
