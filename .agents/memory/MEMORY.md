@@ -16,3 +16,4 @@
 - [Socket bridge integration](socket-bridge-integration.md) — IBridgeProvider.getQuotes() returns BridgeQuote[]; SocketBridgeProvider stores full route in routeMeta.socketRoute for buildTx; getProvider() uses prefix match for socket:* IDs.
 - [pg ECONNRESET crash pattern](pg-econnreset-crash.md) — dual uncaughtException handlers + missing client error listener caused pg drops to kill API server; three-part fix documented.
 - [guardedInterval thundering herd](guarded-interval-jitter.md) — setInterval causes all background services to re-align on LCM boundaries (~6 min); fix is ±20% jitter via self-rescheduling setTimeout.
+- [Escrow wallet routing bugs](escrow-wallet-routing.md) — three root causes made escrow MetaMask-only; fixes: remove undeployed chain addresses, check provider==="reown" before connector.id, read wallet.getChain() after ThirdWeb connect.

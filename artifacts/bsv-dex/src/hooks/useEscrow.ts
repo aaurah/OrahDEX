@@ -152,15 +152,30 @@ export function useEscrow() {
   const escrowAvailable = isEvm && hasEscrow(chainId);
 
   // Detect whether the underlying connection is actually Reown/WalletConnect.
-  // When a user connects via Reown, useThirdwebWalletSync syncs the wallet into
-  // ThirdWeb's active state and ThirdwebSync then sets provider = "thirdweb" in
-  // the store — but the signing MUST still go through wagmi/Reown because that
-  // is the only path that sends a proper WalletConnect deep-link on mobile.
   //
-  // IMPORTANT: ThirdWeb also syncs a connected wallet into wagmi state, so a
-  // broad `isConnected` check would route ThirdWeb users through sendRawViaReown
-  // instead of the ThirdWeb SDK path. We must check the connector ID specifically.
+  // Priority: trust the wallet store `provider` field first. When the user
+  // connects via Reown AppKit (WalletConnect) the subscription in App.tsx sets
+  // provider = "reown" regardless of which wallet app the user chose — MetaMask
+  // Mobile, Rainbow, Coinbase Mobile, etc. all go through WalletConnect and get
+  // provider = "reown" in the store. Their wagmi connector.id values vary
+  // ("walletConnect", "metaMaskSDK", "coinbaseWalletSDK", …) so a connector.id
+  // substring check alone misses many connector types.
+  //
+  // IMPORTANT: ThirdWeb also syncs into wagmi state via useThirdwebWalletSync, so
+  // we must gate the connector.id fallback on !isThirdweb to avoid routing native
+  // ThirdWeb embedded-wallet users through the Reown/WalletConnect code path.
   function isReownConnected(): boolean {
+    // Definitive signal: the store knows the user connected via Reown AppKit.
+    if (provider === "reown") {
+      const config = getWagmiConfig();
+      if (!config) return false;
+      const acct = wagmiGetAccount(config);
+      return !!(acct?.isConnected && acct?.address);
+    }
+    // Belt-and-suspenders: catch any Reown connector that bypassed the store
+    // subscription (race conditions, SSR hydration, etc.), but exclude ThirdWeb
+    // users whose wallet is synced into wagmi via useThirdwebWalletSync.
+    if (isThirdweb) return false;
     const config = getWagmiConfig();
     if (!config) return false;
     const acct = wagmiGetAccount(config);
