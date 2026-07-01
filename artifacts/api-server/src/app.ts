@@ -527,7 +527,10 @@ function isTransientNetworkError(err: unknown): boolean {
     msg.includes("connection timeout") ||
     msg.includes("Connection ended unexpectedly") ||
     msg.includes("ssl routines") ||
-    msg.includes("socket hang up")
+    msg.includes("socket hang up") ||
+    // Neon/Postgres kills the socket outright (compute suspend/resume, admin
+    // maintenance) — the raw server error text never matches the wrappers above.
+    msg.includes("administrator command")
   );
 }
 

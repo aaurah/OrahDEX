@@ -29,3 +29,11 @@ Node.js calls **all** listeners in registration order. So the "stays alive" log 
 - Any new pg pool created in this codebase must add `pool.on("connect", client => client.on("error", ...))`.
 - Any `uncaughtException` handler that calls `process.exit` must filter transient network errors first.
 - Any reverse proxy / static server that health-checks on behalf of the API must return 200 for all deployment-probed paths when the upstream is temporarily unavailable.
+
+## Gap found later: "administrator command" not recognized as transient
+
+Neon also kills sockets outright (compute suspend/resume, admin maintenance), surfacing the raw Postgres error text `terminating connection due to administrator command`. This string never matches wrapper phrases like `"Connection terminated"` because pg passes the server's message through verbatim.
+
+Three separate transient-error allowlists in this codebase (`lib/db/src/index.ts` `isTransientPgError`, `app.ts` `isTransientNetworkError`, `alertBus.ts` `isConnErr`) did not include it, so a query hit by this exact error would fail/alert instead of retrying — even though the per-client handler from Fix 1 already logged it as non-fatal.
+
+**How to apply:** any transient-pg-error matcher added in the future should include `msg.includes("administrator command")` alongside the other substrings. If a new one is added anywhere else, check it includes this too.

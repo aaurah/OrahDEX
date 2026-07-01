@@ -112,7 +112,8 @@ export async function emit(
       (e.message.includes("Connection terminated") ||
        e.message.includes("connection timeout") ||
        e.message.includes("Client was closed") ||
-       e.message.includes("ECONNRESET"));
+       e.message.includes("ECONNRESET") ||
+       e.message.includes("administrator command"));
     ensureTable()
       .then(() => pool.query(SQL, params))
       .catch(async (err) => {
