@@ -148,10 +148,11 @@ function buildLadder(
     let priceStr: string;
     if (px >= 1000)       priceStr = px.toFixed(2);
     else if (px >= 1)     priceStr = px.toFixed(4);
-    else if (px >= 0.001) priceStr = px.toFixed(6);
-    else if (px >= 1e-8)  priceStr = px.toFixed(10);
+    else if (px >= 0.01)  priceStr = px.toFixed(6);
     else {
-      // Sub-satoshi: enough decimals to show 4+ significant figures
+      // Sub-cent: derive decimals from magnitude so tight spreads never collapse
+      // to the same rounded value (fixed toFixed(10) was too coarse below ~1e-6
+      // and produced identical bid/ask strings for nano-cap pairs).
       const mag = -Math.floor(Math.log10(px));
       priceStr = px.toFixed(Math.min(mag + 4, 18)).replace(/0+$/, "").replace(/\.$/, "0");
     }
