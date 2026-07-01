@@ -14,6 +14,10 @@ export function isDbConnError(err: unknown): boolean {
     msg.includes("connection refused") ||
     msg.includes("econnrefused") ||
     msg.includes("query read timeout") ||
+    // Neon/Postgres kills the socket outright (compute suspend/resume, admin
+    // maintenance, deploy-time teardown). The raw server error text is passed
+    // through verbatim and never matches the wrapper phrases above.
+    msg.includes("administrator command") ||
     // Drizzle wraps pg errors as "_DrizzleQueryError: Failed query: ...: <pg message>"
     // The substring below catches all such wrappers that contain a conn error.
     (msg.includes("failed query") && msg.includes("connection"))
