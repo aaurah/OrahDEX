@@ -89,7 +89,11 @@ function isTransientPgError(err: unknown): boolean {
     msg.includes("connection timeout") ||
     msg.includes("ECONNRESET") ||
     msg.includes("ECONNREFUSED") ||
-    msg.includes("read ETIMEDOUT")
+    msg.includes("read ETIMEDOUT") ||
+    // Neon/Postgres kills the socket outright (compute suspend/resume, admin
+    // maintenance) — the pg driver surfaces the server's raw error text
+    // verbatim, so it never matches the "Connection terminated" wrapper above.
+    msg.includes("administrator command")
   );
 }
 
