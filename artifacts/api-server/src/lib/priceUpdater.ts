@@ -1304,6 +1304,102 @@ export async function syncAllLEPairs(): Promise<{ coins: number; inserted: numbe
   return { coins: coinTickers.length, inserted, updated, deleted, quotes: coinTickers.length - 1 };
 }
 
+/**
+ * syncNewLECoins — lightweight incremental sync for newly-listed LE coins.
+ *
+ * Runs every 4 hours automatically. Fetches the live LE /v2/coins list,
+ * compares it with coins already in the DB, and only inserts pairs for
+ * genuinely new coins. This means:
+ *   - New LetsExchange coins are permanently added within 4 hours automatically
+ *   - No manual admin le-sync required for new listings
+ *   - Much cheaper than full syncAllLEPairs (only N×new_coins rows, not N²)
+ *   - onConflictDoNothing — safe to run at any time, never clobbers live prices
+ */
+export async function syncNewLECoins(): Promise<{ newCoins: number; inserted: number }> {
+  // 1. Fetch live LE coin list
+  let liveCoins: string[] = [];
+  try {
+    const res = await leRequest("/v2/coins");
+    if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+      const seen = new Set<string>();
+      for (const item of res.data as Record<string, unknown>[]) {
+        const code = ((item.code ?? item.ticker ?? item.symbol ?? "") as string).toUpperCase().trim();
+        if (code && !seen.has(code)) { seen.add(code); liveCoins.push(code); }
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "syncNewLECoins: failed to fetch LE coins (skipping cycle)");
+    return { newCoins: 0, inserted: 0 };
+  }
+  if (liveCoins.length === 0) return { newCoins: 0, inserted: 0 };
+
+  // 2. Get coins already in the DB as base assets
+  const dbResult = await pool.query<{ base_asset: string }>(
+    `SELECT DISTINCT base_asset FROM markets WHERE type = 'letsexchange'`,
+  );
+  const dbCoins = new Set(dbResult.rows.map(r => r.base_asset));
+
+  // 3. Find genuinely new coins not yet in the DB
+  const newCoins = liveCoins.filter(c => !dbCoins.has(c));
+  if (newCoins.length === 0) {
+    logger.debug({ total: liveCoins.length }, "syncNewLECoins: no new coins detected");
+    return { newCoins: 0, inserted: 0 };
+  }
+
+  logger.info(
+    { count: newCoins.length, sample: newCoins.slice(0, 10) },
+    "syncNewLECoins: new LE coins detected — inserting pairs",
+  );
+
+  // 4. Fetch sovereign prices for cross-rate math
+  const prices = await fetchSovereignPrices();
+  const usdOf = (sym: string): number => prices[sym]?.usd || FALLBACK_PRICES[sym] || 0;
+
+  const CHUNK = 500;
+  let inserted = 0;
+
+  for (const newCoin of newCoins) {
+    const newUSD = usdOf(newCoin);
+    const rows: (typeof marketsTable.$inferInsert)[] = [];
+
+    // newCoin as base paired with every other live coin as quote
+    for (const quote of liveCoins) {
+      if (quote === newCoin) continue;
+      const quoteUSD = usdOf(quote);
+      const p = (newUSD > 0 && quoteUSD > 0) ? fmtPrice(newUSD / quoteUSD) : "0";
+      rows.push({
+        symbol: `${newCoin}/${quote}`, baseAsset: newCoin, quoteAsset: quote,
+        lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
+        volume24h: "0", high24h: p, low24h: p,
+        status: "active", type: "letsexchange",
+      });
+    }
+
+    // Every other live coin as base paired with newCoin as quote (reverse direction)
+    for (const base of liveCoins) {
+      if (base === newCoin) continue;
+      const baseUSD = usdOf(base);
+      const p = (baseUSD > 0 && newUSD > 0) ? fmtPrice(baseUSD / newUSD) : "0";
+      rows.push({
+        symbol: `${base}/${newCoin}`, baseAsset: base, quoteAsset: newCoin,
+        lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
+        volume24h: "0", high24h: p, low24h: p,
+        status: "active", type: "letsexchange",
+      });
+    }
+
+    // Insert in chunks — onConflictDoNothing preserves any live prices already present
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      const result = await db.insert(marketsTable).values(chunk).onConflictDoNothing();
+      inserted += (result as any).rowCount ?? 0;
+    }
+  }
+
+  logger.info({ newCoins: newCoins.length, inserted }, "syncNewLECoins: complete");
+  return { newCoins: newCoins.length, inserted };
+}
+
 // Shared in-memory map of coin → 24h change percent (populated each sovereign cycle)
 const _coinChangeMap: Record<string, number> = {};
 export function getCoinChangeMap(): Record<string, number> { return _coinChangeMap; }
@@ -1559,6 +1655,14 @@ export function startPriceUpdater() {
   setTimeout(() => {
     seedMarketsIfNeeded().catch(err => logger.warn({ err }, "seedMarketsIfNeeded failed"));
   }, 15_000);
+
+  // Incremental LE coin sync — automatically picks up new coins added by LetsExchange.
+  // First run at 5 min (server fully warmed up), then every 4 hours.
+  // onConflictDoNothing makes it safe to run at any time; no-op when DB is current.
+  guardedInterval(
+    "le-coin-sync", () => syncNewLECoins().then(() => {}), 4 * 60 * 60 * 1000,
+    { timeoutMs: 5 * 60 * 1000, initialDelayMs: 5 * 60 * 1000 },
+  );
 
   // First Binance price fetch deferred to 35 s so the server is fully settled
   // before the large ticker-24hr response (~5 MB / 2000+ objects) is parsed.
