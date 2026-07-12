@@ -22,6 +22,7 @@ const AdminLayout  = lazy(() => import("@/components/AdminLayout").then(m => ({ 
 const MobileLayout = lazy(() => import("@/components/mobile/MobileLayout").then(m => ({ default: m.MobileLayout })));
 const MobileTabKeeper = lazy(() => import("@/components/mobile/MobileTabKeeper").then(m => ({ default: m.MobileTabKeeper })));
 const Layout = lazy(() => import("@/components/Layout").then(m => ({ default: m.Layout })));
+const AiAssistant = lazy(() => import("@/components/AiAssistant").then(m => ({ default: m.AiAssistant })));
 
 /* ─── Lazy page imports — each becomes its own JS chunk ─── */
 const LandingPage  = lazy(() => import("@/pages/Landing").then(m => ({ default: m.LandingPage })));
@@ -434,11 +435,13 @@ function Router() {
       {/* ── Landing page ── */}
       <Route path="/home">
         <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
+        <Suspense fallback={null}><AiAssistant /></Suspense>
       </Route>
 
       {/* ── Root: landing page ── */}
       <Route path="/">
         <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
+        <Suspense fallback={null}><AiAssistant /></Suspense>
       </Route>
 
       {/* ── Redirects ── */}
