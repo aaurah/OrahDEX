@@ -78,13 +78,18 @@ export const BOT_ADDRESS = "BOT_LIQUIDITY_ENGINE";
 /* ── Spread / size schedule ─────────────────────────────────────────────── */
 // Each level: [spread_fraction, size_multiplier]
 // Tightest spread closest to mid-price, widening out.
+// 10 levels per side (20 orders total) for a deep, realistic order book.
 const LEVELS = [
-  [0.0003, 3.5],
-  [0.0010, 2.8],
-  [0.0025, 2.2],
-  [0.0055, 1.7],
-  [0.0120, 1.2],
-  [0.0280, 0.8],
+  [0.0002, 4.2],
+  [0.0005, 3.6],
+  [0.0010, 3.0],
+  [0.0020, 2.5],
+  [0.0040, 2.0],
+  [0.0080, 1.6],
+  [0.0150, 1.2],
+  [0.0280, 0.9],
+  [0.0500, 0.6],
+  [0.0900, 0.4],
 ] as const;
 
 /**
