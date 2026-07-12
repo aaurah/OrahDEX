@@ -34,7 +34,6 @@ const DexHub       = lazy(() => import("@/pages/DexHub").then(m => ({ default: m
 const SwapPage     = lazy(() => import("@/pages/Swap").then(m => ({ default: m.Swap })));
 const P2P          = lazy(() => import("@/pages/P2P").then(m => ({ default: m.P2P })));
 const Liquidity    = lazy(() => import("@/pages/Liquidity").then(m => ({ default: m.Liquidity })));
-const BridgePage   = lazy(() => import("@/pages/Bridge").then(m => ({ default: m.BridgePage })));
 const CopyTrading  = lazy(() => import("@/pages/CopyTrading").then(m => ({ default: m.CopyTrading })));
 const RevenuePage  = lazy(() => import("@/pages/Revenue"));
 const SovereignOverviewPage = lazy(() => import("@/pages/SovereignOverview").then(m => ({ default: m.SovereignOverviewPage })));
@@ -496,7 +495,7 @@ function Router() {
                   <Route path="/liquidity"      component={Liquidity} />
                   <Route path="/genesis"        component={GenesisLiquidity} />
                   <Route path="/p2p"            component={P2P} />
-                  <Route path="/bridge"         component={BridgePage} />
+                  <Route path="/bridge"><RedirectTo href="/swap" /></Route>
                   <Route path="/copy"           component={CopyTrading} />
                   <Route path="/fees"           component={RevenuePage} />
                   <Route path="/keeper"         component={KeeperProfile} />

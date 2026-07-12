@@ -30,7 +30,6 @@ const UserApiKeys           = lazy(() => import("@/pages/UserApiKeys").then(m =>
 const SwapPage              = lazy(() => import("@/pages/Swap").then(m => ({ default: m.Swap })));
 const DexHub                = lazy(() => import("@/pages/DexHub").then(m => ({ default: m.DexHub })));
 const P2P                   = lazy(() => import("@/pages/P2P").then(m => ({ default: m.P2P })));
-const BridgePage            = lazy(() => import("@/pages/Bridge").then(m => ({ default: m.BridgePage })));
 const CopyTrading           = lazy(() => import("@/pages/CopyTrading").then(m => ({ default: m.CopyTrading })));
 const RevenuePage           = lazy(() => import("@/pages/Revenue"));
 const KeeperProfile         = lazy(() => import("@/pages/KeeperProfile").then(m => ({ default: m.KeeperProfile })));
@@ -43,7 +42,7 @@ const DevAIPage             = lazy(() => import("@/pages/DevAI").then(m => ({ de
 type TabKey =
   | "markets" | "swap" | "trade" | "futures" | "wallet"
   | "settings" | "staking" | "nft" | "liquidity" | "genesis"
-  | "dex" | "p2p" | "bridge" | "copy" | "fees" | "keeper"
+  | "dex" | "p2p" | "copy" | "fees" | "keeper"
   | "prediction" | "sovereign" | "ora-ai" | "devai";
 
 /* Routes that need live params and are rendered normally (not kept alive) */
@@ -71,7 +70,6 @@ function getTabKey(location: string): TabKey | null {
   if (location.startsWith("/genesis"))                       return "genesis";
   if (location.startsWith("/dex"))                           return "dex";
   if (location.startsWith("/p2p"))                           return "p2p";
-  if (location.startsWith("/bridge"))                        return "bridge";
   if (location.startsWith("/copy"))                          return "copy";
   if (location.startsWith("/fees"))                          return "fees";
   if (location.startsWith("/keeper"))                        return "keeper";
@@ -184,7 +182,6 @@ export function MobileTabKeeper() {
       {vis("genesis")    && <Tab active={act("genesis")}>    <Suspense fallback={<Skeleton />}><MobileGenesis /></Suspense></Tab>}
       {vis("dex")        && <Tab active={act("dex")}>        <Suspense fallback={<Skeleton />}><DexHub /></Suspense></Tab>}
       {vis("p2p")        && <Tab active={act("p2p")}>        <Suspense fallback={<Skeleton />}><P2P /></Suspense></Tab>}
-      {vis("bridge")     && <Tab active={act("bridge")}>     <Suspense fallback={<Skeleton />}><BridgePage /></Suspense></Tab>}
       {vis("copy")       && <Tab active={act("copy")}>       <Suspense fallback={<Skeleton />}><CopyTrading /></Suspense></Tab>}
       {vis("fees")       && <Tab active={act("fees")}>       <Suspense fallback={<Skeleton />}><RevenuePage /></Suspense></Tab>}
       {vis("keeper")     && <Tab active={act("keeper")}>     <Suspense fallback={<Skeleton />}><KeeperProfile /></Suspense></Tab>}
