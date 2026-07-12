@@ -39,17 +39,19 @@ import { API_BASE } from "@/lib/api";
 import { validateAltChainAddress } from "@/lib/addressValidation";
 import { isAddress as isEvmAddress } from "viem";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, fetchEvmBalance } from "@/lib/reown";
-import { getViemAccountForAddress } from "@/lib/walletSigner";
 import {
-  signBsvChallengeWithPasskey,
-  sendBsvWithPasskey,
-  sendBtcWithPasskey,
-  sendLtcWithPasskey,
-  sendDogeWithPasskey,
-  sendXrpWithPasskey,
-  sendTrxWithPasskey,
-  sendBchWithPasskey,
-  sendSolWithPasskey,
+  getViemAccountForAddress,
+  sendBsvFromAddress,
+  sendBtcFromAddress,
+  sendLtcFromAddress,
+  sendDogeFromAddress,
+  sendXrpFromAddress,
+  sendTrxFromAddress,
+  sendBchFromAddress,
+  sendSolFromAddress,
+  signBsvChallengeFromAddress,
+} from "@/lib/walletSigner";
+import {
   listPasskeyWallets,
   loginWithPasskey,
 } from "@/lib/passkeyWallet";
@@ -857,11 +859,8 @@ export function WithdrawSheet({
       // Instead we build, sign and broadcast a P2PKH transaction directly using
       // the passkey-derived BSV private key — no exchange API involved.
       if (activeChain === "bsv") {
-        if (!passkeyEvmAddress && listPasskeyWallets().length === 0) {
-          throw new Error("No passkey wallet found on this device. Please create or restore your OrahWallet first.");
-        }
-        const result = await sendBsvWithPasskey(
-          passkeyEvmAddress ?? "",
+        const result = await sendBsvFromAddress(
+          passkeyEvmAddress ?? walletAddress,
           chainAddress!,
           nonEvmSendRecipient.trim(),
           parsedAmt,
@@ -887,10 +886,8 @@ export function WithdrawSheet({
       if (activeChain === "btc") {
         const btcAddr = nonEvmAddresses?.["btc"] ?? nonEvmAddresses?.["BTC"];
         if (!btcAddr) throw new Error("No BTC address found for this wallet.");
-        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
-          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
-        const result = await sendBtcWithPasskey(
-          passkeyEvmAddress ?? "", btcAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        const result = await sendBtcFromAddress(
+          passkeyEvmAddress ?? walletAddress, btcAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "BTC sent", description: `${parsedAmt} BTC sent on-chain. Fee: ${result.feeSat} sat. TXID: ${result.txid.slice(0, 16)}…` });
@@ -904,10 +901,8 @@ export function WithdrawSheet({
       if (activeChain === "ltc") {
         const ltcAddr = nonEvmAddresses?.["ltc"] ?? nonEvmAddresses?.["LTC"];
         if (!ltcAddr) throw new Error("No LTC address found for this wallet.");
-        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
-          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
-        const result = await sendLtcWithPasskey(
-          passkeyEvmAddress ?? "", ltcAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        const result = await sendLtcFromAddress(
+          passkeyEvmAddress ?? walletAddress, ltcAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "LTC sent", description: `${parsedAmt} LTC sent on-chain. Fee: ${result.feeSat} lit. TXID: ${result.txid.slice(0, 16)}…` });
@@ -921,10 +916,8 @@ export function WithdrawSheet({
       if (activeChain === "doge") {
         const dogeAddr = nonEvmAddresses?.["doge"] ?? nonEvmAddresses?.["DOGE"];
         if (!dogeAddr) throw new Error("No DOGE address found for this wallet.");
-        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
-          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
-        const result = await sendDogeWithPasskey(
-          passkeyEvmAddress ?? "", dogeAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        const result = await sendDogeFromAddress(
+          passkeyEvmAddress ?? walletAddress, dogeAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "DOGE sent", description: `${parsedAmt} DOGE sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
@@ -938,10 +931,8 @@ export function WithdrawSheet({
       if (activeChain === "xrp") {
         const xrpAddr = nonEvmAddresses?.["xrp"] ?? nonEvmAddresses?.["XRP"];
         if (!xrpAddr) throw new Error("No XRP address found for this wallet.");
-        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
-          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
-        const result = await sendXrpWithPasskey(
-          passkeyEvmAddress ?? "", xrpAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        const result = await sendXrpFromAddress(
+          passkeyEvmAddress ?? walletAddress, xrpAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "XRP sent", description: `${parsedAmt} XRP sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
@@ -955,10 +946,8 @@ export function WithdrawSheet({
       if (activeChain === "trx") {
         const trxAddr = nonEvmAddresses?.["tron"] ?? nonEvmAddresses?.["trx"] ?? nonEvmAddresses?.["TRX"];
         if (!trxAddr) throw new Error("No TRX address found for this wallet.");
-        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
-          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
-        const result = await sendTrxWithPasskey(
-          passkeyEvmAddress ?? "", trxAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        const result = await sendTrxFromAddress(
+          passkeyEvmAddress ?? walletAddress, trxAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "TRX sent", description: `${parsedAmt} TRX sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
@@ -972,10 +961,8 @@ export function WithdrawSheet({
       if (activeChain === "bch") {
         const bchAddr = nonEvmAddresses?.["bch"] ?? nonEvmAddresses?.["BCH"];
         if (!bchAddr) throw new Error("No BCH address found for this wallet.");
-        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
-          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
-        const result = await sendBchWithPasskey(
-          passkeyEvmAddress ?? "", bchAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        const result = await sendBchFromAddress(
+          passkeyEvmAddress ?? walletAddress, bchAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "BCH sent", description: `${parsedAmt} BCH sent on-chain. Fee: ${result.feeSat} sat. TXID: ${result.txid.slice(0, 16)}…` });
@@ -989,10 +976,8 @@ export function WithdrawSheet({
       if (activeChain === "sol") {
         const solAddr = nonEvmAddresses?.["sol"] ?? nonEvmAddresses?.["SOL"];
         if (!solAddr) throw new Error("No SOL address found for this wallet.");
-        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
-          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
-        const result = await sendSolWithPasskey(
-          passkeyEvmAddress ?? "", solAddr, nonEvmSendRecipient.trim(), parsedAmt,
+        const result = await sendSolFromAddress(
+          passkeyEvmAddress ?? walletAddress, solAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "SOL sent", description: `${parsedAmt} SOL sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
@@ -1014,9 +999,7 @@ export function WithdrawSheet({
           throw new Error(err.error ?? "Failed to get withdrawal challenge");
         }
         const { message } = await challengeRes.json();
-        if (!passkeyEvmAddress && listPasskeyWallets().length === 0)
-          throw new Error("No passkey wallet found. Please create or restore your OrahWallet first.");
-        const signature = await signBsvChallengeWithPasskey(passkeyEvmAddress ?? "", message);
+        const signature = await signBsvChallengeFromAddress(passkeyEvmAddress ?? walletAddress, message);
         const wAsset = withdrawChainMode.toUpperCase();
         const withdrawRes = await fetch(`${API_BASE}/withdrawals`, {
           method:  "POST",
