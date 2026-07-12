@@ -209,14 +209,31 @@ router.get("/markets", async (req, res) => {
       takerFee:              parseFloat(m.takerFee),
     }));
 
-    // Stable priority sort: pinned first, then any market with a real price,
-    // then by 24h volume. Ensures the top ~1000 returned to a paginated
-    // request are the ones a user will actually see/trade.
+    // Stable priority sort — deterministic across all environments:
+    // 1. Major assets by hardcoded rank (BTC > ETH > BNB > SOL > XRP …)
+    //    This overrides the `pinned` flag which is inconsistent between dev/prod.
+    // 2. Has a real live price (last_price > 0)
+    // 3. By quote asset preference (USDT > USDC > BTC > ETH > BSV)
+    // 4. Volume descending as tie-breaker
+    const ASSET_RANK: Record<string, number> = {
+      BTC: 100, WBTC: 99, ETH: 98, WETH: 97,
+      BNB: 96, SOL: 95, XRP: 94, ADA: 93,
+      AVAX: 92, DOGE: 91, DOT: 90, MATIC: 89,
+      LINK: 88, UNI: 87, ATOM: 86, LTC: 85,
+      BCH: 84, NEAR: 83, FIL: 82, APT: 81,
+      BSV: 80,
+    };
+    const QUOTE_RANK: Record<string, number> = {
+      USDT: 10, USDC: 9, TUSD: 8, USDD: 7,
+      BTC: 6, ETH: 5, BSV: 4, BNB: 3,
+    };
     result.sort((a, b) => {
-      const pa = a.pinned ? 1 : 0, pb = b.pinned ? 1 : 0;
-      if (pa !== pb) return pb - pa;
+      const ra = ASSET_RANK[a.baseAsset] ?? 0, rb = ASSET_RANK[b.baseAsset] ?? 0;
+      if (ra !== rb) return rb - ra;
       const ha = a.lastPrice > 0 ? 1 : 0, hb = b.lastPrice > 0 ? 1 : 0;
       if (ha !== hb) return hb - ha;
+      const qa = QUOTE_RANK[a.quoteAsset] ?? 0, qb = QUOTE_RANK[b.quoteAsset] ?? 0;
+      if (qa !== qb) return qb - qa;
       return (b.volume24h || 0) - (a.volume24h || 0);
     });
 
