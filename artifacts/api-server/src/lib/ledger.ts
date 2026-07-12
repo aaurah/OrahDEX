@@ -12,6 +12,7 @@
  */
 
 import { pool } from "@workspace/db";
+import { logger } from "./logger.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -33,7 +34,7 @@ export interface LpPosition {
   createdAt:     Date;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 /**
  * Normalize a wallet address for ledger storage / lookup.
@@ -45,21 +46,41 @@ export interface LpPosition {
  *
  * Non-EVM addresses (BSV legacy, BTC bech32, BCH cashaddr, Tron, Solana)
  * are case-sensitive and pass through unchanged.
+ *
+ * FIXED: Type-safe — throws on non-string input instead of returning unknown type.
  */
-function normAddr(addr: string): string {
-  if (typeof addr !== "string") return addr;
+function normAddr(addr: unknown): string {
+  if (typeof addr !== "string") {
+    logger.error({ addr }, "normAddr received non-string address");
+    throw new Error(`Address must be a string, got ${typeof addr}`);
+  }
   return addr.startsWith("0x") || addr.startsWith("0X")
     ? addr.toLowerCase()
     : addr;
 }
 
-// Compare two decimal strings
+/**
+ * Safely compare two decimal strings using parseFloat with error handling.
+ * Returns false if either input is invalid (prevents silent NaN comparisons).
+ */
 export function gte(a: string, b: string): boolean {
-  return parseFloat(a) >= parseFloat(b);
+  const aNum = parseFloat(a);
+  const bNum = parseFloat(b);
+  if (isNaN(aNum) || isNaN(bNum)) {
+    logger.warn({ a, b }, "gte: invalid decimal comparison");
+    return false;
+  }
+  return aNum >= bNum;
 }
 
 export function lt(a: string, b: string): boolean {
-  return parseFloat(a) < parseFloat(b);
+  const aNum = parseFloat(a);
+  const bNum = parseFloat(b);
+  if (isNaN(aNum) || isNaN(bNum)) {
+    logger.warn({ a, b }, "lt: invalid decimal comparison");
+    return false;
+  }
+  return aNum < bNum;
 }
 
 // ── Ensure balance row exists (upsert with 0) ─────────────────────────────
@@ -114,7 +135,7 @@ export async function seedInitialBalances(walletAddress: string): Promise<void> 
   }
 
   const SEED_ASSETS = [
-    // ── Stablecoins ──────────────────────────────────────────────────────────
+    // ── Stablecoins ────────────────────────────────────────────────────────
     { asset: "USDT",  min: 1000,    max: 20000,      dec: 2 },
     { asset: "USDC",  min: 1000,    max: 20000,      dec: 2 },
     { asset: "TUSD",  min: 1000,    max: 10000,      dec: 2 },
@@ -198,7 +219,7 @@ export async function seedInitialBalances(walletAddress: string): Promise<void> 
     { asset: "GALA",  min: 100,     max: 5000,       dec: 2 },
     { asset: "ILV",   min: 0.5,     max: 20,         dec: 4 },
     { asset: "FIL",   min: 5,       max: 150,        dec: 4 },
-    // ── Meme coins ───────────────────────────────────────────────────────────
+    // ── Meme coins ────────────────────────────────────────────────────────────
     { asset: "PEPE",  min: 10000000, max: 500000000, dec: 0 },
     { asset: "SHIB",  min: 500000,  max: 20000000,   dec: 0 },
     { asset: "BONK",  min: 1000000, max: 50000000,   dec: 0 },
@@ -238,6 +259,7 @@ export async function seedInitialBalances(walletAddress: string): Promise<void> 
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
+    logger.error({ err }, "seedInitialBalances failed");
     throw err;
   } finally {
     client.release();
@@ -300,6 +322,9 @@ export async function ensureSeedForAsset(
 ): Promise<void> {
   walletAddress = normAddr(walletAddress);
   const needed = parseFloat(neededAmount);
+  if (isNaN(needed)) {
+    throw new Error(`Invalid neededAmount: ${neededAmount}`);
+  }
   // Run inside a transaction with a row lock so two concurrent callers
   // cannot both read the same balance and both decide to seed.
   const client = await pool.connect();
@@ -339,6 +364,7 @@ export async function ensureSeedForAsset(
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
+    logger.error({ err, walletAddress, asset }, "ensureSeedForAsset failed");
     throw err;
   } finally {
     client.release();
@@ -352,6 +378,10 @@ export async function creditAvailable(
   asset:         string,
   amount:        string,
 ): Promise<void> {
+  const amtNum = parseFloat(amount);
+  if (isNaN(amtNum) || amtNum < 0) {
+    throw new Error(`Invalid credit amount: ${amount}`);
+  }
   await pool.query(
     `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
      VALUES ($1, $2, $3, '0', now())
@@ -368,6 +398,10 @@ export async function debitAvailable(
   asset:         string,
   amount:        string,
 ): Promise<void> {
+  const amtNum = parseFloat(amount);
+  if (isNaN(amtNum) || amtNum < 0) {
+    throw new Error(`Invalid debit amount: ${amount}`);
+  }
   walletAddress = normAddr(walletAddress);
   const client = await pool.connect();
   try {
@@ -380,7 +414,7 @@ export async function debitAvailable(
     );
     const row = rows[0];
     if (!row || lt(row.available, amount)) {
-      throw new Error(`INSUFFICIENT_FUNDS:${asset}`);
+      throw new Error(`INSUFFICIENT_FUNDS:${asset}:have ${row?.available ?? "0"}:need ${amount}`);
     }
     await client.query(
       `UPDATE user_balances
@@ -392,6 +426,7 @@ export async function debitAvailable(
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
+    logger.error({ err, walletAddress, asset, amount }, "debitAvailable failed");
     throw err;
   } finally {
     client.release();
@@ -406,6 +441,10 @@ export async function lockForOrder(params: {
   amount:        string;
 }): Promise<void> {
   params = { ...params, walletAddress: normAddr(params.walletAddress) };
+  const amtNum = parseFloat(params.amount);
+  if (isNaN(amtNum) || amtNum < 0) {
+    throw new Error(`Invalid lock amount: ${params.amount}`);
+  }
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -421,7 +460,7 @@ export async function lockForOrder(params: {
 
     const row = rows[0];
     if (!row || lt(row.available, params.amount)) {
-      throw new Error(`INSUFFICIENT_FUNDS:${params.asset}`);
+      throw new Error(`INSUFFICIENT_FUNDS:${params.asset}:have ${row?.available ?? "0"}:need ${params.amount}`);
     }
 
     await client.query(
@@ -436,6 +475,7 @@ export async function lockForOrder(params: {
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
+    logger.error({ err, params }, "lockForOrder failed");
     throw err;
   } finally {
     client.release();
@@ -490,6 +530,7 @@ async function _unlockFundsImpl(params: {
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
+    logger.error({ err, params }, "_unlockFundsImpl failed");
     throw err;
   } finally {
     client.release();
@@ -530,11 +571,19 @@ export async function settleTrade(params: {
   const buyerAddress  = normAddr(params.buyerAddress);
   const sellerAddress = normAddr(params.sellerAddress);
   const { baseAsset, quoteAsset, amount, price, feePct = 0.001, isBotSeller = false, isBotBuyer = false } = params;
-  const cost    = (parseFloat(amount) * parseFloat(price)).toFixed(18);
-  const buyFee  = (parseFloat(amount) * feePct).toFixed(18);
-  const sellFee = (parseFloat(cost)   * feePct).toFixed(18);
-  const netBase = (parseFloat(amount) - parseFloat(buyFee)).toFixed(18);
-  const netQuote= (parseFloat(cost)   - parseFloat(sellFee)).toFixed(18);
+  
+  // Validate inputs before calculations
+  const amtNum = parseFloat(amount);
+  const priceNum = parseFloat(price);
+  if (isNaN(amtNum) || isNaN(priceNum) || amtNum <= 0 || priceNum <= 0) {
+    throw new Error(`Invalid trade params: amount=${amount}, price=${price}`);
+  }
+
+  const cost    = (amtNum * priceNum).toFixed(18);
+  const buyFee  = (amtNum * feePct).toFixed(18);
+  const sellFee = (priceNum * amtNum * feePct).toFixed(18);
+  const netBase = (amtNum - parseFloat(buyFee)).toFixed(18);
+  const netQuote = (priceNum * amtNum - parseFloat(sellFee)).toFixed(18);
 
   const client = await pool.connect();
   try {
@@ -638,6 +687,7 @@ export async function settleTrade(params: {
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
+    logger.error({ err, params }, "settleTrade failed");
     throw err;
   } finally {
     client.release();
@@ -653,6 +703,12 @@ export async function settleSwap(params: {
   amountIn:      string;
   amountOut:     string;
 }): Promise<void> {
+  const amtIn = parseFloat(params.amountIn);
+  const amtOut = parseFloat(params.amountOut);
+  if (isNaN(amtIn) || isNaN(amtOut) || amtIn < 0 || amtOut < 0) {
+    throw new Error(`Invalid swap amounts: in=${params.amountIn}, out=${params.amountOut}`);
+  }
+  
   const walletAddress = normAddr(params.walletAddress);
   const { assetIn, assetOut, amountIn, amountOut } = params;
 
@@ -671,7 +727,7 @@ export async function settleSwap(params: {
 
     const row = rows[0];
     if (!row || lt(row.available, amountIn)) {
-      throw new Error(`INSUFFICIENT_FUNDS:${assetIn}`);
+      throw new Error(`INSUFFICIENT_FUNDS:${assetIn}:have ${row?.available ?? "0"}:need ${amountIn}`);
     }
 
     await client.query(
@@ -693,13 +749,14 @@ export async function settleSwap(params: {
     await client.query("COMMIT");
   } catch (err) {
     await client.query("ROLLBACK");
+    logger.error({ err, params }, "settleSwap failed");
     throw err;
   } finally {
     client.release();
   }
 }
 
-// ── Add liquidity ────────────────────────────────────────────────────────────
+// ── Add liquidity ─────────────────────────────────────────────────────────
 
 export async function addLiquidity(params: {
   walletAddress: string;
@@ -709,6 +766,12 @@ export async function addLiquidity(params: {
   amountA:       string;
   amountB:       string;
 }): Promise<{ lpTokens: string; positionId: number }> {
+  const amtA = parseFloat(params.amountA);
+  const amtB = parseFloat(params.amountB);
+  if (isNaN(amtA) || isNaN(amtB) || amtA <= 0 || amtB <= 0) {
+    throw new Error(`Invalid liquidity amounts: A=${params.amountA}, B=${params.amountB}`);
+  }
+
   const { walletAddress, poolId, assetA, assetB, amountA, amountB } = params;
 
   const client = await pool.connect();
@@ -757,7 +820,7 @@ export async function addLiquidity(params: {
     );
 
     // LP tokens = geometric mean of amounts (simplified)
-    const lpTokens = Math.sqrt(parseFloat(amountA) * parseFloat(amountB)).toFixed(18);
+    const lpTokens = Math.sqrt(amtA * amtB).toFixed(18);
 
     const { rows: posRows } = await client.query<{ id: number }>(
       `INSERT INTO liquidity_positions
@@ -771,13 +834,14 @@ export async function addLiquidity(params: {
     return { lpTokens, positionId: posRows[0]!.id };
   } catch (err) {
     await client.query("ROLLBACK");
+    logger.error({ err, params }, "addLiquidity failed");
     throw err;
   } finally {
     client.release();
   }
 }
 
-// ── Remove liquidity ─────────────────────────────────────────────────────────
+// ── Remove liquidity ────────────────────────────────────────────────────────
 
 export async function removeLiquidity(params: {
   walletAddress: string;
@@ -827,6 +891,7 @@ export async function removeLiquidity(params: {
     return { assetA: pos.asset_a, assetB: pos.asset_b, amountA: pos.amount_a, amountB: pos.amount_b };
   } catch (err) {
     await client.query("ROLLBACK");
+    logger.error({ err, params }, "removeLiquidity failed");
     throw err;
   } finally {
     client.release();
