@@ -363,6 +363,12 @@ importers:
       '@coinbase/wallet-sdk':
         specifier: ^4.3.7
         version: 4.3.7(bufferutil@4.1.0)(typescript@6.0.2)(utf-8-validate@5.0.10)(zod@4.3.6)
+      '@fontsource/jetbrains-mono':
+        specifier: ^5.2.8
+        version: 5.2.8
+      '@fontsource/plus-jakarta-sans':
+        specifier: ^5.2.8
+        version: 5.2.8
       '@keystonehq/bc-ur-registry-eth':
         specifier: ^0.22.1
         version: 0.22.1
@@ -441,9 +447,6 @@ importers:
       '@workspace/integrations-openai-ai-react':
         specifier: workspace:*
         version: link:../../lib/integrations-openai-ai-react
-      '@zoralabs/coins-sdk':
-        specifier: ^0.7.1
-        version: 0.7.1(abitype@1.2.3(typescript@6.0.2)(zod@4.3.6))(viem@2.47.6(bufferutil@4.1.0)(typescript@6.0.2)(utf-8-validate@5.0.10)(zod@4.3.6))
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
@@ -2340,6 +2343,12 @@ packages:
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
 
+  '@fontsource/jetbrains-mono@5.2.8':
+    resolution: {integrity: sha512-6w8/SG4kqvIMu7xd7wt6x3idn1Qux3p9N62s6G3rfldOUYHpWcc2FKrqf+Vo44jRvqWj2oAtTHrZXEP23oSKwQ==}
+
+  '@fontsource/plus-jakarta-sans@5.2.8':
+    resolution: {integrity: sha512-P5qE49fqdeD+7DXH1KBxmMPlB17LTz1zvBhFH0tFzfnYTKVJVyb0pR6plh0ZGXxcB+Oayb54FZZw3V42/DawTw==}
+
   '@gemini-wallet/core@0.3.2':
     resolution: {integrity: sha512-Z4aHi3ECFf5oWYWM3F1rW83GJfB9OvhBYPTmb5q+VyK3uvzvS48lwo+jwh2eOoCRWEuT/crpb9Vwp2QaS5JqgQ==}
     peerDependencies:
@@ -2353,10 +2362,6 @@ packages:
     deprecated: Starting with v0.73.0, this package is bundled directly inside @hey-api/openapi-ts.
     peerDependencies:
       '@hey-api/openapi-ts': < 2
-
-  '@hey-api/client-fetch@0.8.4':
-    resolution: {integrity: sha512-SWtUjVEFIUdiJGR2NiuF0njsSrSdTe7WHWkp3BLH3DEl2bRhiflOnBo29NSDdrY90hjtTQiTQkBxUgGOF29Xzg==}
-    deprecated: Starting with v0.73.0, this package is bundled directly inside @hey-api/openapi-ts.
 
   '@hookform/resolvers@5.2.2':
     resolution: {integrity: sha512-A/IxlMLShx3KjV/HeTcTfaMxdwy690+L/ZADoeaTltLx+CVuzkeVIPuybK3jrRfw7YZnmdKsVVHAlEPIAEUNlA==}
@@ -5614,16 +5619,6 @@ packages:
 
   '@xrplf/secret-numbers@2.0.0':
     resolution: {integrity: sha512-z3AOibRTE9E8MbjgzxqMpG1RNaBhQ1jnfhNCa1cGf2reZUJzPMYs4TggQTc7j8+0WyV3cr7y/U8Oz99SXIkN5Q==}
-
-  '@zoralabs/coins-sdk@0.7.1':
-    resolution: {integrity: sha512-hkVsulBFh4yxFxq7jOGQKp5Y6TbZxHmcU4jYpW1S50HLhe0RbVicNFLCKBdRyh9ssX0TbGbHRbXf02CsCfezsQ==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      abitype: ^1.0.8
-      viem: 2.53.1
-
-  '@zoralabs/protocol-deployments@0.7.6':
-    resolution: {integrity: sha512-E8hkSFkpqxttSoH+GQJbcTvjnVQGL+Nlo2WXA3YSkEvzB7Xfv6JOaUxsVZ5ahj0HWD2dwTSw3AucXciIPnTWQQ==}
 
   abitype@1.0.6:
     resolution: {integrity: sha512-MMSqYh4+C/aVqI2RQaWqbvI4Kxo5cQV40WQ4QFtDnNzCkqChm8MuENhElmynZlO0qUy/ObkEUaXtKqYnx1Kp3A==}
@@ -12471,6 +12466,10 @@ snapshots:
 
   '@floating-ui/utils@0.2.11': {}
 
+  '@fontsource/jetbrains-mono@5.2.8': {}
+
+  '@fontsource/plus-jakarta-sans@5.2.8': {}
+
   '@gemini-wallet/core@0.3.2(viem@2.47.6(bufferutil@4.1.0)(typescript@6.0.2)(utf-8-validate@5.0.10)(zod@3.25.76))':
     dependencies:
       '@metamask/rpc-errors': 7.0.2
@@ -12488,8 +12487,6 @@ snapshots:
       '@shikijs/vscode-textmate': 10.0.2
 
   '@hey-api/client-fetch@0.10.0': {}
-
-  '@hey-api/client-fetch@0.8.4': {}
 
   '@hookform/resolvers@5.2.2(react-hook-form@7.72.0(react@19.2.4))':
     dependencies:
@@ -18907,15 +18904,6 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
-
-  '@zoralabs/coins-sdk@0.7.1(abitype@1.2.3(typescript@6.0.2)(zod@4.3.6))(viem@2.47.6(bufferutil@4.1.0)(typescript@6.0.2)(utf-8-validate@5.0.10)(zod@4.3.6))':
-    dependencies:
-      '@hey-api/client-fetch': 0.8.4
-      '@zoralabs/protocol-deployments': 0.7.6
-      abitype: 1.2.3(typescript@6.0.2)(zod@4.3.6)
-      viem: 2.47.6(bufferutil@4.1.0)(typescript@6.0.2)(utf-8-validate@5.0.10)(zod@4.3.6)
-
-  '@zoralabs/protocol-deployments@0.7.6': {}
 
   abitype@1.0.6(typescript@6.0.2)(zod@3.25.76):
     optionalDependencies:
