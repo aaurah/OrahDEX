@@ -1050,7 +1050,7 @@ export function Layout({ children }: { children: ReactNode }) {
       <TxStatusBar />
 
       {/* Ora — AI Trading Assistant */}
-      {(location === "/" || location.startsWith("/trade") || location.startsWith("/futures") || location.startsWith("/swap")) && (
+      {(location.startsWith("/trade") || location.startsWith("/futures") || location.startsWith("/swap")) && (
         <Suspense fallback={null}><AiAssistant /></Suspense>
       )}
 
