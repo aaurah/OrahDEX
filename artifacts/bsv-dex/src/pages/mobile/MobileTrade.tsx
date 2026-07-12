@@ -3030,32 +3030,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 : `Sell ${base}`}
             </button>
 
-            {/* Swap bridge button */}
-            <button
-              onClick={() => {
-                setSwapMode(v => !v);
-                setShowOrderForm(true);
-                setOrderError(null);
-              }}
-              className={cn(
-                "flex-1 py-3 rounded-xl text-sm font-bold transition-all active:opacity-80 flex items-center justify-center gap-1",
-                swapMode && showOrderForm
-                  ? "bg-primary/15 border border-primary/40 text-primary"
-                  : "bg-card border border-border text-muted-foreground"
-              )}
-            >
-              <ArrowLeftRight size={14} />
-              Swap
-            </button>
-
-            {/* BSV Atomic Swap button */}
-            <button
-              onClick={() => setAtomicSwapOpen(true)}
-              className="flex-1 py-3 rounded-xl text-sm font-bold transition-all active:opacity-80 flex items-center justify-center gap-1 bg-violet-600/15 border border-violet-500/30 text-violet-300"
-            >
-              <ShieldCheck size={14} />
-              Atomic
-            </button>
           </>
         )}
       </div>
