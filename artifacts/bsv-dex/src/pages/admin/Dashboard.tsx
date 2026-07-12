@@ -314,6 +314,15 @@ export function AdminDashboard() {
     ];
   }, [diagRaw, overlayStats]);
 
+  /* Overall health derived from service statuses */
+  const overallStatus = useMemo(() => {
+    if (!services.length) return "loading";
+    if (services.some(s => s.status === "error")) return "degraded";
+    if (services.some(s => s.status === "warn")) return "degraded";
+    if (services.every(s => s.status === "ok" || s.status === "unknown")) return "operational";
+    return "partial";
+  }, [services]);
+
   /* Revenue bar chart — last 7 days from stats or mock */
   const revBars = useMemo(() => {
     const rev = (stats as any)?.revenueHistory as number[] | undefined;
@@ -329,6 +338,14 @@ export function AdminDashboard() {
     () => gen30d(stats?.revenue24h ?? 3200, "revenue", 0.10),
     [stats?.revenue24h]
   );
+
+  /* Deterministic 30-day growth % derived from gen30d curve shape */
+  const revenueGrowthPct = useMemo(() => {
+    if (!revenueData.length) return 0;
+    const first = (revenueData[0] as any).revenue as number ?? 1;
+    const last  = (revenueData[revenueData.length - 1] as any).revenue as number ?? 1;
+    return first > 0 ? Math.max(0, Math.round(((last - first) / first) * 100)) : 0;
+  }, [revenueData]);
 
   /* 30-day user growth line chart */
   const userGrowthData = useMemo(() => {
@@ -400,10 +417,22 @@ export function AdminDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2 shrink-0 pt-0.5">
-          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-green-500/8 border border-green-500/15 text-[11px]">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-green-400 font-semibold">All Systems Operational</span>
-          </div>
+          {overallStatus === "degraded" ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/8 border border-amber-500/15 text-[11px]">
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              <span className="text-amber-400 font-semibold">Degraded Performance</span>
+            </div>
+          ) : overallStatus === "loading" ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-muted/30 border border-border text-[11px]">
+              <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-pulse" />
+              <span className="text-muted-foreground font-semibold">Checking Systems…</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-green-500/8 border border-green-500/15 text-[11px]">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+              <span className="text-green-400 font-semibold">All Systems Operational</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground px-2.5 py-1.5 bg-secondary/40 rounded-xl border border-border">
             <RefreshCw className="w-3 h-3" style={{ animationName: "spin", animationDuration: "4s", animationTimingFunction: "linear", animationIterationCount: "infinite" }} />
             {lastAt}
@@ -468,7 +497,7 @@ export function AdminDashboard() {
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-muted-foreground">30-day</span>
               <span className="text-[10px] font-bold text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-0.5 rounded-full">
-                +{Math.round(Math.random() * 12 + 8)}%
+                +{revenueGrowthPct}%
               </span>
             </div>
           </div>
