@@ -27,6 +27,7 @@ import {
   validatePin, hasPin, setPin as savePinVerifier, storeWithPin,
   storeWithPasskey, createImportPasskey, saveDerivedAddresses,
 } from "@/lib/walletPin";
+
 import {
   HardwareChooser,
   LedgerPanel,
@@ -35,6 +36,9 @@ import {
   GridPlusPanel,
   type HWDevice,
 } from "@/components/HardwareWalletPanels";
+
+const isMobileDevice = () =>
+  typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
 
 const srOnly: React.CSSProperties = {
   position: "absolute", width: 1, height: 1, padding: 0,
@@ -390,16 +394,18 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
 
       <p className="text-[11px] text-muted-foreground text-center pb-1">How should this wallet be protected for signing?</p>
 
-      <button onClick={() => setStep("biometric")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-all text-left">
-        <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
-          <Fingerprint className="w-5 h-5 text-primary" />
-        </div>
-        <div className="flex-1">
-          <div className="text-sm font-semibold text-foreground">Face ID / Touch ID</div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">Biometric — no PIN to remember</div>
-        </div>
-        <ChevronRight className="w-4 h-4 text-primary/40 group-hover:text-primary/70 shrink-0" />
-      </button>
+      {isMobileDevice() && (
+        <button onClick={() => setStep("biometric")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-all text-left">
+          <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+            <Fingerprint className="w-5 h-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-foreground">Face ID / Touch ID</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">Biometric — no PIN to remember</div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-primary/40 group-hover:text-primary/70 shrink-0" />
+        </button>
+      )}
 
       <button onClick={() => setStep(hasPin() ? "pin-entry" : "pin-setup")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/20 transition-all text-left">
         <div className="w-10 h-10 rounded-xl bg-muted border border-border flex items-center justify-center shrink-0">
@@ -720,16 +726,18 @@ function SeedCreatePanel({ onDone }: { onDone: () => void }) {
     <div className="space-y-3">
       <p className="text-[11px] text-muted-foreground text-center pb-1">How should this wallet be protected?</p>
 
-      <button onClick={() => setStep("biometric")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-all text-left">
-        <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
-          <Fingerprint className="w-5 h-5 text-primary" />
-        </div>
-        <div className="flex-1">
-          <div className="text-sm font-semibold text-foreground">Face ID / Touch ID</div>
-          <div className="text-[11px] text-muted-foreground mt-0.5">Biometric — no PIN to remember</div>
-        </div>
-        <ChevronRight className="w-4 h-4 text-primary/40 group-hover:text-primary/70 shrink-0" />
-      </button>
+      {isMobileDevice() && (
+        <button onClick={() => setStep("biometric")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-all text-left">
+          <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+            <Fingerprint className="w-5 h-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-foreground">Face ID / Touch ID</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">Biometric — no PIN to remember</div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-primary/40 group-hover:text-primary/70 shrink-0" />
+        </button>
+      )}
 
       <button onClick={() => setStep(hasPin() ? "pin-entry" : "pin-setup")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/20 transition-all text-left">
         <div className="w-10 h-10 rounded-xl bg-muted border border-border flex items-center justify-center shrink-0">
