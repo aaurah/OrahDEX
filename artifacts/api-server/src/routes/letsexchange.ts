@@ -853,6 +853,32 @@ router.post("/letsexchange/estimate", async (req, res) => {
         });
         return;
       }
+      // All live venues failed — check DB for a cached rate as last resort.
+      // This keeps every pair quotable even during complete API outages.
+      try {
+        const [cachedRow] = await db
+          .select({ lastPrice: marketsTable.lastPrice })
+          .from(marketsTable)
+          .where(eq(marketsTable.symbol, `${from}/${to}`))
+          .limit(1);
+        const cachedRate = parseFloat(cachedRow?.lastPrice ?? "0");
+        if (cachedRate > 0) {
+          logger.info({ from, to, cachedRate }, "estimate: all venues failed — serving cached DB rate");
+          res.json({
+            amount:             String(cachedRate * amt),
+            rate:               String(cachedRate),
+            min_amount:         "",
+            max_amount:         "",
+            rate_id:            null,
+            rate_id_expired_at: null,
+            withdrawal_fee:     "0",
+            best_venue:         "cached",
+            stale:              true,
+            venue_quotes:       [],
+          });
+          return;
+        }
+      } catch { /* non-fatal — fall through to 503 */ }
       res.status(503).json({ error: `No rate available for ${from}→${to}`, detail: errDetails }); return;
     }
 
@@ -876,6 +902,16 @@ router.post("/letsexchange/estimate", async (req, res) => {
 
     const estimatedOutput = best.expectedOutput;
     const rate = amt > 0 ? estimatedOutput / amt : 0;
+
+    // Non-blocking: persist live rate to DB so future fallbacks use real rates.
+    // Covers all 1.88M bridge pairs over time as users trade them.
+    if (rate > 0) {
+      db.update(marketsTable)
+        .set({ lastPrice: String(rate) })
+        .where(eq(marketsTable.symbol, `${from}/${to}`))
+        .catch(() => {}); // non-fatal — never block the response
+    }
+
     // Use the winning venue's minAmount; fall back to lowestMin across all venues
     // so the UI always shows a real minimum (never "0" or blank).
     const resolvedMin = best.minAmount ?? lowestMin;
