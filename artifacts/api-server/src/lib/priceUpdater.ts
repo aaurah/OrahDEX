@@ -1,6 +1,6 @@
 import { db, pool, withDbRetry } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
-import { eq, desc, gte, inArray, notInArray, and, sql } from "drizzle-orm";
+import { eq, desc, gte, inArray, and, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { guardedInterval, withRetry } from "./selfHealing.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
@@ -1553,13 +1553,20 @@ export async function updateMarketPrices() {
       _coinChangeMap[sym] = data.usd_24h_change ?? 0;
     }
 
+    // Only update types where the sovereign price engine has data.
+    // "spot" and "futures" are our internally-managed market rows (~1 K rows).
+    // "letsexchange" (36 K rows) and "simpleswap" (66 K rows) are external
+    // pair catalogs whose prices are computed on-the-fly from sovereign data at
+    // swap/quote time — they don't need periodic DB price writes.
+    // Selecting them here would pull 100 K+ rows per cycle, saturating the DB
+    // connection pool and causing the price-updater to exceed its 70 s timeout.
     const markets = await db.select({
       symbol:     marketsTable.symbol,
       baseAsset:  marketsTable.baseAsset,
       quoteAsset: marketsTable.quoteAsset,
       type:       marketsTable.type,
     }).from(marketsTable)
-      .where(notInArray(marketsTable.type, ["letsexchange"]));
+      .where(inArray(marketsTable.type, ["spot", "futures"]));
 
     const pendingUpdates: Array<{
       symbol: string; lastPrice: string; priceChange24h: string;
