@@ -67,8 +67,9 @@ export const modal = createAppKit({
     analytics: false,
     email:     false,
     socials:   [],
-    onramp:    true,
-    swaps:     false,
+    onramp:    true,        // Meld — fiat → crypto purchases
+    swaps:     ["1inch"],  // 1inch DEX aggregator — EVM token swaps
+    activity:  true,       // on-chain transaction history
   },
   themeMode: "dark",
   themeVariables: {
