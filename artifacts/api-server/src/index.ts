@@ -35,7 +35,7 @@ process.on("unhandledRejection", (reason: unknown) => {
    We bind a minimal http.Server first so the platform's port-detection window
    is satisfied, then hot-swap the request handler once Express finishes loading.
    Health probes return 200 during the loading window so the startup check passes.
-── */
+─ */
 type RequestHandler = http.RequestListener;
 
 let currentHandler: RequestHandler = (_req, res) => {
@@ -65,10 +65,22 @@ await new Promise<void>((resolve, reject) => {
 });
 console.info(`[startup] Placeholder server listening on port ${port}`);
 
+/* ── Attempt to run lightweight migrations (bounded) before loading the app.
+   Migrations are idempotent. A failure here is non-fatal; we log and continue.
+   Running them here avoids running migrations at module import time and keeps
+   the index.ts/app.ts module initialization fast and predictable. ── */
+try {
+  // Dynamic import so this stays in the small initial bundle.
+  const { runMigrations } = await import("./migrations/runMigrations.js");
+  await runMigrations(10_000).catch((e: any) => console.warn("[startup] migrations failed (non-fatal)", e?.message ?? e));
+} catch (e: any) {
+  console.warn("[startup] migrations module load failed (non-fatal)", e?.message ?? e);
+}
+
 /* ── Step 2: Load the full Express application (takes ~9 s on production VM) ─
    Dynamic import keeps app.ts in a separate bundle chunk so index.ts evaluates
    first and the placeholder server is already listening before the heavy load.
-── */
+─ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const { default: app } = await import("./app.js") as { default: RequestHandler };
 currentHandler = app;
@@ -79,7 +91,7 @@ console.info(`[startup] Express handler active on port ${port}`);
    so server.close() finishes in < 1 s rather than waiting for idle timeouts.
    Fast shutdown is critical: the old process must fully exit before the new
    one can bind the same port in a rolling deployment.
-── */
+─ */
 function shutdown(signal: string): void {
   console.info(`[shutdown] ${signal} received — draining connections`);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
