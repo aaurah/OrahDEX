@@ -1172,9 +1172,8 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
 
       {/* ══ Hero card ══════════════════════════════════════════════════════════ */}
       <div className="relative rounded-3xl bg-card border border-border/60 overflow-hidden mb-4 shadow-sm">
-        {/* Decorative gradient blobs */}
-        <div className="absolute top-0 left-0 w-64 h-40 bg-gradient-to-br from-violet-500/10 via-primary/5 to-transparent pointer-events-none" />
-        <div className="absolute bottom-0 right-0 w-40 h-32 bg-gradient-to-tl from-fuchsia-500/8 to-transparent pointer-events-none" />
+        {/* Decorative gradient — full-width so no hard edge appears */}
+        <div className="absolute inset-0 bg-gradient-to-br from-violet-500/6 via-transparent to-fuchsia-500/4 pointer-events-none" />
 
         <div className="relative p-5">
           {/* Top bar: logo + security badge */}
