@@ -432,23 +432,42 @@ export function SpotTrading() {
     return sorted.map(([p, q]) => { cum += p * q; return { price: p, quantity: q, total: cum }; });
   }
   const rawOB = apiOrderBook as any;
-  const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
+  // Bridge pairs (LE/SS) return isBridgePair:true with empty bids/asks —
+  // they should route to the swap panel, not the DEX order form.
+  const isBridgePair = rawOB?.isBridgePair === true;
+  const hasRealOB = !isBridgePair && (rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0);
 
-  // Auto-switch trade mode based on liquidity, unless the user manually picked
+  // Auto-switch trade mode based on liquidity, unless the user manually picked.
+  // Bridge pairs always auto-route to swap mode.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!tradeModeLockedByUser) {
-      setTradeMode(hasRealOB ? "order" : "swap");
+      setTradeMode((hasRealOB && !isBridgePair) ? "order" : "swap");
     }
-  }, [hasRealOB, symbol]); // reset on symbol change too
+  }, [hasRealOB, isBridgePair, symbol]); // reset on symbol change too
 
   // When pair changes, unlock user preference so auto-routing kicks in fresh
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setTradeModeLockedByUser(false); }, [symbol]);
 
-  const orderBook = (hasRealOB && Array.isArray(rawOB.bids[0])
-    ? { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) }
-    : (hasRealOB ? apiOrderBook : generateMockOrderBook(ticker.lastPrice))) as import("@workspace/api-client-react").OrderBook;
+  // Bridge pairs: pass empty book so OrderBook renders its bridge-level UI.
+  // Non-bridge: use real orders or fall back to a mock visual.
+  const orderBook = (() => {
+    if (isBridgePair) return { bids: [], asks: [] };
+    if (hasRealOB && Array.isArray(rawOB.bids[0])) return { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) };
+    if (hasRealOB) return apiOrderBook;
+    return generateMockOrderBook(ticker.lastPrice);
+  })() as import("@workspace/api-client-react").OrderBook;
+
+  // Unified bridge rate passed to OrderBook: LE wins, SS is fallback.
+  // This drives the virtual order book levels and the swap CTA.
+  const ssRateData = ssVenuePrice ? {
+    rate:      String(ssVenuePrice.rate),
+    minAmount: ssVenuePrice.minAmount != null ? String(ssVenuePrice.minAmount) : "0",
+    maxAmount: ssVenuePrice.maxAmount != null ? String(ssVenuePrice.maxAmount) : "999999",
+  } : null;
+  const bridgeRate     = leRateData ?? ssRateData;
+  const bridgeProvider = leRateData ? "letsexchange" : ssVenuePrice ? "simpleswap" : null;
 
   const queryClient = useQueryClient();
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
@@ -1382,11 +1401,12 @@ export function SpotTrading() {
             onFill={handleOrderBookFill}
             symbol={symbol}
             trades={trades as any}
-            leRate={leRateData ? {
-              rate:      leRateData.rate,
-              minAmount: leRateData.minAmount,
-              maxAmount: leRateData.maxAmount,
+            leRate={bridgeRate ? {
+              rate:      bridgeRate.rate,
+              minAmount: bridgeRate.minAmount,
+              maxAmount: bridgeRate.maxAmount,
             } : null}
+            bridgeProvider={bridgeProvider ?? undefined}
             hasInternalLiquidity={hasRealOB}
             onLeSwap={handleLeSwap}
             externalFlash={obFlash}
