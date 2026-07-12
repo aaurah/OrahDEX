@@ -5,6 +5,7 @@ import {
   RefreshCw, Link2, Link2Off, Send, TrendingUp, ChevronDown, ChevronUp,
   Coins, Trash2, Loader2, ExternalLink, Cpu, Globe,
   ArrowUpRight, ArrowDownLeft, ScanSearch, History, Filter, Zap,
+  QrCode, Search, Shield, BarChart2, Eye, EyeOff, Lock,
 } from "lucide-react";
 import { WalletAddresses } from "@/components/wallet/WalletAddresses";
 import { WalletDApps } from "@/components/wallet/WalletDApps";
@@ -1118,22 +1119,50 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
     toast({ title: "Address copied" });
   };
 
+  const [assetSearch, setAssetSearch] = useState("");
+  const [hideSmall, setHideSmall]     = useState(false);
+  const [balanceHidden, setBalanceHidden] = useState(false);
+
+  const filteredChains = useMemo(() => {
+    const q = assetSearch.toLowerCase();
+    if (!q) return CHAINS;
+    return CHAINS.filter(c =>
+      c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q)
+    );
+  }, [assetSearch]);
+
   if (!address) {
     return (
-      <div className="min-h-full flex flex-col items-center justify-center px-6 py-20">
-        <div className="w-20 h-20 rounded-3xl bg-primary/15 flex items-center justify-center mb-5">
-          <WalletIcon size={32} className="text-primary" />
+      <div className="min-h-full flex flex-col items-center justify-center px-6 py-16">
+        <div className="relative mb-8">
+          <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary/20 to-violet-500/10 flex items-center justify-center border border-primary/20">
+            <WalletIcon size={36} className="text-primary" />
+          </div>
+          <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+            <Shield size={14} className="text-emerald-400" />
+          </div>
         </div>
-        <h2 className="text-xl font-bold text-foreground mb-2">Your sovereign wallet</h2>
-        <p className="text-sm text-muted-foreground text-center max-w-sm mb-6">
-          Import a seed phrase, create a passkey wallet, or connect an external wallet —
-          all chains, one identity.
+        <h2 className="text-2xl font-bold text-foreground mb-2 text-center">Your Sovereign Wallet</h2>
+        <p className="text-sm text-muted-foreground text-center max-w-xs mb-8 leading-relaxed">
+          One identity, all chains. Import a seed phrase, create a passkey wallet, or connect any external wallet.
         </p>
+        <div className="grid grid-cols-3 gap-3 w-full max-w-xs mb-8">
+          {[
+            { icon: ShieldCheck, label: "Passkey secured", color: "text-violet-400", bg: "bg-violet-500/10" },
+            { icon: Link2, label: "16 chains", color: "text-blue-400", bg: "bg-blue-500/10" },
+            { icon: Coins, label: "1000s of tokens", color: "text-emerald-400", bg: "bg-emerald-500/10" },
+          ].map(f => (
+            <div key={f.label} className={cn("rounded-2xl border border-border p-3 flex flex-col items-center gap-1.5", f.bg)}>
+              <f.icon size={18} className={f.color} />
+              <span className="text-[10px] font-semibold text-muted-foreground text-center">{f.label}</span>
+            </div>
+          ))}
+        </div>
         <button
           onClick={() => openWalletModal()}
-          className="px-6 py-3 rounded-xl bg-primary text-primary-foreground font-semibold flex items-center gap-2"
+          className="w-full max-w-xs px-6 py-3.5 rounded-2xl bg-primary text-primary-foreground font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all"
         >
-          <Plus size={16} /> Get started
+          <Plus size={16} /> Connect Wallet
         </button>
       </div>
     );
@@ -1142,62 +1171,116 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   return (
     <div className="min-h-full px-3 sm:px-6 py-4 sm:py-6 max-w-3xl mx-auto pb-32 sm:pb-10">
 
-      {/* ── Identity card ── */}
-      <div className="rounded-3xl bg-gradient-to-br from-primary/15 via-card to-card border border-border p-5 mb-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <BrandLogo textSize="text-lg" suffix="Wallet" />
+      {/* ══ Hero card ══════════════════════════════════════════════════════════ */}
+      <div className="relative rounded-3xl bg-card border border-border/60 overflow-hidden mb-4 shadow-sm">
+        {/* Decorative gradient blobs */}
+        <div className="absolute top-0 left-0 w-64 h-40 bg-gradient-to-br from-violet-500/10 via-primary/5 to-transparent pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-40 h-32 bg-gradient-to-tl from-fuchsia-500/8 to-transparent pointer-events-none" />
+
+        <div className="relative p-5">
+          {/* Top bar: logo + security badge */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-primary/15 flex items-center justify-center">
+                <WalletIcon size={15} className="text-primary" />
+              </div>
+              <span className="text-sm font-bold text-foreground">OrahWallet</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {imported ? (
+                <span className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                  <ShieldCheck size={10} />
+                  {imported.protectedBy === "passkey" ? "Passkey" : "PIN"}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full bg-secondary text-muted-foreground border border-border">
+                  <Globe size={10} /> External
+                </span>
+              )}
+              <button
+                onClick={() => setBalanceHidden(h => !h)}
+                className="w-7 h-7 rounded-lg bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {balanceHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+              </button>
+            </div>
           </div>
-          {imported && (
-            <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-primary/15 text-primary uppercase tracking-wider flex items-center gap-1">
-              <ShieldCheck size={10} /> {imported.protectedBy === "passkey" ? "Passkey" : "PIN"} secured
+
+          {/* Balance */}
+          <div className="mb-1">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">Total Portfolio</p>
+            <div className="flex items-baseline gap-3">
+              <p className="text-4xl font-black text-foreground tracking-tight leading-none">
+                {balanceHidden ? "••••••" : formatQuoteAmount(totalUsd, quoteCurrency)}
+              </p>
+            </div>
+          </div>
+
+          {/* Portfolio allocation mini-bar */}
+          <div className="flex rounded-full overflow-hidden h-1 w-full mb-5 gap-px">
+            {[
+              { color: "#627EEA", label: "EVM",   pct: evmAddress ? 70 : 0 },
+              { color: "#F7931A", label: "BTC",   pct: derived?.btc ? 15 : 0 },
+              { color: "#EAB300", label: "BSV",   pct: (derived?.bsv ?? (network === "bsv" ? address : null)) ? 8 : 0 },
+              { color: "#14F195", label: "SOL",   pct: derived?.sol ? 7 : 0 },
+              { color: "#6B7280", label: "Other", pct: 0 },
+            ].filter(s => s.pct > 0).map(s => (
+              <div key={s.label} className="h-full transition-all" style={{ width: `${s.pct}%`, backgroundColor: s.color, opacity: 0.7 }} />
+            ))}
+            {!evmAddress && !derived?.btc && <div className="h-full w-full bg-border/50 rounded-full" />}
+          </div>
+
+          {/* Address pill */}
+          <div className="flex items-center gap-2 bg-secondary/50 border border-border/40 rounded-xl px-3 py-2 mb-5">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+            <span className="flex-1 font-mono text-xs text-foreground truncate">
+              {balanceHidden ? "••••••••••••••••" : shortAddr(address)}
             </span>
-          )}
-        </div>
+            <button
+              onClick={copyAddress}
+              className="text-muted-foreground hover:text-foreground transition-colors ml-1"
+              title="Copy address"
+            >
+              {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+            </button>
+            <button
+              onClick={() => setReceiveOpen(true)}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Show QR code"
+            >
+              <QrCode size={12} />
+            </button>
+          </div>
 
-        {/* Total balance */}
-        <div className="mb-4">
-          <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Total EVM balance</p>
-          <p className="text-3xl font-bold text-foreground tracking-tight">
-            {formatQuoteAmount(totalUsd, quoteCurrency)}
-          </p>
-        </div>
-
-        <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Your address</p>
-        <button onClick={copyAddress} className="flex items-center gap-2 group w-full text-left mb-5">
-          <span className="font-mono text-sm sm:text-base text-foreground truncate">{shortAddr(address)}</span>
-          {copied
-            ? <Check size={14} className="text-green-400" />
-            : <Copy size={14} className="text-muted-foreground group-hover:text-foreground" />}
-        </button>
-
-        {/* Action buttons — imToken / MetaMask style */}
-        <div className="grid grid-cols-4 gap-2">
-          <ActionButton icon={Download}    label="Receive" onClick={() => setReceiveOpen(true)} />
-          <ActionButton icon={Send}        label="Send"    onClick={() => setSendOpen(true)} />
-          <ActionButton icon={ArrowDownUp} label="Swap"    onClick={() => navigate("/swap")} />
-          <ActionButton icon={Sparkles}    label="Buy"     onClick={() => setBuyCryptoOpen(true)} />
+          {/* Action buttons — circular Trust Wallet / imToken style */}
+          <div className="grid grid-cols-5 gap-1">
+            <ActionButton icon={Download}    label="Receive" onClick={() => setReceiveOpen(true)}    bg="bg-emerald-500/15" fg="text-emerald-400" />
+            <ActionButton icon={Send}        label="Send"    onClick={() => setSendOpen(true)}        bg="bg-blue-500/15"    fg="text-blue-400"   />
+            <ActionButton icon={ArrowDownUp} label="Swap"    onClick={() => navigate("/swap")}        bg="bg-primary/15"     fg="text-primary"    />
+            <ActionButton icon={Sparkles}    label="Buy"     onClick={() => setBuyCryptoOpen(true)}   bg="bg-orange-500/15"  fg="text-orange-400" />
+            <ActionButton icon={BarChart2}   label="History" onClick={() => setTab("activity")}       bg="bg-violet-500/15"  fg="text-violet-400" />
+          </div>
         </div>
       </div>
 
-      {/* ── Tab selector ── */}
-      <div className="flex bg-card border border-border rounded-2xl p-1 mb-4 gap-1">
+      {/* ══ Tab strip ═══════════════════════════════════════════════════════════ */}
+      <div className="flex bg-secondary/40 border border-border/50 rounded-2xl p-1 mb-4 gap-0.5">
         {(
           [
-            { id: "portfolio", label: "Portfolio",    icon: WalletIcon },
-            { id: "activity",  label: "Activity",     icon: History },
-            { id: "addresses", label: "Addresses",    icon: Cpu },
-            { id: "dapps",     label: "dApps",        icon: Globe },
+            { id: "portfolio", label: "Assets",    icon: Coins },
+            { id: "activity",  label: "Activity",  icon: History },
+            { id: "addresses", label: "Addresses", icon: Cpu },
+            { id: "dapps",     label: "dApps",     icon: Globe },
           ] as const
         ).map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all",
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all",
               tab === t.id
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                ? "bg-card text-foreground shadow-sm border border-border/40"
+                : "text-muted-foreground hover:text-foreground/80"
             )}
           >
             <t.icon size={13} />
@@ -1229,74 +1312,116 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         <ActivityTab txs={onchainTxs} loading={txLoading} evmAddress={evmAddress} />
       )}
 
-      {/* ── Portfolio tab ── */}
+      {/* ══ Assets tab ══════════════════════════════════════════════════════════ */}
       {tab === "portfolio" && (<>
 
-      {/* ── Quick stats — Atomic Wallet style ── */}
-      <div className="flex gap-2 mb-4">
-        <StatPill
-          label="Chains linked"
-          value={`${linkedChains} / ${totalNonEvm}`}
-          icon={Link2}
-          accent="border-border bg-card"
-        />
-        <StatPill
-          label="EVM networks"
-          value="8 active"
-          icon={TrendingUp}
-          accent="border-border bg-card"
-        />
+      {/* ── Stats row ── */}
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="rounded-2xl border border-border bg-card p-3 flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <Link2 size={11} className="text-blue-400" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Linked</span>
+          </div>
+          <p className="text-sm font-bold text-foreground">{linkedChains} <span className="text-muted-foreground font-normal text-xs">/ {totalNonEvm}</span></p>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-3 flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <TrendingUp size={11} className="text-violet-400" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">EVM</span>
+          </div>
+          <p className="text-sm font-bold text-foreground">8 <span className="text-muted-foreground font-normal text-xs">networks</span></p>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-3 flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <Lock size={11} className={canBackup ? "text-emerald-400" : "text-amber-400"} />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Security</span>
+          </div>
+          <p className={cn("text-sm font-bold", canBackup ? "text-emerald-400" : "text-amber-400")}>
+            {imported?.protectedBy === "passkey" ? "Passkey" : canBackup ? "PIN" : "External"}
+          </p>
+        </div>
       </div>
 
       {afterActions}
 
-      {/* ── Backup CTA ── */}
+      {/* ── Security / backup card ── */}
       {canBackup && (
         <button
           onClick={() => setRevealOpen(true)}
-          className="w-full mb-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-center gap-3 hover:bg-amber-500/15 transition-colors text-left"
+          className="w-full mb-4 rounded-2xl border border-amber-500/25 bg-amber-500/8 p-4 flex items-center gap-3 hover:bg-amber-500/12 transition-colors text-left group"
         >
-          <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center shrink-0">
             <KeyRound size={18} className="text-amber-400" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-foreground">Back up your wallet</p>
-            <p className="text-[11px] text-muted-foreground">Reveal recovery phrase or private key. Authentication required.</p>
+            <p className="text-[11px] text-muted-foreground">Reveal recovery phrase or private key · Auth required</p>
           </div>
-          <ChevronRight size={16} className="text-muted-foreground" />
+          <ChevronRight size={15} className="text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
         </button>
       )}
 
       {!canBackup && (
-        <div className="mb-4 rounded-2xl border border-border bg-card p-4 flex items-start gap-3">
-          <AlertCircle size={16} className="text-muted-foreground shrink-0 mt-0.5" />
-          <p className="text-xs text-muted-foreground">
-            You're connected via an external wallet. Backup is managed by that wallet's own app.
-            Use the <strong>Link</strong> button on any chain below to add watch addresses or import keys.
+        <div className="mb-4 rounded-2xl border border-border bg-card/50 p-3.5 flex items-start gap-3">
+          <div className="w-7 h-7 rounded-lg bg-secondary flex items-center justify-center shrink-0 mt-0.5">
+            <Globe size={13} className="text-muted-foreground" />
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            External wallet connected. Backup is managed by your wallet app.
+            Tap <strong className="text-foreground">Link</strong> on any chain to add addresses.
           </p>
         </div>
       )}
 
-      {/* ── Chain list — Guarda / Atomic / imToken style ── */}
+      {/* ── Search + filter bar ── */}
+      <div className="flex items-center gap-2 mb-3">
+        <div className="relative flex-1">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={assetSearch}
+            onChange={e => setAssetSearch(e.target.value)}
+            placeholder="Search assets & chains…"
+            className="w-full pl-8 pr-3 py-2 rounded-xl bg-card border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/40 transition-all"
+          />
+          {assetSearch && (
+            <button
+              onClick={() => setAssetSearch("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <AlertCircle size={12} />
+            </button>
+          )}
+        </div>
+        {hasMissingChains && (
+          <button
+            onClick={refreshAddresses}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 text-[11px] font-semibold text-primary px-3 py-2 rounded-xl bg-primary/10 hover:bg-primary/15 transition-colors disabled:opacity-50 shrink-0 border border-primary/20"
+          >
+            <RefreshCw size={11} className={refreshing ? "animate-spin" : ""} />
+            {refreshing ? "Updating…" : "Refresh"}
+          </button>
+        )}
+      </div>
+
+      {/* ── Chain list ── */}
       <div>
         <div className="flex items-center justify-between px-1 mb-2">
           <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
             Assets &amp; Chains
+            {filteredChains.length < CHAINS.length && (
+              <span className="ml-1.5 text-primary/70">{filteredChains.length} shown</span>
+            )}
           </p>
-          {hasMissingChains && (
-            <button
-              onClick={refreshAddresses}
-              disabled={refreshing}
-              className="flex items-center gap-1 text-[10px] font-semibold text-primary px-2 py-0.5 rounded-full bg-primary/10 hover:bg-primary/20 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={10} className={refreshing ? "animate-spin" : ""} />
-              {refreshing ? "Updating…" : "Refresh addresses"}
-            </button>
-          )}
         </div>
 
         <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
-          {CHAINS.map(c => (
+          {filteredChains.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+              <Search size={22} className="opacity-20" />
+              <p className="text-sm">No chains match "{assetSearch}"</p>
+            </div>
+          ) : filteredChains.map(c => (
             <ChainBalanceRow
               key={c.id}
               chain={c}
@@ -1322,15 +1447,22 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
           ))}
         </div>
 
-        {/* Import hint — MetaMask style tip */}
-        <p className="mt-3 text-center text-[10px] text-muted-foreground/60">
-          Tap <Link2 size={9} className="inline mb-0.5" /> on any chain to link an address or import a private key
-        </p>
+        {!assetSearch && (
+          <p className="mt-3 text-center text-[10px] text-muted-foreground/50">
+            Tap <Link2 size={9} className="inline mb-0.5" /> on any chain to link an address or import a private key
+          </p>
+        )}
       </div>
 
       {/* ── Smart Account (EIP-4337) ── */}
-      <div className="mt-5 bg-card border border-border rounded-2xl p-5">
-        <SmartAccountPanel />
+      <div className="mt-4 rounded-2xl border border-border bg-card overflow-hidden">
+        <div className="flex items-center gap-2 px-4 pt-4 pb-2 border-b border-border/50">
+          <Cpu size={13} className="text-primary" />
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">Smart Account</p>
+        </div>
+        <div className="p-4">
+          <SmartAccountPanel />
+        </div>
       </div>
 
       </>)}
@@ -1558,6 +1690,16 @@ function ActivityTab({
             const isContract = !!tx.functionName && !tx.isTokenTransfer;
             const counterpart = tx.isIncoming ? tx.from : tx.to;
             const prefix = isContract ? "On" : tx.isIncoming ? "From" : "To";
+
+            const amtVal    = tx.isTokenTransfer ? tx.tokenValue : tx.valueEth;
+            const amtSymbol = tx.isTokenTransfer ? (tx.tokenSymbol ?? "Token") : tx.nativeSymbol;
+            const amtFmt    = amtVal != null && amtVal > 0
+              ? `${amtVal < 0.0001 ? amtVal.toExponential(2) : amtVal < 1 ? amtVal.toFixed(5) : amtVal.toFixed(4)} ${amtSymbol}`
+              : null;
+            const amtColor  = tx.isError
+              ? "text-red-400"
+              : tx.isIncoming ? "text-emerald-400" : "text-foreground";
+
             return (
               <a
                 key={`${tx.hash}-${i}`}
@@ -1587,8 +1729,12 @@ function ActivityTab({
                 </div>
 
                 <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
-                  <span className="text-[11px] font-semibold text-muted-foreground">{date}</span>
-                  <span className="text-[11px] text-muted-foreground/60">{time}</span>
+                  {amtFmt && (
+                    <span className={`text-[12px] font-bold tabular-nums ${amtColor}`}>
+                      {tx.isIncoming ? "+" : tx.isError ? "" : "−"}{amtFmt}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-muted-foreground">{date} {time}</span>
                   <ExternalLink size={10} className="text-muted-foreground/30 group-hover:text-muted-foreground/60 mt-0.5" />
                 </div>
               </a>
@@ -1600,14 +1746,22 @@ function ActivityTab({
   );
 }
 
-function ActionButton({ icon: Icon, label, onClick }: { icon: any; label: string; onClick: () => void }) {
+function ActionButton({
+  icon: Icon, label, onClick,
+  bg = "bg-primary/15", fg = "text-primary",
+}: {
+  icon: any; label: string; onClick: () => void;
+  bg?: string; fg?: string;
+}) {
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-card border border-border hover:bg-secondary/40 active:scale-95 transition-all"
+      className="flex flex-col items-center gap-1.5 active:scale-95 transition-all group"
     >
-      <Icon size={18} className="text-primary" />
-      <span className="text-[11px] font-semibold text-foreground">{label}</span>
+      <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center transition-all group-hover:scale-105 group-active:scale-95", bg)}>
+        <Icon size={20} className={fg} />
+      </div>
+      <span className="text-[10px] font-semibold text-muted-foreground group-hover:text-foreground transition-colors">{label}</span>
     </button>
   );
 }
