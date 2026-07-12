@@ -1215,20 +1215,6 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
             </div>
           </div>
 
-          {/* Portfolio allocation mini-bar */}
-          <div className="flex rounded-full overflow-hidden h-1 w-full mb-5 gap-px">
-            {[
-              { color: "#627EEA", label: "EVM",   pct: evmAddress ? 70 : 0 },
-              { color: "#F7931A", label: "BTC",   pct: derived?.btc ? 15 : 0 },
-              { color: "#EAB300", label: "BSV",   pct: (derived?.bsv ?? (network === "bsv" ? address : null)) ? 8 : 0 },
-              { color: "#14F195", label: "SOL",   pct: derived?.sol ? 7 : 0 },
-              { color: "#6B7280", label: "Other", pct: 0 },
-            ].filter(s => s.pct > 0).map(s => (
-              <div key={s.label} className="h-full transition-all" style={{ width: `${s.pct}%`, backgroundColor: s.color, opacity: 0.7 }} />
-            ))}
-            {!evmAddress && !derived?.btc && <div className="h-full w-full bg-border/50 rounded-full" />}
-          </div>
-
           {/* Address pill */}
           <div className="flex items-center gap-2 bg-secondary/50 border border-border/40 rounded-xl px-3 py-2 mb-5">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
