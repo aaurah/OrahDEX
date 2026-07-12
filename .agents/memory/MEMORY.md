@@ -16,6 +16,7 @@
 - [Socket bridge integration](socket-bridge-integration.md) — IBridgeProvider.getQuotes() returns BridgeQuote[]; SocketBridgeProvider stores full route in routeMeta.socketRoute for buildTx; getProvider() uses prefix match for socket:* IDs.
 - [pg ECONNRESET crash pattern](pg-econnreset-crash.md) — dual uncaughtException handlers + missing client error listener caused pg drops to kill API server; three-part fix documented.
 - [guardedInterval thundering herd](guarded-interval-jitter.md) — setInterval causes all background services to re-align on LCM boundaries (~6 min); fix is ±20% jitter via self-rescheduling setTimeout.
+- [Bridge pair scale issues](bridge-pair-scale.md) — 1.88M LE/SS pairs; 84% have last_price=0; mock order book used absolute offsets (broke sub-cent pairs); mobile had no bridge auto-routing.
 - [Escrow wallet routing bugs](escrow-wallet-routing.md) — three root causes made escrow MetaMask-only; fixes: remove undeployed chain addresses, check provider==="reown" before connector.id, read wallet.getChain() after ThirdWeb connect.
 - [CoinGecko price feed](coingecko-price-feed.md) — Binance blocked in Replit; CoinGecko free API works (no key), covers 150+ coins with real change24h; MATIC needs "polygon-ecosystem-token" not "matic-network"; DOGS needs "dogs-2".
 - [Deploy stops dev workflows](deploy-stops-workflows.md) — publishing/deploying can leave all 3 dev workflows as NOT_STARTED afterward; preview goes blank until manually restarted.
