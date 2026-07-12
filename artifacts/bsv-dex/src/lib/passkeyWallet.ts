@@ -1083,3 +1083,125 @@ export async function signWithPasskey(
 
   return { signature: sig, address: account.address };
 }
+
+// ─── Secret-first helpers (no passkey ceremony) ───────────────────────────────
+// These accept a pre-obtained secret (mnemonic or 0x private key) and do pure
+// key derivation / signing. Callers (walletSigner.ts) are responsible for
+// obtaining the secret via the appropriate auth path (PIN prompt or passkey).
+
+/**
+ * Authenticate a NATIVE passkey wallet (created via registerPasskeyWallet /
+ * importPasskeyWallet) and return the raw decrypted secret string.
+ * This is the native-passkey counterpart of unlockWithPin / unlockWithPasskey.
+ */
+export async function getNativePasskeySecret(evmAddress: string): Promise<string> {
+  const wallets  = listPasskeyWallets();
+  const matching = wallets.filter(w => w.address.toLowerCase() === evmAddress.toLowerCase());
+  if (matching.length === 0 && wallets.length === 0)
+    throw new Error("OrahWallet not found on this device. Please create or restore your passkey wallet first.");
+
+  const allowCredentials = matching.length > 0
+    ? matching.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }))
+    : wallets.map(w => ({ id: b642buf(url2b64(w.credentialId)), type: "public-key" as const }));
+
+  let assertion: PublicKeyCredential | null;
+  try {
+    assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge:        crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials,
+        userVerification: "required",
+        timeout:          60_000,
+      },
+    }) as PublicKeyCredential | null;
+  } catch (err: any) {
+    const msg: string = err?.message ?? "";
+    if (msg.includes("not allowed") || msg.includes("denied") || msg.includes("cancel") || err?.name === "NotAllowedError")
+      throw new Error('Wrong passkey selected. Please choose "OrahDEX Wallet" when prompted.');
+    throw err;
+  }
+  if (!assertion) throw new Error("Passkey authentication cancelled");
+
+  const rawId        = assertion.rawId;
+  const credentialId = b642url(buf2b64(rawId));
+  let wallet = wallets.find(w => w.credentialId === credentialId);
+  if (!wallet) {
+    const restored = await tryRestoreFromServer(credentialId, rawId);
+    if (!restored) throw new Error('Wrong passkey selected — wallet data not found. Please choose "OrahDEX Wallet".');
+    wallet = restored;
+  }
+  return decryptPrivateKey(wallet.encryptedKey, wallet.iv, rawId);
+}
+
+/**
+ * Derive a secp256k1 private key for the given BIP44 derivation path from a
+ * pre-obtained secret string. No passkey ceremony — caller supplies the secret.
+ */
+export async function deriveChainPrivKeyFromSecret(
+  secret:     string,
+  derivePath: string,
+): Promise<Uint8Array> {
+  const { HDKey }          = await import("@scure/bip32");
+  const { mnemonicToSeed } = await import("@scure/bip39");
+  const isMnemonic = secret.trim().split(/\s+/).length >= 12 && !secret.startsWith("0x");
+  if (!isMnemonic)
+    throw new Error("Legacy wallet format does not support multi-chain signing. Please re-import your seed phrase.");
+  const seed    = await mnemonicToSeed(secret.trim());
+  const root    = HDKey.fromMasterSeed(seed);
+  const derived = root.derive(derivePath);
+  if (!derived.privateKey) throw new Error(`Key derivation failed for path ${derivePath}`);
+  return derived.privateKey;
+}
+
+/**
+ * Derive the BSV private key (m/44'/236'/0'/0/0) from a pre-obtained secret.
+ * Accepts both mnemonic and 0x raw private key.
+ */
+export async function deriveBsvPrivKeyFromSecret(secret: string): Promise<Uint8Array> {
+  const isMnemonic = secret.trim().split(/\s+/).length >= 12 && !secret.startsWith("0x");
+  if (isMnemonic) {
+    const { HDKey }          = await import("@scure/bip32");
+    const { mnemonicToSeed } = await import("@scure/bip39");
+    const seed    = await mnemonicToSeed(secret.trim());
+    const root    = HDKey.fromMasterSeed(seed);
+    const derived = root.derive("m/44'/236'/0'/0/0");
+    if (!derived.privateKey) throw new Error("BSV key derivation failed");
+    return derived.privateKey;
+  }
+  const hex = (secret.startsWith("0x") ? secret.slice(2) : secret).padStart(64, "0");
+  return new Uint8Array(hex.match(/.{2}/g)!.map((b: string) => parseInt(b, 16)));
+}
+
+/**
+ * Produce a Bitcoin Signed Message compact signature from a pre-obtained secret.
+ * No passkey ceremony — caller supplies the secret (mnemonic or 0x privkey).
+ */
+export async function signBsvChallengeFromSecret(
+  message: string,
+  secret:  string,
+): Promise<string> {
+  const { sha256 }    = await import("@noble/hashes/sha2.js");
+  const { secp256k1 } = await import("@noble/curves/secp256k1");
+  const bsvPrivKey    = await deriveBsvPrivKeyFromSecret(secret);
+
+  const msgBuf = new TextEncoder().encode(message);
+  const prefix = new TextEncoder().encode("\x18Bitcoin Signed Message:\n");
+  const len    = msgBuf.length;
+  const varint = len < 0xfd
+    ? new Uint8Array([len])
+    : len < 0xffff
+      ? new Uint8Array([0xfd, len & 0xff, (len >> 8) & 0xff])
+      : new Uint8Array([0xfe, len & 0xff, (len >> 8) & 0xff, (len >> 16) & 0xff, (len >> 24) & 0xff]);
+
+  const preimage = new Uint8Array(prefix.length + varint.length + msgBuf.length);
+  preimage.set(prefix, 0);
+  preimage.set(varint, prefix.length);
+  preimage.set(msgBuf, prefix.length + varint.length);
+
+  const msgHash     = sha256(sha256(preimage));
+  const sig         = secp256k1.sign(msgHash, bsvPrivKey, { lowS: true, prehash: false });
+  const recoveryBit = sig.recovery ?? 0;
+  const compact64   = sig.toCompactRawBytes();
+  const sigBytes    = new Uint8Array([31 + recoveryBit, ...compact64]);
+  return btoa(String.fromCharCode(...sigBytes));
+}
