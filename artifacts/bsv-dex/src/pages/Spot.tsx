@@ -450,15 +450,6 @@ export function SpotTrading() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setTradeModeLockedByUser(false); }, [symbol]);
 
-  // Bridge pairs: pass empty book so OrderBook renders its bridge-level UI.
-  // Non-bridge: use real orders or fall back to a mock visual.
-  const orderBook = (() => {
-    if (isBridgePair) return { bids: [], asks: [] };
-    if (hasRealOB && Array.isArray(rawOB.bids[0])) return { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) };
-    if (hasRealOB) return apiOrderBook;
-    return generateMockOrderBook(ticker.lastPrice);
-  })() as import("@workspace/api-client-react").OrderBook;
-
   // Unified bridge rate passed to OrderBook: LE wins, SS is fallback.
   // This drives the virtual order book levels and the swap CTA.
   const ssRateData = ssVenuePrice ? {
@@ -468,6 +459,18 @@ export function SpotTrading() {
   } : null;
   const bridgeRate     = leRateData ?? ssRateData;
   const bridgeProvider = leRateData ? "letsexchange" : ssVenuePrice ? "simpleswap" : null;
+
+  // Build the order book data passed to the OrderBook component:
+  //   - Bridge pair WITH live rate  → empty bids/asks; OrderBook renders bridge levels from leRate
+  //   - Bridge pair WITHOUT rate yet → fall back to mock visual so depth isn't blank during loading
+  //   - Standard pair with real orders → toEntries (raw [price,qty] tuples) or apiOrderBook
+  //   - Standard pair with no orders  → generateMockOrderBook for visual depth
+  const orderBook = (() => {
+    if (isBridgePair && bridgeRate) return { bids: [], asks: [] };
+    if (hasRealOB && Array.isArray(rawOB.bids[0])) return { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) };
+    if (hasRealOB) return apiOrderBook;
+    return generateMockOrderBook(ticker.lastPrice);
+  })() as import("@workspace/api-client-react").OrderBook;
 
   const queryClient = useQueryClient();
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
