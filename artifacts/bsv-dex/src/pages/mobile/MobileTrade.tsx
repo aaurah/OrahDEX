@@ -22,6 +22,7 @@ import { VENUE_LABELS, VENUE_COLORS } from "@/lib/venues";
 import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 import { useEscrow } from "@/hooks/useEscrow";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { usePairPrices } from "@/hooks/usePairPrices";
 import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
 import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
 import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
@@ -943,6 +944,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const lePairPrice = Number(lePair?.lastPrice ?? 0) || 0;
   const lePairChange = Number(lePair?.priceChangePercent24h ?? 0) || 0;
 
+  // Live LE/SS rate for this pair — works for any of the 1.8M bridge pairs even with no stored price
+  const { letsexchange: leVenuePrice } = usePairPrices(
+    { symbol: base, network: base },
+    { symbol: quote, network: quote },
+  );
+  const liveBridgeRate = leVenuePrice?.rate ?? 0;
+
   const MOBILE_RANGE_PRESET_MAP: Record<string, { apiInterval: string; limit: number }> = {
     '1Y':  { apiInterval: '1d', limit: 365 },
     '2Y':  { apiInterval: '1w', limit: 104 },
@@ -1008,7 +1016,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     retry: false,
   });
 
-  const lastPrice = parseFloat(ticker?.lastPrice) || lePairPrice || 0;
+  const lastPrice = parseFloat(ticker?.lastPrice) || lePairPrice || liveBridgeRate || 0;
 
 
   // ── Auto-fetch best swap-venue quote when native order book has no liquidity ─
@@ -1080,20 +1088,26 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const volQuote = lastPrice * vol24;
 
   // Fallback price for candles/orderbook when ticker hasn't loaded yet
-  const fallbackPrice = lastPrice > 0 ? lastPrice : (MOCK_TICKER[rawSymbol]?.lastPrice ?? 14.35);
+  const fallbackPrice = lastPrice > 0 ? lastPrice : (MOCK_TICKER[rawSymbol]?.lastPrice || liveBridgeRate || 14.35);
   // Ensure the chart always has candle data to render
   const chartCandles = (Array.isArray(candles) && candles.length > 0)
     ? candles
     : generateMockCandles(fallbackPrice);
   // Ensure order book always shows data
   const rawOB = orderBook as any;
-  const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
+  const isBridgePair = rawOB?.isBridgePair === true || (ticker as any)?.isBridgePair === true;
+  const hasRealOB = !isBridgePair && (rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0);
   // Memoized so the mock order book (which uses Math.random) doesn't regenerate on every render
   const effectiveOrderBook = useMemo(
     () => hasRealOB ? orderBook : generateMockOrderBook(fallbackPrice),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [hasRealOB, orderBook, fallbackPrice],
   );
+
+  // Auto-route bridge pairs (LE/SS) straight to swap mode — no DEX liquidity exists for these
+  useEffect(() => {
+    setSwapMode(isBridgePair);
+  }, [isBridgePair, symbol]);
 
   /* ── Live browser-tab price title ────────────────────────────────────── */
   useEffect(() => {

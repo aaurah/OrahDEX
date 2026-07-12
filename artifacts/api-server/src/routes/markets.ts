@@ -372,7 +372,8 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
         priceChange24h,
         priceChangePercent24h: pctChange,
       }),
-      type: market?.type ?? "spot",
+      type:         market?.type ?? "spot",
+      isBridgePair: market?.type === "letsexchange" || market?.type === "simpleswap",
     };
     tickerCache.set(symbol, ticker);
     res.json(ticker);
