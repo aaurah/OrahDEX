@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { WalletAddresses } from "@/components/wallet/WalletAddresses";
 import { WalletDApps } from "@/components/wallet/WalletDApps";
-import { SmartAccountPanel } from "@/components/wallet/SmartAccountPanel";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -1454,16 +1453,6 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         )}
       </div>
 
-      {/* ── Smart Account (EIP-4337) ── */}
-      <div className="mt-4 rounded-2xl border border-border bg-card overflow-hidden">
-        <div className="flex items-center gap-2 px-4 pt-4 pb-2 border-b border-border/50">
-          <Cpu size={13} className="text-primary" />
-          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">Smart Account</p>
-        </div>
-        <div className="p-4">
-          <SmartAccountPanel />
-        </div>
-      </div>
 
       </>)}
       {/* ── end portfolio tab ── */}
