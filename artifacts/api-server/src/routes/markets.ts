@@ -459,6 +459,24 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
       lastPrice = parseFloat(market.lastPrice);
       // For markets with stale/zero DB price, fall back to cross-rate (same as candles/ticker)
       if (!(lastPrice > 0)) lastPrice = resolveCrossPrice(market.symbol, 0);
+
+      // Bridge pairs (LetsExchange / SimpleSwap): return an empty real-order book
+      // plus metadata so the frontend renders live-quoted swap levels instead of
+      // fake synthetic depth that can never actually be filled.
+      if (market.type === "letsexchange" || market.type === "simpleswap") {
+        const bridgeResult = {
+          bids:         [] as [number, number][],
+          asks:         [] as [number, number][],
+          lastPrice,
+          isBridgePair: true,
+          provider:     market.type,
+          minOrderSize: market.minOrderSize ?? null,
+          maxOrderSize: market.maxOrderSize ?? null,
+        };
+        orderbookCache.set(cacheKey, bridgeResult);
+        res.json(bridgeResult);
+        return;
+      }
     }
 
     // A market with no price yet can't produce meaningful synthetic depth
