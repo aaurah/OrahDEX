@@ -11,6 +11,9 @@ import {
 } from "@/lib/passkeyWallet";
 import { Fingerprint, Plus, LogIn, Shield, Loader2, AlertCircle, Smartphone } from "lucide-react";
 
+const isMobileDevice = () =>
+  typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -101,7 +104,9 @@ export function OrahWalletDialog({ open, onClose }: Props) {
           </DialogTitle>
           <DialogDescription className="text-xs leading-relaxed">
             Non-custodial multi-chain wallet — BSV, BTC, ETH, SOL, LTC, DOGE, XRP, TRON & more.
-            Secured by Face ID, Touch ID, or Windows Hello.
+            {isMobileDevice()
+              ? " Secured by Face ID or Touch ID."
+              : " Secured by your device passkey."}
           </DialogDescription>
         </DialogHeader>
 
@@ -122,7 +127,7 @@ export function OrahWalletDialog({ open, onClose }: Props) {
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : <Plus className="w-4 h-4 shrink-0" />}
             <span className="flex-1 text-left">Create New Wallet</span>
-            <span className="text-[10px] opacity-60 shrink-0">Face ID · Touch ID</span>
+            {isMobileDevice() && <span className="text-[10px] opacity-60 shrink-0">Face ID · Touch ID</span>}
           </Button>
 
           <Button
