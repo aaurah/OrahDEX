@@ -1269,8 +1269,8 @@ export const generateMockOrderBook = (basePrice: number): OrderBook => {
   let totalBid = 0;
   let totalAsk = 0;
   for (let i = 0; i < 20; i++) {
-    const bidPrice = basePrice - (Math.random() * 0.5) - (i * 0.2);
-    const askPrice = basePrice + (Math.random() * 0.5) + (i * 0.2);
+    const bidPrice = basePrice * (1 - (Math.random() * 0.005) - (i * 0.002));
+    const askPrice = basePrice * (1 + (Math.random() * 0.005) + (i * 0.002));
     const bidQty = Math.random() * 100 + 10;
     const askQty = Math.random() * 100 + 10;
     totalBid += bidQty;
