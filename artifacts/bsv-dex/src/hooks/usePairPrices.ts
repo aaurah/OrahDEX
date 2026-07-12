@@ -2,6 +2,9 @@
  * usePairPrices — fetches LetsExchange + SimpleSwap rates for the current pair
  * in a single call, returning per-venue prices alongside the best external quote.
  * Polls every 45 s. Returns null values when a venue doesn't support the pair.
+ *
+ * When all live APIs are down, the backend serves a cached DB rate with stale:true.
+ * This hook surfaces that as bestRate so the UI can still show a rate.
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -26,6 +29,8 @@ export interface PairPrices {
   letsexchange: VenuePrice | null;
   simpleswap:   VenuePrice | null;
   bestVenue:    string | null;
+  bestRate:     VenuePrice | null; // best rate regardless of venue (includes cached fallback)
+  stale:        boolean;           // true when rate came from DB cache (all live APIs failed)
   loading:      boolean;
 }
 
@@ -36,13 +41,15 @@ export function usePairPrices(fromCoin: Coin | null, toCoin: Coin | null): PairP
     letsexchange: null,
     simpleswap:   null,
     bestVenue:    null,
+    bestRate:     null,
+    stale:        false,
   });
   const [loading, setLoading] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchPrices = useCallback(async () => {
     if (!fromCoin || !toCoin) {
-      setPrices({ letsexchange: null, simpleswap: null, bestVenue: null });
+      setPrices({ letsexchange: null, simpleswap: null, bestVenue: null, bestRate: null, stale: false });
       return;
     }
     const refAmt = REF_AMOUNTS[fromCoin.symbol] ?? REF_AMOUNTS.DEFAULT;
@@ -60,8 +67,12 @@ export function usePairPrices(fromCoin: Coin | null, toCoin: Coin | null): PairP
           float:        true,
         }),
       });
-      if (!r.ok) { setPrices({ letsexchange: null, simpleswap: null, bestVenue: null }); return; }
+      if (!r.ok) {
+        setPrices({ letsexchange: null, simpleswap: null, bestVenue: null, bestRate: null, stale: false });
+        return;
+      }
       const d = await r.json();
+      const isStale = d.stale === true;
 
       const venueMap: Record<string, VenuePrice> = {};
       if (Array.isArray(d.venue_quotes)) {
@@ -77,7 +88,7 @@ export function usePairPrices(fromCoin: Coin | null, toCoin: Coin | null): PairP
         }
       }
 
-      // Fallback: if venue_quotes missing (old API), use top-level rate as best venue
+      // Top-level rate as best-venue entry (covers stale/cached responses too)
       if (Object.keys(venueMap).length === 0 && d.rate && parseFloat(d.rate) > 0) {
         const venue = d.best_venue ?? "letsexchange";
         venueMap[venue] = {
@@ -88,19 +99,32 @@ export function usePairPrices(fromCoin: Coin | null, toCoin: Coin | null): PairP
         };
       }
 
+      // bestRate: use the top-level rate directly so it works for both live and cached
+      let bestRate: VenuePrice | null = null;
+      if (d.rate && parseFloat(d.rate) > 0) {
+        bestRate = {
+          rate:       parseFloat(d.rate),
+          minAmount:  d.min_amount ? parseFloat(d.min_amount) : null,
+          maxAmount:  d.max_amount ? parseFloat(d.max_amount) : null,
+          canExecute: !isStale, // stale rates are indicative only; canExecute when live
+        };
+      }
+
       setPrices({
         letsexchange: venueMap["letsexchange"] ?? null,
         simpleswap:   venueMap["simpleswap"]   ?? null,
         bestVenue:    d.best_venue ?? null,
+        bestRate,
+        stale:        isStale,
       });
     } catch {
-      setPrices({ letsexchange: null, simpleswap: null, bestVenue: null });
+      setPrices({ letsexchange: null, simpleswap: null, bestVenue: null, bestRate: null, stale: false });
     }
     setLoading(false);
   }, [fromCoin?.symbol, fromCoin?.network, toCoin?.symbol, toCoin?.network]);
 
   useEffect(() => {
-    setPrices({ letsexchange: null, simpleswap: null, bestVenue: null });
+    setPrices({ letsexchange: null, simpleswap: null, bestVenue: null, bestRate: null, stale: false });
     fetchPrices();
     timerRef.current = setInterval(fetchPrices, REFRESH_MS);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };

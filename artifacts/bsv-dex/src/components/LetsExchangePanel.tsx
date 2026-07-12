@@ -70,6 +70,7 @@ interface Estimate {
   deposit_min_amount?: string;
   deposit_max_amount?: string;
   best_venue?: string;      // winning venue from meta-router
+  stale?: boolean;          // true when rate is from DB cache (all live APIs failed)
 }
 
 // Response from POST /v1/transaction (normalised across all venues)
@@ -687,23 +688,37 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
         </div>
         {/* Rate + venue badge */}
         {estimate && fromCoin && toCoin && (
-          <div className="flex items-center gap-2 mt-2 flex-wrap">
-            <span className="text-[11px] text-muted-foreground">
-              1 {fromCoin.symbol} ≈ <span className="text-emerald-400/80 font-mono">{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
-            </span>
-            <span className={cn(
-              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold",
-              estimate.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/30 text-sky-400" :
-              estimate.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
-              estimate.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/30 text-orange-400" :
-              "bg-violet-500/10 border-violet-500/30 text-violet-400"
-            )}>
-              ⚡ {VENUE_LABELS[estimate.best_venue ?? ""] ?? "OrahRouter"}
-            </span>
-            {estimate.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && (
-              <span className="text-[10px] text-muted-foreground/50 ml-auto">
-                Fee: <span className="font-mono">{fmtNum(estimate.withdrawal_fee, 6)} {toCoin.symbol}</span>
+          <div className="flex flex-col gap-1.5 mt-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-muted-foreground">
+                1 {fromCoin.symbol} ≈ <span className={cn("font-mono", estimate.stale ? "text-amber-400/80" : "text-emerald-400/80")}>{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
               </span>
+              {estimate.stale ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold bg-amber-500/10 border-amber-500/30 text-amber-400">
+                  <Clock className="w-2.5 h-2.5" /> Cached rate
+                </span>
+              ) : (
+                <span className={cn(
+                  "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold",
+                  estimate.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/30 text-sky-400" :
+                  estimate.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
+                  estimate.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/30 text-orange-400" :
+                  "bg-violet-500/10 border-violet-500/30 text-violet-400"
+                )}>
+                  ⚡ {VENUE_LABELS[estimate.best_venue ?? ""] ?? "OrahRouter"}
+                </span>
+              )}
+              {estimate.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && (
+                <span className="text-[10px] text-muted-foreground/50 ml-auto">
+                  Fee: <span className="font-mono">{fmtNum(estimate.withdrawal_fee, 6)} {toCoin.symbol}</span>
+                </span>
+              )}
+            </div>
+            {estimate.stale && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-500/8 border border-amber-500/20 text-[10px] text-amber-400/80">
+                <AlertTriangle className="w-3 h-3 shrink-0" />
+                Live rates temporarily unavailable — using last known rate. Swap will use best live price at execution.
+              </div>
             )}
           </div>
         )}
