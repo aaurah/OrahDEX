@@ -7,7 +7,7 @@ import {
   Users2, Search, ChevronDown, Shield, Star, Clock, Plus, X, Check,
   ArrowUpDown, Filter, Globe, Zap, AlertCircle, MessageSquare, Lock,
   TrendingUp, Activity, CheckCircle2, Info, ChevronRight,
-  ArrowLeftRight, Link2, Unlock, RefreshCw, AlertTriangle, Timer,
+  ArrowLeftRight, RefreshCw, Timer,
   Copy, Send, Wallet, ArrowRight, SlidersHorizontal, Trash2,
 } from "lucide-react";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -879,7 +879,7 @@ export function P2P() {
     }
   });
 
-  const [mainTab, setMainTab] = useState<"p2p" | "atomic" | "direct">("p2p");
+  const [mainTab, setMainTab] = useState<"p2p" | "direct">("p2p");
   const [side, setSide] = useState<Side>("buy");
   const [coin, setCoin] = useState<Coin>("BTC");
   const [fiat, setFiat] = useState<Fiat>("USD");
@@ -891,26 +891,6 @@ export function P2P() {
   const [showFiatDropdown, setShowFiatDropdown] = useState(false);
   const [showPayDropdown, setShowPayDropdown] = useState(false);
 
-  // Atomic swap state
-  const [atomicFrom, setAtomicFrom] = useState<Coin>("BTC");
-  const [atomicTo, setAtomicTo]     = useState<Coin>("BSV");
-  const [atomicAmt, setAtomicAmt]   = useState("");
-  const [atomicStep, setAtomicStep] = useState<0|1|2|3|4>(0);
-  const [htlcHash]                  = useState(() => Array.from({length: 16}, () => Math.floor(Math.random()*16).toString(16)).join("").toUpperCase());
-  const [htlcRunning, setHtlcRunning] = useState(false);
-
-  const atomicFromPrice = COIN_PRICES[atomicFrom] ?? 1;
-  const atomicToPrice   = COIN_PRICES[atomicTo]   ?? 1;
-  const atomicOutput    = atomicAmt ? ((parseFloat(atomicAmt) * atomicFromPrice) / atomicToPrice) : 0;
-
-  const startHtlc = () => {
-    if (htlcRunning || !atomicAmt || parseFloat(atomicAmt) <= 0) return;
-    setHtlcRunning(true);
-    setAtomicStep(1);
-    const advance = (step: 1|2|3|4, delay: number) =>
-      setTimeout(() => { setAtomicStep(step); if (step === 4) setHtlcRunning(false); }, delay);
-    advance(2, 1200); advance(3, 2800); advance(4, 4200);
-  };
 
   // ── Direct Trade state ──────────────────────────────────────────────────────
   const ALL_COINS = ["ETH","BTC","BSV","USDT","USDC","BNB","SOL","AVAX","ARB","OP","POL","MATIC","DAI","LINK","UNI","AAVE","WBTC","CAKE","GMX","DEGEN","BRETT"] as const;
@@ -1219,12 +1199,6 @@ export function P2P() {
                 mainTab === "direct" ? "bg-card text-foreground shadow" : "text-muted-foreground hover:text-foreground"
               )}>
               <Send className="w-3.5 h-3.5" /> Direct Trade
-            </button>
-            <button onClick={() => setMainTab("atomic")}
-              className={cn("px-4 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all",
-                mainTab === "atomic" ? "bg-card text-foreground shadow" : "text-muted-foreground hover:text-foreground"
-              )}>
-              <Link2 className="w-3.5 h-3.5" /> Atomic Swap
             </button>
           </div>
 
@@ -1720,146 +1694,6 @@ export function P2P() {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Atomic Swap View ─────────────────────────────────────────────── */}
-      {mainTab === "atomic" && (
-        <div className="px-4 lg:px-10 py-8 max-w-[1400px] mx-auto">
-          <div className="max-w-2xl mx-auto space-y-5">
-            {/* Header */}
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Lock className="w-4 h-4 text-primary" />
-                <span className="text-sm font-bold text-foreground">HTLC Atomic Swap</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 font-bold">Trustless</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold uppercase tracking-wider">Preview</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Swap crypto directly with a counterparty using Hash Time-Locked Contracts — no custodian, no wrapped tokens. Both sides lock funds simultaneously; revealing the secret preimage unlocks both.
-              </p>
-              <p className="text-[11px] text-amber-400/80 mt-1">
-                This screen is a protocol walkthrough — pressing “Initiate” simulates the four HTLC steps so you can see how a real swap would flow. No funds move and no on-chain transaction is broadcast.
-              </p>
-            </div>
-
-            {/* Swap form */}
-            <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
-              {/* From */}
-              <div>
-                <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">You send</div>
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-1.5">
-                    {(["BTC","ETH","BSV","SOL"] as Coin[]).map(c => (
-                      <button key={c} onClick={() => setAtomicFrom(c)}
-                        className={cn("px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all",
-                          atomicFrom === c ? "bg-primary/20 border-primary/50 text-primary" : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
-                        )}>{c}</button>
-                    ))}
-                  </div>
-                  <input type="number" value={atomicAmt} onChange={e => { setAtomicAmt(e.target.value); setAtomicStep(0); }}
-                    placeholder="0.00"
-                    className="flex-1 text-right bg-secondary border border-border rounded-xl px-3 py-2 font-mono font-semibold text-lg text-foreground focus:outline-none focus:border-primary/50" />
-                </div>
-                {atomicAmt && <div className="text-xs text-muted-foreground text-right mt-1">≈ ${(parseFloat(atomicAmt||"0") * atomicFromPrice).toLocaleString(undefined,{maximumFractionDigits:2})}</div>}
-              </div>
-
-              {/* Arrow */}
-              <div className="flex justify-center">
-                <button onClick={() => { const f=atomicFrom,t=atomicTo; setAtomicFrom(t); setAtomicTo(f); setAtomicStep(0); }}
-                  className="w-9 h-9 rounded-full border border-border bg-secondary hover:border-primary/50 hover:bg-primary/10 flex items-center justify-center transition-all">
-                  <ArrowLeftRight className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </div>
-
-              {/* To */}
-              <div>
-                <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">You receive</div>
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-1.5">
-                    {(["BTC","ETH","BSV","SOL"] as Coin[]).map(c => (
-                      <button key={c} onClick={() => setAtomicTo(c)}
-                        className={cn("px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all",
-                          atomicTo === c ? "bg-primary/20 border-primary/50 text-primary" : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
-                        )}>{c}</button>
-                    ))}
-                  </div>
-                  <div className="flex-1 text-right bg-secondary/50 border border-border/50 rounded-xl px-3 py-2 font-mono font-semibold text-lg text-foreground">
-                    {atomicOutput > 0 ? atomicOutput.toFixed(6) : "0.00"}
-                  </div>
-                </div>
-                {atomicOutput > 0 && <div className="text-xs text-muted-foreground text-right mt-1">≈ ${(atomicOutput * atomicToPrice).toLocaleString(undefined,{maximumFractionDigits:2})}</div>}
-              </div>
-
-              {/* Rate summary */}
-              {atomicOutput > 0 && (
-                <div className="pt-2 border-t border-border/50 space-y-1.5">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Exchange rate</span>
-                    <span className="font-mono text-foreground">1 {atomicFrom} = {(atomicFromPrice/atomicToPrice).toFixed(6)} {atomicTo}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">HTLC timeout</span>
-                    <span className="text-foreground flex items-center gap-1"><Timer className="w-3 h-3" /> 24 h refund window</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Settlement</span>
-                    <span className="text-amber-300 font-semibold flex items-center gap-1"><Zap className="w-3 h-3" /> Preview only — would settle BSV on-chain</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* HTLC step-by-step */}
-            <div className="bg-card border border-border rounded-2xl p-5">
-              <div className="text-sm font-bold text-foreground mb-3">HTLC Protocol Steps</div>
-              <div className="space-y-2">
-                {[
-                  { icon: <Lock className="w-3.5 h-3.5"/>,    label: `You lock ${atomicAmt||"0"} ${atomicFrom}`, detail: `HTLC script with hash H = ${htlcHash.slice(0,8)}…` },
-                  { icon: <Link2 className="w-3.5 h-3.5"/>,   label: `Counterparty locks ${atomicOutput.toFixed(6)||"0"} ${atomicTo}`, detail: "Same hash H used — funds are mirrored on both chains" },
-                  { icon: <Unlock className="w-3.5 h-3.5"/>,  label: "You reveal preimage S → unlock their funds", detail: "Revealing S on destination triggers your side" },
-                  { icon: <CheckCircle2 className="w-3.5 h-3.5"/>, label: "Walkthrough complete — protocol illustrated", detail: "In a real swap, an OP_RETURN on BSV would record the settlement" },
-                ].map((step, i) => (
-                  <div key={i} className={cn(
-                    "flex items-start gap-2.5 p-2.5 rounded-xl border transition-all",
-                    atomicStep > i ? "border-green-500/30 bg-green-500/5" :
-                    atomicStep === i + 1 ? "border-primary/40 bg-primary/5" :
-                    "border-border bg-secondary/20"
-                  )}>
-                    <div className={cn("w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5 text-xs font-black",
-                      atomicStep > i ? "bg-green-500/20 text-green-400" :
-                      atomicStep === i + 1 ? "bg-primary/20 text-primary" :
-                      "bg-muted/40 text-muted-foreground"
-                    )}>
-                      {atomicStep > i ? <CheckCircle2 className="w-3.5 h-3.5"/> : step.icon}
-                    </div>
-                    <div>
-                      <div className={cn("text-xs font-semibold", atomicStep > i ? "text-green-400" : atomicStep === i+1 ? "text-foreground" : "text-muted-foreground")}>{step.label}</div>
-                      <div className="text-[10px] text-muted-foreground">{step.detail}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Warning */}
-            <div className="flex items-start gap-2.5 p-3.5 rounded-xl border border-amber-500/25 bg-amber-500/8 text-xs text-amber-400/90">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>Never share your HTLC preimage before confirming your counterparty's funds are locked. If no match is found before timeout, your funds are automatically refunded.</span>
-            </div>
-
-            {/* Submit */}
-            <button
-              onClick={startHtlc}
-              disabled={!atomicAmt || parseFloat(atomicAmt) <= 0 || atomicFrom === atomicTo || htlcRunning}
-              className="w-full py-4 rounded-2xl font-bold text-base bg-gradient-to-r from-orange-600 to-primary text-white flex items-center justify-center gap-2.5 shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-            >
-              {htlcRunning
-                ? <><RefreshCw className="w-5 h-5 animate-spin" /> Simulating HTLC…</>
-                : <><Lock className="w-5 h-5" /> Run HTLC Walkthrough</>
-              }
-            </button>
           </div>
         </div>
       )}
