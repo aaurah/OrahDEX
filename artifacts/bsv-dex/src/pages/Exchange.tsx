@@ -707,7 +707,6 @@ export function ExchangePage() {
 
   // ── History
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory());
-  const [activeTab, setActiveTab] = useState<"form" | "history">("form");
 
   const handleSubmit = async () => {
     if (!fromCoin || !toCoin || !quote?.best) return;
@@ -914,52 +913,13 @@ export function ExchangePage() {
 
         {/* ── Middle: Order Form ── */}
         <div className="bg-card border border-border rounded-xl overflow-hidden self-start">
-          {/* Tabs */}
-          <div className="flex border-b border-border">
-            {(["form", "history"] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setActiveTab(t)}
-                className={cn(
-                  "flex-1 py-2.5 text-xs font-medium transition-colors flex items-center justify-center gap-1.5",
-                  activeTab === t
-                    ? "text-primary border-b-2 border-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t === "form" ? <><ArrowRight size={12} />Exchange</> : <><History size={12} />History</>}
-              </button>
-            ))}
+          <div className="flex items-center gap-1.5 px-4 py-3 border-b border-border/50">
+            <ArrowRight size={13} className="text-primary" />
+            <span className="text-xs font-medium">Exchange</span>
           </div>
 
           <div className="p-4">
-            {activeTab === "history" ? (
-              <div className="space-y-2">
-                {history.length === 0 ? (
-                  <p className="text-center text-xs text-muted-foreground py-8">No exchange history yet</p>
-                ) : history.map(h => (
-                  <div key={h.transaction_id} className="bg-secondary/30 rounded-lg p-3 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium">
-                        {h.coin_from} → {h.coin_to}
-                      </span>
-                      <span className={cn("text-[10px] capitalize", STATUS_COLOR[h.status] ?? "text-muted-foreground")}>
-                        {h.status}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span>{fmtNum(h.deposit_amount)} → {fmtNum(h.withdrawal_amount)}</span>
-                      <span>{timeAgo(h.createdAt)}</span>
-                    </div>
-                    {h.venue && (
-                      <span className={cn("text-[10px]", VENUE_COLORS[h.venue] ?? "text-muted-foreground")}>
-                        {VENUE_LABELS[h.venue] ?? h.venue}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : orderResult ? (
+            {orderResult ? (
               /* ── Success: show deposit address + tracker ── */
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-green-400 text-sm font-medium">
