@@ -28,7 +28,6 @@ import { ChainReceiveSheet } from "@/components/wallet/ChainReceiveSheet";
 import { ManualImportSheet, type ImportChain } from "@/components/wallet/ManualImportSheet";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { BrandLogo } from "@/components/BrandLogo";
-import { BuyCryptoModal } from "@/components/BuyCryptoModal";
 import { useToast } from "@/hooks/use-toast";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { cn } from "@/lib/utils";
@@ -1011,7 +1010,6 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   useIncomingTxWatcher(evmAddress ?? null);
   const [receiveOpen, setReceiveOpen]         = useState(false);
   const [sendOpen, setSendOpen]               = useState(false);
-  const [buyCryptoOpen, setBuyCryptoOpen]     = useState(false);
   const [nonEvmSendChain, setNonEvmSendChain] = useState<string | null>(null);
   const [sendTokenConfig, setSendTokenConfig] = useState<{ chainId: number; symbol: string } | null>(null);
   const [tokenReceive, setTokenReceive]       = useState<{ symbol: string; chainName: string; address: string } | null>(null);
@@ -1237,11 +1235,10 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
           </div>
 
           {/* Action buttons — circular Trust Wallet / imToken style */}
-          <div className="grid grid-cols-5 gap-1">
+          <div className="grid grid-cols-4 gap-1">
             <ActionButton icon={Download}    label="Receive" onClick={() => setReceiveOpen(true)}    bg="bg-emerald-500/15" fg="text-emerald-400" />
             <ActionButton icon={Send}        label="Send"    onClick={() => setSendOpen(true)}        bg="bg-blue-500/15"    fg="text-blue-400"   />
             <ActionButton icon={ArrowDownUp} label="Swap"    onClick={() => navigate("/swap")}        bg="bg-primary/15"     fg="text-primary"    />
-            <ActionButton icon={Sparkles}    label="Buy"     onClick={() => setBuyCryptoOpen(true)}   bg="bg-orange-500/15"  fg="text-orange-400" />
             <ActionButton icon={BarChart2}   label="History" onClick={() => setTab("activity")}       bg="bg-violet-500/15"  fg="text-violet-400" />
           </div>
         </div>
@@ -1443,7 +1440,6 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       {/* ── end portfolio tab ── */}
 
       {/* ── Modals & sheets (always mounted so state persists) ── */}
-      <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
 
       <WithdrawSheet

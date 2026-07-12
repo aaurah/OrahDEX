@@ -2,7 +2,7 @@ import {
   TrendingUp, TrendingDown,
   ArrowDownToLine,
   Copy, Check, RefreshCw, Info,
-  LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
+  LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight,
   ArrowDownLeft, ArrowUpRight, History, Upload, ChevronDown, X, Search, Loader2, Trash2,
 } from "lucide-react";
 
@@ -15,9 +15,6 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReceiveModal } from "@/components/ReceiveModal";
-import { BuyCryptoModal } from "@/components/BuyCryptoModal";
-import { DirectBuyModal } from "@/components/DirectBuyModal";
-import { BuyHistory } from "@/components/BuyHistory";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { cn, getProviderLabel } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
@@ -243,10 +240,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   const [, navigate] = useLocation();
   const [tab, setTab] = useState<Tab | null>(() => hidePreContent ? null : (visibleTabs?.[0] ?? "assets"));
   const [receiveOpen, setReceiveOpen] = useState(false);
-  const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
-  const [directBuyOpen, setDirectBuyOpen] = useState(false);
-  const [directBuyCoin, setDirectBuyCoin] = useState<string>("BTC");
-  const [directBuyUsd, setDirectBuyUsd] = useState<string | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [dismissedOrders, setDismissedOrders] = useState<Set<string>>(() => {
@@ -744,15 +737,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   return (
     <>
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
-      <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
-      <DirectBuyModal
-        open={directBuyOpen}
-        onClose={() => { setDirectBuyOpen(false); setDirectBuyUsd(undefined); }}
-        defaultCoin={directBuyCoin}
-        defaultFiatUsd={directBuyUsd}
-        defaultPayMethod="card"
-        onSwitchToProviders={() => setBuyCryptoOpen(true)}
-      />
       {withdrawAsset && (() => {
         const assetNet = getAssetNetworkInfo(withdrawAsset.asset, network);
         const sameNetwork = assetNet.network === (network ?? "evm");
@@ -978,12 +962,8 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             </div>
           )}
 
-          {/* Buy / Receive / Bridge */}
-          <div className="grid grid-cols-3 gap-2">
-            <button onClick={() => setDirectBuyOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-gradient-to-b from-green-600 to-emerald-600 text-white font-bold text-xs shadow-lg shadow-green-600/20 active:opacity-90">
-              <CreditCard size={15} />
-              Buy
-            </button>
+          {/* Receive / Bridge */}
+          <div className="grid grid-cols-2 gap-2">
             <button onClick={() => setReceiveOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-lg shadow-primary/20 active:opacity-90">
               <ArrowDownToLine size={15} />
               Receive
@@ -1557,20 +1537,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                   </>
                 );
               })()}
-
-              {/* ── BUYS (fiat → crypto purchases) ─────────────────────── */}
-              {historySubTab === "buys" && (
-                <BuyHistory
-                  walletAddress={[address, internalEvmAddress, sessionStorage.getItem("orahdex_session_addr")]
-                    .filter((s): s is string => !!s && s.length >= 6)
-                    .join(",") || null}
-                  onResume={(o) => {
-                    setDirectBuyCoin(o.coin_symbol);
-                    setDirectBuyUsd((o.fiat_amount_cents / 100).toFixed(2));
-                    setDirectBuyOpen(true);
-                  }}
-                />
-              )}
 
               {/* ── TRADES ─────────────────────────────────────────────── */}
               {historySubTab === "trades" && (
