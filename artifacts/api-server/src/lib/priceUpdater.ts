@@ -8,6 +8,7 @@ import { serviceState } from "./serviceState.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
 import { getCachedLEPrices, warmLEPriceCache, leRequest, fetchLEKeyPricesIfNeeded } from "./lePriceCache.js";
+import { fetchSSCurrencies, isSimpleSwapConfigured } from "./simpleswap.js";
 
 /** Format a price with enough decimal places so sub-satoshi values aren't lost.
  *  e.g. 4.2e-12 → "0.0000000000042000" rather than "0.00000000"
@@ -1400,6 +1401,115 @@ export async function syncNewLECoins(): Promise<{ newCoins: number; inserted: nu
   return { newCoins: newCoins.length, inserted };
 }
 
+// ── SimpleSwap pair sync ──────────────────────────────────────────────────────
+
+// Same quote set used by the /simpleswap/pairs route
+const SS_QUOTE_ASSETS = [
+  "BSV", "BTC", "ETH", "USDT", "USDC", "BNB",
+  "SOL", "XRP", "TRX", "DOGE",
+  "LTC", "BCH", "AVAX", "MATIC",
+  "ARB", "OP", "FTM", "CRO", "MNT", "ZK", "SCR", "LINEA",
+];
+
+// SS network-specific tickers → canonical OrahDEX symbols
+const SS_TO_SYMBOL: Record<string, string> = {
+  usdterc20: "USDT",  usdttrc20: "USDT",  usdtbsc:   "USDT",  usdtsol:   "USDT",
+  usdtmatic: "USDT",  usdtton:   "USDT",  usdtop:    "USDT",  usdtarb:   "USDT",
+  usdtavax:  "USDT",  usdtalgo:  "USDT",  usdtkava:  "USDT",  usdtcelo:  "USDT",
+  usdcerc20: "USDC",  usdcbsc:   "USDC",  usdcsol:   "USDC",  usdcmatic: "USDC",
+  usdcop:    "USDC",  usdcarb:   "USDC",  usdcbase:  "USDC",  usdcavax:  "USDC",
+  usdcton:   "USDC",
+  "bnb-bsc": "BNB",   bnbbsc:    "BNB",
+  pol:       "MATIC",
+  avaxc:     "AVAX",
+  etharb:    "ETH",   ethop:     "ETH",   ethbase:   "ETH",   ethlinea:  "ETH",
+  ethscroll: "ETH",   ethbsc:    "ETH",
+  wbtcerc20: "WBTC",  wbtcbsc:   "WBTC",
+  daierc20:  "DAI",   daibsc:    "DAI",   daimatic:  "DAI",   daiarb:    "DAI",
+  linkbsc:   "LINK",  unibsc:    "UNI",
+};
+
+function normalizeSsTicker(ticker: string): string | null {
+  if (!ticker) return null;
+  const mapped = SS_TO_SYMBOL[ticker.toLowerCase()];
+  if (mapped) return mapped;
+  const cleaned = ticker.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (cleaned.length < 1 || cleaned.length > 12) return null;
+  return cleaned;
+}
+
+/**
+ * syncSSPairs — seed and sync SimpleSwap pairs into the DB.
+ *
+ * Fetches the live SS currency catalog, deduplicates by normalized symbol,
+ * then upserts coin × SS_QUOTE_ASSETS rows as type='simpleswap'.
+ *
+ *   - First run: full seed — inserts all ~3 000 coins × 22 quotes (~66 K rows)
+ *   - Subsequent runs: onConflictDoNothing makes repeat runs safe and fast
+ *   - New SS coins appear in DB within 4 hours — no manual admin action needed
+ *   - Skips silently when SIMPLESWAP_API_KEY is not configured
+ */
+export async function syncSSPairs(): Promise<{ coins: number; inserted: number }> {
+  if (!isSimpleSwapConfigured()) {
+    logger.debug("syncSSPairs: SIMPLESWAP_API_KEY not configured — skipping");
+    return { coins: 0, inserted: 0 };
+  }
+
+  const currencies = await fetchSSCurrencies();
+  if (currencies.length === 0) {
+    logger.warn("syncSSPairs: fetchSSCurrencies returned empty — skipping cycle");
+    return { coins: 0, inserted: 0 };
+  }
+
+  // Deduplicate by normalised symbol (first network variant wins)
+  const seenSymbols = new Set<string>();
+  const uniqueSymbols: string[] = [];
+  for (const c of currencies) {
+    const sym = normalizeSsTicker(c.symbol);
+    if (!sym || seenSymbols.has(sym)) continue;
+    seenSymbols.add(sym);
+    uniqueSymbols.push(sym);
+  }
+
+  logger.info({ coins: uniqueSymbols.length }, "syncSSPairs: building pairs");
+
+  // Get sovereign prices for cross-rate math
+  const prices = await fetchSovereignPrices();
+  const usdOf = (sym: string): number => prices[sym]?.usd || FALLBACK_PRICES[sym] || 0;
+
+  const QUOTES_SET = new Set(SS_QUOTE_ASSETS);
+  const CHUNK = 500;
+  let inserted = 0;
+  const rows: (typeof marketsTable.$inferInsert)[] = [];
+
+  for (const base of uniqueSymbols) {
+    if (QUOTES_SET.has(base)) continue; // pure quote asset — skip as base
+    const baseUSD = usdOf(base);
+
+    for (const quote of SS_QUOTE_ASSETS) {
+      if (base === quote) continue;
+      const quoteUSD = usdOf(quote);
+      const p = (baseUSD > 0 && quoteUSD > 0) ? fmtPrice(baseUSD / quoteUSD) : "0";
+      rows.push({
+        symbol: `${base}/${quote}`, baseAsset: base, quoteAsset: quote,
+        lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
+        volume24h: "0", high24h: p, low24h: p,
+        status: "active", type: "simpleswap",
+      });
+    }
+  }
+
+  // Upsert in chunks — onConflictDoNothing preserves any live prices already stored
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const result = await db.insert(marketsTable).values(chunk).onConflictDoNothing();
+    inserted += (result as any).rowCount ?? 0;
+  }
+
+  logger.info({ coins: uniqueSymbols.length, pairs: rows.length, inserted }, "syncSSPairs: complete");
+  return { coins: uniqueSymbols.length, inserted };
+}
+
 // Shared in-memory map of coin → 24h change percent (populated each sovereign cycle)
 const _coinChangeMap: Record<string, number> = {};
 export function getCoinChangeMap(): Record<string, number> { return _coinChangeMap; }
@@ -1662,6 +1772,12 @@ export function startPriceUpdater() {
   guardedInterval(
     "le-coin-sync", () => syncNewLECoins().then(() => {}), 4 * 60 * 60 * 1000,
     { timeoutMs: 5 * 60 * 1000, initialDelayMs: 5 * 60 * 1000 },
+  );
+
+  // SS pairs seed/sync — first boot seeds all ~66K rows, then picks up new SS coins every 4 h.
+  guardedInterval(
+    "ss-pairs-sync", () => syncSSPairs().then(() => {}), 4 * 60 * 60 * 1000,
+    { timeoutMs: 3 * 60 * 1000, initialDelayMs: 3 * 60 * 1000 },
   );
 
   // First Binance price fetch deferred to 35 s so the server is fully settled

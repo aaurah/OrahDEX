@@ -571,58 +571,80 @@ router.get("/simpleswap/pairs", async (req, res) => {
   let builtPairs = cached(cacheKey, SS_PAIRS_TTL) as Record<string, unknown>[] | null;
 
   if (!builtPairs) {
-    const currencies = await fetchSSCurrencies();
+    // Priority order (lower applied first, higher overrides):
+    //   0. DB stored SS pairs  — stable, survives restarts, has real prices
+    //   1. Live SS API         — newer coins, enriches metadata (image, hasExtraId)
+    const mergeMap = new Map<string, Record<string, unknown>>();
 
-    if (currencies.length === 0) {
-      res.status(503).json({ error: "SimpleSwap currencies unavailable" });
-      return;
-    }
-
-    // Dedup by normalized symbol (first network variant wins)
-    const seenSymbols = new Set<string>();
-    const uniqueCoins: { symbol: string; name: string; network: string | null; image: string | null; hasExtraId: boolean }[] = [];
-    for (const c of currencies) {
-      const sym = normalizeSsSymbol(c.symbol);
-      if (!sym || seenSymbols.has(sym)) continue;
-      seenSymbols.add(sym);
-      uniqueCoins.push({ symbol: sym, name: c.name, network: c.network, image: c.image, hasExtraId: c.hasExtraId });
-    }
-
-    const QUOTES_SET = new Set(LE_PAIR_QUOTES);
-    const pairs: Record<string, unknown>[] = [];
-    for (const coin of uniqueCoins) {
-      if (QUOTES_SET.has(coin.symbol)) continue; // quote-only coins skip as base
-      for (const q of LE_PAIR_QUOTES) {
-        if (coin.symbol === q) continue;
-        pairs.push({
-          symbol:                `${coin.symbol}/${q}`,
-          baseAsset:             coin.symbol,
-          quoteAsset:            q,
-          network:               coin.network,
-          networkName:           null,
-          image:                 coin.image,
-          hasExtraId:            coin.hasExtraId,
-          minAmount:             null,
-          maxAmount:             null,
-          lastPrice:             0,
-          priceChangePercent24h: 0,
-          volume:                0,
-          type:                  "simpleswap",
-          ssSource:              true,
-          leSource:              false,
+    // Layer 0: DB — always available even when SS API is down
+    try {
+      const dbRows = await db.select({
+        symbol:                marketsTable.symbol,
+        baseAsset:             marketsTable.baseAsset,
+        quoteAsset:            marketsTable.quoteAsset,
+        lastPrice:             marketsTable.lastPrice,
+        priceChangePercent24h: marketsTable.priceChangePercent24h,
+      }).from(marketsTable).where(
+        and(eq(marketsTable.type, "simpleswap"), eq(marketsTable.enabled, true)),
+      );
+      const changeMap = getCoinChangeMap();
+      for (const r of dbRows) {
+        mergeMap.set(r.symbol, {
+          symbol: r.symbol, baseAsset: r.baseAsset, quoteAsset: r.quoteAsset,
+          network: null, networkName: null, image: null, hasExtraId: false,
+          minAmount: null, maxAmount: null,
+          lastPrice:             parseFloat(String(r.lastPrice)) || 0,
+          priceChangePercent24h: parseFloat(String(r.priceChangePercent24h)) || (changeMap[r.baseAsset] ?? 0),
+          volume: 0, type: "simpleswap", ssSource: true, leSource: false,
         });
       }
+      logger.debug({ rows: dbRows.length }, "simpleswap /pairs: DB layer loaded");
+    } catch (err: any) {
+      logger.warn({ err }, "simpleswap /pairs: DB layer failed (non-fatal)");
     }
 
-    builtPairs = pairs;
-    if (pairs.length > 0) {
-      setCache(cacheKey, pairs);
-      ssPairsBackup = pairs; // persist beyond TTL — pairs never auto-delete
+    // Layer 1: Live SS API — adds newer coins and enriches metadata
+    const currencies = await fetchSSCurrencies();
+    if (currencies.length > 0) {
+      const seenSymbols = new Set<string>();
+      const uniqueCoins: { symbol: string; name: string; network: string | null; image: string | null; hasExtraId: boolean }[] = [];
+      for (const c of currencies) {
+        const sym = normalizeSsSymbol(c.symbol);
+        if (!sym || seenSymbols.has(sym)) continue;
+        seenSymbols.add(sym);
+        uniqueCoins.push({ symbol: sym, name: c.name, network: c.network, image: c.image, hasExtraId: c.hasExtraId });
+      }
+      const QUOTES_SET = new Set(LE_PAIR_QUOTES);
+      for (const coin of uniqueCoins) {
+        if (QUOTES_SET.has(coin.symbol)) continue;
+        for (const q of LE_PAIR_QUOTES) {
+          if (coin.symbol === q) continue;
+          const sym = `${coin.symbol}/${q}`;
+          const existing = mergeMap.get(sym);
+          mergeMap.set(sym, {
+            ...(existing ?? {}),
+            symbol: sym, baseAsset: coin.symbol, quoteAsset: q,
+            network: coin.network, networkName: null, image: coin.image,
+            hasExtraId: coin.hasExtraId, minAmount: null, maxAmount: null,
+            lastPrice:             (existing?.lastPrice as number) || 0,
+            priceChangePercent24h: (existing?.priceChangePercent24h as number) || 0,
+            volume: (existing?.volume as number) || 0,
+            type: "simpleswap", ssSource: true, leSource: false,
+          });
+        }
+      }
+      logger.debug({ coins: uniqueCoins.length }, "simpleswap /pairs: live API layer merged");
     }
-    logger.info({ coins: uniqueCoins.length, pairs: pairs.length }, "simpleswap /pairs: built");
+
+    builtPairs = Array.from(mergeMap.values());
+    if (builtPairs.length > 0) {
+      setCache(cacheKey, builtPairs);
+      ssPairsBackup = builtPairs;
+    }
+    logger.info({ total: builtPairs.length }, "simpleswap /pairs: built");
   }
 
-  // If live fetch returned nothing but we have a stale backup, serve it
+  // Fall back to stale in-memory backup if build produced nothing
   const source = (builtPairs && builtPairs.length > 0) ? builtPairs : ssPairsBackup;
   if (!source) {
     res.status(503).json({ error: "SimpleSwap currencies unavailable" });
