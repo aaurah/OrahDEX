@@ -25,7 +25,6 @@ const appKit = createAppKit({
     name: "OrahDEX",
     description: "OrahDEX — Multi-chain Exchange",
     url: typeof window !== "undefined" ? window.location.origin : "https://orahdex.io",
-    // Full URL so wallets can fetch it from any origin
     icons: typeof window !== "undefined"
       ? [`${window.location.origin}${import.meta.env.BASE_URL}icon-512.png`]
       : ["https://orahdex.io/icon-512.png"],
@@ -39,14 +38,8 @@ const appKit = createAppKit({
   },
   themeMode: "dark",
   themeVariables: {
-    // OrahDEX primary green — hsl(142 71% 58%)
     "--w3m-accent": "#4ade80",
-    // Navy at hsl(216°) with 50% saturation — creates a clear navy shift
-    // when mixed into AppKit's default #202020 backgrounds (not just subtle tint)
-    "--w3m-color-mix": "#0a121f",
-    // 30% → backgrounds → ~#191c20 (matches OrahDEX card), text stays readable
-    "--w3m-color-mix-strength": 30,
-    // 3×4=12px cards (rounded-xl), 3×3=9px buttons (≈rounded-lg)
+    "--w3m-color-mix-strength": 0,
     "--w3m-border-radius-master": "3px",
     "--w3m-font-family": "Inter, system-ui, sans-serif",
     "--w3m-z-index": 9999,
@@ -74,7 +67,6 @@ function hideReownBranding(): void {
   };
   const observer = new MutationObserver(inject);
   observer.observe(document.body, { childList: true });
-  // Also try immediately in case modal is already rendered
   inject();
 }
 
@@ -82,20 +74,91 @@ if (typeof window !== "undefined") {
   hideReownBranding();
 }
 
-export function openReownModal(): void {
-  _suppressNextConnect = false;
-  try {
-    appKit.open({ view: "Connect" });
-  } catch (e) {
-    console.error("[OrahDEX] Failed to open Reown modal:", e);
-  }
-}
+/**
+ * Applies OrahDEX's exact theme colours directly to the AppKit CSS token variables.
+ *
+ * AppKit generates --apkt-tokens-theme-* on :root via a <style> element.
+ * document.documentElement.style (inline) has higher CSS specificity than any
+ * stylesheet :root rule, so our values always win — no color-mix maths needed.
+ *
+ * Token names come from ThemeConstantsUtil.js → tokens.dark / tokens.light.
+ * Base hex values are computed from OrahDEX's CSS HSL variables in index.css:
+ *   DARK    background hsl(216 20% 5%)   ≈ #0a0c0f
+ *   AMOLED  background hsl(0 0% 0%)      = #000000
+ *   LIGHT   background hsl(210 20% 98%)  ≈ #f9fafb
+ */
+function applyTokenOverrides(
+  theme: "dark" | "light" | "amoled" | "system",
+  effective: "dark" | "light",
+): void {
+  const r = document.documentElement;
 
-export function disconnectReown(): void {
-  _suppressNextConnect = true;
-  try {
-    appKit.disconnect();
-  } catch { /* */ }
+  if (theme === "amoled") {
+    // True-black AMOLED — matches html.amoled in index.css
+    r.style.setProperty("--apkt-tokens-theme-backgroundPrimary",  "#000000");
+    r.style.setProperty("--apkt-tokens-theme-backgroundInvert",   "#e8e8e8");
+    r.style.setProperty("--apkt-tokens-theme-foregroundPrimary",  "#080808");
+    r.style.setProperty("--apkt-tokens-theme-foregroundSecondary","#0d0d0d");
+    r.style.setProperty("--apkt-tokens-theme-foregroundTertiary", "#141414");
+    r.style.setProperty("--apkt-tokens-theme-borderPrimary",      "#1a1a1a");
+    r.style.setProperty("--apkt-tokens-theme-borderPrimaryDark",  "#222222");
+    r.style.setProperty("--apkt-tokens-theme-borderSecondary",    "#2a2a2a");
+    r.style.setProperty("--apkt-tokens-theme-overlay",            "rgba(0,0,0,0.75)");
+    r.style.setProperty("--apkt-tokens-theme-textPrimary",        "#e9f0f8");
+    r.style.setProperty("--apkt-tokens-theme-textSecondary",      "#6b7c94");
+    r.style.setProperty("--apkt-tokens-theme-textTertiary",       "#8a9db8");
+    r.style.setProperty("--apkt-tokens-theme-textInvert",         "#000000");
+    r.style.setProperty("--apkt-tokens-theme-iconDefault",        "#6b7c94");
+    r.style.setProperty("--apkt-tokens-theme-iconInverse",        "#e9f0f8");
+    r.style.setProperty("--apkt-tokens-core-backgroundAccentPrimary", "#4ade80");
+    r.style.setProperty("--apkt-tokens-core-textAccentPrimary",       "#4ade80");
+    r.style.setProperty("--apkt-tokens-core-iconAccentPrimary",       "#4ade80");
+    r.style.setProperty("--apkt-tokens-core-borderAccentPrimary",     "#4ade80");
+  } else if (effective === "light") {
+    // Light theme — matches html.light in index.css
+    // background hsl(210 20% 98%) ≈ #f9fafb, card #ffffff, border hsl(210 16% 86%) ≈ #d5dbe1
+    r.style.setProperty("--apkt-tokens-theme-backgroundPrimary",  "#f9fafb");
+    r.style.setProperty("--apkt-tokens-theme-backgroundInvert",   "#14191f");
+    r.style.setProperty("--apkt-tokens-theme-foregroundPrimary",  "#edf1f6");
+    r.style.setProperty("--apkt-tokens-theme-foregroundSecondary","#e5eaef");
+    r.style.setProperty("--apkt-tokens-theme-foregroundTertiary", "#d5dbe1");
+    r.style.setProperty("--apkt-tokens-theme-borderPrimary",      "#d5dbe1");
+    r.style.setProperty("--apkt-tokens-theme-borderPrimaryDark",  "#c0ccd8");
+    r.style.setProperty("--apkt-tokens-theme-borderSecondary",    "#aab8c6");
+    r.style.setProperty("--apkt-tokens-theme-overlay",            "rgba(200,210,220,0.5)");
+    r.style.setProperty("--apkt-tokens-theme-textPrimary",        "#14191f");
+    r.style.setProperty("--apkt-tokens-theme-textSecondary",      "#566476");
+    r.style.setProperty("--apkt-tokens-theme-textTertiary",       "#6f8399");
+    r.style.setProperty("--apkt-tokens-theme-textInvert",         "#ffffff");
+    r.style.setProperty("--apkt-tokens-theme-iconDefault",        "#566476");
+    r.style.setProperty("--apkt-tokens-theme-iconInverse",        "#14191f");
+    r.style.setProperty("--apkt-tokens-core-backgroundAccentPrimary", "#22a349");
+    r.style.setProperty("--apkt-tokens-core-textAccentPrimary",       "#22a349");
+    r.style.setProperty("--apkt-tokens-core-iconAccentPrimary",       "#22a349");
+    r.style.setProperty("--apkt-tokens-core-borderAccentPrimary",     "#22a349");
+  } else {
+    // Dark (and system-dark) — matches :root in index.css
+    // background hsl(216 20% 5%) ≈ #0a0c0f, card hsl(216 15% 9%) ≈ #14161b
+    r.style.setProperty("--apkt-tokens-theme-backgroundPrimary",  "#0a0c0f");
+    r.style.setProperty("--apkt-tokens-theme-backgroundInvert",   "#e0e8f0");
+    r.style.setProperty("--apkt-tokens-theme-foregroundPrimary",  "#14161b");
+    r.style.setProperty("--apkt-tokens-theme-foregroundSecondary","#1a1e23");
+    r.style.setProperty("--apkt-tokens-theme-foregroundTertiary", "#23282f");
+    r.style.setProperty("--apkt-tokens-theme-borderPrimary",      "#23282f");
+    r.style.setProperty("--apkt-tokens-theme-borderPrimaryDark",  "#2a3040");
+    r.style.setProperty("--apkt-tokens-theme-borderSecondary",    "#3a4254");
+    r.style.setProperty("--apkt-tokens-theme-overlay",            "rgba(0,0,0,0.6)");
+    r.style.setProperty("--apkt-tokens-theme-textPrimary",        "#dde4ed");
+    r.style.setProperty("--apkt-tokens-theme-textSecondary",      "#7a899f");
+    r.style.setProperty("--apkt-tokens-theme-textTertiary",       "#a0b0c8");
+    r.style.setProperty("--apkt-tokens-theme-textInvert",         "#0a0c0f");
+    r.style.setProperty("--apkt-tokens-theme-iconDefault",        "#7a899f");
+    r.style.setProperty("--apkt-tokens-theme-iconInverse",        "#dde4ed");
+    r.style.setProperty("--apkt-tokens-core-backgroundAccentPrimary", "#4ade80");
+    r.style.setProperty("--apkt-tokens-core-textAccentPrimary",       "#4ade80");
+    r.style.setProperty("--apkt-tokens-core-iconAccentPrimary",       "#4ade80");
+    r.style.setProperty("--apkt-tokens-core-borderAccentPrimary",     "#4ade80");
+  }
 }
 
 /**
@@ -111,33 +174,20 @@ export function syncReownTheme(theme: "dark" | "light" | "amoled" | "system"): v
       ? (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light")
       : "dark";
 
-  const vars: Record<string, any> = {
-    "--w3m-border-radius-master": "3px",
-    "--w3m-font-family": "Inter, system-ui, sans-serif",
-    "--w3m-z-index": 9999,
-  };
-
-  if (theme === "amoled") {
-    // True-black AMOLED — push backgrounds to near-black
-    vars["--w3m-accent"] = "#4ade80";
-    vars["--w3m-color-mix"] = "#000000";
-    vars["--w3m-color-mix-strength"] = 35;
-  } else if (effective === "light") {
-    // Light theme — pale green tint on white, darker accent for contrast
-    vars["--w3m-accent"] = "#22a349";      // hsl(142 71% 42%) — OrahDEX light primary
-    vars["--w3m-color-mix"] = "#f0fdf4";   // Tailwind green-50 — very pale tint
-    vars["--w3m-color-mix-strength"] = 15;
-  } else {
-    // Dark (and system-dark) — OrahDEX navy hsl(216° 50% sat)
-    vars["--w3m-accent"] = "#4ade80";
-    vars["--w3m-color-mix"] = "#0a121f";
-    vars["--w3m-color-mix-strength"] = 30;
-  }
-
   try {
     appKit.setThemeMode(effective);
-    (appKit as any).setThemeVariables(vars);
+    (appKit as any).setThemeVariables({
+      "--w3m-accent":               effective === "light" ? "#22a349" : "#4ade80",
+      "--w3m-color-mix-strength":   0,
+      "--w3m-border-radius-master": "3px",
+      "--w3m-font-family":          "Inter, system-ui, sans-serif",
+      "--w3m-z-index":              9999,
+    });
   } catch { /* AppKit not ready */ }
+
+  // Apply immediately, then again after AppKit's async style flush
+  applyTokenOverrides(theme, effective);
+  setTimeout(() => applyTokenOverrides(theme, effective), 80);
 }
 
 export function subscribeReownAccount(
@@ -156,4 +206,20 @@ export function subscribeReownAccount(
   } catch {
     return () => {};
   }
+}
+
+export function openReownModal(): void {
+  _suppressNextConnect = false;
+  try {
+    appKit.open({ view: "Connect" });
+  } catch (e) {
+    console.error("[OrahDEX] Failed to open Reown modal:", e);
+  }
+}
+
+export function disconnectReown(): void {
+  _suppressNextConnect = true;
+  try {
+    appKit.disconnect();
+  } catch { /* */ }
 }
