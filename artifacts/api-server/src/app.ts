@@ -34,6 +34,7 @@ import { startBsvIntentWatcher } from "./lib/bsvIntentWatcher.js";
 import { startArcStatusPoller } from "./lib/arcStatusPoller.js";
 import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
 import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
+import { ensureCoinMetadataTable, runCoinGeckoImport } from "./lib/coinGeckoImporter.js";
 import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
 import { startOverlayScanner } from "./lib/overlayScanner.js";
 import { startSelfDiagnostic } from "./lib/selfDiagnostic.js";
@@ -618,6 +619,30 @@ _s(90_000, startFundingRateEngine,     "startFundingRateEngine");
 _s(96_000, startBsvMempoolWatcher,    "startBsvMempoolWatcher");
 _s(102_000, startOverlayScanner,     "startOverlayScanner");
 _s(108_000, startSelfDiagnostic,    "startSelfDiagnostic");
+// ── Coin metadata seeder ─────────────────────────────────────────────────────
+// Runs once per boot if coin_metadata is empty or has fewer than 100 rows.
+// Uses CoinGecko free public API — no key required.
+// Bulk phase: top-2000 coins by market cap → name + image + rank persisted forever.
+// Details phase (50 coins per boot): description, social links.
+_s(114_000, () => {
+  (async () => {
+    try {
+      await ensureCoinMetadataTable();
+      const r = await pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata`);
+      const count = r.rows[0]?.n ?? 0;
+      if (count < 100) {
+        logger.info({ count }, "coinMeta: table sparse — starting background import");
+        runCoinGeckoImport({ maxBulkPages: 8, maxDetailCoins: 50 })
+          .then(res => logger.info(res, "coinMeta: initial import complete"))
+          .catch(e  => logger.warn({ err: e }, "coinMeta: import failed (non-fatal)"));
+      } else {
+        logger.info({ count }, "coinMeta: already populated, skipping boot import");
+      }
+    } catch (e) {
+      logger.warn({ err: e }, "coinMeta: boot seeder error (non-fatal)");
+    }
+  })();
+}, "coinMetaSeeder");
 
 
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));

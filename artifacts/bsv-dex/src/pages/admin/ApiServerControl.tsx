@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import {
   Server, Activity, RefreshCw, RotateCcw, Wrench,
   Stethoscope, AlertTriangle, CheckCircle, XCircle,
-  Clock, Zap, Database, Shield, ShieldAlert, Bell,
+  Clock, Zap, Database, Shield, ShieldAlert, Bell, Image,
   Play, TrendingUp, Timer, AlertCircle, CheckCheck,
   ChevronDown, ChevronUp, HardDrive, Cpu, Package,
   ShieldCheck, Link2, Layers, Info, SkipForward,
@@ -83,7 +83,7 @@ interface AlertSummary {
   total: number;
 }
 
-type TabId = "overview" | "services" | "repair" | "circuits" | "alerts";
+type TabId = "overview" | "services" | "repair" | "circuits" | "alerts" | "coins";
 
 /* ── Colour helpers ─────────────────────────────────────────────────────── */
 
@@ -1035,12 +1035,127 @@ function AlertsTab({ alerts, alertSummary, refetch }: {
    MAIN PAGE
 ══════════════════════════════════════════════════════════════════════════ */
 
+/* ── CoinsTab ───────────────────────────────────────────────────────────── */
+function CoinsTab() {
+  const qc = useQueryClient();
+  const [bulkPages,   setBulkPages]   = useState("8");
+  const [detailCoins, setDetailCoins] = useState("100");
+
+  const { data: status, isLoading, refetch } = useQuery<any>({
+    queryKey:        ["admin-coins-import-status"],
+    queryFn:         () => adminFetch("/api/admin/coins-import/status").then(r => r.json()),
+    refetchInterval: 8_000,
+    staleTime:       5_000,
+  });
+
+  const trigger = useMutation({
+    mutationFn: () =>
+      adminFetch("/api/admin/coins-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxBulkPages: parseInt(bulkPages), maxDetailCoins: parseInt(detailCoins) }),
+      }).then(r => r.json()),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-coins-import-status"] }); refetch(); },
+  });
+
+  const phaseColor = (p: string) => p === "done" ? "text-green-400" : p === "error" ? "text-red-400" : p === "idle" ? "text-zinc-400" : "text-yellow-400";
+  const running    = status?.running;
+
+  const StatBox = ({ label, value, sub }: { label: string; value: any; sub?: string }) => (
+    <div className="bg-zinc-800/60 border border-zinc-700/50 rounded-xl p-4 text-center">
+      <p className="text-2xl font-bold text-white tabular-nums">{value ?? "—"}</p>
+      <p className="text-xs text-zinc-400 mt-1">{label}</p>
+      {sub && <p className="text-[10px] text-zinc-500 mt-0.5">{sub}</p>}
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-2xl p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Image className="w-5 h-5 text-primary" />
+            <h3 className="font-semibold text-white">Coin Metadata Import</h3>
+          </div>
+          <button onClick={() => refetch()} className="text-zinc-400 hover:text-white p-1.5 rounded-lg hover:bg-zinc-800 transition-colors">
+            <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
+          </button>
+        </div>
+        <p className="text-xs text-zinc-400">
+          Pulls logos, names, market-cap ranks, descriptions and social links from CoinGecko's free API.
+          Stored permanently in <code className="text-primary font-mono">coin_metadata</code> — all coin lists,
+          Market Hub and the mobile selector use it automatically. The server auto-seeds on boot if the table is sparse.
+        </p>
+
+        {/* Stats */}
+        {status && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <StatBox label="Total in DB"    value={status.totalInDb?.toLocaleString()} />
+            <StatBox label="With Logo"      value={status.withImage?.toLocaleString()} />
+            <StatBox label="Full Details"   value={status.withDetails?.toLocaleString()} />
+            <StatBox label="Phase"          value={<span className={phaseColor(status.phase ?? "idle")}>{status.phase ?? "idle"}</span>} />
+          </div>
+        )}
+
+        {/* Progress (only when running) */}
+        {running && (
+          <div className="bg-zinc-800/60 border border-yellow-500/30 rounded-xl p-4 space-y-1.5">
+            <p className="text-xs text-yellow-400 font-semibold flex items-center gap-1.5">
+              <RefreshCw className="w-3 h-3 animate-spin" /> Import running…
+            </p>
+            <p className="text-xs text-zinc-300">Symbols matched: <b>{status?.matched}</b></p>
+            <p className="text-xs text-zinc-300">Details fetched: <b>{status?.detailsFetched}</b> / <b>{status?.detailsRemaining + (status?.detailsFetched ?? 0)}</b></p>
+          </div>
+        )}
+
+        {/* Trigger */}
+        <div className="border-t border-zinc-700/40 pt-4 space-y-3">
+          <p className="text-xs font-medium text-zinc-300">Manual trigger</p>
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="space-y-1">
+              <label className="text-[10px] text-zinc-500 uppercase tracking-wider">Bulk pages (×250 coins)</label>
+              <input
+                type="number" min={1} max={40} value={bulkPages}
+                onChange={e => setBulkPages(e.target.value)}
+                className="w-24 bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] text-zinc-500 uppercase tracking-wider">Detail coins (per run)</label>
+              <input
+                type="number" min={0} max={2000} value={detailCoins}
+                onChange={e => setDetailCoins(e.target.value)}
+                className="w-28 bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary"
+              />
+            </div>
+            <button
+              onClick={() => trigger.mutate()}
+              disabled={running || trigger.isPending}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+                running || trigger.isPending
+                  ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
+                  : "bg-primary text-black hover:bg-primary/90",
+              )}
+            >
+              {running ? "Running…" : trigger.isPending ? "Starting…" : "Run Import"}
+            </button>
+          </div>
+          {trigger.isError && <p className="text-xs text-red-400">{String((trigger.error as any)?.message ?? "Failed")}</p>}
+          {trigger.isSuccess && !running && <p className="text-xs text-green-400">Import started — status above updates every 8 s.</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const TABS: { id: TabId; label: string; icon: any }[] = [
   { id: "overview",  label: "Overview",   icon: Server },
   { id: "services",  label: "Services",   icon: Activity },
   { id: "repair",    label: "Repair",     icon: Wrench },
   { id: "circuits",  label: "Circuits",   icon: Shield },
   { id: "alerts",    label: "Alerts",     icon: Bell },
+  { id: "coins",     label: "Coins",      icon: Image },
 ];
 
 export function ApiServerControl() {
@@ -1203,6 +1318,8 @@ export function ApiServerControl() {
           refetch={refetchAlerts}
         />
       )}
+
+      {tab === "coins" && <CoinsTab />}
     </div>
   );
 }
