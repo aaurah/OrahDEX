@@ -35,6 +35,8 @@ import { startArcStatusPoller } from "./lib/arcStatusPoller.js";
 import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
 import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
 import { ensureCoinMetadataTable, runCoinGeckoImport } from "./lib/coinGeckoImporter.js";
+import { runCoinPaprikaImport } from "./lib/coinPaprikaImporter.js";
+import { clearCoinsCache } from "./routes/dex.js";
 import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
 import { startOverlayScanner } from "./lib/overlayScanner.js";
 import { startSelfDiagnostic } from "./lib/selfDiagnostic.js";
@@ -619,11 +621,28 @@ _s(90_000, startFundingRateEngine,     "startFundingRateEngine");
 _s(96_000, startBsvMempoolWatcher,    "startBsvMempoolWatcher");
 _s(102_000, startOverlayScanner,     "startOverlayScanner");
 _s(108_000, startSelfDiagnostic,    "startSelfDiagnostic");
-// ── Coin metadata seeder ─────────────────────────────────────────────────────
-// Runs once per boot if coin_metadata is empty or has fewer than 100 rows.
-// Uses CoinGecko free public API — no key required.
-// Bulk phase: top-2000 coins by market cap → name + image + rank persisted forever.
-// Details phase (50 coins per boot): description, social links.
+// ── CoinPaprika bulk logo seeder (fast — single HTTP call, ~9 000 coins) ─────
+// Runs on every boot: fetches ALL coins from CoinPaprika, upserts image_url +
+// name into coin_metadata using COALESCE so higher-quality CoinGecko data is
+// never overwritten.  Clears the all-sources cache afterward so logos appear
+// immediately without waiting for the 2-minute cache TTL.
+_s(60_000, () => {
+  (async () => {
+    try {
+      await ensureCoinMetadataTable();
+      logger.info("coinMeta: CoinPaprika bulk import starting…");
+      const result = await runCoinPaprikaImport();
+      clearCoinsCache();
+      logger.info(result, "coinMeta: CoinPaprika import complete — cache cleared");
+    } catch (e) {
+      logger.warn({ err: e }, "coinMeta: CoinPaprika import failed (non-fatal)");
+    }
+  })();
+}, "coinPaprikaSeeder");
+
+// ── CoinGecko detail seeder (slower — rate-limited, provides descriptions) ───
+// Only runs if coin_metadata has < 100 rows (first boot after table creation).
+// Subsequent runs are skipped to avoid hammering the free CoinGecko API.
 _s(114_000, () => {
   (async () => {
     try {
@@ -631,18 +650,18 @@ _s(114_000, () => {
       const r = await pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata`);
       const count = r.rows[0]?.n ?? 0;
       if (count < 100) {
-        logger.info({ count }, "coinMeta: table sparse — starting background import");
-        runCoinGeckoImport({ maxBulkPages: 8, maxDetailCoins: 50 })
-          .then(res => logger.info(res, "coinMeta: initial import complete"))
-          .catch(e  => logger.warn({ err: e }, "coinMeta: import failed (non-fatal)"));
+        logger.info({ count }, "coinMeta: table still sparse — running CoinGecko bulk import");
+        runCoinGeckoImport({ maxBulkPages: 4, maxDetailCoins: 20 })
+          .then(res => { clearCoinsCache(); logger.info(res, "coinMeta: CoinGecko import complete"); })
+          .catch(e  => logger.warn({ err: e }, "coinMeta: CoinGecko import failed (non-fatal)"));
       } else {
-        logger.info({ count }, "coinMeta: already populated, skipping boot import");
+        logger.info({ count }, "coinMeta: already populated, skipping CoinGecko boot import");
       }
     } catch (e) {
-      logger.warn({ err: e }, "coinMeta: boot seeder error (non-fatal)");
+      logger.warn({ err: e }, "coinMeta: CoinGecko seeder error (non-fatal)");
     }
   })();
-}, "coinMetaSeeder");
+}, "coinGeckoSeeder");
 
 
 hydrateAlertsFromDB().catch(e => logger.warn({ err: e }, "hydrateAlertsFromDB failed (non-fatal)"));
