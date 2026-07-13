@@ -12,7 +12,7 @@
 
 import { db, pool, withDbRetry } from "@workspace/db";
 import { ordersTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
-import { eq, and, notInArray } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
@@ -228,7 +228,11 @@ async function runCycle(): Promise<void> {
         type:       marketsTable.type,
         status:     marketsTable.status,
       }).from(marketsTable)
-        .where(notInArray(marketsTable.type, ["letsexchange"]))
+        // Liquidity bot only operates on internal order-book markets.
+        // Excluding external catalog types (letsexchange: 36K rows,
+        // simpleswap: 66K rows) drops the query from 100K+ rows to ~1K
+        // and eliminates a major source of DB connection hold time.
+        .where(inArray(marketsTable.type, ["spot", "futures"]))
     );
     const active = markets.filter(m => m.status === "active");
 

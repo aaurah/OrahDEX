@@ -10,7 +10,7 @@
 - [ARC broadcaster pattern](arc-broadcaster-pattern.md) — ARC body is {rawTx} not {txhex}; drizzle-kit push needs TTY so use pool.query IF NOT EXISTS for migrations in app.ts instead.
 - [Emotion stubs for ThirdWeb/Rolldown](emotion-stubs.md) — Rolldown namespace collisions fixed via alias stubs; Proxy target MUST be plain function (not forwardRef) or apply trap won't fire.
 - [LiquidityBot bulk write pattern](liquidity-bot-bulk-write.md) — sequential chunked INSERTs saturate prod DB for ~100 s/cycle; use single UNNEST query instead.
-- [LE markets full-table scan](le-markets-scan-pattern.md) — 36K LE rows in markets table; every background service SELECT must filter type != 'letsexchange' or use symbol list.
+- [Markets query scope rule](le-markets-scan-pattern.md) — 36K LE + 66K simpleswap rows; all background service SELECTs MUST use inArray(type,["spot","futures"]) not notInArray — fixed in priceUpdater, liquidityBot, sor.ts.
 - [GeckoTerminal live integration](gecko-terminal-integration.md) — live pool data merges over static mock-data at render time in MobileMarketSelector; lib + hook pattern documented.
 - [SS pairs normalization](ss-pairs-normalization.md) — SS uses network-specific tickers (usdterc20, pol, avaxc, bnb-bsc); must map to canonical symbols before building pairs; dedup by normalized symbol first.
 - [Socket bridge integration](socket-bridge-integration.md) — IBridgeProvider.getQuotes() returns BridgeQuote[]; SocketBridgeProvider stores full route in routeMeta.socketRoute for buildTx; getProvider() uses prefix match for socket:* IDs.

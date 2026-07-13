@@ -11,7 +11,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
-import { notInArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { buildPoolGraph, computeSorQuote, type SorQuoteResult } from "../lib/sorEngine.js";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
@@ -36,7 +36,10 @@ async function getGraph() {
     type:       marketsTable.type,
     status:     marketsTable.status,
   }).from(marketsTable)
-    .where(notInArray(marketsTable.type, ["letsexchange"]));
+    // SOR routes through internal order-book markets only (~1K rows).
+    // External catalogs (letsexchange: 36K, simpleswap: 66K) are not
+    // real on-book liquidity and would balloon this query 100×.
+    .where(inArray(marketsTable.type, ["spot", "futures"]));
 
   cachedGraph = buildPoolGraph(markets);
   cacheAt     = now;
