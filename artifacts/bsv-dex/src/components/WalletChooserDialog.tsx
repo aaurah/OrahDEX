@@ -8,10 +8,6 @@ import {
   Smartphone, RefreshCw, Check, WifiOff,
   FileKey, Copy, AlertTriangle, KeyRound,
 } from "lucide-react";
-import { ConnectEmbed } from "thirdweb/react";
-import { createWallet, inAppWallet } from "thirdweb/wallets";
-import { ethereum, polygon, arbitrum, optimism, base, bsc, avalanche, sepolia } from "thirdweb/chains";
-import { thirdwebClient } from "@/lib/thirdweb-client";
 import { QRCodeSVG } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -62,8 +58,7 @@ type Tab =
   | "trezor"
   | "keystone"
   | "gridplus"
-  | "mobile-qr"
-  | "evm";
+  | "mobile-qr";
 
 function applyOrahWallet(address: string, chains?: PasskeyChainAddresses) {
   const store = useWalletStore.getState();
@@ -1119,19 +1114,6 @@ export function WalletChooserDialog() {
                 />
 
                 <OptionCard
-                  onClick={() => setTab("evm")}
-                  iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
-                  icon={<span className="text-xl leading-none text-blue-400">⟠</span>}
-                  title="EVM Wallet"
-                  sub="MetaMask · Coinbase · Browser wallet · Email"
-                  badge={
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 tracking-wider">
-                      EVM
-                    </span>
-                  }
-                />
-
-                <OptionCard
                   onClick={() => setTab("hardware")}
                   iconBg="bg-amber-500/10 border border-amber-500/20 group-hover:bg-amber-500/15 group-hover:border-amber-500/30"
                   icon={<HardDrive className="w-5 h-5 text-amber-400" />}
@@ -1286,37 +1268,6 @@ export function WalletChooserDialog() {
           </>
         )}
 
-        {/* ══════════════════════════════════════
-            EVM WALLET (ThirdWeb)
-        ══════════════════════════════════════ */}
-        {tab === "evm" && (
-          <>
-            <SubHeader
-              onBack={() => setTab("choose")}
-              icon={<span className="text-xl leading-none text-blue-400">⟠</span>}
-              title="EVM Wallet"
-              description="Connect MetaMask, Coinbase, or any browser wallet"
-            />
-            <div className="flex-1 overflow-y-auto px-4 pb-4 pt-2 flex items-start justify-center">
-              <ConnectEmbed
-                client={thirdwebClient}
-                wallets={[
-                  createWallet("io.metamask"),
-                  createWallet("com.coinbase.wallet"),
-                  createWallet("io.rabby"),
-                  createWallet("com.trustwallet.app"),
-                  inAppWallet({
-                    auth: { options: ["email", "google", "apple", "passkey"] },
-                  }),
-                ]}
-                chains={[ethereum, base, polygon, arbitrum, optimism, bsc, avalanche, sepolia]}
-                onConnect={handleClose}
-                theme="dark"
-                style={{ width: "100%", maxWidth: 380, borderRadius: 16 }}
-              />
-            </div>
-          </>
-        )}
 
       </DialogContent>
     </Dialog>
