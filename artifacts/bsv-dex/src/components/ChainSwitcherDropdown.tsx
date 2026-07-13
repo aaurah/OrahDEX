@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, CheckCircle2, PlusCircle, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, CheckCircle2, PlusCircle, Plus, Trash2, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useToast } from "@/hooks/use-toast";
@@ -711,11 +711,12 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
               <div className="px-1.5 pb-1.5 space-y-0.5">
                 {OTHER_CHAINS_MAINNET.map(chain => {
                   const active = network === chain.network;
+                  const canSwitch = canSwitchToNetwork(chain.network);
                   return (
                     <button key={chain.key} disabled={active}
                       onClick={() => {
                         if (active) return;
-                        if (!canSwitchToNetwork(chain.network)) {
+                        if (!canSwitch) {
                           toast({ title: `No ${chain.name} wallet`, description: "Create or import an OrahDEX multi-chain wallet to use this network.", variant: "destructive" });
                           return;
                         }
@@ -723,11 +724,15 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
                         setOpen(false);
                       }}
                       className={cn("w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left",
-                        active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
+                        active     ? "bg-primary/10 text-foreground cursor-default" :
+                        !canSwitch ? "hover:bg-white/5 text-muted-foreground/40 cursor-pointer" :
+                                     "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
                     >
-                      <span className={cn("text-sm leading-none font-bold w-5 text-center", chain.color)}>{chain.icon}</span>
+                      <span className={cn("text-sm leading-none font-bold w-5 text-center", canSwitch ? chain.color : "text-muted-foreground/25")}>{chain.icon}</span>
                       <span className="flex-1">{chain.name}</span>
-                      <span className="text-[10px] text-muted-foreground/50 shrink-0">{chain.symbol}</span>
+                      {!canSwitch && !active
+                        ? <Lock className="w-3 h-3 text-muted-foreground/35 shrink-0" />
+                        : <span className="text-[10px] text-muted-foreground/50 shrink-0">{chain.symbol}</span>}
                       {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
                     </button>
                   );
@@ -869,23 +874,28 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
                 <div className="space-y-0.5">
                   {OTHER_CHAINS_MAINNET.map(chain => {
                     const active = network === chain.network;
+                    const canSwitch = canSwitchToNetwork(chain.network);
                     return (
                       <button key={chain.key} disabled={active}
                         onClick={() => {
-                        if (active) return;
-                        if (!canSwitchToNetwork(chain.network)) {
-                          toast({ title: `No ${chain.name} wallet`, description: "Create or import an OrahDEX multi-chain wallet to use this network.", variant: "destructive" });
-                          return;
-                        }
-                        switchNetworkType(chain.network);
-                        setOpen(false);
-                      }}
+                          if (active) return;
+                          if (!canSwitch) {
+                            toast({ title: `No ${chain.name} wallet`, description: "Create or import an OrahDEX multi-chain wallet to use this network.", variant: "destructive" });
+                            return;
+                          }
+                          switchNetworkType(chain.network);
+                          setOpen(false);
+                        }}
                         className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
-                          active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
+                          active     ? "bg-primary/10 text-foreground cursor-default" :
+                          !canSwitch ? "hover:bg-white/5 text-muted-foreground/40 cursor-pointer" :
+                                       "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
                       >
-                        <span className={cn("text-base leading-none font-bold w-6", chain.color)}>{chain.icon}</span>
+                        <span className={cn("text-base leading-none font-bold w-6", canSwitch ? chain.color : "text-muted-foreground/25")}>{chain.icon}</span>
                         <span className="flex-1">{chain.name}</span>
-                        <span className="text-[10px] text-muted-foreground/50">{chain.symbol}</span>
+                        {!canSwitch && !active
+                          ? <Lock className="w-3.5 h-3.5 text-muted-foreground/35 shrink-0" />
+                          : <span className="text-[10px] text-muted-foreground/50">{chain.symbol}</span>}
                         {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
                       </button>
                     );
