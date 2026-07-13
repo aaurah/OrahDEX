@@ -193,7 +193,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             return (
               <div className="px-3 py-2.5 border-b border-border">
                 <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
-                <div className="flex gap-1">
+                <div className="flex gap-1 overflow-x-auto pb-0.5 scrollbar-none" style={{ scrollbarWidth: 'none' }}>
                   {available.map((net) => {
                     const isActive = network === net || (net === 'bsv' && network === 'bsv-test');
                     return (
@@ -202,7 +202,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
                         onClick={() => { if (!isActive) { switchNetworkType(net); setOpen(false); } }}
                         disabled={isActive}
                         className={cn(
-                          "flex-1 flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-bold transition-all border",
+                          "flex-none flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-bold transition-all border w-12 shrink-0",
                           isActive
                             ? "bg-primary/15 text-primary border-primary/40"
                             : "bg-muted/40 text-muted-foreground border-border/40 hover:bg-muted hover:text-foreground"
