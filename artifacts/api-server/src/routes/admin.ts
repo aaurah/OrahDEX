@@ -3810,32 +3810,63 @@ router.get("/profits", requireAdminToken, async (_req, res) => {
 // Returns the live state of every error-pattern the error watcher tracks:
 // hit counts, remediation counts, circuit-breaker status, last outcome.
 
-/* ── Coin metadata import (CoinGecko) ─────────────────────────────────────── */
+/* ── Coin metadata import ──────────────────────────────────────────────────── */
 router.get("/coins-import/status", requireAdminToken, async (_req, res) => {
   try {
-    const { getImporterStatus } = await import("../lib/coinGeckoImporter.js");
-    const status = getImporterStatus();
-    const metaCount = await pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata`).catch(() => ({ rows: [{ n: 0 }] }));
-    const withImage = await pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata WHERE image_url IS NOT NULL`).catch(() => ({ rows: [{ n: 0 }] }));
-    const detailed  = await pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata WHERE details_fetched = true`).catch(() => ({ rows: [{ n: 0 }] }));
-    res.json({ ...status, totalInDb: metaCount.rows[0].n, withImage: withImage.rows[0].n, withDetails: detailed.rows[0].n });
+    const [{ getImporterStatus }, { getPaprikaStatus }] = await Promise.all([
+      import("../lib/coinGeckoImporter.js"),
+      import("../lib/coinPaprikaImporter.js"),
+    ]);
+    const cg = getImporterStatus();
+    const cp = getPaprikaStatus();
+    const [metaCount, withImage, detailed] = await Promise.all([
+      pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata`).catch(() => ({ rows: [{ n: 0 }] })),
+      pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata WHERE image_url IS NOT NULL`).catch(() => ({ rows: [{ n: 0 }] })),
+      pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata WHERE details_fetched = true`).catch(() => ({ rows: [{ n: 0 }] })),
+    ]);
+    res.json({
+      totalInDb:   metaCount.rows[0].n,
+      withImage:   withImage.rows[0].n,
+      withDetails: detailed.rows[0].n,
+      coinGecko:   cg,
+      coinPaprika: cp,
+    });
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed" });
   }
 });
 
+/* Trigger CoinPaprika bulk logo import (fast — single HTTP call, ~9 000 coins) */
+router.post("/coins-import/paprika", requireAdminToken, async (_req, res) => {
+  try {
+    const { runCoinPaprikaImport, getPaprikaStatus, } = await import("../lib/coinPaprikaImporter.js");
+    const { ensureCoinMetadataTable }                 = await import("../lib/coinGeckoImporter.js");
+    const { clearCoinsCache }                         = await import("../routes/dex.js");
+    const st = getPaprikaStatus();
+    if (st.running) return res.status(409).json({ error: "CoinPaprika import already running", status: st });
+    await ensureCoinMetadataTable();
+    runCoinPaprikaImport()
+      .then(r => { clearCoinsCache(); logger.info(r, "coinMeta: admin CoinPaprika import done"); })
+      .catch(e => logger.warn({ err: e }, "coinMeta: admin CoinPaprika import failed"));
+    res.json({ started: true, source: "coinpaprika" });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to start CoinPaprika import" });
+  }
+});
+
+/* Trigger CoinGecko detail import (slower — rate-limited) */
 router.post("/coins-import", requireAdminToken, async (req, res) => {
   try {
     const { runCoinGeckoImport, ensureCoinMetadataTable, getImporterStatus } = await import("../lib/coinGeckoImporter.js");
+    const { clearCoinsCache } = await import("../routes/dex.js");
     const st = getImporterStatus();
-    if (st.running) return res.status(409).json({ error: "Import already running", status: st });
+    if (st.running) return res.status(409).json({ error: "CoinGecko import already running", status: st });
     const maxBulkPages   = Math.min(40, Math.max(1, parseInt(req.body?.maxBulkPages   ?? "8",  10) || 8));
     const maxDetailCoins = Math.min(2000, Math.max(0, parseInt(req.body?.maxDetailCoins ?? "100", 10) || 100));
     await ensureCoinMetadataTable();
-    // Fire-and-forget — returns immediately, caller polls /status
     runCoinGeckoImport({ maxBulkPages, maxDetailCoins })
-      .then(r => logger.info(r, "coinMeta: admin-triggered import complete"))
-      .catch(e => logger.warn({ err: e }, "coinMeta: admin-triggered import failed"));
+      .then(r => { clearCoinsCache(); logger.info(r, "coinMeta: admin CoinGecko import complete"); })
+      .catch(e => logger.warn({ err: e }, "coinMeta: admin CoinGecko import failed"));
     res.json({ started: true, maxBulkPages, maxDetailCoins });
   } catch (err: any) {
     res.status(500).json({ error: err?.message ?? "Failed to start import" });

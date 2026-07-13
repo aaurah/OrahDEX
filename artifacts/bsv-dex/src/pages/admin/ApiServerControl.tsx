@@ -1039,7 +1039,7 @@ function AlertsTab({ alerts, alertSummary, refetch }: {
 function CoinsTab() {
   const qc = useQueryClient();
   const [bulkPages,   setBulkPages]   = useState("8");
-  const [detailCoins, setDetailCoins] = useState("100");
+  const [detailCoins, setDetailCoins] = useState("50");
 
   const { data: status, isLoading, refetch } = useQuery<any>({
     queryKey:        ["admin-coins-import-status"],
@@ -1048,7 +1048,13 @@ function CoinsTab() {
     staleTime:       5_000,
   });
 
-  const trigger = useMutation({
+  const paprikaTrigger = useMutation({
+    mutationFn: () =>
+      adminFetch("/api/admin/coins-import/paprika", { method: "POST" }).then(r => r.json()),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-coins-import-status"] }); refetch(); },
+  });
+
+  const cgTrigger = useMutation({
     mutationFn: () =>
       adminFetch("/api/admin/coins-import", {
         method: "POST",
@@ -1058,92 +1064,117 @@ function CoinsTab() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin-coins-import-status"] }); refetch(); },
   });
 
-  const phaseColor = (p: string) => p === "done" ? "text-green-400" : p === "error" ? "text-red-400" : p === "idle" ? "text-zinc-400" : "text-yellow-400";
-  const running    = status?.running;
+  const phaseColor = (p: string | undefined) =>
+    !p || p === "idle" ? "text-zinc-400" : p === "done" ? "text-green-400" : p === "error" ? "text-red-400" : "text-yellow-400";
 
-  const StatBox = ({ label, value, sub }: { label: string; value: any; sub?: string }) => (
+  const cp = status?.coinPaprika;
+  const cg = status?.coinGecko;
+
+  const StatBox = ({ label, value }: { label: string; value: any }) => (
     <div className="bg-zinc-800/60 border border-zinc-700/50 rounded-xl p-4 text-center">
       <p className="text-2xl font-bold text-white tabular-nums">{value ?? "—"}</p>
       <p className="text-xs text-zinc-400 mt-1">{label}</p>
-      {sub && <p className="text-[10px] text-zinc-500 mt-0.5">{sub}</p>}
     </div>
   );
 
   return (
     <div className="space-y-5">
-      <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-2xl p-5 space-y-4">
+
+      {/* ── DB stats ── */}
+      {status && (
+        <div className="grid grid-cols-3 gap-3">
+          <StatBox label="Total in DB"  value={status.totalInDb?.toLocaleString()} />
+          <StatBox label="With Logo"    value={status.withImage?.toLocaleString()} />
+          <StatBox label="Full Details" value={status.withDetails?.toLocaleString()} />
+        </div>
+      )}
+
+      {/* ── CoinPaprika ── */}
+      <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-2xl p-5 space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Image className="w-5 h-5 text-primary" />
-            <h3 className="font-semibold text-white">Coin Metadata Import</h3>
+          <div>
+            <div className="flex items-center gap-2">
+              <Image className="w-4 h-4 text-primary" />
+              <h3 className="font-semibold text-white text-sm">CoinPaprika Bulk Import</h3>
+              <span className="text-[10px] bg-green-500/15 text-green-400 border border-green-500/30 px-1.5 py-0.5 rounded font-bold">FAST</span>
+            </div>
+            <p className="text-xs text-zinc-500 mt-0.5">~9 000 coins, single HTTP call — logos for everything including bridge/SS tokens</p>
           </div>
-          <button onClick={() => refetch()} className="text-zinc-400 hover:text-white p-1.5 rounded-lg hover:bg-zinc-800 transition-colors">
+          <button onClick={() => refetch()} className="text-zinc-400 hover:text-white p-1.5 rounded-lg hover:bg-zinc-800 transition-colors shrink-0">
             <RefreshCw className={cn("w-4 h-4", isLoading && "animate-spin")} />
           </button>
         </div>
-        <p className="text-xs text-zinc-400">
-          Pulls logos, names, market-cap ranks, descriptions and social links from CoinGecko's free API.
-          Stored permanently in <code className="text-primary font-mono">coin_metadata</code> — all coin lists,
-          Market Hub and the mobile selector use it automatically. The server auto-seeds on boot if the table is sparse.
-        </p>
 
-        {/* Stats */}
-        {status && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatBox label="Total in DB"    value={status.totalInDb?.toLocaleString()} />
-            <StatBox label="With Logo"      value={status.withImage?.toLocaleString()} />
-            <StatBox label="Full Details"   value={status.withDetails?.toLocaleString()} />
-            <StatBox label="Phase"          value={<span className={phaseColor(status.phase ?? "idle")}>{status.phase ?? "idle"}</span>} />
+        {cp && (
+          <div className="flex flex-wrap gap-3 text-xs">
+            <span className="text-zinc-400">Status: <span className={phaseColor(cp.running ? "running" : "idle")}>{cp.running ? "Running…" : "Idle"}</span></span>
+            {cp.lastRunAt && <span className="text-zinc-400">Last run: <span className="text-zinc-200">{new Date(cp.lastRunAt).toLocaleTimeString()}</span></span>}
+            {cp.upserted > 0 && <span className="text-zinc-400">Upserted: <span className="text-green-400 font-bold">{cp.upserted.toLocaleString()}</span></span>}
+            {cp.error && <span className="text-red-400 truncate max-w-xs">{cp.error}</span>}
           </div>
         )}
 
-        {/* Progress (only when running) */}
-        {running && (
-          <div className="bg-zinc-800/60 border border-yellow-500/30 rounded-xl p-4 space-y-1.5">
-            <p className="text-xs text-yellow-400 font-semibold flex items-center gap-1.5">
-              <RefreshCw className="w-3 h-3 animate-spin" /> Import running…
-            </p>
-            <p className="text-xs text-zinc-300">Symbols matched: <b>{status?.matched}</b></p>
-            <p className="text-xs text-zinc-300">Details fetched: <b>{status?.detailsFetched}</b> / <b>{status?.detailsRemaining + (status?.detailsFetched ?? 0)}</b></p>
-          </div>
+        <button
+          onClick={() => paprikaTrigger.mutate()}
+          disabled={cp?.running || paprikaTrigger.isPending}
+          className={cn(
+            "px-4 py-2 rounded-lg text-sm font-semibold transition-colors w-full",
+            cp?.running || paprikaTrigger.isPending
+              ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
+              : "bg-primary text-black hover:bg-primary/90",
+          )}
+        >
+          {cp?.running ? "Running…" : paprikaTrigger.isPending ? "Starting…" : "Run CoinPaprika Import (recommended)"}
+        </button>
+        {paprikaTrigger.isSuccess && !cp?.running && (
+          <p className="text-xs text-green-400">Started — logos will appear in the market list within seconds.</p>
         )}
+      </div>
 
-        {/* Trigger */}
-        <div className="border-t border-zinc-700/40 pt-4 space-y-3">
-          <p className="text-xs font-medium text-zinc-300">Manual trigger</p>
-          <div className="flex flex-wrap gap-3 items-end">
-            <div className="space-y-1">
-              <label className="text-[10px] text-zinc-500 uppercase tracking-wider">Bulk pages (×250 coins)</label>
-              <input
-                type="number" min={1} max={40} value={bulkPages}
-                onChange={e => setBulkPages(e.target.value)}
-                className="w-24 bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] text-zinc-500 uppercase tracking-wider">Detail coins (per run)</label>
-              <input
-                type="number" min={0} max={2000} value={detailCoins}
-                onChange={e => setDetailCoins(e.target.value)}
-                className="w-28 bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary"
-              />
-            </div>
-            <button
-              onClick={() => trigger.mutate()}
-              disabled={running || trigger.isPending}
-              className={cn(
-                "px-4 py-1.5 rounded-lg text-sm font-semibold transition-colors",
-                running || trigger.isPending
-                  ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
-                  : "bg-primary text-black hover:bg-primary/90",
-              )}
-            >
-              {running ? "Running…" : trigger.isPending ? "Starting…" : "Run Import"}
-            </button>
+      {/* ── CoinGecko ── */}
+      <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-2xl p-5 space-y-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Image className="w-4 h-4 text-amber-400" />
+            <h3 className="font-semibold text-white text-sm">CoinGecko Detail Import</h3>
+            <span className="text-[10px] bg-amber-500/15 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">SLOW</span>
           </div>
-          {trigger.isError && <p className="text-xs text-red-400">{String((trigger.error as any)?.message ?? "Failed")}</p>}
-          {trigger.isSuccess && !running && <p className="text-xs text-green-400">Import started — status above updates every 8 s.</p>}
+          <p className="text-xs text-zinc-500 mt-0.5">Top coins by market cap — adds descriptions, ATH/ATL, categories. Rate-limited by free API.</p>
         </div>
+
+        {cg && (
+          <div className="flex flex-wrap gap-3 text-xs">
+            <span className="text-zinc-400">Phase: <span className={phaseColor(cg.phase)}>{cg.phase ?? "idle"}</span></span>
+            {cg.matched !== undefined && <span className="text-zinc-400">Matched: <span className="text-zinc-200">{cg.matched}</span></span>}
+            {cg.running && <span className="text-yellow-400 flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Running</span>}
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2 items-end">
+          <div className="space-y-1">
+            <label className="text-[10px] text-zinc-500 uppercase tracking-wider">Bulk pages ×250</label>
+            <input type="number" min={1} max={40} value={bulkPages} onChange={e => setBulkPages(e.target.value)}
+              className="w-20 bg-zinc-800 border border-zinc-600 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-primary" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] text-zinc-500 uppercase tracking-wider">Detail coins</label>
+            <input type="number" min={0} max={500} value={detailCoins} onChange={e => setDetailCoins(e.target.value)}
+              className="w-20 bg-zinc-800 border border-zinc-600 rounded-lg px-2 py-1.5 text-sm text-white focus:outline-none focus:border-primary" />
+          </div>
+          <button
+            onClick={() => cgTrigger.mutate()}
+            disabled={cg?.running || cgTrigger.isPending}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors",
+              cg?.running || cgTrigger.isPending
+                ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
+                : "bg-zinc-700 text-zinc-200 hover:bg-zinc-600",
+            )}
+          >
+            {cg?.running ? "Running…" : cgTrigger.isPending ? "Starting…" : "Run CoinGecko Import"}
+          </button>
+        </div>
+        {cgTrigger.isError && <p className="text-xs text-red-400">{String((cgTrigger.error as any)?.message ?? "Failed")}</p>}
       </div>
     </div>
   );

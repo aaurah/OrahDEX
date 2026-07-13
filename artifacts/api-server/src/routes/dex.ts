@@ -26,6 +26,12 @@ interface Cache<T> { data: T; ts: number }
 let exchangeCache: Cache<any> | null = null;
 let priceCache:    Cache<any> | null = null;
 let coinsCache:    Cache<any[]> | null = null;
+
+/** Called by the coin-metadata importers after a bulk upsert so logos appear immediately. */
+export function clearCoinsCache() {
+  coinsCache       = null;
+  allSourcesCache  = null;
+}
 const EXCHANGE_CACHE_MS = 10 * 60 * 1000;
 const PRICE_CACHE_MS    = 60 * 1000;
 const COINS_CACHE_MS    = 2 * 60 * 1000;
