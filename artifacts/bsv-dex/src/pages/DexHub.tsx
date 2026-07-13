@@ -1252,7 +1252,7 @@ export function DexHub() {
                         className="border-b border-border/40 hover:bg-primary/5 transition-colors cursor-pointer group"
                         onClick={() => setSelectedCoin(coin)}
                       >
-                        <td className="px-3 py-2.5 text-muted-foreground text-xs font-mono">{coin.rank ?? idx + 1}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground text-xs font-mono">{idx + 1}</td>
 
                         <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2.5">
