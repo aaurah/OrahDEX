@@ -335,6 +335,31 @@ function Router() {
     };
   }, []);
 
+  // Single Reown account subscription — syncs AppKit connected wallet to walletStore
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    import("@/lib/reown-appkit").then(({ subscribeReownAccount }) => {
+      unsub = subscribeReownAccount((address, chainId) => {
+        if (address) {
+          const { provider } = useWalletStore.getState();
+          if (!provider || provider === "reown") {
+            useWalletStore.getState().connect({
+              address,
+              provider: "reown",
+              network: "evm",
+              chainId,
+            });
+          }
+        } else {
+          if (useWalletStore.getState().provider === "reown") {
+            useWalletStore.getState().disconnect();
+          }
+        }
+      });
+    }).catch(() => {});
+    return () => { unsub?.(); };
+  }, []);
+
   return (
     <Switch>
       {/* ── Admin login ── */}

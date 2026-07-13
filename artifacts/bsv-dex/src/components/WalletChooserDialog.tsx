@@ -6,7 +6,7 @@ import {
   Download, ArrowLeft, Eye, EyeOff, CheckCircle2,
   HardDrive, ChevronRight, Wallet, QrCode,
   Smartphone, RefreshCw, Check, WifiOff,
-  FileKey, Copy, AlertTriangle, KeyRound,
+  FileKey, Copy, AlertTriangle, KeyRound, Globe,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
@@ -1127,6 +1127,19 @@ export function WalletChooserDialog() {
                   icon={<QrCode className="w-5 h-5 text-cyan-400" />}
                   title="Connect via Mobile QR"
                   sub="Scan with your phone to link instantly"
+                />
+
+                <OptionCard
+                  onClick={() => {
+                    close();
+                    import("@/lib/reown-appkit")
+                      .then(({ openReownModal }) => openReownModal())
+                      .catch(() => {});
+                  }}
+                  iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
+                  icon={<Globe className="w-5 h-5 text-blue-400" />}
+                  title="EVM Wallet"
+                  sub="MetaMask · WalletConnect · Coinbase · Rainbow + 300 more"
                 />
               </div>
             </div>

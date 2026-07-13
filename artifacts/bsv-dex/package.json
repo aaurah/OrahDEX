@@ -114,6 +114,8 @@
     "viem": "^2.47.6",
     "vite-plugin-node-polyfills": "^0.26.0",
     "wagmi": "^3.6.0",
-    "zustand": "^5.0.12"
+    "zustand": "^5.0.12",
+    "@reown/appkit": "^1.8.22",
+    "@reown/appkit-adapter-wagmi": "^1.8.22"
   }
 }
