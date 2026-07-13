@@ -12,8 +12,6 @@ import { Bridge, NATIVE_TOKEN_ADDRESS, sendTransaction } from "thirdweb";
 import { useActiveAccount } from "thirdweb/react";
 import { parseUnits, formatUnits } from "viem";
 import { thirdwebClient } from "@/lib/thirdweb-client";
-import { wagmiConfig } from "@/lib/reown";
-import { switchChain as wagmiSwitchChain, getAccount as wagmiGetAccount } from "@wagmi/core";
 import { useWalletStore } from "@/store/useWalletStore";
 import {
   Zap, X, Loader2, CheckCircle2, AlertCircle, ArrowRight, ChevronDown,
@@ -202,9 +200,8 @@ export function ThirdwebBridgePanel({
 
     const eth = (window as any).ethereum;
 
-    // Resolve wallet: ThirdWeb account → window.ethereum → Reown/WalletConnect connector
+    // Resolve wallet: ThirdWeb account → window.ethereum injected wallet
     let senderAddress: string | null = null;
-    let reownProvider: any = null;
 
     if (thirdwebAccount) {
       senderAddress = thirdwebAccount.address;
@@ -213,22 +210,7 @@ export function ThirdwebBridgePanel({
       if (!accounts?.length) accounts = await eth.request({ method: "eth_requestAccounts" });
       senderAddress = accounts?.[0] ?? null;
     } else if (storeAddress) {
-      // Wallet connected via Reown/WalletConnect — address is already in the store.
-      // wagmiSwitchChain "wakes up" the WalletConnect session so the provider
-      // responds to requests (mirrors escrow.ts sendRawViaReown pattern).
       senderAddress = storeAddress;
-      try {
-        const acct = wagmiGetAccount(wagmiConfig);
-        if (acct.chainId !== srcChainId) {
-          await wagmiSwitchChain(wagmiConfig, { chainId: srcChainId });
-        }
-      } catch {}
-      for (const connector of (wagmiConfig as any).connectors ?? []) {
-        try {
-          const p = await (connector as any).getProvider?.();
-          if (p) { reownProvider = p; break; }
-        } catch {}
-      }
     }
 
     if (!senderAddress) {
@@ -266,7 +248,7 @@ export function ThirdwebBridgePanel({
           const result = await sendTransaction({ transaction: tx, account: thirdwebAccount });
           if (i === 0) firstHash = result.transactionHash;
         } else {
-          const eip1193 = reownProvider ?? eth;
+          const eip1193 = eth;
           const chainHex = "0x" + tx.chainId.toString(16);
           const curChain: string = await eip1193.request({ method: "eth_chainId" });
           if (curChain.toLowerCase() !== chainHex.toLowerCase()) {

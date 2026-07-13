@@ -279,81 +279,12 @@ export function Layout({ children }: { children: ReactNode }) {
   const prevAddressRef  = useRef<string | null>(null);
   const prevChainIdRef  = useRef<number | null>(null);
 
-  // Auto-sync Reown/EVM wallet into wallet store on page load (handles refresh reconnect)
-  useEffect(() => {
-    let sub: (() => void) | null = null;
-    import("@/lib/reown").then(({
-      subscribeReownAccount, fetchEvmBalance, parseChainFromCaip,
-      isEvmConnectRequested, setEvmConnectRequested, isUserDisconnecting,
-      getWcMultiChainAddresses, getReownAccount,
-    }) => {
-      // Named function so it can be called both as the subscription callback
-      // AND immediately after subscribing (AppKit's subscribeAccount does NOT
-      // emit current state on subscription — it only fires on future changes,
-      // so a cached WC session restored before our subscription is registered
-      // would never be picked up without this proactive check).
-      const applyReownState = async (state: { address?: string; isConnected: boolean; caipAddress?: string }) => {
-        if (state.isConnected && state.address) {
-          const {
-            address: current, provider: currentProvider,
-            chainId: currentChainId, connect, setBalance,
-          } = useWalletStore.getState();
-          const newChainId = parseChainFromCaip(state.caipAddress) ?? undefined;
-
-          // Decide whether to update the store:
-          // 1. No wallet connected yet — always accept
-          // 2. User deliberately opened EVM modal (intent flag set) — override any existing wallet
-          // 3. Same Reown wallet but chain switched — update chainId
-          // Guard: Reown's auto-reconnect on page load must NOT override a non-Reown wallet.
-          const isIntentionalEvm = isEvmConnectRequested();
-          const isChainSwitch =
-            currentProvider === "reown" &&
-            current === state.address &&
-            newChainId !== undefined &&
-            newChainId !== currentChainId;
-
-          if (!current || isIntentionalEvm || isChainSwitch) {
-            if (isIntentionalEvm) setEvmConnectRequested(false);
-            connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
-            const bal = await fetchEvmBalance(state.address, newChainId ?? null);
-            if (bal !== null) setBalance(bal);
-            // Extract any extra namespace addresses the wallet exposed in the
-            // WalletConnect v2 session (Trust Wallet, OKX, BitGet etc. expose
-            // Solana, TRON and Bitcoin accounts alongside EVM in one WC session).
-            const { sol, tron, btc } = getWcMultiChainAddresses();
-            if (sol)  useWalletStore.getState().setInternalSolAddress(sol);
-            if (tron) useWalletStore.getState().setInternalTronAddress(tron);
-            if (btc)  useWalletStore.getState().setInternalBtcAddress(btc);
-          }
-        } else if (!state.isConnected) {
-          // Reown externally disconnected (wallet extension revoked, not via our UI).
-          if (!isUserDisconnecting()) {
-            const { provider: currentProvider, disconnect } = useWalletStore.getState();
-            if (currentProvider === "reown") disconnect();
-          }
-        }
-      };
-
-      sub = subscribeReownAccount(applyReownState);
-
-      // Proactive initial check: if AppKit already has a connected WC session
-      // (e.g., restored from localStorage before our subscription was registered),
-      // subscribeAccount will never fire for it. Read and apply state directly.
-      const nowState = getReownAccount();
-      if (nowState.isConnected && nowState.address) {
-        applyReownState(nowState);
-      }
-    });
-    return () => sub?.();
-  }, []);
-
   // Periodic EVM balance refresh for the compact header button (every 30s)
   useEffect(() => {
     if (!address || network !== "evm" || !chainId) return;
     const refresh = async () => {
-      const reown = await import("@/lib/reown").catch(() => null);
-      if (!reown) return;
-      const bal = await reown.fetchEvmBalance(address, chainId);
+      const { fetchEvmBalance } = await import("@/lib/reown").catch(() => ({ fetchEvmBalance: async () => null }));
+      const bal = await fetchEvmBalance(address, chainId);
       if (bal !== null) useWalletStore.getState().setBalance(bal);
     };
     refresh();
@@ -368,7 +299,7 @@ export function Layout({ children }: { children: ReactNode }) {
         ? `${address.slice(0, 6)}…${address.slice(-4)}`
         : address;
       const networkLabel = network === "bsv" ? "BSV" : network === "sol" ? "Solana" : network === "btc" ? "Bitcoin" : network === "tron" ? "TRON" : "EVM";
-      const providerLabel = (provider === 'reown' || provider === 'orah-wallet') ? 'Orah Wallet' : (provider ?? networkLabel);
+      const providerLabel = provider === 'orah-wallet' ? 'Orah Wallet' : (provider ?? networkLabel);
       toast({
         title: "Wallet Connected",
         description: `${providerLabel} · ${shortAddr}`,

@@ -9,7 +9,6 @@ import {
 import { useOnChainTxHistory } from "@/hooks/useOnChainTxHistory";
 import type { OnChainTx } from "@/hooks/useOnChainTxHistory";
 import { useWalletStore } from "@/store/useWalletStore";
-import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
@@ -787,7 +786,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             </button>
             <button
               onClick={async () => {
-                if (provider === "reown") await disconnectReown();
                 disconnect();
               }}
               className="p-2 rounded-full border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/30 transition-all"

@@ -16,8 +16,6 @@ import { sendTransaction, prepareTransaction, waitForReceipt } from "thirdweb";
 import { defineChain } from "thirdweb/chains";
 import { thirdwebClient } from "@/lib/thirdweb-client";
 import { useWalletStore } from "@/store/useWalletStore";
-import { getAccount as wagmiGetAccount } from "@wagmi/core";
-import { getWagmiConfig } from "@/lib/reown";
 import {
   hasEscrow,
   resolveEscrowAsset,
@@ -151,37 +149,9 @@ export function useEscrow() {
   // chain where the OrahDEX escrow contract is deployed.
   const escrowAvailable = isEvm && hasEscrow(chainId);
 
-  // Detect whether the underlying connection is actually Reown/WalletConnect.
-  //
-  // Priority: trust the wallet store `provider` field first. When the user
-  // connects via Reown AppKit (WalletConnect) the subscription in App.tsx sets
-  // provider = "reown" regardless of which wallet app the user chose — MetaMask
-  // Mobile, Rainbow, Coinbase Mobile, etc. all go through WalletConnect and get
-  // provider = "reown" in the store. Their wagmi connector.id values vary
-  // ("walletConnect", "metaMaskSDK", "coinbaseWalletSDK", …) so a connector.id
-  // substring check alone misses many connector types.
-  //
-  // IMPORTANT: ThirdWeb also syncs into wagmi state via useThirdwebWalletSync, so
-  // we must gate the connector.id fallback on !isThirdweb to avoid routing native
-  // ThirdWeb embedded-wallet users through the Reown/WalletConnect code path.
+  // Reown/WalletConnect has been removed. This always returns false.
   function isReownConnected(): boolean {
-    // Definitive signal: the store knows the user connected via Reown AppKit.
-    if (provider === "reown") {
-      const config = getWagmiConfig();
-      if (!config) return false;
-      const acct = wagmiGetAccount(config);
-      return !!(acct?.isConnected && acct?.address);
-    }
-    // Belt-and-suspenders: catch any Reown connector that bypassed the store
-    // subscription (race conditions, SSR hydration, etc.), but exclude ThirdWeb
-    // users whose wallet is synced into wagmi via useThirdwebWalletSync.
-    if (isThirdweb) return false;
-    const config = getWagmiConfig();
-    if (!config) return false;
-    const acct = wagmiGetAccount(config);
-    if (!acct?.isConnected || !acct?.address) return false;
-    const connectorId = ((acct as any).connector?.id ?? "").toLowerCase();
-    return connectorId.includes("walletconnect") || connectorId.includes("reown");
+    return false;
   }
 
   const [status,    setStatus]    = useState<EscrowStatus>("idle");
@@ -212,9 +182,8 @@ export function useEscrow() {
 
     // Routing priority:
     //   1. Orah in-app wallet (local key)
-    //   2. Reown/WalletConnect — wagmi path triggers the mobile deep-link properly
-    //   3. Native ThirdWeb connection (ThirdWeb UI → ThirdWeb SDK sendTransaction)
-    //   4. Universal fallback (window.ethereum / wagmi connector scan)
+    //   2. Native ThirdWeb connection (ThirdWeb UI → ThirdWeb SDK sendTransaction)
+    //   3. Universal fallback (window.ethereum injected wallet)
     const useReown = !isOrahWallet && isReownConnected();
     const useTw    = !isOrahWallet && !useReown && isThirdweb && !!thirdwebAccount;
 

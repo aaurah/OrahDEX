@@ -269,23 +269,13 @@ function Router() {
   useEffect(() => {
     applyStoredTheme();
 
-    // Sync Reown modal theme — deferred with setTimeout(0) so each call lands
-    // in its own event-loop task, safely outside any Lit or React update cycle.
-    const doSyncTheme = (theme: string) =>
-      setTimeout(() =>
-        import("@/lib/reown").then(({ syncReownTheme }) => syncReownTheme(theme)),
-      0);
-    const themeTimer = setTimeout(() => doSyncTheme(useThemeStore.getState().theme), 500);
-    const unsubTheme = useThemeStore.subscribe(s => doSyncTheme(s.theme));
-
     const eth = (window as any).ethereum;
 
     const { network, address, disconnect, provider: storedProvider } = useWalletStore.getState();
     // Skip the injected-wallet liveness check for:
-    //   • reown      → handled by its own subscription below
     //   • orah-wallet → in-app self-custodial wallet, address derived locally
     //                   from the PIN/passkey secret — never depends on window.ethereum
-    if (network === "evm" && storedProvider !== "reown" && storedProvider !== "orah-wallet") {
+    if (network === "evm" && storedProvider !== "orah-wallet") {
       if (!eth) {
         disconnect();
       } else {
@@ -308,7 +298,6 @@ function Router() {
 
     const onAccountsChanged = async (accounts: string[]) => {
       const { provider: p } = useWalletStore.getState();
-      if (p === "reown") return;
       // Orah Wallet is self-custodial and independent of window.ethereum —
       // ignore injected wallet account events for it.
       if (p === "orah-wallet") return;
@@ -326,7 +315,7 @@ function Router() {
 
     const onChainChanged = async (chainHex: string) => {
       const { address: addr, provider: p } = useWalletStore.getState();
-      if (p === "reown" || !addr) return;
+      if (!addr) return;
       const chainId = parseInt(chainHex, 16);
       useWalletStore.getState().setBalance(null);
       useWalletStore.getState().connect({ address: addr, provider: p ?? "metamask", network: "evm", chainId });
@@ -341,8 +330,6 @@ function Router() {
     }
 
     return () => {
-      clearTimeout(themeTimer);
-      unsubTheme();
       if (eth) {
         eth.removeListener?.("accountsChanged", onAccountsChanged);
         eth.removeListener?.("chainChanged", onChainChanged);

@@ -3,7 +3,7 @@ import { ChevronDown, CheckCircle2, PlusCircle, Plus, Trash2, Lock } from "lucid
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useToast } from "@/hooks/use-toast";
-import { switchReownChain, fetchEvmBalance, CHAIN_RPC_URLS } from "@/lib/reown";
+import { fetchEvmBalance, CHAIN_RPC_URLS } from "@/lib/reown";
 import { useCustomChainStore } from "@/store/useCustomChainStore";
 import { AddNetworkDialog } from "@/components/AddNetworkDialog";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -440,54 +440,6 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
 
     setSwitching(chain.id);
 
-    /* ── Reown / WalletConnect path ─────────────────────────────────────── */
-    if (provider === "reown") {
-      try {
-        const switched = await switchReownChain(chain.id);
-        if (!switched) {
-          /* Chain not pre-configured in AppKit — fall back to injected provider */
-          const eth = (window as any).ethereum;
-          if (!eth) throw new Error(`${chain.name} is not available via WalletConnect. Please connect via MetaMask to use this chain.`);
-          const hexId = `0x${chain.id.toString(16)}`;
-          try {
-            await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
-          } catch (switchErr: any) {
-            if (switchErr?.code === 4902 || switchErr?.code === -32603) {
-              await eth.request({
-                method: "wallet_addEthereumChain",
-                params: [{
-                  chainId: hexId,
-                  chainName: chain.name,
-                  nativeCurrency: { name: chain.nativeName, symbol: chain.symbol, decimals: chain.nativeDecimals },
-                  rpcUrls: [chain.rpcUrl],
-                  blockExplorerUrls: [chain.blockExplorerUrl],
-                }],
-              });
-              await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
-            } else throw switchErr;
-          }
-        }
-        /* Use switchChain to update only the chainId — never wipes internal addresses */
-        switchChain(chain.id);
-        const bal = await fetchEvmBalance(address!, chain.id);
-        if (bal !== null) useWalletStore.getState().setBalance(bal);
-        toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
-        setOpen(false); onChainSelected?.();
-      } catch (err: any) {
-        if (err?.code === 4001 || err?.message?.toLowerCase().includes("reject")) {
-          toast({ title: "Cancelled", description: "You rejected the chain switch.", variant: "destructive" });
-        } else {
-          toast({
-            title: "Switch failed",
-            description: err?.message || "Could not switch chain via WalletConnect.",
-            variant: "destructive",
-          });
-        }
-      } finally {
-        setSwitching(null);
-      }
-      return;
-    }
 
     /* ── OrahDEX software wallet (seed phrase / passkey) ─────────────────
        No browser extension needed — we own the key, so just update the

@@ -3,7 +3,6 @@ import { ChevronDown, ArrowRight, ArrowUpDown, RefreshCw, Zap, Clock, AlertCircl
 import { API_BASE } from "@/lib/api";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useWalletStore } from "@/store/useWalletStore";
-import { wagmiConfig } from "@/lib/reown";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -402,19 +401,10 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
     setExecuteError(null);
     setExecuteTxHash(null);
     try {
-      // Resolve EIP-1193 provider: window.ethereum → Reown/WalletConnect connectors
+      // Resolve EIP-1193 provider: window.ethereum injected wallet
       const eth = (window as any).ethereum;
-      let provider: any = eth ?? null;
-
-      if (!provider) {
-        for (const connector of (wagmiConfig as any).connectors ?? []) {
-          try {
-            const p = await (connector as any).getProvider?.();
-            if (p) { provider = p; break; }
-          } catch {}
-        }
-      }
-      if (!provider) throw new Error("No wallet connected. Please connect a wallet first.");
+      const provider = eth ?? null;
+      if (!provider) throw new Error("No wallet connected. Please connect a browser wallet.");
 
       // Switch to the source chain the bridge tx needs to run on
       const targetHex = "0x" + builtTx.tx.chainId.toString(16);

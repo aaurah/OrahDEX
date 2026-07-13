@@ -2,11 +2,8 @@
 - [Bridge agg patterns](bridge-agg-patterns.md) — Express async route safety, toWei edge case, dropdown click-outside pattern.
 - [Git merge conflict resolution](git-merge-resolution.md) — agent cannot git add/rm/commit/push; use a shell script the user runs manually.
 - [OrahDEX Replit migration](orahdex-migration.md) — pnpm install times out; use per-package filter installs + pnpm store symlinks for bsv-dex build.
-- [WalletConnect logger bindings crash](wc-logger-bindings-fix.md) — `e.bindings is not a function` from logger@2 hitting a pino-v10 logger inlined in logger@3.
-- [Reown appkit subpath alias](reown-appkit-subpath.md) — Rolldown (Vite 8) can't resolve @reown/appkit/* subpaths via symlinks; must add explicit resolve.alias entries.
-- [ThirdWeb wallet store sync](thirdweb-wallet-sync.md) — ThirdwebMobilePanel.handleConnect must extract account from wallet.connect() and call useWalletStore.getState().connect() to update OrahDEX state.
+- [ThirdWeb wallet store sync](thirdweb-wallet-sync.md) — ThirdwebSync component in App.tsx watches useActiveAccount() and calls store.connect(); EVM connect is now ThirdWeb ConnectEmbed only (Reown removed).
 - [ThirdWeb Bridge integration](thirdweb-bridge-integration.md) — Bridge.Buy.prepare multi-step execution; ThirdwebBridgePanel in OrderForm funds trades from any EVM chain/token.
-- [Reown raw eth_sendTransaction](reown-raw-send.md) — viem@2.47.x wagmiSendTransaction throws "method not supported" on WalletConnect; must call eth_sendTransaction directly on the connector's EIP-1193 provider.
 - [ARC broadcaster pattern](arc-broadcaster-pattern.md) — ARC body is {rawTx} not {txhex}; drizzle-kit push needs TTY so use pool.query IF NOT EXISTS for migrations in app.ts instead.
 - [Emotion stubs for ThirdWeb/Rolldown](emotion-stubs.md) — Rolldown namespace collisions fixed via alias stubs; Proxy target MUST be plain function (not forwardRef) or apply trap won't fire.
 - [LiquidityBot bulk write pattern](liquidity-bot-bulk-write.md) — sequential chunked INSERTs saturate prod DB for ~100 s/cycle; use single UNNEST query instead.
@@ -17,9 +14,8 @@
 - [pg ECONNRESET crash pattern](pg-econnreset-crash.md) — dual uncaughtException handlers + missing client error listener caused pg drops to kill API server; three-part fix documented.
 - [guardedInterval thundering herd](guarded-interval-jitter.md) — setInterval causes all background services to re-align on LCM boundaries (~6 min); fix is ±20% jitter via self-rescheduling setTimeout.
 - [Bridge pair scale issues](bridge-pair-scale.md) — 1.88M LE/SS pairs; 84% have last_price=0; mock order book used absolute offsets (broke sub-cent pairs); mobile had no bridge auto-routing.
-- [Escrow wallet routing bugs](escrow-wallet-routing.md) — three root causes made escrow MetaMask-only; fixes: remove undeployed chain addresses, check provider==="reown" before connector.id, read wallet.getChain() after ThirdWeb connect.
+- [EVM wallet connect architecture](evm-wallet-connect.md) — Reown/WalletConnect fully removed; EVM connect is ThirdWeb ConnectEmbed (WalletChooserDialog "evm" tab); ThirdwebSync in App.tsx is the only store sync path.
 - [CoinGecko price feed](coingecko-price-feed.md) — Binance blocked in Replit; CoinGecko free API works (no key), covers 150+ coins with real change24h; MATIC needs "polygon-ecosystem-token" not "matic-network"; DOGS needs "dogs-2".
 - [Deploy stops dev workflows](deploy-stops-workflows.md) — publishing/deploying can leave all 3 dev workflows as NOT_STARTED afterward; preview goes blank until manually restarted.
 - [TRON BIP44 derivation path](tron-derivation-path.md) — TRON must use m/44'/195'/0'/0/0 + keccak256; old evmToTronAddress(evm) used wrong key vs MetaMask snap/Trust Wallet.
-- [Reown dual-subscription guard](reown-dual-sub-guard.md) — only ONE subscribeReownAccount subscription (Layout.tsx) must exist; duplicate in App.tsx lacked the intentional-EVM guard and silently overrode passkey wallets.
 - [iOS Safari noble/curves init race](ios-safari-noble-curves.md) — static top-level import of secp256k1/ed25519 from @noble/curves resolves to undefined on iOS in split chunks; fix: lazy dynamic import inside the function.

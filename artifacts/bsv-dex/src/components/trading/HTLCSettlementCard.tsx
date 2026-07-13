@@ -21,7 +21,6 @@ import {
   type LockInstruction,
 } from "../../hooks/useEvmHtlcSession";
 import { getPublicClient } from "../../lib/escrow";
-import { getWagmiConfig } from "../../lib/reown";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -150,22 +149,7 @@ function LockPanel({
       if (h) return h;
     }
 
-    // 2. Try all wagmi connectors (WalletConnect / Reown AppKit)
-    const config = getWagmiConfig();
-    if (config) {
-      for (const connector of (config as any).connectors ?? []) {
-        try {
-          const provider = await (connector as any).getProvider?.();
-          if (!provider) continue;
-          const h = await tryProvider(provider);
-          if (h) return h;
-        } catch (e: any) {
-          if (isUserRejection(e)) throw e;
-        }
-      }
-    }
-
-    throw new Error("No wallet found. Connect MetaMask or use WalletConnect.");
+    throw new Error("No wallet found. Connect MetaMask or install a browser wallet.");
   }
 
   async function handleLock() {

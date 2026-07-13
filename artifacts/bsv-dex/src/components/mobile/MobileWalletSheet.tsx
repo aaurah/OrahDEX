@@ -4,7 +4,6 @@ import {
   ExternalLink, Wallet, TrendingUp, TrendingDown, RefreshCw,
 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
-import { disconnectReown } from "@/lib/reown";
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { cn, getProviderLabel } from "@/lib/utils";
@@ -58,8 +57,7 @@ export function MobileWalletSheet({ onClose }: { onClose: () => void }) {
     setTimeout(onClose, 300);
   };
 
-  const handleDisconnect = async () => {
-    if (provider === "reown") await disconnectReown();
+  const handleDisconnect = () => {
     disconnect();
     handleClose();
   };

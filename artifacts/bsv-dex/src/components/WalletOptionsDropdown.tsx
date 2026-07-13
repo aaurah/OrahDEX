@@ -1,8 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
-import { LogOut, Wallet, Copy, Check, ChevronDown, ArrowLeftRight, Repeat2, CreditCard, History } from 'lucide-react';
+import { LogOut, Wallet, Copy, Check, ChevronDown, ArrowLeftRight } from 'lucide-react';
 import { useWalletStore, type WalletNetwork } from '@/store/useWalletStore';
 import { useWalletModalStore } from '@/store/useWalletModalStore';
-import { disconnectReown, openReownModal } from '@/lib/reown';
 import { ChainSwitcherDropdown } from './ChainSwitcherDropdown';
 import { cn, getProviderLabel } from '@/lib/utils';
 
@@ -50,9 +49,6 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
 
   if (!address) return null;
 
-  const isReown = provider === 'reown';
-  const isEvm   = network === 'evm';
-
   const balanceLabel = balance
     ? `${parseFloat(balance).toFixed(4)} ${
         network === 'evm'  ? 'ETH'  :
@@ -72,27 +68,15 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const handleDisconnect = async () => {
+  const handleDisconnect = () => {
     setOpen(false);
-    if (provider === 'reown') await disconnectReown();
     disconnect();
   };
 
-  const handleSwitchWallet = async () => {
+  const handleSwitchWallet = () => {
     setOpen(false);
-    if (provider === 'reown') {
-      await disconnectReown();
-      disconnect();
-      setTimeout(() => openReownModal("Connect"), 500);
-    } else {
-      disconnect();
-      openWalletModal();
-    }
-  };
-
-  const handleOpenView = (view: "Swap" | "OnRampProviders" | "Account") => {
-    setOpen(false);
-    openReownModal(view);
+    disconnect();
+    openWalletModal();
   };
 
   return (
@@ -223,52 +207,6 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             <div className="px-4 py-3 border-b border-border">
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-2 font-semibold">Change EVM Chain</p>
               <ChainSwitcherDropdown inline />
-            </div>
-          )}
-
-          {/* ── Reown AppKit quick-access features ─────────────────────────── */}
-          {isReown && (
-            <div className="px-3 py-2.5 border-b border-border">
-              <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Wallet Features</p>
-              <div className={cn("grid gap-1.5", isEvm ? "grid-cols-3" : "grid-cols-2")}>
-                {/* EVM Swap via 1inch — only on EVM */}
-                {isEvm && (
-                  <button
-                    onClick={() => handleOpenView("Swap")}
-                    className="flex flex-col items-center gap-1.5 py-2.5 px-1 rounded-xl bg-violet-500/8 border border-violet-500/20 hover:bg-violet-500/15 transition-colors group"
-                  >
-                    <div className="w-7 h-7 rounded-lg bg-violet-500/15 flex items-center justify-center group-hover:bg-violet-500/25 transition-colors">
-                      <Repeat2 className="w-3.5 h-3.5 text-violet-400" />
-                    </div>
-                    <span className="text-[9px] font-semibold text-violet-400 leading-none">Swap</span>
-                    <span className="text-[8px] text-muted-foreground leading-none">1inch</span>
-                  </button>
-                )}
-
-                {/* Buy Crypto via Meld OnRamp */}
-                <button
-                  onClick={() => handleOpenView("OnRampProviders")}
-                  className="flex flex-col items-center gap-1.5 py-2.5 px-1 rounded-xl bg-emerald-500/8 border border-emerald-500/20 hover:bg-emerald-500/15 transition-colors group"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-emerald-500/15 flex items-center justify-center group-hover:bg-emerald-500/25 transition-colors">
-                    <CreditCard className="w-3.5 h-3.5 text-emerald-400" />
-                  </div>
-                  <span className="text-[9px] font-semibold text-emerald-400 leading-none">Buy</span>
-                  <span className="text-[8px] text-muted-foreground leading-none">Meld</span>
-                </button>
-
-                {/* Activity / Transaction History */}
-                <button
-                  onClick={() => handleOpenView("Account")}
-                  className="flex flex-col items-center gap-1.5 py-2.5 px-1 rounded-xl bg-sky-500/8 border border-sky-500/20 hover:bg-sky-500/15 transition-colors group"
-                >
-                  <div className="w-7 h-7 rounded-lg bg-sky-500/15 flex items-center justify-center group-hover:bg-sky-500/25 transition-colors">
-                    <History className="w-3.5 h-3.5 text-sky-400" />
-                  </div>
-                  <span className="text-[9px] font-semibold text-sky-400 leading-none">Activity</span>
-                  <span className="text-[8px] text-muted-foreground leading-none">History</span>
-                </button>
-              </div>
             </div>
           )}
 

@@ -12,7 +12,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useBsvBalance } from "@/hooks/useBsvBalance";
 import { useLocation } from "wouter";
-import { disconnectReown, sendEvmTransfer } from "@/lib/reown";
+import { sendEvmTransfer } from "@/lib/reown";
 import { resolveNftSpendBalance } from "@/lib/nftBalance";
 import { deriveChannelKey, encryptMessage, decryptMessage } from "@/lib/chatCrypto";
 import { useHybridBalance } from "@/hooks/useHybridBalance";
@@ -1343,7 +1343,6 @@ function EditProfileSheet({ address, profile, onClose, onSave }: {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Failed to delete profile");
       setShowDeleteConfirm(false);
-      if (provider === "reown") await disconnectReown();
       disconnect();
       onClose();
       navigate("/");
