@@ -30,7 +30,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
     address, provider, network, balance,
     disconnect, switchNetworkType,
     internalBsvAddress, internalBtcAddress, internalSolAddress, internalEvmAddress, internalBchAddress,
-    internalXrpAddress, internalLtcAddress, internalDogeAddress,
+    internalXrpAddress, internalLtcAddress, internalDogeAddress, internalTronAddress,
   } = useWalletStore();
   const { open: openWalletModal } = useWalletModalStore();
   const [open, setOpen]           = useState(false);
@@ -178,6 +178,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             const xrpAddr  = internalXrpAddress  ?? (network === 'xrp'  ? address : null);
             const ltcAddr  = internalLtcAddress  ?? (network === 'ltc'  ? address : null);
             const dogeAddr = internalDogeAddress ?? (network === 'doge' ? address : null);
+            const tronAddr = internalTronAddress  ?? (network === 'tron' ? address : null);
             const available: WalletNetwork[] = [];
             if (evmAddr)  available.push('evm');
             if (bsvAddr)  available.push('bsv');
@@ -187,6 +188,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             if (xrpAddr)  available.push('xrp');
             if (ltcAddr)  available.push('ltc');
             if (dogeAddr) available.push('doge');
+            if (tronAddr) available.push('tron');
             if (available.length < 2)  return null;
             return (
               <div className="px-3 py-2.5 border-b border-border">
