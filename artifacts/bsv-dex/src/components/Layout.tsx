@@ -285,9 +285,14 @@ export function Layout({ children }: { children: ReactNode }) {
     import("@/lib/reown").then(({
       subscribeReownAccount, fetchEvmBalance, parseChainFromCaip,
       isEvmConnectRequested, setEvmConnectRequested, isUserDisconnecting,
-      getWcMultiChainAddresses,
+      getWcMultiChainAddresses, getReownAccount,
     }) => {
-      sub = subscribeReownAccount(async (state) => {
+      // Named function so it can be called both as the subscription callback
+      // AND immediately after subscribing (AppKit's subscribeAccount does NOT
+      // emit current state on subscription — it only fires on future changes,
+      // so a cached WC session restored before our subscription is registered
+      // would never be picked up without this proactive check).
+      const applyReownState = async (state: { address?: string; isConnected: boolean; caipAddress?: string }) => {
         if (state.isConnected && state.address) {
           const {
             address: current, provider: currentProvider,
@@ -327,7 +332,17 @@ export function Layout({ children }: { children: ReactNode }) {
             if (currentProvider === "reown") disconnect();
           }
         }
-      });
+      };
+
+      sub = subscribeReownAccount(applyReownState);
+
+      // Proactive initial check: if AppKit already has a connected WC session
+      // (e.g., restored from localStorage before our subscription was registered),
+      // subscribeAccount will never fire for it. Read and apply state directly.
+      const nowState = getReownAccount();
+      if (nowState.isConnected && nowState.address) {
+        applyReownState(nowState);
+      }
     });
     return () => sub?.();
   }, []);
