@@ -70,6 +70,9 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
 
   const handleDisconnect = () => {
     setOpen(false);
+    if (provider === "reown") {
+      import("@/lib/reown-appkit").then(({ disconnectReown }) => disconnectReown()).catch(() => {});
+    }
     disconnect();
   };
 

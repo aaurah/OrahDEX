@@ -786,6 +786,9 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             </button>
             <button
               onClick={async () => {
+                if (provider === "reown") {
+                  import("@/lib/reown-appkit").then(({ disconnectReown }) => disconnectReown()).catch(() => {});
+                }
                 disconnect();
               }}
               className="p-2 rounded-full border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/30 transition-all"

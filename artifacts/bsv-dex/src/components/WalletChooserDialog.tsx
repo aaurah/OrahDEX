@@ -1084,6 +1084,19 @@ export function WalletChooserDialog() {
             <div className="flex-1 overflow-y-auto overscroll-contain px-6 pb-4">
               <div className="space-y-2">
                 <OptionCard
+                  onClick={() => {
+                    close();
+                    import("@/lib/reown-appkit")
+                      .then(({ openReownModal }) => openReownModal())
+                      .catch(() => {});
+                  }}
+                  iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
+                  icon={<Globe className="w-5 h-5 text-blue-400" />}
+                  title="EVM Wallet"
+                  sub="MetaMask · WalletConnect · Coinbase · Rainbow + 300 more"
+                />
+
+                <OptionCard
                   onClick={() => setTab("passkey")}
                   iconBg="bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40"
                   icon={<Fingerprint className="w-5 h-5 text-primary" />}
@@ -1127,19 +1140,6 @@ export function WalletChooserDialog() {
                   icon={<QrCode className="w-5 h-5 text-cyan-400" />}
                   title="Connect via Mobile QR"
                   sub="Scan with your phone to link instantly"
-                />
-
-                <OptionCard
-                  onClick={() => {
-                    close();
-                    import("@/lib/reown-appkit")
-                      .then(({ openReownModal }) => openReownModal())
-                      .catch(() => {});
-                  }}
-                  iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
-                  icon={<Globe className="w-5 h-5 text-blue-400" />}
-                  title="EVM Wallet"
-                  sub="MetaMask · WalletConnect · Coinbase · Rainbow + 300 more"
                 />
               </div>
             </div>
