@@ -341,7 +341,7 @@ function Router() {
     }
 
     let reownUnsub: (() => void) | null = null;
-    import("@/lib/reown").then(({ subscribeReownAccount, fetchEvmBalance, parseChainFromCaip, isUserDisconnecting, setUserDisconnecting }) => {
+    import("@/lib/reown").then(({ subscribeReownAccount, fetchEvmBalance, parseChainFromCaip, isUserDisconnecting, setUserDisconnecting, getWcMultiChainAddresses }) => {
       reownUnsub = subscribeReownAccount(async (state) => {
         const { provider: current } = useWalletStore.getState();
         if (current === "thirdweb") return;
@@ -358,6 +358,13 @@ function Router() {
           if (bal !== null) {
             useWalletStore.getState().setBalance(bal);
           }
+          // Extract any extra namespace addresses the wallet exposed in
+          // the WalletConnect session (Trust Wallet, OKX, BitGet etc. include
+          // Solana and TRON accounts alongside EVM in one WC v2 session).
+          const { sol, tron, btc } = getWcMultiChainAddresses();
+          if (sol)  useWalletStore.getState().setInternalSolAddress(sol);
+          if (tron) useWalletStore.getState().setInternalTronAddress(tron);
+          if (btc)  useWalletStore.getState().setInternalBtcAddress(btc);
         } else if (current === "reown") {
           useWalletStore.getState().disconnect();
           setUserDisconnecting(false);

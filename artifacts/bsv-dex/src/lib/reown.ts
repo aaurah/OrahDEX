@@ -273,6 +273,40 @@ export function parseChainFromCaip(caipAddress?: string): number | null {
   return isNaN(n) ? null : n;
 }
 
+/**
+ * Reads the active WalletConnect v2 session namespaces and extracts any
+ * Solana and TRON addresses the wallet exposed (common in Trust Wallet, OKX,
+ * BitGet, etc. which include multiple namespaces in one WC session).
+ * Returns null for each chain that is not present in the session.
+ */
+export function getWcMultiChainAddresses(): {
+  sol: string | null;
+  tron: string | null;
+  btc: string | null;
+} {
+  const result = { sol: null as string | null, tron: null as string | null, btc: null as string | null };
+  try {
+    // AppKit v1.x exposes the underlying WalletConnect universal provider
+    const up = (modal as any)?.universalProvider;
+    const session = up?.session;
+    const ns = session?.namespaces as Record<string, { accounts?: string[] }> | undefined;
+    if (!ns) return result;
+
+    const last = (accounts: string[] | undefined): string | null => {
+      const a = accounts?.[0];
+      if (!a) return null;
+      const parts = a.split(":");
+      return parts.length >= 3 ? parts.slice(2).join(":") : null;
+    };
+
+    result.sol  = last(ns["solana"]?.accounts);
+    result.tron = last(ns["tron"]?.accounts);
+    // bip122 is the WC2 namespace for Bitcoin / UTXO chains
+    result.btc  = last(ns["bip122"]?.accounts);
+  } catch { /* AppKit internal state not accessible in this build */ }
+  return result;
+}
+
 export const CHAIN_RPC_URLS: Record<number, string> = {
   1:       "https://eth.llamarpc.com",
   56:      "https://bsc.llamarpc.com",
