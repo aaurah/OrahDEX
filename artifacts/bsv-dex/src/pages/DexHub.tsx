@@ -1358,9 +1358,11 @@ export function DexHub() {
                   <button onClick={() => setSelectedCoin(null)} className="p-2 rounded-xl bg-secondary border border-border active:opacity-60 shrink-0" aria-label="Back">
                     <ChevronLeft className="w-5 h-5" />
                   </button>
-                  {selectedCoin.image
-                    ? <img src={selectedCoin.image} alt={selectedCoin.symbol} className="w-9 h-9 rounded-full shrink-0 border border-border" />
-                    : <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-sm font-black text-primary">{selectedCoin.symbol[0]}</div>
+                  {(coinDetail?.image ?? selectedCoin.image)
+                    ? <img src={coinDetail?.image ?? selectedCoin.image!} alt={selectedCoin.symbol} className="w-9 h-9 rounded-full shrink-0 border border-border" />
+                    : detailLoading
+                      ? <div className="w-9 h-9 rounded-full bg-secondary border border-border animate-pulse shrink-0" />
+                      : <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-sm font-black text-primary">{selectedCoin.symbol[0]}</div>
                   }
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">

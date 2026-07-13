@@ -766,6 +766,22 @@ router.get("/coins/:symbol/detail", async (req, res) => {
     };
 
     detailCache.set(symbol, { data: result, ts: Date.now() });
+
+    // Persist image/name/rank to coin_metadata so the list gets logos over time
+    if (result.image) {
+      pool.query(
+        `INSERT INTO coin_metadata (symbol, name, image_url, market_cap_rank, details_fetched, updated_at)
+         VALUES ($1, $2, $3, $4, true, NOW())
+         ON CONFLICT (symbol) DO UPDATE SET
+           name             = COALESCE(EXCLUDED.name, coin_metadata.name),
+           image_url        = COALESCE(EXCLUDED.image_url, coin_metadata.image_url),
+           market_cap_rank  = COALESCE(EXCLUDED.market_cap_rank, coin_metadata.market_cap_rank),
+           details_fetched  = true,
+           updated_at       = NOW()`,
+        [result.symbol, result.name, result.image, result.marketCapRank],
+      ).catch(() => { /* table may not exist yet — non-fatal */ });
+    }
+
     return res.json(result);
   } catch (err: any) {
     req.log.warn({ err: err?.message, symbol }, "coin detail fetch failed");
