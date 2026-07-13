@@ -58,6 +58,9 @@ export function MobileWalletSheet({ onClose }: { onClose: () => void }) {
   };
 
   const handleDisconnect = () => {
+    if (provider === "reown") {
+      import("@/lib/reown-appkit").then(({ disconnectReown }) => disconnectReown()).catch(() => {});
+    }
     disconnect();
     handleClose();
   };

@@ -131,6 +131,9 @@ export function MobileSettings() {
 
   const handleDisconnect = async () => {
     if (window.confirm("Disconnect your wallet?")) {
+      if (provider === "reown") {
+        import("@/lib/reown-appkit").then(({ disconnectReown }) => disconnectReown()).catch(() => {});
+      }
       disconnect();
     }
   };
