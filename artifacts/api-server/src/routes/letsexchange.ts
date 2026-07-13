@@ -20,7 +20,7 @@
 
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { marketsTable, leSwapsTable } from "@workspace/db/schema";
 import { eq, and, ne, inArray, sql } from "drizzle-orm";
 import {
@@ -97,13 +97,44 @@ let ssPairsBackup: Record<string, unknown>[] | null = null;
 // Populated via POST /api/admin/hidden-pairs; cleared via DELETE.
 const hiddenPairSymbols = new Set<string>();
 
+// ── coin_metadata logo map ────────────────────────────────────────────────────
+// Loaded once per cache-fill cycle; maps UPPER symbol → logo URL.
+// Used to enrich LE currencies and SS pairs when the provider returns no logo.
+async function loadCoinMetaMap(): Promise<Map<string, string>> {
+  try {
+    const rows = await pool.query<{ symbol: string; image_url: string }>(
+      `SELECT symbol, image_url FROM coin_metadata WHERE image_url IS NOT NULL AND image_url != ''`,
+    );
+    const m = new Map<string, string>();
+    for (const r of rows.rows) m.set(r.symbol.toUpperCase(), r.image_url);
+    return m;
+  } catch {
+    return new Map();
+  }
+}
+
+/** Clear LE currencies + SS pairs caches so the next request re-builds with fresh logos. */
+export function clearSwapCaches(): void {
+  cache.delete("currencies");
+  cache.delete("ss_pairs_v1");
+  leCurrenciesBackup = null;
+  ssPairsBackup      = null;
+  logger.info("swap caches cleared (LE currencies + SS pairs)");
+}
+
 async function fetchAndCacheCurrencies(): Promise<NormalisedCoin[]> {
   if (currenciesInflight) return currenciesInflight;
   currenciesInflight = (async () => {
     try {
       const { ok, data, status } = await leRequest("/v2/coins");
       if (!ok) throw new Error(`LE /v2/coins returned ${status}`);
-      const coins = normaliseV2Coins(Array.isArray(data) ? data : []);
+      const raw = normaliseV2Coins(Array.isArray(data) ? data : []);
+      // Enrich missing logos from coin_metadata (CoinPaprika data)
+      const metaMap = await loadCoinMetaMap();
+      const coins = raw.map(c => ({
+        ...c,
+        image: c.image ?? metaMap.get(c.symbol.toUpperCase()) ?? null,
+      }));
       setCache("currencies", coins);
       leCurrenciesBackup = coins; // persist beyond TTL — never go back to built-in fallback
       return coins;
@@ -637,7 +668,13 @@ router.get("/simpleswap/pairs", async (req, res) => {
     }
 
     builtPairs = Array.from(mergeMap.values());
+    // Enrich missing logos from coin_metadata (CoinPaprika data)
     if (builtPairs.length > 0) {
+      const metaMap = await loadCoinMetaMap();
+      builtPairs = builtPairs.map(p => ({
+        ...p,
+        image: (p as any).image || metaMap.get(String((p as any).baseAsset ?? "").toUpperCase()) || null,
+      }));
       setCache(cacheKey, builtPairs);
       ssPairsBackup = builtPairs;
     }
