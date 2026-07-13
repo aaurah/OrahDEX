@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, timestamp, integer, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -14,7 +14,10 @@ export const tradesTable = pgTable("trades", {
   walletAddress: text("wallet_address"),
   txid: text("txid"),
   timestamp: timestamp("timestamp").notNull().defaultNow(),
-});
+}, (t) => [
+  index("trades_wallet_ts_idx").on(t.walletAddress, t.timestamp),
+  index("trades_symbol_ts_idx").on(t.symbol, t.timestamp),
+]);
 
 export const insertTradeSchema = createInsertSchema(tradesTable).omit({ timestamp: true });
 export type InsertTrade = z.infer<typeof insertTradeSchema>;

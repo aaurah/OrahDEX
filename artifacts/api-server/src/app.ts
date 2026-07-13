@@ -2,8 +2,9 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import cors from "cors";
 import helmet from "helmet";
 import compression from "compression";
+import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
-import { rateLimit } from "express-rate-limit";
+import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -23,7 +24,7 @@ import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
 import { warmCurrenciesCache, clearSwapCaches } from "./routes/letsexchange.js";
 import { hydrateAdminTokens } from "./middleware/adminAuth.js";
 import { startCopyOrchestrator } from "./lib/copyOrchestrator.js";
-import { apiKeyAuth, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
+import { apiKeyAuth, rejectQueryParamApiKey, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
 import { WebhookHandlers } from "./webhookHandlers.js";
 import evmWebhookRouter from "./routes/evmWebhookRouter.js";
 import { getHealthReport, startOrderReconciler } from "./lib/selfHealing.js";
@@ -142,6 +143,9 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 }));
 
+/* ── Cookie parser — required for HttpOnly admin session cookies ─────── */
+app.use(cookieParser());
+
 /* ── Compression — gzip all API responses (typically 60-80% smaller) ──── */
 app.use(compression({
   level: 6,
@@ -174,15 +178,25 @@ app.use(
 // Build the allowed-origin list:
 //   1. ALLOWED_ORIGINS env var (comma-separated, takes full precedence when set)
 //   2. Hard-coded custom domains
-//   3. All *.replit.app / *.replit.dev subdomains (covers all Replit deployments)
+//   3. The specific Replit dev domain for this Repl (from REPLIT_DEV_DOMAIN env var)
+//      Avoids the previous wildcard *.replit.app / *.replit.dev that allowed any
+//      Replit user's app to make credentialed cross-origin requests to this API.
 //   4. localhost variants (dev convenience)
+//
+// For production Replit deployments (deployed .replit.app domains), set the
+// ALLOWED_ORIGINS env var explicitly via Replit Secrets.
+const _replitDevOrigins: string[] = [];
+const _replitDevDomain = process.env["REPLIT_DEV_DOMAIN"];
+if (_replitDevDomain) {
+  _replitDevOrigins.push(`https://${_replitDevDomain}`);
+}
+
 const _allowedOrigins: (string | RegExp)[] = process.env["ALLOWED_ORIGINS"]
   ? process.env["ALLOWED_ORIGINS"].split(",").map(o => o.trim()).filter(Boolean)
   : [
       "https://orahdex.org",
       "https://www.orahdex.org",
-      /^https?:\/\/[^.]+\.replit\.app$/,
-      /^https?:\/\/[^.]+\.replit\.dev$/,
+      ..._replitDevOrigins,
       /^https?:\/\/localhost(:\d+)?$/,
       /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
     ];
@@ -269,12 +283,25 @@ const globalLimiter = rateLimit({
 });
 app.use(globalLimiter);
 
-/* Stricter limit for financial write operations */
+/* Stricter limit for financial write operations — keyed by wallet address when
+ * available (prevents a single wallet from bypassing the cap via IP rotation).
+ * Falls back to IP for requests without a wallet in the body.                 */
 const exchangeLimiter = rateLimit({
   windowMs:        60_000,
   max:             30,
   standardHeaders: "draft-7",
   legacyHeaders:   false,
+  // Key by wallet address when available so rate limits are wallet-scoped.
+  // Falls back to the built-in ipKeyGenerator (normalises IPv6) when no
+  // wallet is present in the request body.
+  keyGenerator: (req) => {
+    const body = req.body as Record<string, unknown> | undefined;
+    const wallet = body?.["walletAddress"] ?? body?.["wallet_address"] ?? body?.["minter"];
+    if (typeof wallet === "string" && wallet.length > 10) {
+      return `wallet:${wallet.toLowerCase()}`;
+    }
+    return ipKeyGenerator(req);
+  },
   handler: (_req, res) => res.status(429).json({ error: "Exchange rate limit reached — wait a moment before retrying." }),
 });
 const EXCHANGE_WRITE_PATHS = [
@@ -425,6 +452,10 @@ app.get("/api/health",  healthHandler);
 app.get("/api/healthz", healthHandler);
 app.get("/v1/health",   healthHandler);
 app.get("/v1/healthz",  healthHandler);
+
+// Reject API keys in query params before any route can consume them.
+// Keys must arrive via the Authorization header to stay out of server logs.
+app.use(rejectQueryParamApiKey);
 
 app.use("/api", apiKeyAuth);
 app.use("/v1", apiKeyAuth);

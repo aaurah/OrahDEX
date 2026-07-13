@@ -13,7 +13,7 @@
 
 import { db, withDbRetry } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
-import { eq, and, ne, lte, gte } from "drizzle-orm";
+import { eq, and, ne, inArray } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
 import { buildSettlement } from "./settlement.js";
@@ -47,40 +47,58 @@ export async function triggerStopOrders(): Promise<void> {
       markets.map(m => [m.symbol, parseFloat(m.lastPrice)])
     );
 
-    for (const order of openStops) {
+    // ── Identify triggered orders in-memory — no per-order DB round-trips ────
+    const triggeredOrders = openStops.filter(order => {
+      const stopPrice = order.stopPrice ? parseFloat(order.stopPrice) : null;
+      if (!stopPrice || stopPrice <= 0) return false;
+      const marketPrice = priceMap.get(order.symbol) ?? 0;
+      if (marketPrice <= 0) return false;
+      return (order.side === "buy"  && marketPrice >= stopPrice) ||
+             (order.side === "sell" && marketPrice <= stopPrice);
+    });
+
+    if (triggeredOrders.length === 0) return;
+
+    // ── ONE batch query for all counter-orders across all triggered symbols ───
+    // Replaces the previous N+1 pattern (one SELECT per triggered order).
+    const triggeredSymbols = [...new Set(triggeredOrders.map(o => o.symbol))];
+    const allCounterOrders = await withDbRetry(() =>
+      db.select().from(ordersTable).where(
+        and(
+          inArray(ordersTable.symbol, triggeredSymbols),
+          eq(ordersTable.status, "open"),
+        )
+      )
+    );
+
+    // Build lookup: `${symbol}:${side}` → candidate counter-orders
+    const counterMap = new Map<string, typeof allCounterOrders>();
+    for (const o of allCounterOrders) {
+      const key = `${o.symbol}:${o.side}`;
+      if (!counterMap.has(key)) counterMap.set(key, []);
+      counterMap.get(key)!.push(o);
+    }
+
+    for (const order of triggeredOrders) {
       const stopPrice = order.stopPrice ? parseFloat(order.stopPrice) : null;
       if (!stopPrice || stopPrice <= 0) continue;
-
       const marketPrice = priceMap.get(order.symbol) ?? 0;
       if (marketPrice <= 0) continue;
-
-      const triggered =
-        (order.side === "buy"  && marketPrice >= stopPrice) ||
-        (order.side === "sell" && marketPrice <= stopPrice);
-
-      if (!triggered) continue;
 
       logger.info(
         { orderId: order.id, symbol: order.symbol, side: order.side, stopPrice, marketPrice },
         "Stop order triggered — executing as market fill"
       );
 
-      // Match against best available counter-order (like a market order)
+      // Use pre-fetched counter-order map instead of a per-order SELECT
       const counterSide = order.side === "buy" ? "sell" : "buy";
-      const counterOrders = await db.select().from(ordersTable).where(
-        and(
-          eq(ordersTable.symbol, order.symbol),
-          eq(ordersTable.side, counterSide),
-          eq(ordersTable.status, "open"),
-          ne(ordersTable.walletAddress, order.walletAddress),
-        )
-      );
-
-      const sorted = counterOrders.sort((a, b) => {
-        const pa = parseFloat(a.price || "0") || 0;
-        const pb = parseFloat(b.price || "0") || 0;
-        return order.side === "buy" ? pa - pb : pb - pa;
-      });
+      const sorted = (counterMap.get(`${order.symbol}:${counterSide}`) ?? [])
+        .filter(c => c.walletAddress !== order.walletAddress)
+        .sort((a, b) => {
+          const pa = parseFloat(a.price || "0") || 0;
+          const pb = parseFloat(b.price || "0") || 0;
+          return order.side === "buy" ? pa - pb : pb - pa;
+        });
 
       const match = sorted[0];
       // Use remainingQuantity so a partially-consumed stop order fills the correct amount

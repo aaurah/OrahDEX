@@ -1,3 +1,5 @@
+import * as ExpoCrypto from "expo-crypto";
+
 const WORDLIST = [
   "abandon","ability","able","about","above","absent","absorb","abstract","absurd","abuse",
   "access","accident","account","accuse","achieve","acid","acoustic","acquire","across","act",
@@ -21,34 +23,52 @@ const WORDLIST = [
   "box","boy","bracket","brain","brand","brave","bread","breeze","brick","bridge",
 ];
 
+/**
+ * Return a cryptographically-random integer in [0, max).
+ * Uses expo-crypto.getRandomValues — backed by SecureRandom on Android
+ * and Security.framework on iOS.  Never uses Math.random().
+ */
+function cryptoRandIndex(max: number): number {
+  const bytes = new Uint8Array(4);
+  ExpoCrypto.getRandomValues(bytes);
+  const uint32 = ((bytes[0]! << 24) | (bytes[1]! << 16) | (bytes[2]! << 8) | bytes[3]!) >>> 0;
+  return uint32 % max;
+}
+
 export function generateMnemonic(wordCount: 12 | 24 = 12): string[] {
   const words: string[] = [];
   const pool = [...WORDLIST];
   for (let i = 0; i < wordCount; i++) {
-    const idx = Math.floor(Math.random() * pool.length);
-    words.push(pool[idx]);
+    const idx = cryptoRandIndex(pool.length);
+    words.push(pool[idx]!);
     pool.splice(idx, 1);
   }
   return words;
 }
 
-export function deriveAddress(mnemonic: string[], network: "evm" | "bsv"): string {
-  const seed = mnemonic.join("").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-  const rng = (max: number) => {
-    let s = seed;
-    return () => {
-      s = (s * 1664525 + 1013904223) & 0xffffffff;
-      return Math.abs(s) % max;
-    };
-  };
+/**
+ * Derive a display address from a mnemonic for the given network.
+ *
+ * NOTE: This is a lightweight deterministic helper for the demo wallet
+ * preview.  Production key derivation must use a full BIP-32/BIP-44 library
+ * (e.g. @scure/bip32 + @scure/bip39).  The derivation here is intentionally
+ * NOT a real HD-wallet derivation path and MUST NOT be used to control
+ * on-chain funds.  We use SHA-256 of the mnemonic bytes as the seed so that
+ * the mapping is at least cryptographically non-reversible.
+ */
+export async function deriveAddress(mnemonic: string[], network: "evm" | "bsv"): Promise<string> {
+  const input = mnemonic.join(" ");
+  const hash = await ExpoCrypto.digestStringAsync(
+    ExpoCrypto.CryptoDigestAlgorithm.SHA256,
+    input,
+    { encoding: ExpoCrypto.CryptoEncoding.HEX },
+  );
   if (network === "evm") {
-    const r = rng(16);
-    const hex = "0123456789abcdef";
-    return "0x" + Array.from({ length: 40 }, () => hex[r()]).join("");
+    return "0x" + hash.slice(0, 40);
   }
   const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  const r = rng(chars.length);
-  return "1" + Array.from({ length: 33 }, () => chars[r()]).join("");
+  const bytes = Uint8Array.from({ length: 33 }, (_, i) => parseInt(hash.slice(i * 2, i * 2 + 2), 16));
+  return "1" + Array.from(bytes, b => chars[b % chars.length]).join("");
 }
 
 export function validateMnemonic(input: string): { valid: boolean; words: string[]; error?: string } {

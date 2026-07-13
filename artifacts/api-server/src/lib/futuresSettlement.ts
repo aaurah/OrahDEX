@@ -299,9 +299,14 @@ export async function getFuturesMarginBalance(
 /**
  * Open a new futures position.
  *
+ * Atomically locks the margin AND inserts the position row in a single
+ * database transaction.  The previous two-step flow (lockFuturesMargin in
+ * its own transaction, then a separate db.insert) left a race window where
+ * margin could be debited but no position existed if the server crashed or
+ * the process was killed between the two commits.
+ *
  * Caller must have already verified funding via fundingVerifier.verifyFuturesFunding()
  * and passed the resulting fundingRef in params.fundingRef.
- * The margin lock happens here, not before (fundingVerifier only validates balance).
  */
 export async function openFuturesPosition(
   params: FuturesOpenParams,
@@ -318,38 +323,71 @@ export async function openFuturesPosition(
     );
   }
 
-  // Lock margin from the futures bucket
-  await lockFuturesMargin(walletAddress, margin);
-
   const liquidationPrice = computeLiquidationPrice(entryPrice, leverage, side);
   const notionalValue    = quantity * entryPrice;
   const takerFeeRate     = await getTakerFeeRate(symbol);
   const openingFee       = notionalValue * takerFeeRate;
   const positionId       = crypto.randomUUID();
-  const unrealizedPnl    = 0;
   const txid             = crypto.createHash("sha256")
     .update(`futures-open:${positionId}:${Date.now()}`)
     .digest("hex");
 
-  await db.insert(futuresPositionsTable).values({
-    id:                   positionId,
-    walletAddress,
-    symbol,
-    side,
-    leverage:             leverage.toFixed(2),
-    entryPrice:           entryPrice.toFixed(8),
-    markPrice:            entryPrice.toFixed(8),
-    liquidationPrice:     liquidationPrice.toFixed(8),
-    quantity:             quantity.toFixed(8),
-    margin:               margin.toFixed(8),
-    unrealizedPnl:        "0",
-    unrealizedPnlPercent: "0",
-    realizedPnl:          "0",
-    fundingFee:           "0",
-    marginMode:           "isolated",
-    status:               "open",
-    txid,
-  });
+  // ── Atomic: lock margin AND insert position in ONE transaction ─────────────
+  // Eliminates the race window that existed when these were separate commits.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Ensure the margin account row exists before we lock it
+    await client.query(
+      `INSERT INTO futures_margin_accounts (wallet_address, asset, available, locked, updated_at)
+       VALUES ($1, 'USDT', 0, 0, now())
+       ON CONFLICT (wallet_address, asset) DO NOTHING`,
+      [walletAddress],
+    );
+
+    // Lock the row and verify sufficient balance
+    const { rows: marginRows } = await client.query<{ available: string }>(
+      `SELECT available FROM futures_margin_accounts
+       WHERE wallet_address = $1 AND asset = 'USDT' FOR UPDATE`,
+      [walletAddress],
+    );
+    const avail = parseFloat(marginRows[0]?.available ?? "0");
+    if (avail < margin) {
+      throw new Error(`INSUFFICIENT_FUTURES_MARGIN:USDT:need=${margin},have=${avail}`);
+    }
+
+    // Move margin: available → locked
+    await client.query(
+      `UPDATE futures_margin_accounts
+       SET available  = available - $1,
+           locked     = locked + $1,
+           updated_at = now()
+       WHERE wallet_address = $2 AND asset = 'USDT'`,
+      [margin.toFixed(8), walletAddress],
+    );
+
+    // Insert the position row in the same transaction — no race window
+    await client.query(
+      `INSERT INTO futures_positions
+         (id, wallet_address, symbol, side, leverage, entry_price, mark_price,
+          liquidation_price, quantity, margin, unrealized_pnl, unrealized_pnl_percent,
+          realized_pnl, funding_fee, margin_mode, status, txid, opened_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'0','0','0','0','isolated','open',$11,now())`,
+      [
+        positionId, walletAddress, symbol, side,
+        leverage.toFixed(2), entryPrice.toFixed(8), entryPrice.toFixed(8),
+        liquidationPrice.toFixed(8), quantity.toFixed(8), margin.toFixed(8), txid,
+      ],
+    );
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 
   return { positionId, liquidationPrice, notionalValue, openingFee };
 }

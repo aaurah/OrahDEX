@@ -72,7 +72,9 @@ const BSV_WALLETS = [
 
 function genBsvAddress(): string {
   const c = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  return "1" + Array.from({length:33}, () => c[Math.floor(Math.random()*c.length)]).join("");
+  const bytes = new Uint8Array(33);
+  crypto.getRandomValues(bytes);
+  return "1" + Array.from(bytes, b => c[b % c.length]).join("");
 }
 
 // ── Payment methods ────────────────────────────────────────────────────────────

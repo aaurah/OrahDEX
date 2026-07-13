@@ -192,7 +192,21 @@ router.get("/staking/coins", (_req, res) => {
       .map(p => ({ id: p.id, name: p.name, logo: p.logo, url: p.url, tvl: p.tvl, rating: p.rating })),
   }));
   res.set("Cache-Control", "public, max-age=300");
-  res.json(coins);
+  res.json({
+    coins,
+    dataSource: "static",
+    custodialDisclosure: {
+      nativeStaking: {
+        type: "off-chain-custodial",
+        description:
+          "OrahDEX Native Staking records positions in an internal ledger. " +
+          "Your staked assets remain under OrahDEX custody and are NOT locked " +
+          "in any on-chain smart contract. Rewards are credited by OrahDEX off-chain. " +
+          "This is a custodial product — not permissionless on-chain DeFi staking.",
+        riskWarning: "Custodial staking carries platform risk. Consider using the listed third-party providers for non-custodial staking.",
+      },
+    },
+  });
 });
 
 // ── GET /api/staking/providers ────────────────────────────────────────────────

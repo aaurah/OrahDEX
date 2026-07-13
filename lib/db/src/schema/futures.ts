@@ -1,4 +1,4 @@
-import { pgTable, text, numeric, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, numeric, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -22,7 +22,10 @@ export const futuresPositionsTable = pgTable("futures_positions", {
   txid: text("txid"),
   openedAt: timestamp("opened_at").notNull().defaultNow(),
   closedAt: timestamp("closed_at"),
-});
+}, (t) => [
+  index("futures_wallet_status_idx").on(t.walletAddress, t.status),
+  index("futures_symbol_status_idx").on(t.symbol, t.status),
+]);
 
 export const insertFuturesPositionSchema = createInsertSchema(futuresPositionsTable).omit({ openedAt: true });
 export type InsertFuturesPosition = z.infer<typeof insertFuturesPositionSchema>;

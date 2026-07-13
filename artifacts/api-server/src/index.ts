@@ -20,13 +20,54 @@ const port = rawPort ? Number(rawPort) : 8080;
 if (Number.isNaN(port) || port <= 0) throw new Error(`Invalid PORT value: "${rawPort}"`);
 
 // ── Process-level crash shields ──────────────────────────────────────────────
-// Set up before anything else so early errors don't crash the process.
+// Transient I/O error codes that are safe to swallow (the operation failed but
+// process state is not corrupted — a retry on the next tick will work fine).
+const TRANSIENT_CODES = new Set([
+  "ECONNRESET", "ECONNREFUSED", "ECONNABORTED",
+  "ETIMEDOUT",  "EPIPE",        "EHOSTUNREACH",
+  "ENOTFOUND",  "EPROTO",       "ENETUNREACH",
+]);
+
+// Transient message substrings (for errors without a .code property).
+const TRANSIENT_MESSAGES = [
+  "socket hang up",
+  "network request failed",
+  "fetch failed",
+  "read ECONNRESET",
+  "write EPIPE",
+];
+
+function isTransient(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code && TRANSIENT_CODES.has(code)) return true;
+  const msg = err.message.toLowerCase();
+  return TRANSIENT_MESSAGES.some(t => msg.includes(t));
+}
+
 process.on("uncaughtException", (err: Error) => {
-  console.error("[uncaughtException] process stays alive —", err?.message, err?.stack);
+  if (isTransient(err)) {
+    // Known transient I/O errors — process state is intact, continue running.
+    console.error("[uncaughtException] transient I/O error (continuing) —", err?.message);
+    return;
+  }
+  // Non-transient exceptions indicate corrupt state (logic errors, assertion
+  // failures, type errors).  Log fully and exit so the supervisor can restart
+  // with a clean slate rather than silently continuing in a broken state.
+  console.error("[uncaughtException] FATAL — restarting process:", err?.message, err?.stack);
+  process.exit(1);
 });
+
 process.on("unhandledRejection", (reason: unknown) => {
+  if (isTransient(reason)) {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    console.error("[unhandledRejection] transient I/O error (continuing) —", msg);
+    return;
+  }
   const msg = reason instanceof Error ? reason.message : String(reason);
-  console.error("[unhandledRejection] process stays alive —", msg);
+  const stack = reason instanceof Error ? reason.stack : undefined;
+  console.error("[unhandledRejection] FATAL — restarting process:", msg, stack);
+  process.exit(1);
 });
 
 /* ── Step 1: Bind port immediately with a lightweight placeholder ────────────

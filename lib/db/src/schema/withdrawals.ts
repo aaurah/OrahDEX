@@ -1,4 +1,4 @@
-import { pgTable, varchar, numeric, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, varchar, numeric, text, timestamp, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const withdrawalRequestsTable = pgTable("withdrawal_requests", {
@@ -19,4 +19,7 @@ export const withdrawalRequestsTable = pgTable("withdrawal_requests", {
   // ARC broadcaster fields — populated for BSV transactions only
   arcTxid:       text("arc_txid"),
   arcStatus:     varchar("arc_status", { length: 64 }),
-});
+}, (t) => [
+  index("withdrawals_wallet_created_idx").on(t.walletAddress, t.createdAt),
+  index("withdrawals_status_created_idx").on(t.status, t.createdAt),
+]);

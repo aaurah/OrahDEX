@@ -184,6 +184,20 @@ async function verifyTOTPServer(code: string, secret: string): Promise<boolean> 
   return false;
 }
 
+/**
+ * Admin session cookie options.
+ * HttpOnly — JS cannot read the token.
+ * SameSite=Strict — no cross-site request inclusion.
+ * Secure in production — only sent over HTTPS.
+ */
+const ADMIN_COOKIE_OPTS = {
+  httpOnly:  true,
+  secure:    process.env.NODE_ENV === "production",
+  sameSite:  "strict" as const,
+  maxAge:    30 * 24 * 60 * 60 * 1000, // 30 days (matches TOKEN_TTL_MS)
+  path:      "/",
+};
+
 /* ─── ADMIN AUTH ENDPOINTS ────────────────────────────────────────────────── */
 
 /**
@@ -211,7 +225,10 @@ router.post("/auth", async (req, res) => {
     return;
   }
   const token = await generateAdminToken();
-  res.json({ success: true, token });
+  // Set token as HttpOnly cookie so JS cannot read it.
+  // Browsers include it automatically on same-origin requests (SameSite=Strict).
+  res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
+  res.json({ success: true });
 });
 
 /**
@@ -234,7 +251,8 @@ router.post("/auth/totp", async (req, res) => {
   const ok = await verifyTOTPServer(code, secret);
   if (ok) {
     const token = await generateAdminToken();
-    res.json({ success: true, token });
+    res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
+    res.json({ success: true });
   } else {
     recordAuthFailure(req);
     res.status(401).json({ error: "Incorrect code. Try again." });
@@ -328,7 +346,8 @@ router.post("/auth/wallet", async (req, res) => {
   }
   pendingNonces.delete(address.toLowerCase());
   const token = await generateAdminToken();
-  res.json({ success: true, address, token });
+  res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
+  res.json({ success: true, address });
 });
 
 /**
@@ -336,6 +355,8 @@ router.post("/auth/wallet", async (req, res) => {
  */
 router.post("/auth/logout", requireAdminToken, async (req, res) => {
   await revokeAllAdminTokens();
+  // Clear the HttpOnly session cookie on the client as well
+  res.clearCookie("admin_session", { path: "/" });
   res.json({ success: true });
 });
 

@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
-import { eq, and, lte, gte, ne, isNotNull, desc, sql } from "drizzle-orm";
+import { eq, and, lte, gte, ne, isNotNull, desc, asc, sql } from "drizzle-orm";
 import crypto from "node:crypto";
+import { recoverMessageAddress } from "viem";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
@@ -25,6 +26,16 @@ import {
 } from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
+
+// ── Order-read challenge store ────────────────────────────────────────────────
+// Wallets that want to prove ownership before reading their orders request a
+// nonce via GET /orders/challenge, sign it with their private key, and pass
+// `sig` + `nonce` as query params to GET /orders.
+//
+// Enforcement is opt-in via the REQUIRE_ORDER_READ_SIG env var so the change
+// can be rolled out without breaking existing integrations immediately.
+const _readChallenges = new Map<string, { nonce: string; expiresAt: number }>();
+const READ_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 // ── Wallet-format helpers ─────────────────────────────────────────────────────
 
@@ -95,12 +106,72 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
   };
 }
 
+// ── GET /orders/challenge — issue a read-ownership nonce ─────────────────────
+// Clients request a nonce, sign it with their private key (EVM: personal_sign),
+// then pass `sig` + `nonce` to GET /orders to prove they own the address.
+// Enforcement is controlled by REQUIRE_ORDER_READ_SIG env var.
+router.get("/orders/challenge", (req, res) => {
+  const walletAddress = req.query.walletAddress as string;
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+  const nonce     = crypto.randomBytes(16).toString("hex");
+  const expiresAt = Date.now() + READ_CHALLENGE_TTL_MS;
+  _readChallenges.set(walletAddress.toLowerCase(), { nonce, expiresAt });
+  res.json({
+    message:    `OrahDEX order read authorization for ${walletAddress}\nnonce: ${nonce}`,
+    nonce,
+    expiresAt,
+    instructions: "Sign this message with your wallet (EVM: personal_sign / eth_signMessage) and pass sig + nonce as query params to GET /orders.",
+  });
+});
+
 // ── GET /orders ───────────────────────────────────────────────────────────────
 router.get("/orders", async (req, res) => {
   try {
     const walletAddress = req.query.walletAddress as string;
     if (!walletAddress) {
       res.status(400).json({ error: "walletAddress is required" });
+      return;
+    }
+
+    // ── Ownership proof (T005) ──────────────────────────────────────────────
+    // If `sig` + `nonce` are supplied, verify the caller owns this wallet.
+    // If REQUIRE_ORDER_READ_SIG=true, signature is mandatory for EVM wallets.
+    const sig      = req.query.sig  as string | undefined;
+    const sigNonce = req.query.nonce as string | undefined;
+    const isEvmWallet = /^0x[0-9a-fA-F]{40}$/.test(walletAddress);
+
+    if (sig && sigNonce) {
+      const challenge = _readChallenges.get(walletAddress.toLowerCase());
+      if (!challenge || challenge.nonce !== sigNonce || Date.now() > challenge.expiresAt) {
+        res.status(401).json({
+          error: "Invalid or expired ownership challenge. Request a fresh one via GET /orders/challenge.",
+        });
+        return;
+      }
+      if (isEvmWallet) {
+        try {
+          const message   = `OrahDEX order read authorization for ${walletAddress}\nnonce: ${sigNonce}`;
+          const recovered = await recoverMessageAddress({ message, signature: sig as `0x${string}` });
+          if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
+            res.status(401).json({ error: "Signature does not match wallet address." });
+            return;
+          }
+        } catch {
+          res.status(401).json({ error: "Invalid signature format." });
+          return;
+        }
+      }
+      // Challenge consumed — one-time use
+      _readChallenges.delete(walletAddress.toLowerCase());
+    } else if (process.env.REQUIRE_ORDER_READ_SIG === "true" && isEvmWallet) {
+      // Strict mode: enforce signature for EVM wallets
+      res.status(401).json({
+        error:        "Ownership proof required to read orders.",
+        instructions: "Call GET /orders/challenge?walletAddress=<addr> to get a nonce, sign it, then pass sig and nonce here.",
+      });
       return;
     }
 
@@ -551,6 +622,9 @@ router.post("/orders", async (req, res) => {
       // breaks numeric DB comparisons on very small asset prices.
       const safePriceStr = price != null ? price.toFixed(8) : undefined;
 
+      // Fetch counter-orders sorted by best price, capped at 500 rows.
+      // ORDER BY pushes sorting into the DB so only the cheapest sells / most
+      // expensive buys are loaded — avoids reading the entire order book in memory.
       const counterOrders = await db.select().from(ordersTable).where(
         and(
           eq(ordersTable.symbol, symbol),
@@ -564,14 +638,12 @@ router.post("/orders", async (req, res) => {
                 : gte(ordersTable.price, safePriceStr)]
             : []),
         )
-      );
+      )
+        .orderBy(side === "buy" ? asc(ordersTable.price) : desc(ordersTable.price))
+        .limit(500);
 
-      // Sort: best price first (cheapest sell for buy, most expensive buy for sell)
-      const sorted = counterOrders.sort((a, b) => {
-        const pa = parseFloat(a.price ?? "0");
-        const pb = parseFloat(b.price ?? "0");
-        return side === "buy" ? pa - pb : pb - pa;
-      });
+      // already sorted by the DB — alias for clarity
+      const sorted = counterOrders;
 
       // External EVM orders must match only against external EVM counterparties
       // so settlement remains wallet-to-wallet via HTLC, not synthetic ledger fill.
@@ -1526,12 +1598,13 @@ router.post("/orders/precheck", async (req, res) => {
       warnings.push({ code: "PRICE_IMPACT_MODERATE", message: "Your order will move the price by >1%." });
     }
 
-    // Liquidity check — no open bot orders on the counter side? warn.
+    // Liquidity check — no open orders on the counter side? warn.
+    // Uses LIMIT 1 so we only need to know existence, not count the entire book.
     const [base, quote = "USDT"] = symbol.split("/");
     const counterSide = side === "buy" ? "sell" : "buy";
-    const counterOrders = await db.select().from(ordersTable).where(
+    const counterOrders = await db.select({ id: ordersTable.id }).from(ordersTable).where(
       and(eq(ordersTable.symbol, symbol), eq(ordersTable.side, counterSide), eq(ordersTable.status, "open"))
-    );
+    ).limit(1);
     if (counterOrders.length === 0) {
       warnings.push({ code: "LOW_LIQUIDITY", message: "No counter-orders visible — your order may wait for a match." });
     }

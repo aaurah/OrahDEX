@@ -179,6 +179,16 @@ async function processEvmWithdrawal(params: {
   recipient:  string;
   chainIdOverride?: number;
 }): Promise<{ txid: string; explorer: string }> {
+  // Validate chainIdOverride when provided — guards against silent bugs where
+  // a caller passes a floating-point, negative, or absurdly large chain ID.
+  if (params.chainIdOverride !== undefined) {
+    const id = params.chainIdOverride;
+    if (!Number.isInteger(id) || id <= 0 || id > 2_147_483_647) {
+      throw new Error(
+        `Invalid chainIdOverride ${id}: must be a positive 32-bit integer (received ${typeof id} ${id})`,
+      );
+    }
+  }
   const baseChainId = params.chainIdOverride ?? assetToChainId(params.asset);
   const chainId     = EVM_USE_TESTNET && TESTNET_REMAP[baseChainId] ? TESTNET_REMAP[baseChainId] : baseChainId;
   const chain       = chainById(chainId);
