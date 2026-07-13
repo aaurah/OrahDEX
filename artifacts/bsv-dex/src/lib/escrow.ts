@@ -153,7 +153,7 @@ export function buildCancelCalldata(orderId: string): `0x${string}` {
  */
 async function tryTxWithProvider(
   provider: any,
-  params: { from: string; to: string; value?: bigint; data: `0x${string}`; chainId: number },
+  params: { from: string; to: string; value?: bigint; data: `0x${string}`; chainId: number; gasHex?: string },
 ): Promise<string | null> {
   try {
     const chainHex = "0x" + params.chainId.toString(16);
@@ -165,6 +165,7 @@ async function tryTxWithProvider(
     if (params.value !== undefined && params.value > 0n) {
       tx.value = "0x" + params.value.toString(16);
     }
+    if (params.gasHex) tx.gas = params.gasHex;
     const hash: string = await provider.request({ method: "eth_sendTransaction", params: [tx] });
     return hash ?? null;
   } catch (err: any) {
@@ -184,6 +185,14 @@ async function tryTxWithProvider(
  * Returns the tx hash. Throws user-rejection errors immediately.
  * Falls through providers on non-rejection failures so a stale WalletConnect
  * session can't permanently block an injected wallet (and vice-versa).
+ *
+ * Gas is pre-estimated using our own public RPC and embedded in every
+ * eth_sendTransaction call so external wallets (ThirdWeb, imToken, Rainbow…)
+ * never need to call eth_estimateGas via their own provider.  Some providers
+ * (e.g. zan.top for ThirdWeb on Sepolia) rate-limit eth_estimateGas for
+ * unregistered accounts; without the pre-populated gas field, those wallets
+ * return a non-rejection error that previously caused every connector to be
+ * silently skipped, producing the misleading "No wallet found" message.
  */
 async function sendTxUniversal(params: {
   from:    string;
@@ -192,9 +201,26 @@ async function sendTxUniversal(params: {
   data:    `0x${string}`;
   chainId: number;
 }): Promise<string> {
+  // Pre-estimate gas with our own RPC (200 % padding) so wallets don't need to
+  // call eth_estimateGas themselves.  Silently falls back to wallet estimation
+  // if our RPC is also unavailable.
+  let gasHex: string | undefined;
+  try {
+    const pub = getPublicClient(params.chainId);
+    const est = await pub.estimateGas({
+      account: params.from as `0x${string}`,
+      to:      params.to   as `0x${string}`,
+      value:   params.value,
+      data:    params.data,
+    });
+    gasHex = "0x" + ((est * 200n) / 100n).toString(16);
+  } catch { /* wallet will estimate on its own */ }
+
+  const paramsWithGas = { ...params, gasHex };
+
   const injected = (window as any).ethereum;
   if (injected) {
-    const h = await tryTxWithProvider(injected, params);
+    const h = await tryTxWithProvider(injected, paramsWithGas);
     if (h) return h;
   }
 
@@ -205,7 +231,7 @@ async function sendTxUniversal(params: {
       try {
         const provider = await (connector as any).getProvider?.();
         if (!provider) continue;
-        const h = await tryTxWithProvider(provider, params);
+        const h = await tryTxWithProvider(provider, paramsWithGas);
         if (h) return h;
       } catch (err: any) {
         const msg = (err?.message ?? "").toLowerCase();
@@ -215,6 +241,10 @@ async function sendTxUniversal(params: {
       }
     }
   }
+
+  // Track the last real error from an active WalletConnect provider so we can
+  // surface it instead of the generic "No wallet found" if all connectors fail.
+  let lastProviderError: Error | null = null;
 
   // Try AppKit (Reown/WalletConnect) connectors.
   // IMPORTANT: do NOT use tryTxWithProvider here — it uses raw wallet_switchEthereumChain
@@ -231,6 +261,7 @@ async function sendTxUniversal(params: {
       if (params.value !== undefined && params.value > 0n) {
         txObj.value = "0x" + params.value.toString(16);
       }
+      if (gasHex) txObj.gas = gasHex;
       for (const connector of (appKitConfig as any).connectors ?? []) {
         try {
           const provider = await (connector as any).getProvider?.();
@@ -242,6 +273,8 @@ async function sendTxUniversal(params: {
           const isReject = err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
             msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
           if (isReject) throw err;
+          // Record the error — it came from an active provider, so it's meaningful
+          lastProviderError = err instanceof Error ? err : new Error(String(err?.message ?? err));
         }
       }
     } catch (err: any) {
@@ -252,6 +285,10 @@ async function sendTxUniversal(params: {
       // Chain switch or provider setup failed non-rejection → fall through to error
     }
   }
+
+  // Surface the last real provider error rather than the generic "No wallet found"
+  // so users (and developers) see the actual failure reason.
+  if (lastProviderError) throw lastProviderError;
 
   throw new Error(
     "No wallet found. Open MetaMask, connect via WalletConnect, or use the Orah Wallet.",
