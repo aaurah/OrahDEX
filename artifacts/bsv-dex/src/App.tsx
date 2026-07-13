@@ -338,19 +338,36 @@ function Router() {
   // Single Reown account subscription — syncs AppKit connected wallet to walletStore
   useEffect(() => {
     let unsub: (() => void) | undefined;
+    // Track whether this is the first fire after page load.
+    // AppKit reconnects via the WalletConnect session and fires subscribeAccount with
+    // the session's defaultNetwork chainId (usually mainnet=1), even if the user had
+    // previously switched to Sepolia or another chain via the ChainSwitcher. The
+    // wallet store has the correct chainId persisted — honour it on the first fire.
+    let isFirstFire = true;
+
     import("@/lib/reown-appkit").then(({ subscribeReownAccount }) => {
       unsub = subscribeReownAccount((address, chainId) => {
         if (address) {
-          const { provider } = useWalletStore.getState();
+          const { provider, address: storedAddress, chainId: storedChainId } = useWalletStore.getState();
           if (!provider || provider === "reown") {
+            // On first fire: if reconnecting to the same address that was previously
+            // connected via Reown, preserve the persisted chainId (user's explicit
+            // network selection) rather than overwriting with AppKit's session default.
+            let effectiveChainId = chainId;
+            if (isFirstFire && storedAddress === address && provider === "reown" && storedChainId) {
+              effectiveChainId = storedChainId;
+            }
+            isFirstFire = false;
+
             useWalletStore.getState().connect({
               address,
               provider: "reown",
               network: "evm",
-              chainId,
+              chainId: effectiveChainId,
             });
           }
         } else {
+          isFirstFire = true; // reset on disconnect so next connect starts fresh
           if (useWalletStore.getState().provider === "reown") {
             useWalletStore.getState().disconnect();
           }
