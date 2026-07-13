@@ -10,7 +10,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { FALLBACK_PRICES, fetchCoinGeckoPrices, simulateDailyChange } from "../lib/priceUpdater.js";
@@ -440,6 +440,24 @@ async function buildCgCoins(): Promise<any[]> {
     });
   }
 
+  // Enrich name, image and rank from coin_metadata (populated by CoinGecko importer).
+  // Single bulk query — no per-coin roundtrips. Degrades gracefully if table missing.
+  try {
+    const meta = await pool.query<{ symbol: string; name: string | null; image_url: string | null; market_cap_rank: number | null }>(
+      `SELECT symbol, name, image_url, market_cap_rank FROM coin_metadata`,
+    );
+    const metaMap = new Map(meta.rows.map(r => [r.symbol.toUpperCase(), r]));
+    for (const c of coins) {
+      const m = metaMap.get(String(c.symbol).toUpperCase());
+      if (!m) continue;
+      if (m.name)             c.name  = m.name;
+      if (m.image_url)        c.image = m.image_url;
+      if (m.market_cap_rank)  c.rank  = m.market_cap_rank;
+    }
+    // Re-sort: if we now have real ranks, honour them (market_cap_rank ascending).
+    coins.sort((a, b) => (a.rank ?? 9999) - (b.rank ?? 9999));
+  } catch { /* coin_metadata table may not exist yet — degrade gracefully */ }
+
   coinsCache = { data: coins, ts: Date.now() };
   lastGoodCoins = coins;
   return coins;
@@ -507,6 +525,15 @@ router.get("/coins/all-sources", async (req, res) => {
       if (!leSymbols.has(sym)) { leSymbols.add(sym); leBySym.set(sym, c); }
     }
 
+    // ── 4b. coin_metadata enrichment map — single bulk query, used for all sources
+    const coinMetaMap = new Map<string, { name: string | null; image_url: string | null }>();
+    try {
+      const metaRows = await pool.query<{ symbol: string; name: string | null; image_url: string | null }>(
+        `SELECT symbol, name, image_url FROM coin_metadata`,
+      );
+      for (const r of metaRows.rows) coinMetaMap.set(r.symbol.toUpperCase(), r);
+    } catch { /* table may not exist yet */ }
+
     // ── 5. Tag CG coins with availableOn ─────────────────────────────────────
     const taggedCg = cgCoins.map((c: any) => {
       const sym = String(c.symbol).toUpperCase();
@@ -514,11 +541,13 @@ router.get("/coins/all-sources", async (req, res) => {
       if (leSymbols.has(sym)) availableOn.push("le");
       if (ssSymbols.has(sym)) availableOn.push("ss");
       const leCoin = leBySym.get(sym);
+      const meta   = coinMetaMap.get(sym);
       return {
         ...c,
         source: "cg",
         availableOn,
-        image: c.image ?? leCoin?.image ?? null,
+        name:  meta?.name  ?? c.name  ?? sym,
+        image: meta?.image_url ?? c.image ?? leCoin?.image ?? null,
       };
     });
 
@@ -530,12 +559,13 @@ router.get("/coins/all-sources", async (req, res) => {
       const price = lePrices[sym] ?? 0;
       const availableOn: string[] = ["le"];
       if (ssSymbols.has(sym)) availableOn.push("ss");
+      const meta = coinMetaMap.get(sym);
       leOnlyCoins.push({
         id:               `le-${sym.toLowerCase()}`,
         rank:             leRank++,
-        name:             c.name || sym,
+        name:             meta?.name  ?? c.name ?? sym,
         symbol:           sym,
-        image:            c.image ?? null,
+        image:            meta?.image_url ?? c.image ?? null,
         price,
         marketCap:        0,
         volume24h:        0,
@@ -556,12 +586,13 @@ router.get("/coins/all-sources", async (req, res) => {
     for (const sym of ssSymbols) {
       if (cgSymbols.has(sym) || leSymbols.has(sym)) continue;
       const price = lePrices[sym] ?? 0;
+      const meta  = coinMetaMap.get(sym);
       ssOnlyCoins.push({
         id:               `ss-${sym.toLowerCase()}`,
         rank:             ssRank++,
-        name:             sym,
+        name:             meta?.name ?? sym,
         symbol:           sym,
-        image:            null,
+        image:            meta?.image_url ?? null,
         price,
         marketCap:        0,
         volume24h:        0,
