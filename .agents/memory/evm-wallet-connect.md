@@ -1,18 +1,34 @@
 ---
 name: EVM wallet connect architecture
-description: Reown/WalletConnect removed; how EVM wallet connect now works end-to-end.
+description: Both Reown/WalletConnect and ThirdWeb completely removed; only OrahDEX-native wallet options remain.
 ---
 
 ## The rule
-Reown/AppKit is completely removed from the codebase. All EVM wallet connection goes through either OrahDEX's own passkey/seed wallet or ThirdWeb.
+Neither Reown/AppKit nor ThirdWeb exists in the codebase. All wallet connection is through OrahDEX's own options only.
 
-## Architecture
-- **WalletChooserDialog** has an "EVM Wallet" tab (`tab === "evm"`) that renders ThirdWeb's `ConnectEmbed` with MetaMask, Coinbase, Rabby, Trust, and inAppWallet (email/google/apple/passkey).
-- **ThirdwebSync** component in `App.tsx` watches `useActiveAccount()` from ThirdWeb. When it becomes non-null it calls `useWalletStore.getState().connect({ provider: "thirdweb", ... })`. This is the ONLY path from ThirdWeb → wallet store.
-- **reown.ts** still exists but only exports EVM utility functions (fetchEvmBalance, sendEvmTransfer, CHAIN_RPC_URLS, etc.) and a minimal `wagmiConfig` with no connectors. WagmiProvider wraps the app in `main.tsx` for backward compat with some admin pages.
-- `useThirdwebWalletSync` is now a no-op hook kept only for import compatibility.
-- `isReownConnected()` in useEscrow.ts always returns false.
+## Current wallet options (WalletChooserDialog)
+1. OrahDEX Wallet — passkey / Face ID / PIN (orah-wallet provider)
+2. Seed Phrase Wallet — create new 12-word wallet
+3. Import Wallet — existing seed phrase
+4. Hardware Wallet — Ledger, Trezor, Keystone, GridPlus
+5. Mobile QR — link via OrahDEX mobile app
 
-**Why:** User requested complete removal of Reown/WalletConnect. ThirdWeb ConnectEmbed covers MetaMask, Coinbase, injected wallets and adds in-app wallet (email/social) as a bonus.
+## What was removed
+- @reown/appkit and @reown/appkit-adapter-wagmi (packages)
+- thirdweb (package)
+- ThirdwebSwapPanel, ThirdwebBridgePanel, ThirdwebSync, useThirdwebWalletSync
+- thirdweb-client.ts, thirdweb-theme.ts
+- ThirdWebStatusPanel in ContractBuilder
+- Universal Swap / twswap tab in Bridge page
+- Universal bridge provider option in Swap page
 
-**How to apply:** Never re-introduce @reown/appkit or @reown/appkit-adapter-wagmi. If a new EVM wallet connector is needed, add it to the `wallets` array in the `ConnectEmbed` in WalletChooserDialog.tsx. If the ThirdWeb session doesn't sync to the store, debug ThirdwebSync in App.tsx first.
+## What remains
+- `reown.ts` still exists but only exports EVM utility functions (fetchEvmBalance,
+  sendEvmTransfer, CHAIN_RPC_URLS, wagmiConfig with no connectors)
+- WagmiProvider wraps app in main.tsx for wagmi hooks in admin pages
+- Escrow routing: orah-wallet → lockEthViaOrah / lockErc20ViaOrah; all others → universal (window.ethereum)
+- EVM signing in MobileTrade: wagmi signMessageAsync → window.ethereum personal_sign fallback
+
+**Why:** User explicitly requested complete removal of both Reown and ThirdWeb.
+
+**How to apply:** Never re-introduce thirdweb or @reown packages. If EVM wallet connect is needed in future, evaluate a new approach from scratch.

@@ -1,5 +1,4 @@
 import { useEffect, useRef, ReactNode, lazy, Suspense, Component } from "react";
-import { useActiveAccount, useActiveWalletChain } from "thirdweb/react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -16,7 +15,6 @@ import { useTxTracker } from "@/hooks/useTxTracker";
 import { useInternalEvmWallet } from "@/hooks/useInternalEvmWallet";
 import { useInternalBsvWallet } from "@/hooks/useInternalBsvWallet";
 import { useInactivityLock } from "@/hooks/useInactivityLock";
-import { useThirdwebWalletSync } from "@/hooks/useThirdwebWalletSync";
 import { usePageMeta } from "@/hooks/usePageMeta";
 
 const AdminLayout  = lazy(() => import("@/components/AdminLayout").then(m => ({ default: m.AdminLayout })));
@@ -490,50 +488,12 @@ function Router() {
   );
 }
 
-function ThirdwebSync() {
-  const account = useActiveAccount();
-  const chain = useActiveWalletChain();
-  // Guard: only auto-disconnect after we've confirmed a ThirdWeb account at least once.
-  // WalletConnect-based wallets (Coinbase Wallet, MetaMask Mobile) on iOS briefly
-  // report null from useActiveAccount() during session init, causing a spurious
-  // disconnect that wipes the store right after the "Wallet connected" toast.
-  const hadAccountRef = useRef(false);
-
-  useEffect(() => {
-    if (!account) {
-      if (hadAccountRef.current) {
-        // Real disconnect: user revoked the session in their wallet app.
-        const { provider: current } = useWalletStore.getState();
-        if (current === "thirdweb") useWalletStore.getState().disconnect();
-      }
-      return;
-    }
-    hadAccountRef.current = true;
-    const chainId = chain?.id ?? 1;
-    useWalletStore.getState().connect({
-      address: account.address,
-      provider: "thirdweb",
-      network: "evm",
-      chainId,
-    });
-    import("@/lib/reown").then(({ fetchEvmBalance }) => {
-      fetchEvmBalance(account.address, chainId).then(bal => {
-        if (bal !== null) useWalletStore.getState().setBalance(bal);
-      });
-    });
-  }, [account?.address, chain?.id]);
-
-  return null;
-}
-
 function AppContent() {
   useInternalEvmWallet();
   useInternalBsvWallet();
-  useThirdwebWalletSync();
 
   return (
     <>
-      <ThirdwebSync />
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <Router />
       </WouterRouter>

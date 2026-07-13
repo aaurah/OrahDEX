@@ -1,8 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useSearch, useLocation } from "wouter";
-import { thirdwebClient } from "@/lib/thirdweb-client";
-import { useSwapWidgetTheme } from "@/lib/thirdweb-theme";
-import { ThirdwebSwapPanel } from "@/components/ThirdwebSwapPanel";
 import { useSEO } from "@/hooks/useSEO";
 import {
   ArrowRight, ArrowLeftRight, ChevronDown, Shield, Zap, Clock,
@@ -1624,7 +1621,6 @@ function BsvQuickSwap({ onSwapDone }: { onSwapDone?: () => void }) {
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export function BridgePage() {
-  const swapWidgetTheme = useSwapWidgetTheme();
   useSEO({
     title: "Buy · Swap · Bridge · DEX — OrahDEX",
     description: "Buy crypto with card, swap 6,000+ coins across 30+ chains, bridge between L1 & L2 networks, or trade on-chain DEX — all in one place on OrahDEX.",
@@ -1638,10 +1634,10 @@ export function BridgePage() {
   const [, setLocation] = useLocation();
 
   const { data: bsvChain } = useBsvChain();
-  const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw" | "history" | "twswap">(() => {
+  const [pageTab, setPageTab] = useState<"bsvswap" | "swap" | "deposit" | "withdraw" | "history">(() => {
     const params = new URLSearchParams(searchStr);
     const t = params.get("tab");
-    if (t === "deposit" || t === "withdraw" || t === "swap" || t === "history" || t === "bsvswap" || t === "twswap") return t;
+    if (t === "deposit" || t === "withdraw" || t === "swap" || t === "history" || t === "bsvswap") return t;
     return "deposit";
   });
   const [historyCount, setHistoryCount] = useState(() => loadSwapHistory().length);
@@ -1887,7 +1883,6 @@ export function BridgePage() {
           {([
             { id: "deposit",  icon: <ArrowDown className="w-3.5 h-3.5" />,      label: "Deposit"        },
             { id: "withdraw", icon: <ArrowUp className="w-3.5 h-3.5" />,        label: "Withdraw"       },
-            { id: "twswap",   icon: <Zap className="w-3.5 h-3.5" />,            label: "Universal Swap" },
             { id: "swap",     icon: <ArrowLeftRight className="w-3.5 h-3.5" />, label: "Cross-chain"    },
             { id: "bsvswap",  icon: <ArrowRight className="w-3.5 h-3.5" />,     label: "BSV→Any"        },
             { id: "history",  icon: <Clock className="w-3.5 h-3.5" />,          label: "History"        },
@@ -1978,13 +1973,6 @@ export function BridgePage() {
       {pageTab === "deposit"  && <CanonicalPanel mode="deposit"  />}
       {pageTab === "withdraw" && <CanonicalPanel mode="withdraw" />}
       {pageTab === "history"  && <SwapHistory />}
-
-      {/* ── Universal Swap ── */}
-      {pageTab === "twswap" && (
-        <div className="max-w-[480px] mx-auto">
-          <ThirdwebSwapPanel />
-        </div>
-      )}
 
       {pageTab !== "swap" && pageTab !== "bsvswap" && null}
 

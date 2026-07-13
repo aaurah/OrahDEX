@@ -111,7 +111,6 @@
     "postcss": "^8.5.10",
     "qrcode.react": "^4.2.0",
     "react-helmet-async": "^3.0.0",
-    "thirdweb": "^5.101.2",
     "viem": "^2.47.6",
     "vite-plugin-node-polyfills": "^0.26.0",
     "wagmi": "^3.6.0",

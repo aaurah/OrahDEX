@@ -30,10 +30,6 @@ import {
   getAssetNativeChain, walletCanReceive,
 } from "@/lib/crossChain";
 import { CHAIN_TOKEN_ADDRESSES } from "@/lib/onChainLiquidity";
-import { ThirdwebBridgePanel } from "@/components/trading/ThirdwebBridgePanel";
-
-const NATIVE_SYMBOLS_EVM = new Set(["ETH", "BNB", "MATIC", "AVAX", "SEI", "OP", "POL"]);
-const TW_NATIVE_ADDR = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
@@ -1082,21 +1078,6 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             </span>
           </div>
         )}
-        {isEvm && availableAmt <= 0 && (() => {
-          const bridgeDestAddr = NATIVE_SYMBOLS_EVM.has(availableSym)
-            ? TW_NATIVE_ADDR
-            : ((CHAIN_TOKEN_ADDRESSES[chainId] ?? {})[availableSym] ?? TW_NATIVE_ADDR);
-          const TOKEN_DEC: Record<string, number> = { USDT: 6, USDC: 6, USDCE: 6, USDBC: 6 };
-          const bridgeDestDecimals = TOKEN_DEC[availableSym] ?? 18;
-          return (
-            <ThirdwebBridgePanel
-              destinationChainId={chainId}
-              destinationTokenAddress={bridgeDestAddr}
-              destinationTokenSymbol={availableSym}
-              destinationTokenDecimals={bridgeDestDecimals}
-            />
-          );
-        })()}
 
         {/* Locked-in-orders row */}
         {apiLockedAmt > 0 && (
