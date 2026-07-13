@@ -140,7 +140,12 @@ export function Markets() {
   const [tab, setTab] = useState<Tab>("usd");
   const [usdSub, setUsdSub] = useState<UsdSub>("USDT");
   const [search, setSearch] = useState("");
-  const [stars, setStars] = useState<Set<string>>(new Set());
+  const [stars, setStars] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("market_favorites");
+      return raw ? new Set<string>(JSON.parse(raw)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
   const [selectedCoin, setSelectedCoin] = useState<MarketRow | null>(null);
   const tabScrollRef = useRef<HTMLDivElement>(null);
@@ -488,7 +493,12 @@ export function Markets() {
     (m.baseAsset ?? "").toLowerCase().includes(search.toLowerCase())
   );
   const toggleStar = (symbol: string) =>
-    setStars(prev => { const n = new Set(prev); n.has(symbol) ? n.delete(symbol) : n.add(symbol); return n; });
+    setStars(prev => {
+      const n = new Set(prev);
+      n.has(symbol) ? n.delete(symbol) : n.add(symbol);
+      try { localStorage.setItem("market_favorites", JSON.stringify([...n])); } catch {}
+      return n;
+    });
 
   const { quoteCurrency } = useSettingsStore();
   const isFiatTarget = FIAT_CURRENCIES.some(c => c.code === quoteCurrency);
