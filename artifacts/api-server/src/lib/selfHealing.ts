@@ -33,6 +33,22 @@ interface ServiceEntry extends ServiceHealth {
 
 const registry = new Map<string, ServiceEntry>();
 
+/**
+ * Zero out a service's consecutive-fail counter so it no longer shows as
+ * DEAD/DEGRADED in the health report.  The in-flight backoff timer in the
+ * guardedInterval closure is unaffected, but the next successful tick will
+ * keep the counter at 0 and the service will show "healthy" immediately.
+ * Returns false when the service name is not registered.
+ */
+export function resetServiceHealth(name: string): boolean {
+  const entry = registry.get(name);
+  if (!entry) return false;
+  entry.consecutiveFails = 0;
+  entry.totalFails        = 0;
+  logger.info({ service: name }, `[SelfHeal] ${name}: health state manually reset by admin`);
+  return true;
+}
+
 export function getHealthReport(): ServiceHealth[] {
   const now = Date.now();
   return Array.from(registry.values()).map(e => {
