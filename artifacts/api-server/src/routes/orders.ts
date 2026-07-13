@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
 import { eq, and, lte, gte, ne, isNotNull, desc, asc, sql } from "drizzle-orm";
 import crypto from "node:crypto";
@@ -830,9 +830,21 @@ router.post("/orders", async (req, res) => {
           // Ledger settlement failed for this match. Since settleTrade() threw
           // before committing, no funds changed — skip this match and try the next.
           req.log.error(
-            { err: fillErr?.message, tradeId, matchId: match.id, fillQty, fillPrice },
+            { err: fillErr?.message, code: fillErr?.code, tradeId, matchId: match.id, fillQty, fillPrice },
             "orders: fill settlement failed — skipping match, trying next counter-order",
           );
+          // Cross-chain HTLC failures: notify both parties so they understand
+          // why their cross-chain fill was skipped.
+          if (fillErr?.code === "CROSS_CHAIN_HTLC_ERROR") {
+            for (const addr of [buyerAddress, sellerAddress]) {
+              pushNotification(addr, {
+                type:  "settlement_skipped",
+                title: "Cross-chain fill skipped",
+                body:  "A cross-chain match was found but the HTLC could not be generated. The fill was skipped to protect fund safety — your order remains open.",
+                pair:  symbol,
+              });
+            }
+          }
           continue;
         }
 
@@ -852,7 +864,13 @@ router.post("/orders", async (req, res) => {
               .where(eq(ordersTable.id, match.id));
           }
         } else {
-          await db.update(ordersTable)
+          // Optimistic concurrency guard: only update the counter-order if it is
+          // still 'open'.  A concurrent taker may have already consumed it (their
+          // settleTrade will have thrown SETTLEMENT_INSUFFICIENT_LOCK and they will
+          // have continued to the next match).  If we get 0 rows here the ledger
+          // already committed for this fill — log a warning and continue; the fill
+          // value is already recorded in totalFilled above.
+          const [updatedMatch] = await db.update(ordersTable)
             .set({
               status:            isMatchFullyFilled ? "filled" : "open",
               filledQuantity:    newMatchFilled.toFixed(18),
@@ -861,7 +879,15 @@ router.post("/orders", async (req, res) => {
               matchedOrderId:    id,
               updatedAt:         new Date(),
             })
-            .where(eq(ordersTable.id, match.id));
+            .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "open")))
+            .returning({ id: ordersTable.id });
+
+          if (!updatedMatch) {
+            req.log.warn(
+              { matchId: match.id, tradeId },
+              "orders: counter-order status already changed (concurrent consume) — fill credited, order state diverged",
+            );
+          }
         }
 
         totalFilled    += fillQty;
@@ -1391,6 +1417,11 @@ router.get("/orders/:orderId", async (req, res) => {
 });
 
 // ── DELETE /orders/:orderId ───────────────────────────────────────────────────
+// Atomically cancels the order AND unlocks its reserved balance in a single
+// pool transaction.  No fire-and-forget — if the unlock fails the entire
+// operation rolls back and the order stays open so the client can retry.
+// The POST /orders/recover-locked endpoint remains available as a last-resort
+// reconciliation tool for any previously-orphaned locks.
 router.delete("/orders/:orderId", async (req, res) => {
   try {
     const body = req.body;
@@ -1399,52 +1430,89 @@ router.delete("/orders/:orderId", async (req, res) => {
       return;
     }
 
-    const [order] = await db
-      .update(ordersTable)
-      .set({ status: "cancelled", updatedAt: new Date() })
-      .where(and(
-        eq(ordersTable.id, req.params.orderId),
-        eq(ordersTable.walletAddress, body.walletAddress),
-        eq(ordersTable.status, "open"),   // guard: never cancel an already-filled/cancelled order
-      ))
-      .returning();
+    const client = await pool.connect();
+    let orderRow: Record<string, unknown>;
+    try {
+      await client.query("BEGIN");
 
-    if (!order) {
-      res.status(404).json({ error: "Order not found or not owned by this wallet" });
-      return;
+      // Step 1: Mark the order cancelled (only if open and owned by this wallet)
+      const { rows: cancelRows } = await client.query<Record<string, unknown>>(
+        `UPDATE orders
+         SET status = 'cancelled', updated_at = NOW()
+         WHERE id = $1
+           AND wallet_address = $2
+           AND status = 'open'
+         RETURNING *`,
+        [req.params.orderId, body.walletAddress],
+      );
+
+      if (!cancelRows.length) {
+        await client.query("ROLLBACK");
+        res.status(404).json({ error: "Order not found or not owned by this wallet" });
+        return;
+      }
+      orderRow = cancelRows[0]!;
+
+      // Step 2: Compute the unlock amount
+      const symbol    = String(orderRow.symbol ?? "");
+      const side      = String(orderRow.side   ?? "");
+      const [base, quote = "USDT"] = symbol.split("/");
+      const lockAsset = side === "buy" ? quote : base;
+      const remaining = parseFloat(String(orderRow.remaining_quantity ?? "0"));
+      let   lockPrice = parseFloat(String(orderRow.price ?? "0"));
+
+      // Market buy orders have no stored price — look up the current market
+      // price within the same connection so the unlock mirrors the lock.
+      if (!lockPrice && side === "buy") {
+        const { rows: mktRows } = await client.query<{ last_price: string }>(
+          `SELECT last_price FROM markets WHERE symbol = $1 LIMIT 1`,
+          [symbol],
+        );
+        lockPrice = mktRows[0] ? parseFloat(mktRows[0].last_price) : 0;
+      }
+
+      const lockAmount = side === "buy" ? lockPrice * remaining : remaining;
+
+      // Step 3: Unlock reserved balance in the same transaction
+      if (lockAmount > 0 && lockAsset) {
+        const wallet     = String(orderRow.wallet_address ?? "");
+        const normWallet = /^0x/i.test(wallet) ? wallet.toLowerCase() : wallet;
+        await client.query(
+          `UPDATE user_balances
+           SET locked     = GREATEST(locked - $1::numeric, '0'),
+               available  = available + LEAST($1::numeric, locked),
+               updated_at = NOW()
+           WHERE wallet_address = $2 AND asset_symbol = $3`,
+          [lockAmount.toFixed(18), normWallet, lockAsset],
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (txErr) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw txErr;
+    } finally {
+      client.release();
     }
 
-    // ── Respond immediately — the order is already cancelled in the DB ────────
-    // Unlocking the reserved balance is a separate DB transaction; we fire it
-    // in the background so the client doesn't have to wait for it.
-    res.json(serializeOrder(order));
-
-    // ── Unlock the reserved balance (background, non-blocking) ───────────────
-    (async () => {
-      try {
-        const [baseAsset, quoteAsset = "USDT"] = order.symbol.split("/");
-        const lockAsset = order.side === "buy" ? quoteAsset : baseAsset;
-        const remaining = parseFloat(order.remainingQuantity);
-
-        // Market orders have no stored price — look up current market price so
-        // the unlock amount mirrors what was locked at order placement time.
-        let lockPrice = parseFloat(order.price ?? "0");
-        if (!lockPrice && order.side === "buy") {
-          const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, order.symbol));
-          lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
-        }
-
-        const lockAmount = order.side === "buy"
-          ? (lockPrice * remaining).toString()
-          : remaining.toString();
-
-        if (parseFloat(lockAmount) > 0 && lockAsset) {
-          await unlockFunds({ walletAddress: order.walletAddress, asset: lockAsset, amount: lockAmount });
-        }
-      } catch (unlockErr) {
-        req.log.warn({ unlockErr }, "Ledger unlock failed on cancel");
-      }
-    })();
+    // Return a serialized response from the raw DB row
+    res.json({
+      id:                String(orderRow!.id ?? ""),
+      walletAddress:     String(orderRow!.wallet_address ?? ""),
+      symbol:            String(orderRow!.symbol ?? ""),
+      side:              String(orderRow!.side ?? ""),
+      type:              String(orderRow!.type ?? ""),
+      status:            String(orderRow!.status ?? ""),
+      price:             orderRow!.price != null ? parseFloat(String(orderRow!.price)) : undefined,
+      quantity:          parseFloat(String(orderRow!.quantity ?? "0")),
+      filledQuantity:    parseFloat(String(orderRow!.filled_quantity ?? "0")),
+      remainingQuantity: parseFloat(String(orderRow!.remaining_quantity ?? "0")),
+      fee:               parseFloat(String(orderRow!.fee ?? "0")),
+      total:             orderRow!.total != null ? parseFloat(String(orderRow!.total)) : undefined,
+      txid:              orderRow!.txid ?? null,
+      createdAt:         orderRow!.created_at ?? null,
+      updatedAt:         orderRow!.updated_at ?? null,
+    });
   } catch (err) {
     req.log.error({ err }, "Failed to cancel order");
     res.status(500).json({ error: "Internal server error" });
