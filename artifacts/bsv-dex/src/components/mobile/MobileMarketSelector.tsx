@@ -315,10 +315,23 @@ function getRows(
     }
     return Array.from(bestByBase.values());
   })();
-  const allSpot = () => [
-    ...enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures" && m.price > 0),
-    ...aosOnly,
-  ];
+  const allSpot = () => {
+    const merged = new Map<string, NormRow>();
+    // 1. DB rows — authoritative live prices (includes LE/SS DB entries)
+    for (const m of apiRows) {
+      if (m.type !== "futures" && m.price > 0) merged.set(m.symbol, m);
+    }
+    // 2. Static-mock enriched rows — fills coins not yet in DB
+    for (const m of enrich(ALL_POOL_DEDUPED)) {
+      if (m.type !== "futures" && m.price > 0 && !merged.has(m.symbol))
+        merged.set(m.symbol, m);
+    }
+    // 3. AOS swap-only pairs not already covered by DB or mock
+    for (const m of aosOnly) {
+      if (!merged.has(m.symbol)) merged.set(m.symbol, m);
+    }
+    return Array.from(merged.values()).sort((a, b) => a.base.localeCompare(b.base));
+  };
 
   switch (cat) {
     case "all":       return allSpot();
