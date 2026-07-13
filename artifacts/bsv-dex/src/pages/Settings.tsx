@@ -14,7 +14,6 @@ import { NotificationAdvancedRows } from "@/components/NotificationAdvancedRows"
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { SocialBar } from "@/components/SocialBar";
-import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
 import { useSettingsStore, FIAT_CURRENCIES, CRYPTO_QUOTE_CURRENCIES } from "@/store/useSettingsStore";
@@ -130,7 +129,6 @@ export function WebSettings() {
 
   const handleDisconnect = async () => {
     if (window.confirm("Disconnect your wallet?")) {
-      if (provider === "reown") await disconnectReown();
       disconnect();
     }
   };

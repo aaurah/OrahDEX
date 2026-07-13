@@ -14,8 +14,6 @@ import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { useAccount, useChainId, useBalance, useDisconnect } from "wagmi";
-import { useAppKit } from "@reown/appkit/react";
 import { cn } from "@/lib/utils";
 import { BrandLogo } from "./BrandLogo";
 import { SupportChatToaster } from "./SupportChatToaster";
@@ -130,11 +128,6 @@ const NAV_GROUPS: NavGroup[] = [
 function AdminWalletWidget({ collapsed }: { collapsed: boolean }) {
   const { open: openWallet } = useWalletModalStore();
   const walletStore = useWalletStore();
-  const { address: evmAddress, isConnected: evmConnected } = useAccount();
-  const chainId = useChainId();
-  const { data: evmBalance, isLoading: balanceLoading } = useBalance({ address: evmAddress, query: { enabled: evmConnected } });
-  const { disconnect: evmDisconnect } = useDisconnect();
-  const appKit = useAppKit();
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -145,19 +138,17 @@ function AdminWalletWidget({ collapsed }: { collapsed: boolean }) {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const isConnected   = evmConnected || !!walletStore.address;
-  const displayAddress = evmConnected && evmAddress ? evmAddress : walletStore.address ?? null;
-  const network = evmConnected ? "evm" : walletStore.network;
-  const chainInfo = evmConnected && chainId ? CHAIN_NAMES[chainId] : null;
-  const networkStyle = network === "evm"
+  const displayAddress = walletStore.address ?? null;
+  const network        = walletStore.network;
+  const chainId        = walletStore.chainId;
+  const chainInfo      = network === "evm" && chainId ? CHAIN_NAMES[chainId] : null;
+  const networkStyle   = network === "evm"
     ? (chainInfo ? { color: chainInfo.color, label: chainInfo.short } : { color: "text-blue-400 bg-blue-400/10 border-blue-400/20", label: "EVM" })
     : network ? NETWORK_STYLES[network] ?? { color: "text-muted-foreground bg-muted/10 border-border", label: network.toUpperCase() } : null;
+  const balance        = walletStore.balance ?? null;
+  const truncate       = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 
-  const evmBalNum = evmBalance ? Number(evmBalance.value) / 10 ** evmBalance.decimals : NaN;
-  const balance   = evmConnected && evmBalance ? `${isNaN(evmBalNum) ? "0.0000" : evmBalNum.toFixed(4)} ${evmBalance.symbol}` : walletStore.balance ?? null;
-  const truncate  = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
-
-  if (!isConnected) {
+  if (!displayAddress) {
     return (
       <button onClick={() => openWallet()} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary/20 transition-all">
         <Wallet className="w-3.5 h-3.5" />
@@ -187,23 +178,23 @@ function AdminWalletWidget({ collapsed }: { collapsed: boolean }) {
                 <button onClick={() => { navigator.clipboard.writeText(displayAddress); setCopied(true); setTimeout(() => setCopied(false), 2000); }} className="text-muted-foreground hover:text-green-400 transition-colors shrink-0">
                   {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
-                {evmConnected && <a href={`https://etherscan.io/address/${displayAddress}`} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-blue-400 shrink-0"><ExternalLink className="w-3.5 h-3.5" /></a>}
+                {network === "evm" && displayAddress && <a href={`https://etherscan.io/address/${displayAddress}`} target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-blue-400 shrink-0"><ExternalLink className="w-3.5 h-3.5" /></a>}
               </div>
             )}
           </div>
-          {(evmConnected || walletStore.balance) && (
+          {balance && (
             <div className="px-4 py-3 border-b border-border">
               <p className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">Balance</p>
-              {balanceLoading ? <p className="text-sm font-mono text-muted-foreground animate-pulse">Fetching…</p> : <p className="text-sm font-mono font-bold">{balance ?? "—"}</p>}
+              <p className="text-sm font-mono font-bold">{balance}</p>
             </div>
           )}
           <div className="p-2 space-y-0.5">
-            <button onClick={() => { setOpen(false); appKit.open(); }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground rounded-xl hover:bg-white/5 transition-all">
+            <button onClick={() => { setOpen(false); openWallet(); }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-foreground rounded-xl hover:bg-white/5 transition-all">
               <Layers className="w-4 h-4 shrink-0" />
-              <span>Switch Network / Wallet</span>
+              <span>Switch Wallet</span>
             </button>
             <div className="mx-3 h-px bg-border/60" />
-            <button onClick={() => { setOpen(false); if (evmConnected) evmDisconnect(); walletStore.disconnect(); }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-red-400 rounded-xl hover:bg-red-400/5 transition-all">
+            <button onClick={() => { setOpen(false); walletStore.disconnect(); }} className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-muted-foreground hover:text-red-400 rounded-xl hover:bg-red-400/5 transition-all">
               <LogOut className="w-4 h-4 shrink-0" />
               <span>Disconnect</span>
             </button>

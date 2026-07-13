@@ -11,8 +11,6 @@ import { Bridge, NATIVE_TOKEN_ADDRESS, sendTransaction } from "thirdweb";
 import { useActiveAccount } from "thirdweb/react";
 import { parseUnits, formatUnits } from "viem";
 import { thirdwebClient } from "@/lib/thirdweb-client";
-import { wagmiConfig } from "@/lib/reown";
-import { switchChain as wagmiSwitchChain, getAccount as wagmiGetAccount } from "@wagmi/core";
 import { useWalletStore } from "@/store/useWalletStore";
 import {
   ArrowDown, Loader2, CheckCircle2, AlertCircle, ExternalLink, RefreshCw, Zap,
@@ -282,9 +280,8 @@ export function ThirdwebSwapPanel() {
 
     const eth = (window as any).ethereum;
 
-    // Resolve wallet: ThirdWeb account → window.ethereum → Reown/WalletConnect connector
+    // Resolve wallet: ThirdWeb account → window.ethereum injected wallet
     let sender: string | null = null;
-    let reownProvider: any = null;
 
     if (account) {
       sender = account.address;
@@ -293,22 +290,7 @@ export function ThirdwebSwapPanel() {
       if (!accs?.length) accs = await eth.request({ method: "eth_requestAccounts" });
       sender = accs?.[0] ?? null;
     } else if (storeAddress) {
-      // Wallet connected via Reown/WalletConnect — address is already in the store.
-      // wagmiSwitchChain "wakes up" the WalletConnect session so the provider
-      // responds to requests (mirrors escrow.ts sendRawViaReown pattern).
       sender = storeAddress;
-      try {
-        const acct = wagmiGetAccount(wagmiConfig);
-        if (acct.chainId !== srcChain) {
-          await wagmiSwitchChain(wagmiConfig, { chainId: srcChain });
-        }
-      } catch {}
-      for (const connector of (wagmiConfig as any).connectors ?? []) {
-        try {
-          const p = await (connector as any).getProvider?.();
-          if (p) { reownProvider = p; break; }
-        } catch {}
-      }
     }
 
     if (!sender) {
@@ -347,7 +329,7 @@ export function ThirdwebSwapPanel() {
           const result = await sendTransaction({ transaction: tx, account });
           if (i === 0) firstHash = result.transactionHash;
         } else {
-          const eip1193 = reownProvider ?? eth;
+          const eip1193 = eth;
           const chainHex = "0x" + tx.chainId.toString(16);
           const curChain: string = await eip1193.request({ method: "eth_chainId" });
           if (curChain.toLowerCase() !== chainHex.toLowerCase()) {

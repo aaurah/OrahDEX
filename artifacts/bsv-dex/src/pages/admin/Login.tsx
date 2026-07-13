@@ -12,7 +12,6 @@ import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { cn } from '@/lib/utils';
 import { BrandLogo } from '@/components/BrandLogo';
 import { useAccount, useSignMessage, useChainId } from 'wagmi';
-import { openReownModal } from '@/lib/reown';
 
 const API = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
@@ -374,18 +373,7 @@ export function AdminLogin() {
                 )}
               </div>
 
-              {/* Primary: WalletConnect via Reown */}
-              <button
-                onClick={() => openReownModal('Connect')}
-                className="w-full flex items-center justify-center gap-2.5 bg-gradient-to-r from-violet-600/90 to-blue-600/80 border border-violet-500/30 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-violet-500/20 hover:shadow-violet-500/40 hover:scale-[1.01] active:scale-[0.99] transition-all"
-              >
-                <svg className="w-4 h-4" viewBox="0 0 40 25" fill="currentColor">
-                  <path d="M8.19 4.63C14.64-1.82 25.36-1.82 31.81 4.63l.77.77a.79.79 0 010 1.12l-2.65 2.65a.42.42 0 01-.58 0l-1.06-1.06c-4.52-4.52-11.85-4.52-16.37 0l-1.13 1.13a.42.42 0 01-.58 0L7.56 6.59a.79.79 0 010-1.12l.63-.84zM37.28 10.1l2.36 2.36a.79.79 0 010 1.12L28.5 24.72a.83.83 0 01-1.17 0l-7.67-7.67a.21.21 0 00-.29 0l-7.67 7.67a.83.83 0 01-1.17 0L-.3 13.58a.79.79 0 010-1.12l2.36-2.36a.83.83 0 011.17 0l7.67 7.67c.08.08.21.08.29 0l7.67-7.67a.83.83 0 011.17 0l7.67 7.67c.08.08.21.08.29 0l7.67-7.67a.83.83 0 011.17 0z"/>
-                </svg>
-                Connect via WalletConnect
-              </button>
-
-              {/* Secondary: MetaMask (injected) */}
+              {/* MetaMask / injected wallet */}
               {!canSign && (window as any).ethereum && (
                 <button
                   onClick={async () => {
@@ -409,7 +397,9 @@ export function AdminLogin() {
               {/* Switch wallet (when already connected) */}
               {canSign && (
                 <button
-                  onClick={() => openReownModal('Connect')}
+                  onClick={async () => {
+                    try { await (window as any).ethereum?.request({ method: "eth_requestAccounts" }); } catch {}
+                  }}
                   className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 text-xs font-medium transition-all"
                 >
                   <Layers className="w-3.5 h-3.5" />
