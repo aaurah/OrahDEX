@@ -472,6 +472,47 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
       return;
     }
 
+    /* ── Reown / WalletConnect path ──────────────────────────────────────── */
+    if (provider === "reown") {
+      try {
+        const [{ switchChain: wagmiSwitchChain }, { wagmiAdapter }] = await Promise.all([
+          import("wagmi/actions"),
+          import("@/lib/reown-appkit"),
+        ]);
+        const hexId = `0x${chain.id.toString(16)}`;
+        try {
+          await wagmiSwitchChain(wagmiAdapter.wagmiConfig, { chainId: chain.id as any });
+        } catch (switchErr: any) {
+          /* Chain not in wagmiConfig's chain list — fall back to raw EIP-1193 */
+          const connector = wagmiAdapter.wagmiConfig.connectors.find(
+            (c: any) => c.id === "walletConnect" || c.type === "walletConnect"
+          );
+          const eip1193 = await (connector as any)?.getProvider?.();
+          if (!eip1193) throw switchErr;
+          try {
+            await eip1193.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
+          } catch (e2: any) {
+            if (e2?.code === 4902 || e2?.code === -32603) {
+              await eip1193.request({ method: "wallet_addEthereumChain", params: [{ chainId: hexId, chainName: chain.name, nativeCurrency: { name: chain.nativeName, symbol: chain.symbol, decimals: chain.nativeDecimals }, rpcUrls: [chain.rpcUrl], blockExplorerUrls: [chain.blockExplorerUrl] }] });
+              await eip1193.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
+            } else { throw e2; }
+          }
+        }
+        switchChain(chain.id);
+        const bal = await fetchEvmBalance(address!, chain.id);
+        if (bal !== null) useWalletStore.getState().setBalance(bal);
+        toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
+        setOpen(false); onChainSelected?.();
+      } catch (err: any) {
+        if (err?.code !== 4001 && err?.name !== "UserRejectedRequestError") {
+          toast({ title: "Switch failed", description: err?.message || "Chain switch failed via WalletConnect.", variant: "destructive" });
+        }
+      } finally {
+        setSwitching(null);
+      }
+      return;
+    }
+
     /* ── Injected wallet path (MetaMask, Coinbase Wallet, etc.) ─────────── */
     const eth = (window as any).ethereum;
     if (!eth) {

@@ -95,6 +95,48 @@ export function disconnectReown(): void {
   } catch { /* */ }
 }
 
+/**
+ * Syncs AppKit's modal theme to match the active OrahDEX theme.
+ * Call whenever the OrahDEX theme changes (dark / amoled / light / system).
+ */
+export function syncReownTheme(theme: "dark" | "light" | "amoled" | "system"): void {
+  if (typeof window === "undefined") return;
+
+  const effective: "dark" | "light" =
+    theme === "light" ? "light"
+    : theme === "system"
+      ? (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+      : "dark";
+
+  const vars: Record<string, any> = {
+    "--w3m-border-radius-master": "3px",
+    "--w3m-font-family": "Inter, system-ui, sans-serif",
+    "--w3m-z-index": 9999,
+  };
+
+  if (theme === "amoled") {
+    // True-black AMOLED — push backgrounds to near-black
+    vars["--w3m-accent"] = "#4ade80";
+    vars["--w3m-color-mix"] = "#000000";
+    vars["--w3m-color-mix-strength"] = 35;
+  } else if (effective === "light") {
+    // Light theme — pale green tint on white, darker accent for contrast
+    vars["--w3m-accent"] = "#22a349";      // hsl(142 71% 42%) — OrahDEX light primary
+    vars["--w3m-color-mix"] = "#f0fdf4";   // Tailwind green-50 — very pale tint
+    vars["--w3m-color-mix-strength"] = 15;
+  } else {
+    // Dark (and system-dark) — OrahDEX navy hsl(216° 50% sat)
+    vars["--w3m-accent"] = "#4ade80";
+    vars["--w3m-color-mix"] = "#0a121f";
+    vars["--w3m-color-mix-strength"] = 30;
+  }
+
+  try {
+    appKit.setThemeMode(effective);
+    (appKit as any).setThemeVariables(vars);
+  } catch { /* AppKit not ready */ }
+}
+
 export function subscribeReownAccount(
   cb: (address: string | null, chainId: number) => void
 ): () => void {
