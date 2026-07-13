@@ -338,28 +338,27 @@ function Router() {
   // Single Reown account subscription — syncs AppKit connected wallet to walletStore
   useEffect(() => {
     let unsub: (() => void) | undefined;
-    // Track whether this is the first fire after page load.
-    // AppKit reconnects via the WalletConnect session and fires subscribeAccount with
-    // the session's defaultNetwork chainId (usually mainnet=1), even if the user had
-    // previously switched to Sepolia or another chain via the ChainSwitcher. The
-    // wallet store has the correct chainId persisted — honour it on the first fire.
-    let isFirstFire = true;
 
-    import("@/lib/reown-appkit").then(({ subscribeReownAccount, saveReownChain }) => {
+    import("@/lib/reown-appkit").then(({ subscribeReownAccount }) => {
       unsub = subscribeReownAccount((address, chainId) => {
         if (address) {
-          const { provider, address: storedAddress, chainId: storedChainId } = useWalletStore.getState();
+          const { provider, address: storedAddress } = useWalletStore.getState();
           if (!provider || provider === "reown") {
-            // On first fire: if reconnecting to the same address that was previously
-            // connected via Reown, preserve the persisted chainId (user's explicit
-            // network selection) rather than overwriting with AppKit's session default.
-            // (AppKit initialises from the orah-reown-chain localStorage key, but this
-            // is a second safety net in case of edge cases.)
+            // AppKit fires subscribeAccount multiple times during WC session
+            // restoration, each time reporting the session's original negotiated
+            // chain (often mainnet=1) — NOT what the user last switched to via
+            // wallet_switchEthereumChain.  The authoritative source of the user's
+            // chosen chain is "orah-reown-chain" in localStorage, which is written
+            // ONLY by ChainSwitcherDropdown on an explicit user switch.
+            // When reconnecting to the same Reown address, always honour that
+            // stored preference over whatever AppKit reports.
             let effectiveChainId = chainId;
-            if (isFirstFire && storedAddress === address && provider === "reown" && storedChainId) {
-              effectiveChainId = storedChainId;
+            if (storedAddress === address && provider === "reown") {
+              try {
+                const saved = parseInt(localStorage.getItem("orah-reown-chain") ?? "", 10);
+                if (saved) effectiveChainId = saved;
+              } catch {}
             }
-            isFirstFire = false;
 
             useWalletStore.getState().connect({
               address,
@@ -367,12 +366,8 @@ function Router() {
               network: "evm",
               chainId: effectiveChainId,
             });
-
-            // Keep the localStorage key in sync for subsequent page loads
-            saveReownChain(effectiveChainId);
           }
         } else {
-          isFirstFire = true; // reset on disconnect so next connect starts fresh
           if (useWalletStore.getState().provider === "reown") {
             useWalletStore.getState().disconnect();
           }
