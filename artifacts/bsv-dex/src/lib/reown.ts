@@ -229,10 +229,23 @@ export function isUserDisconnecting(): boolean { return _userDisconnecting; }
 
 export async function disconnectReown(): Promise<void> {
   setUserDisconnecting(true);
+
+  // Stage 1 — AppKit modal disconnect (closes any open WalletConnect session)
   try {
-    await (modal as any).disconnect?.();
+    const fn = (modal as any).disconnect;
+    if (typeof fn === "function") await fn.call(modal);
   } catch (err) {
-    console.warn("[OrahDEX] Reown disconnect:", err);
+    console.warn("[OrahDEX] Reown modal.disconnect:", err);
+  }
+
+  // Stage 2 — Wagmi core disconnect (clears stored connector sessions in
+  // localStorage / IndexedDB so AppKit does NOT auto-reconnect on next page load).
+  // This is the reliable path; modal.disconnect alone is often not enough.
+  try {
+    const { disconnect: wagmiDisconnect } = await import("@wagmi/core");
+    await wagmiDisconnect(wagmiConfig);
+  } catch (err) {
+    console.warn("[OrahDEX] Wagmi disconnect:", err);
   }
 }
 
