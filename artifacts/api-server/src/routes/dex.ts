@@ -12,7 +12,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { FALLBACK_PRICES, fetchCoinGeckoPrices, simulateDailyChange } from "../lib/priceUpdater.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { getCachedLEPrices } from "../lib/lePriceCache.js";
@@ -488,8 +488,13 @@ router.get("/coins/all-sources", async (req, res) => {
     const leCurrencies = getCachedLECurrencies();
     const lePrices     = getCachedLEPrices();
 
-    // ── 3. SS ticker set ──────────────────────────────────────────────────────
-    const ssSymbols = new Set(Object.keys(SS_COIN_TICKER).map(s => s.toUpperCase()));
+    // ── 3. SS ticker set — from DB (all enabled simpleswap markets) ──────────
+    // SS_COIN_TICKER is only ~14 hardcoded coins; query DB for the full live set.
+    const ssDbRows = await db
+      .selectDistinct({ base: marketsTable.baseAsset })
+      .from(marketsTable)
+      .where(and(eq(marketsTable.type, "simpleswap"), eq(marketsTable.enabled, true)));
+    const ssSymbols = new Set(ssDbRows.map(r => r.base.toUpperCase()));
 
     // ── 4. Determine which symbols each source covers ─────────────────────────
     const cgSymbols = new Set(cgCoins.map((c: any) => String(c.symbol).toUpperCase()));
