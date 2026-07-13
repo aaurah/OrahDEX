@@ -25,7 +25,10 @@ const appKit = createAppKit({
     name: "OrahDEX",
     description: "OrahDEX — Multi-chain Exchange",
     url: typeof window !== "undefined" ? window.location.origin : "https://orahdex.io",
-    icons: ["/favicon.ico"],
+    // Full URL so wallets can fetch it from any origin
+    icons: typeof window !== "undefined"
+      ? [`${window.location.origin}${import.meta.env.BASE_URL}icon-512.png`]
+      : ["https://orahdex.io/icon-512.png"],
   },
   features: {
     analytics: false,
