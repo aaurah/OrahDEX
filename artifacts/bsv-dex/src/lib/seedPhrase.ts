@@ -1,17 +1,18 @@
 /**
  * OrahDEX HD Wallet — BIP39 + BIP44/SLIP-0010 multi-chain derivation (browser-safe).
  *
- * One seed phrase → eight chain addresses (each using its own BIP44 coin type):
+ * One seed phrase → nine chain addresses (each using its own BIP44 coin type):
  *   EVM (Ethereum, BSC, Polygon…)  : m/44'/60'/0'/0/0   secp256k1
  *   BTC (Bitcoin)                  : m/84'/0'/0'/0/0    secp256k1, P2WPKH bech32 (starts with "bc1q")
  *   BSV (Bitcoin SV)               : m/44'/236'/0'/0/0  secp256k1, P2PKH (starts with "1")
  *   BCH (Bitcoin Cash)             : m/44'/145'/0'/0/0  secp256k1, CashAddr (bitcoincash:q…)
  *   SOL (Solana)                   : m/44'/501'/0'/0'   ed25519 SLIP-0010 (Phantom-compatible)
+ *   TRON                           : m/44'/195'/0'/0/0  secp256k1, keccak256+0x41 Base58Check (starts with "T")
  *   XRP (Ripple XRP Ledger)        : m/44'/144'/0'/0/0  secp256k1, XRP Base58 alphabet (starts with "r")
  *   LTC (Litecoin)                 : m/44'/2'/0'/0/0    secp256k1, P2PKH version 0x30 (starts with "L")
  *   DOGE (Dogecoin)                : m/44'/3'/0'/0/0    secp256k1, P2PKH version 0x1E (starts with "D")
  *
- * All addresses are fully compatible with MetaMask, Trust Wallet, Phantom, Ledger, etc.
+ * All addresses are fully compatible with MetaMask (incl. TRON snap), Trust Wallet, Phantom, Ledger, etc.
  */
 
 import {
@@ -26,6 +27,8 @@ import { sha512 } from "@noble/hashes/sha2.js";
 import { ripemd160 } from "@noble/hashes/legacy.js";
 import { hmac } from "@noble/hashes/hmac.js";
 import { ed25519 } from "@noble/curves/ed25519.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 
 // ─── BIP39 mnemonic generation ────────────────────────────────────────────────
 
@@ -67,7 +70,10 @@ export async function deriveAllAddresses(mnemonic: string[]): Promise<HdWalletAd
   const bch = deriveCashAddr(bchKey);
 
   const sol  = deriveSolanaAddress(seed);
-  const tron = evmToTronAddress(evm);   // same key as EVM, Tron Base58Check encoding
+  // TRON uses its own BIP44 coin type 195 (m/44'/195'/0'/0/0) — a different key than EVM.
+  // Deriving from EVM key via evmToTronAddress() gives the wrong address vs MetaMask / Trust Wallet.
+  const tronKey = root.derive("m/44'/195'/0'/0/0");
+  const tron = deriveTronAddressFromHdKey(tronKey);
 
   const xrpKey  = root.derive("m/44'/144'/0'/0/0");
   const xrp  = deriveXrpAddress(xrpKey);
@@ -178,7 +184,24 @@ function deriveP2WPKH(key: HDKey): string {
   return bech32Encode("bc", 0, pkh);  // witness version 0 = P2WPKH
 }
 
-// ─── Tron (same key as EVM — prefix 0x41 + Base58Check) ──────────────────────
+// ─── Tron (BIP44 coin type 195, m/44'/195'/0'/0/0 — different key from EVM) ───
+
+/**
+ * Derive a TRON address from an HD key at m/44'/195'/0'/0/0.
+ * TRON uses secp256k1 + keccak256 (same algorithm as Ethereum) but a different
+ * BIP44 path (coin type 195 vs 60), giving a distinct private key and address.
+ * The 20-byte address is encoded with prefix 0x41 → Base58Check → "T…" address.
+ * This matches MetaMask (TRON snap), Trust Wallet, Ledger, and all standard wallets.
+ */
+function deriveTronAddressFromHdKey(key: HDKey): string {
+  if (!key.publicKey) throw new Error("no TRON public key");
+  // Decompress the 33-byte compressed pubkey → 65-byte uncompressed (04 || x || y)
+  const uncompressed = secp256k1.ProjectivePoint.fromHex(key.publicKey).toRawBytes(false);
+  // keccak256 of the 64-byte payload (skip 0x04 prefix byte), take last 20 bytes
+  const hash = keccak_256(uncompressed.slice(1));
+  const addrHex = "0x" + Array.from(hash.slice(12)).map(b => b.toString(16).padStart(2, "0")).join("");
+  return evmToTronAddress(addrHex);
+}
 
 /**
  * Convert an EVM address (0x…) to a Tron Base58Check address (T…).
