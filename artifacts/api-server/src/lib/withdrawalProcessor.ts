@@ -241,9 +241,30 @@ async function processEvmWithdrawal(params: {
     });
   }
 
-  await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 }).catch(() => {
-    logger.warn({ txHash }, "withdrawal: receipt polling timed out (tx is broadcast)");
-  });
+  // Wait for confirmation and reject reverts — same pattern as escrow.ts.
+  // viem's waitForTransactionReceipt resolves for BOTH success and revert without
+  // throwing, so callers must check receipt.status or a reverted withdrawal tx
+  // would be marked "completed" even though funds were never moved.
+  try {
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+    if (receipt.status === "reverted") {
+      throw new Error(
+        `EVM withdrawal transaction reverted on-chain — funds not moved. ` +
+        `The hot wallet may have insufficient balance or gas. txHash: ${txHash}`,
+      );
+    }
+  } catch (receiptErr: any) {
+    const msg: string = receiptErr?.message ?? String(receiptErr);
+    if (msg.includes("timed out") || receiptErr?.name === "WaitForTransactionReceiptTimeoutError") {
+      // Timeout only: tx is broadcast and will likely confirm. Log and continue so
+      // the withdrawal is still marked "completed" with the known txHash.
+      logger.warn({ txHash }, "withdrawal: receipt polling timed out (tx broadcast, awaiting confirmation)");
+    } else {
+      // Revert or other error: re-throw so processWithdrawal catches it and keeps the
+      // request in "pending" for admin review rather than falsely marking it "completed".
+      throw receiptErr;
+    }
+  }
 
   const explorer = `${chain.explorer}/tx/${txHash}`;
   logger.info({ txHash, asset: params.asset, amount: params.amount, recipient: params.recipient, chainId }, "EVM withdrawal broadcast");
