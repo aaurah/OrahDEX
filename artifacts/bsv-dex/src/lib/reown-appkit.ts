@@ -36,10 +36,15 @@ const appKit = createAppKit({
   },
   themeMode: "dark",
   themeVariables: {
+    // OrahDEX primary green — hsl(142 71% 58%)
     "--w3m-accent": "#4ade80",
-    "--w3m-color-mix": "#0b0d12",
-    "--w3m-color-mix-strength": 20,
-    "--w3m-border-radius-master": "2px",
+    // Navy at hsl(216°) with 50% saturation — creates a clear navy shift
+    // when mixed into AppKit's default #202020 backgrounds (not just subtle tint)
+    "--w3m-color-mix": "#0a121f",
+    // 30% → backgrounds → ~#191c20 (matches OrahDEX card), text stays readable
+    "--w3m-color-mix-strength": 30,
+    // 3×4=12px cards (rounded-xl), 3×3=9px buttons (≈rounded-lg)
+    "--w3m-border-radius-master": "3px",
     "--w3m-font-family": "Inter, system-ui, sans-serif",
     "--w3m-z-index": 9999,
   } as any,
