@@ -50,24 +50,33 @@ export const ESCROW_ABI = parseAbi([
   "event OrderReleased(bytes32 indexed orderId, address indexed recipient, address token, uint256 amount)",
 ]);
 
+// Placeholder used for chains where the contract is not yet deployed.
+// Any chain mapped to this address must be blocked — funds sent there
+// would be unrecoverable because the relayer controls no key for it.
+const PLACEHOLDER_ESCROW_ADDRESS = "0xeE234cEb85697b64800E696699b7841e00413B4f" as const;
+
 // Populated as contracts are deployed on each chain.
 // Deploy script (deploy-escrow-standalone.mjs) writes addresses here automatically.
 export const ESCROW_ADDRESSES: Record<number, `0x${string}`> = {
   // ── Mainnets ────────────────────────────────────────────────────────────────
-  1:      "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Ethereum
-  10:     "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Optimism
-  56:     "0xeE234cEb85697b64800E696699b7841e00413B4f",   // BSC
-  43114:  "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Avalanche
-  59144:  "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Linea
-  534352: "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Scroll
-  8453:   "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Base
-  42161:  "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Arbitrum
-  137:    "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Polygon
-  324:    "0xeE234cEb85697b64800E696699b7841e00413B4f",   // zkSync Era
-  1329:   "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Sei
-  130:    "0xeE234cEb85697b64800E696699b7841e00413B4f",   // Unichain
+  // NOTE: All mainnet entries below still point to the placeholder address.
+  //       They are intentionally NOT in DEPLOYED_ESCROW_CHAINS and will be
+  //       blocked at the API level until the contract is deployed and verified
+  //       on each chain.  Update both maps when deploying to a new chain.
+  1:      PLACEHOLDER_ESCROW_ADDRESS,   // Ethereum      — deploy pending
+  10:     PLACEHOLDER_ESCROW_ADDRESS,   // Optimism      — deploy pending
+  56:     PLACEHOLDER_ESCROW_ADDRESS,   // BSC           — deploy pending
+  43114:  PLACEHOLDER_ESCROW_ADDRESS,   // Avalanche     — deploy pending
+  59144:  PLACEHOLDER_ESCROW_ADDRESS,   // Linea         — deploy pending
+  534352: PLACEHOLDER_ESCROW_ADDRESS,   // Scroll        — deploy pending
+  8453:   PLACEHOLDER_ESCROW_ADDRESS,   // Base          — deploy pending
+  42161:  PLACEHOLDER_ESCROW_ADDRESS,   // Arbitrum      — deploy pending
+  137:    PLACEHOLDER_ESCROW_ADDRESS,   // Polygon       — deploy pending
+  324:    PLACEHOLDER_ESCROW_ADDRESS,   // zkSync Era    — deploy pending
+  1329:   PLACEHOLDER_ESCROW_ADDRESS,   // Sei           — deploy pending
+  130:    PLACEHOLDER_ESCROW_ADDRESS,   // Unichain      — deploy pending
   // ── Testnets ────────────────────────────────────────────────────────────────
-  11155111: "0x4deb6023abD9E1C640aDa35201be8ff591d21cF2", // Sepolia
+  11155111: "0x4deb6023abD9E1C640aDa35201be8ff591d21cF2", // Sepolia — DEPLOYED ✓
   // 84532:   "0x...",                                      // Base Sepolia   — deploy pending
   // 421614:  "0x...",                                      // Arb Sepolia    — deploy pending
   // 11155420:"0x...",                                      // Op Sepolia     — deploy pending
@@ -75,6 +84,28 @@ export const ESCROW_ADDRESSES: Record<number, `0x${string}`> = {
   // 97:      "0x...",                                      // BSC Testnet    — deploy pending
   // 43113:   "0x...",                                      // Avax Fuji      — deploy pending
 };
+
+/**
+ * Chain IDs where the escrow contract is actually deployed and verified.
+ * Any chain NOT in this set must be blocked, even if ESCROW_ADDRESSES has
+ * an entry (which may be the placeholder address).
+ * Add a chain ID here only after deploying + verifying the contract on-chain
+ * and updating ESCROW_ADDRESSES to the real deployed address.
+ */
+export const DEPLOYED_ESCROW_CHAINS = new Set<number>([
+  11155111, // Sepolia — the only chain with a real deployed contract
+]);
+
+/**
+ * Returns true only for chains where the escrow contract is both present in
+ * ESCROW_ADDRESSES AND is a real deployed contract (not the placeholder).
+ * Use this instead of `isEscrowChain` whenever the check involves locking
+ * or releasing real user funds.
+ */
+export function isEscrowDeployed(chainId: number): boolean {
+  return DEPLOYED_ESCROW_CHAINS.has(chainId) &&
+    ESCROW_ADDRESSES[chainId] !== PLACEHOLDER_ESCROW_ADDRESS;
+}
 
 const CHAIN_BY_ID = {
   // ── Mainnets ────────────────────────────────────────────────────────────────
@@ -273,11 +304,25 @@ export interface ReleaseResult {
  * the chain has no escrow deployed, the deposit doesn't exist, or the
  * deposit has already been released. Idempotent against double-release.
  */
+const RELEASE_TIMEOUT_MS = 90_000;
+
 export async function releaseEscrow(
   orderId:   string,
   recipient: string,
   chainId:   number,
 ): Promise<ReleaseResult> {
+  // Safety gate: block any chain that doesn't have a real deployed contract.
+  // All mainnet chains currently map to the placeholder address — accepting
+  // funds on those chains would make them unrecoverable.
+  if (!isEscrowDeployed(chainId)) {
+    return {
+      ok:     false,
+      reason: `Escrow contract not yet deployed on chain ${chainId}. ` +
+              `Escrow is only available on Sepolia (testnet) at this time. ` +
+              `Mainnet deployments are in progress — check back soon.`,
+    };
+  }
+
   const escrow = ESCROW_ADDRESSES[chainId];
   if (!escrow)     return { ok: false, reason: `no escrow on chainId ${chainId}` };
   const chain = CHAIN_BY_ID[chainId as keyof typeof CHAIN_BY_ID];
@@ -304,13 +349,23 @@ export async function releaseEscrow(
   });
 
   try {
-    const txHash = await wallet.writeContract({
-      address: escrow,
-      abi:     ESCROW_ABI,
-      functionName: "release",
-      args:    [orderIdToBytes32(orderId), recipient as `0x${string}`],
-      nonce,
-    });
+    // Enforce a hard timeout so a stuck RPC or unresponsive node cannot hang
+    // the relayer indefinitely, which would block subsequent escrow settlements.
+    const txHash = await Promise.race([
+      wallet.writeContract({
+        address: escrow,
+        abi:     ESCROW_ABI,
+        functionName: "release",
+        args:    [orderIdToBytes32(orderId), recipient as `0x${string}`],
+        nonce,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`releaseEscrow timed out after ${RELEASE_TIMEOUT_MS / 1000}s on chain ${chainId}`)),
+          RELEASE_TIMEOUT_MS,
+        )
+      ),
+    ]);
     return { ok: true, txHash, explorerUrl: escrowExplorerUrl(chainId, txHash) };
   } catch (err: any) {
     // Surface revert reasons (e.g. "already released", "not relayer") so

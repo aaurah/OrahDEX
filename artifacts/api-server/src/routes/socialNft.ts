@@ -156,6 +156,76 @@ router.post("/social/posts", async (req, res) => {
   }
 });
 
+/* ── On-chain EVM transaction verifier ────────────────────────────────────── */
+const CHAIN_RPC_URLS: Record<string, string> = {
+  ETH:   process.env["ETH_RPC_URL"]       ?? "https://eth.llamarpc.com",
+  BNB:   process.env["BSC_RPC_URL"]       ?? "https://bsc-dataseed.binance.org",
+  BASE:  process.env["BASE_RPC_URL"]      ?? "https://mainnet.base.org",
+  MATIC: process.env["POLYGON_RPC_URL"]   ?? "https://polygon-bor-rpc.publicnode.com",
+  ARB:   process.env["ARBITRUM_RPC_URL"]  ?? "https://arb1.arbitrum.io/rpc",
+  OP:    process.env["OPTIMISM_RPC_URL"]  ?? "https://mainnet.optimism.io",
+  AVAX:  process.env["AVALANCHE_RPC_URL"] ?? "https://api.avax.network/ext/bc/C/rpc",
+};
+
+async function verifyEvmTx(
+  txHash: string,
+  chain: string,
+): Promise<{ ok: boolean; reason?: string }> {
+  const rpc = CHAIN_RPC_URLS[chain.toUpperCase()];
+  if (!rpc) {
+    return {
+      ok: false,
+      reason: `On-chain verification not available for chain "${chain}". ` +
+              `Supported: ETH, BNB, BASE, MATIC, ARB, OP, AVAX`,
+    };
+  }
+
+  let receipt: Record<string, string> | null = null;
+  try {
+    const resp = await fetch(rpc, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1,
+        method: "eth_getTransactionReceipt",
+        params: [txHash],
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    const json = await resp.json() as { result?: Record<string, string> | null };
+    receipt = json.result ?? null;
+  } catch (err: any) {
+    return { ok: false, reason: `Could not verify transaction on ${chain}: ${err?.message ?? "timeout"}` };
+  }
+
+  if (!receipt) {
+    return { ok: false, reason: "Transaction not found on-chain — wait for at least 1 confirmation before minting" };
+  }
+  if (receipt["status"] !== "0x1") {
+    return { ok: false, reason: "Transaction failed or was reverted — only successful payments can be used to mint" };
+  }
+
+  // Verify at least 1 confirmation
+  try {
+    const blkResp = await fetch(rpc, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "eth_blockNumber", params: [] }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    const blkJson = await blkResp.json() as { result?: string };
+    if (blkJson.result && receipt["blockNumber"]) {
+      const txBlock = parseInt(receipt["blockNumber"], 16);
+      const current = parseInt(blkJson.result, 16);
+      if (current - txBlock < 1) {
+        return { ok: false, reason: "Transaction has 0 confirmations — please wait for at least 1 block" };
+      }
+    }
+  } catch { /* if we can't check block number, receipt being present is sufficient */ }
+
+  return { ok: true };
+}
+
 /* ── POST /social/posts/:id/mint ──────────────────────────────────────────── */
 router.post("/social/posts/:id/mint", async (req, res) => {
   try {
@@ -179,6 +249,21 @@ router.post("/social/posts/:id/mint", async (req, res) => {
     const { rows: posts } = await pool.query("SELECT * FROM social_posts WHERE id = $1", [req.params.id]);
     if (!posts.length) { res.status(404).json({ error: "Post not found" }); return; }
     const post = posts[0];
+
+    // Verify the payment transaction actually exists on-chain and succeeded.
+    // This prevents free mints from fabricated tx_hash values.
+    const chain = (post.chain as string | undefined)?.toUpperCase() ?? "";
+    if (CHAIN_RPC_URLS[chain]) {
+      const { ok, reason } = await verifyEvmTx(tx_hash, chain);
+      if (!ok) {
+        res.status(402).json({ error: reason ?? "Payment transaction could not be verified on-chain" });
+        return;
+      }
+    } else {
+      // Chain not verifiable (BSV, SOL, BTC, etc.) — log for manual audit.
+      logger.warn({ tx_hash, chain, postId: req.params.id, minter },
+        "socialNft mint: chain not auto-verifiable — recording for manual review");
+    }
 
     // Atomic sold-out check: increment only if under max_supply
     const updateResult = await pool.query(
@@ -429,9 +514,25 @@ router.get("/social/external/trending", async (_req, res) => {
       ? [...liveZora, ...CURATED_ZORA].slice(0, 16)
       : CURATED_ZORA;
     const magicEden = CURATED_SOL;
-    res.json({ zora, magicEden, fetchedAt: new Date().toISOString(), liveCount: liveZora.length });
+    res.json({
+      zora,
+      magicEden,
+      fetchedAt: new Date().toISOString(),
+      liveCount: liveZora.length,
+      dataSource: liveZora.length > 0 ? "live+curated" : "curated",
+      dataSourceNote: liveZora.length > 0
+        ? "Zora entries combine live API data with curated fallbacks; Magic Eden entries are curated."
+        : "Live Zora API unavailable — showing curated collection list. Magic Eden entries are curated.",
+    });
   } catch (err: any) {
-    res.json({ zora: CURATED_ZORA, magicEden: CURATED_SOL, fetchedAt: new Date().toISOString(), liveCount: 0 });
+    res.json({
+      zora: CURATED_ZORA,
+      magicEden: CURATED_SOL,
+      fetchedAt: new Date().toISOString(),
+      liveCount: 0,
+      dataSource: "curated",
+      dataSourceNote: "Showing curated collection list — live data fetch failed.",
+    });
   }
 });
 

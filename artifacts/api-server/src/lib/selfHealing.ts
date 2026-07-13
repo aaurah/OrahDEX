@@ -339,8 +339,10 @@ export function startOrderReconciler(): void {
     }
   };
 
-  setTimeout(reconcile, 60_000);
-  setInterval(reconcile, RECONCILE_INTERVAL_MS);
+  guardedInterval("order-reconciler", reconcile, RECONCILE_INTERVAL_MS, {
+    initialDelayMs: 60_000,
+    timeoutMs:      4 * 60_000,
+  });
   logger.info({ intervalMs: RECONCILE_INTERVAL_MS, stuckAgeMs: STUCK_ORDER_AGE_MS },
     "[SelfHeal] Order reconciler started");
 }

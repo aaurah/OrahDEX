@@ -32,6 +32,33 @@ const router: IRouter = Router();
 
 const FEE_PCT = 0.003; // 0.3%
 
+/**
+ * Default server-side slippage tolerance.
+ * Applied when the client does not supply `minAmountOut`.
+ * Surfaced in /swap/quote so clients can display it before execution.
+ */
+const DEFAULT_MAX_SLIPPAGE_PCT = 5; // 5%
+
+/**
+ * Short-lived in-memory rate cache for the /swap/quote endpoint.
+ * Avoids 1–3 DB round-trips on every preview quote.
+ * The actual /swap execution still calls resolveRate() directly (no cache)
+ * so fills always use the freshest price from the market table.
+ */
+const _rateCache = new Map<string, { rate: number; expiresAt: number }>();
+const RATE_CACHE_TTL_MS = 30_000; // 30 s — quotes refresh faster than this
+
+async function resolveRateCached(assetIn: string, assetOut: string): Promise<number | null> {
+  const key = `${assetIn}:${assetOut}`;
+  const cached = _rateCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.rate;
+  const rate = await resolveRate(assetIn, assetOut);
+  if (rate != null) {
+    _rateCache.set(key, { rate, expiresAt: Date.now() + RATE_CACHE_TTL_MS });
+  }
+  return rate;
+}
+
 function verifyEvmSwapSignature(
   res: Response,
   walletAddress: unknown,
@@ -100,7 +127,7 @@ router.post("/swap/quote", async (req, res) => {
   }
 
   try {
-    const rate = await resolveRate(assetIn.toUpperCase(), assetOut.toUpperCase());
+    const rate = await resolveRateCached(assetIn.toUpperCase(), assetOut.toUpperCase());
     if (!rate) {
       res.status(422).json({
         error: "No price available for this pair",
@@ -148,14 +175,18 @@ router.post("/swap/quote", async (req, res) => {
     }
 
     res.json({
-      assetIn:    assetIn.toUpperCase(),
-      assetOut:   assetOut.toUpperCase(),
-      amountIn:   amtIn.toFixed(8),
-      amountOut:  amtOut.toFixed(8),
-      fee:        fee.toFixed(8),
-      feePct:     FEE_PCT * 100,
-      rate:       rate.toFixed(8),
+      assetIn:            assetIn.toUpperCase(),
+      assetOut:           assetOut.toUpperCase(),
+      amountIn:           amtIn.toFixed(8),
+      amountOut:          amtOut.toFixed(8),
+      fee:                fee.toFixed(8),
+      feePct:             FEE_PCT * 100,
+      rate:               rate.toFixed(8),
       priceImpactPct,
+      defaultSlippagePct: DEFAULT_MAX_SLIPPAGE_PCT,
+      minAmountOutHint:   (amtOut * (1 - DEFAULT_MAX_SLIPPAGE_PCT / 100)).toFixed(8),
+      slippageNote:       `Set minAmountOut ≥ minAmountOutHint in your swap request. ` +
+                          `If omitted, the server enforces a ${DEFAULT_MAX_SLIPPAGE_PCT}% tolerance automatically.`,
     });
   } catch (err) {
     req.log.error({ err }, "Swap quote failed");
@@ -214,14 +245,12 @@ router.post("/swap", async (req, res) => {
 
     // Slippage check.
     // If the client supplied minAmountOut, enforce it strictly. Otherwise
-    // apply a server-side default cap (5% below the quoted output) so a
-    // malformed/malicious request without a min cannot be filled at any
-    // arbitrarily bad rate. Clients should always send a real minAmountOut
-    // computed from a fresh quote — this is a safety net, not a substitute.
-    const DEFAULT_MAX_SLIPPAGE = 0.05; // 5%
+    // apply a server-side default cap so a malformed/malicious request without
+    // a min cannot be filled at any arbitrarily bad rate.
+    // Clients should always send a real minAmountOut from a fresh quote.
     const effectiveMinOut = minAmountOut != null && minAmountOut !== ""
       ? parseFloat(minAmountOut)
-      : grossOut * (1 - DEFAULT_MAX_SLIPPAGE);
+      : grossOut * (1 - DEFAULT_MAX_SLIPPAGE_PCT / 100);
     if (Number.isFinite(effectiveMinOut) && amtOut < effectiveMinOut) {
       res.status(422).json({
         error:    "Slippage exceeded",

@@ -247,7 +247,12 @@ router.get("/nft/collections", async (req, res) => {
     if (category) rows = rows.filter(r => r.category === category);
     if (q)        rows = rows.filter(r => r.name.toLowerCase().includes(q.toLowerCase()));
 
-    res.json({ collections: rows, total: rows.length });
+    res.json({
+      collections: rows,
+      total: rows.length,
+      dataSource: "seeded",
+      dataSourceNote: "Collection metadata is seeded from a curated static list. Prices, volumes, and floor values are illustrative and not live market data.",
+    });
   } catch (err: any) {
     res.status(500).json({ error: "Internal server error" });
   }
