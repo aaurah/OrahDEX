@@ -1681,8 +1681,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
                 return (
                   <div key={i} className="flex items-center text-[11px] h-[22px]">
-                    {/* BID row — display only */}
-                    <div className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left">
+                    {/* BID row — tap to fill buy form */}
+                    <button
+                      className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left active:bg-green-500/10 transition-colors"
+                      onClick={() => {
+                        if (bP == null) return;
+                        setPrice(String(bP));
+                        if (bQ != null) setAmount(bQ.toFixed(3));
+                        setSide("buy");
+                        setOrderError(null);
+                        setShowOrderForm(true);
+                      }}
+                    >
                       <div
                         className="absolute inset-y-0 right-0 bg-green-500/12"
                         style={{ width: `${bidPct}%` }}
@@ -1697,13 +1707,23 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </span>
                         </>
                       ) : <span className="flex-1" />}
-                    </div>
+                    </button>
 
                     {/* Center vertical divider */}
                     <div className="w-px self-stretch bg-border/60 shrink-0" />
 
-                    {/* ASK row — display only */}
-                    <div className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left">
+                    {/* ASK row — tap to fill sell form */}
+                    <button
+                      className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left active:bg-red-500/10 transition-colors"
+                      onClick={() => {
+                        if (aP == null) return;
+                        setPrice(String(aP));
+                        if (aQ != null) setAmount(aQ.toFixed(3));
+                        setSide("sell");
+                        setOrderError(null);
+                        setShowOrderForm(true);
+                      }}
+                    >
                       <div
                         className="absolute inset-y-0 left-0 bg-red-500/12"
                         style={{ width: `${askPct}%` }}
@@ -1718,7 +1738,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </span>
                         </>
                       ) : <span className="flex-1" />}
-                    </div>
+                    </button>
                   </div>
                 );
               })}
