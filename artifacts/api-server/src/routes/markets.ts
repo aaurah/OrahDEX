@@ -178,12 +178,13 @@ router.get("/markets", async (req, res) => {
 
   try {
     // Always filter by enabled=true — this is the stability guarantee.
-    // Always exclude type='letsexchange': those 36K+ rows are served via
-    // /api/letsexchange/pairs and must never be JSON-serialized here (OOM risk).
-    const leExclude = ne(marketsTable.type, "letsexchange");
+    // Exclude 'letsexchange' (36 K rows, served via /api/letsexchange/pairs) and
+    // 'catalog' (1.24 M rows, served via /api/markets/search) to prevent OOM on
+    // JSON.stringify of the full table.
+    const bigExclude = and(ne(marketsTable.type, "letsexchange"), ne(marketsTable.type, "catalog"));
     const conditions = types.length
-      ? and(eq(marketsTable.enabled, true), leExclude, inArray(marketsTable.type, types))
-      : and(eq(marketsTable.enabled, true), leExclude);
+      ? and(eq(marketsTable.enabled, true), bigExclude, inArray(marketsTable.type, types))
+      : and(eq(marketsTable.enabled, true), bigExclude);
 
     const markets = await withDbRetry(() => db.select().from(marketsTable).where(conditions));
 
@@ -270,6 +271,85 @@ router.get("/markets/count", async (_req, res) => {
     res.json({ count: Number(rows[0]?.count ?? 0) });
   } catch {
     res.json({ count: 0 });
+  }
+});
+
+/**
+ * GET /markets/search — Server-side full-catalog market search.
+ *
+ * Searches all types (spot, futures, simpleswap, catalog) by exact then prefix
+ * match on base_asset and quote_asset. Spot/futures results appear first,
+ * followed by simpleswap, then catalog. Uses DB indexes for fast lookup.
+ *
+ * ?q=BTC      required — token symbol (matched case-insensitively)
+ * ?limit=100  max rows returned (default 100, max 500)
+ * ?offset=0   pagination offset
+ */
+router.get("/markets/search", async (req, res) => {
+  const rawQ   = ((req.query.q  as string) ?? "").trim().toUpperCase();
+  const limit  = Math.min(500, Math.max(1, parseInt((req.query.limit  as string) ?? "100", 10) || 100));
+  const offset = Math.max(0, parseInt((req.query.offset as string) ?? "0", 10) || 0);
+
+  if (!rawQ) {
+    res.status(400).json({ error: "q parameter is required" });
+    return;
+  }
+
+  try {
+    const rows = await withDbRetry(() =>
+      db.select({
+        symbol:                marketsTable.symbol,
+        baseAsset:             marketsTable.baseAsset,
+        quoteAsset:            marketsTable.quoteAsset,
+        lastPrice:             marketsTable.lastPrice,
+        priceChangePercent24h: marketsTable.priceChangePercent24h,
+        volume24h:             marketsTable.volume24h,
+        type:                  marketsTable.type,
+        pinned:                marketsTable.pinned,
+      })
+      .from(marketsTable)
+      .where(and(
+        eq(marketsTable.enabled, true),
+        sql`(${marketsTable.baseAsset} = ${rawQ} OR ${marketsTable.quoteAsset} = ${rawQ}
+             OR ${marketsTable.baseAsset} ILIKE ${rawQ + "%"}
+             OR ${marketsTable.quoteAsset} ILIKE ${rawQ + "%"})`,
+      ))
+      .orderBy(
+        // Exact-base match first, then exact-quote, then prefix
+        sql`CASE
+          WHEN ${marketsTable.baseAsset}  = ${rawQ} THEN 0
+          WHEN ${marketsTable.quoteAsset} = ${rawQ} THEN 1
+          ELSE 2
+        END`,
+        // Spot/futures before letsexchange/simpleswap/catalog
+        sql`CASE
+          WHEN ${marketsTable.type} IN ('spot','futures') THEN 0
+          WHEN ${marketsTable.type} = 'simpleswap'        THEN 1
+          WHEN ${marketsTable.type} = 'letsexchange'      THEN 2
+          ELSE 3
+        END`,
+        desc(marketsTable.pinned),
+        desc(sql`${marketsTable.lastPrice}::numeric`),
+      )
+      .limit(limit)
+      .offset(offset)
+    );
+
+    const result = rows.map(m => ({
+      symbol:                m.symbol,
+      baseAsset:             m.baseAsset,
+      quoteAsset:            m.quoteAsset,
+      lastPrice:             resolveCrossPrice(m.symbol, parseFloat(m.lastPrice)),
+      priceChangePercent24h: parseFloat(m.priceChangePercent24h),
+      volume24h:             parseFloat(m.volume24h),
+      type:                  m.type,
+    }));
+
+    res.setHeader("X-Total-Count", String(result.length));
+    res.json(result);
+  } catch (err) {
+    req.log.error({ err }, "markets/search failed");
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

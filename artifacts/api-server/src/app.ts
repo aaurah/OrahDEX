@@ -115,6 +115,13 @@ pool.query(`
   CREATE INDEX IF NOT EXISTS overlay_records_indexed_at_idx   ON overlay_records (indexed_at DESC);
 `).catch((err: Error) => logger.warn({ err: err.message }, "overlay_records migration failed (non-fatal)"));
 
+// Indexes to make /api/markets/search fast across the 1.24 M catalog table.
+pool.query(`
+  CREATE INDEX IF NOT EXISTS idx_markets_base_asset  ON markets (base_asset);
+  CREATE INDEX IF NOT EXISTS idx_markets_quote_asset ON markets (quote_asset);
+  CREATE INDEX IF NOT EXISTS idx_markets_type        ON markets (type);
+`).catch((err: Error) => logger.warn({ err: err.message }, "markets search indexes failed (non-fatal)"));
+
 const app: Express = express();
 const middlewareRegistrationOrder: string[] = [];
 

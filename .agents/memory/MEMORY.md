@@ -7,7 +7,7 @@
 - [ARC broadcaster pattern](arc-broadcaster-pattern.md) — ARC body is {rawTx} not {txhex}; drizzle-kit push needs TTY so use pool.query IF NOT EXISTS for migrations in app.ts instead.
 - [Emotion stubs for ThirdWeb/Rolldown](emotion-stubs.md) — Rolldown namespace collisions fixed via alias stubs; Proxy target MUST be plain function (not forwardRef) or apply trap won't fire.
 - [LiquidityBot bulk write pattern](liquidity-bot-bulk-write.md) — sequential chunked INSERTs saturate prod DB for ~100 s/cycle; use single UNNEST query instead.
-- [Markets query scope rule](le-markets-scan-pattern.md) — 36K LE + 66K simpleswap rows; all background service SELECTs MUST use inArray(type,["spot","futures"]) not notInArray — fixed in priceUpdater, liquidityBot, sor.ts.
+- [Markets DB scale reality](markets-db-scale.md) — DB has 1.99M letsexchange rows (all-to-all LE) + 55K simpleswap + 4K spot; main /markets MUST exclude both letsexchange+catalog; search endpoint covers all types.
 - [GeckoTerminal live integration](gecko-terminal-integration.md) — live pool data merges over static mock-data at render time in MobileMarketSelector; lib + hook pattern documented.
 - [SS pairs normalization](ss-pairs-normalization.md) — SS uses network-specific tickers (usdterc20, pol, avaxc, bnb-bsc); must map to canonical symbols before building pairs; dedup by normalized symbol first.
 - [Socket bridge integration](socket-bridge-integration.md) — IBridgeProvider.getQuotes() returns BridgeQuote[]; SocketBridgeProvider stores full route in routeMeta.socketRoute for buildTx; getProvider() uses prefix match for socket:* IDs.
@@ -25,3 +25,4 @@
 - [pnpm bufferutil CAS corruption](pnpm-bufferutil-corruption.md) — store entries with bufferutil@4.1.0_utf-8-validate@5.0.10 in hash lose JS files; fix: relink viem to clean hash, download openai/stripe-replit-sync directly from npm via Python.
 - [express-rate-limit ipKeyGenerator](erl-ipkeygenerator.md) — custom keyGenerator that falls back to IP must use ipKeyGenerator(req) not req.ip; missing helper throws ERR_ERL_KEY_GEN_IPV6 ValidationError at startup.
 - [Drizzle atomic two-phase ops](drizzle-atomic-two-phase.md) — two consecutive Drizzle operations (e.g. margin lock then position insert) each in their own transaction create a crash-window race; fix: single pool.connect() client that commits both in one transaction.
+- [Universal markets catalog design](universal-markets-catalog.md) — catalog rows conflict with letsexchange rows via unique(symbol); search endpoint must include letsexchange to expose 2M+ pairs; universalMarkets.ts adds SS-only pairs not in LE.
