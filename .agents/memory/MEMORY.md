@@ -20,3 +20,4 @@
 - [Escrow wallet routing bugs](escrow-wallet-routing.md) — three root causes made escrow MetaMask-only; fixes: remove undeployed chain addresses, check provider==="reown" before connector.id, read wallet.getChain() after ThirdWeb connect.
 - [CoinGecko price feed](coingecko-price-feed.md) — Binance blocked in Replit; CoinGecko free API works (no key), covers 150+ coins with real change24h; MATIC needs "polygon-ecosystem-token" not "matic-network"; DOGS needs "dogs-2".
 - [Deploy stops dev workflows](deploy-stops-workflows.md) — publishing/deploying can leave all 3 dev workflows as NOT_STARTED afterward; preview goes blank until manually restarted.
+- [TRON BIP44 derivation path](tron-derivation-path.md) — TRON must use m/44'/195'/0'/0/0 + keccak256; old evmToTronAddress(evm) used wrong key vs MetaMask snap/Trust Wallet.

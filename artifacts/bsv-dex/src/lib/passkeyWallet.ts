@@ -370,7 +370,7 @@ export async function loginWithPasskey(opts?: { hybrid?: boolean }): Promise<Log
     },
   }) as PublicKeyCredential | null;
 
-  if (!assertion) throw new Error("Passkey authentication cancelled");
+  if (!assertion) throw new Error('Authentication cancelled — tap the button again to retry.');
 
   const rawId        = assertion.rawId;
   const credentialId = b642url(buf2b64(rawId));
@@ -458,7 +458,7 @@ export async function revealPasskeyWalletSecret(address: string): Promise<string
       timeout:          60_000,
     },
   }) as PublicKeyCredential | null;
-  if (!assertion) throw new Error("Passkey authentication cancelled");
+  if (!assertion) throw new Error('Authentication cancelled — tap the button again to retry.');
 
   return decryptPrivateKey(wallet.encryptedKey, wallet.iv, assertion.rawId);
 }
@@ -564,7 +564,7 @@ export async function getViemAccountForOrahWallet(address: string): Promise<impo
     },
   }) as PublicKeyCredential | null;
 
-  if (!assertion) throw new Error("Passkey authentication cancelled");
+  if (!assertion) throw new Error('Authentication cancelled — tap the button again to retry.');
 
   const rawId        = assertion.rawId;
   const credentialId = b642url(buf2b64(rawId));
@@ -644,19 +644,21 @@ export async function sendBsvWithPasskey(
       publicKey: { challenge, allowCredentials, userVerification: "required", timeout: 60_000 },
     }) as PublicKeyCredential | null;
   } catch (err: any) {
-    const msg: string = err?.message ?? "";
-    if (msg.includes("not allowed") || msg.includes("denied") || msg.includes("cancel") || err?.name === "NotAllowedError")
-      throw new Error('Wrong passkey selected. Please choose "OrahDEX Wallet" when prompted.');
+    const msg: string = (err?.message ?? "").toLowerCase();
+    if (msg.includes("cancel") || msg.includes("abort") || msg.includes("dismiss"))
+      throw new Error('Authentication cancelled — tap "Send BSV" again to retry.');
+    if (err?.name === "NotAllowedError" || msg.includes("not allowed") || msg.includes("denied"))
+      throw new Error('Authentication failed. Tap "Send BSV" again and when prompted choose "OrahDEX Wallet".');
     throw err;
   }
-  if (!assertion) throw new Error("Passkey authentication cancelled");
+  if (!assertion) throw new Error('Authentication cancelled — tap "Send BSV" again to retry.');
 
   const rawId        = assertion.rawId;
   const credentialId = b642url(buf2b64(rawId));
   let wallet = wallets.find(w => w.credentialId === credentialId);
   if (!wallet) {
     const restored = await tryRestoreFromServer(credentialId, rawId);
-    if (!restored) throw new Error('Wrong passkey selected — wallet data not found. Please choose "OrahDEX Wallet".');
+    if (!restored) throw new Error('Passkey not recognised — please choose "OrahDEX Wallet" when prompted.');
     wallet = restored;
   }
 
@@ -719,24 +721,16 @@ export async function signBsvChallengeWithPasskey(
       },
     }) as PublicKeyCredential | null;
   } catch (err: any) {
-    // iOS/Safari throws a platform error when the user picks a passkey that
-    // isn't in allowCredentials. Give a clear instruction instead of the raw
-    // browser error string.
-    const msg: string = err?.message ?? "";
-    if (
-      msg.includes("not allowed") ||
-      msg.includes("denied") ||
-      msg.includes("cancelled") ||
-      msg.includes("canceled") ||
-      err?.name === "NotAllowedError"
-    ) {
-      throw new Error(
-        'Wrong passkey selected. When prompted, please choose "OrahDEX Wallet" — not any other passkey on your device.'
-      );
-    }
+    // iOS/Safari throws NotAllowedError for both user cancellation and wrong passkey.
+    // Distinguish so the user gets actionable feedback.
+    const msg: string = (err?.message ?? "").toLowerCase();
+    if (msg.includes("cancel") || msg.includes("abort") || msg.includes("dismiss"))
+      throw new Error('Authentication cancelled — tap the button again to retry.');
+    if (err?.name === "NotAllowedError" || msg.includes("not allowed") || msg.includes("denied"))
+      throw new Error('Authentication failed. Try again and choose "OrahDEX Wallet" when prompted.');
     throw err;
   }
-  if (!assertion) throw new Error("Passkey authentication cancelled");
+  if (!assertion) throw new Error('Authentication cancelled — tap the button again to retry.');
 
   const rawId        = assertion.rawId;
   const credentialId = b642url(buf2b64(rawId));
@@ -746,9 +740,7 @@ export async function signBsvChallengeWithPasskey(
   if (!wallet) {
     const restored = await tryRestoreFromServer(credentialId, rawId);
     if (!restored) {
-      throw new Error(
-        'Wrong passkey selected — wallet data not found. When prompted, please choose "OrahDEX Wallet".'
-      );
+      throw new Error('Passkey not recognised — please choose "OrahDEX Wallet" when prompted.');
     }
     wallet = restored;
   }
@@ -845,19 +837,21 @@ async function deriveChainPrivKey(
       },
     }) as PublicKeyCredential | null;
   } catch (err: any) {
-    const msg: string = err?.message ?? "";
-    if (msg.includes("not allowed") || msg.includes("denied") || msg.includes("cancel") || err?.name === "NotAllowedError")
-      throw new Error('Wrong passkey selected. Please choose "OrahDEX Wallet" when prompted.');
+    const msg: string = (err?.message ?? "").toLowerCase();
+    if (msg.includes("cancel") || msg.includes("abort") || msg.includes("dismiss"))
+      throw new Error('Authentication cancelled — tap the button again to retry.');
+    if (err?.name === "NotAllowedError" || msg.includes("not allowed") || msg.includes("denied"))
+      throw new Error('Authentication failed. Try again and choose "OrahDEX Wallet" when prompted.');
     throw err;
   }
-  if (!assertion) throw new Error("Passkey authentication cancelled");
+  if (!assertion) throw new Error('Authentication cancelled — tap the button again to retry.');
 
   const rawId        = assertion.rawId;
   const credentialId = b642url(buf2b64(rawId));
   let wallet = wallets.find(w => w.credentialId === credentialId);
   if (!wallet) {
     const restored = await tryRestoreFromServer(credentialId, rawId);
-    if (!restored) throw new Error('Wrong passkey selected — wallet data not found. Please choose "OrahDEX Wallet".');
+    if (!restored) throw new Error('Passkey not recognised — please choose "OrahDEX Wallet" when prompted.');
     wallet = restored;
   }
 
@@ -992,19 +986,21 @@ async function getMnemonicFromPasskey(evmAddress: string): Promise<string> {
       },
     }) as PublicKeyCredential | null;
   } catch (err: any) {
-    const msg: string = err?.message ?? "";
-    if (msg.includes("not allowed") || msg.includes("denied") || msg.includes("cancel") || err?.name === "NotAllowedError")
-      throw new Error('Wrong passkey selected. Please choose "OrahDEX Wallet" when prompted.');
+    const msg: string = (err?.message ?? "").toLowerCase();
+    if (msg.includes("cancel") || msg.includes("abort") || msg.includes("dismiss"))
+      throw new Error('Authentication cancelled — tap the button again to retry.');
+    if (err?.name === "NotAllowedError" || msg.includes("not allowed") || msg.includes("denied"))
+      throw new Error('Authentication failed. Try again and choose "OrahDEX Wallet" when prompted.');
     throw err;
   }
-  if (!assertion) throw new Error("Passkey authentication cancelled");
+  if (!assertion) throw new Error('Authentication cancelled — tap the button again to retry.');
 
   const rawId        = assertion.rawId;
   const credentialId = b642url(buf2b64(rawId));
   let wallet = wallets.find(w => w.credentialId === credentialId);
   if (!wallet) {
     const restored = await tryRestoreFromServer(credentialId, rawId);
-    if (!restored) throw new Error('Wrong passkey selected — wallet data not found. Please choose "OrahDEX Wallet".');
+    if (!restored) throw new Error('Passkey not recognised — please choose "OrahDEX Wallet" when prompted.');
     wallet = restored;
   }
 
@@ -1055,7 +1051,7 @@ export async function signWithPasskey(
     },
   }) as PublicKeyCredential | null;
 
-  if (!assertion) throw new Error("Passkey authentication cancelled");
+  if (!assertion) throw new Error('Authentication cancelled — tap the button again to retry.');
 
   const secret = await decryptPrivateKey(wallet.encryptedKey, wallet.iv, assertion.rawId);
 
@@ -1115,19 +1111,21 @@ export async function getNativePasskeySecret(evmAddress: string): Promise<string
       },
     }) as PublicKeyCredential | null;
   } catch (err: any) {
-    const msg: string = err?.message ?? "";
-    if (msg.includes("not allowed") || msg.includes("denied") || msg.includes("cancel") || err?.name === "NotAllowedError")
-      throw new Error('Wrong passkey selected. Please choose "OrahDEX Wallet" when prompted.');
+    const msg: string = (err?.message ?? "").toLowerCase();
+    if (msg.includes("cancel") || msg.includes("abort") || msg.includes("dismiss"))
+      throw new Error('Authentication cancelled — tap the button again to retry.');
+    if (err?.name === "NotAllowedError" || msg.includes("not allowed") || msg.includes("denied"))
+      throw new Error('Authentication failed. Try again and choose "OrahDEX Wallet" when prompted.');
     throw err;
   }
-  if (!assertion) throw new Error("Passkey authentication cancelled");
+  if (!assertion) throw new Error('Authentication cancelled — tap the button again to retry.');
 
   const rawId        = assertion.rawId;
   const credentialId = b642url(buf2b64(rawId));
   let wallet = wallets.find(w => w.credentialId === credentialId);
   if (!wallet) {
     const restored = await tryRestoreFromServer(credentialId, rawId);
-    if (!restored) throw new Error('Wrong passkey selected — wallet data not found. Please choose "OrahDEX Wallet".');
+    if (!restored) throw new Error('Passkey not recognised — please choose "OrahDEX Wallet" when prompted.');
     wallet = restored;
   }
   return decryptPrivateKey(wallet.encryptedKey, wallet.iv, rawId);
