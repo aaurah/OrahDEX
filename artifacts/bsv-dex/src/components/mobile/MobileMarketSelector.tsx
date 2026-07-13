@@ -526,11 +526,10 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     apiRows.map((m: NormRow) => [m.symbol, m])
   ), [apiRows]);
 
-  // Lightweight global pool used ONLY when the user is searching.
-  // We dedupe directly from apiRows + aosPairs instead of fanning out across
-  // 36 categories — that fan-out crashed mobile Safari with ~30k AOS pairs.
-  const globalRows = useMemo<NormRow[]>(() => {
-    if (!search) return [];
+  // Full symbol pool: apiRows + every AOS pair by exact symbol (no base dedup).
+  // Used for search AND favorites so any starred symbol — even if it's not
+  // the "best quote" for its base — can always be found.
+  const fullPool = useMemo<NormRow[]>(() => {
     const merged = new Map<string, NormRow>();
     for (const m of apiRows) merged.set(m.symbol, m);
     for (const p of aosPairs) {
@@ -538,13 +537,20 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       if (!merged.has(p.symbol)) merged.set(p.symbol, p);
     }
     return Array.from(merged.values());
-  }, [search, apiRows, aosPairs]);
+  }, [apiRows, aosPairs]);
+
+  // Alias kept for search path (same data, no extra cost)
+  const globalRows = fullPool;
 
   // Live on-chain data from GeckoTerminal (chain tabs only, cached 90s)
   const { data: geckoRows } = useGeckoTerminalPools(cat);
   let rows: NormRow[] = search
     ? globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search))
-    : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
+    : cat === "favorites"
+      // Use the full (no-base-dedup) pool so any starred symbol is always found,
+      // regardless of whether it was the "best quote" for its base coin.
+      ? fullPool.filter(m => favorites.has(m.symbol)).sort((a, b) => a.base.localeCompare(b.base))
+      : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
 
   // Merge GeckoTerminal live data: update prices for known tokens, append new ones
   if (!search && geckoRows.length > 0) {
