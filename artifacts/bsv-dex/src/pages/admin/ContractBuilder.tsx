@@ -19,14 +19,10 @@ import {
   RefreshCw, Globe2, Wallet, GitBranch, Hash, Info, Code2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useActiveAccount } from "thirdweb/react";
-import { thirdwebClient } from "@/lib/thirdweb-client";
 import { ESCROW_ADDRESSES, ESCROW_ABI, RELAYER_ADDRESS } from "@/lib/escrowConfig";
 import { createPublicClient, http, formatEther } from "viem";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const THIRDWEB_SDK_VERSION = "5.101.2";
 
 const TOKEN_TYPES = [
   { id: "token",      label: "Fungible Token",       desc: "Standard ERC-20 / BSV-20 compatible token", icon: "💰" },
@@ -143,79 +139,6 @@ function CopyButton({ text }: { text: string }) {
     <button onClick={copy} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors p-0.5">
       {copied ? <Check size={11} className="text-green-400" /> : <Copy size={11} />}
     </button>
-  );
-}
-
-// ── ThirdWeb Status Panel ─────────────────────────────────────────────────────
-
-function ThirdWebStatusPanel() {
-  const account = useActiveAccount();
-  const clientIdSet = !!import.meta.env.VITE_THIRDWEB_CLIENT_ID;
-
-  return (
-    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
-      <div className="flex items-center gap-2.5">
-        <div className="w-8 h-8 rounded-xl bg-violet-500/15 border border-violet-500/25 flex items-center justify-center shrink-0">
-          <Zap size={15} className="text-violet-400" />
-        </div>
-        <div>
-          <h3 className="font-semibold text-sm">ThirdWeb v5 Integration</h3>
-          <p className="text-[11px] text-muted-foreground">SDK status, connected account &amp; service health</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-secondary/50 rounded-xl p-3 space-y-1">
-          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">SDK Version</p>
-          <p className="text-sm font-mono font-bold text-violet-400">v{THIRDWEB_SDK_VERSION}</p>
-        </div>
-        <div className="bg-secondary/50 rounded-xl p-3 space-y-1">
-          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Client ID</p>
-          <StatusBadge ok={clientIdSet} label={clientIdSet ? "Configured" : "Missing"} />
-        </div>
-        <div className="bg-secondary/50 rounded-xl p-3 space-y-1">
-          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Active Account</p>
-          {account ? (
-            <div className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0" />
-              <code className="text-[10px] font-mono text-foreground truncate">{shortenAddr(account.address)}</code>
-              <CopyButton text={account.address} />
-            </div>
-          ) : (
-            <p className="text-[11px] text-muted-foreground italic">Not connected</p>
-          )}
-        </div>
-        <div className="bg-secondary/50 rounded-xl p-3 space-y-1">
-          <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider">Services</p>
-          <div className="flex flex-wrap gap-1">
-            <StatusBadge ok label="Bridge" />
-            <StatusBadge ok label="Escrow" />
-          </div>
-        </div>
-      </div>
-
-      {/* ThirdWeb API capabilities list */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-        {[
-          ["Bridge.Buy.prepare/quote",    "Cross-chain token swaps",      true ],
-          ["Bridge.tokens(chainId)",      "Live token lists per chain",   true ],
-          ["sendTransaction(account,tx)", "EVM tx via ThirdWeb account",  true ],
-          ["prepareTransaction",          "Escrow lock/cancel/release",   true ],
-          ["waitForReceipt",              "Tx confirmation polling",       true ],
-          ["defineChain(chainId)",        "Any EVM chain support",         true ],
-          ["getContract + readContract",  "On-chain state queries",        true ],
-          ["EIP-4337 Smart Accounts",     "OrahAccountFactory (Sepolia)",  false],
-        ].map(([fn, desc, active]) => (
-          <div key={fn as string} className="flex items-start gap-2">
-            <span className={cn("mt-0.5 w-1.5 h-1.5 rounded-full shrink-0", active ? "bg-green-400" : "bg-amber-400")} />
-            <div>
-              <code className="font-mono text-foreground">{fn}</code>
-              <span className="text-muted-foreground ml-1">— {desc}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -436,7 +359,6 @@ function SmartAccountInfoPanel() {
             {[
               { label: "Factory — Sepolia", value: "0x000…0000", note: "Deploy pending", warn: true },
               { label: "Factory — Mainnet", value: "Not deployed", note: "Coming soon", warn: true },
-              { label: "ThirdWeb SDK", value: `v${THIRDWEB_SDK_VERSION}`, note: "EIP-4337 ready", warn: false },
             ].map(item => (
               <div key={item.label} className={cn(
                 "rounded-xl p-3 border",
@@ -696,9 +618,9 @@ function DeployModal({ onClose }: { onClose: () => void }) {
               </div>
 
               {isEvmNet && (
-                <div className="flex items-center gap-2.5 p-3 bg-violet-500/5 border border-violet-500/20 rounded-xl text-[11px] text-violet-300">
-                  <Zap size={12} className="text-violet-400 shrink-0" />
-                  Deploy via <strong className="mx-1">ThirdWeb SDK v{THIRDWEB_SDK_VERSION}</strong> — your wallet will prompt to sign the deployment transaction.
+                <div className="flex items-center gap-2.5 p-3 bg-blue-500/5 border border-blue-500/20 rounded-xl text-[11px] text-blue-300">
+                  <Zap size={12} className="text-blue-400 shrink-0" />
+                  Your wallet will prompt to sign the deployment transaction.
                 </div>
               )}
 
@@ -858,9 +780,6 @@ export function AdminContractBuilder() {
           Deploy Contract
         </button>
       </div>
-
-      {/* ThirdWeb status */}
-      <ThirdWebStatusPanel />
 
       {/* On-chain escrow contracts */}
       <EscrowContractsPanel />

@@ -39,7 +39,6 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { BridgeAggPanel } from "@/components/BridgeAggPanel";
-import { ThirdwebSwapPanel } from "@/components/ThirdwebSwapPanel";
 import { SorRouteDisplay } from "@/components/SorRouteDisplay";
 import { makeSorQuoteDebouncer } from "@/lib/sorClient";
 import type { SorQuoteResponse } from "@/lib/sorClient";
@@ -2208,7 +2207,6 @@ export function Swap() {
   const [activeTab, setActiveTab] = useState<"swap" | "bridge" | "dex">(
     urlTab === "bridge" || urlTab === "dex" ? urlTab : "swap"
   );
-  const [bridgeProvider, setBridgeProvider] = useState<"agg" | "universal">("agg");
 
   // Default: all wallets start in on-chain DEX mode (Uniswap V3).
   // Orah passkey wallets sign transactions via biometric auth — no seed phrase stored.
@@ -2511,32 +2509,7 @@ export function Swap() {
         {/* ═══════════════ BRIDGE TAB ═══════════════ */}
         {activeTab === "bridge" && (
           <div className="space-y-3">
-            <div className="flex items-center gap-1 p-1 bg-muted/20 rounded-xl border border-border/30">
-              <button
-                onClick={() => setBridgeProvider("agg")}
-                className={cn(
-                  "flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-150",
-                  bridgeProvider === "agg"
-                    ? "bg-card text-foreground shadow-sm border border-border/40"
-                    : "text-muted-foreground hover:text-foreground/80",
-                )}
-              >
-                Cross-Chain Bridge
-              </button>
-              <button
-                onClick={() => setBridgeProvider("universal")}
-                className={cn(
-                  "flex-1 py-2 rounded-lg text-xs font-semibold transition-all duration-150",
-                  bridgeProvider === "universal"
-                    ? "bg-card text-foreground shadow-sm border border-border/40"
-                    : "text-muted-foreground hover:text-foreground/80",
-                )}
-              >
-                Universal Swap
-              </button>
-            </div>
-            {bridgeProvider === "agg" && <BridgeAggPanel walletAddress={address ?? undefined} />}
-            {bridgeProvider === "universal" && <ThirdwebSwapPanel />}
+            <BridgeAggPanel walletAddress={address ?? undefined} />
           </div>
         )}
 
