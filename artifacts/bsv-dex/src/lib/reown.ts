@@ -200,9 +200,11 @@ export function subscribeReownAccount(
   }
 }
 
-export function getReownAccount(): { address?: string; isConnected: boolean } {
+export function getReownAccount(): { address?: string; isConnected: boolean; caipAddress?: string } {
   try {
-    return (modal as any).getAccount?.() ?? { isConnected: false };
+    // getAccount() without namespace uses activeChain (eip155 for EVM wallets)
+    const acc = (modal as any).getAccount?.();
+    return acc ?? { isConnected: false };
   } catch {
     return { isConnected: false };
   }
