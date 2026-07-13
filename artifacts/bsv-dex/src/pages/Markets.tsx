@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { CoinLogo } from "@/components/CoinLogo";
-import { useStagedMarkets as useGetMarkets } from "@/hooks/useStagedMarkets";
+import { useStagedMarkets as useGetMarkets, useMarketSearch } from "@/hooks/useStagedMarkets";
 import { useSEO } from "@/hooks/useSEO";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
@@ -187,6 +187,7 @@ export function Markets() {
 
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } as any });
   const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
+  const { results: serverSearchResults } = useMarketSearch(search, { debounceMs: 300 });
 
   // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
   const needAllPairs = tab === "sol" || tab === "eth" || tab === "favorites" || search.length > 0;
@@ -488,10 +489,19 @@ export function Markets() {
   const searchPool = search
     ? [...tradeable(raw), ...leAllPairs.filter(m => !raw.some((r: any) => r.symbol === m.symbol))]
     : markets;
-  const filtered = searchPool.filter(m =>
+  const _localFiltered = searchPool.filter(m =>
     m.symbol.toLowerCase().includes(search.toLowerCase()) ||
     (m.baseAsset ?? "").toLowerCase().includes(search.toLowerCase())
   );
+  const _localSymbols = new Set(_localFiltered.map((m: any) => m.symbol));
+  const filtered = search
+    ? [
+        ..._localFiltered,
+        ...serverSearchResults
+          .filter((m: any) => !_localSymbols.has(m.symbol))
+          .map((m: any) => normalise(m)),
+      ]
+    : _localFiltered;
   const toggleStar = (symbol: string) =>
     setStars(prev => {
       const n = new Set(prev);

@@ -1787,6 +1787,16 @@ export function startPriceUpdater() {
     { timeoutMs: 3 * 60 * 1000, initialDelayMs: 3 * 60 * 1000 },
   );
 
+  // Universal market catalog — N×(N-1) cross-product of all tradeable assets → type="catalog".
+  // Deferred 20 min so LE + SS syncs can run first, then refreshed daily.
+  // Timeout: 30 min — expected runtime is 2–5 min for 1.24 M rows.
+  guardedInterval(
+    "universal-markets",
+    () => import("./universalMarkets.js").then(m => m.generateUniversalMarkets()),
+    24 * 60 * 60 * 1000,
+    { timeoutMs: 30 * 60 * 1000, initialDelayMs: 20 * 60 * 1000 },
+  );
+
   // First Binance price fetch deferred to 35 s so the server is fully settled
   // before the large ticker-24hr response (~5 MB / 2000+ objects) is parsed.
   // After the first run, the guarded interval takes over every 60 s.

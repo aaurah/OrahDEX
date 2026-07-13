@@ -17,6 +17,7 @@ import {
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { useSSPairs } from "@/hooks/useSSPairs";
+import { useMarketSearch } from "@/hooks/useStagedMarkets";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
 import { cn, marketMatchesQuery } from "@/lib/utils";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
@@ -394,6 +395,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const [cat, setCat]         = useState<Cat>(resolvedDefault);
   const [usdSub, setUsdSub]   = useState<UsdSub>("USDT");
   const [search, setSearch]   = useState("");
+  const { results: serverSearchResults } = useMarketSearch(search, { debounceMs: 300 });
   const [sortKey, setSortKey] = useState<"base"|"price"|"chg">("base");
   const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
   const [infoCoin, setInfoCoin] = useState<string | null>(null);
@@ -548,8 +550,16 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
   // Live on-chain data from GeckoTerminal (chain tabs only, cached 90s)
   const { data: geckoRows } = useGeckoTerminalPools(cat);
+  const _svrRows: NormRow[] = search
+    ? serverSearchResults
+        .filter((m: any) => m.symbol && !globalRows.some(r => r.symbol === m.symbol))
+        .map((m: any) => normalise({ ...m, type: m.type ?? "catalog" }))
+    : [];
   let rows: NormRow[] = search
-    ? globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search))
+    ? [
+        ...globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search)),
+        ..._svrRows,
+      ]
     : cat === "favorites"
       // Use the full (no-base-dedup) pool so any starred symbol is always found,
       // regardless of whether it was the "best quote" for its base coin.
