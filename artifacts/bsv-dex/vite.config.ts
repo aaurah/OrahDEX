@@ -64,7 +64,10 @@ export default defineConfig({
         const pnpmEntries = fs.readdirSync(pnpmRoot);
 
         function findEntry(pkgName: string, versionHint = "") {
-          const safe = pkgName.replace(/^@/, "").replace("/", "+");
+          // For scoped packages (@reown/appkit) pnpm entries keep the leading @:
+          //   "@reown/appkit" → safe = "@reown+appkit" → matches "@reown+appkit@1.8.22_..."
+          // For plain packages (viem) the result is unchanged.
+          const safe = pkgName.replace("/", "+");
           const candidates = pnpmEntries.filter(e => e.startsWith(safe + "@"));
           if (!candidates.length) return null;
           if (versionHint) {
@@ -80,9 +83,11 @@ export default defineConfig({
 
         function ensureLink(pkgName: string, entry: string) {
           const dest = path.join(bsvNm, pkgName);
-          if (fs.existsSync(dest)) return;
+          if (fs.existsSync(dest)) return; // real dir or valid symlink — already good
           const src = path.join(pnpmRoot, entry, "node_modules", pkgName);
-          if (!fs.existsSync(src)) return;
+          if (!fs.existsSync(src)) return; // pnpm store source missing — leave broken symlink alone
+          // dest is a broken symlink AND src exists — remove stale symlink then recreate
+          try { fs.unlinkSync(dest); } catch { /* nothing to unlink */ }
           fs.mkdirSync(path.dirname(dest), { recursive: true });
           fs.symlinkSync(src, dest);
         }
@@ -121,6 +126,8 @@ export default defineConfig({
           "semver": "5.",
           "use-sync-external-store": "1.",
           "valtio": "1.",
+          "@phosphor-icons/webcomponents": "2.",
+          "@safe-global/safe-gateway-typescript-sdk": "3.",
         };
 
         for (const [pkg, hint] of Object.entries(REQUIRED)) {
@@ -773,6 +780,7 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
       // dist files so rolldown never needs to follow the symlink for subpaths.
       "@reown/appkit/react":    path.resolve(import.meta.dirname, "node_modules/@reown/appkit/dist/esm/exports/react.js"),
       "@reown/appkit/networks": path.resolve(import.meta.dirname, "node_modules/@reown/appkit/dist/esm/exports/networks.js"),
+      "@reown/appkit-adapter-wagmi": path.resolve(import.meta.dirname, "node_modules/@reown/appkit-adapter-wagmi/dist/esm/src/index.js"),
       // @emotion/react is aliased to a standalone stub to prevent Rolldown from
       // deriving the same "import_react" namespace identifier for both `react`
       // and `@emotion/react` (both end in "react"). Without this alias, the
@@ -781,6 +789,9 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
       // React's namespace (where it is undefined) → TypeError on app load.
       "@emotion/react":   path.resolve(import.meta.dirname, "src/stubs/emotion-react.js"),
       "@emotion/styled":  path.resolve(import.meta.dirname, "src/stubs/emotion-styled.js"),
+      // @trezor/websocket-client is only used by @trezor/connect-web's suite-desktop
+      // entry point which never runs in a browser — stub it to prevent build errors.
+      "@trezor/websocket-client": path.resolve(import.meta.dirname, "src/stubs/trezor-websocket-client"),
     },
     dedupe: ["react", "react-dom"],
   },
