@@ -327,6 +327,20 @@ function explorerTxUrl(chainId: number, txHash: string): string {
   return `${base}/tx/${txHash}`;
 }
 
+/**
+ * Wait for a transaction to be mined and throw a clear error if it reverted.
+ * viem's waitForTransactionReceipt resolves for BOTH success and revert;
+ * without this check the UI shows "done" even when funds were never moved.
+ */
+async function waitAndAssertSuccess(chainId: number, txHash: `0x${string}`): Promise<void> {
+  const receipt = await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash });
+  if (receipt.status === "reverted") {
+    throw new Error(
+      `Transaction reverted. Your funds were not moved. Check on explorer: ${explorerTxUrl(chainId, txHash)}`,
+    );
+  }
+}
+
 /** Human-readable chain name used in escrow lock UI strings. */
 const CHAIN_LABELS: Record<number, string> = {
   1:        "Ethereum",
@@ -375,6 +389,7 @@ export async function lockEthViaInjected(
       data:  buildLockEthCalldata(orderId),
     }],
   });
+  await waitAndAssertSuccess(chainId, txHash as `0x${string}`);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -404,7 +419,7 @@ export async function lockErc20ViaInjected(
       data: buildApproveCalldata(escrow, rawAmount),
     }],
   });
-  await getPublicClient(chainId).waitForTransactionReceipt({ hash: approveTxHash as `0x${string}` });
+  await waitAndAssertSuccess(chainId, approveTxHash as `0x${string}`);
 
   // Step 2: lockERC20
   const txHash: string = await eth.request({
@@ -415,6 +430,7 @@ export async function lockErc20ViaInjected(
       data: buildLockErc20Calldata(orderId, tokenAddress, rawAmount),
     }],
   });
+  await waitAndAssertSuccess(chainId, txHash as `0x${string}`);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -435,6 +451,7 @@ export async function lockEthUniversal(
     from, to: escrow, value: rawAmount,
     data: buildLockEthCalldata(orderId), chainId,
   });
+  await waitAndAssertSuccess(chainId, txHash as `0x${string}`);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -487,13 +504,14 @@ export async function lockErc20Universal(
     method: "eth_sendTransaction",
     params: [{ from, to: tokenAddress, data: buildApproveCalldata(escrow, rawAmount) }],
   });
-  await getPublicClient(chainId).waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
+  await waitAndAssertSuccess(chainId, approveTx as `0x${string}`);
 
   // Step 2: lockERC20
   const txHash: string = await provider.request({
     method: "eth_sendTransaction",
     params: [{ from, to: escrow, data: buildLockErc20Calldata(orderId, tokenAddress, rawAmount) }],
   });
+  await waitAndAssertSuccess(chainId, txHash as `0x${string}`);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -609,7 +627,7 @@ export async function lockEthViaOrah(
     nonce,
     gas,
   } as any);
-  await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash });
+  await waitAndAssertSuccess(chainId, txHash);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -635,7 +653,7 @@ export async function lockErc20ViaOrah(
     nonce: approveNonce,
     gas:   approveGas,
   } as any);
-  await pub.waitForTransactionReceipt({ hash: approveTx });
+  await waitAndAssertSuccess(chainId, approveTx);
 
   // Step 2: lockERC20 — re-fetch nonce, pre-estimate gas
   const lockData  = buildLockErc20Calldata(orderId, tokenAddress, rawAmount);
@@ -647,7 +665,7 @@ export async function lockErc20ViaOrah(
     nonce: lockNonce,
     gas:   lockGas,
   } as any);
-  await pub.waitForTransactionReceipt({ hash: txHash });
+  await waitAndAssertSuccess(chainId, txHash);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -668,7 +686,7 @@ export async function cancelEscrowViaOrah(
     nonce,
     gas: cancelGas,
   } as any);
-  await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash });
+  await waitAndAssertSuccess(chainId, txHash);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -805,7 +823,7 @@ export async function lockEthViaReown(
   const txHash = await sendRawViaReown({
     from: acct.address, to: escrow, value: rawAmount, data, gas, chainId,
   });
-  await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash as `0x${string}` });
+  await waitAndAssertSuccess(chainId, txHash as `0x${string}`);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -832,7 +850,7 @@ export async function lockErc20ViaReown(
   const approveTx = await sendRawViaReown({
     from: acct.address, to: tokenAddress, data: approveData, gas: approveGas, chainId,
   });
-  await getPublicClient(chainId).waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
+  await waitAndAssertSuccess(chainId, approveTx as `0x${string}`);
 
   // Step 2: lockERC20
   const lockData = buildLockErc20Calldata(orderId, tokenAddress, rawAmount);
@@ -843,7 +861,7 @@ export async function lockErc20ViaReown(
   const txHash = await sendRawViaReown({
     from: acct.address, to: escrow, data: lockData, gas: lockGas, chainId,
   });
-  await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash as `0x${string}` });
+  await waitAndAssertSuccess(chainId, txHash as `0x${string}`);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -867,7 +885,7 @@ export async function cancelEscrowViaReown(
   const txHash = await sendRawViaReown({
     from: acct.address, to: escrow, data, gas, chainId,
   });
-  await getPublicClient(chainId).waitForTransactionReceipt({ hash: txHash as `0x${string}` });
+  await waitAndAssertSuccess(chainId, txHash as `0x${string}`);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -882,6 +900,7 @@ export async function cancelEscrowUniversal(
   const escrow = escrowAddress(chainId);
   if (!escrow) throw new Error(`No escrow contract on chainId ${chainId}`);
   const txHash = await sendTxUniversal({ from, to: escrow, data: buildCancelCalldata(orderId), chainId });
+  await waitAndAssertSuccess(chainId, txHash as `0x${string}`);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
@@ -906,6 +925,7 @@ export async function cancelEscrowViaInjected(
       data: buildCancelCalldata(orderId),
     }],
   });
+  await waitAndAssertSuccess(chainId, txHash as `0x${string}`);
   return { txHash, explorerUrl: explorerTxUrl(chainId, txHash) };
 }
 
