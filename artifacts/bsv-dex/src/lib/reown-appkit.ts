@@ -14,13 +14,36 @@ const networks = [
   linea, zkSync, scroll, sepolia,
 ] as const;
 
+/**
+ * localStorage key that persists the user's last chosen EVM chainId across sessions.
+ * Read at module-load time so AppKit starts on the correct network instead of always
+ * defaulting to mainnet, which would cause `subscribeAccount` to fire with chainId=1
+ * and overwrite the user's Sepolia (or other testnet) selection on every refresh.
+ */
+const REOWN_CHAIN_KEY = "orah-reown-chain";
+
+function readStoredChainId(): number {
+  try { return parseInt(localStorage.getItem(REOWN_CHAIN_KEY) ?? "", 10) || 1; }
+  catch { return 1; }
+}
+
+/** Persist the user's chosen EVM chainId so it survives page refresh. */
+export function saveReownChain(chainId: number): void {
+  try { localStorage.setItem(REOWN_CHAIN_KEY, String(chainId)); } catch {}
+}
+
+const storedChainId = readStoredChainId();
+const initialNetwork =
+  (networks as readonly (typeof mainnet)[]).find((n) => n.id === storedChainId)
+  ?? mainnet;
+
 export const wagmiAdapter = new WagmiAdapter({ projectId, networks });
 
 const appKit = createAppKit({
   adapters: [wagmiAdapter],
   projectId,
   networks,
-  defaultNetwork: mainnet,
+  defaultNetwork: initialNetwork,
   metadata: {
     name: "OrahDEX",
     description: "OrahDEX — Multi-chain Exchange",
@@ -197,7 +220,16 @@ export function subscribeReownAccount(
     return appKit.subscribeAccount((acc: any) => {
       if (acc?.isConnected && acc?.address) {
         if (_suppressNextConnect) return;
-        cb(acc.address as string, typeof acc.chainId === "number" ? acc.chainId : 1);
+        // acc.chainId may be a number (1) or a CAIP-2 string ("eip155:11155111").
+        let chainId: number;
+        if (typeof acc.chainId === "number") {
+          chainId = acc.chainId;
+        } else if (typeof acc.chainId === "string" && acc.chainId.includes(":")) {
+          chainId = parseInt(acc.chainId.split(":")[1], 10) || 1;
+        } else {
+          chainId = 1;
+        }
+        cb(acc.address as string, chainId);
       } else {
         _suppressNextConnect = false;
         cb(null, 1);
