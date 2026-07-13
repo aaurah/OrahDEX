@@ -1739,18 +1739,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
                 return (
                   <div key={i} className="flex items-center text-[11px] h-[22px]">
-                    {/* BID — clickable, fills buy form */}
-                    <button
-                      className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left active:bg-green-500/10 transition-colors"
-                      onClick={() => {
-                        if (bP == null) return;
-                        setPrice(String(bP));
-                        setAmount(bQ != null ? bQ.toFixed(3) : "");
-                        setSide("buy");
-                        setOrderError(null);
-                        setShowOrderForm(true);
-                      }}
-                    >
+                    {/* BID row — display only */}
+                    <div className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left">
                       <div
                         className="absolute inset-y-0 right-0 bg-green-500/12"
                         style={{ width: `${bidPct}%` }}
@@ -1765,23 +1755,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </span>
                         </>
                       ) : <span className="flex-1" />}
-                    </button>
+                    </div>
 
                     {/* Center vertical divider */}
                     <div className="w-px self-stretch bg-border/60 shrink-0" />
 
-                    {/* ASK — clickable, fills sell form */}
-                    <button
-                      className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left active:bg-red-500/10 transition-colors"
-                      onClick={() => {
-                        if (aP == null) return;
-                        setPrice(String(aP));
-                        setAmount(aQ != null ? aQ.toFixed(3) : "");
-                        setSide("sell");
-                        setOrderError(null);
-                        setShowOrderForm(true);
-                      }}
-                    >
+                    {/* ASK row — display only */}
+                    <div className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left">
                       <div
                         className="absolute inset-y-0 left-0 bg-red-500/12"
                         style={{ width: `${askPct}%` }}
@@ -1796,7 +1776,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                           </span>
                         </>
                       ) : <span className="flex-1" />}
-                    </button>
+                    </div>
                   </div>
                 );
               })}
