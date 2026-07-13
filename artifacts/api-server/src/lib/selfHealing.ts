@@ -110,9 +110,11 @@ export function guardedInterval(
   intervalMs: number,
   options: GuardedIntervalOptions = {},
 ): () => void {
-  // Cap backoff to ~16 intervals so repeated failures do not effectively disable
-  // a background worker for many hours before the next retry.
-  const MAX_SKIP_INTERVALS = 16;
+  // Cap backoff to 4 intervals so a recovered service re-enters the normal
+  // cadence within 4× its interval (≤ 4 min for price-updater) rather than
+  // the old 16× ceiling (≤ 16 min).  A DEAD service that just needed a fix
+  // deployed should not wait 16 minutes before its first retry attempt.
+  const MAX_SKIP_INTERVALS = 4;
   const timeoutMs           = options.timeoutMs            ?? Math.floor(intervalMs * 0.9);
   const maxFails            = options.maxFailsBeforeBackoff ?? 5;
   const initialDelayMs      = options.initialDelayMs        ?? 0;
