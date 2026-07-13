@@ -45,18 +45,34 @@ const DEFAULT_MAX_SLIPPAGE_PCT = 5; // 5%
  * The actual /swap execution still calls resolveRate() directly (no cache)
  * so fills always use the freshest price from the market table.
  */
-const _rateCache = new Map<string, { rate: number; expiresAt: number }>();
+const _rateCache    = new Map<string, { rate: number; expiresAt: number }>();
+const _rateInFlight = new Map<string, Promise<number | null>>();
 const RATE_CACHE_TTL_MS = 30_000; // 30 s — quotes refresh faster than this
 
 async function resolveRateCached(assetIn: string, assetOut: string): Promise<number | null> {
   const key = `${assetIn}:${assetOut}`;
   const cached = _rateCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.rate;
-  const rate = await resolveRate(assetIn, assetOut);
-  if (rate != null) {
-    _rateCache.set(key, { rate, expiresAt: Date.now() + RATE_CACHE_TTL_MS });
-  }
-  return rate;
+
+  // Single-flight: if a DB fetch is already in-progress for this key, await
+  // the same promise instead of launching a duplicate query (thundering-herd
+  // prevention for burst quote traffic on the same pair).
+  const inflight = _rateInFlight.get(key);
+  if (inflight) return inflight;
+
+  const fetch = resolveRate(assetIn, assetOut).then(rate => {
+    if (rate != null) {
+      _rateCache.set(key, { rate, expiresAt: Date.now() + RATE_CACHE_TTL_MS });
+    }
+    _rateInFlight.delete(key);
+    return rate;
+  }).catch(err => {
+    _rateInFlight.delete(key);
+    throw err;
+  });
+
+  _rateInFlight.set(key, fetch);
+  return fetch;
 }
 
 function verifyEvmSwapSignature(
@@ -279,15 +295,16 @@ router.post("/swap", async (req, res) => {
     }, "Swap settled");
 
     res.json({
-      success:   true,
-      assetIn:   assetIn.toUpperCase(),
-      assetOut:  assetOut.toUpperCase(),
-      amountIn:  amtIn.toFixed(8),
-      amountOut: amtOut.toFixed(8),
-      fee:       fee.toFixed(8),
-      feePct:    FEE_PCT * 100,
-      rate:      rate.toFixed(8),
-      timestamp: new Date().toISOString(),
+      success:    true,
+      dataSource: "synthetic_amm",  // settled against internal ledger balances, not the order book
+      assetIn:    assetIn.toUpperCase(),
+      assetOut:   assetOut.toUpperCase(),
+      amountIn:   amtIn.toFixed(8),
+      amountOut:  amtOut.toFixed(8),
+      fee:        fee.toFixed(8),
+      feePct:     FEE_PCT * 100,
+      rate:       rate.toFixed(8),
+      timestamp:  new Date().toISOString(),
     });
   } catch (err: any) {
     if (err?.message?.startsWith("INSUFFICIENT_FUNDS")) {
@@ -445,6 +462,9 @@ router.post("/swap/execute", async (req, res) => {
   const amt = parseFloat(String(amountIn));
   if (!isFinite(amt) || amt <= 0) {
     res.status(400).json({ error: "amountIn must be a positive finite number" }); return;
+  }
+  if (amt > 1_000_000) {
+    res.status(400).json({ error: "amountIn exceeds maximum swap size (1,000,000)" }); return;
   }
   const [a, b]   = [String(assetIn).toUpperCase(), String(assetOut).toUpperCase()];
   const splitOpt = allowSplit === true || allowSplit === "true";
@@ -664,6 +684,9 @@ router.post("/swap/execute", async (req, res) => {
         address:  withdrawalStr,
         extraId:  withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
         refundAddress: refund ? String(refund) : undefined,
+        // Forward the rate_id returned by GET /swap/quote so ChangeNOW honours
+        // the locked rate the user was shown, rather than re-pricing at execution.
+        rateId:   rate_id ? String(rate_id) : undefined,
       });
       if (!result.ok) {
         res.status(422).json({ error: result.error, venue: "changenow" }); return;
