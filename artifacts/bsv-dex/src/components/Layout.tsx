@@ -213,6 +213,13 @@ export function Layout({ children }: { children: ReactNode }) {
   const { address, network, provider, chainId } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const { open: openWalletModal } = useWalletModalStore();
+
+  /* Sync AppKit modal theme to OrahDEX active theme (dark/amoled/light/system) */
+  useEffect(() => {
+    import("@/lib/reown-appkit").then(({ syncReownTheme }) => {
+      syncReownTheme(theme as "dark" | "light" | "amoled" | "system");
+    }).catch(() => {});
+  }, [theme]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showMoreNav, setShowMoreNav] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
