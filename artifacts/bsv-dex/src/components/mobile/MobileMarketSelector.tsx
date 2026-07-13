@@ -496,7 +496,8 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const { pairs: rawSsPairs } = useSSPairs({ all: true });
 
   const aosPairs = useMemo<NormRow[]>(() => {
-    const all = (rawAosPairs ?? []).map(p => ({
+    // Merge LetsExchange + SimpleSwap into one pool, deduplicated by base:quote.
+    const toNorm = (p: { symbol: string; baseAsset: string; quoteAsset: string; lastPrice: number; priceChangePercent24h: number; network?: string | null; networkName?: string | null }): NormRow => ({
       symbol:   p.symbol,
       base:     p.baseAsset,
       quote:    p.quoteAsset,
@@ -505,9 +506,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       type:     "spot" as const,
       network:  p.network ?? p.networkName ?? undefined,
       swapOnly: true as const,
-    }));
-    // Deduplicate at source: same base+quote on multiple chains → keep highest price.
-    // Using uppercase keys so case inconsistencies in LE data don't slip through.
+    });
+    const all = [
+      ...(rawAosPairs ?? []).map(toNorm),
+      ...(rawSsPairs  ?? []).map(toNorm),
+    ];
+    // Deduplicate: same base+quote on multiple chains/providers → keep highest price.
     const best = new Map<string, NormRow>();
     for (const p of all) {
       const key = `${p.base.toUpperCase()}:${p.quote.toUpperCase()}`;
@@ -515,7 +519,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       if (!ex || p.price > ex.price) best.set(key, p);
     }
     return [...best.values()];
-  }, [rawAosPairs]);
+  }, [rawAosPairs, rawSsPairs]);
 
   const apiRows = useMemo<NormRow[]>(
     () => (Array.isArray(apiData) ? apiData : []).map(normalise),
