@@ -208,6 +208,15 @@ export function subscribeReownAccount(
   }
 }
 
+/**
+ * Returns the wagmi config managed by the AppKit WagmiAdapter.
+ * This is the config that tracks the active WalletConnect / Reown session
+ * and is DIFFERENT from the minimal wagmiConfig exported by reown.ts.
+ */
+export function getAppKitWagmiConfig() {
+  return wagmiAdapter.wagmiConfig;
+}
+
 export function openReownModal(): void {
   _suppressNextConnect = false;
   try {
