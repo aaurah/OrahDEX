@@ -1413,14 +1413,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           if (!evmSignature) {
             const hexMsg = "0x" + Array.from(new TextEncoder().encode(orderMsg))
               .map(b => b.toString(16).padStart(2, "0")).join("");
-            const eth = (window as any).ethereum;
-            if (!eth) {
-              throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
+
+            if (provider === "reown") {
+              // Reown/WalletConnect: window.ethereum is never injected — must call
+              // personal_sign directly on the connector's raw EIP-1193 provider.
+              const { wagmiAdapter } = await import("@/lib/reown-appkit");
+              const connector = wagmiAdapter.wagmiConfig.connectors.find(
+                (c: any) => c.id === "walletConnect" || c.type === "walletConnect"
+              );
+              const eip1193 = await (connector as any)?.getProvider?.();
+              if (!eip1193) throw new Error("WalletConnect provider unavailable. Please reconnect your wallet.");
+              evmSignature = await eip1193.request({ method: "personal_sign", params: [hexMsg, address] });
+            } else {
+              const eth = (window as any).ethereum;
+              if (!eth) {
+                throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
+              }
+              evmSignature = await eth.request({ method: "personal_sign", params: [hexMsg, address] });
             }
-            evmSignature = await eth.request({
-              method: "personal_sign",
-              params: [hexMsg, address],
-            });
           }
         }
       } catch (signErr: any) {
