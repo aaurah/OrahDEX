@@ -285,6 +285,7 @@ export function Layout({ children }: { children: ReactNode }) {
     import("@/lib/reown").then(({
       subscribeReownAccount, fetchEvmBalance, parseChainFromCaip,
       isEvmConnectRequested, setEvmConnectRequested, isUserDisconnecting,
+      getWcMultiChainAddresses,
     }) => {
       sub = subscribeReownAccount(async (state) => {
         if (state.isConnected && state.address) {
@@ -311,6 +312,13 @@ export function Layout({ children }: { children: ReactNode }) {
             connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
             const bal = await fetchEvmBalance(state.address, newChainId ?? null);
             if (bal !== null) setBalance(bal);
+            // Extract any extra namespace addresses the wallet exposed in the
+            // WalletConnect v2 session (Trust Wallet, OKX, BitGet etc. expose
+            // Solana, TRON and Bitcoin accounts alongside EVM in one WC session).
+            const { sol, tron, btc } = getWcMultiChainAddresses();
+            if (sol)  useWalletStore.getState().setInternalSolAddress(sol);
+            if (tron) useWalletStore.getState().setInternalTronAddress(tron);
+            if (btc)  useWalletStore.getState().setInternalBtcAddress(btc);
           }
         } else if (!state.isConnected) {
           // Reown externally disconnected (wallet extension revoked, not via our UI).
