@@ -8,7 +8,7 @@ import {
   HeartPulse, TrendingUp, Terminal, Headphones, Inbox, Search, ArrowDownToLine,
   Landmark, Plug2, Printer, Database, Link2, Shuffle,
   PanelLeftClose, PanelLeftOpen, Bell, Zap, Settings,
-  Stethoscope, Signal, BarChart3, BookOpen,
+  Stethoscope, Signal, BarChart3, BookOpen, Server,
 } from "lucide-react";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useTicketReadStore } from "@/store/useTicketReadStore";
@@ -90,12 +90,13 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "System", icon: Activity, color: "text-green-400",
     items: [
-      { href: "/admin/health",      label: "System Health",  icon: HeartPulse },
-      { href: "/admin/diagnostics", label: "Diagnostics",    icon: Stethoscope },
-      { href: "/admin/api-monitor", label: "API Monitor",    icon: Signal },
-      { href: "/admin/liquidity",   label: "Liquidity Bot",  icon: Activity },
-      { href: "/admin/bsv-intents", label: "BSV Intents",    icon: Shuffle, badge: "NEW", badgeColor: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" },
-      { href: "/admin/logs",        label: "System Logs",    icon: Terminal },
+      { href: "/admin/health",         label: "System Health",    icon: HeartPulse },
+      { href: "/admin/diagnostics",    label: "Diagnostics",      icon: Stethoscope },
+      { href: "/admin/server-control", label: "Server Control",   icon: Server, badge: "NEW", badgeColor: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" },
+      { href: "/admin/api-monitor",    label: "API Monitor",      icon: Signal },
+      { href: "/admin/liquidity",      label: "Liquidity Bot",    icon: Activity },
+      { href: "/admin/bsv-intents",    label: "BSV Intents",      icon: Shuffle },
+      { href: "/admin/logs",           label: "System Logs",      icon: Terminal },
     ],
   },
   {

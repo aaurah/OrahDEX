@@ -115,6 +115,7 @@ const AdminDbSync            = lazy(() => import("@/pages/admin/DbSync").then(m 
 const AdminCexConnections    = lazy(() => import("@/pages/admin/CexConnections").then(m => ({ default: m.AdminCexConnections })));
 const AdminDiagnostics       = lazy(() => import("@/pages/admin/Diagnostics"));
 const AdminBsvIntents        = lazy(() => import("@/pages/admin/BsvIntents").then(m => ({ default: m.AdminBsvIntents })));
+const AdminApiServerControl  = lazy(() => import("@/pages/admin/ApiServerControl").then(m => ({ default: m.ApiServerControl })));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -432,6 +433,7 @@ function Router() {
       <Route path="/admin/cex-connections"><AdminRoute><AdminCexConnections /></AdminRoute></Route>
       <Route path="/admin/diagnostics">   <AdminRoute><AdminDiagnostics /></AdminRoute></Route>
       <Route path="/admin/bsv-intents">  <AdminRoute><AdminBsvIntents /></AdminRoute></Route>
+      <Route path="/admin/server-control"><AdminRoute><AdminApiServerControl /></AdminRoute></Route>
 
       {/* ── Landing page ── */}
       <Route path="/home">

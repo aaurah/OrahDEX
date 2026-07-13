@@ -28,6 +28,10 @@ import {
   withCircuitBreaker,
   recordRateLimit,
 } from "../lib/exchangeApiRepairEngine.js";
+import {
+  resetServiceHealth,
+  getHealthReport,
+} from "../lib/selfHealing.js";
 
 const router = Router();
 
@@ -290,6 +294,33 @@ router.post("/exchange-repair/simulate-rate-limit", (req, res) => {
   recordRateLimit(api, retryAfterMs ?? 30_000);
   alertInfo("admin", `Admin simulated rate limit for: ${api}`);
   res.json({ ok: true, api, throttledForMs: retryAfterMs ?? 30_000 });
+});
+
+/* ── POST /admin/repair/reset-service ────────────────────────────────────── */
+// Zero out a service's consecutive-fail counter so it exits DEAD/DEGRADED.
+
+router.post("/repair/reset-service", (req, res) => {
+  const { name } = req.body as { name?: string };
+  if (!name) { res.status(400).json({ error: "name is required" }); return; }
+  const ok = resetServiceHealth(name);
+  if (!ok) { res.status(404).json({ error: `Service '${name}' not found in registry` }); return; }
+  alertInfo("admin", `Admin reset health state for service: ${name}`);
+  logger.info({ service: name }, "admin: repair/reset-service executed");
+  res.json({ ok: true, service: name, resetAt: new Date().toISOString() });
+});
+
+/* ── POST /admin/repair/reset-all-services ───────────────────────────────── */
+// Zero out ALL services' consecutive-fail counters.
+
+router.post("/repair/reset-all-services", (_req, res) => {
+  const services = getHealthReport();
+  const reset: string[] = [];
+  for (const svc of services) {
+    if (resetServiceHealth(svc.name)) reset.push(svc.name);
+  }
+  alertInfo("admin", `Admin reset health state for ${reset.length} service(s)`);
+  logger.info({ count: reset.length, services: reset }, "admin: repair/reset-all-services executed");
+  res.json({ ok: true, reset, count: reset.length, resetAt: new Date().toISOString() });
 });
 
 export default router;
