@@ -20,7 +20,7 @@ import { startEvmDepositWatcher } from "./lib/evmDepositWatcher.js";
 import { startRouteCache } from "./lib/routeCache.js";
 import { startHtlcWatcher } from "./lib/htlcWatcher.js";
 import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
-import { warmCurrenciesCache } from "./routes/letsexchange.js";
+import { warmCurrenciesCache, clearSwapCaches } from "./routes/letsexchange.js";
 import { hydrateAdminTokens } from "./middleware/adminAuth.js";
 import { startCopyOrchestrator } from "./lib/copyOrchestrator.js";
 import { apiKeyAuth, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
@@ -633,7 +633,8 @@ _s(60_000, () => {
       logger.info("coinMeta: CoinPaprika bulk import starting…");
       const result = await runCoinPaprikaImport();
       clearCoinsCache();
-      logger.info(result, "coinMeta: CoinPaprika import complete — cache cleared");
+      clearSwapCaches(); // force LE currencies + SS pairs to re-fetch with new logos
+      logger.info(result, "coinMeta: CoinPaprika import complete — caches cleared");
     } catch (e) {
       logger.warn({ err: e }, "coinMeta: CoinPaprika import failed (non-fatal)");
     }
