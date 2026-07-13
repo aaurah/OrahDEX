@@ -108,7 +108,13 @@ router.get("/orders", async (req, res) => {
     // Normalize symbol: accept both "BSV-USDT" (URL/dash) and "BSV/USDT" (DB/slash)
     const rawSym = req.query.symbol as string | undefined;
     const symbol = rawSym ? rawSym.replace(/-/g, "/") : undefined;
-    const status = req.query.status as string | undefined;
+    const rawStatus = req.query.status as string | undefined;
+    const VALID_STATUSES = new Set(["open", "filled", "cancelled", "partial", "expired", "pending"]);
+    if (rawStatus && !VALID_STATUSES.has(rawStatus)) {
+      res.status(400).json({ error: `Invalid status '${rawStatus}'. Allowed values: ${[...VALID_STATUSES].join(", ")}` });
+      return;
+    }
+    const status = rawStatus;
 
     // Push all filters to the DB — never fetch all rows and slice in memory
     const conditions = [eq(ordersTable.walletAddress, walletAddress)];

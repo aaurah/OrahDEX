@@ -156,7 +156,14 @@ function assetToChainId(asset: string): number {
     AVAX: 43114,
     FTM: 250,
   };
-  return CHAIN_MAP[asset.toUpperCase()] ?? 1;
+  const mapped = CHAIN_MAP[asset.toUpperCase()];
+  if (!mapped) {
+    throw new Error(
+      `Cannot determine EVM chain for asset '${asset}' from the legacy "evm" network key. ` +
+      `Use a specific network key (e.g. "eth", "base", "arb", "op", "bsc") or supply chainIdOverride.`,
+    );
+  }
+  return mapped;
 }
 
 /** Find an EVM chain config by chain ID */

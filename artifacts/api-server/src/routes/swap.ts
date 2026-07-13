@@ -13,8 +13,8 @@
 
 import { Router, type IRouter, type Response } from "express";
 import { db, pool } from "@workspace/db";
-import { marketsTable } from "@workspace/db/schema";
-import { or, eq } from "drizzle-orm";
+import { marketsTable, ordersTable } from "@workspace/db/schema";
+import { or, eq, and } from "drizzle-orm";
 import {
   settleSwap,
 } from "../lib/ledger.js";
@@ -115,6 +115,38 @@ router.post("/swap/quote", async (req, res) => {
     const fee      = grossOut * FEE_PCT;
     const amtOut   = grossOut - fee;
 
+    // Estimate price impact from live order-book depth instead of a hardcoded value.
+    // Buying base asset (assetIn is a stablecoin) → look at sell-side depth.
+    // Selling base asset → look at buy-side depth.
+    // impact = amtIn / totalCounterLiquidity × 100, capped at 50%.
+    // Falls back to 0.1 when the pair has no open counter-orders (thin/new market).
+    const QUOTE_ASSETS = new Set(["USDT","USDC","BUSD","TUSD","DAI","USDE"]);
+    const buyingBase = QUOTE_ASSETS.has(assetIn.toUpperCase());
+    const obPair = buyingBase
+      ? `${assetOut.toUpperCase()}/${assetIn.toUpperCase()}`
+      : `${assetIn.toUpperCase()}/${assetOut.toUpperCase()}`;
+    const counterSide = buyingBase ? "sell" : "buy";
+    let priceImpactPct = 0.1;
+    try {
+      const counterRows = await db
+        .select({ qty: ordersTable.remainingQuantity, price: ordersTable.price, qty2: ordersTable.quantity })
+        .from(ordersTable)
+        .where(and(
+          eq(ordersTable.symbol, obPair),
+          eq(ordersTable.side, counterSide),
+          eq(ordersTable.status, "open"),
+        ));
+      // Sum liquidity in the same units as amtIn (quote for buys, base for sells)
+      const totalLiq = counterRows.reduce((acc, o) => {
+        const qty = parseFloat(o.qty ?? o.qty2 ?? "0");
+        const px  = parseFloat(o.price ?? "0");
+        return acc + (buyingBase ? qty * px : qty);
+      }, 0);
+      if (totalLiq > 0) priceImpactPct = Math.min((amtIn / totalLiq) * 100, 50);
+    } catch {
+      // Non-fatal: fall back to 0.1 so the quote still returns
+    }
+
     res.json({
       assetIn:    assetIn.toUpperCase(),
       assetOut:   assetOut.toUpperCase(),
@@ -123,7 +155,7 @@ router.post("/swap/quote", async (req, res) => {
       fee:        fee.toFixed(8),
       feePct:     FEE_PCT * 100,
       rate:       rate.toFixed(8),
-      priceImpactPct: 0.1,   // simplified — real AMM would calculate from reserves
+      priceImpactPct,
     });
   } catch (err) {
     req.log.error({ err }, "Swap quote failed");
