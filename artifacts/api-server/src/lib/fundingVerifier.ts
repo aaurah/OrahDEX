@@ -66,6 +66,7 @@ import {
   type WalletSource,
 } from "./orderIntent.js";
 import { getTokenInfo, isNativeAsset } from "./tokenRegistry.js";
+import { fetchUtxoValue } from "./bsvSpvVerifier.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -119,12 +120,38 @@ async function verifySpotFunding(
   const needed = parseFloat(amount);
 
   // ── External BSV UTXO wallet ────────────────────────────────────────────
+  // Verify the UTXO exists on-chain via WhatsOnChain before accepting it as
+  // funding proof. Format-only checks allowed a fake/spent UTXO ref to pass.
   if (walletSource === "external" && utxoRef) {
-    const [txid, vout] = utxoRef.split(":");
-    if (!txid || vout == null) {
-      return { valid: false, fundingRef: "", error: "Invalid utxoRef format", code: "INVALID_UTXO_REF" };
+    const [txid, rawVout] = utxoRef.split(":");
+    if (!txid || rawVout == null) {
+      return { valid: false, fundingRef: "", error: "Invalid utxoRef format (expected txid:vout)", code: "INVALID_UTXO_REF" };
     }
-    return { valid: true, fundingRef: utxoFundingRef(txid, parseInt(vout, 10)) };
+    const voutIdx = parseInt(rawVout, 10);
+    if (!Number.isFinite(voutIdx) || voutIdx < 0) {
+      return { valid: false, fundingRef: "", error: "Invalid utxoRef vout index", code: "INVALID_UTXO_REF" };
+    }
+
+    // fetchUtxoValue calls WoC GET /tx/hash/{txid} — returns null when not found.
+    const utxoSats = await fetchUtxoValue(txid, voutIdx);
+    if (utxoSats === null) {
+      return {
+        valid:      false,
+        fundingRef: "",
+        error:      "BSV UTXO not found on-chain. The transaction may be unconfirmed or the txid is invalid.",
+        code:       "UTXO_NOT_FOUND",
+      };
+    }
+    const neededSats = Math.ceil(needed * 1e8);
+    if (utxoSats < neededSats) {
+      return {
+        valid:      false,
+        fundingRef: "",
+        error:      `BSV UTXO value ${utxoSats} sat is below the required ${neededSats} sat.`,
+        code:       "UTXO_INSUFFICIENT",
+      };
+    }
+    return { valid: true, fundingRef: utxoFundingRef(txid, voutIdx) };
   }
 
   // ── External EVM / non-UTXO wallet ───────────────────────────────────────

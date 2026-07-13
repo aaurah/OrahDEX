@@ -37,6 +37,7 @@ import {
   sei,
   unichain, unichainSepolia,
 } from "viem/chains";
+import { logger } from "./logger.js";
 
 // ── Contract config ───────────────────────────────────────────────────────────
 
@@ -399,21 +400,41 @@ export async function settleEscrowMatch(
   }
 
   // Case 3: both locked but on DIFFERENT chains → release each leg on its
-  // own chain. Seller's locked funds go to buyerAddress on sellerChain;
-  // buyer's locked funds go to sellerAddress on buyerChain. Each release is
-  // one-shot and independent — the contract guarantees it's safe to retry on
-  // revert. We run both in parallel to minimise latency.
+  // own chain. Both runs start in parallel; any that fail are retried up to
+  // 2 times with exponential back-off (each release is idempotent on the contract).
   if (sellerChain !== buyerChain) {
-    const [baseLeg, quoteLeg] = await Promise.all([
+    let [baseLeg, quoteLeg] = await Promise.all([
       releaseEscrow(p.sellerOrderId, p.buyerAddress,  sellerChain),
       releaseEscrow(p.buyerOrderId,  p.sellerAddress, buyerChain),
     ]);
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      if (baseLeg.ok && quoteLeg.ok) break;
+      await new Promise(r => setTimeout(r, attempt * 2_000));
+      if (!baseLeg.ok) {
+        logger.warn({ sellerOrderId: p.sellerOrderId, attempt }, "escrowRelayer: retrying base-leg (cross-chain)");
+        baseLeg  = await releaseEscrow(p.sellerOrderId, p.buyerAddress,  sellerChain);
+      }
+      if (!quoteLeg.ok) {
+        logger.warn({ buyerOrderId: p.buyerOrderId, attempt }, "escrowRelayer: retrying quote-leg (cross-chain)");
+        quoteLeg = await releaseEscrow(p.buyerOrderId,  p.sellerAddress, buyerChain);
+      }
+    }
     return { bothLocked: true, baseLeg, quoteLeg, resolvedChainId: sellerChain };
   }
 
-  // Case 4: both locked on the same chain → safe to release each leg.
+  // Case 4: both locked on the same chain → release base leg first, then quote.
+  // If base succeeds but quote fails, auto-retry the quote leg up to 2 times.
+  // The contract is idempotent — replaying a completed release is a safe no-op.
   const chainId = sellerChain;
-  const baseLeg  = await releaseEscrow(p.sellerOrderId, p.buyerAddress,  chainId);
-  const quoteLeg = await releaseEscrow(p.buyerOrderId,  p.sellerAddress, chainId);
+  const baseLeg = await releaseEscrow(p.sellerOrderId, p.buyerAddress, chainId);
+  let quoteLeg  = await releaseEscrow(p.buyerOrderId,  p.sellerAddress, chainId);
+  if (baseLeg.ok && !quoteLeg.ok) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      await new Promise(r => setTimeout(r, attempt * 2_000));
+      logger.warn({ buyerOrderId: p.buyerOrderId, attempt }, "escrowRelayer: retrying quote-leg (same-chain)");
+      quoteLeg = await releaseEscrow(p.buyerOrderId, p.sellerAddress, chainId);
+      if (quoteLeg.ok) break;
+    }
+  }
   return { bothLocked: true, baseLeg, quoteLeg, resolvedChainId: chainId };
 }

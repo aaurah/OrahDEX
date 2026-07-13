@@ -170,6 +170,28 @@ export async function fetchTxAmountToAddress(
 }
 
 /**
+ * Fetch the satoshi value of a specific output (txid at vout index).
+ *
+ * Calls WhatsOnChain GET /tx/hash/{txid} and reads the matching vout.
+ * Returns:
+ *   - A positive integer (satoshis) when the txid is on-chain and the vout exists.
+ *   - null when the txid is not found (unconfirmed, invalid, or WoC error) or the
+ *     vout index is out of range.
+ *
+ * This is intentionally a lightweight existence + value check only. It does NOT
+ * verify that the UTXO is currently unspent — the settlement layer handles that.
+ */
+export async function fetchUtxoValue(txid: string, vout: number): Promise<number | null> {
+  const data = await wocFetch(`/tx/hash/${txid}`);
+  if (!data || typeof data !== "object") return null;
+  const tx = data as { vout?: Array<{ value?: number }> };
+  if (!Array.isArray(tx.vout) || vout < 0 || vout >= tx.vout.length) return null;
+  const output = tx.vout[vout];
+  if (!output || typeof output.value !== "number") return null;
+  return Math.round(output.value * 1e8);
+}
+
+/**
  * Fetch address transaction history from WhatsOnChain.
  * Returns an array of { tx_hash, height } — height 0 = mempool.
  */
