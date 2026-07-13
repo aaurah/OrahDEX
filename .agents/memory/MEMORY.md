@@ -22,3 +22,4 @@
 - [Reown dual-subscription guard](reown-dual-sub-guard.md) — only ONE subscribeReownAccount subscription (Layout.tsx) must exist; duplicate in App.tsx lacked the intentional-EVM guard and silently overrode passkey wallets.
 - [Reown AppKit defaultNetwork reset](reown-default-network.md) — hardcoded defaultNetwork:mainnet causes subscribeAccount to fire chainId=1 on every refresh; fix: read orah-reown-chain from localStorage at module-load time.
 - [iOS Safari noble/curves init race](ios-safari-noble-curves.md) — static top-level import of secp256k1/ed25519 from @noble/curves resolves to undefined on iOS in split chunks; fix: lazy dynamic import inside the function.
+- [pnpm bufferutil CAS corruption](pnpm-bufferutil-corruption.md) — store entries with bufferutil@4.1.0_utf-8-validate@5.0.10 in hash lose JS files; fix: relink viem to clean hash, download openai/stripe-replit-sync directly from npm via Python.
