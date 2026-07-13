@@ -15,6 +15,7 @@ import {
 import { ESCROW_ADDRESSES, ESCROW_ABI, ESCROW_CHAIN_ID } from "./escrowConfig";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "./onChainLiquidity";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, getWagmiConfig } from "./reown";
+import { getAppKitWagmiConfig } from "./reown-appkit";
 import { getViemAccountForAddress } from "./walletSigner";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -197,9 +198,29 @@ async function sendTxUniversal(params: {
     if (h) return h;
   }
 
+  // Try the minimal wagmiConfig connectors (legacy path, usually empty for WC)
   const config = getWagmiConfig();
   if (config) {
     for (const connector of (config as any).connectors ?? []) {
+      try {
+        const provider = await (connector as any).getProvider?.();
+        if (!provider) continue;
+        const h = await tryTxWithProvider(provider, params);
+        if (h) return h;
+      } catch (err: any) {
+        const msg = (err?.message ?? "").toLowerCase();
+        const isReject = err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
+          msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
+        if (isReject) throw err;
+      }
+    }
+  }
+
+  // Try AppKit (Reown/WalletConnect) connectors — separate wagmi instance that
+  // holds the live WalletConnect session; getWagmiConfig() above has no WC connectors.
+  const appKitConfig = getAppKitWagmiConfig();
+  if (appKitConfig) {
+    for (const connector of (appKitConfig as any).connectors ?? []) {
       try {
         const provider = await (connector as any).getProvider?.();
         if (!provider) continue;
@@ -391,9 +412,10 @@ export async function lockErc20Universal(
     }
     const injected = (window as any).ethereum;
     if (injected && await canUse(injected)) return injected;
-    const config = getWagmiConfig();
-    if (config) {
-      for (const connector of (config as any).connectors ?? []) {
+    // Try minimal wagmiConfig connectors first, then AppKit connectors
+    for (const cfg of [getWagmiConfig(), getAppKitWagmiConfig()]) {
+      if (!cfg) continue;
+      for (const connector of (cfg as any).connectors ?? []) {
         try {
           const provider = await (connector as any).getProvider?.();
           if (provider && await canUse(provider)) return provider;
@@ -634,10 +656,13 @@ async function sendRawViaReown(params: {
   gas:     bigint;
   chainId: number;
 }): Promise<string> {
-  const config = getWagmiConfig();
+  // Use AppKit wagmiConfig — this is the config that holds the live WC session.
+  // The minimal wagmiConfig from reown.ts has zero WalletConnect connectors.
+  const appKitConfig = getAppKitWagmiConfig();
+  const config = appKitConfig ?? getWagmiConfig();
   if (!config) throw new Error("Wallet connector not initialized");
 
-  // Switch chain via wagmi (this path works fine — the issue is only sendTransaction)
+  // Switch chain via wagmi
   const acct = wagmiGetAccount(config);
   if (acct.chainId !== params.chainId) {
     await wagmiSwitchChain(config, { chainId: params.chainId });
@@ -656,32 +681,33 @@ async function sendRawViaReown(params: {
     txObj.value = "0x" + params.value.toString(16);
   }
 
-  // Try each wagmi connector in order
-  for (const connector of (config as any).connectors ?? []) {
-    try {
-      const provider = await (connector as any).getProvider?.();
-      if (!provider) continue;
+  // Try connectors from AppKit config first, then minimal wagmiConfig as fallback
+  for (const cfg of [appKitConfig, getWagmiConfig()]) {
+    if (!cfg) continue;
+    for (const connector of (cfg as any).connectors ?? []) {
+      try {
+        const provider = await (connector as any).getProvider?.();
+        if (!provider) continue;
 
-      // Ensure the provider is on the right chain
-      const currentHex: string = await provider.request({ method: "eth_chainId" });
-      if (parseInt(currentHex, 16) !== params.chainId) {
-        await provider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: chainHex }],
+        const currentHex: string = await provider.request({ method: "eth_chainId" });
+        if (parseInt(currentHex, 16) !== params.chainId) {
+          await provider.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: chainHex }],
+          });
+        }
+
+        const hash: string = await provider.request({
+          method: "eth_sendTransaction",
+          params: [txObj],
         });
+        if (hash) return hash;
+      } catch (err: any) {
+        const msg = (err?.message ?? "").toLowerCase();
+        const isReject = err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
+          msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
+        if (isReject) throw err;
       }
-
-      const hash: string = await provider.request({
-        method: "eth_sendTransaction",
-        params: [txObj],
-      });
-      if (hash) return hash;
-    } catch (err: any) {
-      const msg = (err?.message ?? "").toLowerCase();
-      const isReject = err?.code === 4001 || err?.code === "ACTION_REJECTED" ||
-        msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
-      if (isReject) throw err;
-      // Non-rejection error from this connector → try next
     }
   }
 
@@ -696,7 +722,7 @@ export async function lockEthViaReown(
   const escrow = escrowAddress(chainId);
   if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
 
-  const config = getWagmiConfig();
+  const config = getAppKitWagmiConfig() ?? getWagmiConfig();
   if (!config) throw new Error("Wallet connector not initialized");
   const acct = wagmiGetAccount(config);
   if (!acct.address) throw new Error("No connected wallet");
@@ -723,7 +749,7 @@ export async function lockErc20ViaReown(
   const escrow = escrowAddress(chainId);
   if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
 
-  const config = getWagmiConfig();
+  const config = getAppKitWagmiConfig() ?? getWagmiConfig();
   if (!config) throw new Error("Wallet connector not initialized");
   const acct = wagmiGetAccount(config);
   if (!acct.address) throw new Error("No connected wallet");
@@ -759,7 +785,7 @@ export async function cancelEscrowViaReown(
   const escrow = escrowAddress(chainId);
   if (!escrow) throw new Error(`No escrow on chainId ${chainId}`);
 
-  const config = getWagmiConfig();
+  const config = getAppKitWagmiConfig() ?? getWagmiConfig();
   if (!config) throw new Error("Wallet connector not initialized");
   const acct = wagmiGetAccount(config);
   if (!acct.address) throw new Error("No connected wallet");
