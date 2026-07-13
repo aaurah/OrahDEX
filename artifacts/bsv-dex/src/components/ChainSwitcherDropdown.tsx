@@ -475,7 +475,7 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
     /* ── Reown / WalletConnect path ──────────────────────────────────────── */
     if (provider === "reown") {
       try {
-        const [{ switchChain: wagmiSwitchChain }, { wagmiAdapter }] = await Promise.all([
+        const [{ switchChain: wagmiSwitchChain }, { wagmiAdapter, saveReownChain }] = await Promise.all([
           import("wagmi/actions"),
           import("@/lib/reown-appkit"),
         ]);
@@ -499,6 +499,7 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
           }
         }
         switchChain(chain.id);
+        saveReownChain(chain.id); // persist so page refresh restores this chain
         const bal = await fetchEvmBalance(address!, chain.id);
         if (bal !== null) useWalletStore.getState().setBalance(bal);
         toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
