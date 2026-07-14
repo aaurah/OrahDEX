@@ -273,7 +273,10 @@ function Router() {
     // Skip the injected-wallet liveness check for:
     //   • orah-wallet → in-app self-custodial wallet, address derived locally
     //                   from the PIN/passkey secret — never depends on window.ethereum
-    if (network === "evm" && storedProvider !== "orah-wallet") {
+    //   • reown → WalletConnect session managed by AppKit; window.ethereum may
+    //             belong to a completely different injected wallet (e.g. MetaMask
+    //             desktop) whose eth_accounts would overwrite the WC address.
+    if (network === "evm" && storedProvider !== "orah-wallet" && storedProvider !== "reown") {
       if (!eth) {
         disconnect();
       } else {
@@ -296,9 +299,13 @@ function Router() {
 
     const onAccountsChanged = async (accounts: string[]) => {
       const { provider: p } = useWalletStore.getState();
-      // Orah Wallet is self-custodial and independent of window.ethereum —
-      // ignore injected wallet account events for it.
+      // Orah Wallet and Reown/WalletConnect are self-contained — their addresses
+      // must not be overwritten by window.ethereum accountsChanged events.
+      // For Reown: some mobile wallets emit accountsChanged on the injected
+      // provider when the WC session switches chains, which would silently
+      // swap the user's identity if we do not guard here.
       if (p === "orah-wallet") return;
+      if (p === "reown") return;
       if (!accounts.length) {
         useWalletStore.getState().disconnect();
       } else {
