@@ -32,10 +32,25 @@ export function saveReownChain(chainId: number): void {
   try { localStorage.setItem(REOWN_CHAIN_KEY, String(chainId)); } catch {}
 }
 
+/** Read the stored OrahDEX theme so AppKit can open with the right themeMode. */
+function readStoredOrahTheme(): "dark" | "light" | "amoled" | "system" {
+  try {
+    const raw = localStorage.getItem("aura-dex-theme");
+    if (!raw) return "dark";
+    const { state } = JSON.parse(raw);
+    const t = state?.theme;
+    if (t === "light" || t === "amoled" || t === "system") return t as "light" | "amoled" | "system";
+    return "dark";
+  } catch { return "dark"; }
+}
+
 const storedChainId = readStoredChainId();
 const initialNetwork =
   (networks as readonly (typeof mainnet)[]).find((n) => n.id === storedChainId)
   ?? mainnet;
+
+const _storedTheme = readStoredOrahTheme();
+const _initialThemeMode: "dark" | "light" = _storedTheme === "light" ? "light" : "dark";
 
 export const wagmiAdapter = new WagmiAdapter({ projectId, networks });
 
@@ -59,13 +74,13 @@ const appKit = createAppKit({
     onramp: false,
     swaps: false,
   },
-  themeMode: "dark",
+  themeMode: _initialThemeMode,
   themeVariables: {
-    "--w3m-accent": "#4ade80",
-    "--w3m-color-mix-strength": 0,
+    "--w3m-accent":               _storedTheme === "light" ? "#1fb757" : "#4ade80",
+    "--w3m-color-mix-strength":   0,
     "--w3m-border-radius-master": "3px",
-    "--w3m-font-family": "Inter, system-ui, sans-serif",
-    "--w3m-z-index": 9999,
+    "--w3m-font-family":          "Inter, system-ui, sans-serif",
+    "--w3m-z-index":              9999,
   } as any,
 });
 
@@ -98,89 +113,140 @@ if (typeof window !== "undefined") {
 }
 
 /**
+ * Converts HSL components to a #rrggbb hex string using the same algorithm
+ * browsers use, so Reown token values exactly match OrahDEX's CSS variables.
+ *
+ * h: 0–360, s: 0–100, l: 0–100
+ */
+function hslToHex(h: number, s: number, l: number): string {
+  s /= 100;
+  l /= 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n: number): string => {
+    const k = (n + h / 30) % 12;
+    const val = l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1);
+    return Math.round(255 * val).toString(16).padStart(2, "0");
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+/**
  * Applies OrahDEX's exact theme colours directly to the AppKit CSS token variables.
  *
- * AppKit generates --apkt-tokens-theme-* on :root via a <style> element.
- * document.documentElement.style (inline) has higher CSS specificity than any
- * stylesheet :root rule, so our values always win — no color-mix maths needed.
+ * All HSL source values come directly from index.css so the Reown modal
+ * always matches the app's rendered colours with zero drift.
  *
- * Token names come from ThemeConstantsUtil.js → tokens.dark / tokens.light.
- * Base hex values are computed from OrahDEX's CSS HSL variables in index.css:
- *   DARK    background hsl(216 20% 5%)   ≈ #0a0c0f
- *   AMOLED  background hsl(0 0% 0%)      = #000000
- *   LIGHT   background hsl(210 20% 98%)  ≈ #f9fafb
+ *   DARK    — :root         background hsl(216 20%  5%)
+ *   AMOLED  — html.amoled   background hsl(0   0%   0%)
+ *   LIGHT   — html.light    background hsl(210 20% 98%)
  */
 function applyTokenOverrides(
   theme: "dark" | "light" | "amoled" | "system",
   effective: "dark" | "light",
 ): void {
+  if (typeof window === "undefined") return;
   const r = document.documentElement;
+  const set = (k: string, v: string) => r.style.setProperty(k, v);
 
   if (theme === "amoled") {
-    // True-black AMOLED — matches html.amoled in index.css
-    r.style.setProperty("--apkt-tokens-theme-backgroundPrimary",  "#000000");
-    r.style.setProperty("--apkt-tokens-theme-backgroundInvert",   "#e8e8e8");
-    r.style.setProperty("--apkt-tokens-theme-foregroundPrimary",  "#080808");
-    r.style.setProperty("--apkt-tokens-theme-foregroundSecondary","#0d0d0d");
-    r.style.setProperty("--apkt-tokens-theme-foregroundTertiary", "#141414");
-    r.style.setProperty("--apkt-tokens-theme-borderPrimary",      "#1a1a1a");
-    r.style.setProperty("--apkt-tokens-theme-borderPrimaryDark",  "#222222");
-    r.style.setProperty("--apkt-tokens-theme-borderSecondary",    "#2a2a2a");
-    r.style.setProperty("--apkt-tokens-theme-overlay",            "rgba(0,0,0,0.75)");
-    r.style.setProperty("--apkt-tokens-theme-textPrimary",        "#e9f0f8");
-    r.style.setProperty("--apkt-tokens-theme-textSecondary",      "#6b7c94");
-    r.style.setProperty("--apkt-tokens-theme-textTertiary",       "#8a9db8");
-    r.style.setProperty("--apkt-tokens-theme-textInvert",         "#000000");
-    r.style.setProperty("--apkt-tokens-theme-iconDefault",        "#6b7c94");
-    r.style.setProperty("--apkt-tokens-theme-iconInverse",        "#e9f0f8");
-    r.style.setProperty("--apkt-tokens-core-backgroundAccentPrimary", "#4ade80");
-    r.style.setProperty("--apkt-tokens-core-textAccentPrimary",       "#4ade80");
-    r.style.setProperty("--apkt-tokens-core-iconAccentPrimary",       "#4ade80");
-    r.style.setProperty("--apkt-tokens-core-borderAccentPrimary",     "#4ade80");
+    // ── html.amoled ──────────────────────────────────────────────────────────
+    // background  0  0%  0%    card  0  0%  3%    popover  0  0%  5%
+    // secondary   0  0%  7%    border 0  0% 10%   foreground 210 20% 92%
+    // muted-fg  215 16% 50%    primary 142 71% 58%
+    const bg      = hslToHex(0,   0,  0);
+    const card    = hslToHex(0,   0,  3);
+    const popover = hslToHex(0,   0,  5);
+    const surface = hslToHex(0,   0,  7);
+    const border  = hslToHex(0,   0, 10);
+    const text    = hslToHex(210, 20, 92);
+    const muted   = hslToHex(215, 16, 50);
+    const accent  = hslToHex(142, 71, 58);
+
+    set("--apkt-tokens-theme-backgroundPrimary",      bg);
+    set("--apkt-tokens-theme-backgroundInvert",       "#e0e0e0");
+    set("--apkt-tokens-theme-foregroundPrimary",      card);
+    set("--apkt-tokens-theme-foregroundSecondary",    popover);
+    set("--apkt-tokens-theme-foregroundTertiary",     surface);
+    set("--apkt-tokens-theme-borderPrimary",          border);
+    set("--apkt-tokens-theme-borderPrimaryDark",      hslToHex(0, 0, 14));
+    set("--apkt-tokens-theme-borderSecondary",        hslToHex(0, 0, 18));
+    set("--apkt-tokens-theme-overlay",                "rgba(0,0,0,0.75)");
+    set("--apkt-tokens-theme-textPrimary",            text);
+    set("--apkt-tokens-theme-textSecondary",          muted);
+    set("--apkt-tokens-theme-textTertiary",           hslToHex(215, 16, 62));
+    set("--apkt-tokens-theme-textInvert",             bg);
+    set("--apkt-tokens-theme-iconDefault",            muted);
+    set("--apkt-tokens-theme-iconInverse",            text);
+    set("--apkt-tokens-core-backgroundAccentPrimary", accent);
+    set("--apkt-tokens-core-textAccentPrimary",       accent);
+    set("--apkt-tokens-core-iconAccentPrimary",       accent);
+    set("--apkt-tokens-core-borderAccentPrimary",     accent);
+
   } else if (effective === "light") {
-    // Light theme — matches html.light in index.css
-    // background hsl(210 20% 98%) ≈ #f9fafb, card #ffffff, border hsl(210 16% 86%) ≈ #d5dbe1
-    r.style.setProperty("--apkt-tokens-theme-backgroundPrimary",  "#f9fafb");
-    r.style.setProperty("--apkt-tokens-theme-backgroundInvert",   "#14191f");
-    r.style.setProperty("--apkt-tokens-theme-foregroundPrimary",  "#edf1f6");
-    r.style.setProperty("--apkt-tokens-theme-foregroundSecondary","#e5eaef");
-    r.style.setProperty("--apkt-tokens-theme-foregroundTertiary", "#d5dbe1");
-    r.style.setProperty("--apkt-tokens-theme-borderPrimary",      "#d5dbe1");
-    r.style.setProperty("--apkt-tokens-theme-borderPrimaryDark",  "#c0ccd8");
-    r.style.setProperty("--apkt-tokens-theme-borderSecondary",    "#aab8c6");
-    r.style.setProperty("--apkt-tokens-theme-overlay",            "rgba(200,210,220,0.5)");
-    r.style.setProperty("--apkt-tokens-theme-textPrimary",        "#14191f");
-    r.style.setProperty("--apkt-tokens-theme-textSecondary",      "#566476");
-    r.style.setProperty("--apkt-tokens-theme-textTertiary",       "#6f8399");
-    r.style.setProperty("--apkt-tokens-theme-textInvert",         "#ffffff");
-    r.style.setProperty("--apkt-tokens-theme-iconDefault",        "#566476");
-    r.style.setProperty("--apkt-tokens-theme-iconInverse",        "#14191f");
-    r.style.setProperty("--apkt-tokens-core-backgroundAccentPrimary", "#22a349");
-    r.style.setProperty("--apkt-tokens-core-textAccentPrimary",       "#22a349");
-    r.style.setProperty("--apkt-tokens-core-iconAccentPrimary",       "#22a349");
-    r.style.setProperty("--apkt-tokens-core-borderAccentPrimary",     "#22a349");
+    // ── html.light ───────────────────────────────────────────────────────────
+    // background 210 20% 98%   card/popover 0  0% 100%   secondary 210 16% 93%
+    // border     210 16% 86%   foreground  216 20% 10%   muted-fg  215 16% 40%
+    // primary    142 71% 42%
+    const bg      = hslToHex(210, 20, 98);
+    const card    = "#ffffff";
+    const surface = hslToHex(210, 16, 93);
+    const border  = hslToHex(210, 16, 86);
+    const text    = hslToHex(216, 20, 10);
+    const muted   = hslToHex(215, 16, 40);
+    const accent  = hslToHex(142, 71, 42);
+
+    set("--apkt-tokens-theme-backgroundPrimary",      bg);
+    set("--apkt-tokens-theme-backgroundInvert",       text);
+    set("--apkt-tokens-theme-foregroundPrimary",      card);
+    set("--apkt-tokens-theme-foregroundSecondary",    card);
+    set("--apkt-tokens-theme-foregroundTertiary",     surface);
+    set("--apkt-tokens-theme-borderPrimary",          border);
+    set("--apkt-tokens-theme-borderPrimaryDark",      hslToHex(210, 16, 78));
+    set("--apkt-tokens-theme-borderSecondary",        hslToHex(210, 16, 68));
+    set("--apkt-tokens-theme-overlay",                "rgba(190,205,218,0.55)");
+    set("--apkt-tokens-theme-textPrimary",            text);
+    set("--apkt-tokens-theme-textSecondary",          muted);
+    set("--apkt-tokens-theme-textTertiary",           hslToHex(215, 16, 52));
+    set("--apkt-tokens-theme-textInvert",             "#ffffff");
+    set("--apkt-tokens-theme-iconDefault",            muted);
+    set("--apkt-tokens-theme-iconInverse",            text);
+    set("--apkt-tokens-core-backgroundAccentPrimary", accent);
+    set("--apkt-tokens-core-textAccentPrimary",       accent);
+    set("--apkt-tokens-core-iconAccentPrimary",       accent);
+    set("--apkt-tokens-core-borderAccentPrimary",     accent);
+
   } else {
-    // Dark (and system-dark) — matches :root in index.css
-    // background hsl(216 20% 5%) ≈ #0a0c0f, card hsl(216 15% 9%) ≈ #14161b
-    r.style.setProperty("--apkt-tokens-theme-backgroundPrimary",  "#0a0c0f");
-    r.style.setProperty("--apkt-tokens-theme-backgroundInvert",   "#e0e8f0");
-    r.style.setProperty("--apkt-tokens-theme-foregroundPrimary",  "#14161b");
-    r.style.setProperty("--apkt-tokens-theme-foregroundSecondary","#1a1e23");
-    r.style.setProperty("--apkt-tokens-theme-foregroundTertiary", "#23282f");
-    r.style.setProperty("--apkt-tokens-theme-borderPrimary",      "#23282f");
-    r.style.setProperty("--apkt-tokens-theme-borderPrimaryDark",  "#2a3040");
-    r.style.setProperty("--apkt-tokens-theme-borderSecondary",    "#3a4254");
-    r.style.setProperty("--apkt-tokens-theme-overlay",            "rgba(0,0,0,0.6)");
-    r.style.setProperty("--apkt-tokens-theme-textPrimary",        "#dde4ed");
-    r.style.setProperty("--apkt-tokens-theme-textSecondary",      "#7a899f");
-    r.style.setProperty("--apkt-tokens-theme-textTertiary",       "#a0b0c8");
-    r.style.setProperty("--apkt-tokens-theme-textInvert",         "#0a0c0f");
-    r.style.setProperty("--apkt-tokens-theme-iconDefault",        "#7a899f");
-    r.style.setProperty("--apkt-tokens-theme-iconInverse",        "#dde4ed");
-    r.style.setProperty("--apkt-tokens-core-backgroundAccentPrimary", "#4ade80");
-    r.style.setProperty("--apkt-tokens-core-textAccentPrimary",       "#4ade80");
-    r.style.setProperty("--apkt-tokens-core-iconAccentPrimary",       "#4ade80");
-    r.style.setProperty("--apkt-tokens-core-borderAccentPrimary",     "#4ade80");
+    // ── :root (dark) ─────────────────────────────────────────────────────────
+    // background  216 20%  5%   card     216 15%  9%   popover   216 15% 12%
+    // secondary   216 15% 16%   border   216 15% 16%   foreground 210 20% 90%
+    // muted-fg    215 16% 55%   primary  142 71% 58%
+    const bg      = hslToHex(216, 20,  5);
+    const card    = hslToHex(216, 15,  9);
+    const popover = hslToHex(216, 15, 12);
+    const surface = hslToHex(216, 15, 16);
+    const text    = hslToHex(210, 20, 90);
+    const muted   = hslToHex(215, 16, 55);
+    const accent  = hslToHex(142, 71, 58);
+
+    set("--apkt-tokens-theme-backgroundPrimary",      bg);
+    set("--apkt-tokens-theme-backgroundInvert",       text);
+    set("--apkt-tokens-theme-foregroundPrimary",      card);
+    set("--apkt-tokens-theme-foregroundSecondary",    popover);
+    set("--apkt-tokens-theme-foregroundTertiary",     surface);
+    set("--apkt-tokens-theme-borderPrimary",          surface);
+    set("--apkt-tokens-theme-borderPrimaryDark",      hslToHex(216, 15, 20));
+    set("--apkt-tokens-theme-borderSecondary",        hslToHex(216, 15, 26));
+    set("--apkt-tokens-theme-overlay",                "rgba(0,0,0,0.6)");
+    set("--apkt-tokens-theme-textPrimary",            text);
+    set("--apkt-tokens-theme-textSecondary",          muted);
+    set("--apkt-tokens-theme-textTertiary",           hslToHex(215, 16, 66));
+    set("--apkt-tokens-theme-textInvert",             bg);
+    set("--apkt-tokens-theme-iconDefault",            muted);
+    set("--apkt-tokens-theme-iconInverse",            text);
+    set("--apkt-tokens-core-backgroundAccentPrimary", accent);
+    set("--apkt-tokens-core-textAccentPrimary",       accent);
+    set("--apkt-tokens-core-iconAccentPrimary",       accent);
+    set("--apkt-tokens-core-borderAccentPrimary",     accent);
   }
 }
 
@@ -200,7 +266,7 @@ export function syncReownTheme(theme: "dark" | "light" | "amoled" | "system"): v
   try {
     appKit.setThemeMode(effective);
     (appKit as any).setThemeVariables({
-      "--w3m-accent":               effective === "light" ? "#22a349" : "#4ade80",
+      "--w3m-accent":               effective === "light" ? hslToHex(142, 71, 42) : hslToHex(142, 71, 58),
       "--w3m-color-mix-strength":   0,
       "--w3m-border-radius-master": "3px",
       "--w3m-font-family":          "Inter, system-ui, sans-serif",
@@ -211,6 +277,17 @@ export function syncReownTheme(theme: "dark" | "light" | "amoled" | "system"): v
   // Apply immediately, then again after AppKit's async style flush
   applyTokenOverrides(theme, effective);
   setTimeout(() => applyTokenOverrides(theme, effective), 80);
+}
+
+// Apply theme overrides immediately at module-load time so the very first
+// open of the modal already reflects the stored OrahDEX theme.
+if (typeof window !== "undefined") {
+  const _eff: "dark" | "light" =
+    _storedTheme === "light" ? "light"
+    : _storedTheme === "system"
+      ? (window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+      : "dark";
+  applyTokenOverrides(_storedTheme, _eff);
 }
 
 export function subscribeReownAccount(
