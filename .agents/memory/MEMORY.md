@@ -26,3 +26,4 @@
 - [express-rate-limit ipKeyGenerator](erl-ipkeygenerator.md) — custom keyGenerator that falls back to IP must use ipKeyGenerator(req) not req.ip; missing helper throws ERR_ERL_KEY_GEN_IPV6 ValidationError at startup.
 - [Drizzle atomic two-phase ops](drizzle-atomic-two-phase.md) — two consecutive Drizzle operations (e.g. margin lock then position insert) each in their own transaction create a crash-window race; fix: single pool.connect() client that commits both in one transaction.
 - [Universal markets catalog design](universal-markets-catalog.md) — catalog rows conflict with letsexchange rows via unique(symbol); search endpoint must include letsexchange to expose 2M+ pairs; universalMarkets.ts adds SS-only pairs not in LE.
+- [Reown address swap on network tab switch](reown-network-tab-address.md) — switchNetworkType("evm") restored stale internalEvmAddress; three guards needed in App.tsx + connect() must update internalEvmAddress for external EVM wallets.

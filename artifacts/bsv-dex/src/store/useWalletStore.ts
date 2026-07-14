@@ -163,6 +163,18 @@ export const useWalletStore = create<WalletState>()(
           // leaves the seed internals intact.
           const isNewOrahSeed = wallet.provider === "orah-wallet" && !sameAddress;
 
+          // When an external EVM wallet (MetaMask, WalletConnect/Reown, etc.) connects,
+          // update internalEvmAddress to the new address so that network-tab round-trips
+          // (e.g. BSV→EVM) always restore the correct external wallet address rather than
+          // a stale address from a previous session or custodial sub-account.
+          // For orah-wallet the internalEvmAddress is set separately via setInternalEvmAddress
+          // (provisioned by the OrahLink custodial flow) so we never overwrite it here.
+          const newInternalEvmAddress = isNewOrahSeed
+            ? null
+            : (wallet.network === 'evm' && wallet.provider !== 'orah-wallet'
+                ? wallet.address
+                : s.internalEvmAddress);
+
           return {
             address:   wallet.address,
             provider:  wallet.provider,
@@ -170,7 +182,7 @@ export const useWalletStore = create<WalletState>()(
             chainId:   wallet.chainId ?? null,
             balance:   isNetworkSwitchOnSameWallet ? null : (wallet.balance ?? null),
             isConnecting: false,
-            internalEvmAddress:  isNewOrahSeed ? null : s.internalEvmAddress,
+            internalEvmAddress:  newInternalEvmAddress,
             internalBsvAddress:  isNewOrahSeed ? null : s.internalBsvAddress,
             internalBchAddress:  isNewOrahSeed ? null : s.internalBchAddress,
             internalBtcAddress:  isNewOrahSeed ? null : s.internalBtcAddress,
