@@ -14,7 +14,7 @@
 
 import { pool, db, withDbRetry } from "@workspace/db";
 import { futuresPositionsTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { guardedInterval, withRetry } from "./selfHealing.js";
 import { liquidateFuturesPosition } from "./futuresSettlement.js";
@@ -174,7 +174,7 @@ async function runLiquidationCycle(): Promise<void> {
     const markets   = await withDbRetry(() =>
       db.select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
         .from(marketsTable)
-        .where(ne(marketsTable.type, "letsexchange"))
+        .where(inArray(marketsTable.type, ["spot", "futures"]))
     );
     const positions = await withDbRetry(() =>
       db.select().from(futuresPositionsTable)

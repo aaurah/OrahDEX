@@ -1,30 +1,36 @@
 ---
 name: LE markets full-table scan pattern
-description: After syncAllLEPairs populates 36K+ markets rows, any unfiltered SELECT FROM markets is a 36K-row scan that causes Query read timeout under DB load.
+description: With 2M rows in markets, any ne(type,'letsexchange') scan causes DB pool exhaustion. ALL background services MUST use inArray(type,["spot","futures"]).
 ---
 
-## The rule
-Every `SELECT FROM markets` in a background service or hot HTTP endpoint MUST include a type filter. Unfiltered scans cause 30s `Query read timeout` under normal DB load once LE pairs are synced.
+## The rule (updated — 2M row table)
+Every `SELECT FROM markets` in a background service MUST use `inArray(type, ["spot","futures"])` — never a negative filter like `ne(type, 'letsexchange')` or `NOT IN`.
 
-**Why:** syncAllLEPairs() upserts ~36K rows (all-to-all LE coin combinations) into `markets`. Background engines that do `db.select().from(marketsTable)` without a WHERE clause load all 36K rows on every tick, saturating the DB server.
+**Why:** The LE all-to-all sync populated ~1,995,341 rows as type='letsexchange'. Additionally simpleswap has 55,066 rows. A `ne(type,'letsexchange')` scan now returns ~59K rows per tick. With 12+ background services each firing every 60–120 s, the 40-connection pool saturates: connections stay busy for the full query duration, new services time out waiting for a slot, and the entire server appears to hang. This manifested as cascading "Query read timeout" / "Connection terminated unexpectedly" crashes in production.
 
 **How to apply:**
-- Background services that need prices for internal pairs: `WHERE type != 'letsexchange'`
-- Services that only need specific symbols (e.g. PERP_SYMBOLS): `WHERE symbol = ANY($1::text[])` or `inArray(marketsTable.symbol, list)`
-- HTTP endpoints that filter in JS (e.g. `.filter(m => m.type === 'spot')`): move the filter into SQL
+- Background services needing prices for internal order-book pairs: `inArray(type, ["spot","futures"])`
+- Services needing specific symbols: `inArray(symbol, list)` or `WHERE symbol = $1`
+- HTTP endpoints that paginate: always add a type filter + LIMIT
 
-## Fixed services (as of 2026-06-28)
-- `fundingRateEngine` — `inArray(symbol, PERP_SYMBOLS)`, 2 cols only
-- `futuresProfitEngine/runLiquidationCycle` — `ne(type, 'letsexchange')`, 2 cols only
-- `arbBot/runArbCycle` — `and(status='active', ne(type, 'letsexchange'))`
-- `dex.ts buildCgCoins()` — `eq(type, 'spot')` in SQL (was JS `.filter()`)
-- `stopOrderEngine` — `ne(type, 'letsexchange')`
+## Confirmed fixed services (as of 2026-07-14)
+- `liquidityBot` — `inArray(type, ["spot","futures"])` ✅
+- `arbBot/runArbCycle` — was `ne(type,'letsexchange')`, now `inArray(type,["spot","futures"])` ✅
+- `futuresProfitEngine/runLiquidationCycle` — was `ne(type,'letsexchange')`, now `inArray(type,["spot","futures"])` ✅
+- `stopOrderEngine` — was `ne(type,'letsexchange')`, now `inArray(type,["spot","futures"])` ✅
+- `fundingRateEngine` — `inArray(symbol, PERP_SYMBOLS)` (point lookup) ✅
 
 ## Already correct (no change needed)
 - `routeCache.ts` — `inArray(symbol, HOT_PAIRS)`
-- `exchangeApiRepairEngine` — `WHERE type='spot' AND enabled=TRUE LIMIT 50`
+- `hybridRouter.getOraclePrice` — `WHERE symbol = $1 OR symbol = $2 LIMIT 1`
 - Point lookups (`WHERE symbol = $1`) — fine regardless
 
-## Related
-- syncAllLEPairs tombstone DELETE: after each sync, DELETE WHERE type='letsexchange' AND (base_asset != ALL($1) OR quote_asset != ALL($1)) to remove dropped coins.
-- Promise.race dedup: if N concurrent cold-cache requests each create their own setTimeout wrapper, they all fire simultaneously. Store the race itself in a module-level variable and clear it in .finally().
+## universalMarkets catalog generation guard
+`generateUniversalMarkets()` does 1,232 batch INSERTs (ON CONFLICT DO NOTHING).
+Added guards:
+1. Skip entirely if `SELECT COUNT(*) FROM markets WHERE type='catalog'` > 10,000 (LE already covers the universe)
+2. 80ms yield between INSERT chunks, 200ms yield between outer batches
+
+## Main /markets OOM guard
+`bigExclude = and(ne(type,'letsexchange'), ne(type,'catalog'))` — still correct.
+This is for the pagination endpoint that would OOM loading 2M rows. The *search* endpoint (`/markets/search`) is safe because it uses LIMIT.
