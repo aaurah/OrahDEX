@@ -344,6 +344,16 @@ function Router() {
         if (address) {
           const { provider, address: storedAddress } = useWalletStore.getState();
           if (!provider || provider === "reown") {
+            // Guard: when already connected via Reown and AppKit emits a DIFFERENT
+            // address (happens on some mobile WalletConnect wallets after a chain
+            // switch — the wallet returns the account registered on the new chain,
+            // which may differ from the Sepolia/testnet account), do NOT silently
+            // swap the user's address.  ChainSwitcherDropdown already called
+            // switchChain() to update the chainId; there is nothing else to do.
+            if (provider === "reown" && storedAddress && storedAddress !== address) {
+              return;
+            }
+
             // AppKit fires subscribeAccount multiple times during WC session
             // restoration, each time reporting the session's original negotiated
             // chain (often mainnet=1) — NOT what the user last switched to via
