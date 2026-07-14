@@ -41,7 +41,7 @@ export async function triggerStopOrders(): Promise<void> {
       db.select({
         symbol:    marketsTable.symbol,
         lastPrice: marketsTable.lastPrice,
-      }).from(marketsTable).where(ne(marketsTable.type, "letsexchange"))
+      }).from(marketsTable).where(inArray(marketsTable.type, ["spot", "futures"]))
     );
     const priceMap = new Map<string, number>(
       markets.map(m => [m.symbol, parseFloat(m.lastPrice)])

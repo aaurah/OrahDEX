@@ -14,7 +14,7 @@
 
 import { db, withDbRetry } from "@workspace/db";
 import { marketsTable, platformSettingsTable } from "@workspace/db/schema";
-import { eq, and, ne } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
 import { isDbConnError } from "./dbErrors.js";
@@ -163,7 +163,7 @@ async function runArbCycle() {
         updatedAt:  marketsTable.updatedAt,
         status:     marketsTable.status,
       }).from(marketsTable).where(
-        and(eq(marketsTable.status, "active"), ne(marketsTable.type, "letsexchange"))
+        and(eq(marketsTable.status, "active"), inArray(marketsTable.type, ["spot", "futures"]))
       )
     );
 

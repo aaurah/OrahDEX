@@ -14,7 +14,7 @@
  *   • priceUpdater  – only updates type IN ('spot','futures') → prices stay at seed value
  *   • SOR / routes  – catalog pairs resolve price via the USDT bridge at trade time
  */
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { logger } from "./logger.js";
 import { FALLBACK_PRICES } from "./priceUpdater.js";
@@ -138,6 +138,19 @@ export async function generateUniversalMarkets(): Promise<{ assets: number; inse
       `generateUniversalMarkets: ${N} unique assets → ${N * (N - 1)} pairs`,
     );
 
+    // Skip if catalog rows already exist — LE all-to-all (1.99M rows) already
+    // covers the full symbol universe; repeated inserts waste DB pool connections.
+    const [{ cnt }] = await pool.query<{ cnt: string }>(
+      `SELECT COUNT(*) AS cnt FROM markets WHERE type = 'catalog' LIMIT 1`,
+    ).then(r => r.rows);
+    if (parseInt(cnt, 10) > 10_000) {
+      logger.info(
+        { existing: cnt },
+        "generateUniversalMarkets: catalog already populated — skipping",
+      );
+      return { assets: N, inserted: 0 };
+    }
+
     let totalInserted = 0;
 
     for (let bi = 0; bi < N; bi += BASE_BATCH) {
@@ -176,6 +189,8 @@ export async function generateUniversalMarkets(): Promise<{ assets: number; inse
         } catch (err) {
           logger.warn({ err, base: baseBatch[0] }, "generateUniversalMarkets: chunk insert failed (non-fatal)");
         }
+        // Yield between chunks so background services can acquire pool connections.
+        await new Promise(r => setTimeout(r, 80));
       }
 
       if (Math.floor(bi / BASE_BATCH) % 10 === 0) {
@@ -184,6 +199,8 @@ export async function generateUniversalMarkets(): Promise<{ assets: number; inse
           "generateUniversalMarkets: progress",
         );
       }
+      // Yield between outer batches — keeps pool available for concurrent services.
+      await new Promise(r => setTimeout(r, 200));
     }
 
     logger.info(
