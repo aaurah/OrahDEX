@@ -21,8 +21,8 @@ function isValidAddress(addr: string): boolean {
 // reaches this router (e.g. /bsv-status, /staking/providers) because Express
 // walks sub-routers in registration order.
 router.use((req, res, next) => {
-  // NFT features are enabled by default; set NFT_ENABLED=false to disable
-  if (process.env.NFT_ENABLED === "false" && req.path.startsWith("/nft")) {
+  // NFT features are opt-in (disabled by default); set NFT_ENABLED=true to enable
+  if (process.env.NFT_ENABLED !== "true" && req.path.startsWith("/nft")) {
     return res.status(503).json({ error: "NFT features are temporarily disabled." });
   }
   return next();
