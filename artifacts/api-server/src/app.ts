@@ -144,10 +144,19 @@ app.set("trust proxy", 1);
 
 /* ── Security headers (helmet) ───────────────────────────────────────────────
  * Sets X-Frame-Options, X-Content-Type-Options, HSTS, X-DNS-Prefetch-Control,
- * Referrer-Policy, and more. CSP is disabled here because the same server also
- * serves the SPA — the frontend's Vite build handles its own CSP needs.       */
+ * Referrer-Policy, and more.
+ * The frontend SPA CSP is applied separately in serve-static.mjs.            */
+// API server only serves JSON — use a strict CSP that blocks framing,
+// form submissions, and all resource loads from untrusted origins.
+// The frontend SPA has its own CSP applied by serve-static.mjs.
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc:     ["'none'"],
+      frameAncestors: ["'none'"],
+      formAction:     ["'none'"],
+    },
+  },
   crossOriginEmbedderPolicy: false,
 }));
 
@@ -212,7 +221,7 @@ const _allowedOrigins: (string | RegExp)[] = process.env["ALLOWED_ORIGINS"]
 app.use(cors({
   origin: _allowedOrigins,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "x-admin-token"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
   credentials: true,
 }));
 
