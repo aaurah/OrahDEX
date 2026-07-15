@@ -130,7 +130,7 @@ export async function revokeAllAdminTokens(): Promise<void> {
  * return) and runs timingSafeEqual even on length mismatches (via dummy buffer)
  * to prevent timing oracle attacks.
  */
-function matchToken(rawToken: string): { matched: boolean; hash: string } {
+function hasMatchingAdminToken(rawToken: string): { matched: boolean; hash: string } {
   const incomingHash = sha256hex(rawToken);
   const incoming     = Buffer.from(incomingHash);
   const dummy        = Buffer.alloc(incoming.length);
@@ -157,7 +157,7 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
     res.status(401).json({ error: "Admin authentication required." });
     return;
   }
-  const { matched, hash } = matchToken(rawToken);
+  const { matched, hash } = hasMatchingAdminToken(rawToken);
   if (!matched) {
     res.status(401).json({ error: "Admin authentication required." });
     return;
@@ -172,7 +172,7 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
 
 export function isValidAdminToken(token: unknown): boolean {
   if (typeof token !== "string" || token.length === 0) return false;
-  const { matched, hash } = matchToken(token);
+  const { matched, hash } = hasMatchingAdminToken(token);
   if (!matched) return false;
   if (hasHashExpired(hash)) {
     purgeHash(hash);

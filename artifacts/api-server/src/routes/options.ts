@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { isValidAdminToken } from "../middleware/adminAuth.js";
 import { db, pool } from "@workspace/db";
 import {
   optionsContractsTable,
@@ -145,8 +146,8 @@ router.get("/options/contracts", async (req, res) => {
 
 // ── POST /options/contracts (admin only) ──────────────────────────────────────
 router.post("/options/contracts", async (req, res) => {
-  const adminToken = req.headers["x-admin-token"];
-  if (!adminToken || adminToken !== process.env.ADMIN_TOKEN) {
+  const cookieToken = (req.cookies as Record<string, string> | undefined)?.admin_session ?? "";
+  if (!isValidAdminToken(cookieToken)) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }

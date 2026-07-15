@@ -709,10 +709,10 @@ router.post("/admin/balance-adjust", requireAdminToken, async (req, res) => {
 // Requires either a valid admin token or the X-Wallet-Address header matching
 // the URL param (so only the wallet owner or admins can see history).
 router.get("/withdrawals/:walletAddress", async (req, res) => {
-  const adminToken = req.headers["x-admin-token"] as string | undefined;
+  const cookieToken = (req.cookies as Record<string, string> | undefined)?.admin_session ?? "";
   const callerHeader = (req.headers["x-wallet-address"] as string | undefined)?.toLowerCase();
   const paramWallet = req.params.walletAddress?.toLowerCase();
-  const isAdmin = !!adminToken && isValidAdminToken(adminToken);
+  const isAdmin = cookieToken.length > 0 && isValidAdminToken(cookieToken);
   const isSelf = callerHeader && callerHeader === paramWallet;
   if (!isAdmin && !isSelf) {
     res.status(401).json({ error: "Authentication required. Include X-Wallet-Address header matching the requested wallet, or a valid admin token." });
