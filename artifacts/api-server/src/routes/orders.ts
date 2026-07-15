@@ -106,7 +106,7 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
     remainingQuantity: o.remainingQuantity != null ? parseFloat(o.remainingQuantity) : 0,
     total:             o.total             != null ? parseFloat(o.total)             : undefined,
     fee:               o.fee               != null ? parseFloat(o.fee)               : 0,
-    explorerUrl:       settlementExplorerUrl(o.txid, null),
+    explorerUrl:       settlementExplorerUrl(o.txid, o.chainId ?? null),
   };
 }
 
