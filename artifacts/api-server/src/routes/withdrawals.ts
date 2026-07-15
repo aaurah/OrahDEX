@@ -7,7 +7,7 @@ import { requireAdminToken, isValidAdminToken } from "../middleware/adminAuth.js
 import { processWithdrawal, EVM_USE_TESTNET } from "../lib/withdrawalProcessor.js";
 import { getEvmHotWalletAddress } from "../lib/exchangeHotWallet.js";
 import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
-import { createPublicClient, http } from "viem";
+import { createPublicClient, http, formatEther } from "viem";
 import {
   issueWithdrawChallenge,
   verifyWithdrawSignature,
@@ -23,6 +23,15 @@ const router: IRouter = Router();
 const _withdrawRateMap = new Map<string, { count: number; resetAt: number }>();
 const WITHDRAW_RATE_WINDOW_MS = 60_000;
 const WITHDRAW_RATE_LIMIT = 5;
+
+// Sweep expired rate-limit entries every 5 minutes so the map cannot grow
+// unbounded on a long-running server that sees many unique wallet addresses.
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, rec] of _withdrawRateMap) {
+    if (now > rec.resetAt) _withdrawRateMap.delete(key);
+  }
+}, 5 * 60_000).unref();
 
 function checkWithdrawRateLimit(req: import("express").Request, res: import("express").Response, key: string): boolean {
   const now = Date.now();
@@ -109,6 +118,16 @@ router.post("/withdrawals", async (req, res) => {
     });
     return;
   }
+  // Solana base58 public key: 32–44 chars, no O/0/I/l confusion chars.
+  // Validate BEFORE the DB transaction to avoid debiting balance on a bad address.
+  const isSolNetwork = networkUp === "SOL" || networkUp === "SOLANA";
+  const SOL_RECIPIENT_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+  if (isSolNetwork && !SOL_RECIPIENT_RE.test(recipient)) {
+    res.status(400).json({
+      error: "Invalid recipient address for SOL network. Expected a base58-encoded Solana public key (32–44 characters).",
+    });
+    return;
+  }
 
   const parsed = parseFloat(amount);
   if (isNaN(parsed) || parsed <= 0) {
@@ -119,6 +138,21 @@ router.post("/withdrawals", async (req, res) => {
   const parsedFee = fee != null ? parseFloat(fee) : 0;
   if (isNaN(parsedFee) || parsedFee < 0 || parsedFee >= parsed) {
     res.status(400).json({ error: "Invalid fee: must be a non-negative number less than the withdrawal amount" });
+    return;
+  }
+
+  // Minimum withdrawal amounts to prevent dust outputs that get rejected
+  // on-chain. EVM gas-failure cases are handled by the auto-refund path
+  // in the setImmediate block, but BSV/BTC/SOL dust is cheaper to block early.
+  const MIN_AMOUNTS: Record<string, number> = {
+    BSV: 0.00001, BCH: 0.00001, BTC: 0.00001,
+    SOL: 0.000005,
+  };
+  const minAmt = MIN_AMOUNTS[asset?.toUpperCase?.()] ?? 0;
+  if (minAmt > 0 && parsed < minAmt) {
+    res.status(400).json({
+      error: `Minimum withdrawal for ${String(asset).toUpperCase()} is ${minAmt} ${String(asset).toUpperCase()} to prevent a dust output on-chain.`,
+    });
     return;
   }
 
@@ -509,7 +543,9 @@ router.get("/admin/hot-wallet-status", requireAdminToken, async (req, res) => {
       try {
         const client = createPublicClient({ transport: http(c.rpc) });
         const wei    = await client.getBalance({ address: evmAddress as `0x${string}` });
-        return { ...c, balance: Number(wei) / 1e18, error: null as string | null };
+        // formatEther returns a decimal string that is safe to Number()-ify for
+        // display; avoids IEEE-754 precision loss for balances > 9007 ETH.
+        return { ...c, balance: Number(formatEther(wei)), error: null as string | null };
       } catch (err: any) {
         return { ...c, balance: 0, error: err?.message ?? "RPC error" };
       }
