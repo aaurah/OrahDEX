@@ -46,11 +46,12 @@ export const pool = new Pool({
   // of "timeout exceeded when trying to connect" across every engine.
   connectionTimeoutMillis: 15_000,
   // DB_POOL_MAX lets the deployment environment tune the connection limit.
-  // Default is 20 — conservative enough for Neon's free/launch tier while still
-  // handling 12+ concurrent background services.  Set higher (e.g. 40) on plans
-  // with a larger pg_max_connections budget.  The hard cap of 100 prevents
+  // Default is 10 — safe for Neon's free/launch tier (max_connections=5 on
+  // serverless cold-start, higher on paid).  Neon's connection pooler (pgbouncer)
+  // endpoint removes this constraint if configured.  Set higher (e.g. 20–40) on
+  // plans with a larger pg_max_connections budget.  Hard cap of 100 prevents
   // accidentally starving the Postgres server.
-  max: Math.max(5, Math.min(100, parseInt(process.env.DB_POOL_MAX ?? "20", 10) || 20)),
+  max: Math.max(5, Math.min(100, parseInt(process.env.DB_POOL_MAX ?? "10", 10) || 10)),
   // Keep the pool alive between tick cycles.
   allowExitOnIdle: false,
   // Kill runaway queries after 30 s. The liquidity bot's bulk DELETE of 48 k
