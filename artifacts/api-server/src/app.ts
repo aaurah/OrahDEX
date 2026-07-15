@@ -22,6 +22,7 @@ import { startRouteCache } from "./lib/routeCache.js";
 import { startHtlcWatcher } from "./lib/htlcWatcher.js";
 import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
 import { warmCurrenciesCache, clearSwapCaches } from "./routes/letsexchange.js";
+import { warmMarketsCache } from "./routes/markets.js";
 import { hydrateAdminTokens } from "./middleware/adminAuth.js";
 import { startCopyOrchestrator } from "./lib/copyOrchestrator.js";
 import { apiKeyAuth, rejectQueryParamApiKey, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
@@ -534,6 +535,13 @@ startCopyOrchestrator();
 setTimeout(() => {
   warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
 }, 3_000);
+
+// Pre-populate the markets list cache ~10 s after boot so the very first user
+// request hits memory rather than the DB.  10 s gives the pool time to settle
+// after the staggered background-service startup before we add another query.
+setTimeout(() => {
+  warmMarketsCache().catch(e => logger.warn({ err: e }, "warmMarketsCache failed (non-fatal)"));
+}, 10_000);
 
 // syncAllLEPairs() is intentionally NOT called at startup.
 // The DB already holds LE pairs from a previous run (36 K+ rows).

@@ -24,10 +24,96 @@ class TtlCache<T> {
   set(key: string, data: T) { this.store.set(key, { data, ts: Date.now() }); }
 }
 
-const marketsCache    = new TtlCache<any[]>(60_000);   // 60 s — matches price-updater interval
+const marketsCache    = new TtlCache<any[]>(120_000);  // 120 s — reduces DB hits when pool is under pressure
 const orderbookCache  = new TtlCache<any>(2_000);      //  2 s
 const tradesCache     = new TtlCache<any[]>(5_000);    //  5 s
 const tickerCache     = new TtlCache<any>(5_000);      //  5 s
+
+// In-flight request coalescing: if a DB fetch is already running for a given
+// cache key, subsequent requests join the same Promise instead of firing a
+// second query.  This prevents thundering-herd pool exhaustion when the cache
+// expires or the server first boots.
+const _inflight = new Map<string, Promise<any[]>>();
+
+const ASSET_RANK_STATIC: Record<string, number> = {
+  BTC: 100, WBTC: 99, ETH: 98, WETH: 97,
+  BNB: 96, SOL: 95, XRP: 94, ADA: 93,
+  AVAX: 92, DOGE: 91, DOT: 90, MATIC: 89,
+  LINK: 88, UNI: 87, ATOM: 86, LTC: 85,
+  BCH: 84, NEAR: 83, FIL: 82, APT: 81,
+  BSV: 80,
+};
+const QUOTE_RANK_STATIC: Record<string, number> = {
+  USDT: 10, USDC: 9, TUSD: 8, USDD: 7,
+  BTC: 6, ETH: 5, BSV: 4, BNB: 3,
+};
+
+/**
+ * Fetch, map, sort and cache the market list for a given cache key.
+ * Only ONE DB query fires per key at a time — callers join the existing
+ * Promise if a fetch is already in-flight (request coalescing).
+ */
+function fetchAndCacheMarkets(cacheKey: string, types: string[]): Promise<any[]> {
+  const existing = _inflight.get(cacheKey);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const bigExclude = and(ne(marketsTable.type, "letsexchange"), ne(marketsTable.type, "catalog"));
+    const conditions = types.length
+      ? and(eq(marketsTable.enabled, true), bigExclude, inArray(marketsTable.type, types))
+      : and(eq(marketsTable.enabled, true), bigExclude);
+
+    const markets = await withDbRetry(() => db.select().from(marketsTable).where(conditions));
+
+    const result = markets.map((m) => ({
+      symbol:                m.symbol,
+      baseAsset:             m.baseAsset,
+      quoteAsset:            m.quoteAsset,
+      lastPrice:             parseFloat(m.lastPrice),
+      priceChange24h:        parseFloat(m.priceChange24h),
+      priceChangePercent24h: parseFloat(m.priceChangePercent24h),
+      volume24h:             parseFloat(m.volume24h),
+      high24h:               parseFloat(m.high24h),
+      low24h:                parseFloat(m.low24h),
+      marketCap:             m.marketCap ? parseFloat(m.marketCap) : undefined,
+      status:                m.status,
+      type:                  m.type,
+      enabled:               m.enabled,
+      pinned:                m.pinned,
+      minOrderSize:          parseFloat(m.minOrderSize),
+      maxOrderSize:          parseFloat(m.maxOrderSize),
+      tickSize:              parseFloat(m.tickSize),
+      makerFee:              parseFloat(m.makerFee),
+      takerFee:              parseFloat(m.takerFee),
+    }));
+
+    result.sort((a, b) => {
+      const ra = ASSET_RANK_STATIC[a.baseAsset] ?? 0, rb = ASSET_RANK_STATIC[b.baseAsset] ?? 0;
+      if (ra !== rb) return rb - ra;
+      const ha = a.lastPrice > 0 ? 1 : 0, hb = b.lastPrice > 0 ? 1 : 0;
+      if (ha !== hb) return hb - ha;
+      const qa = QUOTE_RANK_STATIC[a.quoteAsset] ?? 0, qb = QUOTE_RANK_STATIC[b.quoteAsset] ?? 0;
+      if (qa !== qb) return qb - qa;
+      return (b.volume24h || 0) - (a.volume24h || 0);
+    });
+
+    const etag = makeETag(result);
+    marketsCache.set(cacheKey, result);
+    marketsETag.set(cacheKey, etag);
+    return result;
+  })().finally(() => _inflight.delete(cacheKey));
+
+  _inflight.set(cacheKey, promise);
+  return promise;
+}
+
+/**
+ * Pre-warm the "all" markets cache.  Called at server startup so the first
+ * user request is served from memory rather than hitting the DB cold.
+ */
+export function warmMarketsCache(): Promise<void> {
+  return fetchAndCacheMarkets("all", []).then(() => void 0);
+}
 
 // ETag store for markets — maps cacheKey → weak ETag string
 const marketsETag = new Map<string, string>();
@@ -177,73 +263,13 @@ router.get("/markets", async (req, res) => {
   }
 
   try {
-    // Always filter by enabled=true — this is the stability guarantee.
-    // Exclude 'letsexchange' (36 K rows, served via /api/letsexchange/pairs) and
-    // 'catalog' (1.24 M rows, served via /api/markets/search) to prevent OOM on
-    // JSON.stringify of the full table.
-    const bigExclude = and(ne(marketsTable.type, "letsexchange"), ne(marketsTable.type, "catalog"));
-    const conditions = types.length
-      ? and(eq(marketsTable.enabled, true), bigExclude, inArray(marketsTable.type, types))
-      : and(eq(marketsTable.enabled, true), bigExclude);
-
-    const markets = await withDbRetry(() => db.select().from(marketsTable).where(conditions));
-
-    const result = markets.map((m) => ({
-      symbol:                m.symbol,
-      baseAsset:             m.baseAsset,
-      quoteAsset:            m.quoteAsset,
-      lastPrice:             parseFloat(m.lastPrice),
-      priceChange24h:        parseFloat(m.priceChange24h),
-      priceChangePercent24h: parseFloat(m.priceChangePercent24h),
-      volume24h:             parseFloat(m.volume24h),
-      high24h:               parseFloat(m.high24h),
-      low24h:                parseFloat(m.low24h),
-      marketCap:             m.marketCap ? parseFloat(m.marketCap) : undefined,
-      status:                m.status,
-      type:                  m.type,
-      enabled:               m.enabled,
-      pinned:                m.pinned,
-      minOrderSize:          parseFloat(m.minOrderSize),
-      maxOrderSize:          parseFloat(m.maxOrderSize),
-      tickSize:              parseFloat(m.tickSize),
-      makerFee:              parseFloat(m.makerFee),
-      takerFee:              parseFloat(m.takerFee),
-    }));
-
-    // Stable priority sort — deterministic across all environments:
-    // 1. Major assets by hardcoded rank (BTC > ETH > BNB > SOL > XRP …)
-    //    This overrides the `pinned` flag which is inconsistent between dev/prod.
-    // 2. Has a real live price (last_price > 0)
-    // 3. By quote asset preference (USDT > USDC > BTC > ETH > BSV)
-    // 4. Volume descending as tie-breaker
-    const ASSET_RANK: Record<string, number> = {
-      BTC: 100, WBTC: 99, ETH: 98, WETH: 97,
-      BNB: 96, SOL: 95, XRP: 94, ADA: 93,
-      AVAX: 92, DOGE: 91, DOT: 90, MATIC: 89,
-      LINK: 88, UNI: 87, ATOM: 86, LTC: 85,
-      BCH: 84, NEAR: 83, FIL: 82, APT: 81,
-      BSV: 80,
-    };
-    const QUOTE_RANK: Record<string, number> = {
-      USDT: 10, USDC: 9, TUSD: 8, USDD: 7,
-      BTC: 6, ETH: 5, BSV: 4, BNB: 3,
-    };
-    result.sort((a, b) => {
-      const ra = ASSET_RANK[a.baseAsset] ?? 0, rb = ASSET_RANK[b.baseAsset] ?? 0;
-      if (ra !== rb) return rb - ra;
-      const ha = a.lastPrice > 0 ? 1 : 0, hb = b.lastPrice > 0 ? 1 : 0;
-      if (ha !== hb) return hb - ha;
-      const qa = QUOTE_RANK[a.quoteAsset] ?? 0, qb = QUOTE_RANK[b.quoteAsset] ?? 0;
-      if (qa !== qb) return qb - qa;
-      return (b.volume24h || 0) - (a.volume24h || 0);
-    });
-
-    const etag = makeETag(result);
-    marketsCache.set(cacheKey, result);
-    marketsETag.set(cacheKey, etag);
+    // fetchAndCacheMarkets coalesces concurrent requests — only one DB query
+    // fires per cache key regardless of how many requests arrive simultaneously.
+    const result = await fetchAndCacheMarkets(cacheKey, types);
+    const etag = marketsETag.get(cacheKey) ?? "";
     const out = applyFilters(result);
     const sliceEtag = etag.replace(/"$/, `:${offset}:${limit ?? "*"}"`);
-    res.setHeader("ETag", sliceEtag);
+    if (sliceEtag) res.setHeader("ETag", sliceEtag);
     res.setHeader("X-Total-Count", String(out.length));
     if (req.headers["if-none-match"] === sliceEtag) {
       res.status(304).end();
