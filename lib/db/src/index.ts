@@ -54,10 +54,13 @@ export const pool = new Pool({
   max: Math.max(5, Math.min(100, parseInt(process.env.DB_POOL_MAX ?? "10", 10) || 10)),
   // Keep the pool alive between tick cycles.
   allowExitOnIdle: false,
-  // Kill runaway queries after 30 s. The liquidity bot's bulk DELETE of 48 k
-  // bot orders is a legitimate long operation that exceeds the old 8 s limit on
-  // the production DB (large table + 4 indexes to update + WAL overhead).
-  query_timeout: 30_000,
+  // Kill runaway queries after 60 s. Neon serverless computes can take 10–30 s
+  // to wake from suspend; the old 30 s limit caused Neon cold-start queries to
+  // time out before the compute had a chance to respond, leaving the pool in a
+  // degraded state for every service that started during the wakeup window.
+  // Legitimate runaway queries are an acceptable cost — they are always wrapped
+  // in try/catch and caught by withDbRetry before they can crash a request.
+  query_timeout: 60_000,
 });
 
 // Catch errors on idle clients in the pool (e.g. a connection dropped by the
