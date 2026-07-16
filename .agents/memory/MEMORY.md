@@ -29,3 +29,5 @@
 - [Admin cookie auth migration](admin-cookie-auth-migration.md) — admin sessions use HttpOnly cookie + SHA-256 hashing only; token removed from JS state; all admin fetches must use adminFetch() with credentials:"include".
 - [Reown address swap on network tab switch](reown-network-tab-address.md) — switchNetworkType("evm") restored stale internalEvmAddress; three guards needed in App.tsx + connect() must update internalEvmAddress for external EVM wallets.
 - [Markets cache pool exhaustion fix](markets-pool-exhaustion.md) — prod /api/markets returns 500 when pool exhausted; fix: pool max 40→20 via DB_POOL_MAX env, request coalescing in fetchAndCacheMarkets(), 120s TTL, startup warmup at 10s.
+- [Express async double-response guard](express-double-response.md) — client abort + slow async handler = ERR_HTTP_HEADERS_SENT; all outer catch blocks must guard with `if (!res.headersSent)` before sending 500.
+- [Neon cold-start query timeout](neon-cold-start-timeout.md) — Neon compute wakes in 10–30 s; query_timeout:30_000 kills queries before wakeup completes; raised to 60_000 to cover the full wakeup window.

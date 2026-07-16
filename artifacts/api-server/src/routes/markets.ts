@@ -278,7 +278,7 @@ router.get("/markets", async (req, res) => {
     res.json(out);
   } catch (err) {
     req.log.error({ err }, "Failed to get markets");
-    res.status(500).json({ error: "Internal server error" });
+    if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -375,7 +375,7 @@ router.get("/markets/search", async (req, res) => {
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "markets/search failed");
-    res.status(500).json({ error: "Internal server error" });
+    if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -405,7 +405,7 @@ router.get("/markets/:symbol", async (req, res) => {
     });
   } catch (err) {
     req.log.error({ err }, "Failed to get market");
-    res.status(500).json({ error: "Internal server error" });
+    if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -502,7 +502,7 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
     res.json(ticker);
   } catch (err) {
     req.log.error({ err }, "Failed to get ticker");
-    res.status(500).json({ error: "Internal server error" });
+    if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -542,7 +542,7 @@ router.get("/markets/:symbol/candles", async (req, res) => {
     res.json(candles);
   } catch (err) {
     req.log.error({ err }, "Failed to get candles");
-    res.status(500).json({ error: "Internal server error" });
+    if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -679,7 +679,7 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "Failed to get order book");
-    res.status(500).json({ error: "Internal server error" });
+    if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -769,7 +769,7 @@ router.get("/markets/:symbol/trades", async (req, res) => {
     res.json(trades);
   } catch (err) {
     req.log.error({ err }, "Failed to get trades");
-    res.status(500).json({ error: "Internal server error" });
+    if (!res.headersSent) res.status(500).json({ error: "Internal server error" });
   }
 });
 
