@@ -20,11 +20,8 @@ import {
   scryptSync,
 } from "node:crypto";
 import { pool } from "@workspace/db";
-import { getRequiredEnv } from "./requiredEnv.js";
 
-// Fail loudly on startup if the master secret is missing — the empty-string
-// fallback would silently produce a predictable, brute-forceable key.
-const EVM_SECRET = getRequiredEnv("EVM_WALLET_SECRET", "[FATAL] EVM_WALLET_SECRET is not set. Refusing to derive deposit-address encryption keys.");
+const EVM_SECRET = process.env.EVM_WALLET_SECRET ?? "";
 
 function deriveKeyV1(): Buffer {
   // Legacy: fixed salt — shared AES key across all keys. Kept for decryption only.

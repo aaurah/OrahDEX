@@ -194,7 +194,7 @@ const ADMIN_COOKIE_OPTS = {
   httpOnly:  true,
   secure:    process.env.NODE_ENV === "production",
   sameSite:  "strict" as const,
-  maxAge:    8 * 60 * 60 * 1000, // 8 hours (matches TOKEN_TTL_MS)
+  maxAge:    30 * 24 * 60 * 60 * 1000, // 30 days (matches TOKEN_TTL_MS)
   path:      "/",
 };
 

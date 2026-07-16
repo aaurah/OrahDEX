@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
-import { adminFetch } from "@/lib/adminFetch";
+import { getAdminHeaders } from "@/store/useAdminAuthStore";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -93,9 +93,9 @@ function CreateVaultModal({ onClose, onCreated }: { onClose: () => void; onCreat
 
   const createMut = useMutation({
     mutationFn: async () => {
-      const res = await adminFetch(`${BASE}/api/copy/vaults`, {
+      const res = await fetch(`${BASE}/api/copy/vaults`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAdminHeaders() },
         body: JSON.stringify({
           ...form,
           feeRate: Number(form.feeRate),
@@ -407,9 +407,9 @@ export function AdminCopyVault() {
 
   const toggleMut = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const res = await adminFetch(`${BASE}/api/copy/vaults/${id}/sync-price`, {
+      const res = await fetch(`${BASE}/api/copy/vaults/${id}/sync-price`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAdminHeaders() },
         body: JSON.stringify({ status }),
       });
       return res.json();

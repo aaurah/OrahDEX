@@ -614,11 +614,7 @@ export function WithdrawSheet({
     queryKey: ["withdrawal-history", walletAddress],
     queryFn: async () => {
       if (!walletAddress) return [];
-      // X-Wallet-Address header proves caller identity — required by the backend
-      // for non-admin users to view their own withdrawal history (returns 401 otherwise).
-      const r = await fetch(`${API_BASE}/withdrawals/${encodeURIComponent(walletAddress)}`, {
-        headers: { "X-Wallet-Address": walletAddress },
-      });
+      const r = await fetch(`${API_BASE}/withdrawals/${encodeURIComponent(walletAddress)}`);
       if (!r.ok) return [];
       return r.json();
     },
@@ -646,10 +642,7 @@ export function WithdrawSheet({
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [walletAddress, "latest"] }),
       });
       const { result } = await res.json();
-      // Divide in BigInt space first to avoid IEEE-754 precision loss for
-      // balances above ~9007 ETH (Number.MAX_SAFE_INTEGER boundary).
-      const weiVal = BigInt(result ?? "0x0");
-      setDepFromWalletBalance(Number(weiVal / 10n ** 15n) / 1e3);
+      setDepFromWalletBalance(Number(BigInt(result ?? "0x0")) / 1e18);
     } catch {
       setDepFromWalletBalance(null);
     } finally {

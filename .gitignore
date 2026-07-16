@@ -48,12 +48,6 @@ Thumbs.db
 .cache/
 .local/
 
-# Database backups — never commit SQL dumps to version control
-backups/
-*.sql
-*.sql.gz
-*.dump
-
 # Environment variables & secrets — NEVER commit these
 .env
 .env.*

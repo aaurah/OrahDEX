@@ -24,7 +24,7 @@ import { logger } from "../lib/logger.js";
 
 const router = Router();
 
-const DILITHIUM_ALGORITHM = "CRYSTALS-Dilithium2";
+const DILITHIUM_ALGORITHM = "CRYSTALS-Dilithium2-placeholder";
 
 // ── POST /auth/quantum/register ───────────────────────────────────────────────
 
@@ -38,10 +38,6 @@ router.post("/auth/quantum/register", async (req, res) => {
 
     if (!walletAddress || typeof walletAddress !== "string" || !walletAddress.trim()) {
       res.status(400).json({ error: "walletAddress is required" });
-      return;
-    }
-    if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
-      res.status(400).json({ error: "walletAddress must be a valid EVM address (0x followed by 40 hex characters)" });
       return;
     }
     if (!dilithiumPublicKey || typeof dilithiumPublicKey !== "string" || !dilithiumPublicKey.trim()) {
@@ -65,12 +61,6 @@ router.post("/auth/quantum/register", async (req, res) => {
       res.status(400).json({ error: "dilithiumPublicKey is too short (minimum 32 bytes / 64 hex chars)" });
       return;
     }
-    // Dilithium2 public keys are 1312 bytes (2624 hex chars). Cap at 4096 to
-    // prevent oversized payloads from being hashed and written to the DB.
-    if (dilithiumPublicKey.length > 4096) {
-      res.status(400).json({ error: "dilithiumPublicKey exceeds maximum allowed length" });
-      return;
-    }
 
     // Verify ECDSA ownership: the user must sign the dilithiumPublicKey with their EVM wallet
     // The message signed is the raw hex string of the Dilithium public key.
@@ -78,8 +68,9 @@ router.post("/auth/quantum/register", async (req, res) => {
     try {
       verifyEvmSignature(walletAddress, message, signature);
     } catch (sigErr) {
-      logger.warn({ walletAddress, err: sigErr instanceof Error ? sigErr.message : String(sigErr) }, "Quantum key registration: ECDSA verification failed");
-      res.status(401).json({ error: "Signature verification failed" });
+      const detail = sigErr instanceof Error ? sigErr.message : String(sigErr);
+      logger.warn({ walletAddress, detail }, "Quantum key registration: ECDSA verification failed");
+      res.status(401).json({ error: "ECDSA signature verification failed", detail });
       return;
     }
 

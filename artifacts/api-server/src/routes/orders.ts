@@ -50,13 +50,9 @@ function detectIsBsvAddress(addr: string): boolean {
   return /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(addr);
 }
 
-/** Detect Solana public keys (base58, 32–44 chars, no O/0/I/l).
- *  Explicitly excludes BSV P2PKH (1xxx) and P2SH (3xxx) addresses which share
- *  the same base58 alphabet and length range, preventing misclassification. */
+/** Detect Solana public keys (base58, 32–44 chars, no O/0/I/l). */
 function detectIsSolAddress(addr: string): boolean {
-  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr)
-    && !addr.startsWith("0x")
-    && !/^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(addr);
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) && !addr.startsWith("0x");
 }
 
 /**
@@ -101,12 +97,12 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
     ...o,
     price:             o.price             ? parseFloat(o.price)             : undefined,
     stopPrice:         o.stopPrice         ? parseFloat(o.stopPrice)         : undefined,
-    quantity:          o.quantity          != null ? parseFloat(o.quantity)          : 0,
-    filledQuantity:    o.filledQuantity    != null ? parseFloat(o.filledQuantity)    : 0,
-    remainingQuantity: o.remainingQuantity != null ? parseFloat(o.remainingQuantity) : 0,
-    total:             o.total             != null ? parseFloat(o.total)             : undefined,
-    fee:               o.fee               != null ? parseFloat(o.fee)               : 0,
-    explorerUrl:       settlementExplorerUrl(o.txid, o.chainId ?? null),
+    quantity:          parseFloat(o.quantity),
+    filledQuantity:    parseFloat(o.filledQuantity),
+    remainingQuantity: parseFloat(o.remainingQuantity),
+    total:             o.total             ? parseFloat(o.total)             : undefined,
+    fee:               parseFloat(o.fee),
+    explorerUrl:       settlementExplorerUrl(o.txid, null),
   };
 }
 

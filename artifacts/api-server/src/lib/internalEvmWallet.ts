@@ -45,11 +45,6 @@ function encrypt(plaintext: string): string {
 
 export function decrypt(stored: string): string {
   const parts = stored.split(":");
-  if (parts.length !== 4 && parts.length !== 3) {
-    throw new Error(
-      `Malformed wallet ciphertext: expected 3 or 4 colon-separated parts, got ${parts.length}`,
-    );
-  }
   let key: Buffer, ivHex: string, tagHex: string, encHex: string;
   if (parts.length === 4) {
     const [saltHex, iv, tag, enc] = parts;

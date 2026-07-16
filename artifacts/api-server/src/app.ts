@@ -22,7 +22,6 @@ import { startRouteCache } from "./lib/routeCache.js";
 import { startHtlcWatcher } from "./lib/htlcWatcher.js";
 import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
 import { warmCurrenciesCache, clearSwapCaches } from "./routes/letsexchange.js";
-import { warmMarketsCache } from "./routes/markets.js";
 import { hydrateAdminTokens } from "./middleware/adminAuth.js";
 import { startCopyOrchestrator } from "./lib/copyOrchestrator.js";
 import { apiKeyAuth, rejectQueryParamApiKey, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
@@ -144,19 +143,10 @@ app.set("trust proxy", 1);
 
 /* ── Security headers (helmet) ───────────────────────────────────────────────
  * Sets X-Frame-Options, X-Content-Type-Options, HSTS, X-DNS-Prefetch-Control,
- * Referrer-Policy, and more.
- * The frontend SPA CSP is applied separately in serve-static.mjs.            */
-// API server only serves JSON — use a strict CSP that blocks framing,
-// form submissions, and all resource loads from untrusted origins.
-// The frontend SPA has its own CSP applied by serve-static.mjs.
+ * Referrer-Policy, and more. CSP is disabled here because the same server also
+ * serves the SPA — the frontend's Vite build handles its own CSP needs.       */
 app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc:     ["'none'"],
-      frameAncestors: ["'none'"],
-      formAction:     ["'none'"],
-    },
-  },
+  contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
 }));
 
@@ -221,7 +211,7 @@ const _allowedOrigins: (string | RegExp)[] = process.env["ALLOWED_ORIGINS"]
 app.use(cors({
   origin: _allowedOrigins,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"],
+  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key", "x-admin-token"],
   credentials: true,
 }));
 
@@ -544,13 +534,6 @@ startCopyOrchestrator();
 setTimeout(() => {
   warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
 }, 3_000);
-
-// Pre-populate the markets list cache ~10 s after boot so the very first user
-// request hits memory rather than the DB.  10 s gives the pool time to settle
-// after the staggered background-service startup before we add another query.
-setTimeout(() => {
-  warmMarketsCache().catch(e => logger.warn({ err: e }, "warmMarketsCache failed (non-fatal)"));
-}, 10_000);
 
 // syncAllLEPairs() is intentionally NOT called at startup.
 // The DB already holds LE pairs from a previous run (36 K+ rows).

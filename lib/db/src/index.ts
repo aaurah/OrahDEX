@@ -45,22 +45,17 @@ export const pool = new Pool({
   // With 12+ concurrent background services the old 5 s limit caused a cascade
   // of "timeout exceeded when trying to connect" across every engine.
   connectionTimeoutMillis: 15_000,
-  // DB_POOL_MAX lets the deployment environment tune the connection limit.
-  // Default is 10 — safe for Neon's free/launch tier (max_connections=5 on
-  // serverless cold-start, higher on paid).  Neon's connection pooler (pgbouncer)
-  // endpoint removes this constraint if configured.  Set higher (e.g. 20–40) on
-  // plans with a larger pg_max_connections budget.  Hard cap of 100 prevents
-  // accidentally starving the Postgres server.
-  max: Math.max(5, Math.min(100, parseInt(process.env.DB_POOL_MAX ?? "10", 10) || 10)),
+  // 40 connections: production load with 12+ background services firing
+  // concurrently can saturate a 25-slot pool, causing "timeout exceeded when
+  // trying to connect" on API routes when background services hold all slots.
+  // 40 gives enough headroom for simultaneous background ticks + HTTP requests.
+  max: 40,
   // Keep the pool alive between tick cycles.
   allowExitOnIdle: false,
-  // Kill runaway queries after 60 s. Neon serverless computes can take 10–30 s
-  // to wake from suspend; the old 30 s limit caused Neon cold-start queries to
-  // time out before the compute had a chance to respond, leaving the pool in a
-  // degraded state for every service that started during the wakeup window.
-  // Legitimate runaway queries are an acceptable cost — they are always wrapped
-  // in try/catch and caught by withDbRetry before they can crash a request.
-  query_timeout: 60_000,
+  // Kill runaway queries after 30 s. The liquidity bot's bulk DELETE of 48 k
+  // bot orders is a legitimate long operation that exceeds the old 8 s limit on
+  // the production DB (large table + 4 indexes to update + WAL overhead).
+  query_timeout: 30_000,
 });
 
 // Catch errors on idle clients in the pool (e.g. a connection dropped by the
