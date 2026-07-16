@@ -3,11 +3,6 @@ import { persist } from 'zustand/middleware';
 
 const API = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
-// Admin sessions are managed entirely via HttpOnly cookies — the raw token is
-// never stored in JavaScript memory or localStorage.  All fetch calls that
-// require admin auth must use credentials: "include" so the browser attaches
-// the cookie automatically.
-
 interface AdminAuthState {
   isAuthenticated: boolean;
   twoFaEnabled: boolean;
@@ -17,6 +12,7 @@ interface AdminAuthState {
   walletAddress: string | null;
   loginMethod: "credentials" | "wallet" | null;
   displayName: string;
+  token: string | null;
   error: string | null;
   login: (email: string, password: string) => Promise<boolean>;
   loginViaWallet: (address: string, signature: string) => Promise<boolean>;
@@ -31,7 +27,7 @@ interface AdminAuthState {
 
 export const useAdminAuthStore = create<AdminAuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       isAuthenticated: false,
       twoFaEnabled: false,
       twoFaSetupDone: false,
@@ -40,6 +36,7 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       walletAddress: null,
       loginMethod: null,
       displayName: 'Admin',
+      token: null,
       error: null,
 
       loginViaWallet: async (address, signature) => {
@@ -47,12 +44,11 @@ export const useAdminAuthStore = create<AdminAuthState>()(
           const res = await fetch(`${API}/api/admin/auth/wallet`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            credentials: "include",
             body: JSON.stringify({ address, signature }),
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            set({ isAuthenticated: true, walletAddress: address, loginMethod: "wallet", error: null });
+            set({ isAuthenticated: true, walletAddress: address, loginMethod: "wallet", token: data.token ?? null, error: null });
             return true;
           }
           set({ error: data.error ?? "Wallet login failed." });
@@ -68,16 +64,15 @@ export const useAdminAuthStore = create<AdminAuthState>()(
           const res = await fetch(`${API}/api/admin/auth`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            credentials: "include",
             body: JSON.stringify({ email, password }),
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            const twoFaEnabled = data.twoFaEnabled ?? false;
+            const { twoFaEnabled } = get();
             if (!twoFaEnabled) {
-              set({ email, isAuthenticated: true, error: null, twoFaVerified: false });
+              set({ email, isAuthenticated: true, token: data.token ?? null, error: null, twoFaVerified: false });
             } else {
-              set({ email, error: null, twoFaVerified: false });
+              set({ email, token: data.token ?? null, error: null, twoFaVerified: false });
             }
             return true;
           }
@@ -94,12 +89,11 @@ export const useAdminAuthStore = create<AdminAuthState>()(
           const res = await fetch(`${API}/api/admin/auth/totp`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            credentials: "include",
             body: JSON.stringify({ code }),
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            set({ isAuthenticated: true, twoFaVerified: true, error: null });
+            set({ isAuthenticated: true, twoFaVerified: true, token: data.token ?? null, error: null });
             return true;
           }
           set({ error: data.error ?? "Incorrect code. Try again." });
@@ -115,19 +109,20 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       disable2FA: () => set({ twoFaEnabled: false, twoFaSetupDone: false }),
 
       logout: () => {
-        // Fire-and-forget: revoke the HttpOnly cookie session on the server.
-        // credentials: "include" is required to send the cookie.
-        fetch(`${API}/api/admin/auth/logout`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-        }).catch(() => {});
+        const token = get().token;
+        if (token) {
+          fetch(`${API}/api/admin/auth/logout`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-admin-token": token },
+          }).catch(() => {});
+        }
         set({
           isAuthenticated: false,
           twoFaVerified: false,
           email: null,
           walletAddress: null,
           loginMethod: null,
+          token: null,
           error: null,
         });
       },
@@ -149,19 +144,13 @@ export const useAdminAuthStore = create<AdminAuthState>()(
         walletAddress: s.walletAddress,
         loginMethod: s.loginMethod,
         displayName: s.displayName,
+        token: s.token,
       }),
     }
   )
 );
 
-/**
- * Returns an empty object — admin auth is handled entirely via the HttpOnly
- * `admin_session` cookie, which browsers attach automatically when
- * `credentials: "include"` is set on the request.  Do not use this function
- * to add an Authorization header; use adminFetch() from lib/adminFetch.ts.
- *
- * @deprecated Use adminFetch() from lib/adminFetch.ts for all admin API calls.
- */
 export function getAdminHeaders(): Record<string, string> {
-  return {};
+  const token = useAdminAuthStore.getState().token;
+  return token ? { "x-admin-token": token } : {};
 }

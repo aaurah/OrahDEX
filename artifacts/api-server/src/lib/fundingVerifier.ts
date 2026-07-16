@@ -261,20 +261,18 @@ async function verifySpotFunding(
         // Unknown tokens: sig-only proof (balance verified at escrow lock time).
         const tokenInfo = getTokenInfo(chainId, asset);
         if (!tokenInfo) {
-          // Token not in registry — cannot verify on-chain balance.
-          // Fail closed rather than accepting with unverifiable sig-only proof,
-          // which would allow orders to be placed without actual token holdings.
-          // Operators must pre-register tokens via the admin token registry.
+          // Token is not in the registry — we cannot verify the on-chain balance,
+          // but the wallet signature already proves the user controls the address.
+          // Accept the order with sig-only proof; if they don't actually hold the
+          // tokens, the escrow lock will fail at the contract level (the ERC-20
+          // safeTransferFrom will revert). This allows any ERC-20 to trade without
+          // requiring every token to be pre-registered.
           logger.warn(
             { walletAddress, chainId, asset },
-            "fundingVerifier: token not in registry — rejecting order (TOKEN_UNSUPPORTED)",
+            "fundingVerifier: token not in registry — accepting with sig-only proof",
           );
-          return {
-            valid:      false,
-            fundingRef: "",
-            error:      `Token ${asset} is not supported for on-chain balance verification on chain ${chainId}. Contact support to register this token.`,
-            code:       "TOKEN_UNSUPPORTED",
-          };
+          const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
+          return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
         }
         const rawBalance = await client.readContract({
           address:      tokenInfo.address as `0x${string}`,

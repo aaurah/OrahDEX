@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
@@ -6,35 +6,25 @@ import { like, eq } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 
 const TOKEN_PREFIX = "admin_session:";
-// 8-hour session TTL — short enough to limit stolen-token exposure on a
-// financial platform, long enough for a working shift without re-auth.
-const TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
+const TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-// In-memory stores hold SHA-256 hashes, never raw token strings.
-// DB rows also store hashes only (value JSON: { hash, createdAt, expiresAt }).
-// Raw tokens exist only in the caller's HttpOnly cookie and in the return
-// value of generateAdminToken() long enough to set that cookie.
-const adminHashes      = new Set<string>();
-const adminExpirations = new Map<string, number>();
+const adminTokens = new Set<string>();
+const adminTokenExpirations = new Map<string, number>();
 
-function sha256hex(input: string): string {
-  return createHash("sha256").update(input).digest("hex");
-}
-
-function hasHashExpired(hash: string): boolean {
-  const expiresAt = adminExpirations.get(hash);
+function hasTokenExpired(token: string): boolean {
+  const expiresAt = adminTokenExpirations.get(token);
   if (typeof expiresAt !== "number" || !Number.isFinite(expiresAt)) return true;
   return Date.now() > expiresAt;
 }
 
-function purgeHash(hash: string): void {
-  adminHashes.delete(hash);
-  adminExpirations.delete(hash);
+function purgeExpiredToken(token: string): void {
+  adminTokens.delete(token);
+  adminTokenExpirations.delete(token);
   void db
     .delete(platformSettingsTable)
-    .where(eq(platformSettingsTable.key, `${TOKEN_PREFIX}${hash}`))
+    .where(eq(platformSettingsTable.key, `${TOKEN_PREFIX}${token}`))
     .catch((err: unknown) => {
-      logger.warn({ err }, "adminAuth: failed to purge expired token from DB");
+      logger.warn({ err }, "adminAuth: failed to purge expired admin token from DB");
     });
 }
 
@@ -45,74 +35,60 @@ export async function hydrateAdminTokens(): Promise<void> {
       .from(platformSettingsTable)
       .where(like(platformSettingsTable.key, `${TOKEN_PREFIX}%`));
     const now = Date.now();
-    let loaded = 0;
     let expired = 0;
-    let skipped = 0;
     for (const row of rows) {
       try {
-        const parsed = JSON.parse(row.value) as Record<string, unknown>;
-        const hash      = parsed["hash"] as string | undefined;
-        const expiresAt = parsed["expiresAt"] as number | undefined;
-        // Rows written by the old plain-token format lack a "hash" field.
-        // Those sessions are invalidated by this upgrade — skip and leave for GC.
-        if (typeof hash !== "string" || hash.length !== 64) {
-          skipped++;
-          continue;
-        }
-        if (typeof expiresAt === "number" && now > expiresAt) {
+        const { token, expiresAt } = JSON.parse(row.value) as { token: string; expiresAt: number };
+        if (expiresAt && now > expiresAt) {
           await db.delete(platformSettingsTable).where(eq(platformSettingsTable.key, row.key));
           expired++;
         } else {
-          adminHashes.add(hash);
+          adminTokens.add(token);
           if (typeof expiresAt === "number" && Number.isFinite(expiresAt)) {
-            adminExpirations.set(hash, expiresAt);
+            adminTokenExpirations.set(token, expiresAt);
           }
-          loaded++;
         }
       } catch (parseErr: any) {
-        logger.warn({ key: row.key, err: parseErr?.message }, "adminAuth: malformed session row — skipping");
+        logger.warn({ key: row.key, err: parseErr?.message }, "adminAuth: malformed admin session row — skipping");
       }
     }
-    logger.info({ loaded, expired, skipped }, "adminAuth: hydrated admin sessions from DB");
+    logger.info({ sessions: adminTokens.size, expired }, "adminAuth: hydrated admin sessions from DB");
   } catch (err: any) {
-    logger.warn({ err: err?.message }, "adminAuth: could not hydrate sessions from DB");
+    logger.warn({ err: err?.message }, "adminAuth: could not hydrate tokens from DB");
   }
 }
 
 export async function generateAdminToken(): Promise<string> {
-  const rawToken  = randomBytes(32).toString("hex");
-  const hash      = sha256hex(rawToken);
+  const token = randomBytes(32).toString("hex");
+  adminTokens.add(token);
   const expiresAt = Date.now() + TOKEN_TTL_MS;
-  adminHashes.add(hash);
-  adminExpirations.set(hash, expiresAt);
-  const key   = `${TOKEN_PREFIX}${hash}`;
-  const value = JSON.stringify({ hash, createdAt: Date.now(), expiresAt });
+  adminTokenExpirations.set(token, expiresAt);
+  const key = `${TOKEN_PREFIX}${token}`;
+  const value = JSON.stringify({ token, createdAt: Date.now(), expiresAt });
   try {
     await db
       .insert(platformSettingsTable)
       .values({ key, value })
       .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
   } catch (err: any) {
-    logger.warn({ err: err?.message }, "adminAuth: could not persist session to DB");
+    logger.warn({ err: err?.message }, "adminAuth: could not persist token to DB");
   }
-  // Return raw token to caller — it goes directly into the HttpOnly cookie.
-  return rawToken;
+  return token;
 }
 
-export async function revokeAdminToken(rawToken: string): Promise<void> {
-  const hash = sha256hex(rawToken);
-  adminHashes.delete(hash);
-  adminExpirations.delete(hash);
+export async function revokeAdminToken(token: string): Promise<void> {
+  adminTokens.delete(token);
+  adminTokenExpirations.delete(token);
   try {
     await db
       .delete(platformSettingsTable)
-      .where(eq(platformSettingsTable.key, `${TOKEN_PREFIX}${hash}`));
+      .where(eq(platformSettingsTable.key, `${TOKEN_PREFIX}${token}`));
   } catch { /* best-effort */ }
 }
 
 export async function revokeAllAdminTokens(): Promise<void> {
-  adminHashes.clear();
-  adminExpirations.clear();
+  adminTokens.clear();
+  adminTokenExpirations.clear();
   try {
     const rows = await db
       .select()
@@ -124,46 +100,36 @@ export async function revokeAllAdminTokens(): Promise<void> {
   } catch { /* best-effort */ }
 }
 
-/**
- * Constant-time check: hash the incoming raw token, then compare against every
- * stored hash using timingSafeEqual. Always iterates all candidates (no early
- * return) and runs timingSafeEqual even on length mismatches (via dummy buffer)
- * to prevent timing oracle attacks.
- */
-function hasMatchingAdminToken(rawToken: string): { matched: boolean; hash: string } {
-  const incomingHash = sha256hex(rawToken);
-  const incoming     = Buffer.from(incomingHash);
-  const dummy        = Buffer.alloc(incoming.length);
+function hasMatchingAdminToken(token: string): boolean {
+  const incoming = Buffer.from(token);
+  // Dummy buffer used when lengths differ so timingSafeEqual always runs
+  // (prevents early short-circuit that leaks token-length timing info).
+  const dummy = Buffer.alloc(incoming.length);
   let found = false;
-  for (const candidate of adminHashes) {
+  for (const candidate of adminTokens) {
     const expected = Buffer.from(candidate);
     if (incoming.length === expected.length) {
       if (timingSafeEqual(incoming, expected)) found = true;
     } else {
-      timingSafeEqual(incoming, dummy);
+      timingSafeEqual(incoming, dummy); // constant-time no-op
     }
   }
-  return { matched: found, hash: incomingHash };
+  return found;
 }
 
-/**
- * Express middleware — accepts ONLY the HttpOnly admin_session cookie.
- * The X-Admin-Token header path has been removed: headers are JavaScript-
- * accessible and therefore vulnerable to XSS exfiltration.
- */
 export function requireAdminToken(req: Request, res: Response, next: NextFunction): void {
-  const rawToken = (req.cookies as Record<string, string> | undefined)?.admin_session ?? "";
-  if (!rawToken) {
+  // Accept token from HttpOnly cookie (preferred) or X-Admin-Token header (legacy).
+  // cookie-parser must be wired in app.ts for req.cookies to be populated.
+  const cookieToken  = (req.cookies as Record<string, string> | undefined)?.admin_session ?? "";
+  const headerToken  = (req.headers["x-admin-token"] as string | undefined) ?? "";
+  const token        = cookieToken || headerToken;
+
+  if (!token || !hasMatchingAdminToken(token)) {
     res.status(401).json({ error: "Admin authentication required." });
     return;
   }
-  const { matched, hash } = hasMatchingAdminToken(rawToken);
-  if (!matched) {
-    res.status(401).json({ error: "Admin authentication required." });
-    return;
-  }
-  if (hasHashExpired(hash)) {
-    purgeHash(hash);
+  if (hasTokenExpired(token)) {
+    purgeExpiredToken(token);
     res.status(401).json({ error: "Admin session expired. Please log in again." });
     return;
   }
@@ -171,15 +137,17 @@ export function requireAdminToken(req: Request, res: Response, next: NextFunctio
 }
 
 export function isValidAdminToken(token: unknown): boolean {
-  if (typeof token !== "string" || token.length === 0) return false;
-  const { matched, hash } = hasMatchingAdminToken(token);
-  if (!matched) return false;
-  if (hasHashExpired(hash)) {
-    purgeHash(hash);
+  if (typeof token !== "string" || token.length === 0 || !hasMatchingAdminToken(token)) return false;
+  if (hasTokenExpired(token)) {
+    purgeExpiredToken(token);
     return false;
   }
   return true;
 }
 
-export const ADMIN_COOKIE_NAME    = "admin_session";
-export const ADMIN_COOKIE_TTL_MS  = TOKEN_TTL_MS;
+/**
+ * Shared cookie options for the admin_session HttpOnly cookie.
+ * Export allows admin.ts to set the cookie with consistent options.
+ */
+export const ADMIN_COOKIE_NAME = "admin_session";
+export const ADMIN_COOKIE_TTL_MS = TOKEN_TTL_MS;

@@ -538,8 +538,8 @@ router.post("/copy/vaults/:id/trade", async (req, res) => {
 router.post("/copy/vaults/:id/sync-price", async (req, res) => {
   try {
     const { newTvl, secret, status } = req.body ?? {};
-    const cookieToken = (req.cookies as Record<string, string> | undefined)?.admin_session ?? "";
-    if (!isValidAdminToken(cookieToken) && !verifyOrchestratorSecret(secret)) {
+    const adminToken = req.headers["x-admin-token"];
+    if (!isValidAdminToken(adminToken) && !verifyOrchestratorSecret(secret)) {
       res.status(403).json({ error: "Forbidden" });
       return;
     }

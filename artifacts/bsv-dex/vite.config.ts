@@ -849,20 +849,6 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
       },
     },
   },
-  build: {
-    sourcemap: false,
-  },
-  esbuild: {
-    // Strip all console.* calls and debugger statements from production bundles.
-    // Financial apps must not leak internal state to browser DevTools.
-    // NODE_ENV is set to "production" automatically by `vite build`.
-    drop: process.env.NODE_ENV === "production"
-      ? (["console", "debugger"] as const)
-      : [],
-    pure: process.env.NODE_ENV === "production"
-      ? ["console.log", "console.warn", "console.info", "console.error", "console.debug"]
-      : [],
-  },
   server: {
     port,
     host: "0.0.0.0",

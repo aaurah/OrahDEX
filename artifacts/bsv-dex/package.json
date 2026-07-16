@@ -95,6 +95,8 @@
     "@stripe/react-stripe-js": "^6.3.0",
     "@stripe/stripe-js": "^9.4.0",
     "@trezor/connect-web": "^9.7.3",
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
     "@wagmi/core": "^3.4.1",
     "@walletconnect/core": "^2.23.9",
     "@walletconnect/types": "^2.23.9",
