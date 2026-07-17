@@ -21,6 +21,7 @@ interface AiInsight {
 }
 
 interface CoinFull {
+  _partial?: boolean;
   error?: string;
   cgId?: string;
   name?: string;
@@ -144,21 +145,22 @@ function Skeleton() {
 }
 
 export function CoinInfoSheet({ symbol, onClose }: Props) {
-  const { data, isLoading, isError } = useQuery<CoinFull>({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<CoinFull>({
     queryKey: ["coin-full", symbol],
     queryFn: async () => {
       const r = await fetch(`${BASE}/api/coins/${encodeURIComponent(symbol!)}/full`);
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const json = await r.json() as CoinFull;
-      // Treat API-level errors as failures so React Query retries & never caches them
-      if (json.error === "not_found" || json.error === "fetch_failed") {
-        throw new Error(json.error);
-      }
+      if (json.error === "not_found" || json.error === "fetch_failed") throw new Error("not_found");
+      if (json.error === "rate_limited") throw new Error("rate_limited");
       return json;
     },
     enabled: !!symbol,
-    staleTime: 30 * 60 * 1000,
-    retry: 2,
+    // Partial hits: serve instantly, keep polling until background enrichment completes.
+    staleTime: (query) => query.state.data?._partial ? 0 : 30 * 60 * 1000,
+    refetchInterval: (query) => query.state.data?._partial ? 6000 : false,
+    // Don't auto-retry rate limits — they need time to clear
+    retry: (count, err: any) => err?.message !== "rate_limited" && count < 2,
   });
 
   if (!symbol) return null;
@@ -168,7 +170,8 @@ export function CoinInfoSheet({ symbol, onClose }: Props) {
     try { ai = JSON.parse(data.aiAnalysis); } catch { ai = null; }
   }
 
-  const notFound = isError;
+  const isRateLimited = isError && (error as any)?.message === "rate_limited";
+  const notFound      = isError && !isRateLimited;
 
   return (
     <div
@@ -220,6 +223,20 @@ export function CoinInfoSheet({ symbol, onClose }: Props) {
 
           {isLoading && <Skeleton />}
 
+          {!isLoading && isRateLimited && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center space-y-2">
+              <p className="text-sm text-amber-200 font-medium">Data temporarily unavailable</p>
+              <p className="text-xs text-amber-300/70">CoinGecko rate limit reached. Please wait a moment.</p>
+              <button
+                onClick={() => refetch()}
+                disabled={isFetching}
+                className="mt-1 text-xs font-semibold text-amber-300 border border-amber-500/40 rounded-lg px-3 py-1.5 hover:bg-amber-500/20 transition disabled:opacity-50"
+              >
+                {isFetching ? "Retrying…" : "Retry"}
+              </button>
+            </div>
+          )}
+
           {!isLoading && notFound && (
             <div className="rounded-xl border border-border bg-muted/20 p-4 text-center">
               <p className="text-sm text-muted-foreground">No data found for <span className="font-semibold text-foreground">{symbol}</span>.</p>
@@ -230,6 +247,12 @@ export function CoinInfoSheet({ symbol, onClose }: Props) {
           {!isLoading && data && !notFound && (
             <>
               {/* ── AI Analysis ─────────────────────────────────────────────── */}
+              {data._partial && !ai && (
+                <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 px-3.5 py-3 flex items-center gap-2.5">
+                  <Sparkles className="w-3.5 h-3.5 text-violet-400 shrink-0 animate-pulse" />
+                  <p className="text-xs text-violet-300/80">AI analysis loading…</p>
+                </div>
+              )}
               {ai && (
                 <Section title="AI Analysis by Ora" icon={<Sparkles className="w-3 h-3 text-violet-400" />}>
                   <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-3.5 space-y-3">

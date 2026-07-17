@@ -16,7 +16,8 @@
 - [Bridge pair scale issues](bridge-pair-scale.md) — 1.88M LE/SS pairs; 84% have last_price=0; mock order book used absolute offsets (broke sub-cent pairs); mobile had no bridge auto-routing.
 - [Reown AppKit re-integration](reown-appkit-reintegration.md) — all @reown/* tarballs + transitive deps installed manually (pnpm SIGKILL); WalletChooserDialog "EVM Wallet" calls openReownModal().
 - [Reown AppKit safe-global deps](reown-safe-global-deps.md) — @reown/appkit-utils SafeProvider.js statically imports @safe-global packages; must install sdk+provider tarballs even if Safe wallet not used.
-- [CoinGecko price feed](coingecko-price-feed.md) — Binance blocked in Replit; CoinGecko free API works (no key), covers 150+ coins with real change24h; MATIC needs "polygon-ecosystem-token" not "matic-network"; DOGS needs "dogs-2".
+- [CoinGecko price feed](coingecko-price-feed.md) — Binance blocked in Replit; CoinGecko free API used for /dex/prices only (not coin info); MATIC needs "polygon-ecosystem-token"; DOGS needs "dogs-2".
+- [CoinPaprika coin-info](coinpaprika-coin-info.md) — replaced CoinGecko for /coins/:symbol/full; AAVE="aave-new", COMP="comp-compoundd"; 1 call seeds 500 coins; logo URLs predictable.
 - [Deploy stops dev workflows](deploy-stops-workflows.md) — publishing/deploying can leave all 3 dev workflows as NOT_STARTED afterward; preview goes blank until manually restarted.
 - [TRON BIP44 derivation path](tron-derivation-path.md) — TRON must use m/44'/195'/0'/0/0 + keccak256; old evmToTronAddress(evm) used wrong key vs MetaMask snap/Trust Wallet.
 - [Reown dual-subscription guard](reown-dual-sub-guard.md) — only ONE subscribeReownAccount subscription (Layout.tsx) must exist; duplicate in App.tsx lacked the intentional-EVM guard and silently overrode passkey wallets.

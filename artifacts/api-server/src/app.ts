@@ -23,6 +23,7 @@ import { startHtlcWatcher } from "./lib/htlcWatcher.js";
 import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
 import { warmCurrenciesCache, clearSwapCaches } from "./routes/letsexchange.js";
 import { hydrateAdminTokens } from "./middleware/adminAuth.js";
+import { seedCoinGeckoIds } from "./services/cgIdSeeder.js";
 import { startCopyOrchestrator } from "./lib/copyOrchestrator.js";
 import { apiKeyAuth, rejectQueryParamApiKey, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
 import { WebhookHandlers } from "./webhookHandlers.js";
@@ -37,7 +38,7 @@ import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
 import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
 import { ensureCoinMetadataTable, runCoinGeckoImport } from "./lib/coinGeckoImporter.js";
 import { runCoinPaprikaImport } from "./lib/coinPaprikaImporter.js";
-import { clearCoinsCache } from "./routes/dex.js";
+import { clearCoinsCache, prefetchCoinMarkets } from "./routes/dex.js";
 import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
 import { startOverlayScanner } from "./lib/overlayScanner.js";
 import { startSelfDiagnostic } from "./lib/selfDiagnostic.js";
@@ -534,6 +535,17 @@ startCopyOrchestrator();
 setTimeout(() => {
   warmCurrenciesCache().catch(e => logger.warn({ err: e }, "warmCurrenciesCache failed (non-fatal)"));
 }, 3_000);
+
+// Seed coingecko_id for all known coins — runs once 15 s after boot.
+setTimeout(() => {
+  seedCoinGeckoIds().catch(e => logger.warn({ err: e }, "seedCoinGeckoIds failed (non-fatal)"));
+}, 15_000);
+
+// Pre-warm coin info cache with 1 batch /coins/markets call (250 coins) so
+// the first open of any major coin is served instantly from cache.
+setTimeout(() => {
+  prefetchCoinMarkets().catch(e => logger.warn({ err: e }, "prefetchCoinMarkets failed (non-fatal)"));
+}, 20_000);
 
 // syncAllLEPairs() is intentionally NOT called at startup.
 // The DB already holds LE pairs from a previous run (36 K+ rows).
