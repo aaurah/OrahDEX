@@ -442,15 +442,18 @@ let _cgCacheTs = 0;
 let _cgCache: Record<string, CoinGeckoPrice> = {};
 const CG_CACHE_MS = 55_000;
 
+/** Market cap (USD) per symbol — populated on each successful CG simple/price call. */
+export const cgMarketCapCache = new Map<string, number>();
+
 export async function fetchCoinGeckoPrices(): Promise<Record<string, CoinGeckoPrice>> {
   if (Date.now() - _cgCacheTs < CG_CACHE_MS && Object.keys(_cgCache).length > 0) {
     return _cgCache;
   }
   const ids = Object.values(COINGECKO_IDS).join(",");
-  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true`;
+  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`;
   const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
   if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
-  const data = await res.json() as Record<string, { usd?: number; usd_24h_change?: number; usd_24h_vol?: number }>;
+  const data = await res.json() as Record<string, { usd?: number; usd_24h_change?: number; usd_24h_vol?: number; usd_market_cap?: number }>;
 
   // Reverse-map: geckoId → our symbol
   const idToSym: Record<string, string> = {};
@@ -460,12 +463,14 @@ export async function fetchCoinGeckoPrices(): Promise<Record<string, CoinGeckoPr
   for (const [id, v] of Object.entries(data)) {
     const sym = idToSym[id];
     if (!sym || !v.usd || v.usd <= 0) continue;
+    const cap = v.usd_market_cap ?? 0;
     out[sym] = {
       usd:            v.usd,
       usd_24h_change: v.usd_24h_change ?? 0,
       usd_24h_vol:    v.usd_24h_vol   ?? v.usd * 500_000,
-      usd_market_cap: 0,
+      usd_market_cap: cap,
     };
+    if (cap > 0) cgMarketCapCache.set(sym, cap);
   }
   _cgCache = out;
   _cgCacheTs = Date.now();

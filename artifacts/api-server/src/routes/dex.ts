@@ -14,7 +14,7 @@ import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db, pool } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { eq, desc, and } from "drizzle-orm";
-import { FALLBACK_PRICES, fetchCoinGeckoPrices, simulateDailyChange } from "../lib/priceUpdater.js";
+import { FALLBACK_PRICES, fetchCoinGeckoPrices, simulateDailyChange, cgMarketCapCache } from "../lib/priceUpdater.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { getCachedLEPrices } from "../lib/lePriceCache.js";
 import { getCachedLECurrencies } from "./letsexchange.js";
@@ -718,6 +718,7 @@ function stripHtml(html: string): string {
 
 // Coins tracked by CoinGecko but absent from CoinPaprika — used as full-data fallback.
 const CG_ID_OVERRIDES: Record<string, string> = {
+  // Gaming / metaverse
   A8:      "ancient8",
   WAXP:    "wax",
   IMX:     "immutable-x",
@@ -737,10 +738,121 @@ const CG_ID_OVERRIDES: Record<string, string> = {
   UFO:     "ufo-gaming",
   NAKA:    "nakamoto-games",
   CWAR:    "cryowar-token",
+  // Top 100 / meme / widely traded (stable CG IDs)
+  BTC:     "bitcoin",
+  ETH:     "ethereum",
+  BNB:     "binancecoin",
+  SOL:     "solana",
+  XRP:     "ripple",
+  ADA:     "cardano",
+  DOGE:    "dogecoin",
+  AVAX:    "avalanche-2",
+  TRX:     "tron",
+  DOT:     "polkadot",
+  LINK:    "chainlink",
+  MATIC:   "matic-network",
+  POL:     "matic-network",
+  SHIB:    "shiba-inu",
+  LTC:     "litecoin",
+  BCH:     "bitcoin-cash",
+  UNI:     "uniswap",
+  NEAR:    "near",
+  ICP:     "internet-computer",
+  APT:     "aptos",
+  SUI:     "sui",
+  OP:      "optimism",
+  ARB:     "arbitrum",
+  MKR:     "maker",
+  AAVE:    "aave",
+  GRT:     "the-graph",
+  SNX:     "havven",
+  CRV:     "curve-dao-token",
+  LDO:     "lido-dao",
+  FET:     "fetch-ai",
+  INJ:     "injective-protocol",
+  STX:     "blockstack",
+  XLM:     "stellar",
+  ATOM:    "cosmos",
+  VET:     "vechain",
+  FIL:     "filecoin",
+  ETC:     "ethereum-classic",
+  ALGO:    "algorand",
+  HBAR:    "hedera-hashgraph",
+  SAND:    "the-sandbox",
+  MANA:    "decentraland",
+  AXS:     "axie-infinity",
+  CHZ:     "chiliz",
+  FLOW:    "flow",
+  EOS:     "eos",
+  XTZ:     "tezos",
+  THETA:   "theta-token",
+  XMR:     "monero",
+  NEO:     "neo",
+  KAVA:    "kava",
+  ZIL:     "zilliqa",
+  GALA:    "gala",
+  ENJ:     "enjincoin",
+  MEME:    "memecoin-2",
+  PEPE:    "pepe",
+  FLOKI:   "floki",
+  BONK:    "bonk",
+  WIF:     "dogwifcoin",
+  DOGS:    "dogs-2",
+  NOT:     "notcoin",
+  ORDI:    "ordinals",
+  SATS:    "1000sats-1000sats",
+  TIA:     "celestia",
+  PYTH:    "pyth-network",
+  JUP:     "jupiter-exchange-solana",
+  WLD:     "worldcoin-wld",
+  RENDER:  "render-token",
+  TAO:     "bittensor",
+  BSV:     "bitcoin-sv",
+  ZEC:     "zcash",
+  DASH:    "dash",
+  RUNE:    "thorchain",
+  CAKE:    "pancakeswap-token",
+  EGLD:    "elrond-erd-2",
+  ONE:     "harmony",
+  CRO:     "crypto-com-chain",
+  FTM:     "fantom",
+  WAVES:   "waves",
+  XEC:     "ecash",
+  IOTA:    "iota",
+  ZRX:     "0x",
+  BAT:     "basic-attention-token",
+  ANKR:    "ankr",
+  HOT:     "holotoken",
+  WOO:     "woo-network",
+  GMT:     "stepn",
+  GST:     "green-satoshi-token",
 };
 
-const cgCoinCacheMs = 30 * 60 * 1000;
-const cgCoinCache   = new Map<string, Cache<any>>();
+const cgCoinCacheMs   = 30 * 60 * 1000;
+const cgCoinCache     = new Map<string, Cache<any>>();
+const cgSearchCacheMs = 4 * 60 * 60 * 1000; // 4 h for found; 2 h for null
+const cgSearchCache   = new Map<string, { id: string | null; ts: number }>();
+
+async function searchCgId(symbol: string): Promise<string | null> {
+  const hit = cgSearchCache.get(symbol);
+  const ttl = hit?.id ? cgSearchCacheMs : cgSearchCacheMs / 2;
+  if (hit && Date.now() - hit.ts < ttl) return hit.id;
+  try {
+    const r = await fetch(
+      `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`,
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) },
+    );
+    if (!r.ok) return null;
+    const d = await r.json() as any;
+    const matches: any[] = (d.coins ?? []).filter(
+      (c: any) => c.symbol?.toUpperCase() === symbol,
+    );
+    matches.sort((a, b) => (a.market_cap_rank ?? 999999) - (b.market_cap_rank ?? 999999));
+    const id = matches[0]?.id ?? null;
+    cgSearchCache.set(symbol, { id, ts: Date.now() });
+    return id;
+  } catch { return null; }
+}
 
 async function fetchCgFullData(symbol: string, cgId: string): Promise<Record<string, any> | null> {
   const hit = cgCoinCache.get(symbol);
@@ -807,46 +919,63 @@ async function enhanceCgWithAI(symbol: string): Promise<void> {
   if (enhanceInFlight.has(symbol)) return;
   enhanceInFlight.add(symbol);
   try {
-    await new Promise(ok => setTimeout(ok, Math.random() * 800));
+    await new Promise(ok => setTimeout(ok, 300 + Math.random() * 700));
     const prev = fullCache.get(symbol)?.data;
-    if (!prev || prev._source !== "coingecko") return;
+    if (!prev) return;
 
-    let aiAnalysis: string | null = prev.aiAnalysis ?? null;
+    let current = { ...prev };
+
+    // If description/links are missing (e.g. seeded by bulk prefetch), fetch full detail
+    if (!current.description) {
+      const cgId = CG_ID_OVERRIDES[symbol] ?? cgIdMap.get(symbol) ?? await searchCgId(symbol);
+      if (cgId) {
+        try {
+          const detail = await fetchCgFullData(symbol, cgId);
+          if (detail) current = { ...detail, ...current, description: detail.description, categories: detail.categories?.length ? detail.categories : current.categories, homepage: detail.homepage ?? current.homepage, twitter: detail.twitter ?? current.twitter, twitterHandle: detail.twitterHandle ?? current.twitterHandle, reddit: detail.reddit ?? current.reddit, github: detail.github ?? current.github, telegram: detail.telegram ?? current.telegram, twitterFollowers: detail.twitterFollowers ?? current.twitterFollowers, redditSubscribers: detail.redditSubscribers ?? current.redditSubscribers };
+        } catch { /* non-fatal */ }
+      }
+    }
+
+    let aiAnalysis: string | null = current.aiAnalysis ?? null;
     if (!aiAnalysis) {
       try {
-        const prompt = `You are a concise crypto analyst on OrahDEX. Analyze ${prev.name} (${prev.symbol}) and return a JSON object with EXACTLY these keys:
-- "summary": 2-3 sentence overview of what this coin is and its core value proposition
-- "useCase": 1-2 sentences on the primary use case / problem it solves
-- "strengths": array of 3 short bullet strings (each ≤12 words)
-- "risks": array of 3 short bullet strings (each ≤12 words)
-- "traderNote": 1 sentence tip for traders watching this asset on OrahDEX
+        const mktCap = current.marketCap
+          ? current.marketCap >= 1e9 ? `$${(current.marketCap / 1e9).toFixed(2)}B` : `$${(current.marketCap / 1e6).toFixed(2)}M`
+          : "N/A";
+        const athPct = current.athChangePercent != null ? `${(current.athChangePercent as number).toFixed(1)}% from ATH` : "N/A";
+        const atlPct = current.atlChangePercent != null ? `+${(current.atlChangePercent as number).toFixed(0)}% from ATL` : "N/A";
+        const prompt = `You are a senior crypto analyst on OrahDEX, a multi-chain DEX. Analyze ${current.name ?? symbol} (${current.symbol ?? symbol}) and return a JSON object with EXACTLY these keys:
+- "summary": 2-3 sentences on the project's core value proposition and technology
+- "useCase": 1-2 sentences on the primary use case and who it serves
+- "strengths": array of exactly 3 bullet strings (each ≤14 words)
+- "risks": array of exactly 3 bullet strings (each ≤14 words)
+- "sentiment": exactly one of "bullish", "bearish", or "neutral" — your overall assessment
+- "outlook": 1-2 sentences on short-term price outlook given the current metrics
+- "traderNote": 1 sentence OrahDEX-specific tip about trading this asset
 
-Context data:
-- Market cap rank: #${prev.marketCapRank ?? "unknown"}
-- Categories: ${(prev.categories ?? []).join(", ") || "N/A"}
-- 24h change: ${prev.priceChange24h != null ? (prev.priceChange24h as number).toFixed(2) + "%" : "N/A"}
-- ATH: $${prev.ath ?? "N/A"}
-- Market cap: $${prev.marketCap ? ((prev.marketCap as number) / 1e6).toFixed(2) + "M" : "N/A"}
-- Description: ${(prev.description ?? "").slice(0, 500)}
+Market context:
+- Market cap: ${mktCap} | Rank: #${current.marketCapRank ?? "unranked"}
+- 24h: ${current.priceChange24h != null ? (current.priceChange24h as number).toFixed(2) + "%" : "N/A"} | 7d: ${current.priceChange7d != null ? (current.priceChange7d as number).toFixed(2) + "%" : "N/A"}
+- ATH distance: ${athPct} | ATL distance: ${atlPct}
+- Categories: ${(current.categories ?? []).join(", ") || "N/A"}
+- Description: ${(current.description ?? "").slice(0, 600)}
 
-Return ONLY valid JSON, no markdown, no extra text.`;
+Return ONLY valid JSON. No markdown fences, no extra text.`;
         const msg = await anthropic.messages.create({
-          model:      "claude-haiku-4-5",
-          max_tokens: 600,
-          messages:   [{ role: "user", content: prompt }],
+          model: "claude-haiku-4-5", max_tokens: 750,
+          messages: [{ role: "user", content: prompt }],
         });
-        const raw       = msg.content[0]?.type === "text" ? msg.content[0].text.trim() : "";
-        const jsonMatch = raw.match(/\{[\s\S]*\}/);
-        if (jsonMatch) aiAnalysis = jsonMatch[0];
+        const raw = msg.content[0]?.type === "text" ? msg.content[0].text.trim() : "";
+        const m   = raw.match(/\{[\s\S]*\}/);
+        if (m) aiAnalysis = m[0];
       } catch { /* non-fatal */ }
     }
 
-    const enriched = { ...prev, _partial: false, aiAnalysis };
+    const enriched = { ...current, _partial: false, aiAnalysis };
     fullCache.set(symbol, { data: enriched, ts: Date.now() });
     cgCoinCache.set(symbol, { data: enriched, ts: Date.now() });
-    logger.info({ symbol }, "coin detail enriched (CG+AI)");
+    logger.info({ symbol }, "coin enriched (CG+AI)");
   } catch (e: any) {
-    // Flip _partial off regardless so the frontend stops polling
     const cur = fullCache.get(symbol);
     if (cur) fullCache.set(symbol, { data: { ...cur.data, _partial: false }, ts: cur.ts });
     logger.warn({ err: e?.message, symbol }, "enhanceCgWithAI failed");
@@ -859,16 +988,36 @@ Return ONLY valid JSON, no markdown, no extra text.`;
 // then fall back to our internal price cache + coin_metadata for name/logo.
 // Returns null if we have no data at all.
 async function internalPriceFallback(symbol: string): Promise<Record<string, any> | null> {
-  // 1. CoinGecko full data for coins we know are absent from CoinPaprika
+  // 1. CoinGecko full data — hardcoded override (instant, no search needed)
   const cgId = CG_ID_OVERRIDES[symbol];
   if (cgId) {
     const cgData = await fetchCgFullData(symbol, cgId);
     if (cgData) return cgData;
   }
 
-  // 2. Internal price cache + coin_metadata (price only)
-  const px = (priceCache?.data ?? {})[symbol];
-  if (px?.usd == null) return null;
+  // 2. CoinGecko symbol search — catches any coin not in CP or our override list
+  if (!cgId) {
+    const searchedId = await searchCgId(symbol);
+    if (searchedId) {
+      const cgData = await fetchCgFullData(symbol, searchedId);
+      if (cgData) return cgData;
+    }
+  }
+
+  // 3. Internal price cache + coin_metadata (price only).
+  // Warm priceCache if not yet populated (first call before any /api/dex/prices request).
+  if (!priceCache || Date.now() - priceCache.ts > PRICE_CACHE_MS) {
+    try {
+      const fresh = await fetchKeyPrices();
+      priceCache = { data: fresh, ts: Date.now() };
+    } catch {}
+  }
+  let px = (priceCache?.data ?? {})[symbol];
+  // Final fallback: static FALLBACK_PRICES table for major coins
+  if (!px?.usd && FALLBACK_PRICES[symbol] && FALLBACK_PRICES[symbol] > 0) {
+    px = { usd: FALLBACK_PRICES[symbol], change24h: 0 };
+  }
+  if (!px?.usd) return null;
 
   let name = symbol;
   let image: string | null = null;
@@ -908,7 +1057,7 @@ async function internalPriceFallback(symbol: string): Promise<Record<string, any
     priceChange7d:     null,
     priceChange30d:    null,
     priceChange1y:     null,
-    marketCap:         null,
+    marketCap:         cgMarketCapCache.get(symbol) ?? null,
     fullyDilutedVal:   null,
     totalVolume:       null,
     circulatingSupply: null,
@@ -934,10 +1083,7 @@ router.get("/coins/:symbol/detail", async (req, res) => {
   // Serve from fullCache if available (seeded by prefetch or a prior /full call).
   const hit = fullCache.get(symbol);
   if (hit && Date.now() - hit.ts < FULL_CACHE_MS) {
-    if (hit.data._partial) {
-      const cpId = CP_ID_OVERRIDES[symbol] ?? cpSymbolMap.get(symbol) ?? hit.data.cpId;
-      if (cpId) enhanceWithDetail(symbol, cpId);
-    }
+    if (hit.data._partial) enhanceCgWithAI(symbol);
     return res.json(hit.data);
   }
 
@@ -948,53 +1094,34 @@ router.get("/coins/:symbol/detail", async (req, res) => {
   }
 
   try {
-    let cpId: string | null = CP_ID_OVERRIDES[symbol] ?? cpSymbolMap.get(symbol) ?? null;
+    let cgId: string | null = CG_ID_OVERRIDES[symbol] ?? cgIdMap.get(symbol) ?? null;
+    if (!cgId) cgId = await searchCgId(symbol);
 
-    if (!cpId) {
-      const searchRes = await fetch(
-        `https://api.coinpaprika.com/v1/search?q=${encodeURIComponent(symbol)}&c=currencies&limit=5`,
-        { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) },
-      );
-      if (searchRes.ok) {
-        const sd: any = await searchRes.json();
-        const matches: any[] = sd?.currencies ?? [];
-        const exact = matches.find((c:any) => c.symbol?.toUpperCase() === symbol);
-        cpId = (exact ?? matches[0])?.id ?? null;
-        if (cpId) cpSymbolMap.set(symbol, cpId);
-      }
-    }
-
-    if (!cpId) {
+    if (!cgId) {
       const fallback = await internalPriceFallback(symbol);
       if (fallback) {
-        fullCache.set(symbol, { data: fallback, ts: Date.now() });
-        if (fallback._source === "coingecko") enhanceCgWithAI(symbol);
+        fullCache.set(symbol, { data: { ...fallback, _partial: true }, ts: Date.now() });
+        enhanceCgWithAI(symbol);
         return res.json(fallback);
       }
       return res.json({ error: "not_found" });
     }
 
-    const tickerRes = await fetch(
-      `https://api.coinpaprika.com/v1/tickers/${cpId}`,
-      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12000) },
-    );
-    if (!tickerRes.ok) {
+    const data = await fetchCgFullData(symbol, cgId);
+    if (!data) {
       const fallback = await internalPriceFallback(symbol);
       if (fallback) {
-        fullCache.set(symbol, { data: fallback, ts: Date.now() });
-        if (fallback._source === "coingecko") enhanceCgWithAI(symbol);
+        fullCache.set(symbol, { data: { ...fallback, _partial: true }, ts: Date.now() });
+        enhanceCgWithAI(symbol);
         return res.json(fallback);
       }
       return res.json({ error: "not_found" });
     }
 
-    const ticker = await tickerRes.json() as any;
-    const partial = cpTickerToCoinData(ticker, symbol);
-    fullCache.set(symbol, { data: partial, ts: Date.now() });
-    detailCache.set(symbol, { data: partial, ts: Date.now() });
-
-    enhanceWithDetail(symbol, cpId);
-    return res.json(partial);
+    fullCache.set(symbol, { data, ts: Date.now() });
+    detailCache.set(symbol, { data, ts: Date.now() });
+    enhanceCgWithAI(symbol);
+    return res.json(data);
   } catch (err: any) {
     req.log.warn({ err: err?.message, symbol }, "coin detail fetch failed");
     return res.json({ error: "fetch_failed" });
@@ -1168,37 +1295,22 @@ const CP_ID_OVERRIDES: Record<string, string> = {
   NOT:"not-notcoin", PYTH:"pyth-pyth-network",
 };
 
-// Runtime symbol→cpId map populated by the prefetch (covers 500 coins).
-const cpSymbolMap = new Map<string, string>();
+// Runtime symbol→cgId map populated by the bulk prefetch.
+const cgIdMap = new Map<string, string>();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Two-tier coin-info strategy to avoid CoinGecko rate limits:
-//
-// Tier 1 — CoinPaprika /v1/tickers?limit=500 (batch): 1 call → 500 coins with
-//   full market data. Pre-warmed at startup; zero per-user API calls for top coins.
-//
-// Tier 2 — CoinPaprika /v1/coins/{id} (individual): enriches the cache in the
-//   background on first open, adding description, links, and AI analysis.
-//
-// CoinPaprika is a public API (no key, 2 req/s limit) that is reliably accessible
-// from server IPs — unlike CoinGecko's free tier which blocks shared server IPs.
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Build a partial coinData record from a CoinPaprika ticker object.
-function cpTickerToCoinData(t: any, symOverride?: string): Record<string, any> {
-  const q = (t.quotes?.USD ?? t.quotes?.usd ?? {}) as Record<string, any>;
-  const price = (q.price as number) ?? null;
-  const maxSupply: number | null = t.max_supply || null;
+// Map a /coins/markets item to our standard coin shape (market data only).
+function cgMarketsItemToData(c: any): Record<string, any> {
   return {
-    _partial:          true,
-    cpId:              t.id,
-    name:              t.name,
-    symbol:            symOverride ?? (t.symbol ?? "").toUpperCase(),
+    _partial:          true,   // description/links/AI enriched on first open
+    _source:           "coingecko",
+    cpId:              null,
+    name:              c.name ?? c.id,
+    symbol:            (c.symbol ?? "").toUpperCase(),
     description:       null,
     categories:        [],
-    image:             `https://static.coinpaprika.com/coin/${t.id}/logo.png`,
-    marketCapRank:     t.rank ?? null,
-    genesisDate:       t.first_data_at ?? null,
+    image:             c.image ?? null,
+    marketCapRank:     c.market_cap_rank ?? null,
+    genesisDate:       null,
     hashingAlgo:       null,
     countryOrigin:     null,
     platforms:         {},
@@ -1209,23 +1321,23 @@ function cpTickerToCoinData(t: any, symOverride?: string): Record<string, any> {
     reddit:            null,
     github:            null,
     telegram:          null,
-    priceUsd:          price,
-    priceChange24h:    (q.percent_change_24h as number) ?? null,
-    priceChange7d:     (q.percent_change_7d as number) ?? null,
-    priceChange30d:    (q.percent_change_30d as number) ?? null,
-    priceChange1y:     (q.percent_change_1y as number) ?? null,
-    marketCap:         (q.market_cap as number) ?? null,
-    fullyDilutedVal:   (price != null && maxSupply) ? price * maxSupply : null,
-    totalVolume:       (q.volume_24h as number) ?? null,
-    circulatingSupply: t.circulating_supply ?? null,
-    totalSupply:       t.total_supply ?? null,
-    maxSupply,
-    ath:               (q.ath_price as number) ?? null,
-    athDate:           (q.ath_date as string) ?? null,
-    athChangePercent:  (q.percent_from_price_ath as number) ?? null,
-    atl:               null,
-    atlDate:           null,
-    atlChangePercent:  null,
+    priceUsd:          c.current_price ?? null,
+    priceChange24h:    c.price_change_percentage_24h ?? null,
+    priceChange7d:     c.price_change_percentage_7d_in_currency ?? null,
+    priceChange30d:    c.price_change_percentage_30d_in_currency ?? null,
+    priceChange1y:     c.price_change_percentage_1y_in_currency ?? null,
+    marketCap:         c.market_cap ?? null,
+    fullyDilutedVal:   c.fully_diluted_valuation ?? null,
+    totalVolume:       c.total_volume ?? null,
+    circulatingSupply: c.circulating_supply ?? null,
+    totalSupply:       c.total_supply ?? null,
+    maxSupply:         c.max_supply ?? null,
+    ath:               c.ath ?? null,
+    athDate:           c.ath_date ?? null,
+    athChangePercent:  c.ath_change_percentage ?? null,
+    atl:               c.atl ?? null,
+    atlDate:           c.atl_date ?? null,
+    atlChangePercent:  c.atl_change_percentage ?? null,
     twitterFollowers:  null,
     redditSubscribers: null,
     aiAnalysis:        null,
@@ -1233,28 +1345,43 @@ function cpTickerToCoinData(t: any, symOverride?: string): Record<string, any> {
 }
 
 // Exported: called from app.ts ~20 s after boot.
-// Fetches top 500 coins in ONE CoinPaprika call — pre-warms cache for all known coins.
-export async function prefetchCoinMarkets(): Promise<void> {
+// Fetches top 250 coins in ONE CoinGecko call — pre-warms fullCache + builds cgIdMap.
+// Retries with exponential backoff on 429 (rate-limited).
+export async function prefetchCgMarkets(retryDelayMs = 90_000): Promise<void> {
   try {
+    const params = new URLSearchParams({
+      vs_currency:             "usd",
+      order:                   "market_cap_desc",
+      per_page:                "250",
+      page:                    "1",
+      sparkline:               "false",
+      price_change_percentage: "7d,30d,1y",
+    });
     const r = await fetch(
-      "https://api.coinpaprika.com/v1/tickers?limit=500",
+      `https://api.coingecko.com/api/v3/coins/markets?${params}`,
       { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(25000) },
     );
-    if (!r.ok) { logger.warn({ status: r.status }, "CP tickers prefetch failed"); return; }
-    const tickers: any[] = await r.json();
+    if (r.status === 429) {
+      logger.warn({ retryMs: retryDelayMs }, "CG markets prefetch rate-limited — will retry");
+      setTimeout(() => prefetchCgMarkets(Math.min(retryDelayMs * 2, 10 * 60_000)), retryDelayMs);
+      return;
+    }
+    if (!r.ok) { logger.warn({ status: r.status }, "CG markets prefetch failed"); return; }
+    const coins: any[] = await r.json();
     let seeded = 0;
-    for (const t of tickers) {
-      const sym = (t.symbol ?? "").toUpperCase();
+    for (const c of coins) {
+      const sym = (c.symbol ?? "").toUpperCase();
       if (!sym) continue;
-      cpSymbolMap.set(sym, t.id);
+      cgIdMap.set(sym, c.id);
+      cgSearchCache.set(sym, { id: c.id, ts: Date.now() }); // warm search cache too
       const existing = fullCache.get(sym);
-      if (existing && !existing.data._partial) continue;
-      fullCache.set(sym, { data: cpTickerToCoinData(t), ts: Date.now() });
+      if (existing && !existing.data._partial) continue; // don't overwrite enriched entries
+      fullCache.set(sym, { data: cgMarketsItemToData(c), ts: Date.now() });
       seeded++;
     }
-    logger.info({ seeded, total: tickers.length }, "CP tickers prefetch complete");
+    logger.info({ seeded, total: coins.length }, "CG markets prefetch complete");
   } catch (e: any) {
-    logger.warn({ err: e?.message }, "CP tickers prefetch error");
+    logger.warn({ err: e?.message }, "CG markets prefetch error");
   }
 }
 
@@ -1364,62 +1491,39 @@ router.get("/coins/:symbol/full", async (req, res) => {
   // ── Cache check ──────────────────────────────────────────────────────────
   const hit = fullCache.get(symbol);
   if (hit && Date.now() - hit.ts < FULL_CACHE_MS) {
-    if (hit.data._partial) {
-      const cpId = CP_ID_OVERRIDES[symbol] ?? cpSymbolMap.get(symbol) ?? hit.data.cpId;
-      if (cpId) enhanceWithDetail(symbol, cpId);
-    }
+    if (hit.data._partial) enhanceCgWithAI(symbol);
     return res.json(hit.data);
   }
 
-  // ── No cache hit — resolve CoinPaprika ID, fetch single-coin ticker ──────
+  // ── No cache hit — resolve CoinGecko ID, fetch full coin data ────────────
   try {
-    let cpId: string | null = CP_ID_OVERRIDES[symbol] ?? cpSymbolMap.get(symbol) ?? null;
+    let cgId: string | null = CG_ID_OVERRIDES[symbol] ?? cgIdMap.get(symbol) ?? null;
+    if (!cgId) cgId = await searchCgId(symbol);
 
-    if (!cpId) {
-      const searchRes = await fetch(
-        `https://api.coinpaprika.com/v1/search?q=${encodeURIComponent(symbol)}&c=currencies&limit=5`,
-        { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) },
-      );
-      if (searchRes.ok) {
-        const sd: any = await searchRes.json();
-        const matches: any[] = sd?.currencies ?? [];
-        const exact = matches.find((c:any) => c.symbol?.toUpperCase() === symbol);
-        cpId = (exact ?? matches[0])?.id ?? null;
-        if (cpId) cpSymbolMap.set(symbol, cpId);
-      }
-    }
-
-    if (!cpId) {
+    if (!cgId) {
       const fallback = await internalPriceFallback(symbol);
       if (fallback) {
-        fullCache.set(symbol, { data: fallback, ts: Date.now() });
-        if (fallback._source === "coingecko") enhanceCgWithAI(symbol);
+        fullCache.set(symbol, { data: { ...fallback, _partial: true }, ts: Date.now() });
+        enhanceCgWithAI(symbol);
         return res.json(fallback);
       }
       return res.json({ error: "not_found" });
     }
 
-    const tickerRes = await fetch(
-      `https://api.coinpaprika.com/v1/tickers/${cpId}`,
-      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12000) },
-    );
-    if (tickerRes.status === 429) return res.json({ error: "rate_limited" });
-    if (!tickerRes.ok) {
+    const data = await fetchCgFullData(symbol, cgId);
+    if (!data) {
       const fallback = await internalPriceFallback(symbol);
       if (fallback) {
-        fullCache.set(symbol, { data: fallback, ts: Date.now() });
-        if (fallback._source === "coingecko") enhanceCgWithAI(symbol);
+        fullCache.set(symbol, { data: { ...fallback, _partial: true }, ts: Date.now() });
+        enhanceCgWithAI(symbol);
         return res.json(fallback);
       }
       return res.json({ error: "not_found" });
     }
 
-    const ticker = await tickerRes.json() as any;
-    const partial = cpTickerToCoinData(ticker, symbol);
-    fullCache.set(symbol, { data: partial, ts: Date.now() });
-
-    enhanceWithDetail(symbol, cpId);
-    return res.json(partial);
+    fullCache.set(symbol, { data, ts: Date.now() });
+    enhanceCgWithAI(symbol);
+    return res.json(data);
   } catch (err: any) {
     req.log?.warn?.({ err: err?.message, symbol }, "coin full fetch failed");
     return res.json({ error: "fetch_failed" });
