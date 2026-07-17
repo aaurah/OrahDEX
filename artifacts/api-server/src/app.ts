@@ -64,6 +64,29 @@ pool.query(`
     ADD COLUMN IF NOT EXISTS "arc_status" text;
 `).catch((err: Error) => logger.warn({ err: err.message }, "ARC columns migration failed (non-fatal)"));
 
+// External swap tracking — records LE/SS swaps created for zero-liquidity pairs.
+pool.query(`
+  CREATE TABLE IF NOT EXISTS external_swaps (
+    id               TEXT PRIMARY KEY,
+    venue_tx_id      TEXT,
+    venue            TEXT NOT NULL,
+    wallet_address   TEXT NOT NULL,
+    from_coin        TEXT NOT NULL,
+    to_coin          TEXT NOT NULL,
+    from_amount      NUMERIC,
+    to_amount        NUMERIC,
+    deposit_address  TEXT,
+    deposit_extra_id TEXT,
+    output_address   TEXT,
+    status           TEXT NOT NULL DEFAULT 'waiting_deposit',
+    mode             TEXT NOT NULL DEFAULT 'manual',
+    side             TEXT,
+    trade_symbol     TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+`).catch((err: Error) => logger.warn({ err: err.message }, "external_swaps table creation failed (non-fatal)"));
+
 // SPV pending deposits table — tracks mempool-detected BSV deposits.
 pool.query(`
   CREATE TABLE IF NOT EXISTS bsv_pending_deposits (

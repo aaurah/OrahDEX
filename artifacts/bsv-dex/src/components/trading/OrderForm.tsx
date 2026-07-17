@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useExternalSwap } from "@/hooks/useExternalSwap";
+import { ExternalSwapStatus } from "@/components/trading/ExternalSwapStatus";
 import { useAccount, useSignMessage } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useSettingsStore } from "@/store/useSettingsStore";
@@ -328,17 +330,26 @@ export interface OrderFormFill {
 }
 
 // ── Main OrderForm ─────────────────────────────────────────────────────────────
-export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlaced, onTradeFlash }: {
+export function OrderForm({
+  symbol, currentPrice = 0, externalFill, onOrderPlaced, onTradeFlash,
+  externalSwapMode = false, externalSwapRate = 0, externalSwapProvider = null,
+}: {
   symbol: string;
   currentPrice?: number;
   externalFill?: OrderFormFill | null;
   onOrderPlaced?: () => void;
   onTradeFlash?: (fill: { price: number; side: "buy" | "sell" }) => void;
+  externalSwapMode?: boolean;
+  externalSwapRate?: number;
+  externalSwapProvider?: string | null;
 }) {
   const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
+
+  // External swap state — used when externalSwapMode=true and user places a market order
+  const externalSwap = useExternalSwap();
   const isOrahWallet = provider === "orah-wallet";
 
   // Wallet signing for external EVM wallets — used to authorise on-chain order placement.
@@ -733,6 +744,49 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!address || !amount || parseFloat(amount) <= 0) return;
+
+    // ── External swap intercept (market orders on zero-liquidity pairs) ────────
+    if (externalSwapMode && type === "market") {
+      const effectiveRate = externalSwapRate > 0 ? externalSwapRate : currentPrice;
+      const fromCoin  = side === "buy" ? quote : base;
+      const toCoin    = side === "buy" ? base  : quote;
+      const fromAmount = side === "buy"
+        ? parseFloat(amount) * effectiveRate
+        : parseFloat(amount);
+
+      if (fromAmount <= 0 || !isFinite(fromAmount)) {
+        toast({ title: "Invalid amount", description: "Enter a valid amount to swap.", variant: "destructive" });
+        return;
+      }
+
+      // Output address: prefer the manual receive field, then the connected wallet address.
+      const outputAddr = (receiveAddress || (isEvm ? address : null) || address)?.trim() ?? "";
+      if (!outputAddr) {
+        toast({
+          title: "Receive address required",
+          description: `Enter your ${toCoin} receive address in the field above.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const result = await externalSwap.execute({
+        fromCoin, toCoin, amount: fromAmount,
+        walletAddress: address!,
+        outputAddress: outputAddr,
+        symbol, side: side as "buy" | "sell",
+      });
+
+      if (result) {
+        toast({
+          title: "Swap created ⚡",
+          description: `Send ${fromAmount.toFixed(8)} ${fromCoin} to the deposit address shown below.`,
+        });
+        onTradeFlash?.({ price: effectiveRate, side: side as "buy" | "sell" });
+        onOrderPlaced?.();
+      }
+      return;
+    }
 
     // ── Synchronous balance guard (runs before precheck, no debounce lag) ─────
     // Block immediately if the balance is clearly too low.
@@ -1659,6 +1713,16 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           </div>
 
         </form>
+
+        {/* External swap status — shown when externalSwapMode is active */}
+        {externalSwapMode && externalSwap.status !== "idle" && (
+          <ExternalSwapStatus
+            status={externalSwap.status}
+            swap={externalSwap.swap}
+            error={externalSwap.error}
+            onReset={externalSwap.reset}
+          />
+        )}
 
         {/* Assets panel */}
         <div className="mt-1 border-t border-border pt-3 space-y-1.5">

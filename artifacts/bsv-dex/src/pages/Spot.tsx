@@ -438,11 +438,13 @@ export function SpotTrading() {
   const hasRealOB = !isBridgePair && (rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0);
 
   // Auto-switch trade mode based on liquidity, unless the user manually picked.
-  // Bridge pairs always auto-route to swap mode.
+  // Only real bridge pairs (cross-chain) auto-route to the swap panel.
+  // Zero-liquidity spot pairs stay in "order" mode — external routing happens
+  // transparently in OrderForm when the user places a market order.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!tradeModeLockedByUser) {
-      setTradeMode((hasRealOB && !isBridgePair) ? "order" : "swap");
+      setTradeMode(isBridgePair ? "swap" : "order");
     }
   }, [hasRealOB, isBridgePair, symbol]); // reset on symbol change too
 
@@ -465,8 +467,14 @@ export function SpotTrading() {
   //   - Bridge pair WITHOUT rate yet → fall back to mock visual so depth isn't blank during loading
   //   - Standard pair with real orders → toEntries (raw [price,qty] tuples) or apiOrderBook
   //   - Standard pair with no orders  → generateMockOrderBook for visual depth
+  // isExternalSwapMode: pair has no real DEX liquidity but LE/SS can fill it.
+  // In this mode OrderBook shows virtual levels; market orders route via LE/SS.
+  const isExternalSwapMode = !hasRealOB && !isBridgePair && bridgeRate != null;
+
   const orderBook = (() => {
     if (isBridgePair && bridgeRate) return { bids: [], asks: [] };
+    // No real orders but LE/SS rate available — let OrderBook render virtual levels.
+    if (isExternalSwapMode) return { bids: [], asks: [] };
     if (hasRealOB && Array.isArray(rawOB.bids[0])) return { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) };
     if (hasRealOB) return apiOrderBook;
     return generateMockOrderBook(ticker.lastPrice);
@@ -1490,22 +1498,24 @@ export function SpotTrading() {
           <div className="flex-1 overflow-y-auto min-h-0">
             {tradeMode === "order" ? (
               <>
-                <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} onTradeFlash={handleTradeFlash} />
-                {/* Swap nudge when no internal OB liquidity */}
-                {!hasRealOB && leRateData && (
-                  <button
-                    onClick={handleLeSwap}
-                    className="w-full flex items-center gap-2 px-3 py-2 bg-yellow-500/8 hover:bg-yellow-500/15 border-t border-yellow-500/20 transition-colors group"
-                  >
-                    <Zap className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
-                    <div className="flex-1 text-left min-w-0">
-                      <p className="text-[10px] font-bold text-yellow-400 leading-tight">No DEX liquidity — switch to swap?</p>
-                      <p className="text-[9px] text-yellow-400/70 leading-tight">
-                        1 {base} ≈ {parseFloat(leRateData.rate).toFixed(6)} {quote}
-                      </p>
-                    </div>
-                    <ArrowLeftRight className="w-3.5 h-3.5 text-yellow-400/50 group-hover:text-yellow-400 transition-colors shrink-0" />
-                  </button>
+                <OrderForm
+                  symbol={symbol}
+                  currentPrice={ticker.lastPrice}
+                  externalFill={orderBookFill}
+                  onOrderPlaced={refetchOrders}
+                  onTradeFlash={handleTradeFlash}
+                  externalSwapMode={isExternalSwapMode}
+                  externalSwapRate={bridgeRate ? Number(bridgeRate.rate) : 0}
+                  externalSwapProvider={bridgeProvider}
+                />
+                {/* External routing badge — shows when LE/SS is active for this pair */}
+                {isExternalSwapMode && bridgeRate && (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 border-t border-yellow-500/20 bg-yellow-500/5">
+                    <Zap className="w-2.5 h-2.5 text-yellow-400 shrink-0" />
+                    <span className="text-[9px] text-yellow-400/80">
+                      External routing via {bridgeProvider === "letsexchange" ? "LetsExchange" : "SimpleSwap"} · 1 {base} ≈ {parseFloat(bridgeRate.rate).toFixed(6)} {quote}
+                    </span>
+                  </div>
                 )}
                 <div className="p-2 border-t border-border">
                   <AiTradeAnalysis symbol={rawSymbol} baseAsset={base} />
@@ -1593,7 +1603,16 @@ export function SpotTrading() {
           )}
 
           {tradeMode === "order" ? (
-            <OrderForm symbol={symbol} currentPrice={ticker.lastPrice} externalFill={orderBookFill} onOrderPlaced={refetchOrders} onTradeFlash={handleTradeFlash} />
+            <OrderForm
+              symbol={symbol}
+              currentPrice={ticker.lastPrice}
+              externalFill={orderBookFill}
+              onOrderPlaced={refetchOrders}
+              onTradeFlash={handleTradeFlash}
+              externalSwapMode={isExternalSwapMode}
+              externalSwapRate={bridgeRate ? Number(bridgeRate.rate) : 0}
+              externalSwapProvider={bridgeProvider}
+            />
           ) : (
             <div className="flex flex-col">
               {/* Buy / Sell direction tabs — mobile */}
