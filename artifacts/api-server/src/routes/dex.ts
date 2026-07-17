@@ -10,6 +10,7 @@
  */
 
 import { Router, type IRouter } from "express";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { db, pool } from "@workspace/db";
 import { marketsTable } from "@workspace/db/schema";
 import { eq, desc, and } from "drizzle-orm";
@@ -753,22 +754,40 @@ router.get("/coins/:symbol/detail", async (req, res) => {
     const md = d?.market_data ?? {};
 
     const result = {
-      cgId:        d.id,
-      name:        d.name,
-      symbol:      (d.symbol ?? symbol).toUpperCase(),
-      description: d.description?.en ? stripHtml(d.description.en).slice(0, 800) : null,
-      categories:  (d.categories ?? []).filter(Boolean).slice(0, 6),
-      homepage:    (d.links?.homepage ?? []).find((u: string) => u?.startsWith("http")) ?? null,
-      twitter:     d.links?.twitter_screen_name ? `https://twitter.com/${d.links.twitter_screen_name}` : null,
-      reddit:      d.links?.subreddit_url ?? null,
-      github:      (d.links?.repos_url?.github ?? [])[0] ?? null,
-      ath:         md.ath?.usd ?? null,
-      athDate:     md.ath_date?.usd ?? null,
-      atl:         md.atl?.usd ?? null,
-      atlDate:     md.atl_date?.usd ?? null,
-      marketCapRank: d.market_cap_rank ?? null,
-      image:       d.image?.large ?? d.image?.small ?? null,
-      genesisDate: d.genesis_date ?? null,
+      cgId:              d.id,
+      name:              d.name,
+      symbol:            (d.symbol ?? symbol).toUpperCase(),
+      description:       d.description?.en ? stripHtml(d.description.en).slice(0, 1200) : null,
+      categories:        (d.categories ?? []).filter(Boolean).slice(0, 8),
+      homepage:          (d.links?.homepage ?? []).find((u: string) => u?.startsWith("http")) ?? null,
+      whitepaper:        d.links?.whitepaper ?? null,
+      twitter:           d.links?.twitter_screen_name ? `https://twitter.com/${d.links.twitter_screen_name}` : null,
+      reddit:            d.links?.subreddit_url ?? null,
+      github:            (d.links?.repos_url?.github ?? [])[0] ?? null,
+      telegram:          d.links?.telegram_channel_identifier ? `https://t.me/${d.links.telegram_channel_identifier}` : null,
+      ath:               md.ath?.usd ?? null,
+      athDate:           md.ath_date?.usd ?? null,
+      athChangePercent:  md.ath_change_percentage?.usd ?? null,
+      atl:               md.atl?.usd ?? null,
+      atlDate:           md.atl_date?.usd ?? null,
+      atlChangePercent:  md.atl_change_percentage?.usd ?? null,
+      marketCapRank:     d.market_cap_rank ?? null,
+      marketCap:         md.market_cap?.usd ?? null,
+      fullyDilutedVal:   md.fully_diluted_valuation?.usd ?? null,
+      totalVolume:       md.total_volume?.usd ?? null,
+      circulatingSupply: md.circulating_supply ?? null,
+      totalSupply:       md.total_supply ?? null,
+      maxSupply:         md.max_supply ?? null,
+      priceUsd:          md.current_price?.usd ?? null,
+      priceChange24h:    md.price_change_percentage_24h ?? null,
+      priceChange7d:     md.price_change_percentage_7d ?? null,
+      priceChange30d:    md.price_change_percentage_30d ?? null,
+      priceChange1y:     md.price_change_percentage_1y ?? null,
+      image:             d.image?.large ?? d.image?.small ?? null,
+      genesisDate:       d.genesis_date ?? null,
+      hashingAlgo:       d.hashing_algorithm ?? null,
+      countryOrigin:     d.country_origin ?? null,
+      platforms:         d.platforms ?? {},
     };
 
     detailCache.set(symbol, { data: result, ts: Date.now() });
@@ -913,6 +932,154 @@ router.get("/aggregator/swap", async (req, res) => {
     return res.json(d);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
+  }
+});
+
+// ─── GET /api/coins/:symbol/full  — everything in one shot, cached 30 min ────
+//
+// Fetches CoinGecko market data + generates a Claude AI analysis.
+// Cached server-side for 30 minutes so repeat opens are instant.
+// ─────────────────────────────────────────────────────────────────────────────
+const fullCache = new Map<string, Cache<any>>();
+const FULL_CACHE_MS = 30 * 60 * 1000;
+
+router.get("/coins/:symbol/full", async (req, res) => {
+  const symbol = (req.params.symbol ?? "").toUpperCase().trim();
+  if (!symbol) return res.status(400).json({ error: "symbol required" });
+
+  const hit = fullCache.get(symbol);
+  if (hit && Date.now() - hit.ts < FULL_CACHE_MS) return res.json(hit.data);
+
+  try {
+    // ── 1. CoinGecko search ──────────────────────────────────────────────────
+    const searchRes = await fetch(
+      `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`,
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) },
+    );
+    if (!searchRes.ok) return res.json({ error: "not_found" });
+
+    const searchData = await searchRes.json() as any;
+    const coins: any[] = searchData?.coins ?? [];
+    const exact = coins.find((c: any) => c.symbol?.toUpperCase() === symbol);
+    const best  = exact ?? coins[0];
+    if (!best?.id) return res.json({ error: "not_found" });
+
+    // ── 2. Full CoinGecko detail ─────────────────────────────────────────────
+    const detailRes = await fetch(
+      `https://api.coingecko.com/api/v3/coins/${best.id}?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false&sparkline=false`,
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10000) },
+    );
+    if (!detailRes.ok) return res.json({ error: "not_found" });
+
+    const d  = await detailRes.json() as any;
+    const md = d?.market_data ?? {};
+    const cd = d?.community_data ?? {};
+
+    const description = d.description?.en ? stripHtml(d.description.en).slice(0, 1500) : null;
+    const categories  = (d.categories ?? []).filter(Boolean).slice(0, 10) as string[];
+
+    const coinData = {
+      cgId:              d.id,
+      name:              d.name,
+      symbol:            (d.symbol ?? symbol).toUpperCase(),
+      description,
+      categories,
+      image:             d.image?.large ?? d.image?.small ?? null,
+      marketCapRank:     d.market_cap_rank ?? null,
+      genesisDate:       d.genesis_date ?? null,
+      hashingAlgo:       d.hashing_algorithm ?? null,
+      countryOrigin:     d.country_origin ?? null,
+      platforms:         d.platforms ?? {},
+      // Links
+      homepage:          (d.links?.homepage ?? []).find((u: string) => u?.startsWith("http")) ?? null,
+      whitepaper:        d.links?.whitepaper ?? null,
+      twitter:           d.links?.twitter_screen_name ? `https://x.com/${d.links.twitter_screen_name}` : null,
+      twitterHandle:     d.links?.twitter_screen_name ?? null,
+      reddit:            d.links?.subreddit_url ?? null,
+      github:            (d.links?.repos_url?.github ?? [])[0] ?? null,
+      telegram:          d.links?.telegram_channel_identifier ? `https://t.me/${d.links.telegram_channel_identifier}` : null,
+      // Price
+      priceUsd:          md.current_price?.usd ?? null,
+      priceChange24h:    md.price_change_percentage_24h ?? null,
+      priceChange7d:     md.price_change_percentage_7d ?? null,
+      priceChange30d:    md.price_change_percentage_30d ?? null,
+      priceChange1y:     md.price_change_percentage_1y ?? null,
+      // Market
+      marketCap:         md.market_cap?.usd ?? null,
+      fullyDilutedVal:   md.fully_diluted_valuation?.usd ?? null,
+      totalVolume:       md.total_volume?.usd ?? null,
+      // Supply
+      circulatingSupply: md.circulating_supply ?? null,
+      totalSupply:       md.total_supply ?? null,
+      maxSupply:         md.max_supply ?? null,
+      // ATH / ATL
+      ath:               md.ath?.usd ?? null,
+      athDate:           md.ath_date?.usd ?? null,
+      athChangePercent:  md.ath_change_percentage?.usd ?? null,
+      atl:               md.atl?.usd ?? null,
+      atlDate:           md.atl_date?.usd ?? null,
+      atlChangePercent:  md.atl_change_percentage?.usd ?? null,
+      // Community
+      twitterFollowers:  cd.twitter_followers ?? null,
+      redditSubscribers: cd.reddit_subscribers ?? null,
+    };
+
+    // ── 3. Claude AI analysis ────────────────────────────────────────────────
+    let aiAnalysis: string | null = null;
+    try {
+      const prompt = `You are a concise crypto analyst on OrahDEX. Analyze ${coinData.name} (${coinData.symbol}) and return a JSON object with EXACTLY these keys:
+- "summary": 2-3 sentence overview of what this coin is and its core value proposition
+- "useCase": 1-2 sentences on the primary use case / problem it solves
+- "strengths": array of 3 short bullet strings (each ≤12 words)
+- "risks": array of 3 short bullet strings (each ≤12 words)
+- "traderNote": 1 sentence tip for traders watching this asset on OrahDEX
+
+Context data:
+- Market cap rank: #${coinData.marketCapRank ?? "unknown"}
+- Categories: ${categories.join(", ") || "N/A"}
+- 24h change: ${coinData.priceChange24h != null ? coinData.priceChange24h.toFixed(2) + "%" : "N/A"}
+- ATH: $${coinData.ath ?? "N/A"}
+- Market cap: $${coinData.marketCap ? (coinData.marketCap / 1e9).toFixed(2) + "B" : "N/A"}
+- Description: ${(description ?? "").slice(0, 400)}
+
+Return ONLY valid JSON, no markdown, no extra text.`;
+
+      const msg = await anthropic.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 600,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const raw = msg.content[0]?.type === "text" ? msg.content[0].text.trim() : "";
+      // Extract JSON even if wrapped in backticks
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) aiAnalysis = jsonMatch[0];
+    } catch (aiErr: any) {
+      req.log?.warn?.({ aiErr: aiErr?.message }, "AI analysis failed — skipping");
+    }
+
+    const result = { ...coinData, aiAnalysis };
+    fullCache.set(symbol, { data: result, ts: Date.now() });
+
+    // Persist image + rank to coin_metadata so logos load faster later
+    if (coinData.image) {
+      pool.query(
+        `INSERT INTO coin_metadata (symbol, name, image_url, market_cap_rank, coingecko_id, details_fetched, updated_at)
+         VALUES ($1,$2,$3,$4,$5,true,NOW())
+         ON CONFLICT (symbol) DO UPDATE SET
+           name             = COALESCE(EXCLUDED.name, coin_metadata.name),
+           image_url        = COALESCE(EXCLUDED.image_url, coin_metadata.image_url),
+           market_cap_rank  = COALESCE(EXCLUDED.market_cap_rank, coin_metadata.market_cap_rank),
+           coingecko_id     = COALESCE(EXCLUDED.coingecko_id, coin_metadata.coingecko_id),
+           details_fetched  = true,
+           updated_at       = NOW()`,
+        [coinData.symbol, coinData.name, coinData.image, coinData.marketCapRank, coinData.cgId],
+      ).catch(() => {});
+    }
+
+    return res.json(result);
+  } catch (err: any) {
+    req.log?.warn?.({ err: err?.message, symbol }, "coin full fetch failed");
+    return res.json({ error: "fetch_failed" });
   }
 });
 
