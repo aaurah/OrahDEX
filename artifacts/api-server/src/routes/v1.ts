@@ -12,7 +12,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { marketsTable, htlcLocksTable, ordersTable, keepersTable } from "@workspace/db/schema";
-import { eq, ilike, and, sum, sql as drizzleSql } from "drizzle-orm";
+import { eq, ilike, and, sum, sql as drizzleSql, or, ne } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { logger } from "../lib/logger.js";
 import { FALLBACK_PRICES, COINGECKO_IDS } from "../lib/priceUpdater.js";
@@ -351,20 +351,34 @@ router.get("/quote", async (req, res) => {
     const amountOut = rawAmountOut - feeAmt;
     const feeUsd    = amountIn * priceInUsd * (feeBps / 10_000);
 
-    // Estimate price impact (simplified — based on order book depth vs volume)
-    // Real-world impact: larger trades have higher slippage
-    const depthUsd = 500_000; // approximate depth per level
-    const priceImpactPct = Math.min((amountInUsd / depthUsd) * 0.1, 5.0);
+    // Estimate depth from live 24h volume — more realistic than a static constant.
+    // We use 5% of 24h volume as a rough "available depth" estimate.
+    const [mktDepth] = await db
+      .select({ volume24h: marketsTable.volume24h })
+      .from(marketsTable)
+      .where(and(
+        or(ilike(marketsTable.symbol, `${symIn}/${symOut}`), ilike(marketsTable.symbol, `${symOut}/${symIn}`)),
+        ne(marketsTable.type, "letsexchange"),
+      ))
+      .limit(1);
+    const vol24hUsd  = parseFloat(mktDepth?.volume24h ?? "0") * priceInUsd || 0;
+    const depthUsd   = vol24hUsd > 0
+      ? Math.max(vol24hUsd * 0.05, 500)
+      : (amountInUsd > 100_000 ? 200_000 : amountInUsd > 10_000 ? 100_000 : 50_000);
+    const priceImpactPct = Math.min((amountInUsd / depthUsd) * 100, 5.0);
 
     // MEV risk: higher for large USD amounts
     const mevRiskLevel: "low" | "medium" | "high" =
       amountInUsd < 10_000 ? "low" :
       amountInUsd < 100_000 ? "medium" : "high";
 
-    // Build the route breakdown
+    // Route breakdown — actual execution uses the hybrid router which selects
+    // internal AMM or external liquidity (LetsExchange/SimpleSwap/StealthEx)
+    // based on live order-book depth and oracle price at trade time.
     const route = [
-      { pool: `OrahDEX-${symIn}-${symOut}`, protocol: "OrahDEX AMM", feeBps: 0 },
-      { pool: `BSV-Settlement`, protocol: "BSV Layer 1", feeBps: feeBps },
+      { pool: "OrahDEX-Hybrid-Router", protocol: "OrahDEX Hybrid Router", feeBps: 0,
+        note: "Routes via internal order book or external aggregator based on depth" },
+      { pool: "OrahDEX-Settlement", protocol: "OrahDEX Settlement Layer", feeBps: feeBps },
     ];
 
     // Keeper-specific routing

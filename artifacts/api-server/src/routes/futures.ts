@@ -376,10 +376,10 @@ router.delete("/futures/positions/:positionId", async (req, res) => {
       return;
     }
 
-    // Close using current mark price (from request or live market)
-    const markPrice = body.markPrice
-      ? parseFloat(body.markPrice)
-      : parseFloat(pos.markPrice);
+    // Always use the oracle-sourced mark price stored on the position.
+    // Client-supplied markPrice is intentionally ignored to prevent profit
+    // fabrication — users must not be able to self-report their close price.
+    const markPrice = parseFloat(pos.markPrice);
 
     // closeFuturesPosition: computes PnL, releases margin ± PnL, marks row closed
     const closeResult = await closeFuturesPosition({

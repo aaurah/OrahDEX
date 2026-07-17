@@ -87,17 +87,35 @@ async function runFundingCycle(): Promise<void> {
       const sideMul = pos.side === "long" ? 1 : -1;
       const payment = qty * markP * rate * sideMul;
       if (payment <= 0) {
-        // User would be a receiver — skip in this simplified single-sided
-        // model (platform never pays funding). Still credit the position's
-        // fundingFee field so the UI shows the rebate accrual.
-        const credit = Math.abs(payment);
+        // User is a funding receiver. Credit their locked margin (80% of the
+        // owed amount — platform keeps its 20% cut both on pay and receive).
+        // This replaces the previous model where receivers got nothing.
+        const credit = Math.abs(payment) * (1 - PLATFORM_CUT);
         if (credit > 0) {
-          await withRetry(() => pool.query(
-            `UPDATE futures_positions
-             SET funding_fee = (COALESCE(funding_fee::numeric, 0) - $1)::text
-             WHERE id = $2 AND status = 'open'`,
-            [credit.toFixed(8), pos.id],
-          ), { maxAttempts: 2, baseDelayMs: 500 });
+          const rcvClient = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
+          try {
+            await rcvClient.query("BEGIN");
+            await rcvClient.query(
+              `UPDATE futures_margin_accounts
+               SET locked = locked + $1, updated_at = now()
+               WHERE wallet_address = $2 AND asset = 'USDT'`,
+              [credit.toFixed(8), pos.walletAddress],
+            );
+            await rcvClient.query(
+              `UPDATE futures_positions
+               SET funding_fee = (COALESCE(funding_fee::numeric, 0) - $1)::text,
+                   margin      = (margin::numeric + $1)::text
+               WHERE id = $2 AND status = 'open'`,
+              [credit.toFixed(8), pos.id],
+            );
+            await rcvClient.query("COMMIT");
+            cycleIncome -= credit; // platform paid out from its cut
+          } catch (rcvErr) {
+            await rcvClient.query("ROLLBACK").catch(() => {});
+            logger.warn({ err: rcvErr, positionId: pos.id }, "Funding credit to receiver failed");
+          } finally {
+            rcvClient.release();
+          }
         }
         continue;
       }
