@@ -833,6 +833,92 @@ const cgCoinCache     = new Map<string, Cache<any>>();
 const cgSearchCacheMs = 4 * 60 * 60 * 1000; // 4 h for found; 2 h for null
 const cgSearchCache   = new Map<string, { id: string | null; ts: number }>();
 
+// ─── Persistent coin-info DB cache ───────────────────────────────────────────
+// coin_info_cache stores fully-enriched coin data (including AI analysis).
+// Survives server restarts: warmCacheFromDB() seeds fullCache at boot.
+// Entries older than DB_CACHE_TTL_MS trigger a background re-enrichment.
+const DB_CACHE_TTL_MS = 8 * 60 * 60 * 1000; // 8 hours
+
+let _dbTableReady = false;
+async function ensureCoinInfoTable(): Promise<void> {
+  if (_dbTableReady) return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS coin_info_cache (
+        symbol     TEXT PRIMARY KEY,
+        data       JSONB        NOT NULL,
+        source     TEXT         NOT NULL DEFAULT 'coingecko',
+        updated_at TIMESTAMPTZ NOT NULL  DEFAULT NOW()
+      )
+    `);
+    _dbTableReady = true;
+  } catch (e: any) {
+    logger.warn({ err: e?.message }, "coin_info_cache: table ensure failed");
+  }
+}
+
+/** Persist fully-enriched coin data to DB. Only saves when AI analysis is present. */
+async function persistCoinInfo(symbol: string, data: Record<string, any>): Promise<void> {
+  if (!data.aiAnalysis) return; // only save fully-enriched entries
+  try {
+    await ensureCoinInfoTable();
+    await pool.query(
+      `INSERT INTO coin_info_cache (symbol, data, source, updated_at)
+       VALUES ($1, $2::jsonb, $3, NOW())
+       ON CONFLICT (symbol) DO UPDATE
+         SET data = EXCLUDED.data, source = EXCLUDED.source, updated_at = NOW()`,
+      [symbol, JSON.stringify(data), data._source ?? "coingecko"],
+    );
+  } catch (e: any) {
+    logger.warn({ err: e?.message, symbol }, "persistCoinInfo failed");
+  }
+}
+
+/** Load a single coin from DB cache. Returns null if missing or stale (> 8 h). */
+async function loadCoinInfoFromDB(symbol: string): Promise<Record<string, any> | null> {
+  try {
+    await ensureCoinInfoTable();
+    const r = await pool.query<{ data: any; updated_at: Date }>(
+      `SELECT data, updated_at FROM coin_info_cache WHERE symbol = $1 LIMIT 1`, [symbol],
+    );
+    if (!r.rows[0]) return null;
+    const ageMs = Date.now() - new Date(r.rows[0].updated_at).getTime();
+    if (ageMs > DB_CACHE_TTL_MS) return null;
+    const d = r.rows[0].data as Record<string, any>;
+    // Overlay fresh price from live feeds when available
+    const freshPx = (priceCache?.data ?? {})[symbol];
+    if (freshPx?.usd)       { d.priceUsd = freshPx.usd; d.priceChange24h = freshPx.change24h ?? d.priceChange24h; }
+    const freshCap = cgMarketCapCache.get(symbol);
+    if (freshCap)            d.marketCap = freshCap;
+    return d;
+  } catch { return null; }
+}
+
+/** Warm fullCache from DB on server start. Non-blocking, best-effort. */
+export async function warmCacheFromDB(): Promise<void> {
+  try {
+    await ensureCoinInfoTable();
+    const r = await pool.query<{ symbol: string; data: any; updated_at: Date }>(
+      `SELECT symbol, data, updated_at FROM coin_info_cache
+       WHERE updated_at > NOW() - INTERVAL '8 hours'
+       ORDER BY updated_at DESC LIMIT 500`,
+    );
+    let warmed = 0;
+    for (const row of r.rows) {
+      const sym = row.symbol as string;
+      const existing = fullCache.get(sym);
+      if (existing && !existing.data._partial) continue; // don't overwrite already-enriched
+      // Mark _partial:true so enhanceCgWithAI will refresh market data on first access,
+      // but it will skip AI re-generation since aiAnalysis is already present.
+      fullCache.set(sym, { data: { ...row.data, _partial: true }, ts: Date.now() });
+      warmed++;
+    }
+    logger.info({ warmed, total: r.rows.length }, "coin_info_cache: warmed from DB");
+  } catch (e: any) {
+    logger.warn({ err: e?.message }, "warmCacheFromDB failed");
+  }
+}
+
 async function searchCgId(symbol: string): Promise<string | null> {
   const hit = cgSearchCache.get(symbol);
   const ttl = hit?.id ? cgSearchCacheMs : cgSearchCacheMs / 2;
@@ -974,6 +1060,7 @@ Return ONLY valid JSON. No markdown fences, no extra text.`;
     const enriched = { ...current, _partial: false, aiAnalysis };
     fullCache.set(symbol, { data: enriched, ts: Date.now() });
     cgCoinCache.set(symbol, { data: enriched, ts: Date.now() });
+    persistCoinInfo(symbol, enriched); // fire-and-forget — saves to DB for next restart
     logger.info({ symbol }, "coin enriched (CG+AI)");
   } catch (e: any) {
     const cur = fullCache.get(symbol);
@@ -1091,6 +1178,14 @@ router.get("/coins/:symbol/detail", async (req, res) => {
   const legacyHit = detailCache.get(symbol);
   if (legacyHit && Date.now() - legacyHit.ts < DETAIL_CACHE_MS) {
     return res.json(legacyHit.data);
+  }
+
+  // DB cache — serves instantly after first load, survives server restarts.
+  const dbData = await loadCoinInfoFromDB(symbol);
+  if (dbData) {
+    fullCache.set(symbol, { data: { ...dbData, _partial: true }, ts: Date.now() });
+    enhanceCgWithAI(symbol); // refresh market data in background; skips AI (already present)
+    return res.json(dbData);
   }
 
   try {
@@ -1493,6 +1588,14 @@ router.get("/coins/:symbol/full", async (req, res) => {
   if (hit && Date.now() - hit.ts < FULL_CACHE_MS) {
     if (hit.data._partial) enhanceCgWithAI(symbol);
     return res.json(hit.data);
+  }
+
+  // ── DB cache — instant load for previously-seen coins (survives restarts) ──
+  const dbFull = await loadCoinInfoFromDB(symbol);
+  if (dbFull) {
+    fullCache.set(symbol, { data: { ...dbFull, _partial: true }, ts: Date.now() });
+    enhanceCgWithAI(symbol); // refresh market data in background; skips AI re-gen
+    return res.json(dbFull);
   }
 
   // ── No cache hit — resolve CoinGecko ID, fetch full coin data ────────────

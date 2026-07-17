@@ -38,7 +38,7 @@ import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
 import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
 import { ensureCoinMetadataTable, runCoinGeckoImport } from "./lib/coinGeckoImporter.js";
 import { runCoinPaprikaImport } from "./lib/coinPaprikaImporter.js";
-import { clearCoinsCache, prefetchCgMarkets } from "./routes/dex.js";
+import { clearCoinsCache, prefetchCgMarkets, warmCacheFromDB } from "./routes/dex.js";
 import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
 import { startOverlayScanner } from "./lib/overlayScanner.js";
 import { startSelfDiagnostic } from "./lib/selfDiagnostic.js";
@@ -540,6 +540,13 @@ setTimeout(() => {
 setTimeout(() => {
   seedCoinGeckoIds().catch(e => logger.warn({ err: e }, "seedCoinGeckoIds failed (non-fatal)"));
 }, 15_000);
+
+// Warm fullCache from DB (coin_info_cache) — instant load for previously-seen coins.
+// Fires at T+1 s so the DB is ready. Non-blocking: serves enriched data immediately
+// on next request even before the CoinGecko prefetch finishes.
+setTimeout(() => {
+  warmCacheFromDB().catch(e => logger.warn({ err: e }, "warmCacheFromDB failed (non-fatal)"));
+}, 1_000);
 
 // Pre-warm coin info cache with 1 batch /coins/markets call (250 coins).
 // Fires at T+3 s — before the priceUpdater's first CG call — to win the
