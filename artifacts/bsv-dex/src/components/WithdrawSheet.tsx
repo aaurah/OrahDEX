@@ -61,6 +61,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { useAddressBookStore, WALLET_TYPE_META } from "@/store/useAddressBookStore";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useHandCashStore } from "@/store/useHandCashStore";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { QRCodeCanvas } from "qrcode.react";
 
@@ -71,6 +72,14 @@ const SUPPORTED_CHAINS: { id: number; label: string; short: string; color: strin
   { id: 56,       label: "BNB Smart Chain",  short: "BSC",      color: "#F3BA2F" },
   { id: 11155111, label: "Sepolia Testnet",  short: "Sepolia",  color: "#9B59B6" },
 ];
+
+/** Returns true if `s` is a HandCash $handle or @handcash.io paymail */
+function isHandCashHandle(s: string): boolean {
+  const t = s.trim().replace(/^\$/, "");
+  if (/^[a-zA-Z][a-zA-Z0-9_]{2,24}$/.test(t)) return true;
+  if (t.toLowerCase().endsWith("@handcash.io")) return true;
+  return false;
+}
 
 // ── non-EVM chains available in the withdraw chain selector ──────────────────
 const NON_EVM_WITHDRAW_CHAINS = [
@@ -485,6 +494,14 @@ export function WithdrawSheet({
   const [passkeyRegistering,  setPasskeyRegistering]  = useState(false);
   const [passkeyRegistered,   setPasskeyRegistered]   = useState(false);
 
+  // ── HandCash state ────────────────────────────────────────────────────────
+  const hcAuthToken = useHandCashStore(s => s.authToken);
+  const hcProfile   = useHandCashStore(s => s.profile);
+  const [hcHandleInfo, setHcHandleInfo] = useState<{
+    handle: string; address: string | null; displayName: string; avatarUrl: string | null; paymail: string;
+  } | null>(null);
+  const [hcHandleFetching, setHcHandleFetching] = useState(false);
+
   // ── withdraw chain selector (overrides network prop inside withdraw tab) ──
   const [withdrawChainMode, setWithdrawChainMode] = useState<string>(
     initialNonEvmChain?.toLowerCase() ?? (isEvmNetwork ? "evm" : network.toLowerCase())
@@ -887,6 +904,33 @@ export function WithdrawSheet({
     }
   }, [open, tab, isOrahWallet, canSignNonEvm, withdrawChainMode, fetchNonEvmBalance]);
 
+  // ── Resolve $handle to BSV address as user types ──────────────────────────
+  useEffect(() => {
+    const t = nonEvmSendRecipient.trim();
+    if (withdrawChainMode !== "bsv" || !t || !isHandCashHandle(t)) {
+      setHcHandleInfo(null);
+      return;
+    }
+    const raw = t.replace(/^\$/, "").replace(/@handcash\.io$/i, "");
+    let cancelled = false;
+    setHcHandleFetching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/handcash/resolve-handle?handle=${encodeURIComponent(raw)}`);
+        if (!cancelled && res.ok) {
+          setHcHandleInfo(await res.json());
+        } else if (!cancelled) {
+          setHcHandleInfo(null);
+        }
+      } catch {
+        if (!cancelled) setHcHandleInfo(null);
+      } finally {
+        if (!cancelled) setHcHandleFetching(false);
+      }
+    }, 600);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [nonEvmSendRecipient, withdrawChainMode]);
+
   // ── wallet send: non-EVM challenge/sign/broadcast ────────────────────────
   const handleNonEvmWalletSend = async () => {
     const parsedAmt = parseFloat(nonEvmSendAmount);
@@ -900,6 +944,34 @@ export function WithdrawSheet({
       const chainAddress = isBitcoinForkChain
         ? (effectiveNonEvmAddresses?.[activeChain] ?? effectiveNonEvmAddresses?.[activeChain.toUpperCase()])
         : undefined;
+
+      // ── BSV via HandCash: connected wallet + $handle recipient ──────────────
+      // If the user has a HandCash wallet connected AND the recipient is a
+      // $handle (or @handcash.io paymail), route the payment through the
+      // HandCash SDK on the backend — no passkey or on-chain signing needed.
+      if (activeChain === "bsv" && hcAuthToken && isHandCashHandle(nonEvmSendRecipient.trim())) {
+        const destination = nonEvmSendRecipient.trim().replace(/^\$/, "").replace(/@handcash\.io$/i, "");
+        const res = await fetch(`${API_BASE}/handcash/pay`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ authToken: hcAuthToken, destination, amount: parsedAmt }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "HandCash payment failed");
+        setNonEvmSendTxHash(data.txid ?? "submitted");
+        toast({
+          title:       "BSV sent via HandCash",
+          description: `${parsedAmt} BSV → $${destination}. TXID: ${String(data.txid ?? "").slice(0, 16)}…`,
+        });
+        addNotification({
+          type:  "withdrawal",
+          title: "BSV Sent via HandCash",
+          body:  `${parsedAmt} BSV sent to $${destination} via HandCash.`,
+        });
+        refetchHistory?.();
+        useHandCashStore.getState().fetchBalance();
+        return;
+      }
 
       if (isBitcoinForkChain && !chainAddress) {
         throw new Error(
@@ -916,11 +988,27 @@ export function WithdrawSheet({
       //
       // Instead we build, sign and broadcast a P2PKH transaction directly using
       // the passkey-derived BSV private key — no exchange API involved.
+      //
+      // If the recipient is a $handle (but HandCash is not connected for sending),
+      // resolve the handle to a BSV address first via the backend.
       if (activeChain === "bsv") {
+        let recipient = nonEvmSendRecipient.trim();
+        if (isHandCashHandle(recipient)) {
+          const raw = recipient.replace(/^\$/, "").replace(/@handcash\.io$/i, "");
+          const alreadyResolved = hcHandleInfo?.handle === raw ? hcHandleInfo.address : null;
+          if (alreadyResolved) {
+            recipient = alreadyResolved;
+          } else {
+            const rr = await fetch(`${API_BASE}/handcash/resolve-handle?handle=${encodeURIComponent(raw)}`);
+            const rd = await rr.json();
+            if (!rr.ok || !rd.address) throw new Error(`Could not resolve $${raw} to a BSV address. Enter the address directly or connect HandCash.`);
+            recipient = rd.address;
+          }
+        }
         const result = await sendBsvFromAddress(
           resolvedSigningEvmAddress,
           chainAddress!,
-          nonEvmSendRecipient.trim(),
+          recipient,
           parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
@@ -1857,8 +1945,24 @@ export function WithdrawSheet({
                 </div>
 
                 {/* Recipient */}
+                {/* HandCash connected banner (BSV only) */}
+                {hcProfile && withdrawChainMode.toLowerCase() === "bsv" && (
+                  <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                    <span className="text-base leading-none shrink-0 select-none">✋</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-emerald-300">${hcProfile.handle} · HandCash connected</p>
+                      <p className="text-[10px] text-emerald-400/80">Type a <span className="font-mono">$handle</span> below to send BSV via HandCash without a passkey.</p>
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
-                  <label className="text-sm font-semibold">Recipient address</label>
+                  <label className="text-sm font-semibold">
+                    Recipient address
+                    {withdrawChainMode.toLowerCase() === "bsv" && (
+                      <span className="ml-1.5 text-[10px] font-normal text-muted-foreground">or <span className="font-mono text-emerald-400">$handle</span></span>
+                    )}
+                  </label>
                   {/* Address book suggestions */}
                   {(() => {
                     const chain = withdrawChainMode.toUpperCase();
@@ -1891,15 +1995,45 @@ export function WithdrawSheet({
                     );
                   })()}
                   <Input
-                    placeholder={addressPlaceholder}
+                    placeholder={withdrawChainMode.toLowerCase() === "bsv" ? "$handle or BSV address" : addressPlaceholder}
                     value={nonEvmSendRecipient}
                     onChange={e => setNonEvmSendRecipient(e.target.value)}
                     className="h-11 font-mono text-xs"
                   />
+                  {/* HandCash handle resolution preview */}
+                  {withdrawChainMode.toLowerCase() === "bsv" && nonEvmSendRecipient.trim() && isHandCashHandle(nonEvmSendRecipient.trim()) && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-border">
+                      {hcHandleFetching ? (
+                        <><Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" /><span className="text-xs text-muted-foreground">Resolving handle…</span></>
+                      ) : hcHandleInfo ? (
+                        <>
+                          {hcHandleInfo.avatarUrl ? (
+                            <img src={hcHandleInfo.avatarUrl} alt={hcHandleInfo.handle} className="w-5 h-5 rounded-full shrink-0 object-cover" />
+                          ) : (
+                            <span className="text-sm leading-none select-none shrink-0">✋</span>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[11px] font-semibold text-foreground truncate">{hcHandleInfo.displayName} <span className="text-emerald-400 font-mono">${hcHandleInfo.handle}</span></p>
+                            {hcHandleInfo.address && (
+                              <p className="text-[9px] text-muted-foreground font-mono truncate">{hcHandleInfo.address.slice(0, 28)}…</p>
+                            )}
+                          </div>
+                          {hcAuthToken
+                            ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0">via HandCash</span>
+                            : <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 shrink-0">on-chain</span>
+                          }
+                        </>
+                      ) : (
+                        <><AlertCircle className="w-3.5 h-3.5 text-muted-foreground shrink-0" /><span className="text-xs text-muted-foreground">Handle not found or could not be resolved</span></>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* ── EVM-only wallet with no OrahDEX passkey → can't sign BSV/BTC/BCH ── */}
-                {!canSignNonEvm && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) && (
+                {/* Hidden for BSV when HandCash is connected (HandCash covers the send) */}
+                {!canSignNonEvm && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) &&
+                  !(withdrawChainMode.toLowerCase() === "bsv" && hcAuthToken) && (
                   <div className="flex items-start gap-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
                     <div className="flex-1 min-w-0">
@@ -2005,19 +2139,37 @@ export function WithdrawSheet({
                   </div>
                 )}
 
-                <Button
-                  onClick={handleNonEvmWalletSend}
-                  disabled={
-                    !nonEvmSendAmount || !nonEvmSendRecipient.trim() || nonEvmSending ||
-                    (nonEvmSendBalance !== null && parseFloat(nonEvmSendAmount) > nonEvmSendBalance) ||
-                    (!canSignNonEvm && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()))
-                  }
-                  className="w-full gap-2 h-11 bg-green-600 hover:bg-green-500 text-white"
-                >
-                  {nonEvmSending
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Authenticating…</>
-                    : <><ArrowRight className="w-4 h-4" /> Send {nonEvmSendAmount ? `${nonEvmSendAmount} ` : ""}{withdrawChainMode.toUpperCase()} from Wallet</>}
-                </Button>
+                {(() => {
+                  const isBsvHandCashSend =
+                    withdrawChainMode.toLowerCase() === "bsv" &&
+                    hcAuthToken &&
+                    isHandCashHandle(nonEvmSendRecipient.trim());
+                  const canSend = isBsvHandCashSend || canSignNonEvm ||
+                    !["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase());
+                  return (
+                    <Button
+                      onClick={handleNonEvmWalletSend}
+                      disabled={
+                        !nonEvmSendAmount || !nonEvmSendRecipient.trim() || nonEvmSending ||
+                        (nonEvmSendBalance !== null && parseFloat(nonEvmSendAmount) > nonEvmSendBalance) ||
+                        !canSend
+                      }
+                      className={cn(
+                        "w-full gap-2 h-11 text-white",
+                        isBsvHandCashSend
+                          ? "bg-emerald-600 hover:bg-emerald-500"
+                          : "bg-green-600 hover:bg-green-500",
+                      )}
+                    >
+                      {nonEvmSending
+                        ? <><Loader2 className="w-4 h-4 animate-spin" /> {isBsvHandCashSend ? "Sending…" : "Authenticating…"}</>
+                        : isBsvHandCashSend
+                          ? <><span className="text-base leading-none select-none">✋</span> Send {nonEvmSendAmount ? `${nonEvmSendAmount} ` : ""}BSV via HandCash</>
+                          : <><ArrowRight className="w-4 h-4" /> Send {nonEvmSendAmount ? `${nonEvmSendAmount} ` : ""}{withdrawChainMode.toUpperCase()} from Wallet</>
+                      }
+                    </Button>
+                  );
+                })()}
               </>
             )}
 

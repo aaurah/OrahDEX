@@ -125,6 +125,9 @@ importers:
 
   artifacts/api-server:
     dependencies:
+      '@handcash/sdk':
+        specifier: ^1.0.3
+        version: 1.0.3
       '@noble/ed25519':
         specifier: ^2.3.0
         version: 2.3.0
@@ -2268,6 +2271,16 @@ packages:
   '@gerrit0/mini-shiki@3.23.0':
     resolution: {integrity: sha512-bEMORlG0cqdjVyCEuU0cDQbORWX+kYCeo0kV1lbxF5bt4r7SID2l9bqsxJEM0zndaxpOUT7riCyIVEuqq/Ynxg==}
 
+  '@handcash/sdk@1.0.3':
+    resolution: {integrity: sha512-d6X2z7K0fwz0l4+UbBc++5yBAoHz/Ts/PY8iekAuD/lsXivme4pBzw6Xr37TAeqVmh3sTCecqSBVosiaWPSZTQ==}
+    engines: {node: '>=16.0.0'}
+
+  '@hey-api/client-fetch@0.13.1':
+    resolution: {integrity: sha512-29jBRYNdxVGlx5oewFgOrkulZckpIpBIRHth3uHFn1PrL2ucMy52FvWOY3U3dVx2go1Z3kUmMi6lr07iOpUqqA==}
+    deprecated: Starting with v0.73.0, this package is bundled directly inside @hey-api/openapi-ts.
+    peerDependencies:
+      '@hey-api/openapi-ts': < 2
+
   '@hookform/resolvers@5.2.2':
     resolution: {integrity: sha512-A/IxlMLShx3KjV/HeTcTfaMxdwy690+L/ZADoeaTltLx+CVuzkeVIPuybK3jrRfw7YZnmdKsVVHAlEPIAEUNlA==}
     peerDependencies:
@@ -2495,6 +2508,10 @@ packages:
 
   '@noble/curves@1.9.1':
     resolution: {integrity: sha512-k11yZxZg+t+gWvBbIswW0yoJlu8cHOC7dhunwOzoWH/mXGBiYyR4YY6hAEK/3EUs4UpB8la1RfdRpeGsFHkWsA==}
+    engines: {node: ^14.21.3 || >=16}
+
+  '@noble/curves@1.9.2':
+    resolution: {integrity: sha512-HxngEd2XUcg9xi20JkwlLCtYwfoFw4JGkuZpT+WlsPD4gB/cxkvTD8fSsoAnphGZhFdZYKeQIPCuFlWPm1uE0g==}
     engines: {node: ^14.21.3 || >=16}
 
   '@noble/curves@1.9.7':
@@ -11407,6 +11424,15 @@ snapshots:
       '@shikijs/types': 3.23.0
       '@shikijs/vscode-textmate': 10.0.2
 
+  '@handcash/sdk@1.0.3':
+    dependencies:
+      '@hey-api/client-fetch': 0.13.1
+      '@noble/curves': 1.9.2
+    transitivePeerDependencies:
+      - '@hey-api/openapi-ts'
+
+  '@hey-api/client-fetch@0.13.1': {}
+
   '@hookform/resolvers@5.2.2(react-hook-form@7.72.0(react@19.2.4))':
     dependencies:
       '@standard-schema/utils': 0.3.0
@@ -11826,6 +11852,10 @@ snapshots:
       '@noble/hashes': 1.7.2
 
   '@noble/curves@1.9.1':
+    dependencies:
+      '@noble/hashes': 1.8.0
+
+  '@noble/curves@1.9.2':
     dependencies:
       '@noble/hashes': 1.8.0
 

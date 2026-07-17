@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
+import { useHandCashStore } from "@/store/useHandCashStore";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -58,7 +59,8 @@ type Tab =
   | "trezor"
   | "keystone"
   | "gridplus"
-  | "mobile-qr";
+  | "mobile-qr"
+  | "handcash";
 
 function applyOrahWallet(address: string, chains?: PasskeyChainAddresses) {
   const store = useWalletStore.getState();
@@ -1050,6 +1052,31 @@ export function WalletChooserDialog() {
   const handleMobileQr = () => setTab("mobile-qr");
   const handleHWPick = (device: HWDevice) => setTab(device);
 
+  const hcProfile   = useHandCashStore(s => s.profile);
+  const hcBalance   = useHandCashStore(s => s.balance);
+  const hcDisconnect = useHandCashStore(s => s.disconnect);
+  const [hcConnecting, setHcConnecting] = useState(false);
+  const [hcError,      setHcError]      = useState<string | null>(null);
+
+  const handleHandCashConnect = async () => {
+    setHcConnecting(true);
+    setHcError(null);
+    try {
+      const res = await fetch(`${API_BASE}/handcash/auth-url`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setHcError(data.error ?? "HandCash is not configured. Add HANDCASH_APP_ID and HANDCASH_APP_SECRET to the server env.");
+        return;
+      }
+      const { url } = await res.json();
+      window.location.href = url;
+    } catch {
+      setHcError("Could not reach the server. Please try again.");
+    } finally {
+      setHcConnecting(false);
+    }
+  };
+
   const isDeviceTab = (t: Tab): t is HWDevice =>
     t === "ledger" || t === "trezor" || t === "keystone" || t === "gridplus";
 
@@ -1140,6 +1167,20 @@ export function WalletChooserDialog() {
                   icon={<QrCode className="w-5 h-5 text-cyan-400" />}
                   title="Connect via Mobile QR"
                   sub="Scan with your phone to link instantly"
+                />
+
+                <p className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase mt-4 mb-2.5">BSV Social Wallets</p>
+                <OptionCard
+                  onClick={() => setTab("handcash")}
+                  iconBg="bg-emerald-500/10 border border-emerald-500/20 group-hover:bg-emerald-500/15 group-hover:border-emerald-500/30"
+                  icon={<span className="text-base leading-none select-none">✋</span>}
+                  title="HandCash"
+                  sub="BSV social wallet · pay any $handle · OAuth sign-in"
+                  badge={hcProfile ? (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 tracking-wider">
+                      ${hcProfile.handle}
+                    </span>
+                  ) : undefined}
                 />
               </div>
             </div>
@@ -1281,6 +1322,104 @@ export function WalletChooserDialog() {
           </>
         )}
 
+        {/* ══════════════════════════════════════
+            HANDCASH PANEL
+        ══════════════════════════════════════ */}
+        {tab === "handcash" && (
+          <>
+            <SubHeader
+              onBack={() => { setHcError(null); setTab("choose"); }}
+              icon={<span className="text-base leading-none select-none">✋</span>}
+              title="HandCash"
+              description="BSV social wallet — sign in with your $handle"
+            />
+            <div className="px-6 py-5 flex flex-col gap-4">
+              {hcProfile ? (
+                /* ── Already connected ── */
+                <>
+                  <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                    {hcProfile.avatarUrl ? (
+                      <img src={hcProfile.avatarUrl} alt={hcProfile.handle}
+                        className="w-10 h-10 rounded-full shrink-0 object-cover"
+                        onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                        <span className="text-lg">✋</span>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-foreground">{hcProfile.displayName}</p>
+                      <p className="text-xs text-emerald-400 font-mono">${hcProfile.handle}</p>
+                      {hcBalance !== null && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{hcBalance.toFixed(8)} BSV spendable</p>
+                      )}
+                    </div>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      CONNECTED
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Your HandCash wallet is connected. You can now send BSV to any <span className="text-foreground font-mono">$handle</span> from the Withdraw panel, or accept BSV payments to your paymail address <span className="text-foreground font-mono">{hcProfile.paymail}</span>.
+                  </p>
+
+                  <Button
+                    variant="outline"
+                    className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-500/50"
+                    onClick={() => { hcDisconnect(); setTab("choose"); }}
+                  >
+                    Disconnect HandCash
+                  </Button>
+                </>
+              ) : (
+                /* ── Not connected ── */
+                <>
+                  <div className="space-y-3 text-[12px] text-muted-foreground leading-relaxed">
+                    <p>HandCash is a BSV social wallet that lets you send and receive bitcoin using a simple <span className="font-mono text-foreground">$handle</span> — no long addresses needed.</p>
+                    <div className="flex flex-col gap-2">
+                      {[
+                        "Send BSV to any $handle instantly",
+                        "Receive payments at your $handle",
+                        "Pay from any chain via Bridge",
+                      ].map(f => (
+                        <div key={f} className="flex items-center gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>{f}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {hcError && (
+                    <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
+                      <p className="text-xs text-red-300">{hcError}</p>
+                    </div>
+                  )}
+
+                  <Button
+                    className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-bold"
+                    onClick={handleHandCashConnect}
+                    disabled={hcConnecting}
+                  >
+                    {hcConnecting ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Connecting…</>
+                    ) : (
+                      <>✋ Connect with HandCash</>
+                    )}
+                  </Button>
+
+                  <p className="text-[10px] text-muted-foreground/60 text-center leading-relaxed">
+                    You'll be redirected to HandCash to authorise OrahDEX, then returned here automatically.
+                    <br />
+                    Requires a HandCash developer app — set <span className="font-mono">HANDCASH_APP_ID</span> + <span className="font-mono">HANDCASH_APP_SECRET</span> in the server environment.
+                  </p>
+                </>
+              )}
+            </div>
+          </>
+        )}
 
       </DialogContent>
     </Dialog>
