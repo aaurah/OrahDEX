@@ -19,6 +19,7 @@ import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { getCachedLEPrices } from "../lib/lePriceCache.js";
 import { getCachedLECurrencies } from "./letsexchange.js";
 import { SS_COIN_TICKER } from "../lib/simpleswap.js";
+import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
 
@@ -715,99 +716,59 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
 }
 
+// /detail re-uses the same fullCache as /full, avoiding duplicate CP API calls.
 router.get("/coins/:symbol/detail", async (req, res) => {
-  const symbol = req.params.symbol.toUpperCase();
-  const cached = detailCache.get(symbol);
-  if (cached && Date.now() - cached.ts < DETAIL_CACHE_MS) return res.json(cached.data);
+  const symbol = (req.params.symbol ?? "").toUpperCase().trim();
+  if (!symbol) return res.status(400).json({ error: "symbol required" });
+
+  // Serve from fullCache if available (seeded by prefetch or a prior /full call).
+  const hit = fullCache.get(symbol);
+  if (hit && Date.now() - hit.ts < FULL_CACHE_MS) {
+    if (hit.data._partial) {
+      const cpId = CP_ID_OVERRIDES[symbol] ?? cpSymbolMap.get(symbol) ?? hit.data.cpId;
+      if (cpId) enhanceWithDetail(symbol, cpId);
+    }
+    return res.json(hit.data);
+  }
+
+  // Also check the legacy detailCache for a still-fresh entry.
+  const legacyHit = detailCache.get(symbol);
+  if (legacyHit && Date.now() - legacyHit.ts < DETAIL_CACHE_MS) {
+    return res.json(legacyHit.data);
+  }
 
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 8000);
+    let cpId: string | null = CP_ID_OVERRIDES[symbol] ?? cpSymbolMap.get(symbol) ?? null;
 
-    // Step 1: search CoinGecko for this symbol
-    const searchRes = await fetch(
-      `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`,
-      { signal: ctrl.signal, headers: { Accept: "application/json" } },
-    );
-    clearTimeout(timer);
-    if (!searchRes.ok) { res.json({ error: "not_found" }); return; }
-
-    const searchData = await searchRes.json() as any;
-    const coins: any[] = searchData?.coins ?? [];
-
-    // Find best match: exact symbol match first, then name contains symbol
-    const exact = coins.find((c: any) => c.symbol?.toUpperCase() === symbol);
-    const best  = exact ?? coins[0];
-    if (!best?.id) { res.json({ error: "not_found" }); return; }
-
-    // Step 2: fetch full coin detail
-    const ctrl2 = new AbortController();
-    const timer2 = setTimeout(() => ctrl2.abort(), 8000);
-    const detailRes = await fetch(
-      `https://api.coingecko.com/api/v3/coins/${best.id}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=true&sparkline=false`,
-      { signal: ctrl2.signal, headers: { Accept: "application/json" } },
-    );
-    clearTimeout(timer2);
-    if (!detailRes.ok) { res.json({ error: "not_found" }); return; }
-
-    const d = await detailRes.json() as any;
-    const md = d?.market_data ?? {};
-
-    const result = {
-      cgId:              d.id,
-      name:              d.name,
-      symbol:            (d.symbol ?? symbol).toUpperCase(),
-      description:       d.description?.en ? stripHtml(d.description.en).slice(0, 1200) : null,
-      categories:        (d.categories ?? []).filter(Boolean).slice(0, 8),
-      homepage:          (d.links?.homepage ?? []).find((u: string) => u?.startsWith("http")) ?? null,
-      whitepaper:        d.links?.whitepaper ?? null,
-      twitter:           d.links?.twitter_screen_name ? `https://twitter.com/${d.links.twitter_screen_name}` : null,
-      reddit:            d.links?.subreddit_url ?? null,
-      github:            (d.links?.repos_url?.github ?? [])[0] ?? null,
-      telegram:          d.links?.telegram_channel_identifier ? `https://t.me/${d.links.telegram_channel_identifier}` : null,
-      ath:               md.ath?.usd ?? null,
-      athDate:           md.ath_date?.usd ?? null,
-      athChangePercent:  md.ath_change_percentage?.usd ?? null,
-      atl:               md.atl?.usd ?? null,
-      atlDate:           md.atl_date?.usd ?? null,
-      atlChangePercent:  md.atl_change_percentage?.usd ?? null,
-      marketCapRank:     d.market_cap_rank ?? null,
-      marketCap:         md.market_cap?.usd ?? null,
-      fullyDilutedVal:   md.fully_diluted_valuation?.usd ?? null,
-      totalVolume:       md.total_volume?.usd ?? null,
-      circulatingSupply: md.circulating_supply ?? null,
-      totalSupply:       md.total_supply ?? null,
-      maxSupply:         md.max_supply ?? null,
-      priceUsd:          md.current_price?.usd ?? null,
-      priceChange24h:    md.price_change_percentage_24h ?? null,
-      priceChange7d:     md.price_change_percentage_7d ?? null,
-      priceChange30d:    md.price_change_percentage_30d ?? null,
-      priceChange1y:     md.price_change_percentage_1y ?? null,
-      image:             d.image?.large ?? d.image?.small ?? null,
-      genesisDate:       d.genesis_date ?? null,
-      hashingAlgo:       d.hashing_algorithm ?? null,
-      countryOrigin:     d.country_origin ?? null,
-      platforms:         d.platforms ?? {},
-    };
-
-    detailCache.set(symbol, { data: result, ts: Date.now() });
-
-    // Persist image/name/rank to coin_metadata so the list gets logos over time
-    if (result.image) {
-      pool.query(
-        `INSERT INTO coin_metadata (symbol, name, image_url, market_cap_rank, details_fetched, updated_at)
-         VALUES ($1, $2, $3, $4, true, NOW())
-         ON CONFLICT (symbol) DO UPDATE SET
-           name             = COALESCE(EXCLUDED.name, coin_metadata.name),
-           image_url        = COALESCE(EXCLUDED.image_url, coin_metadata.image_url),
-           market_cap_rank  = COALESCE(EXCLUDED.market_cap_rank, coin_metadata.market_cap_rank),
-           details_fetched  = true,
-           updated_at       = NOW()`,
-        [result.symbol, result.name, result.image, result.marketCapRank],
-      ).catch(() => { /* table may not exist yet — non-fatal */ });
+    if (!cpId) {
+      const searchRes = await fetch(
+        `https://api.coinpaprika.com/v1/search?q=${encodeURIComponent(symbol)}&c=currencies&limit=5`,
+        { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) },
+      );
+      if (searchRes.ok) {
+        const sd: any = await searchRes.json();
+        const matches: any[] = sd?.currencies ?? [];
+        const exact = matches.find((c:any) => c.symbol?.toUpperCase() === symbol);
+        cpId = (exact ?? matches[0])?.id ?? null;
+        if (cpId) cpSymbolMap.set(symbol, cpId);
+      }
     }
 
-    return res.json(result);
+    if (!cpId) return res.json({ error: "not_found" });
+
+    const tickerRes = await fetch(
+      `https://api.coinpaprika.com/v1/tickers/${cpId}`,
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12000) },
+    );
+    if (!tickerRes.ok) return res.json({ error: "not_found" });
+
+    const ticker = await tickerRes.json() as any;
+    const partial = cpTickerToCoinData(ticker, symbol);
+    fullCache.set(symbol, { data: partial, ts: Date.now() });
+    detailCache.set(symbol, { data: partial, ts: Date.now() });
+
+    enhanceWithDetail(symbol, cpId);
+    return res.json(partial);
   } catch (err: any) {
     req.log.warn({ err: err?.message, symbol }, "coin detail fetch failed");
     return res.json({ error: "fetch_failed" });
@@ -943,107 +904,198 @@ router.get("/aggregator/swap", async (req, res) => {
 const fullCache = new Map<string, Cache<any>>();
 const FULL_CACHE_MS = 30 * 60 * 1000;
 
-router.get("/coins/:symbol/full", async (req, res) => {
-  const symbol = (req.params.symbol ?? "").toUpperCase().trim();
-  if (!symbol) return res.status(400).json({ error: "symbol required" });
+// Hardcoded symbol→CoinPaprika ID for the most common coins.
+// CoinPaprika: public API, no key, 2 req/s, much more reliable than CoinGecko free tier.
+// ID format: "{symbol-lc}-{name-lc-dashes}"
+const CP_ID_OVERRIDES: Record<string, string> = {
+  BTC:"btc-bitcoin", ETH:"eth-ethereum", BNB:"bnb-binance-coin", SOL:"sol-solana",
+  XRP:"xrp-xrp", DOGE:"doge-dogecoin", ADA:"ada-cardano", AVAX:"avax-avalanche",
+  SHIB:"shib-shiba-inu", DOT:"dot-polkadot", LINK:"link-chainlink",
+  MATIC:"matic-polygon", POL:"matic-polygon", LTC:"ltc-litecoin",
+  BCH:"bch-bitcoin-cash", UNI:"uni-uniswap", ATOM:"atom-cosmos",
+  XLM:"xlm-stellar", ETC:"etc-ethereum-classic", ALGO:"algo-algorand",
+  VET:"vet-vechain", FIL:"fil-filecoin", ICP:"icp-internet-computer",
+  HBAR:"hbar-hedera-hashgraph", NEAR:"near-near-protocol", FTM:"ftm-fantom",
+  SAND:"sand-the-sandbox", MANA:"mana-decentraland", AXS:"axs-axie-infinity",
+  AAVE:"aave-new", MKR:"mkr-maker", COMP:"comp-compoundd",
+  GRT:"grt-the-graph", SNX:"snx-synthetix-network-token", SUSHI:"sushi-sushi",
+  CAKE:"cake-pancakeswap", CRV:"crv-curve-dao-token", "1INCH":"1inch-1inch",
+  BAL:"bal-balancer", ENJ:"enj-enjin-coin", ZRX:"zrx-0x",
+  BAT:"bat-basic-attention-token", OCEAN:"ocean-ocean-protocol",
+  BAND:"band-band-protocol", STORJ:"storj-storj", TRX:"trx-tron",
+  XMR:"xmr-monero", EOS:"eos-eos", ZIL:"zil-zilliqa", ANKR:"ankr-ankr",
+  GALA:"gala-gala", FLOW:"flow-flow", CHZ:"chz-chiliz",
+  THETA:"theta-theta-token", HOT:"hot-holo", APE:"ape-apecoin",
+  BSV:"bsv-bitcoin-sv", WBTC:"wbtc-wrapped-bitcoin", STETH:"steth-lido-staked-ether",
+  USDT:"usdt-tether", USDC:"usdc-usd-coin", DAI:"dai-dai",
+  BUSD:"busd-binance-usd", OP:"op-optimism", ARB:"arb-arbitrum",
+  INJ:"inj-injective-protocol", SUI:"sui-sui", SEI:"sei-sei-network",
+  TIA:"tia-celestia", BONK:"bonk-bonk", WIF:"wif-dogwifhat", PEPE:"pepe-pepe",
+  FLOKI:"floki-floki", ORDI:"ordi-ordi", LDO:"ldo-lido-dao",
+  RPL:"rpl-rocket-pool", CVX:"cvx-convex-finance", FRAX:"frax-frax",
+  RUNE:"rune-thorchain", KSM:"ksm-kusama", ZEC:"zec-zcash", DASH:"dash-dash",
+  NEO:"neo-neo", IOTA:"iota-iota", XTZ:"xtz-tezos", WAVES:"waves-waves",
+  EGLD:"egld-elrond", KAVA:"kava-kava", CELO:"celo-celo", ROSE:"rose-oasis-network",
+  QNT:"qnt-quant", FET:"fet-fetch-ai", RNDR:"rndr-render-token",
+  IMX:"imx-immutable-x", GNO:"gno-gnosis", OSMO:"osmo-osmosis",
+  BGB:"bgb-bitget-token", CRO:"cro-crypto-com-coin", TON:"ton-toncoin",
+  NOT:"not-notcoin", PYTH:"pyth-pyth-network",
+};
 
-  const hit = fullCache.get(symbol);
-  if (hit && Date.now() - hit.ts < FULL_CACHE_MS) return res.json(hit.data);
+// Runtime symbol→cpId map populated by the prefetch (covers 500 coins).
+const cpSymbolMap = new Map<string, string>();
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Two-tier coin-info strategy to avoid CoinGecko rate limits:
+//
+// Tier 1 — CoinPaprika /v1/tickers?limit=500 (batch): 1 call → 500 coins with
+//   full market data. Pre-warmed at startup; zero per-user API calls for top coins.
+//
+// Tier 2 — CoinPaprika /v1/coins/{id} (individual): enriches the cache in the
+//   background on first open, adding description, links, and AI analysis.
+//
+// CoinPaprika is a public API (no key, 2 req/s limit) that is reliably accessible
+// from server IPs — unlike CoinGecko's free tier which blocks shared server IPs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Build a partial coinData record from a CoinPaprika ticker object.
+function cpTickerToCoinData(t: any, symOverride?: string): Record<string, any> {
+  const q = (t.quotes?.USD ?? t.quotes?.usd ?? {}) as Record<string, any>;
+  const price = (q.price as number) ?? null;
+  const maxSupply: number | null = t.max_supply || null;
+  return {
+    _partial:          true,
+    cpId:              t.id,
+    name:              t.name,
+    symbol:            symOverride ?? (t.symbol ?? "").toUpperCase(),
+    description:       null,
+    categories:        [],
+    image:             `https://static.coinpaprika.com/coin/${t.id}/logo.png`,
+    marketCapRank:     t.rank ?? null,
+    genesisDate:       t.first_data_at ?? null,
+    hashingAlgo:       null,
+    countryOrigin:     null,
+    platforms:         {},
+    homepage:          null,
+    whitepaper:        null,
+    twitter:           null,
+    twitterHandle:     null,
+    reddit:            null,
+    github:            null,
+    telegram:          null,
+    priceUsd:          price,
+    priceChange24h:    (q.percent_change_24h as number) ?? null,
+    priceChange7d:     (q.percent_change_7d as number) ?? null,
+    priceChange30d:    (q.percent_change_30d as number) ?? null,
+    priceChange1y:     (q.percent_change_1y as number) ?? null,
+    marketCap:         (q.market_cap as number) ?? null,
+    fullyDilutedVal:   (price != null && maxSupply) ? price * maxSupply : null,
+    totalVolume:       (q.volume_24h as number) ?? null,
+    circulatingSupply: t.circulating_supply ?? null,
+    totalSupply:       t.total_supply ?? null,
+    maxSupply,
+    ath:               (q.ath_price as number) ?? null,
+    athDate:           (q.ath_date as string) ?? null,
+    athChangePercent:  (q.percent_from_price_ath as number) ?? null,
+    atl:               null,
+    atlDate:           null,
+    atlChangePercent:  null,
+    twitterFollowers:  null,
+    redditSubscribers: null,
+    aiAnalysis:        null,
+  };
+}
+
+// Exported: called from app.ts ~20 s after boot.
+// Fetches top 500 coins in ONE CoinPaprika call — pre-warms cache for all known coins.
+export async function prefetchCoinMarkets(): Promise<void> {
   try {
-    // ── 1. Resolve CoinGecko ID — DB first, search API as fallback ───────────
-    let cgId: string | null = null;
-
-    // Check our own coin_metadata table (populated by /detail and prior /full calls)
-    try {
-      const dbRow = await pool.query<{ coingecko_id: string }>(
-        `SELECT coingecko_id FROM coin_metadata WHERE symbol = $1 AND coingecko_id IS NOT NULL LIMIT 1`,
-        [symbol],
-      );
-      cgId = dbRow.rows[0]?.coingecko_id ?? null;
-    } catch { /* non-fatal */ }
-
-    // If not in DB, hit CoinGecko search (may be rate-limited on free tier)
-    if (!cgId) {
-      const searchRes = await fetch(
-        `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`,
-        { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) },
-      );
-      if (searchRes.ok) {
-        const searchData = await searchRes.json() as any;
-        const coins: any[] = searchData?.coins ?? [];
-        const exact = coins.find((c: any) => c.symbol?.toUpperCase() === symbol);
-        const best  = exact ?? coins[0];
-        cgId = best?.id ?? null;
-      }
-    }
-
-    if (!cgId) return res.json({ error: "not_found" });
-
-    // ── 2. Full CoinGecko detail ─────────────────────────────────────────────
-    const detailRes = await fetch(
-      `https://api.coingecko.com/api/v3/coins/${cgId}?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false&sparkline=false`,
-      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10000) },
+    const r = await fetch(
+      "https://api.coinpaprika.com/v1/tickers?limit=500",
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(25000) },
     );
-    if (!detailRes.ok) return res.json({ error: "not_found" });
+    if (!r.ok) { logger.warn({ status: r.status }, "CP tickers prefetch failed"); return; }
+    const tickers: any[] = await r.json();
+    let seeded = 0;
+    for (const t of tickers) {
+      const sym = (t.symbol ?? "").toUpperCase();
+      if (!sym) continue;
+      cpSymbolMap.set(sym, t.id);
+      const existing = fullCache.get(sym);
+      if (existing && !existing.data._partial) continue;
+      fullCache.set(sym, { data: cpTickerToCoinData(t), ts: Date.now() });
+      seeded++;
+    }
+    logger.info({ seeded, total: tickers.length }, "CP tickers prefetch complete");
+  } catch (e: any) {
+    logger.warn({ err: e?.message }, "CP tickers prefetch error");
+  }
+}
 
-    const d  = await detailRes.json() as any;
-    const md = d?.market_data ?? {};
-    const cd = d?.community_data ?? {};
+// Track which symbols are already being enhanced so we don't double-fire.
+const enhanceInFlight = new Set<string>();
 
-    const description = d.description?.en ? stripHtml(d.description.en).slice(0, 1500) : null;
-    const categories  = (d.categories ?? []).filter(Boolean).slice(0, 10) as string[];
+// Background Tier-2 enrichment: adds description, links, AI analysis.
+// Non-blocking — caller does NOT await.
+async function enhanceWithDetail(symbol: string, cpId: string): Promise<void> {
+  if (enhanceInFlight.has(symbol)) return;
+  enhanceInFlight.add(symbol);
+  try {
+    await new Promise(ok => setTimeout(ok, Math.random() * 1500));
 
-    const coinData = {
-      cgId:              d.id,
-      name:              d.name,
-      symbol:            (d.symbol ?? symbol).toUpperCase(),
+    const detailRes = await fetch(
+      `https://api.coinpaprika.com/v1/coins/${cpId}`,
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12000) },
+    );
+    if (!detailRes.ok) return;
+    const d: any = await detailRes.json();
+
+    const description = d.description ? stripHtml(d.description).slice(0, 1500) : null;
+    const categories: string[] = d.tags
+      ? (d.tags as any[]).map((t: any) => t.name ?? t).filter(Boolean).slice(0, 10)
+      : [];
+
+    const linksExt: any[] = d.links_extended ?? [];
+    const website    = (d.links?.website ?? [])[0] ?? null;
+    const whitepaper = linksExt.find((l:any) => l.type === "whitepaper")?.url ?? null;
+    const twitterUrl = linksExt.find((l:any) => l.type === "twitter")?.url ?? null;
+    const twitterHandle = twitterUrl
+      ? twitterUrl.replace(/^https?:\/\/(www\.)?(twitter|x)\.com\//i, "").replace(/\/$/, "")
+      : null;
+    const reddit  = linksExt.find((l:any) => l.type === "reddit")?.url
+                 ?? (d.links?.reddit ?? [])[0] ?? null;
+    const github  = linksExt.find((l:any) => l.type === "source_code")?.url
+                 ?? (d.links?.source_code ?? [])[0] ?? null;
+    const telegram = linksExt.find((l:any) => l.type === "telegram")?.url ?? null;
+
+    const prev = fullCache.get(symbol)?.data ?? {};
+    const fullData: Record<string, any> = {
+      ...prev,
+      _partial:      false,
+      cpId:          d.id ?? cpId,
+      name:          d.name ?? prev.name,
+      symbol:        (d.symbol ?? symbol).toUpperCase(),
       description,
       categories,
-      image:             d.image?.large ?? d.image?.small ?? null,
-      marketCapRank:     d.market_cap_rank ?? null,
-      genesisDate:       d.genesis_date ?? null,
-      hashingAlgo:       d.hashing_algorithm ?? null,
-      countryOrigin:     d.country_origin ?? null,
-      platforms:         d.platforms ?? {},
-      // Links
-      homepage:          (d.links?.homepage ?? []).find((u: string) => u?.startsWith("http")) ?? null,
-      whitepaper:        d.links?.whitepaper ?? null,
-      twitter:           d.links?.twitter_screen_name ? `https://x.com/${d.links.twitter_screen_name}` : null,
-      twitterHandle:     d.links?.twitter_screen_name ?? null,
-      reddit:            d.links?.subreddit_url ?? null,
-      github:            (d.links?.repos_url?.github ?? [])[0] ?? null,
-      telegram:          d.links?.telegram_channel_identifier ? `https://t.me/${d.links.telegram_channel_identifier}` : null,
-      // Price
-      priceUsd:          md.current_price?.usd ?? null,
-      priceChange24h:    md.price_change_percentage_24h ?? null,
-      priceChange7d:     md.price_change_percentage_7d ?? null,
-      priceChange30d:    md.price_change_percentage_30d ?? null,
-      priceChange1y:     md.price_change_percentage_1y ?? null,
-      // Market
-      marketCap:         md.market_cap?.usd ?? null,
-      fullyDilutedVal:   md.fully_diluted_valuation?.usd ?? null,
-      totalVolume:       md.total_volume?.usd ?? null,
-      // Supply
-      circulatingSupply: md.circulating_supply ?? null,
-      totalSupply:       md.total_supply ?? null,
-      maxSupply:         md.max_supply ?? null,
-      // ATH / ATL
-      ath:               md.ath?.usd ?? null,
-      athDate:           md.ath_date?.usd ?? null,
-      athChangePercent:  md.ath_change_percentage?.usd ?? null,
-      atl:               md.atl?.usd ?? null,
-      atlDate:           md.atl_date?.usd ?? null,
-      atlChangePercent:  md.atl_change_percentage?.usd ?? null,
-      // Community
-      twitterFollowers:  cd.twitter_followers ?? null,
-      redditSubscribers: cd.reddit_subscribers ?? null,
+      marketCapRank: d.rank ?? prev.marketCapRank,
+      genesisDate:   d.started_at ?? prev.genesisDate,
+      hashingAlgo:   d.hash_algorithm ?? null,
+      countryOrigin: null,
+      platforms:     {},
+      homepage:      website,
+      whitepaper,
+      twitter:       twitterUrl ?? null,
+      twitterHandle,
+      reddit,
+      github,
+      telegram,
     };
 
-    // ── 3. Claude AI analysis ────────────────────────────────────────────────
-    let aiAnalysis: string | null = null;
-    try {
-      const prompt = `You are a concise crypto analyst on OrahDEX. Analyze ${coinData.name} (${coinData.symbol}) and return a JSON object with EXACTLY these keys:
+    // ── Claude AI analysis ────────────────────────────────────────────────
+    let aiAnalysis: string | null = prev.aiAnalysis ?? null;
+    if (!aiAnalysis) {
+      try {
+        const prompt = `You are a concise crypto analyst on OrahDEX. Analyze ${fullData.name} (${fullData.symbol}) and return a JSON object with EXACTLY these keys:
 - "summary": 2-3 sentence overview of what this coin is and its core value proposition
 - "useCase": 1-2 sentences on the primary use case / problem it solves
 - "strengths": array of 3 short bullet strings (each ≤12 words)
@@ -1051,48 +1103,81 @@ router.get("/coins/:symbol/full", async (req, res) => {
 - "traderNote": 1 sentence tip for traders watching this asset on OrahDEX
 
 Context data:
-- Market cap rank: #${coinData.marketCapRank ?? "unknown"}
+- Market cap rank: #${fullData.marketCapRank ?? "unknown"}
 - Categories: ${categories.join(", ") || "N/A"}
-- 24h change: ${coinData.priceChange24h != null ? coinData.priceChange24h.toFixed(2) + "%" : "N/A"}
-- ATH: $${coinData.ath ?? "N/A"}
-- Market cap: $${coinData.marketCap ? (coinData.marketCap / 1e9).toFixed(2) + "B" : "N/A"}
+- 24h change: ${prev.priceChange24h != null ? (prev.priceChange24h as number).toFixed(2) + "%" : "N/A"}
+- ATH: $${prev.ath ?? "N/A"}
+- Market cap: $${prev.marketCap ? ((prev.marketCap as number) / 1e9).toFixed(2) + "B" : "N/A"}
 - Description: ${(description ?? "").slice(0, 400)}
 
 Return ONLY valid JSON, no markdown, no extra text.`;
-
-      const msg = await anthropic.messages.create({
-        model: "claude-haiku-4-5",
-        max_tokens: 600,
-        messages: [{ role: "user", content: prompt }],
-      });
-      const raw = msg.content[0]?.type === "text" ? msg.content[0].text.trim() : "";
-      // Extract JSON even if wrapped in backticks
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      if (jsonMatch) aiAnalysis = jsonMatch[0];
-    } catch (aiErr: any) {
-      req.log?.warn?.({ aiErr: aiErr?.message }, "AI analysis failed — skipping");
+        const msg = await anthropic.messages.create({
+          model: "claude-haiku-4-5",
+          max_tokens: 600,
+          messages: [{ role: "user", content: prompt }],
+        });
+        const raw = msg.content[0]?.type === "text" ? msg.content[0].text.trim() : "";
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) aiAnalysis = jsonMatch[0];
+      } catch { /* non-fatal */ }
     }
 
-    const result = { ...coinData, aiAnalysis };
-    fullCache.set(symbol, { data: result, ts: Date.now() });
+    fullCache.set(symbol, { data: { ...prev, ...fullData, aiAnalysis }, ts: Date.now() });
+    logger.info({ symbol }, "coin detail enriched (CP)");
+  } catch (e: any) {
+    logger.warn({ err: e?.message, symbol }, "enhanceWithDetail (CP) failed");
+  } finally {
+    enhanceInFlight.delete(symbol);
+  }
+}
 
-    // Persist image + rank to coin_metadata so logos load faster later
-    if (coinData.image) {
-      pool.query(
-        `INSERT INTO coin_metadata (symbol, name, image_url, market_cap_rank, coingecko_id, details_fetched, updated_at)
-         VALUES ($1,$2,$3,$4,$5,true,NOW())
-         ON CONFLICT (symbol) DO UPDATE SET
-           name             = COALESCE(EXCLUDED.name, coin_metadata.name),
-           image_url        = COALESCE(EXCLUDED.image_url, coin_metadata.image_url),
-           market_cap_rank  = COALESCE(EXCLUDED.market_cap_rank, coin_metadata.market_cap_rank),
-           coingecko_id     = COALESCE(EXCLUDED.coingecko_id, coin_metadata.coingecko_id),
-           details_fetched  = true,
-           updated_at       = NOW()`,
-        [coinData.symbol, coinData.name, coinData.image, coinData.marketCapRank, coinData.cgId],
-      ).catch(() => {});
+router.get("/coins/:symbol/full", async (req, res) => {
+  const symbol = (req.params.symbol ?? "").toUpperCase().trim();
+  if (!symbol) return res.status(400).json({ error: "symbol required" });
+
+  // ── Cache check ──────────────────────────────────────────────────────────
+  const hit = fullCache.get(symbol);
+  if (hit && Date.now() - hit.ts < FULL_CACHE_MS) {
+    if (hit.data._partial) {
+      const cpId = CP_ID_OVERRIDES[symbol] ?? cpSymbolMap.get(symbol) ?? hit.data.cpId;
+      if (cpId) enhanceWithDetail(symbol, cpId);
+    }
+    return res.json(hit.data);
+  }
+
+  // ── No cache hit — resolve CoinPaprika ID, fetch single-coin ticker ──────
+  try {
+    let cpId: string | null = CP_ID_OVERRIDES[symbol] ?? cpSymbolMap.get(symbol) ?? null;
+
+    if (!cpId) {
+      const searchRes = await fetch(
+        `https://api.coinpaprika.com/v1/search?q=${encodeURIComponent(symbol)}&c=currencies&limit=5`,
+        { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) },
+      );
+      if (searchRes.ok) {
+        const sd: any = await searchRes.json();
+        const matches: any[] = sd?.currencies ?? [];
+        const exact = matches.find((c:any) => c.symbol?.toUpperCase() === symbol);
+        cpId = (exact ?? matches[0])?.id ?? null;
+        if (cpId) cpSymbolMap.set(symbol, cpId);
+      }
     }
 
-    return res.json(result);
+    if (!cpId) return res.json({ error: "not_found" });
+
+    const tickerRes = await fetch(
+      `https://api.coinpaprika.com/v1/tickers/${cpId}`,
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12000) },
+    );
+    if (tickerRes.status === 429) return res.json({ error: "rate_limited" });
+    if (!tickerRes.ok)            return res.json({ error: "not_found" });
+
+    const ticker = await tickerRes.json() as any;
+    const partial = cpTickerToCoinData(ticker, symbol);
+    fullCache.set(symbol, { data: partial, ts: Date.now() });
+
+    enhanceWithDetail(symbol, cpId);
+    return res.json(partial);
   } catch (err: any) {
     req.log?.warn?.({ err: err?.message, symbol }, "coin full fetch failed");
     return res.json({ error: "fetch_failed" });
