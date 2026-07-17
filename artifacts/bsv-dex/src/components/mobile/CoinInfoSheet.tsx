@@ -144,12 +144,21 @@ function Skeleton() {
 }
 
 export function CoinInfoSheet({ symbol, onClose }: Props) {
-  const { data, isLoading } = useQuery<CoinFull>({
+  const { data, isLoading, isError } = useQuery<CoinFull>({
     queryKey: ["coin-full", symbol],
-    queryFn: () => fetch(`${BASE}/api/coins/${encodeURIComponent(symbol!)}/full`).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/coins/${encodeURIComponent(symbol!)}/full`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const json = await r.json() as CoinFull;
+      // Treat API-level errors as failures so React Query retries & never caches them
+      if (json.error === "not_found" || json.error === "fetch_failed") {
+        throw new Error(json.error);
+      }
+      return json;
+    },
     enabled: !!symbol,
     staleTime: 30 * 60 * 1000,
-    retry: 1,
+    retry: 2,
   });
 
   if (!symbol) return null;
@@ -159,7 +168,7 @@ export function CoinInfoSheet({ symbol, onClose }: Props) {
     try { ai = JSON.parse(data.aiAnalysis); } catch { ai = null; }
   }
 
-  const notFound = data?.error === "not_found" || data?.error === "fetch_failed";
+  const notFound = isError;
 
   return (
     <div
