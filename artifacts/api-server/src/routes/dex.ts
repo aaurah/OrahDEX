@@ -716,6 +716,69 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
 }
 
+// When CoinPaprika has no record of a coin, fall back to our internal price
+// cache (populated from our own markets/LE/SS data) + coin_metadata for name/logo.
+// Returns null if we have no price data either.
+async function internalPriceFallback(symbol: string): Promise<Record<string, any> | null> {
+  const px = (priceCache?.data ?? {})[symbol];
+  if (px?.usd == null) return null;
+
+  let name = symbol;
+  let image: string | null = null;
+  try {
+    const meta = await pool.query<{ name: string; image_url: string }>(
+      `SELECT name, image_url FROM coin_metadata WHERE symbol = $1 LIMIT 1`, [symbol],
+    );
+    if (meta.rows[0]) {
+      name  = meta.rows[0].name || symbol;
+      image = meta.rows[0].image_url || null;
+    }
+  } catch { /* non-fatal */ }
+
+  return {
+    _partial:          false,
+    cpId:              null,
+    name,
+    symbol,
+    description:       null,
+    categories:        [],
+    image,
+    marketCapRank:     null,
+    genesisDate:       null,
+    hashingAlgo:       null,
+    countryOrigin:     null,
+    platforms:         {},
+    homepage:          null,
+    whitepaper:        null,
+    twitter:           null,
+    twitterHandle:     null,
+    reddit:            null,
+    github:            null,
+    telegram:          null,
+    priceUsd:          px.usd,
+    priceChange24h:    px.change24h ?? null,
+    priceChange7d:     null,
+    priceChange30d:    null,
+    priceChange1y:     null,
+    marketCap:         null,
+    fullyDilutedVal:   null,
+    totalVolume:       null,
+    circulatingSupply: null,
+    totalSupply:       null,
+    maxSupply:         null,
+    ath:               null,
+    athDate:           null,
+    athChangePercent:  null,
+    atl:               null,
+    atlDate:           null,
+    atlChangePercent:  null,
+    twitterFollowers:  null,
+    redditSubscribers: null,
+    aiAnalysis:        null,
+    _source:           "internal",
+  };
+}
+
 // /detail re-uses the same fullCache as /full, avoiding duplicate CP API calls.
 router.get("/coins/:symbol/detail", async (req, res) => {
   const symbol = (req.params.symbol ?? "").toUpperCase().trim();
@@ -754,13 +817,21 @@ router.get("/coins/:symbol/detail", async (req, res) => {
       }
     }
 
-    if (!cpId) return res.json({ error: "not_found" });
+    if (!cpId) {
+      const fallback = await internalPriceFallback(symbol);
+      if (fallback) { fullCache.set(symbol, { data: fallback, ts: Date.now() }); return res.json(fallback); }
+      return res.json({ error: "not_found" });
+    }
 
     const tickerRes = await fetch(
       `https://api.coinpaprika.com/v1/tickers/${cpId}`,
       { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12000) },
     );
-    if (!tickerRes.ok) return res.json({ error: "not_found" });
+    if (!tickerRes.ok) {
+      const fallback = await internalPriceFallback(symbol);
+      if (fallback) { fullCache.set(symbol, { data: fallback, ts: Date.now() }); return res.json(fallback); }
+      return res.json({ error: "not_found" });
+    }
 
     const ticker = await tickerRes.json() as any;
     const partial = cpTickerToCoinData(ticker, symbol);
@@ -1163,14 +1234,22 @@ router.get("/coins/:symbol/full", async (req, res) => {
       }
     }
 
-    if (!cpId) return res.json({ error: "not_found" });
+    if (!cpId) {
+      const fallback = await internalPriceFallback(symbol);
+      if (fallback) { fullCache.set(symbol, { data: fallback, ts: Date.now() }); return res.json(fallback); }
+      return res.json({ error: "not_found" });
+    }
 
     const tickerRes = await fetch(
       `https://api.coinpaprika.com/v1/tickers/${cpId}`,
       { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12000) },
     );
     if (tickerRes.status === 429) return res.json({ error: "rate_limited" });
-    if (!tickerRes.ok)            return res.json({ error: "not_found" });
+    if (!tickerRes.ok) {
+      const fallback = await internalPriceFallback(symbol);
+      if (fallback) { fullCache.set(symbol, { data: fallback, ts: Date.now() }); return res.json(fallback); }
+      return res.json({ error: "not_found" });
+    }
 
     const ticker = await tickerRes.json() as any;
     const partial = cpTickerToCoinData(ticker, symbol);
