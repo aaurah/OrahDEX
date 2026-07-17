@@ -83,6 +83,24 @@ export async function getSecretForAddress(
     return unlockWithPasskey(rec.address);
   }
 
+  // Guard: if there are OrahDEX passkey wallets on this device but none matches
+  // `address`, do NOT fall through to getNativePasskeySecret — that function
+  // would show all credentials in the iOS picker, letting the user accidentally
+  // pick the wrong passkey, which decrypts a different mnemonic, derives the
+  // wrong BSV key, and produces an OP_EQUALVERIFY on broadcast.
+  const { listPasskeyWallets } = await import('./passkeyWallet');
+  const nativeWallets = listPasskeyWallets();
+  if (
+    nativeWallets.length > 0 &&
+    !nativeWallets.some(w => w.address.toLowerCase() === address.toLowerCase())
+  ) {
+    throw new Error(
+      'No OrahDEX signing key found for this wallet address. ' +
+      'BSV/BTC transactions must be signed by the OrahDEX passkey wallet that owns the coins — ' +
+      'connect your OrahDEX passkey wallet to continue.'
+    );
+  }
+
   // Native passkey wallet (created via registerPasskeyWallet / importPasskeyWallet)
   return getNativePasskeySecret(address);
 }
