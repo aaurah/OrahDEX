@@ -1840,13 +1840,13 @@ export function WithdrawSheet({
                   />
                 </div>
 
-                {/* ── EVM-only wallet: no passkey → can't sign BSV/BTC/BCH ── */}
-                {!isOrahWallet && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) && listPasskeyWallets().length === 0 && (
+                {/* ── EVM-only wallet: no matching passkey → can't sign BSV/BTC/BCH ── */}
+                {!isOrahWallet && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) && !listPasskeyWallets().some(w => w.address.toLowerCase() === (passkeyEvmAddress ?? walletAddress).toLowerCase()) && (
                   <div className="flex items-start gap-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold text-red-300">OrahWallet required for {withdrawChainMode.toUpperCase()} withdrawals</p>
-                      <p className="text-[11px] text-red-400/80 mt-0.5">{withdrawChainMode.toUpperCase()} on-chain withdrawals are signed by your OrahWallet passkey. Create or restore an OrahWallet on this device to continue.</p>
+                      <p className="text-[11px] text-red-400/80 mt-0.5">{withdrawChainMode.toUpperCase()} on-chain withdrawals are signed by the OrahDEX passkey wallet that owns the coins. Connect your OrahDEX passkey wallet to continue.</p>
                     </div>
                   </div>
                 )}
@@ -1952,7 +1952,7 @@ export function WithdrawSheet({
                   disabled={
                     !nonEvmSendAmount || !nonEvmSendRecipient.trim() || nonEvmSending ||
                     (nonEvmSendBalance !== null && parseFloat(nonEvmSendAmount) > nonEvmSendBalance) ||
-                    (!isOrahWallet && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) && listPasskeyWallets().length === 0)
+                    (!isOrahWallet && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) && !listPasskeyWallets().some(w => w.address.toLowerCase() === (passkeyEvmAddress ?? walletAddress).toLowerCase()))
                   }
                   className="w-full gap-2 h-11 bg-green-600 hover:bg-green-500 text-white"
                 >
