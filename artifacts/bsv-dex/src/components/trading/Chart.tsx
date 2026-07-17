@@ -48,6 +48,9 @@ const RANGE_PRESET_MAP: Record<string, { apiInterval: string; limit: number }> =
   'All': { apiInterval: '1M', limit: 1500 },
 };
 
+/* Intervals that use the full A-to-Z history endpoint (Bitfinex inception data) */
+const HISTORY_INTERVALS = new Set(['5Y', '10Y', 'All']);
+
 /* ── Chart type definitions ─────────────────────────────────────────────── */
 const CHART_TYPES: { id: ChartType; label: string; svg: string }[] = [
   { id: 'candle',      label: 'Candlestick',  svg: 'M5,2 L5,5 M5,9 L5,12 M3,5 L7,5 L7,9 L3,9 Z' },
@@ -346,12 +349,18 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   /* ── Fetch candles ──────────────────────────────────────────────────── */
   const fetchCandles = useCallback(async () => {
     try {
-      const preset = RANGE_PRESET_MAP[interval];
-      const apiInterval = preset ? preset.apiInterval : interval;
-      const limit = preset
-        ? preset.limit
-        : ['1d','3d','1w','1M'].includes(interval) ? 300 : 500;
-      const url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/candles?interval=${apiInterval}&limit=${limit}`;
+      let url: string;
+      if (HISTORY_INTERVALS.has(interval)) {
+        /* Full history from coin inception — CoinGecko weekly + exchange daily */
+        url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/history`;
+      } else {
+        const preset = RANGE_PRESET_MAP[interval];
+        const apiInterval = preset ? preset.apiInterval : interval;
+        const limit = preset
+          ? preset.limit
+          : ['1d','3d','1w','1M'].includes(interval) ? 300 : 500;
+        url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/candles?interval=${apiInterval}&limit=${limit}`;
+      }
       const res = await fetch(url);
       if (!res.ok) return;
       const raw = await res.json();
