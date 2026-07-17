@@ -754,7 +754,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             initialTab={withdrawInitialTab}
             visibleTabs={withdrawVisibleTabs}
             isOrahWallet={provider === "orah-wallet"}
-            passkeyEvmAddress={provider === "orah-wallet" ? internalEvmAddress ?? undefined : undefined}
+            passkeyEvmAddress={internalEvmAddress ?? undefined}
           />
         );
       })()}
