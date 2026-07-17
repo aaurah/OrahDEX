@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { WalletChooserDialog } from "@/components/WalletChooserDialog";
 
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
+import { useHandCashStore } from "@/store/useHandCashStore";
 import { applyStoredTheme, useThemeStore } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -392,6 +393,33 @@ function Router() {
       });
     }).catch(() => {});
     return () => { unsub?.(); };
+  }, []);
+
+  // ── HandCash OAuth callback — runs once on mount ─────────────────────────
+  // HandCash redirects back to the app with ?authToken=<token> after the user
+  // authorises.  We read it, fetch the profile, store it, then clean the URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hcToken = params.get("authToken");
+    if (!hcToken) return;
+
+    (async () => {
+      try {
+        const { API_BASE } = await import("@/lib/api");
+        const res = await fetch(`${API_BASE}/handcash/profile?authToken=${encodeURIComponent(hcToken)}`);
+        if (res.ok) {
+          const profile = await res.json();
+          useHandCashStore.getState().setAuth(hcToken, profile);
+          // Kick off balance fetch in background
+          useHandCashStore.getState().fetchBalance();
+        }
+      } catch { /* non-fatal — user can re-connect */ }
+
+      // Clean the authToken param from the URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete("authToken");
+      window.history.replaceState({}, "", url.toString());
+    })();
   }, []);
 
   return (
