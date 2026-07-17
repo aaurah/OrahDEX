@@ -4,6 +4,7 @@ import {
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
   linea, zkSync, scroll, sepolia,
 } from "@reown/appkit/networks";
+import { useThemeStore } from "../store/useThemeStore";
 
 const projectId =
   (import.meta.env.VITE_REOWN_PROJECT_ID as string | undefined) ||
@@ -290,6 +291,14 @@ if (typeof window !== "undefined") {
   applyTokenOverrides(_storedTheme, _eff);
 }
 
+// ── Auto-sync: mirror OrahDEX theme changes into AppKit in real time ────────
+// Uses a Zustand store subscription so the sync works regardless of which
+// layout (desktop / mobile / any page) renders the theme switcher. No React
+// useEffect needed — this subscription is active for the lifetime of the module.
+if (typeof window !== "undefined") {
+  useThemeStore.subscribe((state) => syncReownTheme(state.theme));
+}
+
 export function subscribeReownAccount(
   cb: (address: string | null, chainId: number) => void
 ): () => void {
@@ -328,6 +337,10 @@ export function getAppKitWagmiConfig() {
 
 export function openReownModal(): void {
   _suppressNextConnect = false;
+  // Sync theme right before opening — guarantees the modal always opens in the
+  // current OrahDEX theme even if the Zustand subscription hasn't fired yet
+  // (e.g. the module just loaded for the first time after a theme change).
+  try { syncReownTheme(readStoredOrahTheme()); } catch {}
   try {
     appKit.open({ view: "Connect" });
   } catch (e) {
