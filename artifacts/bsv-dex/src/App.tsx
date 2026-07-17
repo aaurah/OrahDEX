@@ -395,6 +395,21 @@ function Router() {
     return () => { unsub?.(); };
   }, []);
 
+  // ── Sync persisted HandCash auth → global wallet store on startup ─────────
+  // useHandCashStore is persisted; useWalletStore is not. On every page load
+  // we need to tell the wallet store that HandCash is connected.
+  useEffect(() => {
+    const hc = useHandCashStore.getState();
+    if (hc.authToken && hc.profile) {
+      useWalletStore.getState().connect({
+        address:  `$${hc.profile.handle}`,
+        provider: "handcash",
+        network:  "bsv",
+      });
+      hc.fetchBalance();
+    }
+  }, []);
+
   // ── HandCash OAuth callback — runs once on mount ─────────────────────────
   // HandCash redirects back to the app with ?authToken=<token> after the user
   // authorises.  We read it, fetch the profile, store it, then clean the URL.
@@ -410,6 +425,12 @@ function Router() {
         if (res.ok) {
           const profile = await res.json();
           useHandCashStore.getState().setAuth(hcToken, profile);
+          // Also update the global wallet store so the whole app knows
+          useWalletStore.getState().connect({
+            address:  `$${profile.handle}`,
+            provider: "handcash",
+            network:  "bsv",
+          });
           // Kick off balance fetch in background
           useHandCashStore.getState().fetchBalance();
         }

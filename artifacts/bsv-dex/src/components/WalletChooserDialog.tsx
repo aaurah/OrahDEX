@@ -1367,7 +1367,7 @@ export function WalletChooserDialog() {
                   <Button
                     variant="outline"
                     className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-500/50"
-                    onClick={() => { hcDisconnect(); setTab("choose"); }}
+                    onClick={() => { hcDisconnect(); useWalletStore.getState().disconnect(); setTab("choose"); }}
                   >
                     Disconnect HandCash
                   </Button>
