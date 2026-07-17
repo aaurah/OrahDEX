@@ -24,6 +24,7 @@ import { startEvmHtlcWatcher } from "./lib/evmHtlc.js";
 import { warmCurrenciesCache, clearSwapCaches } from "./routes/letsexchange.js";
 import { hydrateAdminTokens } from "./middleware/adminAuth.js";
 import { seedCoinGeckoIds } from "./services/cgIdSeeder.js";
+import { seedGithubTokens } from "./services/githubTokenSeeder.js";
 import { startCopyOrchestrator } from "./lib/copyOrchestrator.js";
 import { apiKeyAuth, rejectQueryParamApiKey, startApiKeyCounterFlusher } from "./middleware/apiKeyAuth.js";
 import { WebhookHandlers } from "./webhookHandlers.js";
@@ -122,6 +123,22 @@ pool.query(`
   CREATE INDEX IF NOT EXISTS idx_markets_quote_asset ON markets (quote_asset);
   CREATE INDEX IF NOT EXISTS idx_markets_type        ON markets (type);
 `).catch((err: Error) => logger.warn({ err: err.message }, "markets search indexes failed (non-fatal)"));
+
+// GitHub token list cache — stores logos, addresses, and decimals from Trust Wallet + Uniswap lists.
+pool.query(`
+  CREATE TABLE IF NOT EXISTS github_tokens (
+    chain_id   INT         NOT NULL,
+    address    TEXT        NOT NULL,
+    symbol     TEXT        NOT NULL,
+    name       TEXT,
+    decimals   INT         NOT NULL DEFAULT 18,
+    logo_url   TEXT,
+    source     TEXT        NOT NULL DEFAULT 'trustwallet',
+    fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (chain_id, address)
+  );
+  CREATE INDEX IF NOT EXISTS github_tokens_symbol_idx ON github_tokens (symbol);
+`).catch((err: Error) => logger.warn({ err: err.message }, "github_tokens migration failed (non-fatal)"));
 
 const app: Express = express();
 const middlewareRegistrationOrder: string[] = [];
@@ -540,6 +557,15 @@ setTimeout(() => {
 setTimeout(() => {
   seedCoinGeckoIds().catch(e => logger.warn({ err: e }, "seedCoinGeckoIds failed (non-fatal)"));
 }, 15_000);
+
+// Seed GitHub token lists (Trust Wallet + Uniswap) — logos, addresses, decimals, new tokens.
+// Runs 30 s after boot so DB is warm, then refreshes every 24 h.
+setTimeout(() => {
+  seedGithubTokens().catch(e => logger.warn({ err: e }, "seedGithubTokens failed (non-fatal)"));
+  setInterval(() => {
+    seedGithubTokens().catch(e => logger.warn({ err: e }, "seedGithubTokens refresh failed (non-fatal)"));
+  }, 24 * 60 * 60 * 1_000);
+}, 30_000);
 
 // Warm fullCache from DB (coin_info_cache) — instant load for previously-seen coins.
 // Fires at T+1 s so the DB is ready. Non-blocking: serves enriched data immediately
