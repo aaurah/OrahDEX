@@ -126,8 +126,8 @@ async function quoteLetsExchange(
     // (NOT coin_from / coin_to / deposit_amount — those cause 422)
     // network_from/network_to must be the LE network code, NOT the coin symbol
     // (e.g. USDT → "ERC20", BNB → "BEP20", TRX → "TRC20")
-    const networkFrom = LE_COIN_NETWORK[fromU]?.network ?? fromU;
-    const networkTo   = LE_COIN_NETWORK[toU]?.network   ?? toU;
+    const networkFrom = LE_COIN_NETWORK[from.toUpperCase()]?.network ?? from.toUpperCase();
+    const networkTo   = LE_COIN_NETWORK[to.toUpperCase()]?.network   ?? to.toUpperCase();
     const { ok, status, data } = await leRequest("/v1/info", "POST", {
       from,
       to,

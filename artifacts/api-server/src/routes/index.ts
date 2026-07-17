@@ -57,6 +57,7 @@ import optionsRouter from "./options.js";
 import overlayRouter from "./overlay.js";
 import handcashRouter from "./handcash.js";
 import tokensRouter from "./tokens.js";
+import externalSwapRouter from "./externalSwap.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
@@ -106,6 +107,7 @@ router.use(sorRouter);
 router.use(buyRouter);
 router.use(handcashRouter);
 router.use(tokensRouter);
+router.use(externalSwapRouter);
 // Protect all /admin routes — allow only the public auth endpoints through without a token.
 const ADMIN_OPEN_METHODS_PATHS = new Set([
   "POST:/auth",

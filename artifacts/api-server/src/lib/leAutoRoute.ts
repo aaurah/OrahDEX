@@ -15,7 +15,8 @@ import { getBestExternalQuote } from "./metaRouter.js";
 import { createSsExchangePair } from "./simpleswap.js";
 import { createCNExchange } from "./changenow.js";
 import { createSXExchange } from "./stealthex.js";
-import { leRequest, getCachedLEPrices } from "./lePriceCache.js";
+import { leRequest, getCachedLEPrices, AFFILIATE_ID } from "./lePriceCache.js";
+import { LE_COIN_NETWORK } from "./leCoinNetwork.js";
 import { creditAvailable } from "./ledger.js";
 import { getOrCreateEvmHotWallet } from "./exchangeHotWallet.js";
 import pino from "pino";
@@ -196,17 +197,21 @@ async function createVenueExchange(
       return r.ok ? { ok: true, transactionId: r.exchange.id } : { ok: false };
     }
     if (venue === "letsexchange") {
+      const fromU2 = from.toUpperCase();
+      const toU2   = to.toUpperCase();
       const body = {
-        coin_from:      from,
-        coin_to:        to,
-        network_from:   from,
-        network_to:     to,
-        deposit_amount: amount,
-        withdrawal:     address,
+        from:         fromU2,
+        to:           toU2,
+        network_from: LE_COIN_NETWORK[fromU2]?.network ?? fromU2,
+        network_to:   LE_COIN_NETWORK[toU2]?.network   ?? toU2,
+        amount,
+        withdrawal:   address,
+        affiliate_id: AFFILIATE_ID,
       };
       const { ok, data } = await leRequest("/v1/transaction", "POST", body);
       if (ok && data && typeof data === "object") {
-        const txId = String((data as Record<string, unknown>).transaction_id ?? "");
+        const d = data as Record<string, unknown>;
+        const txId = String(d.id ?? d.transaction_id ?? "");
         return txId ? { ok: true, transactionId: txId } : { ok: false };
       }
       return { ok: false };
