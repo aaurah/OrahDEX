@@ -5,7 +5,7 @@ import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 import { fetchKeyPrices } from "./dex.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
-import { fetchRealCandles, fetchFullHistoryCandles } from "../lib/candleFetcher.js";
+import { fetchRealCandles, fetchFullHistoryCandles, resampleCandles } from "../lib/candleFetcher.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -490,7 +490,8 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
  */
 router.get("/markets/:symbol/history", async (req, res) => {
   try {
-    const symbol = normSymbol(req.params.symbol!);
+    const symbol   = normSymbol(req.params.symbol!);
+    const resample = (req.query.interval as string) || "";
 
     let price = 0;
     try {
@@ -502,7 +503,13 @@ router.get("/markets/:symbol/history", async (req, res) => {
       price = resolveCrossPrice(symbol, 0);
     }
 
-    const candles = await fetchFullHistoryCandles(symbol, price);
+    let candles = await fetchFullHistoryCandles(symbol, price);
+
+    /* Resample daily candles into weekly/monthly for long-range chart views */
+    if (resample === "1w" || resample === "1M") {
+      candles = resampleCandles(candles, resample);
+    }
+
     res.json(candles);
   } catch (err) {
     logger.error({ err }, "Failed to fetch full history candles");
