@@ -351,8 +351,9 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     try {
       let url: string;
       if (HISTORY_INTERVALS.has(interval)) {
-        /* Full history from coin inception — CoinGecko weekly + exchange daily */
-        url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/history`;
+        /* Full history from coin inception — server resamples daily→weekly/monthly */
+        const res = interval === '5Y' ? '1w' : '1M';
+        url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/history?interval=${res}`;
       } else {
         const preset = RANGE_PRESET_MAP[interval];
         const apiInterval = preset ? preset.apiInterval : interval;

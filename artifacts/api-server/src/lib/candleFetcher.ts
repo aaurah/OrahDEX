@@ -455,6 +455,51 @@ export async function fetchFullHistoryCandles(
   return pinLastCandle([...merged], lastPrice);
 }
 
+/* ── Resample daily candles into weekly or monthly OHLCV bars ────────────────── */
+export function resampleCandles(candles: Candle[], targetInterval: '1w' | '1M'): Candle[] {
+  if (!candles.length) return candles;
+
+  const bucketKey = (ts: number): string => {
+    const d = new Date(ts * 1000);
+    if (targetInterval === '1M') {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    }
+    /* Weekly: Monday-aligned */
+    const dow  = d.getUTCDay(); // 0=Sun
+    const diff = dow === 0 ? -6 : 1 - dow;
+    const mon  = new Date(d.getTime() + diff * 86_400_000);
+    return `${mon.getUTCFullYear()}-${String(mon.getUTCMonth() + 1).padStart(2, '0')}-${String(mon.getUTCDate()).padStart(2, '0')}`;
+  };
+
+  const startTs = (ts: number): number => {
+    const d = new Date(ts * 1000);
+    if (targetInterval === '1M') {
+      return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000;
+    }
+    const dow  = d.getUTCDay();
+    const diff = dow === 0 ? -6 : 1 - dow;
+    return Math.floor((d.getTime() + diff * 86_400_000) / 1000 / 86_400) * 86_400;
+  };
+
+  type Bar = { time: number; open: number; high: number; low: number; close: number; volume: number };
+  const buckets = new Map<string, Bar>();
+
+  for (const c of candles) {
+    const key = bucketKey(c.time);
+    const b   = buckets.get(key);
+    if (!b) {
+      buckets.set(key, { time: startTs(c.time), open: c.open, high: c.high, low: c.low, close: c.close, volume: (c as any).volume ?? 0 });
+    } else {
+      if (c.high > b.high) b.high = c.high;
+      if (c.low  < b.low)  b.low  = c.low;
+      b.close   = c.close;
+      b.volume += (c as any).volume ?? 0;
+    }
+  }
+
+  return Array.from(buckets.values()).sort((a, b) => a.time - b.time) as unknown as Candle[];
+}
+
 /* ── Pin the last candle's close to the live price ──────────────────────────── */
 function pinLastCandle(candles: Candle[], lastPrice: number): Candle[] {
   if (!candles.length || !(lastPrice > 0)) return candles;
