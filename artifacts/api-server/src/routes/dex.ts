@@ -951,22 +951,38 @@ router.get("/coins/:symbol/full", async (req, res) => {
   if (hit && Date.now() - hit.ts < FULL_CACHE_MS) return res.json(hit.data);
 
   try {
-    // ── 1. CoinGecko search ──────────────────────────────────────────────────
-    const searchRes = await fetch(
-      `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`,
-      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) },
-    );
-    if (!searchRes.ok) return res.json({ error: "not_found" });
+    // ── 1. Resolve CoinGecko ID — DB first, search API as fallback ───────────
+    let cgId: string | null = null;
 
-    const searchData = await searchRes.json() as any;
-    const coins: any[] = searchData?.coins ?? [];
-    const exact = coins.find((c: any) => c.symbol?.toUpperCase() === symbol);
-    const best  = exact ?? coins[0];
-    if (!best?.id) return res.json({ error: "not_found" });
+    // Check our own coin_metadata table (populated by /detail and prior /full calls)
+    try {
+      const dbRow = await pool.query<{ coingecko_id: string }>(
+        `SELECT coingecko_id FROM coin_metadata WHERE symbol = $1 AND coingecko_id IS NOT NULL LIMIT 1`,
+        [symbol],
+      );
+      cgId = dbRow.rows[0]?.coingecko_id ?? null;
+    } catch { /* non-fatal */ }
+
+    // If not in DB, hit CoinGecko search (may be rate-limited on free tier)
+    if (!cgId) {
+      const searchRes = await fetch(
+        `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`,
+        { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8000) },
+      );
+      if (searchRes.ok) {
+        const searchData = await searchRes.json() as any;
+        const coins: any[] = searchData?.coins ?? [];
+        const exact = coins.find((c: any) => c.symbol?.toUpperCase() === symbol);
+        const best  = exact ?? coins[0];
+        cgId = best?.id ?? null;
+      }
+    }
+
+    if (!cgId) return res.json({ error: "not_found" });
 
     // ── 2. Full CoinGecko detail ─────────────────────────────────────────────
     const detailRes = await fetch(
-      `https://api.coingecko.com/api/v3/coins/${best.id}?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false&sparkline=false`,
+      `https://api.coingecko.com/api/v3/coins/${cgId}?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false&sparkline=false`,
       { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(10000) },
     );
     if (!detailRes.ok) return res.json({ error: "not_found" });
