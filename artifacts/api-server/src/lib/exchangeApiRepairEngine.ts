@@ -314,7 +314,9 @@ export async function resilientFetch(
     if (res.status === 429) {
       const retryAfterSec = parseInt(res.headers.get("Retry-After") ?? "0", 10);
       recordRateLimit(api, retryAfterSec > 0 ? retryAfterSec * 1000 : undefined);
-      cb.recordFailure("429 Too Many Requests");
+      // 429 = rate-limited, not unhealthy — do NOT count against circuit breaker.
+      // The API is functioning; we are simply sending too many requests.
+      // The RateLimitGuard above handles backoff; treat this as a non-fatal skip.
       throw new Error(`429 rate-limited: ${url}`);
     }
 

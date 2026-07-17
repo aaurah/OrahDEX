@@ -106,14 +106,14 @@ function decryptHtlcSecret(stored: string): string {
   if (!stored.includes(":")) return stored;
   const parts = stored.split(":");
   if (parts.length !== 3) {
-    // Malformed encrypted value — log a warning so operators notice.
-    logger.warn({ storedLen: stored.length }, "evmHtlc: malformed encrypted secret (wrong part count) — treating as plaintext");
-    return stored;
+    // Malformed — throw rather than returning garbage as a "secret".
+    // The caller must surface this to the operator; using a corrupt secret
+    // could cause an incorrect HTLC reveal and potential fund loss.
+    throw new Error(`evmHtlc: malformed encrypted secret (${parts.length} parts, expected 3) — db migration required`);
   }
   const [ivHex, tagHex, encHex] = parts;
   if (!ivHex || !tagHex || !encHex) {
-    logger.warn("evmHtlc: malformed encrypted secret (empty part) — treating as plaintext");
-    return stored;
+    throw new Error("evmHtlc: malformed encrypted secret (empty part) — cannot decrypt");
   }
   const key = getHtlcEncryptionKey();
   const d   = createDecipheriv("aes-256-gcm", key, Buffer.from(ivHex, "hex"), { authTagLength: 16 });

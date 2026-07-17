@@ -197,10 +197,11 @@ export function startFundingRateEngine(): void {
       const basePrice = priceMap[symbol] ?? 0;
       if (basePrice <= 0) continue;
 
-      // Apply ±5% noise to the mark price to create funding rate variance
-      const noise      = 1 + (Math.random() - 0.5) * 0.05;
-      const markPrice  = basePrice * noise;
-      const indexPrice = basePrice; // simplified — production would use spot oracle
+      // Use last price as both mark and index (no artificial noise).
+      // Math.random() noise was removed — it created an oracle manipulation surface
+      // where small spot trades could be used to shift funding rates.
+      const markPrice  = basePrice;
+      const indexPrice = basePrice;
 
       try {
         await updateFundingRate(symbol, markPrice, indexPrice);

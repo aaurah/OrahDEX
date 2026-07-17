@@ -14,7 +14,7 @@
 import { Router, type IRouter, type Response } from "express";
 import { db, pool } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
-import { or, eq, and } from "drizzle-orm";
+import { or, eq, and, ne, desc, sql as sqlRaw } from "drizzle-orm";
 import {
   settleSwap,
 } from "../lib/ledger.js";
@@ -843,16 +843,24 @@ async function resolveRate(assetIn: string, assetOut: string): Promise<number | 
     const [mkt] = await db
       .select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
       .from(marketsTable)
-      .where(or(eq(marketsTable.symbol, direct), eq(marketsTable.symbol, inverse)))
+      .where(and(
+        or(eq(marketsTable.symbol, direct), eq(marketsTable.symbol, inverse)),
+        ne(marketsTable.type, "letsexchange"),
+      ))
+      .orderBy(desc(marketsTable.updatedAt))
       .limit(1);
 
     if (!mkt) {
       // Try routing via USDT if neither is stablecoin
       if (!STABLES.has(assetIn) && !STABLES.has(assetOut)) {
         const [inMkt]  = await db.select({ lastPrice: marketsTable.lastPrice })
-          .from(marketsTable).where(eq(marketsTable.symbol, `${assetIn}/USDT`)).limit(1);
+          .from(marketsTable)
+          .where(and(eq(marketsTable.symbol, `${assetIn}/USDT`), ne(marketsTable.type, "letsexchange")))
+          .orderBy(desc(marketsTable.updatedAt)).limit(1);
         const [outMkt] = await db.select({ lastPrice: marketsTable.lastPrice })
-          .from(marketsTable).where(eq(marketsTable.symbol, `${assetOut}/USDT`)).limit(1);
+          .from(marketsTable)
+          .where(and(eq(marketsTable.symbol, `${assetOut}/USDT`), ne(marketsTable.type, "letsexchange")))
+          .orderBy(desc(marketsTable.updatedAt)).limit(1);
         if (inMkt && outMkt) {
           const inPrice  = parseFloat(inMkt.lastPrice);
           const outPrice = parseFloat(outMkt.lastPrice);

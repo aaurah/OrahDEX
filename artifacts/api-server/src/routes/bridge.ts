@@ -603,7 +603,7 @@ router.get("/evm-lock-info", async (req, res) => {
 
     const amountEth = (Number(lockedWei) / 1e18).toFixed(6);
     const now        = Math.floor(Date.now() / 1000);
-    const isExpired  = timelockUnixSecs !== null ? timelockUnixSecs < now : true; // assume expired if unknown
+    const isExpired  = timelockUnixSecs !== null ? timelockUnixSecs < now : false; // unknown ≠ expired; show as active
     const canRefund  = !!cancelCalldata && !revealed && !refunded;
 
     if (!canRefund && cancelSimFailed) {

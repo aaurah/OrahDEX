@@ -26,6 +26,7 @@
 
 import { logger } from "./logger.js";
 import { leRequest, AFFILIATE_ID } from "./lePriceCache.js";
+import { LE_COIN_NETWORK } from "./leCoinNetwork.js";
 import { quoteFromSSPair, isSimpleSwapConfigured } from "./simpleswap.js";
 import { quoteFromCN, isChangeNowConfigured }                  from "./changenow.js";
 import { quoteFromSX, isStealthExConfigured }                  from "./stealthex.js";
@@ -123,11 +124,15 @@ async function quoteLetsExchange(
   try {
     // LE /v1/info requires: from, to, network_from, network_to, amount
     // (NOT coin_from / coin_to / deposit_amount — those cause 422)
+    // network_from/network_to must be the LE network code, NOT the coin symbol
+    // (e.g. USDT → "ERC20", BNB → "BEP20", TRX → "TRC20")
+    const networkFrom = LE_COIN_NETWORK[fromU]?.network ?? fromU;
+    const networkTo   = LE_COIN_NETWORK[toU]?.network   ?? toU;
     const { ok, status, data } = await leRequest("/v1/info", "POST", {
       from,
       to,
-      network_from:   from,   // for native chains the network = coin symbol
-      network_to:     to,
+      network_from:   networkFrom,
+      network_to:     networkTo,
       amount,
       affiliate_id:   AFFILIATE_ID,
     });
