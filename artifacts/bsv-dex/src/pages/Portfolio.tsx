@@ -618,7 +618,7 @@ export function Portfolio() {
             addressPlaceholder={assetNet.placeholder}
             color={withdrawAsset.color}
             isOrahWallet={provider === "orah-wallet"}
-            passkeyEvmAddress={provider === "orah-wallet" ? internalEvmAddress ?? undefined : undefined}
+            passkeyEvmAddress={internalEvmAddress ?? undefined}
           />
         );
       })()}

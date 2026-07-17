@@ -9,7 +9,7 @@
  * History tab  — past withdrawals with status badges, gas-shortage banner.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +55,7 @@ import {
   listPasskeyWallets,
   loginWithPasskey,
 } from "@/lib/passkeyWallet";
+import { getDerivedAddresses, listImportedWallets } from "@/lib/walletPin";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
@@ -385,6 +386,63 @@ export function WithdrawSheet({
   const isEvmNetwork  = !isBitcoinFork && !isSolana && (network.toLowerCase() === "evm" || network === "");
   const isAltChain    = !isBitcoinFork && !isSolana && !isEvmNetwork; // LTC, DOGE, XRP, ADA, TRON, TON, etc.
   const isNonEvm      = isBitcoinFork || isSolana || isAltChain;
+
+  // ── Resolve the correct OrahDEX signing address for non-EVM chains ────────
+  // When an external EVM wallet is the primary connection passkeyEvmAddress is
+  // undefined. We auto-detect the OrahDEX passkey wallet that owns the non-EVM
+  // addresses, falling back to the first passkey wallet on the device.
+  const resolvedSigningEvmAddress = useMemo((): string => {
+    if (passkeyEvmAddress) return passkeyEvmAddress;
+    const passkeys = listPasskeyWallets();
+    if (passkeys.length === 0) return walletAddress;
+    if (nonEvmAddresses) {
+      for (const pk of passkeys) {
+        const d = getDerivedAddresses(pk.address);
+        if (!d) continue;
+        if (
+          (nonEvmAddresses.bsv && d.bsv?.toLowerCase()  === nonEvmAddresses.bsv.toLowerCase())  ||
+          (nonEvmAddresses.btc && d.btc?.toLowerCase()  === nonEvmAddresses.btc.toLowerCase())  ||
+          (nonEvmAddresses.sol && d.sol?.toLowerCase()  === nonEvmAddresses.sol.toLowerCase())  ||
+          (nonEvmAddresses.trx && d.tron?.toLowerCase() === nonEvmAddresses.trx.toLowerCase())  ||
+          (nonEvmAddresses.xrp && d.xrp?.toLowerCase()  === nonEvmAddresses.xrp.toLowerCase())
+        ) return pk.address;
+      }
+      for (const imp of listImportedWallets()) {
+        const d = getDerivedAddresses(imp.address);
+        if (!d) continue;
+        if (
+          (nonEvmAddresses.bsv && d.bsv?.toLowerCase() === nonEvmAddresses.bsv.toLowerCase()) ||
+          (nonEvmAddresses.btc && d.btc?.toLowerCase() === nonEvmAddresses.btc.toLowerCase()) ||
+          (nonEvmAddresses.sol && d.sol?.toLowerCase() === nonEvmAddresses.sol.toLowerCase())
+        ) return imp.address;
+      }
+    }
+    return passkeys[0].address;
+  }, [passkeyEvmAddress, walletAddress, nonEvmAddresses]);
+
+  // Merge auto-loaded derived addresses with any passed nonEvmAddresses.
+  // Auto-loading lets Portfolio/MobilePortfolio work without passing nonEvmAddresses.
+  const effectiveNonEvmAddresses = useMemo((): Record<string, string | undefined> => {
+    const d = getDerivedAddresses(resolvedSigningEvmAddress);
+    const auto: Record<string, string | undefined> = d ? {
+      bsv:  d.bsv  ?? undefined,
+      btc:  d.btc  ?? undefined,
+      bch:  d.bch  ?? undefined,
+      sol:  d.sol  ?? undefined,
+      trx:  d.tron ?? undefined,
+      xrp:  d.xrp  ?? undefined,
+      ltc:  d.ltc  ?? undefined,
+      doge: d.doge ?? undefined,
+    } : {};
+    return { ...auto, ...nonEvmAddresses };
+  }, [resolvedSigningEvmAddress, nonEvmAddresses]);
+
+  // True when we have an OrahDEX wallet (passkey or imported) that can sign
+  const canSignNonEvm = useMemo(() => {
+    const addr = resolvedSigningEvmAddress.toLowerCase();
+    return listPasskeyWallets().some(w => w.address.toLowerCase() === addr) ||
+      listImportedWallets().some(w => w.address.toLowerCase() === addr);
+  }, [resolvedSigningEvmAddress]);
   const [tab,          setTab]          = useState<"deposit" | "withdraw" | "history">(initialTab);
   const [copiedId,     setCopiedId]     = useState<string | null>(null);
   const [expandedNote, setExpandedNote] = useState<string | null>(null);
@@ -743,7 +801,7 @@ export function WithdrawSheet({
   // ── wallet send: non-EVM balance fetch (BSV, LTC, XRP, …) ───────────────
   const fetchNonEvmBalance = useCallback(async () => {
     const net     = withdrawChainMode.toLowerCase();
-    const chainAddr = nonEvmAddresses?.[net] ?? (net !== "evm" ? undefined : walletAddress);
+    const chainAddr = effectiveNonEvmAddresses?.[net] ?? (net !== "evm" ? undefined : walletAddress);
     if (!chainAddr) return;
     setNonEvmSendBalance(null);
     setNonEvmSendBalFetch(true);
@@ -821,13 +879,13 @@ export function WithdrawSheet({
     } finally {
       setNonEvmSendBalFetch(false);
     }
-  }, [walletAddress, nonEvmAddresses, withdrawChainMode]);
+  }, [walletAddress, effectiveNonEvmAddresses, withdrawChainMode]);
 
   useEffect(() => {
-    if (open && tab === "withdraw" && isOrahWallet && withdrawChainMode !== "evm") {
+    if (open && tab === "withdraw" && (isOrahWallet || canSignNonEvm) && withdrawChainMode !== "evm") {
       fetchNonEvmBalance();
     }
-  }, [open, tab, isOrahWallet, withdrawChainMode, fetchNonEvmBalance]);
+  }, [open, tab, isOrahWallet, canSignNonEvm, withdrawChainMode, fetchNonEvmBalance]);
 
   // ── wallet send: non-EVM challenge/sign/broadcast ────────────────────────
   const handleNonEvmWalletSend = async () => {
@@ -840,7 +898,7 @@ export function WithdrawSheet({
       const isBitcoinForkChain = ["bsv", "btc", "bch"].includes(activeChain);
 
       const chainAddress = isBitcoinForkChain
-        ? (nonEvmAddresses?.[activeChain] ?? nonEvmAddresses?.[activeChain.toUpperCase()])
+        ? (effectiveNonEvmAddresses?.[activeChain] ?? effectiveNonEvmAddresses?.[activeChain.toUpperCase()])
         : undefined;
 
       if (isBitcoinForkChain && !chainAddress) {
@@ -860,7 +918,7 @@ export function WithdrawSheet({
       // the passkey-derived BSV private key — no exchange API involved.
       if (activeChain === "bsv") {
         const result = await sendBsvFromAddress(
-          passkeyEvmAddress ?? walletAddress,
+          resolvedSigningEvmAddress,
           chainAddress!,
           nonEvmSendRecipient.trim(),
           parsedAmt,
@@ -884,10 +942,10 @@ export function WithdrawSheet({
 
       // ── BTC: direct on-chain P2WPKH native-segwit ───────────────────────────
       if (activeChain === "btc") {
-        const btcAddr = nonEvmAddresses?.["btc"] ?? nonEvmAddresses?.["BTC"];
+        const btcAddr = effectiveNonEvmAddresses?.["btc"] ?? effectiveNonEvmAddresses?.["BTC"];
         if (!btcAddr) throw new Error("No BTC address found for this wallet.");
         const result = await sendBtcFromAddress(
-          passkeyEvmAddress ?? walletAddress, btcAddr, nonEvmSendRecipient.trim(), parsedAmt,
+          resolvedSigningEvmAddress, btcAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "BTC sent", description: `${parsedAmt} BTC sent on-chain. Fee: ${result.feeSat} sat. TXID: ${result.txid.slice(0, 16)}…` });
@@ -899,10 +957,10 @@ export function WithdrawSheet({
 
       // ── LTC: direct on-chain P2PKH legacy ───────────────────────────────────
       if (activeChain === "ltc") {
-        const ltcAddr = nonEvmAddresses?.["ltc"] ?? nonEvmAddresses?.["LTC"];
+        const ltcAddr = effectiveNonEvmAddresses?.["ltc"] ?? effectiveNonEvmAddresses?.["LTC"];
         if (!ltcAddr) throw new Error("No LTC address found for this wallet.");
         const result = await sendLtcFromAddress(
-          passkeyEvmAddress ?? walletAddress, ltcAddr, nonEvmSendRecipient.trim(), parsedAmt,
+          resolvedSigningEvmAddress, ltcAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "LTC sent", description: `${parsedAmt} LTC sent on-chain. Fee: ${result.feeSat} lit. TXID: ${result.txid.slice(0, 16)}…` });
@@ -914,10 +972,10 @@ export function WithdrawSheet({
 
       // ── DOGE: direct on-chain P2PKH legacy ──────────────────────────────────
       if (activeChain === "doge") {
-        const dogeAddr = nonEvmAddresses?.["doge"] ?? nonEvmAddresses?.["DOGE"];
+        const dogeAddr = effectiveNonEvmAddresses?.["doge"] ?? effectiveNonEvmAddresses?.["DOGE"];
         if (!dogeAddr) throw new Error("No DOGE address found for this wallet.");
         const result = await sendDogeFromAddress(
-          passkeyEvmAddress ?? walletAddress, dogeAddr, nonEvmSendRecipient.trim(), parsedAmt,
+          resolvedSigningEvmAddress, dogeAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "DOGE sent", description: `${parsedAmt} DOGE sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
@@ -929,10 +987,10 @@ export function WithdrawSheet({
 
       // ── XRP: direct on-chain Payment ────────────────────────────────────────
       if (activeChain === "xrp") {
-        const xrpAddr = nonEvmAddresses?.["xrp"] ?? nonEvmAddresses?.["XRP"];
+        const xrpAddr = effectiveNonEvmAddresses?.["xrp"] ?? effectiveNonEvmAddresses?.["XRP"];
         if (!xrpAddr) throw new Error("No XRP address found for this wallet.");
         const result = await sendXrpFromAddress(
-          passkeyEvmAddress ?? walletAddress, xrpAddr, nonEvmSendRecipient.trim(), parsedAmt,
+          resolvedSigningEvmAddress, xrpAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "XRP sent", description: `${parsedAmt} XRP sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
@@ -944,10 +1002,10 @@ export function WithdrawSheet({
 
       // ── TRX: direct on-chain transfer ────────────────────────────────────────
       if (activeChain === "trx") {
-        const trxAddr = nonEvmAddresses?.["tron"] ?? nonEvmAddresses?.["trx"] ?? nonEvmAddresses?.["TRX"];
+        const trxAddr = effectiveNonEvmAddresses?.["tron"] ?? effectiveNonEvmAddresses?.["trx"] ?? effectiveNonEvmAddresses?.["TRX"];
         if (!trxAddr) throw new Error("No TRX address found for this wallet.");
         const result = await sendTrxFromAddress(
-          passkeyEvmAddress ?? walletAddress, trxAddr, nonEvmSendRecipient.trim(), parsedAmt,
+          resolvedSigningEvmAddress, trxAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "TRX sent", description: `${parsedAmt} TRX sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
@@ -959,10 +1017,10 @@ export function WithdrawSheet({
 
       // ── BCH: direct on-chain BIP143+FORKID transaction ──────────────────────
       if (activeChain === "bch") {
-        const bchAddr = nonEvmAddresses?.["bch"] ?? nonEvmAddresses?.["BCH"];
+        const bchAddr = effectiveNonEvmAddresses?.["bch"] ?? effectiveNonEvmAddresses?.["BCH"];
         if (!bchAddr) throw new Error("No BCH address found for this wallet.");
         const result = await sendBchFromAddress(
-          passkeyEvmAddress ?? walletAddress, bchAddr, nonEvmSendRecipient.trim(), parsedAmt,
+          resolvedSigningEvmAddress, bchAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "BCH sent", description: `${parsedAmt} BCH sent on-chain. Fee: ${result.feeSat} sat. TXID: ${result.txid.slice(0, 16)}…` });
@@ -974,10 +1032,10 @@ export function WithdrawSheet({
 
       // ── SOL: direct on-chain ed25519 SystemProgram.transfer ─────────────────
       if (activeChain === "sol") {
-        const solAddr = nonEvmAddresses?.["sol"] ?? nonEvmAddresses?.["SOL"];
+        const solAddr = effectiveNonEvmAddresses?.["sol"] ?? effectiveNonEvmAddresses?.["SOL"];
         if (!solAddr) throw new Error("No SOL address found for this wallet.");
         const result = await sendSolFromAddress(
-          passkeyEvmAddress ?? walletAddress, solAddr, nonEvmSendRecipient.trim(), parsedAmt,
+          resolvedSigningEvmAddress, solAddr, nonEvmSendRecipient.trim(), parsedAmt,
         );
         setNonEvmSendTxHash(result.txid);
         toast({ title: "SOL sent", description: `${parsedAmt} SOL sent on-chain. TXID: ${result.txid.slice(0, 16)}…` });
@@ -999,7 +1057,7 @@ export function WithdrawSheet({
           throw new Error(err.error ?? "Failed to get withdrawal challenge");
         }
         const { message } = await challengeRes.json();
-        const signature = await signBsvChallengeFromAddress(passkeyEvmAddress ?? walletAddress, message);
+        const signature = await signBsvChallengeFromAddress(resolvedSigningEvmAddress, message);
         const wAsset = withdrawChainMode.toUpperCase();
         const withdrawRes = await fetch(`${API_BASE}/withdrawals`, {
           method:  "POST",
@@ -1840,8 +1898,8 @@ export function WithdrawSheet({
                   />
                 </div>
 
-                {/* ── EVM-only wallet: no matching passkey → can't sign BSV/BTC/BCH ── */}
-                {!isOrahWallet && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) && !listPasskeyWallets().some(w => w.address.toLowerCase() === (passkeyEvmAddress ?? walletAddress).toLowerCase()) && (
+                {/* ── EVM-only wallet with no OrahDEX passkey → can't sign BSV/BTC/BCH ── */}
+                {!canSignNonEvm && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) && (
                   <div className="flex items-start gap-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
                     <div className="flex-1 min-w-0">
@@ -1952,7 +2010,7 @@ export function WithdrawSheet({
                   disabled={
                     !nonEvmSendAmount || !nonEvmSendRecipient.trim() || nonEvmSending ||
                     (nonEvmSendBalance !== null && parseFloat(nonEvmSendAmount) > nonEvmSendBalance) ||
-                    (!isOrahWallet && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) && !listPasskeyWallets().some(w => w.address.toLowerCase() === (passkeyEvmAddress ?? walletAddress).toLowerCase()))
+                    (!canSignNonEvm && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()))
                   }
                   className="w-full gap-2 h-11 bg-green-600 hover:bg-green-500 text-white"
                 >
