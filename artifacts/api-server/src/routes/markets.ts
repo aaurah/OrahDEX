@@ -5,7 +5,7 @@ import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 import { fetchKeyPrices } from "./dex.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
-import { fetchRealCandles } from "../lib/candleFetcher.js";
+import { fetchRealCandles, fetchFullHistoryCandles } from "../lib/candleFetcher.js";
 import { logger } from "../lib/logger.js";
 
 const router: IRouter = Router();
@@ -477,6 +477,36 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to get ticker");
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * GET /markets/:symbol/candles/history
+ *
+ * Full A-to-Z OHLCV history from coin inception to today.
+ * Data source: CoinGecko OHLC weekly candles (inception → 90 days ago)
+ * stitched with recent OKX/Binance daily candles (last 90 days).
+ * Cached server-side for 6 hours — history data is stable.
+ */
+router.get("/markets/:symbol/history", async (req, res) => {
+  try {
+    const symbol = normSymbol(req.params.symbol!);
+
+    let price = 0;
+    try {
+      const [market] = await db.select().from(marketsTable)
+        .where(eq(marketsTable.symbol, symbol)).limit(1);
+      price = market?.lastPrice ? parseFloat(market.lastPrice) : 0;
+      if (!(price > 0)) price = resolveCrossPrice(symbol, 0);
+    } catch (_) {
+      price = resolveCrossPrice(symbol, 0);
+    }
+
+    const candles = await fetchFullHistoryCandles(symbol, price);
+    res.json(candles);
+  } catch (err) {
+    logger.error({ err }, "Failed to fetch full history candles");
+    res.status(500).json({ error: "History fetch failed" });
   }
 });
 
