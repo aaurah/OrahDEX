@@ -1,4 +1,5 @@
 import { Router } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { db } from "@workspace/db";
 import { conversations, messages } from "@workspace/db/schema";
 import { openai } from "@workspace/integrations-openai-ai-server";
@@ -6,6 +7,20 @@ import { eq, asc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 
 const router = Router();
+
+// ── Safety middleware: hard 25-second deadline on every AI route ──────────────
+// If a handler hangs (e.g. SSE stream never closes, OpenAI call stalls without
+// triggering AbortSignal), this ensures the response is always eventually sent.
+router.use((_req: Request, res: Response, next: NextFunction) => {
+  const deadline = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(503).json({ error: "AI service timeout — please retry" });
+    }
+  }, 25_000);
+  res.on("finish", () => clearTimeout(deadline));
+  res.on("close",  () => clearTimeout(deadline));
+  next();
+});
 
 const SYSTEM_PROMPT = `You are Ora — the AI Trading Intelligence of OrahDEX, a sovereign decentralized exchange where every coin is listed and every trade settles on BSV (Bitcoin SV) blockchain.
 
@@ -563,6 +578,19 @@ Be specific to ${symbol}'s actual situation. Focus on: ecosystem developments, i
     tripCircuitBreaker(err);
     logger.warn({ err: err?.message, symbol }, "AI news sentiment failed — serving fallback");
     res.json({ symbol, sentiment: "neutral", sentimentScore: 0, narratives: fallbackNarratives, catalyst: null, risk: null, cached: false });
+  }
+});
+
+// ── AI router error handler — catches anything that escapes a route's try/catch ─
+// This is the last line of defence before Express's default error handler, which
+// would send an HTML 500 page and could expose stack traces in production.
+router.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  logger.error(
+    { err: (err as any)?.message ?? String(err) },
+    "[AI] Uncaught route error — error middleware caught it"
+  );
+  if (!res.headersSent) {
+    res.status(500).json({ error: "AI service temporarily unavailable" });
   }
 });
 

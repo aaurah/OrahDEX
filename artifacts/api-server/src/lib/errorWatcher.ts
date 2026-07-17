@@ -267,6 +267,52 @@ const PATTERNS: ErrorPattern[] = [
     },
   },
 
+  // ── AI provider ─────────────────────────────────────────────────────────
+  {
+    id:          "ai-provider-auth",
+    description: "AI provider authentication or quota failure",
+    keywords:    ["ai provider unavailable (auth error)", "backing off 5 min", "401", "403", "restricted"],
+    category:    "system",
+    severity:    "high",
+    cooldownMs:  300_000,
+    maxPerHour:  3,
+    remediate:   async (ctx) => {
+      logIncident("error", "ai-provider", ctx.message.slice(0, 200));
+      return "AI auth failure logged — circuit breaker will auto-reset in 5 min";
+    },
+  },
+  {
+    id:          "ai-provider-timeout",
+    description: "AI provider timeout or repeated slowness",
+    keywords:    [
+      "ai provider repeatedly timing out", "ai chat error", "ai insights error",
+      "ai market analysis error", "ai trade signal timeout",
+      "ai portfolio analysis failed", "ai news sentiment failed",
+    ],
+    category:    "system",
+    severity:    "warning",
+    cooldownMs:  120_000,
+    maxPerHour:  6,
+    remediate:   async (ctx) => {
+      logIncident("warn", "ai-provider", ctx.message.slice(0, 200));
+      return "AI timeout incident logged";
+    },
+  },
+  {
+    id:          "ai-route-crash",
+    description: "Uncaught error in an AI route — caught by error middleware safety net",
+    keywords:    ["[ai] uncaught route error", "[ai] unhandled route error"],
+    category:    "system",
+    severity:    "high",
+    cooldownMs:  60_000,
+    maxPerHour:  5,
+    remediate:   async (ctx) => {
+      await emitAlert("high", "system", "AI route crash caught by safety net", ctx.message.slice(0, 300));
+      logIncident("error", "ai-route", ctx.message.slice(0, 200));
+      return "AI route crash alert emitted";
+    },
+  },
+
   // ── Catch-all (matches everything not caught above) ─────────────────────
   {
     id:          "unknown-error",
