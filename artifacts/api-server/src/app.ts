@@ -38,7 +38,7 @@ import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
 import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
 import { ensureCoinMetadataTable, runCoinGeckoImport } from "./lib/coinGeckoImporter.js";
 import { runCoinPaprikaImport } from "./lib/coinPaprikaImporter.js";
-import { clearCoinsCache, prefetchCoinMarkets } from "./routes/dex.js";
+import { clearCoinsCache, prefetchCgMarkets } from "./routes/dex.js";
 import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
 import { startOverlayScanner } from "./lib/overlayScanner.js";
 import { startSelfDiagnostic } from "./lib/selfDiagnostic.js";
@@ -541,11 +541,13 @@ setTimeout(() => {
   seedCoinGeckoIds().catch(e => logger.warn({ err: e }, "seedCoinGeckoIds failed (non-fatal)"));
 }, 15_000);
 
-// Pre-warm coin info cache with 1 batch /coins/markets call (250 coins) so
-// the first open of any major coin is served instantly from cache.
+// Pre-warm coin info cache with 1 batch /coins/markets call (250 coins).
+// Fires at T+3 s — before the priceUpdater's first CG call — to win the
+// CoinGecko rate-limit race and seed fullCache with full market data.
+// Auto-retries with exponential back-off if CG returns 429.
 setTimeout(() => {
-  prefetchCoinMarkets().catch(e => logger.warn({ err: e }, "prefetchCoinMarkets failed (non-fatal)"));
-}, 20_000);
+  prefetchCgMarkets().catch(e => logger.warn({ err: e }, "prefetchCgMarkets failed (non-fatal)"));
+}, 3_000);
 
 // syncAllLEPairs() is intentionally NOT called at startup.
 // The DB already holds LE pairs from a previous run (36 K+ rows).

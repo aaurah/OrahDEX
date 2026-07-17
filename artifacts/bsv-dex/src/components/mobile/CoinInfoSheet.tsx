@@ -17,6 +17,8 @@ interface AiInsight {
   useCase?: string;
   strengths?: string[];
   risks?: string[];
+  sentiment?: "bullish" | "bearish" | "neutral";
+  outlook?: string;
   traderNote?: string;
 }
 
@@ -256,6 +258,21 @@ export function CoinInfoSheet({ symbol, onClose }: Props) {
               {ai && (
                 <Section title="AI Analysis by Ora" icon={<Sparkles className="w-3 h-3 text-violet-400" />}>
                   <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-3.5 space-y-3">
+                    {/* Sentiment badge */}
+                    {ai.sentiment && (
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border",
+                          ai.sentiment === "bullish"  && "bg-green-500/15 border-green-500/30 text-green-400",
+                          ai.sentiment === "bearish"  && "bg-red-500/15 border-red-500/30 text-red-400",
+                          ai.sentiment === "neutral"  && "bg-amber-500/15 border-amber-500/30 text-amber-400",
+                        )}>
+                          <span>{ai.sentiment === "bullish" ? "▲" : ai.sentiment === "bearish" ? "▼" : "●"}</span>
+                          {ai.sentiment}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground">Ora AI Sentiment</span>
+                      </div>
+                    )}
                     {ai.summary && (
                       <p className="text-sm text-foreground/90 leading-relaxed">{ai.summary}</p>
                     )}
@@ -291,6 +308,15 @@ export function CoinInfoSheet({ symbol, onClose }: Props) {
                         </div>
                       )}
                     </div>
+                    {ai.outlook && (
+                      <div className="flex gap-2 bg-violet-500/10 border border-violet-500/20 rounded-xl px-3 py-2">
+                        <TrendingUp size={13} className="text-violet-400 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-[10px] font-bold text-violet-400 uppercase tracking-wider mb-0.5">Outlook</p>
+                          <p className="text-[11px] text-foreground/80 leading-relaxed">{ai.outlook}</p>
+                        </div>
+                      </div>
+                    )}
                     {ai.traderNote && (
                       <div className="flex gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
                         <Zap size={13} className="text-amber-400 shrink-0 mt-0.5" />
