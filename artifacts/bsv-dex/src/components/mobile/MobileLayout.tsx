@@ -48,6 +48,13 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("mobile:openChat", handler);
   }, []);
 
+  /* Sync Reown AppKit modal theme whenever OrahDEX theme changes on mobile */
+  useEffect(() => {
+    import("@/lib/reown-appkit").then(({ syncReownTheme }) => {
+      syncReownTheme(theme as "dark" | "light" | "amoled" | "system");
+    }).catch(() => {});
+  }, [theme]);
+
   const isActive = (tab: { matchPrefix: string }) => {
     if (location === "/" && tab.matchPrefix === "/markets") return true;
     return location.startsWith(tab.matchPrefix);
