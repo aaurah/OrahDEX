@@ -391,4 +391,179 @@ router.get("/ai/trade-signal", async (req, res) => {
   }
 });
 
+// ── GET /ai/portfolio-analysis — AI review of a user's holdings ──────────────
+// holdings param: JSON array of {symbol, valueUSD, pct} objects
+// Cached per unique portfolio fingerprint (5 min TTL)
+
+const portfolioCache = new Map<string, CacheEntry>();
+const PORTFOLIO_CACHE_TTL = 5 * 60 * 1000;
+
+router.get("/ai/portfolio-analysis", async (req, res) => {
+  const raw = (req.query.holdings as string) ?? "";
+  if (!raw) { res.status(400).json({ error: "holdings is required" }); return; }
+
+  let holdings: Array<{ symbol: string; valueUSD: number; pct: number }>;
+  try { holdings = JSON.parse(raw); } catch {
+    res.status(400).json({ error: "holdings must be valid JSON" }); return;
+  }
+
+  if (!holdings.length) {
+    res.json({ score: 50, riskLevel: "medium", summary: "No holdings found to analyze.", bullets: [], sentiment: "neutral" });
+    return;
+  }
+
+  const fingerprint = holdings.map(h => `${h.symbol}:${h.pct.toFixed(1)}`).sort().join(",");
+  const cached = portfolioCache.get(fingerprint);
+  if (cached && Date.now() - cached.ts < PORTFOLIO_CACHE_TTL) {
+    try { res.json({ ...JSON.parse(cached.content), cached: true }); return; } catch { /* fall through */ }
+  }
+
+  // Deterministic fallback scoring (no AI needed)
+  const topConcentration = Math.max(...holdings.map(h => h.pct));
+  const stableCount = holdings.filter(h => ["USDT","USDC","BUSD","DAI"].includes(h.symbol)).length;
+  const score = Math.min(100, Math.max(20, Math.round(
+    80 - (topConcentration > 60 ? 30 : topConcentration > 40 ? 15 : 0) +
+    (holdings.length >= 5 ? 10 : holdings.length >= 3 ? 5 : 0) +
+    (stableCount > 0 ? 10 : 0)
+  )));
+  const riskLevel = topConcentration > 60 ? "high" : topConcentration > 35 ? "medium" : "low";
+
+  if (!isAiAvailable()) {
+    res.json({
+      score, riskLevel,
+      summary: `Portfolio has ${holdings.length} assets. Top holding is ${holdings[0]?.symbol} at ${holdings[0]?.pct.toFixed(1)}%.`,
+      bullets: [
+        `**Concentration risk**: ${holdings[0]?.symbol} makes up ${holdings[0]?.pct.toFixed(1)}% of holdings.`,
+        `**Diversification**: ${holdings.length} assets across your portfolio.`,
+        stableCount > 0 ? `**Stability**: You hold ${stableCount} stablecoin(s) as a buffer.` : "**Stability**: No stablecoins detected — consider adding USDT for risk management.",
+      ],
+      sentiment: riskLevel === "low" ? "bullish" : riskLevel === "high" ? "bearish" : "neutral",
+      cached: false,
+    });
+    return;
+  }
+
+  try {
+    const holdingsList = holdings.slice(0, 10)
+      .map(h => `${h.symbol}: ${h.pct.toFixed(1)}% ($${h.valueUSD.toFixed(0)})`)
+      .join("\n");
+
+    const prompt = `Analyze this crypto portfolio and provide a structured review:
+
+Holdings:
+${holdingsList}
+
+Return ONLY a JSON object (no markdown, no backticks) with these exact fields:
+{
+  "score": <0-100 portfolio health score>,
+  "riskLevel": <"low" | "medium" | "high">,
+  "summary": <1-sentence overall assessment>,
+  "bullets": [<3 concise actionable insights as markdown strings>],
+  "sentiment": <"bullish" | "bearish" | "neutral">
+}
+
+Consider: diversification, concentration risk, exposure to volatile vs stable assets, sector balance.`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_completion_tokens: 512,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+    }, { signal: AbortSignal.timeout(15_000) });
+
+    const raw2 = response.choices[0]?.message?.content ?? "";
+    const jsonMatch = raw2.match(/\{[\s\S]*\}/);
+    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+
+    if (!parsed) throw new Error("No JSON in response");
+
+    portfolioCache.set(fingerprint, { content: JSON.stringify(parsed), ts: Date.now() });
+    consecutiveTimeouts = 0;
+    res.json({ ...parsed, cached: false });
+  } catch (err: any) {
+    tripCircuitBreaker(err);
+    logger.warn({ err: err?.message }, "AI portfolio analysis failed — serving computed fallback");
+    res.json({
+      score, riskLevel,
+      summary: `Portfolio spans ${holdings.length} assets. ${riskLevel === "high" ? "High concentration risk detected." : "Moderate diversification."}`,
+      bullets: [
+        `**Top holding**: ${holdings[0]?.symbol} at ${holdings[0]?.pct.toFixed(1)}% — ${holdings[0]?.pct > 50 ? "consider trimming to reduce concentration risk" : "reasonable position size"}.`,
+        `**Diversification**: ${holdings.length < 3 ? "Low — consider spreading across more assets" : holdings.length < 6 ? "Moderate — a few more assets would reduce risk" : "Good — well spread across multiple assets"}.`,
+        stableCount > 0 ? `**Risk buffer**: ${stableCount} stablecoin(s) provide downside protection.` : "**Risk buffer**: Adding 10–20% stablecoins (USDT) can protect against drawdowns.",
+      ],
+      sentiment: riskLevel === "low" ? "bullish" : riskLevel === "high" ? "bearish" : "neutral",
+      cached: false,
+    });
+  }
+});
+
+// ── GET /ai/news-sentiment?symbol=BTC — AI-generated news narratives + sentiment ──
+// Generates 4 narrative "headlines" about a coin's current situation.
+// Cached per symbol (15 min TTL — news narratives are slow to change)
+
+const newsSentimentCache = new Map<string, CacheEntry>();
+const NEWS_CACHE_TTL = 15 * 60 * 1000;
+
+router.get("/ai/news-sentiment", async (req, res) => {
+  const symbol = ((req.query.symbol as string) ?? "").toUpperCase().trim();
+  if (!symbol) { res.status(400).json({ error: "symbol is required" }); return; }
+
+  const cached = newsSentimentCache.get(symbol);
+  if (cached && Date.now() - cached.ts < NEWS_CACHE_TTL) {
+    try { res.json({ ...JSON.parse(cached.content), symbol, cached: true }); return; } catch { /* fall through */ }
+  }
+
+  const fallbackNarratives = [
+    `**${symbol}** continues to trade with mixed signals across major markets.`,
+    "On-chain data shows steady accumulation from long-term holders.",
+    "Macro crypto sentiment remains cautiously optimistic heading into Q3 2026.",
+    "Watch key support/resistance levels before entering new positions.",
+  ];
+
+  if (!isAiAvailable()) {
+    res.json({ symbol, sentiment: "neutral", narratives: fallbackNarratives, catalyst: null, risk: null, cached: false });
+    return;
+  }
+
+  try {
+    const prompt = `Generate an AI-powered market narrative report for ${symbol} as of July 2026.
+
+Return ONLY a JSON object (no markdown, no backticks):
+{
+  "sentiment": <"bullish" | "bearish" | "neutral">,
+  "sentimentScore": <-100 to 100>,
+  "narratives": [<4 concise "news headline" style sentences about current ${symbol} developments, market position, or ecosystem news>],
+  "catalyst": <1 sentence — biggest positive catalyst right now, or null>,
+  "risk": <1 sentence — biggest risk to watch, or null>
+}
+
+Be specific to ${symbol}'s actual situation. Focus on: ecosystem developments, institutional flows, technical levels, macro factors. Keep each narrative under 20 words.`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_completion_tokens: 512,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+    }, { signal: AbortSignal.timeout(15_000) });
+
+    const raw2 = response.choices[0]?.message?.content ?? "";
+    const jsonMatch = raw2.match(/\{[\s\S]*\}/);
+    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+
+    if (!parsed) throw new Error("No JSON in response");
+
+    newsSentimentCache.set(symbol, { content: JSON.stringify(parsed), ts: Date.now() });
+    consecutiveTimeouts = 0;
+    res.json({ ...parsed, symbol, cached: false });
+  } catch (err: any) {
+    tripCircuitBreaker(err);
+    logger.warn({ err: err?.message, symbol }, "AI news sentiment failed — serving fallback");
+    res.json({ symbol, sentiment: "neutral", sentimentScore: 0, narratives: fallbackNarratives, catalyst: null, risk: null, cached: false });
+  }
+});
+
 export default router;

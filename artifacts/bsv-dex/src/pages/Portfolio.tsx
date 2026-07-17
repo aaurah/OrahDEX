@@ -19,6 +19,7 @@ import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import { EXPLORER_TX } from "@/lib/onChainLiquidity";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { AiPortfolioAnalysis } from "@/components/AiPortfolioAnalysis";
 
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -853,6 +854,16 @@ export function Portfolio() {
             </button>
           </div>
         </div>
+
+        {/* AI Portfolio Analysis */}
+        {totalValueUSD > 0 && (() => {
+          const aiHoldings = allBalances
+            .filter(b => b.valueUSD > 0)
+            .sort((a, b) => b.valueUSD - a.valueUSD)
+            .slice(0, 10)
+            .map(b => ({ symbol: b.asset, valueUSD: b.valueUSD, pct: (b.valueUSD / totalValueUSD) * 100 }));
+          return <AiPortfolioAnalysis holdings={aiHoldings} totalValueUSD={totalValueUSD} />;
+        })()}
 
         {/* Asset balances table */}
         <div className="bg-card border border-border rounded-2xl shadow-xl overflow-hidden">
