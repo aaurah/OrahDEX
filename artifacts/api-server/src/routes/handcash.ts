@@ -3,23 +3,24 @@ import { logger } from "../lib/logger.js";
 
 const router = Router();
 
-const HANDCASH_APP_ID     = process.env.HANDCASH_APP_ID;
-const HANDCASH_APP_SECRET = process.env.HANDCASH_APP_SECRET;
-
 let sdkInstance: any        = null;
 let sdkImportAttempted      = false;
 
 async function getSDK(): Promise<any> {
-  if (sdkInstance)         return sdkInstance;
-  if (sdkImportAttempted)  return null;
+  if (sdkInstance)        return sdkInstance;
+  if (sdkImportAttempted) return null;
   sdkImportAttempted = true;
-  if (!HANDCASH_APP_ID || !HANDCASH_APP_SECRET) {
+  /* Read from process.env at call time — not at module load — so secrets
+     injected after the binary was built are always picked up correctly. */
+  const appId     = process.env.HANDCASH_APP_ID;
+  const appSecret = process.env.HANDCASH_APP_SECRET;
+  if (!appId || !appSecret) {
     logger.warn("HandCash: HANDCASH_APP_ID / HANDCASH_APP_SECRET not set");
     return null;
   }
   try {
     const { getInstance } = await import("@handcash/sdk");
-    sdkInstance = getInstance({ appId: HANDCASH_APP_ID, appSecret: HANDCASH_APP_SECRET });
+    sdkInstance = getInstance({ appId, appSecret });
     return sdkInstance;
   } catch (err) {
     logger.warn({ err }, "HandCash SDK import failed — is @handcash/sdk installed?");
