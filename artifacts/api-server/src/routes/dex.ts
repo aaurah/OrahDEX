@@ -716,10 +716,104 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").trim();
 }
 
-// When CoinPaprika has no record of a coin, fall back to our internal price
-// cache (populated from our own markets/LE/SS data) + coin_metadata for name/logo.
-// Returns null if we have no price data either.
+// Coins tracked by CoinGecko but absent from CoinPaprika — used as full-data fallback.
+const CG_ID_OVERRIDES: Record<string, string> = {
+  A8:      "ancient8",
+  WAXP:    "wax",
+  IMX:     "immutable-x",
+  GODS:    "gods-unchained",
+  YGG:     "yield-guild-games",
+  GHST:    "aavegotchi",
+  PIXEL:   "pixels",
+  RON:     "ronin",
+  SLP:     "smooth-love-potion",
+  MAGIC:   "magic",
+  TLM:     "alien-worlds",
+  ALICE:   "my-neighbor-alice",
+  MOBOX:   "mobox",
+  HERO:    "metahero",
+  MBOX:    "mobox",
+  FEVR:    "realfevr",
+  UFO:     "ufo-gaming",
+  NAKA:    "nakamoto-games",
+  CWAR:    "cryowar-token",
+};
+
+const cgCoinCacheMs = 30 * 60 * 1000;
+const cgCoinCache   = new Map<string, Cache<any>>();
+
+async function fetchCgFullData(symbol: string, cgId: string): Promise<Record<string, any> | null> {
+  const hit = cgCoinCache.get(symbol);
+  if (hit && Date.now() - hit.ts < cgCoinCacheMs) return hit.data;
+  try {
+    const r = await fetch(
+      `https://api.coingecko.com/api/v3/coins/${cgId}?localization=false&tickers=false&market_data=true&community_data=true&developer_data=false`,
+      { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(12000) },
+    );
+    if (!r.ok) return null;
+    const d  = await r.json() as any;
+    const md = d.market_data ?? {};
+    const lk = d.links ?? {};
+    const cd = d.community_data ?? {};
+    const data: Record<string, any> = {
+      _partial:          false,
+      _source:           "coingecko",
+      cpId:              null,
+      name:              d.name ?? symbol,
+      symbol:            (d.symbol ?? symbol).toUpperCase(),
+      description:       stripHtml((d.description?.en ?? "").split(". ").slice(0, 4).join(". ")),
+      categories:        (d.categories ?? []).slice(0, 6),
+      image:             d.image?.large ?? d.image?.small ?? null,
+      marketCapRank:     d.market_cap_rank ?? null,
+      genesisDate:       null,
+      hashingAlgo:       null,
+      countryOrigin:     null,
+      platforms:         d.platforms ?? {},
+      homepage:          lk.homepage?.[0] ?? null,
+      whitepaper:        lk.whitepaper ?? null,
+      twitter:           lk.twitter_screen_name ? `https://twitter.com/${lk.twitter_screen_name}` : null,
+      twitterHandle:     lk.twitter_screen_name ?? null,
+      reddit:            lk.subreddit_url ?? null,
+      github:            lk.repos_url?.github?.[0] ?? null,
+      telegram:          lk.telegram_channel_identifier ? `https://t.me/${lk.telegram_channel_identifier}` : null,
+      priceUsd:          md.current_price?.usd ?? null,
+      priceChange24h:    md.price_change_percentage_24h ?? null,
+      priceChange7d:     md.price_change_percentage_7d ?? null,
+      priceChange30d:    md.price_change_percentage_30d ?? null,
+      priceChange1y:     md.price_change_percentage_1y ?? null,
+      marketCap:         md.market_cap?.usd ?? null,
+      fullyDilutedVal:   md.fully_diluted_valuation?.usd ?? null,
+      totalVolume:       md.total_volume?.usd ?? null,
+      circulatingSupply: md.circulating_supply ?? null,
+      totalSupply:       md.total_supply ?? null,
+      maxSupply:         md.max_supply ?? null,
+      ath:               md.ath?.usd ?? null,
+      athDate:           md.ath_date?.usd ?? null,
+      athChangePercent:  md.ath_change_percentage?.usd ?? null,
+      atl:               md.atl?.usd ?? null,
+      atlDate:           md.atl_date?.usd ?? null,
+      atlChangePercent:  md.atl_change_percentage?.usd ?? null,
+      twitterFollowers:  cd.twitter_followers ?? null,
+      redditSubscribers: cd.reddit_subscribers ?? null,
+      aiAnalysis:        null,
+    };
+    cgCoinCache.set(symbol, { data, ts: Date.now() });
+    return data;
+  } catch { return null; }
+}
+
+// When CoinPaprika has no record of a coin, try CoinGecko (for known CG IDs),
+// then fall back to our internal price cache + coin_metadata for name/logo.
+// Returns null if we have no data at all.
 async function internalPriceFallback(symbol: string): Promise<Record<string, any> | null> {
+  // 1. CoinGecko full data for coins we know are absent from CoinPaprika
+  const cgId = CG_ID_OVERRIDES[symbol];
+  if (cgId) {
+    const cgData = await fetchCgFullData(symbol, cgId);
+    if (cgData) return cgData;
+  }
+
+  // 2. Internal price cache + coin_metadata (price only)
   const px = (priceCache?.data ?? {})[symbol];
   if (px?.usd == null) return null;
 
@@ -737,6 +831,7 @@ async function internalPriceFallback(symbol: string): Promise<Record<string, any
 
   return {
     _partial:          false,
+    _source:           "internal",
     cpId:              null,
     name,
     symbol,
@@ -775,7 +870,6 @@ async function internalPriceFallback(symbol: string): Promise<Record<string, any
     twitterFollowers:  null,
     redditSubscribers: null,
     aiAnalysis:        null,
-    _source:           "internal",
   };
 }
 
