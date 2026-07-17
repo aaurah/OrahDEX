@@ -127,6 +127,33 @@ async function checkDbConnectivity(): Promise<DiagResult> {
   }
 }
 
+async function checkAiHealth(): Promise<DiagResult> {
+  try {
+    const port = process.env.PORT ?? "3000";
+    const ctrl = new AbortController();
+    const t    = setTimeout(() => ctrl.abort(), 5_000);
+    const res  = await fetch(`http://127.0.0.1:${port}/api/ai/insights`, {
+      signal: ctrl.signal,
+      headers: { "x-internal-probe": "1" },
+    });
+    clearTimeout(t);
+    if (!res.ok) {
+      return { name: "ai-health", status: "warn", detail: `AI insights endpoint returned HTTP ${res.status}` };
+    }
+    const body = await res.json().catch(() => null);
+    const hasInsights = Array.isArray(body?.insights) && body.insights.length > 0;
+    if (!hasInsights) {
+      return { name: "ai-health", status: "warn", detail: "AI insights returned empty or malformed response" };
+    }
+    return { name: "ai-health", status: "ok", detail: `AI insights responsive (${body.cached ? "cached" : "fresh"})` };
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      return { name: "ai-health", status: "warn", detail: "AI insights endpoint timed out (>5s)" };
+    }
+    return { name: "ai-health", status: "warn", detail: `AI endpoint unreachable: ${err?.message}` };
+  }
+}
+
 async function checkStuckOrders(): Promise<DiagResult> {
   try {
     const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24h ago
@@ -159,6 +186,7 @@ async function runDiagnosticScan(): Promise<void> {
     checkStalePrices(),
     checkArbStats(),
     checkStuckOrders(),
+    checkAiHealth(),
   ]);
 
   const warns  = results.filter(r => r.status === "warn");
