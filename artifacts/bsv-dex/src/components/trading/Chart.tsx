@@ -662,7 +662,11 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
       autoIntervalRef.current = false;
       zoomRangeRef.current = null;
     } else {
-      chartRef.current?.timeScale().fitContent();
+      /* rAF ensures the chart has processed setData (computed its full extent) before we fit */
+      requestAnimationFrame(() => {
+        chartRef.current?.timeScale().fitContent();
+        subChartRef.current?.timeScale().fitContent();
+      });
     }
   }, [displayCandles, chartType]);
 
