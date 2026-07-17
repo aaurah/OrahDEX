@@ -27,6 +27,7 @@ import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
 import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
 import { hasEscrow, chainLabel, checkEscrowDeposit, resolveEscrowAsset } from "@/lib/escrow";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
+import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -2983,114 +2984,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
 
       {/* ── COIN INFO SHEET ── */}
-      <>
-        <div
-          className={cn(
-            "fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-200",
-            coinInfoOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
-          )}
-          onClick={() => setCoinInfoOpen(false)}
-        />
-        <div className={cn(
-          "fixed left-0 right-0 bottom-0 z-50 bg-background rounded-t-2xl shadow-2xl border-t border-border transition-transform duration-300 ease-out",
-          coinInfoOpen ? "translate-y-0" : "translate-y-full"
-        )}>
-          {/* drag handle */}
-          <div className="flex justify-center pt-3 pb-1">
-            <div className="w-10 h-1 rounded-full bg-border" />
-          </div>
-          {/* Header row */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-            <div className="flex items-center gap-2.5">
-              <CoinLogo symbol={base} size={28} />
-              <div>
-                <span className="font-bold text-base text-foreground">{base}</span>
-                <span className="text-muted-foreground text-base">/{quote}</span>
-              </div>
-              {isFutures && (
-                <span className="text-[9px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">PERP</span>
-              )}
-              {isBridgePair && (
-                <span className="text-[9px] font-bold bg-blue-500/15 text-blue-400 px-1.5 py-0.5 rounded border border-blue-500/30">BRIDGE</span>
-              )}
-            </div>
-            <button onClick={() => setCoinInfoOpen(false)} className="p-1.5 rounded-lg hover:bg-secondary transition-colors">
-              <X size={18} className="text-muted-foreground" />
-            </button>
-          </div>
-
-          {/* Body */}
-          <div className="px-4 py-4 space-y-4 overflow-y-auto max-h-[70vh]">
-            {/* Price */}
-            <div>
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mb-1">Current Price</p>
-              <div className="flex items-baseline gap-3">
-                <span className={cn("text-2xl font-bold tabular-nums", change >= 0 ? "text-green-500" : "text-red-500")}>
-                  {fmt(lastPrice)} {quote}
-                </span>
-                <span className={cn("text-sm font-semibold", change >= 0 ? "text-green-500" : "text-red-500")}>
-                  {change >= 0 ? "+" : ""}{change.toFixed(2)}%
-                </span>
-              </div>
-              {priceUSD > 0 && (
-                <p className="text-xs text-muted-foreground mt-0.5">≈ ${fmt(priceUSD)} USD</p>
-              )}
-            </div>
-
-            {/* 24h stats grid */}
-            <div>
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">24h Statistics</p>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: "24h High", value: high24 > 0 ? fmt(high24) : "—", color: "text-green-400" },
-                  { label: "24h Low",  value: low24  > 0 ? fmt(low24)  : "—", color: "text-red-400"   },
-                  { label: `Vol (${base})`,  value: fmtVol(vol24),   color: "text-foreground" },
-                  { label: `Vol (${quote})`, value: fmtVol(volQuote), color: "text-foreground" },
-                ].map(({ label, value, color }) => (
-                  <div key={label} className="bg-secondary/50 rounded-xl px-3 py-2.5">
-                    <p className="text-[10px] text-muted-foreground mb-0.5">{label}</p>
-                    <p className={cn("text-sm font-semibold tabular-nums", color)}>{value}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Cross-rates */}
-            {(crossBTC > 0 || crossBSV > 0) && !isFutures && (
-              <div>
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Cross Rates</p>
-                <div className="flex gap-2 flex-wrap">
-                  {crossBTC > 0 && !isBTCBase && (
-                    <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl px-3 py-2">
-                      <p className="text-[10px] text-orange-400/70 mb-0.5">BTC</p>
-                      <p className="text-sm font-semibold text-orange-400 tabular-nums">₿ {fmt(crossBTC)}</p>
-                    </div>
-                  )}
-                  {crossBSV > 0 && !isBSVBase && (
-                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl px-3 py-2">
-                      <p className="text-[10px] text-yellow-400/70 mb-0.5">BSV</p>
-                      <p className="text-sm font-semibold text-yellow-400 tabular-nums">
-                        ⚡ {crossBSV < 0.001 ? crossBSV.toFixed(6) : crossBSV < 1 ? crossBSV.toFixed(4) : crossBSV.toFixed(2)}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Contract address */}
-            {!isFutures && (
-              <div>
-                <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Contract / Network</p>
-                <ContractAddressBadge baseAsset={base} variant="inline" />
-              </div>
-            )}
-          </div>
-
-          {/* safe-area bottom padding */}
-          <div className="h-safe-area-bottom pb-5" />
-        </div>
-      </>
+      {coinInfoOpen && (
+        <CoinInfoSheet symbol={base} onClose={() => setCoinInfoOpen(false)} />
+      )}
 
       {/* ── SHARE TOAST ── */}
       <ShareToast visible={shareToastVisible} copied={shareCopied} />
