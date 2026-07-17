@@ -797,9 +797,62 @@ async function fetchCgFullData(symbol: string, cgId: string): Promise<Record<str
       redditSubscribers: cd.reddit_subscribers ?? null,
       aiAnalysis:        null,
     };
+    data._partial = true; // AI enrichment fires async; frontend polls until false
     cgCoinCache.set(symbol, { data, ts: Date.now() });
     return data;
   } catch { return null; }
+}
+
+async function enhanceCgWithAI(symbol: string): Promise<void> {
+  if (enhanceInFlight.has(symbol)) return;
+  enhanceInFlight.add(symbol);
+  try {
+    await new Promise(ok => setTimeout(ok, Math.random() * 800));
+    const prev = fullCache.get(symbol)?.data;
+    if (!prev || prev._source !== "coingecko") return;
+
+    let aiAnalysis: string | null = prev.aiAnalysis ?? null;
+    if (!aiAnalysis) {
+      try {
+        const prompt = `You are a concise crypto analyst on OrahDEX. Analyze ${prev.name} (${prev.symbol}) and return a JSON object with EXACTLY these keys:
+- "summary": 2-3 sentence overview of what this coin is and its core value proposition
+- "useCase": 1-2 sentences on the primary use case / problem it solves
+- "strengths": array of 3 short bullet strings (each ≤12 words)
+- "risks": array of 3 short bullet strings (each ≤12 words)
+- "traderNote": 1 sentence tip for traders watching this asset on OrahDEX
+
+Context data:
+- Market cap rank: #${prev.marketCapRank ?? "unknown"}
+- Categories: ${(prev.categories ?? []).join(", ") || "N/A"}
+- 24h change: ${prev.priceChange24h != null ? (prev.priceChange24h as number).toFixed(2) + "%" : "N/A"}
+- ATH: $${prev.ath ?? "N/A"}
+- Market cap: $${prev.marketCap ? ((prev.marketCap as number) / 1e6).toFixed(2) + "M" : "N/A"}
+- Description: ${(prev.description ?? "").slice(0, 500)}
+
+Return ONLY valid JSON, no markdown, no extra text.`;
+        const msg = await anthropic.messages.create({
+          model:      "claude-haiku-4-5",
+          max_tokens: 600,
+          messages:   [{ role: "user", content: prompt }],
+        });
+        const raw       = msg.content[0]?.type === "text" ? msg.content[0].text.trim() : "";
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) aiAnalysis = jsonMatch[0];
+      } catch { /* non-fatal */ }
+    }
+
+    const enriched = { ...prev, _partial: false, aiAnalysis };
+    fullCache.set(symbol, { data: enriched, ts: Date.now() });
+    cgCoinCache.set(symbol, { data: enriched, ts: Date.now() });
+    logger.info({ symbol }, "coin detail enriched (CG+AI)");
+  } catch (e: any) {
+    // Flip _partial off regardless so the frontend stops polling
+    const cur = fullCache.get(symbol);
+    if (cur) fullCache.set(symbol, { data: { ...cur.data, _partial: false }, ts: cur.ts });
+    logger.warn({ err: e?.message, symbol }, "enhanceCgWithAI failed");
+  } finally {
+    enhanceInFlight.delete(symbol);
+  }
 }
 
 // When CoinPaprika has no record of a coin, try CoinGecko (for known CG IDs),
@@ -913,7 +966,11 @@ router.get("/coins/:symbol/detail", async (req, res) => {
 
     if (!cpId) {
       const fallback = await internalPriceFallback(symbol);
-      if (fallback) { fullCache.set(symbol, { data: fallback, ts: Date.now() }); return res.json(fallback); }
+      if (fallback) {
+        fullCache.set(symbol, { data: fallback, ts: Date.now() });
+        if (fallback._source === "coingecko") enhanceCgWithAI(symbol);
+        return res.json(fallback);
+      }
       return res.json({ error: "not_found" });
     }
 
@@ -923,7 +980,11 @@ router.get("/coins/:symbol/detail", async (req, res) => {
     );
     if (!tickerRes.ok) {
       const fallback = await internalPriceFallback(symbol);
-      if (fallback) { fullCache.set(symbol, { data: fallback, ts: Date.now() }); return res.json(fallback); }
+      if (fallback) {
+        fullCache.set(symbol, { data: fallback, ts: Date.now() });
+        if (fallback._source === "coingecko") enhanceCgWithAI(symbol);
+        return res.json(fallback);
+      }
       return res.json({ error: "not_found" });
     }
 
@@ -1330,7 +1391,11 @@ router.get("/coins/:symbol/full", async (req, res) => {
 
     if (!cpId) {
       const fallback = await internalPriceFallback(symbol);
-      if (fallback) { fullCache.set(symbol, { data: fallback, ts: Date.now() }); return res.json(fallback); }
+      if (fallback) {
+        fullCache.set(symbol, { data: fallback, ts: Date.now() });
+        if (fallback._source === "coingecko") enhanceCgWithAI(symbol);
+        return res.json(fallback);
+      }
       return res.json({ error: "not_found" });
     }
 
@@ -1341,7 +1406,11 @@ router.get("/coins/:symbol/full", async (req, res) => {
     if (tickerRes.status === 429) return res.json({ error: "rate_limited" });
     if (!tickerRes.ok) {
       const fallback = await internalPriceFallback(symbol);
-      if (fallback) { fullCache.set(symbol, { data: fallback, ts: Date.now() }); return res.json(fallback); }
+      if (fallback) {
+        fullCache.set(symbol, { data: fallback, ts: Date.now() });
+        if (fallback._source === "coingecko") enhanceCgWithAI(symbol);
+        return res.json(fallback);
+      }
       return res.json({ error: "not_found" });
     }
 
