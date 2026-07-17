@@ -186,24 +186,24 @@ export function CoinInfoSheet({ symbol, onClose }: Props) {
           </div>
 
           {/* Header */}
-          <div className="flex items-start justify-between px-4 pt-1 pb-3 border-b border-border">
-            <div className="flex items-center gap-3 min-w-0">
-              <CoinLogo symbol={symbol} size={44} />
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-lg font-bold text-foreground leading-tight">
+          <div className="flex items-center justify-between px-4 pt-1 pb-3 border-b border-border gap-2">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <CoinLogo symbol={symbol} size={40} className="shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-base font-bold text-foreground leading-tight">
                     {data?.name ?? symbol}
                   </span>
-                  <span className="text-sm font-mono text-muted-foreground">{data?.symbol ?? symbol}</span>
+                  <span className="text-xs font-mono text-muted-foreground">{data?.symbol ?? symbol}</span>
                   {data?.marketCapRank && (
-                    <span className="text-[10px] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20">
+                    <span className="text-[10px] font-bold bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20 leading-none">
                       #{data.marketCapRank}
                     </span>
                   )}
                 </div>
                 {data?.categories && data.categories.length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {data.categories.slice(0, 4).map(tag => (
+                    {data.categories.slice(0, 3).map(tag => (
                       <span key={tag} className={cn("text-[9px] font-semibold px-1.5 py-0.5 rounded border leading-none", getTagColor(tag))}>
                         {tag}
                       </span>
@@ -212,7 +212,7 @@ export function CoinInfoSheet({ symbol, onClose }: Props) {
                 )}
               </div>
             </div>
-            <button onClick={onClose} className="shrink-0 p-1.5 rounded-lg hover:bg-white/10 transition" aria-label="Close">
+            <button onClick={onClose} className="shrink-0 self-start mt-0.5 p-1.5 rounded-lg hover:bg-white/10 transition" aria-label="Close">
               <X size={18} />
             </button>
           </div>
