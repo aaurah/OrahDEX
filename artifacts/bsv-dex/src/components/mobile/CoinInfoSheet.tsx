@@ -4,6 +4,7 @@ import { getTagColor } from "@/lib/coinInfo";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
+import { AiNewsSentiment } from "@/components/AiNewsSentiment";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -326,6 +327,9 @@ export function CoinInfoSheet({ symbol, onClose }: Props) {
                   </div>
                 </Section>
               )}
+
+              {/* ── AI News & Sentiment ──────────────────────────────────────── */}
+              {symbol && <AiNewsSentiment symbol={symbol} />}
 
               {/* ── Price Performance ────────────────────────────────────────── */}
               <Section title="Price Performance" icon={<TrendingUp className="w-3 h-3" />}>

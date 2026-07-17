@@ -14,6 +14,7 @@ import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useToast } from "@/hooks/use-toast";
 import { API_BASE } from "@/lib/api";
 import { useFuturesMargin } from "@/hooks/useFuturesMargin";
+import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
 
 const LEVERAGE_OPTIONS = [2, 3, 5, 10, 20, 25, 50, 75, 100, 125];
 
@@ -913,6 +914,11 @@ export function FuturesTrading() {
                   </button>
                 </div>
               )}
+
+              {/* AI Trade Analysis */}
+              <div className="pt-2">
+                <AiTradeAnalysis symbol={rawSymbol} baseAsset={rawSymbol.split("-")[0]} />
+              </div>
 
               {/* Settle note */}
               <p className="text-[10px] text-muted-foreground text-center pt-1">
