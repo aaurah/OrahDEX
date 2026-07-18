@@ -837,6 +837,25 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
 // Hybrid: queries ALL configured venues (LetsExchange, ChangeNOW, StealthEX,
 // SimpleSwap) in parallel and returns the best rate.  Response includes
 // best_venue so the frontend can route exchange creation to the winner.
+// ── Estimate result cache ─────────────────────────────────────────────────────
+// Each call fires 5 parallel HTTP requests to external venues.  Multiple users
+// polling every 45 s for the same pair would cause unbounded connection growth.
+// Cache results for 60 s so concurrent sessions share one outbound request set.
+const ESTIMATE_CACHE_TTL_MS = 60_000;
+interface EstimateCacheEntry { body: unknown; expiresAt: number }
+const estimateCache = new Map<string, EstimateCacheEntry>();
+function estimateCacheKey(from: string, to: string, amt: number, forceVenue: string | null): string {
+  // Bucket amount to 2 significant figures to improve hit rate without losing precision.
+  const mag  = amt > 0 ? Math.pow(10, Math.floor(Math.log10(amt)) - 1) : 1;
+  const buck = Math.round(amt / mag) * mag;
+  return `${from}:${to}:${buck}:${forceVenue ?? ""}`;
+}
+// Lazy expiry — purge stale entries periodically to prevent unbounded map growth.
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of estimateCache) if (now > v.expiresAt) estimateCache.delete(k);
+}, 5 * 60_000).unref();
+
 router.post("/letsexchange/estimate", async (req, res) => {
   const body = req.body ?? {};
   const normalizeUpper = (v: unknown): string =>
@@ -859,6 +878,18 @@ router.post("/letsexchange/estimate", async (req, res) => {
   const amt = parseFloat(String(amount));
   if (!isFinite(amt) || amt <= 0) { res.status(400).json({ error: "amount must be positive" }); return; }
 
+  // ── Cache lookup (skip for force_venue calls — those are explicit comparisons) ──
+  const forceVenueRaw = typeof body.force_venue === "string" ? body.force_venue as ExternalVenue : null;
+  if (!forceVenueRaw) {
+    const cacheKey = estimateCacheKey(from, to, amt, null);
+    const cached = estimateCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) {
+      res.setHeader("X-Cache", "HIT");
+      res.json(cached.body);
+      return;
+    }
+  }
+
   try {
     // Query all configured venues in parallel via the meta-router
     const lePrices = getCachedLEPrices();
@@ -866,11 +897,10 @@ router.post("/letsexchange/estimate", async (req, res) => {
     const outUsd = lePrices[to]    ?? 1;
 
     // When force_venue is provided, pin to that single provider only
-    const forceVenue = typeof body.force_venue === "string" ? body.force_venue as ExternalVenue : null;
     const ALL_VENUES: ExternalVenue[] = ["letsexchange", "simpleswap", "changenow", "stealthex", "changelly"];
-    const routePrefs = forceVenue ? {
-      preferredVenues: [forceVenue],
-      blacklistVenues: ALL_VENUES.filter(v => v !== forceVenue),
+    const routePrefs = forceVenueRaw ? {
+      preferredVenues: [forceVenueRaw],
+      blacklistVenues: ALL_VENUES.filter(v => v !== forceVenueRaw),
     } : undefined;
 
     const { best, all, errors, lowestMin } = await getBestExternalQuote(from, to, amt, inUsd, outUsd, routePrefs);
@@ -964,7 +994,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
       canExecute: q.canExecute,
     }));
 
-    res.json({
+    const responseBody = {
       amount:             String(estimatedOutput),
       rate:               String(rate),
       min_amount:         resolvedMin != null && resolvedMin > 0 ? String(resolvedMin) : "",
@@ -974,7 +1004,15 @@ router.post("/letsexchange/estimate", async (req, res) => {
       withdrawal_fee:     "0",
       best_venue:         best.venue,
       venue_quotes,
-    });
+    };
+
+    // Store in cache (only non-force_venue calls; rate_id is short-lived but still useful)
+    if (!forceVenueRaw && rate > 0) {
+      const cacheKey = estimateCacheKey(from, to, amt, null);
+      estimateCache.set(cacheKey, { body: responseBody, expiresAt: Date.now() + ESTIMATE_CACHE_TTL_MS });
+    }
+
+    res.json(responseBody);
   } catch (err: any) {
     logger.error({ err }, "letsexchange /estimate failed");
     res.status(502).json({ error: "Failed to reach exchange providers" });

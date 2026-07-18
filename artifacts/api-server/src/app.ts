@@ -677,9 +677,9 @@ process.on("unhandledRejection", (reason) => {
 // container (~300–400 MB RSS). Triggers GC when heap exceeds 65% of total
 // so we reclaim memory before the container OOM-kills the process.
 {
-  const HEAP_GC_PCT   = 0.65;  // trigger GC above this fraction of heapTotal
-  const HEAP_WARN_MB  = 180;   // log warn
-  const HEAP_ALERT_MB = 260;   // log error (imminent OOM for this container)
+  const HEAP_GC_PCT   = 0.75;  // trigger GC above this fraction of heapTotal
+  const HEAP_WARN_MB  = 280;   // log warn  (server typically idles at ~200 MB)
+  const HEAP_ALERT_MB = 420;   // log error (container RSS limit ~700 MB)
   setInterval(() => {
     const { heapUsed, heapTotal, rss } = process.memoryUsage();
     const usedMB  = Math.round(heapUsed  / 1024 / 1024);

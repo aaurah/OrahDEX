@@ -32,3 +32,4 @@
 - [OrahDEX audit key patterns](orahdex-audit-patterns.md) — 12 bugs fixed in full system audit; 3 critical safety rules emerged: resolveRate always needs ne(type,'letsexchange') + orderBy desc, mark price must never use Math.random(), client-supplied prices are never trusted for settlement.
 - [Full chart history pipeline](chart-history-pipeline.md) — Bitfinex free API (no key) is the A-to-Z OHLCV source; CoinGecko rate-limited (429) and CryptoCompare now requires API key; route must be 3-level not 4-level in this Express setup.
 - [GitHub token list integration](github-token-integration.md) — Trust Wallet + Uniswap lists for logos/addresses/decimals; native coins resolved via NATIVE_LOGOS map without DB; CoinLogo.tsx uses /api/tokens/logo/:symbol as priority source.
+- [Estimate endpoint OOM fix](estimate-cache-oom.md) — /letsexchange/estimate fires 5 parallel HTTP calls; must cache 60s or multi-user polling grows heap to OOM in ~1.25h.
