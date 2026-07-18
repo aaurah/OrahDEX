@@ -225,10 +225,12 @@ router.post("/auth", async (req, res) => {
     return;
   }
   const token = await generateAdminToken();
-  // Set token as HttpOnly cookie so JS cannot read it.
-  // Browsers include it automatically on same-origin requests (SameSite=Strict).
+  // Set HttpOnly cookie (works for same-origin / non-proxied environments).
+  // Also return token in body so the x-admin-token header path works in
+  // reverse-proxy environments (e.g. Replit) where SameSite=Strict cookies
+  // are not reliably forwarded.
   res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
-  res.json({ success: true });
+  res.json({ success: true, token });
 });
 
 /**
@@ -252,7 +254,7 @@ router.post("/auth/totp", async (req, res) => {
   if (ok) {
     const token = await generateAdminToken();
     res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
-    res.json({ success: true });
+    res.json({ success: true, token });
   } else {
     recordAuthFailure(req);
     res.status(401).json({ error: "Incorrect code. Try again." });
@@ -347,7 +349,7 @@ router.post("/auth/wallet", async (req, res) => {
   pendingNonces.delete(address.toLowerCase());
   const token = await generateAdminToken();
   res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
-  res.json({ success: true, address });
+  res.json({ success: true, token, address });
 });
 
 /**
