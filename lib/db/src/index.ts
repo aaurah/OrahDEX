@@ -36,11 +36,13 @@ export const pool = new Pool({
   // Send TCP keepalive probes immediately when a connection becomes idle.
   keepAlive: true,
   keepAliveInitialDelayMillis: 0,
-  // Evict idle connections after 5 s. Neon kills idle sockets server-side
-  // within ~60 s; 5 s gives us comfortable headroom to evict stale entries
-  // before Neon beats us to it, which eliminates "Connection terminated
-  // unexpectedly" errors when the pool hands out a dead connection.
-  idleTimeoutMillis: 5_000,
+  // Evict idle connections after 30 s.  Background services fire every 30–120 s,
+  // so a 5 s idle timeout caused pure churn: connections were destroyed between
+  // every tick and recreated from scratch (TCP + TLS + auth) on the next one.
+  // 30 s keeps connections warm across price-updater cycles (60 s) and avoids
+  // the thundering-herd creation storm that saturated the pool.
+  // Neon kills server-side after ~60 s, so 30 s still gives us headroom.
+  idleTimeoutMillis: 30_000,
   // Allow up to 15 s for a slot to free up when all connections are busy.
   // With 12+ concurrent background services the old 5 s limit caused a cascade
   // of "timeout exceeded when trying to connect" across every engine.
@@ -107,9 +109,11 @@ function isTransientPgError(err: unknown): boolean {
  * @example
  *   await withDbRetry(() => db.insert(t).values(row).onConflictDoUpdate(...));
  */
-// 2 s base gives the pool time to re-establish fresh Neon connections after a
-// mass termination event before we retry.  Retries fire at ~2 s, ~4 s, ~8 s.
-const RETRY_BASE_MS  = 2_000;
+// 500 ms base keeps total retry time (500+1000+2000 ms backoff + connection
+// waits) well under the selfHealing 25 s tick timeout.  The old 2 s base meant
+// 3 retries could take up to 59 s (backoff + 3×15 s connection waits), which
+// always exceeded the timeout and made retries useless.
+const RETRY_BASE_MS  = 500;
 const RETRY_MAX      = 3;
 
 export async function withDbRetry<T>(fn: () => Promise<T>): Promise<T> {

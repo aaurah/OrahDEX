@@ -729,6 +729,23 @@ _s(90_000, startFundingRateEngine,     "startFundingRateEngine");
 _s(96_000, startBsvMempoolWatcher,    "startBsvMempoolWatcher");
 _s(102_000, startOverlayScanner,     "startOverlayScanner");
 _s(108_000, startSelfDiagnostic,    "startSelfDiagnostic");
+
+// ── DB pool keepalive ─────────────────────────────────────────────────────────
+// Run a cheap SELECT 1 every 90 s to keep at least one warm connection in the
+// pool and prevent Neon from suspending the compute during quiet periods.
+// Without this, all 40 connections are evicted (idleTimeoutMillis=30 s) between
+// long quiet stretches, causing a mass-reconnect storm on the next busy tick.
+{
+  const KA_INTERVAL_MS = 90_000;
+  const keepaliveTick = () => {
+    pool.query("SELECT 1").catch((err: Error) => {
+      logger.warn({ err: err.message }, "DB keepalive ping failed — pool will reconnect on next query");
+    });
+    setTimeout(keepaliveTick, KA_INTERVAL_MS).unref();
+  };
+  setTimeout(keepaliveTick, KA_INTERVAL_MS).unref();
+}
+
 // ── CoinPaprika bulk logo seeder (fast — single HTTP call, ~9 000 coins) ─────
 // Runs on every boot: fetches ALL coins from CoinPaprika, upserts image_url +
 // name into coin_metadata using COALESCE so higher-quality CoinGecko data is
