@@ -25,8 +25,16 @@ service interval, or the pool churns constantly (destroy + recreate per tick).
 - Price updater runs every 60s, so a 30s idle timeout means connections cycle once between ticks
 - Liquidity bot runs every 120s, so connections are cold for ~90s — but keepalive covers that gap
 
+## Neon 57P01 (compute suspend)
+Neon's FATAL "terminating connection due to administrator command" (code 57P01)
+kills ALL active connections simultaneously during compute suspend/maintenance.
+- isTransientPgError must check BOTH message text AND err.code === "57P01"
+- Pool max=40 with 2 replicas = 80 reconnect attempts during wakeup → exhaustion
+- Fix: max=15 (2×15=30 total, within Neon plan limits); keepalive prevents 5-min idle suspend
+
 ## How to apply
 Any Node.js server with multiple background services and a pg pool:
 - Set idleTimeoutMillis to ≥ (longest service tick / 2), but < server-side idle kill time
 - Set RETRY_BASE_MS so that MAX_RETRIES × (base + connectionTimeout) < selfHeal tick timeout
 - Add a keepalive ping for quiet periods (e.g., nights, low traffic)
+- Set pool max to (Neon connection limit / number of replicas) — default max=40 is too high for most plans

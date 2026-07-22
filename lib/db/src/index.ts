@@ -47,11 +47,13 @@ export const pool = new Pool({
   // With 12+ concurrent background services the old 5 s limit caused a cascade
   // of "timeout exceeded when trying to connect" across every engine.
   connectionTimeoutMillis: 15_000,
-  // 40 connections: production load with 12+ background services firing
-  // concurrently can saturate a 25-slot pool, causing "timeout exceeded when
-  // trying to connect" on API routes when background services hold all slots.
-  // 40 gives enough headroom for simultaneous background ticks + HTTP requests.
-  max: 40,
+  // 15 connections: production runs with 2 replicas (Replit deployment), so
+  // 2 × 15 = 30 total connections — safely within Neon's plan limits.
+  // The old value of 40 meant 80 simultaneous reconnect attempts during a Neon
+  // compute-resume event (57P01 storm), which overwhelmed the pool recovery.
+  // 15 is enough for 12+ background services because each query holds a
+  // connection for <100ms; they do not run truly concurrently.
+  max: 15,
   // Keep the pool alive between tick cycles.
   allowExitOnIdle: false,
   // Kill runaway queries after 30 s. The liquidity bot's bulk DELETE of 48 k
@@ -85,17 +87,24 @@ export const db = drizzle(pool, { schema });
 
 /** Return true for transient network-level Postgres errors that are safe to retry. */
 function isTransientPgError(err: unknown): boolean {
+  if (!err) return false;
   const msg = err instanceof Error ? err.message : String(err);
+  // Also check the raw pg error code so we catch the error regardless of how
+  // the driver formats the message string (driver versions vary).
+  const code = (err as Record<string, unknown>).code;
   return (
     msg.includes("Connection terminated") ||
     msg.includes("connection timeout") ||
+    msg.includes("timeout exceeded when trying to connect") ||
     msg.includes("ECONNRESET") ||
     msg.includes("ECONNREFUSED") ||
     msg.includes("read ETIMEDOUT") ||
     // Neon/Postgres kills the socket outright (compute suspend/resume, admin
     // maintenance) — the pg driver surfaces the server's raw error text
     // verbatim, so it never matches the "Connection terminated" wrapper above.
-    msg.includes("administrator command")
+    msg.includes("administrator command") ||
+    // 57P01 = pg_terminate_backend() / Neon compute suspend
+    code === "57P01"
   );
 }
 
