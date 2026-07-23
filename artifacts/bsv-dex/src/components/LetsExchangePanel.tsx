@@ -1553,10 +1553,41 @@ export function LetsExchangePanel({
 
   useEffect(() => {
     let cancelled = false;
-    fetchCoins()
-      .then(d => { if (!cancelled) { setCoins(d); setLoading(false); } })
-      .catch(() => { if (!cancelled) { setCoinsErr(true); setLoading(false); } });
-    return () => { cancelled = true; };
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+    const MAX_RETRIES = 4;
+
+    function load() {
+      attempts++;
+      fetchCoins()
+        .then(d => {
+          if (cancelled) return;
+          setCoins(d);
+          setLoading(false);
+          // Got the cold-start fallback (< LIVE_COIN_THRESHOLD) — retry in 5 s
+          // to pick up the full live list once the server finishes pagination.
+          if (d.length < LIVE_COIN_THRESHOLD && attempts <= MAX_RETRIES) {
+            retryTimer = setTimeout(() => {
+              if (cancelled) return;
+              fetchCoins().then(fresh => {
+                if (!cancelled && fresh.length > d.length) setCoins(fresh);
+              }).catch(() => {});
+            }, 5000);
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempts < MAX_RETRIES) {
+            // Retry after a short back-off (e.g. momentary 429 from logo storm)
+            retryTimer = setTimeout(() => { if (!cancelled) load(); }, 3000);
+          } else {
+            setCoinsErr(true);
+            setLoading(false);
+          }
+        });
+    }
+    load();
+    return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
   }, []);
 
   const handleAmountContinue = (from: LeCoin, to: LeCoin, amt: string, est: Estimate|null) => {

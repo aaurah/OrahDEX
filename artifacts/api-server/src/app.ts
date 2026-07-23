@@ -316,17 +316,44 @@ assertWebhookMiddlewareOrder(middlewareRegistrationOrder);
 
 /* ── Rate limiting ────────────────────────────────────────────────────────────
  * Layered approach:
- *  - Global:  200 req / 1 min per IP  (protects all endpoints)
+ *  - Logo assets: 600 req / min per IP  (high burst for coin-list rendering)
+ *  - Global:      200 req / 1 min per IP  (protects all write/query endpoints)
  *  - Exchange mutations: 30 req / min  (orders, swap, p2p fill, LE exchange)
  *  - Estimate/quote:    60 req / min  (rate-check calls, slightly relaxed)
- * Skip counting for trusted health/ping endpoints to avoid alert noise.
+ * Cached read-only endpoints (currencies, pairs, logo assets) are excluded
+ * from the global limiter so they never block the coin picker UI.
  */
+
+// Dedicated limiter for logo requests — high burst allowed because the coin
+// picker renders dozens of logos simultaneously, but still caps abuse.
+const logoLimiter = rateLimit({
+  windowMs:        60_000,
+  max:             600,
+  standardHeaders: "draft-7",
+  legacyHeaders:   false,
+  handler: (_req, res) => res.status(429).json({ error: "Too many logo requests." }),
+});
+app.use("/api/tokens/logo", logoLimiter);
+
 const globalLimiter = rateLimit({
   windowMs:          60_000,
   max:               200,
   standardHeaders:   "draft-7",
   legacyHeaders:     false,
-  skip: (req) => req.path === "/api/ping" || req.path === "/api/health" || req.path === "/api/healthz",
+  // Skip health probes AND cached read-only data endpoints.
+  // Cached endpoints (currencies, pairs, prices, logos) must never be blocked
+  // by the global budget — logo storms would otherwise kill the coin picker.
+  skip: (req) => {
+    const p = req.path;
+    return p === "/api/ping" ||
+      p === "/api/health" ||
+      p === "/api/healthz" ||
+      p === "/api/letsexchange/currencies" ||
+      p === "/api/letsexchange/pairs" ||
+      p === "/api/letsexchange/usd-prices" ||
+      p.startsWith("/api/tokens/logo/") ||
+      p.startsWith("/api/tokens/logo");
+  },
   handler: (_req, res) => res.status(429).json({ error: "Too many requests — please slow down." }),
 });
 app.use(globalLimiter);
