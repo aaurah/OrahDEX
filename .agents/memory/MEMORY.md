@@ -6,7 +6,7 @@
 - [ThirdWeb Bridge integration](thirdweb-bridge-integration.md) — Bridge.Buy.prepare multi-step execution; ThirdwebBridgePanel in OrderForm funds trades from any EVM chain/token.
 - [ARC broadcaster pattern](arc-broadcaster-pattern.md) — ARC body is {rawTx} not {txhex}; drizzle-kit push needs TTY so use pool.query IF NOT EXISTS for migrations in app.ts instead.
 - [Emotion stubs for ThirdWeb/Rolldown](emotion-stubs.md) — Rolldown namespace collisions fixed via alias stubs; Proxy target MUST be plain function (not forwardRef) or apply trap won't fire.
-- [LiquidityBot bulk write pattern](liquidity-bot-bulk-write.md) — sequential chunked INSERTs saturate prod DB for ~100 s/cycle; use single UNNEST query instead.
+- [LiquidityBot bulk write pattern](liquidity-bot-bulk-write.md) — single 80K-row UNNEST times out over Neon proxy (560K values); chunk to 10K rows + initialDelayMs=180s + timeoutMs=300s.
 - [Markets DB scale reality](markets-db-scale.md) — DB has 1.99M letsexchange rows (all-to-all LE) + 55K simpleswap + 4K spot; main /markets MUST exclude both letsexchange+catalog; search endpoint covers all types.
 - [GeckoTerminal live integration](gecko-terminal-integration.md) — live pool data merges over static mock-data at render time in MobileMarketSelector; lib + hook pattern documented.
 - [SS pairs normalization](ss-pairs-normalization.md) — SS uses network-specific tickers (usdterc20, pol, avaxc, bnb-bsc); must map to canonical symbols before building pairs; dedup by normalized symbol first.
