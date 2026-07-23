@@ -766,6 +766,11 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
     } catch { /* fall through to original logic */ }
   }
 
+  // Guard: fast-path above may have partially committed headers (e.g. res.set()
+  // succeeded but res.json() threw because the socket closed mid-write).
+  // If headers are already sent, do not attempt another response.
+  if (res.headersSent) return;
+
   try {
     const cacheKey = "le_pairs_all";
     let lePairs = cached(cacheKey) as Record<string, unknown>[] | null;
@@ -829,7 +834,7 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
     res.json({ count: filtered.length });
   } catch (err: any) {
     logger.warn({ err }, "letsexchange /pairs/count failed");
-    res.json({ count: 0 });
+    if (!res.headersSent) res.json({ count: 0 });
   }
 });
 
