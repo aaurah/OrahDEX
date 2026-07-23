@@ -268,8 +268,8 @@ function LetsExchangeSection({
   return (
     <Section
       icon={<Link2 className="w-4 h-4" />}
-      title="Bridge — LetsExchange"
-      description="Powers the Bridge tab. Users can swap 340+ coins cross-chain. Your Partner ID is embedded in every swap so commissions are credited on letsexchange.io."
+      title="Bridge — Exchange Partner"
+      description="Powers the Bridge tab. Users can swap 340+ coins cross-chain. Your Partner ID is embedded in every swap so affiliate commissions are credited automatically."
       badge="Recommended"
       badgeColor="bg-amber-400/10 text-amber-400 border-amber-400/20"
       configuredCount={configuredCount}
@@ -284,7 +284,7 @@ function LetsExchangeSection({
             </div>
             <div className="min-w-0">
               <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-300/80">
-                Your LetsExchange Partner ID
+                Your Exchange Partner ID
               </div>
               {active?.partnerId ? (
                 <div className="flex items-center gap-2 mt-0.5">
@@ -350,11 +350,11 @@ function LetsExchangeSection({
       </div>
 
       <MaskedField
-        label="LetsExchange API Key (JWT)"
+        label="Exchange API Key (JWT)"
         value={form.letsexchange_api_key}
         onChange={setKey}
         placeholder="eyJhbGciOiJIUzI1NiIs..."
-        hint="The whole JWT token from letsexchange.io → Affiliate Program → API Keys. The Partner ID above is decoded from this token's payload."
+        hint="The whole JWT token from the affiliate program → API Keys. The Partner ID above is decoded from this token's payload."
       />
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -880,7 +880,7 @@ export function AdminIntegrations() {
       <Section
         icon={<Zap className="w-4 h-4" />}
         title="Cross-chain Swaps — ChangeNOW"
-        description="Powers the Cross-chain Swap venue alongside LetsExchange. Adds ChangeNOW as a competing quote source — the meta-router automatically picks whichever venue gives users the best rate."
+        description="Powers the Cross-chain Swap venue as an additional quote source — the meta-router automatically picks whichever venue gives users the best rate."
         badge="Recommended"
         badgeColor="bg-green-400/10 text-green-400 border-green-400/20"
         configuredCount={countSet("changenow_api_key")}

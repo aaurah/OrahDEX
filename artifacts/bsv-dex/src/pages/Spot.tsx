@@ -1513,7 +1513,7 @@ export function SpotTrading() {
                   <div className="flex items-center gap-1.5 px-3 py-1.5 border-t border-yellow-500/20 bg-yellow-500/5">
                     <Zap className="w-2.5 h-2.5 text-yellow-400 shrink-0" />
                     <span className="text-[9px] text-yellow-400/80">
-                      External routing via {bridgeProvider === "letsexchange" ? "LetsExchange" : "SimpleSwap"} · 1 {base} ≈ {parseFloat(bridgeRate.rate).toFixed(6)} {quote}
+                      External routing via {bridgeProvider === "letsexchange" ? "OrahRouter" : "OrahSwap"} · 1 {base} ≈ {parseFloat(bridgeRate.rate).toFixed(6)} {quote}
                     </span>
                   </div>
                 )}

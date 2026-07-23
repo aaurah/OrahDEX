@@ -668,7 +668,7 @@ export function DirectBuyModal({
                     <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-400" />
                     <div className="text-xs text-amber-300 leading-relaxed">
                       <span className="font-semibold">Direct checkout minimum is ${DIRECT_MIN_USD}.</span>
-                      {" "}Our swap partner (LetsExchange) requires at least $120 after fees.
+                      {" "}Our swap partner (OrahDEX) requires at least $120 after fees.
                     </div>
                   </div>
                   {onSwitchToProviders && (

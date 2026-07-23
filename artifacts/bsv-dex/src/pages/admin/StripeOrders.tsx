@@ -146,7 +146,7 @@ export function AdminStripeOrders() {
       } else if (o?.error_message) {
         window.alert(`Fulfillment failed:\n\n${o.error_message}\n\nCheck that LETSEXCHANGE_API_KEY is set, the coin is supported, and the customer wallet is valid.`);
       } else {
-        window.alert("Fulfillment endpoint returned no deposit address. Check API server logs for the LetsExchange response.");
+        window.alert("Fulfillment endpoint returned no deposit address. Check API server logs for the exchange response.");
       }
     },
   });
@@ -366,9 +366,9 @@ export function AdminStripeOrders() {
                       <div className="flex items-center justify-end gap-1 flex-wrap">
                         <button
                           disabled={isBusy}
-                          onClick={() => withBusy(o.id, () => fulfillM.mutateAsync(o.id), `Manually create a LetsExchange swap to deliver ${o.coin_symbol} to the customer's wallet?`)}
+                          onClick={() => withBusy(o.id, () => fulfillM.mutateAsync(o.id), `Manually create a cross-chain swap to deliver ${o.coin_symbol} to the customer's wallet?`)}
                           className="px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-[11px] hover:bg-emerald-500/20 disabled:opacity-50 flex items-center gap-1"
-                          title="Manually trigger crypto delivery via LetsExchange"
+                          title="Manually trigger crypto delivery via OrahDEX"
                         >
                           <Send className="w-3 h-3" /> Send coins
                         </button>
@@ -588,7 +588,7 @@ export function AdminStripeOrders() {
             <div className="flex items-start justify-between">
               <div>
                 <div className="text-xs text-emerald-400 font-semibold uppercase tracking-wide">Send Coins to Customer</div>
-                <h2 className="text-xl font-bold mt-1">Deliver {deliveryModal.coin_symbol} via LetsExchange</h2>
+                <h2 className="text-xl font-bold mt-1">Deliver {deliveryModal.coin_symbol} via OrahDEX</h2>
                 <p className="text-xs text-muted-foreground mt-1">Order {shorten(deliveryModal.id, 10, 6)}</p>
               </div>
               <button
@@ -655,7 +655,7 @@ export function AdminStripeOrders() {
               </div>
               {deliveryModal.le_transaction_id && (
                 <div>
-                  <div className="text-[10px] uppercase text-muted-foreground">LetsExchange Tx ID</div>
+                  <div className="text-[10px] uppercase text-muted-foreground">Exchange Tx ID</div>
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-xs">{deliveryModal.le_transaction_id}</span>
                     <a
@@ -672,7 +672,7 @@ export function AdminStripeOrders() {
 
             <div className="text-xs text-muted-foreground border-t border-border/50 pt-3">
               <strong className="text-foreground">How it works:</strong> Once your USDT deposit confirms on Ethereum,
-              LetsExchange automatically swaps it and sends {deliveryModal.coin_symbol} to the customer's wallet.
+              OrahDEX automatically swaps it and sends {deliveryModal.coin_symbol} to the customer's wallet.
               Status will update to <em>completed</em> here when delivery finishes.
             </div>
           </div>
@@ -680,7 +680,7 @@ export function AdminStripeOrders() {
       )}
 
       <div className="rounded-lg border border-border/50 bg-secondary/20 p-3 text-xs text-muted-foreground space-y-1">
-        <div><strong className="text-emerald-400">Send coins</strong> — manually creates a LetsExchange swap and returns a USDT-ERC20 deposit address. Send USDT to that address from your hot wallet to deliver crypto to the customer.</div>
+        <div><strong className="text-emerald-400">Send coins</strong> — manually creates a cross-chain swap and returns a USDT-ERC20 deposit address. Send USDT to that address from your hot wallet to deliver crypto to the customer.</div>
         <div><strong className="text-violet-300">Refund</strong> — issues a real refund through Stripe (paid orders only).</div>
         <div><strong className="text-amber-300">Cancel</strong> — cancels a pending Stripe payment intent.</div>
         <div><strong className="text-red-300">Clear</strong> — deletes the local DB row only; the Stripe payment record remains in your Stripe dashboard.</div>

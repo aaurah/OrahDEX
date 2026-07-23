@@ -79,7 +79,7 @@ export function PriceCompareBar({
         <>
           <PriceChip
             label="LE"
-            labelFull="LetsExchange"
+            labelFull="OrahRouter"
             value={leRate > 0 ? fmt(leRate, orderbookPrice) : "—"}
             quote={quote}
             highlight={leRate > 0 && leRate === bestExternalRate && leRate !== ssRate}
@@ -92,7 +92,7 @@ export function PriceCompareBar({
 
           <PriceChip
             label="SS"
-            labelFull="SimpleSwap"
+            labelFull="OrahSwap"
             value={ssRate > 0 ? fmt(ssRate, orderbookPrice) : "—"}
             quote={quote}
             highlight={ssRate > 0 && ssRate === bestExternalRate && leRate !== ssRate}
@@ -106,7 +106,7 @@ export function PriceCompareBar({
       {/* Best label */}
       {bestVenue && hasExternal && (
         <span className="ml-auto shrink-0 text-[9px] font-semibold text-green-400/70 whitespace-nowrap">
-          best: {bestVenue === "letsexchange" ? "LE" : bestVenue === "simpleswap" ? "SS" : bestVenue}
+          best: {bestVenue === "letsexchange" ? "OrahRouter" : bestVenue === "simpleswap" ? "OrahSwap" : bestVenue}
         </span>
       )}
     </div>

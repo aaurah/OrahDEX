@@ -100,8 +100,8 @@ const STEPS: Step[] = [
   },
   {
     id: "letsexchange",  step: 8, label: "H",
-    title: "Bridge — LetsExchange API Key",
-    description: "Powers the Bridge tab (cross-chain swaps). Users can exchange 340+ coins without holding the target asset. Add your LetsExchange API key in Integrations.",
+    title: "Bridge — Exchange API Key",
+    description: "Powers the Bridge tab (cross-chain swaps). Users can exchange 340+ coins without holding the target asset. Add your Exchange API key in Integrations.",
     href: "/admin/integrations", icon: Link2, priority: "recommended",
     checkIntegrations: ["letsexchange_api_key"],
   },
