@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   CheckCircle2, AlertTriangle, XCircle, RefreshCw, Activity, Zap, Globe,
-  ChevronDown, ChevronUp, Clock, Timer, AlertCircle, Server, Cpu, Wifi,
+  ChevronDown, ChevronUp, Clock, Timer, AlertCircle, Server, Cpu, Wifi, Layers,
 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -112,6 +112,9 @@ function buildServices(health: HealthData | null): DisplayService[] {
     make("price-feed",   "Price Feed",   "Trading Engine", svcStatus(find("price-updater")),   undefined, find("price-updater")),
     make("arb-engine",   "Arb Engine",   "Trading Engine", svcStatus(find("ArbBot")),          undefined, find("ArbBot")),
 
+    make("letsexchange", "LetsExchange", "Bridge Integrations", svcStatus(find("le-coin-sync")),  undefined, find("le-coin-sync")),
+    make("simpleswap",   "SimpleSwap",   "Bridge Integrations", svcStatus(find("ss-pairs-sync")), undefined, find("ss-pairs-sync")),
+
     make("bsv-chain",  "BSV Network",  "Blockchain", bsvStatus,
       health?.bsvChain?.blockHeight ? `Block ${health.bsvChain.blockHeight.toLocaleString()}` : undefined,
       find("bsv-deposit-watcher")),
@@ -120,9 +123,10 @@ function buildServices(health: HealthData | null): DisplayService[] {
 }
 
 const GROUP_ICONS: Record<string, React.ReactNode> = {
-  "Core Platform":  <Globe className="w-3.5 h-3.5" />,
-  "Trading Engine": <Zap className="w-3.5 h-3.5" />,
-  "Blockchain":     <Activity className="w-3.5 h-3.5" />,
+  "Core Platform":       <Globe className="w-3.5 h-3.5" />,
+  "Trading Engine":      <Zap className="w-3.5 h-3.5" />,
+  "Bridge Integrations": <Layers className="w-3.5 h-3.5" />,
+  "Blockchain":          <Activity className="w-3.5 h-3.5" />,
 };
 
 const BAR_COLOR: Record<BarState, string> = {
@@ -411,7 +415,7 @@ export function StatusPage() {
     : overall === "outage"    ? "System Outage Detected"
     : "Checking Status…";
 
-  const groups = ["Core Platform", "Trading Engine", "Blockchain"];
+  const groups = ["Core Platform", "Trading Engine", "Bridge Integrations", "Blockchain"];
 
   const relativeTime = (d: Date | null) => {
     if (!d) return "—";
