@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Link2, Shield, Percent, Zap, DollarSign, Bell,
   Activity, LogOut, Info, FileText, ChevronRight,
@@ -6,6 +6,7 @@ import {
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
   Headphones, MessageCircle, HelpCircle, Mail, Search, X, Key, Volume2, KeyRound, Wallet as WalletIcon,
 } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 import { getImportedWallet } from "@/lib/walletPin";
 import { listPasskeyWallets } from "@/lib/passkeyWallet";
 import { RevealSecretSheet } from "@/components/wallet/RevealSecretSheet";
@@ -28,6 +29,27 @@ const THEMES: { id: Theme; label: string; Icon: any; color: string }[] = [
   { id: "amoled", label: "Amoled", Icon: Smartphone, color: "#22c55e" },
   { id: "system", label: "System", Icon: Monitor,    color: "#64748b" },
 ];
+
+type SystemStatus = "operational" | "degraded" | "outage" | "loading";
+
+function useSystemStatus(): SystemStatus {
+  const [status, setStatus] = useState<SystemStatus>("loading");
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/health`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then((d) => {
+        if (cancelled) return;
+        if (!d) { setStatus("degraded"); return; }
+        const anyDead = d.services?.some((s: any) => s.status === "dead");
+        const anyDeg  = d.services?.some((s: any) => s.status === "degraded" || s.status === "stuck");
+        setStatus(anyDead ? "outage" : anyDeg ? "degraded" : "operational");
+      })
+      .catch(() => { if (!cancelled) setStatus("degraded"); });
+    return () => { cancelled = true; };
+  }, []);
+  return status;
+}
 
 const BASE_URL = window.location.origin;
 
@@ -128,6 +150,7 @@ export function MobileSettings() {
     ? listPasskeyWallets().some(w => w.address.toLowerCase() === address.toLowerCase())
     : false;
   const canBackup = !!imported || passkeyOwned;
+  const systemStatus = useSystemStatus();
 
   const handleDisconnect = async () => {
     if (window.confirm("Disconnect your wallet?")) {
@@ -315,6 +338,37 @@ export function MobileSettings() {
 
       <Section title="About">
         <Row icon={Info} label="Version" value="1.0.0" />
+        <Row
+          icon={Activity}
+          iconColor={
+            systemStatus === "operational" ? "#22c55e"
+            : systemStatus === "degraded"   ? "#eab308"
+            : systemStatus === "outage"     ? "#ef4444"
+            : "#64748b"
+          }
+          label="System Status"
+          value={
+            systemStatus === "operational" ? "All systems operational"
+            : systemStatus === "degraded"   ? "Partial degradation"
+            : systemStatus === "outage"     ? "Service disruption"
+            : "Checking…"
+          }
+          onClick={() => navigate("/status")}
+          rightEl={
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "w-2 h-2 rounded-full",
+                  systemStatus === "operational" ? "bg-green-400 animate-pulse"
+                  : systemStatus === "degraded"   ? "bg-yellow-400"
+                  : systemStatus === "outage"     ? "bg-red-400"
+                  : "bg-slate-500 animate-pulse"
+                )}
+              />
+              <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+            </div>
+          }
+        />
         <Row icon={BookOpen} iconColor="#4ade80" label="White Paper" value="OrahDEX project white paper" onClick={() => navigate("/whitepaper")} />
         <Row icon={FileText} label="Terms of Service" onClick={() => navigate("/terms")} />
         <Row icon={Shield} label="Privacy Policy" onClick={() => navigate("/privacy")} />
