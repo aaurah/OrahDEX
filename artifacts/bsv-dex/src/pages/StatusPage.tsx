@@ -436,7 +436,7 @@ export function StatusPage() {
       {/* Top bar */}
       <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex flex-col gap-0.5">
+          <div className="flex flex-col gap-1">
             <div className="flex items-center gap-3">
               <BrandLogo textSize="text-base" tooltip={false} />
               <span className="text-xs text-muted-foreground font-medium border-l border-border pl-3">Status</span>
@@ -446,6 +446,30 @@ export function StatusPage() {
                 {pairsCount.toLocaleString()}+ trading pairs available
               </span>
             )}
+            {/* Bridge integration chips */}
+            <div className="flex items-center gap-1.5 pl-0.5 flex-wrap">
+              {[
+                { label: "LetsExchange", svc: health?.services?.find(s => s.name === "le-coin-sync") },
+                { label: "SimpleSwap",   svc: health?.services?.find(s => s.name === "ss-pairs-sync") },
+              ].map(({ label, svc }) => {
+                const ok  = svc?.status === "ok";
+                const bad = svc?.status === "dead";
+                return (
+                  <span key={label} className={cn(
+                    "inline-flex items-center gap-1 text-[10px] font-medium rounded-full px-2 py-0.5 border",
+                    ok  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                    : bad ? "bg-red-500/10 border-red-500/20 text-red-400"
+                    : "bg-muted/20 border-border/50 text-muted-foreground"
+                  )}>
+                    <span className={cn(
+                      "w-1.5 h-1.5 rounded-full shrink-0",
+                      ok ? "bg-emerald-400 animate-pulse" : bad ? "bg-red-400" : "bg-muted-foreground"
+                    )} />
+                    {label}
+                  </span>
+                );
+              })}
+            </div>
           </div>
           <a href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
             ← Back to OrahDEX
