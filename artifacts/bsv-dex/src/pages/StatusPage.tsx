@@ -112,8 +112,8 @@ function buildServices(health: HealthData | null): DisplayService[] {
     make("price-feed",   "Price Feed",   "Trading Engine", svcStatus(find("price-updater")),   undefined, find("price-updater")),
     make("arb-engine",   "Arb Engine",   "Trading Engine", svcStatus(find("ArbBot")),          undefined, find("ArbBot")),
 
-    make("letsexchange", "LetsExchange", "Bridge Integrations", svcStatus(find("le-coin-sync")),  undefined, find("le-coin-sync")),
-    make("simpleswap",   "SimpleSwap",   "Bridge Integrations", svcStatus(find("ss-pairs-sync")), undefined, find("ss-pairs-sync")),
+    make("letsexchange", "API Pairs (Primary)",   "Bridge Integrations", svcStatus(find("le-coin-sync")),  undefined, find("le-coin-sync")),
+    make("simpleswap",   "API Pairs (Secondary)", "Bridge Integrations", svcStatus(find("ss-pairs-sync")), undefined, find("ss-pairs-sync")),
 
     make("bsv-chain",  "BSV Network",  "Blockchain", bsvStatus,
       health?.bsvChain?.blockHeight ? `Block ${health.bsvChain.blockHeight.toLocaleString()}` : undefined,
