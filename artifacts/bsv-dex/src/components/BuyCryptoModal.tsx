@@ -146,7 +146,7 @@ const PAY_METHODS: PayMethodDef[] = [
 
 // ── Provider registry ──────────────────────────────────────────────────────────
 interface ProviderDef {
-  id:string; name:string; badge:string; color:string; fee:string;
+  id:string; name:string; badge:string; color:string; fee:string; feeAvgPct:number;
   minUSD:number; maxUSD:number; methods:PayMethod[]; coins:string[]; rating:number;
   kycLevel: "none"|"light"|"full";
   baseUrl:string;
@@ -155,7 +155,49 @@ interface ProviderDef {
 
 const PROVIDERS: ProviderDef[] = [
   {
-    id:"moonpay", name:"MoonPay", badge:"🌙", color:"text-violet-400", fee:"1–4.5%", minUSD:30, maxUSD:50000, rating:4.8, kycLevel:"light",
+    id:"transak", name:"Transak", badge:"🔶", color:"text-orange-400", fee:"0.5–2%", feeAvgPct:1.25, minUSD:1, maxUSD:50000, rating:4.6, kycLevel:"light",
+    methods:["card","apple","google","bank"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","INJ"],
+    baseUrl:"https://global.transak.com",
+    params:(coin,fiat,amt,_m,addr)=>({ defaultCryptoCurrency:coin, fiatAmount:amt, fiatCurrency:fiat, ...(addr?{walletAddress:addr}:{}) }),
+  },
+  {
+    id:"ramp", name:"Ramp Network", badge:"🔵", color:"text-blue-300", fee:"0.49–2.9%", feeAvgPct:1.7, minUSD:5, maxUSD:10000, rating:4.7, kycLevel:"light",
+    methods:["card","apple","google","bank"],
+    coins:["BTC","ETH","SOL","MATIC","AVAX","DOT","UNI","LINK","ARB","OP","APT","NEAR","DOGE"],
+    baseUrl:"https://app.ramp.network",
+    params:(coin,fiat,amt,_m,addr)=>({ swapAsset:coin, fiatCurrency:fiat, fiatValue:amt, ...(addr?{userAddress:addr}:{}) }),
+  },
+  {
+    id:"onramper", name:"Onramper", badge:"🔁", color:"text-teal-400", fee:"0.5–2.5%", feeAvgPct:1.5, minUSD:30, maxUSD:50000, rating:4.6, kycLevel:"light",
+    methods:["card","apple","google","bank"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","INJ"],
+    baseUrl:"https://buy.onramper.com",
+    params:(coin,fiat,amt,_m,addr)=>({ defaultCrypto:coin, defaultFiat:fiat, defaultAmount:amt, ...(addr?{wallets:`${coin}:${addr}`}:{}) }),
+  },
+  {
+    id:"guardarian", name:"Guardarian", badge:"🛡", color:"text-indigo-400", fee:"0–3.5%", feeAvgPct:1.75, minUSD:10, maxUSD:30000, rating:4.4, kycLevel:"light",
+    methods:["card","bank","apple","google"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","SUI","INJ"],
+    baseUrl:"https://guardarian.com/calculator/v1",
+    params:(coin,fiat,amt,_m,addr)=>({ from_currency:fiat, to_currency:coin, amount:amt, ...(addr?{to_wallet_address:addr}:{}) }),
+  },
+  {
+    id:"cryptocom", name:"Crypto.com", badge:"🔷", color:"text-blue-300", fee:"0–2.99%", feeAvgPct:1.5, minUSD:1, maxUSD:250000, rating:4.5, kycLevel:"full",
+    methods:["card","apple","google","bank","crypto"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","ATOM","LTC","BCH","UNI","NEAR","ARB","OP","SUI","INJ"],
+    baseUrl:"https://crypto.com/exchange/buy",
+    params:(coin,fiat,amt,_m,addr)=>({ toCurrency:coin, fromCurrency:fiat, amount:amt, ...(addr?{address:addr}:{}) }),
+  },
+  {
+    id:"coinspot", name:"CoinSpot", badge:"🟡", color:"text-yellow-400", fee:"0.1–1%", feeAvgPct:0.55, minUSD:20, maxUSD:100000, rating:4.3, kycLevel:"full",
+    methods:["card","bank"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","BSV"],
+    baseUrl:"https://www.coinspot.com.au/buy",
+    params:(coin)=>({ crypto:coin }),
+  },
+  {
+    id:"moonpay", name:"MoonPay", badge:"🌙", color:"text-violet-400", fee:"1–4.5%", feeAvgPct:2.75, minUSD:30, maxUSD:50000, rating:4.8, kycLevel:"light",
     methods:["card","apple","google","bank"],
     coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","LTC","BCH","UNI","NEAR","ARB","OP","SUI","BSV"],
     baseUrl:"https://buy.moonpay.com",
@@ -163,49 +205,28 @@ const PROVIDERS: ProviderDef[] = [
       paymentMethod:m==="card"?"credit_debit_card":m==="bank"?"sepa_bank_transfer":m, ...(addr?{walletAddress:addr}:{}) }),
   },
   {
-    id:"ramp", name:"Ramp Network", badge:"🔵", color:"text-blue-300", fee:"0.49–2.9%", minUSD:5, maxUSD:10000, rating:4.7, kycLevel:"light",
-    methods:["card","apple","google","bank"],
-    coins:["BTC","ETH","SOL","MATIC","AVAX","DOT","UNI","LINK","ARB","OP","APT","NEAR","DOGE"],
-    baseUrl:"https://app.ramp.network",
-    params:(coin,fiat,amt,_m,addr)=>({ swapAsset:coin, fiatCurrency:fiat, fiatValue:amt, ...(addr?{userAddress:addr}:{}) }),
-  },
-  {
-    id:"banxa", name:"Banxa", badge:"🏦", color:"text-emerald-400", fee:"1–3%", minUSD:50, maxUSD:100000, rating:4.4, kycLevel:"full",
+    id:"banxa", name:"Banxa", badge:"🏦", color:"text-emerald-400", fee:"1–3%", feeAvgPct:2.0, minUSD:50, maxUSD:100000, rating:4.4, kycLevel:"full",
     methods:["card","bank"],
     coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","LTC","BCH","DOT","LINK"],
     baseUrl:"https://checkout.banxa.com",
     params:(coin,fiat,amt,_m,addr)=>({ coinType:coin, fiatType:fiat, fiatAmount:amt, ...(addr?{walletAddress:addr}:{}) }),
   },
   {
-    id:"simplex", name:"Simplex", badge:"💎", color:"text-blue-400", fee:"3.5–5%", minUSD:50, maxUSD:20000, rating:4.2, kycLevel:"light",
-    methods:["card","apple","google"],
-    coins:["BTC","ETH","XRP","BNB","ADA","DOGE","LTC","BCH","MATIC","LINK","DOT"],
-    baseUrl:"https://checkout.simplexcc.com",
-    params:(coin,fiat,amt)=>({ crypto_currency:coin, fiat_currency:fiat, requested_amount:amt, requested_currency:fiat }),
-  },
-  {
-    id:"mercuryo", name:"Mercuryo", badge:"☿", color:"text-orange-400", fee:"2.5–3.9%", minUSD:30, maxUSD:15000, rating:4.3, kycLevel:"light",
-    methods:["card","apple","google","bank"],
-    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","DOT","ATOM","LTC","BCH"],
-    baseUrl:"https://exchange.mercuryo.io",
-    params:(coin,fiat,amt,_m,addr)=>({ currency:coin, fiat_currency:fiat, amount:amt, ...(addr?{address:addr}:{}) }),
-  },
-  {
-    id:"alchemypay", name:"Alchemy Pay", badge:"⚗️", color:"text-purple-400", fee:"1.5–3%", minUSD:10, maxUSD:20000, rating:4.5, kycLevel:"light",
+    id:"alchemypay", name:"Alchemy Pay", badge:"⚗️", color:"text-purple-400", fee:"1.5–3%", feeAvgPct:2.25, minUSD:10, maxUSD:20000, rating:4.5, kycLevel:"light",
     methods:["card","apple","google","bank","crypto"],
     coins:["BTC","ETH","SOL","BNB","ADA","MATIC","AVAX","DOT","LINK","UNI","ARB","OP","APT","NEAR","INJ","SUI"],
     baseUrl:"https://ramp.alchemypay.org",
     params:(coin,fiat,amt,_m,addr)=>({ crypto:coin, fiat:fiat, amount:amt, ...(addr?{address:addr}:{}) }),
   },
   {
-    id:"paybis", name:"Paybis", badge:"💳", color:"text-pink-400", fee:"1.5–4%", minUSD:50, maxUSD:20000, rating:4.1, kycLevel:"light",
+    id:"bybit", name:"Bybit", badge:"🟠", color:"text-orange-400", fee:"1–3%", feeAvgPct:2.0, minUSD:10, maxUSD:20000, rating:4.4, kycLevel:"light",
     methods:["card","bank"],
-    coins:["BTC","ETH","XRP","BNB","LTC","BCH","DOGE","MATIC","DOT"],
-    baseUrl:"https://paybis.com/buy-cryptocurrency",
-    params:(coin,fiat,amt)=>({ from:fiat, to:coin, amount:amt }),
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","SUI"],
+    baseUrl:"https://www.bybit.com/fiat/trade/otc",
+    params:(coin,fiat,amt,_m,addr)=>({ tokenId:coin, fiatId:fiat, amount:amt, ...(addr?{address:addr}:{}) }),
   },
   {
-    id:"coinbase", name:"Coinbase", badge:"🔵", color:"text-blue-400", fee:"1.49–3.99%", minUSD:2, maxUSD:50000, rating:4.8, kycLevel:"full",
+    id:"coinbase", name:"Coinbase", badge:"🔵", color:"text-blue-400", fee:"1.49–3.99%", feeAvgPct:2.74, minUSD:2, maxUSD:50000, rating:4.8, kycLevel:"full",
     methods:["card","apple","google","bank"],
     coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","BSV"],
     baseUrl:"https://pay.coinbase.com/buy/select-asset",
@@ -215,53 +236,39 @@ const PROVIDERS: ProviderDef[] = [
     }),
   },
   {
-    id:"cryptocom", name:"Crypto.com", badge:"🔷", color:"text-blue-300", fee:"0–2.99%", minUSD:1, maxUSD:250000, rating:4.5, kycLevel:"full",
-    methods:["card","apple","google","bank","crypto"],
-    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","ATOM","LTC","BCH","UNI","NEAR","ARB","OP","SUI","INJ"],
-    baseUrl:"https://crypto.com/exchange/buy",
-    params:(coin,fiat,amt,_m,addr)=>({ toCurrency:coin, fromCurrency:fiat, amount:amt, ...(addr?{address:addr}:{}) }),
+    id:"mercuryo", name:"Mercuryo", badge:"☿", color:"text-orange-400", fee:"2.5–3.9%", feeAvgPct:3.2, minUSD:30, maxUSD:15000, rating:4.3, kycLevel:"light",
+    methods:["card","apple","google","bank"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","DOT","ATOM","LTC","BCH"],
+    baseUrl:"https://exchange.mercuryo.io",
+    params:(coin,fiat,amt,_m,addr)=>({ currency:coin, fiat_currency:fiat, amount:amt, ...(addr?{address:addr}:{}) }),
   },
   {
-    id:"coinspot", name:"CoinSpot", badge:"🟡", color:"text-yellow-400", fee:"0.1–1%", minUSD:20, maxUSD:100000, rating:4.3, kycLevel:"full",
-    methods:["card","bank"],
-    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","BSV"],
-    baseUrl:"https://www.coinspot.com.au/buy",
-    params:(coin)=>({ crypto:coin }),
-  },
-  {
-    id:"bybit", name:"Bybit", badge:"🟠", color:"text-orange-400", fee:"1–3%", minUSD:10, maxUSD:20000, rating:4.4, kycLevel:"light",
-    methods:["card","bank"],
-    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","SUI"],
-    baseUrl:"https://www.bybit.com/fiat/trade/otc",
-    params:(coin,fiat,amt,_m,addr)=>({ tokenId:coin, fiatId:fiat, amount:amt, ...(addr?{address:addr}:{}) }),
-  },
-  {
-    id:"bitget", name:"Bitget", badge:"⚫", color:"text-gray-300", fee:"1–4%", minUSD:10, maxUSD:20000, rating:4.3, kycLevel:"light",
-    methods:["card","bank"],
-    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","SUI"],
-    baseUrl:"https://www.bitget.com/fiat/buy",
-    params:(coin,fiat,amt)=>({ cryptoCurrency:coin, fiatCurrency:fiat, amount:amt }),
-  },
-  {
-    id:"guardarian", name:"Guardarian", badge:"🛡", color:"text-indigo-400", fee:"0–3.5%", minUSD:10, maxUSD:30000, rating:4.4, kycLevel:"light",
-    methods:["card","bank","apple","google"],
-    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","SUI"],
-    baseUrl:"https://guardarian.com/calculator/v1",
-    params:(coin,fiat,amt,_m,addr)=>({ from_currency:fiat, to_currency:coin, amount:amt, ...(addr?{to_wallet_address:addr}:{}) }),
-  },
-  {
-    id:"utorg", name:"UTORG", badge:"🔸", color:"text-amber-400", fee:"1.5–3.5%", minUSD:20, maxUSD:15000, rating:4.2, kycLevel:"light",
+    id:"utorg", name:"UTORG", badge:"🔸", color:"text-amber-400", fee:"1.5–3.5%", feeAvgPct:2.5, minUSD:20, maxUSD:15000, rating:4.2, kycLevel:"light",
     methods:["card","apple","google"],
     coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","ATOM","LTC","BCH","NEAR"],
     baseUrl:"https://app.utorg.pro",
     params:(coin,fiat,amt,_m,addr)=>({ currency:coin, fiatCurrency:fiat, amount:amt, ...(addr?{paymentAddress:addr}:{}) }),
   },
   {
-    id:"onramper", name:"Onramper", badge:"🔁", color:"text-teal-400", fee:"0.5–2.5%", minUSD:30, maxUSD:50000, rating:4.6, kycLevel:"light",
-    methods:["card","apple","google","bank"],
-    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","INJ"],
-    baseUrl:"https://buy.onramper.com",
-    params:(coin,fiat,amt,_m,addr)=>({ defaultCrypto:coin, defaultFiat:fiat, defaultAmount:amt, ...(addr?{wallets:`${coin}:${addr}`}:{}) }),
+    id:"bitget", name:"Bitget", badge:"⚫", color:"text-gray-300", fee:"1–4%", feeAvgPct:2.5, minUSD:10, maxUSD:20000, rating:4.3, kycLevel:"light",
+    methods:["card","bank"],
+    coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","SUI"],
+    baseUrl:"https://www.bitget.com/fiat/buy",
+    params:(coin,fiat,amt)=>({ cryptoCurrency:coin, fiatCurrency:fiat, amount:amt }),
+  },
+  {
+    id:"paybis", name:"Paybis", badge:"💳", color:"text-pink-400", fee:"1.5–4%", feeAvgPct:2.75, minUSD:50, maxUSD:20000, rating:4.1, kycLevel:"light",
+    methods:["card","bank"],
+    coins:["BTC","ETH","XRP","BNB","LTC","BCH","DOGE","MATIC","DOT"],
+    baseUrl:"https://paybis.com/buy-cryptocurrency",
+    params:(coin,fiat,amt)=>({ from:fiat, to:coin, amount:amt }),
+  },
+  {
+    id:"simplex", name:"Simplex", badge:"💎", color:"text-blue-400", fee:"3.5–5%", feeAvgPct:4.25, minUSD:50, maxUSD:20000, rating:4.2, kycLevel:"light",
+    methods:["card","apple","google"],
+    coins:["BTC","ETH","XRP","BNB","ADA","DOGE","LTC","BCH","MATIC","LINK","DOT"],
+    baseUrl:"https://checkout.simplexcc.com",
+    params:(coin,fiat,amt)=>({ crypto_currency:coin, fiat_currency:fiat, requested_amount:amt, requested_currency:fiat }),
   },
 ];
 
@@ -344,6 +351,31 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
     return () => { cancelled = true; };
   }, []);
 
+  // Live price fetch — updates estimate when coin changes
+  const [livePrice, setLivePrice] = useState<number | null>(null);
+  const [priceLoading, setPriceLoading] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const CG_IDS: Record<string,string> = {
+      BTC:"bitcoin", ETH:"ethereum", SOL:"solana", XRP:"ripple", BNB:"binancecoin",
+      ADA:"cardano", DOGE:"dogecoin", AVAX:"avalanche-2", MATIC:"matic-network",
+      LINK:"chainlink", DOT:"polkadot", UNI:"uniswap", ATOM:"cosmos", LTC:"litecoin",
+      BCH:"bitcoin-cash", NEAR:"near", APT:"aptos", ARB:"arbitrum", OP:"optimism",
+      SUI:"sui", INJ:"injective-protocol", BSV:"bitcoin-sv",
+    };
+    const cgId = CG_IDS[coin];
+    if (!cgId) { setLivePrice(null); return; }
+    setPriceLoading(true);
+    setLivePrice(null);
+    const ctrl = new AbortController();
+    fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=usd`, { signal: ctrl.signal })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.[cgId]?.usd) setLivePrice(d[cgId].usd); })
+      .catch(() => {})
+      .finally(() => setPriceLoading(false));
+    return () => ctrl.abort();
+  }, [coin, open]);
+
   useEffect(() => {
     if (open) {
       setStep(address ? "coin" : "connect");
@@ -364,7 +396,9 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
   const coinNet  = COIN_NETWORKS[coin] ?? { type:"native", name:coin, nativeSymbol:coin, addressHint:"Enter your address" };
   const coinDef  = COINS.find(c => c.symbol === coin);
 
-  const supportedProviders = PROVIDERS.filter(p => p.coins.includes(coin) && p.methods.includes(payMethod));
+  const supportedProviders = PROVIDERS
+    .filter(p => p.coins.includes(coin) && p.methods.includes(payMethod))
+    .sort((a, b) => a.feeAvgPct - b.feeAvgPct);
   const allProvidersForCoin = PROVIDERS.filter(p => p.coins.includes(coin));
   const selectedProvider   = PROVIDERS.find(p => p.id === providerId) ?? supportedProviders[0];
   const filteredCoins = COINS.filter(c => !search || c.symbol.toLowerCase().includes(search.toLowerCase()) || c.name.toLowerCase().includes(search.toLowerCase()));
@@ -373,8 +407,15 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
 
   const numAmt    = parseFloat(amount) || 0;
   const fiatToUSD = fiat==="EUR"?1.08:fiat==="GBP"?1.27:fiat==="AUD"?0.65:fiat==="CAD"?0.74:1;
-  const est       = (numAmt * fiatToUSD * 0.975) / (PRICES[coin] ?? 1);
+  const priceForCalc = livePrice ?? PRICES[coin] ?? 1;
+  const avgFee   = selectedProvider?.feeAvgPct ?? 2.5;
+  const est       = (numAmt * fiatToUSD * (1 - avgFee / 100)) / priceForCalc;
   const fmtEst    = est >= 1 ? est.toFixed(6) : est >= 0.0001 ? est.toFixed(8) : est.toExponential(4);
+
+  function providerEst(p: ProviderDef): string {
+    const e = (numAmt * fiatToUSD * (1 - p.feeAvgPct / 100)) / priceForCalc;
+    return e >= 1 ? e.toFixed(6) : e >= 0.0001 ? e.toFixed(8) : e.toExponential(4);
+  }
 
   const activeChainId   = switchedChainId ?? connectedChainId ?? 1;
   const activeChain     = EVM_CHAINS.find(c => c.chainId === activeChainId) ?? EVM_CHAINS[0];
@@ -1101,10 +1142,23 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
               {/* Live quote */}
               <div className="bg-green-500/10 border border-green-500/20 rounded-xl p-4">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-muted-foreground">You receive ≈</span>
+                  <div>
+                    <span className="text-sm text-muted-foreground">You receive ≈</span>
+                    {livePrice && (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse inline-block"/>
+                        <span className="text-[10px] text-green-400/80">Live · ${livePrice.toLocaleString(undefined,{maximumFractionDigits:4})}/{coin}</span>
+                      </div>
+                    )}
+                    {priceLoading && !livePrice && (
+                      <div className="text-[10px] text-muted-foreground/60 mt-0.5 flex items-center gap-1">
+                        <RefreshCw className="w-2.5 h-2.5 animate-spin"/>Fetching price…
+                      </div>
+                    )}
+                  </div>
                   <div className="text-right">
                     <div className="text-xl font-black text-green-400">{fmtEst} {coin}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">after ~2.5% avg fee · {fiat} {amount}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">after ~{avgFee.toFixed(1)}% fee · {fiat} {amount}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 mt-2 text-[10px] text-green-400/70">
@@ -1121,10 +1175,12 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
               ) : (
                 <>
                   <div>
-                    <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Choose provider ({supportedProviders.length})</label>
+                    <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Choose provider ({supportedProviders.length}) · sorted by best rate</label>
                     <div className="space-y-2 mt-2">
-                      {supportedProviders.map(p => {
+                      {supportedProviders.map((p, idx) => {
                         const sel = providerId===p.id || (!providerId && p.id===supportedProviders[0]?.id);
+                        const isBest = idx === 0;
+                        const estAmt = providerEst(p);
                         return (
                           <button key={p.id} onClick={()=>setProviderId(p.id)}
                             className={cn("w-full flex items-start gap-3 p-3.5 rounded-xl border text-left transition-all",
@@ -1133,24 +1189,30 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-bold text-sm">{p.name}</span>
+                                {isBest && (
+                                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-green-500 text-white tracking-wider">BEST RATE</span>
+                                )}
                                 <span className={cn("text-[10px] font-bold",p.color)}>★ {p.rating}</span>
                                 <span className="text-[10px] bg-secondary px-1.5 py-0.5 rounded text-muted-foreground">{p.fee}</span>
                                 <span className={cn("text-[9px] font-semibold",KYC_COLOR[p.kycLevel])}>{KYC_LABEL[p.kycLevel]}</span>
                               </div>
                               <div className="flex gap-1 mt-1 flex-wrap">
-                                {p.methods.map(m=>{
-                                  const md = PAY_METHODS.find(x=>x.id===m);
-                                  return (
-                                    <span key={m} className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium",
-                                      m===payMethod?"bg-primary/20 text-primary border border-primary/30":"bg-secondary/60 text-muted-foreground")}>
-                                      {m==="apple"?"🍎 Apple":m==="google"?"G Pay":m==="card"?"💳 Card":m==="bank"?"🏦 Bank":"₿ Crypto"}
-                                    </span>
-                                  );
-                                })}
+                                {p.methods.map(m=>(
+                                  <span key={m} className={cn("text-[10px] px-1.5 py-0.5 rounded font-medium",
+                                    m===payMethod?"bg-primary/20 text-primary border border-primary/30":"bg-secondary/60 text-muted-foreground")}>
+                                    {m==="apple"?"🍎 Apple":m==="google"?"G Pay":m==="card"?"💳 Card":m==="bank"?"🏦 Bank":"₿ Crypto"}
+                                  </span>
+                                ))}
                               </div>
                               <div className="text-[10px] text-muted-foreground mt-1">Min ${p.minUSD} · Max ${p.maxUSD.toLocaleString()}</div>
                             </div>
-                            <div className={cn("w-4 h-4 rounded-full border-2 shrink-0 mt-1 transition-all",sel?"border-primary bg-primary":"border-border")}/>
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              <div className={cn("text-sm font-black tabular-nums", isBest?"text-green-400":"text-foreground")}>
+                                ≈{estAmt}
+                              </div>
+                              <div className="text-[9px] text-muted-foreground">{coin}</div>
+                              <div className={cn("w-4 h-4 rounded-full border-2 transition-all mt-0.5",sel?"border-primary bg-primary":"border-border")}/>
+                            </div>
                           </button>
                         );
                       })}
