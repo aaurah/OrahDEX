@@ -47,13 +47,15 @@ export const pool = new Pool({
   // With 12+ concurrent background services the old 5 s limit caused a cascade
   // of "timeout exceeded when trying to connect" across every engine.
   connectionTimeoutMillis: 15_000,
-  // 15 connections: production runs with 2 replicas (Replit deployment), so
-  // 2 × 15 = 30 total connections — safely within Neon's plan limits.
-  // The old value of 40 meant 80 simultaneous reconnect attempts during a Neon
-  // compute-resume event (57P01 storm), which overwhelmed the pool recovery.
-  // 15 is enough for 12+ background services because each query holds a
-  // connection for <100ms; they do not run truly concurrently.
-  max: 15,
+  // 20 connections: production runs with 2 replicas (Replit deployment), so
+  // 2 × 20 = 40 total connections — within Neon plan limits while leaving
+  // headroom for HTTP routes when background services are active.
+  // max=15 was too tight: the liquidity bot holds one connection for several
+  // seconds (80K-row UNNEST bulk write), and with 12+ other services + HTTP
+  // routes competing, the pool exhausted under peak load.
+  // max=40 was too high: 80 simultaneous reconnects during a Neon 57P01
+  // suspend/resume storm overwhelmed recovery.  20 is the balanced sweet spot.
+  max: 20,
   // Keep the pool alive between tick cycles.
   allowExitOnIdle: false,
   // Kill runaway queries after 30 s. The liquidity bot's bulk DELETE of 48 k
