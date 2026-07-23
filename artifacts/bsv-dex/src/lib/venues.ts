@@ -4,6 +4,7 @@ export const VENUE_LABELS: Record<string, string> = {
   simpleswap:   "OrahSwap",
   stealthex:    "OrahLink",
   changelly:    "OrahPath",
+  swapzone:     "OrahPro",
 };
 
 export const VENUE_COLORS: Record<string, string> = {
@@ -12,6 +13,7 @@ export const VENUE_COLORS: Record<string, string> = {
   simpleswap:   "text-emerald-400",
   stealthex:    "text-orange-400",
   changelly:    "text-pink-400",
+  swapzone:     "text-yellow-400",
 };
 
 export function venueLabel(venue: string | null | undefined): string {

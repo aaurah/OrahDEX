@@ -38,6 +38,7 @@ interface IntegrationSettings {
   telegram_chat_id: string;
   letsexchange_api_key: string;
   changenow_api_key: string;
+  swapzone_api_key: string;
   sumsub_api_key: string;
 }
 
@@ -66,6 +67,7 @@ const DEFAULTS: IntegrationSettings = {
   telegram_chat_id: "",
   letsexchange_api_key: "",
   changenow_api_key: "",
+  swapzone_api_key: "",
   sumsub_api_key: "",
 };
 
@@ -896,6 +898,29 @@ export function AdminIntegrations() {
         <div className="p-3 bg-green-400/5 border border-green-400/15 rounded-xl text-xs text-green-300 space-y-1">
           <p className="font-semibold">Once saved, ChangeNOW competes with StealthEX and SimpleSwap on every cross-chain swap quote. Users automatically get the best rate.</p>
           <p className="text-green-300/70">No restart required — the key is picked up within 60 seconds.</p>
+        </div>
+      </Section>
+
+      {/* ── Swapzone Meta-Aggregator ── */}
+      <Section
+        icon={<Zap className="w-4 h-4" />}
+        title="Swap Aggregator — Swapzone"
+        description="Meta-aggregator routing through 15+ exchanges (GoDex, Exolix, SideShift, CoiNCraddle, NExchange, and more). Competes with all other venues — the best rate wins automatically."
+        badge="Recommended"
+        badgeColor="bg-yellow-400/10 text-yellow-400 border-yellow-400/20"
+        configuredCount={countSet("swapzone_api_key")}
+        totalCount={1}
+      >
+        <MaskedField
+          label="Swapzone API Key"
+          value={form.swapzone_api_key}
+          onChange={set("swapzone_api_key")}
+          placeholder="your-swapzone-api-key"
+          hint="Get your API key at swapzone.io/partners/sign-up — free partner account. Unlocks 3,000+ coins across 15+ exchanges including GoDex, Exolix, SideShift, and more."
+        />
+        <div className="p-3 bg-yellow-400/5 border border-yellow-400/15 rounded-xl text-xs text-yellow-200 space-y-1">
+          <p className="font-semibold">Once saved, Swapzone (OrahPro) joins the quote competition on every cross-chain swap. Users automatically get the best rate across all venues.</p>
+          <p className="text-yellow-200/70">No restart required — the key is picked up within 60 seconds. Sign up at swapzone.io/partners for a free partner account and earn referral revenue on every swap.</p>
         </div>
       </Section>
 

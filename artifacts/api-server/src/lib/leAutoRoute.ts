@@ -15,6 +15,7 @@ import { getBestExternalQuote } from "./metaRouter.js";
 import { createSsExchangePair } from "./simpleswap.js";
 import { createCNExchange } from "./changenow.js";
 import { createSXExchange } from "./stealthex.js";
+import { quoteFromSZ, createSzTransaction } from "./swapzone.js";
 import { leRequest, getCachedLEPrices, AFFILIATE_ID } from "./lePriceCache.js";
 import { LE_COIN_NETWORK } from "./leCoinNetwork.js";
 import { creditAvailable } from "./ledger.js";
@@ -215,6 +216,20 @@ async function createVenueExchange(
         return txId ? { ok: true, transactionId: txId } : { ok: false };
       }
       return { ok: false };
+    }
+    if (venue === "swapzone") {
+      // SwapZone requires a fresh rateId — get a new quote right before creating
+      const szQuote = await quoteFromSZ(from, to, amount);
+      if (!szQuote?.rateId) return { ok: false };
+      const r = await createSzTransaction({
+        from,
+        to,
+        amount,
+        rateId:         szQuote.rateId,
+        addressReceive: address,
+        addressRefund:  address,
+      });
+      return r.ok ? { ok: true, transactionId: r.exchange.id } : { ok: false };
     }
     // Other venues (changelly) not yet integrated for auto-route
     return { ok: false };
