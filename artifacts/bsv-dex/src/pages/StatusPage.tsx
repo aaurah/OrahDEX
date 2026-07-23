@@ -446,30 +446,6 @@ export function StatusPage() {
                 {pairsCount.toLocaleString()}+ trading pairs available
               </span>
             )}
-            {/* Bridge integration chips */}
-            <div className="flex items-center gap-1.5 pl-0.5 flex-wrap">
-              {[
-                { label: "LetsExchange", svc: health?.services?.find(s => s.name === "le-coin-sync") },
-                { label: "SimpleSwap",   svc: health?.services?.find(s => s.name === "ss-pairs-sync") },
-              ].map(({ label, svc }) => {
-                const ok  = svc?.status === "ok";
-                const bad = svc?.status === "dead";
-                return (
-                  <span key={label} className={cn(
-                    "inline-flex items-center gap-1 text-[10px] font-medium rounded-full px-2 py-0.5 border",
-                    ok  ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                    : bad ? "bg-red-500/10 border-red-500/20 text-red-400"
-                    : "bg-muted/20 border-border/50 text-muted-foreground"
-                  )}>
-                    <span className={cn(
-                      "w-1.5 h-1.5 rounded-full shrink-0",
-                      ok ? "bg-emerald-400 animate-pulse" : bad ? "bg-red-400" : "bg-muted-foreground"
-                    )} />
-                    {label}
-                  </span>
-                );
-              })}
-            </div>
           </div>
           <a href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
             ← Back to OrahDEX
