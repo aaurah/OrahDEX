@@ -235,10 +235,10 @@ function CoinPicker({
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    if (!q) return coins.slice(0, 80);
+    if (!q) return coins;
     return coins.filter(c =>
       c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
-    ).slice(0, 80);
+    );
   }, [coins, search]);
 
   return (
