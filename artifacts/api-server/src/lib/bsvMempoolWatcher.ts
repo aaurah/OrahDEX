@@ -287,7 +287,7 @@ export function startBsvMempoolWatcher(): void {
     "BSV mempool watcher starting (mainnet SPV + round-robin mode)",
   );
   guardedInterval("bsv-mempool-watcher", mempoolTick, POLL_INTERVAL_MS, {
-    timeoutMs:      POLL_INTERVAL_MS - 3_000,
+    timeoutMs:      30_000,   // WoC API calls + header sync regularly exceed 12 s; 30 s gives enough headroom
     initialDelayMs: 12_000,
   });
 }

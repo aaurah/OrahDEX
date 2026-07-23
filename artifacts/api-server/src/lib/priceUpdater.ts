@@ -1732,7 +1732,7 @@ export async function updateMarketPrices() {
              AS v(sym, lp, pc, pcp, vol, hi, lo, mc)
            WHERE m.symbol = v.sym`,
           params,
-        ), { maxAttempts: 2, baseDelayMs: 500 })
+        ), { maxAttempts: 1, baseDelayMs: 0 })
         .catch(err => logger.warn({ err }, "priceUpdater: bulk UPDATE failed"));
     }
     pendingUpdates.length = 0;
@@ -1807,10 +1807,12 @@ export function startPriceUpdater() {
   // After the first run, the guarded interval takes over every 60 s.
   _stopPriceUpdater = guardedInterval(
     "price-updater", updateMarketPrices, 60_000,
-    // 70 s timeout: Binance now fails fast (≤ 5 s), so the critical path is
-    // the LE fallback (≤ 15 s parallel) + DB bulk update (≤ 15 s).
-    // 70 s gives ~35 s of margin over the expected worst-case runtime.
-    { timeoutMs: 70_000, initialDelayMs: 35_000 },
+    // 120 s timeout: bulk UPDATE now uses maxAttempts:1 so the retry overhead is
+    // gone, but on a loaded DB the single attempt can still take 30–40 s.
+    // Network fetches (LE + CoinGecko + WoC) add another 15–20 s.
+    // 120 s gives headroom for slow-DB environments without being so long
+    // that stale prices go undetected for more than 2 price cycles.
+    { timeoutMs: 120_000, initialDelayMs: 35_000 },
   );
   logger.info("Live price updater started (interval: 60s, self-healing)");
 }
