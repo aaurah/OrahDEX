@@ -48,6 +48,7 @@ const PrivacyPolicy   = lazy(() => import("@/pages/PrivacyPolicy").then(m => ({ 
 const WhitePaper      = lazy(() => import("@/pages/WhitePaper").then(m => ({ default: m.WhitePaper })));
 const SupportPage     = lazy(() => import("@/pages/Support").then(m => ({ default: m.SupportPage })));
 const WebSettings     = lazy(() => import("@/pages/Settings").then(m => ({ default: m.WebSettings })));
+const StatusPage      = lazy(() => import("@/pages/StatusPage").then(m => ({ default: m.StatusPage })));
 
 /* Mobile */
 const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
@@ -520,6 +521,9 @@ function Router() {
       <Route path="/futures"><RedirectTo href="/futures/BSV-USDT-PERP" /></Route>
 
       {/* ── Standalone legal / info pages (no nav wrapper) ── */}
+      <Route path="/status">
+        <Suspense fallback={<PageSkeleton />}><StatusPage /></Suspense>
+      </Route>
       <Route path="/terms">
         <Suspense fallback={<PageSkeleton />}><TermsOfService /></Suspense>
       </Route>
