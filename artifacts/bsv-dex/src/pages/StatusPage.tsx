@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { CheckCircle2, AlertTriangle, XCircle, RefreshCw, Activity, Zap, Globe, Layers } from "lucide-react";
+import { CheckCircle2, AlertTriangle, XCircle, RefreshCw, Activity, Zap, Globe } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 
 type BarState = "up" | "degraded" | "down" | "maintenance";
@@ -116,9 +116,6 @@ function buildServices(health: HealthData | null): DisplayService[] {
     make("price-feed",   "Price Feed",     "Trading Engine", svcStatus(find("price-updater"))),
     make("arb-engine",   "Arb Engine",     "Trading Engine", svcStatus(find("ArbBot"))),
 
-    make("letsexchange", "LetsExchange",   "Bridge Integrations", svcStatus(find("le-coin-sync"))),
-    make("simpleswap",   "SimpleSwap",     "Bridge Integrations", svcStatus(find("ss-pairs-sync"))),
-
     make("bsv-chain",  "BSV Network",  "Blockchain", bsvStatus,
       health?.bsvChain?.blockHeight ? `Block ${health.bsvChain.blockHeight.toLocaleString()}` : undefined),
     make("evm-chains", "EVM Networks", "Blockchain", svcStatus(find("evm-deposit-watcher"))),
@@ -128,7 +125,6 @@ function buildServices(health: HealthData | null): DisplayService[] {
 const GROUP_ICONS: Record<string, React.ReactNode> = {
   "Core Platform":      <Globe className="w-3.5 h-3.5" />,
   "Trading Engine":     <Zap className="w-3.5 h-3.5" />,
-  "Bridge Integrations":<Layers className="w-3.5 h-3.5" />,
   "Blockchain":         <Activity className="w-3.5 h-3.5" />,
 };
 
@@ -318,7 +314,7 @@ export function StatusPage() {
       : "Checking Status…";
 
   // Group services
-  const groups = ["Core Platform", "Trading Engine", "Bridge Integrations", "Blockchain"];
+  const groups = ["Core Platform", "Trading Engine", "Blockchain"];
 
   const relativeTime = (d: Date | null) => {
     if (!d) return "—";
