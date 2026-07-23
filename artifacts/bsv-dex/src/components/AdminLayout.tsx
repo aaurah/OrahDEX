@@ -88,6 +88,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: "System", icon: Activity, color: "text-green-400",
     items: [
+      { href: "/admin/status",         label: "Service Status",   icon: Activity },
       { href: "/admin/health",         label: "System Health",    icon: HeartPulse },
       { href: "/admin/diagnostics",    label: "Diagnostics",      icon: Stethoscope },
       { href: "/admin/server-control", label: "Server Control",   icon: Server, badge: "NEW", badgeColor: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" },
