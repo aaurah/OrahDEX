@@ -371,6 +371,7 @@ export function StatusPage() {
   const [loading, setLoading]   = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [refreshing, setRefreshing]   = useState(false);
+  const [pairsCount, setPairsCount]   = useState<number | null>(null);
 
   const fetchHealth = useCallback(async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -390,6 +391,13 @@ export function StatusPage() {
     const t = setInterval(() => fetchHealth(), 30_000);
     return () => clearInterval(t);
   }, [fetchHealth]);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/letsexchange/pairs/count?all=true`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.count) setPairsCount(d.count); })
+      .catch(() => {});
+  }, []);
 
   const services = buildServices(health);
   const anyOutage   = services.some(s => s.currentStatus === "outage");
@@ -428,9 +436,16 @@ export function StatusPage() {
       {/* Top bar */}
       <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <BrandLogo textSize="text-base" tooltip={false} />
-            <span className="text-xs text-muted-foreground font-medium border-l border-border pl-3">Status</span>
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-3">
+              <BrandLogo textSize="text-base" tooltip={false} />
+              <span className="text-xs text-muted-foreground font-medium border-l border-border pl-3">Status</span>
+            </div>
+            {pairsCount !== null && (
+              <span className="text-[10px] text-muted-foreground/70 pl-0.5">
+                {pairsCount.toLocaleString()}+ trading pairs available
+              </span>
+            )}
           </div>
           <a href="/" className="text-xs text-muted-foreground hover:text-foreground transition-colors">
             ← Back to OrahDEX
