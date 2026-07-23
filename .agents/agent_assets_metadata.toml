@@ -1,3 +1,8 @@
 uploads = []
 generated = []
-outputs = []
+
+[[outputs]]
+id = "dpuCkoNXigoSswz5S5-Hf"
+uri = "file://.local/exports/OrahDEX_Wikipedia_Draft.txt"
+type = "text"
+title = "OrahDEX — Wikipedia Article Draft (MediaWiki markup)"
