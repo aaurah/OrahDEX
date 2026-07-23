@@ -282,11 +282,11 @@ function CoinPicker({ coins, selected, onChange, exclude, compact }: {
   const filtered = useMemo(() => {
     const qq = q.toLowerCase().trim();
     const list = exclude ? coins.filter(c => c.symbol !== exclude) : coins;
-    if (!qq) return list.slice(0, 120);
+    if (!qq) return list;
     return list.filter(c =>
       c.symbol.toLowerCase().includes(qq) || c.name.toLowerCase().includes(qq) ||
       (c.networkName ?? "").toLowerCase().includes(qq)
-    ).slice(0, 80);
+    );
   }, [coins, q, exclude]);
 
   return (
