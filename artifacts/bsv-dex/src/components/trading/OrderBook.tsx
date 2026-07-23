@@ -178,8 +178,8 @@ export function OrderBook({
     return genBridgeLevels(leRate.rate, leRate.minAmount, leRate.maxAmount);
   }, [leRate?.rate, leRate?.minAmount, leRate?.maxAmount]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const providerLabel = bridgeProvider === "simpleswap" ? "SS" : "LE";
-  const providerFull  = bridgeProvider === "simpleswap" ? "SimpleSwap" : "LetsExchange";
+  const providerLabel = bridgeProvider === "simpleswap" ? "OrahSwap" : "OrahRouter";
+  const providerFull  = bridgeProvider === "simpleswap" ? "OrahSwap" : "OrahRouter";
 
   const bridgeMaxTotal = Math.max(
     ...bridgeLevels.bids.map(b => b.total),
@@ -412,7 +412,7 @@ export function OrderBook({
                     <span className="text-[10px] font-mono font-bold text-yellow-400">
                       {formatPrice(leAskPrice, 4)}
                     </span>
-                    <span className="text-[8px] px-1 py-px rounded bg-yellow-500/20 text-yellow-400 font-bold shrink-0">⚡LE</span>
+                    <span className="text-[8px] px-1 py-px rounded bg-yellow-500/20 text-yellow-400 font-bold shrink-0">⚡Orah</span>
                     <ArrowRight className="w-2.5 h-2.5 text-yellow-400/50 group-hover:text-yellow-400 transition-colors shrink-0" />
                   </button>
                 )}

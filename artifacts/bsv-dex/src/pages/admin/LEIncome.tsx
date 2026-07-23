@@ -99,14 +99,14 @@ function ExchangeIdLookup() {
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2">
       <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-zinc-400 font-semibold">
-        <Search className="w-3.5 h-3.5 text-emerald-400" /> Look up any Exchange ID on LetsExchange
+        <Search className="w-3.5 h-3.5 text-emerald-400" /> Look up any Exchange ID
       </div>
       <div className="flex items-center gap-2">
         <input
           value={id}
           onChange={e => setId(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter") open(); }}
-          placeholder="Paste Exchange ID (LetsExchange transaction_id)…"
+          placeholder="Paste Exchange ID (transaction_id)…"
           className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm font-mono text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-emerald-500/50"
           spellCheck={false}
           autoComplete="off"
@@ -124,13 +124,13 @@ function ExchangeIdLookup() {
           disabled={!trimmed}
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-xs font-bold border border-emerald-500/30 disabled:opacity-40"
         >
-          <ExternalLink className="w-3.5 h-3.5" /> Open on letsexchange.io
+          <ExternalLink className="w-3.5 h-3.5" /> Open tracker
         </button>
       </div>
       <p className="text-[11px] text-zinc-500">
         The Exchange ID is the <span className="font-mono">transaction_id</span> returned when a Bridge swap is created.
         Each row in <span className="font-semibold text-zinc-300">Recent</span> below has a copy + open button to jump to that swap's
-        LetsExchange status page.
+        Exchange status page.
       </p>
     </div>
   );
@@ -163,7 +163,7 @@ export function AdminLEIncome() {
             Swap Income
           </h1>
           <p className="text-zinc-400 text-sm mt-1">
-            LetsExchange affiliate commission tracker — affiliate commissions are paid directly by LE
+            Bridge affiliate commission tracker — commissions are paid directly by our exchange partners
           </p>
         </div>
         <button

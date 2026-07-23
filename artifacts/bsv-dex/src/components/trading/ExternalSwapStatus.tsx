@@ -23,7 +23,7 @@ export function ExternalSwapStatus({ status, swap, error, onReset }: Props) {
     });
   };
 
-  const venueName = swap?.venue === "letsexchange" ? "LetsExchange" : "SimpleSwap";
+  const venueName = swap?.venue === "letsexchange" ? "OrahRouter" : "OrahSwap";
 
   // ── Creating ──────────────────────────────────────────────────────────────
   if (status === "creating") {

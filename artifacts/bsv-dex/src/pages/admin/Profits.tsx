@@ -276,7 +276,7 @@ export function AdminProfits() {
           {[
             ["Spot Orderbook", "0.10% maker & taker fee on every matched trade. Collected at fill time."],
             ["AMM Swap", "0.30% fee on every AMM swap. 83% to LPs, 17% to platform."],
-            ["Bridge / Exchange", "~0.30% estimated affiliate commission per cross-chain swap (ChangeNOW, StealthEX, SimpleSwap, LetsExchange, Changelly)."],
+            ["Bridge / Exchange", "~0.30% estimated affiliate commission per cross-chain swap via our exchange partners."],
             ["P2P Trade", "0.05% platform cut on every P2P intent fill."],
             ["LP Spread", "Platform share (1/6) of pool swap fees from liquidity positions."],
             ["Copy Trading", "10% of vault manager performance fees when followers profit."],
