@@ -8,6 +8,7 @@ import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../
 import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable, keeperEarningsTable } from "@workspace/db/schema";
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
+import { invalidateSzKeyCache } from "../lib/swapzone.js";
 import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
@@ -1344,6 +1345,7 @@ const INTEGRATION_KEYS = [
   "telegram_chat_id",
   "letsexchange_api_key",
   "changenow_api_key",
+  "swapzone_api_key",
   "sumsub_api_key",
 ];
 
@@ -1371,6 +1373,7 @@ router.put("/integrations", async (req, res) => {
         .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: value ?? "", updatedAt: new Date() } });
     }
     if ("changenow_api_key" in updates) invalidateCnKeyCache();
+    if ("swapzone_api_key"  in updates) invalidateSzKeyCache();
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to save integrations" });

@@ -31,6 +31,7 @@ import { quoteFromSSPair, isSimpleSwapConfigured } from "./simpleswap.js";
 import { quoteFromCN, isChangeNowConfigured }                  from "./changenow.js";
 import { quoteFromSX, isStealthExConfigured }                  from "./stealthex.js";
 import { quoteFromChangelly, isChangellyConfigured }           from "./changelly.js";
+import { quoteFromSZ, isSwapzoneConfigured }                   from "./swapzone.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,8 @@ export type ExternalVenue =
   | "simpleswap"
   | "changenow"
   | "stealthex"
-  | "changelly";
+  | "changelly"
+  | "swapzone";
 
 export interface RouteQuote {
   venue:           ExternalVenue;
@@ -83,6 +85,7 @@ export const VENUE_FEE_RATIOS: Record<ExternalVenue, number> = {
   changenow:    0.0040, // ~0.4%
   stealthex:    0.0040, // ~0.4%
   changelly:    0.0050, // ~0.5%
+  swapzone:     0.0045, // ~0.45% (meta-aggregator; routes through best sub-exchange)
 };
 
 // ─── Scoring ─────────────────────────────────────────────────────────────────
@@ -330,6 +333,46 @@ async function quoteChangelly(
   }
 }
 
+async function quoteSwapzone(
+  from:   string,
+  to:     string,
+  amount: number,
+): Promise<{ quote: RouteQuote | null; error: string | null }> {
+  if (!(await isSwapzoneConfigured())) {
+    return { quote: null, error: "SWAPZONE_API_KEY not configured" };
+  }
+
+  try {
+    const result = await quoteFromSZ(from, to, amount);
+    if (!result) return { quote: null, error: "Swapzone returned no result" };
+
+    const canExecute =
+      (result.minAmount == null || amount >= result.minAmount) &&
+      (result.maxAmount == null || amount <= result.maxAmount);
+
+    const feeRatio = VENUE_FEE_RATIOS.swapzone;
+    const quote: RouteQuote = {
+      venue:          "swapzone",
+      inputToken:     from,
+      outputToken:    to,
+      inputAmount:    amount,
+      expectedOutput: result.estimatedAmount,
+      networkFeeUsd:  0,
+      venueFeeUsd:    amount * feeRatio,
+      venueFeeRatio:  feeRatio,
+      slippageBps:    0,
+      minAmount:      result.minAmount,
+      maxAmount:      result.maxAmount,
+      canExecute,
+      score:          0,
+      raw:            result,
+    };
+    return { quote, error: null };
+  } catch (err: any) {
+    return { quote: null, error: err?.message ?? "Swapzone error" };
+  }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -365,12 +408,13 @@ export async function getBestExternalQuote(
   };
 
   // Fire all provider quote requests in parallel
-  const [leR, ssR, cnR, sxR, clR] = await Promise.all([
+  const [leR, ssR, cnR, sxR, clR, szR] = await Promise.all([
     quoteLetsExchange(fromU, toU, amount),
     quoteSimpleSwap(fromU, toU, amount),
     quoteChangeNow(fromU, toU, amount),
     quoteStealthEx(fromU, toU, amount),
     quoteChangelly(fromU, toU, amount),
+    quoteSwapzone(fromU, toU, amount),
   ]);
 
   const errors: Record<ExternalVenue, string | null> = {
@@ -379,10 +423,11 @@ export async function getBestExternalQuote(
     changenow:    cnR.error,
     stealthex:    sxR.error,
     changelly:    clR.error,
+    swapzone:     szR.error,
   };
 
   // Score each successful quote
-  const rawQuotes = [leR.quote, ssR.quote, cnR.quote, sxR.quote, clR.quote].filter(
+  const rawQuotes = [leR.quote, ssR.quote, cnR.quote, sxR.quote, clR.quote, szR.quote].filter(
     (q): q is RouteQuote => q !== null,
   );
 
