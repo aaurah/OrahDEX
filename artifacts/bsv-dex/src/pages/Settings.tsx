@@ -350,7 +350,7 @@ export function WebSettings() {
 
         {/* ── About ── */}
         <Section title="About">
-          <Row icon={Info} label="Version" value="1.0.0" />
+          <Row icon={Info} label="Version" value="8.0.0" />
           <Row
             icon={Activity}
             iconColor={
