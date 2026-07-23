@@ -140,11 +140,15 @@ pool.query(`
   CREATE INDEX IF NOT EXISTS overlay_records_indexed_at_idx   ON overlay_records (indexed_at DESC);
 `).catch((err: Error) => logger.warn({ err: err.message }, "overlay_records migration failed (non-fatal)"));
 
-// Indexes to make /api/markets/search fast across the 1.24 M catalog table.
+// Indexes to make /api/markets/search fast and price-updater UPDATE fast.
+// idx_markets_symbol is critical: the price-updater bulk UPDATE uses
+// WHERE m.symbol = v.sym AND m.type IN ('spot','futures') — without this
+// index Postgres does a sequential scan of the full 2M-row table every 60s.
 pool.query(`
   CREATE INDEX IF NOT EXISTS idx_markets_base_asset  ON markets (base_asset);
   CREATE INDEX IF NOT EXISTS idx_markets_quote_asset ON markets (quote_asset);
   CREATE INDEX IF NOT EXISTS idx_markets_type        ON markets (type);
+  CREATE INDEX IF NOT EXISTS idx_markets_symbol      ON markets (symbol);
 `).catch((err: Error) => logger.warn({ err: err.message }, "markets search indexes failed (non-fatal)"));
 
 // GitHub token list cache — stores logos, addresses, and decimals from Trust Wallet + Uniswap lists.
