@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { CheckCircle2, AlertTriangle, XCircle, RefreshCw, Activity, Zap, Globe } from "lucide-react";
 import { API_BASE } from "@/lib/api";
+import { BrandLogo } from "@/components/BrandLogo";
 
 type BarState = "up" | "degraded" | "down" | "maintenance";
 
@@ -329,11 +330,9 @@ export function StatusPage() {
       {/* Top bar */}
       <div className="border-b border-border/50 bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-6 h-6 rounded-md bg-[#4F63EF] flex items-center justify-center">
-              <Activity className="w-3.5 h-3.5 text-white" />
-            </div>
-            <span className="text-sm font-bold text-foreground tracking-tight">OrahDEX Status</span>
+          <div className="flex items-center gap-3">
+            <BrandLogo textSize="text-base" tooltip={false} />
+            <span className="text-xs text-muted-foreground font-medium border-l border-border pl-3">Status</span>
           </div>
           <a
             href="/"
