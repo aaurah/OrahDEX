@@ -463,38 +463,21 @@ async function repairStaleMarkets(): Promise<void> {
   logger.warn({ staleCount: rows.length, staleSymbols: staleSymbols.slice(0, 10) },
     "[StaleRepairer] Stale market prices detected — triggering refresh");
 
-  // Trigger price updater for stale symbols via dynamic import
-  try {
-    const { updateMarketPrices } = await import("../lib/priceUpdater.js");
-    await updateMarketPrices();
-    staleRepairCount++;
-
-    // Re-check if prices were actually fixed
-    const { rows: recheckRows } = await pool.query<{ symbol: string; last_price: string }>(
-      `SELECT symbol, last_price FROM markets WHERE symbol = ANY($1::text[])`,
-      [staleSymbols],
-    );
-    const stillStale = recheckRows.filter(r => !r.last_price || r.last_price === "0");
-
-    addRepair({
-      type:   "stale-fixed",
-      target: `${staleSymbols.length} markets`,
-      detail: `Fixed: ${staleSymbols.length - stillStale.length}, still stale: ${stillStale.length}`,
-    });
-
-    if (stillStale.length > 0) {
-      alertWarning("price",
-        `[AutoRepair] ${stillStale.length} markets still have stale prices after repair`,
-        stillStale.map(r => r.symbol).slice(0, 10).join(", "),
-      );
-    } else {
-      logger.info({ repaired: staleSymbols.length }, "[StaleRepairer] All stale markets repaired");
-    }
-  } catch (err: any) {
-    addRepair({ type: "stale-repair", target: "price-engine", detail: `Repair failed: ${err?.message}` });
-    alertCritical("price", "[AutoRepair] Stale market repair failed", err?.message);
-    logger.error({ err: err?.message }, "[StaleRepairer] Repair cycle failed");
-  }
+  // The price-updater guardedInterval already runs every 60 s — calling
+  // updateMarketPrices() here would create a second concurrent DB write
+  // session, saturating the pool and causing BOTH the guard interval AND
+  // this repair tick to time-out/fail.  Log the staleness and let the
+  // price-updater's own next cycle fix it.
+  staleRepairCount++;
+  addRepair({
+    type:   "stale-detected",
+    target: `${staleSymbols.length} markets`,
+    detail: `Stale symbols (first 10): ${staleSymbols.slice(0, 10).join(", ")} — deferring to price-updater interval`,
+  });
+  alertWarning("price",
+    `[AutoRepair] ${staleSymbols.length} markets have stale prices — price-updater will fix on next cycle`,
+    staleSymbols.slice(0, 10).join(", "),
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
