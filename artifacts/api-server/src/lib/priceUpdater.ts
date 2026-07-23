@@ -1730,7 +1730,8 @@ export async function updateMarketPrices() {
                  market_cap              = v.mc
            FROM (VALUES ${placeholders})
              AS v(sym, lp, pc, pcp, vol, hi, lo, mc)
-           WHERE m.symbol = v.sym`,
+           WHERE m.symbol = v.sym
+             AND m.type IN ('spot', 'futures')`,
           params,
         ), { maxAttempts: 1, baseDelayMs: 0 })
         .catch(err => logger.warn({ err }, "priceUpdater: bulk UPDATE failed"));
