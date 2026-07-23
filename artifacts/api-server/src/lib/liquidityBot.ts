@@ -342,42 +342,48 @@ async function runCycle(): Promise<void> {
       deletedCount = result.rowCount ?? 0;
     } while (deletedCount >= DELETE_CHUNK);
 
-    // Single UNNEST bulk INSERT — 1 DB round-trip for the entire batch.
-    // Previously: 25 sequential db.insert() calls of 2,000 rows each held the
-    // DB server under write pressure for ~100 s per cycle, saturating all pool
-    // connections.  UNNEST processes the entire 48k-row batch in one pass:
-    // the server reads the arrays, inserts all rows, and updates all 4 indexes
-    // once — reducing write time to ~3-5 s and leaving the pool free.
+    // Chunked UNNEST bulk INSERT — split into 10 000-row batches.
+    // A single 80 000-row UNNEST sends ~560 000 values in one pg protocol
+    // message; over Neon's serverless proxy this takes 90–110 s to transmit,
+    // causing the guardedInterval timeout every cycle and holding the pool
+    // slot the entire time.  10 K-row chunks send ~70 K values each, completing
+    // in ~3–8 s per chunk (8 chunks × ~5 s ≈ 40–60 s total) — well within the
+    // expanded 300 s timeout and releasing the connection frequently enough
+    // that other services can acquire the pool.
+    const INSERT_CHUNK = 10_000;
     if (allOrders.length > 0) {
-      const ids       = allOrders.map(o => o.id);
-      const symbols   = allOrders.map(o => o.symbol);
-      const sides     = allOrders.map(o => o.side);
-      const prices    = allOrders.map(o => o.price    ?? "0");
-      const qtys      = allOrders.map(o => o.quantity);
-      const totals    = allOrders.map(o => o.total    ?? "0");
-      const feeAssets = allOrders.map(o => o.feeAsset ?? "USDT");
+      for (let ci = 0; ci < allOrders.length; ci += INSERT_CHUNK) {
+        const chunk     = allOrders.slice(ci, ci + INSERT_CHUNK);
+        const ids       = chunk.map(o => o.id);
+        const symbols   = chunk.map(o => o.symbol);
+        const sides     = chunk.map(o => o.side);
+        const prices    = chunk.map(o => o.price    ?? "0");
+        const qtys      = chunk.map(o => o.quantity);
+        const totals    = chunk.map(o => o.total    ?? "0");
+        const feeAssets = chunk.map(o => o.feeAsset ?? "USDT");
 
-      await pool.query(
-        `INSERT INTO orders
-           (id, symbol, wallet_address, network_type, side, type, status,
-            price, stop_price, quantity, filled_quantity, remaining_quantity,
-            total, fee, fee_asset, time_in_force, is_bot, is_synthetic)
-         SELECT
-           t.id, t.symbol, $8, 'bsv', t.side, 'limit', 'open',
-           t.price, NULL, t.qty, 0, t.qty,
-           t.total, 0, t.fee_asset, 'GTC', TRUE, FALSE
-         FROM unnest($1::text[], $2::text[], $3::text[],
-                     $4::numeric[], $5::numeric[], $6::numeric[], $7::text[])
-              AS t(id, symbol, side, price, qty, total, fee_asset)
-         ON CONFLICT (id) DO NOTHING`,
-        [ids, symbols, sides, prices, qtys, totals, feeAssets, BOT_ADDRESS],
-      ).catch(err => {
-        if (isDbConnError(err)) {
-          logger.warn("liquidityBot: UNNEST insert skipped — transient DB connection error");
-        } else {
-          logger.warn({ err, orderCount: allOrders.length }, "Bot: UNNEST bulk insert failed");
-        }
-      });
+        await pool.query(
+          `INSERT INTO orders
+             (id, symbol, wallet_address, network_type, side, type, status,
+              price, stop_price, quantity, filled_quantity, remaining_quantity,
+              total, fee, fee_asset, time_in_force, is_bot, is_synthetic)
+           SELECT
+             t.id, t.symbol, $8, 'bsv', t.side, 'limit', 'open',
+             t.price, NULL, t.qty, 0, t.qty,
+             t.total, 0, t.fee_asset, 'GTC', TRUE, FALSE
+           FROM unnest($1::text[], $2::text[], $3::text[],
+                       $4::numeric[], $5::numeric[], $6::numeric[], $7::text[])
+                AS t(id, symbol, side, price, qty, total, fee_asset)
+           ON CONFLICT (id) DO NOTHING`,
+          [ids, symbols, sides, prices, qtys, totals, feeAssets, BOT_ADDRESS],
+        ).catch(err => {
+          if (isDbConnError(err)) {
+            logger.warn("liquidityBot: UNNEST insert chunk skipped — transient DB connection error");
+          } else {
+            logger.warn({ err, chunkStart: ci, chunkSize: chunk.length }, "Bot: UNNEST bulk insert chunk failed");
+          }
+        });
+      }
     }
 
     const activeLen = active.length;
@@ -419,8 +425,17 @@ export function startLiquidityBot(): void {
   seedMarketsIfNeeded()
     .catch(err => logger.warn({ err }, "Liquidity bot: market seed failed (non-fatal)"));
 
+  // initialDelayMs=180_000: wait 3 minutes before the first run so all other
+  // background services can complete their first tick.  The bot fires 500 ms
+  // after startup previously, immediately saturating the pool and causing every
+  // other service to fail and be marked DEAD before they even got a chance to run.
+  //
+  // timeoutMs=300_000: the chunked UNNEST insert for 80 000 orders runs
+  // 8 × 10 K-row batches, each taking ~3–8 s over Neon → ~40–60 s total.
+  // The old 110 s limit was hit every single cycle; the bot timed out without
+  // ever completing, leaving the order book in a partial-delete state.
   guardedInterval("liquidity-bot", runCycle, 120_000, {
-    timeoutMs:     110_000,
-    initialDelayMs: 500,
+    timeoutMs:      300_000,
+    initialDelayMs: 180_000,
   });
 }
