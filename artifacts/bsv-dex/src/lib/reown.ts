@@ -7,27 +7,35 @@ import {
 
 // Minimal wagmi config — no WalletConnect connectors.
 // Used by ThirdWeb panels for provider detection; they fall back to window.ethereum.
-// QuickNode RPC overrides — set VITE_QN_*_RPC in .env to your QuickNode endpoint URLs.
-// Falls back to public free RPCs when not set.
+// Optional VITE_ overrides — set these in .env to a direct QuickNode/Alchemy URL
+// if you want the frontend to call the provider directly (faster, no proxy hop).
+// When blank, the frontend uses the backend /api/rpc/:chainId proxy instead,
+// which keeps the Alchemy API key server-side only.
 const QN = {
-  eth:  import.meta.env.VITE_QN_ETH_RPC,
-  bsc:  import.meta.env.VITE_QN_BSC_RPC,
-  base: import.meta.env.VITE_QN_BASE_RPC,
-  poly: import.meta.env.VITE_QN_MATIC_RPC,
-  arb:  import.meta.env.VITE_QN_ARB_RPC,
-  op:   import.meta.env.VITE_QN_OP_RPC,
-  avax: import.meta.env.VITE_QN_AVAX_RPC,
+  eth:  import.meta.env.VITE_QN_ETH_RPC  || undefined,
+  bsc:  import.meta.env.VITE_QN_BSC_RPC  || undefined,
+  base: import.meta.env.VITE_QN_BASE_RPC || undefined,
+  poly: import.meta.env.VITE_QN_MATIC_RPC|| undefined,
+  arb:  import.meta.env.VITE_QN_ARB_RPC  || undefined,
+  op:   import.meta.env.VITE_QN_OP_RPC   || undefined,
+  avax: import.meta.env.VITE_QN_AVAX_RPC || undefined,
 };
+
+// Backend RPC proxy — keeps Alchemy key off the client bundle.
+// Format: {origin}/api/rpc/{chainId}
+const _origin = typeof window !== "undefined" ? window.location.origin : "";
+const _base   = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+const _proxy  = (chainId: number) => `${_origin}${_base}/api/rpc/${chainId}`;
 
 export const wagmiConfig = createConfig({
   chains: [mainnet, polygon, arbitrum, optimism, base, bsc, avalanche, linea, zkSync, scroll, mantle, fantom, cronos, sepolia],
   transports: {
-    [mainnet.id]:   http(QN.eth  ?? "https://eth.llamarpc.com"),
-    [polygon.id]:   http(QN.poly ?? "https://polygon.llamarpc.com"),
-    [arbitrum.id]:  http(QN.arb  ?? "https://arbitrum.llamarpc.com"),
-    [optimism.id]:  http(QN.op   ?? "https://optimism.llamarpc.com"),
-    [base.id]:      http(QN.base ?? "https://base-rpc.publicnode.com"),
-    [bsc.id]:       http(QN.bsc  ?? "https://bsc.llamarpc.com"),
+    [mainnet.id]:   http(QN.eth  ?? _proxy(1)),
+    [polygon.id]:   http(QN.poly ?? _proxy(137)),
+    [arbitrum.id]:  http(QN.arb  ?? _proxy(42161)),
+    [optimism.id]:  http(QN.op   ?? _proxy(10)),
+    [base.id]:      http(QN.base ?? _proxy(8453)),
+    [bsc.id]:       http(QN.bsc  ?? _proxy(56)),
     [avalanche.id]: http(QN.avax ?? "https://api.avax.network/ext/bc/C/rpc"),
     [linea.id]:     http("https://rpc.linea.build"),
     [zkSync.id]:    http("https://mainnet.era.zksync.io"),
@@ -50,12 +58,12 @@ export function parseChainFromCaip(caipAddress?: string): number | null {
 }
 
 export const CHAIN_RPC_URLS: Record<number, string> = {
-  1:       QN.eth  ?? "https://eth.llamarpc.com",
-  56:      QN.bsc  ?? "https://bsc.llamarpc.com",
-  137:     QN.poly ?? "https://polygon.llamarpc.com",
-  42161:   QN.arb  ?? "https://arbitrum.llamarpc.com",
-  10:      QN.op   ?? "https://optimism.llamarpc.com",
-  8453:    QN.base ?? "https://base-rpc.publicnode.com",
+  1:       QN.eth  ?? _proxy(1),
+  56:      QN.bsc  ?? _proxy(56),
+  137:     QN.poly ?? _proxy(137),
+  42161:   QN.arb  ?? _proxy(42161),
+  10:      QN.op   ?? _proxy(10),
+  8453:    QN.base ?? _proxy(8453),
   59144:   "https://rpc.linea.build",
   324:     "https://mainnet.era.zksync.io",
   534352:  "https://rpc.scroll.io",
