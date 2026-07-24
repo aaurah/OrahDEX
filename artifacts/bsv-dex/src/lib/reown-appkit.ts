@@ -86,8 +86,8 @@ const appKit = createAppKit({
   },
   features: {
     analytics:     false,
-    email:         true,
-    socials:       ["google", "github", "apple", "x", "discord", "farcaster"],
+    email:         false,   // native social login handled in WalletChooserDialog
+    socials:       false,   // native social login handled in WalletChooserDialog
     onramp:        true,
     swaps:         true,
     smartAccounts: true,
