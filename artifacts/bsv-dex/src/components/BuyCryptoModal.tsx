@@ -153,6 +153,15 @@ interface ProviderDef {
   params:(coin:string,fiat:string,amount:string,method:PayMethod,addr:string)=>Record<string,string>;
 }
 
+const COINBASE_SLUGS: Record<string, string> = {
+  BTC:"bitcoin", ETH:"ethereum", SOL:"solana", XRP:"xrp", BNB:"bnb",
+  ADA:"cardano", DOGE:"dogecoin", AVAX:"avalanche", MATIC:"polygon",
+  LINK:"chainlink", DOT:"polkadot", UNI:"uniswap", ATOM:"cosmos",
+  LTC:"litecoin", BCH:"bitcoin-cash", NEAR:"near-protocol", ARB:"arbitrum",
+  OP:"optimism", APT:"aptos", SUI:"sui", BSV:"bitcoin-sv",
+  USDT:"tether", USDC:"usd-coin", INJ:"injective-protocol",
+};
+
 const PROVIDERS: ProviderDef[] = [
   {
     id:"transak", name:"Transak", badge:"🔶", color:"text-orange-400", fee:"0.5–2%", feeAvgPct:1.25, minUSD:1, maxUSD:50000, rating:4.6, kycLevel:"light",
@@ -229,11 +238,8 @@ const PROVIDERS: ProviderDef[] = [
     id:"coinbase", name:"Coinbase", badge:"🔵", color:"text-blue-400", fee:"1.49–3.99%", feeAvgPct:2.74, minUSD:2, maxUSD:50000, rating:4.8, kycLevel:"full",
     methods:["card","apple","google","bank"],
     coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","BSV"],
-    baseUrl:"https://pay.coinbase.com/buy/select-asset",
-    params:(coin,fiat,amt,_m,addr)=>({
-      defaultAsset:coin, presetFiatAmount:amt, fiatCurrency:fiat,
-      ...(addr?{destinationAddresses:JSON.stringify({[coin]:addr})}:{}),
-    }),
+    baseUrl:"https://www.coinbase.com/buy",
+    params:()=>({}),
   },
   {
     id:"mercuryo", name:"Mercuryo", badge:"☿", color:"text-orange-400", fee:"2.5–3.9%", feeAvgPct:3.2, minUSD:30, maxUSD:15000, rating:4.3, kycLevel:"light",
@@ -563,11 +569,11 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
   function getProviderUrl(pId: string) {
     const p = PROVIDERS.find(x => x.id === pId);
     if (!p) return "#";
-    const baseParams = p.params(coin,fiat,amount,payMethod,effectiveAddr) as Record<string,string>;
-    // Coinbase Onramp requires appId (CDP Project ID) — inject it when available
-    if (p.id === "coinbase" && coinbaseProjectId) {
-      baseParams.appId = coinbaseProjectId;
+    // Coinbase uses path-based URL: coinbase.com/buy/{slug}
+    if (p.id === "coinbase") {
+      return `${p.baseUrl}/${COINBASE_SLUGS[coin] ?? coin.toLowerCase()}`;
     }
+    const baseParams = p.params(coin,fiat,amount,payMethod,effectiveAddr) as Record<string,string>;
     return `${p.baseUrl}?${new URLSearchParams(baseParams)}`;
   }
 

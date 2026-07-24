@@ -100,6 +100,15 @@ interface FeaturedProvider extends Provider {
   tagline: string;
 }
 
+const COINBASE_SLUGS: Record<string, string> = {
+  BTC:"bitcoin", ETH:"ethereum", SOL:"solana", XRP:"xrp", BNB:"bnb",
+  ADA:"cardano", DOGE:"dogecoin", AVAX:"avalanche", MATIC:"polygon",
+  LINK:"chainlink", DOT:"polkadot", UNI:"uniswap", ATOM:"cosmos",
+  LTC:"litecoin", BCH:"bitcoin-cash", NEAR:"near-protocol", ARB:"arbitrum",
+  OP:"optimism", APT:"aptos", SUI:"sui", BSV:"bitcoin-sv",
+  USDT:"tether", USDC:"usd-coin",
+};
+
 const PROVIDERS: Provider[] = [
   {
     id: "moonpay", name: "MoonPay", fee: "1–4.5%", minUSD: 30, maxUSD: 50000,
@@ -145,8 +154,8 @@ const PROVIDERS: Provider[] = [
     id: "coinbase", name: "Coinbase", fee: "1.49–3.99%", minUSD: 2, maxUSD: 50000,
     methods: ["card","apple","google","bank"],
     coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","USDT","USDC"],
-    buyUrl:  (c,f,a,_m,addr) => `https://pay.coinbase.com/buy/select-asset?${qs({ defaultAsset:c, presetFiatAmount:a, fiatCurrency:f, ...(addr?{destinationAddresses:JSON.stringify({[c]:addr})}:{}) })}`,
-    sellUrl: (c,f,addr) => `https://pay.coinbase.com/sell/select-asset?${qs({ defaultAsset:c, fiatCurrency:f, ...(addr?{destinationAddresses:JSON.stringify({[c]:addr})}:{}) })}`,
+    buyUrl:  (c) => `https://www.coinbase.com/buy/${COINBASE_SLUGS[c] ?? c.toLowerCase()}`,
+    sellUrl: (c) => `https://www.coinbase.com/sell/${COINBASE_SLUGS[c] ?? c.toLowerCase()}`,
   },
 ];
 
