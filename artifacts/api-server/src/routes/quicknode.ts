@@ -3,10 +3,32 @@ import { logger } from "../lib/logger.js";
 
 const router = Router();
 
-// ── QuickNode endpoint helpers ────────────────────────────────────────────────
-// Set these environment variables to your QuickNode HTTP endpoint URLs.
-// The proxy falls back to free public RPCs when a QN endpoint is not set.
+// ── Alchemy RPC URL builder ───────────────────────────────────────────────────
+// Alchemy uses one API key across all chains; each chain has its own subdomain.
+const ALCHEMY_CHAIN_HOSTS: Record<number, string> = {
+  1:     "eth-mainnet.g.alchemy.com",
+  56:    "bnb-mainnet.g.alchemy.com",
+  137:   "polygon-mainnet.g.alchemy.com",
+  8453:  "base-mainnet.g.alchemy.com",
+  42161: "arb-mainnet.g.alchemy.com",
+  10:    "opt-mainnet.g.alchemy.com",
+  43114: "avax-mainnet.g.alchemy.com",
+};
 
+function alchemyUrl(chainId: number): string | undefined {
+  const key  = process.env["ALCHEMY_API_KEY"];
+  const host = ALCHEMY_CHAIN_HOSTS[chainId];
+  if (!key || !host) return undefined;
+  return `https://${host}/v2/${key}`;
+}
+
+const ALCHEMY_SOL_HOST = "solana-mainnet.g.alchemy.com";
+function alchemySolUrl(): string | undefined {
+  const key = process.env["ALCHEMY_API_KEY"];
+  return key ? `https://${ALCHEMY_SOL_HOST}/v2/${key}` : undefined;
+}
+
+// ── QuickNode full-URL endpoint lookup (optional, overrides Alchemy) ──────────
 function qnEndpoint(chainId: number): string | undefined {
   const map: Record<number, string | undefined> = {
     1:     process.env["QN_ETH_ENDPOINT"],
@@ -17,9 +39,10 @@ function qnEndpoint(chainId: number): string | undefined {
     10:    process.env["QN_OP_ENDPOINT"],
     43114: process.env["QN_AVAX_ENDPOINT"],
   };
-  return map[chainId];
+  return map[chainId] || undefined;
 }
 
+// Priority: QuickNode (full URL) → Alchemy → public RPC
 const FALLBACK_RPCS: Record<number, string> = {
   1:     "https://ethereum.publicnode.com",
   56:    "https://bsc-dataseed.binance.org",
@@ -30,21 +53,20 @@ const FALLBACK_RPCS: Record<number, string> = {
   43114: "https://api.avax.network/ext/bc/C/rpc",
 };
 
+function rpcEndpoint(chainId: number): string | undefined {
+  return qnEndpoint(chainId) ?? alchemyUrl(chainId) ?? FALLBACK_RPCS[chainId];
+}
+
 // ── POST /api/rpc/:chainId ────────────────────────────────────────────────────
-// JSON-RPC proxy — uses QuickNode when configured, falls back to public RPCs.
-// Frontend Wallet/Swap pages fall back here for chains without a direct URL.
+// JSON-RPC proxy: QuickNode → Alchemy → public RPC fallback.
+// The frontend Wallet/Swap pages fall back to this route so the Alchemy key
+// is never exposed in client-side bundles.
 router.post("/rpc/:chainId", async (req, res) => {
   const chainId = parseInt(req.params["chainId"] ?? "", 10);
-  if (isNaN(chainId)) {
-    res.status(400).json({ error: "Invalid chainId" });
-    return;
-  }
+  if (isNaN(chainId)) { res.status(400).json({ error: "Invalid chainId" }); return; }
 
-  const endpoint = qnEndpoint(chainId) ?? FALLBACK_RPCS[chainId];
-  if (!endpoint) {
-    res.status(400).json({ error: `No RPC endpoint for chain ${chainId}` });
-    return;
-  }
+  const endpoint = rpcEndpoint(chainId);
+  if (!endpoint) { res.status(400).json({ error: `No RPC endpoint for chain ${chainId}` }); return; }
 
   try {
     const response = await fetch(endpoint, {
@@ -61,14 +83,14 @@ router.post("/rpc/:chainId", async (req, res) => {
   }
 });
 
-// ── POST /api/quicknode/solana ────────────────────────────────────────────────
-// Solana JSON-RPC proxy — uses QN_SOL_ENDPOINT.
-router.post("/quicknode/solana", async (req, res) => {
-  const endpoint = process.env["QN_SOL_ENDPOINT"];
-  if (!endpoint) {
-    res.status(503).json({ error: "QN_SOL_ENDPOINT not configured" });
-    return;
-  }
+// ── POST /api/rpc/solana ──────────────────────────────────────────────────────
+// Solana JSON-RPC proxy: QuickNode → Alchemy → public mainnet-beta.
+router.post("/rpc/solana", async (req, res) => {
+  const endpoint =
+    process.env["QN_SOL_ENDPOINT"] ??
+    alchemySolUrl() ??
+    "https://api.mainnet-beta.solana.com";
+
   try {
     const r = await fetch(endpoint, {
       method:  "POST",
@@ -79,32 +101,28 @@ router.post("/quicknode/solana", async (req, res) => {
     const data = await r.json();
     res.status(r.status).json(data);
   } catch (err) {
-    logger.error({ err }, "QuickNode Solana proxy error");
-    res.status(502).json({ error: "QuickNode Solana proxy error" });
+    logger.error({ err }, "Solana RPC proxy error");
+    res.status(502).json({ error: "Solana RPC proxy error" });
   }
 });
 
 // ── GET /api/quicknode/swap/price ─────────────────────────────────────────────
-// QuickNode DeFi Swap Meta-Aggregation Add-on — price estimate (no calldata).
-// Add-on 614 on QuickNode dashboard = 0x-based DEX aggregator.
-// Required params: sellToken, buyToken, sellAmount, (optional) takerAddress, chainId
+// QuickNode DeFi Swap Add-on (0x-based) price estimate — only works when a
+// QuickNode endpoint with the add-on enabled is set via QN_*_ENDPOINT.
 router.get("/quicknode/swap/price", async (req, res) => {
   const chainId = parseInt((req.query["chainId"] as string) ?? "1", 10);
   const endpoint = qnEndpoint(chainId);
-
   if (!endpoint) {
-    res.status(503).json({ error: `QuickNode not configured for chain ${chainId}` });
+    res.status(503).json({ error: `QuickNode endpoint not configured for chain ${chainId}` });
     return;
   }
-
   const params = new URLSearchParams(req.query as Record<string, string>);
   params.delete("chainId");
-  const url = `${endpoint.replace(/\/$/, "")}/addon/614/swap/v1/price?${params}`;
-
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-    const data = await r.json();
-    res.status(r.status).json(data);
+    const r = await fetch(`${endpoint.replace(/\/$/, "")}/addon/614/swap/v1/price?${params}`, {
+      signal: AbortSignal.timeout(10_000),
+    });
+    res.status(r.status).json(await r.json());
   } catch (err) {
     logger.error({ err, chainId }, "QuickNode swap price error");
     res.status(502).json({ error: "QuickNode swap price error" });
@@ -112,25 +130,21 @@ router.get("/quicknode/swap/price", async (req, res) => {
 });
 
 // ── GET /api/quicknode/swap/quote ─────────────────────────────────────────────
-// QuickNode DeFi Swap Add-on — firm quote with full swap calldata + approval info.
-// Required params: sellToken, buyToken, sellAmount, takerAddress, chainId
+// QuickNode DeFi Swap Add-on firm quote with calldata.
 router.get("/quicknode/swap/quote", async (req, res) => {
   const chainId = parseInt((req.query["chainId"] as string) ?? "1", 10);
   const endpoint = qnEndpoint(chainId);
-
   if (!endpoint) {
-    res.status(503).json({ error: `QuickNode not configured for chain ${chainId}` });
+    res.status(503).json({ error: `QuickNode endpoint not configured for chain ${chainId}` });
     return;
   }
-
   const params = new URLSearchParams(req.query as Record<string, string>);
   params.delete("chainId");
-  const url = `${endpoint.replace(/\/$/, "")}/addon/614/swap/v1/quote?${params}`;
-
   try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-    const data = await r.json();
-    res.status(r.status).json(data);
+    const r = await fetch(`${endpoint.replace(/\/$/, "")}/addon/614/swap/v1/quote?${params}`, {
+      signal: AbortSignal.timeout(15_000),
+    });
+    res.status(r.status).json(await r.json());
   } catch (err) {
     logger.error({ err, chainId }, "QuickNode swap quote error");
     res.status(502).json({ error: "QuickNode swap quote error" });
@@ -138,19 +152,27 @@ router.get("/quicknode/swap/quote", async (req, res) => {
 });
 
 // ── GET /api/quicknode/status ─────────────────────────────────────────────────
-// Reports which QuickNode endpoints are configured (no values exposed).
+// Reports which providers are active per chain (no key values exposed).
 router.get("/quicknode/status", (_req, res) => {
+  const alchemyKey = !!process.env["ALCHEMY_API_KEY"];
+  const chainStatus = (id: number) => {
+    if (qnEndpoint(id))    return "quicknode";
+    if (alchemyUrl(id))    return "alchemy";
+    if (FALLBACK_RPCS[id]) return "public";
+    return "none";
+  };
   res.json({
-    evm: {
-      eth:       !!process.env["QN_ETH_ENDPOINT"],
-      bsc:       !!process.env["QN_BSC_ENDPOINT"],
-      base:      !!process.env["QN_BASE_ENDPOINT"],
-      polygon:   !!process.env["QN_MATIC_ENDPOINT"],
-      arbitrum:  !!process.env["QN_ARB_ENDPOINT"],
-      optimism:  !!process.env["QN_OP_ENDPOINT"],
-      avalanche: !!process.env["QN_AVAX_ENDPOINT"],
+    alchemy_key_set: alchemyKey,
+    solana: process.env["QN_SOL_ENDPOINT"] ? "quicknode" : alchemyKey ? "alchemy" : "public",
+    chains: {
+      eth:       chainStatus(1),
+      bsc:       chainStatus(56),
+      base:      chainStatus(8453),
+      polygon:   chainStatus(137),
+      arbitrum:  chainStatus(42161),
+      optimism:  chainStatus(10),
+      avalanche: chainStatus(43114),
     },
-    solana: !!process.env["QN_SOL_ENDPOINT"],
   });
 });
 
