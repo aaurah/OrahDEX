@@ -39,6 +39,7 @@ import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 import { BridgeAggPanel } from "@/components/BridgeAggPanel";
+import { FiatBuySellPanel } from "@/components/FiatBuySellPanel";
 import { SorRouteDisplay } from "@/components/SorRouteDisplay";
 import { makeSorQuoteDebouncer } from "@/lib/sorClient";
 import type { SorQuoteResponse } from "@/lib/sorClient";
@@ -2204,8 +2205,8 @@ export function Swap() {
   const { toast } = useToast();
 
   const urlTab = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState<"swap" | "bridge" | "dex">(
-    urlTab === "bridge" || urlTab === "dex" ? urlTab : "swap"
+  const [activeTab, setActiveTab] = useState<"buy" | "swap" | "bridge" | "dex">(
+    urlTab === "bridge" || urlTab === "dex" || urlTab === "buy" ? urlTab : "swap"
   );
 
   // Default: all wallets start in on-chain DEX mode (Uniswap V3).
@@ -2477,6 +2478,7 @@ export function Swap() {
         {/* ─── Tab bar — LetsExchange segment-control style ─── */}
         <div className="flex items-center gap-0.5 p-1 bg-muted/20 rounded-2xl border border-border/30">
           {([
+            { key: "buy",    label: "Buy"    },
             { key: "swap",   label: "Swap"   },
             { key: "bridge", label: "Bridge" },
             { key: "dex",    label: "DEX"    },
@@ -2495,6 +2497,9 @@ export function Swap() {
             </button>
           ))}
         </div>
+
+        {/* ═══════════════ BUY TAB ═══════════════ */}
+        {activeTab === "buy" && <FiatBuySellPanel />}
 
         {/* ═══════════════ SWAP TAB ═══════════════ */}
         {activeTab === "swap" && (
