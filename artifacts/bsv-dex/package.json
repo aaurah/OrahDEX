@@ -78,6 +78,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@coinbase/cbpay-js": "^2.4.0",
     "@coinbase/wallet-sdk": "^4.3.7",
     "@keystonehq/bc-ur-registry-eth": "^0.22.1",
     "@ledgerhq/context-module": "^1.17.1",
@@ -90,6 +91,8 @@
     "@noble/curves": "^2.0.1",
     "@noble/hashes": "^2.0.1",
     "@noble/secp256k1": "^3.0.0",
+    "@reown/appkit": "^1.8.22",
+    "@reown/appkit-adapter-wagmi": "^1.8.22",
     "@scure/bip32": "^2.0.1",
     "@scure/bip39": "^2.0.1",
     "@stripe/react-stripe-js": "^6.3.0",
@@ -114,8 +117,6 @@
     "viem": "^2.47.6",
     "vite-plugin-node-polyfills": "^0.26.0",
     "wagmi": "^3.6.0",
-    "zustand": "^5.0.12",
-    "@reown/appkit": "^1.8.22",
-    "@reown/appkit-adapter-wagmi": "^1.8.22"
+    "zustand": "^5.0.12"
   }
 }
