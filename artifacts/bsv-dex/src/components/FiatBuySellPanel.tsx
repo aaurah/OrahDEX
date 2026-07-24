@@ -100,14 +100,7 @@ interface FeaturedProvider extends Provider {
   tagline: string;
 }
 
-const COINBASE_SLUGS: Record<string, string> = {
-  BTC:"bitcoin", ETH:"ethereum", SOL:"solana", XRP:"xrp", BNB:"bnb",
-  ADA:"cardano", DOGE:"dogecoin", AVAX:"avalanche", MATIC:"polygon",
-  LINK:"chainlink", DOT:"polkadot", UNI:"uniswap", ATOM:"cosmos",
-  LTC:"litecoin", BCH:"bitcoin-cash", NEAR:"near-protocol", ARB:"arbitrum",
-  OP:"optimism", APT:"aptos", SUI:"sui", BSV:"bitcoin-sv",
-  USDT:"tether", USDC:"usd-coin",
-};
+const CB_APP_ID = import.meta.env.VITE_COINBASE_APP_ID ?? "";
 
 const PROVIDERS: Provider[] = [
   {
@@ -154,8 +147,8 @@ const PROVIDERS: Provider[] = [
     id: "coinbase", name: "Coinbase", fee: "1.49–3.99%", minUSD: 2, maxUSD: 50000,
     methods: ["card","apple","google","bank"],
     coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","USDT","USDC"],
-    buyUrl:  (c) => `https://www.coinbase.com/buy/${COINBASE_SLUGS[c] ?? c.toLowerCase()}`,
-    sellUrl: (c) => `https://www.coinbase.com/sell/${COINBASE_SLUGS[c] ?? c.toLowerCase()}`,
+    buyUrl:  (c,f,a,_m,addr) => `https://pay.coinbase.com/buy/select-asset?${qs({ appId:CB_APP_ID, defaultAsset:c, presetFiatAmount:a, fiatCurrency:f, addresses:JSON.stringify(addr?{[c]:[addr]}:{}) })}`,
+    sellUrl: (c,f,_addr) => `https://pay.coinbase.com/sell/select-asset?${qs({ appId:CB_APP_ID, defaultAsset:c, fiatCurrency:f })}`,
   },
 ];
 

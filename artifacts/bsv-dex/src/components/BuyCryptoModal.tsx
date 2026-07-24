@@ -238,8 +238,8 @@ const PROVIDERS: ProviderDef[] = [
     id:"coinbase", name:"Coinbase", badge:"🔵", color:"text-blue-400", fee:"1.49–3.99%", feeAvgPct:2.74, minUSD:2, maxUSD:50000, rating:4.8, kycLevel:"full",
     methods:["card","apple","google","bank"],
     coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","BSV"],
-    baseUrl:"https://www.coinbase.com/buy",
-    params:()=>({}),
+    baseUrl:"https://pay.coinbase.com/buy/select-asset",
+    params:(coin,fiat,amt,_m,addr)=>({ defaultAsset:coin, presetFiatAmount:amt, fiatCurrency:fiat, addresses:JSON.stringify(addr?{[coin]:[addr]}:{}) }),
   },
   {
     id:"mercuryo", name:"Mercuryo", badge:"☿", color:"text-orange-400", fee:"2.5–3.9%", feeAvgPct:3.2, minUSD:30, maxUSD:15000, rating:4.3, kycLevel:"light",
@@ -347,7 +347,7 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
   const [copied, setCopied]               = useState(false);
 
   // Coinbase Onramp project ID (fetched from server, used as appId in pay.coinbase.com URL)
-  const [coinbaseProjectId, setCoinbaseProjectId] = useState<string>("");
+  const [coinbaseProjectId, setCoinbaseProjectId] = useState<string>(import.meta.env.VITE_COINBASE_APP_ID ?? "");
   useEffect(() => {
     let cancelled = false;
     fetch("/api/coinbase/onramp-config")
@@ -569,11 +569,10 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
   function getProviderUrl(pId: string) {
     const p = PROVIDERS.find(x => x.id === pId);
     if (!p) return "#";
-    // Coinbase uses path-based URL: coinbase.com/buy/{slug}
-    if (p.id === "coinbase") {
-      return `${p.baseUrl}/${COINBASE_SLUGS[coin] ?? coin.toLowerCase()}`;
-    }
     const baseParams = p.params(coin,fiat,amount,payMethod,effectiveAddr) as Record<string,string>;
+    if (p.id === "coinbase" && coinbaseProjectId) {
+      baseParams.appId = coinbaseProjectId;
+    }
     return `${p.baseUrl}?${new URLSearchParams(baseParams)}`;
   }
 
