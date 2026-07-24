@@ -720,14 +720,52 @@ export async function discoverNewTokens(
   } catch { /* discovery is non-fatal */ }
 }
 
+// ─── Module-level balance cache ───────────────────────────────────────────────
+// Survives component remounts so the wallet never flashes empty when the user
+// navigates away and back.  Also shared between useAllEvmBalances (portfolio
+// total) and EvmChainRow (token list) so duplicate hook instances for the same
+// address+chain attach to one in-flight fetch instead of firing separate RPC
+// storms.
+const _balanceCache = new Map<string, { balances: TokenBalance[]; fetchedAt: number }>();
+const _inFlight     = new Map<string, Promise<void>>();
+const CACHE_TTL_MS  = 60_000; // re-use cached data if fresher than 60 s
+
 export function useEvmBalances(address: string | null, chainId: number | null) {
-  const [balances, setBalances] = useState<TokenBalance[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [lastFetch, setLastFetch] = useState(0);
+  const cacheKey = address && chainId ? `${address.toLowerCase()}_${chainId}` : null;
+  const _cached  = cacheKey ? _balanceCache.get(cacheKey) : undefined;
+
+  const [balances,  setBalances]  = useState<TokenBalance[]>(_cached?.balances ?? []);
+  const [loading,   setLoading]   = useState(false);
+  const [lastFetch, setLastFetch] = useState(_cached?.fetchedAt ?? 0);
 
   const fetch = useCallback(async () => {
-    if (!address || !chainId) return;
+    if (!address || !chainId || !cacheKey) return;
+
+    // If a fetch is already in-flight for this address+chain, attach to it so
+    // duplicate hook instances (useAllEvmBalances + EvmChainRow) share one RPC
+    // round-trip instead of hammering the endpoint simultaneously.
+    const existing = _inFlight.get(cacheKey);
+    if (existing) {
+      await existing;
+      const c = _balanceCache.get(cacheKey);
+      if (c) { setBalances(c.balances); setLastFetch(c.fetchedAt); }
+      return;
+    }
+
+    // Skip fetch if cache is still fresh (e.g. second hook instance mounts
+    // within CACHE_TTL_MS of the first).
+    if (_cached && Date.now() - _cached.fetchedAt < CACHE_TTL_MS) {
+      setBalances(_cached.balances);
+      setLastFetch(_cached.fetchedAt);
+      return;
+    }
+
     const resolvedChainId: number = chainId;
+
+    // Register this fetch as in-flight so concurrent hook instances can attach.
+    let _resolve!: () => void;
+    const promise = new Promise<void>(r => { _resolve = r; });
+    _inFlight.set(cacheKey, promise);
 
     setLoading(true);
     try {
@@ -820,8 +858,12 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
       }
 
       result.sort((a, b) => b.usdValue - a.usdValue);
+      // Write to module-level cache before notifying React so any concurrent
+      // hook instances that attach to the in-flight promise get fresh data.
+      const fetchedAt = Date.now();
+      _balanceCache.set(cacheKey, { balances: result, fetchedAt });
       setBalances(result);
-      setLastFetch(Date.now());
+      setLastFetch(fetchedAt);
 
       // Background: auto-discover tokens the user holds.
       // Prefer the Blockscout/explorer API (full history, like MetaMask).
@@ -859,8 +901,11 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
       console.error("EVM balance fetch error:", err);
     } finally {
       setLoading(false);
+      // Resolve the in-flight promise so waiting hook instances wake up.
+      _inFlight.delete(cacheKey);
+      _resolve();
     }
-  }, [address, chainId]);
+  }, [address, chainId, cacheKey]);
 
   useEffect(() => {
     if (!address || !chainId) return;
@@ -868,6 +913,17 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
     const id = setInterval(fetch, 30_000);
     return () => clearInterval(id);
   }, [fetch]);
+
+  // Re-fetch when the browser tab becomes visible again.  Browsers throttle
+  // setInterval to ~60 s (or longer) for background tabs, so without this a
+  // user returning to the wallet page could see balances that are minutes
+  // stale.  visibilitychange fires the moment they bring the tab forward.
+  useEffect(() => {
+    if (!address || !chainId) return;
+    const onVisible = () => { if (document.visibilityState === "visible") fetch(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [address, chainId, fetch]);
 
   // Re-fetch immediately when a custom token is added/removed for this chain
   // so the balance list updates without waiting for the next 30s tick.
@@ -878,11 +934,14 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
       const count = state.getByChainId(chainId).length;
       if (count !== prevCount) {
         prevCount = count;
+        // Bust the cache so the re-fetch always hits the RPC (the token list
+        // changed — stale cache would suppress the update).
+        if (cacheKey) _balanceCache.delete(cacheKey);
         fetch();
       }
     });
     return unsub;
-  }, [address, chainId, fetch]);
+  }, [address, chainId, cacheKey, fetch]);
 
   return { balances, loading, refresh: fetch, lastFetch };
 }
