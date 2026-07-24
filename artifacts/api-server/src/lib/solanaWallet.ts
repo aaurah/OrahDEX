@@ -105,8 +105,9 @@ export interface SolanaKeypair {
 // ── RPC helpers ───────────────────────────────────────────────────────────────
 
 const SOLANA_RPC_URL = () => {
-  if (process.env.QN_SOL_ENDPOINT)   return process.env.QN_SOL_ENDPOINT;
-  if (process.env.ALCHEMY_API_KEY)   return `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`;
+  if (process.env.QN_SOL_ENDPOINT)  return process.env.QN_SOL_ENDPOINT;
+  if (process.env.ALCHEMY_API_KEY)  return `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`;
+  if (process.env.GB_SOL_TOKEN)     return `https://go.getblock.io/${process.env.GB_SOL_TOKEN}/`;
   return process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
 };
 

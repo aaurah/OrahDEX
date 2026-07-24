@@ -3,32 +3,13 @@ import { logger } from "../lib/logger.js";
 
 const router = Router();
 
-// ── Alchemy RPC URL builder ───────────────────────────────────────────────────
-// Alchemy uses one API key across all chains; each chain has its own subdomain.
-const ALCHEMY_CHAIN_HOSTS: Record<number, string> = {
-  1:     "eth-mainnet.g.alchemy.com",
-  56:    "bnb-mainnet.g.alchemy.com",
-  137:   "polygon-mainnet.g.alchemy.com",
-  8453:  "base-mainnet.g.alchemy.com",
-  42161: "arb-mainnet.g.alchemy.com",
-  10:    "opt-mainnet.g.alchemy.com",
-  43114: "avax-mainnet.g.alchemy.com",
-};
-
-function alchemyUrl(chainId: number): string | undefined {
-  const key  = process.env["ALCHEMY_API_KEY"];
-  const host = ALCHEMY_CHAIN_HOSTS[chainId];
-  if (!key || !host) return undefined;
-  return `https://${host}/v2/${key}`;
-}
-
-const ALCHEMY_SOL_HOST = "solana-mainnet.g.alchemy.com";
-function alchemySolUrl(): string | undefined {
-  const key = process.env["ALCHEMY_API_KEY"];
-  return key ? `https://${ALCHEMY_SOL_HOST}/v2/${key}` : undefined;
-}
-
-// ── QuickNode full-URL endpoint lookup (optional, overrides Alchemy) ──────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Hybrid RPC provider chain
+//
+// Priority per chain: QuickNode (full URL) → Alchemy → GetBlock → public RPC
+//
+// ── 1. QuickNode ──────────────────────────────────────────────────────────────
+// Set QN_*_ENDPOINT to your full QuickNode HTTP endpoint URL.
 function qnEndpoint(chainId: number): string | undefined {
   const map: Record<number, string | undefined> = {
     1:     process.env["QN_ETH_ENDPOINT"],
@@ -42,8 +23,51 @@ function qnEndpoint(chainId: number): string | undefined {
   return map[chainId] || undefined;
 }
 
-// Priority: QuickNode (full URL) → Alchemy → public RPC
-const FALLBACK_RPCS: Record<number, string> = {
+// ── 2. Alchemy ────────────────────────────────────────────────────────────────
+// One ALCHEMY_API_KEY covers all chains via per-chain subdomains.
+const ALCHEMY_HOSTS: Record<number, string> = {
+  1:     "eth-mainnet.g.alchemy.com",
+  56:    "bnb-mainnet.g.alchemy.com",
+  137:   "polygon-mainnet.g.alchemy.com",
+  8453:  "base-mainnet.g.alchemy.com",
+  42161: "arb-mainnet.g.alchemy.com",
+  10:    "opt-mainnet.g.alchemy.com",
+  43114: "avax-mainnet.g.alchemy.com",
+};
+function alchemyUrl(chainId: number): string | undefined {
+  const key = process.env["ALCHEMY_API_KEY"];
+  const host = ALCHEMY_HOSTS[chainId];
+  return key && host ? `https://${host}/v2/${key}` : undefined;
+}
+function alchemySolUrl(): string | undefined {
+  const key = process.env["ALCHEMY_API_KEY"];
+  return key ? `https://solana-mainnet.g.alchemy.com/v2/${key}` : undefined;
+}
+
+// ── 3. GetBlock ───────────────────────────────────────────────────────────────
+// Each chain gets its own access token. URL: https://go.getblock.io/<TOKEN>/
+// Set GB_ETH_TOKEN, GB_BSC_TOKEN, GB_BASE_TOKEN, GB_MATIC_TOKEN,
+//     GB_ARB_TOKEN, GB_OP_TOKEN, GB_AVAX_TOKEN, GB_SOL_TOKEN
+function getblockUrl(chainId: number): string | undefined {
+  const tokenMap: Record<number, string | undefined> = {
+    1:     process.env["GB_ETH_TOKEN"],
+    56:    process.env["GB_BSC_TOKEN"],
+    137:   process.env["GB_MATIC_TOKEN"],
+    8453:  process.env["GB_BASE_TOKEN"],
+    42161: process.env["GB_ARB_TOKEN"],
+    10:    process.env["GB_OP_TOKEN"],
+    43114: process.env["GB_AVAX_TOKEN"],
+  };
+  const token = tokenMap[chainId];
+  return token ? `https://go.getblock.io/${token}/` : undefined;
+}
+function getblockSolUrl(): string | undefined {
+  const token = process.env["GB_SOL_TOKEN"];
+  return token ? `https://go.getblock.io/${token}/` : undefined;
+}
+
+// ── 4. Public fallback ────────────────────────────────────────────────────────
+const PUBLIC_RPCS: Record<number, string> = {
   1:     "https://ethereum.publicnode.com",
   56:    "https://bsc-dataseed.binance.org",
   137:   "https://polygon-bor.publicnode.com",
@@ -53,14 +77,44 @@ const FALLBACK_RPCS: Record<number, string> = {
   43114: "https://api.avax.network/ext/bc/C/rpc",
 };
 
+// ── Resolve best available endpoint ──────────────────────────────────────────
 function rpcEndpoint(chainId: number): string | undefined {
-  return qnEndpoint(chainId) ?? alchemyUrl(chainId) ?? FALLBACK_RPCS[chainId];
+  return (
+    qnEndpoint(chainId)   ??
+    alchemyUrl(chainId)   ??
+    getblockUrl(chainId)  ??
+    PUBLIC_RPCS[chainId]
+  );
+}
+function solanaEndpoint(): string {
+  return (
+    process.env["QN_SOL_ENDPOINT"] ??
+    alchemySolUrl()                 ??
+    getblockSolUrl()                ??
+    "https://api.mainnet-beta.solana.com"
+  );
 }
 
-// ── POST /api/rpc/:chainId ────────────────────────────────────────────────────
-// JSON-RPC proxy: QuickNode → Alchemy → public RPC fallback.
-// The frontend Wallet/Swap pages fall back to this route so the Alchemy key
-// is never exposed in client-side bundles.
+// Helper: which provider is active for a chain
+function providerName(chainId: number): string {
+  if (qnEndpoint(chainId))  return "quicknode";
+  if (alchemyUrl(chainId))  return "alchemy";
+  if (getblockUrl(chainId)) return "getblock";
+  if (PUBLIC_RPCS[chainId]) return "public";
+  return "none";
+}
+function solanaProviderName(): string {
+  if (process.env["QN_SOL_ENDPOINT"])  return "quicknode";
+  if (alchemySolUrl())                 return "alchemy";
+  if (getblockSolUrl())                return "getblock";
+  return "public";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Routes
+// ─────────────────────────────────────────────────────────────────────────────
+
+// POST /api/rpc/:chainId — JSON-RPC proxy (hybrid provider chain)
 router.post("/rpc/:chainId", async (req, res) => {
   const chainId = parseInt(req.params["chainId"] ?? "", 10);
   if (isNaN(chainId)) { res.status(400).json({ error: "Invalid chainId" }); return; }
@@ -83,14 +137,9 @@ router.post("/rpc/:chainId", async (req, res) => {
   }
 });
 
-// ── POST /api/rpc/solana ──────────────────────────────────────────────────────
-// Solana JSON-RPC proxy: QuickNode → Alchemy → public mainnet-beta.
+// POST /api/rpc/solana — Solana JSON-RPC proxy (hybrid provider chain)
 router.post("/rpc/solana", async (req, res) => {
-  const endpoint =
-    process.env["QN_SOL_ENDPOINT"] ??
-    alchemySolUrl() ??
-    "https://api.mainnet-beta.solana.com";
-
+  const endpoint = solanaEndpoint();
   try {
     const r = await fetch(endpoint, {
       method:  "POST",
@@ -106,9 +155,8 @@ router.post("/rpc/solana", async (req, res) => {
   }
 });
 
-// ── GET /api/quicknode/swap/price ─────────────────────────────────────────────
-// QuickNode DeFi Swap Add-on (0x-based) price estimate — only works when a
-// QuickNode endpoint with the add-on enabled is set via QN_*_ENDPOINT.
+// GET /api/quicknode/swap/price — QuickNode DeFi Swap add-on (addon 614, 0x-based)
+// Only available when a QN_*_ENDPOINT with the add-on enabled is configured.
 router.get("/quicknode/swap/price", async (req, res) => {
   const chainId = parseInt((req.query["chainId"] as string) ?? "1", 10);
   const endpoint = qnEndpoint(chainId);
@@ -129,8 +177,7 @@ router.get("/quicknode/swap/price", async (req, res) => {
   }
 });
 
-// ── GET /api/quicknode/swap/quote ─────────────────────────────────────────────
-// QuickNode DeFi Swap Add-on firm quote with calldata.
+// GET /api/quicknode/swap/quote — QuickNode DeFi Swap add-on firm quote + calldata
 router.get("/quicknode/swap/quote", async (req, res) => {
   const chainId = parseInt((req.query["chainId"] as string) ?? "1", 10);
   const endpoint = qnEndpoint(chainId);
@@ -151,28 +198,24 @@ router.get("/quicknode/swap/quote", async (req, res) => {
   }
 });
 
-// ── GET /api/quicknode/status ─────────────────────────────────────────────────
-// Reports which providers are active per chain (no key values exposed).
+// GET /api/quicknode/status — hybrid provider status (no key values exposed)
 router.get("/quicknode/status", (_req, res) => {
-  const alchemyKey = !!process.env["ALCHEMY_API_KEY"];
-  const chainStatus = (id: number) => {
-    if (qnEndpoint(id))    return "quicknode";
-    if (alchemyUrl(id))    return "alchemy";
-    if (FALLBACK_RPCS[id]) return "public";
-    return "none";
-  };
   res.json({
-    alchemy_key_set: alchemyKey,
-    solana: process.env["QN_SOL_ENDPOINT"] ? "quicknode" : alchemyKey ? "alchemy" : "public",
-    chains: {
-      eth:       chainStatus(1),
-      bsc:       chainStatus(56),
-      base:      chainStatus(8453),
-      polygon:   chainStatus(137),
-      arbitrum:  chainStatus(42161),
-      optimism:  chainStatus(10),
-      avalanche: chainStatus(43114),
+    providers: {
+      quicknode:   Object.values({ eth: "QN_ETH_ENDPOINT", bsc: "QN_BSC_ENDPOINT", base: "QN_BASE_ENDPOINT" }).some(k => !!process.env[k]),
+      alchemy:     !!process.env["ALCHEMY_API_KEY"],
+      getblock:    Object.values({ eth: "GB_ETH_TOKEN", bsc: "GB_BSC_TOKEN", base: "GB_BASE_TOKEN", sol: "GB_SOL_TOKEN" }).some(k => !!process.env[k]),
     },
+    chains: {
+      eth:       providerName(1),
+      bsc:       providerName(56),
+      base:      providerName(8453),
+      polygon:   providerName(137),
+      arbitrum:  providerName(42161),
+      optimism:  providerName(10),
+      avalanche: providerName(43114),
+    },
+    solana: solanaProviderName(),
   });
 });
 
