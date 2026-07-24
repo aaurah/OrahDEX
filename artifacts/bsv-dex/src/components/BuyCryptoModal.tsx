@@ -350,10 +350,13 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
   const [coinbaseProjectId, setCoinbaseProjectId] = useState<string>(import.meta.env.VITE_COINBASE_APP_ID ?? "");
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/coinbase/onramp-config")
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (!cancelled && d?.projectId) setCoinbaseProjectId(d.projectId); })
-      .catch(() => { /* optional — falls back to generic Coinbase URL */ });
+    // Only use server-supplied project ID if VITE env var is not already set
+    if (!import.meta.env.VITE_COINBASE_APP_ID) {
+      fetch("/api/coinbase/onramp-config")
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (!cancelled && d?.projectId) setCoinbaseProjectId(d.projectId); })
+        .catch(() => { /* falls back to generic Coinbase URL */ });
+    }
     return () => { cancelled = true; };
   }, []);
 
