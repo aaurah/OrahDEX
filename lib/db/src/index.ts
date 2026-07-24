@@ -101,10 +101,17 @@ function isTransientPgError(err: unknown): boolean {
     msg.includes("ECONNRESET") ||
     msg.includes("ECONNREFUSED") ||
     msg.includes("read ETIMEDOUT") ||
+    msg.includes("connect ETIMEDOUT") ||
     // Neon/Postgres kills the socket outright (compute suspend/resume, admin
     // maintenance) — the pg driver surfaces the server's raw error text
     // verbatim, so it never matches the "Connection terminated" wrapper above.
     msg.includes("administrator command") ||
+    // pg-pool surfaces connection-acquisition timeout (connectionTimeoutMillis
+    // exceeded) as "Query read timeout".  This happens during a thundering-herd
+    // reconnect storm after a Neon 57P01 suspend: all 20 pool slots are being
+    // created simultaneously, queued acquirers time out, and workers see this
+    // error instead of a real query failure.  It is always safe to retry.
+    msg.includes("Query read timeout") ||
     // 57P01 = pg_terminate_backend() / Neon compute suspend
     code === "57P01"
   );
