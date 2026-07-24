@@ -2780,10 +2780,12 @@ router.get("/exchange-wallet", requireAdminToken, async (req, res) => {
       } catch { return null; }
     };
 
+    const _alch2 = (host: string) => process.env.ALCHEMY_API_KEY ? `https://${host}/v2/${process.env.ALCHEMY_API_KEY}` : undefined;
+    const _gb2   = (tok: string | undefined) => tok ? `https://go.getblock.io/${tok}/` : undefined;
     const [ethBal, bnbBal, maticBal] = await Promise.all([
-      fetchNative(process.env.QN_ETH_ENDPOINT   ?? process.env.ETH_RPC_URL     ?? "https://eth.llamarpc.com",                    "ETH"),
-      fetchNative(process.env.QN_BSC_ENDPOINT   ?? process.env.BSC_RPC_URL     ?? "https://bsc-dataseed.binance.org",             "BNB"),
-      fetchNative(process.env.QN_MATIC_ENDPOINT ?? process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com",      "MATIC"),
+      fetchNative(process.env.QN_ETH_ENDPOINT   ?? _alch2("eth-mainnet.g.alchemy.com")     ?? _gb2(process.env.GB_ETH_TOKEN)   ?? process.env.ETH_RPC_URL     ?? "https://eth.llamarpc.com",               "ETH"),
+      fetchNative(process.env.QN_BSC_ENDPOINT   ?? _alch2("bnb-mainnet.g.alchemy.com")     ?? _gb2(process.env.GB_BSC_TOKEN)   ?? process.env.BSC_RPC_URL     ?? "https://bsc-dataseed.binance.org",        "BNB"),
+      fetchNative(process.env.QN_MATIC_ENDPOINT ?? _alch2("polygon-mainnet.g.alchemy.com") ?? _gb2(process.env.GB_MATIC_TOKEN) ?? process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com", "MATIC"),
     ]);
 
     const bsvWallet  = await getOrCreateWallet();
@@ -2984,13 +2986,15 @@ router.post("/rescue-evm-wallet", requireAdminToken, async (req, res) => {
   }
 
   const chainId = parseInt(String(rawChainId ?? 8453), 10);
+  const _alchemy = (host: string) => process.env.ALCHEMY_API_KEY ? `https://${host}/v2/${process.env.ALCHEMY_API_KEY}` : undefined;
+  const _gb      = (tok: string | undefined) => tok ? `https://go.getblock.io/${tok}/` : undefined;
   const RPC_URLS: Record<number, string> = {
-    1:     process.env.QN_ETH_ENDPOINT   ?? process.env.ETH_RPC_URL     ?? "https://ethereum.publicnode.com",
-    8453:  process.env.QN_BASE_ENDPOINT  ?? process.env.BASE_RPC_URL    ?? "https://base.publicnode.com",
-    42161: process.env.QN_ARB_ENDPOINT   ?? process.env.ARB_RPC_URL     ?? "https://arbitrum-one.publicnode.com",
-    10:    process.env.QN_OP_ENDPOINT    ?? process.env.OP_RPC_URL      ?? "https://optimism.publicnode.com",
-    56:    process.env.QN_BSC_ENDPOINT   ?? process.env.BSC_RPC_URL     ?? "https://bsc.publicnode.com",
-    137:   process.env.QN_MATIC_ENDPOINT ?? process.env.POLYGON_RPC_URL ?? "https://polygon-bor.publicnode.com",
+    1:     process.env.QN_ETH_ENDPOINT   ?? _alchemy("eth-mainnet.g.alchemy.com")     ?? _gb(process.env.GB_ETH_TOKEN)   ?? process.env.ETH_RPC_URL     ?? "https://ethereum.publicnode.com",
+    8453:  process.env.QN_BASE_ENDPOINT  ?? _alchemy("base-mainnet.g.alchemy.com")    ?? _gb(process.env.GB_BASE_TOKEN)  ?? process.env.BASE_RPC_URL    ?? "https://base.publicnode.com",
+    42161: process.env.QN_ARB_ENDPOINT   ?? _alchemy("arb-mainnet.g.alchemy.com")     ?? _gb(process.env.GB_ARB_TOKEN)   ?? process.env.ARB_RPC_URL     ?? "https://arbitrum-one.publicnode.com",
+    10:    process.env.QN_OP_ENDPOINT    ?? _alchemy("opt-mainnet.g.alchemy.com")     ?? _gb(process.env.GB_OP_TOKEN)    ?? process.env.OP_RPC_URL      ?? "https://optimism.publicnode.com",
+    56:    process.env.QN_BSC_ENDPOINT   ?? _alchemy("bnb-mainnet.g.alchemy.com")     ?? _gb(process.env.GB_BSC_TOKEN)   ?? process.env.BSC_RPC_URL     ?? "https://bsc.publicnode.com",
+    137:   process.env.QN_MATIC_ENDPOINT ?? _alchemy("polygon-mainnet.g.alchemy.com") ?? _gb(process.env.GB_MATIC_TOKEN) ?? process.env.POLYGON_RPC_URL ?? "https://polygon-bor.publicnode.com",
   };
   const rpcUrl = RPC_URLS[chainId] ?? RPC_URLS[8453]!;
 
