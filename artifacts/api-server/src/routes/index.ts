@@ -58,6 +58,7 @@ import overlayRouter from "./overlay.js";
 import handcashRouter from "./handcash.js";
 import tokensRouter from "./tokens.js";
 import externalSwapRouter from "./externalSwap.js";
+import awsRouter from "./aws.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
@@ -122,6 +123,7 @@ router.use("/admin", (req, res, next) => {
 router.use("/admin", adminRouter);
 router.use("/admin", adminDiagnosticsRouter);
 router.use("/admin", cexRouter);
+router.use("/admin", awsRouter);
 router.use("/tv", tvRouter);
 router.use("/global-markets", globalMarketsRouter);
 router.use("/bridge", bridgeRouter);
