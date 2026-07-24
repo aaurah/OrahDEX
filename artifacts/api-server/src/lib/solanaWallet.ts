@@ -105,7 +105,7 @@ export interface SolanaKeypair {
 // ── RPC helpers ───────────────────────────────────────────────────────────────
 
 const SOLANA_RPC_URL = () =>
-  process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
+  process.env.QN_SOL_ENDPOINT ?? process.env.SOLANA_RPC_URL ?? "https://api.mainnet-beta.solana.com";
 
 async function rpcCall(method: string, params: unknown[]): Promise<unknown> {
   const response = await fetch(SOLANA_RPC_URL(), {

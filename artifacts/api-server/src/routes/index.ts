@@ -58,6 +58,7 @@ import overlayRouter from "./overlay.js";
 import handcashRouter from "./handcash.js";
 import tokensRouter from "./tokens.js";
 import externalSwapRouter from "./externalSwap.js";
+import quicknodeRouter from "./quicknode.js";
 import awsRouter from "./aws.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
@@ -161,6 +162,7 @@ router.use("/wallet", walletRouter);
 router.use(anthropicRouter);
 router.use(quantumAuthRouter);
 router.use("/overlay", overlayRouter);
+router.use(quicknodeRouter);
 
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
