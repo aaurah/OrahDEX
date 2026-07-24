@@ -1713,8 +1713,12 @@ export async function updateMarketPrices() {
     // Flush all price updates in a single bulk UPDATE per chunk — uses exactly
     // 1 DB connection instead of N concurrent ones, eliminating the pool
     // exhaustion that caused the 15 May 2026 production outage.
-    // 8 params per row × 500 rows = 4000 — well within PostgreSQL's 65535 limit.
-    const BULK_CHUNK = 500;
+    // 8 params per row × 4000 rows = 32000 — well within PostgreSQL's 65535 limit.
+    // CHUNK SIZE: 4000 → ~1 chunk for all spot/futures markets (~4K rows).
+    // Old value of 500 produced 8 chunks; under pool exhaustion each chunk waited
+    // connectionTimeoutMillis (15 s) before failing, so 8 × 15 s = 120 s burned
+    // the full guardedInterval budget every cycle and kept price-updater DEAD.
+    const BULK_CHUNK = 4_000;
     for (let i = 0; i < pendingUpdates.length; i += BULK_CHUNK) {
       const chunk = pendingUpdates.slice(i, i + BULK_CHUNK);
       const placeholders = chunk
@@ -1733,7 +1737,7 @@ export async function updateMarketPrices() {
         u.low24h,
         u.marketCap ?? null,
       ]);
-      await withRetry(() => pool.query(
+      const updateFailed = await withRetry(() => pool.query(
           `UPDATE markets AS m
              SET last_price              = v.lp,
                  price_change_24h        = v.pc,
@@ -1748,7 +1752,12 @@ export async function updateMarketPrices() {
              AND m.type IN ('spot', 'futures')`,
           params,
         ), { maxAttempts: 1, baseDelayMs: 0 })
-        .catch(err => logger.warn({ err }, "priceUpdater: bulk UPDATE failed"));
+        .then(() => false)
+        .catch(err => {
+          logger.warn({ err }, "priceUpdater: bulk UPDATE failed — aborting remaining chunks");
+          return true;
+        });
+      if (updateFailed) break; // pool exhausted — don't burn 15 s × N on doomed chunks
     }
     pendingUpdates.length = 0;
     // Release the large markets query result before proceeding
