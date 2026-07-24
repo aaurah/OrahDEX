@@ -317,8 +317,24 @@ if (typeof window !== "undefined") {
   useThemeStore.subscribe((state) => syncReownTheme(state.theme));
 }
 
+/**
+ * Returns true when the connected account came from an email or social login
+ * (i.e. Reown's embedded/smart-account wallet, not an external signer).
+ * connectorType values in AppKit 1.x: "EMAIL" | "SOCIAL" | "WALLET_CONNECT" |
+ * "INJECTED" | "COINBASE_SDK" | "EIP6963" | "ANNOUNCED"
+ */
+export function isReownSocialOrEmail(): boolean {
+  try {
+    const state = (appKit as any).getState?.() ?? {};
+    const ct: string = (state.connectorType ?? state.connector?.type ?? "").toUpperCase();
+    return ct === "EMAIL" || ct === "SOCIAL";
+  } catch {
+    return false;
+  }
+}
+
 export function subscribeReownAccount(
-  cb: (address: string | null, chainId: number) => void
+  cb: (address: string | null, chainId: number, isSocialOrEmail: boolean) => void
 ): () => void {
   try {
     return appKit.subscribeAccount((acc: any) => {
@@ -333,10 +349,14 @@ export function subscribeReownAccount(
         } else {
           chainId = 1;
         }
-        cb(acc.address as string, chainId);
+        // Detect social/email via the acc object itself (most reliable) or
+        // fall back to reading appKit state.
+        const ct: string = ((acc as any).connectorType ?? "").toUpperCase();
+        const isSocialOrEmail = ct === "EMAIL" || ct === "SOCIAL" || isReownSocialOrEmail();
+        cb(acc.address as string, chainId, isSocialOrEmail);
       } else {
         _suppressNextConnect = false;
-        cb(null, 1);
+        cb(null, 1, false);
       }
     });
   } catch {

@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { PinPromptModal } from "@/components/PinPromptModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { WalletChooserDialog } from "@/components/WalletChooserDialog";
+import { OrahWalletDialog } from "@/components/OrahWalletDialog";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 import { useHandCashStore } from "@/store/useHandCashStore";
@@ -350,7 +352,7 @@ function Router() {
     let unsub: (() => void) | undefined;
 
     import("@/lib/reown-appkit").then(({ subscribeReownAccount }) => {
-      unsub = subscribeReownAccount((address, chainId) => {
+      unsub = subscribeReownAccount((address, chainId, isSocialOrEmail) => {
         if (address) {
           const { provider, address: storedAddress } = useWalletStore.getState();
           if (!provider || provider === "reown") {
@@ -378,6 +380,13 @@ function Router() {
                 const saved = parseInt(localStorage.getItem("orah-reown-chain") ?? "", 10);
                 if (saved) effectiveChainId = saved;
               } catch {}
+            }
+
+            // Fresh connection (no prior provider) via social/email → open OrahWallet
+            // so the user can set up their native passkey wallet after social login.
+            // Only fires on a brand-new connect, not on page-refresh session restores.
+            if (!provider && isSocialOrEmail) {
+              useWalletModalStore.getState().openOrahWallet();
             }
 
             useWalletStore.getState().connect({
@@ -615,8 +624,16 @@ function AppContent() {
       <PinPromptModal />
       {/* Wallet chooser — always mounted so it works across all layouts */}
       <WalletChooserDialog />
+      {/* OrahWallet passkey dialog — opens after social/email login */}
+      <OrahWalletDialogGlobal />
     </>
   );
+}
+
+function OrahWalletDialogGlobal() {
+  const isOpen = useWalletModalStore((s) => s.isOrahWalletOpen);
+  const close  = useWalletModalStore((s) => s.closeOrahWallet);
+  return <OrahWalletDialog open={isOpen} onClose={close} />;
 }
 
 function App() {
