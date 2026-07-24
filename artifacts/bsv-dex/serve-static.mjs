@@ -111,7 +111,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (urlPath.startsWith("/api") || urlPath.startsWith("/v1")) {
+  if (
+    urlPath.startsWith("/api") ||
+    urlPath.startsWith("/v1") ||
+    urlPath.startsWith("/docs") ||
+    urlPath.startsWith("/rpc")
+  ) {
     proxyToApi(req, res);
     return;
   }

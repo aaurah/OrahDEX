@@ -7,7 +7,7 @@ deploymentTarget = "vm"
 [[services]]
 localPort = 8080
 name = "API Server"
-paths = ["/api", "/v1"]
+paths = ["/api", "/v1", "/docs", "/rpc"]
 
 [services.development]
 run = "pnpm --filter @workspace/api-server run dev"
