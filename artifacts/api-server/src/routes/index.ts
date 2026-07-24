@@ -59,6 +59,7 @@ import overlayRouter from "./overlay.js";
 import handcashRouter from "./handcash.js";
 import tokensRouter from "./tokens.js";
 import externalSwapRouter from "./externalSwap.js";
+import lifiRouter from "./lifi.js";
 import quicknodeRouter from "./quicknode.js";
 import awsRouter from "./aws.js";
 import { db, pool } from "@workspace/db";
@@ -111,6 +112,7 @@ router.use(buyRouter);
 router.use(handcashRouter);
 router.use(tokensRouter);
 router.use(externalSwapRouter);
+router.use(lifiRouter);
 // Protect all /admin routes — allow only the public auth endpoints through without a token.
 const ADMIN_OPEN_METHODS_PATHS = new Set([
   "POST:/auth",

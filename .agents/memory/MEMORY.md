@@ -37,6 +37,7 @@
 - [Estimate endpoint OOM fix](estimate-cache-oom.md) — /letsexchange/estimate fires 5 parallel HTTP calls; must cache 60s or multi-user polling grows heap to OOM in ~1.25h.
 - [Postgres connection storm](pg-connection-storm.md) — idleTimeoutMillis=5s caused constant churn; 30s + 500ms retry base + 90s keepalive ping fixes cascade.
 - [Worker concurrent-update antipattern](worker-concurrent-update-antipattern.md) — repair workers must never call heavy bulk-write fns owned by a guardedInterval; timeout rules for bsv-mempool-watcher + price-updater documented.
+- [LI.FI integration](lifi-integration.md) — 3 hard quirks: zero address rejected, native token needs symbol not address, routes needs POST /advanced/routes not GET /routes.
 - [price-updater bulk UPDATE type filter](price-updater-type-filter.md) — missing AND m.type IN ('spot','futures') caused 2M-row seq scan; production tick took 97s+ vs <1s with the filter.
 - [Alchemy + QuickNode RPC integration](alchemy-rpc-integration.md) — ALCHEMY_API_KEY secret; backend proxy /api/rpc/:chainId; frontend routes through proxy so key never hits client bundle.
 - [Reown Solana+Bitcoin adapters](reown-solana-bitcoin-adapters.md) — deps list + wiring: WagmiAdapter takes EVM-only networks; createAppKit takes full list; @exodus/bitcoin-wallet-standard is bundled (don't install separately).
