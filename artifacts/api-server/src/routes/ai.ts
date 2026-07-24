@@ -5,6 +5,7 @@ import { conversations, messages } from "@workspace/db/schema";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { eq, asc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
+import { getTopHlMarkets } from "../lib/hyperliquid.js";
 
 const router = Router();
 
@@ -313,6 +314,15 @@ router.get("/ai/insights", async (_req, res) => {
   }
 
   try {
+    // Fetch live HL market context (non-blocking — falls back gracefully)
+    const hlContext = await getTopHlMarkets(8).then(tops => {
+      if (!tops.length) return "";
+      const lines = tops.map(m =>
+        `${m.coin}: mark=$${m.markPrice.toLocaleString()} funding=${(m.fundingRate * 100).toFixed(4)}% OI=$${(m.openInterest / 1e6).toFixed(1)}M`
+      ).join(", ");
+      return `\n\nLive Hyperliquid perp data (now): ${lines}`;
+    }).catch(() => "");
+
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       max_completion_tokens: 512,
@@ -320,7 +330,7 @@ router.get("/ai/insights", async (_req, res) => {
         { role: "system", content: SYSTEM_PROMPT },
         {
           role: "user",
-          content: `Give 3 brief, sharp market insights for crypto traders as of March 2026. Each insight should be 1-2 sentences. Format as a JSON array of strings. Focus on actionable trends across DeFi, L2s, and BSV ecosystem. Return only valid JSON, no markdown wrapping.`
+          content: `Give 3 brief, sharp market insights for crypto traders right now. Each insight should be 1-2 sentences. Format as a JSON array of strings. Focus on actionable trends across DeFi, L2s, and BSV ecosystem. Return only valid JSON, no markdown wrapping.${hlContext}`
         },
       ],
     }, { signal: AbortSignal.timeout(15_000) });  // 15s — insights are lightweight
