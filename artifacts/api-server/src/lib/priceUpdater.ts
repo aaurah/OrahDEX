@@ -625,18 +625,26 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
   // VAMM-generated trades have simulated prices that diverge from market rates.
   // Only use own-trade data to augment trading volume, never to replace the
   // Binance reference price for coins that Binance already covers.
+  // Guarded with a 5 s Promise.race: withDbRetry can wait up to 63 s under
+  // pool exhaustion (4 attempts × 15 s connectionTimeoutMillis); bailing out
+  // early keeps fetchSovereignPrices() well under the 120 s tick budget.
   try {
     const since = new Date(Date.now() - 60 * 60 * 1000); // last 1 hour
-    const recentTrades = await db
-      .select({
-        symbol:    tradesTable.symbol,
-        price:     tradesTable.price,
-        total:     tradesTable.total,
-        timestamp: tradesTable.timestamp,
-      })
-      .from(tradesTable)
-      .where(gte(tradesTable.timestamp, since))
-      .orderBy(desc(tradesTable.timestamp));
+    const recentTrades = await Promise.race([
+      db
+        .select({
+          symbol:    tradesTable.symbol,
+          price:     tradesTable.price,
+          total:     tradesTable.total,
+          timestamp: tradesTable.timestamp,
+        })
+        .from(tradesTable)
+        .where(gte(tradesTable.timestamp, since))
+        .orderBy(desc(tradesTable.timestamp)),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("own-trades overlay timed out after 5s")), 5_000)
+      ),
+    ]);
 
     for (const trade of recentTrades) {
       const parts = trade.symbol.split("/");
@@ -1559,19 +1567,25 @@ export async function updateMarketPrices() {
     }
 
     // Only update types where the sovereign price engine has data.
-    // "spot" and "futures" are our internally-managed market rows (~1 K rows).
-    // "letsexchange" (36 K rows) and "simpleswap" (66 K rows) are external
-    // pair catalogs whose prices are computed on-the-fly from sovereign data at
-    // swap/quote time — they don't need periodic DB price writes.
-    // Selecting them here would pull 100 K+ rows per cycle, saturating the DB
-    // connection pool and causing the price-updater to exceed its 70 s timeout.
-    const markets = await db.select({
-      symbol:     marketsTable.symbol,
-      baseAsset:  marketsTable.baseAsset,
-      quoteAsset: marketsTable.quoteAsset,
-      type:       marketsTable.type,
-    }).from(marketsTable)
-      .where(inArray(marketsTable.type, ["spot", "futures"]));
+    // "spot" and "futures" are our internally-managed market rows (~4 K rows).
+    // "letsexchange" and "simpleswap" are external pair catalogs whose prices
+    // are computed on-the-fly from sovereign data at swap/quote time — they
+    // don't need periodic DB price writes.
+    // Guarded with a 12 s Promise.race: withDbRetry can wait up to 63 s under
+    // pool exhaustion; bailing out early lets the tick finish or retry quickly
+    // instead of burning the full 120 s timeout budget on a stuck connection.
+    const markets = await Promise.race([
+      db.select({
+        symbol:     marketsTable.symbol,
+        baseAsset:  marketsTable.baseAsset,
+        quoteAsset: marketsTable.quoteAsset,
+        type:       marketsTable.type,
+      }).from(marketsTable)
+        .where(inArray(marketsTable.type, ["spot", "futures"])),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("markets SELECT timed out after 12s")), 12_000)
+      ),
+    ]);
 
     const pendingUpdates: Array<{
       symbol: string; lastPrice: string; priceChange24h: string;
