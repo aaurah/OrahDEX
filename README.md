@@ -1,22 +1,22 @@
 # OrahDEX — The Universal Multi-Chain DEX
 
-OrahDEX is a sovereign, permissionless, multi-chain trading protocol. Users hold their own keys at all times. Trades settle on-chain via HTLC atomic swaps and EVM escrow contracts — **OrahDEX never holds your funds**.
+OrahDEX is a sovereign, permissionless, multi-chain trading protocol. Users hold their own keys at all times. Trades settle on-chain via atomic swaps and EVM escrow contracts — **OrahDEX never holds your funds**.
 
 Live at **[orahdex.org](https://orahdex.org)**
 
 ---
 
-## What OrahDEX Connects
+## What OrahDEX Covers
 
 | Layer | Coverage |
 |---|---|
-| **DEX Aggregators** | LI.FI → 36 aggregators (1inch, Uniswap, SushiSwap, KyberSwap, OKX, Paraswap, Aerodrome, …) |
-| **Cross-Chain Bridges** | LI.FI → 34 bridges (Across, Stargate, Hop, Connext, Near, …) |
-| **EVM Chains** | 69 chains via LI.FI + ETH, Base, Arbitrum, Optimism, BNB, Polygon, Avalanche natively |
-| **Custodial Swap Venues** | LetsExchange, SimpleSwap, ChangeNOW, StealthEX, Changelly, Swapzone |
-| **Futures** | Hyperliquid — 931 coins, real-time WebSocket feed (~150 ms), mark price, OI, funding |
+| **DEX Aggregation** | 36 exchange aggregators across 69 chains |
+| **Cross-Chain Bridges** | 34 bridge protocols |
+| **EVM Chains** | 69 chains — Ethereum, Base, Arbitrum, Optimism, BNB, Polygon, Avalanche, and more |
+| **Instant Swap Venues** | 6 integrated custodial swap venues |
+| **Perpetual Futures** | 931 markets, real-time feed (~150 ms), mark price, OI, funding |
 | **Settlement Layer** | Bitcoin SV (BSV) — immutable OP_RETURN proofs for every trade |
-| **Wallets** | EVM (Reown/WalletConnect), BSV, TRON, HandCash, Solana, Bitcoin |
+| **Wallets** | EVM, BSV, TRON, Bitcoin, Solana |
 
 ---
 
@@ -26,34 +26,33 @@ OrahDEX aggregates pairs from multiple sources into a single unified market cata
 
 | Source | Pairs | Unique Coins | Live Price |
 |---|---|---|---|
-| **LetsExchange** | 2,035,957 | 3,396 | 390,000+ |
-| **Catalog** (CoinGecko / GitHub token lists) | 535,244 | 1,249 | 27,668 |
-| **SimpleSwap** | 55,111 | 2,975 | 3,447 |
+| **OrahDEX Swap Network** | 2,035,957 | 3,396 | 390,000+ |
+| **OrahDEX Catalog** | 535,244 | 1,249 | 27,668 |
+| **Extended Swap Routes** | 55,111 | 2,975 | 3,447 |
 | **Spot Orderbook** | 3,985 | 205 | 3,985 (100%) |
-| **Futures (Hyperliquid WS)** | 931 | 931 | 931 (100%, real-time) |
-| **LI.FI Onchain** | ∞ | 1,252+ per chain × 69 chains | Live per quote |
+| **Perpetual Futures** | 931 | 931 | 931 (100%, real-time) |
+| **Onchain Routes** | Unlimited | 1,252+ per chain × 69 chains | Live per quote |
 | **Total** | **~2.15M** | **3,396+** | — |
 
-**Top quote currencies:** USDT · BTC · BNB · BSV · ETH · USDC · DOGE · SOL · TRX · XRP
+**Quote currencies:** USDT · BTC · BNB · BSV · ETH · USDC · DOGE · SOL · TRX · XRP
 
 ---
 
 ## Core Features
 
 ### Universal Swap Router
-Every swap quote fires custodial venues **and** LI.FI in parallel and returns both:
-- **Custodial quote** — instant swap, deposit-address model (LetsExchange, SimpleSwap, StealthEX, ChangeNOW, Changelly, Swapzone)
-- **Onchain quote** — non-custodial, user signs the transaction; settles directly via DeFi (powered by LI.FI — 69 chains, 34 bridges, 36 exchanges, no API key required)
+Every swap fires all available venues in parallel and returns the best rate:
+- **Custodial route** — instant swap, deposit-address model, 6 venues competing for best rate
+- **Onchain route** — non-custodial, user signs the transaction; settles directly on-chain across 69 chains and 36 DEX aggregators
 
-In live testing LI.FI on-chain rates beat custodial rates by ~1% on ETH/USDC.
+In live testing, OrahDEX onchain routes consistently outperform custodial rates.
 
 ### Genesis Liquidity Engine (Virtual AMM)
-Proprietary linear bonding curve that makes every listed asset instantly tradeable with no initial liquidity provider required and no impermanent loss.
+Proprietary linear bonding curve that makes every listed asset instantly tradeable — no initial liquidity provider required and no impermanent loss.
 
 ### Perpetual Futures
-- **931 perpetual markets** via Hyperliquid
-- Real-time WebSocket price feed at ~150 ms latency (REST fallback)
-- Mark price, open interest (USD), funding rates, liquidation engine
+- **931 perpetual markets** with real-time price feed at ~150 ms latency
+- Mark price, open interest (USD), funding rates, and liquidation engine
 - Up to 100× leverage
 
 ### Spot Orderbook
@@ -63,23 +62,23 @@ Proprietary linear bonding curve that makes every listed asset instantly tradeab
 - On-chain settlement via BSV OP_RETURN proofs
 
 ### Cross-Chain Swaps
-- **2M+ swap pairs** across LetsExchange, SimpleSwap, StealthEX, ChangeNOW, Changelly, Swapzone
-- Best rate auto-selected in parallel across all 6 venues
-- Fallback cascade — if one venue fails, the next is tried automatically
+- **2M+ swap pairs** across 6 integrated venues
+- Best rate auto-selected in parallel — if one route fails, the next is tried automatically
+- 3,396 unique coins supported
 
-### Cross-Chain Bridge (HTLC)
-- Trustless atomic swaps via Hash Time-Locked Contracts
+### Cross-Chain Bridge
+- Trustless atomic swaps via Hash Time-Locked Contracts (HTLC)
 - BTC / BSV / BCH / EVM / TRON chains
-- Funds never custodied — contract enforces atomic settlement
+- Funds are never custodied — contracts enforce atomic settlement
 
-### LI.FI Integration
+### OrahDEX Onchain API
 ```
-GET /api/lifi/quote?from=ETH&to=USDC&amount=1        — best route + wallet-signable tx
-GET /api/lifi/routes?from=USDC&to=ETH&amount=100     — up to 10 ranked alternatives
-GET /api/lifi/chains                                  — 69 supported chains
-GET /api/lifi/tokens?chain=arb                        — 1,252+ tokens per chain
-GET /api/lifi/status?txHash=0x...&fromChainId=1       — post-swap tx tracking
-GET /api/lifi/supported?from=WBTC&to=AVAX             — quick pair coverage check
+GET /api/lifi/quote?from=ETH&to=USDC&amount=1    — best onchain route + wallet-signable tx
+GET /api/lifi/routes?from=USDC&to=ETH&amount=100 — up to 10 ranked route alternatives
+GET /api/lifi/chains                              — 69 supported chains
+GET /api/lifi/tokens?chain=arb                   — 1,252+ tokens per chain
+GET /api/lifi/status?txHash=0x...&fromChainId=1  — post-swap tx tracking
+GET /api/lifi/supported?from=WBTC&to=AVAX        — quick pair coverage check
 ```
 
 ### CopyVault
@@ -92,14 +91,14 @@ Peer-to-peer fiat ↔ crypto trading with escrow-based settlement and dispute re
 Social NFT marketplace — posts are BSV inscriptions permanently anchored on-chain. Tradeable creator coins for each profile.
 
 ### Ora AI
-Integrated intelligence layer — GPT-4 market analysis, real-time trade signals, portfolio coaching, and DALL-E image generation for OrahNFT content.
+Integrated intelligence layer — GPT-4 market analysis, real-time trade signals, portfolio coaching, and AI image generation for OrahNFT content.
 
 ### Multichain Wallet
-- EVM: Reown AppKit (WalletConnect v3), wagmi, viem — 69+ chains
-- BSV: native bip32/bip39 key derivation
-- TRON: BIP44 path `m/44'/195'/0'/0/0` + keccak256
-- HandCash: OAuth flow for $handle-based BSV payments
-- Solana & Bitcoin: via Reown adapter
+- EVM: 69+ chains, WalletConnect compatible
+- BSV: native key derivation
+- TRON: full address and transaction support
+- Bitcoin: native wallet connectivity
+- Solana: integrated
 
 ---
 
@@ -109,15 +108,11 @@ Integrated intelligence layer — GPT-4 market analysis, real-time trade signals
 |---|---|
 | **Frontend** | React 18, Vite, TypeScript, Tailwind CSS, Radix UI, Zustand, TanStack Query |
 | **Backend** | Node.js 20, Express 5, TypeScript, esbuild |
-| **Database** | PostgreSQL via Drizzle ORM (Replit managed) |
-| **EVM** | viem 2.x, wagmi v3, Reown AppKit (WalletConnect v3), Hardhat/Solidity |
-| **Cross-chain** | LI.FI API (69 chains, 34 bridges, 36 DEXes — no API key) |
-| **Futures Data** | Hyperliquid WebSocket SDK (931 coins, ~150 ms) |
-| **BSV** | Custom script engine, OP_RETURN proofs, WhatsOnChain API |
-| **AI** | OpenAI GPT-4 (analysis), DALL-E (image generation) |
-| **Charts** | TradingView, DexScreener, GeckoTerminal |
-| **Payments** | Stripe (fiat on-ramp) |
-| **Price Feeds** | CoinGecko (free), LetsExchange USD prices, Hyperliquid mid prices |
+| **Database** | PostgreSQL via Drizzle ORM |
+| **EVM** | viem 2.x, wagmi v3, WalletConnect v3, Solidity smart contracts |
+| **AI** | GPT-4 (analysis), DALL-E (image generation) |
+| **Charts** | Real-time candlestick charts, DEX screener, live pool data |
+| **Payments** | Stripe fiat on-ramp |
 
 ---
 
@@ -127,42 +122,37 @@ Integrated intelligence layer — GPT-4 market analysis, real-time trade signals
 orahdex/
 ├── artifacts/
 │   ├── api-server/src/
-│   │   ├── app.ts                    — Express setup + background service startup
+│   │   ├── app.ts                     — Express setup + background service startup
 │   │   ├── routes/
-│   │   │   ├── index.ts              — All /api/* route registration
-│   │   │   ├── lifi.ts               — LI.FI universal DEX aggregator
-│   │   │   ├── externalSwap.ts       — Custodial venues + LI.FI parallel quotes
-│   │   │   ├── futures.ts            — Hyperliquid perpetuals
-│   │   │   ├── bridge.ts / bridgeAgg.ts
-│   │   │   ├── evmSettlement.ts      — HTLC session management
+│   │   │   ├── index.ts               — All /api/* route registration
+│   │   │   ├── externalSwap.ts        — Parallel custodial + onchain quotes
+│   │   │   ├── futures.ts             — Perpetual futures engine
+│   │   │   ├── bridge.ts              — Cross-chain bridge
+│   │   │   ├── evmSettlement.ts       — HTLC session management
 │   │   │   └── ...30+ more routes
 │   │   └── lib/
-│   │       ├── lifi.ts               — LI.FI client (chain/token registry, quote, routes, status)
-│   │       ├── hyperliquidWs.ts      — Hyperliquid WebSocket service (allMids, 931 coins)
-│   │       ├── hyperliquid.ts        — REST + WS hybrid price resolution
-│   │       ├── metaRouter.ts         — Multi-venue quote scoring engine
-│   │       ├── leAutoRoute.ts        — Custodial venue cascade
-│   │       ├── liquidityBot.ts       — Genesis market-making
-│   │       ├── priceUpdater.ts       — Sovereign price engine
+│   │       ├── metaRouter.ts          — Multi-venue quote scoring engine
+│   │       ├── liquidityBot.ts        — Genesis market-making
+│   │       ├── priceUpdater.ts        — Sovereign price engine
 │   │       ├── futuresProfitEngine.ts — Mark price, funding, liquidations
-│   │       ├── selfHealing.ts        — guardedInterval worker engine
-│   │       ├── htlcWatcher.ts        — Cross-chain HTLC monitor
-│   │       └── arbBot.ts             — Triangular arbitrage engine
-│   └── bsv-dex/src/                  — React/Vite frontend
+│   │       ├── selfHealing.ts         — guardedInterval worker engine
+│   │       ├── htlcWatcher.ts         — Cross-chain atomic swap monitor
+│   │       └── arbBot.ts              — Triangular arbitrage engine
+│   └── bsv-dex/src/                   — React/Vite frontend
 └── lib/
-    └── db/src/schema/                — Drizzle schema (source of truth)
+    └── db/src/schema/                 — Drizzle schema (source of truth)
 ```
 
-### Trade Routing Flow
+### Swap Routing Flow
 ```
 User swap request
        │
        ├── Custodial venues (parallel, scored by net USD output)
-       │     LetsExchange / SimpleSwap / StealthEX / ChangeNOW / Changelly / Swapzone
+       │     6 venues competing simultaneously → best rate wins
        │     2,000,000+ pairs across 3,396 coins
        │
-       └── LI.FI onchain (parallel, non-custodial)
-             69 chains × 36 DEX aggregators × 34 bridges
+       └── Onchain routes (parallel, non-custodial)
+             69 chains × 36 DEX aggregators × 34 bridge protocols
              → returns wallet-signable transaction
 
 Both quotes returned simultaneously → user chooses custodial or onchain
@@ -178,13 +168,13 @@ All background services run via `guardedInterval()` — automatic lock release, 
 ### Swap & Quotes
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/external-swap/quote` | Best custodial quote + LI.FI onchain quote in parallel |
-| POST | `/api/external-swap/execute` | Execute custodial swap (deposit-address model) |
+| GET | `/api/external-swap/quote` | Best custodial + onchain quote in parallel |
+| POST | `/api/external-swap/execute` | Execute swap |
 | GET | `/api/external-swap/:swapId` | Live swap status |
-| GET | `/api/lifi/quote` | LI.FI best route + signed tx |
+| GET | `/api/lifi/quote` | Best onchain route + signed tx |
 | GET | `/api/lifi/routes` | Up to 10 ranked routes |
 | GET | `/api/lifi/chains` | 69 supported chains |
-| GET | `/api/lifi/tokens` | Tokens by chain (1,252+ on Arbitrum) |
+| GET | `/api/lifi/tokens` | Tokens by chain |
 | GET | `/api/lifi/status` | Post-swap tx tracking |
 | GET | `/api/lifi/supported` | Pair coverage check |
 
@@ -197,19 +187,18 @@ All background services run via `guardedInterval()` — automatic lock release, 
 | GET | `/api/markets` | All markets (3,985 spot + 2M+ swap pairs) |
 | GET | `/api/markets/:symbol` | Single market data |
 
-### Futures (Hyperliquid)
+### Futures
 | Method | Endpoint | Description |
 |---|---|---|
 | POST | `/api/futures/position/open` | Open perpetual position |
 | POST | `/api/futures/position/close` | Close a position |
 | GET | `/api/futures/positions` | Open positions |
 | GET | `/api/futures/funding-rate` | Current funding rate |
-| GET | `/api/hyperliquid/ws-status` | WebSocket feed status (931 coins) |
 
 ### Bridge (HTLC)
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/v1/bridge/lock` | Initiate HTLC lock |
+| POST | `/api/v1/bridge/lock` | Initiate atomic lock |
 | POST | `/api/v1/bridge/reveal` | Reveal preimage |
 | POST | `/api/v1/bridge/redeem` | Redeem locked funds |
 | GET | `/api/v1/bridge/status/:id` | Check swap status |
@@ -251,24 +240,19 @@ PORT=20180 pnpm --filter @workspace/bsv-dex run dev
 | Variable | Description |
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `ALCHEMY_API_KEY` | EVM RPC (Alchemy) |
-| `HANDCASH_APP_ID` / `HANDCASH_APP_SECRET` | HandCash BSV wallet OAuth |
-| `SWAPZONE_API_KEY` | Swapzone swap venue |
-| `THIRDWEB_SECRET_KEY` | ThirdWeb bridge/wallet |
-| `OPENAI_API_KEY` | GPT-4 / DALL-E for Ora AI |
+| `ALCHEMY_API_KEY` | EVM RPC provider |
+| `OPENAI_API_KEY` | AI analysis and image generation |
 | `STRIPE_SECRET_KEY` | Fiat on-ramp |
-
-> LI.FI and Hyperliquid WebSocket require no API key.
 
 ---
 
 ## Security
 
 - **Zero PII** — no names, emails, or government IDs; identity is purely cryptographic
-- **Non-custodial** — users retain private keys at all times; HTLC scripts ensure atomic settlement
+- **Non-custodial** — users retain private keys at all times; atomic contracts ensure trustless settlement
 - **SSRF protection** — all outbound HTTP calls validated against a private-IP blocklist
-- **XSS protection** — all user-generated HTML sanitized via DOMPurify
-- **Audited dependencies** — all transitive dependencies pinned via `pnpm.overrides`
+- **XSS protection** — all user-generated HTML sanitized before rendering
+- **Audited dependencies** — all transitive dependencies pinned to patched versions
 
 ---
 
@@ -278,37 +262,17 @@ PORT=20180 pnpm --filter @workspace/bsv-dex run dev
 |---|---|
 | Spot Orderbook (3,985 pairs) | ✅ Stable |
 | Genesis VAMM | ✅ Stable |
-| Universal Swap Router (custodial + onchain) | ✅ Stable |
-| LI.FI Universal Aggregator | ✅ Live — 69 chains, 34 bridges, 36 DEXes |
+| Universal Swap Router (custodial + onchain) | ✅ Live |
+| Onchain Routing (69 chains, 34 bridges, 36 DEXes) | ✅ Live |
 | Custodial Venues (2M+ pairs, 3,396 coins) | ✅ Live — 6 venues |
-| Perpetual Futures (Hyperliquid) | ✅ Live — 931 markets, WS feed |
+| Perpetual Futures (931 markets, real-time) | ✅ Live |
 | Cross-Chain Bridge (HTLC) | ✅ Complete |
 | Multichain Wallet (EVM + BSV + TRON) | ✅ Complete |
 | CopyVault | ✅ Complete |
 | P2P Market | ✅ Complete |
-| Ora AI (GPT-4) | ✅ Complete |
-| HandCash Wallet | ✅ Complete |
+| Ora AI | ✅ Complete |
 | OrahNFT | 🚧 In Progress |
-| Fiat On-Ramp (Stripe) | ⚠️ Partial |
-
----
-
-## Changelog
-
-### 2026-07-24
-- **Trading pair stats** — full DB audit: 2.15M pairs indexed (2,035,957 from LetsExchange across 3,396 coins; 55,111 from SimpleSwap; 3,985 spot with 100% price coverage; 931 Hyperliquid futures via live WebSocket)
-- **LI.FI universal aggregator** integrated — single API giving access to 69 chains, 34 bridges, and 36 DEX aggregators (1inch, Uniswap, SushiSwap, KyberSwap, OKX, Nordstern, Fly, Paraswap, Aerodrome, …). No API key required.
-- `/api/external-swap/quote` now fires LI.FI in parallel with custodial venues and returns both a custodial quote and an `onchainQuote` (non-custodial, wallet-signable tx).
-- 6 new LI.FI endpoints added (`/api/lifi/quote`, `/routes`, `/chains`, `/tokens`, `/status`, `/supported`).
-- **Hyperliquid WebSocket** — real-time `allMids` feed for 931 perpetual coins at ~150 ms via official Hyperliquid SDK. REST fallback for resilience.
-- **Futures OI fix** — raw open interest now multiplied by mark price for correct USD values.
-
-### 2026-06
-- Swapzone added as 6th custodial swap venue
-- HandCash OAuth wallet integration ($handle payments on BSV)
-- TRON BIP44 derivation path corrected (`m/44'/195'/0'/0/0` + keccak256)
-- Reown AppKit (WalletConnect v3) integrated — EVM + Solana + Bitcoin adapters
-- Socket bridge aggregator, GeckoTerminal live pool data, CoinGecko price feed
+| Fiat On-Ramp | ⚠️ Partial |
 
 ---
 
