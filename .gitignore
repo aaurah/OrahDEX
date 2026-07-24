@@ -49,6 +49,9 @@ Thumbs.db
 .local/
 .agents/
 
+# Canvas assets (large binary files — not needed in repo)
+.canvas/assets/
+
 # Environment variables & secrets — NEVER commit these
 .env
 .env.*
