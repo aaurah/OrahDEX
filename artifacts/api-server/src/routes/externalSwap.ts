@@ -1,22 +1,25 @@
 /**
- * externalSwap.ts — Seamless LE/SS swap backend for zero-liquidity trading pairs.
+ * externalSwap.ts — All-venue swap backend: LE, SimpleSwap, Swapzone, ChangeNow, StealthEx.
  *
- * GET  /api/external-swap/quote?from=BTC&to=USDT&amount=0.01
- *      → best rate from LetsExchange (fallback SimpleSwap)
+ * GET  /api/external-swap/quote?from=BTC&to=ETH&amount=0.1
+ *      → best rate across ALL configured swap venues (parallel race)
  *
  * POST /api/external-swap/execute
  *      body: { fromCoin, toCoin, amount, walletAddress, outputAddress, symbol?, side? }
- *      → creates exchange, returns depositAddress + swapId
+ *      → creates exchange on winning venue, returns depositAddress + swapId
  *
  * GET  /api/external-swap/:swapId
- *      → live status (polls LE/SS, updates DB)
+ *      → live status (polls venue API, updates DB)
  */
 
 import { Router } from "express";
 import { pool } from "@workspace/db";
-import { leRequest, AFFILIATE_ID } from "../lib/lePriceCache.js";
-import { LE_COIN_NETWORK } from "../lib/leCoinNetwork.js";
-import { quoteFromSSPair, createSsExchangePair, getSsExchange } from "../lib/simpleswap.js";
+import { getBestExternalQuote } from "../lib/metaRouter.js";
+import { createVenueExchange } from "../lib/leAutoRoute.js";
+import { getCachedLEPrices } from "../lib/lePriceCache.js";
+import { leRequest } from "../lib/lePriceCache.js";
+import { getSsExchange } from "../lib/simpleswap.js";
+import { getSzTransactionStatus } from "../lib/swapzone.js";
 import { logger } from "../lib/logger.js";
 
 const router = Router();
@@ -34,44 +37,36 @@ router.get("/external-swap/quote", async (req, res) => {
   }
 
   try {
-    const networkFrom = LE_COIN_NETWORK[from]?.network ?? from;
-    const networkTo   = LE_COIN_NETWORK[to]?.network   ?? to;
-    const { ok, data } = await leRequest("/v1/info", "POST", {
-      from, to, network_from: networkFrom, network_to: networkTo, amount,
-      affiliate_id: AFFILIATE_ID,
-    });
-    if (ok && data && typeof data === "object") {
-      const d = data as Record<string, unknown>;
-      const estimated = parseFloat(String(d.estimated_to ?? d.to_amount ?? "")) || 0;
-      if (estimated > 0) {
-        res.json({
-          venue: "letsexchange", from, to, amount,
-          estimatedOutput: estimated,
-          rate:      estimated / amount,
-          minAmount: d.min_amount ? parseFloat(String(d.min_amount)) || null : null,
-          maxAmount: d.max_amount ? parseFloat(String(d.max_amount)) || null : null,
-        });
-        return;
-      }
-    }
-  } catch (e: any) {
-    logger.debug({ err: e?.message }, "external-swap/quote: LE failed");
-  }
+    const prices   = getCachedLEPrices();
+    const inUsd    = prices[from]  ?? (from  === "USDT" ? 1 : 0);
+    const outUsd   = prices[to]    ?? (to    === "USDT" ? 1 : 0);
 
-  try {
-    const result = await quoteFromSSPair(from, to, amount);
-    if (result && result.estimatedAmount > 0) {
+    const { best, lowestMin } = await getBestExternalQuote(from, to, amount, inUsd, outUsd);
+
+    if (best && best.expectedOutput > 0) {
       res.json({
-        venue: "simpleswap", from, to, amount,
-        estimatedOutput: result.estimatedAmount,
-        rate:      result.estimatedAmount / amount,
-        minAmount: result.minAmount,
-        maxAmount: result.maxAmount,
+        venue:           best.venue,
+        from,
+        to,
+        amount,
+        estimatedOutput: best.expectedOutput,
+        rate:            best.expectedOutput / amount,
+        minAmount:       best.minAmount,
+        maxAmount:       best.maxAmount,
+        canExecute:      best.canExecute,
+      });
+      return;
+    }
+
+    if (lowestMin && lowestMin > 0) {
+      res.status(422).json({
+        error:     `Amount too small. Minimum is ${lowestMin} ${from}`,
+        minAmount: lowestMin,
       });
       return;
     }
   } catch (e: any) {
-    logger.debug({ err: e?.message }, "external-swap/quote: SS failed");
+    logger.warn({ err: e?.message, from, to }, "external-swap/quote: metaRouter error");
   }
 
   res.status(404).json({ error: `No quote available for ${from}→${to}` });
@@ -98,89 +93,68 @@ router.post("/external-swap/execute", async (req, res) => {
   }
   const receiveAddr = String(outputAddress ?? "").trim();
   if (!receiveAddr) {
-    res.status(400).json({ error: "outputAddress required — provide the address where you will receive toCoin" });
+    res.status(400).json({ error: "outputAddress required — the address where you will receive toCoin" });
     return;
   }
 
-  // Try LetsExchange first
+  // Get the best quote across all venues
+  const prices = getCachedLEPrices();
+  const inUsd  = prices[from] ?? (from === "USDT" ? 1 : 0);
+  const outUsd = prices[to]   ?? (to   === "USDT" ? 1 : 0);
+
+  let winningVenue = "letsexchange";
   try {
-    const networkFrom = LE_COIN_NETWORK[from]?.network ?? from;
-    const networkTo   = LE_COIN_NETWORK[to]?.network   ?? to;
-    const { ok, data } = await leRequest("/v1/transaction", "POST", {
-      from, to,
-      network_from: networkFrom,
-      network_to:   networkTo,
-      amount:       amt,
-      withdrawal:   receiveAddr,
-      affiliate_id: AFFILIATE_ID,
-    });
-
-    if (ok && data && typeof data === "object") {
-      const d = data as Record<string, unknown>;
-      const txId          = String(d.id ?? d.transaction_id ?? "");
-      const depositAddr   = String(d.deposit_address ?? "");
-      const depositExtra  = d.deposit_extra_id ? String(d.deposit_extra_id) : null;
-      const expectedOut   = parseFloat(String(d.to_amount ?? d.estimated_to ?? "")) || 0;
-
-      if (txId && depositAddr) {
-        const swapId = `le_${txId}`;
-        await pool.query(`
-          INSERT INTO external_swaps
-            (id, venue_tx_id, venue, wallet_address, from_coin, to_coin, from_amount,
-             to_amount, deposit_address, deposit_extra_id, output_address, status, mode, side, trade_symbol)
-          VALUES ($1,$2,'letsexchange',$3,$4,$5,$6,$7,$8,$9,$10,'waiting_deposit','manual',$11,$12)
-          ON CONFLICT (id) DO NOTHING
-        `, [swapId, txId, String(walletAddress), from, to, amt, expectedOut || null,
-            depositAddr, depositExtra, receiveAddr, side ?? null, symbol ?? null]);
-
-        res.json({
-          swapId, venue: "letsexchange",
-          fromCoin: from, toCoin: to, fromAmount: amt,
-          expectedOutput: expectedOut,
-          depositAddress: depositAddr, depositExtraId: depositExtra,
-          status: "waiting_deposit", mode: "manual",
-        });
-        return;
-      }
-    }
-    logger.warn({ from, to, amt, data }, "LE execute: no txId/depositAddr in response");
+    const { best } = await getBestExternalQuote(from, to, amt, inUsd, outUsd);
+    if (best?.venue) winningVenue = best.venue;
   } catch (e: any) {
-    logger.warn({ err: e?.message }, "external-swap/execute: LE failed, trying SS");
+    logger.warn({ err: e?.message }, "external-swap/execute: metaRouter quote failed, defaulting to letsexchange");
   }
 
-  // Fallback: SimpleSwap
-  try {
-    const ssResult = await createSsExchangePair({
-      from, to, amount: amt, address: receiveAddr,
-    });
-    if (ssResult.ok) {
-      const { exchange } = ssResult;
-      const swapId       = `ss_${exchange.id}`;
-      const expectedOut  = exchange.withdrawalAmount
-        ? parseFloat(exchange.withdrawalAmount) || 0 : 0;
+  // Try the winning venue first, then cascade through the rest
+  const venueOrder = [
+    winningVenue,
+    ...["letsexchange", "simpleswap", "swapzone", "changenow", "stealthex"].filter(v => v !== winningVenue),
+  ];
+
+  for (const venue of venueOrder) {
+    try {
+      const exchResult = await createVenueExchange(venue, from, to, amt, receiveAddr);
+      if (!exchResult.ok || !exchResult.transactionId) continue;
+
+      const swapId      = `${venue.slice(0, 2)}_${exchResult.transactionId}`;
+      const venuePrefix = venue === "letsexchange" ? "le"
+        : venue === "simpleswap"  ? "ss"
+        : venue === "swapzone"    ? "sz"
+        : venue === "changenow"   ? "cn"
+        : venue === "stealthex"   ? "sx"
+        : venue.slice(0, 2);
+      const finalSwapId = `${venuePrefix}_${exchResult.transactionId}`;
 
       await pool.query(`
         INSERT INTO external_swaps
           (id, venue_tx_id, venue, wallet_address, from_coin, to_coin, from_amount,
-           to_amount, deposit_address, deposit_extra_id, output_address, status, mode, side, trade_symbol)
-        VALUES ($1,$2,'simpleswap',$3,$4,$5,$6,$7,$8,$9,$10,'waiting_deposit','manual',$11,$12)
+           deposit_address, output_address, status, mode, side, trade_symbol)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'waiting_deposit','manual',$10,$11)
         ON CONFLICT (id) DO NOTHING
-      `, [swapId, exchange.id, String(walletAddress), from, to, amt, expectedOut || null,
-          exchange.depositAddress, exchange.depositExtraId, receiveAddr,
+      `, [finalSwapId, exchResult.transactionId, venue, String(walletAddress),
+          from, to, amt, exchResult.depositAddress ?? receiveAddr, receiveAddr,
           side ?? null, symbol ?? null]);
 
       res.json({
-        swapId, venue: "simpleswap",
-        fromCoin: from, toCoin: to, fromAmount: amt,
-        expectedOutput: expectedOut,
-        depositAddress: exchange.depositAddress, depositExtraId: exchange.depositExtraId,
-        status: "waiting_deposit", mode: "manual",
+        swapId:         finalSwapId,
+        venue,
+        fromCoin:       from,
+        toCoin:         to,
+        fromAmount:     amt,
+        depositAddress: exchResult.depositAddress,
+        depositExtraId: exchResult.depositExtraId ?? null,
+        status:         "waiting_deposit",
+        mode:           "manual",
       });
       return;
+    } catch (e: any) {
+      logger.warn({ err: e?.message, venue }, "external-swap/execute: venue failed, trying next");
     }
-    logger.warn({ err: ssResult.error }, "external-swap/execute: SS also failed");
-  } catch (e: any) {
-    logger.warn({ err: e?.message }, "external-swap/execute: SS exception");
   }
 
   res.status(503).json({ error: "No swap venue available for this pair. Please try again shortly." });
@@ -205,13 +179,10 @@ router.get("/external-swap/:swapId", async (req, res) => {
 
   let liveStatus: string = row.status;
 
-  // Don't re-poll terminal statuses
   if (liveStatus !== "completed" && liveStatus !== "failed") {
     try {
       if (row.venue === "letsexchange") {
-        const { ok, data } = await leRequest(
-          `/v1/transaction/${row.venue_tx_id}/status`, "GET", null
-        );
+        const { ok, data } = await leRequest(`/v1/transaction/${row.venue_tx_id}/status`, "GET", null);
         if (ok) {
           const raw = typeof data === "string" ? data
             : (data && typeof data === "object" ? String((data as any).status ?? "") : "");
@@ -220,6 +191,9 @@ router.get("/external-swap/:swapId", async (req, res) => {
       } else if (row.venue === "simpleswap") {
         const ssEx = await getSsExchange(row.venue_tx_id);
         if (ssEx) liveStatus = mapSsStatus(String((ssEx as any).status ?? ""));
+      } else if (row.venue === "swapzone") {
+        const szStatus = await getSzTransactionStatus(row.venue_tx_id);
+        if (szStatus?.status) liveStatus = mapSzStatus(szStatus.status);
       }
     } catch (e: any) {
       logger.debug({ err: e?.message }, "external-swap status poll (non-fatal)");
@@ -250,19 +224,28 @@ router.get("/external-swap/:swapId", async (req, res) => {
 // ── Status normalizers ────────────────────────────────────────────────────────
 function mapLeStatus(s: string): string {
   const st = s.toLowerCase();
-  if (["finished", "done", "success", "complete"].includes(st))          return "completed";
+  if (["finished", "done", "success", "complete"].includes(st))           return "completed";
   if (["failed", "error", "refunded", "expired", "overdue"].includes(st)) return "failed";
-  if (["sending", "sent"].includes(st))                                  return "completing";
-  if (["confirming", "exchanging", "processing"].includes(st))           return "confirming";
+  if (["sending", "sent"].includes(st))                                   return "completing";
+  if (["confirming", "exchanging", "processing"].includes(st))            return "confirming";
   return "waiting_deposit";
 }
 
 function mapSsStatus(s: string): string {
   const st = s.toLowerCase();
-  if (["finished", "success", "complete"].includes(st))                  return "completed";
-  if (["failed", "error", "refunded", "expired"].includes(st))           return "failed";
-  if (["sending"].includes(st))                                          return "completing";
-  if (["confirming", "exchanging"].includes(st))                         return "confirming";
+  if (["finished", "success", "complete"].includes(st))        return "completed";
+  if (["failed", "error", "refunded", "expired"].includes(st)) return "failed";
+  if (["sending"].includes(st))                                return "completing";
+  if (["confirming", "exchanging"].includes(st))               return "confirming";
+  return "waiting_deposit";
+}
+
+function mapSzStatus(s: string): string {
+  const st = s.toLowerCase();
+  if (["completed", "finished", "success"].includes(st))       return "completed";
+  if (["failed", "error", "refunded", "expired"].includes(st)) return "failed";
+  if (["sending"].includes(st))                                return "completing";
+  if (["confirming", "exchanging"].includes(st))               return "confirming";
   return "waiting_deposit";
 }
 

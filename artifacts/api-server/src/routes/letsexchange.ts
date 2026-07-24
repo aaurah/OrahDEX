@@ -963,7 +963,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
     const outUsd = lePrices[to]    ?? 1;
 
     // When force_venue is provided, pin to that single provider only
-    const ALL_VENUES: ExternalVenue[] = ["letsexchange", "simpleswap", "changenow", "stealthex", "changelly"];
+    const ALL_VENUES: ExternalVenue[] = ["letsexchange", "simpleswap", "changenow", "stealthex", "changelly", "swapzone"];
     const routePrefs = forceVenueRaw ? {
       preferredVenues: [forceVenueRaw],
       blacklistVenues: ALL_VENUES.filter(v => v !== forceVenueRaw),
@@ -1409,7 +1409,7 @@ router.get("/letsexchange/status/:id", async (req, res) => {
     }
 
     // ── Rescue: try all other venues in case venue metadata was lost ──────────
-    const ALL_VENUES = ["changenow", "stealthex", "simpleswap", "changelly", "letsexchange"];
+    const ALL_VENUES = ["changenow", "stealthex", "simpleswap", "changelly", "letsexchange", "swapzone"];
     for (const fallbackVenue of ALL_VENUES.filter(v => v !== venue)) {
       const rescued = await tryGetStatus(fallbackVenue, id);
       if (rescued) {

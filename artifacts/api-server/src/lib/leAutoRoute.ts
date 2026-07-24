@@ -177,25 +177,31 @@ function fail(error: string): LeAutoRouteResult {
   return { ok: false, filledQty: 0, fillPrice: 0, fillValue: 0, error };
 }
 
-async function createVenueExchange(
+export async function createVenueExchange(
   venue:   string,
   from:    string,
   to:      string,
   amount:  number,
   address: string,
-): Promise<{ ok: boolean; transactionId?: string }> {
+): Promise<{ ok: boolean; transactionId?: string; depositAddress?: string; depositExtraId?: string | null }> {
   try {
     if (venue === "simpleswap") {
       const r = await createSsExchangePair({ from, to, amount, address });
-      return r.ok ? { ok: true, transactionId: r.exchange.id } : { ok: false };
+      return r.ok
+        ? { ok: true, transactionId: r.exchange.id, depositAddress: r.exchange.depositAddress, depositExtraId: r.exchange.depositExtraId ?? null }
+        : { ok: false };
     }
     if (venue === "changenow") {
       const r = await createCNExchange({ from, to, amount, address });
-      return r.ok ? { ok: true, transactionId: r.exchange.id } : { ok: false };
+      return r.ok
+        ? { ok: true, transactionId: r.exchange.id, depositAddress: r.exchange.depositAddress }
+        : { ok: false };
     }
     if (venue === "stealthex") {
       const r = await createSXExchange({ from, to, amount, address });
-      return r.ok ? { ok: true, transactionId: r.exchange.id } : { ok: false };
+      return r.ok
+        ? { ok: true, transactionId: r.exchange.id, depositAddress: r.exchange.depositAddress }
+        : { ok: false };
     }
     if (venue === "letsexchange") {
       const fromU2 = from.toUpperCase();
@@ -212,8 +218,10 @@ async function createVenueExchange(
       const { ok, data } = await leRequest("/v1/transaction", "POST", body);
       if (ok && data && typeof data === "object") {
         const d = data as Record<string, unknown>;
-        const txId = String(d.id ?? d.transaction_id ?? "");
-        return txId ? { ok: true, transactionId: txId } : { ok: false };
+        const txId        = String(d.id ?? d.transaction_id ?? "");
+        const depositAddr = String(d.deposit_address ?? "");
+        const depositExtra = d.deposit_extra_id ? String(d.deposit_extra_id) : null;
+        return txId ? { ok: true, transactionId: txId, depositAddress: depositAddr, depositExtraId: depositExtra } : { ok: false };
       }
       return { ok: false };
     }
@@ -229,7 +237,9 @@ async function createVenueExchange(
         addressReceive: address,
         addressRefund:  address,
       });
-      return r.ok ? { ok: true, transactionId: r.exchange.id } : { ok: false };
+      return r.ok
+        ? { ok: true, transactionId: r.exchange.id, depositAddress: r.exchange.depositAddress, depositExtraId: r.exchange.depositExtraId ?? null }
+        : { ok: false };
     }
     // Other venues (changelly) not yet integrated for auto-route
     return { ok: false };
