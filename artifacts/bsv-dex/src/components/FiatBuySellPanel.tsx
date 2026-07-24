@@ -141,9 +141,23 @@ const PROVIDERS: Provider[] = [
     coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","SUI","USDT","USDC"],
     buyUrl:  (c,f,a,_m,addr) => `https://guardarian.com/calculator/v1?${qs({ from_currency:f, to_currency:c, amount:a, ...(addr?{to_wallet_address:addr}:{}) })}`,
   },
+  {
+    id: "coinbase", name: "Coinbase", fee: "1.49–3.99%", minUSD: 2, maxUSD: 50000,
+    methods: ["card","apple","google","bank"],
+    coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","USDT","USDC"],
+    buyUrl:  (c,f,a,_m,addr) => `https://pay.coinbase.com/buy/select-asset?${qs({ defaultAsset:c, presetFiatAmount:a, fiatCurrency:f, ...(addr?{destinationAddresses:JSON.stringify({[c]:addr})}:{}) })}`,
+    sellUrl: (c,f,addr) => `https://pay.coinbase.com/sell/select-asset?${qs({ defaultAsset:c, fiatCurrency:f, ...(addr?{destinationAddresses:JSON.stringify({[c]:addr})}:{}) })}`,
+  },
 ];
 
 const FEATURED: FeaturedProvider[] = [
+  {
+    ...PROVIDERS.find(p => p.id === "coinbase")!,
+    badge: "🔵", color: "text-blue-400",
+    accentBg: "bg-blue-500/10", accentBorder: "border-blue-500/30",
+    kycLevel: "full", sellSupported: true,
+    tagline: "Most trusted · Apple Pay · Card · Bank",
+  },
   {
     ...PROVIDERS.find(p => p.id === "moonpay")!,
     badge: "🌙", color: "text-violet-400",
