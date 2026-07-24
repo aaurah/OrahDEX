@@ -1,8 +1,12 @@
 import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
+import { SolanaAdapter } from "@reown/appkit-adapter-solana";
+import { BitcoinAdapter } from "@reown/appkit-adapter-bitcoin";
 import {
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
   linea, zkSync, scroll, sepolia,
+  solana, solanaTestnet, solanaDevnet,
+  bitcoin, bitcoinTestnet,
 } from "@reown/appkit/networks";
 import { useThemeStore } from "../store/useThemeStore";
 
@@ -11,8 +15,13 @@ const projectId =
   "04663615251cf13fb1b043d754e7a17f";
 
 const networks = [
+  // EVM
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
   linea, zkSync, scroll, sepolia,
+  // Solana
+  solana, solanaTestnet, solanaDevnet,
+  // Bitcoin
+  bitcoin, bitcoinTestnet,
 ] as const;
 
 /**
@@ -53,10 +62,17 @@ const initialNetwork =
 const _storedTheme = readStoredOrahTheme();
 const _initialThemeMode: "dark" | "light" = _storedTheme === "light" ? "light" : "dark";
 
-export const wagmiAdapter = new WagmiAdapter({ projectId, networks });
+const evmNetworks = [
+  mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
+  linea, zkSync, scroll, sepolia,
+] as const;
+
+export const wagmiAdapter  = new WagmiAdapter({ projectId, networks: evmNetworks });
+export const solanaAdapter  = new SolanaAdapter();
+export const bitcoinAdapter = new BitcoinAdapter();
 
 const appKit = createAppKit({
-  adapters: [wagmiAdapter],
+  adapters: [wagmiAdapter, solanaAdapter, bitcoinAdapter],
   projectId,
   networks,
   defaultNetwork: initialNetwork,
@@ -69,12 +85,14 @@ const appKit = createAppKit({
       : ["https://orahdex.io/icon-512.png"],
   },
   features: {
-    analytics: false,
-    email: false,
-    socials: false,
-    onramp: false,
-    swaps: false,
+    analytics:     false,
+    email:         true,
+    socials:       ["google", "github", "apple", "x", "discord", "farcaster"],
+    onramp:        true,
+    swaps:         true,
+    smartAccounts: true,
   },
+  enableWallets: true,
   themeMode: _initialThemeMode,
   themeVariables: {
     "--w3m-accent":               _storedTheme === "light" ? "#1fb757" : "#4ade80",

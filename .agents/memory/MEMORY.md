@@ -39,3 +39,4 @@
 - [Worker concurrent-update antipattern](worker-concurrent-update-antipattern.md) — repair workers must never call heavy bulk-write fns owned by a guardedInterval; timeout rules for bsv-mempool-watcher + price-updater documented.
 - [price-updater bulk UPDATE type filter](price-updater-type-filter.md) — missing AND m.type IN ('spot','futures') caused 2M-row seq scan; production tick took 97s+ vs <1s with the filter.
 - [Alchemy + QuickNode RPC integration](alchemy-rpc-integration.md) — ALCHEMY_API_KEY secret; backend proxy /api/rpc/:chainId; frontend routes through proxy so key never hits client bundle.
+- [Reown Solana+Bitcoin adapters](reown-solana-bitcoin-adapters.md) — deps list + wiring: WagmiAdapter takes EVM-only networks; createAppKit takes full list; @exodus/bitcoin-wallet-standard is bundled (don't install separately).
