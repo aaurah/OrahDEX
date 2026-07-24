@@ -59,7 +59,6 @@ const CSP = [
 
 const SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
-  "X-Frame-Options": "SAMEORIGIN",
   "Content-Security-Policy": CSP,
   "Referrer-Policy": "strict-origin-when-cross-origin",
 };
