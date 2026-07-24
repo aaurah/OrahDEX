@@ -239,7 +239,7 @@ const PROVIDERS: ProviderDef[] = [
     methods:["card","apple","google","bank"],
     coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","BSV"],
     baseUrl:"https://pay.coinbase.com/buy/select-asset",
-    params:(coin,fiat,amt,_m,addr)=>({ defaultAsset:coin, presetFiatAmount:amt, fiatCurrency:fiat, addresses:JSON.stringify(addr?{[coin]:[addr]}:{}) }),
+    params:(coin,fiat,amt,_m,addr)=>({ defaultAsset:coin, presetFiatAmount:amt, fiatCurrency:fiat, ...(addr ? {addresses:JSON.stringify({[coin]:[addr]})} : {}) }),
   },
   {
     id:"mercuryo", name:"Mercuryo", badge:"☿", color:"text-orange-400", fee:"2.5–3.9%", feeAvgPct:3.2, minUSD:30, maxUSD:15000, rating:4.3, kycLevel:"light",

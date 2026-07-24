@@ -147,7 +147,7 @@ const PROVIDERS: Provider[] = [
     id: "coinbase", name: "Coinbase", fee: "1.49–3.99%", minUSD: 2, maxUSD: 50000,
     methods: ["card","apple","google","bank"],
     coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","USDT","USDC"],
-    buyUrl:  (c,f,a,_m,addr) => `https://pay.coinbase.com/buy/select-asset?${qs({ appId:CB_APP_ID, defaultAsset:c, presetFiatAmount:a, fiatCurrency:f, addresses:JSON.stringify(addr?{[c]:[addr]}:{}) })}`,
+    buyUrl:  (c,f,a,_m,addr) => `https://pay.coinbase.com/buy/select-asset?${qs({ appId:CB_APP_ID, defaultAsset:c, presetFiatAmount:a, fiatCurrency:f, ...(addr ? {addresses:JSON.stringify({[c]:[addr]})} : {}) })}`,
     sellUrl: (c,f,_addr) => `https://pay.coinbase.com/sell/select-asset?${qs({ appId:CB_APP_ID, defaultAsset:c, fiatCurrency:f })}`,
   },
 ];
