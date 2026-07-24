@@ -3,6 +3,7 @@ import { logger } from "../lib/logger.js";
 import {
   isAwsConfigured,
   getS3BucketName,
+  getS3AccessPoint,
   s3Upload,
   s3Download,
   s3Delete,
@@ -18,10 +19,13 @@ const router = Router();
 // ─── Status ───────────────────────────────────────────────────────────────────
 
 router.get("/aws/status", (_req, res) => {
+  const ap = getS3AccessPoint();
   res.json({
-    configured: isAwsConfigured(),
-    region:     process.env.AWS_REGION ?? "us-east-1",
-    bucket:     getS3BucketName() || null,
+    configured:  isAwsConfigured(),
+    region:      process.env.AWS_REGION ?? "us-east-1",
+    bucket:      process.env.AWS_S3_BUCKET || null,
+    accessPoint: ap || null,
+    s3Target:    getS3BucketName() || null,
   });
 });
 
