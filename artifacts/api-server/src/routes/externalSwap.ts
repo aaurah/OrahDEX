@@ -20,6 +20,7 @@ import { getCachedLEPrices } from "../lib/lePriceCache.js";
 import { leRequest } from "../lib/lePriceCache.js";
 import { getSsExchange } from "../lib/simpleswap.js";
 import { getSzTransactionStatus } from "../lib/swapzone.js";
+import { getLifiOutputAmount, resolveLifiToken } from "../lib/lifi.js";
 import { logger } from "../lib/logger.js";
 
 const router = Router();
@@ -41,7 +42,26 @@ router.get("/external-swap/quote", async (req, res) => {
     const inUsd    = prices[from]  ?? (from  === "USDT" ? 1 : 0);
     const outUsd   = prices[to]    ?? (to    === "USDT" ? 1 : 0);
 
-    const { best, lowestMin } = await getBestExternalQuote(from, to, amount, inUsd, outUsd);
+    // Fire custodial venues + LI.FI in parallel
+    const lifiSupported = !!(resolveLifiToken(from) && resolveLifiToken(to));
+    const [{ best, lowestMin }, lifiResult] = await Promise.all([
+      getBestExternalQuote(from, to, amount, inUsd, outUsd),
+      lifiSupported ? getLifiOutputAmount(from, to, amount) : Promise.resolve(null),
+    ]);
+
+    // Build onchain quote from LI.FI if available
+    const onchainQuote = lifiResult && lifiResult.toAmount > 0 ? {
+      venue:           "lifi",
+      executionType:   "onchain",
+      from,
+      to,
+      amount,
+      estimatedOutput: lifiResult.toAmount,
+      rate:            lifiResult.toAmount / amount,
+      gasCostUsd:      lifiResult.gasCostUsd,
+      tool:            lifiResult.tool,
+      note:            "Non-custodial: user signs the swap transaction directly",
+    } : null;
 
     if (best && best.expectedOutput > 0) {
       res.json({
@@ -54,7 +74,14 @@ router.get("/external-swap/quote", async (req, res) => {
         minAmount:       best.minAmount,
         maxAmount:       best.maxAmount,
         canExecute:      best.canExecute,
+        onchainQuote,   // LI.FI non-custodial alternative (may be null)
       });
+      return;
+    }
+
+    // No custodial quote — but LI.FI might still work
+    if (onchainQuote) {
+      res.json({ ...onchainQuote, canExecute: true, minAmount: null, maxAmount: null });
       return;
     }
 
