@@ -11,12 +11,17 @@ import {
   computeLiquidationPrice,
 } from "../lib/futuresSettlement.js";
 import { verifyAndLockFunding } from "../lib/fundingVerifier.js";
+import { fetchHlMarkets } from "../lib/hyperliquid.js";
 
 const router: IRouter = Router();
 
+// Data-read routes (markets, funding-rates, ticker) are always available.
+// Trading routes (open/close/deposit) require FUTURES_ENABLED=true.
+const TRADING_PATHS = ["/futures/open", "/futures/close", "/futures/deposit", "/futures/positions"];
 router.use((req, res, next) => {
-  if (process.env.FUTURES_ENABLED !== "true" && req.path.startsWith("/futures")) {
-    return res.status(503).json({ error: "Futures features are not yet available. Coming soon." });
+  const isTrading = TRADING_PATHS.some(p => req.path.startsWith(p));
+  if (isTrading && process.env.FUTURES_ENABLED !== "true") {
+    return res.status(503).json({ error: "Futures trading is not yet enabled." });
   }
   return next();
 });
@@ -42,40 +47,68 @@ const PERP_SYMBOLS = [
 
 router.get("/futures/markets", async (_req, res) => {
   try {
-    const perpMarkets = await db.select().from(marketsTable).where(inArray(marketsTable.symbol, PERP_SYMBOLS));
+    // Fetch DB prices and HL live data in parallel
+    const [perpMarkets, hlMarkets] = await Promise.all([
+      db.select().from(marketsTable).where(inArray(marketsTable.symbol, PERP_SYMBOLS)),
+      fetchHlMarkets().catch(() => [] as Awaited<ReturnType<typeof fetchHlMarkets>>),
+    ]);
+
     const priceMap: Record<string, (typeof perpMarkets)[0]> = {};
     for (const m of perpMarkets) priceMap[m.symbol] = m;
 
+    // Build a map of coin → HL market for O(1) lookup
+    const hlMap: Record<string, (typeof hlMarkets)[0]> = {};
+    for (const h of hlMarkets) hlMap[h.coin] = h;
+
+    function nextFundingTime(): string {
+      const d = new Date(); const h = d.getHours();
+      const nh = h < 8 ? 8 : h < 16 ? 16 : 24;
+      d.setHours(nh % 24, 0, 0, 0);
+      if (nh === 24) d.setDate(d.getDate() + 1);
+      return d.toISOString();
+    }
+
     const markets = PERP_SYMBOLS.map((sym) => {
-      const m      = priceMap[sym];
-      const last   = m ? parseFloat(m.lastPrice) : 0;
-      const chg    = m ? parseFloat(m.priceChangePercent24h ?? "0") : 0;
-      const vol    = m ? parseFloat(m.volume24h ?? "0") : 0;
-      const base   = sym.split("/")[0];
-      const rate   = FUNDING_RATES.find((r) => r.symbol === sym);
+      const m    = priceMap[sym];
+      const base = sym.split("/")[0];
+      const hl   = hlMap[base];
+
+      // Prefer HL mark/oracle prices; fall back to DB last price
+      const dbLast   = m ? parseFloat(m.lastPrice) : 0;
+      const markPrice  = hl?.markPrice  > 0 ? hl.markPrice  : dbLast;
+      const indexPrice = hl?.oraclePrice > 0 ? hl.oraclePrice : markPrice;
+
+      const chg        = m ? parseFloat(m.priceChangePercent24h ?? "0") : 0;
+      const dbVol      = m ? parseFloat(m.volume24h ?? "0") : 0;
+
+      // HL volume/OI in USD; fall back to DB volume estimate
+      const volume24h    = hl?.volume24h    > 0 ? hl.volume24h    : dbVol;
+      const openInterest = hl?.openInterest > 0 ? hl.openInterest : dbVol * 0.15;
+
+      // Real HL funding rate; fall back to static table
+      const staticRate  = FUNDING_RATES.find((r) => r.symbol === sym);
+      const fundingRate = hl?.fundingRate !== undefined
+        ? hl.fundingRate
+        : (staticRate?.fundingRate ?? 0.0001);
+
       return {
-        symbol:               `${base}/USDT-PERP`,
-        baseAsset:            base,
-        quoteAsset:           "USDT",
-        lastPrice:            last,
-        markPrice:            last,
-        indexPrice:           last,
-        priceChangePercent:   chg,
+        symbol:                `${base}/USDT-PERP`,
+        baseAsset:             base,
+        quoteAsset:            "USDT",
+        lastPrice:             markPrice,
+        markPrice,
+        indexPrice,
+        priceChangePercent:    chg,
         priceChangePercent24h: chg,
-        volume:               vol,
-        volume24h:            vol,
-        openInterest:         vol * 0.15,
-        fundingRate:          rate?.fundingRate ?? 0.0001,
-        fundingRatePct:       (rate?.fundingRate ?? 0.0001) * 100,
-        nextFundingTime:      (() => {
-          const d = new Date(); const h = d.getHours();
-          const nh = h < 8 ? 8 : h < 16 ? 16 : 24;
-          d.setHours(nh % 24, 0, 0, 0);
-          if (nh === 24) d.setDate(d.getDate() + 1);
-          return d.toISOString();
-        })(),
-        maxLeverage:          100,
-        type:                 "futures",
+        volume:                volume24h,
+        volume24h,
+        openInterest,
+        fundingRate,
+        fundingRatePct:        fundingRate * 100,
+        nextFundingTime:       nextFundingTime(),
+        maxLeverage:           hl?.maxLeverage ?? 100,
+        type:                  "futures",
+        source:                hl ? "hyperliquid" : "internal",
       };
     });
 

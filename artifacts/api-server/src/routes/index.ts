@@ -36,6 +36,7 @@ import aiImageRouter from "./aiImage.js";
 import creatorCoinsRouter from "./creatorCoins.js";
 import predictionRouter from "./prediction.js";
 import feeRevenueRouter from "./feeRevenue.js";
+import hyperliquidRouter from "./hyperliquid.js";
 import tradeRouter from "./trade.js";
 import letsexchangeRouter from "./letsexchange.js";
 import stakingRouter from "./staking.js";
@@ -163,6 +164,7 @@ router.use(anthropicRouter);
 router.use(quantumAuthRouter);
 router.use("/overlay", overlayRouter);
 router.use(quicknodeRouter);
+router.use(hyperliquidRouter);
 
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
