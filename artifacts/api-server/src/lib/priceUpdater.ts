@@ -1530,7 +1530,19 @@ export function getCoinChangeMap(): Record<string, number> { return _coinChangeM
 export async function updateMarketPrices() {
   try {
     // ── Sovereign price engine: Binance + WhatsOnChain + own trades ───────────
-    const prices = await fetchSovereignPrices();
+    // Hard 45 s outer cap on the whole function: even if an internal AbortSignal
+    // doesn't fire (e.g. LE body-read hanging after headers are received, or
+    // CoinGecko rate-limit retry loop), we bail out with whatever prices we have
+    // rather than burning the entire 120 s guardian budget.
+    const prices = await Promise.race([
+      fetchSovereignPrices(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("fetchSovereignPrices timed out after 45s")), 45_000)
+      ),
+    ]).catch(err => {
+      logger.warn({ err }, "priceUpdater: fetchSovereignPrices timed out — using empty price set");
+      return {} as Record<string, CoinGeckoPrice>;
+    });
     serviceState.priceEngineLastRunAt = Date.now();
     serviceState.priceEngineRuns++;
     const priceCount = Object.keys(prices).length;
@@ -1769,8 +1781,13 @@ export async function updateMarketPrices() {
       if (usd && usd > 0) updateGenesisPrice(sym, usd);
     }
 
-    // After prices update, check for any open stop orders that should trigger
-    await triggerStopOrders();
+    // After prices update, check for any open stop orders that should trigger.
+    // Capped at 20 s: triggerStopOrders has 3+ withDbRetry calls (open stops,
+    // markets lookup, counter-orders) each up to 15 s under pool exhaustion.
+    await Promise.race([
+      triggerStopOrders(),
+      new Promise<void>(resolve => setTimeout(resolve, 20_000)),
+    ]);
 
   } catch (err) {
     logger.warn({ err }, "Failed to update prices from sovereign price engine");
