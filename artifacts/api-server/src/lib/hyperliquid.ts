@@ -11,6 +11,7 @@
  */
 
 import { logger } from "./logger.js";
+import { getHlWsMids, getHlWsMid, isHlWsConnected } from "./hyperliquidWs.js";
 
 const HL_URL   = "https://api.hyperliquid.xyz/info";
 const CACHE_TTL = 60_000;  // 60 seconds
@@ -123,10 +124,20 @@ export async function fetchHlMarkets(): Promise<HlMarket[]> {
 
 /**
  * Returns a map of coin → mark price for quick lookup.
- * Falls back to an empty object on error.
+ * Prefers real-time WS prices when the feed is live; REST fallback otherwise.
  */
 export async function getHlMarkPrices(): Promise<Record<string, number>> {
   try {
+    // Fast path: WS feed is live — return all coin prices with no HTTP call
+    if (isHlWsConnected()) {
+      const wsMids = getHlWsMids();
+      if (wsMids.size > 100) {
+        const out: Record<string, number> = {};
+        for (const [coin, px] of wsMids) out[coin] = px;
+        return out;
+      }
+    }
+    // Slow path: REST
     const markets = await fetchHlMarkets();
     const out: Record<string, number> = {};
     for (const m of markets) if (m.markPrice > 0) out[m.coin] = m.markPrice;
@@ -139,10 +150,22 @@ export async function getHlMarkPrices(): Promise<Record<string, number>> {
 // ── All mids ──────────────────────────────────────────────────────────────────
 
 /**
- * Returns current mid prices for all HL assets. Useful as a lightweight
- * price oracle (no funding/OI data). Cached 60 s.
+ * Returns current mid prices for all HL assets.
+ * Returns real-time WS prices instantly when the feed is live;
+ * falls back to cached REST data otherwise.
  */
 export async function fetchHlAllMids(): Promise<HlMids> {
+  // Fast path: WS feed has live data — zero latency, no HTTP
+  if (isHlWsConnected()) {
+    const wsMids = getHlWsMids();
+    if (wsMids.size > 100) {
+      const out: HlMids = {};
+      for (const [coin, px] of wsMids) out[coin] = px;
+      return out;
+    }
+  }
+
+  // Slow path: REST with 60 s cache
   if (midsCache && Date.now() - midsCache.ts < CACHE_TTL) return midsCache.data;
   if (midsFetch) return midsFetch;
 
