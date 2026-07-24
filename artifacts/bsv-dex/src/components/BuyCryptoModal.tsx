@@ -239,7 +239,7 @@ const PROVIDERS: ProviderDef[] = [
     methods:["card","apple","google","bank"],
     coins:["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","BSV"],
     baseUrl:"https://pay.coinbase.com/buy/select-asset",
-    params:(coin,fiat,amt,_m,addr)=>({ defaultAsset:coin, presetFiatAmount:amt, fiatCurrency:fiat, ...(addr ? {addresses:JSON.stringify({[coin]:[addr]})} : {}) }),
+    params:(coin,fiat,amt,_m,addr)=>({ defaultAsset:coin, presetFiatAmount:amt, fiatCurrency:fiat, defaultExperience:"buy", ...(addr ? {addresses:JSON.stringify({[coin]:[addr]})} : {}) }),
   },
   {
     id:"mercuryo", name:"Mercuryo", badge:"☿", color:"text-orange-400", fee:"2.5–3.9%", feeAvgPct:3.2, minUSD:30, maxUSD:15000, rating:4.3, kycLevel:"light",
@@ -346,19 +346,23 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
   const [switchedChainId, setSwitchedChainId] = useState<number|null>(null);
   const [copied, setCopied]               = useState(false);
 
-  // Coinbase Onramp project ID (fetched from server, used as appId in pay.coinbase.com URL)
-  const [coinbaseProjectId, setCoinbaseProjectId] = useState<string>(import.meta.env.VITE_COINBASE_APP_ID ?? "");
-  useEffect(() => {
-    let cancelled = false;
-    // Only use server-supplied project ID if VITE env var is not already set
-    if (!import.meta.env.VITE_COINBASE_APP_ID) {
-      fetch("/api/coinbase/onramp-config")
-        .then(r => r.ok ? r.json() : null)
-        .then(d => { if (!cancelled && d?.projectId) setCoinbaseProjectId(d.projectId); })
-        .catch(() => { /* falls back to generic Coinbase URL */ });
-    }
-    return () => { cancelled = true; };
-  }, []);
+  const [cbLoading, setCbLoading] = useState(false);
+
+  async function openCoinbase(baseUrl: string) {
+    setCbLoading(true);
+    try {
+      const r = await fetch("/api/coinbase/onramp-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(effectiveAddr ? { address: effectiveAddr } : {}),
+      });
+      const d = await r.json() as { token?: string };
+      const sep = baseUrl.includes("?") ? "&" : "?";
+      window.open(d.token ? `${baseUrl}${sep}sessionToken=${d.token}` : baseUrl, "_blank", "noopener,noreferrer");
+    } catch {
+      window.open(baseUrl, "_blank", "noopener,noreferrer");
+    } finally { setCbLoading(false); }
+  }
 
   // Live price fetch — updates estimate when coin changes
   const [livePrice, setLivePrice] = useState<number | null>(null);
@@ -573,9 +577,6 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
     const p = PROVIDERS.find(x => x.id === pId);
     if (!p) return "#";
     const baseParams = p.params(coin,fiat,amount,payMethod,effectiveAddr) as Record<string,string>;
-    if (p.id === "coinbase" && coinbaseProjectId) {
-      baseParams.appId = coinbaseProjectId;
-    }
     return `${p.baseUrl}?${new URLSearchParams(baseParams)}`;
   }
 
@@ -1318,12 +1319,18 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
               </div>
 
               {/* Primary CTA */}
-              <a href={getProviderUrl(selectedProvider.id)} target="_blank" rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full bg-primary text-primary-foreground py-4 rounded-xl font-black text-sm hover:opacity-90 transition-opacity shadow-lg shadow-primary/20">
-                <span className="text-xl">{selectedProvider.badge}</span>
-                Buy {coin} via {selectedProvider.name}
-                <ExternalLink className="w-4 h-4"/>
-              </a>
+              <button type="button" disabled={cbLoading}
+                onClick={() => {
+                  const url = getProviderUrl(selectedProvider.id);
+                  if (selectedProvider.id === "coinbase") openCoinbase(url);
+                  else window.open(url, "_blank", "noopener,noreferrer");
+                }}
+                className="flex items-center justify-center gap-2 w-full bg-primary text-primary-foreground py-4 rounded-xl font-black text-sm hover:opacity-90 transition-opacity shadow-lg shadow-primary/20 disabled:opacity-60">
+                {cbLoading && selectedProvider.id === "coinbase"
+                  ? <><RefreshCw className="w-4 h-4 animate-spin"/>Connecting to Coinbase…</>
+                  : <><span className="text-xl">{selectedProvider.badge}</span>Buy {coin} via {selectedProvider.name}<ExternalLink className="w-4 h-4"/></>
+                }
+              </button>
 
               {/* Other providers */}
               {supportedProviders.filter(p=>p.id!==selectedProvider.id).length > 0 && (
@@ -1331,13 +1338,18 @@ export function BuyCryptoModal({ open, onClose, defaultCoin = "BTC", defaultPayM
                   <p className="text-[11px] text-muted-foreground font-semibold uppercase tracking-wider mb-2">Other providers</p>
                   <div className="space-y-1.5">
                     {supportedProviders.filter(p=>p.id!==selectedProvider.id).map(p=>(
-                      <a key={p.id} href={getProviderUrl(p.id)} target="_blank" rel="noopener noreferrer"
+                      <button key={p.id} type="button"
+                        onClick={() => {
+                          const url = getProviderUrl(p.id);
+                          if (p.id === "coinbase") openCoinbase(url);
+                          else window.open(url, "_blank", "noopener,noreferrer");
+                        }}
                         className="flex items-center gap-3 w-full bg-secondary/40 border border-border py-2.5 px-3.5 rounded-xl text-sm hover:border-primary/50 transition-colors">
                         <span className="text-lg">{p.badge}</span>
-                        <span className="flex-1 font-medium">{p.name}</span>
+                        <span className="flex-1 font-medium text-left">{p.name}</span>
                         <span className="text-xs text-muted-foreground">{p.fee}</span>
                         <ExternalLink className="w-3 h-3 text-muted-foreground"/>
-                      </a>
+                      </button>
                     ))}
                   </div>
                 </div>

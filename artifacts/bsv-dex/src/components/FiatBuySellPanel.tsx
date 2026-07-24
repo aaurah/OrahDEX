@@ -100,7 +100,17 @@ interface FeaturedProvider extends Provider {
   tagline: string;
 }
 
-const CB_APP_ID = import.meta.env.VITE_COINBASE_APP_ID ?? "";
+async function fetchCoinbaseToken(address?: string): Promise<string | null> {
+  try {
+    const r = await fetch("/api/coinbase/onramp-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(address ? { address } : {}),
+    });
+    const d = await r.json() as { token?: string };
+    return d.token ?? null;
+  } catch { return null; }
+}
 
 const PROVIDERS: Provider[] = [
   {
@@ -147,8 +157,8 @@ const PROVIDERS: Provider[] = [
     id: "coinbase", name: "Coinbase", fee: "1.49–3.99%", minUSD: 2, maxUSD: 50000,
     methods: ["card","apple","google","bank"],
     coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","USDT","USDC"],
-    buyUrl:  (c,f,a,_m,addr) => `https://pay.coinbase.com/buy/select-asset?${qs({ appId:CB_APP_ID, defaultAsset:c, presetFiatAmount:a, fiatCurrency:f, ...(addr ? {addresses:JSON.stringify({[c]:[addr]})} : {}) })}`,
-    sellUrl: (c,f,_addr) => `https://pay.coinbase.com/sell/select-asset?${qs({ appId:CB_APP_ID, defaultAsset:c, fiatCurrency:f })}`,
+    buyUrl:  (c,f,a,_m,addr) => `https://pay.coinbase.com/buy/select-asset?${qs({ defaultAsset:c, presetFiatAmount:a, fiatCurrency:f, defaultExperience:"buy", ...(addr ? {addresses:JSON.stringify({[c]:[addr]})} : {}) })}`,
+    sellUrl: (c,f,_addr) => `https://pay.coinbase.com/sell/select-asset?${qs({ defaultAsset:c, fiatCurrency:f })}`,
   },
 ];
 
@@ -329,6 +339,7 @@ export function FiatBuySellPanel() {
   const [amount, setAmount]         = useState("250");
   const [payMethod, setPayMethod]   = useState<PayMethod>("card");
   const [selectedId, setSelectedId] = useState<string>("moonpay");
+  const [cbLoading, setCbLoading]   = useState(false);
 
   const numAmt  = parseFloat(amount) || 0;
   const receive = estimateReceive(numAmt, fiat.code, coin.symbol);
@@ -347,6 +358,20 @@ export function FiatBuySellPanel() {
   [selectedId]);
 
   const canLaunch = numAmt >= (mode === "buy" ? 5 : 0);
+
+  async function handleLaunch() {
+    const url = buildUrl(selectedFeatured);
+    if (selectedFeatured.id === "coinbase") {
+      setCbLoading(true);
+      try {
+        const token = await fetchCoinbaseToken(address ?? undefined);
+        const sep = url.includes("?") ? "&" : "?";
+        window.open(token ? `${url}${sep}sessionToken=${token}` : url, "_blank", "noopener,noreferrer");
+      } finally { setCbLoading(false); }
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
 
   function buildUrl(p: Provider) {
     const addr = address ?? "";
@@ -532,23 +557,29 @@ export function FiatBuySellPanel() {
 
       {/* ── CTA button ── */}
       {canLaunch ? (
-        <a
-          href={launchUrl}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          disabled={cbLoading}
+          onClick={handleLaunch}
           className={cn(
-            "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 mt-0.5 hover:opacity-90 active:scale-[0.99]",
+            "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 mt-0.5 hover:opacity-90 active:scale-[0.99] disabled:opacity-60",
             selectedFeatured.accentBg.replace("/10","/80"),
             "text-white border",
             selectedFeatured.accentBorder
           )}
         >
-          <span className="text-lg">{selectedFeatured.badge}</span>
-          {mode === "buy"
-            ? `Buy ${coin.symbol} via ${selectedFeatured.name}`
-            : `Sell ${coin.symbol} via ${selectedFeatured.name}`}
-          <ExternalLink className="w-4 h-4 opacity-70" />
-        </a>
+          {cbLoading ? (
+            <><RefreshCw className="w-4 h-4 animate-spin" />Connecting to Coinbase…</>
+          ) : (
+            <>
+              <span className="text-lg">{selectedFeatured.badge}</span>
+              {mode === "buy"
+                ? `Buy ${coin.symbol} via ${selectedFeatured.name}`
+                : `Sell ${coin.symbol} via ${selectedFeatured.name}`}
+              <ExternalLink className="w-4 h-4 opacity-70" />
+            </>
+          )}
+        </button>
       ) : (
         <div className="w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 mt-0.5 bg-muted/50 text-muted-foreground/40 cursor-not-allowed">
           Enter amount
