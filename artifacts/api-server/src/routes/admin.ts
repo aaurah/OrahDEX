@@ -2781,9 +2781,9 @@ router.get("/exchange-wallet", requireAdminToken, async (req, res) => {
     };
 
     const [ethBal, bnbBal, maticBal] = await Promise.all([
-      fetchNative(process.env.ETH_RPC_URL ?? "https://eth.llamarpc.com",         "ETH"),
-      fetchNative(process.env.BSC_RPC_URL ?? "https://bsc-dataseed.binance.org", "BNB"),
-      fetchNative(process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com", "MATIC"),
+      fetchNative(process.env.QN_ETH_ENDPOINT   ?? process.env.ETH_RPC_URL     ?? "https://eth.llamarpc.com",                    "ETH"),
+      fetchNative(process.env.QN_BSC_ENDPOINT   ?? process.env.BSC_RPC_URL     ?? "https://bsc-dataseed.binance.org",             "BNB"),
+      fetchNative(process.env.QN_MATIC_ENDPOINT ?? process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com",      "MATIC"),
     ]);
 
     const bsvWallet  = await getOrCreateWallet();
@@ -2985,12 +2985,12 @@ router.post("/rescue-evm-wallet", requireAdminToken, async (req, res) => {
 
   const chainId = parseInt(String(rawChainId ?? 8453), 10);
   const RPC_URLS: Record<number, string> = {
-    1:     process.env.ETH_RPC_URL     ?? "https://ethereum.publicnode.com",
-    8453:  process.env.BASE_RPC_URL    ?? "https://base.publicnode.com",
-    42161: process.env.ARB_RPC_URL     ?? "https://arbitrum-one.publicnode.com",
-    10:    process.env.OP_RPC_URL      ?? "https://optimism.publicnode.com",
-    56:    process.env.BSC_RPC_URL     ?? "https://bsc.publicnode.com",
-    137:   process.env.POLYGON_RPC_URL ?? "https://polygon-bor.publicnode.com",
+    1:     process.env.QN_ETH_ENDPOINT   ?? process.env.ETH_RPC_URL     ?? "https://ethereum.publicnode.com",
+    8453:  process.env.QN_BASE_ENDPOINT  ?? process.env.BASE_RPC_URL    ?? "https://base.publicnode.com",
+    42161: process.env.QN_ARB_ENDPOINT   ?? process.env.ARB_RPC_URL     ?? "https://arbitrum-one.publicnode.com",
+    10:    process.env.QN_OP_ENDPOINT    ?? process.env.OP_RPC_URL      ?? "https://optimism.publicnode.com",
+    56:    process.env.QN_BSC_ENDPOINT   ?? process.env.BSC_RPC_URL     ?? "https://bsc.publicnode.com",
+    137:   process.env.QN_MATIC_ENDPOINT ?? process.env.POLYGON_RPC_URL ?? "https://polygon-bor.publicnode.com",
   };
   const rpcUrl = RPC_URLS[chainId] ?? RPC_URLS[8453]!;
 

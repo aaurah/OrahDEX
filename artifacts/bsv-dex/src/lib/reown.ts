@@ -7,16 +7,28 @@ import {
 
 // Minimal wagmi config — no WalletConnect connectors.
 // Used by ThirdWeb panels for provider detection; they fall back to window.ethereum.
+// QuickNode RPC overrides — set VITE_QN_*_RPC in .env to your QuickNode endpoint URLs.
+// Falls back to public free RPCs when not set.
+const QN = {
+  eth:  import.meta.env.VITE_QN_ETH_RPC,
+  bsc:  import.meta.env.VITE_QN_BSC_RPC,
+  base: import.meta.env.VITE_QN_BASE_RPC,
+  poly: import.meta.env.VITE_QN_MATIC_RPC,
+  arb:  import.meta.env.VITE_QN_ARB_RPC,
+  op:   import.meta.env.VITE_QN_OP_RPC,
+  avax: import.meta.env.VITE_QN_AVAX_RPC,
+};
+
 export const wagmiConfig = createConfig({
   chains: [mainnet, polygon, arbitrum, optimism, base, bsc, avalanche, linea, zkSync, scroll, mantle, fantom, cronos, sepolia],
   transports: {
-    [mainnet.id]:   http("https://eth.llamarpc.com"),
-    [polygon.id]:   http("https://polygon.llamarpc.com"),
-    [arbitrum.id]:  http("https://arbitrum.llamarpc.com"),
-    [optimism.id]:  http("https://optimism.llamarpc.com"),
-    [base.id]:      http("https://base-rpc.publicnode.com"),
-    [bsc.id]:       http("https://bsc.llamarpc.com"),
-    [avalanche.id]: http("https://api.avax.network/ext/bc/C/rpc"),
+    [mainnet.id]:   http(QN.eth  ?? "https://eth.llamarpc.com"),
+    [polygon.id]:   http(QN.poly ?? "https://polygon.llamarpc.com"),
+    [arbitrum.id]:  http(QN.arb  ?? "https://arbitrum.llamarpc.com"),
+    [optimism.id]:  http(QN.op   ?? "https://optimism.llamarpc.com"),
+    [base.id]:      http(QN.base ?? "https://base-rpc.publicnode.com"),
+    [bsc.id]:       http(QN.bsc  ?? "https://bsc.llamarpc.com"),
+    [avalanche.id]: http(QN.avax ?? "https://api.avax.network/ext/bc/C/rpc"),
     [linea.id]:     http("https://rpc.linea.build"),
     [zkSync.id]:    http("https://mainnet.era.zksync.io"),
     [scroll.id]:    http("https://rpc.scroll.io"),
@@ -38,12 +50,12 @@ export function parseChainFromCaip(caipAddress?: string): number | null {
 }
 
 export const CHAIN_RPC_URLS: Record<number, string> = {
-  1:       "https://eth.llamarpc.com",
-  56:      "https://bsc.llamarpc.com",
-  137:     "https://polygon.llamarpc.com",
-  42161:   "https://arbitrum.llamarpc.com",
-  10:      "https://optimism.llamarpc.com",
-  8453:    "https://base-rpc.publicnode.com",
+  1:       QN.eth  ?? "https://eth.llamarpc.com",
+  56:      QN.bsc  ?? "https://bsc.llamarpc.com",
+  137:     QN.poly ?? "https://polygon.llamarpc.com",
+  42161:   QN.arb  ?? "https://arbitrum.llamarpc.com",
+  10:      QN.op   ?? "https://optimism.llamarpc.com",
+  8453:    QN.base ?? "https://base-rpc.publicnode.com",
   59144:   "https://rpc.linea.build",
   324:     "https://mainnet.era.zksync.io",
   534352:  "https://rpc.scroll.io",
