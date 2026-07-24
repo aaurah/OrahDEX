@@ -6,10 +6,15 @@ import { logger } from "./logger.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const AWS_REGION     = process.env.AWS_REGION     ?? "us-east-1";
-const AWS_S3_BUCKET  = process.env.AWS_S3_BUCKET  ?? "";
-const AWS_KEY_ID     = process.env.AWS_ACCESS_KEY_ID;
-const AWS_SECRET_KEY = process.env.AWS_SECRET_ACCESS_KEY;
+const AWS_REGION          = process.env.AWS_REGION           ?? "us-east-1";
+const AWS_S3_BUCKET       = process.env.AWS_S3_BUCKET        ?? "";
+// Access point alias takes priority over raw bucket name — same API, separate IAM policy surface.
+const AWS_S3_ACCESS_POINT = process.env.AWS_S3_ACCESS_POINT  ?? "";
+const AWS_KEY_ID          = process.env.AWS_ACCESS_KEY_ID;
+const AWS_SECRET_KEY      = process.env.AWS_SECRET_ACCESS_KEY;
+
+// Resolved target: access point alias when set, otherwise raw bucket name.
+const S3_TARGET = AWS_S3_ACCESS_POINT || AWS_S3_BUCKET;
 
 if (!AWS_KEY_ID || !AWS_SECRET_KEY) {
   logger.warn("awsClient: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY not set — AWS features disabled");
@@ -43,7 +48,11 @@ export function isAwsConfigured(): boolean {
 }
 
 export function getS3BucketName(): string {
-  return AWS_S3_BUCKET;
+  return S3_TARGET;
+}
+
+export function getS3AccessPoint(): string {
+  return AWS_S3_ACCESS_POINT;
 }
 
 // ─── S3 Helpers ───────────────────────────────────────────────────────────────
@@ -67,8 +76,8 @@ export interface S3UploadResult {
 
 /** Upload a file to S3 (streams supported — uses multipart for large files) */
 export async function s3Upload(opts: S3UploadOptions): Promise<S3UploadResult> {
-  const bucket = opts.bucket ?? AWS_S3_BUCKET;
-  if (!bucket) return { ok: false, error: "AWS_S3_BUCKET not configured" };
+  const bucket = opts.bucket ?? S3_TARGET;
+  if (!bucket) return { ok: false, error: "S3 target not configured (set AWS_S3_ACCESS_POINT or AWS_S3_BUCKET)" };
   if (!isAwsConfigured()) return { ok: false, error: "AWS credentials not configured" };
 
   try {
@@ -100,8 +109,8 @@ export async function s3Upload(opts: S3UploadOptions): Promise<S3UploadResult> {
 
 /** Download an object from S3 as a Buffer */
 export async function s3Download(key: string, bucket?: string): Promise<{ ok: boolean; data?: Buffer; contentType?: string; error?: string }> {
-  const b = bucket ?? AWS_S3_BUCKET;
-  if (!b) return { ok: false, error: "AWS_S3_BUCKET not configured" };
+  const b = bucket ?? S3_TARGET;
+  if (!b) return { ok: false, error: "S3 target not configured (set AWS_S3_ACCESS_POINT or AWS_S3_BUCKET)" };
   if (!isAwsConfigured()) return { ok: false, error: "AWS credentials not configured" };
 
   try {
@@ -125,8 +134,8 @@ export async function s3Download(key: string, bucket?: string): Promise<{ ok: bo
 
 /** Delete an object from S3 */
 export async function s3Delete(key: string, bucket?: string): Promise<{ ok: boolean; error?: string }> {
-  const b = bucket ?? AWS_S3_BUCKET;
-  if (!b) return { ok: false, error: "AWS_S3_BUCKET not configured" };
+  const b = bucket ?? S3_TARGET;
+  if (!b) return { ok: false, error: "S3 target not configured (set AWS_S3_ACCESS_POINT or AWS_S3_BUCKET)" };
   if (!isAwsConfigured()) return { ok: false, error: "AWS credentials not configured" };
 
   try {
@@ -141,7 +150,7 @@ export async function s3Delete(key: string, bucket?: string): Promise<{ ok: bool
 
 /** Check if an S3 object exists */
 export async function s3Exists(key: string, bucket?: string): Promise<boolean> {
-  const b = bucket ?? AWS_S3_BUCKET;
+  const b = bucket ?? S3_TARGET;
   if (!b || !isAwsConfigured()) return false;
 
   try {
@@ -154,8 +163,8 @@ export async function s3Exists(key: string, bucket?: string): Promise<boolean> {
 
 /** List objects in S3 with optional prefix */
 export async function s3List(prefix?: string, bucket?: string): Promise<{ ok: boolean; keys?: string[]; error?: string }> {
-  const b = bucket ?? AWS_S3_BUCKET;
-  if (!b) return { ok: false, error: "AWS_S3_BUCKET not configured" };
+  const b = bucket ?? S3_TARGET;
+  if (!b) return { ok: false, error: "S3 target not configured (set AWS_S3_ACCESS_POINT or AWS_S3_BUCKET)" };
   if (!isAwsConfigured()) return { ok: false, error: "AWS credentials not configured" };
 
   try {
@@ -175,8 +184,8 @@ export async function s3List(prefix?: string, bucket?: string): Promise<{ ok: bo
  * @param expiresInSeconds default 3600 (1 hour)
  */
 export async function s3PresignedGetUrl(key: string, expiresInSeconds = 3600, bucket?: string): Promise<{ ok: boolean; url?: string; error?: string }> {
-  const b = bucket ?? AWS_S3_BUCKET;
-  if (!b) return { ok: false, error: "AWS_S3_BUCKET not configured" };
+  const b = bucket ?? S3_TARGET;
+  if (!b) return { ok: false, error: "S3 target not configured (set AWS_S3_ACCESS_POINT or AWS_S3_BUCKET)" };
   if (!isAwsConfigured()) return { ok: false, error: "AWS credentials not configured" };
 
   try {
@@ -194,8 +203,8 @@ export async function s3PresignedGetUrl(key: string, expiresInSeconds = 3600, bu
  * Useful for letting the frontend upload directly to S3 without going through the API server.
  */
 export async function s3PresignedPutUrl(key: string, contentType: string, expiresInSeconds = 900, bucket?: string): Promise<{ ok: boolean; url?: string; error?: string }> {
-  const b = bucket ?? AWS_S3_BUCKET;
-  if (!b) return { ok: false, error: "AWS_S3_BUCKET not configured" };
+  const b = bucket ?? S3_TARGET;
+  if (!b) return { ok: false, error: "S3 target not configured (set AWS_S3_ACCESS_POINT or AWS_S3_BUCKET)" };
   if (!isAwsConfigured()) return { ok: false, error: "AWS credentials not configured" };
 
   try {
