@@ -10,6 +10,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import router from "./routes";
 import v1Router from "./routes/v1.js";
+import { docsRouter, rpcRouter } from "./routes/docs.js";
 import { logger } from "./lib/logger";
 import { startPriceUpdater } from "./lib/priceUpdater.js";
 import { startLiquidityBot } from "./lib/liquidityBot.js";
@@ -531,6 +532,10 @@ app.get("/api/health",  healthHandler);
 app.get("/api/healthz", healthHandler);
 app.get("/v1/health",   healthHandler);
 app.get("/v1/healthz",  healthHandler);
+
+/* ── API docs (public — no key required) ─────────────────────────────────── */
+app.use("/docs", docsRouter);
+app.use("/rpc",  rpcRouter);
 
 // Reject API keys in query params before any route can consume them.
 // Keys must arrive via the Authorization header to stay out of server logs.
