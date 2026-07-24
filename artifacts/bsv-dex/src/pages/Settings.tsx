@@ -21,7 +21,7 @@ import { useSettingsStore, FIAT_CURRENCIES, CRYPTO_QUOTE_CURRENCIES } from "@/st
 import { usePriceAlertsStore } from "@/store/usePriceAlertsStore";
 import { PriceAlertsDialog } from "@/components/PriceAlertsDialog";
 import { SlippagePicker, LeveragePicker } from "@/components/TradingDefaultsPickers";
-import { cn } from "@/lib/utils";
+import { cn, getProviderLabel } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
 
 const THEMES: { id: Theme; label: string; Icon: any; color: string }[] = [
@@ -180,7 +180,7 @@ export function WebSettings() {
               <Row
                 icon={Link2}
                 label="Connected Wallet"
-                value={`${provider} · ${address.slice(0, 14)}...${address.slice(-6)}`}
+                value={`${getProviderLabel(provider)} · ${address.slice(0, 14)}...${address.slice(-6)}`}
               />
               <Row
                 icon={Shield}
