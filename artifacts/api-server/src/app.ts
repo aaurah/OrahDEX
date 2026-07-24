@@ -13,6 +13,7 @@ import v1Router from "./routes/v1.js";
 import { docsRouter, rpcRouter } from "./routes/docs.js";
 import { logger } from "./lib/logger";
 import { startPriceUpdater } from "./lib/priceUpdater.js";
+import { startHlWebSocket } from "./lib/hyperliquidWs.js";
 import { startLiquidityBot } from "./lib/liquidityBot.js";
 import { startArbBot } from "./lib/arbBot.js";
 import { startFuturesProfitEngine } from "./lib/futuresProfitEngine.js";
@@ -743,6 +744,7 @@ process.on("unhandledRejection", (reason) => {
   }, 5 * 60 * 1000).unref();
 }
 
+_s(    0, startHlWebSocket,            "startHlWebSocket");
 _s(    0, startPriceUpdater,          "startPriceUpdater");
 _s(6_000, startLiquidityBot,          "startLiquidityBot");
 _s(12_000, startArbBot,               "startArbBot");

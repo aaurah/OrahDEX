@@ -20,6 +20,7 @@
     "@noble/hashes": "^2.0.1",
     "@noble/secp256k1": "^3.0.0",
     "@types/compression": "^1.8.1",
+    "@types/ws": "^8.18.1",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/integrations-anthropic-ai": "workspace:*",
@@ -32,12 +33,14 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.4.1",
     "helmet": "^8.1.0",
+    "hyperliquid": "^1.7.7",
     "nodemailer": "^9.0.1",
     "p-retry": "^7.1.1",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "qrcode": "^1.5.4",
-    "viem": "^2.47.6"
+    "viem": "^2.47.6",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",

@@ -155,6 +155,9 @@ importers:
       '@types/compression':
         specifier: ^1.8.1
         version: 1.8.1
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
@@ -191,6 +194,9 @@ importers:
       helmet:
         specifier: ^8.1.0
         version: 8.1.0
+      hyperliquid:
+        specifier: ^1.7.7
+        version: 1.7.7(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       nodemailer:
         specifier: '>=9.0.1'
         version: 9.0.1
@@ -209,6 +215,9 @@ importers:
       viem:
         specifier: ^2.47.6
         version: 2.47.6(bufferutil@4.1.0)(typescript@5.9.3)(utf-8-validate@6.0.6)(zod@4.3.6)
+      ws:
+        specifier: '>=8.20.1'
+        version: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     devDependencies:
       '@types/cookie-parser':
         specifier: ^1.4.10
@@ -6592,6 +6601,10 @@ packages:
   domutils@3.2.2:
     resolution: {integrity: sha512-6kZKyUajlDuqlHKVX1w7gyslj9MPIXzIFiz/rGu35uC1wMi+kMhQwGhl4lt9unC9Vb9INnY9Z3/ZA3+FhASLaw==}
 
+  dotenv@16.6.1:
+    resolution: {integrity: sha512-uBq4egWHTcTt33a72vpSG0z3HnPuIl6NqYcTrKEg2azoEyl2hpW0zqlxysq2pK9HlDIHyHyakeYaYnSAwd8bow==}
+    engines: {node: '>=12'}
+
   drizzle-kit@0.31.10:
     resolution: {integrity: sha512-7OZcmQUrdGI+DUNNsKBn1aW8qSoKuTH7d0mYgSP8bAzdFzKoovxEFnoGQp2dVs82EOJeYycqRtciopszwUf8bw==}
     hasBin: true
@@ -7520,6 +7533,10 @@ packages:
 
   humanize-ms@1.2.1:
     resolution: {integrity: sha512-Fl70vYtsAFb/C06PTS9dZBo7ihau+Tu/DNCk/OyHhea07S+aeMWpFFkUaXRa8fI+ScZbEI8dfSxwY7gxZ9SAVQ==}
+
+  hyperliquid@1.7.7:
+    resolution: {integrity: sha512-i+mey+chqabb0IFZ2TSpG9ztvr3lgSQQcxEjoVwWbVs8gSEqlwPfDzpYDEmWbhZBRfakIU+AwlD7Z2cH9dgMTQ==}
+    engines: {node: '>=16.0.0'}
 
   hyphenate-style-name@1.1.0:
     resolution: {integrity: sha512-WDC/ui2VVRrz3jOVi+XtjqkDjiVjTtFaAGiW37k6b+ohyQ5wYDOGkvCZa8+H0nx3gyvv0+BST9xuOgIyGQ00gw==}
@@ -18794,6 +18811,8 @@ snapshots:
       domelementtype: 2.3.0
       domhandler: 5.0.3
 
+  dotenv@16.6.1: {}
+
   drizzle-kit@0.31.10:
     dependencies:
       '@drizzle-team/brocli': 0.10.2
@@ -19874,6 +19893,19 @@ snapshots:
   humanize-ms@1.2.1:
     dependencies:
       ms: 2.1.3
+
+  hyperliquid@1.7.7(bufferutil@4.1.0)(utf-8-validate@6.0.6):
+    dependencies:
+      '@msgpack/msgpack': 3.1.3
+      axios: 1.16.1
+      dotenv: 16.6.1
+      ethers: 6.16.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+    transitivePeerDependencies:
+      - bufferutil
+      - debug
+      - supports-color
+      - utf-8-validate
 
   hyphenate-style-name@1.1.0: {}
 
