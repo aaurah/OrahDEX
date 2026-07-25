@@ -1942,7 +1942,7 @@ export function WithdrawSheet({
                     />
                     {effectiveMax !== null && (
                       <button
-                        onClick={() => setNonEvmSendAmount(effectiveMax.toFixed(8))}
+                        onClick={() => setNonEvmSendAmount((Math.floor(effectiveMax * 1e8) / 1e8).toFixed(8))}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-primary hover:text-primary/80 px-2 py-0.5 rounded bg-primary/10 hover:bg-primary/20 transition-colors"
                       >
                         MAX
