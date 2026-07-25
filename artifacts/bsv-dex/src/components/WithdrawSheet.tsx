@@ -981,17 +981,11 @@ export function WithdrawSheet({
       }
 
       // ── BSV: direct on-chain transaction ────────────────────────────────────
-      // The "On-chain Balance" shown is the user's REAL BSV at their passkey
-      // wallet address (fetched from WhatsOnChain). It is NOT in the exchange
-      // internal ledger, so going through /api/withdrawals would fail with
-      // "platform liquidity" because that endpoint checks the internal ledger.
-      //
-      // Instead we build, sign and broadcast a P2PKH transaction directly using
-      // the passkey-derived BSV private key — no exchange API involved.
-      //
-      // If the recipient is a $handle (but HandCash is not connected for sending),
-      // resolve the handle to a BSV address first via the backend.
-      if (activeChain === "bsv") {
+      // Only used when the user has NO exchange balance (available === 0).
+      // When available > 0, the user's BSV lives in the OrahDEX internal ledger
+      // and must be withdrawn via /api/withdrawals (exchange path below), not
+      // by building a raw P2PKH UTXO transaction.
+      if (activeChain === "bsv" && available <= 0) {
         let recipient = nonEvmSendRecipient.trim();
         if (isHandCashHandle(recipient)) {
           const raw = recipient.replace(/^\$/, "").replace(/@handcash\.io$/i, "");
