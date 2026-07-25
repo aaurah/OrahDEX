@@ -84,8 +84,12 @@ const EVM_NETWORKS = new Set([
 const BSV_ADDRESS_RE = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
 
 router.post("/withdrawals", async (req, res) => {
-  const { walletAddress, asset, amount, network, networkLabel, recipient, fee, signature, bsvSignerAddress } = req.body;
-  if (walletAddress && !checkWithdrawRateLimit(req, res, String(walletAddress).toLowerCase())) return;
+  // Normalise to lowercase so DB lookups match regardless of EVM checksum casing
+  const walletAddress: string | undefined = req.body.walletAddress
+    ? String(req.body.walletAddress).toLowerCase()
+    : req.body.walletAddress;
+  const { asset, amount, network, networkLabel, recipient, fee, signature, bsvSignerAddress } = req.body;
+  if (walletAddress && !checkWithdrawRateLimit(req, res, walletAddress)) return;
 
   if (!walletAddress || !asset || !amount || !network || !recipient) {
     res.status(400).json({ error: "Missing required fields: walletAddress, asset, amount, network, recipient" });
