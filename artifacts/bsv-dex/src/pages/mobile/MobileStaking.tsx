@@ -501,9 +501,11 @@ function ProvidersTab() {
           fetch(`${API_BASE}/api/staking/coins`),
           fetch(`${API_BASE}/api/staking/providers`),
         ]);
-        const coinsData: PosCoin[]   = await coinsRes.json();
-        const provData:  Provider[]  = await providersRes.json();
+        const coinsRaw = await coinsRes.json();
+        const provRaw  = await providersRes.json();
         if (cancelled) return;
+        const coinsData: PosCoin[]  = Array.isArray(coinsRaw) ? coinsRaw : [];
+        const provData:  Provider[] = Array.isArray(provRaw)  ? provRaw  : [];
         setCoins(coinsData);
         setProviders(provData);
         if (coinsData.length) setSelectedCoin(coinsData[0]);
@@ -749,7 +751,8 @@ function EarnTab() {
   const fetchCoins = useCallback(async () => {
     try {
       const res  = await fetch(`${API_BASE}/api/staking/coins`);
-      const data: PosCoin[] = await res.json();
+      const raw  = await res.json();
+      const data: PosCoin[] = Array.isArray(raw) ? raw : [];
       setCoins(data);
       if (data.length && !selectedCoin) setSelectedCoin(data[0]);
     } finally {
