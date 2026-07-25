@@ -1025,11 +1025,13 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                           onClick={() => {
                             setWithdrawAsset({ asset: b.asset, available: avail, network: net.network, networkLabel: net.networkLabel, color });
                             setWithdrawInitialTab("withdraw");
+                            setWithdrawVisibleTabs(["withdraw", "deposit", "history"]);
+                            setWithdrawOpen(true);
                           }}
-                          className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition-all"
-                          title={`Withdraw ${b.asset}`}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 active:scale-95 transition-all text-[11px] font-semibold"
                         >
                           <ArrowUpRight size={12} />
+                          Withdraw
                         </button>
                       </div>
                     </div>
