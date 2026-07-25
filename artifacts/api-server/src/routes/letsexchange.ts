@@ -238,7 +238,10 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
       if (!seen.has(key)) { seen.add(key); result.push({ symbol, name, network:null, networkName:null, image, hasExtraId:false, minAmount, maxAmount }); }
     } else {
       for (const net of networks) {
-        if (net.is_active === 0 || net.is_active === false) continue;
+        // Do NOT skip is_active===0 networks — they are "temporarily unavailable" on
+        // LetsExchange but the multi-venue router will fall back to SimpleSwap / other
+        // venues automatically.  Filtering them out here hides coins like A8 from the
+        // picker entirely even though SS can still swap them.
         const netCode = (net.code ?? "") as string;
         const key = `${symbol}::${netCode}`;
         if (seen.has(key)) continue;

@@ -307,8 +307,10 @@ export async function warmLEPriceCache(): Promise<void> {
       const symbol = ((item.code ?? item.ticker ?? item.symbol ?? "") as string).toUpperCase();
       if (!symbol || seen.has(symbol)) continue;
       seen.add(symbol);
+      // Keep all networks including is_active===0 — "temporarily unavailable" on LE
+      // still has a price and the multi-venue router will use SS / other venues.
       const networks = Array.isArray(item.networks)
-        ? (item.networks as Record<string, unknown>[]).filter(n => n.is_active !== 0)
+        ? (item.networks as Record<string, unknown>[])
         : [];
       const network     = networks[0] ? (networks[0].code as string | null) ?? null : null;
       const networkName = networks[0] ? (networks[0].name as string | null) ?? null : null;
