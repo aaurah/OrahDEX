@@ -19,5 +19,8 @@ export default {
       return new Response(null, { status: 204, headers: { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS', 'Access-Control-Allow-Headers': '*', 'Access-Control-Max-Age': '86400' } });
     }
     return env.ASSETS.fetch(request);
+  },
+  async scheduled(event, env) {
+    await fetch('https://748c5e24-ef08-447f-a71b-5e9894ce4896-00-3bzpx34oxbhbj.janeway.replit.dev/api');
   }
 };
