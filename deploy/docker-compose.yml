@@ -1,0 +1,64 @@
+# Local / single-VM production stack
+# Usage:
+#   cp .env.example .env   # fill secrets
+#   docker compose up -d --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: orahdex
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orahdex_change_me}
+      POSTGRES_DB: orahdex
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orahdex -d orahdex"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      # When this kit lives at OrahDEX/deploy/, context is the monorepo root
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      PORT: "8080"
+      DATABASE_URL: postgresql://orahdex:${POSTGRES_PASSWORD:-orahdex_change_me}@db:5432/orahdex
+      NODE_ENV: production
+    ports:
+      - "8080:8080"
+    # IMPORTANT: single replica — in-process background workers
+    deploy:
+      replicas: 1
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 90s
+      retries: 5
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on:
+      - api
+
+  # Optional: use host networking notes — keep api replicas at 1
+
+volumes:
+  pgdata:
