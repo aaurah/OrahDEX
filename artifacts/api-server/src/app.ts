@@ -579,6 +579,13 @@ startApiKeyCounterFlusher();
         `<script>window.__REOWN_PROJECT_ID__=${JSON.stringify(reownId)};</script></head>`,
       );
     }
+    // Inject Vercel Speed Insights script
+    if (indexHtml) {
+      indexHtml = indexHtml.replace(
+        "</head>",
+        `<script defer src="/_vercel/speed-insights/script.js"></script></head>`,
+      );
+    }
     app.get(/^(?!\/api|\/v1).*$/, (_req: Request, res: Response) => {
       res.setHeader("X-Robots-Tag", "index, follow");
       if (indexHtml) {
