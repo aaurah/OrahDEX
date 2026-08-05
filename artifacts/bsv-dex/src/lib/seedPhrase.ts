@@ -198,6 +198,8 @@ async function deriveTronAddressFromHdKey(key: HDKey): Promise<string> {
   if (!key.privateKey) throw new Error("no TRON private key");
   // Lazy import avoids iOS Safari module-initialization race where the static
   // import resolves to `undefined` when the chunk first executes.
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore — noble/curves subpath export; types resolved at runtime
   const { secp256k1 } = await import("@noble/curves/secp256k1");
   // getPublicKey(privateKey, false) → 65-byte uncompressed point (04 || x || y)
   // This is equivalent to ProjectivePoint.fromHex(compressedPubKey).toRawBytes(false)
@@ -252,6 +254,8 @@ function deriveDogeAddress(key: HDKey): string {
  * Address = plain Base58 of the 32-byte ed25519 public key.
  */
 async function deriveSolanaAddress(seed: Uint8Array): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+  // @ts-ignore — noble/curves subpath export; types resolved at runtime
   const { ed25519 } = await import("@noble/curves/ed25519");
   const privateKey = slip10Derive(seed, [
     0x80000000 + 44,   // 44'

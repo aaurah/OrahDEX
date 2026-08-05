@@ -1,3 +1,4 @@
+// @ts-ignore — thirdweb is an optional server-side dependency
 import { createThirdwebClient } from "thirdweb";
 
 if (!process.env.THIRDWEB_SECRET_KEY) {

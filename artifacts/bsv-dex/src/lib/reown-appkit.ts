@@ -67,14 +67,14 @@ const evmNetworks = [
   linea, zkSync, scroll, sepolia,
 ] as const;
 
-export const wagmiAdapter  = new WagmiAdapter({ projectId, networks: evmNetworks });
+export const wagmiAdapter  = new WagmiAdapter({ projectId, networks: [...evmNetworks] });
 export const solanaAdapter  = new SolanaAdapter();
 export const bitcoinAdapter = new BitcoinAdapter();
 
 const appKit = createAppKit({
   adapters: [wagmiAdapter, solanaAdapter, bitcoinAdapter],
   projectId,
-  networks,
+  networks: [...networks] as any,
   defaultNetwork: initialNetwork,
   metadata: {
     name: "OrahDEX",
@@ -90,7 +90,6 @@ const appKit = createAppKit({
     socials:       false,   // native social login handled in WalletChooserDialog
     onramp:        true,
     swaps:         true,
-    smartAccounts: true,
   },
   enableWallets: true,
   themeMode: _initialThemeMode,

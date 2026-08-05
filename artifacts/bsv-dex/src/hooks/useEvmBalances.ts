@@ -262,7 +262,7 @@ function balanceOfCalldata(address: string): string {
 
 async function rpcCall(method: string, params: any[], chainId: number): Promise<any> {
   const customRpc = useCustomChainStore.getState().getById(chainId)?.rpcUrl;
-  const urls = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId], customRpc].filter(Boolean);
+  const urls = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId], customRpc].filter((u): u is string => Boolean(u));
   for (const rpcUrl of urls) {
     try {
       const res = await globalThis.fetch(rpcUrl, {
@@ -776,7 +776,7 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
             const { getBalance } = await import("@wagmi/core");
             const result = await getBalance(config, {
               address: address as `0x${string}`,
-              chainId: resolvedChainId,
+              chainId: resolvedChainId as any,
             });
             return Number(result.value) / 1e18;
           } catch { /* fall through */ }
