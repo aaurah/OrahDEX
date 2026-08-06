@@ -77,7 +77,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake" | "base" | "zora";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "vote",      label: "🗳️ Vote" },

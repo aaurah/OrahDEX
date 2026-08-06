@@ -141,11 +141,12 @@ async function checkAiHealth(): Promise<DiagResult> {
       return { name: "ai-health", status: "warn", detail: `AI insights endpoint returned HTTP ${res.status}` };
     }
     const body = await res.json().catch(() => null);
-    const hasInsights = Array.isArray(body?.insights) && body.insights.length > 0;
+    const b = body as any;
+    const hasInsights = Array.isArray(b?.insights) && b.insights.length > 0;
     if (!hasInsights) {
       return { name: "ai-health", status: "warn", detail: "AI insights returned empty or malformed response" };
     }
-    return { name: "ai-health", status: "ok", detail: `AI insights responsive (${body.cached ? "cached" : "fresh"})` };
+    return { name: "ai-health", status: "ok", detail: `AI insights responsive (${b.cached ? "cached" : "fresh"})` };
   } catch (err: any) {
     if (err?.name === "AbortError") {
       return { name: "ai-health", status: "warn", detail: "AI insights endpoint timed out (>5s)" };
