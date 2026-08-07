@@ -1,3 +1,7 @@
+import { Router } from "express";
+
+const router = Router();
+
 router.get("/markets/:symbol/candles", async (req, res) => {
   try {
     const symbol   = normSymbol(req.params.symbol);
@@ -49,3 +53,4 @@ router.get("/markets/:symbol/candles", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+export default router;
