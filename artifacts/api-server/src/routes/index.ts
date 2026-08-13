@@ -4,6 +4,8 @@ import diagnosticsRouter from "./diagnostics.js";
 import aiRouter from "./ai.js";
 import devaiRouter from "./devai.js";
 import marketsRouter from "./markets.js";
+// markets default export
+// markets default export
 import ordersRouter from "./orders.js";
 import tradesRouter from "./trades.js";
 import portfolioRouter from "./portfolio.js";
@@ -36,11 +38,14 @@ import aiImageRouter from "./aiImage.js";
 import creatorCoinsRouter from "./creatorCoins.js";
 import predictionRouter from "./prediction.js";
 import feeRevenueRouter from "./feeRevenue.js";
+import hyperliquidRouter from "./hyperliquid.js";
 import tradeRouter from "./trade.js";
 import letsexchangeRouter from "./letsexchange.js";
 import stakingRouter from "./staking.js";
 import lpStakingRouter from "./lpStaking.js";
 import bsvIntentRouter from "./bsvIntent.js";
+import evmToBsvIntentRouter from "./evmToBsvIntent.js";
+import swapsRouter from "./swaps.js";
 import stripeCheckoutRouter from "./stripeCheckout.js";
 import adminDiagnosticsRouter from "./adminDiagnostics.js";
 import coinbaseRouter from "./coinbase.js";
@@ -52,6 +57,13 @@ import sorRouter from "./sor.js";
 import lightningRouter from "./lightning.js";
 import advancedOrdersRouter from "./advancedOrders.js";
 import optionsRouter from "./options.js";
+import overlayRouter from "./overlay.js";
+import handcashRouter from "./handcash.js";
+import tokensRouter from "./tokens.js";
+import externalSwapRouter from "./externalSwap.js";
+import lifiRouter from "./lifi.js";
+import quicknodeRouter from "./quicknode.js";
+import awsRouter from "./aws.js";
 import { db, pool } from "@workspace/db";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import { platformSettingsTable, adminEmailsTable, walletsTable } from "@workspace/db/schema";
@@ -62,6 +74,7 @@ import { getOrCreateBsvWallet, getBsvWallet } from "../lib/internalBsvWallet.js"
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
 import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { arcBroadcast } from "../lib/arcBroadcaster.js";
 import { randomBytes } from "node:crypto";
 
 const router: IRouter = Router();
@@ -98,6 +111,10 @@ router.use(liquidityRouter);
 router.use(swapRouter);
 router.use(sorRouter);
 router.use(buyRouter);
+router.use(handcashRouter);
+router.use(tokensRouter);
+router.use(externalSwapRouter);
+router.use(lifiRouter);
 // Protect all /admin routes — allow only the public auth endpoints through without a token.
 const ADMIN_OPEN_METHODS_PATHS = new Set([
   "POST:/auth",
@@ -112,6 +129,7 @@ router.use("/admin", (req, res, next) => {
 router.use("/admin", adminRouter);
 router.use("/admin", adminDiagnosticsRouter);
 router.use("/admin", cexRouter);
+router.use("/admin", awsRouter);
 router.use("/tv", tvRouter);
 router.use("/global-markets", globalMarketsRouter);
 router.use("/bridge", bridgeRouter);
@@ -140,12 +158,17 @@ router.use(letsexchangeRouter);
 router.use(stakingRouter);
 router.use(lpStakingRouter);
 router.use(bsvIntentRouter);
+router.use(evmToBsvIntentRouter);
+router.use(swapsRouter);
 router.use(stripeCheckoutRouter);
 router.use(coinbaseRouter);
 router.use(kycRouter);
 router.use("/wallet", walletRouter);
 router.use(anthropicRouter);
 router.use(quantumAuthRouter);
+router.use("/overlay", overlayRouter);
+router.use(quicknodeRouter);
+router.use(hyperliquidRouter);
 
 
 /* ── BSV HandCash handle resolution proxy ────────────────────────────────── */
@@ -450,22 +473,11 @@ router.post("/bsv/broadcast", async (req, res) => {
     return;
   }
   try {
-    const ctrl  = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15_000);
-    const wocRes = await fetch(BSV_NET.wocBroadcast, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json", "User-Agent": "OrahDEX/1.0" },
-      body:    JSON.stringify({ txhex: rawHex }),
-      signal:  ctrl.signal,
-    });
-    clearTimeout(timer);
-    const text = await wocRes.text();
-    if (wocRes.ok && text) {
-      // WoC returns the txid as plain or JSON-quoted text
-      const txid = text.trim().replace(/^"|"$/g, "");
-      res.json({ txid, explorerUrl: `${BSV_NET.explorer}/tx/${txid}` });
+    const result = await arcBroadcast(rawHex);
+    if (result.txid) {
+      res.json({ txid: result.txid, arcStatus: result.arcStatus, explorerUrl: `${BSV_NET.explorer}/tx/${result.txid}` });
     } else {
-      res.status(wocRes.status).json({ error: text || "Broadcast failed" });
+      res.status(400).json({ error: result.error ?? "Broadcast failed" });
     }
   } catch (err: any) {
     logger.warn({ err: err?.message }, "BSV broadcast failed");
@@ -598,24 +610,52 @@ router.post("/webhook/email-inbound", async (req, res) => {
     const subject: string =
       b.subject ?? b.Subject ?? "(no subject)";
 
-    const body: string =
-      b["body-plain"] ?? b.text ?? b.TextBody ?? b.body ?? b.plain ??
-      b["body-html"] ?? b.html ?? b.HtmlBody ?? "(empty)";
+    // Prefer plain-text body; fall back to HTML variants
+    const plainBody: string | undefined =
+      b["body-plain"] ?? b.text ?? b.TextBody ?? b.body ?? b.plain;
 
-    // Strip basic HTML tags for storage if we only got HTML
-    // Use a character-by-character approach to avoid ReDoS on untrusted input.
-    // Handles nested `<` by tracking the outermost opening tag only.
-    const MAX_EMAIL_BODY_LENGTH = 50_000;
-    const cleanBody = (() => {
-      let out = "";
-      let tagDepth = 0;
-      for (const ch of body.slice(0, MAX_EMAIL_BODY_LENGTH)) {
-        if (ch === "<") { tagDepth++; continue; }
-        if (ch === ">" && tagDepth > 0) { tagDepth--; if (tagDepth === 0) out += " "; continue; }
-        if (tagDepth === 0) out += ch;
+    const htmlBody: string | undefined =
+      b["body-html"] ?? b.html ?? b.HtmlBody;
+
+    // Proper HTML→text converter: skips style/script/head content, adds
+    // newlines for block elements. Safe against ReDoS (no regex on input).
+    function htmlToPlainText(html: string, max = 50_000): string {
+      const SKIP  = new Set(["style","script","head","noscript"]);
+      const BLOCK = new Set(["p","div","br","hr","tr","td","th","h1","h2","h3",
+                             "h4","h5","h6","li","article","section","header",
+                             "footer","blockquote","pre"]);
+      let out = "", i = 0, skip = 0;
+      const src = html.slice(0, max);
+      while (i < src.length) {
+        if (src[i] !== "<") { if (!skip) out += src[i]; i++; continue; }
+        let j = i + 1, inQ = "";
+        while (j < src.length && (src[j] !== ">" || inQ)) {
+          if ((src[j] === '"' || src[j] === "'") && !inQ) inQ = src[j];
+          else if (src[j] === inQ) inQ = "";
+          j++;
+        }
+        const inner = src.slice(i + 1, j).trim();
+        const isClose = inner.startsWith("/");
+        const name = (isClose ? inner.slice(1) : inner).split(/[\s/]/)[0].toLowerCase();
+        if (!isClose && SKIP.has(name)) skip++;
+        else if (isClose && SKIP.has(name) && skip > 0) { skip--; out += "\n"; }
+        else if (!skip) out += BLOCK.has(name) ? "\n" : " ";
+        i = j + 1;
       }
-      return out.replace(/  +/g, " ").trim();
-    })();
+      return out.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+    }
+
+    // Store raw HTML when available so the frontend can render images,
+    // branded layouts, and styled verification codes via sandboxed iframe.
+    // Fall back to plain text, then "(empty)".
+    let storedBody: string;
+    if (htmlBody && htmlBody.trim()) {
+      storedBody = htmlBody.trim();
+    } else if (plainBody && plainBody.trim()) {
+      storedBody = plainBody.trim();
+    } else {
+      storedBody = "(empty)";
+    }
 
     if (!from || !subject) {
       res.status(400).json({ error: "Missing required fields: from, subject" });
@@ -627,7 +667,7 @@ router.post("/webhook/email-inbound", async (req, res) => {
       fromAddress: from,
       toAddress: to,
       subject,
-      body: cleanBody || body,
+      body: storedBody,
       category: "contact",
       isRead: false,
       isStarred: false,

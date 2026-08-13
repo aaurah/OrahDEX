@@ -38,15 +38,11 @@ import { Fingerprint } from "lucide-react";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { API_BASE } from "@/lib/api";
 import { LetsExchangePanel } from "@/components/LetsExchangePanel";
-import { FiatBuySellPanel } from "@/components/FiatBuySellPanel";
 import { BridgeAggPanel } from "@/components/BridgeAggPanel";
-import { BuyCryptoModal } from "@/components/BuyCryptoModal";
-import { DirectBuyModal } from "@/components/DirectBuyModal";
-import { KycModal } from "@/components/KycModal";
+import { FiatBuySellPanel } from "@/components/FiatBuySellPanel";
 import { SorRouteDisplay } from "@/components/SorRouteDisplay";
 import { makeSorQuoteDebouncer } from "@/lib/sorClient";
 import type { SorQuoteResponse } from "@/lib/sorClient";
-type FiatPayMethod = "apple" | "google" | "card" | "bank";
 
 // ─── Chain config ────────────────────────────────────────────────────────────
 
@@ -2194,7 +2190,7 @@ function BuyCryptoPanel({
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function Swap() {
-  useSEO({ title: "Buy · Swap · Bridge · DEX — OrahDEX", description: "Buy crypto with card, swap 6,000+ coins across 30+ chains, bridge between networks, or trade on-chain DEX — all in one place." });
+  useSEO({ title: "Swap · Bridge · DEX — OrahDEX", description: "Swap 6,000+ coins across 30+ chains, bridge between networks, or trade on-chain DEX — all in one place." });
   const [, setLocation] = useLocation();
   const searchStr = useSearch();
   const searchParams = new URLSearchParams(searchStr);
@@ -2209,60 +2205,9 @@ export function Swap() {
   const { toast } = useToast();
 
   const urlTab = searchParams.get("tab");
-  const [activeTab, setActiveTab] = useState<"swap" | "buysell" | "bridge" | "dex">(
-    urlTab === "buysell" || urlTab === "bridge" || urlTab === "dex" ? urlTab : "swap"
+  const [activeTab, setActiveTab] = useState<"buy" | "swap" | "bridge" | "dex">(
+    urlTab === "bridge" || urlTab === "dex" || urlTab === "buy" ? urlTab : "swap"
   );
-  const [buySellMode, setBuySellMode] = useState<"buy" | "sell">("buy");
-
-  const [fiatModalOpen, setFiatModalOpen]           = useState(false);
-  const [fiatModalMethod, setFiatModalMethod]       = useState<FiatPayMethod>("card");
-  const [buyCryptoOpen, setBuyCryptoOpen]           = useState(false);
-
-  const [kycModalOpen,  setKycModalOpen]            = useState(false);
-  const SESSION_KYC_KEY = "orahdex_kyc_verified";
-  const [kycVerified,   setKycVerified]             = useState<boolean>(() =>
-    sessionStorage.getItem(SESSION_KYC_KEY) === "true"
-  );
-  const [kycPending,    setKycPending]              = useState<FiatPayMethod | null>(null);
-
-  // Check KYC status whenever a wallet is connected; session flag short-circuits the fetch
-  useEffect(() => {
-    if (sessionStorage.getItem(SESSION_KYC_KEY) === "true") {
-      setKycVerified(true);
-      return;
-    }
-    if (!address) return;
-    fetch(`${API_BASE}/kyc/status?walletAddress=${encodeURIComponent(address)}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.verified) {
-          sessionStorage.setItem(SESSION_KYC_KEY, "true");
-          setKycVerified(true);
-        }
-      })
-      .catch(() => {});
-  }, [address]);
-
-  function openFiatModal(method: FiatPayMethod) {
-    if (!kycVerified) {
-      // Gate: require KYC before first purchase
-      setKycPending(method);
-      setKycModalOpen(true);
-    } else {
-      setFiatModalMethod(method);
-      setFiatModalOpen(true);
-    }
-  }
-
-  function handleKycVerified() {
-    sessionStorage.setItem(SESSION_KYC_KEY, "true");
-    setKycVerified(true);
-    if (kycPending) {
-      setFiatModalMethod(kycPending);
-      setKycPending(null);
-      setFiatModalOpen(true);
-    }
-  }
 
   // Default: all wallets start in on-chain DEX mode (Uniswap V3).
   // Orah passkey wallets sign transactions via biometric auth — no seed phrase stored.
@@ -2533,10 +2478,10 @@ export function Swap() {
         {/* ─── Tab bar — LetsExchange segment-control style ─── */}
         <div className="flex items-center gap-0.5 p-1 bg-muted/20 rounded-2xl border border-border/30">
           {([
-            { key: "swap",    label: "Swap"     },
-            { key: "buysell", label: "Buy/Sell" },
-            { key: "bridge",  label: "Bridge"   },
-            { key: "dex",     label: "DEX"      },
+            { key: "buy",    label: "Buy"    },
+            { key: "swap",   label: "Swap"   },
+            { key: "bridge", label: "Bridge" },
+            { key: "dex",    label: "DEX"    },
           ] as const).map(tab => (
             <button
               key={tab.key}
@@ -2553,21 +2498,24 @@ export function Swap() {
           ))}
         </div>
 
-        {/* ═══════════════ BUY/SELL TAB ═══════════════ */}
-        {activeTab === "buysell" && (
-          <FiatBuySellPanel />
-        )}
+        {/* ═══════════════ BUY TAB ═══════════════ */}
+        {activeTab === "buy" && <FiatBuySellPanel />}
 
-        {/* ═══════════════ SWAP TAB (LetsExchange cross-chain) ═══════════════ */}
+        {/* ═══════════════ SWAP TAB ═══════════════ */}
         {activeTab === "swap" && (
-          <div id="lets-exchange-panel">
-            <LetsExchangePanel walletAddress={address} onConnectWallet={openWalletModal} initialFrom={leFrom} initialTo={leTo} />
-          </div>
+          <LetsExchangePanel
+            walletAddress={address}
+            onConnectWallet={openWalletModal}
+            initialFrom={leFrom}
+            initialTo={leTo}
+          />
         )}
 
         {/* ═══════════════ BRIDGE TAB ═══════════════ */}
         {activeTab === "bridge" && (
-          <BridgeAggPanel walletAddress={address ?? undefined} />
+          <div className="space-y-3">
+            <BridgeAggPanel walletAddress={address ?? undefined} />
+          </div>
         )}
 
         {/* ═══════════════ DEX TAB (on-chain Uniswap V3 / PancakeSwap) ═══════════════ */}

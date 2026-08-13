@@ -241,13 +241,18 @@ router.get("/nft/collections", async (req, res) => {
   await ensureSeeded();
   try {
     const { chain, category, q } = req.query as Record<string, string>;
-    let rows = await db.select().from(nftCollectionsTable).orderBy(desc(nftCollectionsTable.volume24h));
+    let rows = await db.select().from(nftCollectionsTable).orderBy(desc(nftCollectionsTable.volume24h)).limit(200);
 
     if (chain)    rows = rows.filter(r => r.chain.toUpperCase() === chain.toUpperCase());
     if (category) rows = rows.filter(r => r.category === category);
     if (q)        rows = rows.filter(r => r.name.toLowerCase().includes(q.toLowerCase()));
 
-    res.json({ collections: rows, total: rows.length });
+    res.json({
+      collections: rows,
+      total: rows.length,
+      dataSource: "seeded",
+      dataSourceNote: "Collection metadata is seeded from a curated static list. Prices, volumes, and floor values are illustrative and not live market data.",
+    });
   } catch (err: any) {
     res.status(500).json({ error: "Internal server error" });
   }
@@ -314,11 +319,13 @@ router.get("/nft/items/:id", async (req, res) => {
 
     const listings = await db.select().from(nftListingsTable)
       .where(and(eq(nftListingsTable.nftId, nft.id), eq(nftListingsTable.status, "active")))
-      .orderBy(asc(nftListingsTable.price));
+      .orderBy(asc(nftListingsTable.price))
+      .limit(20);
 
     const bids = await db.select().from(nftBidsTable)
       .where(and(eq(nftBidsTable.nftId, nft.id), eq(nftBidsTable.status, "active")))
-      .orderBy(desc(nftBidsTable.price));
+      .orderBy(desc(nftBidsTable.price))
+      .limit(20);
 
     const activity = await db.select().from(nftActivityTable)
       .where(eq(nftActivityTable.nftId, nft.id))
@@ -482,13 +489,16 @@ router.get("/nft/portfolio/:address", async (req, res) => {
     const { address } = req.params;
     const owned = await db.select().from(nftsTable)
       .where(eq(nftsTable.owner, address.toLowerCase()))
-      .orderBy(desc(nftsTable.createdAt));
+      .orderBy(desc(nftsTable.createdAt))
+      .limit(200);
 
     const myListings = await db.select().from(nftListingsTable)
-      .where(and(eq(nftListingsTable.seller, address.toLowerCase()), eq(nftListingsTable.status, "active")));
+      .where(and(eq(nftListingsTable.seller, address.toLowerCase()), eq(nftListingsTable.status, "active")))
+      .limit(50);
 
     const myBids = await db.select().from(nftBidsTable)
-      .where(and(eq(nftBidsTable.bidder, address.toLowerCase()), eq(nftBidsTable.status, "active")));
+      .where(and(eq(nftBidsTable.bidder, address.toLowerCase()), eq(nftBidsTable.status, "active")))
+      .limit(50);
 
     res.json({ owned, myListings, myBids });
   } catch (err: any) {

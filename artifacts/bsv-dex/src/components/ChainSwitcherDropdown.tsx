@@ -1,9 +1,12 @@
 import { useState } from "react";
-import { ChevronDown, CheckCircle2, PlusCircle } from "lucide-react";
+import { ChevronDown, CheckCircle2, PlusCircle, Plus, Trash2, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useToast } from "@/hooks/use-toast";
-import { switchReownChain, fetchEvmBalance, CHAIN_RPC_URLS } from "@/lib/reown";
+import { fetchEvmBalance, CHAIN_RPC_URLS } from "@/lib/reown";
+import { useCustomChainStore } from "@/store/useCustomChainStore";
+import { AddNetworkDialog } from "@/components/AddNetworkDialog";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 
 interface ChainDef {
   id: number;
@@ -258,7 +261,33 @@ const EVM_CHAINS: ChainDef[] = [
     nativeName: "Ether",
     nativeDecimals: 18,
   },
+  {
+    id: 33139,
+    key: "apechain",
+    name: "ApeChain",
+    symbol: "APE",
+    badge: "L3",
+    icon: "🦍",
+    color: "text-blue-400",
+    rpcUrl: "https://rpc.apechain.com/http",
+    blockExplorerUrl: "https://explorer.apechain.com",
+    nativeName: "ApeCoin",
+    nativeDecimals: 18,
+  },
   /* ─── L1 — Alt L1s ──────────────────────────────────────────── */
+  {
+    id: 1329,
+    key: "sei",
+    name: "Sei",
+    symbol: "SEI",
+    badge: "L1",
+    icon: "🔴",
+    color: "text-red-400",
+    rpcUrl: "https://evm-rpc.sei-apis.com",
+    blockExplorerUrl: "https://seitrace.com",
+    nativeName: "Sei",
+    nativeDecimals: 18,
+  },
   {
     id: 100,
     key: "gnosis",
@@ -378,8 +407,30 @@ interface Props {
 export function ChainSwitcherDropdown({ inline = false, startOpen = false, onChainSelected }: Props) {
   const { chainId, network, address, connect, provider, switchNetworkType, switchChain } = useWalletStore();
   const { toast } = useToast();
+  const { open: openWalletModal } = useWalletModalStore();
   const [open, setOpen] = useState(startOpen);
   const [switching, setSwitching] = useState<number | null>(null);
+  const [addNetworkOpen, setAddNetworkOpen] = useState(false);
+
+  const customChains = useCustomChainStore(s => s.chains);
+  const removeCustomChain = useCustomChainStore(s => s.remove);
+
+  const switchCustomChain = (cc: (typeof customChains)[0]) => {
+    const synthetic: ChainDef = {
+      id: cc.id,
+      key: `custom_${cc.id}`,
+      name: cc.name,
+      symbol: cc.symbol,
+      badge: "L1",
+      icon: "◈",
+      color: "text-primary",
+      rpcUrl: cc.rpcUrl,
+      blockExplorerUrl: cc.blockExplorerUrl,
+      nativeName: cc.nativeName,
+      nativeDecimals: 18,
+    };
+    switchEvmChain(synthetic);
+  };
 
   const currentEvmChain = EVM_CHAINS.find(c => c.id === chainId);
   const currentOther    = [...OTHER_CHAINS_MAINNET, ...OTHER_CHAINS_TESTNET].find(c => c.network === network);
@@ -389,54 +440,6 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
 
     setSwitching(chain.id);
 
-    /* ── Reown / WalletConnect path ─────────────────────────────────────── */
-    if (provider === "reown") {
-      try {
-        const switched = await switchReownChain(chain.id);
-        if (!switched) {
-          /* Chain not pre-configured in AppKit — fall back to injected provider */
-          const eth = (window as any).ethereum;
-          if (!eth) throw new Error(`${chain.name} is not available via WalletConnect. Please connect via MetaMask to use this chain.`);
-          const hexId = `0x${chain.id.toString(16)}`;
-          try {
-            await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
-          } catch (switchErr: any) {
-            if (switchErr?.code === 4902 || switchErr?.code === -32603) {
-              await eth.request({
-                method: "wallet_addEthereumChain",
-                params: [{
-                  chainId: hexId,
-                  chainName: chain.name,
-                  nativeCurrency: { name: chain.nativeName, symbol: chain.symbol, decimals: chain.nativeDecimals },
-                  rpcUrls: [chain.rpcUrl],
-                  blockExplorerUrls: [chain.blockExplorerUrl],
-                }],
-              });
-              await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
-            } else throw switchErr;
-          }
-        }
-        /* Use switchChain to update only the chainId — never wipes internal addresses */
-        switchChain(chain.id);
-        const bal = await fetchEvmBalance(address!, chain.id);
-        if (bal !== null) useWalletStore.getState().setBalance(bal);
-        toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
-        setOpen(false); onChainSelected?.();
-      } catch (err: any) {
-        if (err?.code === 4001 || err?.message?.toLowerCase().includes("reject")) {
-          toast({ title: "Cancelled", description: "You rejected the chain switch.", variant: "destructive" });
-        } else {
-          toast({
-            title: "Switch failed",
-            description: err?.message || "Could not switch chain via WalletConnect.",
-            variant: "destructive",
-          });
-        }
-      } finally {
-        setSwitching(null);
-      }
-      return;
-    }
 
     /* ── OrahDEX software wallet (seed phrase / passkey) ─────────────────
        No browser extension needed — we own the key, so just update the
@@ -463,6 +466,48 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
         setOpen(false); onChainSelected?.();
       } catch (err: any) {
         toast({ title: "Switch failed", description: err?.message || "Could not switch chain.", variant: "destructive" });
+      } finally {
+        setSwitching(null);
+      }
+      return;
+    }
+
+    /* ── Reown / WalletConnect path ──────────────────────────────────────── */
+    if (provider === "reown") {
+      try {
+        const [{ switchChain: wagmiSwitchChain }, { wagmiAdapter, saveReownChain }] = await Promise.all([
+          import("wagmi/actions"),
+          import("@/lib/reown-appkit"),
+        ]);
+        const hexId = `0x${chain.id.toString(16)}`;
+        try {
+          await wagmiSwitchChain(wagmiAdapter.wagmiConfig, { chainId: chain.id as any });
+        } catch (switchErr: any) {
+          /* Chain not in wagmiConfig's chain list — fall back to raw EIP-1193 */
+          const connector = wagmiAdapter.wagmiConfig.connectors.find(
+            (c: any) => c.id === "walletConnect" || c.type === "walletConnect"
+          );
+          const eip1193 = await (connector as any)?.getProvider?.();
+          if (!eip1193) throw switchErr;
+          try {
+            await eip1193.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
+          } catch (e2: any) {
+            if (e2?.code === 4902 || e2?.code === -32603) {
+              await eip1193.request({ method: "wallet_addEthereumChain", params: [{ chainId: hexId, chainName: chain.name, nativeCurrency: { name: chain.nativeName, symbol: chain.symbol, decimals: chain.nativeDecimals }, rpcUrls: [chain.rpcUrl], blockExplorerUrls: [chain.blockExplorerUrl] }] });
+              await eip1193.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hexId }] });
+            } else { throw e2; }
+          }
+        }
+        switchChain(chain.id);
+        saveReownChain(chain.id); // persist so page refresh restores this chain
+        const bal = await fetchEvmBalance(address!, chain.id);
+        if (bal !== null) useWalletStore.getState().setBalance(bal);
+        toast({ title: `Switched to ${chain.name}`, description: `${chain.badge} · ${chain.symbol}` });
+        setOpen(false); onChainSelected?.();
+      } catch (err: any) {
+        if (err?.code !== 4001 && err?.name !== "UserRejectedRequestError") {
+          toast({ title: "Switch failed", description: err?.message || "Chain switch failed via WalletConnect.", variant: "destructive" });
+        }
       } finally {
         setSwitching(null);
       }
@@ -660,34 +705,101 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
                 Other Networks
               </p>
               <div className="px-1.5 pb-1.5 space-y-0.5">
-                {OTHER_CHAINS_MAINNET.map(chain => {
-                  const active = network === chain.network;
-                  return (
-                    <button key={chain.key} disabled={active}
-                      onClick={() => {
-                        if (active) return;
-                        if (!canSwitchToNetwork(chain.network)) {
-                          toast({ title: `No ${chain.name} wallet`, description: "Create or import an OrahDEX multi-chain wallet to use this network.", variant: "destructive" });
-                          return;
-                        }
-                        switchNetworkType(chain.network);
-                        setOpen(false);
-                      }}
-                      className={cn("w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left",
-                        active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
-                    >
-                      <span className={cn("text-sm leading-none font-bold w-5 text-center", chain.color)}>{chain.icon}</span>
-                      <span className="flex-1">{chain.name}</span>
-                      <span className="text-[10px] text-muted-foreground/50 shrink-0">{chain.symbol}</span>
-                      {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
-                    </button>
-                  );
-                })}
+                {OTHER_CHAINS_MAINNET.every(c => !canSwitchToNetwork(c.network)) ? (
+                  <button
+                    onClick={() => { setOpen(false); openWalletModal(); }}
+                    className="w-full flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-xs font-medium transition-all text-left bg-primary/5 border border-primary/20 hover:bg-primary/10"
+                  >
+                    <span className="text-base leading-none shrink-0">🔓</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-foreground font-semibold text-[11px] leading-snug">SOL · TRON · XRP · LTC + more</p>
+                      <p className="text-muted-foreground text-[10px] leading-snug">Add OrahDEX HD wallet to unlock</p>
+                    </div>
+                    <Plus className="w-3.5 h-3.5 text-primary shrink-0" />
+                  </button>
+                ) : (
+                  OTHER_CHAINS_MAINNET.map(chain => {
+                    const active = network === chain.network;
+                    const canSwitch = canSwitchToNetwork(chain.network);
+                    return (
+                      <button key={chain.key} disabled={active}
+                        onClick={() => {
+                          if (active) return;
+                          if (!canSwitch) {
+                            toast({ title: `No ${chain.name} wallet`, description: "Create or import an OrahDEX multi-chain wallet to use this network.", variant: "destructive" });
+                            return;
+                          }
+                          switchNetworkType(chain.network);
+                          setOpen(false);
+                        }}
+                        className={cn("w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left",
+                          active     ? "bg-primary/10 text-foreground cursor-default" :
+                          !canSwitch ? "hover:bg-white/5 text-muted-foreground/40 cursor-pointer" :
+                                       "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
+                      >
+                        <span className={cn("text-sm leading-none font-bold w-5 text-center", canSwitch ? chain.color : "text-muted-foreground/25")}>{chain.icon}</span>
+                        <span className="flex-1">{chain.name}</span>
+                        {!canSwitch && !active
+                          ? <Lock className="w-3 h-3 text-muted-foreground/35 shrink-0" />
+                          : <span className="text-[10px] text-muted-foreground/50 shrink-0">{chain.symbol}</span>}
+                        {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
+
+            {/* Custom Networks */}
+            {(customChains.length > 0 || true) && (
+              <div className="border-t border-border">
+                <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-3 pt-2 pb-1">
+                  Custom Networks
+                </p>
+                <div className="px-1.5 pb-1 space-y-0.5">
+                  {customChains.map(cc => {
+                    const active = network === "evm" && chainId === cc.id;
+                    return (
+                      <div key={cc.id} className="flex items-center gap-1">
+                        <button
+                          onClick={() => switchCustomChain(cc)}
+                          disabled={active || !!switching}
+                          className={cn("flex-1 flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition-all text-left",
+                            active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
+                        >
+                          <span className="text-sm w-5 text-center text-primary shrink-0">◈</span>
+                          <span className="flex-1 truncate">{cc.name}</span>
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded border bg-primary/15 text-primary border-primary/30 shrink-0">CUSTOM</span>
+                          {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                        </button>
+                        <button
+                          onClick={() => removeCustomChain(cc.id)}
+                          className="p-1.5 rounded-md hover:bg-destructive/15 text-muted-foreground/40 hover:text-destructive transition-colors shrink-0"
+                          title="Remove network"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button
+                    onClick={() => setAddNetworkOpen(true)}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5 shrink-0" />
+                    <span>Add Custom Network</span>
+                  </button>
+                </div>
+              </div>
+            )}
             </div>{/* end scrollable */}
           </div>
         )}
+      <AddNetworkDialog
+        open={addNetworkOpen}
+        onClose={() => setAddNetworkOpen(false)}
+        onAdded={(id) => { switchCustomChain(useCustomChainStore.getState().getById(id)!); }}
+      />
       </div>
     );
   }
@@ -770,35 +882,100 @@ export function ChainSwitcherDropdown({ inline = false, startOpen = false, onCha
                   Other Networks
                 </p>
                 <div className="space-y-0.5">
-                  {OTHER_CHAINS_MAINNET.map(chain => {
-                    const active = network === chain.network;
+                  {OTHER_CHAINS_MAINNET.every(c => !canSwitchToNetwork(c.network)) ? (
+                    <button
+                      onClick={() => { setOpen(false); openWalletModal(); }}
+                      className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium transition-all text-left bg-primary/5 border border-primary/20 hover:bg-primary/10"
+                    >
+                      <span className="text-lg leading-none shrink-0">🔓</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-foreground font-semibold text-xs leading-snug">SOL · TRON · XRP · LTC + more</p>
+                        <p className="text-muted-foreground text-[11px] leading-snug">Add OrahDEX HD wallet to unlock</p>
+                      </div>
+                      <Plus className="w-4 h-4 text-primary shrink-0" />
+                    </button>
+                  ) : (
+                    OTHER_CHAINS_MAINNET.map(chain => {
+                      const active = network === chain.network;
+                      const canSwitch = canSwitchToNetwork(chain.network);
+                      return (
+                        <button key={chain.key} disabled={active}
+                          onClick={() => {
+                            if (active) return;
+                            if (!canSwitch) {
+                              toast({ title: `No ${chain.name} wallet`, description: "Create or import an OrahDEX multi-chain wallet to use this network.", variant: "destructive" });
+                              return;
+                            }
+                            switchNetworkType(chain.network);
+                            setOpen(false);
+                          }}
+                          className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                            active     ? "bg-primary/10 text-foreground cursor-default" :
+                            !canSwitch ? "hover:bg-white/5 text-muted-foreground/40 cursor-pointer" :
+                                         "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
+                        >
+                          <span className={cn("text-base leading-none font-bold w-6", canSwitch ? chain.color : "text-muted-foreground/25")}>{chain.icon}</span>
+                          <span className="flex-1">{chain.name}</span>
+                          {!canSwitch && !active
+                            ? <Lock className="w-3.5 h-3.5 text-muted-foreground/35 shrink-0" />
+                            : <span className="text-[10px] text-muted-foreground/50">{chain.symbol}</span>}
+                          {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Custom Networks */}
+              <div className="border-t border-border pt-2 mt-1">
+                <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-bold px-2 py-1.5">
+                  Custom Networks
+                </p>
+                <div className="space-y-0.5">
+                  {customChains.map(cc => {
+                    const active = network === "evm" && chainId === cc.id;
                     return (
-                      <button key={chain.key} disabled={active}
-                        onClick={() => {
-                        if (active) return;
-                        if (!canSwitchToNetwork(chain.network)) {
-                          toast({ title: `No ${chain.name} wallet`, description: "Create or import an OrahDEX multi-chain wallet to use this network.", variant: "destructive" });
-                          return;
-                        }
-                        switchNetworkType(chain.network);
-                        setOpen(false);
-                      }}
-                        className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
-                          active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
-                      >
-                        <span className={cn("text-base leading-none font-bold w-6", chain.color)}>{chain.icon}</span>
-                        <span className="flex-1">{chain.name}</span>
-                        <span className="text-[10px] text-muted-foreground/50">{chain.symbol}</span>
-                        {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
-                      </button>
+                      <div key={cc.id} className="flex items-center gap-1">
+                        <button
+                          onClick={() => switchCustomChain(cc)}
+                          disabled={active || !!switching}
+                          className={cn("flex-1 flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-left",
+                            active ? "bg-primary/10 text-foreground cursor-default" : "hover:bg-white/5 text-muted-foreground hover:text-foreground")}
+                        >
+                          <span className="text-base w-6 text-center text-primary shrink-0 font-bold">◈</span>
+                          <span className="flex-1 truncate">{cc.name}</span>
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded border bg-primary/15 text-primary border-primary/30 shrink-0">CUSTOM</span>
+                          {active && <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />}
+                        </button>
+                        <button
+                          onClick={() => removeCustomChain(cc.id)}
+                          className="p-2 rounded-lg hover:bg-destructive/15 text-muted-foreground/40 hover:text-destructive transition-colors shrink-0"
+                          title="Remove network"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     );
                   })}
+                  <button
+                    onClick={() => { setOpen(false); setAddNetworkOpen(true); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all"
+                  >
+                    <Plus className="w-4 h-4 shrink-0" />
+                    <span>Add Custom Network</span>
+                  </button>
                 </div>
               </div>
             </div>
           </div>
         </>
       )}
+      <AddNetworkDialog
+        open={addNetworkOpen}
+        onClose={() => setAddNetworkOpen(false)}
+        onAdded={(id) => { switchCustomChain(useCustomChainStore.getState().getById(id)!); }}
+      />
     </div>
   );
 }

@@ -234,4 +234,127 @@ router.post("/derive-from-key", async (req, res) => {
   }
 });
 
+// ─── EVM on-chain tx history proxy (via Reown BlockchainAPI) ─────────────────
+// Same data source Reown AppKit modal uses — browser → our server → rpc.walletconnect.org
+
+// Public project ID (same one used client-side in lib/reown.ts — safe to include here)
+const REOWN_PROJECT_ID = "04663615251cf13fb1b043d754e7a17f";
+const REOWN_API = "https://rpc.walletconnect.org";
+
+const CHAIN_META: Record<string, { chainId: number; name: string; symbol: string; color: string; explorerUrl: string }> = {
+  "eip155:1":     { chainId: 1,     name: "Ethereum",  symbol: "ETH",  color: "#8B5CF6", explorerUrl: "https://etherscan.io/tx/" },
+  "eip155:56":    { chainId: 56,    name: "BNB Chain", symbol: "BNB",  color: "#F59E0B", explorerUrl: "https://bscscan.com/tx/" },
+  "eip155:137":   { chainId: 137,   name: "Polygon",   symbol: "MATIC",color: "#8B5CF6", explorerUrl: "https://polygonscan.com/tx/" },
+  "eip155:42161": { chainId: 42161, name: "Arbitrum",  symbol: "ETH",  color: "#3B82F6", explorerUrl: "https://arbiscan.io/tx/" },
+  "eip155:10":    { chainId: 10,    name: "Optimism",  symbol: "ETH",  color: "#EF4444", explorerUrl: "https://optimistic.etherscan.io/tx/" },
+  "eip155:8453":  { chainId: 8453,  name: "Base",      symbol: "ETH",  color: "#3B82F6", explorerUrl: "https://basescan.org/tx/" },
+  "eip155:43114": { chainId: 43114, name: "Avalanche", symbol: "AVAX", color: "#EF4444", explorerUrl: "https://snowtrace.io/tx/" },
+  "eip155:59144": { chainId: 59144, name: "Linea",     symbol: "ETH",  color: "#22C55E", explorerUrl: "https://lineascan.build/tx/" },
+};
+
+async function fetchReownChainTxs(address: string, caipChainId: string): Promise<any[]> {
+  const meta = CHAIN_META[caipChainId];
+  if (!meta) return [];
+  const addrLower = address.toLowerCase();
+
+  try {
+    const url = `${REOWN_API}/v1/account/${address}/history?projectId=${REOWN_PROJECT_ID}&chainId=${caipChainId}&st=c&sv=html-wagmi-1.8.0`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!res.ok) return [];
+    const json = await res.json() as any;
+    const items: any[] = Array.isArray(json.data) ? json.data : [];
+
+    return items.map((tx: any) => {
+      const hash   = tx.metadata?.hash ?? tx.id ?? "";
+      const sentFrom = (tx.metadata?.sentFrom ?? "").toLowerCase();
+      const sentTo   = (tx.metadata?.sentTo   ?? "").toLowerCase();
+      const minedAt  = tx.metadata?.minedAt ? new Date(tx.metadata.minedAt).getTime() / 1000 : 0;
+      const isIncoming = sentTo === addrLower;
+
+      // Pull value from first transfer
+      const transfer   = Array.isArray(tx.transfers) ? tx.transfers[0] : null;
+      const isToken    = transfer?.fungible_info?.symbol && transfer.fungible_info.symbol !== meta.symbol;
+      const tokenSym   = transfer?.fungible_info?.symbol ?? "";
+      const qty        = parseFloat(transfer?.quantity?.numeric ?? "0");
+      const valueEth   = isToken ? 0 : qty;
+      const tokenValue = isToken ? qty : undefined;
+      const funcName   = tx.metadata?.operationType ?? "";
+
+      return {
+        hash,
+        chainId:        meta.chainId,
+        chainName:      meta.name,
+        chainColor:     meta.color,
+        from:           tx.metadata?.sentFrom ?? "",
+        to:             tx.metadata?.sentTo   ?? "",
+        valueEth,
+        nativeSymbol:   meta.symbol,
+        timeStamp:      Math.round(minedAt),
+        isError:        tx.metadata?.status === "failed",
+        isIncoming,
+        functionName:   funcName,
+        isTokenTransfer: !!isToken,
+        tokenSymbol:    isToken ? tokenSym : undefined,
+        tokenValue,
+        explorerUrl:    meta.explorerUrl + hash,
+      };
+    });
+  } catch { return []; }
+}
+
+router.get("/evm-tx-history/:address", async (req, res) => {
+  const { address } = req.params;
+  if (!address || !address.startsWith("0x")) return res.status(400).json({ error: "invalid address" });
+
+  const results = await Promise.allSettled(
+    Object.keys(CHAIN_META).map(caipId => fetchReownChainTxs(address, caipId))
+  );
+  const all: any[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled") all.push(...r.value);
+  }
+  // Deduplicate by hash+chainId
+  const seen = new Set<string>();
+  const deduped = all.filter(tx => {
+    const key = `${tx.chainId}:${tx.hash}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  deduped.sort((a, b) => b.timeStamp - a.timeStamp);
+  return res.json(deduped);
+});
+
+// ─── Solana balance proxy ─────────────────────────────────────────────────────
+// Browser → our API (server-side) → Solana RPC
+// Avoids CORS / outbound-POST restrictions in the Replit preview iframe.
+
+const SOL_RPCS = [
+  "https://api.mainnet-beta.solana.com",
+  "https://rpc.ankr.com/solana",
+];
+
+router.get("/sol-balance/:address", async (req, res) => {
+  const { address } = req.params;
+  if (!address || address.length < 32) return res.status(400).json({ error: "invalid address" });
+
+  for (const rpc of SOL_RPCS) {
+    try {
+      const r = await fetch(rpc, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getBalance", params: [address] }),
+        signal: AbortSignal.timeout(6000),
+      });
+      if (!r.ok) continue;
+      const json = await r.json() as any;
+      const lamports = json?.result?.value;
+      if (typeof lamports === "number") {
+        return res.json({ lamports, sol: lamports / 1e9 });
+      }
+    } catch { /* try next */ }
+  }
+  return res.status(502).json({ error: "All Solana RPCs failed" });
+});
+
 export default router;

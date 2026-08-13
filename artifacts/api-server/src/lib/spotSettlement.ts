@@ -137,7 +137,16 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
         "spotSettlement: HTLC generated for cross-chain fill"
       );
     } catch (err) {
-      log.warn({ err }, "spotSettlement: HTLC generation failed — continuing with OP_RETURN only");
+      log.warn({ err }, "spotSettlement: HTLC generation failed");
+    }
+    // Cross-chain fills REQUIRE an HTLC to be non-custodial.
+    // If generation failed, abort the fill so the matching engine skips
+    // this counter-order — no ledger changes have occurred yet at this point.
+    if (!htlcResult) {
+      throw Object.assign(
+        new Error("CrossChainHTLCError: HTLC generation failed for cross-chain fill"),
+        { code: "CROSS_CHAIN_HTLC_ERROR", pair, tradeId },
+      );
     }
   }
 

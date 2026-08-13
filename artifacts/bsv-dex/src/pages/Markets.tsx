@@ -1,15 +1,15 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { CoinLogo } from "@/components/CoinLogo";
-import { useStagedMarkets as useGetMarkets } from "@/hooks/useStagedMarkets";
+import { useStagedMarkets as useGetMarkets, useMarketSearch } from "@/hooks/useStagedMarkets";
 import { useSEO } from "@/hooks/useSEO";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
-  BASE_MARKETS, ZORA_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
+  BASE_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
-  GAMING_MARKETS, COSMOS_MARKETS, L1_MARKETS, L2_MARKETS,
+  GAMING_MARKETS, COSMOS_MARKETS,
   RWA_MARKETS, EXCHANGE_MARKETS, DEPIN_MARKETS, BRC20_MARKETS,
   UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
@@ -25,6 +25,9 @@ import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } 
 import { useWalletPrices } from "@/hooks/useWalletPrices";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
+import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
+import { useBaseTokenList } from "@/hooks/useBaseTokenList";
+import { useBaseTokenPrices } from "@/hooks/useBaseTokenPrices";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -46,7 +49,7 @@ interface MarketRow {
 }
 
 type UsdSub = "USDT" | "USDC" | "TUSD" | "USDD";
-type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "uniswap" | "pancake" | "futures" | "l1" | "l2" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20";
+type Tab = "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "uniswap" | "pancake" | "futures" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20";
 
 const USD_SUBS: { id: UsdSub; label: string }[] = [
   { id: "USDT", label: "USDT" },
@@ -71,8 +74,7 @@ const TAB_META: TabMeta[] = [
   { id: "op",        label: "OP",           color: "text-red-400",     desc: "All pairs quoted in OP · Optimism" },
   { id: "ftm",       label: "FTM",          color: "text-blue-400",    desc: "All pairs quoted in FTM · Fantom" },
   { id: "cro",       label: "CRO",          color: "text-indigo-400",  desc: "All pairs quoted in CRO · Cronos" },
-  { id: "base",      label: "BASE",         color: "text-blue-400",    desc: "Curated Base L2 pairs · Excludes Zora social coins" },
-  { id: "zora",      label: "ZORA",         color: "text-pink-400",    desc: "Zora social / creator coins · Every post is a coin" },
+  { id: "base",      label: "BASE",         color: "text-blue-400",    desc: "Curated Base L2 pairs · Live prices via DexScreener" },
   { id: "linea",     label: "LINEA",        color: "text-violet-400",  desc: "All pairs quoted in LINEA · MetaMask L2" },
   { id: "zk",        label: "ZK",           color: "text-indigo-300",  desc: "All pairs quoted in ZK · zkSync Era" },
   { id: "scr",       label: "SCROLL",       color: "text-orange-300",  desc: "All pairs quoted in SCR · Scroll L2" },
@@ -87,8 +89,6 @@ const TAB_META: TabMeta[] = [
   { id: "pancake",   label: "BNB DEX",      color: "text-yellow-400",  desc: "BNB Smart Chain DEX pools + multi-chain" },
   { id: "gaming",    label: "GAMING",       color: "text-violet-400",  desc: "Gaming & Metaverse · P2E, NFT games, virtual worlds" },
   { id: "cosmos",    label: "COSMOS",       color: "text-purple-400",  desc: "Cosmos IBC ecosystem · app-chains, DEXs, data availability" },
-  { id: "l1",        label: "LAYER 1",      color: "text-amber-400",   desc: "Layer 1 blockchains · all major base chains" },
-  { id: "l2",        label: "LAYER 2",      color: "text-sky-400",     desc: "Layer 2 scaling · rollups, bridges, interop" },
   { id: "rwa",       label: "RWA",          color: "text-yellow-400",  desc: "Real World Assets · tokenized gold, T-bills, real estate" },
   { id: "exchange",  label: "EXCHANGE",     color: "text-orange-400",  desc: "Exchange tokens · CEX utility & governance tokens" },
   { id: "brc20",     label: "BRC-20",       color: "text-orange-400",  desc: "BRC-20 tokens & Bitcoin Ordinals · on-chain Bitcoin assets" },
@@ -116,8 +116,8 @@ const ALL_MOCK = () => [
   ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
   ...AI_MARKETS, ...DEPIN_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
   ...UNISWAP_MARKETS, ...PANCAKE_MARKETS,
-  ...BASE_MARKETS, ...ZORA_MARKETS,
-  ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
+  ...BASE_MARKETS,
+  ...GAMING_MARKETS, ...COSMOS_MARKETS,
   ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...BRC20_MARKETS,
 ].map(normalise);
 
@@ -140,10 +140,14 @@ export function Markets() {
   const [tab, setTab] = useState<Tab>("usd");
   const [usdSub, setUsdSub] = useState<UsdSub>("USDT");
   const [search, setSearch] = useState("");
-  const [stars, setStars] = useState<Set<string>>(new Set());
+  const [stars, setStars] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("market_favorites");
+      return raw ? new Set<string>(JSON.parse(raw)) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
   const [selectedCoin, setSelectedCoin] = useState<MarketRow | null>(null);
-  const prevAddressRef = useRef<string | null>(null);
   const tabScrollRef = useRef<HTMLDivElement>(null);
   const [tabCanScrollLeft, setTabCanScrollLeft] = useState(false);
   const [tabCanScrollRight, setTabCanScrollRight] = useState(true);
@@ -172,24 +176,8 @@ export function Markets() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  /* Auto-switch to the correct market tab when wallet connects or changes chain */
-  useEffect(() => {
-    const prev = prevAddressRef.current;
-    prevAddressRef.current = address;
-    const { tab: walletTab, isAutoSelected } = getWalletMarketTab(address, network, chainId);
-    if (isAutoSelected) {
-      setTab(walletTab as Tab);
-      setWalletBannerDismissed(false);
-    } else if (!address && prev) {
-      // wallet disconnected — go back to USD
-      setTab("usd");
-      setWalletBannerDismissed(false);
-    }
-  }, [address, network, chainId]);
-
-  const { tab: walletTab, label: walletChainLabel, isAutoSelected: isWalletTab } = getWalletMarketTab(address, network, chainId);
-  /* Show banner only when the visible tab is the wallet's auto-selected tab */
-  const showWalletBanner = isWalletTab && !walletBannerDismissed && tab === walletTab;
+  const showWalletBanner = false;
+  const walletChainLabel = "";
 
   const [, navigate] = useLocation();
 
@@ -199,11 +187,38 @@ export function Markets() {
 
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } as any });
   const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
+  const { results: serverSearchResults } = useMarketSearch(search, { debounceMs: 300 });
 
-  // LetsExchange all quoted pairs — complete external pair universe
-  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true });
-  const leAllPairs = useMemo(
-    () => (rawLeAllPairs ?? []).map(p => normalise({
+  // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
+  const needAllPairs = tab === "sol" || tab === "eth" || tab === "favorites" || search.length > 0;
+  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
+  const leAllPairs = useMemo(() => {
+    const mapped = (rawLeAllPairs ?? []).map(p => ({
+      ...normalise({
+        symbol:               p.symbol,
+        baseAsset:            p.baseAsset,
+        quoteAsset:           p.quoteAsset,
+        lastPrice:            p.lastPrice,
+        priceChangePercent24h: p.priceChangePercent24h,
+        volume24h:            p.volume,
+        type:                 "spot",
+      }),
+      network: (p as any).network ?? null,
+    })).filter(m => m.lastPrice > 0);
+    // LE lists the same coin on multiple chains — keep one per base:quote (best price)
+    const best = new Map<string, typeof mapped[0]>();
+    for (const m of mapped) {
+      const key = `${m.baseAsset}:${m.quoteAsset}`;
+      const ex = best.get(key);
+      if (!ex || m.lastPrice > ex.lastPrice) best.set(key, m);
+    }
+    return [...best.values()];
+  }, [rawLeAllPairs]);
+
+  // LE BSV-quoted pairs — only needed for BSV tab
+  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV", enabled: tab === "bsv" });
+  const leBsvPairs = useMemo(() => {
+    const all = (rawLePairs ?? []).map(p => normalise({
       symbol:               p.symbol,
       baseAsset:            p.baseAsset,
       quoteAsset:           p.quoteAsset,
@@ -211,14 +226,16 @@ export function Markets() {
       priceChangePercent24h: p.priceChangePercent24h,
       volume24h:            p.volume,
       type:                 "spot",
-    })).filter(m => m.lastPrice > 0),
-    [rawLeAllPairs],
-  );
+    })).filter(m => m.lastPrice > 0);
+    const best = new Map<string, typeof all[0]>();
+    for (const m of all) { const ex = best.get(m.baseAsset); if (!ex || m.lastPrice > ex.lastPrice) best.set(m.baseAsset, m); }
+    return [...best.values()];
+  }, [rawLePairs]);
 
-  // LetsExchange BSV-quoted pairs — all 800+ coins tradeable vs BSV
-  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
-  const leBsvPairs = useMemo(
-    () => (rawLePairs ?? []).map(p => normalise({
+  // LE BTC-quoted pairs — only needed for BTC tab
+  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC", enabled: tab === "btc" });
+  const leBtcPairs = useMemo(() => {
+    const all = (rawLeBtcPairs ?? []).map(p => normalise({
       symbol:               p.symbol,
       baseAsset:            p.baseAsset,
       quoteAsset:           p.quoteAsset,
@@ -226,23 +243,11 @@ export function Markets() {
       priceChangePercent24h: p.priceChangePercent24h,
       volume24h:            p.volume,
       type:                 "spot",
-    })).filter(m => m.lastPrice > 0),
-    [rawLePairs],
-  );
-
-  // LetsExchange BTC-quoted pairs — all 800+ coins tradeable vs BTC
-  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC" });
-  const leBtcPairs = useMemo(
-    () => (rawLeBtcPairs ?? []).map(p => normalise({
-      symbol:               p.symbol,
-      baseAsset:            p.baseAsset,
-      quoteAsset:           p.quoteAsset,
-      lastPrice:            p.lastPrice,
-      priceChangePercent24h: p.priceChangePercent24h,
-      volume24h:            p.volume,
-      type:                 "spot",
-    })).filter(m => m.lastPrice > 0),
-    [rawLeBtcPairs],
+    })).filter(m => m.lastPrice > 0);
+    const best = new Map<string, typeof all[0]>();
+    for (const m of all) { const ex = best.get(m.baseAsset); if (!ex || m.lastPrice > ex.lastPrice) best.set(m.baseAsset, m); }
+    return [...best.values()];
+  }, [rawLeBtcPairs],
   );
 
   /**
@@ -250,6 +255,13 @@ export function Markets() {
    * Mock data always provides the FULL pair list; API prices enrich it.
    */
   const livePrice = new Map<string, any>(raw.map((m: any) => [m.symbol, m]));
+
+  // Live on-chain data from GeckoTerminal (chain/category tabs, cached 90s)
+  const { data: geckoRows } = useGeckoTerminalPools(tab);
+  // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
+  const { data: baseTokenList } = useBaseTokenList(tab === "base");
+  // DexScreener prices for catalog tokens not covered by GeckoTerminal (cached 60s)
+  const basePrices = useBaseTokenPrices(baseTokenList, tab === "base" && baseTokenList.length > 0);
 
   /** Enrich a mock pair list with live prices from the API where available. */
   const enrich = (mock: any[]): any[] =>
@@ -336,7 +348,20 @@ export function Markets() {
         const leOnlyBtc = leBtcPairs.filter(m => !dbBtcSymbols.has(m.symbol) && !dbBtcBases.has(m.baseAsset));
         return [...dbBtc, ...leOnlyBtc];
       }
-      case "eth":     return dbByQuote("ETH");
+      case "eth": {
+        const dbEth = dbByQuote("ETH");
+        const dbBases = new Set(dbEth.map((m: any) => m.baseAsset));
+        const baseKw = ["base", "base-mainnet"];
+        const baseLeByBase = new Map<string, any>();
+        for (const m of leAllPairs) {
+          const net = String((m as any).network ?? "").toLowerCase();
+          if (!baseKw.some(kw => net.includes(kw))) continue;
+          if (dbBases.has(m.baseAsset)) continue;
+          const ex = baseLeByBase.get(m.baseAsset);
+          if (!ex || m.lastPrice > ex.lastPrice) baseLeByBase.set(m.baseAsset, m);
+        }
+        return [...dbEth, ...baseLeByBase.values()];
+      }
       case "bnb":     return dbByQuote("BNB");
       case "matic":   return dbByQuote("MATIC");
       case "avax":    return dbByQuote("AVAX");
@@ -344,14 +369,50 @@ export function Markets() {
       case "op":      return dbByQuote("OP");
       case "ftm":     return dbByQuote("FTM");
       case "cro":     return dbByQuote("CRO");
-      case "base":    return dbByQuote("BASE");
+      case "base": {
+        let all = enrich(BASE_MARKETS.map(normalise));
+        // Gecko merge: update prices + append priced tokens not in the static list
+        if (geckoRows.length) {
+          const geckoByBase = new Map(geckoRows.map((g: any) => [g.base, g]));
+          const updated = all.map((r: any) => { const g = geckoByBase.get(r.baseAsset); return g && g.price > 0 ? { ...r, lastPrice: g.price, priceChangePercent24h: g.chg } : r; });
+          const existingBases = new Set(updated.map((r: any) => r.baseAsset));
+          const extra = geckoRows.filter((g: any) => !existingBases.has(g.base) && g.price > 0).map((g: any) => normalise({ symbol: g.symbol, baseAsset: g.base, quoteAsset: g.quote, lastPrice: g.price, priceChangePercent24h: g.chg, volume24h: g.vol, type: "spot" }));
+          all = [...updated, ...extra];
+        }
+        // Base token list: append all ~2300 Base chain catalog tokens not already shown
+        if (baseTokenList.length) {
+          const existingBases = new Set(all.map((r: any) => r.baseAsset));
+          const listExtra = baseTokenList
+            .filter(t => !existingBases.has(t.symbol))
+            .map(t => {
+              const dp = basePrices.get(t.symbol);
+              return normalise({ symbol: `${t.symbol}/USDC`, baseAsset: t.symbol, quoteAsset: "USDC", lastPrice: dp?.price ?? 0, priceChangePercent24h: dp?.chg ?? 0, volume24h: dp?.vol ?? 0, type: "spot" });
+            });
+          all = [...all, ...listExtra];
+        }
+        return all;
+      }
       case "linea":   return dbByQuote("LINEA");
       case "zk":      return dbByQuote("ZK");
       case "scr":     return dbByQuote("SCR");
       case "mnt":     return dbByQuote("MNT");
       case "bch":     return dbByQuote("BCH");
-      case "zora":    return dbBySymbols(ZORA_MARKETS.map(normalise));
-      case "sol":     return dbByCategory("sol_eco");
+      case "sol": {
+        const dbSol = dbByCategory("sol_eco");
+        const leSolPairs = leAllPairs.filter(m => {
+          const net = String((m as any).network ?? "").toLowerCase();
+          return net.includes("sol");
+        });
+        const dbBases = new Set(dbSol.map((m: any) => m.baseAsset));
+        // Dedup within leSolPairs too — same coin on multiple SOL-related networks
+        const leSolByBase = new Map<string, typeof leSolPairs[0]>();
+        for (const m of leSolPairs) {
+          if (dbBases.has(m.baseAsset)) continue;
+          const ex = leSolByBase.get(m.baseAsset);
+          if (!ex || m.lastPrice > ex.lastPrice) leSolByBase.set(m.baseAsset, m);
+        }
+        return [...dbSol, ...leSolByBase.values()];
+      }
       case "ai":      return dbByCategory("ai");
       case "depin":   return dbByCategory("depin");
       case "meme":    return dbByCategory("meme");
@@ -360,8 +421,6 @@ export function Markets() {
       case "pancake": return dbBySymbols(PANCAKE_MARKETS.map(normalise));
       case "gaming":  return dbByCategory("gaming");
       case "cosmos":  return dbByCategory("cosmos");
-      case "l1":      return dbByCategory("l1");
-      case "l2":      return dbByCategory("l2");
       case "rwa":     return dbByCategory("rwa");
       case "exchange":return dbByCategory("exchange");
       case "brc20":   return dbByCategory("brc20");
@@ -395,14 +454,21 @@ export function Markets() {
       case "op":        return dbQ("OP");
       case "ftm":       return dbQ("FTM");
       case "cro":       return dbQ("CRO");
-      case "base":      return dbQ("BASE");
+      case "base":      return dbS(BASE_MARKETS);
       case "linea":     return dbQ("LINEA");
       case "zk":        return dbQ("ZK");
       case "scr":       return dbQ("SCR");
       case "mnt":       return dbQ("MNT");
       case "bch":       return dbQ("BCH");
-      case "zora":      return dbS(ZORA_MARKETS);
-      case "sol":       return dbByCategory("sol_eco").length;
+      case "sol": {
+        const dbSolC = dbByCategory("sol_eco");
+        const leSolC = leAllPairs.filter(m => {
+          const net = String((m as any).network ?? "").toLowerCase();
+          return net.includes("sol");
+        });
+        const dbBasesC = new Set(dbSolC.map((m: any) => m.baseAsset));
+        return dbSolC.length + leSolC.filter(m => !dbBasesC.has(m.baseAsset)).length;
+      }
       case "ai":        return dbByCategory("ai").length;
       case "depin":     return dbByCategory("depin").length;
       case "meme":      return dbByCategory("meme").length;
@@ -411,8 +477,6 @@ export function Markets() {
       case "pancake":   return dbS(PANCAKE_MARKETS);
       case "gaming":    return dbByCategory("gaming").length;
       case "cosmos":    return dbByCategory("cosmos").length;
-      case "l1":        return dbByCategory("l1").length;
-      case "l2":        return dbByCategory("l2").length;
       case "rwa":       return dbByCategory("rwa").length;
       case "exchange":  return dbByCategory("exchange").length;
       case "brc20":     return dbByCategory("brc20").length;
@@ -425,12 +489,26 @@ export function Markets() {
   const searchPool = search
     ? [...tradeable(raw), ...leAllPairs.filter(m => !raw.some((r: any) => r.symbol === m.symbol))]
     : markets;
-  const filtered = searchPool.filter(m =>
+  const _localFiltered = searchPool.filter(m =>
     m.symbol.toLowerCase().includes(search.toLowerCase()) ||
     (m.baseAsset ?? "").toLowerCase().includes(search.toLowerCase())
   );
+  const _localSymbols = new Set(_localFiltered.map((m: any) => m.symbol));
+  const filtered = search
+    ? [
+        ..._localFiltered,
+        ...serverSearchResults
+          .filter((m: any) => !_localSymbols.has(m.symbol))
+          .map((m: any) => normalise(m)),
+      ]
+    : _localFiltered;
   const toggleStar = (symbol: string) =>
-    setStars(prev => { const n = new Set(prev); n.has(symbol) ? n.delete(symbol) : n.add(symbol); return n; });
+    setStars(prev => {
+      const n = new Set(prev);
+      n.has(symbol) ? n.delete(symbol) : n.add(symbol);
+      try { localStorage.setItem("market_favorites", JSON.stringify([...n])); } catch {}
+      return n;
+    });
 
   const { quoteCurrency } = useSettingsStore();
   const isFiatTarget = FIAT_CURRENCIES.some(c => c.code === quoteCurrency);
@@ -648,14 +726,7 @@ export function Markets() {
           {tab === "base" && (
             <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-xl">
               <span className="text-base leading-none">🔵</span>
-              <span className="text-xs font-bold text-blue-400">Base L2 — Curated Pairs Only</span>
-            </div>
-          )}
-          {tab === "zora" && (
-            <div className="mt-2 flex items-center gap-2 px-3 py-1.5 bg-pink-500/10 border border-pink-500/30 rounded-xl">
-              <span className="text-base leading-none">🎨</span>
-              <span className="text-xs font-bold text-pink-400">Zora Social Coins</span>
-              <span className="ml-auto px-1.5 py-0.5 rounded bg-pink-500/20 border border-pink-500/30 text-[10px] font-bold text-pink-400 uppercase">High Risk</span>
+              <span className="text-xs font-bold text-blue-400">Base L2 — 2300+ Tokens · Live Prices via DexScreener</span>
             </div>
           )}
       </div>

@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useExternalSwap } from "@/hooks/useExternalSwap";
+import { ExternalSwapStatus } from "@/components/trading/ExternalSwapStatus";
 import { useAccount, useSignMessage } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useSettingsStore } from "@/store/useSettingsStore";
@@ -29,6 +31,7 @@ import {
   CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
   getAssetNativeChain, walletCanReceive,
 } from "@/lib/crossChain";
+import { CHAIN_TOKEN_ADDRESSES } from "@/lib/onChainLiquidity";
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
@@ -327,17 +330,26 @@ export interface OrderFormFill {
 }
 
 // ── Main OrderForm ─────────────────────────────────────────────────────────────
-export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlaced, onTradeFlash }: {
+export function OrderForm({
+  symbol, currentPrice = 0, externalFill, onOrderPlaced, onTradeFlash,
+  externalSwapMode = false, externalSwapRate = 0, externalSwapProvider = null,
+}: {
   symbol: string;
   currentPrice?: number;
   externalFill?: OrderFormFill | null;
   onOrderPlaced?: () => void;
   onTradeFlash?: (fill: { price: number; side: "buy" | "sell" }) => void;
+  externalSwapMode?: boolean;
+  externalSwapRate?: number;
+  externalSwapProvider?: string | null;
 }) {
   const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
+
+  // External swap state — used when externalSwapMode=true and user places a market order
+  const externalSwap = useExternalSwap();
   const isOrahWallet = provider === "orah-wallet";
 
   // Wallet signing for external EVM wallets — used to authorise on-chain order placement.
@@ -733,6 +745,49 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
     e.preventDefault();
     if (!address || !amount || parseFloat(amount) <= 0) return;
 
+    // ── External swap intercept (market orders on zero-liquidity pairs) ────────
+    if (externalSwapMode && type === "market") {
+      const effectiveRate = externalSwapRate > 0 ? externalSwapRate : currentPrice;
+      const fromCoin  = side === "buy" ? quote : base;
+      const toCoin    = side === "buy" ? base  : quote;
+      const fromAmount = side === "buy"
+        ? parseFloat(amount) * effectiveRate
+        : parseFloat(amount);
+
+      if (fromAmount <= 0 || !isFinite(fromAmount)) {
+        toast({ title: "Invalid amount", description: "Enter a valid amount to swap.", variant: "destructive" });
+        return;
+      }
+
+      // Output address: prefer the manual receive field, then the connected wallet address.
+      const outputAddr = (receiveAddress || (isEvm ? address : null) || address)?.trim() ?? "";
+      if (!outputAddr) {
+        toast({
+          title: "Receive address required",
+          description: `Enter your ${toCoin} receive address in the field above.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const result = await externalSwap.execute({
+        fromCoin, toCoin, amount: fromAmount,
+        walletAddress: address!,
+        outputAddress: outputAddr,
+        symbol, side: side as "buy" | "sell",
+      });
+
+      if (result) {
+        toast({
+          title: "Swap created ⚡",
+          description: `Send ${fromAmount.toFixed(8)} ${fromCoin} to the deposit address shown below.`,
+        });
+        onTradeFlash?.({ price: effectiveRate, side: side as "buy" | "sell" });
+        onOrderPlaced?.();
+      }
+      return;
+    }
+
     // ── Synchronous balance guard (runs before precheck, no debounce lag) ─────
     // Block immediately if the balance is clearly too low.
     // EVM external wallets are skipped: the DEX never holds their funds and the
@@ -750,10 +805,13 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
       });
       return;
     }
-    if (!isEvm && side === "buy" && total > 0 && total > availableAmt + 1e-9) {
+    // Market buy orders lock qty * price * 1.005 (0.5% slippage buffer); account for
+    // it here so the guard fires before the server rejects the order.
+    const lockRequired = (side === "buy" && type === "market") ? total * 1.005 : total;
+    if (!isEvm && side === "buy" && lockRequired > 0 && lockRequired > availableAmt + 1e-9) {
       toast({
         title:       "Insufficient Balance",
-        description: `You need ${total.toFixed(2)} ${quote} but only have ${availableAmt.toFixed(2)} ${quote}.`,
+        description: `You need ${lockRequired.toFixed(2)} ${quote} (incl. fees) but only have ${availableAmt.toFixed(2)} ${quote}.`,
         variant:     "destructive",
       });
       return;
@@ -868,14 +926,24 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
             // Build the hex-encoded message required by personal_sign
             const hexMsg = "0x" + Array.from(new TextEncoder().encode(orderMsg))
               .map(b => b.toString(16).padStart(2, "0")).join("");
-            const eth = (window as any).ethereum;
-            if (!eth) {
-              throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
+
+            if (provider === "reown") {
+              // Reown/WalletConnect: window.ethereum is never injected — must call
+              // personal_sign directly on the connector's raw EIP-1193 provider.
+              const { wagmiAdapter } = await import("@/lib/reown-appkit");
+              const connector = wagmiAdapter.wagmiConfig.connectors.find(
+                (c: any) => c.id === "walletConnect" || c.type === "walletConnect"
+              );
+              const eip1193 = await (connector as any)?.getProvider?.();
+              if (!eip1193) throw new Error("WalletConnect provider unavailable. Please reconnect your wallet.");
+              evmSignature = await eip1193.request({ method: "personal_sign", params: [hexMsg, address] });
+            } else {
+              const eth = (window as any).ethereum;
+              if (!eth) {
+                throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
+              }
+              evmSignature = await eth.request({ method: "personal_sign", params: [hexMsg, address] });
             }
-            evmSignature = await eth.request({
-              method: "personal_sign",
-              params: [hexMsg, address],
-            });
           }
         }
       } catch (signErr: any) {
@@ -1062,15 +1130,15 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
           </div>
         )}
 
-        {/* Low balance hint */}
+        {/* Low balance hint + ThirdWeb Universal Bridge */}
         {availableAmt <= 0 && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-amber-500/8 border border-amber-500/20">
             <span className="text-amber-400/80">
-              No {availableSym} in wallet — get it via{" "}
+              No {availableSym} in wallet — bridge from any chain below, or{" "}
               <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold hover:text-cyan-300">
-                Bridge
+                swap
               </a>
-              {" "}or swap for more.
+              {" "}for more.
             </span>
           </div>
         )}
@@ -1248,9 +1316,12 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                   }
                   const portion = opt === "MAX" ? availableAmt : availableAmt * (opt / 100);
                   if (side === "buy") {
-                    // available is in quote (USDT) — divide by price to get base token qty
+                    // available is in quote (USDT) — divide by price to get base token qty.
+                    // Market buy orders carry a 0.5% slippage buffer in the backend lock amount;
+                    // divide it out here so the locked amount never exceeds available balance.
                     const px = price && parseFloat(price) > 0 ? parseFloat(price) : currentPrice;
-                    if (px > 0) setAmount((portion / px).toFixed(6));
+                    const slipFactor = type === "market" ? 1.005 : 1;
+                    if (px > 0) setAmount((portion / (px * slipFactor)).toFixed(6));
                   } else {
                     // available is already in base tokens
                     setAmount(portion > 0 ? portion.toFixed(6) : "");
@@ -1643,6 +1714,16 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
         </form>
 
+        {/* External swap status — shown when externalSwapMode is active */}
+        {externalSwapMode && externalSwap.status !== "idle" && (
+          <ExternalSwapStatus
+            status={externalSwap.status}
+            swap={externalSwap.swap}
+            error={externalSwap.error}
+            onReset={externalSwap.reset}
+          />
+        )}
+
         {/* Assets panel */}
         <div className="mt-1 border-t border-border pt-3 space-y-1.5">
           <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Assets</p>
@@ -1673,12 +1754,16 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
 
       {/* ── Order Confirmation Modal ─────────────────────────────────────────── */}
       {showConfirm && (() => {
-        const qty    = parseFloat(amount) || 0;
-        const px     = parseFloat(price)  || currentPrice;
-        const total  = qty * px;
-        const fee    = total * 0.003;
-        const isBuy  = side === "buy";
-        const locked = isBuy ? total : qty;
+        const FEE_RATE   = 0.001;   // 0.1% taker fee (matches backend default)
+        const qty        = parseFloat(amount) || 0;
+        const px         = parseFloat(price)  || currentPrice;
+        const total      = qty * px;
+        const fee        = total * FEE_RATE;
+        const isBuy      = side === "buy";
+        // Market buy orders lock qty × price × 1.005 (0.5% slippage buffer).
+        // Use the real lock amount so the insufficient-balance warning is accurate.
+        const slipFactor = (isBuy && type === "market") ? 1.005 : 1;
+        const locked     = isBuy ? total * slipFactor : qty;
         return (
           <div
             className="fixed inset-0 z-[999] flex items-end justify-center bg-black/60 backdrop-blur-sm"
@@ -1725,7 +1810,7 @@ export function OrderForm({ symbol, currentPrice = 0, externalFill, onOrderPlace
                   <span className="font-mono font-semibold">{total.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {quote}</span>
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground/70">
-                  <span>Est. Fee ({liveQuote ? `${(liveQuote.feeBps / 100).toFixed(2)}%` : "0.30%"})</span>
+                  <span>Est. Fee ({liveQuote ? `${(liveQuote.feeBps / 100).toFixed(2)}%` : "0.10%"})</span>
                   <span className="font-mono">{fee.toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 6 })} {quote}</span>
                 </div>
                 <div className="border-t border-border/50 pt-2 flex justify-between text-xs">

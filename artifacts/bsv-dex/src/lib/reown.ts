@@ -1,257 +1,53 @@
-import { createAppKit } from "@reown/appkit/react";
-import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
+import { getCoinbaseProvider } from "./coinbaseWallet";
+import { createConfig, http } from "@wagmi/core";
 import {
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
-  linea, zkSync, scroll, mantle, fantom, cronos,
-  type AppKitNetwork,
-} from "@reown/appkit/networks";
+  linea, zkSync, scroll, mantle, fantom, cronos, sepolia,
+} from "viem/chains";
 
-// Resolution order:
-//   1. Build-time: VITE_REOWN_PROJECT_ID baked in by vite.config define
-//   2. Run-time:   window.__REOWN_PROJECT_ID__ injected by Express into index.html
-//   3. Hardcoded fallback (public client-side identifier — safe to commit)
-const projectId: string =
-  import.meta.env.VITE_REOWN_PROJECT_ID ||
-  (typeof window !== "undefined" && (window as any).__REOWN_PROJECT_ID__) ||
-  "04663615251cf13fb1b043d754e7a17f";
-
-const sepolia: AppKitNetwork = {
-  id:             11155111,
-  name:           "Sepolia",
-  caipNetworkId:  "eip155:11155111",
-  chainNamespace: "eip155",
-  nativeCurrency: { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls:        { default: { http: ["https://ethereum-sepolia-rpc.publicnode.com"] } },
-  blockExplorers: { default: { name: "Etherscan", url: "https://sepolia.etherscan.io" } },
-  testnet:        true,
+// Minimal wagmi config — no WalletConnect connectors.
+// Used by ThirdWeb panels for provider detection; they fall back to window.ethereum.
+// Optional VITE_ overrides — set these in .env to a direct QuickNode/Alchemy URL
+// if you want the frontend to call the provider directly (faster, no proxy hop).
+// When blank, the frontend uses the backend /api/rpc/:chainId proxy instead,
+// which keeps the Alchemy API key server-side only.
+const QN = {
+  eth:  import.meta.env.VITE_QN_ETH_RPC  || undefined,
+  bsc:  import.meta.env.VITE_QN_BSC_RPC  || undefined,
+  base: import.meta.env.VITE_QN_BASE_RPC || undefined,
+  poly: import.meta.env.VITE_QN_MATIC_RPC|| undefined,
+  arb:  import.meta.env.VITE_QN_ARB_RPC  || undefined,
+  op:   import.meta.env.VITE_QN_OP_RPC   || undefined,
+  avax: import.meta.env.VITE_QN_AVAX_RPC || undefined,
 };
 
-export const REOWN_NETWORKS: [AppKitNetwork, ...AppKitNetwork[]] = [
-  mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
-  linea, zkSync, scroll, mantle, fantom, cronos, sepolia,
-];
+// Backend RPC proxy — keeps Alchemy key off the client bundle.
+// Format: {origin}/api/rpc/{chainId}
+const _origin = typeof window !== "undefined" ? window.location.origin : "";
+const _base   = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+const _proxy  = (chainId: number) => `${_origin}${_base}/api/rpc/${chainId}`;
 
-export const wagmiAdapter = new WagmiAdapter({
-  networks: REOWN_NETWORKS,
-  projectId,
-});
-
-export const wagmiConfig = wagmiAdapter.wagmiConfig;
-
-export const modal = createAppKit({
-  adapters: [wagmiAdapter],
-  networks: REOWN_NETWORKS,
-  projectId,
-  metadata: {
-    name: "OrahDEX",
-    description: "Trade means DEX — Multi-chain BSV DEX with instant on-chain settlement",
-    url: typeof window !== "undefined" ? window.location.origin : "https://orahdex.org",
-    icons: [
-      typeof window !== "undefined"
-        ? `${window.location.origin}/favicon.svg`
-        : "https://orahdex.org/favicon.svg",
-    ],
-  },
-  features: {
-    analytics: false,
-    email:     false,
-    socials:   [],
-    onramp:    true,
-    swaps:     false,
-  },
-  themeMode: "dark",
-  themeVariables: {
-    "--w3m-accent":               "#4ade80",
-    "--w3m-border-radius-master": "12px",
-    "--w3m-font-family":          "inherit",
-    "--w3m-z-index":              9999,
+export const wagmiConfig = createConfig({
+  chains: [mainnet, polygon, arbitrum, optimism, base, bsc, avalanche, linea, zkSync, scroll, mantle, fantom, cronos, sepolia],
+  transports: {
+    [mainnet.id]:   http(QN.eth  ?? _proxy(1)),
+    [polygon.id]:   http(QN.poly ?? _proxy(137)),
+    [arbitrum.id]:  http(QN.arb  ?? _proxy(42161)),
+    [optimism.id]:  http(QN.op   ?? _proxy(10)),
+    [base.id]:      http(QN.base ?? _proxy(8453)),
+    [bsc.id]:       http(QN.bsc  ?? _proxy(56)),
+    [avalanche.id]: http(QN.avax ?? "https://api.avax.network/ext/bc/C/rpc"),
+    [linea.id]:     http("https://rpc.linea.build"),
+    [zkSync.id]:    http("https://mainnet.era.zksync.io"),
+    [scroll.id]:    http("https://rpc.scroll.io"),
+    [mantle.id]:    http("https://rpc.mantle.xyz"),
+    [fantom.id]:    http("https://rpc.ftm.tools"),
+    [cronos.id]:    http("https://evm.cronos.org"),
+    [sepolia.id]:   http("https://ethereum-sepolia-rpc.publicnode.com"),
   },
 });
 
-suppressThirdPartyBranding();
-
-/* ── Theme sync ─────────────────────────────────────────────────────────── */
-
-/** Call whenever the app theme changes to keep the modal in sync. */
-export function syncReownTheme(theme: string): void {
-  const prefersDark =
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-color-scheme: dark)").matches;
-
-  const isDark =
-    theme === "dark" ||
-    theme === "amoled" ||
-    (theme === "system" && prefersDark);
-
-  modal.setThemeMode(isDark ? "dark" : "light");
-
-  if (isDark) {
-    const bg       = theme === "amoled" ? "#000000" : "#0a0c0f";
-    const strength = theme === "amoled" ? 60        : 40;
-    (modal as any).setThemeVariables({
-      "--w3m-accent":               "#4ade80",
-      "--w3m-color-mix":            bg,
-      "--w3m-color-mix-strength":   strength,
-      "--w3m-border-radius-master": "12px",
-      "--w3m-font-family":          "inherit",
-      "--w3m-z-index":              9999,
-    });
-  } else {
-    (modal as any).setThemeVariables({
-      "--w3m-accent":               "#4ade80",
-      "--w3m-color-mix":            "#ffffff",
-      "--w3m-color-mix-strength":   0,
-      "--w3m-border-radius-master": "12px",
-      "--w3m-font-family":          "inherit",
-      "--w3m-z-index":              9999,
-    });
-  }
-}
-
-function suppressThirdPartyBranding(): void {
-  const STYLE_ID = "orahdex-no-brand";
-  const HIDE_CSS = `
-    wui-ux-by-reown,
-    wui-footer,
-    w3m-legal-footer,
-    wcm-footer,
-    [class*="reown"],
-    [class*="ux-by"],
-    [data-testid="w3m-footer"],
-    [data-testid="wui-ux-by-reown"] {
-      display: none !important;
-      visibility: hidden !important;
-      height: 0 !important;
-      overflow: hidden !important;
-    }
-  `;
-
-  const processedRoots = new WeakSet<ShadowRoot>();
-
-  function injectIntoShadow(root: ShadowRoot) {
-    if (processedRoots.has(root)) return;
-    processedRoots.add(root);
-    if (!root.querySelector(`#${STYLE_ID}`)) {
-      const s = document.createElement("style");
-      s.id = STYLE_ID;
-      s.textContent = HIDE_CSS;
-      root.appendChild(s);
-    }
-    root.querySelectorAll("*").forEach(el => {
-      const sr = (el as Element & { shadowRoot?: ShadowRoot }).shadowRoot;
-      if (sr) injectIntoShadow(sr);
-    });
-    const obs = new MutationObserver(() => {
-      root.querySelectorAll("*").forEach(el => {
-        const sr = (el as Element & { shadowRoot?: ShadowRoot }).shadowRoot;
-        if (sr) injectIntoShadow(sr);
-      });
-    });
-    obs.observe(root, { childList: true, subtree: true });
-  }
-
-  function scan() {
-    ["w3m-modal", "wcm-modal", "appkit-modal"].forEach(tag => {
-      document.querySelectorAll(tag).forEach(modal => {
-        const sr = (modal as HTMLElement & { shadowRoot?: ShadowRoot }).shadowRoot;
-        if (sr) injectIntoShadow(sr);
-      });
-    });
-  }
-
-  if (typeof document !== "undefined") {
-    const obs = new MutationObserver(scan);
-    obs.observe(document.body, { childList: true, subtree: true });
-    scan();
-  }
-}
-
-type ReownView =
-  | "Connect" | "Account" | "Networks" | "OnRampProviders"
-  | "Swap" | "AllWallets" | "WhatIsAWallet" | "WhatIsANetwork";
-
-export function openReownModal(view?: ReownView): void {
-  modal.open(view ? { view } : undefined);
-}
-
-export function closeReownModal(): void {
-  modal.close();
-}
-
-export function subscribeReownAccount(
-  cb: (state: { address?: string; isConnected: boolean; caipAddress?: string }) => void
-): () => void {
-  try {
-    return (modal.subscribeAccount as any)(cb) ?? (() => {});
-  } catch {
-    return () => {};
-  }
-}
-
-export function getReownAccount(): { address?: string; isConnected: boolean } {
-  try {
-    return (modal as any).getAccount?.() ?? { isConnected: false };
-  } catch {
-    return { isConnected: false };
-  }
-}
-
-export function getWagmiConfig() {
-  return wagmiConfig;
-}
-
-export function getWagmiAdapter() { return wagmiAdapter; }
-
-let _userDisconnecting = false;
-let _disconnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-export function setUserDisconnecting(val: boolean): void {
-  _userDisconnecting = val;
-  if (_disconnectTimer) clearTimeout(_disconnectTimer);
-  if (val) {
-    _disconnectTimer = setTimeout(() => { _userDisconnecting = false; }, 3000);
-  }
-}
-
-export function isUserDisconnecting(): boolean { return _userDisconnecting; }
-
-export async function disconnectReown(): Promise<void> {
-  setUserDisconnecting(true);
-  try {
-    await (modal as any).disconnect?.();
-  } catch (err) {
-    console.warn("[OrahDEX] Reown disconnect:", err);
-  }
-}
-
-// Signals that the user deliberately opened the EVM connect modal.
-// Layout.tsx's subscribeReownAccount callback uses this to distinguish
-// intentional EVM connect (should override existing wallet) from Reown's
-// auto-reconnect on page load (should NOT override a non-Reown wallet).
-let _evmConnectRequested = false;
-let _evmConnectTimer: ReturnType<typeof setTimeout> | null = null;
-
-export function setEvmConnectRequested(val: boolean): void {
-  _evmConnectRequested = val;
-  if (_evmConnectTimer) clearTimeout(_evmConnectTimer);
-  if (val) {
-    // Safety reset — flag consumed by callback or auto-clears after 2 min
-    _evmConnectTimer = setTimeout(() => { _evmConnectRequested = false; }, 120_000);
-  }
-}
-
-export function isEvmConnectRequested(): boolean { return _evmConnectRequested; }
-
-export async function switchReownChain(chainId: number): Promise<boolean> {
-  const network = REOWN_NETWORKS.find(n => n.id === chainId);
-  if (!network) return false;
-  try {
-    await (modal as any).switchNetwork(network);
-    return true;
-  } catch (err) {
-    throw err;
-  }
-}
+export function getWagmiConfig() { return wagmiConfig; }
 
 export function parseChainFromCaip(caipAddress?: string): number | null {
   if (!caipAddress) return null;
@@ -262,12 +58,12 @@ export function parseChainFromCaip(caipAddress?: string): number | null {
 }
 
 export const CHAIN_RPC_URLS: Record<number, string> = {
-  1:       "https://eth.llamarpc.com",
-  56:      "https://bsc.llamarpc.com",
-  137:     "https://polygon.llamarpc.com",
-  42161:   "https://arbitrum.llamarpc.com",
-  10:      "https://optimism.llamarpc.com",
-  8453:    "https://base.llamarpc.com",
+  1:       QN.eth  ?? _proxy(1),
+  56:      QN.bsc  ?? _proxy(56),
+  137:     QN.poly ?? _proxy(137),
+  42161:   QN.arb  ?? _proxy(42161),
+  10:      QN.op   ?? _proxy(10),
+  8453:    QN.base ?? _proxy(8453),
   59144:   "https://rpc.linea.build",
   324:     "https://mainnet.era.zksync.io",
   534352:  "https://rpc.scroll.io",
@@ -286,6 +82,8 @@ export const CHAIN_RPC_URLS: Record<number, string> = {
   288:     "https://mainnet.boba.network",
   1088:    "https://andromeda.metis.io/?owner=1088",
   167000:  "https://rpc.mainnet.taiko.xyz",
+  33139:   "https://rpc.apechain.com/http",
+  1329:    "https://evm-rpc.sei-apis.com",
 };
 
 export const CHAIN_RPC_FALLBACKS: Record<number, string> = {
@@ -297,6 +95,7 @@ export const CHAIN_RPC_FALLBACKS: Record<number, string> = {
   8453:    "https://mainnet.base.org",
   43114:   "https://api.avax.network/ext/bc/C/rpc",
   11155111:"https://eth-sepolia.public.blastapi.io",
+  33139:   "https://apechain.calderachain.xyz/http",
 };
 
 export async function fetchEvmBalance(
@@ -304,18 +103,6 @@ export async function fetchEvmBalance(
   chainId?: number | null
 ): Promise<string | null> {
   try {
-    if (chainId && wagmiAdapter?.wagmiConfig) {
-      try {
-        const { getBalance } = await import("@wagmi/core");
-        const result = await getBalance(wagmiAdapter.wagmiConfig, {
-          address: address as `0x${string}`,
-          chainId,
-        });
-        const native = Number(result.value) / 1e18;
-        if (native >= 0) return native.toFixed(6);
-      } catch { /* fall through */ }
-    }
-
     const eth = (window as any).ethereum;
     if (eth) {
       try {
@@ -348,24 +135,6 @@ export async function fetchEvmBalance(
   }
 }
 
-export async function signMessageWithReownProvider(
-  message: string,
-  address: string,
-): Promise<string | null> {
-  if (!wagmiAdapter?.wagmiConfig) return null;
-  const hexMsg = "0x" + Array.from(new TextEncoder().encode(message))
-    .map(b => b.toString(16).padStart(2, "0")).join("");
-  for (const connector of wagmiAdapter.wagmiConfig.connectors) {
-    try {
-      const provider = await (connector as any).getProvider?.();
-      if (!provider) continue;
-      const sig = await (provider as any).request({ method: "personal_sign", params: [hexMsg, address] });
-      if (sig) return sig as string;
-    } catch { /* try next */ }
-  }
-  return null;
-}
-
 export async function sendEvmTransfer({
   from, to, valueWei, targetChainId,
 }: { from: string; to: string; valueWei: bigint; targetChainId: number }): Promise<string> {
@@ -392,20 +161,7 @@ export async function sendEvmTransfer({
   const injected = (window as any).ethereum;
   if (injected) { const h = await tryProvider(injected); if (h) return h; }
 
-  const config = wagmiAdapter?.wagmiConfig;
-  if (config) {
-    for (const connector of config.connectors) {
-      try {
-        const provider = await (connector as any).getProvider?.();
-        if (!provider) continue;
-        const h = await tryProvider(provider);
-        if (h) return h;
-      } catch (err: any) {
-        if (err?.code === 4001 || err?.message?.includes("rejected")) throw err;
-      }
-    }
-  }
-  throw new Error("No active wallet found. Please connect MetaMask or use WalletConnect.");
+  throw new Error("No active wallet found. Please connect MetaMask or install a browser wallet.");
 }
 
 export async function sendErc20Transfer({
@@ -436,20 +192,7 @@ export async function sendErc20Transfer({
   const injected = (window as any).ethereum;
   if (injected) { const h = await tryProvider(injected); if (h) return h; }
 
-  const config = wagmiAdapter?.wagmiConfig;
-  if (config) {
-    for (const connector of config.connectors) {
-      try {
-        const provider = await (connector as any).getProvider?.();
-        if (!provider) continue;
-        const h = await tryProvider(provider);
-        if (h) return h;
-      } catch (err: any) {
-        if (err?.code === 4001 || err?.message?.includes("rejected")) throw err;
-      }
-    }
-  }
-  throw new Error("No active wallet found. Please connect MetaMask or use WalletConnect.");
+  throw new Error("No active wallet found. Please connect MetaMask or install a browser wallet.");
 }
 
 export async function approveToken(
@@ -588,7 +331,7 @@ export function getEvmProvider(walletId: string): any {
   switch (walletId) {
     case "metamask":  return w.ethereum?.isMetaMask && !w.ethereum?.isRabby ? w.ethereum : w.ethereum?.providers?.find((p: any) => p.isMetaMask && !p.isRabby) ?? null;
     case "rabby":     return w.rabby ?? (w.ethereum?.isRabby ? w.ethereum : null);
-    case "coinbase":  return w.coinbaseWalletExtension ?? w.ethereum?.isCoinbaseWallet ? w.ethereum : null;
+    case "coinbase":  return getCoinbaseProvider() ?? w.coinbaseWalletExtension ?? (w.ethereum?.isCoinbaseWallet ? w.ethereum : null);
     case "trust":     return w.trustwallet ?? (w.ethereum?.isTrust ? w.ethereum : null);
     case "okx":       return w.okxwallet ?? null;
     case "bybit":     return w.bybitWallet ?? null;

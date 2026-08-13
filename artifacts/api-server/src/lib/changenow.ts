@@ -38,7 +38,7 @@ async function getApiKey(): Promise<string> {
       .where(eq(platformSettingsTable.key, "changenow_api_key"));
     _cachedKey  = rows[0]?.value ?? "";
     _cacheExpiry = now + 60_000;
-    return _cachedKey;
+    return _cachedKey ?? "";
   } catch {
     return "";
   }

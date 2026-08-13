@@ -1,9 +1,17 @@
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { randomUUID } from "node:crypto";
+import { isDbConnError } from "./dbErrors.js";
+import { guardedInterval, withRetry } from "./selfHealing.js";
 
 async function runTrailingStopEngine(): Promise<void> {
-  const client = await pool.connect();
+  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  try {
+    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
+  } catch (err) {
+    logger.warn({ err }, "Trailing stop engine: DB connect failed, skipping cycle");
+    return;
+  }
   try {
     const { rows: activeStops } = await client.query<{
       id: string;
@@ -61,15 +69,25 @@ async function runTrailingStopEngine(): Promise<void> {
           }
           if (currentPrice <= newStopPrice) {
             const orderId = randomUUID();
-            await client.query(
-              `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, 'market', 'open', $6, '0', $6, '0', false, false, NOW(), NOW())`,
-              [orderId, stop.symbol, stop.wallet_address, stop.network_type ?? "evm", "sell", stop.quantity]
-            );
-            await client.query(
-              `UPDATE trailing_stop_orders SET status = 'triggered', triggered_order_id = $1, updated_at = NOW() WHERE id = $2`,
-              [orderId, stop.id]
-            );
+            // Wrap INSERT + UPDATE atomically so a crash between the two can't
+            // spawn duplicate market orders from a single trailing stop trigger.
+            await client.query("BEGIN");
+            try {
+              await client.query(
+                `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, 'market', 'open', $6, '0', $6, '0', false, false, NOW(), NOW())`,
+                [orderId, stop.symbol, stop.wallet_address, stop.network_type ?? "evm", "sell", stop.quantity]
+              );
+              await client.query(
+                `UPDATE trailing_stop_orders SET status = 'triggered', triggered_order_id = $1, updated_at = NOW() WHERE id = $2`,
+                [orderId, stop.id]
+              );
+              await client.query("COMMIT");
+            } catch (triggerErr) {
+              await client.query("ROLLBACK").catch(() => {});
+              logger.error({ err: triggerErr, stopId: stop.id }, "Trailing stop sell-trigger transaction failed");
+              continue;
+            }
             logger.info({ stopId: stop.id, orderId, symbol: stop.symbol }, "Trailing stop triggered (sell)");
             continue;
           }
@@ -80,15 +98,24 @@ async function runTrailingStopEngine(): Promise<void> {
           }
           if (currentPrice >= newStopPrice) {
             const orderId = randomUUID();
-            await client.query(
-              `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, created_at, updated_at)
-               VALUES ($1, $2, $3, $4, $5, 'market', 'open', $6, '0', $6, '0', false, false, NOW(), NOW())`,
-              [orderId, stop.symbol, stop.wallet_address, stop.network_type ?? "evm", "buy", stop.quantity]
-            );
-            await client.query(
-              `UPDATE trailing_stop_orders SET status = 'triggered', triggered_order_id = $1, updated_at = NOW() WHERE id = $2`,
-              [orderId, stop.id]
-            );
+            // Atomic: INSERT order + UPDATE stop status in one transaction
+            await client.query("BEGIN");
+            try {
+              await client.query(
+                `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, 'market', 'open', $6, '0', $6, '0', false, false, NOW(), NOW())`,
+                [orderId, stop.symbol, stop.wallet_address, stop.network_type ?? "evm", "buy", stop.quantity]
+              );
+              await client.query(
+                `UPDATE trailing_stop_orders SET status = 'triggered', triggered_order_id = $1, updated_at = NOW() WHERE id = $2`,
+                [orderId, stop.id]
+              );
+              await client.query("COMMIT");
+            } catch (triggerErr) {
+              await client.query("ROLLBACK").catch(() => {});
+              logger.error({ err: triggerErr, stopId: stop.id }, "Trailing stop buy-trigger transaction failed");
+              continue;
+            }
             logger.info({ stopId: stop.id, orderId, symbol: stop.symbol }, "Trailing stop triggered (buy)");
             continue;
           }
@@ -101,18 +128,26 @@ async function runTrailingStopEngine(): Promise<void> {
           [newHigh.toString(), newLow.toString(), newStopPrice.toString(), stop.id]
         );
       } catch (err) {
-        logger.error({ err, stopId: stop.id }, "Error processing trailing stop");
+        if (isDbConnError(err)) logger.warn({ stopId: stop.id }, "Trailing stop: DB unavailable, skipping order");
+        else logger.error({ err, stopId: stop.id }, "Error processing trailing stop");
       }
     }
   } catch (err) {
-    logger.error({ err }, "runTrailingStopEngine error");
+    if (isDbConnError(err)) logger.warn({ err }, "runTrailingStopEngine: DB error, skipping cycle");
+    else logger.error({ err }, "runTrailingStopEngine error");
   } finally {
-    client.release();
+    client!.release();
   }
 }
 
 async function runIcebergEngine(): Promise<void> {
-  const client = await pool.connect();
+  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  try {
+    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
+  } catch (err) {
+    logger.warn({ err }, "Iceberg engine: DB connect failed, skipping cycle");
+    return;
+  }
   try {
     const { rows: icebergs } = await client.query<{
       id: string;
@@ -199,18 +234,26 @@ async function runIcebergEngine(): Promise<void> {
 
         logger.info({ icebergId: iceberg.id, orderId, sliceQty }, "Iceberg slice placed");
       } catch (err) {
-        logger.error({ err, icebergId: iceberg.id }, "Error processing iceberg order");
+        if (isDbConnError(err)) logger.warn({ icebergId: iceberg.id }, "Iceberg: DB unavailable, skipping order");
+        else logger.error({ err, icebergId: iceberg.id }, "Error processing iceberg order");
       }
     }
   } catch (err) {
-    logger.error({ err }, "runIcebergEngine error");
+    if (isDbConnError(err)) logger.warn({ err }, "runIcebergEngine: DB error, skipping cycle");
+    else logger.error({ err }, "runIcebergEngine error");
   } finally {
-    client.release();
+    client!.release();
   }
 }
 
 async function runTwapEngine(): Promise<void> {
-  const client = await pool.connect();
+  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  try {
+    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
+  } catch (err) {
+    logger.warn({ err }, "TWAP engine: DB connect failed, skipping cycle");
+    return;
+  }
   try {
     const { rows: twaps } = await client.query<{
       id: string;
@@ -301,7 +344,8 @@ async function runTwapEngine(): Promise<void> {
           logger.info({ twapId: twap.id }, "TWAP order completed");
         }
       } catch (err) {
-        logger.error({ err, twapId: twap.id }, "Error processing TWAP order");
+        if (isDbConnError(err)) logger.warn({ twapId: twap.id }, "TWAP: DB unavailable, skipping order");
+        else logger.error({ err, twapId: twap.id }, "Error processing TWAP order");
       }
     }
 
@@ -315,24 +359,28 @@ async function runTwapEngine(): Promise<void> {
       );
     }
   } catch (err) {
-    logger.error({ err }, "runTwapEngine error");
+    if (isDbConnError(err)) logger.warn({ err }, "runTwapEngine: DB error, skipping cycle");
+    else logger.error({ err }, "runTwapEngine error");
   } finally {
-    client.release();
+    client!.release();
   }
 }
 
 export function startAdvancedOrderEngines(): void {
-  setInterval(() => {
-    runTrailingStopEngine().catch(err => logger.error({ err }, "Trailing stop engine uncaught error"));
-  }, 5_000);
+  // guardedInterval replaces the raw setInterval + busy-flag pattern.
+  // Engines are staggered 10 s apart so they never compete for pool connections.
+  guardedInterval("trailing-stop-engine", runTrailingStopEngine, 30_000, {
+    timeoutMs: 25_000,
+    initialDelayMs: 0,
+  });
+  guardedInterval("iceberg-engine", runIcebergEngine, 30_000, {
+    timeoutMs: 25_000,
+    initialDelayMs: 10_000,
+  });
+  guardedInterval("twap-engine", runTwapEngine, 30_000, {
+    timeoutMs: 25_000,
+    initialDelayMs: 20_000,
+  });
 
-  setInterval(() => {
-    runIcebergEngine().catch(err => logger.error({ err }, "Iceberg engine uncaught error"));
-  }, 5_000);
-
-  setInterval(() => {
-    runTwapEngine().catch(err => logger.error({ err }, "TWAP engine uncaught error"));
-  }, 5_000);
-
-  logger.info("Advanced order engines started (trailing stop, iceberg, TWAP)");
+  logger.info("Advanced order engines started (trailing-stop / iceberg / TWAP — 30 s intervals, staggered)");
 }

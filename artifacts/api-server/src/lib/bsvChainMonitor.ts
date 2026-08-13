@@ -11,9 +11,9 @@
  *   GET ${BSV_NET.wocBase}/mempool/info
  */
 
-import { db } from "@workspace/db";
+import { db, withDbRetry } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { serviceState } from "./serviceState.js";
@@ -45,17 +45,41 @@ export interface BsvChainStatus {
   bsvUsd: number;
 }
 
-async function setSetting(key: string, value: string) {
-  await db.insert(platformSettingsTable)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+/** Batch-upsert multiple platform_settings in a single round-trip. */
+async function setSettings(pairs: Record<string, string>) {
+  const entries = Object.entries(pairs).map(([key, value]) => ({ key, value }));
+  if (entries.length === 0) return;
+  await withDbRetry(() =>
+    db.insert(platformSettingsTable)
+      .values(entries)
+      .onConflictDoUpdate({
+        target: platformSettingsTable.key,
+        set: { value: sql`excluded.value`, updatedAt: new Date() },
+      })
+  );
 }
 
 async function getSetting(key: string): Promise<string | null> {
   try {
-    const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+    const rows = await withDbRetry(() =>
+      db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key))
+    );
     return rows[0]?.value ?? null;
   } catch { return null; }
+}
+
+async function getSettings(keys: string[]): Promise<Record<string, string | null>> {
+  const map: Record<string, string | null> = Object.fromEntries(keys.map(k => [k, null]));
+  try {
+    const rows = await withDbRetry(() =>
+      db
+        .select({ key: platformSettingsTable.key, value: platformSettingsTable.value })
+        .from(platformSettingsTable)
+        .where(inArray(platformSettingsTable.key, keys))
+    );
+    for (const row of rows) map[row.key] = row.value;
+  } catch { /* return nulls for all keys */ }
+  return map;
 }
 
 async function safeFetch(url: string): Promise<Record<string, unknown> | null> {
@@ -124,31 +148,39 @@ async function fetchChainInfo(): Promise<void> {
     : 0;
 
   const now = new Date().toISOString();
-  await setSetting("bsv_chain_online",       String(online));
-  await setSetting("bsv_block_height",       String(blockHeight));
-  await setSetting("bsv_best_block_hash",    bestBlockHash);
-  await setSetting("bsv_difficulty",         String(difficulty));
-  await setSetting("bsv_median_time",        String(medianTime));
-  await setSetting("bsv_last_checked",       now);
-  await setSetting("bsv_hashrate_ehs",       String(hashrateEHs));
-  await setSetting("bsv_mempool_tx_count",   String(mempoolTxCount));
-  await setSetting("bsv_mempool_bytes",      String(mempoolBytes));
-  await setSetting("bsv_fee_rate_sat",       String(feeRateSatPerByte));
-  await setSetting("bsv_usd",               String(bsvUsd));
+  await setSettings({
+    bsv_chain_online:     String(online),
+    bsv_block_height:     String(blockHeight),
+    bsv_best_block_hash:  bestBlockHash,
+    bsv_difficulty:       String(difficulty),
+    bsv_median_time:      String(medianTime),
+    bsv_last_checked:     now,
+    bsv_hashrate_ehs:     String(hashrateEHs),
+    bsv_mempool_tx_count: String(mempoolTxCount),
+    bsv_mempool_bytes:    String(mempoolBytes),
+    bsv_fee_rate_sat:     String(feeRateSatPerByte),
+    bsv_usd:              String(bsvUsd),
+  });
 }
 
 export async function getBsvChainStatus(): Promise<BsvChainStatus> {
-  const online           = (await getSetting("bsv_chain_online"))      === "true";
-  const blockHeight      = parseInt((await getSetting("bsv_block_height"))    ?? "0") || 0;
-  const bestBlockHash    = (await getSetting("bsv_best_block_hash"))   ?? "";
-  const difficulty       = parseFloat((await getSetting("bsv_difficulty"))    ?? "0") || 0;
-  const medianTime       = parseInt((await getSetting("bsv_median_time"))     ?? "0") || 0;
-  const lastChecked      = (await getSetting("bsv_last_checked"))      ?? new Date().toISOString();
-  const hashrateEHs      = parseFloat((await getSetting("bsv_hashrate_ehs"))  ?? "0") || 0;
-  const mempoolTxCount   = parseInt((await getSetting("bsv_mempool_tx_count")) ?? "0") || 0;
-  const mempoolBytes     = parseInt((await getSetting("bsv_mempool_bytes"))   ?? "0") || 0;
-  const feeRateSatPerByte= parseInt((await getSetting("bsv_fee_rate_sat"))    ?? "1") || 1;
-  const bsvUsd           = parseFloat((await getSetting("bsv_usd"))           ?? "0") || 0;
+  const s = await getSettings([
+    "bsv_chain_online", "bsv_block_height", "bsv_best_block_hash",
+    "bsv_difficulty", "bsv_median_time", "bsv_last_checked",
+    "bsv_hashrate_ehs", "bsv_mempool_tx_count", "bsv_mempool_bytes",
+    "bsv_fee_rate_sat", "bsv_usd",
+  ]);
+  const online           = s["bsv_chain_online"]      === "true";
+  const blockHeight      = parseInt(s["bsv_block_height"]      ?? "0") || 0;
+  const bestBlockHash    = s["bsv_best_block_hash"]   ?? "";
+  const difficulty       = parseFloat(s["bsv_difficulty"]      ?? "0") || 0;
+  const medianTime       = parseInt(s["bsv_median_time"]       ?? "0") || 0;
+  const lastChecked      = s["bsv_last_checked"]      ?? new Date().toISOString();
+  const hashrateEHs      = parseFloat(s["bsv_hashrate_ehs"]    ?? "0") || 0;
+  const mempoolTxCount   = parseInt(s["bsv_mempool_tx_count"]  ?? "0") || 0;
+  const mempoolBytes     = parseInt(s["bsv_mempool_bytes"]     ?? "0") || 0;
+  const feeRateSatPerByte= parseInt(s["bsv_fee_rate_sat"]      ?? "1") || 1;
+  const bsvUsd           = parseFloat(s["bsv_usd"]             ?? "0") || 0;
 
   return {
     online,
@@ -248,7 +280,12 @@ export async function queryHtlcStatus(
 export function startBsvChainMonitor(): void {
   logger.info("BSV chain monitor starting — polling WhatsOnChain every 60 s");
   let _busy = false;
-  fetchChainInfo();
+  // Guard the first call so a DB error doesn't become an unhandledRejection,
+  // and set _busy so the 60 s interval doesn't fire concurrently if it's slow.
+  _busy = true;
+  fetchChainInfo()
+    .catch(err => logger.warn({ err }, "BSV chain monitor: initial fetch failed (non-fatal)"))
+    .finally(() => { _busy = false; });
   setInterval(async () => {
     if (_busy) { logger.warn("BSV chain monitor: previous fetch still running, skipping"); return; }
     _busy = true;

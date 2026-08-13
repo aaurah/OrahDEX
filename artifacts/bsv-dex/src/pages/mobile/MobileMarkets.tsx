@@ -16,15 +16,20 @@ import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
   BSV_MARKETS, BTC_MARKETS, ETH_MARKETS, BCH_MARKETS, BNB_MARKETS,
   MATIC_MARKETS, AVAX_MARKETS, ARB_MARKETS, OP_MARKETS, FTM_MARKETS, CRO_MARKETS,
-  BASE_MARKETS, ZORA_MARKETS, LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
+  LINEA_MARKETS, ZK_MARKETS, SCR_MARKETS, MNT_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
-  GAMING_MARKETS, COSMOS_MARKETS, L1_MARKETS, L2_MARKETS,
+  GAMING_MARKETS, COSMOS_MARKETS,
   RWA_MARKETS, EXCHANGE_MARKETS, DEPIN_MARKETS, BRC20_MARKETS,
   UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
+import { useZoraCoins } from "@/hooks/useZoraCoins";
+import { useBaseTokenList } from "@/hooks/useBaseTokenList";
+import { useBaseTokenPrices } from "@/hooks/useBaseTokenPrices";
 import { cn } from "@/lib/utils";
+import { hasCategory } from "@/lib/market-categories";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -72,7 +77,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "base" | "zora" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "vote",      label: "🗳️ Vote" },
@@ -90,8 +95,6 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "op",        label: "OP" },
   { id: "ftm",       label: "FTM" },
   { id: "cro",       label: "CRO" },
-  { id: "base",      label: "⬡ Base" },
-  { id: "zora",      label: "ZORA" },
   { id: "linea",     label: "LINEA" },
   { id: "zk",        label: "ZK" },
   { id: "scr",       label: "SCROLL" },
@@ -104,8 +107,6 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "defi",      label: "DEFI" },
   { id: "gaming",    label: "GAMING" },
   { id: "cosmos",    label: "COSMOS" },
-  { id: "l1",        label: "LAYER 1" },
-  { id: "l2",        label: "LAYER 2" },
   { id: "rwa",       label: "RWA" },
   { id: "exchange",  label: "EXCHANGE" },
   { id: "brc20",     label: "BRC-20" },
@@ -124,9 +125,9 @@ const _ALL_POOL_RAW = [
   ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
   ...BNB_MARKETS, ...MATIC_MARKETS, ...AVAX_MARKETS, ...ARB_MARKETS,
   ...OP_MARKETS, ...FTM_MARKETS, ...CRO_MARKETS,
-  ...BASE_MARKETS, ...ZORA_MARKETS, ...LINEA_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...MNT_MARKETS,
+  ...LINEA_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...MNT_MARKETS,
   ...AI_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
-  ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
+  ...GAMING_MARKETS, ...COSMOS_MARKETS,
   ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...DEPIN_MARKETS, ...BRC20_MARKETS,
   ...UNISWAP_MARKETS, ...PANCAKE_MARKETS,
   ...NEW_MARKETS, ...FUTURES_MARKETS,
@@ -158,6 +159,10 @@ function getCatRows(
   const dbByQuote = (quote: string): MktRow[] =>
     apiRows.filter(m => m.quote === quote && m.type !== "futures" && m.price > 0);
 
+  /** All DB pairs matching a category tag, priced > 0 — same logic as desktop */
+  const dbByCat = (tag: string): MktRow[] =>
+    apiRows.filter(m => m.type !== "futures" && m.price > 0 && hasCategory(m.base, tag));
+
   switch (cat) {
     case "all":       return enrich(MOBILE_ALL_POOL).filter(m => m.type !== "futures" && m.price > 0);
     case "favorites": return [
@@ -165,11 +170,17 @@ function getCatRows(
       ...leAllPairs.filter(p => favorites.has(p.symbol)),
     ];
     case "new":       return NEW_MARKETS.map(normalise);
-    case "usd":       return enrich(STABLE_MOCK[usdSub]);
+    case "usd": {
+      const dbUsd = dbByQuote(usdSub);
+      return dbUsd.length > 0 ? dbUsd : enrich(STABLE_MOCK[usdSub]);
+    }
     case "btc": {
       const dbBtc = dbByQuote("BTC");
-      if (dbBtc.length > 0) return dbBtc;
-      // Fallback: static list enriched with live prices + LE extras
+      if (dbBtc.length > 0) {
+        const dbBtcBases = new Set(dbBtc.map(r => r.base));
+        const leBtcExtra = leBtcPairs.filter(p => !dbBtcBases.has(p.base) && p.price > 0);
+        return [...dbBtc, ...leBtcExtra];
+      }
       const native = enrich(BTC_MARKETS);
       const seenBtcBases = new Set(native.map(r => r.base));
       const seenBtcSymbols = new Set(native.map(r => r.symbol));
@@ -178,23 +189,42 @@ function getCatRows(
         .sort((a, b) => a.base.localeCompare(b.base));
       return [...native, ...extraBtc];
     }
-    case "eth":       return dbByQuote("ETH").length > 0 ? dbByQuote("ETH") : enrich(ETH_MARKETS);
-    case "bnb":       return dbByQuote("BNB").length > 0 ? dbByQuote("BNB") : enrich(BNB_MARKETS);
-    case "sol":       return enrich(SOL_MARKETS);
-    case "bch":       return enrich(BCH_MARKETS);
-    case "matic":     return enrich(MATIC_MARKETS);
-    case "avax":      return enrich(AVAX_MARKETS);
-    case "arb":       return enrich(ARB_MARKETS);
-    case "op":        return enrich(OP_MARKETS);
-    case "ftm":       return enrich(FTM_MARKETS);
-    case "cro":       return enrich(CRO_MARKETS);
-    case "base":      return enrich(BASE_MARKETS);
-    case "zora":      return enrich(ZORA_MARKETS);
-    case "linea":     return enrich(LINEA_MARKETS);
-    case "zk":        return enrich(ZK_MARKETS);
-    case "scr":       return enrich(SCR_MARKETS);
-    case "mnt":       return enrich(MNT_MARKETS);
+    case "eth": {
+      const dbEth = dbByQuote("ETH");
+      const leEthPairs = leAllPairs.filter(p => p.quote === "ETH" && p.price > 0);
+      if (dbEth.length > 0) {
+        const seenBases = new Set(dbEth.map(r => r.base));
+        const leExtra = leEthPairs.filter(p => !seenBases.has(p.base)).sort((a, b) => a.base.localeCompare(b.base));
+        return [...dbEth, ...leExtra];
+      }
+      const native = enrich(ETH_MARKETS);
+      const seenBases = new Set(native.map(r => r.base));
+      const seenSymbols = new Set(native.map(r => r.symbol));
+      const extra = leEthPairs
+        .filter(p => !seenBases.has(p.base) && !seenSymbols.has(p.symbol))
+        .sort((a, b) => a.base.localeCompare(b.base));
+      return [...native, ...extra];
+    }
+    case "bnb":   return dbByQuote("BNB").length   > 0 ? dbByQuote("BNB")   : enrich(BNB_MARKETS);
+    case "matic": return dbByQuote("MATIC").length > 0 ? dbByQuote("MATIC") : enrich(MATIC_MARKETS);
+    case "avax":  return dbByQuote("AVAX").length  > 0 ? dbByQuote("AVAX")  : enrich(AVAX_MARKETS);
+    case "arb":   return dbByQuote("ARB").length   > 0 ? dbByQuote("ARB")   : enrich(ARB_MARKETS);
+    case "op":    return dbByQuote("OP").length    > 0 ? dbByQuote("OP")    : enrich(OP_MARKETS);
+    case "ftm":   return dbByQuote("FTM").length   > 0 ? dbByQuote("FTM")   : enrich(FTM_MARKETS);
+    case "cro":   return dbByQuote("CRO").length   > 0 ? dbByQuote("CRO")   : enrich(CRO_MARKETS);
+    case "linea": return dbByQuote("LINEA").length > 0 ? dbByQuote("LINEA") : enrich(LINEA_MARKETS);
+    case "zk":    return dbByQuote("ZK").length    > 0 ? dbByQuote("ZK")    : enrich(ZK_MARKETS);
+    case "scr":   return dbByQuote("SCR").length   > 0 ? dbByQuote("SCR")   : enrich(SCR_MARKETS);
+    case "mnt":   return dbByQuote("MNT").length   > 0 ? dbByQuote("MNT")   : enrich(MNT_MARKETS);
+    case "bch":   return dbByQuote("BCH").length   > 0 ? dbByQuote("BCH")   : enrich(BCH_MARKETS);
     case "bsv": {
+      const dbBsv = dbByQuote("BSV");
+      const dbBsvBases  = new Set(dbBsv.map(r => r.base));
+      const dbBsvSymbols = new Set(dbBsv.map(r => r.symbol));
+      if (dbBsv.length > 0) {
+        const leExtra = lePairs.filter(p => !dbBsvBases.has(p.base) && !dbBsvSymbols.has(p.symbol) && p.price > 0);
+        return [...dbBsv, ...leExtra];
+      }
       const native = enrich(BSV_MARKETS).filter(m => m.price > 0);
       const seenBases = new Set(native.map(r => r.base));
       const seenSymbols = new Set(native.map(r => r.symbol));
@@ -203,21 +233,30 @@ function getCatRows(
         .sort((a, b) => a.base.localeCompare(b.base));
       return [...native, ...extra];
     }
-    case "ai":        return enrich(AI_MARKETS);
-    case "depin":     return enrich(DEPIN_MARKETS);
-    case "meme":      return enrich(MEME_MARKETS);
-    case "defi":      return enrich(DEFI_MARKETS);
-    case "gaming":    return enrich(GAMING_MARKETS);
-    case "cosmos":    return enrich(COSMOS_MARKETS);
-    case "l1":        return enrich(L1_MARKETS);
-    case "l2":        return enrich(L2_MARKETS);
-    case "rwa":       return enrich(RWA_MARKETS);
-    case "exchange":  return enrich(EXCHANGE_MARKETS);
-    case "brc20":     return enrich(BRC20_MARKETS);
-    case "uniswap":   return enrich(UNISWAP_MARKETS);
-    case "pancake":   return enrich(PANCAKE_MARKETS);
-    case "futures":   return enrich(FUTURES_MARKETS);
-    default:          return [];
+    case "sol": {
+      const dbSol = dbByCat("sol_eco");
+      const leSolPairs = leAllPairs.filter(p => {
+        const net = String((p as any).network ?? "").toLowerCase();
+        return net.includes("sol");
+      });
+      const base = dbSol.length > 0 ? dbSol : enrich(SOL_MARKETS);
+      const baseBases = new Set(base.map(r => r.base));
+      const extraSol = leSolPairs.filter(p => !baseBases.has(p.base) && p.price > 0);
+      return [...base, ...extraSol];
+    }
+    case "ai":       { const db = dbByCat("ai");       return db.length > 0 ? db : enrich(AI_MARKETS);       }
+    case "depin":    { const db = dbByCat("depin");    return db.length > 0 ? db : enrich(DEPIN_MARKETS);    }
+    case "meme":     { const db = dbByCat("meme");     return db.length > 0 ? db : enrich(MEME_MARKETS);     }
+    case "defi":     { const db = dbByCat("defi");     return db.length > 0 ? db : enrich(DEFI_MARKETS);     }
+    case "gaming":   { const db = dbByCat("gaming");   return db.length > 0 ? db : enrich(GAMING_MARKETS);   }
+    case "cosmos":   { const db = dbByCat("cosmos");   return db.length > 0 ? db : enrich(COSMOS_MARKETS);   }
+    case "rwa":      { const db = dbByCat("rwa");      return db.length > 0 ? db : enrich(RWA_MARKETS);      }
+    case "exchange": { const db = dbByCat("exchange"); return db.length > 0 ? db : enrich(EXCHANGE_MARKETS); }
+    case "brc20":    { const db = dbByCat("brc20");    return db.length > 0 ? db : enrich(BRC20_MARKETS);    }
+    case "uniswap":  return enrich(UNISWAP_MARKETS);
+    case "pancake":  return enrich(PANCAKE_MARKETS);
+    case "futures":  return enrich(FUTURES_MARKETS);
+    default:         return [];
   }
 }
 
@@ -235,7 +274,6 @@ export function MobileMarkets() {
     } catch { return new Set<string>(); }
   });
   const [walletBannerDismissed, setWalletBannerDismissed] = useState(false);
-  const prevAddressRef = useRef<string | null>(null);
   const [walletSheetOpen, setWalletSheetOpen] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
 
@@ -264,23 +302,8 @@ export function MobileMarkets() {
     MNT:   crossPrices.MNT?.usd   || 1.02,
   };
 
-  /* Auto-switch to correct market category when wallet connects / chain changes */
-  useEffect(() => {
-    const prev = prevAddressRef.current;
-    prevAddressRef.current = address;
-    const { tab: walletCat, isAutoSelected } = getWalletMarketTab(address, network, chainId);
-    if (isAutoSelected) {
-      setCat(walletCat as Cat);
-      setWalletBannerDismissed(false);
-    } else if (!address && prev) {
-      setCat("usd");
-      setWalletBannerDismissed(false);
-    }
-  }, [address, network, chainId]);
-
-  const { tab: walletCatTab, label: walletChainLabel, isAutoSelected: isWalletCat } = getWalletMarketTab(address, network, chainId);
-  /* Show banner only when the visible tab is the wallet's auto-selected category */
-  const showWalletBanner = isWalletCat && !walletBannerDismissed && cat === walletCatTab;
+  const showWalletBanner = false;
+  const walletChainLabel = "";
 
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
@@ -292,23 +315,25 @@ export function MobileMarkets() {
     refetchInterval: 30_000,
   });
 
-  // LetsExchange all quoted pairs — complete exchange pair universe
-  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true });
+  // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
+  const needAllPairs = cat === "eth" || cat === "sol" || cat === "favorites" || search.length > 0;
+  const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
   const leAllPairs = useMemo<MktRow[]>(() =>
     (rawLeAllPairs ?? []).map(p => ({
-      symbol: p.symbol,
-      base:   p.baseAsset,
-      quote:  p.quoteAsset,
-      price:  p.lastPrice ?? 0,
-      chg:    p.priceChangePercent24h ?? 0,
-      vol:    p.volume ?? 0,
-      cap:    0,
-      type:   "spot",
-    })),
+      symbol:  p.symbol,
+      base:    p.baseAsset,
+      quote:   p.quoteAsset,
+      price:   p.lastPrice ?? 0,
+      chg:     p.priceChangePercent24h ?? 0,
+      vol:     p.volume ?? 0,
+      cap:     0,
+      type:    "spot",
+      network: (p as any).network ?? null,
+    } as MktRow)),
   [rawLeAllPairs]);
 
-  // LetsExchange BSV-quoted pairs — provides all 800+ coins tradeable vs BSV
-  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV" });
+  // LE BSV-quoted pairs — only needed for BSV tab
+  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV", enabled: cat === "bsv" });
   const lePairs = useMemo<MktRow[]>(() =>
     (rawLePairs ?? []).map(p => ({
       symbol: p.symbol,
@@ -322,8 +347,8 @@ export function MobileMarkets() {
     })),
   [rawLePairs]);
 
-  // LetsExchange BTC-quoted pairs — provides all 800+ coins tradeable vs BTC
-  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC" });
+  // LE BTC-quoted pairs — only needed for BTC tab
+  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC", enabled: cat === "btc" });
   const leBtcPairs = useMemo<MktRow[]>(() =>
     (rawLeBtcPairs ?? []).map(p => ({
       symbol: p.symbol,
@@ -346,6 +371,15 @@ export function MobileMarkets() {
     apiRows.map((m: MktRow) => [m.symbol, m])
   ), [apiRows]);
 
+  // Live on-chain data from GeckoTerminal (chain/category tabs, cached 90s)
+  const { data: geckoRows } = useGeckoTerminalPools(cat);
+  // Live Zora Coins API data (zora tab only)
+  const { data: zoraRows } = useZoraCoins(cat === "zora");
+  // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
+  const { data: baseTokenList } = useBaseTokenList(cat === "base");
+  // DexScreener prices for catalog tokens not covered by GeckoTerminal (cached 60s)
+  const basePrices = useBaseTokenPrices(baseTokenList, cat === "base" && baseTokenList.length > 0);
+
   const globalRows = useMemo(() => Array.from(new Map(
     [
       ...apiRows,
@@ -354,6 +388,27 @@ export function MobileMarkets() {
   ).values()), [apiRows, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs]);
 
   let rows = getCatRows(cat, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs, apiRows);
+
+  const applyLiveMerge = (rows: MktRow[], src: any[]): MktRow[] => {
+    const byBase = new Map(src.map((s: any) => [s.base, s]));
+    const updated = rows.map(r => { const s = byBase.get(r.base); return s && s.price > 0 ? { ...r, price: s.price, chg: s.chg } : r; });
+    const existing = new Set(updated.map(r => r.base));
+    const extra: MktRow[] = src.filter((s: any) => !existing.has(s.base) && s.price > 0).map((s: any) => ({ symbol: s.symbol, base: s.base, quote: s.quote, price: s.price, chg: s.chg, vol: s.vol, cap: s.fdv ?? 0, type: "spot" as const }));
+    return [...updated, ...extra];
+  };
+
+  // Merge live GeckoTerminal data for chain/category tabs
+  if (!search && geckoRows.length > 0) rows = applyLiveMerge(rows, geckoRows);
+  // Merge Zora Coins API data for zora tab
+  if (!search && cat === "zora" && zoraRows.length > 0) rows = applyLiveMerge(rows, zoraRows);
+  // Merge Base token list: append all ~2300 Base chain catalog tokens for base tab
+  if (!search && cat === "base" && baseTokenList.length > 0) {
+    const existingBases = new Set(rows.map(r => r.base));
+    const listExtra: MktRow[] = baseTokenList
+      .filter(t => !existingBases.has(t.symbol))
+      .map(t => { const dp = basePrices.get(t.symbol); return { symbol: `${t.symbol}/USDC`, base: t.symbol, quote: "USDC", price: dp?.price ?? 0, chg: dp?.chg ?? 0, vol: dp?.vol ?? 0, cap: 0, type: "spot" as const }; });
+    rows = [...rows, ...listExtra];
+  }
 
   if (search) {
     const q = search.toUpperCase();

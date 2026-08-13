@@ -11,7 +11,7 @@
  * → buying $8,500 worth moves price by ~1%
  */
 import { Router } from "express";
-import { db } from "@workspace/db";
+import { db, withDbRetry } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
@@ -109,7 +109,9 @@ type PersistedMarket = Pick<VammMarket,
 >;
 
 async function loadPersistedState(): Promise<void> {
-  const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, VAMM_STATE_KEY));
+  const rows = await withDbRetry(() =>
+    db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, VAMM_STATE_KEY))
+  );
   if (!rows[0]) return;
   const saved = JSON.parse(rows[0].value) as Record<string, PersistedMarket>;
   let restored = 0;
@@ -142,9 +144,11 @@ async function saveVammState(): Promise<void> {
     };
   }
   const value = JSON.stringify(state);
-  await db.insert(platformSettingsTable)
-    .values({ key: VAMM_STATE_KEY, value })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+  await withDbRetry(() =>
+    db.insert(platformSettingsTable)
+      .values({ key: VAMM_STATE_KEY, value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } })
+  );
 }
 
 // Best-effort state recovery on startup; markets are already seeded from SEED_PRICES

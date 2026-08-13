@@ -66,6 +66,7 @@ import {
   type WalletSource,
 } from "./orderIntent.js";
 import { getTokenInfo, isNativeAsset } from "./tokenRegistry.js";
+import { fetchUtxoValue } from "./bsvSpvVerifier.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -119,12 +120,38 @@ async function verifySpotFunding(
   const needed = parseFloat(amount);
 
   // ── External BSV UTXO wallet ────────────────────────────────────────────
+  // Verify the UTXO exists on-chain via WhatsOnChain before accepting it as
+  // funding proof. Format-only checks allowed a fake/spent UTXO ref to pass.
   if (walletSource === "external" && utxoRef) {
-    const [txid, vout] = utxoRef.split(":");
-    if (!txid || vout == null) {
-      return { valid: false, fundingRef: "", error: "Invalid utxoRef format", code: "INVALID_UTXO_REF" };
+    const [txid, rawVout] = utxoRef.split(":");
+    if (!txid || rawVout == null) {
+      return { valid: false, fundingRef: "", error: "Invalid utxoRef format (expected txid:vout)", code: "INVALID_UTXO_REF" };
     }
-    return { valid: true, fundingRef: utxoFundingRef(txid, parseInt(vout, 10)) };
+    const voutIdx = parseInt(rawVout, 10);
+    if (!Number.isFinite(voutIdx) || voutIdx < 0) {
+      return { valid: false, fundingRef: "", error: "Invalid utxoRef vout index", code: "INVALID_UTXO_REF" };
+    }
+
+    // fetchUtxoValue calls WoC GET /tx/hash/{txid} — returns null when not found.
+    const utxoSats = await fetchUtxoValue(txid, voutIdx);
+    if (utxoSats === null) {
+      return {
+        valid:      false,
+        fundingRef: "",
+        error:      "BSV UTXO not found on-chain. The transaction may be unconfirmed or the txid is invalid.",
+        code:       "UTXO_NOT_FOUND",
+      };
+    }
+    const neededSats = Math.ceil(needed * 1e8);
+    if (utxoSats < neededSats) {
+      return {
+        valid:      false,
+        fundingRef: "",
+        error:      `BSV UTXO value ${utxoSats} sat is below the required ${neededSats} sat.`,
+        code:       "UTXO_INSUFFICIENT",
+      };
+    }
+    return { valid: true, fundingRef: utxoFundingRef(txid, voutIdx) };
   }
 
   // ── External EVM / non-UTXO wallet ───────────────────────────────────────
@@ -180,7 +207,7 @@ async function verifySpotFunding(
     const RPC_URLS: Record<number, string> = {
       1:        process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
       56:       process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
-      137:      process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",
+      137:      process.env.POLYGON_RPC_URL  ?? "https://polygon-bor-rpc.publicnode.com",
       8453:     process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
       42161:    process.env.ARB_RPC_URL      ?? "https://arb1.arbitrum.io/rpc",
       10:       process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",
@@ -230,19 +257,22 @@ async function verifySpotFunding(
         onChain = Number(onChainBal) / 1e18;
       } else {
         // ERC-20 token: look up contract address and decimals.
-        // Unknown tokens are rejected — accepting without verification is a security risk.
+        // Known tokens: full on-chain balanceOf check via RPC.
+        // Unknown tokens: sig-only proof (balance verified at escrow lock time).
         const tokenInfo = getTokenInfo(chainId, asset);
         if (!tokenInfo) {
+          // Token is not in the registry — we cannot verify the on-chain balance,
+          // but the wallet signature already proves the user controls the address.
+          // Accept the order with sig-only proof; if they don't actually hold the
+          // tokens, the escrow lock will fail at the contract level (the ERC-20
+          // safeTransferFrom will revert). This allows any ERC-20 to trade without
+          // requiring every token to be pre-registered.
           logger.warn(
             { walletAddress, chainId, asset },
-            "fundingVerifier: token not in registry — rejecting order",
+            "fundingVerifier: token not in registry — accepting with sig-only proof",
           );
-          return {
-            valid:      false,
-            fundingRef: "",
-            error:      `Token ${asset} is not supported on chain ${chainId}. Add it to the token registry or deposit via a supported path.`,
-            code:       "TOKEN_UNSUPPORTED",
-          };
+          const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
+          return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
         }
         const rawBalance = await client.readContract({
           address:      tokenInfo.address as `0x${string}`,

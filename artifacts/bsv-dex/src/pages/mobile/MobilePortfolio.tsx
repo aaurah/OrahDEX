@@ -2,28 +2,26 @@ import {
   TrendingUp, TrendingDown,
   ArrowDownToLine,
   Copy, Check, RefreshCw, Info,
-  LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight, CreditCard,
-  ArrowDownLeft, ArrowUpRight, History, Upload, ChevronDown, X, Search, Loader2,
+  LogOut, Zap, Droplets, ExternalLink, ArrowLeftRight,
+  ArrowDownLeft, ArrowUpRight, History, Upload, ChevronDown, X, Search, Loader2, Trash2,
 } from "lucide-react";
 
 import { useOnChainTxHistory } from "@/hooks/useOnChainTxHistory";
 import type { OnChainTx } from "@/hooks/useOnChainTxHistory";
 import { useWalletStore } from "@/store/useWalletStore";
-import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ReceiveModal } from "@/components/ReceiveModal";
-import { BuyCryptoModal } from "@/components/BuyCryptoModal";
-import { DirectBuyModal } from "@/components/DirectBuyModal";
-import { BuyHistory } from "@/components/BuyHistory";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { cn, getProviderLabel } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { useEvmBalances } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
+import { useEscrow } from "@/hooks/useEscrow";
+import { checkEscrowDeposit } from "@/lib/escrow";
 
 import { EXPLORER_TX, CHAIN_NAMES } from "@/lib/onChainLiquidity";
 import { ChainSwitcherDropdown } from "@/components/ChainSwitcherDropdown";
@@ -236,16 +234,17 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   const { quoteCurrency } = useSettingsStore();
   const { getUserPositions, removePosition, clearWalletPositions } = useLiquidityStore();
   const lpPositions = address ? Object.entries(getUserPositions(address)) : [];
+  const { cancelOrder: cancelOrderOnChain, escrowAvailable } = useEscrow();
   const { open: openWallet } = useWalletModalStore();
   const [, navigate] = useLocation();
   const [tab, setTab] = useState<Tab | null>(() => hidePreContent ? null : (visibleTabs?.[0] ?? "assets"));
   const [receiveOpen, setReceiveOpen] = useState(false);
-  const [buyCryptoOpen, setBuyCryptoOpen] = useState(false);
-  const [directBuyOpen, setDirectBuyOpen] = useState(false);
-  const [directBuyCoin, setDirectBuyCoin] = useState<string>("BTC");
-  const [directBuyUsd, setDirectBuyUsd] = useState<string | undefined>(undefined);
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [dismissedOrders, setDismissedOrders] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("orah_dismissed_orders") ?? "[]")); }
+    catch { return new Set(); }
+  });
   const [chainSheetOpen, setChainSheetOpen] = useState(false);
   const [historyFilter, setHistoryFilter] = useState<string | null>(null);
   const [historySubTab, setHistorySubTab] = useState<"onchain" | "trades" | "bridge" | "swaps" | "buys">(
@@ -262,6 +261,17 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
     try { return JSON.parse(localStorage.getItem("orah_swap_history") ?? "[]"); } catch { return []; }
   });
   const [liveLeStatuses, setLiveLeStatuses] = useState<Record<string, any>>({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  const removeBridgeEntry = useCallback((id: string) => {
+    setBridgeHistory(prev => {
+      const next = prev.filter((e: any) => e.transaction_id !== id);
+      try { localStorage.setItem("le_swap_history", JSON.stringify(next.slice(0, 50))); } catch {}
+      return next;
+    });
+    setLiveLeStatuses(prev => { const n = { ...prev }; delete n[id]; return n; });
+    setConfirmDeleteId(null);
+  }, []);
 
   // ── Transaction lookup tool ──────────────────────────────────────────────
   const [lookupId,     setLookupId]     = useState("");
@@ -380,6 +390,23 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   });
   const myOrders: any[] = Array.isArray(ordersData) ? ordersData : [];
 
+  // ── OrahDEX internal exchange balance (user_balances) ────────────────────────
+  const { data: exchangePortfolio, refetch: refetchExchange } = useQuery<{ balances: any[] }>({
+    queryKey: ["orah-exchange-balance", ledgerAddress],
+    queryFn:  async () => {
+      if (!ledgerAddress) return { balances: [] };
+      const r = await fetch(`${BASE}/api/portfolio?walletAddress=${encodeURIComponent(ledgerAddress)}`);
+      if (!r.ok) return { balances: [] };
+      const d = await r.json();
+      return { balances: Array.isArray(d?.balances) ? d.balances : Array.isArray(d) ? d : [] };
+    },
+    enabled: !!ledgerAddress,
+    refetchInterval: 30_000,
+    staleTime:       15_000,
+  });
+  const exchangeBalances: any[] = exchangePortfolio?.balances ?? [];
+  const nonZeroExchange = exchangeBalances.filter(b => parseFloat(b.available ?? b.total ?? "0") > 0);
+
   const { data: historyData = [], isLoading: historyLoading } = useQuery<any[]>({
     queryKey: ["trade-history", ledgerAddress],
     queryFn: () => fetch(`${BASE}/api/trades/history?walletAddress=${encodeURIComponent(ledgerAddress || "")}&limit=100`).then(r => r.json()),
@@ -420,13 +447,52 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
     return Object.entries(groups).map(([label, trades]) => ({ label, trades }));
   })();
 
+  function dismissOrder(id: string) {
+    setDismissedOrders(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      try { localStorage.setItem("orah_dismissed_orders", JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }
+
   const cancelMutation = useMutation({
     mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
+      // Step 1: If the order has an active on-chain escrow deposit, cancel it
+      // first so funds are returned to the user's wallet. Without this, clicking
+      // Cancel in the portfolio only removes the order from the DB but leaves the
+      // funds locked in the OrahDEXEscrow contract indefinitely.
+      if (escrowAvailable && chainId) {
+        let hasDeposit = false;
+        try {
+          const dep = await Promise.race([
+            checkEscrowDeposit(orderId, chainId),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
+          ]);
+          hasDeposit = !!dep && !dep.released;
+        } catch { /* RPC failure — skip on-chain cancel, let user retry */ }
+
+        if (hasDeposit) {
+          try {
+            await cancelOrderOnChain(orderId);
+          } catch (e: any) {
+            const msg = String(e?.message ?? "").toLowerCase();
+            const isMissingDeposit =
+              msg.includes("no deposit") ||
+              msg.includes("already settled") ||
+              msg.includes("already released");
+            if (!isMissingDeposit) throw e;
+          }
+        }
+      }
+      // Step 2: Tell the server to remove the order from the orderbook.
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ walletAddress: orderWalletAddress }),
       });
+      // 404 = already cancelled — treat as success.
+      if (res.status === 404) return { id: orderId, status: "cancelled" };
       if (!res.ok) throw new Error("Failed to cancel");
       return res.json();
     },
@@ -687,15 +753,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   return (
     <>
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
-      <BuyCryptoModal open={buyCryptoOpen} onClose={() => setBuyCryptoOpen(false)} />
-      <DirectBuyModal
-        open={directBuyOpen}
-        onClose={() => { setDirectBuyOpen(false); setDirectBuyUsd(undefined); }}
-        defaultCoin={directBuyCoin}
-        defaultFiatUsd={directBuyUsd}
-        defaultPayMethod="card"
-        onSwitchToProviders={() => setBuyCryptoOpen(true)}
-      />
       {withdrawAsset && (() => {
         const assetNet = getAssetNetworkInfo(withdrawAsset.asset, network);
         const sameNetwork = assetNet.network === (network ?? "evm");
@@ -714,7 +771,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             initialTab={withdrawInitialTab}
             visibleTabs={withdrawVisibleTabs}
             isOrahWallet={provider === "orah-wallet"}
-            passkeyEvmAddress={provider === "orah-wallet" ? internalEvmAddress ?? undefined : undefined}
+            passkeyEvmAddress={internalEvmAddress ?? undefined}
           />
         );
       })()}
@@ -746,7 +803,9 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             </button>
             <button
               onClick={async () => {
-                if (provider === "reown") await disconnectReown();
+                if (provider === "reown") {
+                  import("@/lib/reown-appkit").then(({ disconnectReown }) => disconnectReown()).catch(() => {});
+                }
                 disconnect();
               }}
               className="p-2 rounded-full border border-border text-muted-foreground hover:text-red-400 hover:border-red-400/30 transition-all"
@@ -921,12 +980,69 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
             </div>
           )}
 
-          {/* Buy / Receive / Bridge */}
-          <div className="grid grid-cols-3 gap-2">
-            <button onClick={() => setDirectBuyOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-gradient-to-b from-green-600 to-emerald-600 text-white font-bold text-xs shadow-lg shadow-green-600/20 active:opacity-90">
-              <CreditCard size={15} />
-              Buy
-            </button>
+          {/* ── BUCKET 3: OrahDEX Exchange Balance ──────────────────────────────── */}
+          {nonZeroExchange.length > 0 && (
+            <div className="bg-emerald-500/5 border border-emerald-500/25 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <Zap size={14} className="text-emerald-400" />
+                  <span className="text-sm font-bold text-foreground">OrahDEX Balance</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase tracking-wide">Trading</span>
+                </div>
+                <button onClick={() => refetchExchange()} className="text-emerald-400/60 hover:text-emerald-400 transition-colors">
+                  <RefreshCw size={12} />
+                </button>
+              </div>
+              <p className="text-[10px] text-muted-foreground mb-3">
+                Funds in your OrahDEX trading account — ready to trade or withdraw to your wallet.
+              </p>
+              <div className="space-y-2.5">
+                {nonZeroExchange.map((b: any) => {
+                  const avail  = parseFloat(b.available ?? "0");
+                  const locked = parseFloat(b.locked ?? "0");
+                  const usdVal = parseFloat(b.value ?? "0") || avail * (parseFloat(b.price ?? "0") || 0);
+                  const net    = ASSET_NETWORK_MAP[b.asset] ?? { network: "evm", networkLabel: b.asset, placeholder: "" };
+                  const color  = ASSET_COLORS[b.asset] ?? "#6B7280";
+                  return (
+                    <div key={b.asset} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0" style={{ backgroundColor: color }}>
+                          {b.asset.slice(0, 2)}
+                        </div>
+                        <div>
+                          <span className="text-xs font-semibold text-foreground">{b.asset}</span>
+                          {locked > 0 && (
+                            <div className="text-[9px] text-orange-400">{locked.toLocaleString(undefined, { maximumFractionDigits: 6 })} in orders</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="text-right">
+                          <div className="text-xs font-mono text-foreground">{avail.toLocaleString(undefined, { maximumFractionDigits: 8 })}</div>
+                          {usdVal > 0 && <div className="text-[10px] text-muted-foreground">{formatQuoteAmount(usdVal, quoteCurrency)}</div>}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setWithdrawAsset({ asset: b.asset, available: avail, network: net.network, networkLabel: net.networkLabel, color });
+                            setWithdrawInitialTab("withdraw");
+                            setWithdrawVisibleTabs(["withdraw", "deposit", "history"]);
+                            setWithdrawOpen(true);
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 active:scale-95 transition-all text-[11px] font-semibold"
+                        >
+                          <ArrowUpRight size={12} />
+                          Withdraw
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Receive / Bridge */}
+          <div className="grid grid-cols-2 gap-2">
             <button onClick={() => setReceiveOpen(true)} className="flex flex-col items-center justify-center gap-1 py-3 rounded-2xl bg-primary text-primary-foreground font-bold text-xs shadow-lg shadow-primary/20 active:opacity-90">
               <ArrowDownToLine size={15} />
               Receive
@@ -1268,18 +1384,19 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
           )}
 
           {/* Orders tab */}
-          {tab === "orders" && (
-            myOrders.length === 0 ? (
+          {tab === "orders" && (() => {
+            const visibleOrders = myOrders.filter(o => !dismissedOrders.has(String(o.id)));
+            return visibleOrders.length === 0 ? (
               <div className="bg-card border border-border rounded-2xl p-8 mb-4 flex flex-col items-center gap-2 text-muted-foreground">
                 <p className="text-sm font-medium">No orders yet</p>
                 <p className="text-xs opacity-60 text-center">Your open and past orders will appear here</p>
               </div>
             ) : (
               <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
-                {myOrders.map((o: any, i: number) => (
+                {visibleOrders.map((o: any, i: number) => (
                   <div
                     key={o.id}
-                    className={`flex items-center gap-3 px-4 py-3.5 ${i < myOrders.length - 1 ? "border-b border-border" : ""}`}
+                    className={`flex items-center gap-3 px-4 py-3.5 ${i < visibleOrders.length - 1 ? "border-b border-border" : ""}`}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
@@ -1298,7 +1415,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                         {o.type ?? "limit"} · {Number(o.quantity).toFixed(4)} @ ${Number(o.price).toLocaleString()}
                       </p>
                     </div>
-                    {o.status === "open" ? (
+                    {o.status === "open" || o.status === "pending" ? (
                       <button
                         onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || ledgerAddress || "") })}
                         disabled={cancellingId === String(o.id)}
@@ -1307,20 +1424,29 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                         {cancellingId === String(o.id) ? "…" : "Cancel"}
                       </button>
                     ) : (
-                      <div className="text-right shrink-0">
-                        <p className="text-xs font-semibold capitalize" style={{ color: STATUS_COLOR[o.status] ?? "#6b7280" }}>
-                          {o.status}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          {new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </p>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-right">
+                          <p className="text-xs font-semibold capitalize" style={{ color: STATUS_COLOR[o.status] ?? "#6b7280" }}>
+                            {o.status}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">
+                            {new Date(o.updatedAt ?? o.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => dismissOrder(String(o.id))}
+                          className="p-1.5 rounded-lg text-muted-foreground/40 hover:text-red-400 hover:bg-red-500/10 active:bg-red-500/20 transition-all"
+                          aria-label="Remove"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                     )}
                   </div>
                 ))}
               </div>
-            )
-          )}
+            );
+          })()}
 
           {/* History tab */}
           {tab === "history" && (
@@ -1490,20 +1616,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                   </>
                 );
               })()}
-
-              {/* ── BUYS (fiat → crypto purchases) ─────────────────────── */}
-              {historySubTab === "buys" && (
-                <BuyHistory
-                  walletAddress={[address, internalEvmAddress, sessionStorage.getItem("orahdex_session_addr")]
-                    .filter((s): s is string => !!s && s.length >= 6)
-                    .join(",") || null}
-                  onResume={(o) => {
-                    setDirectBuyCoin(o.coin_symbol);
-                    setDirectBuyUsd((o.fiat_amount_cents / 100).toFixed(2));
-                    setDirectBuyOpen(true);
-                  }}
-                />
-              )}
 
               {/* ── TRADES ─────────────────────────────────────────────── */}
               {historySubTab === "trades" && (
@@ -1757,6 +1869,15 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                                 {dateStr && <span className="text-muted-foreground/40"> · {dateStr}</span>}
                               </p>
                             </div>
+                            {isPending && (
+                              <button
+                                onClick={() => setConfirmDeleteId(prev => prev === e.transaction_id ? null : e.transaction_id)}
+                                className="shrink-0 p-2 -mr-1 rounded-xl hover:bg-red-500/10 active:bg-red-500/20 transition-colors"
+                                aria-label="Remove transaction"
+                              >
+                                <Trash2 size={15} className={confirmDeleteId === e.transaction_id ? "text-red-400" : "text-muted-foreground/35"} />
+                              </button>
+                            )}
                           </div>
 
                           {/* Deposit address — shown for pending swaps */}
@@ -1810,6 +1931,25 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                               <Copy size={10} />
                             </button>
                           </div>
+
+                          {/* Delete confirmation — shown when trash icon is tapped */}
+                          {isPending && confirmDeleteId === e.transaction_id && (
+                            <div className="flex items-center gap-2 px-4 pb-3 pt-2 border-t border-red-500/15 bg-red-500/5">
+                              <span className="flex-1 text-[11px] text-muted-foreground">Remove this entry?</span>
+                              <button
+                                onClick={() => setConfirmDeleteId(null)}
+                                className="text-[11px] px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:bg-white/5 active:opacity-60 transition"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => removeBridgeEntry(e.transaction_id)}
+                                className="text-[11px] px-3 py-1.5 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500/25 active:opacity-60 transition font-semibold"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

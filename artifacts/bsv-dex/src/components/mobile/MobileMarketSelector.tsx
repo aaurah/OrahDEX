@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { X, Search, Star, ChevronUp, ChevronDown, ArrowLeftRight, Info } from "lucide-react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { X, Search, Star, ChevronUp, ChevronDown, ArrowLeftRight, Info, RefreshCw } from "lucide-react";
 import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
 import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -11,11 +11,14 @@ import {
   MNT_MARKETS, ZK_MARKETS, SCR_MARKETS, LINEA_MARKETS,
   AI_MARKETS, SOL_MARKETS, MEME_MARKETS, DEFI_MARKETS, NEW_MARKETS,
   FUTURES_MARKETS,
-  BASE_MARKETS, ZORA_MARKETS, GAMING_MARKETS, COSMOS_MARKETS,
-  L1_MARKETS, L2_MARKETS, RWA_MARKETS, EXCHANGE_MARKETS,
+  GAMING_MARKETS, COSMOS_MARKETS,
+  RWA_MARKETS, EXCHANGE_MARKETS,
   DEPIN_MARKETS, BRC20_MARKETS, UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { useSSPairs } from "@/hooks/useSSPairs";
+import { useMarketSearch } from "@/hooks/useStagedMarkets";
+import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
 import { cn, marketMatchesQuery } from "@/lib/utils";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 
@@ -51,15 +54,15 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "base" | "zora" | "gaming" | "cosmos" | "l1" | "l2" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
-  { id: "favorites", label: "Favorites" },
+  { id: "favorites", label: "Favs"      },
   { id: "all",       label: "All"       },
-  { id: "usd",       label: "USD"       },
   { id: "new",       label: "NEW"       },
+  { id: "usd",       label: "USD"       },
   { id: "btc",       label: "BTC"       },
-  { id: "bsv",       label: "BSV"       },
+  { id: "bsv",       label: "⚡ BSV"    },
   { id: "eth",       label: "ETH"       },
   { id: "bnb",       label: "BNB"       },
   { id: "matic",     label: "MATIC"     },
@@ -68,28 +71,64 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "op",        label: "OP"        },
   { id: "ftm",       label: "FTM"       },
   { id: "cro",       label: "CRO"       },
-  { id: "base",      label: "⬡ Base"    },
-  { id: "zora",      label: "ZORA"      },
-  { id: "mnt",       label: "MNT"       },
+  { id: "linea",     label: "LINEA"     },
   { id: "zk",        label: "ZK"        },
   { id: "scr",       label: "SCROLL"    },
-  { id: "linea",     label: "LINEA"     },
-  { id: "bch",       label: "BCH"       },
+  { id: "mnt",       label: "MNT"       },
   { id: "sol",       label: "SOL"       },
+  { id: "bch",       label: "BCH"       },
   { id: "ai",        label: "AI"        },
   { id: "depin",     label: "DePIN"     },
   { id: "meme",      label: "MEME"      },
   { id: "defi",      label: "DEFI"      },
-  { id: "uniswap",   label: "UNISWAP"   },
-  { id: "pancake",   label: "PANCAKE"   },
   { id: "gaming",    label: "GAMING"    },
   { id: "cosmos",    label: "COSMOS"    },
-  { id: "l1",        label: "LAYER 1"   },
-  { id: "l2",        label: "LAYER 2"   },
   { id: "rwa",       label: "RWA"       },
   { id: "exchange",  label: "EXCHANGE"  },
   { id: "brc20",     label: "BRC-20"    },
+  { id: "uniswap",   label: "UNISWAP"   },
+  { id: "pancake",   label: "PANCAKE"   },
   { id: "futures",   label: "Futures"   },
+];
+
+/** Chain tabs shown in the top "by network" row — ordered by importance */
+const CHAIN_TABS: { id: Cat; icon: string; name: string }[] = [
+  { id: "bsv",   icon: "⚡", name: "BSV"      },
+  { id: "btc",   icon: "₿",  name: "BTC"      },
+  { id: "eth",   icon: "⟠",  name: "ETH"      },
+  { id: "sol",   icon: "◎",  name: "SOL"      },
+  { id: "bnb",   icon: "🟡", name: "BNB"      },
+  { id: "bch",   icon: "🔶", name: "BCH"      },
+  { id: "matic", icon: "🟣", name: "Polygon"  },
+  { id: "avax",  icon: "🔺", name: "AVAX"     },
+  { id: "arb",   icon: "🔷", name: "Arbitrum" },
+  { id: "op",    icon: "🔴", name: "Optimism" },
+  { id: "zk",    icon: "⚡", name: "zkSync"   },
+  { id: "linea", icon: "⬛", name: "Linea"    },
+  { id: "scr",   icon: "📜", name: "Scroll"   },
+  { id: "mnt",   icon: "🟢", name: "Mantle"   },
+  { id: "ftm",   icon: "👻", name: "Fantom"   },
+  { id: "cro",   icon: "⬡",  name: "Cronos"   },
+];
+
+/** Topic/theme tabs shown in the bottom "by category" row */
+const TOPIC_TABS: { id: Cat; label: string }[] = [
+  { id: "favorites", label: "⭐ Favs"    },
+  { id: "all",       label: "All"        },
+  { id: "usd",       label: "💵 USD"     },
+  { id: "new",       label: "🆕 NEW"     },
+  { id: "ai",        label: "🤖 AI"      },
+  { id: "meme",      label: "🐸 MEME"    },
+  { id: "defi",      label: "🏦 DeFi"    },
+  { id: "depin",     label: "📡 DePIN"   },
+  { id: "gaming",    label: "🎮 Gaming"  },
+  { id: "rwa",       label: "🏛 RWA"     },
+  { id: "cosmos",    label: "⚛ Cosmos"  },
+  { id: "brc20",     label: "BRC-20"     },
+  { id: "exchange",  label: "Exchange"   },
+  { id: "uniswap",   label: "🦄 Uni"     },
+  { id: "pancake",   label: "🥞 Cake"    },
+  { id: "futures",   label: "📈 Futures" },
 ];
 
 const ALL_POOL = [
@@ -97,11 +136,10 @@ const ALL_POOL = [
   ...BSV_MARKETS, ...BTC_MARKETS, ...ETH_MARKETS, ...BCH_MARKETS,
   ...BNB_MARKETS, ...MATIC_MARKETS, ...AVAX_MARKETS, ...ARB_MARKETS,
   ...OP_MARKETS, ...FTM_MARKETS, ...CRO_MARKETS,
-  ...BASE_MARKETS, ...ZORA_MARKETS,
   ...MNT_MARKETS, ...ZK_MARKETS, ...SCR_MARKETS, ...LINEA_MARKETS,
   ...AI_MARKETS, ...DEPIN_MARKETS, ...SOL_MARKETS, ...MEME_MARKETS, ...DEFI_MARKETS,
   ...UNISWAP_MARKETS, ...PANCAKE_MARKETS,
-  ...GAMING_MARKETS, ...COSMOS_MARKETS, ...L1_MARKETS, ...L2_MARKETS,
+  ...GAMING_MARKETS, ...COSMOS_MARKETS,
   ...RWA_MARKETS, ...EXCHANGE_MARKETS, ...BRC20_MARKETS,
   ...NEW_MARKETS, ...FUTURES_MARKETS,
 ];
@@ -136,8 +174,6 @@ const CAT_NETWORKS: Partial<Record<Cat, string[]>> = {
   zk:      ["zksync"],
   scr:     ["scroll"],
   linea:   ["linea"],
-  base:    ["base", "base-mainnet"],
-  zora:    ["zora"],
   cosmos:  ["cosmos", "ibc", "cosmoshub"],
   brc20:   ["bitcoin", "btc"],
   uniswap: ["ethereum", "eth", "erc20"],
@@ -162,8 +198,6 @@ const CAT_PREFERRED_QUOTE: Partial<Record<Cat, string[]>> = {
   zk:      ["ETH",  "USDT", "USDC"],
   scr:     ["ETH",  "USDT", "USDC"],
   linea:   ["ETH",  "USDT", "USDC"],
-  base:    ["ETH",  "USDT", "USDC"],
-  zora:    ["ETH",  "USDT", "USDC"],
   cosmos:  ["ATOM", "USDT", "USDC"],
   brc20:   ["BTC",  "USDT", "USDC"],
   uniswap: ["ETH",  "USDT", "USDC"],
@@ -246,9 +280,15 @@ function getRows(
     const native = db.length > 0 ? db : enrich(fallbackMock).filter(m => m.price > 0);
     const seenSymbols = new Set(native.map(r => r.symbol));
     const seenBases   = new Set(native.map(r => r.base));
-    const aos = aosPairs
-      .filter(p => p.quote === quote && p.price > 0 && !seenBases.has(p.base) && !seenSymbols.has(p.symbol))
-      .sort((a, b) => a.base.localeCompare(b.base));
+    // Deduplicate within AOS pairs by base — same coin on multiple chains → show once (best price)
+    const aosByBase = new Map<string, NormRow>();
+    for (const p of aosPairs) {
+      if (p.quote !== quote || p.price <= 0) continue;
+      if (seenBases.has(p.base) || seenSymbols.has(p.symbol)) continue;
+      const cur = aosByBase.get(p.base);
+      if (!cur || p.price > cur.price) aosByBase.set(p.base, p);
+    }
+    const aos = Array.from(aosByBase.values()).sort((a, b) => a.base.localeCompare(b.base));
     return [...native, ...aos];
   };
 
@@ -263,11 +303,36 @@ function getRows(
 
   // "All" pool = all native spot + AOS pairs not already native (priced only)
   const nativeSymbols = new Set(ALL_POOL_DEDUPED.map((m: any) => normalise(m).symbol));
-  const aosOnly = aosPairs.filter(p => !nativeSymbols.has(p.symbol) && p.price > 0);
-  const allSpot = () => [
-    ...enrich(ALL_POOL_DEDUPED).filter(m => m.type !== "futures" && m.price > 0),
-    ...aosOnly,
-  ];
+  const nativeBases   = new Set(ALL_POOL_DEDUPED.map((m: any) => normalise(m).base));
+  // Deduplicate AOS by base coin — LE lists the same coin on multiple chains.
+  // Keep one entry per base (highest price = most liquid network).
+  const aosOnly = (() => {
+    const bestByBase = new Map<string, NormRow>();
+    for (const p of aosPairs) {
+      if (p.price <= 0) continue;
+      if (nativeSymbols.has(p.symbol) || nativeBases.has(p.base)) continue;
+      const cur = bestByBase.get(p.base);
+      if (!cur || p.price > cur.price) bestByBase.set(p.base, p);
+    }
+    return Array.from(bestByBase.values());
+  })();
+  const allSpot = () => {
+    const merged = new Map<string, NormRow>();
+    // 1. DB rows — authoritative live prices (includes LE/SS DB entries)
+    for (const m of apiRows) {
+      if (m.type !== "futures" && m.price > 0) merged.set(m.symbol, m);
+    }
+    // 2. Static-mock enriched rows — fills coins not yet in DB
+    for (const m of enrich(ALL_POOL_DEDUPED)) {
+      if (m.type !== "futures" && m.price > 0 && !merged.has(m.symbol))
+        merged.set(m.symbol, m);
+    }
+    // 3. AOS swap-only pairs not already covered by DB or mock
+    for (const m of aosOnly) {
+      if (!merged.has(m.symbol)) merged.set(m.symbol, m);
+    }
+    return Array.from(merged.values()).sort((a, b) => a.base.localeCompare(b.base));
+  };
 
   switch (cat) {
     case "all":       return allSpot();
@@ -277,7 +342,7 @@ function getRows(
     // ── Chain-quote tabs: DB-backed ────────────────────────────────────────────
     case "btc":       return quoteAllPairs("BTC",   BTC_MARKETS);
     case "bsv":       return quoteAllPairs("BSV",   BSV_MARKETS);
-    case "eth":       return chainFromDB("ETH",   cat, ETH_MARKETS);
+    case "eth":       return quoteAllPairs("ETH",  ETH_MARKETS);
     case "bnb":       return chainFromDB("BNB",   cat, BNB_MARKETS);
     case "sol":       return chainFromDB("SOL",   cat, SOL_MARKETS);
     case "bch":       return chainFromDB("BCH",   cat, BCH_MARKETS);
@@ -291,16 +356,12 @@ function getRows(
     case "zk":        return chainFromDB("ZK",    cat, ZK_MARKETS);
     case "scr":       return chainFromDB("SCR",   cat, SCR_MARKETS);
     case "linea":     return chainFromDB("LINEA", cat, LINEA_MARKETS);
-    case "base":      return chainFromDB("BASE",  cat, BASE_MARKETS);
-    case "zora":      return chainRows(ZORA_MARKETS,     cat);
     // ── Category/topic tabs: static enrich + AOS ──────────────────────────────
     case "ai":        return chainRows(AI_MARKETS,       cat);
     case "meme":      return chainRows(MEME_MARKETS,     cat);
     case "defi":      return chainRows(DEFI_MARKETS,     cat);
     case "gaming":    return chainRows(GAMING_MARKETS,   cat);
     case "cosmos":    return chainRows(COSMOS_MARKETS,   cat);
-    case "l1":        return enrich(L1_MARKETS);
-    case "l2":        return enrich(L2_MARKETS);
     case "rwa":       return enrich(RWA_MARKETS);
     case "exchange":  return enrich(EXCHANGE_MARKETS);
     case "depin":     return chainRows(DEPIN_MARKETS,    cat);
@@ -323,17 +384,28 @@ interface Props {
 const SPOT_CATS    = CATS.filter(c => c.id !== "futures");
 const FUTURES_CATS: { id: Cat; label: string }[] = [{ id: "futures", label: "Futures" }];
 
+const PAGE = 150; // rows per infinite-scroll page
+
 export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat, mode }: Props) {
   const [, navigate]  = useLocation();
+  const queryClient   = useQueryClient();
   const effectiveCats = mode === "futures" ? FUTURES_CATS : mode === "spot" ? SPOT_CATS : CATS;
   const resolvedDefault: Cat = mode === "futures" ? "futures" : (defaultCat ?? "usd");
 
   const [cat, setCat]         = useState<Cat>(resolvedDefault);
   const [usdSub, setUsdSub]   = useState<UsdSub>("USDT");
   const [search, setSearch]   = useState("");
+  const { results: serverSearchResults } = useMarketSearch(search, { debounceMs: 300 });
   const [sortKey, setSortKey] = useState<"base"|"price"|"chg">("base");
   const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
   const [infoCoin, setInfoCoin] = useState<string | null>(null);
+  const [renderCount, setRenderCount] = useState(PAGE);
+  const [pulling, setPulling]   = useState(false);
+  const [pullDist, setPullDist] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const scrollRef   = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const touchStartY = useRef(0);
   const [favorites, setFavorites] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem("market_favorites");
@@ -358,6 +430,56 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     }
   }, [mode, defaultCat]);
 
+  // Reset render count whenever filters change so the list starts from the top
+  useEffect(() => {
+    setRenderCount(PAGE);
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [cat, usdSub, search, sortKey, sortDir]);
+
+  // Infinite scroll — grow render window when sentinel comes into view
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setRenderCount(n => n + PAGE); },
+      { root: scrollRef.current, rootMargin: "200px" }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [cat, usdSub, search, sortKey, sortDir]);
+
+  // Pull-to-refresh handlers
+  const doRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await queryClient.invalidateQueries({ queryKey: ["markets"] });
+    await queryClient.refetchQueries({ queryKey: ["markets"] });
+    setRefreshing(false);
+  }, [queryClient]);
+
+  const onTouchStart = useCallback((e: React.TouchEvent) => {
+    if ((scrollRef.current?.scrollTop ?? 0) === 0) {
+      touchStartY.current = e.touches[0].clientY;
+    } else {
+      touchStartY.current = -1;
+    }
+  }, []);
+
+  const onTouchMove = useCallback((e: React.TouchEvent) => {
+    if (touchStartY.current < 0) return;
+    const delta = e.touches[0].clientY - touchStartY.current;
+    if (delta > 0) {
+      setPulling(true);
+      setPullDist(Math.min(delta * 0.45, 72));
+    }
+  }, []);
+
+  const onTouchEnd = useCallback(() => {
+    if (pullDist >= 52 && !refreshing) doRefresh();
+    setPulling(false);
+    setPullDist(0);
+    touchStartY.current = -1;
+  }, [pullDist, refreshing, doRefresh]);
+
   // Native market data (prices / changes)
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
@@ -372,9 +494,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
 
   // AOS pairs from LetsExchange — available to trade via Swap tab
   const { pairs: rawAosPairs } = useLetsExchangePairs({ all: true });
+  // SimpleSwap pairs — combined with LE for chain-specific tabs
+  const { pairs: rawSsPairs } = useSSPairs({ all: true });
 
-  const aosPairs = useMemo<NormRow[]>(() =>
-    (rawAosPairs ?? []).map(p => ({
+  const aosPairs = useMemo<NormRow[]>(() => {
+    // Merge LetsExchange + SimpleSwap into one pool, deduplicated by base:quote.
+    const toNorm = (p: { symbol: string; baseAsset: string; quoteAsset: string; lastPrice: number; priceChangePercent24h: number; network?: string | null; networkName?: string | null }): NormRow => ({
       symbol:   p.symbol,
       base:     p.baseAsset,
       quote:    p.quoteAsset,
@@ -382,9 +507,21 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       chg:      p.priceChangePercent24h ?? 0,
       type:     "spot" as const,
       network:  p.network ?? p.networkName ?? undefined,
-      swapOnly: true,
-    })),
-  [rawAosPairs]);
+      swapOnly: true as const,
+    });
+    const all = [
+      ...(rawAosPairs ?? []).map(toNorm),
+      ...(rawSsPairs  ?? []).map(toNorm),
+    ];
+    // Deduplicate: same base+quote on multiple chains/providers → keep highest price.
+    const best = new Map<string, NormRow>();
+    for (const p of all) {
+      const key = `${p.base.toUpperCase()}:${p.quote.toUpperCase()}`;
+      const ex = best.get(key);
+      if (!ex || p.price > ex.price) best.set(key, p);
+    }
+    return [...best.values()];
+  }, [rawAosPairs, rawSsPairs]);
 
   const apiRows = useMemo<NormRow[]>(
     () => (Array.isArray(apiData) ? apiData : []).map(normalise),
@@ -395,11 +532,10 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     apiRows.map((m: NormRow) => [m.symbol, m])
   ), [apiRows]);
 
-  // Lightweight global pool used ONLY when the user is searching.
-  // We dedupe directly from apiRows + aosPairs instead of fanning out across
-  // 36 categories — that fan-out crashed mobile Safari with ~30k AOS pairs.
-  const globalRows = useMemo<NormRow[]>(() => {
-    if (!search) return [];
+  // Full symbol pool: apiRows + every AOS pair by exact symbol (no base dedup).
+  // Used for search AND favorites so any starred symbol — even if it's not
+  // the "best quote" for its base — can always be found.
+  const fullPool = useMemo<NormRow[]>(() => {
     const merged = new Map<string, NormRow>();
     for (const m of apiRows) merged.set(m.symbol, m);
     for (const p of aosPairs) {
@@ -407,11 +543,42 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       if (!merged.has(p.symbol)) merged.set(p.symbol, p);
     }
     return Array.from(merged.values());
-  }, [search, apiRows, aosPairs]);
+  }, [apiRows, aosPairs]);
 
+  // Alias kept for search path (same data, no extra cost)
+  const globalRows = fullPool;
+
+  // Live on-chain data from GeckoTerminal (chain tabs only, cached 90s)
+  const { data: geckoRows } = useGeckoTerminalPools(cat);
+  const _svrRows: NormRow[] = search
+    ? serverSearchResults
+        .filter((m: any) => m.symbol && !globalRows.some(r => r.symbol === m.symbol))
+        .map((m: any) => normalise({ ...m, type: m.type ?? "catalog" }))
+    : [];
   let rows: NormRow[] = search
-    ? globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search))
-    : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
+    ? [
+        ...globalRows.filter(m => marketMatchesQuery(m.base, m.quote, m.symbol, search)),
+        ..._svrRows,
+      ]
+    : cat === "favorites"
+      // Use the full (no-base-dedup) pool so any starred symbol is always found,
+      // regardless of whether it was the "best quote" for its base coin.
+      ? fullPool.filter(m => favorites.has(m.symbol)).sort((a, b) => a.base.localeCompare(b.base))
+      : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
+
+  // Merge GeckoTerminal live data: update prices for known tokens, append new ones
+  if (!search && geckoRows.length > 0) {
+    const geckoByBase = new Map(geckoRows.map(g => [g.base, g]));
+    rows = rows.map(r => {
+      const g = geckoByBase.get(r.base);
+      return g && g.price > 0 ? { ...r, price: g.price, chg: g.chg } : r;
+    });
+    const existingBases = new Set(rows.map(r => r.base));
+    const newRows: NormRow[] = geckoRows
+      .filter(g => !existingBases.has(g.base) && g.price > 0)
+      .map(g => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, type: "spot" as const, network: g.network, swapOnly: true }));
+    rows = [...rows, ...newRows];
+  }
 
   rows = [...rows].sort((a, b) => {
     let v = 0;
@@ -421,13 +588,10 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     return sortDir === "asc" ? v : -v;
   });
 
-  // Mobile Safari cannot render thousands of rows without crashing
-  // ("a problem repeatedly occurred"). Cap the visible list and surface a
-  // hint when there are more results than we drew.
-  const MAX_RENDER = 300;
-  const totalRows  = rows.length;
-  const truncated  = totalRows > MAX_RENDER;
-  if (truncated) rows = rows.slice(0, MAX_RENDER);
+  // Infinite-scroll window — render PAGE rows at a time; sentinel triggers more
+  const totalRows = rows.length;
+  const hasMore   = totalRows > renderCount;
+  if (hasMore) rows = rows.slice(0, renderCount);
 
   const toggleSort = (k: "base"|"price"|"chg") => {
     if (sortKey === k) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -481,9 +645,19 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
         {/* Header */}
         <div className="flex items-center justify-between px-4 pt-safe-top pt-4 pb-3 border-b border-border shrink-0">
           <span className="text-base font-bold">{mode === "futures" ? "Futures Pairs" : "Markets"}</span>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={doRefresh}
+              disabled={refreshing}
+              className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+              aria-label="Refresh markets"
+            >
+              <RefreshCw size={15} className={refreshing ? "animate-spin text-primary" : "text-muted-foreground"} />
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Search */}
@@ -503,7 +677,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
           </div>
         </div>
 
-        {/* Category tabs — replaced by result count pill when searching */}
+        {/* Filter rows — replaced by result count pill when searching */}
         {search ? (
           <div className="flex items-center gap-2 px-4 py-2 border-b border-border/40 shrink-0">
             <span className="text-[11px] font-bold text-primary bg-primary/15 px-2.5 py-1 rounded-full">
@@ -511,7 +685,27 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
             </span>
             <span className="text-[10px] text-muted-foreground">Every chain &amp; quote asset</span>
           </div>
+        ) : mode === "futures" ? (
+          /* Futures mode — single flat tab row */
+          <div className="flex overflow-x-auto no-scrollbar px-2 border-b border-border/40 shrink-0">
+            {effectiveCats.map(c => (
+              <button
+                key={c.id}
+                onClick={() => { setCat(c.id); setSearch(""); setSortKey("base"); setSortDir("asc"); }}
+                className={cn(
+                  "shrink-0 px-3 py-2.5 text-[12px] font-medium whitespace-nowrap relative transition-colors",
+                  cat === c.id ? "text-foreground font-bold" : "text-muted-foreground"
+                )}
+              >
+                {c.label}
+                {cat === c.id && (
+                  <span className="absolute bottom-0 left-1 right-1 h-[2px] bg-primary rounded-full" />
+                )}
+              </button>
+            ))}
+          </div>
         ) : (
+          /* Spot mode — single flat scrollable tab row matching Markets tab order */
           <div className="flex overflow-x-auto no-scrollbar px-2 border-b border-border/40 shrink-0">
             {effectiveCats.map(c => (
               <button
@@ -565,7 +759,34 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
         </div>
 
         {/* Market rows */}
-        <div className="flex-1 overflow-y-auto overscroll-contain">
+        <div
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto overscroll-contain"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          {/* Pull-to-refresh indicator */}
+          <div
+            style={{
+              height: pulling || refreshing ? `${Math.max(pullDist, refreshing ? 44 : 0)}px` : "0px",
+              transition: pulling ? "none" : "height 0.2s ease",
+              overflow: "hidden",
+            }}
+            className="flex items-center justify-center"
+          >
+            <RefreshCw
+              size={18}
+              className={cn(
+                "transition-transform",
+                refreshing ? "animate-spin text-primary" : "text-muted-foreground"
+              )}
+              style={{ transform: refreshing ? undefined : `rotate(${(pullDist / 72) * 360}deg)` }}
+            />
+            <span className="text-[11px] text-muted-foreground ml-2">
+              {refreshing ? "Refreshing…" : pullDist >= 52 ? "Release to refresh" : "Pull to refresh"}
+            </span>
+          </div>
           {rows.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
               {cat === "favorites" ? "No favorites yet" : search ? "No results" : "Loading…"}
@@ -699,12 +920,19 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
               );
             });
           })()}
-          {truncated && (
+          {/* Infinite-scroll sentinel */}
+          <div ref={sentinelRef} className="h-px" />
+
+          {/* Footer: progress or end-of-list */}
+          {hasMore ? (
             <div className="px-4 py-3 text-center text-[11px] text-muted-foreground border-t border-border/30">
-              Showing first {MAX_RENDER} of {totalRows} matches.
-              {search ? " Refine your search to narrow results." : " Pick a category tab to narrow results."}
+              Showing {renderCount} of {totalRows} · scroll for more
             </div>
-          )}
+          ) : totalRows > PAGE ? (
+            <div className="px-4 py-3 text-center text-[11px] text-muted-foreground/50 border-t border-border/20">
+              All {totalRows} pairs loaded
+            </div>
+          ) : null}
         </div>
       </div>
       <CoinInfoSheet symbol={infoCoin} onClose={() => setInfoCoin(null)} />

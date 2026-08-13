@@ -82,6 +82,11 @@ const PROVIDER_LABELS: Record<string, string> = {
   "slope":          "Slope",
   "mobile-qr":      "Mobile QR",
   "manual":         "Manual Entry",
+  "reown":          "EVM Wallet",
+  "orah-wallet":    "OrahDEX Wallet",
+  "passkey":        "Passkey",
+  "handcash":       "HandCash",
+  "thirdweb":       "ThirdWeb",
 };
 
 export function getProviderLabel(provider: string | null | undefined): string {

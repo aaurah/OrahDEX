@@ -95,7 +95,7 @@ export function LetsExchangeWidget({
       <iframe
         key={widgetUrl}
         src={widgetUrl}
-        title="LetsExchange"
+        title="OrahDEX Exchange"
         allow="payment; clipboard-write"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation"
         className="w-full min-h-[560px] border-0 bg-transparent"

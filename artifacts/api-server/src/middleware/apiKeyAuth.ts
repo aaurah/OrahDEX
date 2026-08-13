@@ -156,6 +156,38 @@ declare global {
   }
 }
 
+/**
+ * Middleware that rejects any request that arrives with an API key in the
+ * query string (?apiKey=...).  Keys must be sent via Authorization: Bearer
+ * or the X-API-Key header so they never appear in server access logs.
+ *
+ * Returns HTTP 400 with an actionable message instead of silently ignoring
+ * the query param, so integrators are guided to fix their clients.
+ */
+export function rejectQueryParamApiKey(req: Request, res: Response, next: NextFunction): void {
+  if (req.query["apiKey"] ?? req.query["api_key"]) {
+    res.status(400).json({
+      error: "API keys must not be sent as query parameters (they appear in server logs). " +
+             "Send the key in the Authorization header: Authorization: Bearer <your-key>",
+    });
+    return;
+  }
+  next();
+}
+
+/**
+ * Middleware that blocks requests that have no valid API key attached.
+ * Must be applied AFTER apiKeyAuth (which populates req.apiKey).
+ * Explicitly whitelisted paths bypass this check.
+ */
+export function requireApiKey(req: Request, res: Response, next: NextFunction): void {
+  if (req.apiKey) return next();
+  res.status(401).json({
+    error: "API key required. Include your key in the Authorization header: Authorization: Bearer <your-key>. " +
+           "Keys can be created in the OrahDEX admin panel.",
+  });
+}
+
 export async function apiKeyAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const presented =
     (req.header("x-api-key") ?? "").trim() ||

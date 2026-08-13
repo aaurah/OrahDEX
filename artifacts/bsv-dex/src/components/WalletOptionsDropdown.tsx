@@ -2,7 +2,6 @@ import { useRef, useState, useEffect } from 'react';
 import { LogOut, Wallet, Copy, Check, ChevronDown, ArrowLeftRight } from 'lucide-react';
 import { useWalletStore, type WalletNetwork } from '@/store/useWalletStore';
 import { useWalletModalStore } from '@/store/useWalletModalStore';
-import { disconnectReown, openReownModal } from '@/lib/reown';
 import { ChainSwitcherDropdown } from './ChainSwitcherDropdown';
 import { cn, getProviderLabel } from '@/lib/utils';
 
@@ -30,7 +29,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
     address, provider, network, balance,
     disconnect, switchNetworkType,
     internalBsvAddress, internalBtcAddress, internalSolAddress, internalEvmAddress, internalBchAddress,
-    internalXrpAddress, internalLtcAddress, internalDogeAddress,
+    internalXrpAddress, internalLtcAddress, internalDogeAddress, internalTronAddress,
   } = useWalletStore();
   const { open: openWalletModal } = useWalletModalStore();
   const [open, setOpen]           = useState(false);
@@ -40,6 +39,8 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (target?.closest?.('[role="dialog"]')) return;
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener('mousedown', handler);
@@ -67,22 +68,18 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const handleDisconnect = async () => {
+  const handleDisconnect = () => {
     setOpen(false);
-    if (provider === 'reown') await disconnectReown();
+    if (provider === "reown") {
+      import("@/lib/reown-appkit").then(({ disconnectReown }) => disconnectReown()).catch(() => {});
+    }
     disconnect();
   };
 
-  const handleSwitchWallet = async () => {
+  const handleSwitchWallet = () => {
     setOpen(false);
-    if (provider === 'reown') {
-      await disconnectReown();
-      disconnect();
-      setTimeout(() => openReownModal("Connect"), 500);
-    } else {
-      disconnect();
-      openWalletModal();
-    }
+    disconnect();
+    openWalletModal();
   };
 
   return (
@@ -168,6 +165,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             const xrpAddr  = internalXrpAddress  ?? (network === 'xrp'  ? address : null);
             const ltcAddr  = internalLtcAddress  ?? (network === 'ltc'  ? address : null);
             const dogeAddr = internalDogeAddress ?? (network === 'doge' ? address : null);
+            const tronAddr = internalTronAddress  ?? (network === 'tron' ? address : null);
             const available: WalletNetwork[] = [];
             if (evmAddr)  available.push('evm');
             if (bsvAddr)  available.push('bsv');
@@ -177,13 +175,13 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
             if (xrpAddr)  available.push('xrp');
             if (ltcAddr)  available.push('ltc');
             if (dogeAddr) available.push('doge');
+            if (tronAddr) available.push('tron');
             if (available.length < 2)  return null;
             return (
               <div className="px-3 py-2.5 border-b border-border">
                 <p className="text-[9px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Network</p>
-                <div className="flex gap-1">
+                <div className="flex gap-1 overflow-x-auto pb-0.5 scrollbar-none" style={{ scrollbarWidth: 'none' }}>
                   {available.map((net) => {
-                    // treat bsv-test as active when the bsv button is shown
                     const isActive = network === net || (net === 'bsv' && network === 'bsv-test');
                     return (
                       <button
@@ -191,7 +189,7 @@ export function WalletOptionsDropdown({ compact = false }: Props) {
                         onClick={() => { if (!isActive) { switchNetworkType(net); setOpen(false); } }}
                         disabled={isActive}
                         className={cn(
-                          "flex-1 flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-bold transition-all border",
+                          "flex-none flex flex-col items-center gap-0.5 py-2 rounded-lg text-[10px] font-bold transition-all border w-12 shrink-0",
                           isActive
                             ? "bg-primary/15 text-primary border-primary/40"
                             : "bg-muted/40 text-muted-foreground border-border/40 hover:bg-muted hover:text-foreground"

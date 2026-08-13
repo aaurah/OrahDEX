@@ -314,7 +314,9 @@ export async function resilientFetch(
     if (res.status === 429) {
       const retryAfterSec = parseInt(res.headers.get("Retry-After") ?? "0", 10);
       recordRateLimit(api, retryAfterSec > 0 ? retryAfterSec * 1000 : undefined);
-      cb.recordFailure("429 Too Many Requests");
+      // 429 = rate-limited, not unhealthy — do NOT count against circuit breaker.
+      // The API is functioning; we are simply sending too many requests.
+      // The RateLimitGuard above handles backoff; treat this as a non-fatal skip.
       throw new Error(`429 rate-limited: ${url}`);
     }
 
@@ -461,38 +463,21 @@ async function repairStaleMarkets(): Promise<void> {
   logger.warn({ staleCount: rows.length, staleSymbols: staleSymbols.slice(0, 10) },
     "[StaleRepairer] Stale market prices detected — triggering refresh");
 
-  // Trigger price updater for stale symbols via dynamic import
-  try {
-    const { updateMarketPrices } = await import("../lib/priceUpdater.js");
-    await updateMarketPrices();
-    staleRepairCount++;
-
-    // Re-check if prices were actually fixed
-    const { rows: recheckRows } = await pool.query<{ symbol: string; last_price: string }>(
-      `SELECT symbol, last_price FROM markets WHERE symbol = ANY($1::text[])`,
-      [staleSymbols],
-    );
-    const stillStale = recheckRows.filter(r => !r.last_price || r.last_price === "0");
-
-    addRepair({
-      type:   "stale-fixed",
-      target: `${staleSymbols.length} markets`,
-      detail: `Fixed: ${staleSymbols.length - stillStale.length}, still stale: ${stillStale.length}`,
-    });
-
-    if (stillStale.length > 0) {
-      alertWarning("price",
-        `[AutoRepair] ${stillStale.length} markets still have stale prices after repair`,
-        stillStale.map(r => r.symbol).slice(0, 10).join(", "),
-      );
-    } else {
-      logger.info({ repaired: staleSymbols.length }, "[StaleRepairer] All stale markets repaired");
-    }
-  } catch (err: any) {
-    addRepair({ type: "stale-repair", target: "price-engine", detail: `Repair failed: ${err?.message}` });
-    alertCritical("price", "[AutoRepair] Stale market repair failed", err?.message);
-    logger.error({ err: err?.message }, "[StaleRepairer] Repair cycle failed");
-  }
+  // The price-updater guardedInterval already runs every 60 s — calling
+  // updateMarketPrices() here would create a second concurrent DB write
+  // session, saturating the pool and causing BOTH the guard interval AND
+  // this repair tick to time-out/fail.  Log the staleness and let the
+  // price-updater's own next cycle fix it.
+  staleRepairCount++;
+  addRepair({
+    type:   "stale-detected",
+    target: `${staleSymbols.length} markets`,
+    detail: `Stale symbols (first 10): ${staleSymbols.slice(0, 10).join(", ")} — deferring to price-updater interval`,
+  });
+  alertWarning("price",
+    `[AutoRepair] ${staleSymbols.length} markets have stale prices — price-updater will fix on next cycle`,
+    staleSymbols.slice(0, 10).join(", "),
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -519,7 +504,7 @@ const PROBE_ROUTES = [
   { path: "/api/dex/prices",                  method: "GET", maxMs: 3_000 },
   { path: "/api/ai/insights",                 method: "GET", maxMs: 5_000 },
   { path: "/api/staking/providers",           method: "GET", maxMs: 3_000 },
-  { path: "/api/letsexchange/currencies",     method: "GET", maxMs: 5_000 },
+  { path: "/api/letsexchange/currencies",     method: "GET", maxMs: 3_000 },
   { path: "/api/coinbase/onramp-config",      method: "GET", maxMs: 3_000 },
 ];
 
@@ -563,12 +548,24 @@ async function probeRoutes(): Promise<void> {
     } else {
       existing.consecutiveOk++;
       if (existing.consecutive5xx > 0) {
-        // Route recovered
+        // Route recovered (in same server lifecycle)
         if (existing.consecutive5xx >= 3) {
           addRepair({ type: "route-recovered", target: route.path, detail: `Recovered after ${existing.consecutive5xx} failures` });
           alertInfo("system", `[AutoRepair] Route recovered: ${route.path}`);
         }
         existing.consecutive5xx = 0;
+      }
+      // Auto-resolve any stale "Route failing" critical alerts for this path
+      // (covers alerts created before a server restart when in-memory state resets).
+      if (existing.consecutiveOk === 3) {
+        import("./alertBus.js").then(({ getAlerts, resolveAlert }) => {
+          const stale = getAlerts({ severity: "critical", unresolvedOnly: true })
+            .filter(a => a.message.includes(route.path));
+          stale.forEach(a => resolveAlert(a.id).catch(() => {}));
+          if (stale.length > 0) {
+            addRepair({ type: "route-recovered", target: route.path, detail: `Auto-resolved ${stale.length} stale alert(s) from before restart` });
+          }
+        }).catch(() => {});
       }
     }
 

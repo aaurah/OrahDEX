@@ -149,7 +149,7 @@ router.get("/social/creators/:address", async (req, res) => {
         `SELECT cp.*, cc.symbol, cc.name as coin_name, cc.price_usd, cc.market_cap_usd, cc.ath_usd, cc.virtual_bsv, cc.virtual_tokens, cc.price_bsv, cc.holder_count, cc.circulating_supply, cc.total_supply
          FROM creator_profiles cp LEFT JOIN creator_coins cc ON LOWER(cp.address) = LOWER(cc.creator_address) WHERE LOWER(cp.address) = $1`, [address],
       );
-      const { rows: posts } = await pool.query("SELECT * FROM social_posts WHERE LOWER(creator) = $1 ORDER BY created_at DESC", [address]);
+      const { rows: posts } = await pool.query("SELECT * FROM social_posts WHERE LOWER(creator) = $1 ORDER BY created_at DESC LIMIT 100", [address]);
       const profile = newProfile[0] ?? null;
       if (profile) profile.post_count = posts.length;
       res.json({ profile, posts, topHolders: [], trades: [] });
@@ -157,7 +157,7 @@ router.get("/social/creators/:address", async (req, res) => {
     }
 
     const [{ rows: posts }, { rows: topHolders }, { rows: trades }, { rows: nftStats }, { rows: nftHolders }, { rows: holdingsRows }] = await Promise.all([
-      pool.query("SELECT * FROM social_posts WHERE LOWER(creator) = $1 ORDER BY created_at DESC", [address]),
+      pool.query("SELECT * FROM social_posts WHERE LOWER(creator) = $1 ORDER BY created_at DESC LIMIT 100", [address]),
       pool.query(
         `SELECT ch.holder, ch.amount, cp.username, cp.avatar_url
          FROM coin_holdings ch

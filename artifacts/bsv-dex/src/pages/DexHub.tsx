@@ -1,10 +1,10 @@
-import { useState, useMemo, Fragment, useEffect, useRef } from "react";
+import { useState, useMemo, Fragment, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { useSEO } from "@/hooks/useSEO";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   TrendingUp, Globe, ArrowUpRight, Search, RefreshCw,
   BarChart2, ShieldCheck, Layers, ExternalLink, Coins,
-  ArrowUpDown, ChevronDown, Droplets, Zap, X, ChevronUp,
+  ArrowUpDown, ArrowLeftRight, ChevronDown, Droplets, Zap, X, ChevronUp, ChevronLeft,
   Shield, Link2, Copy, Check, FlaskConical, Receipt, AlertTriangle, CheckCircle2, Info,
   Cpu, Waves, Activity, Gauge,
 } from "lucide-react";
@@ -14,20 +14,121 @@ import { BrandLogo, OrahInline, OrahO } from "@/components/BrandLogo";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { useBsvChain, fmtHashrate, fmtDifficulty, fmtMempoolMb, fmtBlockAge } from "@/hooks/useBsvChain";
 import { useSettingsStore, convertFromUsd, getCurrencySymbol, formatQuoteAmount } from "@/store/useSettingsStore";
+const Chart = lazy(() => import("@/components/trading/Chart").then(m => ({ default: m.Chart })));
 
-/* ── Curated Base / Zora ecosystem tokens ── */
-const ZORA_COINS = [
-  { id: "zora-network",  symbol: "ZORA",   name: "Zora",          chain: "Base",  contract: "0x1111111111166B7FE7bd91CA18A7FE55b40B963", image: "https://assets.coingecko.com/coins/images/35552/small/zora.png" },
-  { id: "degen-base",    symbol: "DEGEN",  name: "Degen",         chain: "Base",  contract: "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed", image: "https://assets.coingecko.com/coins/images/34515/small/android-chrome-512x512.png" },
-  { id: "brett-base",    symbol: "BRETT",  name: "Brett",         chain: "Base",  contract: "0x532f27101965dd16442E59d40670FaF5eBB142E4", image: "https://assets.coingecko.com/coins/images/35529/small/1000048322.png" },
-  { id: "higher-base",   symbol: "HIGHER", name: "Higher",        chain: "Base",  contract: "0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe", image: "" },
-  { id: "enjoy-zora",    symbol: "ENJOY",  name: "Enjoy",         chain: "Zora",  contract: "0xa6B280B42CB0b7c4a4F789eC6cCC3a7609A1Bc39", image: "" },
-  { id: "mochi-base",    symbol: "MOCHI",  name: "Mochi",         chain: "Base",  contract: "0xF6e932Ca12afa26665dC4dDE7e27be02A7c02e50", image: "" },
-  { id: "toshi-base",    symbol: "TOSHI",  name: "Toshi",         chain: "Base",  contract: "0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4", image: "" },
-  { id: "normie-base",   symbol: "NORMIE", name: "Normie",        chain: "Base",  contract: "0x7F12d13B34F5F4f0a9449c16Bcd42f0da47AF200", image: "" },
-  { id: "doginme-base",  symbol: "DOGINME",name: "Doginme",       chain: "Base",  contract: "0x6921B130D297cc43754afba22e5EAc0FBf8Db75b", image: "" },
-  { id: "mfer-base",     symbol: "MFER",   name: "mfer",          chain: "Base",  contract: "0xe3086852A4B125803C815a158249ae468A3254Ca", image: "" },
-];
+/* ── Known token contracts: symbol → { contract, chain } ── */
+const KNOWN_CONTRACTS: Record<string, { contract: string; chain: string }> = {
+  // Ethereum mainnet ERC-20
+  WBTC:    { contract: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", chain: "ETH" },
+  WETH:    { contract: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", chain: "ETH" },
+  USDT:    { contract: "0xdAC17F958D2ee523a2206206994597C13D831ec7", chain: "ETH" },
+  USDC:    { contract: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", chain: "ETH" },
+  DAI:     { contract: "0x6B175474E89094C44Da98b954EedeAC495271d0F", chain: "ETH" },
+  PAXG:    { contract: "0x45804880De22913dAFE09f4980848ECE6EcbAf78", chain: "ETH" },
+  XAUT:    { contract: "0x68749665FF8D2d112Fa859AA293F07A622782F38", chain: "ETH" },
+  YFI:     { contract: "0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e", chain: "ETH" },
+  LINK:    { contract: "0x514910771AF9Ca656af840dff83E8264EcF986CA", chain: "ETH" },
+  UNI:     { contract: "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984", chain: "ETH" },
+  AAVE:    { contract: "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9", chain: "ETH" },
+  SHIB:    { contract: "0x95aD61b0a150d79219dCF64E1E6Cc01f0B64C4cE", chain: "ETH" },
+  PEPE:    { contract: "0x6982508145454Ce325dDbE47a25d4ec3d2311933", chain: "ETH" },
+  MATIC:   { contract: "0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0", chain: "ETH" },
+  POL:     { contract: "0x455e53CBB86018Ac2B8092FdCd39d8444aFFC3F6", chain: "ETH" },
+  CRV:     { contract: "0xD533a949740bb3306d119CC777fa900bA034cd52", chain: "ETH" },
+  SNX:     { contract: "0xC011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F", chain: "ETH" },
+  MKR:     { contract: "0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2", chain: "ETH" },
+  COMP:    { contract: "0xc00e94Cb662C3520282E6f5717214004A7f26888", chain: "ETH" },
+  BAL:     { contract: "0xba100000625a3754423978a60c9317c58a424e3D", chain: "ETH" },
+  LDO:     { contract: "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32", chain: "ETH" },
+  RPL:     { contract: "0xD33526068D116cE69F19A9ee46F0bd304F21A51f", chain: "ETH" },
+  "1INCH": { contract: "0x111111111117dC0aa78b770fA6A738034120C302", chain: "ETH" },
+  GRT:     { contract: "0xc944E90C64B2c07662A292be6244BDf05Cda44a7", chain: "ETH" },
+  FET:     { contract: "0xaea46A60368A7bD060eec7DF8CBa43b7EF41Ad85", chain: "ETH" },
+  WLD:     { contract: "0x163f8C2467924be0ae7B5347228CABF260318753", chain: "ETH" },
+  ENS:     { contract: "0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72", chain: "ETH" },
+  IMX:     { contract: "0xF57e7e7C23978C3cAEC3C3548E3D615c346e79fF", chain: "ETH" },
+  SAND:    { contract: "0x3845badAde8e6dFF049820680d1F14bD3903a5d0", chain: "ETH" },
+  MANA:    { contract: "0x0F5D2fB29fb7d3CFeE444a200298f468908cC942", chain: "ETH" },
+  AXS:     { contract: "0xBB0E17EF65F82Ab018d8EDd776e8DD940327B28b", chain: "ETH" },
+  CHZ:     { contract: "0x3506424F91fD33084466F402d5D97f05F8e3b4AF", chain: "ETH" },
+  SUSHI:   { contract: "0x6B3595068778DD592e39A122f4f5a5cF09C90fE2", chain: "ETH" },
+  ZRX:     { contract: "0xE41d2489571d322189246DaFA5ebDe1F4699F498", chain: "ETH" },
+  BAT:     { contract: "0x0D8775F648430679A709E98d2b0Cb6250d2887EF", chain: "ETH" },
+  HOT:     { contract: "0x6c6EE5e31d828De241282B9606C8e98Ea48526E2", chain: "ETH" },
+  FTT:     { contract: "0x50D1c9771902476076eCFc8B2A83Ad6b9355a4c9", chain: "ETH" },
+  OCEAN:   { contract: "0x967da4048cD07aB37855c090aAF366e4ce1b9F48", chain: "ETH" },
+  // Arbitrum
+  ARB:     { contract: "0x912CE59144191C1204E64559FE8253a0e49E6548", chain: "Arbitrum" },
+  GMX:     { contract: "0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a", chain: "Arbitrum" },
+  // Optimism
+  OP:      { contract: "0x4200000000000000000000000000000000000042", chain: "Optimism" },
+  // BSC
+  BUSD:    { contract: "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56", chain: "BSC" },
+  CAKE:    { contract: "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82", chain: "BSC" },
+  // Base / Zora ecosystem
+  ZORA:    { contract: "0x1111111111166B7FE7bd91CA18A7FE55b40B963", chain: "Base" },
+  DEGEN:   { contract: "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed", chain: "Base" },
+  BRETT:   { contract: "0x532f27101965dd16442E59d40670FaF5eBB142E4", chain: "Base" },
+  HIGHER:  { contract: "0x0578d8A44db98B23BF096A382e016e29a5Ce0ffe", chain: "Base" },
+  ENJOY:   { contract: "0xa6B280B42CB0b7c4a4F789eC6cCC3a7609A1Bc39", chain: "Zora" },
+  MOCHI:   { contract: "0xF6e932Ca12afa26665dC4dDE7e27be02A7c02e50", chain: "Base" },
+  TOSHI:   { contract: "0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4", chain: "Base" },
+  NORMIE:  { contract: "0x7F12d13B34F5F4f0a9449c16Bcd42f0da47AF200", chain: "Base" },
+  DOGINME: { contract: "0x6921B130D297cc43754afba22e5EAc0FBf8Db75b", chain: "Base" },
+  MFER:    { contract: "0xe3086852A4B125803C815a158249ae468A3254Ca", chain: "Base" },
+};
+
+/* ── CoinGecko / CMC slug helpers ── */
+const CG_SLUG_OVERRIDES: Record<string, string> = {
+  BTC:"bitcoin", ETH:"ethereum", BNB:"binancecoin", XRP:"ripple",
+  ADA:"cardano", SOL:"solana", DOGE:"dogecoin", DOT:"polkadot",
+  TRX:"tron", MATIC:"matic-network", POL:"matic-network",
+  LTC:"litecoin", BCH:"bitcoin-cash", AVAX:"avalanche-2",
+  LINK:"chainlink", UNI:"uniswap", ATOM:"cosmos", ALGO:"algorand",
+  VET:"vechain", FIL:"filecoin", EOS:"eos", NEAR:"near",
+  ICP:"internet-computer", SAND:"the-sandbox", MANA:"decentraland",
+  AXS:"axie-infinity", THETA:"theta-token", FTM:"fantom",
+  AAVE:"aave", GRT:"the-graph", KSM:"kusama", SHIB:"shiba-inu",
+  USDT:"tether", USDC:"usd-coin", DAI:"dai", BSV:"bitcoin-sv",
+  CAKE:"pancakeswap-token", RUNE:"thorchain", CRV:"curve-dao-token",
+  MKR:"maker", SNX:"synthetix-network-token", COMP:"compound-governance-token",
+  ETC:"ethereum-classic", EGLD:"elrond-erd-2", HNT:"helium",
+  YFI:"yearn-finance", SUSHI:"sushi", BAL:"balancer", LDO:"lido-dao",
+  ARB:"arbitrum", OP:"optimism", ENS:"ethereum-name-service",
+  FET:"fetch-ai", WLD:"worldcoin-wld", IMX:"immutable-x",
+  PEPE:"pepe", BRETT:"brett", DEGEN:"degen-base",
+};
+const CMC_SLUG_OVERRIDES: Record<string, string> = {
+  BTC:"bitcoin", ETH:"ethereum", BNB:"bnb", XRP:"xrp",
+  ADA:"cardano", SOL:"solana", DOGE:"dogecoin", DOT:"polkadot",
+  TRX:"tron", MATIC:"polygon", POL:"polygon",
+  LTC:"litecoin", BCH:"bitcoin-cash", AVAX:"avalanche",
+  LINK:"chainlink", UNI:"uniswap", ATOM:"cosmos", ALGO:"algorand",
+  VET:"vechain", FIL:"filecoin", EOS:"eos", NEAR:"near-protocol",
+  ICP:"internet-computer", SAND:"the-sandbox", MANA:"decentraland",
+  AXS:"axie-infinity", THETA:"theta-network", FTM:"fantom",
+  AAVE:"aave", GRT:"the-graph", SHIB:"shiba-inu",
+  USDT:"tether", USDC:"usd-coin", DAI:"multi-collateral-dai",
+  BSV:"bitcoin-sv", CAKE:"pancakeswap", RUNE:"thorchain",
+  CRV:"curve-dao-token", MKR:"maker", SNX:"synthetix-network-token",
+  COMP:"compound", ETC:"ethereum-classic", YFI:"yearn-finance",
+  SUSHI:"sushiswap", LDO:"lido-dao", ARB:"arbitrum", OP:"optimism",
+  ENS:"ethereum-name-service", FET:"fetch", WLD:"worldcoin",
+  IMX:"immutable", PEPE:"pepe",
+};
+function cgSlug(symbol: string, name: string) {
+  return CG_SLUG_OVERRIDES[symbol.toUpperCase()]
+    ?? (name || symbol).toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
+function cmcSlug(symbol: string, name: string) {
+  return CMC_SLUG_OVERRIDES[symbol.toUpperCase()]
+    ?? (name || symbol).toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
+
+/* kept for backward-compat (coin detail modal uses zoraContractFor) */
+const ZORA_COINS = Object.entries(KNOWN_CONTRACTS).map(([symbol, v]) => ({
+  id: symbol.toLowerCase(), symbol, name: symbol, chain: v.chain, contract: v.contract, image: "",
+}));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -113,10 +214,24 @@ function CexBadge() {
   );
 }
 
-type View    = "exchanges" | "coins";
-type ExType  = "all" | "cex" | "dex";
-type SortKey = "rank" | "volume" | "marketcap" | "trust" | "name";
-type CoinSort = "rank" | "base" | "price" | "chg" | "vol";
+type View       = "exchanges" | "coins";
+type ExType     = "all" | "cex" | "dex";
+type SortKey    = "rank" | "volume" | "marketcap" | "trust" | "name";
+type CoinSort   = "rank" | "base" | "price" | "chg" | "vol";
+type CoinSource = "all" | "cg" | "le" | "ss";
+
+const SOURCE_META: Record<CoinSource, { label: string; cls: string; activeCls: string }> = {
+  all: { label: "All",           cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-primary/15 border-primary/40 text-primary" },
+  cg:  { label: "Market Data",   cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-orange-500/15 border-orange-500/40 text-orange-400" },
+  le:  { label: "Swap Network",  cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-green-500/15 border-green-500/40 text-green-400" },
+  ss:  { label: "Bridge Coins",  cls: "border-border text-muted-foreground hover:text-foreground", activeCls: "bg-blue-500/15 border-blue-500/40 text-blue-400" },
+};
+
+const COIN_SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
+  cg: { label: "Market", cls: "bg-orange-500/10 text-orange-400 border-orange-500/20" },
+  le: { label: "Swap",   cls: "bg-green-500/10  text-green-400  border-green-500/20"  },
+  ss: { label: "Bridge", cls: "bg-blue-500/10   text-blue-400   border-blue-500/20"   },
+};
 
 const SORT_LABELS: Record<SortKey, string> = {
   rank:      "Rank",
@@ -434,14 +549,27 @@ export function DexHub() {
   const [exSortDir, setExSortDir] = useState<"asc" | "desc">("asc");
 
   /* ── Coin sort / search state ── */
-  const [coinSearch, setCoinSearch]       = useState("");
-  const [contractSearch, setContractSearch] = useState("");
+  const [coinSearch, setCoinSearch]             = useState("");
+  const [contractSearch, setContractSearch]     = useState("");
+  const [debouncedContract, setDebouncedContract] = useState("");
   const [coinSort, setCoinSort]           = useState<CoinSort>("rank");
   const [coinSortDir, setCoinSortDir]     = useState<"asc"|"desc">("asc");
   const [coinPage, setCoinPage]           = useState(0);
+  const [coinSource, setCoinSource]       = useState<CoinSource>("all");
+  /* Infinite scroll — callback ref so it works with conditional rendering */
+  const scrollObserver = useRef<IntersectionObserver | null>(null);
+  const setSentinelRef = useCallback((node: HTMLDivElement | null) => {
+    scrollObserver.current?.disconnect();
+    scrollObserver.current = null;
+    if (!node) return;
+    scrollObserver.current = new IntersectionObserver(
+      entries => { if (entries[0]?.isIntersecting) setCoinPage(p => p + 1); },
+      { rootMargin: "300px" },
+    );
+    scrollObserver.current.observe(node);
+  }, []);
   const [copiedAddr, setCopiedAddr]       = useState<string | null>(null);
   const [vammCoin, setVammCoin]           = useState<any | null>(null);
-  const [showZora, setShowZora]           = useState(false);
   const COIN_PAGE_SIZE = 50;
 
   const { data, isLoading, refetch, isFetching } = useQuery({
@@ -457,11 +585,11 @@ export function DexHub() {
 
   const allExchanges: any[] = data?.exchanges ?? [];
 
-  /* ── World coins ── */
+  /* ── All coins — merged from OrahDB, Swap Network, Bridge Coins ── */
   const { data: coinsRaw, isLoading: coinsLoading } = useQuery({
-    queryKey: ["coins-markets-world"],
+    queryKey: ["coins-all-sources"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/coins/markets?per_page=250`);
+      const r = await fetch(`${BASE}/api/coins/all-sources`);
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
@@ -471,12 +599,41 @@ export function DexHub() {
 
   const allCoins: any[] = Array.isArray(coinsRaw) ? coinsRaw : [];
 
+  /* ── Contract address debounce + live lookup ── */
+  const IS_CONTRACT_RE = /^0x[0-9a-fA-F]{38,42}$/;
+  const isContractAddr = IS_CONTRACT_RE.test(contractSearch.trim());
+
+  useEffect(() => {
+    if (!isContractAddr) { setDebouncedContract(""); return; }
+    const t = setTimeout(() => setDebouncedContract(contractSearch.trim().toLowerCase()), 600);
+    return () => clearTimeout(t);
+  }, [contractSearch, isContractAddr]);
+
+  const { data: contractResult, isFetching: contractFetching } = useQuery<any>({
+    queryKey: ["by-contract", debouncedContract],
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/coins/by-contract?address=${debouncedContract}`);
+      if (!r.ok) throw new Error("lookup failed");
+      return r.json();
+    },
+    enabled: IS_CONTRACT_RE.test(debouncedContract),
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+
   /* Look up Zora contract for a given symbol */
   const zoraContractFor = (symbol: string) =>
     ZORA_COINS.find(z => z.symbol.toLowerCase() === symbol.toLowerCase())?.contract ?? null;
 
   const filteredCoins = useMemo(() => {
     let rows = allCoins;
+    // Source filter
+    if (coinSource !== "all") {
+      rows = rows.filter(c => {
+        const on: string[] = c.availableOn ?? [c.source];
+        return on.includes(coinSource);
+      });
+    }
     if (coinSearch) {
       const q = coinSearch.toLowerCase();
       rows = rows.filter(m =>
@@ -486,9 +643,22 @@ export function DexHub() {
     }
     if (contractSearch.trim().length > 5) {
       const q = contractSearch.trim().toLowerCase();
-      const matched = ZORA_COINS.filter(z => z.contract.toLowerCase().includes(q));
-      const matchedSymbols = new Set(matched.map(z => z.symbol.toLowerCase()));
-      rows = rows.filter(m => matchedSymbols.has(m.symbol.toLowerCase()));
+      // If the live lookup resolved a symbol, filter to that coin
+      if (contractResult?.found) {
+        const resolvedSym = contractResult.symbol.toLowerCase();
+        rows = rows.filter(m => m.symbol.toLowerCase() === resolvedSym);
+      } else {
+        // Fallback: try local KNOWN_CONTRACTS (partial match for shorter addresses)
+        const matchedSymbols = new Set(
+          Object.entries(KNOWN_CONTRACTS)
+            .filter(([, v]) => v.contract.toLowerCase().includes(q))
+            .map(([sym]) => sym.toLowerCase())
+        );
+        if (matchedSymbols.size > 0) {
+          rows = rows.filter(m => matchedSymbols.has(m.symbol.toLowerCase()));
+        }
+        // full EVM address still fetching → keep full list while spinner shows
+      }
     }
     return [...rows].sort((a, b) => {
       let v = 0;
@@ -499,12 +669,68 @@ export function DexHub() {
       if (coinSort === "vol")   v = a.volume24h - b.volume24h;
       return coinSortDir === "asc" ? v : -v;
     });
-  }, [allCoins, coinSearch, coinSort, coinSortDir]);
+  }, [allCoins, coinSource, coinSearch, contractSearch, contractResult, coinSort, coinSortDir]);
 
   const pagedCoins = filteredCoins.slice(0, (coinPage + 1) * COIN_PAGE_SIZE);
 
-  /* ── Selected coin for exchange modal ── */
+  /* ── Selected coin detail ── */
   const [selectedCoin, setSelectedCoin] = useState<any | null>(null);
+  const [coinDetailTab, setCoinDetailTab] = useState<"overview"|"markets"|"trade">("overview");
+  const [coinDetailInterval, setCoinDetailInterval] = useState("1d");
+  useEffect(() => { if (selectedCoin) setCoinDetailTab("overview"); }, [selectedCoin?.id]);
+
+  /* Live ticker for the selected coin — enriches missing high24h / low24h / volume24h
+     when the coin record comes from LE/SS (no DB market data on those rows). */
+  const { data: selectedTicker } = useQuery({
+    queryKey: ["coin-ticker", selectedCoin?.symbol],
+    queryFn: async () => {
+      const sym = encodeURIComponent(`${selectedCoin!.symbol}/USDT`);
+      const r = await fetch(`${BASE}/api/markets/${sym}/ticker`);
+      if (!r.ok) return null;
+      return r.json();
+    },
+    enabled: !!selectedCoin,
+    staleTime: 20_000,
+    refetchInterval: 30_000,
+  });
+
+  /* Enriched stat values — fall back to live ticker when coin row has no data */
+  const enrichedHigh24h  = (selectedCoin?.high24h   ?? 0) > 0 ? selectedCoin!.high24h   : (selectedTicker?.high24h   ?? 0);
+  const enrichedLow24h   = (selectedCoin?.low24h    ?? 0) > 0 ? selectedCoin!.low24h    : (selectedTicker?.low24h    ?? 0);
+  const enrichedVol24h   = (selectedCoin?.volume24h ?? 0) > 0 ? selectedCoin!.volume24h : (selectedTicker?.volume24h ?? 0);
+  const enrichedSrcLabel = selectedCoin?.source === "le" || selectedCoin?.source === "ss"
+    ? "OrahSwap" : "OrahDEX";
+
+  /* Intercept browser back button so it closes the sheet instead of navigating away */
+  const popHandledRef = useRef(false);
+  useEffect(() => {
+    if (!selectedCoin) return;
+    popHandledRef.current = false;
+    window.history.pushState({ coinDetailOpen: true }, "");
+    const handlePop = () => {
+      popHandledRef.current = true;
+      setSelectedCoin(null);
+    };
+    window.addEventListener("popstate", handlePop);
+    return () => {
+      window.removeEventListener("popstate", handlePop);
+      if (!popHandledRef.current && window.history.state?.coinDetailOpen) {
+        window.history.back();
+      }
+    };
+  }, [selectedCoin?.id]);
+
+  const { data: coinDetail, isLoading: detailLoading } = useQuery({
+    queryKey: ["coin-detail", selectedCoin?.symbol],
+    enabled: !!selectedCoin?.symbol,
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/coins/${encodeURIComponent(selectedCoin!.symbol)}/detail`);
+      if (!r.ok) return null;
+      const d = await r.json();
+      return d?.error ? null : d;
+    },
+  });
 
   const { data: tickersData, isLoading: tickersLoading } = useQuery({
     queryKey: ["coin-tickers", selectedCoin?.id],
@@ -744,7 +970,7 @@ export function DexHub() {
           All Coins
           {allCoins.length > 0 && (
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-primary/20 text-primary">
-              {allCoins.length}
+              {allCoins.length.toLocaleString()}+
             </span>
           )}
         </button>
@@ -849,72 +1075,42 @@ export function DexHub() {
       {/* ══════════════ ALL COINS VIEW ══════════════ */}
       {view === "coins" && (
         <div>
-          {/* ── Zora / Base section ── */}
-          <div className="mb-5">
-            <button
-              onClick={() => setShowZora(v => !v)}
-              className={cn(
-                "w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all text-left",
-                showZora
-                  ? "border-primary/40 bg-primary/5"
-                  : "border-border bg-card hover:border-primary/30"
-              )}
-            >
-              <div className="w-9 h-9 rounded-xl bg-blue-600/10 border border-blue-500/20 flex items-center justify-center shrink-0">
-                <span className="text-base font-black text-blue-400">⬡</span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-sm text-foreground">Base & Zora Ecosystem</div>
-                <div className="text-xs text-muted-foreground">Zora.co tokens · ZORA · DEGEN · BRETT · HIGHER + more</div>
-              </div>
-              <ChevronDown className={cn("w-4 h-4 text-muted-foreground transition-transform", showZora && "rotate-180")} />
-            </button>
-
-            {showZora && (
-              <div className="mt-2 bg-card border border-border rounded-2xl overflow-hidden">
-                <div className="px-4 py-2 border-b border-border/60 bg-secondary/30">
-                  <p className="text-[11px] text-muted-foreground font-medium">Tap any coin to copy its Base contract address for trading</p>
-                </div>
-                {ZORA_COINS.map(coin => (
-                  <div key={coin.id} className="flex items-center gap-3 px-4 py-3 border-b border-border/40 last:border-0">
-                    <div className="w-9 h-9 rounded-full bg-blue-500/10 border border-blue-500/20 flex items-center justify-center shrink-0 overflow-hidden">
-                      {coin.image
-                        ? <img src={coin.image} alt={coin.symbol} className="w-full h-full object-cover" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                        : <span className="text-xs font-bold text-blue-400">{coin.symbol[0]}</span>
-                      }
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-foreground">{coin.symbol}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-semibold">{coin.chain}</span>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground font-mono truncate">{coin.contract}</p>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        await navigator.clipboard.writeText(coin.contract).catch(() => {});
-                        setCopiedAddr(coin.contract);
-                        setTimeout(() => setCopiedAddr(null), 2000);
-                      }}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                      title="Copy contract address"
-                    >
-                      {copiedAddr === coin.contract ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-                    </button>
-                    <button
-                      onClick={() => navigate(`/trade/${coin.symbol}-USDT`)}
-                      className="px-3 py-1.5 rounded-lg bg-primary/15 border border-primary/30 text-primary text-xs font-bold hover:bg-primary/25 transition-colors shrink-0"
-                    >
-                      Trade
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Search: name/symbol + contract address */}
+          {/* Source filter + Search */}
           <div className="flex flex-wrap items-center gap-3 mb-4">
+            {/* Source tabs */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {(["all", "cg", "le", "ss"] as CoinSource[]).map(src => {
+                const m = SOURCE_META[src];
+                const isActive = coinSource === src;
+                const count = src === "all"
+                  ? allCoins.length
+                  : allCoins.filter(c => (c.availableOn ?? [c.source]).includes(src)).length;
+                return (
+                  <button
+                    key={src}
+                    onClick={() => { setCoinSource(src); setCoinPage(0); }}
+                    className={cn(
+                      "px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5",
+                      isActive ? m.activeCls : cn("bg-card", m.cls)
+                    )}
+                  >
+                    {m.label}
+                    {count > 0 && (
+                      <span className={cn(
+                        "text-[9px] font-bold px-1 py-0.5 rounded-full",
+                        isActive ? "bg-white/15" : "bg-muted/60"
+                      )}>
+                        {count.toLocaleString()}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="h-5 w-px bg-border hidden sm:block" />
+
+            {/* Search */}
             <div className="relative flex-1 min-w-[160px] max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
@@ -925,21 +1121,90 @@ export function DexHub() {
                 className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
               />
             </div>
-            <div className="relative flex-1 min-w-[160px] max-w-xs">
-              <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Contract address 0x…"
-                value={contractSearch}
-                onChange={e => {
-                  setContractSearch(e.target.value);
-                  if (e.target.value.length > 5) setShowZora(true);
-                }}
-                className="w-full bg-card border border-border rounded-xl pl-9 pr-4 py-2 text-sm font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all"
-              />
+            <div className="flex-1 min-w-[180px] max-w-sm">
+              <div className="relative">
+                {contractFetching
+                  ? <RefreshCw className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary animate-spin" />
+                  : contractResult?.found
+                    ? <CheckCircle2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-green-400" />
+                    : isContractAddr && contractResult && !contractResult.found
+                      ? <AlertTriangle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400" />
+                      : <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                }
+                <input
+                  type="text"
+                  placeholder="Paste contract address 0x…"
+                  value={contractSearch}
+                  onChange={e => { setContractSearch(e.target.value); setCoinSearch(""); setCoinPage(0); }}
+                  className={cn(
+                    "w-full bg-card border rounded-xl pl-9 pr-8 py-2 text-sm font-mono focus:outline-none transition-all",
+                    contractResult?.found
+                      ? "border-green-500/50 focus:border-green-500 focus:ring-1 focus:ring-green-500/30"
+                      : isContractAddr && contractResult && !contractResult.found
+                        ? "border-amber-500/50 focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30"
+                        : "border-border focus:border-primary focus:ring-1 focus:ring-primary"
+                  )}
+                />
+                {contractSearch && (
+                  <button
+                    onClick={() => { setContractSearch(""); setDebouncedContract(""); setCoinPage(0); }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Resolved token card */}
+              {contractResult?.found && (() => {
+                const cr = contractResult;
+                const listed = allCoins.find(c => c.symbol.toLowerCase() === cr.symbol.toLowerCase());
+                const dsLink = `https://dexscreener.com/search?q=${cr.address}`;
+                return (
+                  <div
+                    className={cn(
+                      "mt-2 rounded-xl border p-3 flex items-center gap-3 cursor-pointer transition-colors",
+                      listed
+                        ? "border-primary/30 bg-primary/5 hover:bg-primary/10"
+                        : "border-border bg-card hover:bg-secondary/60"
+                    )}
+                    onClick={() => {
+                      if (listed) { setSelectedCoin(listed); setCoinDetailTab("overview"); }
+                      else window.open(dsLink, "_blank", "noopener");
+                    }}
+                  >
+                    {cr.imageUrl
+                      ? <img src={cr.imageUrl} alt={cr.symbol} className="w-8 h-8 rounded-full object-cover shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      : <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0 text-xs font-bold">{cr.symbol.slice(0, 2)}</div>
+                    }
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold leading-none">{cr.symbol} <span className="font-normal text-muted-foreground text-xs">· {cr.chain}</span></p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{cr.name}</p>
+                      {cr.price != null && (
+                        <p className="text-[11px] text-green-400 mt-0.5 font-mono">${cr.price < 0.0001 ? cr.price.toExponential(2) : cr.price.toLocaleString(undefined, { maximumFractionDigits: 6 })}</p>
+                      )}
+                    </div>
+                    <div className="shrink-0 text-right">
+                      {listed
+                        ? <span className="text-[10px] text-primary font-semibold uppercase tracking-wider">Listed ↗</span>
+                        : <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wider flex items-center gap-1">DexScreener <ExternalLink className="w-3 h-3" /></span>
+                      }
+                      {cr.poolCount > 1 && <p className="text-[10px] text-muted-foreground mt-0.5">{cr.poolCount} pools</p>}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Not found hint */}
+              {isContractAddr && contractResult && !contractResult.found && !contractFetching && (
+                <p className="mt-1 text-[11px] text-amber-400/80 px-1">Token not found on any supported chain</p>
+              )}
+              {isContractAddr && !contractResult && !contractFetching && (
+                <p className="mt-1 text-[11px] text-muted-foreground px-1">Searching across all EVM chains…</p>
+              )}
             </div>
             <span className="text-xs text-muted-foreground">
-              {coinsLoading ? "Loading…" : `${filteredCoins.length} coins · tap a row to see all exchanges`}
+              {coinsLoading ? "Loading…" : `${filteredCoins.length.toLocaleString()} coins · tap a row to see exchanges`}
             </span>
           </div>
 
@@ -987,7 +1252,7 @@ export function DexHub() {
                         className="border-b border-border/40 hover:bg-primary/5 transition-colors cursor-pointer group"
                         onClick={() => setSelectedCoin(coin)}
                       >
-                        <td className="px-3 py-2.5 text-muted-foreground text-xs font-mono">{coin.rank ?? idx + 1}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground text-xs font-mono">{idx + 1}</td>
 
                         <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2.5">
@@ -996,7 +1261,14 @@ export function DexHub() {
                               : <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">{coin.symbol[0]}</div>
                             }
                             <div>
-                              <p className="text-sm font-bold text-foreground leading-tight">{coin.name}</p>
+                              <div className="flex items-center gap-1.5">
+                                <p className="text-sm font-bold text-foreground leading-tight">{coin.name}</p>
+                                {coin.source && COIN_SOURCE_BADGE[coin.source] && (
+                                  <span className={cn("text-[9px] px-1 py-0.5 rounded border font-bold leading-none shrink-0", COIN_SOURCE_BADGE[coin.source].cls)}>
+                                    {COIN_SOURCE_BADGE[coin.source].label}
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-[10px] text-muted-foreground font-semibold">{coin.symbol}</p>
                             </div>
                           </div>
@@ -1055,151 +1327,444 @@ export function DexHub() {
               </table>
             </div>
 
-            {/* Footer: count + Load More */}
+            {/* Footer: count + infinite-scroll sentinel */}
             {!coinsLoading && filteredCoins.length > 0 && (
               <div className="px-4 py-3 border-t border-border bg-secondary/20 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
                 <span>Showing {pagedCoins.length} of {filteredCoins.length} coins</span>
                 {pagedCoins.length < filteredCoins.length && (
-                  <button
-                    onClick={() => setCoinPage(p => p + 1)}
-                    className="px-4 py-1.5 rounded-lg bg-card border border-border hover:border-primary/40 text-sm font-semibold text-foreground transition-colors"
-                  >
-                    Load more ({filteredCoins.length - pagedCoins.length} remaining)
-                  </button>
+                  <span className="text-muted-foreground/60 text-[11px]">Scroll to load more…</span>
                 )}
               </div>
             )}
+            {/* Sentinel — observed by IntersectionObserver to trigger next page */}
+            {!coinsLoading && pagedCoins.length < filteredCoins.length && (
+              <div ref={setSentinelRef} className="h-10" aria-hidden="true" />
+            )}
           </div>
 
-          {/* ── Exchange listings modal ── */}
+          {/* ── Coin detail sheet ── */}
           {selectedCoin && (
             <>
-              {/* Backdrop */}
-              <div
-                className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm"
-                onClick={() => setSelectedCoin(null)}
-              />
-              {/* Drawer */}
-              <div className="fixed inset-x-0 bottom-0 z-50 max-h-[85vh] flex flex-col bg-background rounded-t-2xl border-t border-border shadow-2xl overflow-hidden lg:inset-auto lg:top-1/2 lg:left-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[700px] lg:max-h-[80vh] lg:rounded-2xl lg:border">
+              <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm" onClick={() => setSelectedCoin(null)} />
+              <div className="fixed inset-x-0 bottom-0 z-50 h-[93vh] flex flex-col bg-background rounded-t-2xl border-t border-border shadow-2xl overflow-hidden lg:inset-auto lg:top-1/2 lg:left-1/2 lg:-translate-x-1/2 lg:-translate-y-1/2 lg:w-[680px] lg:h-[86vh] lg:rounded-2xl lg:border">
 
-                {/* Modal header */}
-                <div className="flex items-center gap-3 px-4 py-4 border-b border-border shrink-0">
-                  {selectedCoin.image && (
-                    <img src={selectedCoin.image} alt={selectedCoin.symbol} className="w-9 h-9 rounded-full shrink-0" />
-                  )}
+                {/* ── Drag handle ── */}
+                <div className="flex justify-center pt-2.5 pb-1 shrink-0">
+                  <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
+                </div>
+
+                {/* ── Header ── */}
+                <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border shrink-0">
+                  <button onClick={() => setSelectedCoin(null)} className="p-2 rounded-xl bg-secondary border border-border active:opacity-60 shrink-0" aria-label="Back">
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  {(coinDetail?.image ?? selectedCoin.image)
+                    ? <img src={coinDetail?.image ?? selectedCoin.image!} alt={selectedCoin.symbol} className="w-9 h-9 rounded-full shrink-0 border border-border" />
+                    : detailLoading
+                      ? <div className="w-9 h-9 rounded-full bg-secondary border border-border animate-pulse shrink-0" />
+                      : <div className="w-9 h-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-sm font-black text-primary">{selectedCoin.symbol[0]}</div>
+                  }
                   <div className="flex-1 min-w-0">
-                    <p className="font-bold text-base leading-tight">{selectedCoin.name}
-                      <span className="ml-2 text-xs font-semibold text-muted-foreground">{selectedCoin.symbol}</span>
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {qSym}{fmtPrice(selectedCoin.price)}
-                      <span className={cn("ml-2 text-xs font-semibold", selectedCoin.change24h >= 0 ? "text-green-400" : "text-red-400")}>
-                        {selectedCoin.change24h >= 0 ? "+" : ""}{selectedCoin.change24h.toFixed(2)}%
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-sm leading-tight truncate">{selectedCoin.name}</span>
+                      <span className="text-[10px] font-mono bg-secondary border border-border px-1.5 py-0.5 rounded text-muted-foreground shrink-0">{selectedCoin.symbol}</span>
+                      {selectedCoin.rank && <span className="text-[10px] text-muted-foreground shrink-0">#{selectedCoin.rank}</span>}
+                    </div>
+                    <div className="flex items-baseline gap-2 mt-0.5">
+                      <span className="text-base font-bold font-mono tabular-nums">{qSym}{fmtPrice(selectedCoin.price)}</span>
+                      <span className={cn("text-xs font-semibold", selectedCoin.change24h >= 0 ? "text-green-400" : "text-red-400")}>
+                        {selectedCoin.change24h >= 0 ? "▲" : "▼"} {Math.abs(selectedCoin.change24h).toFixed(2)}%
                       </span>
-                    </p>
+                    </div>
                   </div>
-                  <button onClick={() => setSelectedCoin(null)} className="p-2 rounded-lg hover:bg-secondary transition-colors shrink-0">
+                  <button onClick={() => setSelectedCoin(null)} className="p-2 rounded-xl bg-secondary border border-border active:opacity-60 shrink-0" aria-label="Close">
                     <X className="w-5 h-5" />
                   </button>
                 </div>
 
-                {/* Contract address row (if known) */}
-                {(() => {
-                  const ca = zoraContractFor(selectedCoin.symbol);
-                  if (!ca) return null;
-                  return (
-                    <div className="px-4 py-2 border-b border-border/40 shrink-0 flex items-center gap-2 bg-blue-500/5">
-                      <span className="text-[10px] text-blue-400 font-bold uppercase tracking-wide shrink-0">Base</span>
-                      <p className="text-[11px] text-muted-foreground font-mono truncate flex-1">{ca}</p>
-                      <button
-                        onClick={async () => {
-                          await navigator.clipboard.writeText(ca).catch(() => {});
-                          setCopiedAddr(ca);
-                          setTimeout(() => setCopiedAddr(null), 2000);
-                        }}
-                        className="shrink-0 flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
-                      >
-                        {copiedAddr === ca ? <Check size={12} /> : <Copy size={12} />}
-                        {copiedAddr === ca ? "Copied!" : "Copy"}
-                      </button>
-                    </div>
-                  );
-                })()}
-
-                <div className="px-4 py-2 border-b border-border/40 shrink-0">
-                  <p className="text-xs text-muted-foreground">
-                    {tickersLoading ? "Loading exchanges…" : `${tickersData?.tickers?.length ?? 0} exchanges list ${selectedCoin.symbol} · tap to trade`}
-                  </p>
-                </div>
-
-                {/* Exchange list */}
-                <div className="flex-1 overflow-y-auto overscroll-contain divide-y divide-border/40">
-                  {tickersLoading && Array.from({ length: 8 }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-3 px-4 py-3">
-                      <div className="w-8 h-8 rounded-full bg-muted animate-pulse shrink-0" />
-                      <div className="flex-1 space-y-1.5">
-                        <div className="h-3.5 bg-muted animate-pulse rounded w-32" />
-                        <div className="h-3 bg-muted animate-pulse rounded w-20" />
-                      </div>
-                      <div className="h-4 bg-muted animate-pulse rounded w-20" />
+                {/* ── Stats grid ── */}
+                <div className="grid grid-cols-3 divide-x divide-border border-b border-border shrink-0">
+                  {[
+                    { label: "Mkt Cap",     val: selectedCoin.marketCap > 0 ? `${qSym}${fmtVol(selectedCoin.marketCap)}` : "—" },
+                    { label: "24h Vol",     val: enrichedVol24h  > 0 ? `${qSym}${fmtVol(enrichedVol24h)}`    : "—" },
+                    { label: "24h High",    val: enrichedHigh24h > 0 ? `${qSym}${fmtPrice(enrichedHigh24h)}` : "—" },
+                    { label: "24h Low",     val: enrichedLow24h  > 0 ? `${qSym}${fmtPrice(enrichedLow24h)}`  : "—" },
+                    { label: "Circulating", val: selectedCoin.circulatingSupply > 0 ? fmtVol(selectedCoin.circulatingSupply) : "—" },
+                    { label: "Total Supply",val: (selectedCoin as any).totalSupply > 0 ? fmtVol((selectedCoin as any).totalSupply) : "∞" },
+                    { label: "Rank",        val: selectedCoin.rank ? `#${selectedCoin.rank}` : "—" },
+                    { label: "Source",      val: enrichedSrcLabel },
+                    { label: "Price",       val: selectedCoin.price > 0 ? `${qSym}${fmtPrice(selectedCoin.price)}` : "—" },
+                  ].map((s, i) => (
+                    <div key={i} className={cn("px-3 py-2 bg-card", i >= 3 && "border-t border-border")}>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">{s.label}</p>
+                      <p className="text-xs font-semibold tabular-nums font-mono truncate">{s.val}</p>
                     </div>
                   ))}
+                </div>
 
-                  {!tickersLoading && (tickersData?.tickers ?? [])
-                    .filter((t: any) => !t.isAnomaly && !t.isStale)
-                    .map((t: any, i: number) => {
-                      const tsColor = t.trustScore === "green" ? "bg-green-500" : t.trustScore === "yellow" ? "bg-green-500" : "bg-red-400";
-                      return (
-                        <a
-                          key={i}
-                          href={t.tradeUrl ?? "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors"
-                        >
-                          {/* Exchange logo */}
-                          {t.exchangeLogo
-                            ? <img src={t.exchangeLogo} alt={t.exchangeName} className="w-8 h-8 rounded-full shrink-0 bg-secondary" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                            : <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary shrink-0">{t.exchangeName?.[0] ?? "?"}</div>
-                          }
+                {/* ── Tab bar ── */}
+                <div className="flex border-b border-border shrink-0 bg-card">
+                  {(["overview", "markets", "trade"] as const).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setCoinDetailTab(tab)}
+                      className={cn(
+                        "flex-1 py-2.5 text-sm font-semibold transition-colors capitalize",
+                        coinDetailTab === tab
+                          ? "text-primary border-b-2 border-primary bg-background"
+                          : "text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {tab === "markets"
+                        ? `Markets${!tickersLoading && tickersData ? ` · ${tickersData.tickers?.length ?? 0}` : ""}`
+                        : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    </button>
+                  ))}
+                </div>
 
-                          {/* Exchange name + pair */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <p className="text-sm font-semibold text-foreground truncate">{t.exchangeName}</p>
-                              {t.trustScore && (
-                                <span className={cn("w-2 h-2 rounded-full shrink-0", tsColor)} title={`Trust: ${t.trustScore}`} />
+                {/* ── Tab content ── */}
+                <div className="flex-1 overflow-y-auto overscroll-contain">
+
+                  {/* OVERVIEW */}
+                  {coinDetailTab === "overview" && (
+                    <div className="p-4 space-y-4">
+
+                      {/* Price chart */}
+                      {/* Timeframe selector */}
+                      <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                        {([
+                          { id: "1h",  label: "1H"  },
+                          { id: "4h",  label: "4H"  },
+                          { id: "1d",  label: "1D"  },
+                          { id: "3d",  label: "3D"  },
+                          { id: "1w",  label: "1W"  },
+                          { id: "1M",  label: "1M"  },
+                          { id: "1Y",  label: "1Y"  },
+                          { id: "All", label: "All" },
+                        ] as const).map(tf => (
+                          <button
+                            key={tf.id}
+                            onClick={() => setCoinDetailInterval(tf.id)}
+                            className={cn(
+                              "shrink-0 px-3 py-1 rounded-full text-[11px] font-semibold transition-all",
+                              coinDetailInterval === tf.id
+                                ? "bg-green-500/20 text-green-400 border border-green-500/40"
+                                : "text-muted-foreground hover:text-foreground bg-secondary/40 hover:bg-secondary/80"
+                            )}
+                          >
+                            {tf.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="rounded-xl overflow-hidden border border-border bg-secondary/20" style={{ height: 260 }}>
+                        <Suspense fallback={<div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">Loading chart…</div>}>
+                          <Chart
+                            key={selectedCoin.symbol}
+                            symbol={`${selectedCoin.symbol}/USDT`}
+                            interval={coinDetailInterval}
+                            onIntervalChange={setCoinDetailInterval}
+                            hideIntervalBar
+                          />
+                        </Suspense>
+                      </div>
+
+                      {/* 24h range bar */}
+                      {enrichedHigh24h > 0 && enrichedLow24h > 0 && (
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-[11px] text-muted-foreground">
+                            <span>24h Low  {qSym}{fmtPrice(enrichedLow24h)}</span>
+                            <span>24h High  {qSym}{fmtPrice(enrichedHigh24h)}</span>
+                          </div>
+                          <div className="h-1.5 bg-secondary rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-red-500 via-yellow-400 to-green-500 rounded-full"
+                              style={{ width: `${Math.min(100, Math.max(2, ((selectedCoin.price - enrichedLow24h) / Math.max(enrichedHigh24h - enrichedLow24h, 0.0001)) * 100))}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Contract address */}
+                      {(() => {
+                        const entry = KNOWN_CONTRACTS[selectedCoin.symbol.toUpperCase()];
+                        if (!entry) return null;
+                        return (
+                          <div className="rounded-xl border border-border bg-card p-3 flex items-center gap-3">
+                            <div className="shrink-0">
+                              <span className="text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">{entry.chain}</span>
+                            </div>
+                            <p className="text-[11px] font-mono text-muted-foreground truncate flex-1">{entry.contract}</p>
+                            <button
+                              onClick={async () => {
+                                await navigator.clipboard.writeText(entry.contract).catch(() => {});
+                                setCopiedAddr(entry.contract);
+                                setTimeout(() => setCopiedAddr(null), 2000);
+                              }}
+                              className="shrink-0 flex items-center gap-1 text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+                            >
+                              {copiedAddr === entry.contract ? <Check size={12} /> : <Copy size={12} />}
+                              {copiedAddr === entry.contract ? "Copied!" : "Copy"}
+                            </button>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Coin detail from CoinGecko API */}
+                      {detailLoading && (
+                        <div className="space-y-2">
+                          <div className="h-3 rounded bg-muted animate-pulse w-3/4" />
+                          <div className="h-3 rounded bg-muted animate-pulse w-full" />
+                          <div className="h-3 rounded bg-muted animate-pulse w-5/6" />
+                        </div>
+                      )}
+                      {coinDetail && !detailLoading && (
+                        <div className="space-y-3">
+                          {/* Description */}
+                          {coinDetail.description && (
+                            <div className="rounded-xl border border-border bg-card p-3">
+                              <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mb-1.5">About</p>
+                              <p className="text-xs text-foreground/80 leading-relaxed line-clamp-4">{coinDetail.description}</p>
+                            </div>
+                          )}
+
+                          {/* ATH / ATL */}
+                          {(coinDetail.ath || coinDetail.atl) && (
+                            <div className="rounded-xl border border-border bg-card p-3 grid grid-cols-2 gap-3">
+                              {coinDetail.ath && (
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">All-Time High</p>
+                                  <p className="text-sm font-bold text-green-400">{qSym}{fmtPrice(coinDetail.ath)}</p>
+                                  {coinDetail.athDate && (
+                                    <p className="text-[10px] text-muted-foreground">{new Date(coinDetail.athDate).toLocaleDateString()}</p>
+                                  )}
+                                </div>
+                              )}
+                              {coinDetail.atl && (
+                                <div>
+                                  <p className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">All-Time Low</p>
+                                  <p className="text-sm font-bold text-red-400">{qSym}{fmtPrice(coinDetail.atl)}</p>
+                                  {coinDetail.atlDate && (
+                                    <p className="text-[10px] text-muted-foreground">{new Date(coinDetail.atlDate).toLocaleDateString()}</p>
+                                  )}
+                                </div>
                               )}
                             </div>
-                            <p className="text-xs text-muted-foreground">{t.base}/{t.target}</p>
-                          </div>
+                          )}
 
-                          {/* Price + volume */}
-                          <div className="text-right shrink-0">
-                            <p className="text-sm font-mono font-semibold tabular-nums">{qSym}{fmtPrice(t.convertedLast || t.price)}</p>
-                            <p className="text-[10px] text-muted-foreground tabular-nums">{qSym}{fmtVol(t.convertedVol)} vol</p>
-                          </div>
+                          {/* Categories */}
+                          {coinDetail.categories?.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {coinDetail.categories.map((cat: string) => (
+                                <span key={cat} className="text-[10px] px-2 py-0.5 rounded-full bg-secondary border border-border text-muted-foreground font-medium">{cat}</span>
+                              ))}
+                            </div>
+                          )}
 
-                          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 ml-1" />
-                        </a>
-                      );
-                    })
-                  }
-
-                  {!tickersLoading && tickersData?.tickers?.length === 0 && (
-                    <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-                      No exchange listings found
+                          {/* Social / official links */}
+                          {(coinDetail.homepage || coinDetail.twitter || coinDetail.reddit || coinDetail.github) && (
+                            <div>
+                              <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-semibold mb-2">Links</p>
+                              <div className="flex flex-wrap gap-2">
+                                {coinDetail.homepage && (
+                                  <button type="button" onClick={() => window.open(coinDetail.homepage, "_blank", "noopener,noreferrer")}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary border border-border text-xs font-medium active:opacity-70">
+                                    <Globe size={12} className="text-blue-400" /> Website
+                                  </button>
+                                )}
+                                {coinDetail.twitter && (
+                                  <button type="button" onClick={() => window.open(coinDetail.twitter, "_blank", "noopener,noreferrer")}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary border border-border text-xs font-medium active:opacity-70">
+                                    <svg viewBox="0 0 24 24" className="w-3 h-3 fill-sky-400 shrink-0"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.748l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.911-5.622Zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+                                    Twitter
+                                  </button>
+                                )}
+                                {coinDetail.reddit && (
+                                  <button type="button" onClick={() => window.open(coinDetail.reddit, "_blank", "noopener,noreferrer")}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary border border-border text-xs font-medium active:opacity-70">
+                                    <svg viewBox="0 0 24 24" className="w-3 h-3 fill-orange-400 shrink-0"><path d="M12 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0zm5.01 4.744c.688 0 1.25.561 1.25 1.249a1.25 1.25 0 0 1-2.498.056l-2.597-.547-.8 3.747c1.824.07 3.48.632 4.674 1.488.308-.309.73-.491 1.207-.491.968 0 1.754.786 1.754 1.754 0 .716-.435 1.333-1.01 1.614a3.111 3.111 0 0 1 .042.52c0 2.694-3.13 4.87-7.004 4.87-3.874 0-7.004-2.176-7.004-4.87 0-.183.015-.366.043-.534A1.748 1.748 0 0 1 4.028 12c0-.968.786-1.754 1.754-1.754.463 0 .898.196 1.207.49 1.207-.883 2.878-1.43 4.744-1.487l.885-4.182a.342.342 0 0 1 .14-.197.35.35 0 0 1 .238-.042l2.906.617a1.214 1.214 0 0 1 1.108-.701zM9.25 12C8.561 12 8 12.562 8 13.25c0 .687.561 1.248 1.25 1.248.687 0 1.248-.561 1.248-1.249 0-.688-.561-1.249-1.249-1.249zm5.5 0c-.687 0-1.248.561-1.248 1.25 0 .687.561 1.248 1.249 1.248.688 0 1.249-.561 1.249-1.249 0-.687-.562-1.249-1.25-1.249zm-5.466 3.99a.327.327 0 0 0-.231.094.33.33 0 0 0 0 .463c.842.842 2.484.913 2.961.913.477 0 2.105-.056 2.961-.913a.361.361 0 0 0 .029-.463.33.33 0 0 0-.464 0c-.547.533-1.684.73-2.512.73-.828 0-1.979-.196-2.512-.73a.326.326 0 0 0-.232-.095z"/></svg>
+                                    Reddit
+                                  </button>
+                                )}
+                                {coinDetail.github && (
+                                  <button type="button" onClick={() => window.open(coinDetail.github, "_blank", "noopener,noreferrer")}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary border border-border text-xs font-medium active:opacity-70">
+                                    <svg viewBox="0 0 24 24" className="w-3 h-3 fill-foreground shrink-0"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+                                    GitHub
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
+
+                  {/* MARKETS */}
+                  {coinDetailTab === "markets" && (() => {
+                    const all: any[]  = (tickersData?.tickers ?? []).filter((t: any) => !t.isAnomaly && !t.isStale);
+                    const cex   = all.filter((t: any) => !t.swapOnly);
+                    const swaps = all.filter((t: any) => t.swapOnly);
+                    return (
+                      <div className="divide-y divide-border/40">
+                        <div className="px-4 py-2 bg-secondary/30">
+                          <p className="text-xs text-muted-foreground">
+                            {tickersLoading ? "Loading markets…"
+                              : cex.length > 0 ? `${cex.length} market${cex.length !== 1 ? "s" : ""} · ${selectedCoin.symbol}`
+                              : swaps.length > 0 ? `Available on ${swaps.length} swap service${swaps.length !== 1 ? "s" : ""}`
+                              : `No markets found for ${selectedCoin.symbol}`}
+                          </p>
+                        </div>
+
+                        {tickersLoading && Array.from({ length: 4 }).map((_, i) => (
+                          <div key={i} className="flex items-center gap-3 px-4 py-3">
+                            <div className="w-8 h-8 rounded-full bg-muted animate-pulse shrink-0" />
+                            <div className="flex-1 space-y-1.5">
+                              <div className="h-3.5 bg-muted animate-pulse rounded w-32" />
+                              <div className="h-3 bg-muted animate-pulse rounded w-20" />
+                            </div>
+                            <div className="h-4 bg-muted animate-pulse rounded w-20" />
+                          </div>
+                        ))}
+
+                        {/* Order-book markets */}
+                        {!tickersLoading && cex.map((t: any, i: number) => {
+                          const tsColor = t.trustScore === "green" ? "bg-green-500" : t.trustScore === "yellow" ? "bg-yellow-400" : "bg-red-400";
+                          return (
+                            <a key={i} href={t.tradeUrl ?? "#"} target="_blank" rel="noopener noreferrer"
+                              className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors"
+                            >
+                              {t.exchangeLogo
+                                ? <img src={t.exchangeLogo} alt={t.exchangeName} className="w-8 h-8 rounded-full shrink-0 bg-secondary" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                                : <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-[11px] font-bold text-primary shrink-0">{t.exchangeName?.[0] ?? "?"}</div>
+                              }
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-sm font-semibold truncate">{t.exchangeName}</p>
+                                  {t.trustScore && <span className={cn("w-2 h-2 rounded-full shrink-0", tsColor)} />}
+                                </div>
+                                <p className="text-xs text-muted-foreground">{t.base}/{t.target}</p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="text-sm font-mono font-semibold tabular-nums">{qSym}{fmtPrice(t.convertedLast || t.price)}</p>
+                                <p className="text-[10px] text-muted-foreground tabular-nums">{qSym}{fmtVol(t.convertedVol)} vol</p>
+                              </div>
+                              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0 ml-1" />
+                            </a>
+                          );
+                        })}
+
+                        {/* Swap services */}
+                        {!tickersLoading && swaps.length > 0 && (
+                          <>
+                            {cex.length > 0 && (
+                              <div className="px-4 py-1.5 bg-secondary/20">
+                                <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Swap Services</p>
+                              </div>
+                            )}
+                            {swaps.map((t: any, i: number) => (
+                              <button key={i}
+                                onClick={() => { setSelectedCoin(null); navigate("/swap"); }}
+                                className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/40 transition-colors w-full text-left"
+                              >
+                                <div className="w-8 h-8 rounded-full bg-green-500/10 border border-green-500/20 flex items-center justify-center shrink-0 text-[22px]">
+                                  <OrahO online={true} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5">
+                                    <p className="text-sm font-semibold truncate">{t.exchangeName}</p>
+                                    <span className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-violet-500/15 text-violet-400 border border-violet-500/20 shrink-0">SWAP</span>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground">Instant swap · any pair</p>
+                                </div>
+                                <div className="text-right shrink-0">
+                                  {t.price > 0
+                                    ? <p className="text-sm font-mono font-semibold tabular-nums">{qSym}{fmtPrice(t.price)}</p>
+                                    : <p className="text-xs text-muted-foreground">Market rate</p>
+                                  }
+                                </div>
+                                <ArrowLeftRight className="w-3.5 h-3.5 text-primary/50 shrink-0 ml-1" />
+                              </button>
+                            ))}
+                          </>
+                        )}
+
+                        {!tickersLoading && all.length === 0 && (
+                          <div className="flex flex-col items-center justify-center h-40 gap-2 text-muted-foreground">
+                            <Globe className="w-8 h-8 opacity-30" />
+                            <p className="text-sm">No markets found</p>
+                            <p className="text-xs opacity-60">Use the Trade tab to trade on OrahDEX</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* TRADE */}
+                  {coinDetailTab === "trade" && (
+                    <div className="p-4 space-y-3">
+                      {/* Spot trading */}
+                      <button
+                        onClick={() => { setSelectedCoin(null); navigate(`/trade/${selectedCoin.symbol}-USDT`); }}
+                        className="w-full rounded-2xl border border-primary/30 bg-primary/5 p-5 flex items-center gap-4 active:bg-primary/10 transition-colors text-left"
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+                          <BarChart2 className="w-6 h-6 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-base">{selectedCoin.symbol}/USDT</p>
+                          <p className="text-sm text-muted-foreground mt-0.5">Spot · Order Book · Limit &amp; Market orders</p>
+                        </div>
+                        <ArrowUpRight className="w-5 h-5 text-primary shrink-0" />
+                      </button>
+
+                      {/* Futures */}
+                      <button
+                        onClick={() => { setSelectedCoin(null); navigate(`/futures/${selectedCoin.symbol}-USDT`); }}
+                        className="w-full rounded-2xl border border-border bg-card p-5 flex items-center gap-4 active:bg-secondary/60 transition-colors text-left"
+                      >
+                        <div className="w-12 h-12 rounded-xl bg-secondary flex items-center justify-center shrink-0">
+                          <Zap className="w-6 h-6 text-yellow-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-base">{selectedCoin.symbol}/USDT Perp</p>
+                          <p className="text-sm text-muted-foreground mt-0.5">Futures · Up to 100× leverage</p>
+                        </div>
+                        <ArrowUpRight className="w-5 h-5 text-muted-foreground shrink-0" />
+                      </button>
+
+                      {/* Current price snapshot */}
+                      <div className="rounded-2xl border border-border bg-card p-4 grid grid-cols-2 gap-3">
+                        <div>
+                          <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Current Price</p>
+                          <p className="text-lg font-bold tabular-nums font-mono">{qSym}{fmtPrice(selectedCoin.price)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">24h Change</p>
+                          <p className={cn("text-lg font-bold", selectedCoin.change24h >= 0 ? "text-green-400" : "text-red-400")}>
+                            {selectedCoin.change24h >= 0 ? "+" : ""}{selectedCoin.change24h.toFixed(2)}%
+                          </p>
+                        </div>
+                        {enrichedVol24h > 0 && (
+                          <div>
+                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">24h Volume</p>
+                            <p className="text-sm font-semibold tabular-nums">{qSym}{fmtVol(enrichedVol24h)}</p>
+                          </div>
+                        )}
+                        {selectedCoin.marketCap > 0 && (
+                          <div>
+                            <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Market Cap</p>
+                            <p className="text-sm font-semibold tabular-nums">{qSym}{fmtVol(selectedCoin.marketCap)}</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                 </div>
 
-                {/* VAMM Quick Swap inside modal */}
-                <div className="shrink-0 border-t border-border px-4 pt-4 pb-2">
-                  <VammSwapPanel symbol={selectedCoin.symbol} />
-                </div>
-
-                {/* Footer CTA */}
-                <div className="shrink-0 border-t border-border px-4 py-3">
+                {/* ── Footer CTA ── */}
+                <div className="shrink-0 border-t border-border px-4 py-3 bg-card">
                   <button
                     onClick={() => { navigate(`/trade/${selectedCoin.symbol}-USDT`); setSelectedCoin(null); }}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-primary text-primary-foreground font-bold text-sm hover:bg-primary/90 transition-colors"

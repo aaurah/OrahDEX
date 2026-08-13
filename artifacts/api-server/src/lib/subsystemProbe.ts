@@ -66,9 +66,9 @@ const EVM_CHAINS: Array<{ id: string; label: string; envVar: string; fallback: s
   { id: "arbitrum", label: "Arbitrum One",       envVar: "ARB_RPC_URL",      fallback: "https://arbitrum-one.publicnode.com" },
   { id: "optimism", label: "Optimism",           envVar: "OP_RPC_URL",       fallback: "https://optimism.publicnode.com" },
   { id: "bnb",      label: "BNB Smart Chain",    envVar: "BSC_RPC_URL",      fallback: "https://bsc-dataseed.binance.org" },
-  { id: "polygon",  label: "Polygon",            envVar: "POLYGON_RPC_URL",  fallback: "https://polygon-rpc.com" },
+  { id: "polygon",  label: "Polygon",            envVar: "POLYGON_RPC_URL",  fallback: "https://polygon-bor-rpc.publicnode.com" },
   { id: "avax",     label: "Avalanche C-Chain",  envVar: "AVAX_RPC_URL",     fallback: "https://api.avax.network/ext/bc/C/rpc" },
-  { id: "sepolia",  label: "Sepolia Testnet",    envVar: "SEPOLIA_RPC_URL",  fallback: "https://sepolia.publicnode.com" },
+  { id: "sepolia",  label: "Sepolia Testnet",    envVar: "SEPOLIA_RPC_URL",  fallback: "https://ethereum-sepolia-rpc.publicnode.com" },
 ];
 
 async function probeRpc(chain: (typeof EVM_CHAINS)[number]): Promise<ProbeResult> {
@@ -111,13 +111,16 @@ export async function probeLetsExchange(): Promise<ProbeResult> {
       if (hasKey) headers["Authorization"] = `Bearer ${process.env["LETSEXCHANGE_API_KEY"]}`;
       const r = await fetch("https://api.letsexchange.io/api/v2/coins", {
         headers,
-        signal: AbortSignal.timeout(6_000),
+        // Match lePriceCache.ts request timeout — 8 s so the outer probe wrapper
+        // (9 s) fires last, keeping "degraded" vs "down" classification accurate.
+        signal: AbortSignal.timeout(8_000),
       });
       if (r.status === 403) return `Reachable (API key required for full access)`;
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json() as unknown[];
       return `${data.length} coins available · key ${hasKey ? "configured" : "not set"}`;
     },
+    9_000, // outer wrapper timeout > inner AbortSignal so abort fires first
   );
 }
 
@@ -151,20 +154,48 @@ export async function probeStripe(): Promise<ProbeResult> {
 
 /* ── BSV / WhatsOnChain ───────────────────────────────────────────────────── */
 
+let _wocCachedDetail: string | null = null;
+let _wocCachedAt    = 0;
+const WOC_CACHE_TTL_MS = 10 * 60_000; // serve cache for up to 10 min on 429
+
 export async function probeBsvChain(): Promise<ProbeResult> {
-  return probe(
-    "bsv",
-    "BSV / WhatsOnChain",
-    async () => {
-      const r = await fetch("https://api.whatsonchain.com/v1/bsv/main/chain/info", {
-        signal: AbortSignal.timeout(5_000),
-        headers: { "User-Agent": "OrahDEX/1.0" },
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json() as { blocks?: number; headers?: number };
-      return `block ${(j.blocks ?? j.headers ?? 0).toLocaleString()}`;
-    },
-  );
+  const start = Date.now();
+  try {
+    const r = await fetch("https://api.whatsonchain.com/v1/bsv/main/chain/info", {
+      signal: AbortSignal.timeout(5_000),
+      headers: { "User-Agent": "OrahDEX/1.0" },
+    });
+
+    if (r.status === 429) {
+      const latencyMs = Date.now() - start;
+      const retryAfter = r.headers.get("Retry-After");
+      const cached = _wocCachedDetail && (Date.now() - _wocCachedAt < WOC_CACHE_TTL_MS)
+        ? ` (cached: ${_wocCachedDetail})`
+        : "";
+      return {
+        name: "bsv", label: "BSV / WhatsOnChain",
+        status: "degraded", latencyMs,
+        detail: `Rate limited by WoC${retryAfter ? ` — retry after ${retryAfter}s` : ""}${cached}`,
+        checkedAt: new Date().toISOString(),
+      };
+    }
+
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json() as { blocks?: number; headers?: number };
+    const detail = `block ${(j.blocks ?? j.headers ?? 0).toLocaleString()}`;
+    _wocCachedDetail = detail;
+    _wocCachedAt     = Date.now();
+    const latencyMs  = Date.now() - start;
+    return { name: "bsv", label: "BSV / WhatsOnChain", status: "ok", latencyMs, detail, checkedAt: new Date().toISOString() };
+  } catch (err: any) {
+    const latencyMs = Date.now() - start;
+    const status: ProbeStatus = latencyMs >= 4_900 ? "degraded" : "down";
+    return {
+      name: "bsv", label: "BSV / WhatsOnChain", status, latencyMs,
+      detail: "—", error: err?.message ?? String(err),
+      checkedAt: new Date().toISOString(),
+    };
+  }
 }
 
 /* ── Database ─────────────────────────────────────────────────────────────── */
@@ -176,7 +207,7 @@ export async function probeDatabase(): Promise<ProbeResult> {
     async () => {
       const { pool } = await import("@workspace/db");
       const start = Date.now();
-      const { rows } = await pool.query<{ version: string }>("SELECT version() AS version");
+      const { rows } = await pool.query("SELECT version() AS version") as { rows: { version: string }[] };
       const latencyMs = Date.now() - start;
       const ver = rows[0]?.version?.split(" ").slice(0, 2).join(" ") ?? "unknown";
       const quality = latencyMs < 50 ? "fast" : latencyMs < 200 ? "normal" : "slow";
@@ -187,13 +218,24 @@ export async function probeDatabase(): Promise<ProbeResult> {
 
 /* ── Price engine freshness ───────────────────────────────────────────────── */
 
-let _lastPriceCheck = 0;
-let _priceCount     = 0;
+let _lastPriceCheck    = 0;
+let _priceCount        = 0;
+let _engineStartedAt   = 0; // set by notifyPriceEngineStarted()
+
+/** Call this immediately when startPriceUpdater() fires so the probe knows the
+ *  engine is warming up and won't misreport "No price run recorded" during the
+ *  initial 35-second startup delay. */
+export function notifyPriceEngineStarted() {
+  _engineStartedAt = Date.now();
+}
 
 export function recordPriceEngineRun(count: number) {
   _lastPriceCheck = Date.now();
   _priceCount     = count;
 }
+
+// First price run is deferred 35 s; allow 90 s before treating "no run" as degraded.
+const WARMUP_GRACE_MS = 90_000;
 
 export async function probePriceEngine(): Promise<ProbeResult> {
   const staleSec = _lastPriceCheck ? Math.floor((Date.now() - _lastPriceCheck) / 1000) : null;
@@ -202,8 +244,17 @@ export async function probePriceEngine(): Promise<ProbeResult> {
   let detail: string;
 
   if (staleSec === null) {
-    status = "degraded";
-    detail = "No price run recorded since startup";
+    const uptimeMs  = _engineStartedAt ? Date.now() - _engineStartedAt : 0;
+    const remaining = Math.max(0, Math.ceil((WARMUP_GRACE_MS - uptimeMs) / 1000));
+    if (_engineStartedAt && uptimeMs < WARMUP_GRACE_MS) {
+      status = "ok";
+      detail = remaining > 0
+        ? `Warming up — first price run in ~${remaining}s`
+        : "First price run completing…";
+    } else {
+      status = "degraded";
+      detail = "No price run recorded since startup";
+    }
   } else if (staleSec > 300) {
     status = "down";
     detail = `Last price update ${staleSec}s ago (>${Math.floor(staleSec / 60)}m)`;
@@ -231,13 +282,15 @@ export async function probeWebhookReceiver(): Promise<ProbeResult> {
   const domain          = process.env["REPLIT_DEV_DOMAIN"] ?? "unknown";
 
   const parts = [
-    `EVM HMAC: ${hasHmacSecret ? "configured" : "⚠ not set (webhook requests rejected)"}`,
+    `EVM HMAC: ${hasHmacSecret ? "configured" : "not set (optional — EVM webhooks disabled)"}`,
     `Stripe sig: ${hasStripeSecret ? "configured" : "⚠ not set (insecure)"}`,
     hasDomain ? `domain: ${domain}` : "domain: unknown",
   ];
 
-  const status: ProbeStatus =
-    (!hasHmacSecret || !hasStripeSecret) ? "degraded" : "ok";
+  // EVM HMAC is optional — the system falls back to RPC polling without it.
+  // Only flag degraded when the Stripe webhook secret is missing, since that
+  // allows payment events to arrive without signature verification.
+  const status: ProbeStatus = !hasStripeSecret ? "degraded" : "ok";
 
   return {
     name: "webhook", label: "Webhook Receiver",
@@ -255,9 +308,9 @@ export async function probeSwapRouter(): Promise<ProbeResult> {
     "Swap Router (LE Pairs in DB)",
     async () => {
       const { pool } = await import("@workspace/db");
-      const { rows } = await pool.query<{ cnt: string }>(
+      const { rows } = await pool.query(
         "SELECT COUNT(*) AS cnt FROM markets WHERE type = 'letsexchange' AND status = 'active'",
-      );
+      ) as { rows: { cnt: string }[] };
       const cnt = parseInt(rows[0]?.cnt ?? "0", 10);
       if (cnt === 0) throw new Error("No LE pairs seeded — run POST /api/admin/le-sync");
       if (cnt < 1000) return `${cnt.toLocaleString()} LE pairs seeded (partial — run le-sync for full catalog)`;

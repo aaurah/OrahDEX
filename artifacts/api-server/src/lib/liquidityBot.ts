@@ -10,14 +10,15 @@
  * so it can be excluded from real-user analytics.
  */
 
-import { db, pool } from "@workspace/db";
+import { db, pool, withDbRetry } from "@workspace/db";
 import { ordersTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
-import { eq, and, notInArray } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "./logger.js";
 import { guardedInterval } from "./selfHealing.js";
 import { FALLBACK_PRICES, seedMarketsIfNeeded } from "./priceUpdater.js";
 import { serviceState } from "./serviceState.js";
+import { isDbConnError } from "./dbErrors.js";
 
 /** Stablecoin quote assets — treated as 1:1 with USD for cross-price math */
 const STABLECOINS = new Set(["USDT","USDC","TUSD","USDD","BUSD","DAI"]);
@@ -26,15 +27,19 @@ const STABLECOINS = new Set(["USDT","USDC","TUSD","USDD","BUSD","DAI"]);
 
 async function getSetting(key: string): Promise<string | null> {
   try {
-    const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+    const rows = await withDbRetry(() =>
+      db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key))
+    );
     return rows[0]?.value ?? null;
   } catch { return null; }
 }
 
 async function setSetting(key: string, value: string) {
-  await db.insert(platformSettingsTable)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+  await withDbRetry(() =>
+    db.insert(platformSettingsTable)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } })
+  );
 }
 
 /**
@@ -73,13 +78,18 @@ export const BOT_ADDRESS = "BOT_LIQUIDITY_ENGINE";
 /* ── Spread / size schedule ─────────────────────────────────────────────── */
 // Each level: [spread_fraction, size_multiplier]
 // Tightest spread closest to mid-price, widening out.
+// 10 levels per side (20 orders total) for a deep, realistic order book.
 const LEVELS = [
-  [0.0003, 3.5],
-  [0.0010, 2.8],
-  [0.0025, 2.2],
-  [0.0055, 1.7],
-  [0.0120, 1.2],
-  [0.0280, 0.8],
+  [0.0002, 4.2],
+  [0.0005, 3.6],
+  [0.0010, 3.0],
+  [0.0020, 2.5],
+  [0.0040, 2.0],
+  [0.0080, 1.6],
+  [0.0150, 1.2],
+  [0.0280, 0.9],
+  [0.0500, 0.6],
+  [0.0900, 0.4],
 ] as const;
 
 /**
@@ -143,10 +153,11 @@ function buildLadder(
     let priceStr: string;
     if (px >= 1000)       priceStr = px.toFixed(2);
     else if (px >= 1)     priceStr = px.toFixed(4);
-    else if (px >= 0.001) priceStr = px.toFixed(6);
-    else if (px >= 1e-8)  priceStr = px.toFixed(10);
+    else if (px >= 0.01)  priceStr = px.toFixed(6);
     else {
-      // Sub-satoshi: enough decimals to show 4+ significant figures
+      // Sub-cent: derive decimals from magnitude so tight spreads never collapse
+      // to the same rounded value (fixed toFixed(10) was too coarse below ~1e-6
+      // and produced identical bid/ask strings for nano-cap pairs).
       const mag = -Math.floor(Math.log10(px));
       priceStr = px.toFixed(Math.min(mag + 4, 18)).replace(/0+$/, "").replace(/\.$/, "0");
     }
@@ -207,16 +218,22 @@ function buildMarketOrders(
 /* ── Full cycle: iterate all active markets ─────────────────────────────── */
 async function runCycle(): Promise<void> {
   try {
-    const markets = await db.select({
-      symbol:     marketsTable.symbol,
-      baseAsset:  marketsTable.baseAsset,
-      quoteAsset: marketsTable.quoteAsset,
-      lastPrice:  marketsTable.lastPrice,
-      volume24h:  marketsTable.volume24h,
-      type:       marketsTable.type,
-      status:     marketsTable.status,
-    }).from(marketsTable)
-      .where(notInArray(marketsTable.type, ["letsexchange"]));
+    const markets = await withDbRetry(() =>
+      db.select({
+        symbol:     marketsTable.symbol,
+        baseAsset:  marketsTable.baseAsset,
+        quoteAsset: marketsTable.quoteAsset,
+        lastPrice:  marketsTable.lastPrice,
+        volume24h:  marketsTable.volume24h,
+        type:       marketsTable.type,
+        status:     marketsTable.status,
+      }).from(marketsTable)
+        // Liquidity bot only operates on internal order-book markets.
+        // Excluding external catalog types (letsexchange: 36K rows,
+        // simpleswap: 66K rows) drops the query from 100K+ rows to ~1K
+        // and eliminates a major source of DB connection hold time.
+        .where(inArray(marketsTable.type, ["spot", "futures"]))
+    );
     const active = markets.filter(m => m.status === "active");
 
     // ── Step 1: Build the master USD price map from live USDT spot markets ──
@@ -245,7 +262,7 @@ async function runCycle(): Promise<void> {
     }
 
     if (crossUpdates.length > 0) {
-      const BULK_CHUNK = 1000;
+      const BULK_CHUNK = 10_000;
       for (let ci = 0; ci < crossUpdates.length; ci += BULK_CHUNK) {
         const chunk       = crossUpdates.slice(ci, ci + BULK_CHUNK);
         const placeholders = chunk
@@ -260,7 +277,13 @@ async function runCycle(): Promise<void> {
              WHERE m.symbol = v.symbol`,
             params,
           )
-          .catch(err => logger.warn({ err }, "Bot: bulk cross-price update failed"));
+          .catch(err => {
+            if (isDbConnError(err)) {
+              logger.warn("liquidityBot: bulk cross-price update skipped — transient DB connection error");
+            } else {
+              logger.error({ err }, "Bot: bulk cross-price update failed");
+            }
+          });
       }
     }
 
@@ -301,22 +324,65 @@ async function runCycle(): Promise<void> {
       for (const o of marketOrders) allOrders.push(o);
     }
 
-    // Single DELETE wipes all stale bot orders in one round-trip
-    await db.delete(ordersTable).where(
-      and(
-        eq(ordersTable.walletAddress, BOT_ADDRESS),
-        eq(ordersTable.status, "open"),
-      ),
-    );
+    // Chunked DELETE — avoids a single 48k-row operation that exceeds the
+    // query_timeout on the production DB (large table + 4 indexes + WAL).
+    // Each chunk deletes ≤5 000 rows, completing in < 500 ms per round-trip.
+    const DELETE_CHUNK = 5_000;
+    let deletedCount: number;
+    do {
+      const result = await pool.query<{ id: string }>(
+        `DELETE FROM orders
+         WHERE id IN (
+           SELECT id FROM orders
+           WHERE wallet_address = $1 AND status = $2
+           LIMIT $3
+         )`,
+        [BOT_ADDRESS, "open", DELETE_CHUNK],
+      );
+      deletedCount = result.rowCount ?? 0;
+    } while (deletedCount >= DELETE_CHUNK);
 
-    // Bulk INSERT in chunks of 400 orders
-    // (400 orders × ~19 columns = 7,600 parameters — well under PG's 65,535 limit)
+    // Chunked UNNEST bulk INSERT — split into 10 000-row batches.
+    // A single 80 000-row UNNEST sends ~560 000 values in one pg protocol
+    // message; over Neon's serverless proxy this takes 90–110 s to transmit,
+    // causing the guardedInterval timeout every cycle and holding the pool
+    // slot the entire time.  10 K-row chunks send ~70 K values each, completing
+    // in ~3–8 s per chunk (8 chunks × ~5 s ≈ 40–60 s total) — well within the
+    // expanded 300 s timeout and releasing the connection frequently enough
+    // that other services can acquire the pool.
+    const INSERT_CHUNK = 10_000;
     if (allOrders.length > 0) {
-      const INSERT_CHUNK = 400;
       for (let ci = 0; ci < allOrders.length; ci += INSERT_CHUNK) {
-        await db.insert(ordersTable)
-          .values(allOrders.slice(ci, ci + INSERT_CHUNK))
-          .catch(err => logger.warn({ err, offset: ci }, "Bot: bulk insert chunk failed"));
+        const chunk     = allOrders.slice(ci, ci + INSERT_CHUNK);
+        const ids       = chunk.map(o => o.id);
+        const symbols   = chunk.map(o => o.symbol);
+        const sides     = chunk.map(o => o.side);
+        const prices    = chunk.map(o => o.price    ?? "0");
+        const qtys      = chunk.map(o => o.quantity);
+        const totals    = chunk.map(o => o.total    ?? "0");
+        const feeAssets = chunk.map(o => o.feeAsset ?? "USDT");
+
+        await pool.query(
+          `INSERT INTO orders
+             (id, symbol, wallet_address, network_type, side, type, status,
+              price, stop_price, quantity, filled_quantity, remaining_quantity,
+              total, fee, fee_asset, time_in_force, is_bot, is_synthetic)
+           SELECT
+             t.id, t.symbol, $8, 'bsv', t.side, 'limit', 'open',
+             t.price, NULL, t.qty, 0, t.qty,
+             t.total, 0, t.fee_asset, 'GTC', TRUE, FALSE
+           FROM unnest($1::text[], $2::text[], $3::text[],
+                       $4::numeric[], $5::numeric[], $6::numeric[], $7::text[])
+                AS t(id, symbol, side, price, qty, total, fee_asset)
+           ON CONFLICT (id) DO NOTHING`,
+          [ids, symbols, sides, prices, qtys, totals, feeAssets, BOT_ADDRESS],
+        ).catch(err => {
+          if (isDbConnError(err)) {
+            logger.warn("liquidityBot: UNNEST insert chunk skipped — transient DB connection error");
+          } else {
+            logger.warn({ err, chunkStart: ci, chunkSize: chunk.length }, "Bot: UNNEST bulk insert chunk failed");
+          }
+        });
       }
     }
 
@@ -335,21 +401,41 @@ async function runCycle(): Promise<void> {
     serviceState.botCycles++;
     logger.info({ markets: activeLen, orders: ordersLen }, "Liquidity bot cycle complete");
   } catch (err) {
-    logger.error({ err }, "Liquidity bot cycle failed");
+    if (isDbConnError(err)) {
+      logger.warn("liquidityBot: cycle skipped — transient DB connection error");
+    } else {
+      logger.error({ err }, "Liquidity bot cycle failed");
+    }
   }
 }
 
 /* ── Public start function ──────────────────────────────────────────────── */
 export function startLiquidityBot(): void {
   logger.info("Liquidity bot starting — seeding order books…");
-  let _busy = false;
 
-  // Await market seeding before the first cycle so the bot always
-  // sees the complete, stable set of active markets from the start.
-  // Subsequent calls to seedMarketsIfNeeded() are near-instant no-ops.
+  // Seed markets (fast no-op after first run) then hand full control to
+  // guardedInterval.  The previous pattern called runCycle() directly before
+  // guardedInterval started, which meant guardedInterval's busy-lock was never
+  // set for that first run.  When the first cycle ran long (many chunks × pool
+  // wait), guardedInterval fired a second concurrent cycle at T+120 s, stacking
+  // multiple cycles and exhausting the connection pool.
+  //
+  // Fix: seed fire-and-forget, then guardedInterval owns ALL cycles starting at
+  // initialDelayMs=500 ms (seed completes well within that window).
   seedMarketsIfNeeded()
-    .then(() => runCycle())
-    .catch(err => logger.warn({ err }, "Liquidity bot: seed-then-first-cycle failed"));
+    .catch(err => logger.warn({ err }, "Liquidity bot: market seed failed (non-fatal)"));
 
-  guardedInterval("liquidity-bot", runCycle, 120_000, { timeoutMs: 110_000 });
+  // initialDelayMs=180_000: wait 3 minutes before the first run so all other
+  // background services can complete their first tick.  The bot fires 500 ms
+  // after startup previously, immediately saturating the pool and causing every
+  // other service to fail and be marked DEAD before they even got a chance to run.
+  //
+  // timeoutMs=300_000: the chunked UNNEST insert for 80 000 orders runs
+  // 8 × 10 K-row batches, each taking ~3–8 s over Neon → ~40–60 s total.
+  // The old 110 s limit was hit every single cycle; the bot timed out without
+  // ever completing, leaving the order book in a partial-delete state.
+  guardedInterval("liquidity-bot", runCycle, 120_000, {
+    timeoutMs:      300_000,
+    initialDelayMs: 180_000,
+  });
 }

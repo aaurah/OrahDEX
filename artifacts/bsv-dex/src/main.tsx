@@ -11,6 +11,9 @@ import { wagmiConfig } from "./lib/reown";
 applyStoredTheme();
 migrateStaleDerivedAddresses();
 
+// Initialize Reown AppKit in the background so the EVM Wallet modal is ready.
+import("./lib/reown-appkit").catch(() => {});
+
 const root = createRoot(document.getElementById("root")!);
 
 root.render(

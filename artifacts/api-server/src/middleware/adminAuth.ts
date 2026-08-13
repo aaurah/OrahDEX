@@ -118,7 +118,12 @@ function hasMatchingAdminToken(token: string): boolean {
 }
 
 export function requireAdminToken(req: Request, res: Response, next: NextFunction): void {
-  const token = (req.headers["x-admin-token"] as string | undefined) ?? "";
+  // Accept token from HttpOnly cookie (preferred) or X-Admin-Token header (legacy).
+  // cookie-parser must be wired in app.ts for req.cookies to be populated.
+  const cookieToken  = (req.cookies as Record<string, string> | undefined)?.admin_session ?? "";
+  const headerToken  = (req.headers["x-admin-token"] as string | undefined) ?? "";
+  const token        = cookieToken || headerToken;
+
   if (!token || !hasMatchingAdminToken(token)) {
     res.status(401).json({ error: "Admin authentication required." });
     return;
@@ -139,3 +144,10 @@ export function isValidAdminToken(token: unknown): boolean {
   }
   return true;
 }
+
+/**
+ * Shared cookie options for the admin_session HttpOnly cookie.
+ * Export allows admin.ts to set the cookie with consistent options.
+ */
+export const ADMIN_COOKIE_NAME = "admin_session";
+export const ADMIN_COOKIE_TTL_MS = TOKEN_TTL_MS;

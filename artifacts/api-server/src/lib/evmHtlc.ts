@@ -54,7 +54,7 @@ import crypto, {
   randomBytes,
 } from "node:crypto";
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { db } from "@workspace/db";
+import { db, withDbRetry } from "@workspace/db";
 import { evmHtlcSessionsTable } from "@workspace/db/schema";
 import { eq, and, lt, notInArray } from "drizzle-orm";
 import {
@@ -68,6 +68,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { logger } from "./logger.js";
+import { isDbConnError } from "./dbErrors.js";
 
 // ── HTLC secret encryption (AES-256-GCM) ─────────────────────────────────────
 // Secrets are encrypted at rest to prevent DB dump / read-replica disclosure.
@@ -105,14 +106,14 @@ function decryptHtlcSecret(stored: string): string {
   if (!stored.includes(":")) return stored;
   const parts = stored.split(":");
   if (parts.length !== 3) {
-    // Malformed encrypted value — log a warning so operators notice.
-    logger.warn({ storedLen: stored.length }, "evmHtlc: malformed encrypted secret (wrong part count) — treating as plaintext");
-    return stored;
+    // Malformed — throw rather than returning garbage as a "secret".
+    // The caller must surface this to the operator; using a corrupt secret
+    // could cause an incorrect HTLC reveal and potential fund loss.
+    throw new Error(`evmHtlc: malformed encrypted secret (${parts.length} parts, expected 3) — db migration required`);
   }
   const [ivHex, tagHex, encHex] = parts;
   if (!ivHex || !tagHex || !encHex) {
-    logger.warn("evmHtlc: malformed encrypted secret (empty part) — treating as plaintext");
-    return stored;
+    throw new Error("evmHtlc: malformed encrypted secret (empty part) — cannot decrypt");
   }
   const key = getHtlcEncryptionKey();
   const d   = createDecipheriv("aes-256-gcm", key, Buffer.from(ivHex, "hex"), { authTagLength: 16 });
@@ -166,7 +167,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
   137: {
     chainId:         137,
     name:            "Polygon Mainnet",
-    rpcUrl:          process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",
+    rpcUrl:          process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com",
     contractAddress: (process.env.EVM_HTLC_CONTRACT_POLYGON as Address | undefined) ?? DEPLOYED_CONTRACT,
     nativeSymbol:    "MATIC",
     blockExplorer:   "https://polygonscan.com",
@@ -256,7 +257,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
   1329: {
     chainId:         1329,
     name:            "Sei",
-    rpcUrl:          process.env.SEI_RPC_URL ?? "https://evm-rpc.sei-apis.com",
+    rpcUrl:          process.env.SEI_RPC_URL ?? "https://sei-evm-rpc.publicnode.com",
     contractAddress: DEPLOYED_CONTRACT,
     nativeSymbol:    "SEI",
     blockExplorer:   "https://seitrace.com",
@@ -662,32 +663,45 @@ export async function startEvmHtlcWatcher(): Promise<void> {
 
   logger.info("evmHtlc: EVM HTLC watcher starting (30 s poll interval)");
 
+  let pollRunning = false;
   setInterval(() => {
-    pollEvmHtlcSessions().catch(err =>
-      logger.warn({ err }, "evmHtlc: poll cycle error")
-    );
+    if (pollRunning) return;
+    pollRunning = true;
+    pollEvmHtlcSessions()
+      .catch(err => isDbConnError(err)
+        ? logger.debug({ err }, "evmHtlc: poll cycle DB connect error (already handled)")
+        : logger.warn({ err }, "evmHtlc: poll cycle error"))
+      .finally(() => { pollRunning = false; });
   }, 30_000);
 }
 
 async function pollEvmHtlcSessions(): Promise<void> {
   const now = new Date();
 
-  const sessions = await db
-    .select()
-    .from(evmHtlcSessionsTable)
-    .where(
-      and(
-        notInArray(evmHtlcSessionsTable.status, TERMINAL_STATUSES),
-      )
+  let sessions: (typeof evmHtlcSessionsTable.$inferSelect)[];
+  try {
+    sessions = await withDbRetry(() =>
+      db.select()
+        .from(evmHtlcSessionsTable)
+        .where(and(notInArray(evmHtlcSessionsTable.status, TERMINAL_STATUSES)))
     );
+  } catch (err) {
+    if (isDbConnError(err)) {
+      logger.warn("evmHtlc: DB unavailable, skipping poll cycle");
+    } else {
+      logger.error({ err }, "evmHtlc: unexpected DB error in poll cycle");
+    }
+    return;
+  }
 
   for (const session of sessions) {
     // Check expiry
     if (session.expiresAt < now) {
-      await db
-        .update(evmHtlcSessionsTable)
-        .set({ status: "EXPIRED", updatedAt: new Date() })
-        .where(eq(evmHtlcSessionsTable.id, session.id));
+      await withDbRetry(() =>
+        db.update(evmHtlcSessionsTable)
+          .set({ status: "EXPIRED", updatedAt: new Date() })
+          .where(eq(evmHtlcSessionsTable.id, session.id))
+      );
       logger.info({ sessionId: session.id, tradeId: session.tradeId }, "evmHtlc: session expired");
       continue;
     }

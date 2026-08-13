@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Cable, Image, Target, TrendingUp, Copy, Repeat2, Waves, Users, Wallet, Flame } from "lucide-react";
+import { BarChart2, Briefcase, Settings, ArrowRightLeft, Layers, Sun, Moon, MonitorSmartphone, Circle, MessageCircle, QrCode, Image, Target, TrendingUp, Copy, Waves, Users, Wallet, Flame } from "lucide-react";
 
 import { BrandLogo } from "@/components/BrandLogo";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
@@ -47,6 +47,13 @@ export function MobileLayout({ children }: { children: React.ReactNode }) {
     window.addEventListener("mobile:openChat", handler);
     return () => window.removeEventListener("mobile:openChat", handler);
   }, []);
+
+  /* Sync Reown AppKit modal theme whenever OrahDEX theme changes on mobile */
+  useEffect(() => {
+    import("@/lib/reown-appkit").then(({ syncReownTheme }) => {
+      syncReownTheme(theme as "dark" | "light" | "amoled" | "system");
+    }).catch(() => {});
+  }, [theme]);
 
   const isActive = (tab: { matchPrefix: string }) => {
     if (location === "/" && tab.matchPrefix === "/markets") return true;

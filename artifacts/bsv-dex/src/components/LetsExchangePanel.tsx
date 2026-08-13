@@ -70,6 +70,7 @@ interface Estimate {
   deposit_min_amount?: string;
   deposit_max_amount?: string;
   best_venue?: string;      // winning venue from meta-router
+  stale?: boolean;          // true when rate is from DB cache (all live APIs failed)
 }
 
 // Response from POST /v1/transaction (normalised across all venues)
@@ -134,14 +135,19 @@ let _coinsCache: LeCoin[] | null = null;
 let _coinsCacheTs = 0;
 let _coinsInflight: Promise<LeCoin[]> | null = null;
 
+// Only treat a response as authoritative once it exceeds the built-in fallback
+// size (331 coins). Anything smaller is likely the cold-cache fallback and
+// should not be cached — the next call will re-fetch and get the live list.
+const LIVE_COIN_THRESHOLD = 400;
+
 async function fetchCoins(): Promise<LeCoin[]> {
-  // Only use cache when it has real data — never cache an empty list
-  if (_coinsCache && _coinsCache.length > 0 && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
+  // Only use cache when it has the full live list (> 400 coins)
+  if (_coinsCache && _coinsCache.length >= LIVE_COIN_THRESHOLD && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
   if (_coinsInflight) return _coinsInflight;
   _coinsInflight = fetch(`${API}/letsexchange/currencies`)
     .then(r => { if (!r.ok) throw new Error("currencies failed"); return r.json(); })
     .then((d: LeCoin[]) => {
-      if (d.length > 0) {         // only cache a real non-empty response
+      if (d.length >= LIVE_COIN_THRESHOLD) { // only cache the full live list
         _coinsCache = d;
         _coinsCacheTs = Date.now();
       }
@@ -276,11 +282,11 @@ function CoinPicker({ coins, selected, onChange, exclude, compact }: {
   const filtered = useMemo(() => {
     const qq = q.toLowerCase().trim();
     const list = exclude ? coins.filter(c => c.symbol !== exclude) : coins;
-    if (!qq) return list.slice(0, 120);
+    if (!qq) return list;
     return list.filter(c =>
       c.symbol.toLowerCase().includes(qq) || c.name.toLowerCase().includes(qq) ||
       (c.networkName ?? "").toLowerCase().includes(qq)
-    ).slice(0, 80);
+    );
   }, [coins, q, exclude]);
 
   return (
@@ -384,12 +390,13 @@ function Countdown({ seconds, onEnd }: { seconds: number; onEnd: () => void }) {
 
 // ─── Step 1: Amount ───────────────────────────────────────────────────────────
 
-function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }: {
+function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, forceVenue }: {
   coins: LeCoin[];
   onContinue: (from: LeCoin, to: LeCoin, amount: string, estimate: Estimate|null) => void;
   initialFrom?: string;
   initialTo?: string;
   walletAddress?: string | null;
+  forceVenue?: string;
 }) {
   const [fromCoin, setFromCoin] = useState<LeCoin|null>(null);
   const [toCoin,   setToCoin]   = useState<LeCoin|null>(null);
@@ -489,6 +496,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
           network_to:   toCoin.network   ?? toCoin.symbol,
           amount:       parseFloat(amount),
           float:        true,
+          ...(forceVenue ? { force_venue: forceVenue } : {}),
         }),
       });
       const d = await r.json();
@@ -680,23 +688,37 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress }
         </div>
         {/* Rate + venue badge */}
         {estimate && fromCoin && toCoin && (
-          <div className="flex items-center gap-2 mt-2 flex-wrap">
-            <span className="text-[11px] text-muted-foreground">
-              1 {fromCoin.symbol} ≈ <span className="text-emerald-400/80 font-mono">{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
-            </span>
-            <span className={cn(
-              "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold",
-              estimate.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/30 text-sky-400" :
-              estimate.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
-              estimate.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/30 text-orange-400" :
-              "bg-violet-500/10 border-violet-500/30 text-violet-400"
-            )}>
-              ⚡ {VENUE_LABELS[estimate.best_venue ?? ""] ?? "OrahRouter"}
-            </span>
-            {estimate.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && (
-              <span className="text-[10px] text-muted-foreground/50 ml-auto">
-                Fee: <span className="font-mono">{fmtNum(estimate.withdrawal_fee, 6)} {toCoin.symbol}</span>
+          <div className="flex flex-col gap-1.5 mt-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-muted-foreground">
+                1 {fromCoin.symbol} ≈ <span className={cn("font-mono", estimate.stale ? "text-amber-400/80" : "text-emerald-400/80")}>{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
               </span>
+              {estimate.stale ? (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold bg-amber-500/10 border-amber-500/30 text-amber-400">
+                  <Clock className="w-2.5 h-2.5" /> Cached rate
+                </span>
+              ) : (
+                <span className={cn(
+                  "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold",
+                  estimate.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/30 text-sky-400" :
+                  estimate.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
+                  estimate.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/30 text-orange-400" :
+                  "bg-violet-500/10 border-violet-500/30 text-violet-400"
+                )}>
+                  ⚡ {VENUE_LABELS[estimate.best_venue ?? ""] ?? "OrahRouter"}
+                </span>
+              )}
+              {estimate.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && (
+                <span className="text-[10px] text-muted-foreground/50 ml-auto">
+                  Fee: <span className="font-mono">{fmtNum(estimate.withdrawal_fee, 6)} {toCoin.symbol}</span>
+                </span>
+              )}
+            </div>
+            {estimate.stale && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-500/8 border border-amber-500/20 text-[10px] text-amber-400/80">
+                <AlertTriangle className="w-3 h-3 shrink-0" />
+                Live rates temporarily unavailable — using last known rate. Swap will use best live price at execution.
+              </div>
             )}
           </div>
         )}
@@ -1507,12 +1529,14 @@ export function LetsExchangePanel({
   walletAddress,
   onConnectWallet,
   onExchangeCreated,
+  forceVenue,
 }: {
   initialFrom?: string;
   initialTo?: string;
   walletAddress?: string | null;
   onConnectWallet?: () => void;
   onExchangeCreated?: (fill: { price: number; side: "buy" | "sell" }) => void;
+  forceVenue?: string;
 } = {}) {
   const [coins,    setCoins]    = useState<LeCoin[]>([]);
   const [coinsErr, setCoinsErr] = useState(false);
@@ -1529,10 +1553,41 @@ export function LetsExchangePanel({
 
   useEffect(() => {
     let cancelled = false;
-    fetchCoins()
-      .then(d => { if (!cancelled) { setCoins(d); setLoading(false); } })
-      .catch(() => { if (!cancelled) { setCoinsErr(true); setLoading(false); } });
-    return () => { cancelled = true; };
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let attempts = 0;
+    const MAX_RETRIES = 4;
+
+    function load() {
+      attempts++;
+      fetchCoins()
+        .then(d => {
+          if (cancelled) return;
+          setCoins(d);
+          setLoading(false);
+          // Got the cold-start fallback (< LIVE_COIN_THRESHOLD) — retry in 5 s
+          // to pick up the full live list once the server finishes pagination.
+          if (d.length < LIVE_COIN_THRESHOLD && attempts <= MAX_RETRIES) {
+            retryTimer = setTimeout(() => {
+              if (cancelled) return;
+              fetchCoins().then(fresh => {
+                if (!cancelled && fresh.length > d.length) setCoins(fresh);
+              }).catch(() => {});
+            }, 5000);
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          if (attempts < MAX_RETRIES) {
+            // Retry after a short back-off (e.g. momentary 429 from logo storm)
+            retryTimer = setTimeout(() => { if (!cancelled) load(); }, 3000);
+          } else {
+            setCoinsErr(true);
+            setLoading(false);
+          }
+        });
+    }
+    load();
+    return () => { cancelled = true; if (retryTimer) clearTimeout(retryTimer); };
   }, []);
 
   const handleAmountContinue = (from: LeCoin, to: LeCoin, amt: string, est: Estimate|null) => {
@@ -1653,7 +1708,7 @@ export function LetsExchangePanel({
               </div>
             )}
 
-            {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} walletAddress={walletAddress} />}
+            {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} walletAddress={walletAddress} forceVenue={forceVenue} />}
             {step === 2 && fromCoin && toCoin && (
               <StepAddress fromCoin={fromCoin} toCoin={toCoin} amount={sendAmount} estimate={estimate}
                 onBack={() => setStep(1)} onContinue={handleAddressContinue}

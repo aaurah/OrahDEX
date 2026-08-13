@@ -16,6 +16,7 @@ import { creditAvailable } from "../lib/ledger.js";
 import { pool } from "@workspace/db";
 import { getOrCreateWallet } from "../lib/bsvWallet.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { getBsvChainStatus } from "../lib/bsvChainMonitor.js";
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
@@ -536,6 +537,65 @@ router.post("/deposit/solana-verify", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "deposit/solana-verify: failed");
     res.status(500).json({ error: "Failed to verify Solana transaction" });
+  }
+});
+
+// ── GET /deposit/bsv-pending?walletAddress={evm_address} ──────────────────────
+// Returns pending and recently confirmed BSV deposits tracked by the SPV
+// mempool watcher for the user's internal BSV wallet addresses.
+router.get("/deposit/bsv-pending", async (req, res) => {
+  const walletAddress = (req.query.walletAddress as string | undefined)?.trim();
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+
+  try {
+    const [chainStatus, { rows }] = await Promise.all([
+      getBsvChainStatus(),
+      pool.query<{
+        txid:         string;
+        bsv_address:  string;
+        amount_sat:   string;
+        status:       string;
+        block_height: number | null;
+        detected_at:  Date;
+        confirmed_at: Date | null;
+      }>(
+        `SELECT txid, bsv_address, amount_sat::text, status, block_height,
+                detected_at, confirmed_at
+         FROM bsv_pending_deposits
+         WHERE user_wallet = $1
+           AND status IN ('mempool', 'confirmed')
+           AND detected_at > NOW() - INTERVAL '48 hours'
+         ORDER BY detected_at DESC
+         LIMIT 20`,
+        [walletAddress],
+      ),
+    ]);
+
+    const chainHeight = chainStatus.blockHeight > 0 ? chainStatus.blockHeight : null;
+
+    const items = rows.map(r => ({
+      txid:         r.txid,
+      bsvAddress:   r.bsv_address,
+      amountSat:    Number(r.amount_sat),
+      amountBsv:    (Number(r.amount_sat) / 1e8).toFixed(8),
+      status:       r.status,
+      blockHeight:  r.block_height,
+      chainHeight,
+      confirmations: (r.block_height && chainHeight)
+        ? Math.max(0, chainHeight - r.block_height + 1)
+        : null,
+      detectedAt:   r.detected_at.toISOString(),
+      confirmedAt:  r.confirmed_at?.toISOString() ?? null,
+      explorerUrl:  `${BSV_NET.explorer}/tx/${r.txid}`,
+    }));
+
+    res.json(items);
+  } catch (err) {
+    req.log.error({ err }, "deposit/bsv-pending: failed");
+    res.status(500).json({ error: "Failed to fetch pending BSV deposits" });
   }
 });
 

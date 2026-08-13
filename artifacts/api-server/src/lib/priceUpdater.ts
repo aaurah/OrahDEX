@@ -1,13 +1,14 @@
-import { db, pool } from "@workspace/db";
+import { db, pool, withDbRetry } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
-import { eq, desc, gte, inArray, notInArray, and, sql } from "drizzle-orm";
+import { eq, desc, gte, inArray, and, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
-import { guardedInterval } from "./selfHealing.js";
+import { guardedInterval, withRetry } from "./selfHealing.js";
 import { triggerStopOrders } from "./stopOrderEngine.js";
 import { serviceState } from "./serviceState.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { updateGenesisPrice } from "../routes/virtualAmm.js";
 import { getCachedLEPrices, warmLEPriceCache, leRequest, fetchLEKeyPricesIfNeeded } from "./lePriceCache.js";
+import { fetchSSCurrencies, isSimpleSwapConfigured } from "./simpleswap.js";
 
 /** Format a price with enough decimal places so sub-satoshi values aren't lost.
  *  e.g. 4.2e-12 → "0.0000000000042000" rather than "0.00000000"
@@ -35,7 +36,7 @@ export const COINGECKO_IDS: Record<string, string> = {
   DOGE:  "dogecoin",
   DOT:   "polkadot",
   AVAX:  "avalanche-2",
-  MATIC: "matic-network",
+  MATIC: "polygon-ecosystem-token", // renamed from matic-network after POL rebrand
   LINK:  "chainlink",
   UNI:   "uniswap",
   ATOM:  "cosmos",
@@ -134,7 +135,7 @@ export const COINGECKO_IDS: Record<string, string> = {
   MEME:  "memecoin-2",
   NOT:   "notcoin",
   HMSTR: "hamster-kombat",
-  DOGS:  "dogs",
+  DOGS:  "dogs-2", // CoinGecko canonical ID post-rebrand
   EIGEN: "eigenlayer",
   LMWR:  "limewire-token",
   // L2 / bridge tokens
@@ -149,6 +150,7 @@ export const COINGECKO_IDS: Record<string, string> = {
   METIS: "metis-token",
   // Gaming / Metaverse
   APE:   "apecoin",
+  A8:    "ancient8",
   AXS:   "axie-infinity",
   ENJ:   "enjincoin",
   GALA:  "gala",
@@ -431,6 +433,50 @@ interface CoinGeckoPrice {
   usd_market_cap: number;
 }
 
+/* ── CoinGecko free-tier batch price fetch ─────────────────────────────────
+ * Works in all cloud environments including Replit (unlike Binance).
+ * Fetches prices + real 24h change for every symbol in COINGECKO_IDS in one
+ * HTTP call. Results cached for 55 s so concurrent callers share the response.
+ */
+let _cgCacheTs = 0;
+let _cgCache: Record<string, CoinGeckoPrice> = {};
+const CG_CACHE_MS = 55_000;
+
+/** Market cap (USD) per symbol — populated on each successful CG simple/price call. */
+export const cgMarketCapCache = new Map<string, number>();
+
+export async function fetchCoinGeckoPrices(): Promise<Record<string, CoinGeckoPrice>> {
+  if (Date.now() - _cgCacheTs < CG_CACHE_MS && Object.keys(_cgCache).length > 0) {
+    return _cgCache;
+  }
+  const ids = Object.values(COINGECKO_IDS).join(",");
+  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+  if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
+  const data = await res.json() as Record<string, { usd?: number; usd_24h_change?: number; usd_24h_vol?: number; usd_market_cap?: number }>;
+
+  // Reverse-map: geckoId → our symbol
+  const idToSym: Record<string, string> = {};
+  for (const [sym, id] of Object.entries(COINGECKO_IDS)) idToSym[id] = sym;
+
+  const out: Record<string, CoinGeckoPrice> = {};
+  for (const [id, v] of Object.entries(data)) {
+    const sym = idToSym[id];
+    if (!sym || !v.usd || v.usd <= 0) continue;
+    const cap = v.usd_market_cap ?? 0;
+    out[sym] = {
+      usd:            v.usd,
+      usd_24h_change: v.usd_24h_change ?? 0,
+      usd_24h_vol:    v.usd_24h_vol   ?? v.usd * 500_000,
+      usd_market_cap: cap,
+    };
+    if (cap > 0) cgMarketCapCache.set(sym, cap);
+  }
+  _cgCache = out;
+  _cgCacheTs = Date.now();
+  return out;
+}
+
 /**
  * Last-known-good BSV price from WhatsOnChain.
  * Persists across fetchSovereignPrices() calls so a WOC timeout uses the
@@ -453,10 +499,24 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
   const out: Record<string, CoinGeckoPrice> = {};
 
   // ── 1. Binance public 24h ticker (all USDT pairs) ──────────────────────────
+  // Retried once on timeout before falling through to the LetsExchange fallback.
   try {
-    const res = await fetch("https://api.binance.com/api/v3/ticker/24hr", {
-      signal: AbortSignal.timeout(6000),
-    });
+    // Single attempt with a 5 s timeout.
+    // In the Replit environment Binance is network-blocked so a connection
+    // error is immediate; a short timeout burns minimal time before the LE
+    // fallback path runs.  In production Binance responds in < 2 s so the
+    // cap never triggers.  Two attempts (the old setting) wasted ~25 s per
+    // cycle in dev and caused the price-updater to reliably exceed its 55 s
+    // timeout, marking it Dead after every run.
+    const res = await withRetry(
+      () => fetch("https://api.binance.com/api/v3/ticker/24hr", {
+        // 2 s: Binance responds in <2 s when reachable; anything longer means
+        // the host is blocked or dropping packets, so cut losses and fall through
+        // to the LetsExchange fallback instead of burning 5 s per cycle.
+        signal: AbortSignal.timeout(2_000),
+      }),
+      { maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
+    );
     if (res.ok) {
       const tickers = await res.json() as Array<{
         symbol: string;
@@ -507,6 +567,26 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     }
   }
 
+  // ── 1c. CoinGecko — live prices + real 24h change for 150+ coins ─────────
+  // Works in all cloud environments (Binance blocked in Replit).
+  // Fills symbols that LE didn't cover and upgrades zero-change entries.
+  try {
+    const cgPrices = await fetchCoinGeckoPrices();
+    let cgNew = 0;
+    for (const [sym, data] of Object.entries(cgPrices)) {
+      if (!out[sym]) {
+        out[sym] = data;
+        cgNew++;
+      } else if (out[sym].usd_24h_change === 0 && data.usd_24h_change !== 0) {
+        out[sym].usd_24h_change = data.usd_24h_change;
+        if (out[sym].usd <= 0 && data.usd > 0) out[sym].usd = data.usd;
+      }
+    }
+    logger.info({ new: cgNew, total: Object.keys(cgPrices).length }, "CoinGecko prices loaded");
+  } catch (err) {
+    logger.warn({ err }, "CoinGecko price fetch failed — continuing with LE + FALLBACK");
+  }
+
   // ── 2. BSV via WhatsOnChain exchange rate ─────────────────────────────────
   try {
     const bsvRes = await fetch(`${BSV_NET.wocBase}/exchangerate`, {
@@ -545,18 +625,26 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
   // VAMM-generated trades have simulated prices that diverge from market rates.
   // Only use own-trade data to augment trading volume, never to replace the
   // Binance reference price for coins that Binance already covers.
+  // Guarded with a 5 s Promise.race: withDbRetry can wait up to 63 s under
+  // pool exhaustion (4 attempts × 15 s connectionTimeoutMillis); bailing out
+  // early keeps fetchSovereignPrices() well under the 120 s tick budget.
   try {
     const since = new Date(Date.now() - 60 * 60 * 1000); // last 1 hour
-    const recentTrades = await db
-      .select({
-        symbol:    tradesTable.symbol,
-        price:     tradesTable.price,
-        total:     tradesTable.total,
-        timestamp: tradesTable.timestamp,
-      })
-      .from(tradesTable)
-      .where(gte(tradesTable.timestamp, since))
-      .orderBy(desc(tradesTable.timestamp));
+    const recentTrades = await Promise.race([
+      db
+        .select({
+          symbol:    tradesTable.symbol,
+          price:     tradesTable.price,
+          total:     tradesTable.total,
+          timestamp: tradesTable.timestamp,
+        })
+        .from(tradesTable)
+        .where(gte(tradesTable.timestamp, since))
+        .orderBy(desc(tradesTable.timestamp)),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("own-trades overlay timed out after 5s")), 5_000)
+      ),
+    ]);
 
     for (const trade of recentTrades) {
       const parts = trade.symbol.split("/");
@@ -654,7 +742,7 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
  *   Mid-caps:     ±8%         (DeFi, L2, gaming, …)
  *   Small/meme:   ±15%        (DOGE, SHIB, PEPE, BOME, DOGS, …)
  */
-function simulateDailyChange(symbol: string): number {
+export function simulateDailyChange(symbol: string): number {
   // Stablecoins never move
   const STABLES = new Set(["USDT","USDC","BUSD","TUSD","USDD","DAI","FDUSD","USDP","GUSD","LUSD","FRAX","CRVUSD","PYUSD"]);
   if (STABLES.has(symbol)) return 0;
@@ -686,66 +774,67 @@ function simulateDailyChange(symbol: string): number {
   return Math.max(-vol, Math.min(vol, parseFloat(raw.toFixed(2))));
 }
 
-// Default fallback prices (approximate) when Binance is down — updated Apr 2026
+// Default fallback prices — last resort when all live APIs are unavailable.
+// Updated Jun 2026. CoinGecko / LE / WhatsOnChain take priority at runtime.
 export const FALLBACK_PRICES: Record<string, number> = {
   // ── Top L1s ─────────────────────────────────────────────────────────────────
-  BSV:16,BTC:95000,ETH:2400,SOL:150,XRP:0.60,BNB:600,ADA:0.45,
-  DOGE:0.12,DOT:6.8,AVAX:18,MATIC:0.32,LINK:14.5,UNI:6.2,ATOM:4.2,
-  LTC:82,BCH:320,TRX:0.24,ETC:18,NEAR:2.4,ICP:7.5,VET:0.022,FIL:3.5,
-  SAND:0.25,MANA:0.25,APT:5.0,ARB:0.42,OP:0.70,SUI:2.2,INJ:16,
-  PEPE:0.0000085,SHIB:0.0000110,
+  BSV:12,BTC:59000,ETH:1577,SOL:73,XRP:1.04,BNB:547,ADA:0.144,
+  DOGE:0.072,DOT:0.81,AVAX:6.55,MATIC:0.14,LINK:7.24,UNI:3.80,ATOM:1.51,
+  LTC:42,BCH:200,TRX:0.11,ETC:6.98,NEAR:1.84,ICP:2.12,VET:0.0044,FIL:0.72,
+  SAND:0.047,MANA:0.062,APT:0.565,ARB:0.074,OP:0.40,SUI:1.50,INJ:4.59,
+  PEPE:0.0000068,SHIB:0.0000088,
   // ── DeFi ─────────────────────────────────────────────────────────────────────
-  MKR:1800,AAVE:130,CRV:0.27,ENS:17,LDO:0.90,SUSHI:0.60,COMP:43,
-  GRT:0.12,SNX:1.5,YFI:5500,RUNE:1.5,BAL:3.2,GMX:25,DYDX:1.24,
-  PENDLE:3.5,CVX:2.8,FXS:2.1,SPELL:0.00082,PERP:0.42,CAKE:2.24,ALPACA:0.00046,
+  MKR:1236,AAVE:89,CRV:0.187,ENS:12,LDO:0.248,SUSHI:0.45,COMP:15.52,
+  GRT:0.0177,SNX:0.209,YFI:1614,RUNE:1.20,BAL:0.089,GMX:5.51,DYDX:0.162,
+  PENDLE:1.31,CVX:1.07,FXS:0.233,SPELL:0.00055,PERP:0.30,CAKE:1.30,ALPACA:0.00030,
   // ── L1 alts ──────────────────────────────────────────────────────────────────
-  FTM:0.20,ALGO:0.14,XLM:0.11,HBAR:0.17,EGLD:25,THETA:0.90,EOS:0.60,
-  ZEC:30,DASH:27,XMR:155,CRO:0.09,AERO:1.2,
-  KAVA:0.48,ONE:0.012,ZIL:0.012,ICX:0.16,WAVES:1.5,NEO:8.5,
-  CFX:0.10,ROSE:0.048,FLR:0.014,CELO:0.48,CKB:0.012,CORE:0.85,
-  BTT:0.00000085,XDC:0.042,GLMR:0.14,MOVR:8.5,KDA:0.75,ZEN:9.5,
-  TON:2.8,KAS:0.085,SEI:0.24,TIA:3.5,
+  FTM:0.0275,ALGO:0.085,XLM:0.178,HBAR:0.070,EGLD:2.55,THETA:0.129,EOS:0.061,
+  ZEC:390,DASH:33,XMR:308,CRO:0.054,AERO:0.60,
+  KAVA:0.32,ONE:0.009,ZIL:0.009,ICX:0.10,WAVES:0.80,NEO:5.0,
+  CFX:0.07,ROSE:0.030,FLR:0.009,CELO:0.35,CKB:0.008,CORE:0.50,
+  BTT:0.00000060,XDC:0.030,GLMR:0.08,MOVR:4.0,KDA:0.40,ZEN:7.0,
+  TON:2.60,KAS:0.031,SEI:0.049,TIA:0.368,
   // ── L2 / Scaling ─────────────────────────────────────────────────────────────
-  BASE:0.85,LINEA:0.05,ZK:0.15,SCR:0.52,MNT:1.02,
-  STRK:0.42,IMX:1.85,BOBA:0.18,METIS:28,
-  "1INCH":0.35,ZRO:2.52,RETH:3980,
-  DAI:1.00,WBTC:83000,WSTETH:3200,
+  BASE:0.50,LINEA:0.03,ZK:0.08,SCR:0.027,MNT:0.421,
+  STRK:0.029,IMX:0.117,BOBA:0.020,METIS:2.65,
+  "1INCH":0.067,ZRO:0.794,RETH:1690,
+  DAI:1.00,WBTC:59000,WSTETH:1845,
   // ── Solana ecosystem ─────────────────────────────────────────────────────────
-  BONK:0.0000248,WIF:0.892,JUP:0.842,PYTH:0.382,JTO:2.42,ORCA:2.84,
-  BOME:0.00842,RAY:2.12,MSOL:172,W:0.24,TNSR:0.35,
+  BONK:0.0000145,WIF:0.50,JUP:0.45,PYTH:0.20,JTO:1.20,ORCA:1.40,
+  BOME:0.0040,RAY:1.20,MSOL:80,W:0.12,TNSR:0.18,
   // ── AI / DePIN ───────────────────────────────────────────────────────────────
-  FET:1.82,AGIX:0.892,OCEAN:0.612,RNDR:7.42,TAO:482,ARKM:1.84,NMR:18.2,
-  ORAI:4.82,CTXC:0.142,WLD:2.84,ALT:0.18,
-  HNT:8.42,IOTX:0.042,GLM:0.28,STORJ:0.45,POWR:0.22,LPT:7.5,
+  FET:0.170,AGIX:0.45,OCEAN:0.30,RNDR:2.80,TAO:203,ARKM:0.90,NMR:10,
+  ORAI:2.40,CTXC:0.07,WLD:1.00,ALT:0.09,
+  HNT:4.0,IOTX:0.020,GLM:0.14,STORJ:0.20,POWR:0.10,LPT:3.50,
   // ── Gaming / Metaverse ───────────────────────────────────────────────────────
-  APE:1.25,AXS:6.82,ENJ:0.18,GALA:0.022,ILV:35,ALICE:0.82,TLM:0.012,SLP:0.0028,
-  WAXP:0.042,PIXEL:0.14,BIGTIME:0.082,BEAM:0.018,PRIME:2.8,RON:2.42,
-  MC:0.12,GODS:0.082,
+  APE:0.145,A8:0.06,AXS:0.965,ENJ:0.09,GALA:0.012,ILV:2.93,ALICE:0.119,TLM:0.006,SLP:0.000456,
+  WAXP:0.025,PIXEL:0.0046,BIGTIME:0.035,BEAM:0.008,PRIME:0.238,RON:1.20,
+  MC:0.012,GODS:0.040,
   // ── Cosmos ecosystem ─────────────────────────────────────────────────────────
-  OSMO:0.48,STARS:0.0085,JUNO:0.28,EVMOS:0.018,STRD:0.82,
-  AKT:2.8,SCRT:0.38,LUNA:0.42,LUNC:0.000085,DYM:2.1,NTRN:0.42,BAND:1.2,
+  OSMO:0.036,STARS:0.000069,JUNO:0.024,EVMOS:0.008,STRD:0.30,
+  AKT:1.20,SCRT:0.20,LUNA:0.047,LUNC:0.0000592,DYM:0.015,NTRN:0.00098,BAND:0.140,
   // ── RWA ──────────────────────────────────────────────────────────────────────
-  ONDO:0.85,PAXG:2182,XAUT:2182,CFG:0.42,MPL:14,
+  ONDO:0.309,PAXG:4023,XAUT:4019,CFG:0.20,MPL:8.0,
   // ── Exchange tokens ──────────────────────────────────────────────────────────
-  OKB:42,GT:6.5,KCS:8.5,HT:2.8,BGB:3.5,WBT:22,
+  OKB:78,GT:6.45,KCS:6.92,HT:0.081,BGB:1.61,WBT:47,
   // ── BRC-20 / Ordinals ────────────────────────────────────────────────────────
-  ORDI:28,SATS:0.00000035,"1000SATS":0.00000035,RATS:0.00000042,
+  ORDI:3.65,SATS:0.00000020,"1000SATS":0.00000020,RATS:0.00000025,
   // ── Polkadot ecosystem ───────────────────────────────────────────────────────
-  KSM:22,ACA:0.052,ASTR:0.042,PHA:0.082,
+  KSM:12,ACA:0.030,ASTR:0.025,PHA:0.040,
   // ── Meme / culture ───────────────────────────────────────────────────────────
-  TRUMP:15,STX:1.52,FLOKI:0.000152,TURBO:0.0082,MOG:0.0000082,
-  POPCAT:0.84,MEW:0.0058,NEIRO:0.00048,BABYDOGE:0.0000000018,
-  MEME:0.012,NOT:0.0082,HMSTR:0.0014,DOGS:0.00048,EIGEN:2.42,LMWR:0.021,
+  TRUMP:8,STX:0.60,FLOKI:0.0000850,TURBO:0.0040,MOG:0.0000042,
+  POPCAT:0.35,MEW:0.0030,NEIRO:0.00022,BABYDOGE:0.0000000010,
+  MEME:0.005,NOT:0.0035,HMSTR:0.00060,DOGS:0.00020,EIGEN:1.10,LMWR:0.010,
   // ── Polygon ecosystem tokens ─────────────────────────────────────────────────
-  GHST:1.42,QUICK:0.042,DFYN:0.048,DQUICK:82.4,
+  GHST:0.60,QUICK:0.020,DFYN:0.020,DQUICK:45,
   // ── Stablecoins / other ──────────────────────────────────────────────────────
   USDT:1,USDC:1,TUSD:1,USDD:1,BUSD:1,
   // ── Base chain assets ────────────────────────────────────────────────────────
-  CBBTC:95000,CBETH:2400,BRETT:0.114,TOSHI:0.000185,DEGEN:0.0084,
-  HIGHER:0.00215,MORPHO:1.82,MOONWELL:0.182,SEAM:4.82,
-  BALD:0.00284,NORMIE:0.00182,
+  CBBTC:59000,CBETH:1577,BRETT:0.060,TOSHI:0.000090,DEGEN:0.0040,
+  HIGHER:0.00100,MORPHO:0.80,MOONWELL:0.080,SEAM:2.00,
+  BALD:0.00120,NORMIE:0.00080,
   // ── Zora ecosystem ───────────────────────────────────────────────────────────
-  ZORA:0.00182,ENJOY:0.000042,BUILD:0.000285,
+  ZORA:0.00090,ENJOY:0.000020,BUILD:0.000140,
 };
 
 export async function seedMarketsIfNeeded() {
@@ -765,7 +854,9 @@ export async function seedMarketsIfNeeded() {
     }
 
     // Fetch only the symbol column so we don't load full rows for 36K+ LE pairs
-    const existingRows = await db.select({ symbol: marketsTable.symbol }).from(marketsTable);
+    const existingRows = await withDbRetry(() =>
+      db.select({ symbol: marketsTable.symbol }).from(marketsTable)
+    );
     const existingSymbols = new Set(existingRows.map(m => m.symbol));
 
     const toInsert: any[] = [];
@@ -995,7 +1086,9 @@ export async function seedLEPairsIfNeeded() {
     const bnbUSD  = lePrices["BNB"]  ?? FALLBACK_PRICES["BNB"]  ?? 600;
 
     // Existing DB symbols (to avoid duplicates)
-    const existing = await db.select({ symbol: marketsTable.symbol }).from(marketsTable);
+    const existing = await withDbRetry(() =>
+      db.select({ symbol: marketsTable.symbol }).from(marketsTable)
+    );
     const existingSymbols = new Set(existing.map(r => r.symbol));
 
     const toInsert: any[] = [];
@@ -1109,7 +1202,7 @@ export async function seedLEPairsIfNeeded() {
  *   3. For every (base, quote) pair where base ≠ quote, compute price = baseUSD / quoteUSD.
  *   4. Upsert in 500-row DB chunks (no giant transactions).
  */
-export async function syncAllLEPairs(): Promise<{ coins: number; inserted: number; updated: number; quotes: number }> {
+export async function syncAllLEPairs(): Promise<{ coins: number; inserted: number; updated: number; deleted: number; quotes: number }> {
   const { getBuiltInLeCoins } = await import("./leAllCoins.js");
 
   // 1. Determine coin list — live API preferred, built-in fallback
@@ -1207,11 +1300,227 @@ export async function syncAllLEPairs(): Promise<{ coins: number; inserted: numbe
     }
   }
 
+  // ── Tombstone: remove LE markets whose base or quote coin was dropped from LE ─
+  // Pass the live coin ticker list as a PostgreSQL text[] array so PostgreSQL can
+  // evaluate != ALL(array) inline without a gigantic IN(...) clause.
+  const delResult = await pool.query<{ rowcount: number }>(
+    `DELETE FROM markets
+     WHERE type = 'letsexchange'
+       AND (base_asset != ALL($1::text[]) OR quote_asset != ALL($1::text[]))`,
+    [coinTickers],
+  );
+  const deleted = delResult.rowCount ?? 0;
+
   logger.info(
-    { coins: coinTickers.length, totalPairs, inserted, source },
+    { coins: coinTickers.length, totalPairs, inserted, deleted, source },
     "LE all-to-all pairs sync complete",
   );
-  return { coins: coinTickers.length, inserted, updated, quotes: coinTickers.length - 1 };
+  return { coins: coinTickers.length, inserted, updated, deleted, quotes: coinTickers.length - 1 };
+}
+
+/**
+ * syncNewLECoins — lightweight incremental sync for newly-listed LE coins.
+ *
+ * Runs every 4 hours automatically. Fetches the live LE /v2/coins list,
+ * compares it with coins already in the DB, and only inserts pairs for
+ * genuinely new coins. This means:
+ *   - New LetsExchange coins are permanently added within 4 hours automatically
+ *   - No manual admin le-sync required for new listings
+ *   - Much cheaper than full syncAllLEPairs (only N×new_coins rows, not N²)
+ *   - onConflictDoNothing — safe to run at any time, never clobbers live prices
+ */
+export async function syncNewLECoins(): Promise<{ newCoins: number; inserted: number }> {
+  // 1. Fetch live LE coin list
+  let liveCoins: string[] = [];
+  try {
+    const res = await leRequest("/v2/coins");
+    if (res.ok && Array.isArray(res.data) && res.data.length > 0) {
+      const seen = new Set<string>();
+      for (const item of res.data as Record<string, unknown>[]) {
+        const code = ((item.code ?? item.ticker ?? item.symbol ?? "") as string).toUpperCase().trim();
+        if (code && !seen.has(code)) { seen.add(code); liveCoins.push(code); }
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, "syncNewLECoins: failed to fetch LE coins (skipping cycle)");
+    return { newCoins: 0, inserted: 0 };
+  }
+  if (liveCoins.length === 0) return { newCoins: 0, inserted: 0 };
+
+  // 2. Get coins already in the DB as base assets
+  const dbResult = await pool.query<{ base_asset: string }>(
+    `SELECT DISTINCT base_asset FROM markets WHERE type = 'letsexchange'`,
+  );
+  const dbCoins = new Set(dbResult.rows.map(r => r.base_asset));
+
+  // 3. Find genuinely new coins not yet in the DB
+  const newCoins = liveCoins.filter(c => !dbCoins.has(c));
+  if (newCoins.length === 0) {
+    logger.debug({ total: liveCoins.length }, "syncNewLECoins: no new coins detected");
+    return { newCoins: 0, inserted: 0 };
+  }
+
+  logger.info(
+    { count: newCoins.length, sample: newCoins.slice(0, 10) },
+    "syncNewLECoins: new LE coins detected — inserting pairs",
+  );
+
+  // 4. Fetch sovereign prices for cross-rate math
+  const prices = await fetchSovereignPrices();
+  const usdOf = (sym: string): number => prices[sym]?.usd || FALLBACK_PRICES[sym] || 0;
+
+  const CHUNK = 500;
+  let inserted = 0;
+
+  for (const newCoin of newCoins) {
+    const newUSD = usdOf(newCoin);
+    const rows: (typeof marketsTable.$inferInsert)[] = [];
+
+    // newCoin as base paired with every other live coin as quote
+    for (const quote of liveCoins) {
+      if (quote === newCoin) continue;
+      const quoteUSD = usdOf(quote);
+      const p = (newUSD > 0 && quoteUSD > 0) ? fmtPrice(newUSD / quoteUSD) : "0";
+      rows.push({
+        symbol: `${newCoin}/${quote}`, baseAsset: newCoin, quoteAsset: quote,
+        lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
+        volume24h: "0", high24h: p, low24h: p,
+        status: "active", type: "letsexchange",
+      });
+    }
+
+    // Every other live coin as base paired with newCoin as quote (reverse direction)
+    for (const base of liveCoins) {
+      if (base === newCoin) continue;
+      const baseUSD = usdOf(base);
+      const p = (baseUSD > 0 && newUSD > 0) ? fmtPrice(baseUSD / newUSD) : "0";
+      rows.push({
+        symbol: `${base}/${newCoin}`, baseAsset: base, quoteAsset: newCoin,
+        lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
+        volume24h: "0", high24h: p, low24h: p,
+        status: "active", type: "letsexchange",
+      });
+    }
+
+    // Insert in chunks — onConflictDoNothing preserves any live prices already present
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK);
+      const result = await db.insert(marketsTable).values(chunk).onConflictDoNothing();
+      inserted += (result as any).rowCount ?? 0;
+    }
+  }
+
+  logger.info({ newCoins: newCoins.length, inserted }, "syncNewLECoins: complete");
+  return { newCoins: newCoins.length, inserted };
+}
+
+// ── SimpleSwap pair sync ──────────────────────────────────────────────────────
+
+// Same quote set used by the /simpleswap/pairs route
+const SS_QUOTE_ASSETS = [
+  "BSV", "BTC", "ETH", "USDT", "USDC", "BNB",
+  "SOL", "XRP", "TRX", "DOGE",
+  "LTC", "BCH", "AVAX", "MATIC",
+  "ARB", "OP", "FTM", "CRO", "MNT", "ZK", "SCR", "LINEA",
+];
+
+// SS network-specific tickers → canonical OrahDEX symbols
+const SS_TO_SYMBOL: Record<string, string> = {
+  usdterc20: "USDT",  usdttrc20: "USDT",  usdtbsc:   "USDT",  usdtsol:   "USDT",
+  usdtmatic: "USDT",  usdtton:   "USDT",  usdtop:    "USDT",  usdtarb:   "USDT",
+  usdtavax:  "USDT",  usdtalgo:  "USDT",  usdtkava:  "USDT",  usdtcelo:  "USDT",
+  usdcerc20: "USDC",  usdcbsc:   "USDC",  usdcsol:   "USDC",  usdcmatic: "USDC",
+  usdcop:    "USDC",  usdcarb:   "USDC",  usdcbase:  "USDC",  usdcavax:  "USDC",
+  usdcton:   "USDC",
+  "bnb-bsc": "BNB",   bnbbsc:    "BNB",
+  pol:       "MATIC",
+  avaxc:     "AVAX",
+  etharb:    "ETH",   ethop:     "ETH",   ethbase:   "ETH",   ethlinea:  "ETH",
+  ethscroll: "ETH",   ethbsc:    "ETH",
+  wbtcerc20: "WBTC",  wbtcbsc:   "WBTC",
+  daierc20:  "DAI",   daibsc:    "DAI",   daimatic:  "DAI",   daiarb:    "DAI",
+  linkbsc:   "LINK",  unibsc:    "UNI",
+};
+
+function normalizeSsTicker(ticker: string): string | null {
+  if (!ticker) return null;
+  const mapped = SS_TO_SYMBOL[ticker.toLowerCase()];
+  if (mapped) return mapped;
+  const cleaned = ticker.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (cleaned.length < 1 || cleaned.length > 12) return null;
+  return cleaned;
+}
+
+/**
+ * syncSSPairs — seed and sync SimpleSwap pairs into the DB.
+ *
+ * Fetches the live SS currency catalog, deduplicates by normalized symbol,
+ * then upserts coin × SS_QUOTE_ASSETS rows as type='simpleswap'.
+ *
+ *   - First run: full seed — inserts all ~3 000 coins × 22 quotes (~66 K rows)
+ *   - Subsequent runs: onConflictDoNothing makes repeat runs safe and fast
+ *   - New SS coins appear in DB within 4 hours — no manual admin action needed
+ *   - Skips silently when SIMPLESWAP_API_KEY is not configured
+ */
+export async function syncSSPairs(): Promise<{ coins: number; inserted: number }> {
+  if (!isSimpleSwapConfigured()) {
+    logger.debug("syncSSPairs: SIMPLESWAP_API_KEY not configured — skipping");
+    return { coins: 0, inserted: 0 };
+  }
+
+  const currencies = await fetchSSCurrencies();
+  if (currencies.length === 0) {
+    logger.warn("syncSSPairs: fetchSSCurrencies returned empty — skipping cycle");
+    return { coins: 0, inserted: 0 };
+  }
+
+  // Deduplicate by normalised symbol (first network variant wins)
+  const seenSymbols = new Set<string>();
+  const uniqueSymbols: string[] = [];
+  for (const c of currencies) {
+    const sym = normalizeSsTicker(c.symbol);
+    if (!sym || seenSymbols.has(sym)) continue;
+    seenSymbols.add(sym);
+    uniqueSymbols.push(sym);
+  }
+
+  logger.info({ coins: uniqueSymbols.length }, "syncSSPairs: building pairs");
+
+  // Get sovereign prices for cross-rate math
+  const prices = await fetchSovereignPrices();
+  const usdOf = (sym: string): number => prices[sym]?.usd || FALLBACK_PRICES[sym] || 0;
+
+  const QUOTES_SET = new Set(SS_QUOTE_ASSETS);
+  const CHUNK = 500;
+  let inserted = 0;
+  const rows: (typeof marketsTable.$inferInsert)[] = [];
+
+  for (const base of uniqueSymbols) {
+    if (QUOTES_SET.has(base)) continue; // pure quote asset — skip as base
+    const baseUSD = usdOf(base);
+
+    for (const quote of SS_QUOTE_ASSETS) {
+      if (base === quote) continue;
+      const quoteUSD = usdOf(quote);
+      const p = (baseUSD > 0 && quoteUSD > 0) ? fmtPrice(baseUSD / quoteUSD) : "0";
+      rows.push({
+        symbol: `${base}/${quote}`, baseAsset: base, quoteAsset: quote,
+        lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
+        volume24h: "0", high24h: p, low24h: p,
+        status: "active", type: "simpleswap",
+      });
+    }
+  }
+
+  // Upsert in chunks — onConflictDoNothing preserves any live prices already stored
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const result = await db.insert(marketsTable).values(chunk).onConflictDoNothing();
+    inserted += (result as any).rowCount ?? 0;
+  }
+
+  logger.info({ coins: uniqueSymbols.length, pairs: rows.length, inserted }, "syncSSPairs: complete");
+  return { coins: uniqueSymbols.length, inserted };
 }
 
 // Shared in-memory map of coin → 24h change percent (populated each sovereign cycle)
@@ -1221,10 +1530,27 @@ export function getCoinChangeMap(): Record<string, number> { return _coinChangeM
 export async function updateMarketPrices() {
   try {
     // ── Sovereign price engine: Binance + WhatsOnChain + own trades ───────────
-    const prices = await fetchSovereignPrices();
+    // Hard 45 s outer cap on the whole function: even if an internal AbortSignal
+    // doesn't fire (e.g. LE body-read hanging after headers are received, or
+    // CoinGecko rate-limit retry loop), we bail out with whatever prices we have
+    // rather than burning the entire 120 s guardian budget.
+    const prices = await Promise.race([
+      fetchSovereignPrices(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("fetchSovereignPrices timed out after 45s")), 45_000)
+      ),
+    ]).catch(err => {
+      logger.warn({ err }, "priceUpdater: fetchSovereignPrices timed out — using empty price set");
+      return {} as Record<string, CoinGeckoPrice>;
+    });
     serviceState.priceEngineLastRunAt = Date.now();
     serviceState.priceEngineRuns++;
-    logger.info({ symbols: Object.keys(prices).length }, "Market prices updated (sovereign engine)");
+    const priceCount = Object.keys(prices).length;
+    logger.info({ symbols: priceCount }, "Market prices updated (sovereign engine)");
+    // Notify the subsystem probe so the Price Engine health check shows OK
+    import("./subsystemProbe.js")
+      .then(m => m.recordPriceEngineRun(priceCount))
+      .catch(() => {});
 
     // Wrapped / synthetic BTC tokens should always track BTC 1:1.
     // If Binance / CoinGecko doesn't provide an independent price, copy BTC.
@@ -1252,13 +1578,26 @@ export async function updateMarketPrices() {
       _coinChangeMap[sym] = data.usd_24h_change ?? 0;
     }
 
-    const markets = await db.select({
-      symbol:     marketsTable.symbol,
-      baseAsset:  marketsTable.baseAsset,
-      quoteAsset: marketsTable.quoteAsset,
-      type:       marketsTable.type,
-    }).from(marketsTable)
-      .where(notInArray(marketsTable.type, ["letsexchange"]));
+    // Only update types where the sovereign price engine has data.
+    // "spot" and "futures" are our internally-managed market rows (~4 K rows).
+    // "letsexchange" and "simpleswap" are external pair catalogs whose prices
+    // are computed on-the-fly from sovereign data at swap/quote time — they
+    // don't need periodic DB price writes.
+    // Guarded with a 12 s Promise.race: withDbRetry can wait up to 63 s under
+    // pool exhaustion; bailing out early lets the tick finish or retry quickly
+    // instead of burning the full 120 s timeout budget on a stuck connection.
+    const markets = await Promise.race([
+      db.select({
+        symbol:     marketsTable.symbol,
+        baseAsset:  marketsTable.baseAsset,
+        quoteAsset: marketsTable.quoteAsset,
+        type:       marketsTable.type,
+      }).from(marketsTable)
+        .where(inArray(marketsTable.type, ["spot", "futures"])),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("markets SELECT timed out after 12s")), 12_000)
+      ),
+    ]);
 
     const pendingUpdates: Array<{
       symbol: string; lastPrice: string; priceChange24h: string;
@@ -1386,8 +1725,12 @@ export async function updateMarketPrices() {
     // Flush all price updates in a single bulk UPDATE per chunk — uses exactly
     // 1 DB connection instead of N concurrent ones, eliminating the pool
     // exhaustion that caused the 15 May 2026 production outage.
-    // 8 params per row × 500 rows = 4000 — well within PostgreSQL's 65535 limit.
-    const BULK_CHUNK = 500;
+    // 8 params per row × 4000 rows = 32000 — well within PostgreSQL's 65535 limit.
+    // CHUNK SIZE: 4000 → ~1 chunk for all spot/futures markets (~4K rows).
+    // Old value of 500 produced 8 chunks; under pool exhaustion each chunk waited
+    // connectionTimeoutMillis (15 s) before failing, so 8 × 15 s = 120 s burned
+    // the full guardedInterval budget every cycle and kept price-updater DEAD.
+    const BULK_CHUNK = 4_000;
     for (let i = 0; i < pendingUpdates.length; i += BULK_CHUNK) {
       const chunk = pendingUpdates.slice(i, i + BULK_CHUNK);
       const placeholders = chunk
@@ -1406,8 +1749,7 @@ export async function updateMarketPrices() {
         u.low24h,
         u.marketCap ?? null,
       ]);
-      await pool
-        .query(
+      const updateFailed = await withRetry(() => pool.query(
           `UPDATE markets AS m
              SET last_price              = v.lp,
                  price_change_24h        = v.pc,
@@ -1418,10 +1760,16 @@ export async function updateMarketPrices() {
                  market_cap              = v.mc
            FROM (VALUES ${placeholders})
              AS v(sym, lp, pc, pcp, vol, hi, lo, mc)
-           WHERE m.symbol = v.sym`,
+           WHERE m.symbol = v.sym
+             AND m.type IN ('spot', 'futures')`,
           params,
-        )
-        .catch(err => logger.warn({ err }, "priceUpdater: bulk UPDATE failed"));
+        ), { maxAttempts: 1, baseDelayMs: 0 })
+        .then(() => false)
+        .catch(err => {
+          logger.warn({ err }, "priceUpdater: bulk UPDATE failed — aborting remaining chunks");
+          return true;
+        });
+      if (updateFailed) break; // pool exhausted — don't burn 15 s × N on doomed chunks
     }
     pendingUpdates.length = 0;
     // Release the large markets query result before proceeding
@@ -1433,8 +1781,13 @@ export async function updateMarketPrices() {
       if (usd && usd > 0) updateGenesisPrice(sym, usd);
     }
 
-    // After prices update, check for any open stop orders that should trigger
-    await triggerStopOrders();
+    // After prices update, check for any open stop orders that should trigger.
+    // Capped at 20 s: triggerStopOrders has 3+ withDbRetry calls (open stops,
+    // markets lookup, counter-orders) each up to 15 s under pool exhaustion.
+    await Promise.race([
+      triggerStopOrders(),
+      new Promise<void>(resolve => setTimeout(resolve, 20_000)),
+    ]);
 
   } catch (err) {
     logger.warn({ err }, "Failed to update prices from sovereign price engine");
@@ -1444,6 +1797,12 @@ export async function updateMarketPrices() {
 let _stopPriceUpdater: (() => void) | null = null;
 
 export function startPriceUpdater() {
+  // Notify the subsystem probe immediately so it shows "warming up" instead of
+  // "No price run recorded" during the 35-second initial delay.
+  import("./subsystemProbe.js")
+    .then(m => m.notifyPriceEngineStarted())
+    .catch(() => { /* non-critical */ });
+
   // Warm the LE price cache at 90 s (price lookups only — no pair sync).
   // syncAllLEPairs() is intentionally NOT called at startup: the DB already
   // holds 36K+ LE pairs from a previous run, and inserting them again while
@@ -1460,12 +1819,41 @@ export function startPriceUpdater() {
     seedMarketsIfNeeded().catch(err => logger.warn({ err }, "seedMarketsIfNeeded failed"));
   }, 15_000);
 
+  // Incremental LE coin sync — automatically picks up new coins added by LetsExchange.
+  // First run at 5 min (server fully warmed up), then every 4 hours.
+  // onConflictDoNothing makes it safe to run at any time; no-op when DB is current.
+  guardedInterval(
+    "le-coin-sync", () => syncNewLECoins().then(() => {}), 4 * 60 * 60 * 1000,
+    { timeoutMs: 5 * 60 * 1000, initialDelayMs: 5 * 60 * 1000 },
+  );
+
+  // SS pairs seed/sync — first boot seeds all ~66K rows, then picks up new SS coins every 4 h.
+  guardedInterval(
+    "ss-pairs-sync", () => syncSSPairs().then(() => {}), 4 * 60 * 60 * 1000,
+    { timeoutMs: 3 * 60 * 1000, initialDelayMs: 3 * 60 * 1000 },
+  );
+
+  // Universal market catalog — N×(N-1) cross-product of all tradeable assets → type="catalog".
+  // Deferred 20 min so LE + SS syncs can run first, then refreshed daily.
+  // Timeout: 30 min — expected runtime is 2–5 min for 1.24 M rows.
+  guardedInterval(
+    "universal-markets",
+    () => import("./universalMarkets.js").then(m => m.generateUniversalMarkets()),
+    24 * 60 * 60 * 1000,
+    { timeoutMs: 30 * 60 * 1000, initialDelayMs: 20 * 60 * 1000 },
+  );
+
   // First Binance price fetch deferred to 35 s so the server is fully settled
   // before the large ticker-24hr response (~5 MB / 2000+ objects) is parsed.
   // After the first run, the guarded interval takes over every 60 s.
   _stopPriceUpdater = guardedInterval(
     "price-updater", updateMarketPrices, 60_000,
-    { timeoutMs: 55_000, initialDelayMs: 35_000 },
+    // 120 s timeout: bulk UPDATE now uses maxAttempts:1 so the retry overhead is
+    // gone, but on a loaded DB the single attempt can still take 30–40 s.
+    // Network fetches (LE + CoinGecko + WoC) add another 15–20 s.
+    // 120 s gives headroom for slow-DB environments without being so long
+    // that stale prices go undetected for more than 2 price cycles.
+    { timeoutMs: 120_000, initialDelayMs: 35_000 },
   );
   logger.info("Live price updater started (interval: 60s, self-healing)");
 }

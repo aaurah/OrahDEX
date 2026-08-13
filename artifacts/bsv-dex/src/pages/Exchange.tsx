@@ -100,15 +100,19 @@ let _coinsCache: Coin[] | null = null;
 let _coinsCacheTs = 0;
 let _coinsInflight: Promise<Coin[]> | null = null;
 
+// Only treat a response as authoritative once it exceeds the built-in fallback
+// size (331 coins). Anything smaller is likely the cold-cache fallback.
+const LIVE_COIN_THRESHOLD = 400;
+
 async function fetchCoins(): Promise<Coin[]> {
-  if (_coinsCache && _coinsCache.length > 0 && Date.now() - _coinsCacheTs < COIN_CACHE_TTL) {
+  if (_coinsCache && _coinsCache.length >= LIVE_COIN_THRESHOLD && Date.now() - _coinsCacheTs < COIN_CACHE_TTL) {
     return _coinsCache;
   }
   if (_coinsInflight) return _coinsInflight;
   _coinsInflight = fetch(`${API_BASE}/letsexchange/currencies`)
     .then(r => { if (!r.ok) throw new Error("currencies failed"); return r.json(); })
     .then((d: Coin[]) => {
-      if (d.length > 0) { _coinsCache = d; _coinsCacheTs = Date.now(); }
+      if (d.length >= LIVE_COIN_THRESHOLD) { _coinsCache = d; _coinsCacheTs = Date.now(); }
       _coinsInflight = null;
       return d;
     })
@@ -231,10 +235,10 @@ function CoinPicker({
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    if (!q) return coins.slice(0, 80);
+    if (!q) return coins;
     return coins.filter(c =>
       c.symbol.toLowerCase().includes(q) || c.name.toLowerCase().includes(q)
-    ).slice(0, 80);
+    );
   }, [coins, search]);
 
   return (
@@ -703,7 +707,6 @@ export function ExchangePage() {
 
   // ── History
   const [history, setHistory] = useState<HistoryEntry[]>(() => loadHistory());
-  const [activeTab, setActiveTab] = useState<"form" | "history">("form");
 
   const handleSubmit = async () => {
     if (!fromCoin || !toCoin || !quote?.best) return;
@@ -910,52 +913,13 @@ export function ExchangePage() {
 
         {/* ── Middle: Order Form ── */}
         <div className="bg-card border border-border rounded-xl overflow-hidden self-start">
-          {/* Tabs */}
-          <div className="flex border-b border-border">
-            {(["form", "history"] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setActiveTab(t)}
-                className={cn(
-                  "flex-1 py-2.5 text-xs font-medium transition-colors flex items-center justify-center gap-1.5",
-                  activeTab === t
-                    ? "text-primary border-b-2 border-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {t === "form" ? <><ArrowRight size={12} />Exchange</> : <><History size={12} />History</>}
-              </button>
-            ))}
+          <div className="flex items-center gap-1.5 px-4 py-3 border-b border-border/50">
+            <ArrowRight size={13} className="text-primary" />
+            <span className="text-xs font-medium">Exchange</span>
           </div>
 
           <div className="p-4">
-            {activeTab === "history" ? (
-              <div className="space-y-2">
-                {history.length === 0 ? (
-                  <p className="text-center text-xs text-muted-foreground py-8">No exchange history yet</p>
-                ) : history.map(h => (
-                  <div key={h.transaction_id} className="bg-secondary/30 rounded-lg p-3 space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium">
-                        {h.coin_from} → {h.coin_to}
-                      </span>
-                      <span className={cn("text-[10px] capitalize", STATUS_COLOR[h.status] ?? "text-muted-foreground")}>
-                        {h.status}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                      <span>{fmtNum(h.deposit_amount)} → {fmtNum(h.withdrawal_amount)}</span>
-                      <span>{timeAgo(h.createdAt)}</span>
-                    </div>
-                    {h.venue && (
-                      <span className={cn("text-[10px]", VENUE_COLORS[h.venue] ?? "text-muted-foreground")}>
-                        {VENUE_LABELS[h.venue] ?? h.venue}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : orderResult ? (
+            {orderResult ? (
               /* ── Success: show deposit address + tracker ── */
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-green-400 text-sm font-medium">

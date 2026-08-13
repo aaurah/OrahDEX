@@ -132,7 +132,8 @@ router.post("/quote", async (req: Request, res: Response) => {
       ? toWei(amountIn, decimals)
       : amountIn;
 
-    const params: BridgeQuoteParams = { fromChainId, toChainId, fromTokenAddress, toTokenAddress, amountIn: amountInWei };
+    const { userAddress: quoteUserAddress } = req.body as { userAddress?: string };
+    const params: BridgeQuoteParams = { fromChainId, toChainId, fromTokenAddress, toTokenAddress, amountIn: amountInWei, userAddress: quoteUserAddress };
     const { quotes, bestQuote } = await getQuotesAcrossProviders(params);
 
     // Annotate with human-readable amounts
@@ -183,7 +184,7 @@ router.post("/build-tx", async (req: Request, res: Response) => {
     };
 
     const tx = await provider.buildTx(params);
-    res.json({ tx, warning: "This is a mock transaction — do not sign on mainnet." });
+    res.json({ tx });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Internal server error";
     res.status(500).json({ error: msg });

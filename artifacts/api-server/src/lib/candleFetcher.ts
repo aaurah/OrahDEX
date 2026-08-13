@@ -70,10 +70,15 @@ const BINANCE_USDT_PAIRS = new Set([
   "FET","RNDR","TAO","WLD","GLM","STORJ","LPT",
   "APE","AXS","ENJ","GALA","RON","CAKE","GMX","DYDX","PENDLE",
   "TON","KAS","SEI","TIA","KAVA","NEO","ZIL","WAVES","ICX",
-  "OSMO","LUNA","LUNC","BAND","ONDO","OKB","KCS","BGB","ORDI",
+  "OSMO","LUNA","LUNC","BAND","ONDO","OKB","KCS","ORDI",
   "KSM","TRUMP","STX","FLOKI","TURBO","EIGEN","ZRO","MNT",
   "STRK","IMX","METIS","AERO","BEAM","PRIME","PIXEL",
 ]);
+
+/* ── Tokens not listed on OKX — skip straight to Binance/Gate.io ───────────
+   OKX returns "Instrument ID doesn't exist" for these, generating noisy warn
+   logs and an unnecessary extra RTT on every candle request.               ── */
+const OKX_SKIP_PAIRS = new Set(["BSV", "BB", "BGB"]);
 
 /* ── Poloniex symbol overrides (BSV → BCHSV etc.) ─────────────────────────── */
 const POLONIEX_SYMBOL_MAP: Record<string, string> = {
@@ -327,10 +332,185 @@ function generateFallbackCandles(lastPrice: number, interval: string, limit: num
   return candles;
 }
 
-/* ── Pin the last candle's close to the live price ──────────────────────────── */
+/* ── Bitfinex symbol map (our base → Bitfinex pair suffix, no t-prefix) ─────── */
+const BITFINEX_SYM: Record<string, string> = {
+  BTC:"BTCUSD", ETH:"ETHUSD", XRP:"XRPUSD", LTC:"LTCUSD",
+  BCH:"BCHUSD", EOS:"EOSUSD", XLM:"XLMUSD", DASH:"DSHUSD",
+  ZEC:"ZECUSD", XMR:"XMRUSD", DOGE:"DOGEUSD", NEO:"NEOUSD",
+  LINK:"LINKUSD", ADA:"ADAUSD", DOT:"DOTUSD", SOL:"SOLUSD",
+  ATOM:"ATOMUSD", AVAX:"AVAXUSD", MATIC:"MATICUSD", UNI:"UNIUSD",
+  AAVE:"AAVEUSD", MKR:"MKRUSD", SNX:"SNXUSD", COMP:"COMPUSD",
+  CRV:"CRVUSD", GRT:"GRTUSD", ENJ:"ENJUSD", SAND:"SANDUSD",
+  MANA:"MANAUSD", THETA:"THETAUSD", FTM:"FTMUSD", NEAR:"NEARUSD",
+  ALGO:"ALGOUSD", VET:"VETUSD", HBAR:"HBARUSD", AXS:"AXSUSD",
+  GALA:"GALAUSD", APE:"APEUSD", IMX:"IMXUSD", OP:"OPUSD",
+  ARB:"ARBUSD", APT:"APTUSD", SUI:"SUIUSD", TIA:"TIAUSD",
+  INJ:"INJUSD", RUNE:"RUNEUSD", ZIL:"ZILUSD", FIL:"FILUSD",
+  SUSHI:"SUSHIUSD", CHZ:"CHZUSD", FLOW:"FLOWUSD", KSM:"KSMUSD",
+  OCEAN:"OCEANUSD", STORJ:"STORJUSD", XTZ:"XTZUSD", WAVES:"WAVESUSD",
+  KAVA:"KAVAUSD", TON:"TONUSD", PENDLE:"PENDLEUSD",
+};
+
+/* ── Bitfinex public candles — free, up to 10 000 daily candles per call ─────── */
+async function fetchBitfinexHistory(base: string): Promise<Candle[]> {
+  const pair = BITFINEX_SYM[base];
+  if (!pair) return [];
+  const url = `https://api-pub.bitfinex.com/v2/candles/trade:1D:t${pair}/hist?limit=10000&sort=1`;
+  const res = await fetch(url, {
+    headers: { Accept: "application/json" },
+    signal: AbortSignal.timeout(18_000),
+  });
+  if (!res.ok) throw new Error(`Bitfinex history HTTP ${res.status}`);
+  const data = await res.json() as number[][];
+  if (!Array.isArray(data) || data.length < 3) throw new Error("Bitfinex returned empty history");
+  // Format: [MTS_ms, OPEN, CLOSE, HIGH, LOW, VOLUME]
+  return data
+    .filter(k => Array.isArray(k) && k.length >= 6 && k[0] > 0 && k[1] > 0)
+    .map(k => ({
+      time:   Math.floor(k[0] / 1000),
+      open:   k[1],
+      close:  k[2],
+      high:   k[3],
+      low:    k[4],
+      volume: Math.abs(k[5] ?? 0), // volume can be negative on Bitfinex (sell side)
+    }))
+    .sort((a, b) => a.time - b.time);
+}
+
+/* ── 6-hour cache for full history (static data changes very slowly) ─────────── */
+interface HistoryCacheEntry { data: Candle[]; ts: number }
+const historyCache = new Map<string, HistoryCacheEntry>();
+const HISTORY_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+/**
+ * fetchFullHistoryCandles — returns A-to-Z OHLCV for a symbol:
+ *   1. Bitfinex daily candles from 2013+ (up to 10 000 candles, free, no key)
+ *   2. OKX daily candles paginated (up to 1500 = ~4 years) — for coins not on Bitfinex
+ *   3. Gate.io daily (fallback for obscure pairs)
+ *   4. Synthetic random walk anchored to lastPrice
+ *
+ * Results are cached for 6 hours — historical data barely changes.
+ */
+export async function fetchFullHistoryCandles(
+  symbol:    string,
+  lastPrice: number,
+): Promise<Candle[]> {
+  const cacheKey = `history:${symbol}`;
+  const cached = historyCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < HISTORY_TTL_MS) {
+    return pinLastCandle([...cached.data], lastPrice);
+  }
+
+  const parts = symbol.split("/");
+  const base  = parts[0]?.toUpperCase() ?? "";
+
+  /* 1. Bitfinex — full daily history from inception (2013+ for major coins) */
+  let merged: Candle[] = [];
+  try {
+    const bfx = await fetchBitfinexHistory(base);
+    if (bfx.length >= 10) {
+      merged = bfx;
+      logger.info({ symbol, count: merged.length, first: merged[0]?.time }, "Bitfinex full history loaded");
+    }
+  } catch (err) {
+    logger.warn({ err, symbol }, "Bitfinex history failed");
+  }
+
+  /* 2. OKX extended daily pagination — for coins not on Bitfinex or to supplement */
+  if (merged.length < 10 && !OKX_SKIP_PAIRS.has(base)) {
+    try {
+      const okx = await fetchOkxCandles(base, "1d", 1500);
+      if (okx.length >= 5) {
+        if (merged.length >= 10) {
+          // Stitch: Bitfinex historical + OKX recent (OKX is more precise for recent data)
+          const cutoff = okx[0]!.time;
+          const pre = merged.filter(c => c.time < cutoff);
+          merged = [...pre, ...okx]
+            .sort((a, b) => a.time - b.time)
+            .filter((c, i, arr) => i === 0 || c.time !== arr[i - 1]!.time);
+        } else {
+          merged = okx;
+        }
+        logger.info({ symbol, count: merged.length, source: "okx+bfx" }, "OKX extended history");
+      }
+    } catch (_) {}
+  }
+
+  /* 3. Gate.io — fallback for obscure pairs not on Bitfinex/OKX */
+  if (merged.length < 5) {
+    try {
+      const gate = await fetchGateCandles(base, "1d", 1000);
+      if (gate.length >= 5) merged = gate;
+    } catch (_) {}
+  }
+
+  /* 4. Synthetic fallback */
+  if (merged.length < 5) {
+    const inception = getInceptionTs(symbol);
+    merged = generateFallbackCandles(lastPrice, "1w", 2000, inception);
+  }
+
+  historyCache.set(cacheKey, { data: merged, ts: Date.now() });
+  logger.info({ symbol, total: merged.length }, "Full history assembled");
+  return pinLastCandle([...merged], lastPrice);
+}
+
+/* ── Resample daily candles into weekly or monthly OHLCV bars ────────────────── */
+export function resampleCandles(candles: Candle[], targetInterval: '1w' | '1M'): Candle[] {
+  if (!candles.length) return candles;
+
+  const bucketKey = (ts: number): string => {
+    const d = new Date(ts * 1000);
+    if (targetInterval === '1M') {
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    }
+    /* Weekly: Monday-aligned */
+    const dow  = d.getUTCDay(); // 0=Sun
+    const diff = dow === 0 ? -6 : 1 - dow;
+    const mon  = new Date(d.getTime() + diff * 86_400_000);
+    return `${mon.getUTCFullYear()}-${String(mon.getUTCMonth() + 1).padStart(2, '0')}-${String(mon.getUTCDate()).padStart(2, '0')}`;
+  };
+
+  const startTs = (ts: number): number => {
+    const d = new Date(ts * 1000);
+    if (targetInterval === '1M') {
+      return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) / 1000;
+    }
+    const dow  = d.getUTCDay();
+    const diff = dow === 0 ? -6 : 1 - dow;
+    return Math.floor((d.getTime() + diff * 86_400_000) / 1000 / 86_400) * 86_400;
+  };
+
+  type Bar = { time: number; open: number; high: number; low: number; close: number; volume: number };
+  const buckets = new Map<string, Bar>();
+
+  for (const c of candles) {
+    const key = bucketKey(c.time);
+    const b   = buckets.get(key);
+    if (!b) {
+      buckets.set(key, { time: startTs(c.time), open: c.open, high: c.high, low: c.low, close: c.close, volume: (c as any).volume ?? 0 });
+    } else {
+      if (c.high > b.high) b.high = c.high;
+      if (c.low  < b.low)  b.low  = c.low;
+      b.close   = c.close;
+      b.volume += (c as any).volume ?? 0;
+    }
+  }
+
+  return Array.from(buckets.values()).sort((a, b) => a.time - b.time) as unknown as Candle[];
+}
+
+/* ── Pin the last candle's close to the live price (guarded) ─────────────────
+   Only adjust when lastPrice is within 2% of the exchange bar close.
+   Prevents bad DB/cross-rate prices (e.g. 62617 vs OKX ~64000) from creating
+   a huge wick that collapses the chart on 1m/1h and other intervals.        */
 function pinLastCandle(candles: Candle[], lastPrice: number): Candle[] {
   if (!candles.length || !(lastPrice > 0)) return candles;
   const last = candles[candles.length - 1]!;
+  const ref = last.close > 0 ? last.close : last.open;
+  if (!(ref > 0)) return candles;
+  const ratio = lastPrice / ref;
+  if (ratio < 0.98 || ratio > 1.02) return candles;
   candles[candles.length - 1] = {
     ...last,
     close: lastPrice,
@@ -349,7 +529,7 @@ function isValidCandleSet(candles: Candle[], minCount: number): boolean {
   return unique.size > 1;
 }
 
-/* ── Main export ───────────────────────────────────────────────────────────────── */
+/* ── Main export ─────────────────────────────────────────────────────────────── */
 export async function fetchRealCandles(
   symbol:    string,
   lastPrice: number,
@@ -379,7 +559,7 @@ export async function fetchRealCandles(
   }
 
   // ── 2. OKX (primary real-data source — global, not geo-blocked) ────────────
-  if (isUsdtPair) {
+  if (isUsdtPair && !OKX_SKIP_PAIRS.has(base)) {
     try {
       const candles = await fetchOkxCandles(base, interval, limit);
       if (isValidCandleSet(candles, minRequired)) {

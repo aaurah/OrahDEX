@@ -12,26 +12,31 @@
  *     and charged a 0.5 % liquidation fee that goes to the platform.
  */
 
-import { pool, db } from "@workspace/db";
+import { pool, db, withDbRetry } from "@workspace/db";
 import { futuresPositionsTable, marketsTable, platformSettingsTable } from "@workspace/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { logger } from "./logger.js";
-import { guardedInterval } from "./selfHealing.js";
+import { guardedInterval, withRetry } from "./selfHealing.js";
 import { liquidateFuturesPosition } from "./futuresSettlement.js";
+import { isDbConnError } from "./dbErrors.js";
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
 
 async function getSetting(key: string): Promise<string | null> {
   try {
-    const rows = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key));
+    const rows = await withDbRetry(() =>
+      db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, key))
+    );
     return rows[0]?.value ?? null;
   } catch { return null; }
 }
 
 async function setSetting(key: string, value: string) {
-  await db.insert(platformSettingsTable)
-    .values({ key, value })
-    .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } });
+  await withDbRetry(() =>
+    db.insert(platformSettingsTable)
+      .values({ key, value })
+      .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value, updatedAt: new Date() } })
+  );
 }
 
 async function rebuildTotal() {
@@ -59,8 +64,10 @@ const OI_TO_VOL_RATIO = 0.15;   // estimated open-interest / 24h-volume ratio
 
 async function runFundingCycle(): Promise<void> {
   try {
-    const positions = await db.select().from(futuresPositionsTable)
-      .where(eq(futuresPositionsTable.status, "open"));
+    const positions = await withDbRetry(() =>
+      db.select().from(futuresPositionsTable)
+        .where(eq(futuresPositionsTable.status, "open"))
+    );
 
     let cycleIncome    = 0;   // total platform revenue this cycle
     let appliedCount   = 0;   // positions that actually paid
@@ -80,17 +87,35 @@ async function runFundingCycle(): Promise<void> {
       const sideMul = pos.side === "long" ? 1 : -1;
       const payment = qty * markP * rate * sideMul;
       if (payment <= 0) {
-        // User would be a receiver — skip in this simplified single-sided
-        // model (platform never pays funding). Still credit the position's
-        // fundingFee field so the UI shows the rebate accrual.
-        const credit = Math.abs(payment);
+        // User is a funding receiver. Credit their locked margin (80% of the
+        // owed amount — platform keeps its 20% cut both on pay and receive).
+        // This replaces the previous model where receivers got nothing.
+        const credit = Math.abs(payment) * (1 - PLATFORM_CUT);
         if (credit > 0) {
-          await pool.query(
-            `UPDATE futures_positions
-             SET funding_fee = (COALESCE(funding_fee::numeric, 0) - $1)::text
-             WHERE id = $2 AND status = 'open'`,
-            [credit.toFixed(8), pos.id],
-          );
+          const rcvClient = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
+          try {
+            await rcvClient.query("BEGIN");
+            await rcvClient.query(
+              `UPDATE futures_margin_accounts
+               SET locked = locked + $1, updated_at = now()
+               WHERE wallet_address = $2 AND asset = 'USDT'`,
+              [credit.toFixed(8), pos.walletAddress],
+            );
+            await rcvClient.query(
+              `UPDATE futures_positions
+               SET funding_fee = (COALESCE(funding_fee::numeric, 0) - $1)::text,
+                   margin      = (margin::numeric + $1)::text
+               WHERE id = $2 AND status = 'open'`,
+              [credit.toFixed(8), pos.id],
+            );
+            await rcvClient.query("COMMIT");
+            cycleIncome -= credit; // platform paid out from its cut
+          } catch (rcvErr) {
+            await rcvClient.query("ROLLBACK").catch(() => {});
+            logger.warn({ err: rcvErr, positionId: pos.id }, "Funding credit to receiver failed");
+          } finally {
+            rcvClient.release();
+          }
         }
         continue;
       }
@@ -98,7 +123,7 @@ async function runFundingCycle(): Promise<void> {
       // Atomically debit from locked margin (capped to what's available so a
       // funding payment can never push margin below zero — that would be the
       // job of the liquidation engine on the next tick).
-      const client = await pool.connect();
+      const client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 1_000 });
       try {
         await client.query("BEGIN");
 
@@ -152,7 +177,8 @@ async function runFundingCycle(): Promise<void> {
       "Futures profit engine: funding cycle complete",
     );
   } catch (err) {
-    logger.error({ err }, "Futures profit engine: funding cycle failed");
+    if (isDbConnError(err)) logger.warn("Futures profit engine: funding cycle skipped — DB unavailable");
+    else logger.error({ err }, "Futures profit engine: funding cycle failed");
   }
 }
 
@@ -162,9 +188,16 @@ async function runFundingCycle(): Promise<void> {
 
 async function runLiquidationCycle(): Promise<void> {
   try {
-    const markets   = await db.select().from(marketsTable);
-    const positions = await db.select().from(futuresPositionsTable)
-      .where(eq(futuresPositionsTable.status, "open"));
+    // Exclude LE markets (36K rows) — only spot/perp prices needed for position mark-to-market.
+    const markets   = await withDbRetry(() =>
+      db.select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
+        .from(marketsTable)
+        .where(inArray(marketsTable.type, ["spot", "futures"]))
+    );
+    const positions = await withDbRetry(() =>
+      db.select().from(futuresPositionsTable)
+        .where(eq(futuresPositionsTable.status, "open"))
+    );
 
     /* build a price map from live market data */
     const priceMap: Record<string, number> = {};
@@ -185,14 +218,14 @@ async function runLiquidationCycle(): Promise<void> {
       const upnl     = dirMult * priceDiff * qty;
       const upnlPct  = (upnl / margin) * 100;
       try {
-        await pool.query(
+        await withRetry(() => pool.query(
           `UPDATE futures_positions
            SET mark_price            = $1,
                unrealized_pnl        = $2,
                unrealized_pnl_percent = $3
            WHERE id = $4 AND status = 'open'`,
           [markPrice.toFixed(8), upnl.toFixed(8), upnlPct.toFixed(4), pos.id],
-        );
+        ), { maxAttempts: 2, baseDelayMs: 500 });
       } catch { /* non-fatal */ }
     }
 
@@ -235,7 +268,8 @@ async function runLiquidationCycle(): Promise<void> {
     await rebuildTotal();
 
   } catch (err) {
-    logger.error({ err }, "Futures profit engine: liquidation cycle failed");
+    if (isDbConnError(err)) logger.warn("Futures profit engine: liquidation cycle skipped — DB unavailable");
+    else logger.error({ err }, "Futures profit engine: liquidation cycle failed");
   }
 }
 

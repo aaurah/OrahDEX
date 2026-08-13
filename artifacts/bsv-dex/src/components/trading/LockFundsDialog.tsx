@@ -52,6 +52,26 @@ function shortenAddr(a: string | null): string {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
+function explorerBase(chainId: number | null): string {
+  const map: Record<number, string> = {
+    1:        "https://etherscan.io",
+    10:       "https://optimistic.etherscan.io",
+    56:       "https://bscscan.com",
+    130:      "https://uniscan.xyz",
+    137:      "https://polygonscan.com",
+    324:      "https://explorer.zksync.io",
+    1329:     "https://seitrace.com",
+    8453:     "https://basescan.org",
+    42161:    "https://arbiscan.io",
+    43114:    "https://snowtrace.io",
+    59144:    "https://lineascan.build",
+    534352:   "https://scrollscan.com",
+    11155111: "https://sepolia.etherscan.io",
+    84532:    "https://sepolia.basescan.org",
+  };
+  return (chainId && map[chainId]) ?? "https://etherscan.io";
+}
+
 function formatAmount(rawAmount: bigint, decimals: number): string {
   if (rawAmount === 0n) return "0";
   const s = rawAmount.toString().padStart(decimals + 1, "0");
@@ -125,7 +145,7 @@ export function LockFundsDialog({
               </Row>
               <Row label="Escrow contract">
                 <a
-                  href={escrowAddr ? `https://etherscan.io/address/${escrowAddr}` : "#"}
+                  href={escrowAddr ? `${explorerBase(chainId)}/address/${escrowAddr}` : "#"}
                   target="_blank" rel="noopener noreferrer"
                   className="font-mono text-violet-300 hover:underline"
                 >
@@ -138,6 +158,12 @@ export function LockFundsDialog({
                 </span>
               </Row>
             </div>
+
+            {!asset && (
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-300">
+                Lock amount couldn't be determined — the price feed may still be loading. Close this dialog and try again in a moment.
+              </div>
+            )}
 
             <div className="flex flex-col gap-2 pt-1">
               <button

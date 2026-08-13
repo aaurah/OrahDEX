@@ -1,59 +1,104 @@
-# OrahDEX — Trade Means DEX
+# OrahDEX — The Universal Multi-Chain DEX
 
-OrahDEX is a sovereign, permissionless, multi-chain trading protocol for non-custodial exchange of digital assets. It uses **Bitcoin SV (BSV)** as its immutable settlement layer while supporting **Ethereum, 12+ EVM chains, and TRON** through a unified interface covering 36,000+ trading pairs.
+OrahDEX is a sovereign, permissionless, multi-chain trading protocol. Users hold their own keys at all times. Trades settle on-chain via atomic swaps and EVM escrow contracts — **OrahDEX never holds your funds**.
 
 Live at **[orahdex.org](https://orahdex.org)**
 
 ---
 
-## Features
+## What OrahDEX Covers
 
-### Spot & Futures Trading
-- 36,000+ trading pairs across EVM, TRON, and BSV networks
-- Limit, market, and stop orders with an on-chain orderbook
-- Perpetual futures with up to 100x leverage, mark price, funding rate, and liquidation logic
+| Layer | Coverage |
+|---|---|
+| **DEX Aggregation** | 36 exchange aggregators across 69 chains |
+| **Cross-Chain Bridges** | 34 bridge protocols |
+| **EVM Chains** | 69 chains — Ethereum, Base, Arbitrum, Optimism, BNB, Polygon, Avalanche, and more |
+| **Instant Swap Venues** | 6 integrated custodial swap venues |
+| **Perpetual Futures** | 931 markets, real-time feed (~150 ms), mark price, OI, funding |
+| **Settlement Layer** | Bitcoin SV (BSV) — immutable OP_RETURN proofs for every trade |
+| **Wallets** | EVM, BSV, TRON, Bitcoin, Solana |
+
+---
+
+## Trading Pairs
+
+OrahDEX aggregates pairs from multiple sources into a single unified market catalog:
+
+| Source | Pairs | Unique Coins | Live Price |
+|---|---|---|---|
+| **OrahDEX Swap Network** | 2,035,957 | 3,396 | 390,000+ |
+| **OrahDEX Catalog** | 535,244 | 1,249 | 27,668 |
+| **Extended Swap Routes** | 55,111 | 2,975 | 3,447 |
+| **Spot Orderbook** | 3,985 | 205 | 3,985 (100%) |
+| **Perpetual Futures** | 931 | 931 | 931 (100%, real-time) |
+| **Onchain Routes** | Unlimited | 1,252+ per chain × 69 chains | Live per quote |
+| **Total** | **~2.15M** | **3,396+** | — |
+
+**Quote currencies:** USDT · BTC · BNB · BSV · ETH · USDC · DOGE · SOL · TRX · XRP
+
+---
+
+## Core Features
+
+### Universal Swap Router
+Every swap fires all available venues in parallel and returns the best rate:
+- **Custodial route** — instant swap, deposit-address model, 6 venues competing for best rate
+- **Onchain route** — non-custodial, user signs the transaction; settles directly on-chain across 69 chains and 36 DEX aggregators
+
+In live testing, OrahDEX onchain routes consistently outperform custodial rates.
 
 ### Genesis Liquidity Engine (Virtual AMM)
-- Proprietary linear bonding curve that makes every asset instantly tradeable
-- No initial liquidity provider participation required
-- Automated market-making without impermanent loss exposure
+Proprietary linear bonding curve that makes every listed asset instantly tradeable — no initial liquidity provider required and no impermanent loss.
 
-### Hybrid Router
-Routes each trade through the best available source in order:
-1. Internal Genesis VAMM
-2. Standard AMM liquidity pools
-3. External aggregators — LetsExchange, Changelly, ChangeNOW, SimpleSwap, StealthEX
+### Perpetual Futures
+- **931 perpetual markets** with real-time price feed at ~150 ms latency
+- Mark price, open interest (USD), funding rates, and liquidation engine
+- Up to 100× leverage
 
-### Cross-Chain Bridge (HTLC)
-- Trustless atomic swaps via Hash Time-Locked Contracts
-- Supports BTC / BSV / BCH / EVM chains
-- `/api/v1/bridge/lock`, `/reveal`, `/redeem`, `/relay` endpoints
-- Funds are never custodied by OrahDEX at any point
+### Spot Orderbook
+- **3,985 live trading pairs** with 100% price coverage
+- **10 quote currencies** — USDT, BTC, BNB, BSV, ETH, USDC, DOGE, SOL, TRX, XRP
+- Limit, market, stop, and advanced conditional orders
+- On-chain settlement via BSV OP_RETURN proofs
+
+### Cross-Chain Swaps
+- **2M+ swap pairs** across 6 integrated venues
+- Best rate auto-selected in parallel — if one route fails, the next is tried automatically
+- 3,396 unique coins supported
+
+### Cross-Chain Bridge
+- Trustless atomic swaps via Hash Time-Locked Contracts (HTLC)
+- BTC / BSV / BCH / EVM / TRON chains
+- Funds are never custodied — contracts enforce atomic settlement
+
+### OrahDEX Onchain API
+```
+GET /api/lifi/quote?from=ETH&to=USDC&amount=1    — best onchain route + wallet-signable tx
+GET /api/lifi/routes?from=USDC&to=ETH&amount=100 — up to 10 ranked route alternatives
+GET /api/lifi/chains                              — 69 supported chains
+GET /api/lifi/tokens?chain=arb                   — 1,252+ tokens per chain
+GET /api/lifi/status?txHash=0x...&fromChainId=1  — post-swap tx tracking
+GET /api/lifi/supported?from=WBTC&to=AVAX        — quick pair coverage check
+```
 
 ### CopyVault
-- On-chain copy trading protocol
-- Followers mirror Leader trades with configurable allocation
-- Every execution recorded as a BSV `OP_RETURN` proof — fully auditable on-chain
+On-chain copy trading — followers mirror leader positions with configurable allocation. Every execution recorded as a BSV OP_RETURN proof.
 
 ### P2P Market
-- Peer-to-peer fiat ↔ crypto trading
-- Escrow-based settlement with dispute resolution
+Peer-to-peer fiat ↔ crypto trading with escrow-based settlement and dispute resolution.
 
 ### OrahNFT
-- Social NFT marketplace inspired by Zora / Instagram
-- Posts are BSV inscriptions — permanently anchored on-chain
-- Tradeable creator coins for each profile
+Social NFT marketplace — posts are BSV inscriptions permanently anchored on-chain. Tradeable creator coins for each profile.
 
 ### Ora AI
-- Integrated AI intelligence layer powered by GPT-4
-- Market analysis, trade signals, and portfolio coaching
-- DALL-E image generation for OrahNFT content
+Integrated intelligence layer — GPT-4 market analysis, real-time trade signals, portfolio coaching, and AI image generation for OrahNFT content.
 
 ### Multichain Wallet
-- EVM multichain wallet via Viem/Wagmi + Reown (WalletConnect)
-- TRON and BSV wallet support
-- QR receive, balance fetch, transaction history
-- Stripe fiat on-ramp integration
+- EVM: 69+ chains, WalletConnect compatible
+- BSV: native key derivation
+- TRON: full address and transaction support
+- Bitcoin: native wallet connectivity
+- Solana: integrated
 
 ---
 
@@ -61,15 +106,13 @@ Routes each trade through the best available source in order:
 
 | Layer | Technology |
 |---|---|
-| Frontend | React, Vite, TypeScript, Tailwind CSS, Radix UI |
-| Mobile | Expo (React Native), Expo Router, Reanimated |
-| Backend | Node.js, Express, TypeScript |
-| Database | PostgreSQL via Drizzle ORM |
-| EVM | Viem, Wagmi, Reown (WalletConnect), Hardhat/Solidity |
-| BSV | Custom script engine, bsvChainMonitor, OP_RETURN proofs |
-| AI | OpenAI GPT-4 (analysis), DALL-E (image generation) |
-| Charts | TradingView, DexScreener, GeckoTerminal |
-| Payments | Stripe (fiat on-ramp) |
+| **Frontend** | React 18, Vite, TypeScript, Tailwind CSS, Radix UI, Zustand, TanStack Query |
+| **Backend** | Node.js 20, Express 5, TypeScript, esbuild |
+| **Database** | PostgreSQL via Drizzle ORM |
+| **EVM** | viem 2.x, wagmi v3, WalletConnect v3, Solidity smart contracts |
+| **AI** | GPT-4 (analysis), DALL-E (image generation) |
+| **Charts** | Real-time candlestick charts, DEX screener, live pool data |
+| **Payments** | Stripe fiat on-ramp |
 
 ---
 
@@ -78,79 +121,94 @@ Routes each trade through the best available source in order:
 ```
 orahdex/
 ├── artifacts/
-│   ├── api-server/          # Express API — trading, bridging, bots, price engine
-│   │   └── src/lib/
-│   │       ├── liquidityBot.ts       # Genesis market-making
-│   │       ├── priceUpdater.ts       # Sovereign price engine (Binance + WhatsOnChain)
-│   │       ├── futuresProfitEngine.ts # Mark price, funding, liquidations
-│   │       ├── copyOrchestrator.ts   # CopyVault trade mirroring
-│   │       ├── hybridRouter.ts       # Multi-source trade routing
-│   │       ├── bsvChainMonitor.ts    # BSV settlement tracker
-│   │       ├── htlcWatcher.ts        # Cross-chain HTLC monitor
-│   │       └── arbBot.ts             # On-chain arbitrage engine
-│   ├── bsv-dex/             # React/Vite frontend
-│   ├── aura-dex-mobile/     # Expo React Native mobile app
-│   └── orahdex-contracts/   # Solidity smart contracts (Hardhat)
+│   ├── api-server/src/
+│   │   ├── app.ts                     — Express setup + background service startup
+│   │   ├── routes/
+│   │   │   ├── index.ts               — All /api/* route registration
+│   │   │   ├── externalSwap.ts        — Parallel custodial + onchain quotes
+│   │   │   ├── futures.ts             — Perpetual futures engine
+│   │   │   ├── bridge.ts              — Cross-chain bridge
+│   │   │   ├── evmSettlement.ts       — HTLC session management
+│   │   │   └── ...30+ more routes
+│   │   └── lib/
+│   │       ├── metaRouter.ts          — Multi-venue quote scoring engine
+│   │       ├── liquidityBot.ts        — Genesis market-making
+│   │       ├── priceUpdater.ts        — Sovereign price engine
+│   │       ├── futuresProfitEngine.ts — Mark price, funding, liquidations
+│   │       ├── selfHealing.ts         — guardedInterval worker engine
+│   │       ├── htlcWatcher.ts         — Cross-chain atomic swap monitor
+│   │       └── arbBot.ts              — Triangular arbitrage engine
+│   └── bsv-dex/src/                   — React/Vite frontend
 └── lib/
-    ├── db/                  # Drizzle schema + migrations
-    └── */                   # Shared utilities
+    └── db/src/schema/                 — Drizzle schema (source of truth)
 ```
 
-### Settlement Flow
-Every trade generates a BSV `OP_RETURN` inscription as an immutable on-chain proof. Cross-chain swaps are coordinated through HTLC scripts — ensuring atomic execution with no custodial risk.
+### Swap Routing Flow
+```
+User swap request
+       │
+       ├── Custodial venues (parallel, scored by net USD output)
+       │     6 venues competing simultaneously → best rate wins
+       │     2,000,000+ pairs across 3,396 coins
+       │
+       └── Onchain routes (parallel, non-custodial)
+             69 chains × 36 DEX aggregators × 34 bridge protocols
+             → returns wallet-signable transaction
+
+Both quotes returned simultaneously → user chooses custodial or onchain
+```
 
 ### Self-Healing Engine
-The API server includes an `exchangeApiRepairEngine` and multiple reconcilers that automatically detect and correct inconsistencies between chain state and the database — keeping the system consistent without manual intervention.
+All background services run via `guardedInterval()` — automatic lock release, failure tracking with exponential backoff, per-service health registry. `/api/health` returns structured status (healthy/degraded/stuck/dead) with 503 on critical failure.
 
 ---
 
 ## API Reference
 
+### Swap & Quotes
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/external-swap/quote` | Best custodial + onchain quote in parallel |
+| POST | `/api/external-swap/execute` | Execute swap |
+| GET | `/api/external-swap/:swapId` | Live swap status |
+| GET | `/api/lifi/quote` | Best onchain route + signed tx |
+| GET | `/api/lifi/routes` | Up to 10 ranked routes |
+| GET | `/api/lifi/chains` | 69 supported chains |
+| GET | `/api/lifi/tokens` | Tokens by chain |
+| GET | `/api/lifi/status` | Post-swap tx tracking |
+| GET | `/api/lifi/supported` | Pair coverage check |
+
 ### Spot Trading
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/trade/exchange` | Place a spot swap |
 | POST | `/api/order/place` | Place limit/stop order |
 | POST | `/api/order/cancel` | Cancel an order |
-| GET | `/api/orderbook/:pair` | Get orderbook depth |
-| GET | `/api/markets` | List all markets |
+| GET | `/api/orderbook/:pair` | Orderbook depth |
+| GET | `/api/markets` | All markets (3,985 spot + 2M+ swap pairs) |
 | GET | `/api/markets/:symbol` | Single market data |
 
 ### Futures
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/futures/position/open` | Open a perpetual position |
+| POST | `/api/futures/position/open` | Open perpetual position |
 | POST | `/api/futures/position/close` | Close a position |
-| GET | `/api/futures/positions` | List open positions |
+| GET | `/api/futures/positions` | Open positions |
 | GET | `/api/futures/funding-rate` | Current funding rate |
-
-### Genesis VAMM
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/genesis/swap` | Execute VAMM swap |
-| GET | `/api/genesis/quote` | Get VAMM quote |
-| GET | `/api/genesis/pools` | List Genesis pools |
 
 ### Bridge (HTLC)
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/v1/bridge/lock` | Initiate HTLC lock |
+| POST | `/api/v1/bridge/lock` | Initiate atomic lock |
 | POST | `/api/v1/bridge/reveal` | Reveal preimage |
 | POST | `/api/v1/bridge/redeem` | Redeem locked funds |
 | GET | `/api/v1/bridge/status/:id` | Check swap status |
 
-### Swap Aggregator
+### Wallet & Portfolio
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/swap/quote` | Get aggregated quote |
-| POST | `/api/swap/execute` | Execute aggregated swap |
-| GET | `/api/swap/status/:id` | Track swap status |
-
-### Wallet
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | `/api/wallet/balance` | Fetch multichain balances |
-| GET | `/api/wallet/transactions` | Transaction history |
+| GET | `/api/wallet/balance` | Multichain balances |
+| GET | `/api/portfolio` | Portfolio summary |
+| GET | `/api/trades` | Trade history |
 
 ---
 
@@ -168,23 +226,6 @@ cd OrahDEX
 corepack pnpm install
 ```
 
-### Environment Variables
-Copy `.env.example` and fill in the required values:
-
-```bash
-cp .env.example .env
-```
-
-Key variables:
-
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string |
-| `STEALTHEX_API_KEY` | StealthEX swap aggregator key |
-| `OPENAI_API_KEY` | GPT-4 / DALL-E for Ora AI and OrahNFT |
-| `STRIPE_SECRET_KEY` | Fiat on-ramp via Stripe |
-| `GITHUB_TOKEN` | CI/CD git operations |
-
 ### Run (Development)
 ```bash
 # API server (port 8080)
@@ -192,21 +233,26 @@ PORT=8080 pnpm --filter @workspace/api-server run dev
 
 # Frontend (port 20180)
 PORT=20180 pnpm --filter @workspace/bsv-dex run dev
-
-# Mobile (Expo)
-pnpm --filter @workspace/aura-dex-mobile run start
 ```
+
+### Key Environment Variables
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `ALCHEMY_API_KEY` | EVM RPC provider |
+| `OPENAI_API_KEY` | AI analysis and image generation |
+| `STRIPE_SECRET_KEY` | Fiat on-ramp |
 
 ---
 
 ## Security
 
-- **Zero PII** — no names, emails, or government IDs collected; identity is purely cryptographic (wallet addresses)
-- **Non-custodial** — users retain private keys at all times; HTLC scripts ensure funds are never held by OrahDEX
-- **Immutable rules** — no admin keys can redirect or pause protocol contracts
-- **Audited dependencies** — all transitive dependencies pinned via `pnpm.overrides` to patched versions (axios, fast-uri, elliptic, undici, and 15+ others)
+- **Zero PII** — no names, emails, or government IDs; identity is purely cryptographic
+- **Non-custodial** — users retain private keys at all times; atomic contracts ensure trustless settlement
 - **SSRF protection** — all outbound HTTP calls validated against a private-IP blocklist
-- **XSS protection** — all user-generated HTML sanitized via DOMPurify before rendering
+- **XSS protection** — all user-generated HTML sanitized before rendering
+- **Audited dependencies** — all transitive dependencies pinned to patched versions
 
 ---
 
@@ -214,52 +260,19 @@ pnpm --filter @workspace/aura-dex-mobile run start
 
 | Module | Status |
 |---|---|
-| Spot Orderbook | ✅ Stable |
+| Spot Orderbook (3,985 pairs) | ✅ Stable |
 | Genesis VAMM | ✅ Stable |
-| Hybrid Router | ✅ Stable |
-| Price Engine | ✅ Stable |
-| Perpetual Futures | ✅ Complete |
+| Universal Swap Router (custodial + onchain) | ✅ Live |
+| Onchain Routing (69 chains, 34 bridges, 36 DEXes) | ✅ Live |
+| Custodial Venues (2M+ pairs, 3,396 coins) | ✅ Live — 6 venues |
+| Perpetual Futures (931 markets, real-time) | ✅ Live |
 | Cross-Chain Bridge (HTLC) | ✅ Complete |
+| Multichain Wallet (EVM + BSV + TRON) | ✅ Complete |
 | CopyVault | ✅ Complete |
 | P2P Market | ✅ Complete |
-| Multichain Wallet (EVM) | ✅ Complete |
 | Ora AI | ✅ Complete |
 | OrahNFT | 🚧 In Progress |
-| Mobile App | 🚧 In Progress |
-| Fiat On-Ramp (Stripe) | ⚠️ Partial |
-| TRON Wallet | ⚠️ Partial |
-
----
-
-## Roadmap
-
-- Full OrahNFT social marketplace with BSV inscription minting
-- Mobile app (Expo) for iOS and Android
-- Expanded TRON wallet support
-- Fiat on-ramp via Stripe (full KYC-free flow)
-- Governance token and protocol fee distribution
-- Additional EVM chain support (Arbitrum, Optimism, Base)
-
----
-
-## Changelog
-
-### 2026-05-14 (session 2)
-- **DEX tab — Multi-DEX Aggregator**: Quotes now fetched in parallel from Uniswap V3, PancakeSwap V3, and OpenOcean (100+ DEXes via free API proxy). Best on-chain route auto-selected; protocol selector UI shows live quote comparison and "BEST" badge. Swap execution routes through the winning protocol's router (`PANCAKE_SWAP_ROUTER` or `SWAP_ROUTER`).
-- **Backend** — Added `GET /api/dex/aggregator/quote` and `GET /api/dex/aggregator/swap` proxy routes for OpenOcean free API (no key required).
-- **DEX hero** updated: title "DEX Aggregator", subtitle lists Uniswap V3 · PancakeSwap · OpenOcean · Best route · Non-custodial; feature badges updated.
-- **Buy/Sell tab** — Removed all `window.open` redirects; replaced with native `LetsExchangePanel` (Buy preset USDT→, Sell preset →USDT). Removed unused state and imports.
-- **LetsExchangePanel** — Removed "1082+ coins" badge.
-
-### 2026-05-14
-- **Security — SSRF guards** applied across all outbound HTTP clients (StealthEX, ChangeNOW, SimpleSwap, LetsExchange price cache, ERC-8004, notifier) — private-IP blocklist blocks internal network access
-- **Security — XSS fixes** applied to AiAssistant, AiTradeAnalysis (DOMPurify.sanitize), ReceiveModal (innerHTML → React state), and chart style injection stripping
-- **Dependencies** — axios bumped to 1.16.1, fast-uri pinned to ≥3.1.2, tmp 0.2.5 added; all via `pnpm.overrides` to cover transitive dependencies
-- **Performance — liquidityBot** O(n²) `active.find()` loop replaced with O(1) Map lookup; 4003-element intermediate array removed
-- **Performance — priceUpdater** sequential `await db.update()` per market replaced with batched parallel writes (50 at a time via `Promise.all`) — eliminates the primary API server OOM source
-- **API server** dev script fixed: port kill corrected 8090 → 8080; memory limit raised 2048 → 3072 MB
-- **SEO** — `sitemap.xml` all 18 URLs corrected from `orahdex.replit.app` → `orahdex.org`; `robots.txt` sitemap declaration updated; production server now sends `X-Robots-Tag: index, follow`
-- **README** fully rewritten with complete feature list, tech stack table, architecture diagram, full API reference, security section, and module status
+| Fiat On-Ramp | ⚠️ Partial |
 
 ---
 

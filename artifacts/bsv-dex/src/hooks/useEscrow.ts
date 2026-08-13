@@ -15,6 +15,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import {
   hasEscrow,
   resolveEscrowAsset,
+  escrowAddress,
   lockEthViaOrah,
   lockErc20ViaOrah,
   cancelEscrowViaOrah,
@@ -55,7 +56,16 @@ export function useEscrow() {
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null);
 
   const lockOrder = useCallback(async (params: LockOrderParams): Promise<EscrowTxResult | null> => {
-    if (!escrowAvailable || !address) return null;
+    if (!address) {
+      setErrorMsg("Wallet not connected. Please connect your wallet and try again.");
+      setStatus("error");
+      return null;
+    }
+    if (!escrowAvailable) {
+      setErrorMsg(`Escrow contract not available on this network (chain ${chainId}). Please switch to a supported EVM chain.`);
+      setStatus("error");
+      return null;
+    }
 
     const asset = resolveEscrowAsset(
       chainId, params.side, params.base, params.quote,
@@ -72,7 +82,7 @@ export function useEscrow() {
       let result: EscrowTxResult;
 
       if (asset.address === null) {
-        // Native ETH — Orah wallet uses viem; all others use universal provider fallback
+        // Native ETH
         setStatus("locking");
         if (isOrahWallet) {
           result = await lockEthViaOrah(params.orderId, asset.rawAmount, address, chainId);
@@ -105,7 +115,16 @@ export function useEscrow() {
   }, [escrowAvailable, address, chainId, isOrahWallet]);
 
   const cancelOrder = useCallback(async (orderId: string): Promise<EscrowTxResult | null> => {
-    if (!escrowAvailable || !address) return null;
+    if (!address) {
+      setErrorMsg("Wallet not connected. Please connect your wallet and try again.");
+      setStatus("error");
+      return null;
+    }
+    if (!escrowAvailable) {
+      setErrorMsg(`Escrow contract not available on this network (chain ${chainId}). Please switch to a supported EVM chain.`);
+      setStatus("error");
+      return null;
+    }
 
     try {
       setErrorMsg(null);

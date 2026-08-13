@@ -9,6 +9,7 @@ import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Colors } from "@/constants/colors";
 import { useWallet, ConnectedWallet } from "@/context/WalletContext";
+import * as ExpoCrypto from "expo-crypto";
 import { generateMnemonic, deriveAddress, validateMnemonic } from "@/utils/seedPhrase";
 
 const C = Colors.dark;
@@ -45,10 +46,15 @@ interface WalletEntry {
 }
 
 function generateAddress(network: WalletNetwork): string {
-  const hex = () => Math.floor(Math.random() * 16).toString(16);
-  if (network === "evm") return "0x" + Array.from({ length: 40 }, hex).join("");
+  if (network === "evm") {
+    const bytes = new Uint8Array(20);
+    ExpoCrypto.getRandomValues(bytes);
+    return "0x" + Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+  }
   const chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  return "1" + Array.from({ length: 33 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  const bytes = new Uint8Array(33);
+  ExpoCrypto.getRandomValues(bytes);
+  return "1" + Array.from(bytes, b => chars[b % chars.length]).join("");
 }
 
 export default function WalletScreen() {

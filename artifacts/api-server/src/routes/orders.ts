@@ -1,8 +1,9 @@
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
-import { eq, and, lte, gte, ne, isNotNull, desc, sql } from "drizzle-orm";
+import { eq, and, lte, gte, ne, isNotNull, desc, asc, sql } from "drizzle-orm";
 import crypto from "node:crypto";
+import { recoverMessageAddress } from "viem";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
@@ -16,6 +17,7 @@ import { settleEscrowMatch, isEscrowChain, findEscrowChain, ESCROW_ADDRESSES } f
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
+import { attemptLeAutoRoute } from "../lib/leAutoRoute.js";
 import {
   buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
   verifyBsvWithdrawSignature, verifySolWithdrawSignature,
@@ -24,6 +26,16 @@ import {
 } from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
+
+// ── Order-read challenge store ────────────────────────────────────────────────
+// Wallets that want to prove ownership before reading their orders request a
+// nonce via GET /orders/challenge, sign it with their private key, and pass
+// `sig` + `nonce` as query params to GET /orders.
+//
+// Enforcement is opt-in via the REQUIRE_ORDER_READ_SIG env var so the change
+// can be rolled out without breaking existing integrations immediately.
+const _readChallenges = new Map<string, { nonce: string; expiresAt: number }>();
+const READ_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 // ── Wallet-format helpers ─────────────────────────────────────────────────────
 
@@ -94,6 +106,27 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
   };
 }
 
+// ── GET /orders/challenge — issue a read-ownership nonce ─────────────────────
+// Clients request a nonce, sign it with their private key (EVM: personal_sign),
+// then pass `sig` + `nonce` to GET /orders to prove they own the address.
+// Enforcement is controlled by REQUIRE_ORDER_READ_SIG env var.
+router.get("/orders/challenge", (req, res) => {
+  const walletAddress = req.query.walletAddress as string;
+  if (!walletAddress) {
+    res.status(400).json({ error: "walletAddress is required" });
+    return;
+  }
+  const nonce     = crypto.randomBytes(16).toString("hex");
+  const expiresAt = Date.now() + READ_CHALLENGE_TTL_MS;
+  _readChallenges.set(walletAddress.toLowerCase(), { nonce, expiresAt });
+  res.json({
+    message:    `OrahDEX order read authorization for ${walletAddress}\nnonce: ${nonce}`,
+    nonce,
+    expiresAt,
+    instructions: "Sign this message with your wallet (EVM: personal_sign / eth_signMessage) and pass sig + nonce as query params to GET /orders.",
+  });
+});
+
 // ── GET /orders ───────────────────────────────────────────────────────────────
 router.get("/orders", async (req, res) => {
   try {
@@ -103,11 +136,56 @@ router.get("/orders", async (req, res) => {
       return;
     }
 
+    // ── Ownership proof (T005) ──────────────────────────────────────────────
+    // If `sig` + `nonce` are supplied, verify the caller owns this wallet.
+    // If REQUIRE_ORDER_READ_SIG=true, signature is mandatory for EVM wallets.
+    const sig      = req.query.sig  as string | undefined;
+    const sigNonce = req.query.nonce as string | undefined;
+    const isEvmWallet = /^0x[0-9a-fA-F]{40}$/.test(walletAddress);
+
+    if (sig && sigNonce) {
+      const challenge = _readChallenges.get(walletAddress.toLowerCase());
+      if (!challenge || challenge.nonce !== sigNonce || Date.now() > challenge.expiresAt) {
+        res.status(401).json({
+          error: "Invalid or expired ownership challenge. Request a fresh one via GET /orders/challenge.",
+        });
+        return;
+      }
+      if (isEvmWallet) {
+        try {
+          const message   = `OrahDEX order read authorization for ${walletAddress}\nnonce: ${sigNonce}`;
+          const recovered = await recoverMessageAddress({ message, signature: sig as `0x${string}` });
+          if (recovered.toLowerCase() !== walletAddress.toLowerCase()) {
+            res.status(401).json({ error: "Signature does not match wallet address." });
+            return;
+          }
+        } catch {
+          res.status(401).json({ error: "Invalid signature format." });
+          return;
+        }
+      }
+      // Challenge consumed — one-time use
+      _readChallenges.delete(walletAddress.toLowerCase());
+    } else if (process.env.REQUIRE_ORDER_READ_SIG === "true" && isEvmWallet) {
+      // Strict mode: enforce signature for EVM wallets
+      res.status(401).json({
+        error:        "Ownership proof required to read orders.",
+        instructions: "Call GET /orders/challenge?walletAddress=<addr> to get a nonce, sign it, then pass sig and nonce here.",
+      });
+      return;
+    }
+
     const limit  = Math.min(parseInt(req.query.limit as string) || 50, 200);
     // Normalize symbol: accept both "BSV-USDT" (URL/dash) and "BSV/USDT" (DB/slash)
     const rawSym = req.query.symbol as string | undefined;
     const symbol = rawSym ? rawSym.replace(/-/g, "/") : undefined;
-    const status = req.query.status as string | undefined;
+    const rawStatus = req.query.status as string | undefined;
+    const VALID_STATUSES = new Set(["open", "filled", "cancelled", "partial", "expired", "pending"]);
+    if (rawStatus && !VALID_STATUSES.has(rawStatus)) {
+      res.status(400).json({ error: `Invalid status '${rawStatus}'. Allowed values: ${[...VALID_STATUSES].join(", ")}` });
+      return;
+    }
+    const status = rawStatus;
 
     // Push all filters to the DB — never fetch all rows and slice in memory
     const conditions = [eq(ordersTable.walletAddress, walletAddress)];
@@ -544,6 +622,9 @@ router.post("/orders", async (req, res) => {
       // breaks numeric DB comparisons on very small asset prices.
       const safePriceStr = price != null ? price.toFixed(8) : undefined;
 
+      // Fetch counter-orders sorted by best price, capped at 500 rows.
+      // ORDER BY pushes sorting into the DB so only the cheapest sells / most
+      // expensive buys are loaded — avoids reading the entire order book in memory.
       const counterOrders = await db.select().from(ordersTable).where(
         and(
           eq(ordersTable.symbol, symbol),
@@ -557,14 +638,12 @@ router.post("/orders", async (req, res) => {
                 : gte(ordersTable.price, safePriceStr)]
             : []),
         )
-      );
+      )
+        .orderBy(side === "buy" ? asc(ordersTable.price) : desc(ordersTable.price))
+        .limit(500);
 
-      // Sort: best price first (cheapest sell for buy, most expensive buy for sell)
-      const sorted = counterOrders.sort((a, b) => {
-        const pa = parseFloat(a.price ?? "0");
-        const pb = parseFloat(b.price ?? "0");
-        return side === "buy" ? pa - pb : pb - pa;
-      });
+      // already sorted by the DB — alias for clarity
+      const sorted = counterOrders;
 
       // External EVM orders must match only against external EVM counterparties
       // so settlement remains wallet-to-wallet via HTLC, not synthetic ledger fill.
@@ -751,9 +830,21 @@ router.post("/orders", async (req, res) => {
           // Ledger settlement failed for this match. Since settleTrade() threw
           // before committing, no funds changed — skip this match and try the next.
           req.log.error(
-            { err: fillErr?.message, tradeId, matchId: match.id, fillQty, fillPrice },
+            { err: fillErr?.message, code: fillErr?.code, tradeId, matchId: match.id, fillQty, fillPrice },
             "orders: fill settlement failed — skipping match, trying next counter-order",
           );
+          // Cross-chain HTLC failures: notify both parties so they understand
+          // why their cross-chain fill was skipped.
+          if (fillErr?.code === "CROSS_CHAIN_HTLC_ERROR") {
+            for (const addr of [buyerAddress, sellerAddress]) {
+              pushNotification(addr, {
+                type:  "settlement_skipped",
+                title: "Cross-chain fill skipped",
+                body:  "A cross-chain match was found but the HTLC could not be generated. The fill was skipped to protect fund safety — your order remains open.",
+                pair:  symbol,
+              });
+            }
+          }
           continue;
         }
 
@@ -773,7 +864,13 @@ router.post("/orders", async (req, res) => {
               .where(eq(ordersTable.id, match.id));
           }
         } else {
-          await db.update(ordersTable)
+          // Optimistic concurrency guard: only update the counter-order if it is
+          // still 'open'.  A concurrent taker may have already consumed it (their
+          // settleTrade will have thrown SETTLEMENT_INSUFFICIENT_LOCK and they will
+          // have continued to the next match).  If we get 0 rows here the ledger
+          // already committed for this fill — log a warning and continue; the fill
+          // value is already recorded in totalFilled above.
+          const [updatedMatch] = await db.update(ordersTable)
             .set({
               status:            isMatchFullyFilled ? "filled" : "open",
               filledQuantity:    newMatchFilled.toFixed(18),
@@ -782,7 +879,15 @@ router.post("/orders", async (req, res) => {
               matchedOrderId:    id,
               updatedAt:         new Date(),
             })
-            .where(eq(ordersTable.id, match.id));
+            .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "open")))
+            .returning({ id: ordersTable.id });
+
+          if (!updatedMatch) {
+            req.log.warn(
+              { matchId: match.id, tradeId },
+              "orders: counter-order status already changed (concurrent consume) — fill credited, order state diverged",
+            );
+          }
         }
 
         totalFilled    += fillQty;
@@ -1160,12 +1265,70 @@ router.post("/orders", async (req, res) => {
       }
     }
 
-    // ── Market orders are Immediate-Or-Cancel: if nothing filled, delete and reject ──
-    // A market order that finds no eligible counter-party should never stay open.
-    // Leaving it open creates zombie orders that confuse the user (they have to
-    // manually cancel something that will never fill).
+    // ── Market orders are Immediate-Or-Cancel: if nothing filled, try LE auto-route ──
+    // When the DEX order book has no matching counter-orders, route the trade
+    // through the best external swap venue (LetsExchange / SimpleSwap / etc.)
+    // transparently. The order is marked "filled" at the venue's quoted rate —
+    // the user sees a normal filled trade in their order log, not a swap.
+    // Only applies to custodial (internal-ledger) users; external wallet users
+    // fall through to the standard NO_LIQUIDITY error.
     if ((isMarket || isStopTriggered) && totalFilled === 0) {
-      // Remove the order — it never matched; no funds were moved.
+      const leRoute = await attemptLeAutoRoute({
+        orderId:       id,
+        walletAddress: body.walletAddress,
+        symbol,
+        side,
+        quantity,
+        lockAmount:    parseFloat(lockAmount),
+        fundingRef:    fundingRef ?? "",
+        feeRate,
+      });
+
+      if (leRoute.ok) {
+        // Record platform fee on the fill value
+        const routeFee       = (leRoute.fillValue * feeRate).toFixed(18);
+        const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
+        recordPlatformFee({ source: "le_autoroute", amount: routeFee, asset: feeAssetSymbol, txRef: id });
+
+        // Mark the order as filled at the venue-quoted rate
+        await db.update(ordersTable).set({
+          status:            "filled",
+          filledQuantity:    leRoute.filledQty.toFixed(18),
+          remainingQuantity: "0",
+          price:             leRoute.fillPrice.toFixed(18),
+          total:             leRoute.fillValue.toFixed(18),
+          fee:               routeFee,
+          txid:              leRoute.leTransactionId ?? null,
+          updatedAt:         new Date(),
+        }).where(eq(ordersTable.id, id));
+
+        // Push filled notification
+        const fillBase = symbol.split("/")[0] ?? symbol;
+        pushNotification(body.walletAddress, {
+          type:  "order_filled",
+          title: "Order Filled ✓",
+          body:  `${leRoute.filledQty.toFixed(4)} ${fillBase} @ $${leRoute.fillPrice.toFixed(4)} avg`,
+          pair:  symbol,
+          txid:  leRoute.leTransactionId ?? undefined,
+          side,
+        });
+
+        const [created]  = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+        const quoteSymbol = (symbol.split("/")[1] ?? "USDT").replace("-PERP", "");
+        res.status(201).json({
+          ...serializeOrder(created),
+          matched:        true,
+          settlementTxid: leRoute.leTransactionId ?? null,
+          quoteSymbol,
+          explorerUrl:    null,
+          settlement:     null,
+        });
+        return;
+      }
+
+      req.log.info({ orderId: id, leError: leRoute.error }, "orders: LE auto-route unavailable — returning NO_LIQUIDITY");
+
+      // No venue could fill it — clean up the order and reject
       await db.delete(ordersTable).where(eq(ordersTable.id, id));
       res.status(422).json({
         error: "No matching sellers found for this market order. Place a limit order to set your price, or try again when liquidity is available.",
@@ -1254,6 +1417,11 @@ router.get("/orders/:orderId", async (req, res) => {
 });
 
 // ── DELETE /orders/:orderId ───────────────────────────────────────────────────
+// Atomically cancels the order AND unlocks its reserved balance in a single
+// pool transaction.  No fire-and-forget — if the unlock fails the entire
+// operation rolls back and the order stays open so the client can retry.
+// The POST /orders/recover-locked endpoint remains available as a last-resort
+// reconciliation tool for any previously-orphaned locks.
 router.delete("/orders/:orderId", async (req, res) => {
   try {
     const body = req.body;
@@ -1262,52 +1430,89 @@ router.delete("/orders/:orderId", async (req, res) => {
       return;
     }
 
-    const [order] = await db
-      .update(ordersTable)
-      .set({ status: "cancelled", updatedAt: new Date() })
-      .where(and(
-        eq(ordersTable.id, req.params.orderId),
-        eq(ordersTable.walletAddress, body.walletAddress),
-        eq(ordersTable.status, "open"),   // guard: never cancel an already-filled/cancelled order
-      ))
-      .returning();
+    const client = await pool.connect();
+    let orderRow: Record<string, unknown>;
+    try {
+      await client.query("BEGIN");
 
-    if (!order) {
-      res.status(404).json({ error: "Order not found or not owned by this wallet" });
-      return;
+      // Step 1: Mark the order cancelled (only if open and owned by this wallet)
+      const { rows: cancelRows } = await client.query<Record<string, unknown>>(
+        `UPDATE orders
+         SET status = 'cancelled', updated_at = NOW()
+         WHERE id = $1
+           AND wallet_address = $2
+           AND status = 'open'
+         RETURNING *`,
+        [req.params.orderId, body.walletAddress],
+      );
+
+      if (!cancelRows.length) {
+        await client.query("ROLLBACK");
+        res.status(404).json({ error: "Order not found or not owned by this wallet" });
+        return;
+      }
+      orderRow = cancelRows[0]!;
+
+      // Step 2: Compute the unlock amount
+      const symbol    = String(orderRow.symbol ?? "");
+      const side      = String(orderRow.side   ?? "");
+      const [base, quote = "USDT"] = symbol.split("/");
+      const lockAsset = side === "buy" ? quote : base;
+      const remaining = parseFloat(String(orderRow.remaining_quantity ?? "0"));
+      let   lockPrice = parseFloat(String(orderRow.price ?? "0"));
+
+      // Market buy orders have no stored price — look up the current market
+      // price within the same connection so the unlock mirrors the lock.
+      if (!lockPrice && side === "buy") {
+        const { rows: mktRows } = await client.query<{ last_price: string }>(
+          `SELECT last_price FROM markets WHERE symbol = $1 LIMIT 1`,
+          [symbol],
+        );
+        lockPrice = mktRows[0] ? parseFloat(mktRows[0].last_price) : 0;
+      }
+
+      const lockAmount = side === "buy" ? lockPrice * remaining : remaining;
+
+      // Step 3: Unlock reserved balance in the same transaction
+      if (lockAmount > 0 && lockAsset) {
+        const wallet     = String(orderRow.wallet_address ?? "");
+        const normWallet = /^0x/i.test(wallet) ? wallet.toLowerCase() : wallet;
+        await client.query(
+          `UPDATE user_balances
+           SET locked     = GREATEST(locked - $1::numeric, '0'),
+               available  = available + LEAST($1::numeric, locked),
+               updated_at = NOW()
+           WHERE wallet_address = $2 AND asset_symbol = $3`,
+          [lockAmount.toFixed(18), normWallet, lockAsset],
+        );
+      }
+
+      await client.query("COMMIT");
+    } catch (txErr) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw txErr;
+    } finally {
+      client.release();
     }
 
-    // ── Respond immediately — the order is already cancelled in the DB ────────
-    // Unlocking the reserved balance is a separate DB transaction; we fire it
-    // in the background so the client doesn't have to wait for it.
-    res.json(serializeOrder(order));
-
-    // ── Unlock the reserved balance (background, non-blocking) ───────────────
-    (async () => {
-      try {
-        const [baseAsset, quoteAsset = "USDT"] = order.symbol.split("/");
-        const lockAsset = order.side === "buy" ? quoteAsset : baseAsset;
-        const remaining = parseFloat(order.remainingQuantity);
-
-        // Market orders have no stored price — look up current market price so
-        // the unlock amount mirrors what was locked at order placement time.
-        let lockPrice = parseFloat(order.price ?? "0");
-        if (!lockPrice && order.side === "buy") {
-          const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, order.symbol));
-          lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
-        }
-
-        const lockAmount = order.side === "buy"
-          ? (lockPrice * remaining).toString()
-          : remaining.toString();
-
-        if (parseFloat(lockAmount) > 0 && lockAsset) {
-          await unlockFunds({ walletAddress: order.walletAddress, asset: lockAsset, amount: lockAmount });
-        }
-      } catch (unlockErr) {
-        req.log.warn({ unlockErr }, "Ledger unlock failed on cancel");
-      }
-    })();
+    // Return a serialized response from the raw DB row
+    res.json({
+      id:                String(orderRow!.id ?? ""),
+      walletAddress:     String(orderRow!.wallet_address ?? ""),
+      symbol:            String(orderRow!.symbol ?? ""),
+      side:              String(orderRow!.side ?? ""),
+      type:              String(orderRow!.type ?? ""),
+      status:            String(orderRow!.status ?? ""),
+      price:             orderRow!.price != null ? parseFloat(String(orderRow!.price)) : undefined,
+      quantity:          parseFloat(String(orderRow!.quantity ?? "0")),
+      filledQuantity:    parseFloat(String(orderRow!.filled_quantity ?? "0")),
+      remainingQuantity: parseFloat(String(orderRow!.remaining_quantity ?? "0")),
+      fee:               parseFloat(String(orderRow!.fee ?? "0")),
+      total:             orderRow!.total != null ? parseFloat(String(orderRow!.total)) : undefined,
+      txid:              orderRow!.txid ?? null,
+      createdAt:         orderRow!.created_at ?? null,
+      updatedAt:         orderRow!.updated_at ?? null,
+    });
   } catch (err) {
     req.log.error({ err }, "Failed to cancel order");
     res.status(500).json({ error: "Internal server error" });
@@ -1461,12 +1666,13 @@ router.post("/orders/precheck", async (req, res) => {
       warnings.push({ code: "PRICE_IMPACT_MODERATE", message: "Your order will move the price by >1%." });
     }
 
-    // Liquidity check — no open bot orders on the counter side? warn.
+    // Liquidity check — no open orders on the counter side? warn.
+    // Uses LIMIT 1 so we only need to know existence, not count the entire book.
     const [base, quote = "USDT"] = symbol.split("/");
     const counterSide = side === "buy" ? "sell" : "buy";
-    const counterOrders = await db.select().from(ordersTable).where(
+    const counterOrders = await db.select({ id: ordersTable.id }).from(ordersTable).where(
       and(eq(ordersTable.symbol, symbol), eq(ordersTable.side, counterSide), eq(ordersTable.status, "open"))
-    );
+    ).limit(1);
     if (counterOrders.length === 0) {
       warnings.push({ code: "LOW_LIQUIDITY", message: "No counter-orders visible — your order may wait for a match." });
     }

@@ -192,7 +192,21 @@ router.get("/staking/coins", (_req, res) => {
       .map(p => ({ id: p.id, name: p.name, logo: p.logo, url: p.url, tvl: p.tvl, rating: p.rating })),
   }));
   res.set("Cache-Control", "public, max-age=300");
-  res.json(coins);
+  res.json({
+    coins,
+    dataSource: "static",
+    custodialDisclosure: {
+      nativeStaking: {
+        type: "off-chain-custodial",
+        description:
+          "OrahDEX Native Staking records positions in an internal ledger. " +
+          "Your staked assets remain under OrahDEX custody and are NOT locked " +
+          "in any on-chain smart contract. Rewards are credited by OrahDEX off-chain. " +
+          "This is a custodial product — not permissionless on-chain DeFi staking.",
+        riskWarning: "Custodial staking carries platform risk. Consider using the listed third-party providers for non-custodial staking.",
+      },
+    },
+  });
 });
 
 // ── GET /api/staking/providers ────────────────────────────────────────────────
@@ -244,7 +258,7 @@ router.get("/staking/positions", async (req, res) => {
 // The client signs the returned `message` and includes nonce+signature in /stake.
 router.post("/staking/challenge", (req, res) => {
   const { walletAddress, coin, amount, lockDays } = req.body ?? {};
-  if (!walletAddress || !coin || !amount || !lockDays) {
+  if (!walletAddress || !coin || !amount || lockDays == null || lockDays === "") {
     res.status(400).json({ error: "walletAddress, coin, amount and lockDays are required" });
     return;
   }
@@ -274,8 +288,8 @@ router.post("/staking/stake", async (req, res) => {
     return;
   }
   const days = parseInt(String(lockDays), 10);
-  if (!days || days < 1) {
-    res.status(400).json({ error: "lockDays must be a positive integer" });
+  if (isNaN(days) || days < 0) {
+    res.status(400).json({ error: "lockDays must be 0 or a positive integer" });
     return;
   }
   const coinMeta = POS_COINS.find(c => c.symbol === String(coin).toUpperCase());

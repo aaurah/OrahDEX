@@ -13,8 +13,8 @@
 
 import { Router, type IRouter, type Response } from "express";
 import { db, pool } from "@workspace/db";
-import { marketsTable } from "@workspace/db/schema";
-import { or, eq } from "drizzle-orm";
+import { marketsTable, ordersTable } from "@workspace/db/schema";
+import { or, eq, and, ne, desc, sql as sqlRaw } from "drizzle-orm";
 import {
   settleSwap,
 } from "../lib/ledger.js";
@@ -31,6 +31,49 @@ import { createChangellyExchange, getChangellyExchange } from "../lib/changelly.
 const router: IRouter = Router();
 
 const FEE_PCT = 0.003; // 0.3%
+
+/**
+ * Default server-side slippage tolerance.
+ * Applied when the client does not supply `minAmountOut`.
+ * Surfaced in /swap/quote so clients can display it before execution.
+ */
+const DEFAULT_MAX_SLIPPAGE_PCT = 5; // 5%
+
+/**
+ * Short-lived in-memory rate cache for the /swap/quote endpoint.
+ * Avoids 1–3 DB round-trips on every preview quote.
+ * The actual /swap execution still calls resolveRate() directly (no cache)
+ * so fills always use the freshest price from the market table.
+ */
+const _rateCache    = new Map<string, { rate: number; expiresAt: number }>();
+const _rateInFlight = new Map<string, Promise<number | null>>();
+const RATE_CACHE_TTL_MS = 30_000; // 30 s — quotes refresh faster than this
+
+async function resolveRateCached(assetIn: string, assetOut: string): Promise<number | null> {
+  const key = `${assetIn}:${assetOut}`;
+  const cached = _rateCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.rate;
+
+  // Single-flight: if a DB fetch is already in-progress for this key, await
+  // the same promise instead of launching a duplicate query (thundering-herd
+  // prevention for burst quote traffic on the same pair).
+  const inflight = _rateInFlight.get(key);
+  if (inflight) return inflight;
+
+  const fetch = resolveRate(assetIn, assetOut).then(rate => {
+    if (rate != null) {
+      _rateCache.set(key, { rate, expiresAt: Date.now() + RATE_CACHE_TTL_MS });
+    }
+    _rateInFlight.delete(key);
+    return rate;
+  }).catch(err => {
+    _rateInFlight.delete(key);
+    throw err;
+  });
+
+  _rateInFlight.set(key, fetch);
+  return fetch;
+}
 
 function verifyEvmSwapSignature(
   res: Response,
@@ -100,7 +143,7 @@ router.post("/swap/quote", async (req, res) => {
   }
 
   try {
-    const rate = await resolveRate(assetIn.toUpperCase(), assetOut.toUpperCase());
+    const rate = await resolveRateCached(assetIn.toUpperCase(), assetOut.toUpperCase());
     if (!rate) {
       res.status(422).json({
         error: "No price available for this pair",
@@ -115,15 +158,51 @@ router.post("/swap/quote", async (req, res) => {
     const fee      = grossOut * FEE_PCT;
     const amtOut   = grossOut - fee;
 
+    // Estimate price impact from live order-book depth instead of a hardcoded value.
+    // Buying base asset (assetIn is a stablecoin) → look at sell-side depth.
+    // Selling base asset → look at buy-side depth.
+    // impact = amtIn / totalCounterLiquidity × 100, capped at 50%.
+    // Falls back to 0.1 when the pair has no open counter-orders (thin/new market).
+    const QUOTE_ASSETS = new Set(["USDT","USDC","BUSD","TUSD","DAI","USDE"]);
+    const buyingBase = QUOTE_ASSETS.has(assetIn.toUpperCase());
+    const obPair = buyingBase
+      ? `${assetOut.toUpperCase()}/${assetIn.toUpperCase()}`
+      : `${assetIn.toUpperCase()}/${assetOut.toUpperCase()}`;
+    const counterSide = buyingBase ? "sell" : "buy";
+    let priceImpactPct = 0.1;
+    try {
+      const counterRows = await db
+        .select({ qty: ordersTable.remainingQuantity, price: ordersTable.price, qty2: ordersTable.quantity })
+        .from(ordersTable)
+        .where(and(
+          eq(ordersTable.symbol, obPair),
+          eq(ordersTable.side, counterSide),
+          eq(ordersTable.status, "open"),
+        ));
+      // Sum liquidity in the same units as amtIn (quote for buys, base for sells)
+      const totalLiq = counterRows.reduce((acc, o) => {
+        const qty = parseFloat(o.qty ?? o.qty2 ?? "0");
+        const px  = parseFloat(o.price ?? "0");
+        return acc + (buyingBase ? qty * px : qty);
+      }, 0);
+      if (totalLiq > 0) priceImpactPct = Math.min((amtIn / totalLiq) * 100, 50);
+    } catch {
+      // Non-fatal: fall back to 0.1 so the quote still returns
+    }
+
     res.json({
-      assetIn:    assetIn.toUpperCase(),
-      assetOut:   assetOut.toUpperCase(),
-      amountIn:   amtIn.toFixed(8),
-      amountOut:  amtOut.toFixed(8),
-      fee:        fee.toFixed(8),
-      feePct:     FEE_PCT * 100,
-      rate:       rate.toFixed(8),
-      priceImpactPct: 0.1,   // simplified — real AMM would calculate from reserves
+      assetIn:            assetIn.toUpperCase(),
+      assetOut:           assetOut.toUpperCase(),
+      amountIn:           amtIn.toFixed(8),
+      amountOut:          amtOut.toFixed(8),
+      fee:                fee.toFixed(8),
+      feePct:             FEE_PCT * 100,
+      rate:               rate.toFixed(8),
+      priceImpactPct,
+      defaultSlippagePct: DEFAULT_MAX_SLIPPAGE_PCT,
+      minAmountOutHint:   (amtOut * (1 - DEFAULT_MAX_SLIPPAGE_PCT / 100)).toFixed(8),
+      slippageNote:       `Set minAmountOut ≥ minAmountOutHint in your swap request. ` +
+                          `If omitted, the server enforces a ${DEFAULT_MAX_SLIPPAGE_PCT}% tolerance automatically.`,
     });
   } catch (err) {
     req.log.error({ err }, "Swap quote failed");
@@ -182,14 +261,12 @@ router.post("/swap", async (req, res) => {
 
     // Slippage check.
     // If the client supplied minAmountOut, enforce it strictly. Otherwise
-    // apply a server-side default cap (5% below the quoted output) so a
-    // malformed/malicious request without a min cannot be filled at any
-    // arbitrarily bad rate. Clients should always send a real minAmountOut
-    // computed from a fresh quote — this is a safety net, not a substitute.
-    const DEFAULT_MAX_SLIPPAGE = 0.05; // 5%
+    // apply a server-side default cap so a malformed/malicious request without
+    // a min cannot be filled at any arbitrarily bad rate.
+    // Clients should always send a real minAmountOut from a fresh quote.
     const effectiveMinOut = minAmountOut != null && minAmountOut !== ""
       ? parseFloat(minAmountOut)
-      : grossOut * (1 - DEFAULT_MAX_SLIPPAGE);
+      : grossOut * (1 - DEFAULT_MAX_SLIPPAGE_PCT / 100);
     if (Number.isFinite(effectiveMinOut) && amtOut < effectiveMinOut) {
       res.status(422).json({
         error:    "Slippage exceeded",
@@ -218,15 +295,16 @@ router.post("/swap", async (req, res) => {
     }, "Swap settled");
 
     res.json({
-      success:   true,
-      assetIn:   assetIn.toUpperCase(),
-      assetOut:  assetOut.toUpperCase(),
-      amountIn:  amtIn.toFixed(8),
-      amountOut: amtOut.toFixed(8),
-      fee:       fee.toFixed(8),
-      feePct:    FEE_PCT * 100,
-      rate:      rate.toFixed(8),
-      timestamp: new Date().toISOString(),
+      success:    true,
+      dataSource: "synthetic_amm",  // settled against internal ledger balances, not the order book
+      assetIn:    assetIn.toUpperCase(),
+      assetOut:   assetOut.toUpperCase(),
+      amountIn:   amtIn.toFixed(8),
+      amountOut:  amtOut.toFixed(8),
+      fee:        fee.toFixed(8),
+      feePct:     FEE_PCT * 100,
+      rate:       rate.toFixed(8),
+      timestamp:  new Date().toISOString(),
     });
   } catch (err: any) {
     if (err?.message?.startsWith("INSUFFICIENT_FUNDS")) {
@@ -384,6 +462,9 @@ router.post("/swap/execute", async (req, res) => {
   const amt = parseFloat(String(amountIn));
   if (!isFinite(amt) || amt <= 0) {
     res.status(400).json({ error: "amountIn must be a positive finite number" }); return;
+  }
+  if (amt > 1_000_000) {
+    res.status(400).json({ error: "amountIn exceeds maximum swap size (1,000,000)" }); return;
   }
   const [a, b]   = [String(assetIn).toUpperCase(), String(assetOut).toUpperCase()];
   const splitOpt = allowSplit === true || allowSplit === "true";
@@ -603,6 +684,9 @@ router.post("/swap/execute", async (req, res) => {
         address:  withdrawalStr,
         extraId:  withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
         refundAddress: refund ? String(refund) : undefined,
+        // Forward the rate_id returned by GET /swap/quote so ChangeNOW honours
+        // the locked rate the user was shown, rather than re-pricing at execution.
+        rateId:   rate_id ? String(rate_id) : undefined,
       });
       if (!result.ok) {
         res.status(422).json({ error: result.error, venue: "changenow" }); return;
@@ -759,16 +843,24 @@ async function resolveRate(assetIn: string, assetOut: string): Promise<number | 
     const [mkt] = await db
       .select({ symbol: marketsTable.symbol, lastPrice: marketsTable.lastPrice })
       .from(marketsTable)
-      .where(or(eq(marketsTable.symbol, direct), eq(marketsTable.symbol, inverse)))
+      .where(and(
+        or(eq(marketsTable.symbol, direct), eq(marketsTable.symbol, inverse)),
+        ne(marketsTable.type, "letsexchange"),
+      ))
+      .orderBy(desc(marketsTable.updatedAt))
       .limit(1);
 
     if (!mkt) {
       // Try routing via USDT if neither is stablecoin
       if (!STABLES.has(assetIn) && !STABLES.has(assetOut)) {
         const [inMkt]  = await db.select({ lastPrice: marketsTable.lastPrice })
-          .from(marketsTable).where(eq(marketsTable.symbol, `${assetIn}/USDT`)).limit(1);
+          .from(marketsTable)
+          .where(and(eq(marketsTable.symbol, `${assetIn}/USDT`), ne(marketsTable.type, "letsexchange")))
+          .orderBy(desc(marketsTable.updatedAt)).limit(1);
         const [outMkt] = await db.select({ lastPrice: marketsTable.lastPrice })
-          .from(marketsTable).where(eq(marketsTable.symbol, `${assetOut}/USDT`)).limit(1);
+          .from(marketsTable)
+          .where(and(eq(marketsTable.symbol, `${assetOut}/USDT`), ne(marketsTable.type, "letsexchange")))
+          .orderBy(desc(marketsTable.updatedAt)).limit(1);
         if (inMkt && outMkt) {
           const inPrice  = parseFloat(inMkt.lastPrice);
           const outPrice = parseFloat(outMkt.lastPrice);

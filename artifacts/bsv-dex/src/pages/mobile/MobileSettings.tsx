@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Link2, Shield, Percent, Zap, DollarSign, Bell,
   Activity, LogOut, Info, FileText, ChevronRight,
@@ -6,6 +6,7 @@ import {
   Moon, Sun, Smartphone, Monitor, Palette, BookOpen,
   Headphones, MessageCircle, HelpCircle, Mail, Search, X, Key, Volume2, KeyRound, Wallet as WalletIcon,
 } from "lucide-react";
+import { API_BASE } from "@/lib/api";
 import { getImportedWallet } from "@/lib/walletPin";
 import { listPasskeyWallets } from "@/lib/passkeyWallet";
 import { RevealSecretSheet } from "@/components/wallet/RevealSecretSheet";
@@ -13,14 +14,13 @@ import { NotificationAdvancedRows } from "@/components/NotificationAdvancedRows"
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { SocialBar } from "@/components/SocialBar";
-import { disconnectReown } from "@/lib/reown";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
 import { useThemeStore, type Theme } from "@/store/useThemeStore";
 import { useSettingsStore, FIAT_CURRENCIES, CRYPTO_QUOTE_CURRENCIES } from "@/store/useSettingsStore";
 import { usePriceAlertsStore } from "@/store/usePriceAlertsStore";
 import { PriceAlertsDialog } from "@/components/PriceAlertsDialog";
 import { SlippagePicker, LeveragePicker } from "@/components/TradingDefaultsPickers";
-import { cn } from "@/lib/utils";
+import { cn, getProviderLabel } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
 
 const THEMES: { id: Theme; label: string; Icon: any; color: string }[] = [
@@ -29,6 +29,27 @@ const THEMES: { id: Theme; label: string; Icon: any; color: string }[] = [
   { id: "amoled", label: "Amoled", Icon: Smartphone, color: "#22c55e" },
   { id: "system", label: "System", Icon: Monitor,    color: "#64748b" },
 ];
+
+type SystemStatus = "operational" | "degraded" | "outage" | "loading";
+
+function useSystemStatus(): SystemStatus {
+  const [status, setStatus] = useState<SystemStatus>("loading");
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/health`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then((d) => {
+        if (cancelled) return;
+        if (!d) { setStatus("degraded"); return; }
+        const anyDead = d.services?.some((s: any) => s.status === "dead");
+        const anyDeg  = d.services?.some((s: any) => s.status === "degraded" || s.status === "stuck");
+        setStatus(anyDead ? "outage" : anyDeg ? "degraded" : "operational");
+      })
+      .catch(() => { if (!cancelled) setStatus("degraded"); });
+    return () => { cancelled = true; };
+  }, []);
+  return status;
+}
 
 const BASE_URL = window.location.origin;
 
@@ -129,10 +150,13 @@ export function MobileSettings() {
     ? listPasskeyWallets().some(w => w.address.toLowerCase() === address.toLowerCase())
     : false;
   const canBackup = !!imported || passkeyOwned;
+  const systemStatus = useSystemStatus();
 
   const handleDisconnect = async () => {
     if (window.confirm("Disconnect your wallet?")) {
-      if (provider === "reown") await disconnectReown();
+      if (provider === "reown") {
+        import("@/lib/reown-appkit").then(({ disconnectReown }) => disconnectReown()).catch(() => {});
+      }
       disconnect();
     }
   };
@@ -149,7 +173,7 @@ export function MobileSettings() {
             <Row
               icon={Link2}
               label="Connected Wallet"
-              value={`${provider} · ${address.slice(0, 10)}...`}
+              value={`${getProviderLabel(provider)} · ${address.slice(0, 10)}...`}
             />
             <Row
               icon={Shield}
@@ -313,7 +337,38 @@ export function MobileSettings() {
       </Section>
 
       <Section title="About">
-        <Row icon={Info} label="Version" value="1.0.0" />
+        <Row icon={Info} label="Version" value="8.0.0" />
+        <Row
+          icon={Activity}
+          iconColor={
+            systemStatus === "operational" ? "#22c55e"
+            : systemStatus === "degraded"   ? "#eab308"
+            : systemStatus === "outage"     ? "#ef4444"
+            : "#64748b"
+          }
+          label="System Status"
+          value={
+            systemStatus === "operational" ? "All systems operational"
+            : systemStatus === "degraded"   ? "Partial degradation"
+            : systemStatus === "outage"     ? "Service disruption"
+            : "Checking…"
+          }
+          onClick={() => navigate("/status")}
+          rightEl={
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "w-2 h-2 rounded-full",
+                  systemStatus === "operational" ? "bg-green-400 animate-pulse"
+                  : systemStatus === "degraded"   ? "bg-yellow-400"
+                  : systemStatus === "outage"     ? "bg-red-400"
+                  : "bg-slate-500 animate-pulse"
+                )}
+              />
+              <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+            </div>
+          }
+        />
         <Row icon={BookOpen} iconColor="#4ade80" label="White Paper" value="OrahDEX project white paper" onClick={() => navigate("/whitepaper")} />
         <Row icon={FileText} label="Terms of Service" onClick={() => navigate("/terms")} />
         <Row icon={Shield} label="Privacy Policy" onClick={() => navigate("/privacy")} />

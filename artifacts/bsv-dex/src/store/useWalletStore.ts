@@ -147,13 +147,34 @@ export const useWalletStore = create<WalletState>()(
 
       connect: (wallet) =>
         set((s) => {
-          // If reconnecting with the same provider and same primary address (e.g. chain
-          // switch via Reown), preserve all internal addresses so the provisioning hooks
-          // don't fire again and overwrite them with new custodial keypairs.
           const sameProvider = s.provider === wallet.provider;
           const sameAddress  = s.address  === wallet.address;
-          const sameNetwork = s.network === wallet.network;
+          const sameNetwork  = s.network  === wallet.network;
           const isNetworkSwitchOnSameWallet = sameProvider && sameAddress && !sameNetwork;
+
+          // Seed-derived internal addresses belong to the user's Orah HD seed phrase.
+          // They must survive cross-wallet sessions (MetaMask, WalletConnect, ThirdWeb,
+          // chain switches) so getNftProfileAddress() always returns the same stable
+          // address — "one seed phrase, one profile".
+          //
+          // Clear them ONLY when a genuinely new Orah seed is connecting: the
+          // orah-wallet provider with a different primary BSV address.  Every other
+          // connect() call (external wallet, network switch, same-wallet reconnect)
+          // leaves the seed internals intact.
+          const isNewOrahSeed = wallet.provider === "orah-wallet" && !sameAddress;
+
+          // When an external EVM wallet (MetaMask, WalletConnect/Reown, etc.) connects,
+          // update internalEvmAddress to the new address so that network-tab round-trips
+          // (e.g. BSV→EVM) always restore the correct external wallet address rather than
+          // a stale address from a previous session or custodial sub-account.
+          // For orah-wallet the internalEvmAddress is set separately via setInternalEvmAddress
+          // (provisioned by the OrahLink custodial flow) so we never overwrite it here.
+          const newInternalEvmAddress = isNewOrahSeed
+            ? null
+            : (wallet.network === 'evm' && wallet.provider !== 'orah-wallet'
+                ? wallet.address
+                : s.internalEvmAddress);
+
           return {
             address:   wallet.address,
             provider:  wallet.provider,
@@ -161,16 +182,15 @@ export const useWalletStore = create<WalletState>()(
             chainId:   wallet.chainId ?? null,
             balance:   isNetworkSwitchOnSameWallet ? null : (wallet.balance ?? null),
             isConnecting: false,
-            // Preserve internals on same-provider reconnect (chain switch); reset on new wallet
-            internalEvmAddress:  sameProvider && sameAddress ? s.internalEvmAddress  : null,
-            internalBsvAddress:  sameProvider && sameAddress ? s.internalBsvAddress  : null,
-            internalBchAddress:  sameProvider && sameAddress ? s.internalBchAddress  : null,
-            internalBtcAddress:  sameProvider && sameAddress ? s.internalBtcAddress  : null,
-            internalSolAddress:  sameProvider && sameAddress ? s.internalSolAddress  : null,
-            internalXrpAddress:  sameProvider && sameAddress ? s.internalXrpAddress  : null,
-            internalLtcAddress:  sameProvider && sameAddress ? s.internalLtcAddress  : null,
-            internalDogeAddress: sameProvider && sameAddress ? s.internalDogeAddress : null,
-            internalTronAddress: sameProvider && sameAddress ? s.internalTronAddress : null,
+            internalEvmAddress:  newInternalEvmAddress,
+            internalBsvAddress:  isNewOrahSeed ? null : s.internalBsvAddress,
+            internalBchAddress:  isNewOrahSeed ? null : s.internalBchAddress,
+            internalBtcAddress:  isNewOrahSeed ? null : s.internalBtcAddress,
+            internalSolAddress:  isNewOrahSeed ? null : s.internalSolAddress,
+            internalXrpAddress:  isNewOrahSeed ? null : s.internalXrpAddress,
+            internalLtcAddress:  isNewOrahSeed ? null : s.internalLtcAddress,
+            internalDogeAddress: isNewOrahSeed ? null : s.internalDogeAddress,
+            internalTronAddress: isNewOrahSeed ? null : s.internalTronAddress,
           };
         }),
 
@@ -182,15 +202,10 @@ export const useWalletStore = create<WalletState>()(
           chainId: null,
           balance: null,
           isConnecting: false,
-          internalEvmAddress: null,
-          internalBsvAddress: null,
-          internalBchAddress: null,
-          internalBtcAddress: null,
-          internalSolAddress: null,
-          internalXrpAddress: null,
-          internalLtcAddress: null,
-          internalDogeAddress: null,
-          internalTronAddress: null,
+          // Intentionally keep all internal*Address fields — they are derived from
+          // the user's seed phrase and must persist through disconnect so that the
+          // NFT profile address stays stable ("one seed, one profile").  They are
+          // only reset when a genuinely new Orah seed is connected (see connect()).
           isHardwareWallet:   false,
           hardwareWalletType: null,
           hardwareWalletPath: null,

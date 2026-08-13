@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ChevronDown, ArrowRight, ArrowUpDown, RefreshCw, Zap, Clock, AlertCircle, CheckCircle2, Copy } from "lucide-react";
+import { ChevronDown, ArrowRight, ArrowUpDown, RefreshCw, Zap, Clock, AlertCircle, CheckCircle2, Copy, ExternalLink, Loader2 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
+import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useWalletStore } from "@/store/useWalletStore";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -44,16 +46,44 @@ interface BuiltTx {
   chainId: number;
 }
 
-// ── Provider display map ──────────────────────────────────────────────────────
+// ── Provider display helpers ──────────────────────────────────────────────────
 
-const PROVIDER_META: Record<string, { label: string; color: string; tag: string }> = {
-  "mock-cheap-slow":      { label: "Across V2",  color: "#4ade80", tag: "Cheapest"  },
-  "mock-fast-expensive":  { label: "Stargate V2", color: "#facc15", tag: "Fastest"  },
-  "mock-balanced":        { label: "Socket",      color: "#60a5fa", tag: "Balanced" },
+const BRIDGE_COLORS: Record<string, string> = {
+  "across":   "#4ade80",
+  "stargate": "#facc15",
+  "hop":      "#f97316",
+  "connext":  "#a78bfa",
+  "cbridge":  "#38bdf8",
+  "synapse":  "#e879f9",
+  "socket":   "#60a5fa",
 };
 
-function providerMeta(id: string) {
-  return PROVIDER_META[id] ?? { label: id, color: "#9ca3af", tag: "" };
+function bridgeColor(name: string): string {
+  const slug = name.toLowerCase().replace(/\s+/g, "").replace(/[^a-z]/g, "");
+  for (const [key, color] of Object.entries(BRIDGE_COLORS)) {
+    if (slug.includes(key)) return color;
+  }
+  const h = [...name].reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 0);
+  const hue = Math.abs(h) % 360;
+  return `hsl(${hue},70%,60%)`;
+}
+
+function providerMeta(id: string, routeMeta?: Record<string, unknown>) {
+  const bridgeName = (routeMeta?.["bridgeName"] as string | undefined)
+    ?? id.split(":")[1]?.split("-").map(w => w[0]?.toUpperCase() + w.slice(1)).join(" ")
+    ?? id;
+  return { label: bridgeName, color: bridgeColor(bridgeName), tag: "" };
+}
+
+function computeTags(quotes: BridgeQuote[]): Map<string, string> {
+  const tags = new Map<string, string>();
+  if (quotes.length < 2) return tags;
+  const fastest  = quotes.reduce((a, b) => a.estimatedTimeSeconds < b.estimatedTimeSeconds ? a : b);
+  tags.set(fastest.providerId, "Fastest");
+  const byFee    = [...quotes].sort((a, b) => (BigInt(a.fee) < BigInt(b.fee) ? -1 : 1));
+  const cheapest = byFee[0];
+  if (cheapest && !tags.has(cheapest.providerId)) tags.set(cheapest.providerId, "Cheapest");
+  return tags;
 }
 
 function fmtTime(seconds: number): string {
@@ -75,6 +105,16 @@ function trimAmount(s: string): string {
 const CHAIN_COLORS: Record<number, string> = {
   1: "#627EEA", 8453: "#0052FF", 42161: "#28A0F0",
   10: "#FF0420", 137: "#8247E5", 56: "#F0B90B", 43114: "#E84142",
+};
+
+const EXPLORER_TX: Record<number, string> = {
+  1:     "https://etherscan.io/tx/",
+  8453:  "https://basescan.org/tx/",
+  42161: "https://arbiscan.io/tx/",
+  10:    "https://optimistic.etherscan.io/tx/",
+  137:   "https://polygonscan.com/tx/",
+  56:    "https://bscscan.com/tx/",
+  43114: "https://snowtrace.io/tx/",
 };
 
 function ChainBadge({ chain }: { chain: Chain }) {
@@ -222,14 +262,16 @@ function QuoteRow({
   isSelected,
   onSelect,
   toToken,
+  tag,
 }: {
   quote: BridgeQuote;
   isBest: boolean;
   isSelected: boolean;
   onSelect: () => void;
   toToken: Token | null;
+  tag?: string;
 }) {
-  const meta = providerMeta(quote.providerId);
+  const meta = providerMeta(quote.providerId, quote.routeMeta);
 
   return (
     <button
@@ -243,12 +285,12 @@ function QuoteRow({
       {/* Provider */}
       <div className="flex flex-col min-w-[90px]">
         <span className="text-sm font-semibold text-foreground">{meta.label}</span>
-        {meta.tag && (
+        {tag && (
           <span
             className="text-[10px] font-medium px-1.5 py-0.5 rounded-full w-fit mt-0.5"
             style={{ background: meta.color + "22", color: meta.color }}
           >
-            {meta.tag}
+            {tag}
           </span>
         )}
       </div>
@@ -288,7 +330,7 @@ function QuoteRow({
 
 // ── Built-tx JSON viewer ──────────────────────────────────────────────────────
 
-function TxViewer({ tx, warning }: { tx: BuiltTx; warning?: string }) {
+function TxViewer({ tx, warning, bridgeName }: { tx: BuiltTx; warning?: string; bridgeName?: string }) {
   const [copied, setCopied] = useState(false);
   const json = JSON.stringify(tx, null, 2);
 
@@ -301,7 +343,9 @@ function TxViewer({ tx, warning }: { tx: BuiltTx; warning?: string }) {
   return (
     <div className="bg-background border border-border/50 rounded-xl overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border/50">
-        <span className="text-xs font-semibold text-primary uppercase tracking-wide">Transaction Payload</span>
+        <span className="text-xs font-semibold text-primary uppercase tracking-wide">
+          Transaction Payload{bridgeName ? ` · via ${bridgeName}` : ""}
+        </span>
         <button
           onClick={copy}
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -326,6 +370,9 @@ function TxViewer({ tx, warning }: { tx: BuiltTx; warning?: string }) {
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
+  const storeAddress = useWalletStore(s => s.address);
+  const effectiveWallet = walletAddress ?? storeAddress ?? undefined;
+
   const [chains, setChains] = useState<Chain[]>([]);
   const [fromChain, setFromChain] = useState<Chain | null>(null);
   const [toChain, setToChain]     = useState<Chain | null>(null);
@@ -338,9 +385,82 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
   const [selectedQuote, setSelectedQuote] = useState<BridgeQuote | null>(null);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
   const [quoteError, setQuoteError]       = useState<string | null>(null);
-  const [builtTx, setBuiltTx]       = useState<{ tx: BuiltTx; warning?: string } | null>(null);
+  const [builtTx, setBuiltTx]       = useState<{ tx: BuiltTx; warning?: string; bridgeName?: string } | null>(null);
   const [buildingTx, setBuildingTx] = useState(false);
   const [buildTxError, setBuildTxError] = useState<string | null>(null);
+
+  // Execute state
+  const [executing,      setExecuting]      = useState(false);
+  const [executeTxHash,  setExecuteTxHash]  = useState<string | null>(null);
+  const [executeError,   setExecuteError]   = useState<string | null>(null);
+  const [executeDone,    setExecuteDone]    = useState(false);
+
+  async function handleExecute() {
+    if (!builtTx) return;
+    setExecuting(true);
+    setExecuteError(null);
+    setExecuteTxHash(null);
+    try {
+      // Resolve EIP-1193 provider: window.ethereum injected wallet
+      const eth = (window as any).ethereum;
+      const provider = eth ?? null;
+      if (!provider) throw new Error("No wallet connected. Please connect a browser wallet.");
+
+      // Switch to the source chain the bridge tx needs to run on
+      const targetHex = "0x" + builtTx.tx.chainId.toString(16);
+      const currentChain: string = await provider.request({ method: "eth_chainId" });
+      if (currentChain.toLowerCase() !== targetHex.toLowerCase()) {
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: targetHex }],
+        });
+      }
+
+      // Resolve from-address
+      const accounts: string[] = await provider.request({ method: "eth_accounts" });
+      const from = accounts[0] ?? effectiveWallet;
+      if (!from) throw new Error("No account found — connect your wallet.");
+
+      const txHash: string = await provider.request({
+        method: "eth_sendTransaction",
+        params: [{
+          from,
+          to:    builtTx.tx.to,
+          data:  builtTx.tx.data,
+          value: builtTx.tx.value && builtTx.tx.value !== "0"
+                   ? "0x" + BigInt(builtTx.tx.value).toString(16)
+                   : "0x0",
+        }],
+      });
+      setExecuteTxHash(txHash);
+      setExecuteDone(true);
+    } catch (e: any) {
+      const msg: string = e?.message ?? "Transaction failed";
+      const isReject = /reject|cancel|denied|user refused/i.test(msg);
+      if (!isReject) setExecuteError(msg.slice(0, 240));
+    } finally {
+      setExecuting(false);
+    }
+  }
+
+  function resetExecute() {
+    setExecuteDone(false);
+    setExecuteTxHash(null);
+    setExecuteError(null);
+    setBuiltTx(null);
+    setQuotes([]);
+    setSelectedQuote(null);
+    setBuildTxError(null);
+  }
+
+  // Wallet balance for the from-token
+  const { balances: evmBals, loading: evmBalsLoading } = useEvmBalances(
+    walletAddress ?? null,
+    fromChain?.id ?? null,
+  );
+  const fromTokenBal = fromToken
+    ? (evmBals.find(t => t.symbol.toUpperCase() === fromToken.symbol.toUpperCase())?.amount ?? 0)
+    : 0;
 
   // Load chains on mount
   useEffect(() => {
@@ -397,6 +517,7 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
           fromTokenAddress: fromToken.address,
           toTokenAddress: toToken.address,
           amountIn: amount,
+          userAddress: walletAddress,
         }),
       });
       const data = await res.json();
@@ -410,30 +531,69 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
     }
   }, [fromChain, toChain, fromToken, toToken, amount]);
 
-  // Build tx
+  // Client-side wei conversion (mirrors the server helper)
+  function clientToWei(val: string, decimals: number): string {
+    try {
+      const parts = val.split(".");
+      const whole = parts[0] || "0";
+      const frac  = (parts[1] ?? "").padEnd(decimals, "0").slice(0, decimals);
+      return (BigInt(whole) * 10n ** BigInt(decimals) + BigInt(frac || "0")).toString();
+    } catch { return "0"; }
+  }
+
+  // Build tx — calls LiFi directly from the browser so the user's IP is used,
+  // avoiding the server-side IP blocks that most bridge APIs enforce on shared hosting.
   async function buildTx() {
     if (!selectedQuote || !fromChain || !toChain || !fromToken || !toToken) return;
     setBuildingTx(true);
     setBuiltTx(null);
     setBuildTxError(null);
     try {
-      const res = await fetch(`${API_BASE}/bridge-agg/build-tx`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          providerId: selectedQuote.providerId,
-          fromChainId: fromChain.id,
-          toChainId: toChain.id,
-          fromTokenAddress: fromToken.address,
-          toTokenAddress: toToken.address,
-          amountIn: amount,
-          userAddress: walletAddress ?? "0x0000000000000000000000000000000000000001",
-          quote: selectedQuote,
-        }),
-      });
+      const amountWei = clientToWei(amount, fromToken.decimals);
+      const url = new URL("https://li.quest/v1/quote");
+      url.searchParams.set("fromChain",  String(fromChain.id));
+      url.searchParams.set("toChain",    String(toChain.id));
+      url.searchParams.set("fromToken",  fromToken.address);
+      url.searchParams.set("toToken",    toToken.address);
+      url.searchParams.set("fromAmount", amountWei);
+      url.searchParams.set("order",      "RECOMMENDED");
+      if (walletAddress) {
+        url.searchParams.set("fromAddress", walletAddress);
+        url.searchParams.set("toAddress",   walletAddress);
+      }
+
+      const res = await fetch(url.toString());
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Build tx failed");
-      setBuiltTx({ tx: data.tx, warning: data.warning });
+
+      if (!res.ok) {
+        const msg: string = data.message ?? "No bridge route available";
+        const isSmall = /amount|small|minimum|low/i.test(msg);
+        throw new Error(isSmall
+          ? "Amount too small — try a higher amount (most bridges require ≥ $5 equivalent)."
+          : msg);
+      }
+
+      const txr = data.transactionRequest as {
+        to?: string; data?: string; value?: string; chainId?: number
+      } | undefined;
+      if (!txr?.to || !txr?.data) {
+        throw new Error("No transaction data in LiFi response — try a larger amount or different route.");
+      }
+
+      const bridgeName: string =
+        (data.toolDetails as { name?: string } | undefined)?.name
+        ?? (data.tool as string | undefined)
+        ?? "Bridge";
+
+      setBuiltTx({
+        tx: {
+          to:      txr.to,
+          data:    txr.data,
+          value:   txr.value ? BigInt(txr.value).toString() : "0",
+          chainId: txr.chainId ?? fromChain.id,
+        },
+        bridgeName,
+      });
     } catch (e: unknown) {
       setBuildTxError(e instanceof Error ? e.message : "Build transaction failed");
     } finally {
@@ -476,6 +636,26 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
           excludeId={toChain?.id}
         />
 
+        {/* Balance row */}
+        {walletAddress && fromToken && (
+          <div className="flex items-center justify-between text-[11px] px-0.5 -mb-1">
+            <span className="text-muted-foreground">Available</span>
+            {evmBalsLoading && evmBals.length === 0
+              ? <span className="text-muted-foreground/50 animate-pulse">loading…</span>
+              : <button
+                  onClick={() => fromTokenBal > 0 ? setAmount(fromTokenBal.toFixed(6)) : undefined}
+                  className={fromTokenBal > 0 ? "text-primary font-semibold" : "text-muted-foreground/60 pointer-events-none"}
+                >
+                  {fromTokenBal < 0.0001 && fromTokenBal > 0
+                    ? fromTokenBal.toFixed(8)
+                    : fromTokenBal < 1
+                      ? fromTokenBal.toFixed(6)
+                      : fromTokenBal.toFixed(4)} {fromToken.symbol}{fromTokenBal > 0 ? " MAX" : ""}
+                </button>
+            }
+          </div>
+        )}
+
         <div className="flex items-center gap-3">
           <div className="flex-1 relative">
             <input
@@ -495,6 +675,22 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
             label="Token"
           />
         </div>
+
+        {/* Min/Max from quotes */}
+        {quotes.length > 0 && fromToken && (
+          <div className="flex items-center justify-between text-[10px] px-1 -mt-1">
+            <span className="text-muted-foreground/55">
+              Min: {parseFloat(quotes[quotes.length - 1]?.amountInHuman ?? "0") > 0
+                ? parseFloat(quotes[quotes.length - 1].amountInHuman).toFixed(4)
+                : "—"} {fromToken.symbol}
+            </span>
+            <span className="text-muted-foreground/40">
+              Max: {parseFloat(quotes[0]?.amountInHuman ?? "0") > 0
+                ? parseFloat(quotes[0].amountInHuman).toFixed(4)
+                : "—"} {fromToken.symbol}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── Swap direction button ────────────────────────────────── */}
@@ -600,16 +796,20 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
             <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wide text-right">Score</span>
           </div>
 
-          {quotes.map((q, i) => (
-            <QuoteRow
-              key={q.providerId}
-              quote={q}
-              isBest={i === 0}
-              isSelected={selectedQuote?.providerId === q.providerId}
-              onSelect={() => { setSelectedQuote(q); setBuiltTx(null); }}
-              toToken={toToken}
-            />
-          ))}
+          {(() => {
+            const tags = computeTags(quotes);
+            return quotes.map((q, i) => (
+              <QuoteRow
+                key={q.providerId}
+                quote={q}
+                isBest={i === 0}
+                isSelected={selectedQuote?.providerId === q.providerId}
+                onSelect={() => { setSelectedQuote(q); setBuiltTx(null); }}
+                toToken={toToken}
+                tag={tags.get(q.providerId)}
+              />
+            ));
+          })()}
         </div>
       )}
 
@@ -642,15 +842,81 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
         </div>
       )}
 
-      {/* ── Built transaction viewer ─────────────────────────────── */}
-      {builtTx && (
+      {/* ── Execute Bridge ────────────────────────────────────────── */}
+      {builtTx && !executeDone && (
         <div className="space-y-2">
-          <TxViewer tx={builtTx.tx} warning={builtTx.warning} />
+          {/* Execute button */}
           <button
-            onClick={() => setBuiltTx(null)}
+            onClick={handleExecute}
+            disabled={executing}
+            className="w-full flex items-center justify-center gap-2.5 bg-primary text-primary-foreground font-bold rounded-xl py-3.5 text-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {executing ? (
+              <>
+                <Loader2 size={15} className="animate-spin" />
+                Sign in wallet…
+              </>
+            ) : (
+              <>
+                <ArrowRight size={15} />
+                Execute Bridge via {builtTx.bridgeName ?? "LiFi"}
+              </>
+            )}
+          </button>
+
+          {/* Execute error */}
+          {executeError && (
+            <div className="flex items-center gap-2.5 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3">
+              <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+              <span className="text-sm text-red-300">{executeError}</span>
+            </div>
+          )}
+
+          {/* Collapsible tx details for power users */}
+          <details className="group">
+            <summary className="text-[11px] text-muted-foreground/60 cursor-pointer hover:text-muted-foreground select-none px-1">
+              Show raw transaction ▸
+            </summary>
+            <div className="mt-2">
+              <TxViewer tx={builtTx.tx} warning={builtTx.warning} bridgeName={builtTx.bridgeName} />
+            </div>
+          </details>
+
+          <button
+            onClick={() => { setBuiltTx(null); setExecuteError(null); }}
             className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
           >
-            Clear
+            ← Back to quotes
+          </button>
+        </div>
+      )}
+
+      {/* ── Bridge success ────────────────────────────────────────── */}
+      {executeDone && (
+        <div className="bg-green-500/10 border border-green-500/30 rounded-xl px-4 py-4 space-y-3">
+          <div className="flex items-center gap-2 text-green-400 font-semibold text-sm">
+            <CheckCircle2 size={16} />
+            Bridge submitted! Tokens are on their way.
+          </div>
+          {executeTxHash && (
+            <a
+              href={`${EXPLORER_TX[builtTx?.tx.chainId ?? fromChain?.id ?? 1] ?? "https://etherscan.io/tx/"}${executeTxHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300 underline"
+            >
+              <ExternalLink size={11} />
+              View on explorer
+            </a>
+          )}
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            Settlement time varies by bridge. Your balance will update once confirmed on the destination chain.
+          </p>
+          <button
+            onClick={resetExecute}
+            className="text-xs text-muted-foreground underline hover:text-foreground"
+          >
+            Make another bridge
           </button>
         </div>
       )}

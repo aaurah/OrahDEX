@@ -97,7 +97,13 @@ async function queryFunding(htlcAddress: string, locktimeBlocks: number): Promis
 
 // ── Broadcast helpers ─────────────────────────────────────────────────────
 
-async function broadcastClaim(intent: IntentRow): Promise<string | null> {
+interface BroadcastOutcome {
+  txid:      string;
+  arcTxid:   string | null;
+  arcStatus: string | null;
+}
+
+async function broadcastClaim(intent: IntentRow): Promise<BroadcastOutcome | null> {
   try {
     if (!intent.fundingTxid || intent.fundingVout == null || !intent.amountInSat) {
       logger.error({ intentId: intent.id }, "bsvIntentWatcher: missing UTXO data for claim");
@@ -132,8 +138,8 @@ async function broadcastClaim(intent: IntentRow): Promise<string | null> {
     });
 
     if (result.broadcast) {
-      logger.info({ intentId: intent.id, txid: result.txid }, "bsvIntentWatcher: claim broadcast SUCCESS");
-      return result.txid;
+      logger.info({ intentId: intent.id, txid: result.txid, arcStatus: result.arcStatus }, "bsvIntentWatcher: claim broadcast SUCCESS");
+      return { txid: result.txid, arcTxid: result.arcTxid, arcStatus: result.arcStatus };
     }
     logger.error({ intentId: intent.id, err: result.error }, "bsvIntentWatcher: claim broadcast failed");
     return null;
@@ -143,7 +149,7 @@ async function broadcastClaim(intent: IntentRow): Promise<string | null> {
   }
 }
 
-async function broadcastRefund(intent: IntentRow): Promise<string | null> {
+async function broadcastRefund(intent: IntentRow): Promise<BroadcastOutcome | null> {
   try {
     if (!intent.fundingTxid || intent.fundingVout == null || !intent.amountInSat) {
       logger.error({ intentId: intent.id }, "bsvIntentWatcher: missing UTXO data for refund");
@@ -169,8 +175,8 @@ async function broadcastRefund(intent: IntentRow): Promise<string | null> {
     });
 
     if (result.broadcast) {
-      logger.info({ intentId: intent.id, txid: result.txid }, "bsvIntentWatcher: refund broadcast SUCCESS");
-      return result.txid;
+      logger.info({ intentId: intent.id, txid: result.txid, arcStatus: result.arcStatus }, "bsvIntentWatcher: refund broadcast SUCCESS");
+      return { txid: result.txid, arcTxid: result.arcTxid, arcStatus: result.arcStatus };
     }
     logger.error({ intentId: intent.id, err: result.error }, "bsvIntentWatcher: refund broadcast failed");
     return null;
@@ -267,17 +273,19 @@ async function processIntent(intent: IntentRow, nowSecs: number): Promise<void> 
           eq(bsvIntentSessionsTable.status, "FILLED"),
         ));
 
-      const claimTxid = await broadcastClaim(intent);
-      if (claimTxid) {
+      const claimOutcome = await broadcastClaim(intent);
+      if (claimOutcome) {
         await db.update(bsvIntentSessionsTable)
           .set({
             status:     "CLAIMED",
-            claimTxid,
+            claimTxid:  claimOutcome.txid,
+            arcTxid:    claimOutcome.arcTxid,
+            arcStatus:  claimOutcome.arcStatus,
             terminalAt: new Date(),
             updatedAt:  new Date(),
           })
           .where(eq(bsvIntentSessionsTable.id, intent.id));
-        logger.info({ intentId: intent.id, claimTxid }, "bsvIntentWatcher: claimed");
+        logger.info({ intentId: intent.id, claimTxid: claimOutcome.txid, arcStatus: claimOutcome.arcStatus }, "bsvIntentWatcher: claimed");
       } else {
         await db.update(bsvIntentSessionsTable)
           .set({ status: "FILLED", updatedAt: new Date() })
@@ -307,17 +315,19 @@ async function processIntent(intent: IntentRow, nowSecs: number): Promise<void> 
           inArray(bsvIntentSessionsTable.status, ["EXPIRED", "REFUNDING"]),
         ));
 
-      const refundTxid = await broadcastRefund(intent);
-      if (refundTxid) {
+      const refundOutcome = await broadcastRefund(intent);
+      if (refundOutcome) {
         await db.update(bsvIntentSessionsTable)
           .set({
             status:     "REFUNDED",
-            refundTxid,
+            refundTxid: refundOutcome.txid,
+            arcTxid:    refundOutcome.arcTxid,
+            arcStatus:  refundOutcome.arcStatus,
             terminalAt: new Date(),
             updatedAt:  new Date(),
           })
           .where(eq(bsvIntentSessionsTable.id, intent.id));
-        logger.info({ intentId: intent.id, refundTxid }, "bsvIntentWatcher: refunded");
+        logger.info({ intentId: intent.id, refundTxid: refundOutcome.txid, arcStatus: refundOutcome.arcStatus }, "bsvIntentWatcher: refunded");
       } else {
         logger.warn({ intentId: intent.id }, "bsvIntentWatcher: refund broadcast failed — will retry");
       }

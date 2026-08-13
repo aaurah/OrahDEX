@@ -156,7 +156,14 @@ function assetToChainId(asset: string): number {
     AVAX: 43114,
     FTM: 250,
   };
-  return CHAIN_MAP[asset.toUpperCase()] ?? 1;
+  const mapped = CHAIN_MAP[asset.toUpperCase()];
+  if (!mapped) {
+    throw new Error(
+      `Cannot determine EVM chain for asset '${asset}' from the legacy "evm" network key. ` +
+      `Use a specific network key (e.g. "eth", "base", "arb", "op", "bsc") or supply chainIdOverride.`,
+    );
+  }
+  return mapped;
 }
 
 /** Find an EVM chain config by chain ID */
@@ -172,6 +179,16 @@ async function processEvmWithdrawal(params: {
   recipient:  string;
   chainIdOverride?: number;
 }): Promise<{ txid: string; explorer: string }> {
+  // Validate chainIdOverride when provided — guards against silent bugs where
+  // a caller passes a floating-point, negative, or absurdly large chain ID.
+  if (params.chainIdOverride !== undefined) {
+    const id = params.chainIdOverride;
+    if (!Number.isInteger(id) || id <= 0 || id > 2_147_483_647) {
+      throw new Error(
+        `Invalid chainIdOverride ${id}: must be a positive 32-bit integer (received ${typeof id} ${id})`,
+      );
+    }
+  }
   const baseChainId = params.chainIdOverride ?? assetToChainId(params.asset);
   const chainId     = EVM_USE_TESTNET && TESTNET_REMAP[baseChainId] ? TESTNET_REMAP[baseChainId] : baseChainId;
   const chain       = chainById(chainId);
@@ -241,9 +258,30 @@ async function processEvmWithdrawal(params: {
     });
   }
 
-  await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 }).catch(() => {
-    logger.warn({ txHash }, "withdrawal: receipt polling timed out (tx is broadcast)");
-  });
+  // Wait for confirmation and reject reverts — same pattern as escrow.ts.
+  // viem's waitForTransactionReceipt resolves for BOTH success and revert without
+  // throwing, so callers must check receipt.status or a reverted withdrawal tx
+  // would be marked "completed" even though funds were never moved.
+  try {
+    const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 });
+    if (receipt.status === "reverted") {
+      throw new Error(
+        `EVM withdrawal transaction reverted on-chain — funds not moved. ` +
+        `The hot wallet may have insufficient balance or gas. txHash: ${txHash}`,
+      );
+    }
+  } catch (receiptErr: any) {
+    const msg: string = receiptErr?.message ?? String(receiptErr);
+    if (msg.includes("timed out") || receiptErr?.name === "WaitForTransactionReceiptTimeoutError") {
+      // Timeout only: tx is broadcast and will likely confirm. Log and continue so
+      // the withdrawal is still marked "completed" with the known txHash.
+      logger.warn({ txHash }, "withdrawal: receipt polling timed out (tx broadcast, awaiting confirmation)");
+    } else {
+      // Revert or other error: re-throw so processWithdrawal catches it and keeps the
+      // request in "pending" for admin review rather than falsely marking it "completed".
+      throw receiptErr;
+    }
+  }
 
   const explorer = `${chain.explorer}/tx/${txHash}`;
   logger.info({ txHash, asset: params.asset, amount: params.amount, recipient: params.recipient, chainId }, "EVM withdrawal broadcast");
@@ -256,7 +294,7 @@ async function processBsvWithdrawal(params: {
   asset:     string;
   amount:    number;
   recipient: string;
-}): Promise<{ txid: string; explorer: string }> {
+}): Promise<{ txid: string; explorer: string; arcTxid: string | null; arcStatus: string | null }> {
   const wallet = await getOrCreateWallet();
   const balance = await fetchWalletBalance(wallet.address);
 
@@ -284,8 +322,8 @@ async function processBsvWithdrawal(params: {
     ? `https://whatsonchain.com/tx/${result.txid}`
     : `https://test.whatsonchain.com/tx/${result.txid}`;
 
-  logger.info({ txid: result.txid, asset: params.asset, amount: params.amount, recipient: params.recipient }, "BSV withdrawal broadcast");
-  return { txid: result.txid, explorer };
+  logger.info({ txid: result.txid, arcStatus: result.arcStatus, asset: params.asset, amount: params.amount, recipient: params.recipient }, "BSV withdrawal broadcast");
+  return { txid: result.txid, explorer, arcTxid: result.arcTxid, arcStatus: result.arcStatus };
 }
 
 // ── SOL withdrawal ─────────────────────────────────────────────────────────────
@@ -331,10 +369,12 @@ async function processSolWithdrawal(params: {
 // ── Public entry point ─────────────────────────────────────────────────────────
 
 export interface ProcessResult {
-  status:   "completed" | "pending";
-  txid?:    string;
+  status:    "completed" | "pending";
+  txid?:     string;
   explorer?: string;
-  note?:    string;
+  note?:     string;
+  arcTxid?:  string | null;
+  arcStatus?: string | null;
 }
 
 /**
@@ -380,8 +420,8 @@ export async function processWithdrawal(params: {
       if (!BSV_ADDRESS_RE.test(params.recipient)) {
         throw new Error(`Invalid BSV/BCH recipient address: ${params.recipient}`);
       }
-      const { txid, explorer } = await processBsvWithdrawal(params);
-      return { status: "completed", txid, explorer };
+      const result = await processBsvWithdrawal(params);
+      return { status: "completed", txid: result.txid, explorer: result.explorer, arcTxid: result.arcTxid, arcStatus: result.arcStatus };
     }
 
     if (net === "sol" || net === "solana") {

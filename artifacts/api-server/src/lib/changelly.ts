@@ -81,7 +81,13 @@ async function changellyRequest(
 function extractResult(data: unknown): unknown | null {
   if (!data || typeof data !== "object") return null;
   const d = data as Record<string, unknown>;
-  if (d.error) return null; // JSON-RPC error
+  if (d.error) {
+    const e = d.error as Record<string, unknown> | string;
+    const code    = typeof e === "object" ? e.code    : undefined;
+    const message = typeof e === "object" ? e.message : e;
+    logger.warn({ code, message }, "Changelly JSON-RPC error");
+    return null;
+  }
   return d.result ?? null;
 }
 

@@ -20,22 +20,36 @@
 
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { marketsTable, leSwapsTable } from "@workspace/db/schema";
 import { eq, and, ne, inArray, sql } from "drizzle-orm";
 import {
-  leRequest, fetchLEPricesUSD, getCachedLEPrices, AFFILIATE_ID,
+  leRequest, fetchLEPricesUSD, getCachedLEPrices, fetchLEKeyPricesIfNeeded, AFFILIATE_ID,
   type NormalisedCoin,
 } from "../lib/lePriceCache.js";
 import { getCoinChangeMap } from "../lib/priceUpdater.js";
 import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
-import { getBestExternalQuote } from "../lib/metaRouter.js";
+import { getBestExternalQuote, type ExternalVenue } from "../lib/metaRouter.js";
 import { createCNExchange, getCNExchange } from "../lib/changenow.js";
 import { createSXExchange, getSXExchange } from "../lib/stealthex.js";
-import { createSsExchangePair, getSsExchange } from "../lib/simpleswap.js";
+import { createSsExchangePair, getSsExchange, fetchSSCurrencies } from "../lib/simpleswap.js";
 import { createChangellyExchange, getChangellyExchange, isChangellyConfigured } from "../lib/changelly.js";
+import { recordPlatformFee } from "../lib/feeCollector.js";
 
 const router: IRouter = Router();
+
+const BRIDGE_COMMISSION_RATE = 0.003; // 0.3% of deposit USD — estimated affiliate commission
+
+function recordBridgeFee(amt: number, fromCoin: string, txRef: string) {
+  const leUsd = getCachedLEPrices();
+  const fromUsdPrice = leUsd[fromCoin.toUpperCase()] ?? 0;
+  if (fromUsdPrice <= 0) return;
+  const depositUsd = amt * fromUsdPrice;
+  const commission = depositUsd * BRIDGE_COMMISSION_RATE;
+  if (commission > 0) {
+    recordPlatformFee({ source: "bridge", amount: commission, asset: "USD", txRef }).catch(() => {});
+  }
+}
 
 /**
  * Returns the built-in coin catalog as NormalisedCoin[] stubs.
@@ -69,14 +83,121 @@ function setCache(k: string, d: unknown) { cache.set(k, { data: d, ts: Date.now(
 // Stampede guard — only one in-flight fetch for currencies at a time
 let currenciesInflight: Promise<NormalisedCoin[]> | null = null;
 
+// Stale-backup for LE currencies: set on first successful fetch, kept forever.
+// Eliminates the "timed out — serving built-in fallback" warning after the
+// first load; stale data is served silently while a background refresh runs.
+let leCurrenciesBackup: NormalisedCoin[] | null = null;
+
+// Guard: only one background pagination run at a time.
+let currenciesBgFetchActive = false;
+
+// Stale-backup for SS pairs: once successfully built, kept forever so pairs
+// never vanish from the list if the SS API is temporarily down.
+// Only the admin hidden-pairs list can suppress individual symbols.
+let ssPairsBackup: Record<string, unknown>[] | null = null;
+
+// Admin-managed set of suppressed pair base symbols (e.g. "SCAM").
+// Populated via POST /api/admin/hidden-pairs; cleared via DELETE.
+const hiddenPairSymbols = new Set<string>();
+
+// ── coin_metadata logo map ────────────────────────────────────────────────────
+// Loaded once per cache-fill cycle; maps UPPER symbol → logo URL.
+// Used to enrich LE currencies and SS pairs when the provider returns no logo.
+async function loadCoinMetaMap(): Promise<Map<string, string>> {
+  try {
+    const rows = await pool.query<{ symbol: string; image_url: string }>(
+      `SELECT symbol, image_url FROM coin_metadata WHERE image_url IS NOT NULL AND image_url != ''`,
+    );
+    const m = new Map<string, string>();
+    for (const r of rows.rows) m.set(r.symbol.toUpperCase(), r.image_url);
+    return m;
+  } catch {
+    return new Map();
+  }
+}
+
+/** Clear LE currencies + SS pairs caches so the next request re-builds with fresh logos. */
+export function clearSwapCaches(): void {
+  cache.delete("currencies");
+  cache.delete("ss_pairs_v1");
+  leCurrenciesBackup = null;
+  ssPairsBackup      = null;
+  logger.info("swap caches cleared (LE currencies + SS pairs)");
+}
+
+// ── Paginated background fetch ─────────────────────────────────────────────────
+// After the first page is cached (fast path, serves the route within 5 s),
+// this function fetches all remaining pages from the LE /v2/coins endpoint and
+// extends the cache so the full 6 000+ coin list becomes available.
+// It runs fire-and-forget; errors are non-fatal.
+async function fetchRemainingCurrencyPages(
+  firstPage: unknown[],
+  metaMap: Map<string, string>,
+): Promise<void> {
+  try {
+    const PAGE = 1000;
+    const all: unknown[] = [...firstPage];
+    let offset = PAGE;
+
+    for (let p = 1; p < 20; p++) { // max 20 pages × 1 000 = 20 000 coins
+      const { ok, data } = await leRequest(`/v2/coins?limit=${PAGE}&offset=${offset}`);
+      if (!ok) break;
+      const page = Array.isArray(data) ? data : [];
+      if (!page.length) break;
+      all.push(...page);
+      offset += PAGE;
+      if (page.length < PAGE) break; // last page — stop
+    }
+
+    if (all.length > firstPage.length) {
+      const raw = normaliseV2Coins(all);
+      const coins = raw.map(c => ({
+        ...c,
+        image: c.image ?? metaMap.get(c.symbol.toUpperCase()) ?? null,
+      }));
+      setCache("currencies", coins);
+      leCurrenciesBackup = coins;
+      logger.info(
+        { total: coins.length, rawCoins: all.length, pages: Math.ceil(offset / PAGE) },
+        "LE coins: full paginated fetch complete",
+      );
+    }
+  } catch (err) {
+    logger.warn({ err }, "LE coins background pagination error (non-fatal)");
+  } finally {
+    currenciesBgFetchActive = false;
+  }
+}
+
 async function fetchAndCacheCurrencies(): Promise<NormalisedCoin[]> {
   if (currenciesInflight) return currenciesInflight;
   currenciesInflight = (async () => {
     try {
-      const { ok, data, status } = await leRequest("/v2/coins");
+      // Phase 1 — fast first-page fetch (completes in ~1–2 s, within the
+      // route's 5 s race window).  Request 1 000 coins to maximise the first
+      // response without blowing the timeout.
+      const { ok, data, status } = await leRequest("/v2/coins?limit=1000");
       if (!ok) throw new Error(`LE /v2/coins returned ${status}`);
-      const coins = normaliseV2Coins(Array.isArray(data) ? data : []);
+      const firstPage = Array.isArray(data) ? data : [];
+
+      const metaMap = await loadCoinMetaMap();
+      const raw = normaliseV2Coins(firstPage);
+      const coins = raw.map(c => ({
+        ...c,
+        image: c.image ?? metaMap.get(c.symbol.toUpperCase()) ?? null,
+      }));
       setCache("currencies", coins);
+      leCurrenciesBackup = coins; // persist beyond TTL — never go back to built-in fallback
+
+      // Phase 2 — if the first page was full, more pages exist (LE has 6 000+
+      // coins).  Kick off a background fetch for the remaining pages so the
+      // full list is available within ~30–60 s of startup without blocking
+      // the route response.
+      if (firstPage.length >= 1000 && !currenciesBgFetchActive) {
+        currenciesBgFetchActive = true;
+        fetchRemainingCurrencyPages(firstPage, metaMap); // fire-and-forget
+      }
+
       return coins;
     } finally {
       currenciesInflight = null;
@@ -89,6 +210,13 @@ async function fetchAndCacheCurrencies(): Promise<NormalisedCoin[]> {
 export async function warmCurrenciesCache(): Promise<void> {
   try { await fetchAndCacheCurrencies(); }
   catch (err) { logger.warn({ err }, "LE currencies warm-up failed (non-fatal)"); }
+}
+
+/** Non-blocking read of the LE currencies cache. Returns built-in fallback if not yet loaded. */
+export function getCachedLECurrencies(): NormalisedCoin[] {
+  const hit = cached("currencies") as NormalisedCoin[] | null;
+  if (hit && hit.length > 0) return hit;
+  return builtInCoinsAsFallback();
 }
 
 // ── Coin normalisation ─────────────────────────────────────────────────────────
@@ -110,7 +238,10 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
       if (!seen.has(key)) { seen.add(key); result.push({ symbol, name, network:null, networkName:null, image, hasExtraId:false, minAmount, maxAmount }); }
     } else {
       for (const net of networks) {
-        if (net.is_active === 0 || net.is_active === false) continue;
+        // Do NOT skip is_active===0 networks — they are "temporarily unavailable" on
+        // LetsExchange but the multi-venue router will fall back to SimpleSwap / other
+        // venues automatically.  Filtering them out here hides coins like A8 from the
+        // picker entirely even though SS can still swap them.
         const netCode = (net.code ?? "") as string;
         const key = `${symbol}::${netCode}`;
         if (seen.has(key)) continue;
@@ -130,26 +261,66 @@ function normaliseV2Coins(raw: unknown[]): NormalisedCoin[] {
 }
 
 // ── GET /api/letsexchange/currencies ─────────────────────────────────────────
+// Returns the full LE coin list (1 000+ entries with network variants).
+// On cold cache AND with an API key configured, waits up to 5 s for the live
+// data so the first response after a restart carries the full list instead of
+// the 331-coin built-in fallback.
+//
+// Both the underlying fetch and the timed Promise.race are deduplicated so that
+// N concurrent cold-cache requests produce exactly one API call and one timeout
+// timer instead of N separate timers all firing simultaneously.
+let _timedCurrencyRace: Promise<NormalisedCoin[]> | null = null;
+
 router.get("/letsexchange/currencies", async (_req, res) => {
-  // Return from cache first — fastest path
+  // 1. Hot cache hit — fastest path (< 1 ms)
   const hit = cached("currencies") as NormalisedCoin[] | null;
   if (hit && hit.length > 0) { res.json(hit); return; }
 
-  // No API key configured — serve the built-in coin catalog so the swap UI
-  // always has coins to show.  Estimate / exchange calls still require a key.
-  if (!process.env.LETSEXCHANGE_API_KEY) {
-    res.json(builtInCoinsAsFallback());
+  // 2. Cache expired but we have a stale backup from a previous successful
+  //    fetch — serve it immediately (no timeout, no warning) and refresh in bg.
+  if (leCurrenciesBackup && leCurrenciesBackup.length > 0) {
+    res.json(leCurrenciesBackup);
+    // Background refresh so next request gets a fresh TTL entry
+    if (process.env.LETSEXCHANGE_API_KEY) {
+      fetchAndCacheCurrencies().catch(() => { /* silent — backup still valid */ });
+    }
     return;
   }
 
-  try {
-    const coins = await fetchAndCacheCurrencies();
-    // If the live API returned an empty list (e.g. temporary outage), fall back
-    // so the frontend never receives an empty coin picker.
-    res.json(coins.length > 0 ? coins : builtInCoinsAsFallback());
-  } catch (err: any) {
-    logger.error({ err }, "letsexchange /currencies failed");
-    res.json(builtInCoinsAsFallback());
+  // 3. True cold-start (first boot, no backup yet) — try live data within 12 s.
+  if (process.env.LETSEXCHANGE_API_KEY) {
+    try {
+      if (!_timedCurrencyRace) {
+        _timedCurrencyRace = Promise.race([
+          fetchAndCacheCurrencies(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("timeout")), 12000)
+          ),
+        ]).finally(() => { _timedCurrencyRace = null; });
+      }
+      const coins = await _timedCurrencyRace;
+      res.json(coins);
+      return;
+    } catch {
+      // Only reaches here on very first boot if LE API is unreachable for >12 s
+      logger.warn("letsexchange cold-start fetch timed out — serving built-in fallback");
+    }
+  }
+
+  res.json(builtInCoinsAsFallback());
+});
+
+// ── GET /api/letsexchange/usd-prices — coin→USD price map from LE cache ──────
+// Returns { ETH: 2500, BTC: 95000, ... } from the shared LE price cache.
+// Always responds immediately — never blocks on a live LE API call.
+// A background refresh is kicked off when the cache is cold so the next
+// request (after ~8-10 s) will get fresh data.
+router.get("/letsexchange/usd-prices", (_req, res) => {
+  const cached = getCachedLEPrices();
+  res.json(cached);
+  // If cache is cold, warm it in the background — fire and forget
+  if (Object.keys(cached).length === 0) {
+    fetchLEKeyPricesIfNeeded().catch(() => {});
   }
 });
 
@@ -455,6 +626,174 @@ router.get("/letsexchange/pairs", async (req, res) => {
   res.json(result);
 });
 
+// ── GET /api/simpleswap/pairs ─────────────────────────────────────────────────
+// Returns all SimpleSwap coins expressed as OrahDEX pair objects using the same
+// quote currencies as the LE pairs endpoint.  Deduplication against LE happens
+// on the frontend (LE wins when both sources carry the same base symbol).
+router.get("/simpleswap/pairs", async (req, res) => {
+  const filterQuote = typeof req.query.quote === "string" ? req.query.quote.toUpperCase() : null;
+  const returnAll   = req.query.all === "true" || req.query.all === "1";
+
+  // SS ticker → canonical OrahDEX symbol (network-specific tickers collapse to base symbol)
+  const SS_TO_SYMBOL: Record<string, string> = {
+    usdterc20: "USDT",  usdttrc20: "USDT", usdtbsc:   "USDT", usdtsol:   "USDT",
+    usdtmatic: "USDT",  usdtton:   "USDT", usdtop:    "USDT", usdtarb:   "USDT",
+    usdtavax:  "USDT",  usdtalgo:  "USDT", usdtkava:  "USDT", usdtcelo:  "USDT",
+    usdcerc20: "USDC",  usdcbsc:   "USDC", usdcsol:   "USDC", usdcmatic: "USDC",
+    usdcop:    "USDC",  usdcarb:   "USDC", usdcbase:  "USDC", usdcavax:  "USDC",
+    usdcton:   "USDC",
+    "bnb-bsc": "BNB",   bnbbsc:    "BNB",
+    pol:       "MATIC",
+    avaxc:     "AVAX",
+    etharb:    "ETH",   ethop:     "ETH",  ethbase:   "ETH",  ethlinea:  "ETH",
+    ethscroll: "ETH",   ethbsc:    "ETH",
+    wbtcerc20: "WBTC",  wbtcbsc:   "WBTC",
+    daierc20:  "DAI",   daibsc:    "DAI",  daimatic:  "DAI",  daiarb:    "DAI",
+    linkbsc:   "LINK",  unibsc:    "UNI",
+  };
+
+  function normalizeSsSymbol(ticker: string): string | null {
+    if (!ticker) return null;
+    const mapped = SS_TO_SYMBOL[ticker.toLowerCase()];
+    if (mapped) return mapped;
+    const cleaned = ticker.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (cleaned.length < 1 || cleaned.length > 12) return null;
+    return cleaned;
+  }
+
+  const SS_PAIRS_TTL = 60 * 60 * 1000; // 1 hour
+  const cacheKey = "ss_pairs_v1";
+  let builtPairs = cached(cacheKey, SS_PAIRS_TTL) as Record<string, unknown>[] | null;
+
+  if (!builtPairs) {
+    // Priority order (lower applied first, higher overrides):
+    //   0. DB stored SS pairs  — stable, survives restarts, has real prices
+    //   1. Live SS API         — newer coins, enriches metadata (image, hasExtraId)
+    const mergeMap = new Map<string, Record<string, unknown>>();
+
+    // Layer 0: DB — always available even when SS API is down
+    try {
+      const dbRows = await db.select({
+        symbol:                marketsTable.symbol,
+        baseAsset:             marketsTable.baseAsset,
+        quoteAsset:            marketsTable.quoteAsset,
+        lastPrice:             marketsTable.lastPrice,
+        priceChangePercent24h: marketsTable.priceChangePercent24h,
+      }).from(marketsTable).where(
+        and(eq(marketsTable.type, "simpleswap"), eq(marketsTable.enabled, true)),
+      );
+      const changeMap = getCoinChangeMap();
+      for (const r of dbRows) {
+        mergeMap.set(r.symbol, {
+          symbol: r.symbol, baseAsset: r.baseAsset, quoteAsset: r.quoteAsset,
+          network: null, networkName: null, image: null, hasExtraId: false,
+          minAmount: null, maxAmount: null,
+          lastPrice:             parseFloat(String(r.lastPrice)) || 0,
+          priceChangePercent24h: parseFloat(String(r.priceChangePercent24h)) || (changeMap[r.baseAsset] ?? 0),
+          volume: 0, type: "simpleswap", ssSource: true, leSource: false,
+        });
+      }
+      logger.debug({ rows: dbRows.length }, "simpleswap /pairs: DB layer loaded");
+    } catch (err: any) {
+      logger.warn({ err }, "simpleswap /pairs: DB layer failed (non-fatal)");
+    }
+
+    // Layer 1: Live SS API — adds newer coins and enriches metadata
+    const currencies = await fetchSSCurrencies();
+    if (currencies.length > 0) {
+      const seenSymbols = new Set<string>();
+      const uniqueCoins: { symbol: string; name: string; network: string | null; image: string | null; hasExtraId: boolean }[] = [];
+      for (const c of currencies) {
+        const sym = normalizeSsSymbol(c.symbol);
+        if (!sym || seenSymbols.has(sym)) continue;
+        seenSymbols.add(sym);
+        uniqueCoins.push({ symbol: sym, name: c.name, network: c.network, image: c.image, hasExtraId: c.hasExtraId });
+      }
+      const QUOTES_SET = new Set(LE_PAIR_QUOTES);
+      for (const coin of uniqueCoins) {
+        if (QUOTES_SET.has(coin.symbol)) continue;
+        for (const q of LE_PAIR_QUOTES) {
+          if (coin.symbol === q) continue;
+          const sym = `${coin.symbol}/${q}`;
+          const existing = mergeMap.get(sym);
+          mergeMap.set(sym, {
+            ...(existing ?? {}),
+            symbol: sym, baseAsset: coin.symbol, quoteAsset: q,
+            network: coin.network, networkName: null, image: coin.image,
+            hasExtraId: coin.hasExtraId, minAmount: null, maxAmount: null,
+            lastPrice:             (existing?.lastPrice as number) || 0,
+            priceChangePercent24h: (existing?.priceChangePercent24h as number) || 0,
+            volume: (existing?.volume as number) || 0,
+            type: "simpleswap", ssSource: true, leSource: false,
+          });
+        }
+      }
+      logger.debug({ coins: uniqueCoins.length }, "simpleswap /pairs: live API layer merged");
+    }
+
+    builtPairs = Array.from(mergeMap.values());
+    // Enrich missing logos from coin_metadata (CoinPaprika data)
+    if (builtPairs.length > 0) {
+      const metaMap = await loadCoinMetaMap();
+      builtPairs = builtPairs.map(p => ({
+        ...p,
+        image: (p as any).image || metaMap.get(String((p as any).baseAsset ?? "").toUpperCase()) || null,
+      }));
+      setCache(cacheKey, builtPairs);
+      ssPairsBackup = builtPairs;
+    }
+    logger.info({ total: builtPairs.length }, "simpleswap /pairs: built");
+  }
+
+  // Fall back to stale in-memory backup if build produced nothing
+  const source = (builtPairs && builtPairs.length > 0) ? builtPairs : ssPairsBackup;
+  if (!source) {
+    res.status(503).json({ error: "SimpleSwap currencies unavailable" });
+    return;
+  }
+
+  // Filter admin-hidden symbols
+  const visible = hiddenPairSymbols.size > 0
+    ? source.filter((p: Record<string, unknown>) => !hiddenPairSymbols.has(String(p.baseAsset ?? "")))
+    : source;
+
+  let result = visible;
+  if (!returnAll && filterQuote) {
+    result = visible.filter((p: Record<string, unknown>) => p.quoteAsset === filterQuote);
+  } else if (!returnAll) {
+    result = visible.filter((p: Record<string, unknown>) => p.quoteAsset === "BSV");
+  }
+
+  res.set("Cache-Control", "public, max-age=300");
+  res.json(result);
+});
+
+// ── Admin: hidden pairs management ───────────────────────────────────────────
+// POST /api/admin/hidden-pairs        { symbol: "SCAM" }  → hides the pair
+// DELETE /api/admin/hidden-pairs/:sym                    → unhides the pair
+// GET  /api/admin/hidden-pairs                           → list hidden symbols
+router.get("/admin/hidden-pairs", (_req, res) => {
+  res.json({ hidden: Array.from(hiddenPairSymbols) });
+});
+
+router.post("/admin/hidden-pairs", (req, res) => {
+  const sym = typeof req.body?.symbol === "string" ? req.body.symbol.trim().toUpperCase() : null;
+  if (!sym) { res.status(400).json({ error: "symbol required" }); return; }
+  hiddenPairSymbols.add(sym);
+  // Invalidate SS cache so next request rebuilds without hidden coin
+  cache.delete("ss_pairs_v1");
+  logger.info({ sym }, "admin: pair hidden");
+  res.json({ hidden: sym, total: hiddenPairSymbols.size });
+});
+
+router.delete("/admin/hidden-pairs/:sym", (req, res) => {
+  const sym = req.params.sym?.toUpperCase() ?? "";
+  hiddenPairSymbols.delete(sym);
+  cache.delete("ss_pairs_v1");
+  logger.info({ sym }, "admin: pair unhidden");
+  res.json({ unhidden: sym, total: hiddenPairSymbols.size });
+});
+
 // ── GET /api/letsexchange/pairs/count ─────────────────────────────────────────
 // Lightweight count endpoint so clients can show total pair counts without
 // transferring the full pairs payload.
@@ -490,6 +829,11 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
       return;
     } catch { /* fall through to original logic */ }
   }
+
+  // Guard: fast-path above may have partially committed headers (e.g. res.set()
+  // succeeded but res.json() threw because the socket closed mid-write).
+  // If headers are already sent, do not attempt another response.
+  if (res.headersSent) return;
 
   try {
     const cacheKey = "le_pairs_all";
@@ -554,7 +898,7 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
     res.json({ count: filtered.length });
   } catch (err: any) {
     logger.warn({ err }, "letsexchange /pairs/count failed");
-    res.json({ count: 0 });
+    if (!res.headersSent) res.json({ count: 0 });
   }
 });
 
@@ -562,6 +906,25 @@ router.get("/letsexchange/pairs/count", async (req, res) => {
 // Hybrid: queries ALL configured venues (LetsExchange, ChangeNOW, StealthEX,
 // SimpleSwap) in parallel and returns the best rate.  Response includes
 // best_venue so the frontend can route exchange creation to the winner.
+// ── Estimate result cache ─────────────────────────────────────────────────────
+// Each call fires 5 parallel HTTP requests to external venues.  Multiple users
+// polling every 45 s for the same pair would cause unbounded connection growth.
+// Cache results for 60 s so concurrent sessions share one outbound request set.
+const ESTIMATE_CACHE_TTL_MS = 60_000;
+interface EstimateCacheEntry { body: unknown; expiresAt: number }
+const estimateCache = new Map<string, EstimateCacheEntry>();
+function estimateCacheKey(from: string, to: string, amt: number, forceVenue: string | null): string {
+  // Bucket amount to 2 significant figures to improve hit rate without losing precision.
+  const mag  = amt > 0 ? Math.pow(10, Math.floor(Math.log10(amt)) - 1) : 1;
+  const buck = Math.round(amt / mag) * mag;
+  return `${from}:${to}:${buck}:${forceVenue ?? ""}`;
+}
+// Lazy expiry — purge stale entries periodically to prevent unbounded map growth.
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of estimateCache) if (now > v.expiresAt) estimateCache.delete(k);
+}, 5 * 60_000).unref();
+
 router.post("/letsexchange/estimate", async (req, res) => {
   const body = req.body ?? {};
   const normalizeUpper = (v: unknown): string =>
@@ -584,13 +947,32 @@ router.post("/letsexchange/estimate", async (req, res) => {
   const amt = parseFloat(String(amount));
   if (!isFinite(amt) || amt <= 0) { res.status(400).json({ error: "amount must be positive" }); return; }
 
+  // ── Cache lookup (skip for force_venue calls — those are explicit comparisons) ──
+  const forceVenueRaw = typeof body.force_venue === "string" ? body.force_venue as ExternalVenue : null;
+  if (!forceVenueRaw) {
+    const cacheKey = estimateCacheKey(from, to, amt, null);
+    const cached = estimateCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) {
+      res.setHeader("X-Cache", "HIT");
+      res.json(cached.body);
+      return;
+    }
+  }
+
   try {
     // Query all configured venues in parallel via the meta-router
     const lePrices = getCachedLEPrices();
     const inUsd  = lePrices[from]  ?? 1;
     const outUsd = lePrices[to]    ?? 1;
 
-    const { best, errors, lowestMin } = await getBestExternalQuote(from, to, amt, inUsd, outUsd);
+    // When force_venue is provided, pin to that single provider only
+    const ALL_VENUES: ExternalVenue[] = ["letsexchange", "simpleswap", "changenow", "stealthex", "changelly", "swapzone"];
+    const routePrefs = forceVenueRaw ? {
+      preferredVenues: [forceVenueRaw],
+      blacklistVenues: ALL_VENUES.filter(v => v !== forceVenueRaw),
+    } : undefined;
+
+    const { best, all, errors, lowestMin } = await getBestExternalQuote(from, to, amt, inUsd, outUsd, routePrefs);
     if (!best) {
       const errDetails = Object.entries(errors)
         .filter(([, v]) => v !== null)
@@ -607,7 +989,33 @@ router.post("/letsexchange/estimate", async (req, res) => {
         });
         return;
       }
-      res.status(404).json({ error: `No rate available for ${from}→${to}`, detail: errDetails }); return;
+      // All live venues failed — check DB for a cached rate as last resort.
+      // This keeps every pair quotable even during complete API outages.
+      try {
+        const [cachedRow] = await db
+          .select({ lastPrice: marketsTable.lastPrice })
+          .from(marketsTable)
+          .where(eq(marketsTable.symbol, `${from}/${to}`))
+          .limit(1);
+        const cachedRate = parseFloat(cachedRow?.lastPrice ?? "0");
+        if (cachedRate > 0) {
+          logger.info({ from, to, cachedRate }, "estimate: all venues failed — serving cached DB rate");
+          res.json({
+            amount:             String(cachedRate * amt),
+            rate:               String(cachedRate),
+            min_amount:         "",
+            max_amount:         "",
+            rate_id:            null,
+            rate_id_expired_at: null,
+            withdrawal_fee:     "0",
+            best_venue:         "cached",
+            stale:              true,
+            venue_quotes:       [],
+          });
+          return;
+        }
+      } catch { /* non-fatal — fall through to 503 */ }
+      res.status(503).json({ error: `No rate available for ${from}→${to}`, detail: errDetails }); return;
     }
 
     // For LetsExchange winner: fetch rate_id for optional fixed-rate locking
@@ -630,11 +1038,32 @@ router.post("/letsexchange/estimate", async (req, res) => {
 
     const estimatedOutput = best.expectedOutput;
     const rate = amt > 0 ? estimatedOutput / amt : 0;
+
+    // Non-blocking: persist live rate to DB so future fallbacks use real rates.
+    // Covers all 1.88M bridge pairs over time as users trade them.
+    if (rate > 0) {
+      db.update(marketsTable)
+        .set({ lastPrice: String(rate) })
+        .where(eq(marketsTable.symbol, `${from}/${to}`))
+        .catch(() => {}); // non-fatal — never block the response
+    }
+
     // Use the winning venue's minAmount; fall back to lowestMin across all venues
     // so the UI always shows a real minimum (never "0" or blank).
     const resolvedMin = best.minAmount ?? lowestMin;
     const resolvedMax = best.maxAmount ?? null;
-    res.json({
+
+    // Per-venue quotes for price comparison UI (LE + SS shown side by side)
+    const venue_quotes = all.map(q => ({
+      venue:      q.venue,
+      rate:       q.inputAmount > 0 ? String(q.expectedOutput / q.inputAmount) : null,
+      output:     String(q.expectedOutput),
+      minAmount:  q.minAmount != null ? String(q.minAmount) : null,
+      maxAmount:  q.maxAmount != null ? String(q.maxAmount) : null,
+      canExecute: q.canExecute,
+    }));
+
+    const responseBody = {
       amount:             String(estimatedOutput),
       rate:               String(rate),
       min_amount:         resolvedMin != null && resolvedMin > 0 ? String(resolvedMin) : "",
@@ -643,7 +1072,16 @@ router.post("/letsexchange/estimate", async (req, res) => {
       rate_id_expired_at,
       withdrawal_fee:     "0",
       best_venue:         best.venue,
-    });
+      venue_quotes,
+    };
+
+    // Store in cache (only non-force_venue calls; rate_id is short-lived but still useful)
+    if (!forceVenueRaw && rate > 0) {
+      const cacheKey = estimateCacheKey(from, to, amt, null);
+      estimateCache.set(cacheKey, { body: responseBody, expiresAt: Date.now() + ESTIMATE_CACHE_TTL_MS });
+    }
+
+    res.json(responseBody);
   } catch (err: any) {
     logger.error({ err }, "letsexchange /estimate failed");
     res.status(502).json({ error: "Failed to reach exchange providers" });
@@ -705,6 +1143,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
+          recordBridgeFee(amt, fromU, ex.id ?? "changenow");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -738,6 +1177,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
+          recordBridgeFee(amt, fromU, ex.id ?? "stealthex");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -771,6 +1211,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
+          recordBridgeFee(amt, fromU, ex.id ?? "simpleswap");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -809,6 +1250,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
+          recordBridgeFee(amt, fromU, ex.id ?? "changelly");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -863,6 +1305,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
       if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: "letsexchange" }, "exchange: fell back to alternate venue");
       const d = leData as Record<string, unknown>;
       if (d?.transaction_id) {
+        recordBridgeFee(amt, fromU, String(d.transaction_id));
         const leUsd = getCachedLEPrices();
         const fromUsd = leUsd[fromU] ?? 0;
         const depositUsd = fromUsd > 0 ? (amt * fromUsd).toFixed(4) : null;
@@ -969,7 +1412,7 @@ router.get("/letsexchange/status/:id", async (req, res) => {
     }
 
     // ── Rescue: try all other venues in case venue metadata was lost ──────────
-    const ALL_VENUES = ["changenow", "stealthex", "simpleswap", "changelly", "letsexchange"];
+    const ALL_VENUES = ["changenow", "stealthex", "simpleswap", "changelly", "letsexchange", "swapzone"];
     for (const fallbackVenue of ALL_VENUES.filter(v => v !== venue)) {
       const rescued = await tryGetStatus(fallbackVenue, id);
       if (rescued) {
@@ -993,15 +1436,14 @@ router.get("/letsexchange/config", (_req, res) => {
   res.json({ affiliateId: AFFILIATE_ID || null });
 });
 
-// Pre-warm LE price cache at startup: fetch coin list then batch-request USD rates.
-// Runs entirely in the background — errors are caught inside each helper.
+// Pre-warm LE coin + price cache at startup.
+// fetchAndCacheCurrencies() fetches the first 1 000 coins immediately, then
+// kicks off background pagination for the remaining 5 000+ pages so the full
+// list is available within ~30–60 s without blocking any request.
 (async () => {
   try {
-    const { ok, data } = await leRequest("/v2/coins");
-    if (!ok || !Array.isArray(data)) return;
-    const coins = normaliseV2Coins(data);
-    setCache("currencies", coins);
-    await fetchLEPricesUSD(coins);
+    const coins = await fetchAndCacheCurrencies();
+    if (coins.length > 0) await fetchLEPricesUSD(coins);
   } catch { /* non-fatal */ }
 })();
 

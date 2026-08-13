@@ -19,11 +19,19 @@ const COIN_COLORS: Record<string, string> = {
   SUSHI:"#EC4899", YFI:"#2563EB", COMP:"#22C55E", SNX:"#10B981",
 };
 
+const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+
 function coinSources(symbol: string): string[] {
   const sym = symbol.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const symUp = symbol.toUpperCase().replace(/[^A-Z0-9]/g, "");
   return [
+    /* 1. Our GitHub-backed logo proxy (Trust Wallet / Uniswap) */
+    `${API_BASE}/api/tokens/logo/${symUp}`,
+    /* 2. CoinCap CDN */
     `https://assets.coincap.io/assets/icons/${sym}@2x.png`,
+    /* 3. Spothq cryptocurrency-icons (GitHub CDN) */
     `https://cdn.jsdelivr.net/gh/spothq/cryptocurrency-icons@master/128/color/${sym}.png`,
+    /* 4. LiveCoinWatch CDN */
     `https://lcw.nyc3.cdn.digitaloceanspaces.com/production/currencies/64/${sym}.png`,
   ];
 }

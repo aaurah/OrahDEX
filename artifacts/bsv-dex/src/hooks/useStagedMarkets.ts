@@ -58,3 +58,51 @@ export function useStagedMarkets(opts?: Parameters<typeof useGetMarkets>[0]) {
   const data = (full.data && (full.data as any[]).length > 0) ? full.data : (priority ?? undefined);
   return { ...full, data } as typeof full;
 }
+
+/**
+ * useMarketSearch — Debounced server-side search across the full 1.24 M pair catalog.
+ *
+ * Calls GET /api/markets/search?q=QUERY on every query change (debounced).
+ * Returns [] when query is empty — callers can fall back to local in-memory data.
+ * Spot/futures results come first; simpleswap/catalog fill the remainder.
+ */
+export function useMarketSearch(
+  query: string,
+  opts: { limit?: number; debounceMs?: number } = {},
+): { results: any[]; loading: boolean } {
+  const limit      = opts.limit      ?? 100;
+  const debounceMs = opts.debounceMs ?? 300;
+  const [results, setResults] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const q = query.trim().toUpperCase();
+    if (!q) { setResults([]); setLoading(false); return; }
+
+    setLoading(true);
+    let controller: AbortController | null = null;
+
+    const id = setTimeout(() => {
+      controller = new AbortController();
+      fetch(`${API_BASE}/markets/search?q=${encodeURIComponent(q)}&limit=${limit}`, {
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      })
+        .then(r => r.ok ? r.json() : [])
+        .then((data: unknown) => {
+          setResults(Array.isArray(data) ? data : []);
+          setLoading(false);
+        })
+        .catch((err: unknown) => {
+          if ((err as any)?.name !== "AbortError") setLoading(false);
+        });
+    }, debounceMs);
+
+    return () => {
+      clearTimeout(id);
+      controller?.abort();
+    };
+  }, [query, limit, debounceMs]);
+
+  return { results, loading };
+}

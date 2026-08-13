@@ -511,45 +511,122 @@ export const FTM_MARKETS: any[] = [
 // ─── BASE PAIRS (Base L2 · Coinbase) — curated, excludes Zora social coins ───
 // Only Base-native blue-chips + established bridged assets. Creator coins → ZORA tab.
 export const BASE_MARKETS: any[] = [
-  spot("WETH",   "USDC",  3415,       2.15, 2_100_000_000), // wrapped ETH on Base
-  spot("CBETH",  "USDC",  3596,       2.04,   420_000_000), // Coinbase staked ETH
-  spot("USDC",   "USDT",  1.0001,     0.01, 1_820_000_000), // native USDC on Base
-  spot("DAI",    "USDC",  0.9998,     0.02,   480_000_000),
-  spot("AERO",   "USDC",  2.84,      12.45,   285_000_000), // Aerodrome — #1 Base DEX
-  spot("BRETT",  "USDC",  0.1142,    18.42,   242_000_000), // biggest Base meme coin
-  spot("TOSHI",  "USDC",  0.000185,  22.15,   168_000_000), // Coinbase mascot meme
-  spot("DEGEN",  "USDC",  0.00842,   14.82,   138_000_000), // Farcaster social token
-  spot("HIGHER", "USDC",  0.00215,    9.64,    82_000_000), // Base cultural token
-  spot("MOCHI",  "USDC",  0.00142,   11.25,    58_000_000), // Base cat meme
-  spot("DOGINME","USDC",  0.0000945, 12.84,    18_000_000), // Base dog meme
-  spot("BALD",   "USDC",  0.00284,    8.42,    42_000_000), // first Base meme coin
-  spot("NORMIE", "USDC",  0.00182,   13.10,    38_000_000), // Base meme
-  spot("MORPHO", "USDC",  1.82,       5.21,    48_000_000), // Morpho lending on Base
-  spot("MOONWELL","USDC", 0.182,      4.85,    28_000_000), // Moonwell lending
-  spot("SEAM",   "USDC",  4.82,       7.42,    22_000_000), // Seamless Protocol
-  spot("WELL",   "USDC",  0.082,      3.15,    18_000_000), // Moonwell governance
-  spot("COMP",   "USDC",  52.5,       0.62,    15_000_000), // Compound on Base
-  spot("SNX",    "USDC",  2.82,      -1.32,    12_000_000), // Synthetix on Base
+  // ── Wrapped majors on Base (ETH-quoted) ───────────────────────────────────
+  spot("CBBTC",    "ETH",  28.26,       -1.38,   410_000_000), // Coinbase BTC
+  spot("WBTC",     "ETH",  28.20,       -1.52,   280_000_000),
+  spot("CBETH",    "ETH",   1.109,       1.94,   195_000_000), // Coinbase staked ETH
+  spot("WSTETH",   "ETH",   1.165,       1.92,   148_000_000), // Lido wstETH
+  spot("RETH",     "ETH",   1.099,       1.88,    95_000_000), // Rocket Pool ETH
+  spot("WEETH",    "ETH",   1.091,       1.82,    88_000_000), // ether.fi
+  spot("EZETH",    "ETH",   1.046,       1.75,    62_000_000), // Renzo
+  spot("MSETH",    "ETH",   1.004,       1.87, 3_580_000_000), // Metastable ETH
+  // ── Stablecoins ───────────────────────────────────────────────────────────
+  spot("USDC",     "USDT",  1.0001,      0.01, 1_820_000_000),
+  spot("USDBC",    "USDT",  0.9999,      0.00,   680_000_000), // bridged USDC
+  spot("DAI",      "ETH",   0.0004132,   0.02,   480_000_000),
+  spot("MSUSD",    "ETH",   0.0004133,   0.02, 3_572_000_000), // Metastable USD
+  spot("GHO",      "ETH",   0.0004131,  -0.05,   120_000_000),
+  spot("EURC",     "ETH",   0.0004483,   0.12,    85_000_000), // Circle Euro
+  // ── Top DEX & DeFi ────────────────────────────────────────────────────────
+  spot("AERO",     "ETH",   0.0001989,   0.80, 2_140_000_000), // Aerodrome
+  spot("VELVET",   "ETH",   0.000000304,20.42,   736_000_000), // Velvet AI DeFi
+  spot("VIRTUAL",  "ETH",   0.001676,   28.42, 4_055_000_000), // Virtuals Protocol
+  spot("LBM",      "VIRTUAL",0.00285,   14.82,   485_000_000), // LBM/VIRTUAL
+  spot("MORPHO",   "ETH",   0.0007521,   5.21,    48_000_000),
+  spot("MOONWELL", "ETH",   0.0000752,   4.85,    28_000_000),
+  spot("SEAM",     "ETH",   0.001992,    7.42,    22_000_000),
+  spot("WELL",     "ETH",   0.00003388,  3.15,    18_000_000),
+  spot("COMP",     "ETH",   0.02169,     0.62,    15_000_000),
+  spot("CRV",      "ETH",   0.0001992,  -2.14,    32_000_000),
+  spot("UNI",      "ETH",   0.003479,    1.82,    95_000_000),
+  spot("LINK",     "ETH",   0.005999,    3.64,    82_000_000),
+  spot("MKR",      "ETH",   0.7612,     -0.85,    42_000_000),
+  spot("SUSHI",    "ETH",   0.0004719,  -0.84,    12_000_000),
+  spot("SNX",      "ETH",   0.001165,   -1.32,    12_000_000),
+  spot("BAL",      "ETH",   0.001579,   -1.85,    18_000_000),
+  spot("RDNT",     "ETH",   0.00003479, -3.42,    14_000_000),
+  spot("SAFE",     "ETH",   0.0004058,  -1.15,    22_000_000),
+  spot("PRIME",    "ETH",   0.003479,    5.85,    38_000_000),
+  spot("BERRY",    "ETH",   0.00485,    12.42,    18_000_000),
+  spot("VVV",      "ETH",   0.00000118,  8.15, 1_442_000_000),
+  spot("RAVE",     "ETH",   0.00000158,  4.85,   888_000_000),
+  // ── AI Agents ────────────────────────────────────────────────────────────
+  spot("CLAUDE",   "ETH",   0.000004131,98.36,   999_000_000), // AI Claude meme
+  spot("AIXBT",    "ETH",   0.0000752,  18.50,   142_000_000),
+  spot("SLEUTH",   "ETH",   0.00000118, 22.42,    85_000_000),
+  spot("SURPLUS",  "ETH",   0.000000348,15.82,    42_000_000),
+  spot("PRXVT",    "VIRTUAL",0.00621,  -10.40, 3_870_000_000), // Virtuals Agent
+  spot("TOSHI",    "ETH",   0.0000000049,22.15,  283_000_000), // real price
+  // ── Prediction & Social ───────────────────────────────────────────────────
+  spot("POLY",     "ETH",   0.000003791,91.13,   162_000_000), // Polymarket
+  spot("JESSE",    "ZORA",  0.001069,   42.23,    28_000_000), // Jesse Pollak meme
+  spot("DRB",      "ETH",   0.000000161, 1.50,    13_100_000), // DebtReliefBot
+  // ── High-volume trending ──────────────────────────────────────────────────
+  spot("B18",      "ETH",   0.0000016,  24.85, 3_844_000_000),
+  spot("YAPPR",    "ETH",   0.0000002,  18.42, 3_640_000_000),
+  spot("PROS",     "ETH",   0.0000012,  12.15, 3_589_000_000),
+  spot("ASOS",     "ETH",   0.00000035, 22.85, 2_785_000_000),
+  spot("SOSO",     "ETH",   0.00000059, 15.82, 2_146_000_000),
+  spot("ANSEM",    "ETH",   0.00000075, 18.42, 1_591_000_000),
+  spot("CHECK",    "ETH",   0.000000118,24.85, 1_761_000_000),
+  spot("TICK",     "ETH",   0.000000075,12.15, 1_217_000_000),
+  spot("SPECTER",  "ETH",   0.000000158, 8.42,   896_000_000),
+  spot("SAOS",     "ETH",   0.000000059,14.85, 1_379_000_000),
+  // ── Meme & Culture ────────────────────────────────────────────────────────
+  spot("BRETT",    "ETH",   0.00004719, 18.42,   242_000_000),
+  spot("DEGEN",    "ETH",   0.0000035,  14.82,   138_000_000), // Farcaster
+  spot("HIGHER",   "ETH",   0.00000089,  9.64,    82_000_000),
+  spot("SPX",      "ETH",   0.0006124,  42.85,   182_000_000), // SPX6900
+  spot("TURBO",    "ETH",   0.0000028,  22.42,    85_000_000),
+  spot("MOCHI",    "ETH",   0.00000059, 11.25,    58_000_000),
+  spot("MIGGLES",  "ETH",   0.0000012,  18.15,    42_000_000),
+  spot("NORMIE",   "ETH",   0.00000075, 13.10,    38_000_000),
+  spot("PEPE",     "ETH",   0.0000000053, 8.42,   65_000_000),
+  spot("BALD",     "ETH",   0.0000012,   8.42,    42_000_000),
+  spot("MFER",     "ETH",   0.00000075,  8.42,    22_000_000),
+  spot("KEYCAT",   "ETH",   0.0000002,  15.82,    28_000_000),
+  spot("DOGINME",  "ETH",   0.000000039,12.84,    18_000_000),
+  spot("BENJI",    "ETH",   0.000000159,12.85,    18_000_000),
+  spot("BONK",     "ETH",   0.000000012, 5.42,    22_000_000),
+  spot("WIF",      "ETH",   0.001174,    8.15,    48_000_000),
+  spot("MOXIE",    "ETH",   0.0000020,  24.85,    35_000_000),
+  spot("LUM",      "ETH",   0.00000076, 18.42,    22_000_000),
+  spot("YOINK",    "ETH",   0.000000118,32.15,    12_000_000),
+  spot("DOT",      "ETH",   0.0000008,  -4.30,     1_600_000), // Base DOT
 ];
 
-// ─── ZORA MARKETS — creator / social coins (Zora Network + Base social layer) ─
-// On Zora, every post creates a tradeable ERC-20. Sorted by 24h volume.
+// ─── ZORA MARKETS — real Zora content coins (GeckoTerminal /category/zora-content) ─
+// Tokens tokenized on Zora for social content. Every post = a tradeable ERC-20.
 export const ZORA_MARKETS: any[] = [
-  spot("ZORA",   "USDC",  0.00182,   24.82,   142_000_000), // Zora Protocol token
-  spot("ENJOY",  "USDC",  0.000042,  31.50,    62_000_000), // ENJOY — Zora OG social
-  spot("BUILD",  "USDC",  0.000285,  42.15,    32_000_000), // BUILD ecosystem
-  spot("IMAGINE","USDC",  0.0000182, 18.42,    28_000_000), // Zora creator coin
-  spot("ONCHAIN","USDC",  0.0000842, 15.42,    24_000_000), // onchain culture
-  spot("BASED",  "USDC",  0.000142,  19.10,    22_000_000), // Base culture token
-  spot("FRIEND", "USDC",  0.00482,    6.84,    18_000_000), // friend.tech derivative
-  spot("NOMAD",  "USDC",  0.000182,  22.84,    16_000_000), // Zora social coin
-  spot("COINAGE","USDC",  0.00182,    8.42,    14_000_000), // Coinage media token
-  spot("RAINBOW","USDC",  0.0000285, 11.25,    12_000_000), // Rainbow wallet social
-  spot("ALFA",   "USDC",  0.000882,  28.42,    10_000_000), // Alfa social coin
-  spot("NOTES",  "USDC",  0.0000482, 14.85,     8_500_000), // creator notes coin
-  spot("POST",   "USDC",  0.0000185,  9.42,     7_200_000), // post-as-coin
-  spot("VIRAL",  "USDC",  0.000242,  35.84,     6_800_000), // viral post coin
-  spot("MINT",   "USDC",  0.00142,    4.15,     5_400_000), // Zora Mint
+  // ── Established Zora protocol tokens (ETH-quoted) ─────────────────────────
+  spot("ZORA",    "ETH",  0.00000075,  24.82,   142_000_000), // Zora Protocol
+  spot("ENJOY",   "ETH",  0.0000000095,31.50,    62_000_000), // ENJOY — Zora OG
+  spot("BUILD",   "ETH",  0.000000118, 42.15,    32_000_000), // BUILD ecosystem
+  // ── Real Zora content tokens (from GeckoTerminal, sorted by holders/activity) ──
+  spot("HPOB",    "ETH",  0.00000542,   6.60,    13_110_000), // Harry Potter Obamanator
+  spot("IHODL",   "ETH",  0.000000188, -2.40,       453_950), // IHODL content coin
+  spot("USOROIL", "ETH",  0.000000191, -0.50,       462_030), // U.S. Oil Reserves coin
+  spot("SHX",     "ETH",  0.000406,    -5.30,       405_810), // SHX content coin
+  spot("SINBAD",  "ETH",  0.0000000351,-2.30,        84_860), // Sinbad Crew Base
+  spot("MUSHY",   "ETH",  0.000000084, -2.60,        52_030), // Mushroom content coin
+  spot("MOON",    "ETH",  0.0000000173, 15.30,       41_940), // mr_lightspeed Moon
+  spot("ARMSTRONG","ETH", 0.0000000141, 12.90,       34_230), // Armstrong content
+  spot("IRVUS",   "ETH",  0.0000000113,  0.40,       27_340), // IRVUS social coin
+  spot("SNG",     "ETH",  0.0000000104, 31.40,       25_340), // $SNG content coin
+  spot("LNOB",    "ZORA", 0.0001146,    8.00,        11_450), // latenightonbase
+  spot("YUGEDIP", "ETH",  0.003281,   256.50,         1_020), // YUGE DIP (nicktess)
+  // ── Zora network native + social layer ────────────────────────────────────
+  spot("IMAGINE", "ETH",  0.0000000110, 18.42,       28_000),
+  spot("ONCHAIN", "ETH",  0.0000000348, 15.42,       24_000),
+  spot("BASED",   "ETH",  0.0000000587, 19.10,       22_000),
+  spot("FRIEND",  "ETH",  0.0000020,    6.84,        18_000),
+  spot("COINAGE", "ETH",  0.00000075,   8.42,        14_000),
+  spot("RAINBOW", "ETH",  0.0000000118, 11.25,       12_000),
+  spot("NOTES",   "ETH",  0.0000000199, 14.85,        8_500),
+  spot("VIRAL",   "ETH",  0.0000001,    35.84,        6_800),
+  spot("MINT",    "ETH",  0.00000059,    4.15,        5_400),
+  spot("LENS",    "ETH",  0.0000020,     3.85,       18_000),
+  spot("RARE",    "ETH",  0.000000118,   6.85,        1_600),
 ];
 
 // ─── CRO PAIRS (Cronos) ───────────────────────────────────────────────────────
@@ -1192,8 +1269,8 @@ export const generateMockOrderBook = (basePrice: number): OrderBook => {
   let totalBid = 0;
   let totalAsk = 0;
   for (let i = 0; i < 20; i++) {
-    const bidPrice = basePrice - (Math.random() * 0.5) - (i * 0.2);
-    const askPrice = basePrice + (Math.random() * 0.5) + (i * 0.2);
+    const bidPrice = basePrice * (1 - (Math.random() * 0.005) - (i * 0.002));
+    const askPrice = basePrice * (1 + (Math.random() * 0.005) + (i * 0.002));
     const bidQty = Math.random() * 100 + 10;
     const askQty = Math.random() * 100 + 10;
     totalBid += bidQty;

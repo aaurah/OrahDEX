@@ -7,7 +7,7 @@ import {
   Users2, Search, ChevronDown, Shield, Star, Clock, Plus, X, Check,
   ArrowUpDown, Filter, Globe, Zap, AlertCircle, MessageSquare, Lock,
   TrendingUp, Activity, CheckCircle2, Info, ChevronRight,
-  ArrowLeftRight, Link2, Unlock, RefreshCw, AlertTriangle, Timer,
+  ArrowLeftRight, RefreshCw, Timer,
   Copy, Send, Wallet, ArrowRight, SlidersHorizontal, Trash2,
 } from "lucide-react";
 import { CoinLogo } from "@/components/CoinLogo";
@@ -259,10 +259,24 @@ function StarRating({ rating }: { rating: number }) {
 function TradeModal({ offer, side, onClose }: { offer: Offer; side: Side; onClose: () => void }) {
   const [amountFiat, setAmountFiat] = useState("");
   const [step, setStep] = useState<"form" | "confirm">("form");
+  const [addrCopied, setAddrCopied] = useState(false);
   const cryptoAmount = amountFiat ? (parseFloat(amountFiat) / offer.price).toFixed(6) : "";
   const avatarIdx = AVATARS.indexOf(offer.trader.avatar ?? "") % AVATAR_COLORS.length;
+  const { address: walletAddress } = useWalletStore();
+  const { open: openWalletModal } = useWalletModalStore();
 
-  const handleConfirm = () => setStep("confirm");
+  const handleConfirm = () => {
+    if (!walletAddress) { openWalletModal(); return; }
+    setStep("confirm");
+  };
+
+  const copyAddr = () => {
+    if (!walletAddress) return;
+    navigator.clipboard.writeText(walletAddress).then(() => {
+      setAddrCopied(true);
+      setTimeout(() => setAddrCopied(false), 2000);
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -390,31 +404,206 @@ function TradeModal({ offer, side, onClose }: { offer: Offer; side: Side; onClos
               <div className="w-16 h-16 rounded-full bg-green-500/15 border border-green-500/30 flex items-center justify-center mx-auto mb-4">
                 <CheckCircle2 className="w-8 h-8 text-green-500" />
               </div>
-              <h3 className="text-lg font-bold text-foreground mb-1">Trade Initiated!</h3>
-              <p className="text-sm text-muted-foreground">Your escrow is locked. {offer.trader.name} has been notified.</p>
+              <h3 className="text-lg font-bold text-foreground mb-1">Trade Opened!</h3>
+              <p className="text-sm text-muted-foreground">
+                {side === "buy"
+                  ? `Send ${offer.fiat} payment and share your crypto receive address with ${offer.trader.name}.`
+                  : `Await ${offer.fiat} payment from the buyer, then send ${offer.coin} to their address.`}
+              </p>
             </div>
-            <div className="bg-secondary/50 border border-border rounded-xl p-4 space-y-3 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Trade ID</span><span className="font-mono font-bold text-foreground">#ORH{Math.floor(Math.random()*900000+100000)}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Amount ({offer.fiat})</span><span className="font-semibold">${parseFloat(amountFiat||"0").toLocaleString()}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Amount ({offer.coin})</span><span className="font-semibold">{cryptoAmount} {offer.coin}</span></div>
+
+            {/* Trade summary */}
+            <div className="bg-secondary/50 border border-border rounded-xl p-4 space-y-2.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">You {side === "buy" ? "spend" : "receive"} ({offer.fiat})</span>
+                <span className="font-semibold">{parseFloat(amountFiat||"0").toLocaleString()} {offer.fiat}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">You {side === "buy" ? "receive" : "send"} ({offer.coin})</span>
+                <span className="font-semibold text-green-400">{cryptoAmount} {offer.coin}</span>
+              </div>
               <div className="flex justify-between"><span className="text-muted-foreground">Rate</span><span>${offer.price.toLocaleString()} / {offer.coin}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Payment method</span><span>{offer.paymentMethods[0]}</span></div>
-              <div className="flex justify-between items-center"><span className="text-muted-foreground">Status</span><span className="flex items-center gap-1 text-green-400"><Clock className="w-3.5 h-3.5" /> Awaiting payment</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Pay via</span><span>{offer.paymentMethods[0]}</span></div>
+              <div className="flex justify-between items-center">
+                <span className="text-muted-foreground">Status</span>
+                <span className="flex items-center gap-1 text-amber-400"><Clock className="w-3.5 h-3.5" /> Awaiting payment</span>
+              </div>
             </div>
-            <div className="flex items-start gap-2 p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-xs text-green-300">
+
+            {/* Your crypto receive address */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <Wallet className="w-3.5 h-3.5" />
+                {side === "buy" ? `Your ${offer.coin} receive address` : "Your wallet address"}
+              </div>
+              {walletAddress ? (
+                <div className="flex items-center gap-2 p-3 rounded-xl bg-secondary border border-border">
+                  <span className="flex-1 font-mono text-xs text-foreground break-all">{walletAddress}</span>
+                  <button onClick={copyAddr}
+                    className={cn(
+                      "shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors",
+                      addrCopied ? "bg-green-500/20 text-green-400" : "bg-primary/15 text-primary hover:bg-primary/25"
+                    )}>
+                    {addrCopied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+                  </button>
+                </div>
+              ) : (
+                <button onClick={openWalletModal}
+                  className="w-full py-2.5 rounded-xl border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors">
+                  Connect wallet to see your address
+                </button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                {side === "buy"
+                  ? `Share this with ${offer.trader.name} so they know where to send ${offer.coin} after confirming your payment.`
+                  : `Provide your payment details to the buyer so they can send ${offer.fiat}.`}
+              </p>
+            </div>
+
+            {/* Instructions banner */}
+            <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>Send your payment within <strong>30 minutes</strong> and mark it as paid. The seller will release {offer.coin} from escrow after confirming receipt.</span>
+              <span>
+                {side === "buy"
+                  ? `Send payment within 30 min via ${offer.paymentMethods[0]}. Once ${offer.trader.name} confirms receipt, they will release ${offer.coin} to your address above.`
+                  : `Wait for ${offer.fiat} payment via ${offer.paymentMethods[0]}. Once confirmed, send ${cryptoAmount} ${offer.coin} to the buyer's address they will share.`}
+              </span>
             </div>
-            <div className="flex gap-3">
-              <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-border text-muted-foreground hover:text-foreground transition-colors text-sm font-medium">
-                Close
-              </button>
-              <button className="flex-1 py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm flex items-center justify-center gap-2">
-                <MessageSquare className="w-4 h-4" /> Open Chat
-              </button>
-            </div>
+
+            <button onClick={onClose}
+              className={cn(
+                "w-full py-3 rounded-xl text-white font-semibold text-sm transition-all",
+                side === "buy" ? "bg-green-600 hover:bg-green-500" : "bg-red-600 hover:bg-red-500"
+              )}>
+              Got It
+            </button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Settlement Modal (shown after accepting a Direct Trade) ─────────────────
+
+type FilledIntent = {
+  intentId: string;
+  makerAddress: string;
+  tokenIn: string;
+  tokenOut: string;
+  amountIn: string;
+  minAmountOut: string;
+};
+
+function SettlementModal({ intent, myAddress, onClose }: {
+  intent: FilledIntent;
+  myAddress: string;
+  onClose: () => void;
+}) {
+  const [makerCopied, setMakerCopied] = useState(false);
+  const [myCopied, setMyCopied] = useState(false);
+
+  const copy = (text: string, setter: (v: boolean) => void) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setter(true);
+      setTimeout(() => setter(false), 2000);
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-green-500/5">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-green-500/20 border border-green-500/30 flex items-center justify-center">
+              <CheckCircle2 className="w-4 h-4 text-green-400" />
+            </div>
+            <div>
+              <div className="font-semibold text-foreground">Trade Accepted</div>
+              <div className="text-xs text-muted-foreground">Settle directly with the maker — wallet to wallet</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* What you owe / what you get */}
+          <div className="bg-secondary/50 border border-border rounded-xl p-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">You send to maker</span>
+              <span className="font-semibold text-orange-400">
+                {parseFloat(intent.amountIn).toLocaleString()} {intent.tokenIn}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">You receive from maker</span>
+              <span className="font-semibold text-green-400">
+                {parseFloat(intent.minAmountOut).toLocaleString()} {intent.tokenOut}
+              </span>
+            </div>
+          </div>
+
+          {/* Maker address — where taker sends tokenIn */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              <Send className="w-3.5 h-3.5" />
+              Send {intent.tokenIn} to this address (maker)
+            </div>
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-orange-500/5 border border-orange-500/25">
+              <span className="flex-1 font-mono text-xs text-foreground break-all">{intent.makerAddress}</span>
+              <button
+                onClick={() => copy(intent.makerAddress, setMakerCopied)}
+                className={cn(
+                  "shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors",
+                  makerCopied ? "bg-green-500/20 text-green-400" : "bg-orange-500/15 text-orange-400 hover:bg-orange-500/25"
+                )}>
+                {makerCopied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Send exactly {parseFloat(intent.amountIn).toLocaleString()} {intent.tokenIn} to this wallet to complete your side.
+            </p>
+          </div>
+
+          {/* Your receive address — where maker sends tokenOut */}
+          {myAddress && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <Wallet className="w-3.5 h-3.5" />
+                Your receive address — share with maker
+              </div>
+              <div className="flex items-center gap-2 p-3 rounded-xl bg-green-500/5 border border-green-500/25">
+                <span className="flex-1 font-mono text-xs text-foreground break-all">{myAddress}</span>
+                <button
+                  onClick={() => copy(myAddress, setMyCopied)}
+                  className={cn(
+                    "shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors",
+                    myCopied ? "bg-green-500/20 text-green-400" : "bg-green-500/15 text-green-400 hover:bg-green-500/25"
+                  )}>
+                  {myCopied ? <><Check className="w-3 h-3" /> Copied</> : <><Copy className="w-3 h-3" /> Copy</>}
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                The maker needs to send {parseFloat(intent.minAmountOut).toLocaleString()} {intent.tokenOut} to this address. Share it with them.
+              </p>
+            </div>
+          )}
+
+          <div className="flex items-start gap-2 p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>Settlement is wallet-to-wallet. OrahDEX records the agreement but does not move funds. Always verify addresses before sending.</span>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-colors">
+            Close
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -690,7 +879,7 @@ export function P2P() {
     }
   });
 
-  const [mainTab, setMainTab] = useState<"p2p" | "atomic" | "direct">("p2p");
+  const [mainTab, setMainTab] = useState<"p2p" | "direct">("p2p");
   const [side, setSide] = useState<Side>("buy");
   const [coin, setCoin] = useState<Coin>("BTC");
   const [fiat, setFiat] = useState<Fiat>("USD");
@@ -702,26 +891,6 @@ export function P2P() {
   const [showFiatDropdown, setShowFiatDropdown] = useState(false);
   const [showPayDropdown, setShowPayDropdown] = useState(false);
 
-  // Atomic swap state
-  const [atomicFrom, setAtomicFrom] = useState<Coin>("BTC");
-  const [atomicTo, setAtomicTo]     = useState<Coin>("BSV");
-  const [atomicAmt, setAtomicAmt]   = useState("");
-  const [atomicStep, setAtomicStep] = useState<0|1|2|3|4>(0);
-  const [htlcHash]                  = useState(() => Array.from({length: 16}, () => Math.floor(Math.random()*16).toString(16)).join("").toUpperCase());
-  const [htlcRunning, setHtlcRunning] = useState(false);
-
-  const atomicFromPrice = COIN_PRICES[atomicFrom] ?? 1;
-  const atomicToPrice   = COIN_PRICES[atomicTo]   ?? 1;
-  const atomicOutput    = atomicAmt ? ((parseFloat(atomicAmt) * atomicFromPrice) / atomicToPrice) : 0;
-
-  const startHtlc = () => {
-    if (htlcRunning || !atomicAmt || parseFloat(atomicAmt) <= 0) return;
-    setHtlcRunning(true);
-    setAtomicStep(1);
-    const advance = (step: 1|2|3|4, delay: number) =>
-      setTimeout(() => { setAtomicStep(step); if (step === 4) setHtlcRunning(false); }, delay);
-    advance(2, 1200); advance(3, 2800); advance(4, 4200);
-  };
 
   // ── Direct Trade state ──────────────────────────────────────────────────────
   const ALL_COINS = ["ETH","BTC","BSV","USDT","USDC","BNB","SOL","AVAX","ARB","OP","POL","MATIC","DAI","LINK","UNI","AAVE","WBTC","CAKE","GMX","DEGEN","BRETT"] as const;
@@ -740,6 +909,7 @@ export function P2P() {
   const [dtFilling,   setDtFilling]   = useState(false);
   const [dtCancelId,  setDtCancelId]  = useState<string | null>(null);
   const [dtFilterCoin, setDtFilterCoin] = useState<DirectCoin | "ALL">("ALL");
+  const [dtFillResult, setDtFillResult] = useState<FilledIntent | null>(null);
 
   const { address: walletAddress, network: walletNetwork } = useWalletStore();
   const { open: openWalletModal }  = useWalletModalStore();
@@ -815,7 +985,7 @@ export function P2P() {
     }
   }
 
-  async function fillDirectTrade(intentId: string, wantAmt: string) {
+  async function fillDirectTrade(intentId: string, wantAmt: string, intentData?: FilledIntent) {
     if (!walletAddress) { openWalletModal(); return; }
     setDtFilling(true);
     setDtFillId(intentId);
@@ -832,10 +1002,10 @@ export function P2P() {
       if (!r.ok) throw new Error(data.error ?? "Fill failed");
       qcDirect.invalidateQueries({ queryKey: ["direct-intents"] });
       qcDirect.invalidateQueries({ queryKey: ["my-direct-intents"] });
-      // Be truthful: the fill endpoint marks the intent as accepted but does
-      // not move funds — settlement is coordinated off-chain between the two
-      // wallets. Don't claim balances changed.
-      alert("Trade accepted! Coordinate settlement with the maker — funds are not moved automatically by this offer.");
+      // Show settlement info so both parties know where to send funds
+      if (intentData) {
+        setDtFillResult(intentData);
+      }
     } catch (e: any) {
       alert(e.message ?? "Fill failed");
     } finally {
@@ -1029,12 +1199,6 @@ export function P2P() {
                 mainTab === "direct" ? "bg-card text-foreground shadow" : "text-muted-foreground hover:text-foreground"
               )}>
               <Send className="w-3.5 h-3.5" /> Direct Trade
-            </button>
-            <button onClick={() => setMainTab("atomic")}
-              className={cn("px-4 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-1.5 transition-all",
-                mainTab === "atomic" ? "bg-card text-foreground shadow" : "text-muted-foreground hover:text-foreground"
-              )}>
-              <Link2 className="w-3.5 h-3.5" /> Atomic Swap
             </button>
           </div>
 
@@ -1443,7 +1607,11 @@ export function P2P() {
                           </div>
                         </div>
                         {canFill && (
-                          <button onClick={() => fillDirectTrade(intent.intentId, intent.minAmountOut)}
+                          <button onClick={() => fillDirectTrade(intent.intentId, intent.minAmountOut, {
+                              intentId: intent.intentId, makerAddress: intent.makerAddress,
+                              tokenIn: intent.tokenIn, tokenOut: intent.tokenOut,
+                              amountIn: intent.amountIn, minAmountOut: intent.minAmountOut,
+                            })}
                             disabled={dtFilling && dtFillId === intent.intentId}
                             className="w-full py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-50">
                             {dtFilling && dtFillId === intent.intentId ? <><RefreshCw className="w-4 h-4 animate-spin" /> Filling…</> : <><Check className="w-4 h-4" /> Accept Trade</>}
@@ -1480,7 +1648,11 @@ export function P2P() {
                             <Copy className="w-3.5 h-3.5" />
                           </button>
                           {canFill ? (
-                            <button onClick={() => fillDirectTrade(intent.intentId, intent.minAmountOut)}
+                            <button onClick={() => fillDirectTrade(intent.intentId, intent.minAmountOut, {
+                                intentId: intent.intentId, makerAddress: intent.makerAddress,
+                                tokenIn: intent.tokenIn, tokenOut: intent.tokenOut,
+                                amountIn: intent.amountIn, minAmountOut: intent.minAmountOut,
+                              })}
                               disabled={dtFilling && dtFillId === intent.intentId}
                               className="px-4 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white text-sm font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50">
                               {dtFilling && dtFillId === intent.intentId ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
@@ -1522,146 +1694,6 @@ export function P2P() {
                 </div>
               </div>
             ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── Atomic Swap View ─────────────────────────────────────────────── */}
-      {mainTab === "atomic" && (
-        <div className="px-4 lg:px-10 py-8 max-w-[1400px] mx-auto">
-          <div className="max-w-2xl mx-auto space-y-5">
-            {/* Header */}
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Lock className="w-4 h-4 text-primary" />
-                <span className="text-sm font-bold text-foreground">HTLC Atomic Swap</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-500/15 border border-orange-500/30 text-orange-400 font-bold">Trustless</span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold uppercase tracking-wider">Preview</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Swap crypto directly with a counterparty using Hash Time-Locked Contracts — no custodian, no wrapped tokens. Both sides lock funds simultaneously; revealing the secret preimage unlocks both.
-              </p>
-              <p className="text-[11px] text-amber-400/80 mt-1">
-                This screen is a protocol walkthrough — pressing “Initiate” simulates the four HTLC steps so you can see how a real swap would flow. No funds move and no on-chain transaction is broadcast.
-              </p>
-            </div>
-
-            {/* Swap form */}
-            <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
-              {/* From */}
-              <div>
-                <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">You send</div>
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-1.5">
-                    {(["BTC","ETH","BSV","SOL"] as Coin[]).map(c => (
-                      <button key={c} onClick={() => setAtomicFrom(c)}
-                        className={cn("px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all",
-                          atomicFrom === c ? "bg-primary/20 border-primary/50 text-primary" : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
-                        )}>{c}</button>
-                    ))}
-                  </div>
-                  <input type="number" value={atomicAmt} onChange={e => { setAtomicAmt(e.target.value); setAtomicStep(0); }}
-                    placeholder="0.00"
-                    className="flex-1 text-right bg-secondary border border-border rounded-xl px-3 py-2 font-mono font-semibold text-lg text-foreground focus:outline-none focus:border-primary/50" />
-                </div>
-                {atomicAmt && <div className="text-xs text-muted-foreground text-right mt-1">≈ ${(parseFloat(atomicAmt||"0") * atomicFromPrice).toLocaleString(undefined,{maximumFractionDigits:2})}</div>}
-              </div>
-
-              {/* Arrow */}
-              <div className="flex justify-center">
-                <button onClick={() => { const f=atomicFrom,t=atomicTo; setAtomicFrom(t); setAtomicTo(f); setAtomicStep(0); }}
-                  className="w-9 h-9 rounded-full border border-border bg-secondary hover:border-primary/50 hover:bg-primary/10 flex items-center justify-center transition-all">
-                  <ArrowLeftRight className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </div>
-
-              {/* To */}
-              <div>
-                <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">You receive</div>
-                <div className="flex items-center gap-3">
-                  <div className="flex gap-1.5">
-                    {(["BTC","ETH","BSV","SOL"] as Coin[]).map(c => (
-                      <button key={c} onClick={() => setAtomicTo(c)}
-                        className={cn("px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all",
-                          atomicTo === c ? "bg-primary/20 border-primary/50 text-primary" : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
-                        )}>{c}</button>
-                    ))}
-                  </div>
-                  <div className="flex-1 text-right bg-secondary/50 border border-border/50 rounded-xl px-3 py-2 font-mono font-semibold text-lg text-foreground">
-                    {atomicOutput > 0 ? atomicOutput.toFixed(6) : "0.00"}
-                  </div>
-                </div>
-                {atomicOutput > 0 && <div className="text-xs text-muted-foreground text-right mt-1">≈ ${(atomicOutput * atomicToPrice).toLocaleString(undefined,{maximumFractionDigits:2})}</div>}
-              </div>
-
-              {/* Rate summary */}
-              {atomicOutput > 0 && (
-                <div className="pt-2 border-t border-border/50 space-y-1.5">
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Exchange rate</span>
-                    <span className="font-mono text-foreground">1 {atomicFrom} = {(atomicFromPrice/atomicToPrice).toFixed(6)} {atomicTo}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">HTLC timeout</span>
-                    <span className="text-foreground flex items-center gap-1"><Timer className="w-3 h-3" /> 24 h refund window</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Settlement</span>
-                    <span className="text-amber-300 font-semibold flex items-center gap-1"><Zap className="w-3 h-3" /> Preview only — would settle BSV on-chain</span>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* HTLC step-by-step */}
-            <div className="bg-card border border-border rounded-2xl p-5">
-              <div className="text-sm font-bold text-foreground mb-3">HTLC Protocol Steps</div>
-              <div className="space-y-2">
-                {[
-                  { icon: <Lock className="w-3.5 h-3.5"/>,    label: `You lock ${atomicAmt||"0"} ${atomicFrom}`, detail: `HTLC script with hash H = ${htlcHash.slice(0,8)}…` },
-                  { icon: <Link2 className="w-3.5 h-3.5"/>,   label: `Counterparty locks ${atomicOutput.toFixed(6)||"0"} ${atomicTo}`, detail: "Same hash H used — funds are mirrored on both chains" },
-                  { icon: <Unlock className="w-3.5 h-3.5"/>,  label: "You reveal preimage S → unlock their funds", detail: "Revealing S on destination triggers your side" },
-                  { icon: <CheckCircle2 className="w-3.5 h-3.5"/>, label: "Walkthrough complete — protocol illustrated", detail: "In a real swap, an OP_RETURN on BSV would record the settlement" },
-                ].map((step, i) => (
-                  <div key={i} className={cn(
-                    "flex items-start gap-2.5 p-2.5 rounded-xl border transition-all",
-                    atomicStep > i ? "border-green-500/30 bg-green-500/5" :
-                    atomicStep === i + 1 ? "border-primary/40 bg-primary/5" :
-                    "border-border bg-secondary/20"
-                  )}>
-                    <div className={cn("w-6 h-6 rounded-md flex items-center justify-center shrink-0 mt-0.5 text-xs font-black",
-                      atomicStep > i ? "bg-green-500/20 text-green-400" :
-                      atomicStep === i + 1 ? "bg-primary/20 text-primary" :
-                      "bg-muted/40 text-muted-foreground"
-                    )}>
-                      {atomicStep > i ? <CheckCircle2 className="w-3.5 h-3.5"/> : step.icon}
-                    </div>
-                    <div>
-                      <div className={cn("text-xs font-semibold", atomicStep > i ? "text-green-400" : atomicStep === i+1 ? "text-foreground" : "text-muted-foreground")}>{step.label}</div>
-                      <div className="text-[10px] text-muted-foreground">{step.detail}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Warning */}
-            <div className="flex items-start gap-2.5 p-3.5 rounded-xl border border-amber-500/25 bg-amber-500/8 text-xs text-amber-400/90">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>Never share your HTLC preimage before confirming your counterparty's funds are locked. If no match is found before timeout, your funds are automatically refunded.</span>
-            </div>
-
-            {/* Submit */}
-            <button
-              onClick={startHtlc}
-              disabled={!atomicAmt || parseFloat(atomicAmt) <= 0 || atomicFrom === atomicTo || htlcRunning}
-              className="w-full py-4 rounded-2xl font-bold text-base bg-gradient-to-r from-orange-600 to-primary text-white flex items-center justify-center gap-2.5 shadow-lg hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-            >
-              {htlcRunning
-                ? <><RefreshCw className="w-5 h-5 animate-spin" /> Simulating HTLC…</>
-                : <><Lock className="w-5 h-5" /> Run HTLC Walkthrough</>
-              }
-            </button>
           </div>
         </div>
       )}
@@ -1853,6 +1885,13 @@ export function P2P() {
         <TradeModal offer={tradeOffer} side={tradeSide} onClose={() => setTradeOffer(null)} />
       )}
       {showPostAd && <PostAdModal onClose={() => setShowPostAd(false)} />}
+      {dtFillResult && (
+        <SettlementModal
+          intent={dtFillResult}
+          myAddress={walletAddress ?? ""}
+          onClose={() => setDtFillResult(null)}
+        />
+      )}
 
       {/* Click outside to close dropdowns */}
       {(showFiatDropdown || showPayDropdown) && (

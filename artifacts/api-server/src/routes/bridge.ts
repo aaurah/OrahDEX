@@ -448,7 +448,6 @@ router.get("/evm-lock-info", async (req, res) => {
     1: [
       process.env.ETH_RPC_URL ?? "",
       "https://ethereum.publicnode.com",
-      "https://cloudflare-eth.com",
       "https://eth.llamarpc.com",
       "https://1rpc.io/eth",
     ].filter(Boolean),
@@ -461,7 +460,7 @@ router.get("/evm-lock-info", async (req, res) => {
     ].filter(Boolean),
     137: [
       process.env.POLYGON_RPC_URL ?? "",
-      "https://polygon-rpc.com",
+      "https://polygon-bor-rpc.publicnode.com",
       "https://polygon.publicnode.com",
     ].filter(Boolean),
     56: [
@@ -544,9 +543,10 @@ router.get("/evm-lock-info", async (req, res) => {
     // Reuse the RPC that successfully returned the transaction
     const client = createPublicClient({ transport: http(workingRpc, { timeout: 8_000 }) });
 
-    // Amount locked = tx.value (for ETH locks)
-    const lockedWei = tx.value ?? 0n;
-    const amountEth = (Number(lockedWei) / 1e18).toFixed(6);
+    // Amount locked = tx.value for native-ETH locks; may be 0 for token locks
+    // or contracts where the amount is stored in calldata. getLock() below
+    // will correct this via lockData[3] if available.
+    let lockedWei = tx.value ?? 0n;
 
     // Known cancel/refund selectors — try in order of likelihood
     // cancel(bytes32) = 0xc4d252f5, refund(bytes32) = 0x7249fbb6
@@ -592,12 +592,18 @@ router.get("/evm-lock-info", async (req, res) => {
       timelockUnixSecs = Number(lockData[5]);
       revealed         = lockData[6];
       refunded         = lockData[7];
+      // If tx.value was 0 (token lock or calldata-amount variant), use the
+      // on-chain stored amount from getLock so the UI shows the real figure.
+      if (lockedWei === 0n && lockData[3] > 0n) {
+        lockedWei = lockData[3];
+      }
     } catch {
       // Contract doesn't implement getLock — use simulation result
     }
 
+    const amountEth = (Number(lockedWei) / 1e18).toFixed(6);
     const now        = Math.floor(Date.now() / 1000);
-    const isExpired  = timelockUnixSecs !== null ? timelockUnixSecs < now : true; // assume expired if unknown
+    const isExpired  = timelockUnixSecs !== null ? timelockUnixSecs < now : false; // unknown ≠ expired; show as active
     const canRefund  = !!cancelCalldata && !revealed && !refunded;
 
     if (!canRefund && cancelSimFailed) {

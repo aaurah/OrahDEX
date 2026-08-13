@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X, Copy, Check, QrCode, ChevronDown, AlertTriangle, Wallet, ArrowRight, ArrowDown, Link2 } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 const NETWORKS = [
@@ -51,6 +52,7 @@ function QRCodeImage({ address }: { address: string }) {
 export function ReceiveModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const { address, network } = useWalletStore();
   const { open: openWalletModal } = useWalletModalStore();
+  const { toast } = useToast();
 
   const [selectedNet, setSelectedNet] = useState(network === "bsv" ? "bsv" : "evm-eth");
   const [copied, setCopied] = useState(false);
@@ -76,6 +78,10 @@ export function ReceiveModal({ isOpen, onClose }: { isOpen: boolean; onClose: ()
     navigator.clipboard?.writeText(activeAddress);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+    toast({
+      title:       "Address copied!",
+      description: `${currentNet.label} · ${activeAddress.slice(0, 14)}…`,
+    });
   };
 
   const handleConnectBsv = () => {

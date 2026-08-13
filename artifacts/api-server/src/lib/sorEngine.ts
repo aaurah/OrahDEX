@@ -142,7 +142,7 @@ export function buildPoolGraph(
       reserveIn:  reserveBaseUsd,
       reserveOut: reserveQuoteUsd,
       tvlUsd,
-      chain:      "sepolia",
+      chain:      "mainnet",
       protocol:   "orahdex_amm",
     });
 
@@ -155,7 +155,7 @@ export function buildPoolGraph(
       reserveIn:  reserveQuoteUsd,
       reserveOut: reserveBaseUsd,
       tvlUsd,
-      chain:      "sepolia",
+      chain:      "mainnet",
       protocol:   "orahdex_amm",
     });
   }

@@ -33,6 +33,22 @@ interface ServiceEntry extends ServiceHealth {
 
 const registry = new Map<string, ServiceEntry>();
 
+/**
+ * Zero out a service's consecutive-fail counter so it no longer shows as
+ * DEAD/DEGRADED in the health report.  The in-flight backoff timer in the
+ * guardedInterval closure is unaffected, but the next successful tick will
+ * keep the counter at 0 and the service will show "healthy" immediately.
+ * Returns false when the service name is not registered.
+ */
+export function resetServiceHealth(name: string): boolean {
+  const entry = registry.get(name);
+  if (!entry) return false;
+  entry.consecutiveFails = 0;
+  entry.totalFails        = 0;
+  logger.info({ service: name }, `[SelfHeal] ${name}: health state manually reset by admin`);
+  return true;
+}
+
 export function getHealthReport(): ServiceHealth[] {
   const now = Date.now();
   return Array.from(registry.values()).map(e => {
@@ -110,9 +126,11 @@ export function guardedInterval(
   intervalMs: number,
   options: GuardedIntervalOptions = {},
 ): () => void {
-  // Cap backoff to ~16 intervals so repeated failures do not effectively disable
-  // a background worker for many hours before the next retry.
-  const MAX_SKIP_INTERVALS = 16;
+  // Cap backoff to 4 intervals so a recovered service re-enters the normal
+  // cadence within 4× its interval (≤ 4 min for price-updater) rather than
+  // the old 16× ceiling (≤ 16 min).  A DEAD service that just needed a fix
+  // deployed should not wait 16 minutes before its first retry attempt.
+  const MAX_SKIP_INTERVALS = 4;
   const timeoutMs           = options.timeoutMs            ?? Math.floor(intervalMs * 0.9);
   const maxFails            = options.maxFailsBeforeBackoff ?? 5;
   const initialDelayMs      = options.initialDelayMs        ?? 0;
@@ -173,19 +191,37 @@ export function guardedInterval(
     }
   };
 
-  let handle: ReturnType<typeof setInterval>;
+  // Self-rescheduling setTimeout with ±20% random jitter applied to every
+  // interval — including the first one.  This permanently prevents multiple
+  // services from re-aligning on their LCM after the startup-stagger window
+  // fades, which would otherwise exhaust the DB connection pool simultaneously.
+  //
+  // Unlike setInterval the next tick is only scheduled after the current tick
+  // fully completes, which is fine because the `busy` flag already prevents
+  // re-entrant execution.  Effective period = intervalMs ± 20% + tick_duration.
+  let handle: ReturnType<typeof setTimeout> | null = null;
+  let stopped = false;
+
+  const scheduleNext = () => {
+    if (stopped) return;
+    const jitter = (Math.random() - 0.5) * 0.4 * intervalMs; // ±20 %
+    handle = setTimeout(async () => {
+      await tick();
+      scheduleNext();
+    }, Math.max(1_000, intervalMs + jitter));
+  };
 
   if (initialDelayMs > 0) {
-    setTimeout(() => {
-      tick();
-      handle = setInterval(tick, intervalMs);
-    }, initialDelayMs);
+    // Fire the very first tick after the requested delay, then self-schedule.
+    handle = setTimeout(() => { void tick().finally(scheduleNext); }, initialDelayMs);
   } else {
-    handle = setInterval(tick, intervalMs);
+    // No initial delay — first tick fires after one jittered interval,
+    // matching the original setInterval(tick, intervalMs) behaviour.
+    scheduleNext();
   }
 
   logger.info({ service: name, intervalMs, timeoutMs }, `[SelfHeal] ${name}: registered`);
-  return () => { if (handle) clearInterval(handle); };
+  return () => { stopped = true; if (handle) clearTimeout(handle); };
 }
 
 /* ── withRetry ───────────────────────────────────────────────────────────── */
@@ -303,8 +339,10 @@ export function startOrderReconciler(): void {
     }
   };
 
-  setTimeout(reconcile, 60_000);
-  setInterval(reconcile, RECONCILE_INTERVAL_MS);
+  guardedInterval("order-reconciler", reconcile, RECONCILE_INTERVAL_MS, {
+    initialDelayMs: 60_000,
+    timeoutMs:      4 * 60_000,
+  });
   logger.info({ intervalMs: RECONCILE_INTERVAL_MS, stuckAgeMs: STUCK_ORDER_AGE_MS },
     "[SelfHeal] Order reconciler started");
 }

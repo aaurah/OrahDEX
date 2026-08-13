@@ -19,6 +19,7 @@ import { CATEGORY_OF, ALL_CATEGORIES, CATEGORY_META, type NotifCategory } from "
 
 /* ── Heavy modals — loaded only when first opened ── */
 const AiAssistant = lazy(() => import("./AiAssistant").then(m => ({ default: m.AiAssistant })));
+const ChatWidget = lazy(() => import("./ChatWidget").then(m => ({ default: m.ChatWidget })));
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -28,7 +29,6 @@ const THEME_LABELS = { dark: "Dark", light: "Light", amoled: "Amoled", system: "
 
 const NAV_LINKS = [
   { href: "/swap",                   label: "Exchange",   icon: Waves },
-  { href: "/bridge",                 label: "Buy·Swap·Bridge·DEX", icon: Link2 },
   { href: "/trade/BSV-USDT",         label: "Trade",      icon: ArrowRightLeft },
   { href: "/futures/BSV-USDT-PERP",  label: "Futures",    icon: LineChart },
   { href: "/prediction",             label: "Predict",    icon: Target },
@@ -213,9 +213,17 @@ export function Layout({ children }: { children: ReactNode }) {
   const { address, network, provider, chainId } = useWalletStore();
   const { theme, setTheme } = useThemeStore();
   const { open: openWalletModal } = useWalletModalStore();
+
+  /* Sync AppKit modal theme to OrahDEX active theme (dark/amoled/light/system) */
+  useEffect(() => {
+    import("@/lib/reown-appkit").then(({ syncReownTheme }) => {
+      syncReownTheme(theme as "dark" | "light" | "amoled" | "system");
+    }).catch(() => {});
+  }, [theme]);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showMoreNav, setShowMoreNav] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [notifFilter, setNotifFilter] = useState<"all" | "unread" | NotifCategory>("all");
   const [notifSearch, setNotifSearch] = useState("");
   const dndUntil = useSettingsStore((s) => s.dndUntil);
@@ -278,58 +286,12 @@ export function Layout({ children }: { children: ReactNode }) {
   const prevAddressRef  = useRef<string | null>(null);
   const prevChainIdRef  = useRef<number | null>(null);
 
-  // Auto-sync Reown/EVM wallet into wallet store on page load (handles refresh reconnect)
-  useEffect(() => {
-    let sub: (() => void) | null = null;
-    import("@/lib/reown").then(({
-      subscribeReownAccount, fetchEvmBalance, parseChainFromCaip,
-      isEvmConnectRequested, setEvmConnectRequested, isUserDisconnecting,
-    }) => {
-      sub = subscribeReownAccount(async (state) => {
-        if (state.isConnected && state.address) {
-          const {
-            address: current, provider: currentProvider,
-            chainId: currentChainId, connect, setBalance,
-          } = useWalletStore.getState();
-          const newChainId = parseChainFromCaip(state.caipAddress) ?? undefined;
-
-          // Decide whether to update the store:
-          // 1. No wallet connected yet — always accept
-          // 2. User deliberately opened EVM modal (intent flag set) — override any existing wallet
-          // 3. Same Reown wallet but chain switched — update chainId
-          // Guard: Reown's auto-reconnect on page load must NOT override a non-Reown wallet.
-          const isIntentionalEvm = isEvmConnectRequested();
-          const isChainSwitch =
-            currentProvider === "reown" &&
-            current === state.address &&
-            newChainId !== undefined &&
-            newChainId !== currentChainId;
-
-          if (!current || isIntentionalEvm || isChainSwitch) {
-            if (isIntentionalEvm) setEvmConnectRequested(false);
-            connect({ address: state.address, provider: "reown", network: "evm", chainId: newChainId });
-            const bal = await fetchEvmBalance(state.address, newChainId ?? null);
-            if (bal !== null) setBalance(bal);
-          }
-        } else if (!state.isConnected) {
-          // Reown externally disconnected (wallet extension revoked, not via our UI).
-          if (!isUserDisconnecting()) {
-            const { provider: currentProvider, disconnect } = useWalletStore.getState();
-            if (currentProvider === "reown") disconnect();
-          }
-        }
-      });
-    });
-    return () => sub?.();
-  }, []);
-
   // Periodic EVM balance refresh for the compact header button (every 30s)
   useEffect(() => {
     if (!address || network !== "evm" || !chainId) return;
     const refresh = async () => {
-      const reown = await import("@/lib/reown").catch(() => null);
-      if (!reown) return;
-      const bal = await reown.fetchEvmBalance(address, chainId);
+      const { fetchEvmBalance } = await import("@/lib/reown").catch(() => ({ fetchEvmBalance: async () => null }));
+      const bal = await fetchEvmBalance(address, chainId);
       if (bal !== null) useWalletStore.getState().setBalance(bal);
     };
     refresh();
@@ -344,7 +306,7 @@ export function Layout({ children }: { children: ReactNode }) {
         ? `${address.slice(0, 6)}…${address.slice(-4)}`
         : address;
       const networkLabel = network === "bsv" ? "BSV" : network === "sol" ? "Solana" : network === "btc" ? "Bitcoin" : network === "tron" ? "TRON" : "EVM";
-      const providerLabel = (provider === 'reown' || provider === 'orah-wallet') ? 'Orah Wallet' : (provider ?? networkLabel);
+      const providerLabel = provider === 'orah-wallet' ? 'Orah Wallet' : (provider ?? networkLabel);
       toast({
         title: "Wallet Connected",
         description: `${providerLabel} · ${shortAddr}`,
@@ -824,6 +786,15 @@ export function Layout({ children }: { children: ReactNode }) {
             )}
           </div>
 
+          {/* Support / Ora AI chat button */}
+          <button
+            onClick={() => setChatOpen(o => !o)}
+            className="relative p-2 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-colors"
+            title="Support & Ora AI"
+          >
+            <MessageCircle className="w-4 h-4" />
+          </button>
+
           {/* BSV LIVE badge — clickable popover with full on-chain details */}
           {!address && (
             <div className="relative hidden sm:block" ref={bsvPopoverRef}>
@@ -1040,10 +1011,16 @@ export function Layout({ children }: { children: ReactNode }) {
       <TxStatusBar />
 
       {/* Ora — AI Trading Assistant */}
-      {(location === "/" || location.startsWith("/trade") || location.startsWith("/futures") || location.startsWith("/swap")) && (
+      {(location.startsWith("/trade") || location.startsWith("/futures") || location.startsWith("/swap")) && (
         <Suspense fallback={null}><AiAssistant /></Suspense>
       )}
 
+      {/* Support / Ora AI chat widget — opened via header MessageCircle button */}
+      {chatOpen && (
+        <Suspense fallback={null}>
+          <ChatWidget open={chatOpen} onClose={() => setChatOpen(false)} />
+        </Suspense>
+      )}
 
     </div>
   );

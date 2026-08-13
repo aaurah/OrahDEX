@@ -1,13 +1,15 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { db, pool } from "@workspace/db";
+import { getWatcherState, getWatcherSummary } from "../lib/errorWatcher.js";
 
 import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
 // Note: generateAdminToken and revokeAllAdminTokens are now async (DB-persisted)
-import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable } from "@workspace/db/schema";
+import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable, keeperEarningsTable } from "@workspace/db/schema";
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
-import { eq, desc, and, sql, ne, isNotNull, or, like, ilike } from "drizzle-orm";
+import { invalidateSzKeyCache } from "../lib/swapzone.js";
+import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
 import { decrypt as decryptEvmKey } from "../lib/internalEvmWallet.js";
@@ -183,6 +185,20 @@ async function verifyTOTPServer(code: string, secret: string): Promise<boolean> 
   return false;
 }
 
+/**
+ * Admin session cookie options.
+ * HttpOnly — JS cannot read the token.
+ * SameSite=Strict — no cross-site request inclusion.
+ * Secure in production — only sent over HTTPS.
+ */
+const ADMIN_COOKIE_OPTS = {
+  httpOnly:  true,
+  secure:    process.env.NODE_ENV === "production",
+  sameSite:  "strict" as const,
+  maxAge:    30 * 24 * 60 * 60 * 1000, // 30 days (matches TOKEN_TTL_MS)
+  path:      "/",
+};
+
 /* ─── ADMIN AUTH ENDPOINTS ────────────────────────────────────────────────── */
 
 /**
@@ -210,6 +226,11 @@ router.post("/auth", async (req, res) => {
     return;
   }
   const token = await generateAdminToken();
+  // Set HttpOnly cookie (works for same-origin / non-proxied environments).
+  // Also return token in body so the x-admin-token header path works in
+  // reverse-proxy environments (e.g. Replit) where SameSite=Strict cookies
+  // are not reliably forwarded.
+  res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
   res.json({ success: true, token });
 });
 
@@ -233,6 +254,7 @@ router.post("/auth/totp", async (req, res) => {
   const ok = await verifyTOTPServer(code, secret);
   if (ok) {
     const token = await generateAdminToken();
+    res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
     res.json({ success: true, token });
   } else {
     recordAuthFailure(req);
@@ -327,7 +349,8 @@ router.post("/auth/wallet", async (req, res) => {
   }
   pendingNonces.delete(address.toLowerCase());
   const token = await generateAdminToken();
-  res.json({ success: true, address, token });
+  res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
+  res.json({ success: true, token, address });
 });
 
 /**
@@ -335,6 +358,8 @@ router.post("/auth/wallet", async (req, res) => {
  */
 router.post("/auth/logout", requireAdminToken, async (req, res) => {
   await revokeAllAdminTokens();
+  // Clear the HttpOnly session cookie on the client as well
+  res.clearCookie("admin_session", { path: "/" });
   res.json({ success: true });
 });
 
@@ -442,7 +467,7 @@ async function buildRealUserList(): Promise<any[]> {
     const verified = userMeta.get(w.address.toLowerCase())?.verified  ?? (w.verified === "true");
     const balOvr   = userMeta.get(w.address.toLowerCase())?.balanceOverride;
 
-    const stats = statsMap.get(w.address.toLowerCase());
+    const stats = statsMap.get(w.address.toLowerCase()) as any;
     return {
       id:           `usr_${w.address.replace("0x", "").slice(0, 8)}`,
       walletAddress: w.address,
@@ -644,7 +669,7 @@ router.get("/trade-analytics", async (_req, res) => {
         if (o.side === "sell") bucket.sell += 1;
         return acc;
       }, {} as Record<string, { symbol: string; total: number; open: number; filled: number; cancelled: number; buy: number; sell: number; volume: number }>)
-    ).sort((a, b) => b.volume - a.volume).slice(0, 20);
+    ).sort((a: any, b: any) => b.volume - a.volume).slice(0, 20);
 
     const limitBreakdown = Object.values(
       allOrders.reduce((acc, o) => {
@@ -654,7 +679,7 @@ router.get("/trade-analytics", async (_req, res) => {
         acc[key].volume += Number(o.total ?? 0);
         return acc;
       }, {} as Record<string, { type: string; count: number; volume: number }>)
-    ).sort((a, b) => b.volume - a.volume);
+    ).sort((a: any, b: any) => b.volume - a.volume);
 
     res.json({
       summary: {
@@ -1320,6 +1345,7 @@ const INTEGRATION_KEYS = [
   "telegram_chat_id",
   "letsexchange_api_key",
   "changenow_api_key",
+  "swapzone_api_key",
   "sumsub_api_key",
 ];
 
@@ -1347,6 +1373,7 @@ router.put("/integrations", async (req, res) => {
         .onConflictDoUpdate({ target: platformSettingsTable.key, set: { value: value ?? "", updatedAt: new Date() } });
     }
     if ("changenow_api_key" in updates) invalidateCnKeyCache();
+    if ("swapzone_api_key"  in updates) invalidateSzKeyCache();
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to save integrations" });
@@ -1409,7 +1436,7 @@ router.get("/bot-profit", async (_req, res) => {
           );
           const wrMap = new Map(wrRows.map(r => [r.id, r]));
           history = historyBase.map((h: any) => {
-            const wr = wrMap.get(h.id);
+            const wr = wrMap.get(h.id) as any;
             if (!wr) return h;
             return {
               ...h,
@@ -1935,8 +1962,13 @@ router.get("/health", async (_req, res) => {
 
     const [openCount] = await db.select({ cnt: sql<number>`count(*)::int` })
       .from(ordersTable).where(and(eq(ordersTable.status, "open"), ne(ordersTable.walletAddress, "BOT_LIQUIDITY_ENGINE")));
-    const allMarkets   = await db.select().from(marketsTable);
-    const activeMarkets= allMarkets.filter(m => m.status === "active").length;
+    // Use aggregate COUNT queries — never load all market rows into memory (1M+ rows = OOM on 5s poll)
+    const [marketCounts] = await db.select({
+      active: sql<number>`count(*) filter (where status = 'active')::int`,
+      total:  sql<number>`count(*)::int`,
+    }).from(marketsTable);
+    const activeMarkets = marketCounts?.active ?? 0;
+    const totalMarkets  = marketCounts?.total  ?? 0;
 
     // Determine degraded vs operational
     const priceEngineStaleSec = (now - serviceState.priceEngineLastRunAt) / 1000;
@@ -1955,7 +1987,7 @@ router.get("/health", async (_req, res) => {
       dbConnections:            10,
       openOrders:               openCount?.cnt ?? 0,
       activeMarkets,
-      totalMarkets:             allMarkets.length,
+      totalMarkets,
       avgOrderbookLatencyMs:    dbLatency + 5,
       avgTradesLatencyMs:       dbLatency + 8,
       nodeVersion:              process.version,
@@ -2045,6 +2077,7 @@ router.post("/le-sync", requireAdminToken, async (_req, res) => {
       coins:    result.coins,
       quotes:   result.quotes,
       rows:     result.inserted,
+      deleted:  result.deleted,
       elapsed,
     });
   } catch (err: any) {
@@ -2747,10 +2780,12 @@ router.get("/exchange-wallet", requireAdminToken, async (req, res) => {
       } catch { return null; }
     };
 
+    const _alch2 = (host: string) => process.env.ALCHEMY_API_KEY ? `https://${host}/v2/${process.env.ALCHEMY_API_KEY}` : undefined;
+    const _gb2   = (tok: string | undefined) => tok ? `https://go.getblock.io/${tok}/` : undefined;
     const [ethBal, bnbBal, maticBal] = await Promise.all([
-      fetchNative(process.env.ETH_RPC_URL ?? "https://eth.llamarpc.com",         "ETH"),
-      fetchNative(process.env.BSC_RPC_URL ?? "https://bsc-dataseed.binance.org", "BNB"),
-      fetchNative(process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",      "MATIC"),
+      fetchNative(process.env.QN_ETH_ENDPOINT   ?? _alch2("eth-mainnet.g.alchemy.com")     ?? _gb2(process.env.GB_ETH_TOKEN)   ?? process.env.ETH_RPC_URL     ?? "https://eth.llamarpc.com",               "ETH"),
+      fetchNative(process.env.QN_BSC_ENDPOINT   ?? _alch2("bnb-mainnet.g.alchemy.com")     ?? _gb2(process.env.GB_BSC_TOKEN)   ?? process.env.BSC_RPC_URL     ?? "https://bsc-dataseed.binance.org",        "BNB"),
+      fetchNative(process.env.QN_MATIC_ENDPOINT ?? _alch2("polygon-mainnet.g.alchemy.com") ?? _gb2(process.env.GB_MATIC_TOKEN) ?? process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com", "MATIC"),
     ]);
 
     const bsvWallet  = await getOrCreateWallet();
@@ -2951,13 +2986,15 @@ router.post("/rescue-evm-wallet", requireAdminToken, async (req, res) => {
   }
 
   const chainId = parseInt(String(rawChainId ?? 8453), 10);
+  const _alchemy = (host: string) => process.env.ALCHEMY_API_KEY ? `https://${host}/v2/${process.env.ALCHEMY_API_KEY}` : undefined;
+  const _gb      = (tok: string | undefined) => tok ? `https://go.getblock.io/${tok}/` : undefined;
   const RPC_URLS: Record<number, string> = {
-    1:     process.env.ETH_RPC_URL     ?? "https://ethereum.publicnode.com",
-    8453:  process.env.BASE_RPC_URL    ?? "https://base.publicnode.com",
-    42161: process.env.ARB_RPC_URL     ?? "https://arbitrum-one.publicnode.com",
-    10:    process.env.OP_RPC_URL      ?? "https://optimism.publicnode.com",
-    56:    process.env.BSC_RPC_URL     ?? "https://bsc.publicnode.com",
-    137:   process.env.POLYGON_RPC_URL ?? "https://polygon-bor.publicnode.com",
+    1:     process.env.QN_ETH_ENDPOINT   ?? _alchemy("eth-mainnet.g.alchemy.com")     ?? _gb(process.env.GB_ETH_TOKEN)   ?? process.env.ETH_RPC_URL     ?? "https://ethereum.publicnode.com",
+    8453:  process.env.QN_BASE_ENDPOINT  ?? _alchemy("base-mainnet.g.alchemy.com")    ?? _gb(process.env.GB_BASE_TOKEN)  ?? process.env.BASE_RPC_URL    ?? "https://base.publicnode.com",
+    42161: process.env.QN_ARB_ENDPOINT   ?? _alchemy("arb-mainnet.g.alchemy.com")     ?? _gb(process.env.GB_ARB_TOKEN)   ?? process.env.ARB_RPC_URL     ?? "https://arbitrum-one.publicnode.com",
+    10:    process.env.QN_OP_ENDPOINT    ?? _alchemy("opt-mainnet.g.alchemy.com")     ?? _gb(process.env.GB_OP_TOKEN)    ?? process.env.OP_RPC_URL      ?? "https://optimism.publicnode.com",
+    56:    process.env.QN_BSC_ENDPOINT   ?? _alchemy("bnb-mainnet.g.alchemy.com")     ?? _gb(process.env.GB_BSC_TOKEN)   ?? process.env.BSC_RPC_URL     ?? "https://bsc.publicnode.com",
+    137:   process.env.QN_MATIC_ENDPOINT ?? _alchemy("polygon-mainnet.g.alchemy.com") ?? _gb(process.env.GB_MATIC_TOKEN) ?? process.env.POLYGON_RPC_URL ?? "https://polygon-bor.publicnode.com",
   };
   const rpcUrl = RPC_URLS[chainId] ?? RPC_URLS[8453]!;
 
@@ -3037,8 +3074,8 @@ router.post("/retry-pending-withdrawals", requireAdminToken, async (req, res) =>
         });
         if (result.status === "completed") {
           await pool.query(
-            `UPDATE withdrawal_requests SET status = 'completed', txid = $1, processed_at = now(), note = 'Auto-retried by admin' WHERE id = $2`,
-            [result.txid, row.id],
+            `UPDATE withdrawal_requests SET status = 'completed', txid = $1, processed_at = now(), note = 'Auto-retried by admin', arc_txid = $3, arc_status = $4 WHERE id = $2`,
+            [result.txid, row.id, result.arcTxid ?? null, result.arcStatus ?? null],
           );
           succeeded++;
           results.push({ id: row.id, status: "completed", txid: result.txid });
@@ -3686,6 +3723,195 @@ router.delete("/chains/:chainId", requireAdminToken, async (req, res) => {
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: "Failed to remove chain" });
+  }
+});
+
+/* ── Overlay Stats ─────────────────────────────────────────────────────────── */
+
+/**
+ * GET /admin/overlay/stats
+ * Returns total indexed overlay records, latest block scanned, and recent records.
+ */
+router.get("/overlay/stats", requireAdminToken, async (_req, res) => {
+  try {
+    const { getOverlayStats } = await import("../lib/overlayScanner.js");
+    const stats = await getOverlayStats();
+    res.json(stats);
+  } catch (err: any) {
+    logger.warn({ err }, "GET /admin/overlay/stats error");
+    res.status(500).json({ error: "Failed to fetch overlay stats" });
+  }
+});
+
+// ── GET /api/admin/profits ────────────────────────────────────────────────────
+// Unified platform profit dashboard — all revenue streams in one response.
+router.get("/profits", requireAdminToken, async (_req, res) => {
+  try {
+    const leSwaps = leSwapsTable;
+    const TREASURY = "EXCHANGE_TREASURY";
+
+    function since(days: number) {
+      const d = new Date();
+      d.setDate(d.getDate() - days);
+      return d;
+    }
+
+    async function feesByPeriod(since: Date) {
+      const rows = await db
+        .select({ source: keeperEarningsTable.source, total: sum(keeperEarningsTable.amount) })
+        .from(keeperEarningsTable)
+        .where(and(eq(keeperEarningsTable.walletAddress, TREASURY), gte(keeperEarningsTable.earnedAt, since)))
+        .groupBy(keeperEarningsTable.source);
+      return Object.fromEntries(rows.map(r => [r.source, parseFloat(r.total ?? "0")]));
+    }
+
+    const ALL_SOURCES = ["orderbook", "swap", "bridge", "p2p", "lp_spread", "copy_trade", "withdrawal", "buy"] as const;
+
+    const [f24h, f7d, f30d, fall] = await Promise.all([
+      feesByPeriod(since(1)),
+      feesByPeriod(since(7)),
+      feesByPeriod(since(30)),
+      feesByPeriod(new Date(0)),
+    ]);
+
+    function buildBreakdown(map: Record<string, number>) {
+      return ALL_SOURCES.map(s => ({
+        source: s,
+        label: { orderbook: "Spot Orderbook", swap: "AMM Swap", bridge: "Bridge / Exchange",
+                  p2p: "P2P Trade", lp_spread: "LP Spread", copy_trade: "Copy Trading",
+                  withdrawal: "Withdrawal Fees", buy: "Buy Orders" }[s] ?? s,
+        amount: map[s] ?? 0,
+      }));
+    }
+
+    function total(map: Record<string, number>) {
+      return Object.values(map).reduce((a, b) => a + b, 0);
+    }
+
+    // Historical trade fees from tradesTable (before feeCollector was active)
+    const [tradeRow] = await db.select({ total: sum(tradesTable.fee) }).from(tradesTable);
+    const historicalTrades = parseFloat(tradeRow?.total ?? "0");
+
+    // LE swap stats for bridge volume context
+    const [leStats] = await db
+      .select({
+        total:    sql<string>`count(*)`,
+        finished: sql<string>`count(*) filter (where status = 'finished')`,
+        volUsd:   sum(leSwaps.depositAmountUsd),
+        finUsd:   sql<string>`sum(deposit_amount_usd::numeric) filter (where status = 'finished')`,
+      })
+      .from(leSwaps);
+
+    const totalSwaps     = parseInt(leStats?.total    ?? "0");
+    const finishedSwaps  = parseInt(leStats?.finished ?? "0");
+    const finishedVolUsd = parseFloat(leStats?.finUsd ?? "0");
+    const totalVolUsd    = parseFloat(leStats?.volUsd ?? "0");
+
+    res.json({
+      breakdown: {
+        "24h": buildBreakdown(f24h),
+        "7d":  buildBreakdown(f7d),
+        "30d": buildBreakdown(f30d),
+        "all": buildBreakdown(fall),
+      },
+      totals: {
+        "24h":  total(f24h),
+        "7d":   total(f7d),
+        "30d":  total(f30d),
+        "all":  total(fall) + historicalTrades,
+      },
+      bridge: {
+        totalSwaps,
+        finishedSwaps,
+        totalVolumeUsd:    totalVolUsd,
+        finishedVolumeUsd: finishedVolUsd,
+        estimatedCommissionUsd: finishedVolUsd * 0.003,
+        commissionRatePct: "0.30",
+      },
+      currency: "USD-equivalent",
+    });
+  } catch (err: any) {
+    logger.warn({ err }, "GET /admin/profits error");
+    res.status(500).json({ error: "Failed to aggregate profits" });
+  }
+});
+
+// ── GET /admin/error-watcher ──────────────────────────────────────────────
+// Returns the live state of every error-pattern the error watcher tracks:
+// hit counts, remediation counts, circuit-breaker status, last outcome.
+
+/* ── Coin metadata import ──────────────────────────────────────────────────── */
+router.get("/coins-import/status", requireAdminToken, async (_req, res) => {
+  try {
+    const [{ getImporterStatus }, { getPaprikaStatus }] = await Promise.all([
+      import("../lib/coinGeckoImporter.js"),
+      import("../lib/coinPaprikaImporter.js"),
+    ]);
+    const cg = getImporterStatus();
+    const cp = getPaprikaStatus();
+    const [metaCount, withImage, detailed] = await Promise.all([
+      pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata`).catch(() => ({ rows: [{ n: 0 }] })),
+      pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata WHERE image_url IS NOT NULL`).catch(() => ({ rows: [{ n: 0 }] })),
+      pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM coin_metadata WHERE details_fetched = true`).catch(() => ({ rows: [{ n: 0 }] })),
+    ]);
+    res.json({
+      totalInDb:   metaCount.rows[0].n,
+      withImage:   withImage.rows[0].n,
+      withDetails: detailed.rows[0].n,
+      coinGecko:   cg,
+      coinPaprika: cp,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed" });
+  }
+});
+
+/* Trigger CoinPaprika bulk logo import (fast — single HTTP call, ~9 000 coins) */
+router.post("/coins-import/paprika", requireAdminToken, async (_req, res) => {
+  try {
+    const { runCoinPaprikaImport, getPaprikaStatus, } = await import("../lib/coinPaprikaImporter.js");
+    const { ensureCoinMetadataTable }                 = await import("../lib/coinGeckoImporter.js");
+    const { clearCoinsCache }                         = await import("../routes/dex.js");
+    const st = getPaprikaStatus();
+    if (st.running) return res.status(409).json({ error: "CoinPaprika import already running", status: st });
+    await ensureCoinMetadataTable();
+    runCoinPaprikaImport()
+      .then(r => { clearCoinsCache(); logger.info(r, "coinMeta: admin CoinPaprika import done"); })
+      .catch(e => logger.warn({ err: e }, "coinMeta: admin CoinPaprika import failed"));
+    res.json({ started: true, source: "coinpaprika" });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to start CoinPaprika import" });
+  }
+});
+
+/* Trigger CoinGecko detail import (slower — rate-limited) */
+router.post("/coins-import", requireAdminToken, async (req, res) => {
+  try {
+    const { runCoinGeckoImport, ensureCoinMetadataTable, getImporterStatus } = await import("../lib/coinGeckoImporter.js");
+    const { clearCoinsCache } = await import("../routes/dex.js");
+    const st = getImporterStatus();
+    if (st.running) return res.status(409).json({ error: "CoinGecko import already running", status: st });
+    const maxBulkPages   = Math.min(40, Math.max(1, parseInt(req.body?.maxBulkPages   ?? "8",  10) || 8));
+    const maxDetailCoins = Math.min(2000, Math.max(0, parseInt(req.body?.maxDetailCoins ?? "100", 10) || 100));
+    await ensureCoinMetadataTable();
+    runCoinGeckoImport({ maxBulkPages, maxDetailCoins })
+      .then(r => { clearCoinsCache(); logger.info(r, "coinMeta: admin CoinGecko import complete"); })
+      .catch(e => logger.warn({ err: e }, "coinMeta: admin CoinGecko import failed"));
+    res.json({ started: true, maxBulkPages, maxDetailCoins });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Failed to start import" });
+  }
+});
+
+router.get("/error-watcher", requireAdminToken, (_req, res) => {
+  try {
+    res.json({
+      summary:  getWatcherSummary(),
+      patterns: getWatcherState(),
+    });
+  } catch (err: any) {
+    logger.warn({ err }, "GET /admin/error-watcher error");
+    res.status(500).json({ error: "Failed to retrieve error watcher state" });
   }
 });
 

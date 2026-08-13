@@ -28,3 +28,101 @@ Workspace packages (`@workspace/api-client-react`, `@workspace/integrations-open
 - API server: port 8080 → external 3000
 - bsv-dex frontend: port 20180 → external 80 (preview pane shows this)
 - API proxy: serve-static.mjs proxies `/api/*` to localhost:8080
+
+## ThirdWeb SDK v5 + Vite/Rolldown build strategy
+
+### Root cause of build failures
+ThirdWeb@5 lives in a pnpm CAS entry (`thirdweb_tmp_10452`). It has two classes of transitive deps that are missing from the pnpm store or from bsv-dex's node_modules resolution chain:
+
+1. **Truly absent packages** (not in pnpm store at all): `@emotion/styled`, `@emotion/react`, `@reown/appkit-scaffold-ui`, `@reown/appkit-ui`, `@reown/appkit-wallet`, `@reown/appkit-utils` (1.7.8 versions), various AWS SDK modules, coinbase-wallet-sdk, react-native, etc. → **Stub with virtual no-op modules**.
+
+2. **Packages only in bsv-dex/node_modules** (not in the root `.pnpm` chain that ThirdWeb or @reown@1.7.8 traverse): `@walletconnect/universal-provider`, `big.js`, `bs58`, `dayjs`, `eventemitter3`, `semver`, `use-sync-external-store`, `valtio`, and all `@reown/*` sub-packages. → **Symlink into `artifacts/bsv-dex/node_modules/`, then use plugin redirect**.
+
+### Three-plugin architecture in vite.config.ts
+1. **`thirdweb-ui-shim`** (`enforce: "pre"`): Explicit stub list for @emotion/*, @radix-ui/*, fuse.js, uqr, and importer-aware catch-all for ThirdWeb's internal dist (`thirdweb_tmp_10452` importer). Catch-all re-resolves from bsv-dex context via async `this.resolve()` (with try-catch), falls back to virtual stub.
+
+2. **`thirdweb-opt-stub`** (`enforce: "pre"`): Explicit TW_OPTIONAL set for optional deps (AWS SDK, coinbase, WC sign-client, react-native, x402, etc.). Returns `"\0tw-opt-stub:<id>"` virtual modules with empty exports.
+
+3. **`bsv-dex-redirect`** (`enforce: "pre"`, BEFORE thirdweb-ui-shim): Intercepts any import of `@reown/*` or `@walletconnect/universal-provider` where the **importer** is anywhere inside `/node_modules/` (covers @reown/appkit@1.7.8 in ThirdWeb's chain). Re-resolves from `src/main.tsx` context using async `this.resolve()` with try-catch.
+
+**Why the three-plugin approach beats resolve.alias**: Vite `resolve.alias` does prefix string replacement — `@reown/appkit` → `/abs/path/` — which breaks subpath exports (`@reown/appkit/react` becomes `/abs/path/react`, a file path, not a package subpath). The plugin approach calls `this.resolve(id, fakeImporter)` with a proper package ID, preserving subpath export resolution.
+
+### Symlinks required in artifacts/bsv-dex/node_modules/
+For each missing package, find the pnpm store entry and symlink:
+```bash
+PNPM="/home/runner/workspace/node_modules/.pnpm"
+BSV_NM="/home/runner/workspace/artifacts/bsv-dex/node_modules"
+# Example:
+entry=$(ls "$PNPM" | grep "^@walletconnect+universal-provider@2.21" | tail -1)
+ln -sfn "$PNPM/$entry/node_modules/@walletconnect/universal-provider" "$BSV_NM/@walletconnect/universal-provider"
+```
+
+### @emotion/styled stub — ThirdWeb v5 runtime crash fix
+ThirdWeb v5 calls `@emotion/styled` in patterns that break naive stubs:
+- `styled.button\`...\`` — tagged template (first arg is array) → return new proxy
+- `styled(Component)\`...\`` — where Component can be a plain function OR a `React.forwardRef` object
+- `styled(Component)(themeCallback)` — second arg is a function (NOT tagged template)
+- `StyledComponent(props)` — direct function call during render
+
+**Critical bug**: `React.forwardRef(...)` returns an object (not a function), so checking `typeof first === 'function'` misses it. Must also check `first.$$typeof != null` to identify React special objects.
+
+**The fix**: Proxy-based stub in `vite.config.ts` (`thirdweb-ui-shim` plugin, `@emotion/styled` case) where:
+1. `Array.isArray(first)` → tagged template → return `makeStyledProxy(tag)` 
+2. `typeof first === 'function'` → component → return `makeStyledProxy(first)`
+3. `first.$$typeof != null || first.render != null || first.type != null` → React special object → return `makeStyledProxy(first)`
+4. plain object → render: `React.createElement(tag, cleanProps, children)`
+5. string → HTML tag → `makeStyledProxy(first)`
+
+**Why**: ThirdWeb creates styled components at module level (not just render time), so any stub that returns a non-callable value crashes the entire module during initialization.
+
+### Symlink durability — pnpm install wipes manual symlinks
+Every time a workflow restarts and runs `pnpm install --frozen-lockfile`, it removes any manually-created symlinks in `artifacts/bsv-dex/node_modules` that aren't in the lockfile. The fix is a `buildStart` plugin hook in `vite.config.ts` (plugin name: `bsv-dex-symlinks`) that re-creates all required symlinks before every build. If new packages need to be added, update the `REQUIRED` dict in that plugin.
+
+The manual recovery command when symlinks get wiped:
+```bash
+python3 - << 'PYEOF'
+import os, json
+from pathlib import Path
+WORKSPACE = "/home/runner/workspace"
+PNPM = f"{WORKSPACE}/node_modules/.pnpm"
+BSV_NM = f"{WORKSPACE}/artifacts/bsv-dex/node_modules"
+pkg = json.load(open(f"{WORKSPACE}/artifacts/bsv-dex/package.json"))
+all_deps = {**pkg.get("dependencies",{}), **pkg.get("devDependencies",{})}
+pnpm_entries = os.listdir(PNPM)
+def find_entry(name, v=""):
+    safe = name.lstrip("@").replace("/","+")
+    m = [e for e in pnpm_entries if e.startswith(safe+"@")]
+    if not m: return None
+    if v:
+        major = v.lstrip("^~>=").split(".")[0]
+        for c in m:
+            if c[len(safe)+1:].split("_")[0].startswith(major+"."): return c
+    return m[0]
+for name, ver in sorted(all_deps.items()):
+    nm = os.path.join(BSV_NM, name)
+    if os.path.lexists(nm): continue
+    e = find_entry(name, ver)
+    if not e: print(f"NOT IN STORE: {name}"); continue
+    src = os.path.join(PNPM, e, "node_modules", name)
+    if not os.path.exists(src): print(f"MISSING TARGET: {name}"); continue
+    os.makedirs(os.path.dirname(nm), exist_ok=True)
+    os.symlink(src, nm); print(f"linked: {name}")
+PYEOF
+```
+
+### Shared lib openai resolution
+The `openai` package is imported by `lib/integrations-openai-ai-server/src/` (a shared lib), not `artifacts/api-server/src/`. esbuild resolves from the importer's location, so openai must be symlinked into `lib/integrations-openai-ai-server/node_modules/`, not `artifacts/api-server/node_modules/`.
+
+### THIRDWEB_SECRET_KEY
+Server-side ThirdWeb client lives at `artifacts/api-server/src/lib/thirdwebServer.ts`. Uses `THIRDWEB_SECRET_KEY` env var. The frontend client at `artifacts/bsv-dex/src/lib/thirdweb-client.ts` uses `VITE_THIRDWEB_CLIENT_ID`.
+
+### Build command (do NOT use pnpm install — it times out)
+```bash
+cd /home/runner/workspace/artifacts/bsv-dex && node_modules/.bin/vite build --config vite.config.ts
+```
+
+### Resolved error taxonomy
+- `"Rolldown failed to resolve X from thirdweb_tmp_10452/..."` → add to TW_OPTIONAL stub list or symlink + catch-all handles it
+- `"Rolldown failed to resolve @reown/appkit-utils from @reown+appkit@1.7.8/..."` → `bsv-dex-redirect` plugin handles it  
+- `"Errored while resolving X in this.resolve"` → rolldown throws for some subpath imports; wrap in try-catch and return null to let rolldown handle natively
+- `"[UNLOADABLE_DEPENDENCY] Could not load node_modules/@reown/appkit/react"` → caused by using `resolve.alias` with directory paths; remove aliases, use plugin instead

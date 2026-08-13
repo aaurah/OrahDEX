@@ -21,10 +21,13 @@ import { VENUE_LABELS, VENUE_COLORS } from "@/lib/venues";
 import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 import { useEscrow } from "@/hooks/useEscrow";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { usePairPrices } from "@/hooks/usePairPrices";
 import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
 import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
-import { hasEscrow, chainLabel, checkEscrowDeposit } from "@/lib/escrow";
+import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
+import { hasEscrow, chainLabel, checkEscrowDeposit, resolveEscrowAsset } from "@/lib/escrow";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
+import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -314,7 +317,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Default to chainId 1 (Ethereum mainnet) when wallet hasn't reported a chain yet,
   // matching Portfolio behavior — otherwise the balance fetch never starts and Trade
   // shows 0 even though the wallet holds funds.
-  const { balances: evmTokenBalances, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, isEvm ? (walletChainId ?? 1) : null);
+  const { balances: evmTokenBalances, loading: evmBalancesLoading, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, isEvm ? (walletChainId ?? 1) : null);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -434,21 +437,34 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const cancelMutation = useMutation({
     mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
       // Step 1 (best-effort): release any on-chain escrow lock so the user
-      // gets their coins back. This prompts the wallet to sign cancel(orderId).
-      // If the order has no on-chain deposit (older orders, off-chain only),
-      // the contract reverts with "no deposit" — we swallow that and continue.
-      if (escrowAvailable) {
+      // gets their coins back. Only send the on-chain cancel tx if there is
+      // actually a deposit in escrow — calling cancel() on an order that was
+      // never locked causes "OrahDEXEscrow: no deposit" to revert, which
+      // triggers a confusing "Gas fee estimation failed" prompt in the wallet.
+      if (escrowAvailable && walletChainId) {
+        let hasDeposit = false;
         try {
-          await cancelOrderOnChain(orderId);
-        } catch (e: any) {
-          const msg = String(e?.message ?? "").toLowerCase();
-          // Only swallow "nothing to refund" errors — surface real failures
-          // (user rejection, network issue, etc) so funds aren't lost silently.
-          const isMissingDeposit =
-            msg.includes("no deposit") ||
-            msg.includes("already settled") ||
-            msg.includes("already released");
-          if (!isMissingDeposit) throw e;
+          // 4-second timeout: a slow RPC shouldn't stall the cancel button.
+          const dep = await Promise.race([
+            checkEscrowDeposit(orderId, walletChainId),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+          ]);
+          hasDeposit = !!dep && !dep.released;
+        } catch { /* RPC failure — err on the side of not sending a bad tx */ }
+
+        if (hasDeposit) {
+          try {
+            await cancelOrderOnChain(orderId);
+          } catch (e: any) {
+            const msg = String(e?.message ?? "").toLowerCase();
+            // Swallow "nothing to refund" errors (race: deposit released between
+            // our check and the tx) — surface real failures (user rejection, etc).
+            const isMissingDeposit =
+              msg.includes("no deposit") ||
+              msg.includes("already settled") ||
+              msg.includes("already released");
+            if (!isMissingDeposit) throw e;
+          }
         }
       }
       // Step 2: tell the server to remove the order from the orderbook.
@@ -457,6 +473,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ walletAddress: orderWalletAddress }),
       });
+      // 404 means the order is already cancelled (desired state) — treat as success.
+      // This handles double-tap, stale cache, and races gracefully.
+      if (res.status === 404) return { id: orderId, status: "cancelled" };
       if (!res.ok) throw new Error("Failed to cancel");
       return res.json();
     },
@@ -620,15 +639,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const [orderError, setOrderError] = useState<{ message: string; code?: string } | null>(null);
 
-  const [swapQuote, setSwapQuote] = useState<{
-    venue: string;
-    assetIn: string;
-    assetOut: string;
-    amountIn: number;
-    expectedOutput: number;
-    canExecute: boolean;
-  } | null>(null);
-  const [swapQuoteLoading, setSwapQuoteLoading] = useState(false);
 
   const orderMutation = useMutation({
     mutationFn: async (body: object) => {
@@ -698,16 +708,36 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       // escrow is deployed, and only when self-custody escrow is available.
       if (!matched && tradeId && escrowAvailable && hasEscrow(walletChainId ?? 0)) {
         const usePrice = Number(ordPriceDisplay) > 0 ? Number(ordPriceDisplay) : lastPrice;
-        setPendingLockParams({
-          orderId:  tradeId,
-          side:     ordSide as "buy" | "sell",
-          base:     ordBase,
-          quote:    ordQuote,
-          quantity: Number(ordQtyDisplay) || 0,
-          price:    usePrice,
-        });
+        const useQty   = Number(ordQtyDisplay) || 0;
+        // For a buy order the lock amount = quantity × price. If price is still
+        // 0 (market order placed before the price feed loads) we can't compute
+        // a valid lock amount. Skip the auto-popup — the manual "Lock funds"
+        // button will remain available once the price feed arrives.
+        const lockAmountKnown = ordSide === "sell" ? useQty > 0 : (useQty > 0 && usePrice > 0);
+        // Also verify the token is resolvable to an on-chain address before
+        // opening the dialog — tokens not in CHAIN_TOKEN_ADDRESSES would show
+        // Amount "—" with the button permanently disabled. The order was already
+        // accepted server-side with sig-only proof, so skip the lock dialog
+        // gracefully for unlisted tokens instead of showing a broken popup.
+        const lockAssetResolvable = lockAmountKnown && !!resolveEscrowAsset(
+          walletChainId ?? 0,
+          ordSide as "buy" | "sell",
+          ordBase, ordQuote, useQty, usePrice,
+        );
+        // Always reset stale escrow state when a new order is placed so the
+        // previous cancel/lock error doesn't bleed through to the new order card.
         resetEscrow();
-        setLockDialogOpen(true);
+        if (lockAssetResolvable) {
+          setPendingLockParams({
+            orderId:  tradeId,
+            side:     ordSide as "buy" | "sell",
+            base:     ordBase,
+            quote:    ordQuote,
+            quantity: useQty,
+            price:    usePrice,
+          });
+          setLockDialogOpen(true);
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
@@ -808,6 +838,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [starred, setStarred] = useState(false);
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [coinInfoOpen, setCoinInfoOpen] = useState(false);
   const headerUnread = useNotificationStore((s) => s.notifications.filter(n => !n.read).length);
   const [shareToastVisible, setShareToastVisible] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -833,8 +864,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [stopPrice, setStopPrice] = useState("");
   const [trailingRate, setTrailingRate] = useState("");
   const [amount, setAmount] = useState("");
+
+  // Clear order form fields whenever the trading pair changes.
+  // MobileTrade is a keep-alive tab component (no key prop) — the same instance
+  // is reused across all pair navigations, so state does NOT reset automatically.
+  // Without this, a price like "4421" from ETH/USDT persists on the next pair
+  // and produces a wildly out-of-market limit order that confuses users.
+  useEffect(() => {
+    setPrice("");
+    setAmount("");
+    setStopPrice("");
+    setTrailingRate("");
+  }, [rawSymbol]);
   const [showOrderForm, setShowOrderForm] = useState(false);
-  const [swapMode, setSwapMode] = useState(false);
+  const [atomicSwapOpen, setAtomicSwapOpen] = useState(false);
   const scrollBodyRef  = useRef<HTMLDivElement>(null);
   const orderFormRef   = useRef<HTMLDivElement>(null);
   const [receiveAddress, setReceiveAddress] = useState("");
@@ -890,6 +933,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const lePairPrice = Number(lePair?.lastPrice ?? 0) || 0;
   const lePairChange = Number(lePair?.priceChangePercent24h ?? 0) || 0;
+
+  // Live LE/SS rate for this pair — works for any of the 1.8M bridge pairs even with no stored price
+  const { letsexchange: leVenuePrice } = usePairPrices(
+    { symbol: base, network: base },
+    { symbol: quote, network: quote },
+  );
+  const liveBridgeRate = leVenuePrice?.rate ?? 0;
 
   const MOBILE_RANGE_PRESET_MAP: Record<string, { apiInterval: string; limit: number }> = {
     '1Y':  { apiInterval: '1d', limit: 365 },
@@ -956,53 +1006,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     retry: false,
   });
 
-  const lastPrice = parseFloat(ticker?.lastPrice) || lePairPrice || 0;
+  const lastPrice = parseFloat(ticker?.lastPrice) || lePairPrice || liveBridgeRate || 0;
 
 
-  // ── Auto-fetch best swap-venue quote when native order book has no liquidity ─
-  useEffect(() => {
-    if (!swapMode && orderError?.code !== "NO_LIQUIDITY") {
-      setSwapQuote(null);
-      return;
-    }
-    const amtNum = parseFloat(amount || "0");
-    if (amtNum <= 0) { setSwapQuote(null); return; }
-    const assetIn  = side === "buy" ? quote : base;
-    const assetOut = side === "buy" ? base  : quote;
-    // In swap mode the user enters the "from" asset amount directly;
-    // in order mode a buy entry is in base units so multiply by price.
-    const amountIn = swapMode ? amtNum : (side === "buy" ? amtNum * lastPrice : amtNum);
-    if (amountIn <= 0) return;
-    let cancelled = false;
-    setSwapQuoteLoading(true);
-    setSwapQuote(null);
-    fetch(`${BASE}/api/swap/multi-quote`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ assetIn, assetOut, amountIn }),
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (cancelled) return;
-        const best = data?.best;
-        if (best && best.expectedOutput > 0) {
-          setSwapQuote({
-            venue:          best.venue,
-            assetIn:        best.inputToken,
-            assetOut:       best.outputToken,
-            amountIn:       best.inputAmount,
-            expectedOutput: best.expectedOutput,
-            canExecute:     best.canExecute,
-          });
-        } else {
-          setSwapQuote(null);
-        }
-      })
-      .catch(() => { if (!cancelled) setSwapQuote(null); })
-      .finally(() => { if (!cancelled) setSwapQuoteLoading(false); });
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [swapMode, orderError?.code, amount, side, base, quote, lastPrice]);
 
   // ── lockedBuySpend: quote asset spent in open buy orders ───────────────────
   // Market orders have price: null in the DB, so we fall back to lastPrice to
@@ -1028,20 +1034,22 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const volQuote = lastPrice * vol24;
 
   // Fallback price for candles/orderbook when ticker hasn't loaded yet
-  const fallbackPrice = lastPrice > 0 ? lastPrice : (MOCK_TICKER[rawSymbol]?.lastPrice ?? 14.35);
+  const fallbackPrice = lastPrice > 0 ? lastPrice : (MOCK_TICKER[rawSymbol]?.lastPrice || liveBridgeRate || 14.35);
   // Ensure the chart always has candle data to render
   const chartCandles = (Array.isArray(candles) && candles.length > 0)
     ? candles
     : generateMockCandles(fallbackPrice);
   // Ensure order book always shows data
   const rawOB = orderBook as any;
-  const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
+  const isBridgePair = rawOB?.isBridgePair === true || (ticker as any)?.isBridgePair === true;
+  const hasRealOB = !isBridgePair && (rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0);
   // Memoized so the mock order book (which uses Math.random) doesn't regenerate on every render
   const effectiveOrderBook = useMemo(
     () => hasRealOB ? orderBook : generateMockOrderBook(fallbackPrice),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [hasRealOB, orderBook, fallbackPrice],
   );
+
 
   /* ── Live browser-tab price title ────────────────────────────────────── */
   useEffect(() => {
@@ -1349,25 +1357,37 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           if (!evmSignature) {
             const hexMsg = "0x" + Array.from(new TextEncoder().encode(orderMsg))
               .map(b => b.toString(16).padStart(2, "0")).join("");
-            const eth = (window as any).ethereum;
-            if (!eth) {
-              throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
+
+            if (provider === "reown") {
+              // Reown/WalletConnect: window.ethereum is never injected — must call
+              // personal_sign directly on the connector's raw EIP-1193 provider.
+              const { wagmiAdapter } = await import("@/lib/reown-appkit");
+              const connector = wagmiAdapter.wagmiConfig.connectors.find(
+                (c: any) => c.id === "walletConnect" || c.type === "walletConnect"
+              );
+              const eip1193 = await (connector as any)?.getProvider?.();
+              if (!eip1193) throw new Error("WalletConnect provider unavailable. Please reconnect your wallet.");
+              evmSignature = await eip1193.request({ method: "personal_sign", params: [hexMsg, address] });
+            } else {
+              const eth = (window as any).ethereum;
+              if (!eth) {
+                throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
+              }
+              evmSignature = await eth.request({ method: "personal_sign", params: [hexMsg, address] });
             }
-            evmSignature = await eth.request({
-              method: "personal_sign",
-              params: [hexMsg, address],
-            });
           }
         }
       } catch (signErr: any) {
         const code = signErr?.code;
         const msg: string = signErr?.message ?? "";
+        const isRejection = code === 4001 || code === "ACTION_REJECTED" ||
+          msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("denied") ||
+          msg.toLowerCase().includes("user cancelled") || msg.toLowerCase().includes("user canceled");
         toast({
-          title: "Signature required",
-          description: code === 4001 || code === "ACTION_REJECTED" ||
-            msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel")
-            ? "You must sign the order in your wallet for on-chain settlement."
-            : (msg || "Could not sign order in wallet."),
+          title: isRejection ? "Wallet signature declined" : "Wallet signing failed",
+          description: isRejection
+            ? `Tap ${side === "buy" ? "Buy" : "Sell"} again and approve the signing request in your wallet to place the order.`
+            : (msg || "Could not sign order. Please reconnect your wallet and try again."),
           variant: "destructive",
         });
         isSubmittingRef.current = false;
@@ -1435,6 +1455,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           </button>
           <button onClick={() => setStarred(s => !s)}>
             <Star size={17} className={starred ? "fill-green-400 text-green-400" : ""} />
+          </button>
+          <button onClick={() => setCoinInfoOpen(true)}>
+            <Info size={17} />
           </button>
           <button onClick={handleShare}>
             <Share2 size={17} />
@@ -1663,13 +1686,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
                 return (
                   <div key={i} className="flex items-center text-[11px] h-[22px]">
-                    {/* BID — clickable, fills buy form */}
+                    {/* BID row — tap to fill buy form */}
                     <button
                       className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left active:bg-green-500/10 transition-colors"
                       onClick={() => {
                         if (bP == null) return;
                         setPrice(String(bP));
-                        setAmount(bQ != null ? bQ.toFixed(3) : "");
+                        if (bQ != null) setAmount(bQ.toFixed(3));
                         setSide("buy");
                         setOrderError(null);
                         setShowOrderForm(true);
@@ -1694,13 +1717,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     {/* Center vertical divider */}
                     <div className="w-px self-stretch bg-border/60 shrink-0" />
 
-                    {/* ASK — clickable, fills sell form */}
+                    {/* ASK row — tap to fill sell form */}
                     <button
                       className="flex-1 relative flex items-center px-3 h-full overflow-hidden text-left active:bg-red-500/10 transition-colors"
                       onClick={() => {
                         if (aP == null) return;
                         setPrice(String(aP));
-                        setAmount(aQ != null ? aQ.toFixed(3) : "");
+                        if (aQ != null) setAmount(aQ.toFixed(3));
                         setSide("sell");
                         setOrderError(null);
                         setShowOrderForm(true);
@@ -1948,88 +1971,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {showOrderForm && (
           <div ref={orderFormRef} className="px-3 pt-3 pb-2 border-t border-border mt-2 space-y-2.5">
 
-            {/* ── INSTANT SWAP WIDGET (shown when swapMode) ── */}
-            {swapMode && (
-              <div className="flex flex-col gap-3">
-                {/* Direction toggle */}
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => { setSide("sell"); setSwapQuote(null); }}
-                    className={cn("flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-colors", side === "sell" ? "bg-primary/10 border-primary/30 text-primary" : "bg-card border-border text-muted-foreground")}
-                  >{base} → {quote}</button>
-                  <button
-                    onClick={() => { setSide("buy"); setSwapQuote(null); }}
-                    className={cn("flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-colors", side === "buy" ? "bg-primary/10 border-primary/30 text-primary" : "bg-card border-border text-muted-foreground")}
-                  >{quote} → {base}</button>
-                </div>
-
-                {/* You send */}
-                <div className="flex flex-col gap-1">
-                  <span className="text-[11px] text-muted-foreground font-medium px-0.5">You send</span>
-                  <div className="flex items-center gap-1.5 h-12 bg-card border border-border rounded-xl overflow-hidden">
-                    <button onClick={() => setAmount(a => String(Math.max(0, parseFloat(a || "0") - 1)))} className="w-10 h-full flex items-center justify-center text-muted-foreground border-r border-border shrink-0 active:bg-border/40"><Minus size={14} /></button>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={amount}
-                      onChange={e => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                      placeholder="0"
-                      className="flex-1 bg-transparent text-base font-mono font-bold text-center outline-none"
-                    />
-                    <span className="text-sm font-semibold text-foreground mr-3 shrink-0">{side === "sell" ? base : quote}</span>
-                  </div>
-                </div>
-
-                {/* Arrow */}
-                <div className="flex items-center justify-center text-muted-foreground"><ArrowLeftRight size={16} /></div>
-
-                {/* You receive */}
-                <div className="flex flex-col gap-1">
-                  <span className="text-[11px] text-muted-foreground font-medium px-0.5">You receive</span>
-                  {swapQuoteLoading ? (
-                    <div className="flex items-center gap-2 h-12 px-4 rounded-xl border border-border/50 bg-card/50">
-                      <span className="animate-spin w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full shrink-0" />
-                      <span className="text-xs text-muted-foreground">Getting best rate…</span>
-                    </div>
-                  ) : swapQuote && amtNum > 0 ? (
-                    <div className="flex items-center justify-between h-12 px-4 rounded-xl border border-primary/30 bg-primary/5">
-                      <span className="text-base font-mono font-bold text-primary">≈ {parseFloat(swapQuote.expectedOutput.toFixed(8)).toString()}</span>
-                      <span className="text-sm font-semibold text-primary shrink-0">{swapQuote.assetOut}</span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center h-12 px-4 rounded-xl border border-border/40 bg-card/50">
-                      <span className="text-muted-foreground text-sm">Enter amount above</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Rate + venue */}
-                {swapQuote && amtNum > 0 && (
-                  <div className="flex items-center justify-between text-[11px] px-0.5">
-                    <span className="text-muted-foreground">1 {swapQuote.assetIn} ≈ {(swapQuote.expectedOutput / swapQuote.amountIn).toFixed(6)} {swapQuote.assetOut}</span>
-                    <span className={cn("font-semibold", VENUE_COLORS[swapQuote.venue] ?? "text-primary")}>via {VENUE_LABELS[swapQuote.venue] ?? swapQuote.venue}</span>
-                  </div>
-                )}
-
-                {/* Swap CTA */}
-                {!address ? (
-                  <button onClick={() => openWallet()} className="w-full py-3.5 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-red-500 to-primary flex items-center justify-center gap-2 active:opacity-80">
-                    <Wallet size={16} />
-                    Connect Wallet to Swap
-                  </button>
-                ) : (
-                  <a
-                    href={swapQuote ? `${BASE}/swap?from=${swapQuote.assetIn}&to=${swapQuote.assetOut}&amount=${swapQuote.amountIn}` : `${BASE}/swap`}
-                    className={cn("w-full py-3.5 rounded-xl text-sm font-bold text-center text-white bg-primary block active:opacity-80 transition-opacity", !swapQuote && "opacity-40 pointer-events-none")}
-                  >
-                    {swapQuote ? `Swap via ${VENUE_LABELS[swapQuote.venue] ?? "OrahBridge"} →` : "Enter amount to see quote"}
-                  </a>
-                )}
-              </div>
-            )}
-
-            {/* ── REGULAR ORDER FORM ── */}
-            {!swapMode && (<>
+            {/* ── ORDER FORM ── */}
+            {(<>
 
             {/* Non-custodial mode disclosure */}
             {isSelfCustodyEvm && (
@@ -2562,8 +2505,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </a>
                 )}
 
-                {/* On-chain escrow lock — only for open orders on chains where escrow is deployed */}
-                {!orderResult.matched && escrowAvailable && hasEscrow(walletChainId ?? 0) && orderResult.tradeId && !escrowTx && (
+                {/* On-chain escrow lock — only for open orders on chains where escrow is deployed,
+                    and only when the token address is known (unlisted tokens use sig-only proof). */}
+                {!orderResult.matched && escrowAvailable && hasEscrow(walletChainId ?? 0) && orderResult.tradeId && !escrowTx && !!resolveEscrowAsset(
+                  walletChainId ?? 0,
+                  orderResult.side as "buy" | "sell",
+                  orderResult.base,
+                  orderResult.quoteSymbol,
+                  orderResult.quantity || orderResult.filledQty || 0,
+                  orderResult.price > 0 ? orderResult.price : lastPrice,
+                ) && (
                   <div className="pt-1.5 border-t border-blue-500/20 space-y-1.5">
                     <p className="text-[11px] text-blue-300/80">
                       Lock funds on-chain so your balance shows in Rabby, imToken &amp; other DeFi wallets.
@@ -2836,15 +2787,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         className="shrink-0 flex items-center gap-2 px-4 py-3 border-t border-border bg-background/95 backdrop-blur"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
       >
-        {/* Order type quick selector */}
-        <button
-          onClick={() => { setOrderTypeOpen(true); setShowOrderForm(true); }}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border bg-card border-border text-foreground shrink-0"
-        >
-          {ORDER_TYPE_LABELS[orderType]}
-          <ChevronDown size={11} className="text-muted-foreground" />
-        </button>
-
         {!address ? (
           /* Connect Wallet CTA */
           <button
@@ -2859,28 +2801,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {/* Buy button */}
             <button
               onClick={() => {
-                if (side === "buy" && showOrderForm && amtNum > 0 && !swapMode) {
+                if (side === "buy" && showOrderForm && amtNum > 0) {
                   handlePlaceOrder();
                 } else {
                   setSide("buy");
                   setOrderError(null);
                   setShowOrderForm(true);
-                  setSwapMode(false);
                 }
               }}
               disabled={isSubmitting}
               className={cn(
                 "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
                 isSubmitting ? "opacity-50 cursor-not-allowed"
-                  : side === "buy" && showOrderForm && amtNum > 0 && !swapMode
+                  : side === "buy" && showOrderForm && amtNum > 0
                   ? "opacity-100 scale-[1.01]"
                   : "opacity-85"
               )}
               style={{ backgroundColor: "#16a34a" }}
             >
-              {isSubmitting && side === "buy" && !swapMode
+              {isSubmitting && side === "buy"
                 ? "Placing…"
-                : side === "buy" && showOrderForm && amtNum > 0 && !swapMode
+                : side === "buy" && showOrderForm && amtNum > 0
                 ? `Buy ${amtNum.toFixed(4)} ${base}`
                 : `Buy ${base}`}
             </button>
@@ -2888,49 +2829,31 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {/* Sell button */}
             <button
               onClick={() => {
-                if (side === "sell" && showOrderForm && amtNum > 0 && !swapMode) {
+                if (side === "sell" && showOrderForm && amtNum > 0) {
                   handlePlaceOrder();
                 } else {
                   setSide("sell");
                   setOrderError(null);
                   setShowOrderForm(true);
-                  setSwapMode(false);
                 }
               }}
               disabled={isSubmitting}
               className={cn(
                 "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
                 isSubmitting ? "opacity-50 cursor-not-allowed"
-                  : side === "sell" && showOrderForm && amtNum > 0 && !swapMode
+                  : side === "sell" && showOrderForm && amtNum > 0
                   ? "opacity-100 scale-[1.01]"
                   : "opacity-85"
               )}
               style={{ backgroundColor: "#dc2626" }}
             >
-              {isSubmitting && side === "sell" && !swapMode
+              {isSubmitting && side === "sell"
                 ? "Placing…"
-                : side === "sell" && showOrderForm && amtNum > 0 && !swapMode
+                : side === "sell" && showOrderForm && amtNum > 0
                 ? `Sell ${amtNum.toFixed(4)} ${base}`
                 : `Sell ${base}`}
             </button>
 
-            {/* Swap bridge button */}
-            <button
-              onClick={() => {
-                setSwapMode(v => !v);
-                setShowOrderForm(true);
-                setOrderError(null);
-              }}
-              className={cn(
-                "flex-1 py-3 rounded-xl text-sm font-bold transition-all active:opacity-80 flex items-center justify-center gap-1",
-                swapMode && showOrderForm
-                  ? "bg-primary/15 border border-primary/40 text-primary"
-                  : "bg-card border border-border text-muted-foreground"
-              )}
-            >
-              <ArrowLeftRight size={14} />
-              Swap
-            </button>
           </>
         )}
       </div>
@@ -3060,10 +2983,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       {/* ── NOTIFICATIONS DRAWER ── */}
       <NotificationsDrawer open={notifOpen} onClose={() => setNotifOpen(false)} />
 
+      {/* ── COIN INFO SHEET ── */}
+      {coinInfoOpen && (
+        <CoinInfoSheet symbol={base} onClose={() => setCoinInfoOpen(false)} />
+      )}
+
       {/* ── SHARE TOAST ── */}
       <ShareToast visible={shareToastVisible} copied={shareCopied} />
 
       {/* ── LOCK FUNDS DIALOG (confirmation + live status) ── */}
+      <CrossChainSwapPanel open={atomicSwapOpen} onOpenChange={setAtomicSwapOpen} />
+
       <LockFundsDialog
         open={lockDialogOpen}
         onOpenChange={setLockDialogOpen}

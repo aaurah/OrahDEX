@@ -1,15 +1,16 @@
-import { useEffect, ReactNode, lazy, Suspense, Component } from "react";
+import { useEffect, useRef, ReactNode, lazy, Suspense, Component } from "react";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SpeedInsights } from "@vercel/speed-insights/react";
-import { Analytics } from "@vercel/analytics/react";
 import { Toaster } from "@/components/ui/toaster";
 import { PinPromptModal } from "@/components/PinPromptModal";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { WalletChooserDialog } from "@/components/WalletChooserDialog";
+import { OrahWalletDialog } from "@/components/OrahWalletDialog";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
 
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
-import { OraAIWidget } from "@/components/OraAIWidget";
+import { useHandCashStore } from "@/store/useHandCashStore";
 import { applyStoredTheme, useThemeStore } from "@/store/useThemeStore";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -18,11 +19,13 @@ import { useTxTracker } from "@/hooks/useTxTracker";
 import { useInternalEvmWallet } from "@/hooks/useInternalEvmWallet";
 import { useInternalBsvWallet } from "@/hooks/useInternalBsvWallet";
 import { useInactivityLock } from "@/hooks/useInactivityLock";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 const AdminLayout  = lazy(() => import("@/components/AdminLayout").then(m => ({ default: m.AdminLayout })));
 const MobileLayout = lazy(() => import("@/components/mobile/MobileLayout").then(m => ({ default: m.MobileLayout })));
 const MobileTabKeeper = lazy(() => import("@/components/mobile/MobileTabKeeper").then(m => ({ default: m.MobileTabKeeper })));
 const Layout = lazy(() => import("@/components/Layout").then(m => ({ default: m.Layout })));
+const AiAssistant = lazy(() => import("@/components/AiAssistant").then(m => ({ default: m.AiAssistant })));
 
 /* ─── Lazy page imports — each becomes its own JS chunk ─── */
 const LandingPage  = lazy(() => import("@/pages/Landing").then(m => ({ default: m.LandingPage })));
@@ -35,7 +38,6 @@ const DexHub       = lazy(() => import("@/pages/DexHub").then(m => ({ default: m
 const SwapPage     = lazy(() => import("@/pages/Swap").then(m => ({ default: m.Swap })));
 const P2P          = lazy(() => import("@/pages/P2P").then(m => ({ default: m.P2P })));
 const Liquidity    = lazy(() => import("@/pages/Liquidity").then(m => ({ default: m.Liquidity })));
-const BridgePage   = lazy(() => import("@/pages/Bridge").then(m => ({ default: m.BridgePage })));
 const CopyTrading  = lazy(() => import("@/pages/CopyTrading").then(m => ({ default: m.CopyTrading })));
 const RevenuePage  = lazy(() => import("@/pages/Revenue"));
 const SovereignOverviewPage = lazy(() => import("@/pages/SovereignOverview").then(m => ({ default: m.SovereignOverviewPage })));
@@ -49,6 +51,7 @@ const PrivacyPolicy   = lazy(() => import("@/pages/PrivacyPolicy").then(m => ({ 
 const WhitePaper      = lazy(() => import("@/pages/WhitePaper").then(m => ({ default: m.WhitePaper })));
 const SupportPage     = lazy(() => import("@/pages/Support").then(m => ({ default: m.SupportPage })));
 const WebSettings     = lazy(() => import("@/pages/Settings").then(m => ({ default: m.WebSettings })));
+const StatusPage      = lazy(() => import("@/pages/StatusPage").then(m => ({ default: m.StatusPage })));
 
 /* Mobile */
 const MobileMarkets   = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
@@ -80,7 +83,6 @@ const AdminApiSettings    = lazy(() => import("@/pages/admin/ApiSettings").then(
 const AdminContractBuilder = lazy(() => import("@/pages/admin/ContractBuilder").then(m => ({ default: m.AdminContractBuilder })));
 const AdminThemes         = lazy(() => import("@/pages/admin/Themes").then(m => ({ default: m.AdminThemes })));
 const AdminTransactions   = lazy(() => import("@/pages/admin/Transactions").then(m => ({ default: m.AdminTransactions })));
-const AdminStripeOrders   = lazy(() => import("@/pages/admin/StripeOrders").then(m => ({ default: m.AdminStripeOrders })));
 const AdminFeeWallet      = lazy(() => import("@/pages/admin/FeeWallet").then(m => ({ default: m.AdminFeeWallet })));
 const AdminBotProfit      = lazy(() => import("@/pages/admin/BotProfit").then(m => ({ default: m.AdminBotProfit })));
 const AdminArbBot         = lazy(() => import("@/pages/admin/ArbBot").then(m => ({ default: m.AdminArbBot })));
@@ -102,6 +104,7 @@ const AdminPrediction     = lazy(() => import("@/pages/admin/PredictionAdmin"));
 const AdminTradingView    = lazy(() => import("@/pages/admin/TradingViewAdmin").then(m => ({ default: m.AdminTradingView })));
 const AdminLogsPage          = lazy(() => import("@/pages/admin/AdminLogs").then(m => ({ default: m.AdminLogsPage })));
 const AdminLEIncome          = lazy(() => import("@/pages/admin/LEIncome").then(m => ({ default: m.AdminLEIncome })));
+const AdminProfits           = lazy(() => import("@/pages/admin/Profits").then(m => ({ default: m.AdminProfits })));
 const AdminSupportSettings   = lazy(() => import("@/pages/admin/SupportSettings").then(m => ({ default: m.AdminSupportSettings })));
 const AdminSupportInbox      = lazy(() => import("@/pages/admin/SupportInbox").then(m => ({ default: m.AdminSupportInbox })));
 const SupportThreadPage      = lazy(() => import("@/pages/SupportThread").then(m => ({ default: m.SupportThread })));
@@ -115,6 +118,8 @@ const AdminDbSync            = lazy(() => import("@/pages/admin/DbSync").then(m 
 const AdminCexConnections    = lazy(() => import("@/pages/admin/CexConnections").then(m => ({ default: m.AdminCexConnections })));
 const AdminDiagnostics       = lazy(() => import("@/pages/admin/Diagnostics"));
 const AdminBsvIntents        = lazy(() => import("@/pages/admin/BsvIntents").then(m => ({ default: m.AdminBsvIntents })));
+const AdminApiServerControl  = lazy(() => import("@/pages/admin/ApiServerControl").then(m => ({ default: m.ApiServerControl })));
+const AdminStatusPage        = lazy(() => import("@/pages/admin/AdminStatus").then(m => ({ default: m.AdminStatusPage })));
 
 /* ─── Error Boundary — catches render errors, shows friendly fallback ─── */
 class AppErrorBoundary extends Component<
@@ -157,15 +162,24 @@ class AppErrorBoundary extends Component<
   }
 }
 
-/* ─── QueryClient — aggressive caching so API is hit far less often ─── */
+/* ─── QueryClient — aggressive caching + smart retry with exponential back-off ─── */
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
-      retryDelay: 1000,
+      retry: (failureCount, error) => {
+        // 4xx errors (bad request, auth, not found) will not self-heal — skip retries
+        const status = (error as { status?: number })?.status;
+        if (status !== undefined && status >= 400 && status < 500) return false;
+        // Network failures and 5xx get up to 3 retries
+        return failureCount < 3;
+      },
+      retryDelay: (attempt) =>
+        // Exponential back-off: 1 s → 2 s → 4 s, capped at 30 s, with ±500 ms jitter
+        Math.min(1_000 * 2 ** attempt + Math.random() * 500, 30_000),
       refetchOnWindowFocus: false,
-      staleTime: 30_000,       // 30 s — data considered fresh; no re-fetch during this window
-      gcTime: 5 * 60_000,      // 5 min — keep unused data in memory cache
+      refetchOnReconnect: true,   // Re-fetch stale data automatically when API comes back
+      staleTime: 30_000,          // 30 s — data considered fresh; no re-fetch during this window
+      gcTime: 5 * 60_000,         // 5 min — keep unused data in memory cache
     },
   },
 });
@@ -243,6 +257,7 @@ function AdminRoute({ children }: { children: ReactNode }) {
 
 function Router() {
   const isMobile = useIsMobile();
+  usePageMeta();
 
   const { refresh: refreshBsvBalance } = useBsvBalance();
   const balanceRefreshKey = useWalletStore((s) => s.balanceRefreshKey);
@@ -258,23 +273,16 @@ function Router() {
   useEffect(() => {
     applyStoredTheme();
 
-    // Sync Reown modal theme — deferred with setTimeout(0) so each call lands
-    // in its own event-loop task, safely outside any Lit or React update cycle.
-    const doSyncTheme = (theme: string) =>
-      setTimeout(() =>
-        import("@/lib/reown").then(({ syncReownTheme }) => syncReownTheme(theme)),
-      0);
-    const themeTimer = setTimeout(() => doSyncTheme(useThemeStore.getState().theme), 500);
-    const unsubTheme = useThemeStore.subscribe(s => doSyncTheme(s.theme));
-
     const eth = (window as any).ethereum;
 
     const { network, address, disconnect, provider: storedProvider } = useWalletStore.getState();
     // Skip the injected-wallet liveness check for:
-    //   • reown      → handled by its own subscription below
     //   • orah-wallet → in-app self-custodial wallet, address derived locally
     //                   from the PIN/passkey secret — never depends on window.ethereum
-    if (network === "evm" && storedProvider !== "reown" && storedProvider !== "orah-wallet") {
+    //   • reown → WalletConnect session managed by AppKit; window.ethereum may
+    //             belong to a completely different injected wallet (e.g. MetaMask
+    //             desktop) whose eth_accounts would overwrite the WC address.
+    if (network === "evm" && storedProvider !== "orah-wallet" && storedProvider !== "reown") {
       if (!eth) {
         disconnect();
       } else {
@@ -297,10 +305,13 @@ function Router() {
 
     const onAccountsChanged = async (accounts: string[]) => {
       const { provider: p } = useWalletStore.getState();
-      if (p === "reown") return;
-      // Orah Wallet is self-custodial and independent of window.ethereum —
-      // ignore injected wallet account events for it.
+      // Orah Wallet and Reown/WalletConnect are self-contained — their addresses
+      // must not be overwritten by window.ethereum accountsChanged events.
+      // For Reown: some mobile wallets emit accountsChanged on the injected
+      // provider when the WC session switches chains, which would silently
+      // swap the user's identity if we do not guard here.
       if (p === "orah-wallet") return;
+      if (p === "reown") return;
       if (!accounts.length) {
         useWalletStore.getState().disconnect();
       } else {
@@ -315,7 +326,7 @@ function Router() {
 
     const onChainChanged = async (chainHex: string) => {
       const { address: addr, provider: p } = useWalletStore.getState();
-      if (p === "reown" || !addr) return;
+      if (!addr) return;
       const chainId = parseInt(chainHex, 16);
       useWalletStore.getState().setBalance(null);
       useWalletStore.getState().connect({ address: addr, provider: p ?? "metamask", network: "evm", chainId });
@@ -329,39 +340,119 @@ function Router() {
       eth.on?.("chainChanged", onChainChanged);
     }
 
-    let reownUnsub: (() => void) | null = null;
-    import("@/lib/reown").then(({ subscribeReownAccount, fetchEvmBalance, parseChainFromCaip, isUserDisconnecting, setUserDisconnecting }) => {
-      reownUnsub = subscribeReownAccount(async (state) => {
-        const { provider: current } = useWalletStore.getState();
-        if (state.isConnected && state.address) {
-          if (isUserDisconnecting()) return;
-          const chainId = parseChainFromCaip(state.caipAddress) ?? 1;
-          useWalletStore.getState().connect({
-            address: state.address,
-            provider: "reown",
-            network: "evm",
-            chainId,
-          });
-          const bal = await fetchEvmBalance(state.address, chainId);
-          if (bal !== null) {
-            useWalletStore.getState().setBalance(bal);
-          }
-        } else if (current === "reown") {
-          useWalletStore.getState().disconnect();
-          setUserDisconnecting(false);
-        }
-      });
-    });
-
     return () => {
-      clearTimeout(themeTimer);
-      unsubTheme();
-      reownUnsub?.();
       if (eth) {
         eth.removeListener?.("accountsChanged", onAccountsChanged);
         eth.removeListener?.("chainChanged", onChainChanged);
       }
     };
+  }, []);
+
+  // Single Reown account subscription — syncs AppKit connected wallet to walletStore
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+
+    import("@/lib/reown-appkit").then(({ subscribeReownAccount }) => {
+      unsub = subscribeReownAccount((address, chainId, isSocialOrEmail) => {
+        if (address) {
+          const { provider, address: storedAddress } = useWalletStore.getState();
+          if (!provider || provider === "reown") {
+            // Guard: when already connected via Reown and AppKit emits a DIFFERENT
+            // address (happens on some mobile WalletConnect wallets after a chain
+            // switch — the wallet returns the account registered on the new chain,
+            // which may differ from the Sepolia/testnet account), do NOT silently
+            // swap the user's address.  ChainSwitcherDropdown already called
+            // switchChain() to update the chainId; there is nothing else to do.
+            if (provider === "reown" && storedAddress && storedAddress !== address) {
+              return;
+            }
+
+            // AppKit fires subscribeAccount multiple times during WC session
+            // restoration, each time reporting the session's original negotiated
+            // chain (often mainnet=1) — NOT what the user last switched to via
+            // wallet_switchEthereumChain.  The authoritative source of the user's
+            // chosen chain is "orah-reown-chain" in localStorage, which is written
+            // ONLY by ChainSwitcherDropdown on an explicit user switch.
+            // When reconnecting to the same Reown address, always honour that
+            // stored preference over whatever AppKit reports.
+            let effectiveChainId = chainId;
+            if (storedAddress === address && provider === "reown") {
+              try {
+                const saved = parseInt(localStorage.getItem("orah-reown-chain") ?? "", 10);
+                if (saved) effectiveChainId = saved;
+              } catch {}
+            }
+
+            // Fresh connection (no prior provider) via social/email → open OrahWallet
+            // so the user can set up their native passkey wallet after social login.
+            // Only fires on a brand-new connect, not on page-refresh session restores.
+            if (!provider && isSocialOrEmail) {
+              useWalletModalStore.getState().openOrahWallet();
+            }
+
+            useWalletStore.getState().connect({
+              address,
+              provider: "reown",
+              network: "evm",
+              chainId: effectiveChainId,
+            });
+          }
+        } else {
+          if (useWalletStore.getState().provider === "reown") {
+            useWalletStore.getState().disconnect();
+          }
+        }
+      });
+    }).catch(() => {});
+    return () => { unsub?.(); };
+  }, []);
+
+  // ── Sync persisted HandCash auth → global wallet store on startup ─────────
+  // useHandCashStore is persisted; useWalletStore is not. On every page load
+  // we need to tell the wallet store that HandCash is connected.
+  useEffect(() => {
+    const hc = useHandCashStore.getState();
+    if (hc.authToken && hc.profile) {
+      useWalletStore.getState().connect({
+        address:  `$${hc.profile.handle}`,
+        provider: "handcash",
+        network:  "bsv",
+      });
+      hc.fetchBalance();
+    }
+  }, []);
+
+  // ── HandCash OAuth callback — runs once on mount ─────────────────────────
+  // HandCash redirects back to the app with ?authToken=<token> after the user
+  // authorises.  We read it, fetch the profile, store it, then clean the URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const hcToken = params.get("authToken");
+    if (!hcToken) return;
+
+    (async () => {
+      try {
+        const { API_BASE } = await import("@/lib/api");
+        const res = await fetch(`${API_BASE}/handcash/profile?authToken=${encodeURIComponent(hcToken)}`);
+        if (res.ok) {
+          const profile = await res.json();
+          useHandCashStore.getState().setAuth(hcToken, profile);
+          // Also update the global wallet store so the whole app knows
+          useWalletStore.getState().connect({
+            address:  `$${profile.handle}`,
+            provider: "handcash",
+            network:  "bsv",
+          });
+          // Kick off balance fetch in background
+          useHandCashStore.getState().fetchBalance();
+        }
+      } catch { /* non-fatal — user can re-connect */ }
+
+      // Clean the authToken param from the URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete("authToken");
+      window.history.replaceState({}, "", url.toString());
+    })();
   }, []);
 
   return (
@@ -381,7 +472,7 @@ function Router() {
       <Route path="/admin/contracts"><AdminRoute><AdminContractBuilder /></AdminRoute></Route>
       <Route path="/admin/themes">  <AdminRoute><AdminThemes /></AdminRoute></Route>
       <Route path="/admin/transactions"><AdminRoute><AdminTransactions /></AdminRoute></Route>
-      <Route path="/admin/stripe-orders"><AdminRoute><AdminStripeOrders /></AdminRoute></Route>
+
       <Route path="/admin/withdrawals"><AdminRoute><AdminWithdrawals /></AdminRoute></Route>
       <Route path="/admin/ledger">    <AdminRoute><AdminLedgerManager /></AdminRoute></Route>
       <Route path="/admin/db-sync">   <AdminRoute><AdminDbSync /></AdminRoute></Route>
@@ -417,18 +508,23 @@ function Router() {
       <Route path="/admin/api-monitor"><AdminRoute><AdminApiMonitor /></AdminRoute></Route>
       <Route path="/admin/trade-analytics"><AdminRoute><AdminTradeAnalytics /></AdminRoute></Route>
       <Route path="/admin/le-income">     <AdminRoute><AdminLEIncome /></AdminRoute></Route>
+      <Route path="/admin/profits">      <AdminRoute><AdminProfits /></AdminRoute></Route>
       <Route path="/admin/cex-connections"><AdminRoute><AdminCexConnections /></AdminRoute></Route>
       <Route path="/admin/diagnostics">   <AdminRoute><AdminDiagnostics /></AdminRoute></Route>
       <Route path="/admin/bsv-intents">  <AdminRoute><AdminBsvIntents /></AdminRoute></Route>
+      <Route path="/admin/server-control"><AdminRoute><AdminApiServerControl /></AdminRoute></Route>
+      <Route path="/admin/status">        <AdminRoute><AdminStatusPage /></AdminRoute></Route>
 
       {/* ── Landing page ── */}
       <Route path="/home">
         <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
+        <Suspense fallback={null}><AiAssistant /></Suspense>
       </Route>
 
       {/* ── Root: landing page ── */}
       <Route path="/">
         <Suspense fallback={<PageSkeleton />}><LandingPage /></Suspense>
+        <Suspense fallback={null}><AiAssistant /></Suspense>
       </Route>
 
       {/* ── Redirects ── */}
@@ -437,6 +533,9 @@ function Router() {
       <Route path="/futures"><RedirectTo href="/futures/BSV-USDT-PERP" /></Route>
 
       {/* ── Standalone legal / info pages (no nav wrapper) ── */}
+      <Route path="/status">
+        <Suspense fallback={<PageSkeleton />}><StatusPage /></Suspense>
+      </Route>
       <Route path="/terms">
         <Suspense fallback={<PageSkeleton />}><TermsOfService /></Suspense>
       </Route>
@@ -485,7 +584,7 @@ function Router() {
                   <Route path="/liquidity"      component={Liquidity} />
                   <Route path="/genesis"        component={GenesisLiquidity} />
                   <Route path="/p2p"            component={P2P} />
-                  <Route path="/bridge"         component={BridgePage} />
+                  <Route path="/bridge"><RedirectTo href="/swap" /></Route>
                   <Route path="/copy"           component={CopyTrading} />
                   <Route path="/fees"           component={RevenuePage} />
                   <Route path="/keeper"         component={KeeperProfile} />
@@ -513,12 +612,6 @@ function Router() {
   );
 }
 
-function OraAIWidgetGate() {
-  const [location] = useLocation();
-  if (location.startsWith("/devai") || location.startsWith("/admin")) return null;
-  return <OraAIWidget />;
-}
-
 function AppContent() {
   useInternalEvmWallet();
   useInternalBsvWallet();
@@ -527,17 +620,23 @@ function AppContent() {
     <>
       <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
         <Router />
-        {/* Ora AI floating chat widget — hidden on DevAI and admin pages */}
-        <OraAIWidgetGate />
       </WouterRouter>
       <Toaster />
       <PinPromptModal />
       {/* Wallet chooser — always mounted so it works across all layouts */}
       <WalletChooserDialog />
-      {/* Vercel Speed Insights */}
+      {/* OrahWallet passkey dialog — opens after social/email login */}
+      <OrahWalletDialogGlobal />
+      {/* Vercel Speed Insights — tracks Web Vitals and performance metrics */}
       <SpeedInsights />
     </>
   );
+}
+
+function OrahWalletDialogGlobal() {
+  const isOpen = useWalletModalStore((s) => s.isOrahWalletOpen);
+  const close  = useWalletModalStore((s) => s.closeOrahWallet);
+  return <OrahWalletDialog open={isOpen} onClose={close} />;
 }
 
 function App() {
@@ -546,8 +645,6 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AppContent />
-          <SpeedInsights />
-          <Analytics />
         </TooltipProvider>
       </QueryClientProvider>
     </AppErrorBoundary>

@@ -4,22 +4,24 @@ import {
   ShieldCheck, KeyRound, Plus, ChevronRight, AlertCircle, Sparkles,
   RefreshCw, Link2, Link2Off, Send, TrendingUp, ChevronDown, ChevronUp,
   Coins, Trash2, Loader2, ExternalLink, Cpu, Globe,
-  ArrowUpRight, ArrowDownLeft,
+  ArrowUpRight, ArrowDownLeft, ScanSearch, History, Filter, Zap,
+  QrCode, Search, Shield, BarChart2, Eye, EyeOff, Lock,
 } from "lucide-react";
 import { WalletAddresses } from "@/components/wallet/WalletAddresses";
 import { WalletDApps } from "@/components/wallet/WalletDApps";
-import { SmartAccountPanel } from "@/components/wallet/SmartAccountPanel";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useEvmBalances, scanTokensFromExplorer } from "@/hooks/useEvmBalances";
+import { useOnChainTxHistory, type OnChainTx } from "@/hooks/useOnChainTxHistory";
+import { useIncomingTxWatcher } from "@/hooks/useIncomingTxWatcher";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useNativeChainBalance } from "@/hooks/useNativeChainBalance";
 import {
   getImportedWallet, getDerivedAddresses, saveDerivedAddresses,
   type DerivedAddresses,
 } from "@/lib/walletPin";
-import { listPasskeyWallets, loginWithPasskey } from "@/lib/passkeyWallet";
+import { listPasskeyWallets, loginWithPasskey, sendBsvWithPasskey } from "@/lib/passkeyWallet";
 import { ReceiveModal } from "@/components/ReceiveModal";
 import { RevealSecretSheet } from "@/components/wallet/RevealSecretSheet";
 import { ChainReceiveSheet } from "@/components/wallet/ChainReceiveSheet";
@@ -27,8 +29,168 @@ import { ManualImportSheet, type ImportChain } from "@/components/wallet/ManualI
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useToast } from "@/hooks/use-toast";
+import { useNotificationStore } from "@/store/useNotificationStore";
 import { cn } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+
+/* ─── BSV Send Sheet ─────────────────────────────────────────────────────── */
+
+function BsvSendSheet({
+  open, onClose, fromAddress, evmAddress,
+}: {
+  open: boolean;
+  onClose: () => void;
+  fromAddress: string;
+  evmAddress: string | null;
+}) {
+  const { toast } = useToast();
+  const { addNotification } = useNotificationStore();
+  const { native: balance } = useNativeChainBalance("bsv", fromAddress || null);
+  const [recipient, setRecipient] = useState("");
+  const [amount,    setAmount]    = useState("");
+  const [sending,   setSending]   = useState(false);
+  const [txid,      setTxid]      = useState<string | null>(null);
+  const [error,     setError]     = useState<string | null>(null);
+
+  const reset = () => { setRecipient(""); setAmount(""); setTxid(null); setError(null); };
+  const handleClose = () => { reset(); onClose(); };
+
+  const parsedAmt = parseFloat(amount);
+  const canSend   = recipient.trim().length > 20 && parsedAmt > 0 && parsedAmt <= balance && !sending;
+
+  const handleSend = async () => {
+    if (!canSend) return;
+    setSending(true);
+    setError(null);
+    try {
+      const ref = evmAddress ?? "";
+      const result = await sendBsvWithPasskey(ref, fromAddress, recipient.trim(), parsedAmt);
+      setTxid(result.txid);
+      toast({
+        title:       "BSV sent",
+        description: `${parsedAmt} BSV → ${recipient.slice(0, 12)}… · Fee: ${result.feeSat} sat`,
+      });
+      addNotification({
+        type:  "withdrawal",
+        title: "BSV Sent",
+        body:  `${parsedAmt} BSV sent to ${recipient.slice(0, 12)}… (fee: ${result.feeSat} sat)`,
+        txid:  result.txid,
+        href:  `https://whatsonchain.com/tx/${result.txid}`,
+      });
+    } catch (err: any) {
+      setError(err?.message ?? "Send failed");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={v => { if (!v) handleClose(); }}>
+      <SheetContent side="bottom" className="rounded-t-2xl max-h-[90vh] overflow-y-auto pb-8">
+        <SheetHeader className="mb-5">
+          <SheetTitle className="flex items-center gap-2">
+            <Send size={16} className="text-primary" /> Send BSV
+          </SheetTitle>
+          <SheetDescription className="font-mono text-xs truncate">
+            From: {fromAddress}
+          </SheetDescription>
+        </SheetHeader>
+
+        {txid ? (
+          <div className="space-y-4">
+            <div className="flex flex-col items-center gap-3 py-4 text-center">
+              <div className="w-12 h-12 rounded-full bg-emerald-500/15 flex items-center justify-center">
+                <Check size={24} className="text-emerald-400" />
+              </div>
+              <p className="font-semibold text-foreground">Sent!</p>
+              <p className="text-xs text-muted-foreground font-mono break-all">{txid}</p>
+            </div>
+            <a
+              href={`https://whatsonchain.com/tx/${txid}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 text-xs text-primary hover:underline"
+            >
+              <ExternalLink size={12} /> View on WhatsOnChain
+            </a>
+            <Button className="w-full" variant="outline" onClick={handleClose}>Done</Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+              <span>Available</span>
+              <span className="font-mono font-semibold text-foreground">
+                {balance > 0 ? `${balance.toFixed(8)} BSV` : "0 BSV"}
+              </span>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Recipient BSV address</label>
+              <Input
+                placeholder="1A1zP1eP5QGefi2DMPTf..."
+                value={recipient}
+                onChange={e => setRecipient(e.target.value)}
+                className="font-mono text-sm"
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">Amount (BSV)</label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  placeholder="0.00010000"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  className="font-mono text-sm"
+                  min={0}
+                  step={0.00000001}
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 text-xs"
+                  onClick={() => setAmount(Math.max(0, balance - 0.00005).toFixed(8))}
+                  disabled={balance <= 0}
+                >
+                  MAX
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">Network fee (~5 000 sat) deducted from remaining balance</p>
+            </div>
+
+            {error && (
+              <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+                <AlertCircle size={13} className="shrink-0 mt-0.5" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <Button
+              className="w-full"
+              disabled={!canSend}
+              onClick={handleSend}
+            >
+              {sending
+                ? <><Loader2 size={14} className="animate-spin mr-2" />Sending…</>
+                : <><Send size={14} className="mr-2" />Send {parsedAmt > 0 ? `${parsedAmt} BSV` : "BSV"}</>}
+            </Button>
+
+            <p className="text-center text-[10px] text-muted-foreground">
+              Requires your OrahDEX passkey to sign the transaction
+            </p>
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 
 /** Sums balances across all 8 live EVM chains for a given address. */
 function useAllEvmBalances(address: string | null) {
@@ -107,7 +269,7 @@ function addressForChain(
 // ─── Chain row shell (imToken / MetaMask hybrid style) ───────────────────────
 
 function ChainRowShell({
-  chain, chainAddr, balanceSlot, onReceive, onImport,
+  chain, chainAddr, balanceSlot, onReceive, onImport, onSend,
   expandable, expanded, onToggleExpand, extra,
 }: {
   chain: ChainRow;
@@ -115,6 +277,7 @@ function ChainRowShell({
   balanceSlot: ReactNode;
   onReceive: () => void;
   onImport: () => void;
+  onSend?: () => void;
   expandable?: boolean;
   expanded?: boolean;
   onToggleExpand?: () => void;
@@ -196,6 +359,16 @@ function ChainRowShell({
               )}
             >
               {hasAddr ? <Link2 size={13} /> : <Link2Off size={13} />}
+            </button>
+          )}
+
+          {onSend && chainAddr && (
+            <button
+              onClick={e => { e.stopPropagation(); onSend(); }}
+              className="w-8 h-8 rounded-lg bg-secondary/60 hover:bg-secondary flex items-center justify-center transition-colors shrink-0"
+              title="Send BSV"
+            >
+              <ArrowUpRight size={14} />
             </button>
           )}
 
@@ -458,10 +631,30 @@ function EvmChainRow({
   onSendToken: (chainId: number, symbol: string) => void;
   onTokenReceive: (symbol: string, chainName: string, address: string) => void;
 }) {
-  const { balances, loading } = useEvmBalances(evmAddress, chain.evmChainId ?? null);
+  const { balances, loading, refresh } = useEvmBalances(evmAddress, chain.evmChainId ?? null);
   const { remove }            = useCustomTokenStore();
   const [expanded, setExpanded] = useState(false);
   const [copiedAddr, setCopiedAddr] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const { toast } = useToast();
+
+  const handleScan = useCallback(async () => {
+    if (!evmAddress || !chain.evmChainId || scanning) return;
+    setScanning(true);
+    try {
+      const found = await scanTokensFromExplorer(evmAddress, chain.evmChainId);
+      await refresh();
+      if (found > 0) {
+        toast({ title: `Found ${found} token${found === 1 ? "" : "s"}`, description: "Balances are loading now." });
+      } else {
+        toast({ title: "No new tokens found", description: "All your tokens are already listed." });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Scan failed", description: "Could not reach the explorer. Try again." });
+    } finally {
+      setScanning(false);
+    }
+  }, [evmAddress, chain.evmChainId, scanning, refresh, toast]);
 
   const native     = balances.find(b => b.isNative);
   const nativeAmt  = native?.amount ?? 0;
@@ -544,6 +737,11 @@ function EvmChainRow({
               {tok.usdValue > 0 && (
                 <p className="text-[10px] text-muted-foreground">{formatQuoteAmount(tok.usdValue, quoteCurrency)}</p>
               )}
+              {tok.price > 0 && (
+                <p className={`text-[10px] font-medium tabular-nums ${tok.change24h >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  {tok.change24h >= 0 ? "+" : ""}{tok.change24h.toFixed(2)}%
+                </p>
+              )}
             </div>
             {/* Per-token Send / Receive actions */}
             <div className="flex items-center gap-1 shrink-0">
@@ -577,13 +775,26 @@ function EvmChainRow({
         ))}
       </div>
 
-      {/* Add token button */}
-      <button
-        onClick={() => onAddToken(chainId)}
-        className="mt-2 w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-primary/30 text-xs font-semibold text-primary/70 hover:text-primary hover:border-primary/60 hover:bg-primary/5 transition-colors"
-      >
-        <Plus size={12} /> Add custom token
-      </button>
+      {/* Add token + Scan buttons */}
+      <div className="mt-2 flex gap-2">
+        <button
+          onClick={() => onAddToken(chainId)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-primary/30 text-xs font-semibold text-primary/70 hover:text-primary hover:border-primary/60 hover:bg-primary/5 transition-colors"
+        >
+          <Plus size={12} /> Add token
+        </button>
+        <button
+          onClick={handleScan}
+          disabled={scanning || !evmAddress}
+          className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-amber-500/30 text-xs font-semibold text-amber-500/70 hover:text-amber-400 hover:border-amber-500/60 hover:bg-amber-500/5 transition-colors disabled:opacity-40"
+          title="Scan blockchain for tokens you hold"
+        >
+          {scanning
+            ? <Loader2 size={12} className="animate-spin" />
+            : <ScanSearch size={12} />}
+          {scanning ? "Scanning…" : "Scan tokens"}
+        </button>
+      </div>
     </div>
   ) : null;
 
@@ -605,13 +816,14 @@ function EvmChainRow({
 // ─── Native (non-EVM) row ─────────────────────────────────────────────────────
 
 function NativeChainRow({
-  chain, chainAddr, quoteCurrency, onReceive, onImport,
+  chain, chainAddr, quoteCurrency, onReceive, onImport, onSend,
 }: {
   chain: ChainRow;
   chainAddr: string | null;
   quoteCurrency: string;
   onReceive: () => void;
   onImport: () => void;
+  onSend?: () => void;
 }) {
   const family = chain.family as any;
   const { native, usd, loading } = useNativeChainBalance(family, chainAddr);
@@ -622,7 +834,7 @@ function NativeChainRow({
         {loading
           ? <span className="inline-block w-16 h-3.5 bg-muted/40 rounded animate-pulse" />
           : native > 0
-            ? `${native < 0.0001 ? native.toExponential(2) : native.toFixed(4)} ${chain.symbol}`
+            ? `${native < 0.001 ? native.toPrecision(4) : native < 1 ? native.toFixed(6) : native.toFixed(4)} ${chain.symbol}`
             : `0 ${chain.symbol}`}
       </p>
       <p className="text-[10px] text-muted-foreground">
@@ -638,6 +850,7 @@ function NativeChainRow({
       balanceSlot={balanceSlot}
       onReceive={onReceive}
       onImport={onImport}
+      onSend={onSend}
     />
   );
 }
@@ -646,7 +859,7 @@ function NativeChainRow({
 
 function ChainBalanceRow({
   chain, address, evmAddress, network, derived, quoteCurrency,
-  onReceive, onImport, onAddToken, onSendToken, onTokenReceive,
+  onReceive, onImport, onAddToken, onSendToken, onTokenReceive, onSendBsv, onSendChain,
 }: {
   chain: ChainRow;
   address: string | null;
@@ -659,6 +872,8 @@ function ChainBalanceRow({
   onAddToken: (chainId: number) => void;
   onSendToken: (chainId: number, symbol: string) => void;
   onTokenReceive: (symbol: string, chainName: string, address: string) => void;
+  onSendBsv?: (addr: string) => void;
+  onSendChain?: (chain: ChainRow, addr: string) => void;
 }) {
   const chainAddr    = addressForChain(chain, evmAddress, address, network, derived);
   const handleReceive = () => onReceive(chain);
@@ -679,6 +894,14 @@ function ChainBalanceRow({
     );
   }
 
+  const handleSend = chainAddr && chain.live
+    ? (chain.family === "bsv" && onSendBsv
+        ? () => onSendBsv(chainAddr)
+        : onSendChain
+          ? () => onSendChain(chain, chainAddr)
+          : undefined)
+    : undefined;
+
   return (
     <NativeChainRow
       chain={chain}
@@ -686,6 +909,7 @@ function ChainBalanceRow({
       quoteCurrency={quoteCurrency}
       onReceive={handleReceive}
       onImport={handleImport}
+      onSend={handleSend}
     />
   );
 }
@@ -750,7 +974,13 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
     };
     const hasStore = Object.values(storeAddrs).some(Boolean);
     if (!storedDerived && !hasStore) return null;
-    return { ...storeAddrs, ...storedDerived };
+    // Server-provisioned internal addresses (storeAddrs) take priority over
+    // HD-derived local derivations (storedDerived) so every view shows the
+    // same address as the header. Only override where storeAddrs has a value.
+    const storeNonNull = Object.fromEntries(
+      Object.entries(storeAddrs).filter(([, v]) => v != null),
+    ) as Partial<DerivedAddresses>;
+    return { ...storedDerived, ...storeNonNull };
   }, [
     storedDerived, evmAddress,
     internalBsvAddress, internalBtcAddress, internalBchAddress,
@@ -766,11 +996,21 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const totalNonEvm  = CHAINS.filter(c => c.family !== "evm").length;
 
   const _qs = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
-  const _initialTab = (_qs?.get("tab") === "dapps" ? "dapps" : "portfolio") as "portfolio" | "addresses" | "dapps";
+  const _qs2 = _qs?.get("tab");
+  const _initialTab = (_qs2 === "dapps" ? "dapps" : _qs2 === "activity" ? "activity" : "portfolio") as "portfolio" | "addresses" | "dapps" | "activity";
   const _initialUri = _qs?.get("uri") ?? "";
-  const [tab, setTab]                         = useState<"portfolio" | "addresses" | "dapps">(_initialTab);
+  const [tab, setTab]                         = useState<"portfolio" | "addresses" | "dapps" | "activity">(_initialTab);
+
+  // On-chain tx history — must come AFTER tab is declared (tab is read in the arg)
+  const { data: onchainTxs = [], isLoading: txLoading } = useOnChainTxHistory(
+    tab === "activity" ? (evmAddress ?? null) : null,
+  );
+
+  // Watch for new incoming EVM transactions and fire notifications automatically
+  useIncomingTxWatcher(evmAddress ?? null);
   const [receiveOpen, setReceiveOpen]         = useState(false);
   const [sendOpen, setSendOpen]               = useState(false);
+  const [nonEvmSendChain, setNonEvmSendChain] = useState<string | null>(null);
   const [sendTokenConfig, setSendTokenConfig] = useState<{ chainId: number; symbol: string } | null>(null);
   const [tokenReceive, setTokenReceive]       = useState<{ symbol: string; chainName: string; address: string } | null>(null);
   const [chainReceive, setChainReceive]       = useState<{ open: boolean; chain?: ChainRow; address?: string | null }>({ open: false });
@@ -779,6 +1019,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const [refreshing, setRefreshing]           = useState(false);
   const [importChain, setImportChain]         = useState<ChainRow | null>(null);
   const [addTokenChainId, setAddTokenChainId] = useState<number | null>(null);
+  const [bsvSend, setBsvSend] = useState<{ open: boolean; addr: string }>({ open: false, addr: "" });
 
   const hasMissingChains = canBackup && (!derived?.btc || !derived?.bch || !derived?.tron || !derived?.xrp || !derived?.ltc || !derived?.doge);
 
@@ -875,22 +1116,50 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
     toast({ title: "Address copied" });
   };
 
+  const [assetSearch, setAssetSearch] = useState("");
+  const [hideSmall, setHideSmall]     = useState(false);
+  const [balanceHidden, setBalanceHidden] = useState(false);
+
+  const filteredChains = useMemo(() => {
+    const q = assetSearch.toLowerCase();
+    if (!q) return CHAINS;
+    return CHAINS.filter(c =>
+      c.name.toLowerCase().includes(q) || c.symbol.toLowerCase().includes(q)
+    );
+  }, [assetSearch]);
+
   if (!address) {
     return (
-      <div className="min-h-full flex flex-col items-center justify-center px-6 py-20">
-        <div className="w-20 h-20 rounded-3xl bg-primary/15 flex items-center justify-center mb-5">
-          <WalletIcon size={32} className="text-primary" />
+      <div className="min-h-full flex flex-col items-center justify-center px-6 py-16">
+        <div className="relative mb-8">
+          <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-primary/20 to-violet-500/10 flex items-center justify-center border border-primary/20">
+            <WalletIcon size={36} className="text-primary" />
+          </div>
+          <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
+            <Shield size={14} className="text-emerald-400" />
+          </div>
         </div>
-        <h2 className="text-xl font-bold text-foreground mb-2">Your sovereign wallet</h2>
-        <p className="text-sm text-muted-foreground text-center max-w-sm mb-6">
-          Import a seed phrase, create a passkey wallet, or connect an external wallet —
-          all chains, one identity.
+        <h2 className="text-2xl font-bold text-foreground mb-2 text-center">Your Sovereign Wallet</h2>
+        <p className="text-sm text-muted-foreground text-center max-w-xs mb-8 leading-relaxed">
+          One identity, all chains. Import a seed phrase, create a passkey wallet, or connect any external wallet.
         </p>
+        <div className="grid grid-cols-3 gap-3 w-full max-w-xs mb-8">
+          {[
+            { icon: ShieldCheck, label: "Passkey secured", color: "text-violet-400", bg: "bg-violet-500/10" },
+            { icon: Link2, label: "16 chains", color: "text-blue-400", bg: "bg-blue-500/10" },
+            { icon: Coins, label: "1000s of tokens", color: "text-emerald-400", bg: "bg-emerald-500/10" },
+          ].map(f => (
+            <div key={f.label} className={cn("rounded-2xl border border-border p-3 flex flex-col items-center gap-1.5", f.bg)}>
+              <f.icon size={18} className={f.color} />
+              <span className="text-[10px] font-semibold text-muted-foreground text-center">{f.label}</span>
+            </div>
+          ))}
+        </div>
         <button
           onClick={() => openWalletModal()}
-          className="px-6 py-3 rounded-xl bg-primary text-primary-foreground font-semibold flex items-center gap-2"
+          className="w-full max-w-xs px-6 py-3.5 rounded-2xl bg-primary text-primary-foreground font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:bg-primary/90 active:scale-[0.98] transition-all"
         >
-          <Plus size={16} /> Get started
+          <Plus size={16} /> Connect Wallet
         </button>
       </div>
     );
@@ -899,61 +1168,100 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   return (
     <div className="min-h-full px-3 sm:px-6 py-4 sm:py-6 max-w-3xl mx-auto pb-32 sm:pb-10">
 
-      {/* ── Identity card ── */}
-      <div className="rounded-3xl bg-gradient-to-br from-primary/15 via-card to-card border border-border p-5 mb-4 shadow-sm">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <BrandLogo textSize="text-lg" suffix="Wallet" />
+      {/* ══ Hero card ══════════════════════════════════════════════════════════ */}
+      <div className="relative rounded-3xl bg-card border border-border/60 overflow-hidden mb-4 shadow-sm">
+        {/* Decorative gradient — full-width so no hard edge appears */}
+        <div className="absolute inset-0 bg-gradient-to-br from-violet-500/6 via-transparent to-fuchsia-500/4 pointer-events-none" />
+
+        <div className="relative p-5">
+          {/* Top bar: logo + security badge */}
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-primary/15 flex items-center justify-center">
+                <WalletIcon size={15} className="text-primary" />
+              </div>
+              <span className="text-sm font-bold text-foreground">OrahWallet</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {imported ? (
+                <span className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                  <ShieldCheck size={10} />
+                  {imported.protectedBy === "passkey" ? "Passkey" : "PIN"}
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-1 rounded-full bg-secondary text-muted-foreground border border-border">
+                  <Globe size={10} /> External
+                </span>
+              )}
+              <button
+                onClick={() => setBalanceHidden(h => !h)}
+                className="w-7 h-7 rounded-lg bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {balanceHidden ? <EyeOff size={12} /> : <Eye size={12} />}
+              </button>
+            </div>
           </div>
-          {imported && (
-            <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-primary/15 text-primary uppercase tracking-wider flex items-center gap-1">
-              <ShieldCheck size={10} /> {imported.protectedBy === "passkey" ? "Passkey" : "PIN"} secured
+
+          {/* Balance */}
+          <div className="mb-1">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">Total Portfolio</p>
+            <div className="flex items-baseline gap-3">
+              <p className="text-4xl font-black text-foreground tracking-tight leading-none">
+                {balanceHidden ? "••••••" : formatQuoteAmount(totalUsd, quoteCurrency)}
+              </p>
+            </div>
+          </div>
+
+          {/* Address pill */}
+          <div className="flex items-center gap-2 bg-secondary/50 border border-border/40 rounded-xl px-3 py-2 mb-5">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+            <span className="flex-1 font-mono text-xs text-foreground truncate">
+              {balanceHidden ? "••••••••••••••••" : shortAddr(address)}
             </span>
-          )}
-        </div>
+            <button
+              onClick={copyAddress}
+              className="text-muted-foreground hover:text-foreground transition-colors ml-1"
+              title="Copy address"
+            >
+              {copied ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+            </button>
+            <button
+              onClick={() => setReceiveOpen(true)}
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              title="Show QR code"
+            >
+              <QrCode size={12} />
+            </button>
+          </div>
 
-        {/* Total balance */}
-        <div className="mb-4">
-          <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Total EVM balance</p>
-          <p className="text-3xl font-bold text-foreground tracking-tight">
-            {formatQuoteAmount(totalUsd, quoteCurrency)}
-          </p>
-        </div>
-
-        <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-1">Your address</p>
-        <button onClick={copyAddress} className="flex items-center gap-2 group w-full text-left mb-5">
-          <span className="font-mono text-sm sm:text-base text-foreground truncate">{shortAddr(address)}</span>
-          {copied
-            ? <Check size={14} className="text-green-400" />
-            : <Copy size={14} className="text-muted-foreground group-hover:text-foreground" />}
-        </button>
-
-        {/* Action buttons — imToken / MetaMask style */}
-        <div className="grid grid-cols-4 gap-2">
-          <ActionButton icon={Download}    label="Receive" onClick={() => setReceiveOpen(true)} />
-          <ActionButton icon={Send}        label="Send"    onClick={() => setSendOpen(true)} />
-          <ActionButton icon={ArrowDownUp} label="Swap"    onClick={() => navigate("/swap")} />
-          <ActionButton icon={Sparkles}    label="Buy"     onClick={() => navigate("/swap")} />
+          {/* Action buttons — circular Trust Wallet / imToken style */}
+          <div className="grid grid-cols-4 gap-1">
+            <ActionButton icon={Download}    label="Receive" onClick={() => setReceiveOpen(true)}    bg="bg-emerald-500/15" fg="text-emerald-400" />
+            <ActionButton icon={Send}        label="Send"    onClick={() => setSendOpen(true)}        bg="bg-blue-500/15"    fg="text-blue-400"   />
+            <ActionButton icon={ArrowDownUp} label="Swap"    onClick={() => navigate("/swap")}        bg="bg-primary/15"     fg="text-primary"    />
+            <ActionButton icon={BarChart2}   label="History" onClick={() => setTab("activity")}       bg="bg-violet-500/15"  fg="text-violet-400" />
+          </div>
         </div>
       </div>
 
-      {/* ── Tab selector ── */}
-      <div className="flex bg-card border border-border rounded-2xl p-1 mb-4 gap-1">
+      {/* ══ Tab strip ═══════════════════════════════════════════════════════════ */}
+      <div className="flex bg-secondary/40 border border-border/50 rounded-2xl p-1 mb-4 gap-0.5">
         {(
           [
-            { id: "portfolio", label: "Portfolio",   icon: WalletIcon },
-            { id: "addresses", label: "All Addresses", icon: Cpu },
-            { id: "dapps",     label: "dApps",       icon: Globe },
+            { id: "portfolio", label: "Assets",    icon: Coins },
+            { id: "activity",  label: "Activity",  icon: History },
+            { id: "addresses", label: "Addresses", icon: Cpu },
+            { id: "dapps",     label: "dApps",     icon: Globe },
           ] as const
         ).map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold transition-all",
+              "flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all",
               tab === t.id
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                ? "bg-card text-foreground shadow-sm border border-border/40"
+                : "text-muted-foreground hover:text-foreground/80"
             )}
           >
             <t.icon size={13} />
@@ -980,74 +1288,121 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         <WalletDApps evmAddress={evmAddress} initialUri={_initialUri} />
       )}
 
-      {/* ── Portfolio tab ── */}
+      {/* ── Activity tab ── */}
+      {tab === "activity" && (
+        <ActivityTab txs={onchainTxs} loading={txLoading} evmAddress={evmAddress} />
+      )}
+
+      {/* ══ Assets tab ══════════════════════════════════════════════════════════ */}
       {tab === "portfolio" && (<>
 
-      {/* ── Quick stats — Atomic Wallet style ── */}
-      <div className="flex gap-2 mb-4">
-        <StatPill
-          label="Chains linked"
-          value={`${linkedChains} / ${totalNonEvm}`}
-          icon={Link2}
-          accent="border-border bg-card"
-        />
-        <StatPill
-          label="EVM networks"
-          value="8 active"
-          icon={TrendingUp}
-          accent="border-border bg-card"
-        />
+      {/* ── Stats row ── */}
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="rounded-2xl border border-border bg-card p-3 flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <Link2 size={11} className="text-blue-400" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Linked</span>
+          </div>
+          <p className="text-sm font-bold text-foreground">{linkedChains} <span className="text-muted-foreground font-normal text-xs">/ {totalNonEvm}</span></p>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-3 flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <TrendingUp size={11} className="text-violet-400" />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">EVM</span>
+          </div>
+          <p className="text-sm font-bold text-foreground">8 <span className="text-muted-foreground font-normal text-xs">networks</span></p>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-3 flex flex-col gap-1">
+          <div className="flex items-center gap-1.5">
+            <Lock size={11} className={canBackup ? "text-emerald-400" : "text-amber-400"} />
+            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Security</span>
+          </div>
+          <p className={cn("text-sm font-bold", canBackup ? "text-emerald-400" : "text-amber-400")}>
+            {imported?.protectedBy === "passkey" ? "Passkey" : canBackup ? "PIN" : "External"}
+          </p>
+        </div>
       </div>
 
       {afterActions}
 
-      {/* ── Backup CTA ── */}
+      {/* ── Security / backup card ── */}
       {canBackup && (
         <button
           onClick={() => setRevealOpen(true)}
-          className="w-full mb-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-center gap-3 hover:bg-amber-500/15 transition-colors text-left"
+          className="w-full mb-4 rounded-2xl border border-amber-500/25 bg-amber-500/8 p-4 flex items-center gap-3 hover:bg-amber-500/12 transition-colors text-left group"
         >
-          <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center shrink-0">
             <KeyRound size={18} className="text-amber-400" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-foreground">Back up your wallet</p>
-            <p className="text-[11px] text-muted-foreground">Reveal recovery phrase or private key. Authentication required.</p>
+            <p className="text-[11px] text-muted-foreground">Reveal recovery phrase or private key · Auth required</p>
           </div>
-          <ChevronRight size={16} className="text-muted-foreground" />
+          <ChevronRight size={15} className="text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
         </button>
       )}
 
       {!canBackup && (
-        <div className="mb-4 rounded-2xl border border-border bg-card p-4 flex items-start gap-3">
-          <AlertCircle size={16} className="text-muted-foreground shrink-0 mt-0.5" />
-          <p className="text-xs text-muted-foreground">
-            You're connected via an external wallet. Backup is managed by that wallet's own app.
-            Use the <strong>Link</strong> button on any chain below to add watch addresses or import keys.
+        <div className="mb-4 rounded-2xl border border-border bg-card/50 p-3.5 flex items-start gap-3">
+          <div className="w-7 h-7 rounded-lg bg-secondary flex items-center justify-center shrink-0 mt-0.5">
+            <Globe size={13} className="text-muted-foreground" />
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            External wallet connected. Backup is managed by your wallet app.
+            Tap <strong className="text-foreground">Link</strong> on any chain to add addresses.
           </p>
         </div>
       )}
 
-      {/* ── Chain list — Guarda / Atomic / imToken style ── */}
+      {/* ── Search + filter bar ── */}
+      <div className="flex items-center gap-2 mb-3">
+        <div className="relative flex-1">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input
+            value={assetSearch}
+            onChange={e => setAssetSearch(e.target.value)}
+            placeholder="Search assets & chains…"
+            className="w-full pl-8 pr-3 py-2 rounded-xl bg-card border border-border text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/40 transition-all"
+          />
+          {assetSearch && (
+            <button
+              onClick={() => setAssetSearch("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <AlertCircle size={12} />
+            </button>
+          )}
+        </div>
+        {hasMissingChains && (
+          <button
+            onClick={refreshAddresses}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 text-[11px] font-semibold text-primary px-3 py-2 rounded-xl bg-primary/10 hover:bg-primary/15 transition-colors disabled:opacity-50 shrink-0 border border-primary/20"
+          >
+            <RefreshCw size={11} className={refreshing ? "animate-spin" : ""} />
+            {refreshing ? "Updating…" : "Refresh"}
+          </button>
+        )}
+      </div>
+
+      {/* ── Chain list ── */}
       <div>
         <div className="flex items-center justify-between px-1 mb-2">
           <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
             Assets &amp; Chains
+            {filteredChains.length < CHAINS.length && (
+              <span className="ml-1.5 text-primary/70">{filteredChains.length} shown</span>
+            )}
           </p>
-          {hasMissingChains && (
-            <button
-              onClick={refreshAddresses}
-              disabled={refreshing}
-              className="flex items-center gap-1 text-[10px] font-semibold text-primary px-2 py-0.5 rounded-full bg-primary/10 hover:bg-primary/20 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={10} className={refreshing ? "animate-spin" : ""} />
-              {refreshing ? "Updating…" : "Refresh addresses"}
-            </button>
-          )}
         </div>
 
         <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
-          {CHAINS.map(c => (
+          {filteredChains.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+              <Search size={22} className="opacity-20" />
+              <p className="text-sm">No chains match "{assetSearch}"</p>
+            </div>
+          ) : filteredChains.map(c => (
             <ChainBalanceRow
               key={c.id}
               chain={c}
@@ -1067,20 +1422,19 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
               onAddToken={(chainId) => setAddTokenChainId(chainId)}
               onSendToken={(chainId, symbol) => setSendTokenConfig({ chainId, symbol })}
               onTokenReceive={(symbol, chainName, addr) => setTokenReceive({ symbol, chainName, address: addr })}
+              onSendBsv={(addr) => setBsvSend({ open: true, addr })}
+              onSendChain={(c, _addr) => { setNonEvmSendChain(c.id); setSendOpen(true); }}
             />
           ))}
         </div>
 
-        {/* Import hint — MetaMask style tip */}
-        <p className="mt-3 text-center text-[10px] text-muted-foreground/60">
-          Tap <Link2 size={9} className="inline mb-0.5" /> on any chain to link an address or import a private key
-        </p>
+        {!assetSearch && (
+          <p className="mt-3 text-center text-[10px] text-muted-foreground/50">
+            Tap <Link2 size={9} className="inline mb-0.5" /> on any chain to link an address or import a private key
+          </p>
+        )}
       </div>
 
-      {/* ── Smart Account (EIP-4337) ── */}
-      <div className="mt-5 bg-card border border-border rounded-2xl p-5">
-        <SmartAccountPanel />
-      </div>
 
       </>)}
       {/* ── end portfolio tab ── */}
@@ -1089,8 +1443,9 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       <ReceiveModal isOpen={receiveOpen} onClose={() => setReceiveOpen(false)} />
 
       <WithdrawSheet
+        key={nonEvmSendChain ?? "evm"}
         open={sendOpen || !!sendTokenConfig}
-        onClose={() => { setSendOpen(false); setSendTokenConfig(null); }}
+        onClose={() => { setSendOpen(false); setSendTokenConfig(null); setNonEvmSendChain(null); }}
         walletAddress={evmAddress ?? address ?? ""}
         asset="ETH"
         available={0}
@@ -1101,6 +1456,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         isOrahWallet={canBackup}
         initialChainId={sendTokenConfig?.chainId}
         initialTokenSymbol={sendTokenConfig?.symbol}
+        initialNonEvmChain={nonEvmSendChain ?? undefined}
         passkeyEvmAddress={
           passkeyOwned
             ? (address ?? undefined)
@@ -1139,6 +1495,13 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
 
       <RevealSecretSheet open={revealOpen} onClose={() => setRevealOpen(false)} address={address} />
 
+      <BsvSendSheet
+        open={bsvSend.open}
+        onClose={() => setBsvSend({ open: false, addr: "" })}
+        fromAddress={bsvSend.addr}
+        evmAddress={evmAddress}
+      />
+
       <ManualImportSheet
         open={!!importChain}
         chain={importChain}
@@ -1157,14 +1520,218 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   );
 }
 
-function ActionButton({ icon: Icon, label, onClick }: { icon: any; label: string; onClick: () => void }) {
+// ── Helpers shared by ActivityTab ────────────────────────────────────────────
+
+function activityShortAddr(addr: string) {
+  if (!addr) return "";
+  return `${addr.slice(0, 8)}…${addr.slice(-6)}`;
+}
+
+function activityFmtDate(ts: number) {
+  const d = new Date(ts * 1000);
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const dy = String(d.getDate()).padStart(2, "0");
+  const hr = String(d.getHours()).padStart(2, "0");
+  const mn = String(d.getMinutes()).padStart(2, "0");
+  return { date: `${mo}-${dy}`, time: `${hr}:${mn}` };
+}
+
+function activityLabel(tx: OnChainTx) {
+  if (tx.isTokenTransfer) {
+    return tx.isIncoming
+      ? `Receive ${tx.tokenSymbol ?? "Token"}`
+      : `Send ${tx.tokenSymbol ?? "Token"}`;
+  }
+  if (tx.functionName) {
+    const raw = tx.functionName.split("(")[0];
+    return raw.replace(/([A-Z])/g, " $1").replace(/^./, s => s.toUpperCase()).trim();
+  }
+  return tx.isIncoming ? `Receive ${tx.nativeSymbol}` : `Send ${tx.nativeSymbol}`;
+}
+
+function ActivityTxIcon({ tx }: { tx: OnChainTx }) {
+  if (tx.isError)
+    return (
+      <div className="w-10 h-10 rounded-full bg-red-500/15 flex items-center justify-center shrink-0">
+        <AlertCircle size={18} className="text-red-400" />
+      </div>
+    );
+  if (!tx.functionName && tx.isIncoming)
+    return (
+      <div className="w-10 h-10 rounded-full bg-green-500/15 flex items-center justify-center shrink-0">
+        <ArrowDownLeft size={18} className="text-green-400" />
+      </div>
+    );
+  if (!tx.functionName && !tx.isIncoming)
+    return (
+      <div className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center shrink-0">
+        <ArrowUpRight size={18} className="text-muted-foreground" />
+      </div>
+    );
+  return (
+    <div className="w-10 h-10 rounded-full bg-blue-500/15 flex items-center justify-center shrink-0" style={{ border: "2px solid #3B82F640" }}>
+      <Zap size={16} className="text-blue-400" />
+    </div>
+  );
+}
+
+function ActivityTab({
+  txs,
+  loading,
+  evmAddress,
+}: {
+  txs: OnChainTx[];
+  loading: boolean;
+  evmAddress?: string;
+}) {
+  const [chainFilter, setChainFilter] = useState<number | null>(null);
+
+  const chains = [...new Set(txs.map(t => t.chainId))];
+  const filtered = chainFilter ? txs.filter(t => t.chainId === chainFilter) : txs;
+
+  return (
+    <div>
+      {/* Header row */}
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <History size={15} className="text-primary" />
+          Account activity
+        </h3>
+        {loading && <RefreshCw size={13} className="animate-spin text-muted-foreground" />}
+      </div>
+
+      {/* Chain filter pills */}
+      {chains.length > 1 && (
+        <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar mb-3">
+          <button
+            onClick={() => setChainFilter(null)}
+            className={`shrink-0 px-3 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+              !chainFilter
+                ? "bg-primary/15 border-primary/40 text-primary"
+                : "bg-card border-border text-muted-foreground"
+            }`}
+          >
+            All
+          </button>
+          {chains.map(cid => {
+            const sample = txs.find(t => t.chainId === cid)!;
+            return (
+              <button
+                key={cid}
+                onClick={() => setChainFilter(chainFilter === cid ? null : cid)}
+                className={`shrink-0 flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+                  chainFilter === cid
+                    ? "bg-primary/15 border-primary/40 text-primary"
+                    : "bg-card border-border text-muted-foreground"
+                }`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: sample.chainColor }} />
+                {sample.chainName}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Empty / loading */}
+      {!evmAddress ? (
+        <div className="bg-card border border-border rounded-2xl p-10 flex flex-col items-center gap-2 text-muted-foreground">
+          <History size={28} className="opacity-20 mb-1" />
+          <p className="text-sm font-medium">Connect your wallet</p>
+          <p className="text-xs opacity-60 text-center">Connect an EVM wallet to view on-chain activity</p>
+        </div>
+      ) : loading && filtered.length === 0 ? (
+        <div className="bg-card border border-border rounded-2xl p-10 flex flex-col items-center gap-2 text-muted-foreground">
+          <RefreshCw size={24} className="animate-spin opacity-40 mb-1" />
+          <p className="text-sm">Fetching on-chain activity…</p>
+          <p className="text-xs opacity-50">Scanning 8 EVM chains</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-card border border-border rounded-2xl p-10 flex flex-col items-center gap-2 text-muted-foreground">
+          <History size={28} className="opacity-20 mb-1" />
+          <p className="text-sm font-medium">No transactions found</p>
+          <p className="text-xs opacity-60 text-center">On-chain activity will appear here</p>
+        </div>
+      ) : (
+        <div className="bg-card border border-border rounded-2xl overflow-hidden divide-y divide-border">
+          {filtered.map((tx, i) => {
+            const label = activityLabel(tx);
+            const { date, time } = activityFmtDate(tx.timeStamp);
+            const isContract = !!tx.functionName && !tx.isTokenTransfer;
+            const counterpart = tx.isIncoming ? tx.from : tx.to;
+            const prefix = isContract ? "On" : tx.isIncoming ? "From" : "To";
+
+            const amtVal    = tx.isTokenTransfer ? tx.tokenValue : tx.valueEth;
+            const amtSymbol = tx.isTokenTransfer ? (tx.tokenSymbol ?? "Token") : tx.nativeSymbol;
+            const amtFmt    = amtVal != null && amtVal > 0
+              ? `${amtVal < 0.0001 ? amtVal.toExponential(2) : amtVal < 1 ? amtVal.toFixed(5) : amtVal.toFixed(4)} ${amtSymbol}`
+              : null;
+            const amtColor  = tx.isError
+              ? "text-red-400"
+              : tx.isIncoming ? "text-emerald-400" : "text-foreground";
+
+            return (
+              <a
+                key={`${tx.hash}-${i}`}
+                href={tx.explorerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 px-4 py-3.5 hover:bg-secondary/40 transition-colors group"
+              >
+                <ActivityTxIcon tx={tx} />
+
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 mb-0.5">
+                    <p className={`text-[13px] font-semibold truncate ${tx.isError ? "text-red-400" : "text-foreground"}`}>
+                      {label}
+                    </p>
+                    {tx.isError && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-bold shrink-0">FAILED</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: tx.chainColor }} />
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      <span className="opacity-60">{prefix} </span>
+                      <span className="font-mono">{activityShortAddr(counterpart)}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
+                  {amtFmt && (
+                    <span className={`text-[12px] font-bold tabular-nums ${amtColor}`}>
+                      {tx.isIncoming ? "+" : tx.isError ? "" : "−"}{amtFmt}
+                    </span>
+                  )}
+                  <span className="text-[10px] text-muted-foreground">{date} {time}</span>
+                  <ExternalLink size={10} className="text-muted-foreground/30 group-hover:text-muted-foreground/60 mt-0.5" />
+                </div>
+              </a>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActionButton({
+  icon: Icon, label, onClick,
+  bg = "bg-primary/15", fg = "text-primary",
+}: {
+  icon: any; label: string; onClick: () => void;
+  bg?: string; fg?: string;
+}) {
   return (
     <button
       onClick={onClick}
-      className="flex flex-col items-center gap-1.5 py-2.5 rounded-xl bg-card border border-border hover:bg-secondary/40 active:scale-95 transition-all"
+      className="flex flex-col items-center gap-1.5 active:scale-95 transition-all group"
     >
-      <Icon size={18} className="text-primary" />
-      <span className="text-[11px] font-semibold text-foreground">{label}</span>
+      <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center transition-all group-hover:scale-105 group-active:scale-95", bg)}>
+        <Icon size={20} className={fg} />
+      </div>
+      <span className="text-[10px] font-semibold text-muted-foreground group-hover:text-foreground transition-colors">{label}</span>
     </button>
   );
 }

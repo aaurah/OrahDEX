@@ -15,7 +15,7 @@ import { Router, type IRouter } from "express";
 import { createPublicClient, http } from "viem";
 import { db } from "@workspace/db";
 import { marketsTable, tradesTable } from "@workspace/db/schema";
-import { or, eq, desc } from "drizzle-orm";
+import { or, eq, desc, ne, and as andOp } from "drizzle-orm";
 import { settleSwap, getBalances, creditAvailable, debitAvailable } from "../lib/ledger.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 import { isVaultConfigured, getVaultAddress, getVaultChainId } from "../lib/orahVault.js";
@@ -34,7 +34,7 @@ import {
 const VERIFY_RPC: Record<number, string> = {
   1:      process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
   56:     process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
-  137:    process.env.POLYGON_RPC_URL  ?? "https://polygon-rpc.com",
+  137:    process.env.POLYGON_RPC_URL  ?? "https://polygon-bor-rpc.publicnode.com",
   8453:   process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
   42161:  process.env.ARB_RPC_URL      ?? "https://arb1.arbitrum.io/rpc",
   10:     process.env.OP_RPC_URL       ?? "https://mainnet.optimism.io",
@@ -72,12 +72,15 @@ async function resolveRate(assetIn: string, assetOut: string): Promise<number | 
   const toUsd = async (sym: string): Promise<number | null> => {
     if (sym === "USDT" || sym === "USDC" || sym === "DAI") return 1;
     const rows = await db.select().from(marketsTable).where(
-      or(
-        eq(marketsTable.symbol, `${sym}/USDT`),
-        eq(marketsTable.symbol, `${sym}/USDC`),
-        eq(marketsTable.symbol, `${sym}/USD`),
+      andOp(
+        or(
+          eq(marketsTable.symbol, `${sym}/USDT`),
+          eq(marketsTable.symbol, `${sym}/USDC`),
+          eq(marketsTable.symbol, `${sym}/USD`),
+        ),
+        ne(marketsTable.type, "letsexchange"),
       )
-    ).limit(1);
+    ).orderBy(desc(marketsTable.updatedAt)).limit(1);
     if (rows[0]?.lastPrice) return parseFloat(rows[0].lastPrice);
     return null;
   };

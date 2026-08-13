@@ -1851,7 +1851,7 @@ export function BridgePage() {
       )}
 
       {/* Swap / Bridge tab selector */}
-      <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-xl border border-border/40 mb-6 max-w-md">
+      <div className="flex items-center gap-1 p-1 bg-muted/50 rounded-xl border border-border/40 mb-6 max-w-md mx-auto">
         <button
           onClick={() => setLocation("/swap")}
           className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-background/60 transition-colors"
@@ -1881,11 +1881,11 @@ export function BridgePage() {
       <div className="w-full max-w-xl mb-8">
         <div className="flex gap-1 p-1 bg-secondary rounded-2xl overflow-x-auto scrollbar-none">
           {([
-            { id: "deposit",  icon: <ArrowDown className="w-3.5 h-3.5" />,      label: "Deposit"   },
-            { id: "withdraw", icon: <ArrowUp className="w-3.5 h-3.5" />,        label: "Withdraw"  },
-            { id: "swap",     icon: <ArrowLeftRight className="w-3.5 h-3.5" />, label: "Cross-chain" },
-            { id: "bsvswap",  icon: <ArrowRight className="w-3.5 h-3.5" />,     label: "BSV→Any"  },
-            { id: "history",  icon: <Clock className="w-3.5 h-3.5" />,          label: "History"   },
+            { id: "deposit",  icon: <ArrowDown className="w-3.5 h-3.5" />,      label: "Deposit"        },
+            { id: "withdraw", icon: <ArrowUp className="w-3.5 h-3.5" />,        label: "Withdraw"       },
+            { id: "swap",     icon: <ArrowLeftRight className="w-3.5 h-3.5" />, label: "Cross-chain"    },
+            { id: "bsvswap",  icon: <ArrowRight className="w-3.5 h-3.5" />,     label: "BSV→Any"        },
+            { id: "history",  icon: <Clock className="w-3.5 h-3.5" />,          label: "History"        },
           ] as const).map(tab => (
             <button
               key={tab.id}
@@ -1973,6 +1973,7 @@ export function BridgePage() {
       {pageTab === "deposit"  && <CanonicalPanel mode="deposit"  />}
       {pageTab === "withdraw" && <CanonicalPanel mode="withdraw" />}
       {pageTab === "history"  && <SwapHistory />}
+
       {pageTab !== "swap" && pageTab !== "bsvswap" && null}
 
       {pageTab === "swap" && (

@@ -8,6 +8,13 @@
       "when": 1781431886580,
       "tag": "0000_green_ben_parker",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1751000000000,
+      "tag": "0001_evm_to_bsv_swaps",
+      "breakpoints": true
     }
   ]
 }
