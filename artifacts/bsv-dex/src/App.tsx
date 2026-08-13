@@ -520,6 +520,11 @@ function Router() {
   );
 }
 
+/**
+ * Displays the floating AI widget on eligible routes.
+ *
+ * @returns The AI widget, or `null` on development and admin routes.
+ */
 function OraAIWidgetGate() {
   const [location] = useLocation();
   if (location.startsWith("/devai") || location.startsWith("/admin")) return null;
