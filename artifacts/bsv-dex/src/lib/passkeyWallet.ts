@@ -1179,7 +1179,7 @@ export async function signBsvChallengeFromSecret(
   secret:  string,
 ): Promise<string> {
   const { sha256 }    = await import("@noble/hashes/sha2.js");
-  const { secp256k1 } = await import("@noble/curves/secp256k1");
+  const { secp256k1 } = await import("@noble/curves/secp256k1.js");
   const bsvPrivKey    = await deriveBsvPrivKeyFromSecret(secret);
 
   const msgBuf = new TextEncoder().encode(message);
