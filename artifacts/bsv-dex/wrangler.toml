@@ -1,27 +1,15 @@
 name = "orahdex"
 main = "./worker.js"
 compatibility_date = "2026-07-30"
-<<<<<<< Updated upstream
-
-routes = [
-  { pattern = "orahdex.com", custom_domain = true },
-  { pattern = "orahdex.org", custom_domain = true },
-  { pattern = "tradeora.app", custom_domain = true }
-]
-=======
 workers_dev = true
 
-[vars]
-BACKEND_URL = "https://orahdex-api.orahdex.workers.dev"
->>>>>>> Stashed changes
+[[services]]
+binding = "ORAHDEX_API"
+service = "orahdex-api"
 
 [assets]
 directory = "./dist/public"
 not_found_handling = "single-page-application"
 
 [triggers]
-<<<<<<< Updated upstream
 crons = ["* * * * *"]
-=======
-crons = ["* * * * *"]
->>>>>>> Stashed changes
