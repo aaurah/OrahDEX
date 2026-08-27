@@ -1,0 +1,16 @@
+name = "orahdex"
+main = "./worker.js"
+compatibility_date = "2026-07-30"
+
+routes = [
+  { pattern = "orahdex.com", custom_domain = true },
+  { pattern = "orahdex.org", custom_domain = true },
+  { pattern = "tradeora.app", custom_domain = true }
+]
+
+[assets]
+directory = "./dist/public"
+not_found_handling = "single-page-application"
+
+[triggers]
+crons = ["* * * * *"]
