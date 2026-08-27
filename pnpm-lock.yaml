@@ -270,13 +270,13 @@ importers:
         version: 1.5.4
       thirdweb:
         specifier: ^5.121.1
-        version: 5.121.1(e877e3c9836ac34423196f05e675dfd3)
+        version: 5.121.1(4297d07c018f1ed2e3c0cfd8a334ea79)
       viem:
         specifier: ^2.47.6
         version: 2.47.6(bufferutil@4.1.0)(typescript@6.0.2)(utf-8-validate@6.0.6)(zod@4.3.6)
       ws:
-        specifier: ^8.21.0
-        version: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+        specifier: ^8.21.1
+        version: 8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     devDependencies:
       '@types/cookie-parser':
         specifier: ^1.4.10
@@ -582,8 +582,8 @@ importers:
         specifier: ^5.1.0
         version: 5.1.0
       postcss:
-        specifier: ^8.5.18
-        version: 8.5.25
+        specifier: ^8.5.26
+        version: 8.5.26
       qrcode.react:
         specifier: ^4.2.0
         version: 4.2.0(react@19.2.4)
@@ -1078,7 +1078,7 @@ importers:
     dependencies:
       openai:
         specifier: ^6.27.0
-        version: 6.33.0(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.3.6)
+        version: 6.33.0(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.3.6)
       p-limit:
         specifier: ^7.3.0
         version: 7.3.0
@@ -5548,6 +5548,7 @@ packages:
   '@xmldom/xmldom@0.8.14':
     resolution: {integrity: sha512-T4EDRUBVZYRldYApjEJiU0e1stYWaRAX7CuSnKzrpwdZKo53zGV8/pqfzV6FfwNl9YThD2OumQYvqtvjvgG7aQ==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   '@xrplf/isomorphic@1.0.1':
     resolution: {integrity: sha512-0bIpgx8PDjYdrLFeC3csF305QQ1L7sxaWnL5y71mCvhenZzJgku9QsA+9QCXBC1eNYtxWO/xR91zrXJy2T/ixg==}
@@ -8519,8 +8520,8 @@ packages:
   nan@2.27.0:
     resolution: {integrity: sha512-hC+0LidcL3XE4rp1C4H54KujgXKzbfyTngZTwBByQxsOxCEKZT0MPQ4hOKUH2jU1OYstqdDH4onyHPDzcV0XdQ==}
 
-  nanoid@3.3.16:
-    resolution: {integrity: sha512-bzlKTyNJ7+LdGIIwy8ijFpIqEQIvafahV7eYykJ8Cvh42EdJeODoJ6gUJXpQJvej1BddH8OqTXZNE/KfbWAu8Q==}
+  nanoid@3.3.18:
+    resolution: {integrity: sha512-DTg4MJbGMWkfi6VZFdNt2/caMbQy4Ou+Op/hJQvGEWcnVfoA1QA+xzRKAzw9jD6+GVOOeYr/mIcuDSdug6F6+w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -9084,8 +9085,8 @@ packages:
     resolution: {integrity: sha512-OCVPnIObs4N29kxTjzLfUryOkvZEq+pf8jTF0lg8E7uETuWHA+v7j3c/xJmiqpX450191LlmZfUKkXxkTry7nA==}
     engines: {node: ^10 || ^12 || >=14}
 
-  postcss@8.5.25:
-    resolution: {integrity: sha512-DTPx3RWSSnWyzLxQnlH0rJP+EW5ekl16ZU4/psbIhA0e53kJfdgaN5vKM+xP7yJtXVu+nfdVFmlgFDEKAe4Pyw==}
+  postcss@8.5.26:
+    resolution: {integrity: sha512-u82N74LFzG8ca+dD8puPnplTXoGH4fTPpVGuIbt36G3qvNlkvfD0lEAZSxaly3KX8TS/L1A1gsCEmvKmBcVbkQ==}
     engines: {node: ^10 || ^12 || >=14}
 
   postgres-array@2.0.0:
@@ -10866,6 +10867,18 @@ packages:
       utf-8-validate:
         optional: true
 
+  ws@8.21.1:
+    resolution: {integrity: sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   x402@0.7.0:
     resolution: {integrity: sha512-G4UnkS4YDMUO+dYFpincma2p2PNN3t/6uP4tIxeHYrH2BL13ELbm4Jovtu4S7A6Ve1S9kka+5tkW33a+KgQX3Q==}
 
@@ -12476,7 +12489,7 @@ snapshots:
       terminal-link: 2.1.1
       toqr: 0.1.1
       wrap-ansi: 7.0.0
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
       zod: 3.25.76
     optionalDependencies:
       expo-router: 55.0.10(3415e259b728bb888270f73a8025d5f8)
@@ -12551,7 +12564,7 @@ snapshots:
       terminal-link: 2.1.1
       toqr: 0.1.1
       wrap-ansi: 7.0.0
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
       zod: 3.25.76
     optionalDependencies:
       expo-router: 55.0.10(3415e259b728bb888270f73a8025d5f8)
@@ -12627,7 +12640,7 @@ snapshots:
       terminal-link: 2.1.1
       toqr: 0.1.1
       wrap-ansi: 7.0.0
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       zod: 3.25.76
     optionalDependencies:
       expo-router: 55.0.10(7e795f65078578c12311b0fb23ad5a23)
@@ -13320,14 +13333,14 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@sentry/minimal': 6.19.7
       inversify: 7.5.1(reflect-metadata@0.2.2)
-      isomorphic-ws: 5.0.0(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      isomorphic-ws: 5.0.0(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       purify-ts: 2.1.0
       reflect-metadata: 0.2.2
       rxjs: 7.8.2
       semver: 7.7.2
       url: 0.11.4
       uuid: 11.0.3
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       xstate: 5.19.2
     transitivePeerDependencies:
       - bufferutil
@@ -15054,7 +15067,7 @@ snapshots:
       '@react-navigation/routers': 7.5.3
       escape-string-regexp: 4.0.0
       fast-deep-equal: 3.1.3
-      nanoid: 3.3.16
+      nanoid: 3.3.18
       query-string: 7.1.3
       react: 19.2.4
       react-is: 19.2.4
@@ -15116,7 +15129,7 @@ snapshots:
       '@react-navigation/core': 7.17.2(react@19.2.4)
       escape-string-regexp: 4.0.0
       fast-deep-equal: 3.1.3
-      nanoid: 3.3.16
+      nanoid: 3.3.18
       react: 19.2.4
       react-native: 0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@5.0.10)
       use-latest-callback: 0.2.6(react@19.2.4)
@@ -15126,7 +15139,7 @@ snapshots:
       '@react-navigation/core': 7.17.2(react@19.2.4)
       escape-string-regexp: 4.0.0
       fast-deep-equal: 3.1.3
-      nanoid: 3.3.16
+      nanoid: 3.3.18
       react: 19.2.4
       react-native: 0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6)
       use-latest-callback: 0.2.6(react@19.2.4)
@@ -15134,7 +15147,7 @@ snapshots:
 
   '@react-navigation/routers@7.5.3':
     dependencies:
-      nanoid: 3.3.16
+      nanoid: 3.3.18
 
   '@reduxjs/toolkit@2.11.2(react-redux@9.2.0(@types/react@19.2.14)(react@19.2.4)(redux@5.0.1))(react@19.0.0)':
     dependencies:
@@ -16537,11 +16550,11 @@ snapshots:
 
   '@solana-program/compute-budget@0.8.0(@solana/kit@2.3.0(typescript@6.0.3))':
     dependencies:
-      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
 
   '@solana-program/stake@0.2.1(@solana/kit@2.3.0(typescript@6.0.3))':
     dependencies:
-      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
 
   '@solana-program/system@0.10.0(@solana/kit@5.5.1(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@5.0.10))':
     dependencies:
@@ -16554,16 +16567,16 @@ snapshots:
 
   '@solana-program/system@0.7.0(@solana/kit@2.3.0(typescript@6.0.3))':
     dependencies:
-      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
 
   '@solana-program/token-2022@0.4.2(@solana/kit@2.3.0(typescript@6.0.3))(@solana/sysvars@2.3.0(typescript@6.0.3))':
     dependencies:
-      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       '@solana/sysvars': 2.3.0(typescript@6.0.3)
 
   '@solana-program/token@0.5.1(@solana/kit@2.3.0(typescript@6.0.3))':
     dependencies:
-      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
 
   '@solana-program/token@0.9.0(@solana/kit@5.5.1(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@5.0.10))':
     dependencies:
@@ -16846,7 +16859,7 @@ snapshots:
     transitivePeerDependencies:
       - fastestsmallesttextencoderdecoder
 
-  '@solana/kit@2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))':
+  '@solana/kit@2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))':
     dependencies:
       '@solana/accounts': 2.3.0(typescript@6.0.3)
       '@solana/addresses': 2.3.0(typescript@6.0.3)
@@ -16859,11 +16872,11 @@ snapshots:
       '@solana/rpc': 2.3.0(typescript@6.0.3)
       '@solana/rpc-parsed-types': 2.3.0(typescript@6.0.3)
       '@solana/rpc-spec-types': 2.3.0(typescript@6.0.3)
-      '@solana/rpc-subscriptions': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/rpc-subscriptions': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       '@solana/rpc-types': 2.3.0(typescript@6.0.3)
       '@solana/signers': 2.3.0(typescript@6.0.3)
       '@solana/sysvars': 2.3.0(typescript@6.0.3)
-      '@solana/transaction-confirmation': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/transaction-confirmation': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       '@solana/transaction-messages': 2.3.0(typescript@6.0.3)
       '@solana/transactions': 2.3.0(typescript@6.0.3)
       typescript: 6.0.3
@@ -17111,14 +17124,14 @@ snapshots:
     transitivePeerDependencies:
       - fastestsmallesttextencoderdecoder
 
-  '@solana/rpc-subscriptions-channel-websocket@2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))':
+  '@solana/rpc-subscriptions-channel-websocket@2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))':
     dependencies:
       '@solana/errors': 2.3.0(typescript@6.0.3)
       '@solana/functional': 2.3.0(typescript@6.0.3)
       '@solana/rpc-subscriptions-spec': 2.3.0(typescript@6.0.3)
       '@solana/subscribable': 2.3.0(typescript@6.0.3)
       typescript: 6.0.3
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
 
   '@solana/rpc-subscriptions-channel-websocket@5.5.1(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@5.0.10)':
     dependencies:
@@ -17126,7 +17139,7 @@ snapshots:
       '@solana/functional': 5.5.1(typescript@6.0.3)
       '@solana/rpc-subscriptions-spec': 5.5.1(typescript@6.0.3)
       '@solana/subscribable': 5.5.1(typescript@6.0.3)
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     optionalDependencies:
       typescript: 6.0.3
     transitivePeerDependencies:
@@ -17140,7 +17153,7 @@ snapshots:
       '@solana/functional': 5.5.1(typescript@6.0.3)
       '@solana/rpc-subscriptions-spec': 5.5.1(typescript@6.0.3)
       '@solana/subscribable': 5.5.1(typescript@6.0.3)
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     optionalDependencies:
       typescript: 6.0.3
     transitivePeerDependencies:
@@ -17164,7 +17177,7 @@ snapshots:
     optionalDependencies:
       typescript: 6.0.3
 
-  '@solana/rpc-subscriptions@2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))':
+  '@solana/rpc-subscriptions@2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))':
     dependencies:
       '@solana/errors': 2.3.0(typescript@6.0.3)
       '@solana/fast-stable-stringify': 2.3.0(typescript@6.0.3)
@@ -17172,7 +17185,7 @@ snapshots:
       '@solana/promises': 2.3.0(typescript@6.0.3)
       '@solana/rpc-spec-types': 2.3.0(typescript@6.0.3)
       '@solana/rpc-subscriptions-api': 2.3.0(typescript@6.0.3)
-      '@solana/rpc-subscriptions-channel-websocket': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/rpc-subscriptions-channel-websocket': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       '@solana/rpc-subscriptions-spec': 2.3.0(typescript@6.0.3)
       '@solana/rpc-transformers': 2.3.0(typescript@6.0.3)
       '@solana/rpc-types': 2.3.0(typescript@6.0.3)
@@ -17412,7 +17425,7 @@ snapshots:
     transitivePeerDependencies:
       - fastestsmallesttextencoderdecoder
 
-  '@solana/transaction-confirmation@2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))':
+  '@solana/transaction-confirmation@2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))':
     dependencies:
       '@solana/addresses': 2.3.0(typescript@6.0.3)
       '@solana/codecs-strings': 2.3.0(typescript@6.0.3)
@@ -17420,7 +17433,7 @@ snapshots:
       '@solana/keys': 2.3.0(typescript@6.0.3)
       '@solana/promises': 2.3.0(typescript@6.0.3)
       '@solana/rpc': 2.3.0(typescript@6.0.3)
-      '@solana/rpc-subscriptions': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/rpc-subscriptions': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       '@solana/rpc-types': 2.3.0(typescript@6.0.3)
       '@solana/transaction-messages': 2.3.0(typescript@6.0.3)
       '@solana/transactions': 2.3.0(typescript@6.0.3)
@@ -17811,7 +17824,7 @@ snapshots:
       '@solana-program/stake': 0.2.1(@solana/kit@2.3.0(typescript@6.0.3))
       '@solana-program/token': 0.5.1(@solana/kit@2.3.0(typescript@6.0.3))
       '@solana-program/token-2022': 0.4.2(@solana/kit@2.3.0(typescript@6.0.3))(@solana/sysvars@2.3.0(typescript@6.0.3))
-      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       '@solana/rpc-types': 2.3.0(typescript@6.0.3)
       '@stellar/stellar-sdk': 14.2.0(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
       '@trezor/blockchain-link-types': 1.5.1(tslib@2.8.1)
@@ -17892,7 +17905,7 @@ snapshots:
       '@solana-program/system': 0.7.0(@solana/kit@2.3.0(typescript@6.0.3))
       '@solana-program/token': 0.5.1(@solana/kit@2.3.0(typescript@6.0.3))
       '@solana-program/token-2022': 0.4.2(@solana/kit@2.3.0(typescript@6.0.3))(@solana/sysvars@2.3.0(typescript@6.0.3))
-      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       '@trezor/blockchain-link': 2.6.2(@solana/sysvars@2.3.0(typescript@6.0.3))(bufferutil@4.1.0)(debug@4.4.3(supports-color@8.1.1))(expo-constants@55.0.11)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@5.0.10))(supports-color@8.1.1)(tslib@2.8.1)(typescript@6.0.3)(utf-8-validate@5.0.10)
       '@trezor/blockchain-link-types': 1.5.1(tslib@2.8.1)
       '@trezor/blockchain-link-utils': 1.5.2(bufferutil@4.1.0)(debug@4.4.3(supports-color@8.1.1))(expo-constants@55.0.11)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@5.0.10))(supports-color@8.1.1)(tslib@2.8.1)(utf-8-validate@5.0.10)
@@ -18022,7 +18035,7 @@ snapshots:
     dependencies:
       '@trezor/utils': 9.5.0(tslib@2.8.1)
       tslib: 2.8.1
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -20097,7 +20110,7 @@ snapshots:
     dependencies:
       '@noble/hashes': 1.8.0
       eventemitter3: 5.0.1
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@5.0.10)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -21487,7 +21500,7 @@ snapshots:
       '@socket.io/component-emitter': 3.1.2
       debug: 4.4.3(supports-color@8.1.1)
       engine.io-parser: 5.2.3
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       xmlhttprequest-ssl: 2.1.2
     transitivePeerDependencies:
       - bufferutil
@@ -21945,7 +21958,7 @@ snapshots:
       expo-symbols: 55.0.7(expo-font@55.0.6)(expo@55.0.11)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@5.0.10))(react@19.2.4)
       fast-deep-equal: 3.1.3
       invariant: 2.2.4
-      nanoid: 3.3.16
+      nanoid: 3.3.18
       query-string: 7.1.3
       react: 19.2.4
       react-fast-compare: 3.2.2
@@ -21993,7 +22006,7 @@ snapshots:
       expo-symbols: 55.0.7(expo-font@55.0.6)(expo@55.0.11)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.2.4)
       fast-deep-equal: 3.1.3
       invariant: 2.2.4
-      nanoid: 3.3.16
+      nanoid: 3.3.18
       query-string: 7.1.3
       react: 19.2.4
       react-fast-compare: 3.2.2
@@ -22782,7 +22795,7 @@ snapshots:
       axios: 1.16.1(debug@4.4.3(supports-color@8.1.1))(supports-color@8.1.1)
       dotenv: 16.6.1
       ethers: 6.16.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     transitivePeerDependencies:
       - bufferutil
       - debug
@@ -22993,9 +23006,9 @@ snapshots:
     dependencies:
       ws: 7.5.13(bufferutil@4.1.0)(utf-8-validate@5.0.10)
 
-  isomorphic-ws@5.0.0(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)):
+  isomorphic-ws@5.0.0(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)):
     dependencies:
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
 
   isows@1.0.6(ws@8.18.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)):
     dependencies:
@@ -23773,7 +23786,7 @@ snapshots:
 
   nan@2.27.0: {}
 
-  nanoid@3.3.16: {}
+  nanoid@3.3.18: {}
 
   negotiator@0.6.3: {}
 
@@ -23952,9 +23965,9 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  openai@6.33.0(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.3.6):
+  openai@6.33.0(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))(zod@4.3.6):
     optionalDependencies:
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       zod: 4.3.6
 
   openapi-fetch@0.13.8:
@@ -24558,13 +24571,13 @@ snapshots:
 
   postcss@8.4.49:
     dependencies:
-      nanoid: 3.3.16
+      nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  postcss@8.5.25:
+  postcss@8.5.26:
     dependencies:
-      nanoid: 3.3.16
+      nanoid: 3.3.18
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
@@ -25342,7 +25355,7 @@ snapshots:
       buffer: 6.0.3
       eventemitter3: 5.0.4
       uuid: 14.0.0
-      ws: 8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      ws: 8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
     optionalDependencies:
       bufferutil: 4.1.0
       utf-8-validate: 6.0.6
@@ -25807,7 +25820,7 @@ snapshots:
 
   text-encoding-utf-8@1.0.2: {}
 
-  thirdweb@5.121.1(e877e3c9836ac34423196f05e675dfd3):
+  thirdweb@5.121.1(4297d07c018f1ed2e3c0cfd8a334ea79):
     dependencies:
       '@base-org/account': 2.5.0(@types/react@19.2.14)(bufferutil@4.1.0)(debug@4.4.3(supports-color@8.1.1))(immer@11.1.4)(react@19.2.4)(typescript@6.0.3)(use-sync-external-store@1.6.0(react@19.2.4))(utf-8-validate@6.0.6)(zod@3.25.75)
       '@coinbase/wallet-sdk': 4.3.0
@@ -25838,7 +25851,7 @@ snapshots:
       toml: 3.0.0
       uqr: 0.1.2
       viem: 2.39.0(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)(zod@3.25.75)
-      x402: 0.7.0(@solana/sysvars@2.3.0(typescript@6.0.3))(@tanstack/query-core@5.96.1)(@tanstack/react-query@5.81.5(react@19.2.4))(@types/react@19.2.14)(bufferutil@4.1.0)(debug@4.4.3(supports-color@8.1.1))(expo-web-browser@55.0.12(expo@55.0.11)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6)))(immer@11.1.4)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.2.4)(supports-color@8.1.1)(typescript@6.0.3)(utf-8-validate@6.0.6)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      x402: 0.7.0(@solana/sysvars@2.3.0(typescript@6.0.3))(@tanstack/query-core@5.96.1)(@tanstack/react-query@5.81.5(react@19.2.4))(@types/react@19.2.14)(bufferutil@4.1.0)(debug@4.4.3(supports-color@8.1.1))(expo-web-browser@55.0.12(expo@55.0.11)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6)))(immer@11.1.4)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.2.4)(supports-color@8.1.1)(typescript@6.0.3)(utf-8-validate@6.0.6)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       zod: 3.25.75
     optionalDependencies:
       ethers: 6.16.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)
@@ -26481,7 +26494,7 @@ snapshots:
     dependencies:
       lightningcss: 1.32.0
       picomatch: 4.0.4
-      postcss: 8.5.25
+      postcss: 8.5.26
       rolldown: 1.1.3
       tinyglobby: 0.2.17
     optionalDependencies:
@@ -26690,24 +26703,29 @@ snapshots:
       bufferutil: 4.1.0
       utf-8-validate: 6.0.6
 
-  ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@5.0.10):
-    optionalDependencies:
-      bufferutil: 4.1.0
-      utf-8-validate: 5.0.10
-
   ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     optionalDependencies:
       bufferutil: 4.1.0
       utf-8-validate: 6.0.6
 
-  x402@0.7.0(@solana/sysvars@2.3.0(typescript@6.0.3))(@tanstack/query-core@5.96.1)(@tanstack/react-query@5.81.5(react@19.2.4))(@types/react@19.2.14)(bufferutil@4.1.0)(debug@4.4.3(supports-color@8.1.1))(expo-web-browser@55.0.12(expo@55.0.11)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6)))(immer@11.1.4)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.2.4)(supports-color@8.1.1)(typescript@6.0.3)(utf-8-validate@6.0.6)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)):
+  ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@5.0.10):
+    optionalDependencies:
+      bufferutil: 4.1.0
+      utf-8-validate: 5.0.10
+
+  ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6):
+    optionalDependencies:
+      bufferutil: 4.1.0
+      utf-8-validate: 6.0.6
+
+  x402@0.7.0(@solana/sysvars@2.3.0(typescript@6.0.3))(@tanstack/query-core@5.96.1)(@tanstack/react-query@5.81.5(react@19.2.4))(@types/react@19.2.14)(bufferutil@4.1.0)(debug@4.4.3(supports-color@8.1.1))(expo-web-browser@55.0.12(expo@55.0.11)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6)))(immer@11.1.4)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.2.4)(supports-color@8.1.1)(typescript@6.0.3)(utf-8-validate@6.0.6)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)):
     dependencies:
       '@scure/base': 1.2.6
       '@solana-program/compute-budget': 0.8.0(@solana/kit@2.3.0(typescript@6.0.3))
       '@solana-program/token': 0.5.1(@solana/kit@2.3.0(typescript@6.0.3))
       '@solana-program/token-2022': 0.4.2(@solana/kit@2.3.0(typescript@6.0.3))(@solana/sysvars@2.3.0(typescript@6.0.3))
-      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
-      '@solana/transaction-confirmation': 2.3.0(typescript@6.0.3)(ws@8.21.0(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/kit': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
+      '@solana/transaction-confirmation': 2.3.0(typescript@6.0.3)(ws@8.21.1(bufferutil@4.1.0)(utf-8-validate@6.0.6))
       viem: 2.47.6(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)(zod@3.25.76)
       wagmi: 2.19.5(@tanstack/query-core@5.96.1)(@tanstack/react-query@5.81.5(react@19.2.4))(@types/react@19.2.14)(bufferutil@4.1.0)(debug@4.4.3(supports-color@8.1.1))(expo-web-browser@55.0.12(expo@55.0.11)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6)))(immer@11.1.4)(react-native@0.84.1(@babel/core@7.29.7(supports-color@8.1.1))(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.2.4)(supports-color@8.1.1)(typescript@6.0.3)(utf-8-validate@6.0.6)(viem@2.47.6(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)(zod@3.25.76))(zod@3.25.76)
       zod: 3.25.76

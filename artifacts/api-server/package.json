@@ -42,7 +42,7 @@
     "qrcode": "^1.5.4",
     "thirdweb": "^5.121.1",
     "viem": "^2.47.6",
-    "ws": "^8.21.0"
+    "ws": "^8.21.1"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
