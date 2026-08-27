@@ -3,6 +3,12 @@ main = "./worker.js"
 compatibility_date = "2026-07-30"
 workers_dev = true
 
+routes = [
+  { pattern = "orahdex.com", custom_domain = true },
+  { pattern = "orahdex.org", custom_domain = true },
+  { pattern = "tradeora.app", custom_domain = true }
+]
+
 [[kv_namespaces]]
 binding = "ORAHDEX_KV"
 id = "8dd2e276f6944b1aa06548efb4294d06"
