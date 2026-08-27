@@ -18,12 +18,10 @@ export default {
       return new Response(JSON.stringify({ status: 'ok', version: '4.1', timestamp: Date.now(), hasServiceBinding: !!env.ORAHDEX_API }), { headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
     }
 
-    // Serve static assets for non-API routes
     if (env.ASSETS && !PROXY_PREFIXES.some(p => url.pathname.startsWith(p))) {
       return env.ASSETS.fetch(request);
     }
 
-    // Use Service Binding to call the API Worker directly
     if (env.ORAHDEX_API) {
       try {
         const newReq = new Request(new URL(url.pathname + url.search, request.url), request);
@@ -36,7 +34,6 @@ export default {
       }
     }
 
-    // Fallback: direct fetch (for when service binding is not available)
     const backend = 'https://orahdex-api.orahdex.workers.dev';
     const targetUrl = backend + url.pathname + url.search;
     try {
