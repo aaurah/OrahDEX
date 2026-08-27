@@ -6,8 +6,18 @@ packages:
 
 allowBuilds:
   '@reown/appkit': true
+  '@stellar/stellar-sdk': true
+  bigint-buffer: true
+  blake-hash: true
+  bufferutil: true
   esbuild: true
+  hyperliquid: true
   keccak: true
+  protobufjs: true
+  secp256k1: true
+  tiny-secp256k1: true
+  usb: true
+  utf-8-validate: true
 
 autoInstallPeers: false
 
