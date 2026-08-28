@@ -17,10 +17,5 @@
     "@vercel/speed-insights": "^2.0.0",
     "stripe": "^22.1.0",
     "stripe-replit-sync": "^1.0.0"
-  },
-"pnpm": {
-  "overrides": {
-    "usb": "0.0.0"
-  }
 }
 }
