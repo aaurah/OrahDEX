@@ -13,11 +13,11 @@ allowBuilds:
   esbuild: true
   hyperliquid: set this to true or false
   keccak: true
-  protobufjs: set this to true or false
-  secp256k1: set this to true or false
+  protobufjs: true
+  secp256k1: true
   tiny-secp256k1: set this to true or false
-  usb: set this to true or false
-  utf-8-validate: set this to true or false
+  usb: true
+  utf-8-validate: true
 
 autoInstallPeers: false
 
@@ -49,12 +49,6 @@ minimumReleaseAge: 0
 minimumReleaseAgeExclude:
   - '@replit/*'
   - stripe-replit-sync
-
-onlyBuiltDependencies:
-  - '@swc/core'
-  - esbuild
-  - msw
-  - unrs-resolver
 
 overrides:
   serialize-javascript: '>=7.0.3'
