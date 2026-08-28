@@ -1,4 +1,7 @@
 {
+  "name": "orahdex-api",
+  "main": "dist/app.mjs",
+  "compatibility_date": "2026-08-26",
   "d1_databases": [
     {
       "binding": "ORAHDEX_DB",
