@@ -1,5 +1,0 @@
-{
-  "version": 1,
-  "include": ["/api/*", "/auth/*", "/ws/*", "/socket/*", "/health", "/v1/*", "/graphql/*"],
-  "exclude": []
-}
