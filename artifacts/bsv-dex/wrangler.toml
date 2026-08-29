@@ -16,7 +16,7 @@ pattern = "aaurah.org"
 custom_domain = true
 
 [vars]
-BACKEND_URL = "https://orahdex-api.orahdex.workers.dev"
+BACKEND_URL = "https://748c5e24-ef08-447f-a71b-5e9894ce4896-00-3bzpx34oxbhbj.janeway.replit.dev"
 
 [assets]
 binding = "ASSETS"
