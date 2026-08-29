@@ -5,7 +5,7 @@
   "scripts": {
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./..."
   },
   "private": true,
   "devDependencies": {
@@ -17,11 +17,11 @@
     "stripe": "^22.1.0",
     "stripe-replit-sync": "^1.0.0"
   },
-  "packageManager": "pnpm@10.11.1"
-},
- "pnpm": {
-   "overrides": {
+  "packageManager": "pnpm@10.11.1",
+  "pnpm": {
+    "overrides": {
       "@reown/appkit-controllers": "1.8.23",
       "@ledgerhq/context-module": "1.17.0"
     }
   }
+}
