@@ -16,5 +16,6 @@
     "@vercel/speed-insights": "^2.0.0",
     "stripe": "^22.1.0",
     "stripe-replit-sync": "^1.0.0"
-  }
+  },
+  "packageManager": "pnpm@10.11.1"
 }
