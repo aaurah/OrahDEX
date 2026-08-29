@@ -1,4 +1,4 @@
-const PROXY_PREFIXES = ['/api', '/auth', '/socket', '/ws', '/health', '/v1', '/graphql', '/__admin'];
+const PROXY_PREFIXES = ['/api', '/auth', '/socket', '/ws', '/health', '/v1', '/graphql'];
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -22,27 +22,27 @@ export default {
       });
     }
 
-    // Serve static assets for non-API routes
-    if (env.ASSETS && !PROXY_PREFIXES.some(p => url.pathname.startsWith(p))) {
-      return env.ASSETS.fetch(request);
+    // Proxy API requests to backend
+    if (PROXY_PREFIXES.some(p => url.pathname.startsWith(p))) {
+      const targetUrl = backend + url.pathname + url.search;
+      try {
+        const response = await fetch(targetUrl, {
+          method: request.method,
+          headers: request.headers,
+          body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+        });
+        const newHeaders = new Headers(response.headers);
+        Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
+        return new Response(response.body, { status: response.status, headers: newHeaders });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: 'API unavailable', backend }), {
+          status: 502, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+        });
+      }
     }
 
-    // Proxy API requests to backend
-    const targetUrl = backend + url.pathname + url.search;
-    try {
-      const response = await fetch(targetUrl, {
-        method: request.method,
-        headers: request.headers,
-        body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
-      });
-      const newHeaders = new Headers(response.headers);
-      Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
-      return new Response(response.body, { status: response.status, headers: newHeaders });
-    } catch (err) {
-      return new Response(JSON.stringify({ error: 'API unavailable', backend }), {
-        status: 502, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
-      });
-    }
+    // Serve static assets for everything else
+    return env.ASSETS.fetch(request);
   },
   async scheduled(event, env) {
     const backend = (env.BACKEND_URL || 'https://orahdex-api.orahdex.workers.dev').replace(/\/+$/, '');
