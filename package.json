@@ -20,9 +20,7 @@
   "packageManager": "pnpm@10.11.1",
   "pnpm": {
     "overrides": {
-      "@reown/appkit-controllers": "1.8.23",
-      "@ledgerhq/context-module": "1.17.1",
-      "@ledgerhq/device-signer-kit-ethereum": "1.17.1"
+      "@reown/appkit-controllers": "1.8.23"
     }
   }
 }
