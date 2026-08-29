@@ -19,6 +19,7 @@ custom_domain = true
 BACKEND_URL = "https://orahdex-api.orahdex.workers.dev"
 
 [assets]
+binding = "ASSETS"
 directory = "./dist/public"
 not_found_handling = "single-page-application"
 
