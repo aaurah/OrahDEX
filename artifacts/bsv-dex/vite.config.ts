@@ -10,15 +10,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@noble/curves/secp256k1': resolve(__dirname, 'node_modules/@noble/curves/secp256k1.js'),
+      '@ledgerhq/context-module': resolve(__dirname, 'stubs/ledgerhq-context-module.js'),
+      '@ledgerhq/device-signer-kit-ethereum': resolve(__dirname, 'stubs/ledgerhq-device-signer.js'),
     },
   },
   build: {
     outDir: 'dist/public',
-    rollupOptions: {
-      external: [
-        '@ledgerhq/context-module',
-        '@ledgerhq/device-signer-kit-ethereum',
-      ],
-    },
   },
 })
