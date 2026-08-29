@@ -1,36 +1,51 @@
+const PROXY_PREFIXES = ['/api', '/auth', '/socket', '/ws', '/health', '/v1', '/graphql', '/__admin'];
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+  'Access-Control-Allow-Headers': '*',
+  'Access-Control-Max-Age': '86400',
+};
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     const backend = (env.BACKEND_URL || 'https://orahdex-api.orahdex.workers.dev').replace(/\/+$/, '');
 
-    // Proxy API requests to backend
-    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/api')) {
-      const proxyUrl = backend + url.pathname + url.search;
-      const proxyReq = new Request(proxyUrl, {
-        method: request.method,
-        headers: request.headers,
-        body: request.body,
-      });
-      try {
-        const response = await fetch(proxyReq);
-        const newResponse = new Response(response.body, response);
-        newResponse.headers.set('Access-Control-Allow-Origin', '*');
-        return newResponse;
-      } catch (e) {
-        return new Response(JSON.stringify({ error: 'API unavailable' }), {
-          status: 502,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-        });
-      }
+    if (request.method === 'OPTIONS') {
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
     }
 
-    // Serve static assets
-    return env.ASSETS.fetch(request);
+    if (url.pathname === '/worker-health') {
+      return new Response(JSON.stringify({ status: 'ok', assets: !!env.ASSETS, backend }), {
+        headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+      });
+    }
+
+    // Serve static assets for non-API routes
+    if (env.ASSETS && !PROXY_PREFIXES.some(p => url.pathname.startsWith(p))) {
+      return env.ASSETS.fetch(request);
+    }
+
+    // Proxy API requests to backend
+    const targetUrl = backend + url.pathname + url.search;
+    try {
+      const response = await fetch(targetUrl, {
+        method: request.method,
+        headers: request.headers,
+        body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+      });
+      const newHeaders = new Headers(response.headers);
+      Object.entries(CORS_HEADERS).forEach(([k, v]) => newHeaders.set(k, v));
+      return new Response(response.body, { status: response.status, headers: newHeaders });
+    } catch (err) {
+      return new Response(JSON.stringify({ error: 'API unavailable', backend }), {
+        status: 502, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS }
+      });
+    }
   },
   async scheduled(event, env) {
     const backend = (env.BACKEND_URL || 'https://orahdex-api.orahdex.workers.dev').replace(/\/+$/, '');
-    try {
-      await fetch(backend + '/api/health', { method: 'GET' });
-    } catch (e) {}
+    try { await fetch(backend + '/api/health'); } catch (e) {}
   },
 };
