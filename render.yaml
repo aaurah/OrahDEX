@@ -1,20 +1,12 @@
-# Exported from Render on 2026-08-13T07:18:42Z
+# Exported from Render on 2026-08-31T21:25:53Z
 version: "1"
-services:
-- type: web
-  name: OrahDEX
-  runtime: node
-  repo: https://github.com/aaurah/OrahDEX
+databases:
+- name: OrahDEX
+  databaseName: orahdex
+  user: orahdex_user
   plan: free
-  envVars:
-  - key: NODE_ENV
-    sync: false
-  - key: PORT
-    sync: false
-  - key: DATABASE_URL
-    sync: false
   region: oregon
-  buildCommand: pnpm install && pnpm run build
-  startCommand: pnpm run start
-  autoDeployTrigger: commit
-  rootDir: artifacts/api-server
+  ipAllowList:
+  - source: 0.0.0.0/0
+    description: everywhere
+  postgresMajorVersion: "18"
