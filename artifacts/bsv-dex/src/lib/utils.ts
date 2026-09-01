@@ -40,6 +40,9 @@ export function shortenAddress(address: string): string {
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
+  "orah-wallet":    "Orah Wallet",
+  "passkey":        "Passkey Wallet",
+  "handcash":       "HandCash",
   "relayx":         "RelayX",
   "panda":          "Panda Wallet",
   "sensilet":       "Sensilet",
@@ -61,6 +64,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   "keystone":       "Keystone",
   "gridplus":       "GridPlus Lattice1",
   "walletconnect":  "WalletConnect",
+  "reown":          "WalletConnect",
   "tronlink":       "TronLink",
   "trust-tron":     "Trust Wallet",
   "okx-tron":       "OKX Wallet",

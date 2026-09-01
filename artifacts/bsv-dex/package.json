@@ -118,11 +118,7 @@
     "@workspace/integrations-openai-ai-react": "workspace:*",
     "bitcoinjs-lib": "6.1.7",
     "buffer": "^6.0.3",
-<<<<<<< HEAD
     "dompurify": "^3.4.3",
-=======
-    "dompurify": "^3.4.13",
->>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
     "gridplus-sdk": "^4.0.0",
     "jsqr": "^1.4.0",
     "lightweight-charts": "^5.1.0",
