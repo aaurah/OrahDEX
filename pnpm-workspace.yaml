@@ -6,8 +6,18 @@ packages:
 
 allowBuilds:
   '@reown/appkit': true
+  '@stellar/stellar-sdk': set this to true or false
+  bigint-buffer: set this to true or false
+  blake-hash: set this to true or false
+  bufferutil: set this to true or false
   esbuild: true
+  hyperliquid: set this to true or false
   keccak: true
+  protobufjs: true
+  secp256k1: true
+  tiny-secp256k1: set this to true or false
+  usb: true
+  utf-8-validate: true
 
 autoInstallPeers: false
 
@@ -39,12 +49,6 @@ minimumReleaseAge: 0
 minimumReleaseAgeExclude:
   - '@replit/*'
   - stripe-replit-sync
-
-onlyBuiltDependencies:
-  - '@swc/core'
-  - esbuild
-  - msw
-  - unrs-resolver
 
 overrides:
   serialize-javascript: '>=7.0.3'

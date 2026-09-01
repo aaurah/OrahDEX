@@ -223,6 +223,7 @@ function computeHeikinAshi(candles: Candle[]): Candle[] {
   return result;
 }
 
+<<<<<<< HEAD
 /* ── Zoom-adaptive interval helpers ────────────────────────────────────── */
 const INTERVAL_SECONDS: [number, string][] = [
   [60,      '1m'],
@@ -250,6 +251,8 @@ function bestIntervalForSpan(spanSec: number): string {
   return '1M';
 }
 
+=======
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
 /* ── Adaptive precision ─────────────────────────────────────────────────── */
 function priceFormat(price: number) {
   const p = price < 0.001 ? 8 : price < 0.1 ? 6 : price < 1 ? 4 : price < 100 ? 2 : 1;
@@ -297,16 +300,23 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const subLine2Ref = useRef<any>(null);
   const subHistRef  = useRef<any>(null);
 
+<<<<<<< HEAD
   /* zoom-adaptive refs */
   const zoomRangeRef        = useRef<{ from: number; to: number } | null>(null);
   const autoIntervalRef     = useRef(false);
   const zoomTimerRef2       = useRef<ReturnType<typeof setTimeout> | null>(null);
   const effectiveIntervalRef = useRef(interval);
 
+=======
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
   const { theme } = useThemeStore();
   const { showTradingViewWatermark } = useSettingsStore();
   const [candles, setCandles]     = useState<Candle[]>([]);
   const [loading, setLoading]     = useState(true);
+<<<<<<< HEAD
+=======
+  const [loadError, setLoadError] = useState(false);
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
   const [chartType, setChartType] = useState<ChartType>(() => {
     const saved = localStorage.getItem('orahdex-chart-type') as ChartType | null;
     return saved && ['candle','heikinashi','bar','line','area','baseline'].includes(saved) ? saved : 'candle';
@@ -322,19 +332,27 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   useEffect(() => {
     if (subIndicatorProp) setSubInd(subIndicatorProp);
   }, [subIndicatorProp]);
+<<<<<<< HEAD
   const [autoInterval, setAutoInterval] = useState<string | null>(null);
+=======
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
   const [showVol, setShowVol]     = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const [chartReady, setChartReady] = useState(false);
   const [subReady, setSubReady]   = useState(false);
   const [hoverInfo, setHoverInfo] = useState<{ o:number;h:number;l:number;c:number;v:number;t:number } | null>(null);
   const [ticker, setTicker]       = useState<{ last: number; change: number; high: number; low: number; vol: number } | null>(null);
+<<<<<<< HEAD
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   /* Keep effectiveIntervalRef current; reset autoInterval on parent-driven interval change */
   const effectiveInterval = autoInterval ?? interval;
   useEffect(() => { effectiveIntervalRef.current = effectiveInterval; }, [effectiveInterval]);
   useEffect(() => { setAutoInterval(null); }, [interval]);
+=======
+  const candleRequestRef = useRef(0);
+  const tickerRequestRef = useRef(0);
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
 
   /* parsed symbol */
   const parts = useMemo(() => {
@@ -347,7 +365,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const pSuffix = isUsd ? '' : ` ${parts.quote}`;
 
   /* ── Fetch candles ──────────────────────────────────────────────────── */
-  const fetchCandles = useCallback(async () => {
+  const fetchCandles = useCallback(async (requestId: number) => {
     try {
       let url: string;
       if (HISTORY_INTERVALS.has(interval)) {
@@ -362,29 +380,56 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
           : ['1d','3d','1w','1M'].includes(interval) ? 300 : 500;
         url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/candles?interval=${apiInterval}&limit=${limit}`;
       }
+<<<<<<< HEAD
       const res = await fetch(url);
       if (!res.ok) return;
+=======
+      const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) {
+        console.warn("[Chart] Candle fetch failed", { symbol, interval, status: res.status });
+        if (requestId === candleRequestRef.current) setLoadError(true);
+        return;
+      }
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
       const raw = await res.json();
       const arr: Candle[] = Array.isArray(raw) ? raw : raw.candles ?? [];
       const MIN_TS = 1000000000; // Sep 2001 — anything older is a bad timestamp
       const sorted = arr.filter(c => c?.time && Number(c.time) > MIN_TS && c.open && c.high && c.low && c.close)
         .sort((a, b) => Number(a.time) - Number(b.time));
+<<<<<<< HEAD
       if (sorted.length) setCandles(sorted);
     } catch (_) {}
     finally { setLoading(false); }
+=======
+      if (requestId !== candleRequestRef.current) return;
+      if (sorted.length) {
+        setCandles(sorted);
+        setLoadError(false);
+      } else {
+        setLoadError(true);
+      }
+    } catch (err) {
+      console.warn("[Chart] Candle fetch error", { err, symbol, interval });
+      if (requestId === candleRequestRef.current) setLoadError(true);
+    }
+    finally {
+      if (requestId === candleRequestRef.current) setLoading(false);
+    }
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
   }, [symbol, interval]);
 
-  const fetchTicker = useCallback(async () => {
+  const fetchTicker = useCallback(async (requestId: number) => {
     try {
       const r = await fetch(`${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/ticker`);
       if (!r.ok) return;
       const t = await r.json();
-      if (t.lastPrice) {
+      if (requestId === tickerRequestRef.current && t.lastPrice) {
         const chg = typeof t.priceChangePercent === 'number' && isFinite(t.priceChangePercent)
           ? t.priceChangePercent
           : t.openPrice > 0 ? ((t.lastPrice - t.openPrice) / t.openPrice) * 100 : 0;
         setTicker({ last: t.lastPrice, change: chg, high: t.highPrice ?? 0, low: t.lowPrice ?? 0, vol: t.volume ?? 0 });
       }
+<<<<<<< HEAD
     } catch (_) {}
   }, [symbol]);
 
@@ -421,12 +466,29 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => { fetchCandles(); fetchTicker(); }, 30_000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
+=======
+    } catch (err) {
+      console.warn("[Chart] Ticker fetch error", { err, symbol });
+    }
+  }, [symbol]);
+
+  useEffect(() => {
+    const candleRequestId = ++candleRequestRef.current;
+    const tickerRequestId = ++tickerRequestRef.current;
+    setLoading(true);
+    setLoadError(false);
+    // Keep existing candles visible while a pair/timeframe change loads.
+    setHoverInfo(null);
+    fetchCandles(candleRequestId);
+    fetchTicker(tickerRequestId);
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
   }, [fetchCandles, fetchTicker]);
 
   /* When the API fetch completes with no data, fall back to the provided candles */
   useEffect(() => {
     if (!loading && candles.length === 0 && fallbackData && fallbackData.length > 0) {
       setCandles(fallbackData);
+      setLoadError(false);
     }
   }, [loading, candles.length, fallbackData]);
 
@@ -656,6 +718,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     } else {
       series.setData(displayCandles.map(c => ({ time: Number(c.time) as any, value: c.close })));
     }
+<<<<<<< HEAD
     /* After a zoom-triggered fetch restore the user's visible range instead of fitContent */
     if (autoIntervalRef.current && zoomRangeRef.current) {
       const { from, to } = zoomRangeRef.current;
@@ -669,6 +732,13 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
         subChartRef.current?.timeScale().fitContent();
       });
     }
+=======
+    /* rAF ensures the chart has processed setData (computed its full extent) before we fit */
+    requestAnimationFrame(() => {
+      chartRef.current?.timeScale().fitContent();
+      subChartRef.current?.timeScale().fitContent();
+    });
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
   }, [displayCandles, chartType]);
 
   /* ── Push candle data whenever candles change ───────────────────────── */
@@ -795,6 +865,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     if (range) chart.timeScale().setVisibleRange(range as any);
   }, [subReady, subInd, candles, indicatorData]);
 
+<<<<<<< HEAD
   /* ── Subscribe to visible time range changes → auto-switch interval ─── */
   useEffect(() => {
     const chart = chartRef.current;
@@ -824,6 +895,8 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     };
   }, [chartReady, fetchForZoom]);
 
+=======
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
   /* ── Zoom helpers ───────────────────────────────────────────────────── */
   const fitContent = () => { chartRef.current?.timeScale().fitContent(); subChartRef.current?.timeScale().fitContent(); };
   const zoomIn  = () => { const ts = chartRef.current?.timeScale(); if (ts) { const r = ts.getVisibleRange(); if (r) { const mid = ((r.from as number)+(r.to as number))/2, span=((r.to as number)-(r.from as number))*0.35; ts.setVisibleRange({ from: (mid-span) as any, to: (mid+span) as any }); } } };
@@ -895,6 +968,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
             <div className="flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto scrollbar-hide">
               {INTERVALS.map(iv => (
                 <button key={iv.id}
+<<<<<<< HEAD
                   onClick={() => { setAutoInterval(null); onIntervalChange?.(iv.id); }}
                   className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
                     (autoInterval ? autoInterval === iv.id : interval === iv.id)
@@ -917,6 +991,17 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
                 Auto
               </button>
             )}
+=======
+                  onClick={() => onIntervalChange?.(iv.id)}
+                  className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
+                    interval === iv.id
+                      ? 'bg-green-500/20 text-green-400 border border-green-500/40'
+                      : isLight ? 'text-gray-500 hover:bg-gray-100 hover:text-gray-800' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'
+                  }`}
+                >{iv.label}</button>
+              ))}
+            </div>
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
             <div className="w-px h-5 mx-1 shrink-0" style={{ background: col.grid }} />
           </>
         )}
@@ -1018,13 +1103,27 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
 
       {/* ── MAIN CHART ── */}
       <div className="flex-1 min-h-0 relative" style={{ minHeight: subInd !== 'none' ? 0 : undefined }}>
+<<<<<<< HEAD
         {loading && (
+=======
+        {loading && candles.length === 0 && (
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
           <div className="absolute inset-0 flex flex-col items-center justify-center z-10 gap-3" style={{ backgroundColor: col.bg }}>
             <div className="flex gap-1">{[0,1,2].map(i => (<span key={i} className="w-2 h-2 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: `${i*150}ms` }} />))}</div>
             <p className="text-xs" style={{ color: col.text }}>Loading {parts.base}/{parts.quote}…</p>
           </div>
         )}
         <div ref={mainRef} className="w-full h-full" />
+<<<<<<< HEAD
+=======
+        {!loading && candles.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center z-10" style={{ backgroundColor: col.bg }}>
+            <p className="text-xs" style={{ color: col.text }}>
+              {loadError ? `Chart data unavailable for ${parts.base}/${parts.quote}` : 'No chart data available'}
+            </p>
+          </div>
+        )}
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
         {/* Watermark — top-left corner */}
         {!loading && (
           <div className="absolute top-3 left-3 pointer-events-none z-[5]">
@@ -1083,8 +1182,12 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
       {/* ── BOTTOM STATUS BAR ── */}
       <div className="px-3 py-1 border-t shrink-0 flex items-center justify-between" style={{ borderColor: col.grid }}>
         <span className="text-[10px]" style={{ color: col.text, opacity: 0.5 }}>
+<<<<<<< HEAD
           {parts.base}/{parts.quote} · {INTERVALS.find(i => i.id === effectiveInterval)?.label ?? effectiveInterval}
           {autoInterval ? <span style={{ color: '#60a5fa' }}> · Auto</span> : null}
+=======
+          {parts.base}/{parts.quote} · {INTERVALS.find(i => i.id === interval)?.label ?? interval}
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
           {' '}· OrahDEX Sovereign Engine
         </span>
         <div className="flex items-center gap-2">

@@ -1,1 +1,32 @@
+<<<<<<< HEAD
 {"name":"orahdex-api"}
+=======
+{
+  "name": "workspace",
+  "version": "4.9.0",
+  "license": "MIT",
+  "scripts": {
+    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "typecheck:libs": "tsc --build",
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+  },
+  "private": true,
+  "devDependencies": {
+    "prettier": "^3.9.6",
+    "typescript": "~6.0.3"
+  },
+  "dependencies": {
+    "@vercel/speed-insights": "^2.0.0",
+    "stripe": "^22.1.0",
+    "stripe-replit-sync": "^1.0.0"
+  },
+  "packageManager": "pnpm@10.26.1",
+  "pnpm": {
+    "overrides": {
+      "@reown/appkit-controllers": "1.8.23",
+      "elliptic": "6.6.1",
+      "protobufjs": "7.5.5"
+    }
+  }
+}
+>>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8

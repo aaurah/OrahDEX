@@ -1,0 +1,12 @@
+name = "orahdex-api"
+main = "dist/app.mjs"
+compatibility_date = "2025-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "ORAHDEX_DB"
+database_name = "orahdex"
+database_id = "d751fe1d-70f7-4761-8c3a-0a73c93c010a"
+
+[observability]
+enabled = false
