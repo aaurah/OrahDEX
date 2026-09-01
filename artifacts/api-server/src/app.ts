@@ -381,11 +381,7 @@ const exchangeLimiter = rateLimit({
     if (typeof wallet === "string" && wallet.length > 10) {
       return `wallet:${wallet.toLowerCase()}`;
     }
-<<<<<<< HEAD
     return ipKeyGenerator(req as any);
-=======
-    return ipKeyGenerator(req.ip ?? "");
->>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
   },
   handler: (_req, res) => res.status(429).json({ error: "Exchange rate limit reached — wait a moment before retrying." }),
 });
@@ -581,13 +577,6 @@ startApiKeyCounterFlusher();
       indexHtml = indexHtml.replace(
         "</head>",
         `<script>window.__REOWN_PROJECT_ID__=${JSON.stringify(reownId)};</script></head>`,
-      );
-    }
-    // Inject Vercel Speed Insights script
-    if (indexHtml) {
-      indexHtml = indexHtml.replace(
-        "</head>",
-        `<script defer src="/_vercel/speed-insights/script.js"></script></head>`,
       );
     }
     app.get(/^(?!\/api|\/v1).*$/, (_req: Request, res: Response) => {

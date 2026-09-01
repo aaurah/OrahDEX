@@ -309,7 +309,6 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
 
   // ── Direction ──────────────────────────────────────────────────────────────
   const [direction, setDirection] = useState<Direction>("bsv-to-evm");
-  const isBsvToEvm = direction === "bsv-to-evm";
 
   // ── BSV→EVM form ───────────────────────────────────────────────────────────
   const [amtBsv,   setAmtBsv]  = useState("");
@@ -669,6 +668,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
   ]);
 
   // ── Render ────────────────────────────────────────────────────────────────
+  const isBsvToEvm = direction === "bsv-to-evm";
 
   const bsvComplete  = displayIntent?.status === "CLAIMED";
   const bsvRefunded  = displayIntent?.status === "REFUNDED" || displayIntent?.status === "CANCELLED";

@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import { Router, type IRouter } from "express";
 import { db, withDbRetry } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
@@ -398,41 +397,10 @@ function resolveCrossPrice(symbol: string, dbPrice: number): number {
   if (!base || !quote) return 0;
   const baseUsd  = FALLBACK_PRICES[base]  ?? 0;
   const quoteUsd = usdStable(quote) ? 1 : (FALLBACK_PRICES[quote] ?? 0);
-=======
-import { Router } from "express";
-import { db } from "@workspace/db";
-import { marketsTable } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
-import { logger } from "../lib/logger.js";
-import { fetchRealCandles } from "../lib/candleFetcher.js";
-import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
-
-const router = Router();
-
-const STABLE_QUOTES = new Set(["USDT", "USDC", "USD", "BUSD", "TUSD", "USDD", "DAI", "FDUSD"]);
-
-/** Normalize a URL path symbol (e.g. "BTC-USDT", "btc_usdt") to "BTC/USDT". */
-function normSymbol(raw: string): string {
-  return raw.trim().toUpperCase().replace(/[-_]/g, "/");
-}
-
-/**
- * Resolve a USD-denominated price for a pair.
- * Prefers the live DB lastPrice; falls back to a cross-rate derived from
- * FALLBACK_PRICES when the DB row is missing, stale, or zero.
- */
-function resolveCrossPrice(symbol: string, lastPrice: number): number {
-  if (Number.isFinite(lastPrice) && lastPrice > 0) return lastPrice;
-  const [base, quote] = symbol.split("/");
-  if (!base || !quote) return 0;
-  const baseUsd  = FALLBACK_PRICES[base] ?? 0;
-  const quoteUsd = STABLE_QUOTES.has(quote) ? 1 : (FALLBACK_PRICES[quote] ?? 0);
->>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
   if (baseUsd > 0 && quoteUsd > 0) return baseUsd / quoteUsd;
   return 0;
 }
 
-<<<<<<< HEAD
 router.get("/markets/:symbol/ticker", async (req, res) => {
   try {
     const symbol = normSymbol(req.params.symbol);
@@ -549,8 +517,6 @@ router.get("/markets/:symbol/history", async (req, res) => {
   }
 });
 
-=======
->>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
 router.get("/markets/:symbol/candles", async (req, res) => {
   try {
     const symbol   = normSymbol(req.params.symbol);
@@ -590,7 +556,6 @@ router.get("/markets/:symbol/candles", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-<<<<<<< HEAD
 
 router.get("/markets/:symbol/orderbook", async (req, res) => {
   try {
@@ -864,6 +829,4 @@ router.get("/prices-full", async (_req, res) => {
   res.json(out);
 });
 
-=======
->>>>>>> d29a2ad01669a0b79bd7364b04f6908a1ddd9eb8
 export default router;

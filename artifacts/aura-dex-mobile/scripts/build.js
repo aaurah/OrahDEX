@@ -67,11 +67,10 @@ function getDeploymentDomain() {
     return stripProtocol(process.env.EXPO_PUBLIC_DOMAIN);
   }
 
-  console.warn(
-    "WARNING: No deployment domain found. Set REPLIT_INTERNAL_APP_DOMAIN, REPLIT_DEV_DOMAIN, or EXPO_PUBLIC_DOMAIN. " +
-    "Falling back to the production domain 'orahdex.org'.",
+  console.error(
+    "ERROR: No deployment domain found. Set REPLIT_INTERNAL_APP_DOMAIN, REPLIT_DEV_DOMAIN, or EXPO_PUBLIC_DOMAIN",
   );
-  return "orahdex.org";
+  process.exit(1);
 }
 
 function prepareDirectories(timestamp) {

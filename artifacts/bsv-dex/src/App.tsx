@@ -626,7 +626,6 @@ function AppContent() {
       <WalletChooserDialog />
       {/* OrahWallet passkey dialog — opens after social/email login */}
       <OrahWalletDialogGlobal />
-      {/* Vercel Speed Insights — tracks Web Vitals and performance metrics */}
     </>
   );
 }
