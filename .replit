@@ -33,12 +33,10 @@ author = "agent"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "pnpm --filter @workspace/api-server run dev"
-waitForPort = 8080
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "PORT=20180 pnpm --filter @workspace/bsv-dex run dev"
-waitForPort = 20180
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
@@ -51,6 +49,7 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
+packages = ["systemd"]
 
 [userenv]
 

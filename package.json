@@ -17,10 +17,12 @@
     "stripe": "^22.1.0",
     "stripe-replit-sync": "^1.0.0"
   },
-  "packageManager": "pnpm@10.11.1",
+  "packageManager": "pnpm@10.26.1",
   "pnpm": {
     "overrides": {
-      "@reown/appkit-controllers": "1.8.23"
+      "@reown/appkit-controllers": "1.8.23",
+      "elliptic": "6.6.1",
+      "protobufjs": "7.5.5"
     }
   }
 }
