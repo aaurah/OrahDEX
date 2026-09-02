@@ -1462,7 +1462,7 @@ export async function prefetchCgMarkets(retryDelayMs = 90_000): Promise<void> {
       return;
     }
     if (!r.ok) { logger.warn({ status: r.status }, "CG markets prefetch failed"); return; }
-    const coins = await r.json() as any[];
+    const coins: any[] = await r.json();
     let seeded = 0;
     for (const c of coins) {
       const sym = (c.symbol ?? "").toUpperCase();

@@ -1290,7 +1290,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
 
       {/* ── Activity tab ── */}
       {tab === "activity" && (
-        <ActivityTab txs={onchainTxs} loading={txLoading} evmAddress={evmAddress ?? undefined} />
+        <ActivityTab txs={onchainTxs} loading={txLoading} evmAddress={evmAddress} />
       )}
 
       {/* ══ Assets tab ══════════════════════════════════════════════════════════ */}
