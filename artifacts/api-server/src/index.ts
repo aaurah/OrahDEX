@@ -112,7 +112,6 @@ console.info(`[startup] Placeholder server listening on port ${port}`);
    the index.ts/app.ts module initialization fast and predictable. ── */
 try {
   // Dynamic import so this stays in the small initial bundle.
-  // @ts-ignore — migrations file may not exist; failure is caught below
   const { runMigrations } = await import("./migrations/runMigrations.js");
   await runMigrations(10_000).catch((e: any) => console.warn("[startup] migrations failed (non-fatal)", e?.message ?? e));
 } catch (e: any) {

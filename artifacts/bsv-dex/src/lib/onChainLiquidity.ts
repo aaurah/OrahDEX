@@ -437,7 +437,7 @@ async function sendTx(
     to,
     data,
     value: valueWei,
-    chainId: chainId as any,
+    chainId,
   });
 }
 
@@ -458,7 +458,7 @@ async function approveErc20(
     abi:          erc20Abi,
     functionName: "approve",
     args:         [spender, amount],
-    chainId:      chainId as any,
+    chainId,
   });
 }
 

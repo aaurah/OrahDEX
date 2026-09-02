@@ -1838,7 +1838,7 @@ export function startPriceUpdater() {
   // Timeout: 30 min — expected runtime is 2–5 min for 1.24 M rows.
   guardedInterval(
     "universal-markets",
-    () => import("./universalMarkets.js").then(m => m.generateUniversalMarkets()).then(() => {}),
+    () => import("./universalMarkets.js").then(m => m.generateUniversalMarkets()),
     24 * 60 * 60 * 1000,
     { timeoutMs: 30 * 60 * 1000, initialDelayMs: 20 * 60 * 1000 },
   );

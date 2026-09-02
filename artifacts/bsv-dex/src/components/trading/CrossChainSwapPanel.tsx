@@ -421,7 +421,7 @@ export function CrossChainSwapPanel({ open, onOpenChange }: Props) {
       if (!r.ok) return null;
       return r.json() as Promise<{ found: boolean; record: { explorerUrl: string; txid: string } } | null>;
     },
-    enabled:         !!overlayOrderId && step === "tracking" && direction === "bsv-to-evm",
+    enabled:         !!overlayOrderId && step === "tracking" && isBsvToEvm,
     refetchInterval: 60_000,
     staleTime:       30_000,
   });

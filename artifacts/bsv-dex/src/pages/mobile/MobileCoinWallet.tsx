@@ -229,7 +229,7 @@ interface Props { coin: string; }
 
 export function MobileCoinWallet({ coin }: Props) {
   const [, setLocation] = useLocation();
-  const { address, network: walletNetwork, internalEvmAddress: evmAddress } = useWalletStore();
+  const { address, network: walletNetwork, evmAddress } = useWalletStore();
   const { toast } = useToast();
 
   // Watch for new incoming EVM transactions and fire notifications automatically

@@ -381,7 +381,7 @@ const exchangeLimiter = rateLimit({
     if (typeof wallet === "string" && wallet.length > 10) {
       return `wallet:${wallet.toLowerCase()}`;
     }
-    return ipKeyGenerator(req as any);
+    return ipKeyGenerator(req);
   },
   handler: (_req, res) => res.status(429).json({ error: "Exchange rate limit reached — wait a moment before retrying." }),
 });
