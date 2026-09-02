@@ -470,7 +470,7 @@ async function repairStaleMarkets(): Promise<void> {
   // price-updater's own next cycle fix it.
   staleRepairCount++;
   addRepair({
-    type:   "stale-repair" as any,
+    type:   "stale-detected",
     target: `${staleSymbols.length} markets`,
     detail: `Stale symbols (first 10): ${staleSymbols.slice(0, 10).join(", ")} — deferring to price-updater interval`,
   });

@@ -1179,8 +1179,6 @@ export async function signBsvChallengeFromSecret(
   secret:  string,
 ): Promise<string> {
   const { sha256 }    = await import("@noble/hashes/sha2.js");
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore — noble/curves subpath export; types resolved at runtime
   const { secp256k1 } = await import("@noble/curves/secp256k1");
   const bsvPrivKey    = await deriveBsvPrivKeyFromSecret(secret);
 
