@@ -1,12 +1,7 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import {
-  createChart, ColorType,
-  Candle, CandlestickSeries, LineSeries,
-  CrosshairMode,
-} from 'lightweight-charts';
-import { useThemeStore } from '@/store/useThemeStore';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { createChart, CrosshairMode } from 'lightweight-charts';
 
-const Chart = ({ symbol, data, interval }) => {
+const Chart = ({ symbol, data, interval, autoScale = true }) => {
   const chartRef = useRef();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -45,15 +40,19 @@ const Chart = ({ symbol, data, interval }) => {
     });
 
     candleSeries.setData(data);
+
+    if (autoScale) {  // Check if autoScale is true
+      chart.timeScale().fitContent(); // Enables auto scaling of the chart based on data
+    }
+
     setLoading(false);
 
     return () => chart.remove();
-  }, [data, createChartInstance]);
+  }, [data, createChartInstance, autoScale]);
 
   useEffect(() => {
     const handleResize = () => {
       if (chartRef.current) {
-        // Resize chart to fit the container
         chartRef.current.resize(chartRef.current.clientWidth, chartRef.current.clientHeight);
       }
     };
