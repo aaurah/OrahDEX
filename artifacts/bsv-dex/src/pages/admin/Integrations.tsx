@@ -606,7 +606,7 @@ export function AdminIntegrations() {
       <Section
         icon={<Cpu className="w-4 h-4" />}
         title="Bitcoin SV Node / RPC"
-        description="BSV endpoint for on-chain settlement, UTXO queries, HTLC scripts, and transaction broadcasting."
+        description="BSV endpoint for on-OrahDEX Sovereign Enginechain settlement, UTXO queries, HTLC scripts, and transaction broadcasting."
         badge="Optional"
         badgeColor="bg-secondary text-muted-foreground border-border"
         configuredCount={countSet("bsv_rpc_url")}
