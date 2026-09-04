@@ -190,8 +190,13 @@ export function Markets() {
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } as any });
   const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
   const { results: serverSearchResults } = useMarketSearch(search, { debounceMs: 300 });
+  const catalogQuote = tab === "usd" ? usdSub : ({
+    bsv: "BSV", btc: "BTC", eth: "ETH", bnb: "BNB", matic: "MATIC",
+    avax: "AVAX", arb: "ARB", op: "OP", ftm: "FTM", cro: "CRO", bch: "BCH",
+  } as Partial<Record<Tab, string>>)[tab] ?? "";
   const allVenueCatalog = useVenueCatalog({
     query: search,
+    quote: catalogQuote,
     limit: 100,
     offset: catalogOffset,
     enabled: catalogScope === "all",
@@ -199,7 +204,7 @@ export function Markets() {
 
   useEffect(() => {
     setCatalogOffset(0);
-  }, [catalogScope, search]);
+  }, [catalogScope, search, tab, usdSub]);
 
   // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
   const needAllPairs = tab === "sol" || tab === "eth" || tab === "favorites" || search.length > 0;
@@ -650,7 +655,12 @@ export function Markets() {
                 return (
                   <button
                     key={t.id}
-                    onClick={() => { setCatalogScope("default"); setTab(t.id); setSearch(""); }}
+                    onClick={() => {
+                      const isQuoteTab = ["usd", "bsv", "btc", "eth", "bnb", "matic", "avax", "arb", "op", "ftm", "cro", "bch"].includes(t.id);
+                      setCatalogScope(isQuoteTab ? "all" : "default");
+                      setTab(t.id);
+                      setSearch("");
+                    }}
                     style={isBsv && !isActive ? { animation: "bsv-glow 2.5s ease-in-out infinite" } : undefined}
                     className={cn(
                       "shrink-0 flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all border",
@@ -679,7 +689,9 @@ export function Markets() {
                       : isFav || isBsv ? "bg-green-500/20 text-green-300"
                       : "bg-white/8 text-muted-foreground"
                     )}>
-                      {tabCount(t.id)}
+                      {isActive && catalogScope === "all"
+                        ? allVenueCatalog.total.toLocaleString()
+                        : tabCount(t.id)}
                     </span>
                   </button>
                 );
