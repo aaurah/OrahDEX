@@ -19,11 +19,7 @@ export interface LeCoin {
   maxAmount: string | null;
 }
 
-// Module-level cache so multiple hook instances share one fetch.
-// We only treat a result as authoritative when it exceeds the built-in
-// fallback size (331 coins). If we got the fallback, we retry after a delay
-// so the live 1 000+ coin list is picked up once the server warms its cache.
-const LIVE_COIN_THRESHOLD = 400;
+// Module-level cache so multiple hook instances share one authoritative server response.
 let coinsCache: LeCoin[] | null = null;
 let fetchPromise: Promise<LeCoin[]> | null = null;
 
@@ -62,13 +58,12 @@ export function useLetsExchangeCoins() {
 
   useEffect(() => {
     // Re-check on every mount: if cache has live data, use it immediately
-    if (coinsCache && coinsCache.length >= LIVE_COIN_THRESHOLD) {
+    if (coinsCache && coinsCache.length > 0) {
       setCoins(coinsCache); setLoading(false); return;
     }
     if (!fetchPromise) {
       fetchPromise = fetchCoins().then(c => {
-        // Only persist as authoritative if it's the full live list
-        if (c.length >= LIVE_COIN_THRESHOLD) coinsCache = c;
+        if (c.length > 0) coinsCache = c;
         fetchPromise = null;
         return c;
       }).catch(() => { fetchPromise = null; return [] as LeCoin[]; });
@@ -78,19 +73,6 @@ export function useLetsExchangeCoins() {
       if (cancelled) return;
       setCoins(c);
       setLoading(false);
-      // Got the fallback (< 400 coins) — schedule a retry in 5 s to pick up
-      // the live list once the server's background warm-up completes.
-      if (c.length > 0 && c.length < LIVE_COIN_THRESHOLD) {
-        setTimeout(() => {
-          if (cancelled) return;
-          fetchCoins().then(fresh => {
-            if (!cancelled && fresh.length >= LIVE_COIN_THRESHOLD) {
-              coinsCache = fresh;
-              setCoins(fresh);
-            }
-          }).catch(() => {});
-        }, 5000);
-      }
     });
     return () => { cancelled = true; };
   }, []);
