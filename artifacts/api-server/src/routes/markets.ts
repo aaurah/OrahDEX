@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, withDbRetry } from "@workspace/db";
+import { db, pool, withDbRetry } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
 import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
@@ -239,8 +239,12 @@ router.get("/markets", async (req, res) => {
     });
 
     const etag = makeETag(result);
-    marketsCache.set(cacheKey, result);
-    marketsETag.set(cacheKey, etag);
+    // Never cache an empty startup response. Market seeders run asynchronously
+    // after boot, so caching [] here hides newly inserted markets for 60 seconds.
+    if (result.length > 0) {
+      marketsCache.set(cacheKey, result);
+      marketsETag.set(cacheKey, etag);
+    }
     const out = applyFilters(result);
     const sliceEtag = etag.replace(/"$/, `:${offset}:${limit ?? "*"}"`);
     res.setHeader("ETag", sliceEtag);
@@ -349,6 +353,124 @@ router.get("/markets/search", async (req, res) => {
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "markets/search failed");
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/**
+ * GET /markets/catalog — bounded, paginated catalog for the "All venues" UI.
+ *
+ * Unlike /markets this endpoint may include the large LetsExchange, SimpleSwap,
+ * and universal catalog datasets. It never serializes the complete table.
+ *
+ * ?scope=default|all  default: all
+ * ?q=BTC              optional symbol/base/quote search
+ * ?quote=USDT         optional exact quote filter
+ * ?sources=spot,letsexchange  optional comma-separated type filter
+ * ?limit=100          default 100, max 200
+ * ?offset=0
+ */
+router.get("/markets/catalog", async (req, res) => {
+  const scope  = req.query.scope === "default" ? "default" : "all";
+  const rawQ   = ((req.query.q as string) ?? "").trim().toUpperCase().slice(0, 64);
+  const quote  = ((req.query.quote as string) ?? "").trim().toUpperCase().slice(0, 32);
+  const limit  = Math.min(200, Math.max(1, parseInt((req.query.limit as string) ?? "100", 10) || 100));
+  const offset = Math.max(0, parseInt((req.query.offset as string) ?? "0", 10) || 0);
+
+  const allowedTypes = new Set(["spot", "futures", "letsexchange", "simpleswap", "catalog"]);
+  const requestedTypes = ((req.query.sources as string) ?? "")
+    .split(",")
+    .map(v => v.trim().toLowerCase())
+    .filter(v => allowedTypes.has(v));
+  const types = scope === "default"
+    ? ["spot", "futures"]
+    : requestedTypes.length > 0 ? requestedTypes : [...allowedTypes];
+
+  const params: unknown[] = [types];
+  const where: string[] = ["enabled = true", `type = ANY($${params.length}::text[])`];
+
+  if (rawQ) {
+    params.push(`${rawQ}%`);
+    const n = params.length;
+    where.push(`(symbol ILIKE $${n} OR base_asset ILIKE $${n} OR quote_asset ILIKE $${n})`);
+  }
+  if (quote) {
+    params.push(quote);
+    where.push(`quote_asset = $${params.length}`);
+  }
+
+  const whereSql = where.join(" AND ");
+
+  try {
+    const [countResult, rowsResult] = await Promise.all([
+      withDbRetry(() => pool.query<{ total: string }>(
+        `SELECT count(*)::text AS total FROM markets WHERE ${whereSql}`,
+        params,
+      )),
+      withDbRetry(() => pool.query<{
+        symbol: string;
+        base_asset: string;
+        quote_asset: string;
+        last_price: string;
+        price_change_percent_24h: string;
+        volume_24h: string;
+        high_24h: string;
+        low_24h: string;
+        market_cap: string | null;
+        type: string;
+        pinned: boolean;
+      }>(
+        `SELECT symbol, base_asset, quote_asset, last_price,
+                price_change_percent_24h, volume_24h, high_24h, low_24h,
+                market_cap, type, pinned
+           FROM markets
+          WHERE ${whereSql}
+          ORDER BY
+            ${rawQ ? `CASE WHEN base_asset = $${params.findIndex(v => v === `${rawQ}%`) + 1}::text THEN 0
+                           WHEN quote_asset = $${params.findIndex(v => v === `${rawQ}%`) + 1}::text THEN 1
+                           ELSE 2 END,` : ""}
+            CASE
+              WHEN type IN ('spot','futures') THEN 0
+              WHEN type = 'simpleswap' THEN 1
+              WHEN type = 'letsexchange' THEN 2
+              ELSE 3
+            END,
+            pinned DESC,
+            (last_price::numeric > 0) DESC,
+            volume_24h::numeric DESC,
+            symbol ASC
+          LIMIT ${limit} OFFSET ${offset}`,
+        params,
+      )),
+    ]);
+
+    const total = Number(countResult.rows[0]?.total ?? 0);
+    const items = rowsResult.rows.map(m => ({
+      symbol: m.symbol,
+      baseAsset: m.base_asset,
+      quoteAsset: m.quote_asset,
+      lastPrice: resolveCrossPrice(m.symbol, parseFloat(m.last_price)),
+      priceChangePercent24h: parseFloat(m.price_change_percent_24h) || 0,
+      volume24h: parseFloat(m.volume_24h) || 0,
+      high24h: parseFloat(m.high_24h) || 0,
+      low24h: parseFloat(m.low_24h) || 0,
+      marketCap: m.market_cap ? parseFloat(m.market_cap) : undefined,
+      type: m.type,
+      sources: [m.type],
+      nativeTrading: m.type === "spot" || m.type === "futures",
+      externalRouting: m.type !== "futures",
+    }));
+
+    res.setHeader("Cache-Control", "public, max-age=15");
+    res.json({
+      items,
+      total,
+      limit,
+      offset,
+      hasMore: offset + items.length < total,
+    });
+  } catch (err) {
+    req.log.error({ err }, "markets/catalog failed");
     res.status(500).json({ error: "Internal server error" });
   }
 });
