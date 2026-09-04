@@ -18,7 +18,7 @@ import { useSettingsStore, convertFromUsd, getCurrencySymbol, FIAT_CURRENCIES } 
 import { CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS, getAssetNativeChain, walletCanReceive } from "@/lib/crossChain";
 import { MIN_QUICK_FILL_QTY } from "@/lib/tradeConstants";
 import { VENUE_LABELS, VENUE_COLORS } from "@/lib/venues";
-import { generateMockCandles, generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
+import { generateMockOrderBook, MOCK_TICKER } from "@/lib/mock-data";
 import { useEscrow } from "@/hooks/useEscrow";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { usePairPrices } from "@/hooks/usePairPrices";
@@ -953,10 +953,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const mobileCandleLimit = mobilePreset ? mobilePreset.limit : 150;
 
   const { data: candles = [] } = useQuery({
-    queryKey: ["candles", symbol, interval],
-    queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`).then(r => r.json()),
+    queryKey: ["candles", symbol, mobileApiInterval, mobileCandleLimit],
+    queryFn: async () => {
+      const response = await fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`);
+      if (!response.ok) throw new Error(`Candle request failed: ${response.status}`);
+      const payload = await response.json();
+      if (!Array.isArray(payload)) throw new Error("Invalid candle response");
+      return payload;
+    },
     refetchInterval: 30000,
     staleTime: 20000,
+    retry: 2,
   });
 
   const { data: perfCandles = [] } = useQuery({
@@ -1035,10 +1042,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   // Fallback price for candles/orderbook when ticker hasn't loaded yet
   const fallbackPrice = lastPrice > 0 ? lastPrice : (MOCK_TICKER[rawSymbol]?.lastPrice || liveBridgeRate || 14.35);
-  // Ensure the chart always has candle data to render
-  const chartCandles = (Array.isArray(candles) && candles.length > 0)
-    ? candles
-    : generateMockCandles(fallbackPrice);
+  const chartCandles = Array.isArray(candles) ? candles : [];
   // Ensure order book always shows data
   const rawOB = orderBook as any;
   const isBridgePair = rawOB?.isBridgePair === true || (ticker as any)?.isBridgePair === true;
@@ -1570,6 +1574,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             hideIntervalBar={true}
             subIndicator={activeIndicator ? (INDICATOR_TO_SUB[activeIndicator] ?? undefined) : undefined}
             data={chartCandles}
+            externalDataOnly={true}
           />
         </div>
 

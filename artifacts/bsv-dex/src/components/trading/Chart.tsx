@@ -26,6 +26,7 @@ interface ChartProps {
   onIntervalChange?: (interval: string) => void;
   hideIntervalBar?: boolean;
   subIndicator?: SubIndicator;
+  externalDataOnly?: boolean;
 }
 
 /* ── Intervals ──────────────────────────────────────────────────────────── */
@@ -265,9 +266,15 @@ function fmtPrice(v: number, price: number): string {
 /* ══════════════════════════════════════════════════════════════════════════
    ORAHCHART — Maximum Features Edition
 ══════════════════════════════════════════════════════════════════════════ */
-function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndicatorProp, hideIntervalBar, data: fallbackData }: {
-  symbol: string; interval: string; onIntervalChange?: (iv: string) => void; subIndicator?: SubIndicator; hideIntervalBar?: boolean; data?: Candle[];
-}) {
+function OrahChart({
+  symbol = 'BSV/USDT',
+  interval = '1h',
+  onIntervalChange,
+  subIndicator: subIndicatorProp,
+  hideIntervalBar,
+  data: fallbackData,
+  externalDataOnly = false,
+}: ChartProps) {
   const mainRef   = useRef<HTMLDivElement>(null);
   const subRef    = useRef<HTMLDivElement>(null);
   const chartRef  = useRef<ReturnType<typeof createChart> | null>(null);
@@ -277,6 +284,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const candlesRef = useRef<Candle[]>([]);
   /* Always-current display candles ref for live last-bar updates */
   const displayCandlesRef = useRef<Candle[]>([]);
+  const lastFitKeyRef = useRef('');
 
   /* series refs */
   const priceSeriesRef   = useRef<any>(null);
@@ -416,19 +424,56 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   }, [symbol]);
 
   useEffect(() => {
-    setLoading(true); setCandles([]); setTicker(null); setHoverInfo(null);
-    fetchCandles(); fetchTicker();
+    setTicker(null); setHoverInfo(null);
+    if (!externalDataOnly) {
+      setLoading(true);
+      setCandles([]);
+      fetchCandles();
+    }
+    fetchTicker();
     if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => { fetchCandles(); fetchTicker(); }, 30_000);
+    timerRef.current = setInterval(() => {
+      if (!externalDataOnly) fetchCandles();
+      fetchTicker();
+    }, 30_000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [fetchCandles, fetchTicker]);
+  }, [fetchCandles, fetchTicker, externalDataOnly]);
+
+  /* Mobile owns candle fetching. Accept only complete, ordered OHLC rows and
+     never clear the last good chart merely because a refetch is in flight. */
+  useEffect(() => {
+    if (!externalDataOnly || !Array.isArray(fallbackData)) return;
+    const unique = new Map<number, Candle>();
+    for (const raw of fallbackData) {
+      const time = Number(raw?.time);
+      const open = Number(raw?.open);
+      const high = Number(raw?.high);
+      const low = Number(raw?.low);
+      const close = Number(raw?.close);
+      const volume = Number((raw as any)?.volume ?? 0);
+      if (
+        time <= 1_000_000_000 ||
+        ![time, open, high, low, close, volume].every(Number.isFinite) ||
+        Math.min(open, high, low, close) <= 0 ||
+        high < Math.max(open, close) ||
+        low > Math.min(open, close) ||
+        volume < 0
+      ) continue;
+      unique.set(time, { ...raw, time, open, high, low, close, volume } as Candle);
+    }
+    const next = [...unique.values()].sort((a, b) => Number(a.time) - Number(b.time));
+    if (next.length >= 2) {
+      setCandles(next);
+      setLoading(false);
+    }
+  }, [externalDataOnly, fallbackData, symbol, interval]);
 
   /* When the API fetch completes with no data, fall back to the provided candles */
   useEffect(() => {
-    if (!loading && candles.length === 0 && fallbackData && fallbackData.length > 0) {
+    if (!externalDataOnly && !loading && candles.length === 0 && fallbackData && fallbackData.length > 0) {
       setCandles(fallbackData);
     }
-  }, [loading, candles.length, fallbackData]);
+  }, [externalDataOnly, loading, candles.length, fallbackData]);
 
   /* Keep candlesRef always current so crosshair callback is never stale */
   useEffect(() => { candlesRef.current = candles; }, [candles]);
@@ -463,7 +508,10 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     const valid = candles.filter(c =>
       c.open > 0 && c.close > 0 && c.high > 0 && c.low > 0 &&
       isFinite(c.open) && isFinite(c.close) && isFinite(c.high) && isFinite(c.low) &&
-      c.high >= c.low && c.high >= Math.min(c.open, c.close)
+      c.high >= Math.max(c.open, c.close) &&
+      c.low <= Math.min(c.open, c.close) &&
+      Number.isFinite(Number((c as any).volume ?? 0)) &&
+      Number((c as any).volume ?? 0) >= 0
     );
     if (!valid.length) return candles;
     // Step 2: compute median close to detect extreme outliers
@@ -662,7 +710,8 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
       try { chartRef.current?.timeScale().setVisibleRange({ from: from as any, to: to as any }); } catch (_) {}
       autoIntervalRef.current = false;
       zoomRangeRef.current = null;
-    } else {
+    } else if (lastFitKeyRef.current !== `${symbol}:${interval}:${chartType}`) {
+      lastFitKeyRef.current = `${symbol}:${interval}:${chartType}`;
       /* rAF ensures the chart has processed setData (computed its full extent) before we fit */
       requestAnimationFrame(() => {
         chartRef.current?.timeScale().fitContent();
@@ -678,14 +727,14 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
 
     /* Volume */
     if (volSeriesRef.current && showVol) {
-      volSeriesRef.current.setData(candles.map(c => ({
+      volSeriesRef.current.setData(displayCandles.map(c => ({
         time: Number(c.time) as any,
         value: (c as any).volume ?? 0,
         color: c.close >= c.open ? '#0ecb8125' : '#f6465d25',
       })));
     }
     if (volSeriesRef.current && !showVol) { volSeriesRef.current.setData([]); }
-  }, [candles, chartReady, showVol, updatePriceSeries]);
+  }, [displayCandles, chartReady, showVol, updatePriceSeries]);
 
   /* ── Overlay indicators ─────────────────────────────────────────────── */
   const overlayRefs: Record<string, React.MutableRefObject<any>> = {
@@ -798,7 +847,9 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   /* ── Subscribe to visible time range changes → auto-switch interval ─── */
   useEffect(() => {
     const chart = chartRef.current;
-    if (!chart || !chartReady) return;
+    // Mobile owns its candle interval and data. A second zoom-driven request
+    // here can arrive late and overwrite the selected pair/timeframe.
+    if (!chart || !chartReady || externalDataOnly) return;
 
     const handler = (range: any) => {
       if (!range) return;
@@ -822,7 +873,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
       chart.timeScale().unsubscribeVisibleTimeRangeChange(handler);
       if (zoomTimerRef2.current) clearTimeout(zoomTimerRef2.current);
     };
-  }, [chartReady, fetchForZoom]);
+  }, [chartReady, fetchForZoom, externalDataOnly]);
 
   /* ── Zoom helpers ───────────────────────────────────────────────────── */
   const fitContent = () => { chartRef.current?.timeScale().fitContent(); subChartRef.current?.timeScale().fitContent(); };
