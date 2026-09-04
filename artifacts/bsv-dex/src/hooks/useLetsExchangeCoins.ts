@@ -22,6 +22,7 @@ export interface LeCoin {
 // Module-level cache so multiple hook instances share one authoritative server response.
 let coinsCache: LeCoin[] | null = null;
 let fetchPromise: Promise<LeCoin[]> | null = null;
+const isLiveCatalog = (items: LeCoin[]) => items.some(coin => !!coin.network);
 
 // Preferred network priority — used to pick the "primary" network for a symbol
 const NETWORK_PRIORITY: Record<string, number> = {
@@ -58,12 +59,12 @@ export function useLetsExchangeCoins() {
 
   useEffect(() => {
     // Re-check on every mount: if cache has live data, use it immediately
-    if (coinsCache && coinsCache.length > 0) {
+    if (coinsCache && isLiveCatalog(coinsCache)) {
       setCoins(coinsCache); setLoading(false); return;
     }
     if (!fetchPromise) {
       fetchPromise = fetchCoins().then(c => {
-        if (c.length > 0) coinsCache = c;
+        if (isLiveCatalog(c)) coinsCache = c;
         fetchPromise = null;
         return c;
       }).catch(() => { fetchPromise = null; return [] as LeCoin[]; });
@@ -73,6 +74,17 @@ export function useLetsExchangeCoins() {
       if (cancelled) return;
       setCoins(c);
       setLoading(false);
+      if (c.length > 0 && !isLiveCatalog(c)) {
+        setTimeout(() => {
+          if (cancelled) return;
+          fetchCoins().then(fresh => {
+            if (!cancelled && isLiveCatalog(fresh)) {
+              coinsCache = fresh;
+              setCoins(fresh);
+            }
+          }).catch(() => {});
+        }, 5000);
+      }
     });
     return () => { cancelled = true; };
   }, []);

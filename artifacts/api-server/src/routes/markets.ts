@@ -7,6 +7,7 @@ import { fetchKeyPrices } from "./dex.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
 import { fetchRealCandles, fetchFullHistoryCandles, resampleCandles } from "../lib/candleFetcher.js";
 import { logger } from "../lib/logger.js";
+import { getVirtualCatalogPage } from "../lib/universalMarkets.js";
 
 const router: IRouter = Router();
 
@@ -385,6 +386,7 @@ router.get("/markets/catalog", async (req, res) => {
   const types = scope === "default"
     ? ["spot", "futures"]
     : requestedTypes.length > 0 ? requestedTypes : [...allowedTypes];
+  const includeVirtualCatalog = scope === "all" && types.includes("catalog");
 
   const params: unknown[] = [types];
   const where: string[] = ["enabled = true", `type = ANY($${params.length}::text[])`];
@@ -402,6 +404,67 @@ router.get("/markets/catalog", async (req, res) => {
   const whereSql = where.join(" AND ");
 
   try {
+    if (includeVirtualCatalog) {
+      const virtual = await getVirtualCatalogPage({ q: rawQ, quote, limit, offset });
+      const symbols = virtual.items.map(item => item.symbol);
+      const overlayTypes = types.filter(type => type !== "catalog");
+      const overlays = new Map<string, {
+        symbol: string; base_asset: string; quote_asset: string; last_price: string;
+        price_change_percent_24h: string; volume_24h: string; high_24h: string;
+        low_24h: string; market_cap: string | null; type: string;
+      }>();
+
+      if (symbols.length > 0 && overlayTypes.length > 0) {
+        const result = await withDbRetry(() => pool.query<{
+          symbol: string; base_asset: string; quote_asset: string; last_price: string;
+          price_change_percent_24h: string; volume_24h: string; high_24h: string;
+          low_24h: string; market_cap: string | null; type: string;
+        }>(
+          `SELECT symbol, base_asset, quote_asset, last_price,
+                  price_change_percent_24h, volume_24h, high_24h, low_24h,
+                  market_cap, type
+             FROM markets
+            WHERE enabled = true
+              AND symbol = ANY($1::text[])
+              AND type = ANY($2::text[])`,
+          [symbols, overlayTypes],
+        ));
+        for (const row of result.rows) overlays.set(row.symbol, row);
+      }
+
+      const items = virtual.items.map(pair => {
+        const real = overlays.get(pair.symbol);
+        const type = real?.type ?? "catalog";
+        return {
+          symbol: pair.symbol,
+          baseAsset: pair.baseAsset,
+          quoteAsset: pair.quoteAsset,
+          lastPrice: resolveCrossPrice(pair.symbol, real ? parseFloat(real.last_price) : 0),
+          priceChangePercent24h: real ? parseFloat(real.price_change_percent_24h) || 0 : 0,
+          volume24h: real ? parseFloat(real.volume_24h) || 0 : 0,
+          high24h: real ? parseFloat(real.high_24h) || 0 : 0,
+          low24h: real ? parseFloat(real.low_24h) || 0 : 0,
+          marketCap: real?.market_cap ? parseFloat(real.market_cap) : undefined,
+          type,
+          sources: real ? [real.type, "catalog"] : ["catalog"],
+          nativeTrading: type === "spot" || type === "futures",
+          externalRouting: type !== "futures",
+        };
+      });
+
+      res.setHeader("Cache-Control", "public, max-age=15");
+      res.json({
+        items,
+        total: virtual.total,
+        limit,
+        offset,
+        hasMore: offset + items.length < virtual.total,
+        assets: virtual.assets,
+        virtual: true,
+      });
+      return;
+    }
+
     const [countResult, rowsResult] = await Promise.all([
       withDbRetry(() => pool.query<{ total: string }>(
         `SELECT count(*)::text AS total FROM markets WHERE ${whereSql}`,

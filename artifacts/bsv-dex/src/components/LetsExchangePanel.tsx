@@ -134,14 +134,15 @@ const COINS_CLIENT_TTL = 30 * 60 * 1000;
 let _coinsCache: LeCoin[] | null = null;
 let _coinsCacheTs = 0;
 let _coinsInflight: Promise<LeCoin[]> | null = null;
+const isLiveCatalog = (items: LeCoin[]) => items.some(coin => !!coin.network);
 
 async function fetchCoins(): Promise<LeCoin[]> {
-  if (_coinsCache && _coinsCache.length > 0 && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
+  if (_coinsCache && isLiveCatalog(_coinsCache) && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
   if (_coinsInflight) return _coinsInflight;
   _coinsInflight = fetch(`${API}/letsexchange/currencies`)
     .then(r => { if (!r.ok) throw new Error("currencies failed"); return r.json(); })
     .then((d: LeCoin[]) => {
-      if (d.length > 0) {
+      if (isLiveCatalog(d)) {
         _coinsCache = d;
         _coinsCacheTs = Date.now();
       }
@@ -1558,6 +1559,12 @@ export function LetsExchangePanel({
           if (cancelled) return;
           setCoins(d);
           setLoading(false);
+          if (d.length > 0 && !isLiveCatalog(d) && attempts <= MAX_RETRIES) {
+            retryTimer = setTimeout(() => {
+              if (cancelled) return;
+              load();
+            }, 5000);
+          }
         })
         .catch(() => {
           if (cancelled) return;
