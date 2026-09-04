@@ -425,17 +425,17 @@ function OrahChart({
 
   useEffect(() => {
     setTicker(null); setHoverInfo(null);
+    if (timerRef.current) clearInterval(timerRef.current);
     if (!externalDataOnly) {
       setLoading(true);
       setCandles([]);
       fetchCandles();
-    }
-    fetchTicker();
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      if (!externalDataOnly) fetchCandles();
       fetchTicker();
-    }, 30_000);
+      timerRef.current = setInterval(() => {
+        fetchCandles();
+        fetchTicker();
+      }, 30_000);
+    }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchCandles, fetchTicker, externalDataOnly]);
 
@@ -536,6 +536,7 @@ function OrahChart({
   /* ── Live last-bar update — fires on every ticker tick ───────────────────
      Calls series.update() instead of setData() so only the last bar redraws */
   useEffect(() => {
+    if (externalDataOnly) return;
     const series = priceSeriesRef.current;
     const livePrice = ticker?.last;
     if (!series || !livePrice || livePrice <= 0) return;
@@ -558,7 +559,7 @@ function OrahChart({
       lr.high  = Math.max(lr.high, livePrice);
       lr.low   = Math.min(lr.low,  livePrice);
     }
-  }, [ticker, chartType]);
+  }, [ticker, chartType, externalDataOnly]);
 
   /* ── Create main chart ──────────────────────────────────────────────── */
   useEffect(() => {
