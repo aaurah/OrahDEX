@@ -33,7 +33,7 @@ import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
 import { getBestExternalQuote, type ExternalVenue } from "../lib/metaRouter.js";
 import { createCNExchange, getCNExchange } from "../lib/changenow.js";
 import { createSXExchange, getSXExchange } from "../lib/stealthex.js";
-import { createSsExchangePair, getSsExchange, fetchSSCurrencies } from "../lib/simpleswap.js";
+import { createSsExchangePair, getSsExchange, fetchSSCurrencies, quoteFromSSPair } from "../lib/simpleswap.js";
 import { createChangellyExchange, getChangellyExchange, isChangellyConfigured } from "../lib/changelly.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 
@@ -575,6 +575,61 @@ router.get("/letsexchange/pairs", async (req, res) => {
   res.json(result);
 });
 
+const SS_TO_CANONICAL: Record<string, string> = {
+  usdterc20: "USDT", usdttrc20: "USDT", usdtbsc: "USDT", usdtsol: "USDT",
+  usdtmatic: "USDT", usdtton: "USDT", usdtop: "USDT", usdtarb: "USDT",
+  usdtavax: "USDT", usdtalgo: "USDT", usdtkava: "USDT", usdtcelo: "USDT",
+  usdcerc20: "USDC", usdcbsc: "USDC", usdcsol: "USDC", usdcmatic: "USDC",
+  usdcop: "USDC", usdcarb: "USDC", usdcbase: "USDC", usdcavax: "USDC",
+  usdcton: "USDC", "bnb-bsc": "BNB", bnbbsc: "BNB", pol: "MATIC",
+  avaxc: "AVAX", etharb: "ETH", ethop: "ETH", ethbase: "ETH",
+  ethlinea: "ETH", ethscroll: "ETH", ethbsc: "ETH",
+  wbtcerc20: "WBTC", wbtcbsc: "WBTC", daierc20: "DAI", daibsc: "DAI",
+  daimatic: "DAI", daiarb: "DAI", linkbsc: "LINK", unibsc: "UNI",
+};
+
+function normalizeSsSymbol(ticker: string): string | null {
+  if (!ticker) return null;
+  const mapped = SS_TO_CANONICAL[ticker.toLowerCase()];
+  if (mapped) return mapped;
+  const cleaned = ticker.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return cleaned.length >= 1 && cleaned.length <= 12 ? cleaned : null;
+}
+
+// ── GET /api/simpleswap/currencies ────────────────────────────────────────────
+// Keeps every provider ticker/network variant so picker selections can route
+// back to the exact SimpleSwap asset rather than guessing from a display symbol.
+router.get("/simpleswap/currencies", async (_req, res) => {
+  const cacheKey = "ss_currencies_v1";
+  let items = cached(cacheKey, 5 * 60 * 1000) as Record<string, unknown>[] | null;
+  if (!items) {
+    const currencies = await fetchSSCurrencies();
+    items = currencies.flatMap(c => {
+      const symbol = normalizeSsSymbol(c.symbol);
+      if (!symbol) return [];
+      return [{
+        symbol,
+        name: c.name || symbol,
+        network: c.network,
+        networkName: c.network,
+        image: c.image,
+        hasExtraId: c.hasExtraId,
+        minAmount: null,
+        maxAmount: null,
+        provider: "simpleswap",
+        providerTicker: c.symbol.toLowerCase(),
+      }];
+    });
+    if (items.length > 0) setCache(cacheKey, items);
+  }
+  if (!items.length) {
+    res.status(503).json({ error: "SimpleSwap currencies unavailable" });
+    return;
+  }
+  res.set("Cache-Control", "public, max-age=60");
+  res.json(items);
+});
+
 // ── GET /api/simpleswap/pairs ─────────────────────────────────────────────────
 // Returns all SimpleSwap coins expressed as OrahDEX pair objects using the same
 // quote currencies as the LE pairs endpoint.  Deduplication against LE happens
@@ -610,8 +665,8 @@ router.get("/simpleswap/pairs", async (req, res) => {
     return cleaned;
   }
 
-  const SS_PAIRS_TTL = 60 * 60 * 1000; // 1 hour
-  const cacheKey = "ss_pairs_v1";
+  const SS_PAIRS_TTL = 5 * 60 * 1000;
+  const cacheKey = "ss_pairs_v2";
   let builtPairs = cached(cacheKey, SS_PAIRS_TTL) as Record<string, unknown>[] | null;
 
   if (!builtPairs) {
@@ -651,12 +706,12 @@ router.get("/simpleswap/pairs", async (req, res) => {
     const currencies = await fetchSSCurrencies();
     if (currencies.length > 0) {
       const seenSymbols = new Set<string>();
-      const uniqueCoins: { symbol: string; name: string; network: string | null; image: string | null; hasExtraId: boolean }[] = [];
+      const uniqueCoins: { symbol: string; providerTicker: string; name: string; network: string | null; image: string | null; hasExtraId: boolean }[] = [];
       for (const c of currencies) {
         const sym = normalizeSsSymbol(c.symbol);
         if (!sym || seenSymbols.has(sym)) continue;
         seenSymbols.add(sym);
-        uniqueCoins.push({ symbol: sym, name: c.name, network: c.network, image: c.image, hasExtraId: c.hasExtraId });
+        uniqueCoins.push({ symbol: sym, providerTicker: c.symbol.toLowerCase(), name: c.name, network: c.network, image: c.image, hasExtraId: c.hasExtraId });
       }
       const QUOTES_SET = new Set(LE_PAIR_QUOTES);
       for (const coin of uniqueCoins) {
@@ -668,6 +723,7 @@ router.get("/simpleswap/pairs", async (req, res) => {
           mergeMap.set(sym, {
             ...(existing ?? {}),
             symbol: sym, baseAsset: coin.symbol, quoteAsset: q,
+            providerTicker: coin.providerTicker,
             network: coin.network, networkName: null, image: coin.image,
             hasExtraId: coin.hasExtraId, minAmount: null, maxAmount: null,
             lastPrice:             (existing?.lastPrice as number) || 0,
@@ -921,6 +977,50 @@ router.post("/letsexchange/estimate", async (req, res) => {
       blacklistVenues: ALL_VENUES.filter(v => v !== forceVenueRaw),
     } : undefined;
 
+    // A SimpleSwap catalog selection carries the exact provider ticker. Keep
+    // that identity through quoting instead of remapping from a canonical symbol.
+    if (forceVenueRaw === "simpleswap") {
+      const providerTickerFrom = typeof body.provider_ticker_from === "string" ? body.provider_ticker_from : undefined;
+      const providerTickerTo = typeof body.provider_ticker_to === "string" ? body.provider_ticker_to : undefined;
+      const ss = await quoteFromSSPair(from, to, amt, { from: providerTickerFrom, to: providerTickerTo });
+      if (!ss) {
+        res.status(503).json({ error: `SimpleSwap has no live rate for ${from}→${to}` });
+        return;
+      }
+      if (ss.minAmount != null && amt < ss.minAmount) {
+        res.status(422).json({
+          error: "below_minimum",
+          min_amount: String(ss.minAmount),
+          pair_supported: true,
+        });
+        return;
+      }
+      if (ss.maxAmount != null && amt > ss.maxAmount) {
+        res.status(422).json({ error: "above_maximum", max_amount: String(ss.maxAmount), pair_supported: true });
+        return;
+      }
+      const rate = ss.estimatedAmount / amt;
+      res.json({
+        amount: String(ss.estimatedAmount),
+        rate: String(rate),
+        min_amount: ss.minAmount != null ? String(ss.minAmount) : "",
+        max_amount: ss.maxAmount != null ? String(ss.maxAmount) : "",
+        rate_id: null,
+        rate_id_expired_at: null,
+        withdrawal_fee: "0",
+        best_venue: "simpleswap",
+        venue_quotes: [{
+          venue: "simpleswap",
+          rate: String(rate),
+          output: String(ss.estimatedAmount),
+          minAmount: ss.minAmount != null ? String(ss.minAmount) : null,
+          maxAmount: ss.maxAmount != null ? String(ss.maxAmount) : null,
+          canExecute: true,
+        }],
+      });
+      return;
+    }
+
     const { best, all, errors, lowestMin } = await getBestExternalQuote(from, to, amt, inUsd, outUsd, routePrefs);
     if (!best) {
       const errDetails = Object.entries(errors)
@@ -1048,6 +1148,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
     return: refund, return_extra_id,
     rate_id, float: isFloat, email,
     best_venue: rawBestVenue,
+    provider_ticker_from, provider_ticker_to,
   } = req.body ?? {};
 
   if (!coin_from || !coin_to || !network_from || !network_to || !deposit_amount || !withdrawal) {
@@ -1071,10 +1172,10 @@ router.post("/letsexchange/exchange", async (req, res) => {
     // Try the winning venue first; on any failure fall through to the next in
     // priority order so a single-venue outage never blocks the whole flow.
     const VENUE_PRIORITY = ["changenow", "stealthex", "simpleswap", "changelly", "letsexchange"] as const;
-    const orderedVenues = [
-      bestVenue,
-      ...VENUE_PRIORITY.filter(v => v !== bestVenue),
-    ];
+    const providerLocked = bestVenue === "simpleswap" && (!!provider_ticker_from || !!provider_ticker_to);
+    const orderedVenues = providerLocked
+      ? ["simpleswap"]
+      : [bestVenue, ...VENUE_PRIORITY.filter(v => v !== bestVenue)];
 
     const venueErrors: Record<string, string> = {};
 
@@ -1122,6 +1223,8 @@ router.post("/letsexchange/exchange", async (req, res) => {
           amount:  amt,
           address: withdrawalStr,
           extraId: withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+          providerTickerFrom: provider_ticker_from ? String(provider_ticker_from) : undefined,
+          providerTickerTo: provider_ticker_to ? String(provider_ticker_to) : undefined,
         });
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
