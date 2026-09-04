@@ -1015,6 +1015,11 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
           <div className="ml-auto text-[10px]" style={{ color: col.text, opacity: 0.5 }}>Click to toggle overlays</div>
         </div>
       )}
+    </div>
+  );
+}
+
+export { OrahChart as Chart };
 
       {/* ── MAIN CHART ── */}
       <div className="flex-1 min-h-0 relative" style={{ minHeight: subInd !== 'none' ? 0 : undefined }}>
