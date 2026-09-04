@@ -1078,4 +1078,9 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
           </div>
           <div ref={subRef} className="w-full" style={{ height: '103px' }} />
         </div>
-      )}
+      )}    </div>
+  );
+}
+
+export { OrahChart as Chart };
+export default OrahChart;
