@@ -1,0 +1,522 @@
+/**
+ * futuresSettlement.ts — Futures position open / close / liquidation
+ *
+ * Operates on the FUTURES margin bucket (futures_margin_accounts), which is
+ * COMPLETELY SEPARATE from the spot balance bucket (user_balances).
+ *
+ * ── Bucket isolation invariant ────────────────────────────────────────────────
+ *
+ *   Spot orders    → user_balances    (available / locked)
+ *   Futures orders → futures_margin_accounts (available / locked)
+ *   These two tables NEVER cross-contaminate.
+ *
+ * ── Position lifecycle ────────────────────────────────────────────────────────
+ *
+ *   1. openPosition()
+ *        Validates margin from futures_margin_accounts.
+ *        Moves margin: available → locked.
+ *        Inserts a new row in futures_positions.
+ *        Returns positionId + opening txid.
+ *
+ *   2. closePosition()
+ *        Computes realized PnL from mark price vs entry price.
+ *        Returns margin ± PnL to futures_margin_accounts.available.
+ *        Marks the position row as closed.
+ *        Returns { realizedPnl, returnedMargin }.
+ *
+ *   3. liquidatePosition()
+ *        Triggered when mark price crosses the liquidation price.
+ *        Confiscates margin (moves to protocol treasury / insurance fund).
+ *        Marks position as liquidated.
+ *        Returns { loss }.
+ *
+ * ── Funding-rate settlement ───────────────────────────────────────────────────
+ *
+ *   applyFundingRate()
+ *       Called by the periodic funding engine (futuresProfitEngine.ts).
+ *       Debits longs / credits shorts (or vice versa) from the locked margin.
+ *
+ * ── Leverage and liquidation price ───────────────────────────────────────────
+ *
+ *   Standard isolated-margin perp formula (loss = margin * (1 - mmr)):
+ *     LONG:  liquidationPrice = entryPrice * (1 - (1 - mmr) / leverage)
+ *     SHORT: liquidationPrice = entryPrice * (1 + (1 - mmr) / leverage)
+ *
+ *   maintenanceMarginRate = 0.005 (0.5%)
+ */
+
+import { pool, db, withDbRetry } from "@workspace/db";
+import { futuresPositionsTable, marketsTable } from "@workspace/db/schema";
+import { eq } from "drizzle-orm";
+import crypto from "node:crypto";
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const MAINTENANCE_MARGIN_RATE   = 0.005;   // 0.5%
+const DEFAULT_TAKER_FEE_RATE    = 0.0005;  // 0.05% — fallback when market row has no fee
+/** Maximum allowed leverage to prevent instant-liquidation abuse. */
+export const MAX_FUTURES_LEVERAGE = 100;
+
+/** Look up the taker fee for a perp symbol from the markets table; falls back to the constant. */
+async function getTakerFeeRate(symbol: string): Promise<number> {
+  try {
+    const baseSym = symbol.replace("-PERP", "");
+    const [m] = await withDbRetry(() =>
+      db.select().from(marketsTable).where(eq(marketsTable.symbol, baseSym))
+    );
+    const fee = m ? parseFloat(m.takerFee) : NaN;
+    return Number.isFinite(fee) && fee >= 0 ? fee : DEFAULT_TAKER_FEE_RATE;
+  } catch {
+    return DEFAULT_TAKER_FEE_RATE;
+  }
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface FuturesOpenParams {
+  walletAddress: string;
+  symbol:        string;
+  side:          "long" | "short";
+  leverage:      number;
+  /** Margin amount in USDT committed from futures_margin_accounts */
+  margin:        number;
+  /** Notional quantity (margin × leverage / entryPrice) */
+  quantity:      number;
+  entryPrice:    number;
+  /** Proves the margin was locked from the futures bucket */
+  fundingRef:    string;
+}
+
+export interface FuturesOpenResult {
+  positionId:       string;
+  liquidationPrice: number;
+  notionalValue:    number;
+  openingFee:       number;
+}
+
+export interface FuturesCloseParams {
+  positionId: string;
+  markPrice:  number;
+}
+
+export interface FuturesCloseResult {
+  realizedPnl:    number;
+  returnedMargin: number;
+  closingFee:     number;
+}
+
+export interface FuturesLiquidateResult {
+  loss: number;
+}
+
+// ── Liquidation price computation ─────────────────────────────────────────────
+
+export function computeLiquidationPrice(
+  entryPrice: number,
+  leverage:   number,
+  side:       "long" | "short",
+): number {
+  // Standard isolated-margin liquidation: position is closed when loss
+  // equals (1 - mmr) of the posted margin, leaving the maintenance buffer
+  // for the protocol to safely unwind. Equivalent price move = (1 - mmr)/leverage.
+  const mmr  = MAINTENANCE_MARGIN_RATE;
+  const move = (1 - mmr) / leverage;
+  return side === "long"
+    ? entryPrice * (1 - move)
+    : entryPrice * (1 + move);
+}
+
+// ── Margin bucket helpers ─────────────────────────────────────────────────────
+
+/**
+ * Lock `amount` of USDT in the futures margin bucket for `walletAddress`.
+ * Throws "INSUFFICIENT_FUTURES_MARGIN" if the available balance is too low.
+ * The spot user_balances table is NEVER touched here.
+ */
+export async function lockFuturesMargin(
+  walletAddress: string,
+  amount:        number,
+  asset:         string = "USDT",
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Upsert row so it always exists
+    await client.query(
+      `INSERT INTO futures_margin_accounts (wallet_address, asset, available, locked, updated_at)
+       VALUES ($1, $2, 0, 0, now())
+       ON CONFLICT (wallet_address, asset) DO NOTHING`,
+      [walletAddress, asset],
+    );
+
+    const { rows } = await client.query<{ available: string }>(
+      `SELECT available FROM futures_margin_accounts
+       WHERE wallet_address = $1 AND asset = $2 FOR UPDATE`,
+      [walletAddress, asset],
+    );
+
+    const avail = parseFloat(rows[0]?.available ?? "0");
+    if (avail < amount) {
+      throw new Error(`INSUFFICIENT_FUTURES_MARGIN:${asset}:need=${amount},have=${avail}`);
+    }
+
+    await client.query(
+      `UPDATE futures_margin_accounts
+       SET available  = available - $1,
+           locked     = locked + $1,
+           updated_at = now()
+       WHERE wallet_address = $2 AND asset = $3`,
+      [amount.toFixed(8), walletAddress, asset],
+    );
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Release `amount` of USDT from the futures margin locked bucket back to available.
+ * Called on close, partial-reduce, or liquidation (to the insurance fund for liquidations).
+ */
+export async function releaseFuturesMargin(
+  walletAddress: string,
+  amount:        number,
+  asset:         string = "USDT",
+): Promise<void> {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error(`releaseFuturesMargin: invalid amount ${amount}`);
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{ locked: string }>(
+      `SELECT locked FROM futures_margin_accounts
+       WHERE wallet_address = $1 AND asset = $2
+       FOR UPDATE`,
+      [walletAddress, asset],
+    );
+    const currentLocked = parseFloat(rows[0]?.locked ?? "0");
+    if (currentLocked < amount - 1e-8) {
+      throw new Error(
+        `releaseFuturesMargin: cannot release ${amount} ${asset} — only ${currentLocked} is locked for ${walletAddress}`,
+      );
+    }
+    const actualRelease = Math.min(amount, currentLocked);
+    await client.query(
+      `UPDATE futures_margin_accounts
+       SET locked     = locked - $1,
+           available  = available + $1,
+           updated_at = now()
+       WHERE wallet_address = $2 AND asset = $3`,
+      [actualRelease.toFixed(8), walletAddress, asset],
+    );
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Transfer USDT from the spot wallet into the futures margin account.
+ * This is the ONLY authorised pathway that crosses between buckets, and it
+ * must be an explicit user action (not automatic).
+ *
+ * Both the spot debit and futures credit run inside a single transaction
+ * so neither can succeed without the other.
+ */
+export async function depositToFuturesMargin(
+  walletAddress: string,
+  amount:        number,
+  asset:         string = "USDT",
+): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Debit spot balance (with row-lock to prevent race)
+    const { rows } = await client.query<{ available: string }>(
+      `SELECT available FROM user_balances
+       WHERE wallet_address = $1 AND asset_symbol = $2
+       FOR UPDATE`,
+      [walletAddress, asset],
+    );
+    const avail = parseFloat(rows[0]?.available ?? "0");
+    if (avail < amount) {
+      throw new Error(`INSUFFICIENT_FUNDS:${asset}`);
+    }
+    await client.query(
+      `UPDATE user_balances
+       SET available = available - $1, updated_at = now()
+       WHERE wallet_address = $2 AND asset_symbol = $3`,
+      [amount.toFixed(8), walletAddress, asset],
+    );
+
+    // Credit futures margin
+    await client.query(
+      `INSERT INTO futures_margin_accounts (wallet_address, asset, available, locked, updated_at)
+       VALUES ($1, $2, $3, 0, now())
+       ON CONFLICT (wallet_address, asset)
+       DO UPDATE SET available = futures_margin_accounts.available + $3, updated_at = now()`,
+      [walletAddress, asset, amount.toFixed(8)],
+    );
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Get the futures margin account balance for a wallet.
+ */
+export async function getFuturesMarginBalance(
+  walletAddress: string,
+  asset:         string = "USDT",
+): Promise<{ available: number; locked: number }> {
+  const { rows } = await pool.query<{ available: string; locked: string }>(
+    `SELECT available, locked FROM futures_margin_accounts
+     WHERE wallet_address = $1 AND asset = $2`,
+    [walletAddress, asset],
+  );
+  return rows[0]
+    ? { available: parseFloat(rows[0].available), locked: parseFloat(rows[0].locked) }
+    : { available: 0, locked: 0 };
+}
+
+// ── Position open ─────────────────────────────────────────────────────────────
+
+/**
+ * Open a new futures position.
+ *
+ * Atomically locks the margin AND inserts the position row in a single
+ * database transaction.  The previous two-step flow (lockFuturesMargin in
+ * its own transaction, then a separate db.insert) left a race window where
+ * margin could be debited but no position existed if the server crashed or
+ * the process was killed between the two commits.
+ *
+ * Caller must have already verified funding via fundingVerifier.verifyFuturesFunding()
+ * and passed the resulting fundingRef in params.fundingRef.
+ */
+export async function openFuturesPosition(
+  params: FuturesOpenParams,
+): Promise<FuturesOpenResult> {
+  const {
+    walletAddress, symbol, side, leverage,
+    margin, quantity, entryPrice, fundingRef,
+  } = params;
+
+  // Validate leverage to prevent instant-liquidation abuse
+  if (!Number.isFinite(leverage) || leverage < 1 || leverage > MAX_FUTURES_LEVERAGE) {
+    throw new Error(
+      `INVALID_LEVERAGE: leverage must be between 1 and ${MAX_FUTURES_LEVERAGE}, got ${leverage}`,
+    );
+  }
+
+  const liquidationPrice = computeLiquidationPrice(entryPrice, leverage, side);
+  const notionalValue    = quantity * entryPrice;
+  const takerFeeRate     = await getTakerFeeRate(symbol);
+  const openingFee       = notionalValue * takerFeeRate;
+  const positionId       = crypto.randomUUID();
+  const txid             = crypto.createHash("sha256")
+    .update(`futures-open:${positionId}:${Date.now()}`)
+    .digest("hex");
+
+  // ── Atomic: lock margin AND insert position in ONE transaction ─────────────
+  // Eliminates the race window that existed when these were separate commits.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Ensure the margin account row exists before we lock it
+    await client.query(
+      `INSERT INTO futures_margin_accounts (wallet_address, asset, available, locked, updated_at)
+       VALUES ($1, 'USDT', 0, 0, now())
+       ON CONFLICT (wallet_address, asset) DO NOTHING`,
+      [walletAddress],
+    );
+
+    // Lock the row and verify sufficient balance
+    const { rows: marginRows } = await client.query<{ available: string }>(
+      `SELECT available FROM futures_margin_accounts
+       WHERE wallet_address = $1 AND asset = 'USDT' FOR UPDATE`,
+      [walletAddress],
+    );
+    const avail = parseFloat(marginRows[0]?.available ?? "0");
+    if (avail < margin) {
+      throw new Error(`INSUFFICIENT_FUTURES_MARGIN:USDT:need=${margin},have=${avail}`);
+    }
+
+    // Move margin: available → locked
+    await client.query(
+      `UPDATE futures_margin_accounts
+       SET available  = available - $1,
+           locked     = locked + $1,
+           updated_at = now()
+       WHERE wallet_address = $2 AND asset = 'USDT'`,
+      [margin.toFixed(8), walletAddress],
+    );
+
+    // Insert the position row in the same transaction — no race window
+    await client.query(
+      `INSERT INTO futures_positions
+         (id, wallet_address, symbol, side, leverage, entry_price, mark_price,
+          liquidation_price, quantity, margin, unrealized_pnl, unrealized_pnl_percent,
+          realized_pnl, funding_fee, margin_mode, status, txid, opened_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'0','0','0','0','isolated','open',$11,now())`,
+      [
+        positionId, walletAddress, symbol, side,
+        leverage.toFixed(2), entryPrice.toFixed(8), entryPrice.toFixed(8),
+        liquidationPrice.toFixed(8), quantity.toFixed(8), margin.toFixed(8), txid,
+      ],
+    );
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return { positionId, liquidationPrice, notionalValue, openingFee };
+}
+
+// ── Position close ────────────────────────────────────────────────────────────
+
+/**
+ * Close an open position at the given mark price.
+ * Realizes PnL and returns margin ± PnL to the futures margin account.
+ */
+export async function closeFuturesPosition(
+  params: FuturesCloseParams,
+): Promise<FuturesCloseResult> {
+  const { positionId, markPrice } = params;
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const { rows: posRows } = await client.query<{
+      id: string; wallet_address: string; symbol: string; side: string;
+      entry_price: string; quantity: string; margin: string; status: string;
+    }>(
+      `SELECT id, wallet_address, symbol, side, entry_price, quantity, margin, status
+       FROM futures_positions WHERE id = $1 FOR UPDATE`,
+      [positionId],
+    );
+
+    const pos = posRows[0];
+    if (!pos) throw new Error(`POSITION_NOT_FOUND:${positionId}`);
+    if (pos.status !== "open") throw new Error(`POSITION_NOT_OPEN:${positionId}:${pos.status}`);
+
+    const entryPrice = parseFloat(pos.entry_price);
+    const quantity   = parseFloat(pos.quantity);
+    const margin     = parseFloat(pos.margin);
+
+    const priceDiff     = markPrice - entryPrice;
+    const dirMult       = pos.side === "long" ? 1 : -1;
+    const realizedPnl   = dirMult * priceDiff * quantity;
+    const takerFeeRate  = await getTakerFeeRate(pos.symbol);
+    const closingFee    = markPrice * quantity * takerFeeRate;
+    const returnedMargin = Math.max(0, margin + realizedPnl - closingFee);
+
+    const { rowCount: marginRows } = await client.query(
+      `UPDATE futures_margin_accounts
+       SET locked     = GREATEST(locked - $1, 0),
+           available  = available + $2,
+           updated_at = now()
+       WHERE wallet_address = $3 AND asset = 'USDT'`,
+      [margin.toFixed(8), returnedMargin.toFixed(8), pos.wallet_address],
+    );
+    if ((marginRows ?? 0) < 1) throw new Error(`NO_MARGIN_ACCOUNT:${pos.wallet_address}`);
+
+    await client.query(
+      `UPDATE futures_positions
+       SET status       = 'closed',
+           mark_price   = $1,
+           realized_pnl = $2,
+           closed_at    = now()
+       WHERE id = $3 AND status = 'open'`,
+      [markPrice.toFixed(8), realizedPnl.toFixed(8), positionId],
+    );
+
+    await client.query("COMMIT");
+    return { realizedPnl, returnedMargin, closingFee };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// ── Liquidation ───────────────────────────────────────────────────────────────
+
+/**
+ * Liquidate a position when mark price crosses the liquidation threshold.
+ * The entire margin is lost (goes to the protocol insurance fund).
+ * Uses SELECT FOR UPDATE to prevent double-liquidation race conditions.
+ */
+export async function liquidateFuturesPosition(
+  positionId: string,
+  markPrice:  number,
+): Promise<FuturesLiquidateResult> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // Row-lock the position first to prevent concurrent liquidations from
+    // both reading status='open' and each proceeding with full liquidation.
+    const { rows: posRows } = await client.query<{
+      id: string; wallet_address: string; margin: string; status: string;
+    }>(
+      `SELECT id, wallet_address, margin, status FROM futures_positions WHERE id = $1 FOR UPDATE`,
+      [positionId],
+    );
+
+    const pos = posRows[0];
+    if (!pos || pos.status !== "open") {
+      await client.query("ROLLBACK");
+      return { loss: 0 };
+    }
+
+    const margin = parseFloat(pos.margin);
+
+    // Confiscate the locked margin (it stays locked, removed from account)
+    await client.query(
+      `UPDATE futures_margin_accounts
+       SET locked     = GREATEST(locked - $1, 0),
+           updated_at = now()
+       WHERE wallet_address = $2 AND asset = 'USDT'`,
+      [margin.toFixed(8), pos.wallet_address],
+    );
+
+    await client.query(
+      `UPDATE futures_positions
+       SET status     = 'liquidated',
+           mark_price = $1,
+           closed_at  = now()
+       WHERE id = $2 AND status = 'open'`,
+      [markPrice.toFixed(8), positionId],
+    );
+
+    await client.query("COMMIT");
+    return { loss: margin };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}

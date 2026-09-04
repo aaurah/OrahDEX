@@ -47,3 +47,18 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+.agents/
+
+# Canvas assets (large binary files — not needed in repo)
+.canvas/assets/
+
+# Environment variables & secrets — NEVER commit these
+.env
+.env.*
+*.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+!.env.example
+.local/changelly-keys.txt

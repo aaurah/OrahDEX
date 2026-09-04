@@ -15,7 +15,15 @@ async function buildAll() {
   await rm(distDir, { recursive: true, force: true });
 
   await esbuild({
-    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+    // Two named entry points so index.ts (tiny placeholder) and app.ts (full
+    // Express bundle) are emitted as separate files.  index.mjs binds port 8080
+    // immediately; app.mjs is dynamically imported once index.mjs is running,
+    // satisfying the platform's port-detection window before the heavy load.
+    entryPoints: {
+      index: path.resolve(artifactDir, "src/index.ts"),
+      app:   path.resolve(artifactDir, "src/app.ts"),
+    },
+    splitting: true,
     platform: "node",
     bundle: true,
     format: "esm",
@@ -100,6 +108,7 @@ async function buildAll() {
       "puppeteer",
       "puppeteer-core",
       "electron",
+      "stripe-replit-sync",
     ],
     sourcemap: "linked",
     plugins: [

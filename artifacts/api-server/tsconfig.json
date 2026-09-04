@@ -1,19 +1,25 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "incremental": true,
-    "tsBuildInfoFile": ".tsbuildinfo",
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
   },
-  "include": ["src"],
+  "include": ["src", "src/types"],
   "references": [
     {
       "path": "../../lib/db"
     },
     {
       "path": "../../lib/api-zod"
+    },
+    {
+      "path": "../../lib/integrations-openai-ai-server"
+    },
+    {
+      "path": "../../lib/integrations-anthropic-ai"
     }
   ]
 }
