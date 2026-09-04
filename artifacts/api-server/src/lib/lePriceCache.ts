@@ -109,12 +109,13 @@ export async function leRequest(
 
   // Official v1/v2 coin-list endpoints require affiliate_id and return the
   // complete list as a single array; they do not support limit/offset paging.
-  if (method === "GET" && /^\/v[12]\/coins$/.test(pathname) && AFFILIATE_ID) {
+  const isCoinList = method === "GET" && /^\/v[12]\/coins$/.test(pathname);
+  if (isCoinList && AFFILIATE_ID) {
     parsed.searchParams.set("affiliate_id", AFFILIATE_ID);
     parsed.searchParams.delete("limit");
     parsed.searchParams.delete("offset");
   }
-  const url = parsed.toString();
+  let url = parsed.toString();
 
   // SSRF guard: verify the URL stays within the hardcoded API base.
   if (!url.startsWith(LE_BASE + "/")) {
@@ -137,9 +138,23 @@ export async function leRequest(
     ) ? { ...(body as Record<string, unknown>), affiliate_id: AFFILIATE_ID } : body;
     opts.body = JSON.stringify(requestBody);
   }
-  const res = await fetch(url, opts);
+  let res = await fetch(url, opts);
   let data: unknown;
   try { data = await res.json(); } catch { data = null; }
+
+  // LetsExchange currently returns HTTP 500 when affiliate_id is present on
+  // coin-list calls, despite documenting it as required, while the same
+  // authenticated request without that query parameter returns the full list.
+  // Try the documented form first and narrowly retry only this provider fault.
+  if (isCoinList && parsed.searchParams.has("affiliate_id") && res.status >= 500) {
+    parsed.searchParams.delete("affiliate_id");
+    url = parsed.toString();
+    res = await fetch(url, { ...opts, signal: AbortSignal.timeout(15_000) });
+    try { data = await res.json(); } catch { data = null; }
+    if (res.ok) {
+      logger.warn({ path: pathname }, "LE coin catalog required compatibility retry without affiliate_id");
+    }
+  }
   return { ok: res.ok, status: res.status, data };
 }
 
