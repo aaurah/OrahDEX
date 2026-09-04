@@ -1,5 +1,7 @@
 export type CustomFetchOptions = RequestInit & {
   responseType?: "json" | "text" | "blob" | "auto";
+  /** Milliseconds before the request is aborted. Defaults to 30 000 (30 s). */
+  timeoutMs?: number;
 };
 
 export type ErrorType<T = unknown> = ApiError<T>;
@@ -26,7 +28,14 @@ let _authTokenGetter: AuthTokenGetter | null = null;
  * Pass `null` to clear the base URL.
  */
 export function setBaseUrl(url: string | null): void {
-  _baseUrl = url ? url.replace(/\/+$/, "") : null;
+  if (!url) {
+    _baseUrl = null;
+    return;
+  }
+  // Trim trailing slashes without using a regex on uncontrolled input
+  let trimmed = url;
+  while (trimmed.endsWith("/")) trimmed = trimmed.slice(0, -1);
+  _baseUrl = trimmed || null;
 }
 
 /**
@@ -36,9 +45,6 @@ export function setBaseUrl(url: string | null): void {
  *
  * Useful for Expo bundles making token-gated API calls.
  * Pass `null` to clear the getter.
- *
- * NOTE: This function should never be used in web applications where session
- * token cookies are automatically associated with API calls by the browser.
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
@@ -327,7 +333,7 @@ export async function customFetch<T = unknown>(
   options: CustomFetchOptions = {},
 ): Promise<T> {
   input = applyBaseUrl(input);
-  const { responseType = "auto", headers: headersInit, ...init } = options;
+  const { responseType = "auto", headers: headersInit, timeoutMs = 30_000, ...init } = options;
 
   const method = resolveMethod(input, init.method);
 
@@ -360,7 +366,23 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  // Apply a request timeout unless the caller already supplies an AbortSignal
+  // or opts out by passing timeoutMs: 0.
+  let timeoutController: AbortController | undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let signal = init.signal;
+  if (timeoutMs > 0 && !signal) {
+    timeoutController = new AbortController();
+    timeoutId = setTimeout(() => timeoutController!.abort(), timeoutMs);
+    signal = timeoutController.signal;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(input, { ...init, method, headers, signal });
+  } finally {
+    if (timeoutId != null) clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);
