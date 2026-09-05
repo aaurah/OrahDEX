@@ -292,7 +292,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const bbUpperRef = useRef<any>(null);
   const bbMidRef   = useRef<any>(null);
   const bbLowerRef = useRef<any>(null);
-  /* sub indicator refs */
+  /* indicator refs */
   const subLine1Ref = useRef<any>(null);
   const subLine2Ref = useRef<any>(null);
   const subHistRef  = useRef<any>(null);
@@ -302,6 +302,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const autoIntervalRef     = useRef(false);
   const zoomTimerRef2       = useRef<ReturnType<typeof setTimeout> | null>(null);
   const effectiveIntervalRef = useRef(interval);
+  const lastManualSelectRef  = useRef(0);
 
   const { theme } = useThemeStore();
   const { showTradingViewWatermark } = useSettingsStore();
@@ -331,10 +332,15 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const [ticker, setTicker]       = useState<{ last: number; change: number; high: number; low: number; vol: number } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /* Keep effectiveIntervalRef current; reset autoInterval on parent-driven interval change */
+  /* Keep effectiveIntervalRef current; reset autoInterval on parent-driven interval change.
+     lastManualSelectRef suppresses the zoom-adaptive auto-switch for a few seconds
+     after an explicit selection — otherwise the fitContent() that runs right after
+     new candles load fires a visible-range change whose 900ms debounce picks a
+     "better" interval and overrides the user's choice (e.g. tapping 1m → jumps to
+     5m, 30m → 2h). */
   const effectiveInterval = autoInterval ?? interval;
   useEffect(() => { effectiveIntervalRef.current = effectiveInterval; }, [effectiveInterval]);
-  useEffect(() => { setAutoInterval(null); }, [interval]);
+  useEffect(() => { setAutoInterval(null); lastManualSelectRef.current = Date.now(); }, [interval]);
 
   /* parsed symbol */
   const parts = useMemo(() => {
@@ -809,6 +815,10 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
 
       if (zoomTimerRef2.current) clearTimeout(zoomTimerRef2.current);
       zoomTimerRef2.current = setTimeout(() => {
+        /* Respect explicit interval selections: skip auto-switch for 4s after
+           the user picks a timeframe (the initial fitContent would otherwise
+           immediately override it). */
+        if (Date.now() - lastManualSelectRef.current < 4000) return;
         const best  = bestIntervalForSpan(span);
         const curIv = effectiveIntervalRef.current;
         /* Don't auto-switch for long-range presets (1Y/2Y/5Y etc.) */
@@ -895,7 +905,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
             <div className="flex items-center gap-0.5 min-w-0 flex-1 overflow-x-auto scrollbar-hide">
               {INTERVALS.map(iv => (
                 <button key={iv.id}
-                  onClick={() => { setAutoInterval(null); onIntervalChange?.(iv.id); }}
+                  onClick={() => { lastManualSelectRef.current = Date.now(); setAutoInterval(null); onIntervalChange?.(iv.id); }}
                   className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-semibold transition-all ${
                     (autoInterval ? autoInterval === iv.id : interval === iv.id)
                       ? autoInterval
@@ -1083,4 +1093,3 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
 }
 
 export { OrahChart as Chart };
-export default OrahChart;
