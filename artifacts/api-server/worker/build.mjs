@@ -113,6 +113,13 @@ const patchCjsPlugin = {
         out = out.replace("require('pg-pool')",
           "(require('pg-pool').default||require('pg-pool'))");
       }
+      // pg/lib/stream.js: pg detects workerd and switches to pg-cloudflare
+      // (cloudflare:sockets startTls), whose lazy TLS handshake fails against
+      // the Supabase pooler. The plain node:net + node:tls path works fine in
+      // workerd — force it.
+      if (/pg[\\/]lib[\\/]stream\.js$/.test(args.path)) {
+        out = out.replace("if (isCloudflareRuntime()) {", "if (false) {");
+      }
       if (out === contents) return null;
       return { contents: out, loader: "js" };
     });
