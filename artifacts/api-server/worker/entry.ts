@@ -57,12 +57,13 @@ interface KvLike {
 interface CtxLike { waitUntil(p: Promise<unknown>): void }
 interface EnvLike { ORAHDEX_KV?: unknown; ALLOWED_ORIGINS?: string }
 
-// path → { ttl seconds, minItems } — minItems guards against caching the
+// path → { ttl seconds, minBytes } — minBytes guards against caching the
 // built-in fallback / partial cold-start responses as if they were live data.
-const KV_CACHED_GETS: Record<string, { ttl: number; minItems: number }> = {
-  "/api/letsexchange/currencies": { ttl: 86400, minItems: 400 },
-  "/api/letsexchange/pairs":      { ttl: 1800,  minItems: 400 },
-  "/api/simpleswap/pairs":        { ttl: 1800,  minItems: 100 },
+// (The built-in fallback is ~30 KB; live responses are ≥ 1 MB.)
+const KV_CACHED_GETS: Record<string, { ttl: number; minBytes: number }> = {
+  "/api/letsexchange/currencies": { ttl: 86400, minBytes: 100_000 },
+  "/api/letsexchange/pairs":      { ttl: 1800,  minBytes: 100_000 },
+  "/api/simpleswap/pairs":        { ttl: 1800,  minBytes: 50_000 },
 };
 
 function kvKey(url: URL): string {
@@ -82,17 +83,18 @@ function corsHeaders(request: Request, env: EnvLike): Record<string, string> {
 }
 
 async function serveJsonFromKv(
-  request: Request, url: URL, cfg: { ttl: number; minItems: number },
+  request: Request, url: URL, cfg: { ttl: number; minBytes: number },
   env: EnvLike, ctx: CtxLike,
   next: () => Promise<Response>,
 ): Promise<Response> {
   const kv = env.ORAHDEX_KV as unknown as KvLike | undefined;
   if (!kv) return next();
   const key = kvKey(url);
+  // Serve the cached JSON body as-is — zero parse/serialize CPU.
   try {
-    const hit = await kv.get(key, { type: "json" });
-    if (Array.isArray(hit) && hit.length >= cfg.minItems) {
-      return new Response(JSON.stringify(hit), { headers: corsHeaders(request, env) });
+    const hit = await kv.get(key);
+    if (typeof hit === "string" && hit.length >= cfg.minBytes) {
+      return new Response(hit, { headers: corsHeaders(request, env) });
     }
   } catch { /* KV read failed — fall through to the app */ }
 
@@ -100,13 +102,15 @@ async function serveJsonFromKv(
   if (res.ok) {
     try {
       const clone = res.clone();
+      // Store the raw body text — no JSON.parse (a 10 MB parse would blow the
+      // free-plan CPU budget inside waitUntil and silently kill the write).
       ctx.waitUntil((async () => {
         try {
-          const data = await clone.json();
-          if (Array.isArray(data) && data.length >= cfg.minItems) {
-            await kv.put(key, JSON.stringify(data), { expirationTtl: cfg.ttl });
+          const text = await clone.text();
+          if (text.length >= cfg.minBytes && (text.startsWith("[") || text.startsWith("{"))) {
+            await kv.put(key, text, { expirationTtl: cfg.ttl });
           }
-        } catch { /* non-JSON or KV write failure — non-fatal */ }
+        } catch { /* read/write failure — non-fatal */ }
       })());
     } catch { /* clone failed — non-fatal */ }
   }
