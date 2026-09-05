@@ -45,6 +45,12 @@ function getHandler() {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown): Promise<Response> {
     restoreGlobals();
+    // Expose Workers bindings + execution context to the Express app (which
+    // only sees Node globals). Used for cross-isolate caches — e.g. the LE
+    // currencies list is persisted in ORAHDEX_KV so a cold isolate doesn't
+    // re-fetch + re-normalise 6k coins (6–9 s CPU → intermittent 1102).
+    (globalThis as Record<string, unknown>).__ORAHDEX_ENV__ = env;
+    (globalThis as Record<string, unknown>).__ORAHDEX_CTX__ = ctx;
     const h = await getHandler();
     return h.fetch(request, env, ctx);
   },
