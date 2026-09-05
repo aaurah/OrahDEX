@@ -2,6 +2,10 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "orahdex-api",
   "main": "./dist/index.js",
+  // dist/index.js is already a fully bundled worker script (built by
+  // worker/build.mjs with workerd-specific shims). Wrangler must NOT re-bundle
+  // it — a second esbuild pass breaks the CJS interop patches.
+  "no_bundle": true,
   "compatibility_date": "2026-09-03",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
