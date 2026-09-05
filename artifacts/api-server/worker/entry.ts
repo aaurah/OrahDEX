@@ -58,7 +58,9 @@ async function dbCheck(): Promise<Response> {
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown): Promise<Response> {
-    if (new URL(request.url).pathname === "/__dbcheck") return dbCheck();
+    const path = new URL(request.url).pathname;
+    // Reachable both directly (workers.dev) and through the /api/* route.
+    if (path === "/__dbcheck" || path === "/api/__dbcheck") return dbCheck();
     const h = await getHandler();
     return h.fetch(request, env, ctx);
   },
