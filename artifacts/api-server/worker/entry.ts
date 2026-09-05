@@ -51,8 +51,8 @@ function getHandler() {
 // automatically from the first live response that looks complete.
 
 interface KvLike {
-  get(key: string, opts?: { type: "json" }): Promise<unknown>;
-  put(key: string, value: string, opts?: { expirationTtl?: number }): Promise<void>;
+  get(key: string, opts?: { type: "json" | "arrayBuffer" }): Promise<unknown>;
+  put(key: string, value: string | ArrayBuffer, opts?: { expirationTtl?: number }): Promise<void>;
 }
 interface CtxLike { waitUntil(p: Promise<unknown>): void }
 interface EnvLike { ORAHDEX_KV?: unknown; ALLOWED_ORIGINS?: string }
@@ -91,7 +91,7 @@ async function serveJsonFromKv(
   if (!kv) return next();
   const key = kvKey(url);
   // Serve the cached JSON body as-is — zero parse/serialize CPU.
-  // Stored gzip-compressed (27 MB raw → ~3 MB, under KV's 25 MiB value limit).
+  // Stored gzip-compressed (27 MB raw → ~1 MB, under KV's 25 MiB value limit).
   const acceptsGzip = (request.headers.get("accept-encoding") ?? "").includes("gzip");
   try {
     const buf = await kv.get(key, { type: "arrayBuffer" });
@@ -118,14 +118,28 @@ async function serveJsonFromKv(
       // response under KV's 25 MiB value limit.
       ctx.waitUntil((async () => {
         try {
-          const text = await clone.text();
-          if (text.length >= cfg.minBytes && (text.startsWith("[") || text.startsWith("{"))) {
-            const gz = new Response(text).body!.pipeThrough(new CompressionStream("gzip"));
-            const buf = await new Response(gz).arrayBuffer();
-            await kv.put(key, buf, { expirationTtl: cfg.ttl });
-            await kv.put("kv:debug:lastwrite", JSON.stringify({ key, raw: text.length, gz: buf.byteLength, at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
+          // Read raw bytes, not text(): workerd does NOT auto-decompress
+          // httpServerHandler bodies, so if the app gzipped its own response
+          // clone.text() would hand us gzip bytes as a string and we would
+          // store a double-gzipped blob (browser decodes only one layer →
+          // JSON.parse fails on the client). Normalise to plain JSON first.
+          let buf = await clone.arrayBuffer();
+          let wasGz = false;
+          const magic = new Uint8Array(buf.slice(0, 2));
+          if (magic[0] === 0x1f && magic[1] === 0x8b) {
+            wasGz = true;
+            buf = await new Response(
+              new Response(buf).body!.pipeThrough(new DecompressionStream("gzip")),
+            ).arrayBuffer();
+          }
+          const head = new TextDecoder().decode(buf.slice(0, 1));
+          if (buf.byteLength >= cfg.minBytes && (head === "[" || head === "{")) {
+            const gz = new Response(buf).body!.pipeThrough(new CompressionStream("gzip"));
+            const out = await new Response(gz).arrayBuffer();
+            await kv.put(key, out, { expirationTtl: cfg.ttl });
+            await kv.put("kv:debug:lastwrite", JSON.stringify({ key, raw: buf.byteLength, gz: out.byteLength, wasGz, at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
           } else {
-            await kv.put("kv:debug:skip", JSON.stringify({ key, bytes: text.length, head: text.slice(0, 40), at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
+            await kv.put("kv:debug:skip", JSON.stringify({ key, bytes: buf.byteLength, wasGz, at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
           }
         } catch (werr) {
           await kv.put("kv:debug:lasterror", JSON.stringify({ key, err: String(werr), at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
