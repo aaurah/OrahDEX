@@ -37,8 +37,9 @@ async function shimFor(name) {
   const file = path.join(shimDir, name.replaceAll("/", "_") + ".mjs");
   if (REAL.has(name)) {
     // workerd's node:stream lacks the legacy `Stream` alias that older CJS
-    // packages (e.g. express/send) inherit from. Provide it explicitly.
-    const extra = name === "stream" ? `\nexport const Stream = def && def.Stream ? def.Stream : def;\n` : "";
+    // packages (e.g. express/send) inherit from. Provide it explicitly, with
+    // an EventEmitter-based fallback if the default export doesn't have it.
+    const extra = name === "stream" ? `\nimport { EventEmitter as __EE } from "node:events";\nconst __S = (def && def.Stream) || (typeof def === "function" ? def : class extends __EE {});\nexport { __S as Stream };\n` : "";
     await writeFile(file, `import def from "node:${name}";\nexport * from "node:${name}";\nexport default def;${extra}\n`);
   } else {
     const named = (STUB_EXPORTS[name] || [])
