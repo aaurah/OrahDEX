@@ -101,7 +101,12 @@ await build({
   outfile: path.join(outdir, "index.js"),
   external: ["cloudflare:node", "cloudflare:sockets", "cloudflare:workers", "node:*", "*.node"],
   plugins: [nodeShimPlugin, patchCjsPlugin],
-  define: { "process.env.NODE_ENV": '"production"' },
+  define: {
+    "process.env.NODE_ENV": '"production"',
+    // workerd leaves import.meta.url undefined in some bundled CJS interop
+    // paths; fs is stubbed anyway, so a fixed value is enough.
+    "import.meta.url": '"file:///worker/index.js"',
+  },
   logLevel: "info",
   minify: true,
 });
