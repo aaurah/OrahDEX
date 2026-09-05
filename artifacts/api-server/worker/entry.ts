@@ -42,12 +42,13 @@ function getHandler() {
   return handlerPromise;
 }
 
-// ── Cross-isolate KV cache for GET /api/letsexchange/currencies ──────────────
-// The Express route's coin caches are per-isolate memory; every cold isolate
-// otherwise re-fetches + re-normalises ~6k coins from LetsExchange (6–9 s CPU,
-// intermittently tripping the free-plan 10 s CPU limit → error 1102). Serving
-// the list from the ORAHDEX_KV binding gives all isolates one shared copy.
-// Refreshed automatically from the first live response that has the full list.
+// ── Cross-isolate KV cache for heavy read-only JSON endpoints ────────────────
+// The Express routes' caches are per-isolate memory; every cold isolate
+// otherwise re-fetches + re-normalises ~6k coins / ~100k pairs from the
+// upstream venue APIs (6–9 s CPU, intermittently tripping the free-plan 10 s
+// CPU limit → error 1102). Serving these GET endpoints from the ORAHDEX_KV
+// binding gives all isolates one shared copy. Entries are refreshed
+// automatically from the first live response that looks complete.
 
 interface KvLike {
   get(key: string, opts?: { type: "json" }): Promise<unknown>;
@@ -56,8 +57,18 @@ interface KvLike {
 interface CtxLike { waitUntil(p: Promise<unknown>): void }
 interface EnvLike { ORAHDEX_KV?: unknown; ALLOWED_ORIGINS?: string }
 
-const KV_LE_CURRENCIES = "le:currencies:v1";
-const KV_COIN_THRESHOLD = 400; // only persist the live list, never the 331-coin built-in fallback
+// path → { ttl seconds, minItems } — minItems guards against caching the
+// built-in fallback / partial cold-start responses as if they were live data.
+const KV_CACHED_GETS: Record<string, { ttl: number; minItems: number }> = {
+  "/api/letsexchange/currencies": { ttl: 86400, minItems: 400 },
+  "/api/letsexchange/pairs":      { ttl: 1800,  minItems: 400 },
+  "/api/simpleswap/pairs":        { ttl: 1800,  minItems: 100 },
+};
+
+function kvKey(url: URL): string {
+  // include the query string so ?all=true and ?quote=BSV cache separately
+  return `kv:v1:${url.pathname}${url.search}`;
+}
 
 function corsHeaders(request: Request, env: EnvLike): Record<string, string> {
   const origin = request.headers.get("Origin");
@@ -70,15 +81,17 @@ function corsHeaders(request: Request, env: EnvLike): Record<string, string> {
   return h;
 }
 
-async function serveCurrenciesFromKv(
-  request: Request, env: EnvLike, ctx: CtxLike,
+async function serveJsonFromKv(
+  request: Request, url: URL, cfg: { ttl: number; minItems: number },
+  env: EnvLike, ctx: CtxLike,
   next: () => Promise<Response>,
 ): Promise<Response> {
   const kv = env.ORAHDEX_KV as unknown as KvLike | undefined;
   if (!kv) return next();
+  const key = kvKey(url);
   try {
-    const hit = await kv.get(KV_LE_CURRENCIES, { type: "json" });
-    if (Array.isArray(hit) && hit.length >= KV_COIN_THRESHOLD) {
+    const hit = await kv.get(key, { type: "json" });
+    if (Array.isArray(hit) && hit.length >= cfg.minItems) {
       return new Response(JSON.stringify(hit), { headers: corsHeaders(request, env) });
     }
   } catch { /* KV read failed — fall through to the app */ }
@@ -90,8 +103,8 @@ async function serveCurrenciesFromKv(
       ctx.waitUntil((async () => {
         try {
           const data = await clone.json();
-          if (Array.isArray(data) && data.length >= KV_COIN_THRESHOLD) {
-            await kv.put(KV_LE_CURRENCIES, JSON.stringify(data), { expirationTtl: 86400 });
+          if (Array.isArray(data) && data.length >= cfg.minItems) {
+            await kv.put(key, JSON.stringify(data), { expirationTtl: cfg.ttl });
           }
         } catch { /* non-JSON or KV write failure — non-fatal */ }
       })());
@@ -107,8 +120,9 @@ export default {
     const next = () => h.fetch(request, env, ctx);
     try {
       const url = new URL(request.url);
-      if (request.method === "GET" && url.pathname === "/api/letsexchange/currencies") {
-        return await serveCurrenciesFromKv(request, (env ?? {}) as EnvLike, ctx as CtxLike, next);
+      const cfg = request.method === "GET" ? KV_CACHED_GETS[url.pathname] : undefined;
+      if (cfg) {
+        return await serveJsonFromKv(request, url, cfg, (env ?? {}) as EnvLike, ctx as CtxLike, next);
       }
     } catch { /* URL parse failure — fall through to the app */ }
     return next();
