@@ -62,3 +62,6 @@ Thumbs.db
 .env.production.local
 !.env.example
 .local/changelly-keys.txt
+
+# Generated at build time by lib/db/vendor/ensure.mjs (downloaded + hash-verified)
+lib/db/vendor/neon-serverless.mjs

@@ -1,8 +1,23 @@
-import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
+import type { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { drizzle as drizzleNeon } from "drizzle-orm/neon-serverless";
 import pg from "pg";
+// @ts-ignore — vendored ESM build of @neondatabase/serverless v1.1.0 (MIT).
+// Materialized at build time by vendor/ensure.mjs — not an npm dep, so no
+// lockfile change is needed in CI (Workers Builds / Replit).
+import { Pool as NeonPool, neonConfig } from "../vendor/neon-serverless.mjs";
 import * as schema from "./schema";
 
-const { Pool } = pg;
+/**
+ * Runtime detection — inside Cloudflare Workers (workerd) raw pg TCP/TLS
+ * sockets to the Neon pooler hang on ~50% of cold isolates. Neon's own
+ * serverless driver (WebSocket-based, built for edge runtimes) is reliable
+ * there, so we swap the pool implementation while keeping the exact same
+ * `pool` / `db` exports for the rest of the codebase.
+ */
+const isWorkerd =
+  (typeof navigator !== "undefined" && navigator.userAgent === "Cloudflare-Workers") ||
+  process.env.ORAHDEX_RUNTIME === "worker";
 
 // pg-connection-string warns that 'require', 'prefer', and 'verify-ca' will
 // change semantics in pg v9.  Explicitly upgrading to 'verify-full' adopts
@@ -31,7 +46,8 @@ const _connectionString = dbUrl
   ? resolvedDatabaseUrl(dbUrl)
   : "postgresql://nodb:nodb@localhost:5432/nodb";
 
-export const pool = new Pool({
+function createPgPool(): pg.Pool {
+  return new pg.Pool({
   connectionString: _connectionString,
   // Send TCP keepalive probes immediately when a connection becomes idle.
   keepAlive: true,
@@ -62,30 +78,49 @@ export const pool = new Pool({
   // bot orders is a legitimate long operation that exceeds the old 8 s limit on
   // the production DB (large table + 4 indexes to update + WAL overhead).
   query_timeout: 30_000,
-});
-
-// Catch errors on idle clients in the pool (e.g. a connection dropped by the
-// server while sitting unused). Without this handler Node.js would emit an
-// unhandled 'error' event and potentially crash the process.
-pool.on("error", (err, _client) => {
-  console.error("[pg-pool] idle client error — connection will be discarded:", err.message);
-});
-
-// Attach an error handler to every client the moment it is created.
-// This covers the gap where pg emits an 'error' event on the underlying
-// socket of a CHECKED-OUT client (i.e. one actively running a query).
-// That error is NOT caught by the pool's own 'error' event — it propagates
-// to the EventEmitter as an uncaughtException, which our app.ts handler
-// treats as fatal and calls process.exit(1).  By registering a listener
-// here we silence it; the query's rejected Promise already surfaces the
-// error to the caller, so no information is lost.
-pool.on("connect", (client) => {
-  client.on("error", (err) => {
-    console.error("[pg-client] socket error on checked-out client (non-fatal):", err.message);
   });
-});
+}
 
-export const db = drizzle(pool, { schema });
+/**
+ * The exported pool. In workerd this is a Neon serverless (WebSocket) Pool —
+ * it exposes the same pg-compatible API surface the codebase uses
+ * (query / connect / on / end), so all callers keep working unchanged.
+ * Everywhere else it is the classic node-postgres TCP pool.
+ */
+export const pool: pg.Pool = (() => {
+  if (isWorkerd) {
+    neonConfig.webSocketConstructor = globalThis.WebSocket as any;
+    console.log("[OrahDEX] workerd runtime detected — using Neon serverless (WebSocket) driver");
+    return new NeonPool({ connectionString: _connectionString }) as unknown as pg.Pool;
+  }
+  const p = createPgPool();
+
+  // Catch errors on idle clients in the pool (e.g. a connection dropped by the
+  // server while sitting unused). Without this handler Node.js would emit an
+  // unhandled 'error' event and potentially crash the process.
+  p.on("error", (err, _client) => {
+    console.error("[pg-pool] idle client error — connection will be discarded:", err.message);
+  });
+
+  // Attach an error handler to every client the moment it is created.
+  // This covers the gap where pg emits an 'error' event on the underlying
+  // socket of a CHECKED-OUT client (i.e. one actively running a query).
+  // That error is NOT caught by the pool's own 'error' event — it propagates
+  // to the EventEmitter as an uncaughtException, which our app.ts handler
+  // treats as fatal and calls process.exit(1).  By registering a listener
+  // here we silence it; the query's rejected Promise already surfaces the
+  // error to the caller, so no information is lost.
+  p.on("connect", (client) => {
+    client.on("error", (err) => {
+      console.error("[pg-client] socket error on checked-out client (non-fatal):", err.message);
+    });
+  });
+  return p;
+})();
+
+export const db = (isWorkerd
+  ? drizzleNeon(pool as any, { schema })
+  : drizzleNodePg(pool, { schema })) as unknown as NodePgDatabase<typeof schema>;
 
 /** Return true for transient network-level Postgres errors that are safe to retry. */
 function isTransientPgError(err: unknown): boolean {
