@@ -37,8 +37,7 @@ async function shimFor(name) {
   const file = path.join(shimDir, name.replaceAll("/", "_") + ".mjs");
   if (REAL.has(name)) {
     // workerd's node:stream lacks the legacy `Stream` alias that older CJS
-    // packages (e.g. express/send) inherit from. Provide it explicitly, with
-    // an EventEmitter-based fallback if the default export doesn't have it.
+    // packages (e.g. express/send) inherit from. Provide it explicitly.
     const extra = name === "stream" ? `\nimport { EventEmitter as __EE } from "node:events";\nconst __S = (def && def.Stream) || (typeof def === "function" ? def : class extends __EE {});\nexport { __S as Stream };\n` : "";
     await writeFile(file, `import def from "node:${name}";\nexport * from "node:${name}";\nexport default def;${extra}\n`);
   } else {
@@ -50,21 +49,24 @@ async function shimFor(name) {
   return file;
 }
 
-// send (express's static file sender) does `var Stream = require('stream')`
-// expecting the legacy CJS module.exports class. Patch it to unwrap the shim
-// namespace. Files still can't be served (fs is stubbed) but the module must
-// not crash the worker at import time.
+// Node's CJS builtins export a *class* as module.exports (require('events')
+// IS EventEmitter, require('stream') IS the Stream class). ESM shims can't
+// reproduce that through esbuild's interop, so rewrite bare require calls
+// (require not followed by a property access) to unwrap the shim namespace.
 const patchCjsPlugin = {
   name: "patch-cjs",
   setup(b) {
-    b.onLoad({ filter: /node_modules[\\/]send[\\/]index\.js$/ }, async (args) => {
+    b.onLoad({ filter: /\.js$/ }, async (args) => {
+      if (!args.path.includes("node_modules")) return null;
       const { readFile } = await import("node:fs/promises");
       let contents = await readFile(args.path, "utf8");
-      contents = contents.replace(
-        "var Stream = require('stream')",
-        "var Stream = require('stream').Stream || require('stream').default || require('stream')"
-      );
-      return { contents, loader: "js" };
+      if (!/require\((['"])(events|stream)\1\)/.test(contents)) return null;
+      const out = contents
+        .replace(/require\((['"])events\1\)(?!\s*[.[(])/g,
+          "(require('events').EventEmitter||require('events').default||require('events'))")
+        .replace(/require\((['"])stream\1\)(?!\s*[.[(])/g,
+          "(require('stream').Stream||require('stream').default||require('stream'))");
+      return { contents: out, loader: "js" };
     });
   },
 };
