@@ -64,6 +64,9 @@ const KV_CACHED_GETS: Record<string, { ttl: number; minBytes: number }> = {
   "/api/letsexchange/currencies":  { ttl: 86400, minBytes: 100_000 },
   "/api/letsexchange/pairs":       { ttl: 1800,  minBytes: 100_000 },
   "/api/letsexchange/pairs/count": { ttl: 1800,  minBytes: 10 },
+  // Mkt Hub "All Coins" — app rebuild takes 15s+ cold, causing the UI to
+  // render 0 coins on first hit. KV-cache it like the other big reads.
+  "/api/coins/all-sources":        { ttl: 600,   minBytes: 100_000 },
   "/api/simpleswap/pairs":         { ttl: 1800,  minBytes: 50_000 },
 };
 
