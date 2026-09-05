@@ -38,8 +38,30 @@ function getHandler() {
   return handlerPromise;
 }
 
+// Temporary diagnostics endpoint: attempts a real pg connection and returns
+// the exact error so workerd/pg incompatibilities are visible without log
+// access. Remove once production is verified.
+async function dbCheck(): Promise<Response> {
+  const out: Record<string, unknown> = { url: process.env.DATABASE_URL ? "set" : "MISSING" };
+  try {
+    const { Client } = await import("pg");
+    const client = new Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10000 });
+    await client.connect();
+    const r = await client.query("SELECT 1 AS ok, count(*) AS markets FROM markets");
+    out.result = r.rows;
+    await client.end();
+    out.status = "connected";
+  } catch (e) {
+    out.status = "failed";
+    out.error = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    out.stack = e instanceof Error ? (e.stack || "").split("\n").slice(0, 6) : undefined;
+  }
+  return new Response(JSON.stringify(out, null, 2), { headers: { "content-type": "application/json" } });
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown): Promise<Response> {
+    if (new URL(request.url).pathname === "/__dbcheck") return dbCheck();
     const h = await getHandler();
     return h.fetch(request, env, ctx);
   },
