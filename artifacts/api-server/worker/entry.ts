@@ -75,6 +75,27 @@ function kvKey(url: URL): string {
   return `kv:v3:${url.pathname}${url.search}`;
 }
 
+// Per-symbol market endpoints (/api/markets/<SYM>/candles etc.) can't be
+// listed statically, so match by suffix. Short TTLs keep prices fresh while
+// shielding cold isolates from rebuild timeouts (which previously made the
+// trade chart render mock candles at stale prices).
+const KV_CACHED_SUFFIXES: Record<string, { ttl: number; minBytes: number }> = {
+  "/candles": { ttl: 60,  minBytes: 50 },
+  "/history": { ttl: 300, minBytes: 100 },
+};
+
+function kvCfgFor(method: string, pathname: string): { ttl: number; minBytes: number } | undefined {
+  if (method !== "GET") return undefined;
+  const exact = KV_CACHED_GETS[pathname];
+  if (exact) return exact;
+  if (pathname.startsWith("/api/markets/")) {
+    for (const [suffix, cfg] of Object.entries(KV_CACHED_SUFFIXES)) {
+      if (pathname.endsWith(suffix)) return cfg;
+    }
+  }
+  return undefined;
+}
+
 function corsHeaders(request: Request, env: EnvLike): Record<string, string> {
   const origin = request.headers.get("Origin");
   const allowed = (env.ALLOWED_ORIGINS ?? "").split(",").map(s => s.trim()).filter(Boolean);
@@ -159,7 +180,7 @@ export default {
     const next = () => h.fetch(request, env, ctx);
     try {
       const url = new URL(request.url);
-      const cfg = request.method === "GET" ? KV_CACHED_GETS[url.pathname] : undefined;
+      const cfg = kvCfgFor(request.method, url.pathname);
       if (cfg) {
         return await serveJsonFromKv(request, url, cfg, (env ?? {}) as EnvLike, ctx as CtxLike, next);
       }
