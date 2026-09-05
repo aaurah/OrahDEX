@@ -50,6 +50,25 @@ async function shimFor(name) {
   return file;
 }
 
+// send (express's static file sender) does `var Stream = require('stream')`
+// expecting the legacy CJS module.exports class. Patch it to unwrap the shim
+// namespace. Files still can't be served (fs is stubbed) but the module must
+// not crash the worker at import time.
+const patchCjsPlugin = {
+  name: "patch-cjs",
+  setup(b) {
+    b.onLoad({ filter: /node_modules[\\/]send[\\/]index\.js$/ }, async (args) => {
+      const { readFile } = await import("node:fs/promises");
+      let contents = await readFile(args.path, "utf8");
+      contents = contents.replace(
+        "var Stream = require('stream')",
+        "var Stream = require('stream').Stream || require('stream').default || require('stream')"
+      );
+      return { contents, loader: "js" };
+    });
+  },
+};
+
 const nodeShimPlugin = {
   name: "node-shim",
   setup(b) {
@@ -75,7 +94,7 @@ await build({
   conditions: ["workerd", "worker", "import", "default"],
   outfile: path.join(outdir, "index.js"),
   external: ["cloudflare:node", "cloudflare:sockets", "cloudflare:workers", "node:*", "*.node"],
-  plugins: [nodeShimPlugin],
+  plugins: [nodeShimPlugin, patchCjsPlugin],
   define: { "process.env.NODE_ENV": '"production"' },
   logLevel: "info",
   minify: true,
