@@ -1,0 +1,4 @@
+{
+  "buildCommand": "pnpm --filter @workspace/bsv-dex build && cp -r bsv-dex/dist/public ./dist",
+  "outputDirectory": "dist"
+}
