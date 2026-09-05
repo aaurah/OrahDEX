@@ -10,6 +10,9 @@ globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 
+// Materialize the vendored Neon serverless driver before bundling.
+await import("../../lib/db/vendor/ensure.mjs");
+
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
