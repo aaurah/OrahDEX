@@ -61,14 +61,15 @@ interface EnvLike { ORAHDEX_KV?: unknown; ALLOWED_ORIGINS?: string }
 // built-in fallback / partial cold-start responses as if they were live data.
 // (The built-in fallback is ~30 KB; live responses are ≥ 1 MB.)
 const KV_CACHED_GETS: Record<string, { ttl: number; minBytes: number }> = {
-  "/api/letsexchange/currencies": { ttl: 86400, minBytes: 100_000 },
-  "/api/letsexchange/pairs":      { ttl: 1800,  minBytes: 100_000 },
-  "/api/simpleswap/pairs":        { ttl: 1800,  minBytes: 50_000 },
+  "/api/letsexchange/currencies":  { ttl: 86400, minBytes: 100_000 },
+  "/api/letsexchange/pairs":       { ttl: 1800,  minBytes: 100_000 },
+  "/api/letsexchange/pairs/count": { ttl: 1800,  minBytes: 10 },
+  "/api/simpleswap/pairs":         { ttl: 1800,  minBytes: 50_000 },
 };
 
 function kvKey(url: URL): string {
   // include the query string so ?all=true and ?quote=BSV cache separately
-  return `kv:v2:${url.pathname}${url.search}`;
+  return `kv:v3:${url.pathname}${url.search}`;
 }
 
 function corsHeaders(request: Request, env: EnvLike): Record<string, string> {
