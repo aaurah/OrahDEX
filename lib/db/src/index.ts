@@ -90,7 +90,18 @@ export const pool: pg.Pool = (() => {
   if (isWorkerd) {
     neonConfig.webSocketConstructor = globalThis.WebSocket as any;
     console.log("[OrahDEX] workerd runtime detected — using Neon serverless (WebSocket) driver");
-    return new NeonPool({ connectionString: _connectionString }) as unknown as pg.Pool;
+    // workerd terminates sockets when a request completes, so every request
+    // pays a fresh WS+TLS+auth handshake (~2s CPU). Keep the pool tiny so a
+    // burst of concurrent requests can't open 10 parallel handshakes and
+    // blow the CPU limit (error 1102). Cache-friendly routes rarely need
+    // more than one in-flight query anyway.
+    const np = new NeonPool({ connectionString: _connectionString, max: 1 }) as unknown as pg.Pool;
+    // Without an 'error' listener an idle-client error becomes an unhandled
+    // exception and kills the isolate (scriptThrewException).
+    np.on("error", (err: Error) => {
+      console.error("[neon-ws-pool] idle client error — connection will be discarded:", err.message);
+    });
+    return np;
   }
   const p = createPgPool();
 
