@@ -68,11 +68,15 @@ const KV_CACHED_GETS: Record<string, { ttl: number; minBytes: number }> = {
   // render 0 coins on first hit. KV-cache it like the other big reads.
   "/api/coins/all-sources":        { ttl: 600,   minBytes: 100_000 },
   "/api/simpleswap/pairs":         { ttl: 1800,  minBytes: 50_000 },
+  // Main markets list — used by Mkt Hub / prices everywhere; was a 4s+
+  // cold rebuild on every isolate. Short TTL + stale-while-revalidate below
+  // keep it fresh AND instant.
+  "/api/markets":                  { ttl: 30,    minBytes: 100_000 },
 };
 
 function kvKey(url: URL): string {
   // include the query string so ?all=true and ?quote=BSV cache separately
-  return `kv:v3:${url.pathname}${url.search}`;
+  return `kv:v4:${url.pathname}${url.search}`;
 }
 
 // Per-symbol market endpoints (/api/markets/<SYM>/candles etc.) can't be
@@ -80,7 +84,7 @@ function kvKey(url: URL): string {
 // shielding cold isolates from rebuild timeouts (which previously made the
 // trade chart render mock candles at stale prices).
 const KV_CACHED_SUFFIXES: Record<string, { ttl: number; minBytes: number }> = {
-  "/candles": { ttl: 60,  minBytes: 50 },
+  "/candles": { ttl: 120, minBytes: 50 },
   "/history": { ttl: 300, minBytes: 100 },
 };
 
@@ -107,6 +111,44 @@ function corsHeaders(request: Request, env: EnvLike): Record<string, string> {
   return h;
 }
 
+// Normalise a (possibly gzipped) app response body to plain JSON bytes and
+// store it gzipped in KV — no JSON.parse (a 27 MB parse would blow the
+// free-plan CPU budget inside waitUntil and silently kill the write).
+async function saveToKv(
+  kv: KvLike, key: string, res: Response, cfg: { ttl: number; minBytes: number },
+): Promise<void> {
+  try {
+    // Read raw bytes, not text(): workerd does NOT auto-decompress
+    // httpServerHandler bodies, so if the app gzipped its own response
+    // clone.text() would hand us gzip bytes as a string and we would store a
+    // double-gzipped blob (browser decodes only one layer → JSON.parse fails
+    // on the client). Normalise to plain JSON first.
+    let buf = await res.arrayBuffer();
+    let wasGz = false;
+    const magic = new Uint8Array(buf.slice(0, 2));
+    if (magic[0] === 0x1f && magic[1] === 0x8b) {
+      wasGz = true;
+      buf = await new Response(
+        new Response(buf).body!.pipeThrough(new DecompressionStream("gzip")),
+      ).arrayBuffer();
+    }
+    const head = new TextDecoder().decode(buf.slice(0, 1));
+    if (buf.byteLength >= cfg.minBytes && (head === "[" || head === "{")) {
+      const gz = new Response(buf).body!.pipeThrough(new CompressionStream("gzip"));
+      const out = await new Response(gz).arrayBuffer();
+      // Data is kept ~8x longer than the freshness marker so stale entries can
+      // still be served instantly while a background refresh runs (SWR).
+      await kv.put(key, out, { expirationTtl: Math.max(cfg.ttl * 8, 3600) });
+      await kv.put(`${key}:fresh`, "1", { expirationTtl: cfg.ttl });
+      await kv.put("kv:debug:lastwrite", JSON.stringify({ key, raw: buf.byteLength, gz: out.byteLength, wasGz, at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
+    } else {
+      await kv.put("kv:debug:skip", JSON.stringify({ key, bytes: buf.byteLength, wasGz, at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
+    }
+  } catch (werr) {
+    await kv.put("kv:debug:lasterror", JSON.stringify({ key, err: String(werr), at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
+  }
+}
+
 async function serveJsonFromKv(
   request: Request, url: URL, cfg: { ttl: number; minBytes: number },
   env: EnvLike, ctx: CtxLike,
@@ -122,11 +164,22 @@ async function serveJsonFromKv(
   // the decompressed body instead and let the edge apply the single gzip.
   // Streaming decompression is cheap CPU and never buffers the 27 MB.
   try {
-    const buf = await kv.get(key, { type: "arrayBuffer" });
-    if (buf && buf.byteLength > 0) {
+    const [buf, fresh] = await Promise.all([
+      kv.get(key, { type: "arrayBuffer" }).catch(() => null),
+      kv.get(`${key}:fresh`).catch(() => null),
+    ]);
+    if (buf && (buf as ArrayBuffer).byteLength > 0) {
       const headers = corsHeaders(request, env);
       const plain = new Response((buf as ArrayBuffer)).body!
         .pipeThrough(new DecompressionStream("gzip"));
+      if (!fresh) {
+        // Stale-while-revalidate: serve the stale copy instantly, refresh in
+        // the background so the user NEVER waits on the 8–16s cold rebuild.
+        ctx.waitUntil((async () => {
+          const res = await next();
+          if (res.ok) await saveToKv(kv, key, res, cfg);
+        })().catch(() => {}));
+      }
       return new Response(plain, { headers });
     }
   } catch { /* KV read failed — fall through to the app */ }
@@ -135,39 +188,7 @@ async function serveJsonFromKv(
   if (res.ok) {
     try {
       const clone = res.clone();
-      // Store gzip-compressed via a native stream — no JSON.parse (a 27 MB
-      // parse would blow the free-plan CPU budget inside waitUntil and
-      // silently kill the write), and compression keeps the full all-quotes
-      // response under KV's 25 MiB value limit.
-      ctx.waitUntil((async () => {
-        try {
-          // Read raw bytes, not text(): workerd does NOT auto-decompress
-          // httpServerHandler bodies, so if the app gzipped its own response
-          // clone.text() would hand us gzip bytes as a string and we would
-          // store a double-gzipped blob (browser decodes only one layer →
-          // JSON.parse fails on the client). Normalise to plain JSON first.
-          let buf = await clone.arrayBuffer();
-          let wasGz = false;
-          const magic = new Uint8Array(buf.slice(0, 2));
-          if (magic[0] === 0x1f && magic[1] === 0x8b) {
-            wasGz = true;
-            buf = await new Response(
-              new Response(buf).body!.pipeThrough(new DecompressionStream("gzip")),
-            ).arrayBuffer();
-          }
-          const head = new TextDecoder().decode(buf.slice(0, 1));
-          if (buf.byteLength >= cfg.minBytes && (head === "[" || head === "{")) {
-            const gz = new Response(buf).body!.pipeThrough(new CompressionStream("gzip"));
-            const out = await new Response(gz).arrayBuffer();
-            await kv.put(key, out, { expirationTtl: cfg.ttl });
-            await kv.put("kv:debug:lastwrite", JSON.stringify({ key, raw: buf.byteLength, gz: out.byteLength, wasGz, at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
-          } else {
-            await kv.put("kv:debug:skip", JSON.stringify({ key, bytes: buf.byteLength, wasGz, at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
-          }
-        } catch (werr) {
-          await kv.put("kv:debug:lasterror", JSON.stringify({ key, err: String(werr), at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
-        }
-      })());
+      ctx.waitUntil(saveToKv(kv, key, clone, cfg));
     } catch { /* clone failed — non-fatal */ }
   }
   return res;
