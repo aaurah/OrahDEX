@@ -32,17 +32,57 @@ const STUB_EXPORTS = {
   tty: ["isatty", "ReadStream", "WriteStream"],
   vm: [],
 };
+// fs needs functional no-ops for pino/SonicBoom (writes to fd 1): pretend
+// every write succeeds fully, and forward log lines to console.log so the
+// app logs land in Workers logs instead of vanishing.
+const FS_STUB_EXTRA = `
+export function write(fd, buf, a, b, c) { const cb = [a, b, c].find((x) => typeof x === "function"); if (cb) cb(null, (buf && buf.length) || 0, buf); try { console.log(String(buf).replace(/\\n+$/, "")); } catch {} }
+export function writeSync(fd, buf) { try { console.log(String(buf).replace(/\\n+$/, "")); } catch {} return (buf && buf.length) || 0; }
+export function open(a, b, c, d) { const cb = [b, c, d].find((x) => typeof x === "function"); if (cb) cb(null, 1); }
+export function openSync() { return 1; }
+export function close(fd, cb) { if (cb) cb(null); }
+export function closeSync() {}
+export function fsync(fd, cb) { if (cb) cb(null); }
+export function fsyncSync() {}
+export function statSync() { return { isFile: () => false, isDirectory: () => false, size: 0 }; }
+export function stat(a, b) { const cb = typeof a === "function" ? a : b; if (cb) cb(null, statSync()); }
+export const constants = { O_WRONLY: 1, O_CREAT: 64, O_APPEND: 1024 };
+`;
 
-async function shimFor(name) {
-  const file = path.join(shimDir, name.replaceAll("/", "_") + ".mjs");
+function shimContent(name) {
   if (REAL.has(name)) {
-    const extra = name === "stream" ? `\nimport { EventEmitter as __EE } from "node:events";\nconst __S = (def && def.Stream) || (typeof def === "function" ? def : class extends __EE {});\nexport { __S as Stream };\n` : "";
-    await writeFile(file, `import def from "node:${name}";\nexport * from "node:${name}";\nexport default def;${extra}\n`);
-  } else {
-    const named = (STUB_EXPORTS[name] || [])
-      .map((n) => `export const ${n} = (...a) => false;`)
-      .join("\n");
-    await writeFile(file, `const stub = new Proxy(function(){}, { get: (t, k) => (k === "__esModule" ? true : (t[k] ??= stub)), apply: () => stub, construct: () => stub });\nexport default stub;\n${named}\n`);
+    let extra = "";
+    if (name === "stream") {
+      extra = `\nimport { EventEmitter as __EE } from "node:events";\nconst __S = (def && def.Stream) || (typeof def === "function" ? def : class extends __EE {});\nexport { __S as Stream };\n`;
+    } else if (name === "util") {
+      // workerd's node:util lacks some legacy exports (e.g. deprecate, which
+      // the `debug` package calls at module load). Provide safe fallbacks.
+      extra = `\nconst __dep = (def && def.deprecate) || ((fn) => fn);\nexport { __dep as deprecate };\n`;
+    }
+    return `import def from "node:${name}";\nexport * from "node:${name}";\nexport default def;${extra}\n`;
+  }
+  const named = (STUB_EXPORTS[name] || [])
+    .map((n) => `export const ${n} = (...a) => false;`)
+    .join("\n");
+  const extra = name === "fs" ? FS_STUB_EXTRA : "";
+  return `const stub = new Proxy(function(){}, { get: (t, k) => (k === "__esModule" ? true : (t[k] ??= stub)), apply: () => stub, construct: () => stub });\nexport default stub;\n${named}\n${extra}\n`;
+}
+
+// Pre-generate every shim up front. Writing them lazily inside onResolve is a
+// race: concurrent writeFile calls to the same path can truncate the file
+// while esbuild is reading it, producing an empty module in the bundle.
+const shimFiles = new Map();
+for (const name of [...REAL, ...Object.keys(STUB_EXPORTS)]) {
+  const file = path.join(shimDir, name.replaceAll("/", "_") + ".mjs");
+  await writeFile(file, shimContent(name));
+  shimFiles.set(name, file);
+}
+function shimFor(name) {
+  let file = shimFiles.get(name);
+  if (!file) {
+    file = path.join(shimDir, name.replaceAll("/", "_") + ".mjs");
+    shimFiles.set(name, file);
+    return writeFile(file, shimContent(name)).then(() => file);
   }
   return file;
 }
@@ -62,7 +102,11 @@ const patchCjsPlugin = {
         .replace(/require\((['"])events\1\)(?!\s*[.[(])/g,
           "(require('events').EventEmitter||require('events').default||require('events'))")
         .replace(/require\((['"])stream\1\)(?!\s*[.[(])/g,
-          "(require('stream').Stream||require('stream').default||require('stream'))");
+          "(require('stream').Stream||require('stream').default||require('stream'))")
+        // is-promise resolves to its ESM build (default-only export) under our
+        // conditions, but CJS consumers call the export directly as a function.
+        .replace(/require\((['"])is-promise\1\)(?!\s*[.[(])/g,
+          "(require('is-promise').default||require('is-promise'))");
       // pg/lib/index.js: esbuild wraps pg-pool's CJS class export in an
       // interop namespace; unwrap it so `class BoundPool extends Pool` works.
       if (/pg[\\/]lib[\\/]index\.js$/.test(args.path)) {
