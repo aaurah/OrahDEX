@@ -107,6 +107,20 @@ await build({
     // paths; fs is stubbed anyway, so a fixed value is enough.
     "import.meta.url": '"file:///worker/index.js"',
   },
+  banner: {
+    js: `// workerd bans timers/IO/RNG in global scope. Dummy them during module
+// evaluation; the entry point restores the originals on first request.
+(() => {
+  const saved = {};
+  const dummyTimer = () => ({ unref() {}, refresh() {}, hasRef: () => false });
+  const dummyFetch = () => new Promise(() => {});
+  for (const n of ["setInterval", "setTimeout", "setImmediate", "queueMicrotask"]) {
+    if (typeof globalThis[n] === "function") { saved[n] = globalThis[n]; globalThis[n] = n === "queueMicrotask" ? () => {} : dummyTimer; }
+  }
+  if (typeof globalThis.fetch === "function") { saved.fetch = globalThis.fetch; globalThis.fetch = dummyFetch; }
+  globalThis.__orahdex_orig__ = saved;
+})();`,
+  },
   logLevel: "info",
   minify: true,
 });
