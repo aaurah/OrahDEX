@@ -38,18 +38,15 @@ function getHandler() {
   return handlerPromise;
 }
 
-// Temporary diagnostics endpoint: attempts a real pg connection and returns
-// the exact error so workerd/pg incompatibilities are visible without log
-// access. Remove once production is verified.
+// Temporary diagnostics endpoint: runs a real query through the app's pooled
+// pg connection and returns the exact error so workerd/pg incompatibilities
+// are visible without log access. Remove once production is verified.
 async function dbCheck(): Promise<Response> {
   const out: Record<string, unknown> = { url: process.env.DATABASE_URL ? "set" : "MISSING" };
   try {
-    const { Client } = await import("pg");
-    const client = new Client({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10000 });
-    await client.connect();
-    const r = await client.query("SELECT 1 AS ok, count(*) AS markets FROM markets");
+    const { pool } = await import("@workspace/db");
+    const r = await pool.query("SELECT 1 AS ok, (SELECT count(*) FROM markets) AS markets");
     out.result = r.rows;
-    await client.end();
     out.status = "connected";
   } catch (e) {
     out.status = "failed";
