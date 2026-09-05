@@ -845,7 +845,11 @@ async function healthHandler(_req: any, res: any) {
   // tick — a premature "dead" verdict would cause deployment health checks to
   // fail and restart the instance, making the problem worse.
   const uptimeSec = (Date.now() - SERVER_START_TIME) / 1000;
-  if (uptimeSec < 45) {
+  // In workerd every isolate evaluates this module at its first request, so
+  // "uptime" is per-isolate and almost never exceeds 45 s — the status page
+  // would show "starting" forever. The grace period only matters for server
+  // deployment probes; skip it in the worker runtime.
+  if (uptimeSec < 45 && process.env.ORAHDEX_RUNTIME !== "worker") {
     return res.status(200).json({
       status: "starting",
       uptime: Math.floor(uptimeSec),
