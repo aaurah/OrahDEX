@@ -97,6 +97,9 @@ async function dbCheck(): Promise<Response> {
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown): Promise<Response> {
+    // Restore real timers/fetch before ANY path — the diagnostics endpoint
+    // needs working setTimeout too, and it bypasses getHandler().
+    restoreGlobals();
     const path = new URL(request.url).pathname;
     // Reachable both directly (workers.dev) and through the /api/* route.
     if (path === "/__dbcheck" || path === "/api/__dbcheck") return dbCheck();
