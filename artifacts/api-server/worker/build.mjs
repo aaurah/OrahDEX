@@ -36,7 +36,10 @@ const STUB_EXPORTS = {
 async function shimFor(name) {
   const file = path.join(shimDir, name.replaceAll("/", "_") + ".mjs");
   if (REAL.has(name)) {
-    await writeFile(file, `import def from "node:${name}";\nexport * from "node:${name}";\nexport default def;\n`);
+    // workerd's node:stream lacks the legacy `Stream` alias that older CJS
+    // packages (e.g. express/send) inherit from. Provide it explicitly.
+    const extra = name === "stream" ? `\nexport const Stream = def && def.Stream ? def.Stream : def;\n` : "";
+    await writeFile(file, `import def from "node:${name}";\nexport * from "node:${name}";\nexport default def;${extra}\n`);
   } else {
     const named = (STUB_EXPORTS[name] || [])
       .map((n) => `export const ${n} = (...a) => false;`)
