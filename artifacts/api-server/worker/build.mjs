@@ -23,11 +23,13 @@ const REAL = new Set([
   "querystring", "stream", "stream/promises", "string_decoder", "timers",
   "timers/promises", "tls", "url", "util", "zlib",
 ]);
-// Named imports the codebase takes from stubbed modules.
+// Named imports the codebase takes from stubbed modules. Stubs return false
+// (never throw) so logging/tty probes and feature checks don't crash boot.
 const STUB_EXPORTS = {
   fs: ["existsSync", "readFileSync", "writeFileSync", "readdirSync", "mkdirSync", "createReadStream", "createWriteStream", "promises"],
   "fs/promises": ["readFile", "writeFile", "mkdir", "readdir", "rm"],
   child_process: ["exec", "spawn", "execSync", "spawnSync"],
+  tty: ["isatty", "ReadStream", "WriteStream"],
   vm: [],
 };
 
@@ -37,7 +39,7 @@ async function shimFor(name) {
     await writeFile(file, `import def from "node:${name}";\nexport * from "node:${name}";\nexport default def;\n`);
   } else {
     const named = (STUB_EXPORTS[name] || [])
-      .map((n) => `export const ${n} = (...a) => { throw new Error("${name}.${n} is not available in this environment"); };`)
+      .map((n) => `export const ${n} = (...a) => false;`)
       .join("\n");
     await writeFile(file, `const stub = new Proxy(function(){}, { get: (t, k) => (k === "__esModule" ? true : (t[k] ??= stub)), apply: () => stub, construct: () => stub });\nexport default stub;\n${named}\n`);
   }
