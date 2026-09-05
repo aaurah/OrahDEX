@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "orahdex-api",
+  "main": "./dist/index.js",
+  "compatibility_date": "2026-09-03",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "routes": [
+    { "pattern": "aaurah.org/api/*", "zone_name": "aaurah.org" },
+    { "pattern": "www.aaurah.org/api/*", "zone_name": "aaurah.org" }
+  ]
+}
