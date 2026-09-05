@@ -91,18 +91,16 @@ async function serveJsonFromKv(
   const kv = env.ORAHDEX_KV as unknown as KvLike | undefined;
   if (!kv) return next();
   const key = kvKey(url);
-  // Serve the cached JSON body as-is — zero parse/serialize CPU.
-  // Stored gzip-compressed (27 MB raw → ~1 MB, under KV's 25 MiB value limit).
-  const acceptsGzip = (request.headers.get("accept-encoding") ?? "").includes("gzip");
+  // Serve the cached JSON — always DE compressed. The blob is stored gzipped
+  // (27 MB → ~1 MB, under KV's 25 MiB limit), but this zone's edge compresses
+  // Worker responses itself; setting content-encoding here caused the body to
+  // be gzipped TWICE (browsers decode one layer → JSON.parse fails). Stream
+  // the decompressed body instead and let the edge apply the single gzip.
+  // Streaming decompression is cheap CPU and never buffers the 27 MB.
   try {
     const buf = await kv.get(key, { type: "arrayBuffer" });
     if (buf && buf.byteLength > 0) {
       const headers = corsHeaders(request, env);
-      if (acceptsGzip) {
-        headers["content-encoding"] = "gzip";
-        return new Response(buf, { headers });
-      }
-      // Client can't take gzip — decompress via native stream (cheap CPU).
       const plain = new Response((buf as ArrayBuffer)).body!
         .pipeThrough(new DecompressionStream("gzip"));
       return new Response(plain, { headers });
