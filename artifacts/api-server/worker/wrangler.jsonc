@@ -11,5 +11,8 @@
   "kv_namespaces": [
     { "binding": "ORAHDEX_KV", "id": "8dd2e276f6944b1aa06548efb4294d06" }
   ],
-  "vars": { "ENVIRONMENT": "production" }
+  "vars": {
+    "ENVIRONMENT": "production",
+    "ALLOWED_ORIGINS": "https://aaurah.org,https://www.aaurah.org,https://orahdex.com,https://www.orahdex.com,https://orahdex.site,https://www.orahdex.site,https://orahdex.org,https://www.orahdex.org"
+  }
 }
