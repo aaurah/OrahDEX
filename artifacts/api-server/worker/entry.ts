@@ -32,6 +32,10 @@ function getHandler() {
   if (!handlerPromise) {
     handlerPromise = (async () => {
       restoreGlobals();
+      // Signal to the app that it runs inside workerd. Used to disable the
+      // compression middleware (workerd zlib streaming corrupts gzip bodies;
+      // Cloudflare's edge compresses responses automatically anyway).
+      process.env.ORAHDEX_RUNTIME = "worker";
       const { default: app } = await import("../src/app");
       const server = http.createServer(app);
       return httpServerHandler(server) as { fetch: (r: Request, e: unknown, c: unknown) => Promise<Response> };
