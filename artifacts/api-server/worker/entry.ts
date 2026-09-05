@@ -68,7 +68,7 @@ const KV_CACHED_GETS: Record<string, { ttl: number; minBytes: number }> = {
 
 function kvKey(url: URL): string {
   // include the query string so ?all=true and ?quote=BSV cache separately
-  return `kv:v1:${url.pathname}${url.search}`;
+  return `kv:v2:${url.pathname}${url.search}`;
 }
 
 function corsHeaders(request: Request, env: EnvLike): Record<string, string> {
@@ -91,10 +91,20 @@ async function serveJsonFromKv(
   if (!kv) return next();
   const key = kvKey(url);
   // Serve the cached JSON body as-is — zero parse/serialize CPU.
+  // Stored gzip-compressed (27 MB raw → ~3 MB, under KV's 25 MiB value limit).
+  const acceptsGzip = (request.headers.get("accept-encoding") ?? "").includes("gzip");
   try {
-    const hit = await kv.get(key);
-    if (typeof hit === "string" && hit.length >= cfg.minBytes) {
-      return new Response(hit, { headers: corsHeaders(request, env) });
+    const buf = await kv.get(key, { type: "arrayBuffer" });
+    if (buf && buf.byteLength > 0) {
+      const headers = corsHeaders(request, env);
+      if (acceptsGzip) {
+        headers["content-encoding"] = "gzip";
+        return new Response(buf, { headers });
+      }
+      // Client can't take gzip — decompress via native stream (cheap CPU).
+      const plain = new Response((buf as ArrayBuffer)).body!
+        .pipeThrough(new DecompressionStream("gzip"));
+      return new Response(plain, { headers });
     }
   } catch { /* KV read failed — fall through to the app */ }
 
@@ -102,14 +112,18 @@ async function serveJsonFromKv(
   if (res.ok) {
     try {
       const clone = res.clone();
-      // Store the raw body text — no JSON.parse (a 10 MB parse would blow the
-      // free-plan CPU budget inside waitUntil and silently kill the write).
+      // Store gzip-compressed via a native stream — no JSON.parse (a 27 MB
+      // parse would blow the free-plan CPU budget inside waitUntil and
+      // silently kill the write), and compression keeps the full all-quotes
+      // response under KV's 25 MiB value limit.
       ctx.waitUntil((async () => {
         try {
           const text = await clone.text();
           if (text.length >= cfg.minBytes && (text.startsWith("[") || text.startsWith("{"))) {
-            await kv.put(key, text, { expirationTtl: cfg.ttl });
-            await kv.put("kv:debug:lastwrite", JSON.stringify({ key, bytes: text.length, at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
+            const gz = new Response(text).body!.pipeThrough(new CompressionStream("gzip"));
+            const buf = await new Response(gz).arrayBuffer();
+            await kv.put(key, buf, { expirationTtl: cfg.ttl });
+            await kv.put("kv:debug:lastwrite", JSON.stringify({ key, raw: text.length, gz: buf.byteLength, at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
           } else {
             await kv.put("kv:debug:skip", JSON.stringify({ key, bytes: text.length, head: text.slice(0, 40), at: Date.now() }), { expirationTtl: 3600 }).catch(() => {});
           }
