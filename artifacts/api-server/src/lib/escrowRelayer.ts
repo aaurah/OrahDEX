@@ -50,50 +50,40 @@ export const ESCROW_ABI = parseAbi([
   "event OrderReleased(bytes32 indexed orderId, address indexed recipient, address token, uint256 amount)",
 ]);
 
-// Placeholder used for chains where the contract is not yet deployed.
-// Any chain mapped to this address must be blocked — funds sent there
-// would be unrecoverable because the relayer controls no key for it.
-const PLACEHOLDER_ESCROW_ADDRESS = "0xeE234cEb85697b64800E696699b7841e00413B4f" as const;
+// Canonical mainnet escrow address — deployed via CREATE2 at the SAME address
+// on every chain below (verified on-chain via eth_getCode + relayer() read on
+// 2026-09-05; relayer = 0x5A391a3A2d6d885C412FE24be624126694de08dA).
+const MAINNET_ESCROW_ADDRESS = "0xeE234cEb85697b64800E696699b7841e00413B4f" as const;
 
 // Populated as contracts are deployed on each chain.
 // Deploy script (deploy-escrow-standalone.mjs) writes addresses here automatically.
 export const ESCROW_ADDRESSES: Record<number, `0x${string}`> = {
-  // ── Mainnets ────────────────────────────────────────────────────────────────
-  // NOTE: All mainnet entries below still point to the placeholder address.
-  //       They are intentionally NOT in DEPLOYED_ESCROW_CHAINS and will be
-  //       blocked at the API level until the contract is deployed and verified
-  //       on each chain.  Update both maps when deploying to a new chain.
-  1:      PLACEHOLDER_ESCROW_ADDRESS,   // Ethereum      — deploy pending
-  10:     PLACEHOLDER_ESCROW_ADDRESS,   // Optimism      — deploy pending
-  56:     PLACEHOLDER_ESCROW_ADDRESS,   // BSC           — deploy pending
-  43114:  PLACEHOLDER_ESCROW_ADDRESS,   // Avalanche     — deploy pending
-  59144:  PLACEHOLDER_ESCROW_ADDRESS,   // Linea         — deploy pending
-  534352: PLACEHOLDER_ESCROW_ADDRESS,   // Scroll        — deploy pending
-  8453:   PLACEHOLDER_ESCROW_ADDRESS,   // Base          — deploy pending
-  42161:  PLACEHOLDER_ESCROW_ADDRESS,   // Arbitrum      — deploy pending
-  137:    PLACEHOLDER_ESCROW_ADDRESS,   // Polygon       — deploy pending
-  324:    PLACEHOLDER_ESCROW_ADDRESS,   // zkSync Era    — deploy pending
-  1329:   PLACEHOLDER_ESCROW_ADDRESS,   // Sei           — deploy pending
-  130:    PLACEHOLDER_ESCROW_ADDRESS,   // Unichain      — deploy pending
+  // ── Mainnets (all verified deployed at the canonical CREATE2 address) ──────
+  1:      MAINNET_ESCROW_ADDRESS,   // Ethereum      — DEPLOYED ✓
+  10:     MAINNET_ESCROW_ADDRESS,   // Optimism      — DEPLOYED ✓
+  56:     MAINNET_ESCROW_ADDRESS,   // BSC           — DEPLOYED ✓
+  43114:  MAINNET_ESCROW_ADDRESS,   // Avalanche     — DEPLOYED ✓
+  59144:  MAINNET_ESCROW_ADDRESS,   // Linea         — DEPLOYED ✓
+  534352: MAINNET_ESCROW_ADDRESS,   // Scroll        — DEPLOYED ✓
+  8453:   MAINNET_ESCROW_ADDRESS,   // Base          — DEPLOYED ✓
+  42161:  MAINNET_ESCROW_ADDRESS,   // Arbitrum      — DEPLOYED ✓
+  137:    MAINNET_ESCROW_ADDRESS,   // Polygon       — DEPLOYED ✓
+  324:    MAINNET_ESCROW_ADDRESS,   // zkSync Era    — DEPLOYED ✓
+  1329:   MAINNET_ESCROW_ADDRESS,   // Sei           — DEPLOYED ✓
+  130:    MAINNET_ESCROW_ADDRESS,   // Unichain      — DEPLOYED ✓
   // ── Testnets ────────────────────────────────────────────────────────────────
   11155111: "0x4deb6023abD9E1C640aDa35201be8ff591d21cF2", // Sepolia — DEPLOYED ✓
-  // 84532:   "0x...",                                      // Base Sepolia   — deploy pending
-  // 421614:  "0x...",                                      // Arb Sepolia    — deploy pending
-  // 11155420:"0x...",                                      // Op Sepolia     — deploy pending
-  // 80002:   "0x...",                                      // Polygon Amoy   — deploy pending
-  // 97:      "0x...",                                      // BSC Testnet    — deploy pending
-  // 43113:   "0x...",                                      // Avax Fuji      — deploy pending
 };
 
 /**
  * Chain IDs where the escrow contract is actually deployed and verified.
  * Any chain NOT in this set must be blocked, even if ESCROW_ADDRESSES has
- * an entry (which may be the placeholder address).
- * Add a chain ID here only after deploying + verifying the contract on-chain
- * and updating ESCROW_ADDRESSES to the real deployed address.
+ * an entry. Add a chain ID here only after deploying + verifying the
+ * contract on-chain and updating ESCROW_ADDRESSES to the real address.
  */
 export const DEPLOYED_ESCROW_CHAINS = new Set<number>([
-  11155111, // Sepolia — the only chain with a real deployed contract
+  1, 10, 56, 43114, 59144, 534352, 8453, 42161, 137, 324, 1329, 130, // mainnets ✓
+  11155111, // Sepolia
 ]);
 
 /**
@@ -104,7 +94,7 @@ export const DEPLOYED_ESCROW_CHAINS = new Set<number>([
  */
 export function isEscrowDeployed(chainId: number): boolean {
   return DEPLOYED_ESCROW_CHAINS.has(chainId) &&
-    ESCROW_ADDRESSES[chainId] !== PLACEHOLDER_ESCROW_ADDRESS;
+    !!ESCROW_ADDRESSES[chainId];
 }
 
 const CHAIN_BY_ID = {
@@ -239,7 +229,9 @@ export interface EscrowDeposit {
  * trust the order metadata. Reads are parallel so total time is ~max(rpc).
  */
 export async function findEscrowChain(orderId: string): Promise<number | null> {
-  const chainIds = Object.keys(ESCROW_ADDRESSES).map(Number);
+  // Only scan chains where escrow is actually deployed — never probe
+  // placeholder or unconfigured chains (fail-closed safety).
+  const chainIds = [...DEPLOYED_ESCROW_CHAINS];
   // ── Fail-closed: any per-chain RPC error throws. ─────────────────────
   // We intentionally do NOT use allSettled here — if even one chain we
   // can't read, we can't tell whether the deposit is there. The caller
@@ -312,14 +304,12 @@ export async function releaseEscrow(
   chainId:   number,
 ): Promise<ReleaseResult> {
   // Safety gate: block any chain that doesn't have a real deployed contract.
-  // All mainnet chains currently map to the placeholder address — accepting
-  // funds on those chains would make them unrecoverable.
   if (!isEscrowDeployed(chainId)) {
     return {
       ok:     false,
-      reason: `Escrow contract not yet deployed on chain ${chainId}. ` +
-              `Escrow is only available on Sepolia (testnet) at this time. ` +
-              `Mainnet deployments are in progress — check back soon.`,
+      reason: `Escrow contract not deployed on chain ${chainId}. ` +
+              `Escrow is live on Ethereum, Optimism, BSC, Avalanche, Linea, Scroll, ` +
+              `Base, Arbitrum, Polygon, zkSync Era, Sei, Unichain, and Sepolia.`,
     };
   }
 
