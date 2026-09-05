@@ -189,7 +189,7 @@ export function Markets() {
   const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
   const { results: serverSearchResults } = useMarketSearch(search, { debounceMs: 300 });
 
-  // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
+  // LE "all" pairs — only needed for SOL/ETH tabs, Favorites, or when searching
   const needAllPairs = tab === "sol" || tab === "eth" || tab === "favorites" || search.length > 0;
   const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
   const leAllPairs = useMemo(() => {
@@ -351,16 +351,28 @@ export function Markets() {
       case "eth": {
         const dbEth = dbByQuote("ETH");
         const dbBases = new Set(dbEth.map((m: any) => m.baseAsset));
-        const baseKw = ["base", "base-mainnet"];
-        const baseLeByBase = new Map<string, any>();
+        // Merge EVERY ETH-quoted LetsExchange pair (any network), one per base
+        // asset — same pattern as the BSV/BTC tabs. This is what makes the tab
+        // show the full ETH pair list instead of only the DB's 198 rows.
+        const leEthByBase = new Map<string, any>();
         for (const m of leAllPairs) {
-          const net = String((m as any).network ?? "").toLowerCase();
-          if (!baseKw.some(kw => net.includes(kw))) continue;
+          if (m.quoteAsset !== "ETH") continue;
           if (dbBases.has(m.baseAsset)) continue;
-          const ex = baseLeByBase.get(m.baseAsset);
-          if (!ex || m.lastPrice > ex.lastPrice) baseLeByBase.set(m.baseAsset, m);
+          const ex = leEthByBase.get(m.baseAsset);
+          if (!ex || m.lastPrice > ex.lastPrice) leEthByBase.set(m.baseAsset, m);
         }
-        return [...dbEth, ...baseLeByBase.values()];
+        // Plus Ethereum-network pairs quoted in other assets (e.g. ETH-chain
+        // tokens trading vs USDT) so ETH-ecosystem coins are discoverable here.
+        const ethNetKw = ["eth", "ethereum", "erc20", "mainnet"];
+        for (const m of leAllPairs) {
+          if (m.quoteAsset === "ETH") continue;
+          const net = String((m as any).network ?? "").toLowerCase();
+          if (!ethNetKw.some(kw => net.includes(kw))) continue;
+          if (dbBases.has(m.baseAsset) || leEthByBase.has(m.baseAsset)) continue;
+          const ex = leEthByBase.get(m.baseAsset);
+          if (!ex || m.lastPrice > ex.lastPrice) leEthByBase.set(m.baseAsset, m);
+        }
+        return [...dbEth, ...leEthByBase.values()];
       }
       case "bnb":     return dbByQuote("BNB");
       case "matic":   return dbByQuote("MATIC");
@@ -446,7 +458,11 @@ export function Markets() {
         const dbBtcBases = new Set(tradeable(raw.filter((m:any)=>m.quoteAsset==="BTC")).map((m:any)=>m.baseAsset));
         return c + leBtcPairs.filter(m => !dbBtcBases.has(m.baseAsset)).length;
       }
-      case "eth":       return dbQ("ETH");
+      case "eth": {
+        const c = dbQ("ETH");
+        const dbBasesE = new Set(tradeable(raw.filter((m:any)=>m.quoteAsset==="ETH")).map((m:any)=>m.baseAsset));
+        return c + leAllPairs.filter(m => m.quoteAsset==="ETH" && !dbBasesE.has(m.baseAsset)).length;
+      }
       case "bnb":       return dbQ("BNB");
       case "matic":     return dbQ("MATIC");
       case "avax":      return dbQ("AVAX");
@@ -712,7 +728,7 @@ export function Markets() {
               <Wallet className="w-3.5 h-3.5 text-primary shrink-0" />
               <span className="text-xs font-semibold text-primary flex-1 min-w-0">Showing {walletChainLabel} Markets</span>
               <button onClick={() => setWalletBannerDismissed(true)} className="text-muted-foreground hover:text-foreground transition-colors shrink-0">
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
           )}
