@@ -1,6 +1,5 @@
 import { drizzle as drizzleNodePg } from "drizzle-orm/node-postgres";
 import type { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { drizzle as drizzleNeon } from "drizzle-orm/neon-serverless";
 import pg from "pg";
 // @ts-ignore — vendored ESM build of @neondatabase/serverless v1.1.0 (MIT).
 // Materialized at build time by vendor/ensure.mjs — not an npm dep, so no
@@ -118,9 +117,11 @@ export const pool: pg.Pool = (() => {
   return p;
 })();
 
-export const db = (isWorkerd
-  ? drizzleNeon(pool as any, { schema })
-  : drizzleNodePg(pool, { schema })) as unknown as NodePgDatabase<typeof schema>;
+// The Neon serverless Pool implements the pg Pool query interface
+// (query(text, values) / query(config) / connect / on / end), so the
+// node-postgres drizzle adapter drives it unchanged — no separate adapter
+// package to resolve at bundle time.
+export const db = drizzleNodePg(pool, { schema });
 
 /** Return true for transient network-level Postgres errors that are safe to retry. */
 function isTransientPgError(err: unknown): boolean {

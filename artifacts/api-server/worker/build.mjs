@@ -39,8 +39,8 @@ const STUB_EXPORTS = {
 // every write succeeds fully, and forward log lines to console.log so the
 // app logs land in Workers logs instead of vanishing.
 const FS_STUB_EXTRA = `
-export function write(fd, buf, a, b, c) { const cb = [a, b, c].find((x) => typeof x === "function"); if (cb) cb(null, (buf && buf.length) || 0, buf); try { console.log(String(buf).replace(/\n+$/, "")); } catch {} }
-export function writeSync(fd, buf) { try { console.log(String(buf).replace(/\n+$/, "")); } catch {} return (buf && buf.length) || 0; }
+export function write(fd, buf, a, b, c) { const cb = [a, b, c].find((x) => typeof x === "function"); if (cb) cb(null, (buf && buf.length) || 0, buf); try { console.log(String(buf).replace(/\\n+$/, "")); } catch {} }
+export function writeSync(fd, buf) { try { console.log(String(buf).replace(/\\n+$/, "")); } catch {} return (buf && buf.length) || 0; }
 export function open(a, b, c, d) { const cb = [b, c, d].find((x) => typeof x === "function"); if (cb) cb(null, 1); }
 export function openSync() { return 1; }
 export function close(fd, cb) { if (cb) cb(null); }
