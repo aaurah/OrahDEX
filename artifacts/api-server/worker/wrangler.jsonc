@@ -5,8 +5,11 @@
   "compatibility_date": "2026-09-03",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
-  "routes": [
-    { "pattern": "aaurah.org/api/*", "zone_name": "aaurah.org" },
-    { "pattern": "www.aaurah.org/api/*", "zone_name": "aaurah.org" }
-  ]
+  "d1_databases": [
+    { "binding": "ORAHDEX_DB", "database_name": "orahdex-db", "database_id": "d751fe1d-70f7-4761-8c3a-0a73c93c010a" }
+  ],
+  "kv_namespaces": [
+    { "binding": "ORAHDEX_KV", "id": "8dd2e276f6944b1aa06548efb4294d06" }
+  ],
+  "vars": { "ENVIRONMENT": "production" }
 }
