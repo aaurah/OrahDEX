@@ -131,25 +131,34 @@ async function quoteLetsExchange(
     // (e.g. USDT → "ERC20", BNB → "BEP20", TRX → "TRC20")
     const networkFrom = LE_COIN_NETWORK[from.toUpperCase()]?.network ?? from.toUpperCase();
     const networkTo   = LE_COIN_NETWORK[to.toUpperCase()]?.network   ?? to.toUpperCase();
-    const { ok, status, data } = await leRequest("/v1/info", "POST", {
+    const reqBody = {
       from,
       to,
       network_from:   networkFrom,
       network_to:     networkTo,
       amount,
       affiliate_id:   AFFILIATE_ID,
-    });
+    };
+    let { ok, status, data } = await leRequest("/v1/info", "POST", reqBody);
+
+    // LE has been retiring v1 endpoints (404 on /v1/info while /v2/coins keeps
+    // working). Fall back to the v2 quote endpoint so estimates keep flowing.
+    if (!ok && (status === 404 || status === 410 || status === 501)) {
+      const v2 = await leRequest("/v2/info", "POST", reqBody).catch(() => null);
+      if (v2) { ok = v2.ok; status = v2.status; data = v2.data; }
+    }
 
     if (!ok || !data || typeof data !== "object") {
-      return { quote: null, error: `LetsExchange HTTP ${status}` };
+      const snippet = data ? JSON.stringify(data).slice(0, 140) : "";
+      return { quote: null, error: `LetsExchange HTTP ${status}${snippet ? ` ${snippet}` : ""}` };
     }
 
     const d = data as Record<string, unknown>;
-    const estimated = parseFloat(String(d.estimated_to ?? d.to_amount ?? "")) || 0;
+    const estimated = parseFloat(String(d.estimated_to ?? d.to_amount ?? d.estimated_amount ?? d.estimated ?? "")) || 0;
     const minAmt    = d.min_amount != null ? parseFloat(String(d.min_amount)) || null : null;
     const maxAmt    = d.max_amount != null ? parseFloat(String(d.max_amount)) || null : null;
 
-    if (estimated <= 0) return { quote: null, error: "LetsExchange returned zero estimate" };
+    if (estimated <= 0) return { quote: null, error: `LetsExchange zero estimate: ${JSON.stringify(data).slice(0, 140)}` };
 
     const canExecute =
       (minAmt == null || amount >= minAmt) &&
