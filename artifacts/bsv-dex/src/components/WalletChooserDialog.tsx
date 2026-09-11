@@ -1,0 +1,1520 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { useWalletModalStore } from "@/store/useWalletModalStore";
+import {
+  Fingerprint, Loader2, Plus, LogIn, Shield, AlertCircle,
+  Download, ArrowLeft, Eye, EyeOff, CheckCircle2,
+  HardDrive, ChevronRight, Wallet, QrCode,
+  Smartphone, RefreshCw, Check, WifiOff,
+  FileKey, Copy, AlertTriangle, KeyRound, Globe,
+} from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
+import { API_BASE } from "@/lib/api";
+import { useHandCashStore } from "@/store/useHandCashStore";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { useWalletStore } from "@/store/useWalletStore";
+import {
+  registerPasskeyWallet,
+  importPasskeyWallet,
+  loginWithPasskey,
+  isPasskeySupported,
+  revealPasskeyWalletSecret,
+  type PasskeyChainAddresses,
+} from "@/lib/passkeyWallet";
+import { validateMnemonic, deriveAllAddresses, generateMnemonic } from "@/lib/seedPhrase";
+import {
+  validatePin, hasPin, setPin as savePinVerifier, storeWithPin,
+  storeWithPasskey, createImportPasskey, saveDerivedAddresses,
+} from "@/lib/walletPin";
+
+import {
+  HardwareChooser,
+  LedgerPanel,
+  TrezorPanel,
+  KeystonePanel,
+  GridPlusPanel,
+  type HWDevice,
+} from "@/components/HardwareWalletPanels";
+
+const isMobileDevice = () =>
+  typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
+
+/* ─── Social provider SVG icons ────────────────────────────────────────────── */
+function GoogleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18">
+      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+    </svg>
+  );
+}
+function GitHubIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" className="text-white">
+      <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/>
+    </svg>
+  );
+}
+function AppleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" className="text-white">
+      <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701"/>
+    </svg>
+  );
+}
+function XIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" className="text-white">
+      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+    </svg>
+  );
+}
+function DiscordIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" className="text-white">
+      <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057.1 18.08.114 18.1.135 18.11a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
+    </svg>
+  );
+}
+function FarcasterIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" className="text-white">
+      <path d="M11.72 0C5.244 0 0 5.244 0 11.72s5.244 11.72 11.72 11.72 11.72-5.244 11.72-11.72S18.196 0 11.72 0zm4.68 17.16H14.4v-4.68c0-1.296-.648-1.944-1.656-1.944-.864 0-1.584.504-1.8 1.296v5.328H8.94v-8.28h2.004v1.08c.576-.72 1.44-1.224 2.52-1.224 1.8 0 2.916 1.08 2.916 3.168v5.256z"/>
+    </svg>
+  );
+}
+
+const SOCIAL_PROVIDERS = [
+  { id: "google",    label: "Google",    Icon: GoogleIcon,   bg: "bg-white border-gray-200" },
+  { id: "github",    label: "GitHub",    Icon: GitHubIcon,   bg: "bg-[#24292e] border-[#24292e]" },
+  { id: "apple",     label: "Apple",     Icon: AppleIcon,    bg: "bg-black border-black" },
+  { id: "x",         label: "X",         Icon: XIcon,        bg: "bg-black border-black" },
+  { id: "discord",   label: "Discord",   Icon: DiscordIcon,  bg: "bg-[#5865f2] border-[#5865f2]" },
+  { id: "farcaster", label: "Farcaster", Icon: FarcasterIcon,bg: "bg-[#8a63d2] border-[#8a63d2]" },
+] as const;
+
+const srOnly: React.CSSProperties = {
+  position: "absolute", width: 1, height: 1, padding: 0,
+  margin: -1, overflow: "hidden", clip: "rect(0,0,0,0)",
+  whiteSpace: "nowrap", border: 0,
+};
+
+type Tab =
+  | "choose"
+  | "passkey"
+  | "create-wallet"
+  | "seed-create"
+  | "view-seed"
+  | "import"
+  | "hardware"
+  | "ledger"
+  | "trezor"
+  | "keystone"
+  | "gridplus"
+  | "mobile-qr"
+  | "handcash";
+
+function applyOrahWallet(address: string, chains?: PasskeyChainAddresses) {
+  const store = useWalletStore.getState();
+  // Default to Ethereum mainnet (1) so chainId is always populated for order signing.
+  // The user can switch chains at any time via the chain switcher.
+  const existingChainId = store.chainId ?? 1;
+  store.connect({ address, provider: "orah-wallet", network: "evm", chainId: existingChainId });
+  if (chains) {
+    store.setInternalEvmAddress(chains.evm ?? address);
+    if (chains.bsv)  store.setInternalBsvAddress(chains.bsv);
+    if (chains.bch)  store.setInternalBchAddress(chains.bch);
+    if (chains.btc)  store.setInternalBtcAddress(chains.btc);
+    if (chains.sol)  store.setInternalSolAddress(chains.sol);
+    if (chains.xrp)  store.setInternalXrpAddress(chains.xrp);
+    if (chains.ltc)  store.setInternalLtcAddress(chains.ltc);
+    if (chains.doge) store.setInternalDogeAddress(chains.doge);
+    if (chains.tron) store.setInternalTronAddress(chains.tron);
+  }
+}
+
+/* ─── Shared UI atoms ───────────────────────────────────────────────────── */
+
+function OptionCard({
+  onClick, iconBg, icon, title, sub, badge, featured,
+}: {
+  onClick: () => void;
+  iconBg: string;
+  icon: React.ReactNode;
+  title: string;
+  sub: string;
+  badge?: React.ReactNode;
+  featured?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`group relative w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border transition-all duration-200 text-left ${
+        featured
+          ? "bg-primary/[0.07] border-primary/25 hover:bg-primary/[0.12] hover:border-primary/50 hover:shadow-[0_0_22px_-6px_hsl(var(--primary)/0.3)]"
+          : "bg-card border-border hover:bg-accent hover:border-primary/20"
+      }`}
+    >
+      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 transition-all duration-200 ${iconBg}`}>
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold text-foreground leading-tight">{title}</div>
+        <div className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed truncate">{sub}</div>
+      </div>
+      {badge && <div className="shrink-0">{badge}</div>}
+      <ChevronRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-muted-foreground/80 group-hover:translate-x-0.5 transition-all shrink-0" />
+    </button>
+  );
+}
+
+function SubHeader({ onBack, icon, title, description }: {
+  onBack: () => void;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="px-6 pt-6 pb-4 border-b border-border">
+      <button
+        onClick={onBack}
+        className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors mb-4 -ml-0.5"
+      >
+        <ArrowLeft className="w-3 h-3" /> Back
+      </button>
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          {icon}
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+          <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{description}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Passkey Panel ─────────────────────────────────────────────────────── */
+
+function PasskeyPanel({ onDone, onViewSeed, fromSocial }: { onDone: () => void; onViewSeed?: () => void; fromSocial?: string | null }) {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState<"create" | "login" | "login-other" | null>(null);
+  const supported = isPasskeySupported();
+
+  const handleCreate = async () => {
+    setLoading("create");
+    try {
+      const result = await registerPasskeyWallet("OrahDEX Wallet");
+      applyOrahWallet(result.address, result.chains);
+      toast({ title: "Passkey wallet created", description: `${result.address.slice(0, 6)}…${result.address.slice(-4)} · BSV, BTC, ETH, SOL + more` });
+      onDone();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (err?.name === "NotAllowedError" || msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+        toast({ title: "Cancelled", description: "Passkey creation was cancelled.", variant: "destructive" });
+      } else {
+        toast({ title: "Create failed", description: msg || "Could not create passkey wallet.", variant: "destructive" });
+      }
+    } finally { setLoading(null); }
+  };
+
+  const handleLogin = async () => {
+    setLoading("login");
+    try {
+      const result = await loginWithPasskey();
+      applyOrahWallet(result.address, result.chains);
+      toast({
+        title: result.restoredFromBackup ? "Wallet restored" : `Welcome back${result.label ? ` · ${result.label}` : ""}`,
+        description: result.restoredFromBackup ? "Restored from cloud backup" : `${result.address.slice(0, 6)}…${result.address.slice(-4)}`,
+      });
+      onDone();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+        toast({ title: "Cancelled", description: "Passkey login was cancelled.", variant: "destructive" });
+      } else if (msg.startsWith("WALLET_NOT_FOUND:")) {
+        toast({ title: "No wallet found", description: "No passkey wallet on this device — create one first.", variant: "destructive" });
+      } else {
+        toast({ title: "Login failed", description: msg || "Could not authenticate.", variant: "destructive" });
+      }
+    } finally { setLoading(null); }
+  };
+
+  const handleLoginOther = async () => {
+    setLoading("login-other");
+    try {
+      const result = await loginWithPasskey({ hybrid: true });
+      applyOrahWallet(result.address, result.chains);
+      toast({
+        title: result.restoredFromBackup ? "Wallet restored" : `Welcome back${result.label ? ` · ${result.label}` : ""}`,
+        description: result.restoredFromBackup ? "Restored from cloud backup" : `${result.address.slice(0, 6)}…${result.address.slice(-4)}`,
+      });
+      onDone();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+        toast({ title: "Cancelled", description: "Passkey login was cancelled.", variant: "destructive" });
+      } else if (msg.startsWith("WALLET_NOT_FOUND:")) {
+        toast({ title: "No wallet found", description: "No passkey wallet exists — create one first.", variant: "destructive" });
+      } else {
+        toast({ title: "Login failed", description: msg || "Could not authenticate.", variant: "destructive" });
+      }
+    } finally { setLoading(null); }
+  };
+
+  if (!supported) return (
+    <div className="flex items-start gap-2.5 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-sm text-destructive">
+      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+      <span>Passkeys are not supported in this browser. Try Chrome, Safari, or Edge on a device with biometrics.</span>
+    </div>
+  );
+
+  return (
+    <div className="space-y-2.5">
+      {fromSocial && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-primary/20 bg-primary/5 px-3.5 py-3 mb-1">
+          <Fingerprint className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+          <div className="space-y-0.5">
+            <p className="text-[11px] font-semibold text-foreground">
+              {fromSocial} → Passkey Wallet
+            </p>
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              On iOS your passkey is secured by your <span className="text-foreground font-medium">Apple ID & iCloud</span>.
+              On Android it uses your <span className="text-foreground font-medium">Google account</span>.
+              No separate login needed — tap Face ID or Touch ID below.
+            </p>
+          </div>
+        </div>
+      )}
+      <button
+        onClick={handleCreate}
+        disabled={!!loading}
+        className="group w-full flex items-center gap-4 px-4 py-4 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 hover:shadow-[0_0_22px_-6px_hsl(var(--primary)/0.3)] transition-all duration-200 text-left disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        <div className="w-11 h-11 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+          {loading === "create" ? <Loader2 className="w-5 h-5 text-primary animate-spin" /> : <Plus className="w-5 h-5 text-primary" />}
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">Create New Wallet</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">Face ID · Touch ID · Security Key</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-primary/40 group-hover:text-primary/70 group-hover:translate-x-0.5 transition-all shrink-0" />
+      </button>
+
+      <button
+        onClick={handleLogin}
+        disabled={!!loading}
+        className="group w-full flex items-center gap-4 px-4 py-4 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/20 transition-all duration-200 text-left disabled:opacity-60 disabled:cursor-not-allowed"
+      >
+        <div className="w-11 h-11 rounded-xl bg-muted border border-border flex items-center justify-center shrink-0">
+          {loading === "login" ? <Loader2 className="w-5 h-5 text-muted-foreground animate-spin" /> : <LogIn className="w-5 h-5 text-muted-foreground" />}
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">Use Existing Passkey</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">This device · paired cloud backup</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/60 group-hover:translate-x-0.5 transition-all shrink-0" />
+      </button>
+
+      <div className="flex items-start gap-2 pt-1 px-1">
+        <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Keys generated locally, encrypted by your passkey. OrahDEX never sees your seed phrase.
+        </p>
+      </div>
+
+      {onViewSeed && (
+        <button
+          onClick={onViewSeed}
+          className="w-full flex items-center justify-center gap-2 py-2 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors border-t border-border/50 mt-1 pt-3"
+        >
+          <FileKey className="w-3.5 h-3.5" />
+          View Seed Phrase (optional)
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ─── Import Wallet Panel ───────────────────────────────────────────────── */
+
+type ImportStep = "phrase" | "protect" | "biometric" | "pin-setup" | "pin-entry";
+
+function ImportPanel({ onDone }: { onDone: () => void }) {
+  const { toast } = useToast();
+  const [step, setStep]                     = useState<ImportStep>("phrase");
+  const [phrase, setPhrase]                 = useState("");
+  const [show, setShow]                     = useState(false);
+  const [loading, setLoading]               = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [pin, setPin]                       = useState("");
+  const [pinConfirm, setPinConfirm]         = useState("");
+  const [pinError, setPinError]             = useState<string | null>(null);
+  const [walletName, setWalletName]         = useState("");
+  const mnemonicRef = useRef<string>("");
+  const wordsRef    = useRef<string[]>([]);
+
+  const wordCount = phrase.trim().split(/\s+/).filter(Boolean).length;
+  const isReady   = wordCount === 12 || wordCount === 24;
+
+  const finishWithAddrs = (addrs: Awaited<ReturnType<typeof deriveAllAddresses>>) => {
+    const chains: PasskeyChainAddresses = {
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch,
+      bsv: addrs.bsv, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+    };
+    saveDerivedAddresses(addrs.evm, chains);
+    applyOrahWallet(addrs.evm, chains);
+  };
+
+  /* ── Step: phrase ───────────────────────────────────────────────────────── */
+  const handlePhraseNext = () => {
+    const { valid, words, error } = validateMnemonic(phrase);
+    if (!valid) { setValidationError(error ?? "Invalid seed phrase."); return; }
+    mnemonicRef.current = words.join(" ");
+    wordsRef.current    = words;
+    setStep("protect");
+  };
+
+  if (step === "phrase") return (
+    <div className="space-y-3">
+      <div className="relative">
+        <Textarea
+          placeholder="Enter your 12 or 24 word seed phrase, separated by spaces…"
+          className={`min-h-[108px] text-sm resize-none pr-10 font-mono leading-relaxed bg-muted/50 border-border placeholder:text-muted-foreground/40 focus-visible:ring-primary/40 transition-all ${validationError ? "border-destructive/60" : ""}`}
+          style={!show ? { WebkitTextSecurity: "disc" } as any : undefined}
+          value={phrase}
+          onChange={e => { setPhrase(e.target.value); setValidationError(null); }}
+          spellCheck={false}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+        />
+        <button
+          type="button"
+          onClick={() => setShow(s => !s)}
+          className="absolute right-3 top-3 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+          tabIndex={-1}
+        >
+          {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+        </button>
+      </div>
+
+      {validationError && (
+        <div className="flex items-start gap-2 text-destructive text-[11px]">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>{validationError}</span>
+        </div>
+      )}
+
+      <div className="flex items-center px-0.5">
+        <span className="text-[11px] text-muted-foreground">
+          {wordCount > 0
+            ? isReady
+              ? <span className="flex items-center gap-1 text-primary font-medium"><CheckCircle2 className="w-3 h-3" />{wordCount} words — ready</span>
+              : <span className="text-amber-500">{wordCount} / {wordCount < 12 ? 12 : 24} words</span>
+            : <span>Enter your seed phrase above</span>
+          }
+        </span>
+      </div>
+
+      {wordCount > 0 && !isReady && (
+        <div className="h-1 rounded-full bg-muted overflow-hidden -mt-1">
+          <div
+            className="h-full rounded-full bg-amber-500/60 transition-all duration-300"
+            style={{ width: `${Math.min((wordCount / (wordCount < 12 ? 12 : 24)) * 100, 100)}%` }}
+          />
+        </div>
+      )}
+
+      <Button
+        className="w-full h-[46px] gap-2 text-sm font-semibold rounded-xl mt-1"
+        onClick={handlePhraseNext}
+        disabled={!isReady || loading}
+      >
+        <Download className="w-4 h-4" />
+        Continue
+      </Button>
+
+      <div className="flex items-start gap-2 px-1">
+        <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Your phrase never leaves this device. All derivation runs locally in your browser.
+        </p>
+      </div>
+    </div>
+  );
+
+  /* ── Step: protect ──────────────────────────────────────────────────────── */
+  if (step === "protect") return (
+    <div className="space-y-3">
+      {/* Wallet name */}
+      <div className="space-y-1.5">
+        <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Wallet name</label>
+        <input
+          type="text"
+          placeholder="e.g. My Main Wallet"
+          maxLength={32}
+          value={walletName}
+          onChange={e => setWalletName(e.target.value)}
+          className="w-full h-10 rounded-xl border border-border bg-muted/50 px-3 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/40"
+        />
+      </div>
+
+      <p className="text-[11px] text-muted-foreground text-center pb-1">How should this wallet be protected for signing?</p>
+
+      {isMobileDevice() && (
+        <button onClick={() => setStep("biometric")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-all text-left">
+          <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+            <Fingerprint className="w-5 h-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-foreground">Face ID / Touch ID</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">Biometric — no PIN to remember</div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-primary/40 group-hover:text-primary/70 shrink-0" />
+        </button>
+      )}
+
+      <button onClick={() => setStep(hasPin() ? "pin-entry" : "pin-setup")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/20 transition-all text-left">
+        <div className="w-10 h-10 rounded-xl bg-muted border border-border flex items-center justify-center shrink-0">
+          <KeyRound className="w-5 h-5 text-muted-foreground" />
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">PIN</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">6–10 digit code · works offline</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/70 shrink-0" />
+      </button>
+
+      <div className="flex items-start gap-2 px-1 pt-1">
+        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Your PIN and passkeys are stored on <strong>this device</strong> and tied to <strong>this website URL</strong>. A PIN set on one domain (e.g. dev) won't work on another (e.g. orahdex.org) — just set a new one there.
+        </p>
+      </div>
+
+      <button onClick={() => setStep("phrase")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── Step: biometric ────────────────────────────────────────────────────── */
+  const handleBiometric = async () => {
+    setLoading(true);
+    try {
+      // importPasskeyWallet stores in the same system as registerPasskeyWallet
+      // (orahdex_passkey_wallets_v1) so BSV signing can find it via listPasskeyWallets()
+      const result = await importPasskeyWallet(mnemonicRef.current, walletName.trim() || "OrahDEX Wallet");
+      finishWithAddrs(result.addrs);
+      toast({ title: "Wallet imported!", description: `${walletName.trim() || "OrahDEX Wallet"} · Face/Touch protected · ${result.address.slice(0, 6)}…${result.address.slice(-4)}` });
+      onDone();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort") || msg.toLowerCase().includes("notallowederror")) {
+        toast({ title: "Cancelled", description: "Biometric authentication was cancelled.", variant: "destructive" });
+      } else {
+        toast({ title: "Biometric unavailable", description: "Switching to PIN protection.", variant: "destructive" });
+        setStep(hasPin() ? "pin-entry" : "pin-setup");
+      }
+    } finally { setLoading(false); }
+  };
+
+  if (step === "biometric") return (
+    <div className="space-y-4">
+      <div className="flex flex-col items-center gap-3 py-3">
+        <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          {loading ? <Loader2 className="w-6 h-6 text-primary animate-spin" /> : <Fingerprint className="w-6 h-6 text-primary" />}
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-semibold text-foreground">Biometric Protection</p>
+          <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+            Your seed phrase will be encrypted and only unlockable with your biometric.
+          </p>
+        </div>
+      </div>
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handleBiometric} disabled={loading}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Fingerprint className="w-4 h-4" />}
+        {loading ? "Waiting for biometric…" : "Authenticate & Import Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── PIN helpers ────────────────────────────────────────────────────────── */
+  const finishWithPin = async (pinVal: string) => {
+    const addrs = await deriveAllAddresses(wordsRef.current);
+    await storeWithPin({ address: addrs.evm, secret: mnemonicRef.current, keyKind: "mnemonic", pin: pinVal, label: walletName.trim() || "OrahDEX Wallet" });
+    finishWithAddrs(addrs);
+    toast({ title: "Wallet imported!", description: `${walletName.trim() || "OrahDEX Wallet"} · PIN protected · ${addrs.evm.slice(0, 6)}…${addrs.evm.slice(-4)}` });
+    onDone();
+  };
+
+  const handlePinSetup = async () => {
+    const v = validatePin(pin);
+    if (!v.valid) { setPinError(v.error!); return; }
+    if (pin !== pinConfirm) { setPinError("PINs do not match"); return; }
+    setPinError(null);
+    setLoading(true);
+    try { await savePinVerifier(pin); await finishWithPin(pin); }
+    catch (err: any) { setPinError(err?.message || "Could not set PIN"); }
+    finally { setLoading(false); }
+  };
+
+  const handlePinEntry = async () => {
+    setPinError(null);
+    setLoading(true);
+    try { await finishWithPin(pin); }
+    catch (err: any) { setPinError(err?.message || "Incorrect PIN"); }
+    finally { setLoading(false); }
+  };
+
+  /* ── Step: pin-setup (first time) ──────────────────────────────────────── */
+  if (step === "pin-setup") return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground text-center leading-relaxed">Create a PIN for this device. You'll use it every time you sign a transaction.</p>
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="New PIN (6–10 digits)"
+        value={pin} onChange={e => { setPin(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="Confirm PIN"
+        value={pinConfirm} onChange={e => { setPinConfirm(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      {pinError && <div className="flex items-start gap-2 text-destructive text-[11px]"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{pinError}</span></div>}
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handlePinSetup} disabled={loading || pin.length < 6}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+        {loading ? "Importing wallet…" : "Set PIN & Import Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── Step: pin-entry (PIN already exists on device) ─────────────────────── */
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground text-center leading-relaxed">Enter your PIN to protect this wallet with your existing device PIN.</p>
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="Enter your PIN"
+        value={pin} onChange={e => { setPin(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      {pinError && <div className="flex items-start gap-2 text-destructive text-[11px]"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{pinError}</span></div>}
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handlePinEntry} disabled={loading || pin.length < 6}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+        {loading ? "Importing wallet…" : "Import Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+}
+
+/* ─── Create Wallet Panel ───────────────────────────────────────────────── */
+
+function CreateWalletPanel({ onDone }: { onDone: () => void }) {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const supported = isPasskeySupported();
+
+  const handleCreate = async () => {
+    setLoading(true);
+    try {
+      const result = await registerPasskeyWallet("OrahDEX Wallet");
+      applyOrahWallet(result.address, result.chains);
+      toast({ title: "Wallet created!", description: `${result.address.slice(0, 6)}…${result.address.slice(-4)} · BSV, BTC, ETH, SOL + more` });
+      onDone();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (err?.name === "NotAllowedError" || msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+        toast({ title: "Cancelled", description: "Passkey creation was cancelled.", variant: "destructive" });
+      } else {
+        toast({ title: "Create failed", description: msg || "Could not create passkey wallet.", variant: "destructive" });
+      }
+    } finally { setLoading(false); }
+  };
+
+  if (!supported) return (
+    <div className="flex items-start gap-2.5 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-sm text-destructive">
+      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+      <span>Passkeys are not supported in this browser. Try Chrome, Safari, or Edge on a device with biometrics.</span>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-primary/20 bg-primary/5 px-4 py-4 flex flex-col items-center gap-3 text-center">
+        <div className="w-14 h-14 rounded-2xl bg-primary/15 border border-primary/25 flex items-center justify-center">
+          <KeyRound className="w-7 h-7 text-primary" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-foreground">Create a new OrahDEX Wallet</p>
+          <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+            Generates a 12-word seed phrase encrypted with your biometric.<br />
+            Supports BSV · BTC · ETH · SOL · LTC · DOGE + more.
+          </p>
+        </div>
+      </div>
+
+      <Button
+        className="w-full h-[46px] gap-2 text-sm font-semibold rounded-xl"
+        onClick={handleCreate}
+        disabled={loading}
+      >
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+        {loading ? "Creating wallet…" : "Create with Face ID / Touch ID"}
+      </Button>
+
+      <div className="flex items-start gap-2 px-1">
+        <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5 text-primary" />
+        <p className="text-[11px] text-muted-foreground leading-relaxed">
+          Your seed phrase is generated locally and encrypted by your passkey. OrahDEX never sees it.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Seed Create Panel ─────────────────────────────────────────────────── */
+
+type SeedStep = "backup" | "protect" | "biometric" | "pin-setup" | "pin-entry";
+
+function SeedCreatePanel({ onDone }: { onDone: () => void }) {
+  const { toast } = useToast();
+  const [step, setStep] = useState<SeedStep>("backup");
+  const [words, setWords] = useState<string[]>([]);
+  const [confirmed, setConfirmed] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [pin, setPin] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+  const mnemonicRef = useRef<string>("");
+
+  useEffect(() => {
+    const w = generateMnemonic(12);
+    setWords(w);
+    mnemonicRef.current = w.join(" ");
+  }, []);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(mnemonicRef.current);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const finishWithAddrs = (addrs: Awaited<ReturnType<typeof deriveAllAddresses>>) => {
+    const chains: PasskeyChainAddresses = {
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch,
+      bsv: addrs.bsv, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+    };
+    saveDerivedAddresses(addrs.evm, chains);
+    applyOrahWallet(addrs.evm, chains);
+  };
+
+  /* ── Biometric ─────────────────────────────────────────────────────────── */
+  const handleBiometric = async () => {
+    setLoading(true);
+    try {
+      const result = await importPasskeyWallet(mnemonicRef.current, "OrahDEX Wallet");
+      finishWithAddrs(result.addrs);
+      toast({ title: "Wallet created!", description: `Face/Touch protected · ${result.address.slice(0, 6)}…${result.address.slice(-4)}` });
+      onDone();
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort") || msg.toLowerCase().includes("notallowederror")) {
+        toast({ title: "Cancelled", description: "Biometric authentication was cancelled.", variant: "destructive" });
+      } else {
+        toast({ title: "Biometric unavailable", description: "Switching to PIN protection.", variant: "destructive" });
+        setStep(hasPin() ? "pin-entry" : "pin-setup");
+      }
+    } finally { setLoading(false); }
+  };
+
+  /* ── PIN helpers ───────────────────────────────────────────────────────── */
+  const finishWithPin = async (pinVal: string) => {
+    const addrs = await deriveAllAddresses(words);
+    await storeWithPin({ address: addrs.evm, secret: mnemonicRef.current, keyKind: "mnemonic", pin: pinVal, label: "OrahDEX Wallet" });
+    finishWithAddrs(addrs);
+    toast({ title: "Wallet created!", description: `PIN protected · ${addrs.evm.slice(0, 6)}…${addrs.evm.slice(-4)}` });
+    onDone();
+  };
+
+  const handlePinSetup = async () => {
+    const v = validatePin(pin);
+    if (!v.valid) { setPinError(v.error!); return; }
+    if (pin !== pinConfirm) { setPinError("PINs do not match"); return; }
+    setPinError(null);
+    setLoading(true);
+    try { await savePinVerifier(pin); await finishWithPin(pin); }
+    catch (err: any) { setPinError(err?.message || "Could not set PIN"); }
+    finally { setLoading(false); }
+  };
+
+  const handlePinEntry = async () => {
+    setPinError(null);
+    setLoading(true);
+    try { await finishWithPin(pin); }
+    catch (err: any) { setPinError(err?.message || "Incorrect PIN"); }
+    finally { setLoading(false); }
+  };
+
+  /* ── Step: backup ──────────────────────────────────────────────────────── */
+  if (step === "backup") return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/[0.08] p-3">
+        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+        <p className="text-[11px] text-amber-200/80 leading-relaxed">
+          Write down these 12 words in order. They are the only way to recover your wallet.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5">
+        {words.map((word, i) => (
+          <div key={i} className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-2 py-1.5">
+            <span className="text-[9px] text-muted-foreground/40 w-3.5 shrink-0 text-right">{i + 1}</span>
+            <span className="text-[11px] font-mono font-semibold text-foreground truncate">{word}</span>
+          </div>
+        ))}
+      </div>
+
+      <button onClick={handleCopy} className="w-full flex items-center justify-center gap-2 py-1.5 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors">
+        {copied ? <Check className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
+        {copied ? "Copied!" : "Copy seed phrase"}
+      </button>
+
+      <label className="flex items-start gap-2.5 cursor-pointer">
+        <input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} className="mt-0.5 accent-primary" />
+        <span className="text-[11px] text-muted-foreground leading-relaxed">
+          I've written down my seed phrase and stored it safely.
+        </span>
+      </label>
+
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={() => setStep("protect")} disabled={!confirmed || words.length === 0}>
+        Choose Protection <ChevronRight className="w-4 h-4" />
+      </Button>
+    </div>
+  );
+
+  /* ── Step: protect ─────────────────────────────────────────────────────── */
+  if (step === "protect") return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground text-center pb-1">How should this wallet be protected?</p>
+
+      {isMobileDevice() && (
+        <button onClick={() => setStep("biometric")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-primary/20 bg-primary/5 hover:bg-primary/10 hover:border-primary/40 transition-all text-left">
+          <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/20 flex items-center justify-center shrink-0">
+            <Fingerprint className="w-5 h-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-foreground">Face ID / Touch ID</div>
+            <div className="text-[11px] text-muted-foreground mt-0.5">Biometric — no PIN to remember</div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-primary/40 group-hover:text-primary/70 shrink-0" />
+        </button>
+      )}
+
+      <button onClick={() => setStep(hasPin() ? "pin-entry" : "pin-setup")} className="group w-full flex items-center gap-4 px-4 py-3.5 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/20 transition-all text-left">
+        <div className="w-10 h-10 rounded-xl bg-muted border border-border flex items-center justify-center shrink-0">
+          <KeyRound className="w-5 h-5 text-muted-foreground" />
+        </div>
+        <div className="flex-1">
+          <div className="text-sm font-semibold text-foreground">PIN</div>
+          <div className="text-[11px] text-muted-foreground mt-0.5">6–10 digit code · works offline</div>
+        </div>
+        <ChevronRight className="w-4 h-4 text-muted-foreground/30 group-hover:text-muted-foreground/70 shrink-0" />
+      </button>
+
+      <button onClick={() => setStep("backup")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── Step: biometric ───────────────────────────────────────────────────── */
+  if (step === "biometric") return (
+    <div className="space-y-4">
+      <div className="flex flex-col items-center gap-3 py-3">
+        <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+          {loading ? <Loader2 className="w-6 h-6 text-primary animate-spin" /> : <Fingerprint className="w-6 h-6 text-primary" />}
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-semibold text-foreground">Biometric Protection</p>
+          <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+            Your seed phrase will be encrypted and only unlockable with your biometric.
+          </p>
+        </div>
+      </div>
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handleBiometric} disabled={loading}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Fingerprint className="w-4 h-4" />}
+        {loading ? "Waiting for biometric…" : "Authenticate & Create Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── Step: pin-setup (first time) ──────────────────────────────────────── */
+  if (step === "pin-setup") return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground text-center leading-relaxed">Create a PIN for this device. You'll use it every time you sign a transaction.</p>
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="New PIN (6–10 digits)"
+        value={pin} onChange={e => { setPin(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="Confirm PIN"
+        value={pinConfirm} onChange={e => { setPinConfirm(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      {pinError && <div className="flex items-start gap-2 text-destructive text-[11px]"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{pinError}</span></div>}
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handlePinSetup} disabled={loading || pin.length < 6}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+        {loading ? "Creating wallet…" : "Set PIN & Create Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+
+  /* ── Step: pin-entry (PIN already exists on device) ────────────────────── */
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] text-muted-foreground text-center leading-relaxed">Enter your PIN to protect this wallet with your existing device PIN.</p>
+      <input type="password" inputMode="numeric" maxLength={10} placeholder="Enter your PIN"
+        value={pin} onChange={e => { setPin(e.target.value.replace(/\D/g, "")); setPinError(null); }}
+        className="w-full h-11 rounded-xl border border-border bg-muted/50 px-4 text-sm font-mono tracking-[0.3em] text-center focus:outline-none focus:ring-2 focus:ring-primary/40" />
+      {pinError && <div className="flex items-start gap-2 text-destructive text-[11px]"><AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /><span>{pinError}</span></div>}
+      <Button className="w-full h-[44px] gap-2 text-sm font-semibold rounded-xl" onClick={handlePinEntry} disabled={loading || pin.length < 6}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+        {loading ? "Creating wallet…" : "Create Wallet"}
+      </Button>
+      <button onClick={() => setStep("protect")} className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1">← Back</button>
+    </div>
+  );
+}
+
+/* ─── View Seed Phrase Panel ────────────────────────────────────────────── */
+
+function ViewSeedPanel({ onBack }: { onBack: () => void }) {
+  const { toast } = useToast();
+  const { address } = useWalletStore();
+  const [loading, setLoading] = useState(false);
+  const [words, setWords] = useState<string[]>([]);
+  const [copied, setCopied] = useState(false);
+
+  const handleReveal = async () => {
+    if (!address) {
+      toast({ title: "No wallet connected", description: "Connect your OrahDEX wallet first.", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const secret = await revealPasskeyWalletSecret(address);
+      const phraseWords = secret.trim().split(/\s+/);
+      if (phraseWords.length < 12) {
+        toast({ title: "Legacy wallet", description: "This wallet uses a raw private key, not a seed phrase.", variant: "destructive" });
+      } else {
+        setWords(phraseWords);
+      }
+    } catch (err: any) {
+      const msg: string = err?.message ?? "";
+      if (msg.toLowerCase().includes("cancel") || msg.toLowerCase().includes("abort")) {
+        toast({ title: "Cancelled", description: "Authentication was cancelled.", variant: "destructive" });
+      } else {
+        toast({ title: "Could not reveal", description: msg || "Authentication failed.", variant: "destructive" });
+      }
+    } finally { setLoading(false); }
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(words.join(" "));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast({ title: "Copied", description: "Seed phrase copied to clipboard." });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/8 p-3.5">
+        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+        <p className="text-[11px] text-amber-200/80 leading-relaxed">
+          Never share your seed phrase with anyone. Anyone with these words can access your wallet permanently.
+        </p>
+      </div>
+
+      {words.length === 0 ? (
+        <Button
+          className="w-full h-[46px] gap-2 text-sm font-semibold rounded-xl"
+          onClick={handleReveal}
+          disabled={loading}
+        >
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Fingerprint className="w-4 h-4" />}
+          {loading ? "Authenticating…" : "Authenticate to Reveal"}
+        </Button>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            {words.map((word, i) => (
+              <div key={i} className="flex items-center gap-1.5 rounded-lg border border-border bg-muted/50 px-2.5 py-2">
+                <span className="text-[10px] text-muted-foreground/50 w-4 shrink-0 text-right">{i + 1}</span>
+                <span className="text-xs font-mono font-medium text-foreground truncate">{word}</span>
+              </div>
+            ))}
+          </div>
+          <Button
+            variant="outline"
+            className="w-full h-[40px] gap-2 text-sm rounded-xl"
+            onClick={handleCopy}
+          >
+            {copied ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
+            {copied ? "Copied!" : "Copy Seed Phrase"}
+          </Button>
+          <button
+            onClick={() => setWords([])}
+            className="w-full text-[11px] text-muted-foreground/50 hover:text-muted-foreground transition-colors py-1"
+          >
+            Hide phrase
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Hardware sub-panel header map ─────────────────────────────────────── */
+
+const HW_META: Record<HWDevice, { emoji: string; title: string; description: string }> = {
+  ledger:   { emoji: "🔲", title: "Ledger",           description: "USB WebHID — Chrome or Edge on desktop." },
+  trezor:   { emoji: "🛡",  title: "Trezor",           description: "USB — Trezor popup works in all browsers." },
+  keystone: { emoji: "🔳", title: "Keystone",          description: "Air-gapped — scan animated QR from device." },
+  gridplus: { emoji: "⚡", title: "GridPlus Lattice1", description: "Wi-Fi — connects via the GridPlus relay." },
+};
+
+/* ─── Mobile QR Panel ──────────────────────────────────────────────────── */
+
+
+function MobileQRPanel({ onDone }: { onDone: () => void }) {
+  const { toast } = useToast();
+  const [token,     setToken]     = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<number>(0);
+  const [status,    setStatus]    = useState<"loading" | "waiting" | "connected" | "expired" | "error">("loading");
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const createSession = useCallback(async () => {
+    setStatus("loading");
+    setToken(null);
+    try {
+      const res  = await fetch(`${API_BASE}/connect-session`, { method: "POST" });
+      const data = await res.json() as { token: string; expiresAt: number };
+      setToken(data.token);
+      setExpiresAt(data.expiresAt);
+      setStatus("waiting");
+    } catch {
+      setStatus("error");
+    }
+  }, []);
+
+  useEffect(() => { createSession(); }, [createSession]);
+
+  useEffect(() => {
+    if (!token || status !== "waiting") return;
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const res  = await fetch(`${API_BASE}/connect-session/${token}`);
+        if (res.status === 404) { setStatus("expired"); clearInterval(pollRef.current!); return; }
+        const data = await res.json() as { status: string; address?: string; chain?: string; walletType?: string };
+        if (data.status === "connected" && data.address) {
+          clearInterval(pollRef.current!);
+          setStatus("connected");
+          const network = (data.chain ?? "BSV") === "BSV" ? "bsv" : "evm";
+          useWalletStore.getState().connect({ address: data.address, provider: "mobile-qr", network });
+          toast({ title: "Mobile wallet connected!", description: `${data.address.slice(0, 14)}…` });
+          setTimeout(onDone, 1200);
+        }
+      } catch { /* ignore transient */ }
+    }, 2000);
+
+    const expireTimer = setTimeout(() => {
+      clearInterval(pollRef.current!);
+      setStatus("expired");
+    }, Math.max(0, expiresAt - Date.now()));
+
+    return () => { clearInterval(pollRef.current!); clearTimeout(expireTimer); };
+  }, [token, status, expiresAt, onDone, toast]);
+
+  const qrValue = token ? `orahdex://connect?token=${token}&expires=${expiresAt}` : "";
+  const ttlSec  = Math.max(0, Math.round((expiresAt - Date.now()) / 1000));
+
+  return (
+    <div className="px-6 py-5 flex flex-col items-center gap-4">
+
+      {/* Loading */}
+      {status === "loading" && (
+        <div className="w-full flex flex-col items-center gap-3 py-8">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Generating session…</p>
+        </div>
+      )}
+
+      {/* Error */}
+      {status === "error" && (
+        <div className="w-full flex flex-col items-center gap-3 py-8">
+          <WifiOff className="w-8 h-8 text-destructive" />
+          <p className="text-sm text-muted-foreground text-center">Could not reach server.<br />Check your connection and try again.</p>
+          <Button size="sm" variant="outline" onClick={createSession} className="gap-2">
+            <RefreshCw className="w-3.5 h-3.5" /> Retry
+          </Button>
+        </div>
+      )}
+
+      {/* Waiting — show QR */}
+      {status === "waiting" && (
+        <>
+          <p className="text-sm text-muted-foreground text-center leading-relaxed">
+            Open <span className="text-foreground font-semibold">OrahDEX</span> on your phone, tap the{" "}
+            <QrCode className="inline w-3.5 h-3.5 mb-0.5 text-cyan-400" /> barcode icon, then scan this code.
+          </p>
+
+          <div className="relative p-3 rounded-2xl bg-white shadow-lg">
+            <QRCodeSVG value={qrValue} size={192} bgColor="#ffffff" fgColor="#000000" level="M" />
+            {/* Corner accent */}
+            <div className="absolute inset-0 rounded-2xl ring-1 ring-border/30 pointer-events-none" />
+          </div>
+
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Waiting for mobile scan… expires in {ttlSec}s
+          </div>
+
+          <div className="w-full rounded-xl bg-cyan-500/8 border border-cyan-500/20 px-4 py-3 flex items-start gap-2.5">
+            <Smartphone className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-muted-foreground leading-relaxed">
+              Your mobile wallet address will be linked to this desktop session. No seed phrase is shared.
+            </p>
+          </div>
+        </>
+      )}
+
+      {/* Connected */}
+      {status === "connected" && (
+        <div className="w-full flex flex-col items-center gap-3 py-8">
+          <div className="w-14 h-14 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center">
+            <Check className="w-7 h-7 text-primary" strokeWidth={2.5} />
+          </div>
+          <p className="text-sm font-semibold text-foreground">Mobile wallet connected!</p>
+          <p className="text-[11px] text-muted-foreground">Closing…</p>
+        </div>
+      )}
+
+      {/* Expired */}
+      {status === "expired" && (
+        <div className="w-full flex flex-col items-center gap-3 py-8">
+          <QrCode className="w-8 h-8 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground text-center">Session expired. Generate a new code.</p>
+          <Button size="sm" variant="outline" onClick={createSession} className="gap-2">
+            <RefreshCw className="w-3.5 h-3.5" /> New Code
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Main Dialog ───────────────────────────────────────────────────────── */
+
+export function WalletChooserDialog() {
+  const { isOpen, close } = useWalletModalStore();
+  const [tab, setTab] = useState<Tab>("choose");
+  const [socialOrigin, setSocialOrigin] = useState<string | null>(null);
+
+  const handleClose = () => { setTab("choose"); setSocialOrigin(null); close(); };
+  const handleMobileQr = () => setTab("mobile-qr");
+  const handleHWPick = (device: HWDevice) => setTab(device);
+
+  const hcProfile   = useHandCashStore(s => s.profile);
+  const hcBalance   = useHandCashStore(s => s.balance);
+  const hcDisconnect = useHandCashStore(s => s.disconnect);
+  const [hcConnecting, setHcConnecting] = useState(false);
+  const [hcError,      setHcError]      = useState<string | null>(null);
+
+  const handleHandCashConnect = async () => {
+    setHcConnecting(true);
+    setHcError(null);
+    try {
+      const res = await fetch(`${API_BASE}/handcash/auth-url`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setHcError(data.error ?? "HandCash is not configured. Add HANDCASH_APP_ID and HANDCASH_APP_SECRET to the server env.");
+        return;
+      }
+      const { url } = await res.json();
+      window.location.href = url;
+    } catch {
+      setHcError("Could not reach the server. Please try again.");
+    } finally {
+      setHcConnecting(false);
+    }
+  };
+
+  const isDeviceTab = (t: Tab): t is HWDevice =>
+    t === "ledger" || t === "trezor" || t === "keystone" || t === "gridplus";
+
+  return (
+    <Dialog open={isOpen} onOpenChange={v => { if (!v) handleClose(); }}>
+      <DialogContent
+        className="p-0 gap-0 bg-background border-border sm:max-w-[420px] overflow-hidden rounded-2xl shadow-2xl flex flex-col max-h-[90dvh]"
+        style={{ backgroundImage: "radial-gradient(ellipse 70% 40% at 50% -5%, hsl(var(--primary) / 0.08) 0%, transparent 70%)" }}
+      >
+        <DialogTitle style={srOnly}>Connect Wallet</DialogTitle>
+        <DialogDescription style={srOnly}>Choose how to connect your wallet to OrahDEX.</DialogDescription>
+
+        {/* ══════════════════════════════════════
+            CHOOSE PANEL
+        ══════════════════════════════════════ */}
+        {tab === "choose" && (
+          <div className="flex flex-col min-h-0 flex-1">
+            <div className="px-6 pt-7 pb-3 shrink-0">
+              <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                  <Wallet className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-foreground tracking-tight">Connect Wallet</h2>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Choose how to connect to OrahDEX</p>
+                </div>
+              </div>
+
+              {/* Social login buttons */}
+              <p className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase mb-2.5">Sign In</p>
+              <div className="flex items-center gap-1.5 mb-3">
+                {SOCIAL_PROVIDERS.map(({ id, label, Icon, bg }) => (
+                  <button
+                    key={id}
+                    title={`Continue with ${label}`}
+                    onClick={() => { setSocialOrigin(label); setTab("passkey"); }}
+                    className={`flex-1 flex items-center justify-center h-9 rounded-xl border ${bg} hover:opacity-80 active:scale-95 transition-all`}
+                  >
+                    <Icon />
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-3 mb-3">
+                <div className="flex-1 h-px bg-border/60" />
+                <span className="text-[10px] text-muted-foreground/50">or</span>
+                <div className="flex-1 h-px bg-border/60" />
+              </div>
+
+              <p className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase mb-2.5">Wallet Options</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto overscroll-contain px-6 pb-4">
+              <div className="space-y-2">
+                <OptionCard
+                  onClick={() => {
+                    close();
+                    import("@/lib/reown-appkit")
+                      .then(({ openReownModal }) => openReownModal())
+                      .catch(() => {});
+                  }}
+                  iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
+                  icon={<Globe className="w-5 h-5 text-blue-400" />}
+                  title="EVM Wallet"
+                  sub="MetaMask · WalletConnect · Coinbase · Rainbow + 300 more"
+                />
+
+                <OptionCard
+                  onClick={() => setTab("passkey")}
+                  iconBg="bg-primary/10 border border-primary/20 group-hover:bg-primary/20 group-hover:border-primary/40"
+                  icon={<Fingerprint className="w-5 h-5 text-primary" />}
+                  title="OrahDEX Wallet"
+                  sub="Create new · or use existing passkey · BSV · BTC · ETH · SOL + more"
+                  badge={
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20 tracking-wider">
+                      NEW
+                    </span>
+                  }
+                  featured
+                />
+
+                <OptionCard
+                  onClick={() => setTab("seed-create")}
+                  iconBg="bg-violet-500/10 border border-violet-500/20 group-hover:bg-violet-500/15 group-hover:border-violet-500/35"
+                  icon={<FileKey className="w-5 h-5 text-violet-400" />}
+                  title="Seed Phrase Wallet"
+                  sub="12-word backup · protect with Face ID, Touch ID, or PIN"
+                />
+
+                <OptionCard
+                  onClick={() => setTab("import")}
+                  iconBg="bg-violet-500/10 border border-violet-500/20 group-hover:bg-violet-500/15 group-hover:border-violet-500/30"
+                  icon={<Download className="w-5 h-5 text-violet-400" />}
+                  title="Import Wallet"
+                  sub="Seed phrase · 12 or 24 words · all chains"
+                />
+
+                <OptionCard
+                  onClick={() => setTab("hardware")}
+                  iconBg="bg-amber-500/10 border border-amber-500/20 group-hover:bg-amber-500/15 group-hover:border-amber-500/30"
+                  icon={<HardDrive className="w-5 h-5 text-amber-400" />}
+                  title="Hardware Wallet"
+                  sub="Ledger · Trezor · Keystone · GridPlus"
+                />
+
+                <OptionCard
+                  onClick={handleMobileQr}
+                  iconBg="bg-cyan-500/10 border border-cyan-500/20 group-hover:bg-cyan-500/15 group-hover:border-cyan-500/30"
+                  icon={<QrCode className="w-5 h-5 text-cyan-400" />}
+                  title="Connect via Mobile QR"
+                  sub="Scan with your phone to link instantly"
+                />
+
+                <p className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase mt-4 mb-2.5">BSV Social Wallets</p>
+                <OptionCard
+                  onClick={() => setTab("handcash")}
+                  iconBg="bg-emerald-500/10 border border-emerald-500/20 group-hover:bg-emerald-500/15 group-hover:border-emerald-500/30"
+                  icon={<span className="text-base leading-none select-none">✋</span>}
+                  title="HandCash"
+                  sub="BSV social wallet · pay any $handle · OAuth sign-in"
+                  badge={hcProfile ? (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 tracking-wider">
+                      ${hcProfile.handle}
+                    </span>
+                  ) : undefined}
+                />
+              </div>
+            </div>
+
+            <div className="shrink-0 px-6 py-3.5 border-t border-border flex items-center gap-2">
+              <Shield className="w-3.5 h-3.5 text-primary shrink-0" />
+              <p className="text-[11px] text-muted-foreground/70">
+                Non-custodial · Your keys, your coins · End-to-end encrypted
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════
+            ORAHDEX WALLET (PASSKEY)
+        ══════════════════════════════════════ */}
+        {tab === "create-wallet" && (
+          <>
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<Plus className="w-5 h-5 text-emerald-400" />}
+              title="Create Wallet"
+              description="Generate a new passkey-protected multi-chain wallet"
+            />
+            <div className="px-6 py-5">
+              <CreateWalletPanel onDone={handleClose} />
+            </div>
+          </>
+        )}
+
+        {tab === "seed-create" && (
+          <>
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<FileKey className="w-5 h-5 text-violet-400" />}
+              title="Seed Phrase Wallet"
+              description="Generate a 12-word backup · protect with Face ID, Touch ID, or PIN"
+            />
+            <div className="px-6 py-5">
+              <SeedCreatePanel onDone={handleClose} />
+            </div>
+          </>
+        )}
+
+        {tab === "passkey" && (
+          <>
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<Fingerprint className="w-5 h-5 text-primary" />}
+              title="Passkey Wallet"
+              description="Non-custodial · secured by Face ID, Touch ID or Windows Hello"
+            />
+            <div className="px-6 py-5">
+              <PasskeyPanel onDone={handleClose} onViewSeed={() => setTab("view-seed")} fromSocial={socialOrigin} />
+            </div>
+          </>
+        )}
+
+        {tab === "view-seed" && (
+          <>
+            <SubHeader
+              onBack={() => setTab("passkey")}
+              icon={<FileKey className="w-5 h-5 text-amber-400" />}
+              title="View Seed Phrase"
+              description="Authenticate with your passkey to reveal your 12-word phrase"
+            />
+            <div className="px-6 py-5">
+              <ViewSeedPanel onBack={() => setTab("passkey")} />
+            </div>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════
+            IMPORT WALLET
+        ══════════════════════════════════════ */}
+        {tab === "import" && (
+          <>
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<Download className="w-5 h-5 text-violet-400" />}
+              title="Import Wallet"
+              description="Restore from a 12 or 24-word BIP39 seed phrase · all chains"
+            />
+            <div className="px-6 py-5">
+              <ImportPanel onDone={handleClose} />
+            </div>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════
+            HARDWARE CHOOSER
+        ══════════════════════════════════════ */}
+        {tab === "hardware" && (
+          <>
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<HardDrive className="w-5 h-5 text-amber-400" />}
+              title="Hardware Wallet"
+              description="Your private keys never leave the physical device"
+            />
+            <div className="px-6 py-5">
+              <HardwareChooser onPick={handleHWPick} />
+            </div>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════
+            INDIVIDUAL DEVICE PANELS
+        ══════════════════════════════════════ */}
+        {isDeviceTab(tab) && (
+          <>
+            <SubHeader
+              onBack={() => setTab("hardware")}
+              icon={<span className="text-xl leading-none">{HW_META[tab].emoji}</span>}
+              title={HW_META[tab].title}
+              description={HW_META[tab].description}
+            />
+            <div className="px-6 py-5 max-h-[60vh] overflow-y-auto">
+              {tab === "ledger"   && <LedgerPanel   onDone={handleClose} />}
+              {tab === "trezor"   && <TrezorPanel   onDone={handleClose} />}
+              {tab === "keystone" && <KeystonePanel onDone={handleClose} />}
+              {tab === "gridplus" && <GridPlusPanel onDone={handleClose} />}
+            </div>
+          </>
+        )}
+
+        {/* ══════════════════════════════════════
+            MOBILE QR CONNECT
+        ══════════════════════════════════════ */}
+        {tab === "mobile-qr" && (
+          <>
+            <SubHeader
+              onBack={() => setTab("choose")}
+              icon={<QrCode className="w-5 h-5 text-cyan-400" />}
+              title="Connect via Mobile QR"
+              description="Scan the code below with the OrahDEX mobile app"
+            />
+            <MobileQRPanel onDone={handleClose} />
+          </>
+        )}
+
+        {/* ══════════════════════════════════════
+            HANDCASH PANEL
+        ══════════════════════════════════════ */}
+        {tab === "handcash" && (
+          <>
+            <SubHeader
+              onBack={() => { setHcError(null); setTab("choose"); }}
+              icon={<span className="text-base leading-none select-none">✋</span>}
+              title="HandCash"
+              description="BSV social wallet — sign in with your $handle"
+            />
+            <div className="px-6 py-5 flex flex-col gap-4">
+              {hcProfile ? (
+                /* ── Already connected ── */
+                <>
+                  <div className="flex items-center gap-3 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30">
+                    {hcProfile.avatarUrl ? (
+                      <img src={hcProfile.avatarUrl} alt={hcProfile.handle}
+                        className="w-10 h-10 rounded-full shrink-0 object-cover"
+                        onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                        <span className="text-lg">✋</span>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-foreground">{hcProfile.displayName}</p>
+                      <p className="text-xs text-emerald-400 font-mono">${hcProfile.handle}</p>
+                      {hcBalance !== null && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5">{hcBalance.toFixed(8)} BSV spendable</p>
+                      )}
+                    </div>
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      CONNECTED
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Your HandCash wallet is connected. You can now send BSV to any <span className="text-foreground font-mono">$handle</span> from the Withdraw panel, or accept BSV payments to your paymail address <span className="text-foreground font-mono">{hcProfile.paymail}</span>.
+                  </p>
+
+                  <Button
+                    variant="outline"
+                    className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-500/50"
+                    onClick={() => { hcDisconnect(); useWalletStore.getState().disconnect(); setTab("choose"); }}
+                  >
+                    Disconnect HandCash
+                  </Button>
+                </>
+              ) : (
+                /* ── Not connected ── */
+                <>
+                  <div className="space-y-3 text-[12px] text-muted-foreground leading-relaxed">
+                    <p>HandCash is a BSV social wallet that lets you send and receive bitcoin using a simple <span className="font-mono text-foreground">$handle</span> — no long addresses needed.</p>
+                    <div className="flex flex-col gap-2">
+                      {[
+                        "Send BSV to any $handle instantly",
+                        "Receive payments at your $handle",
+                        "Pay from any chain via Bridge",
+                      ].map(f => (
+                        <div key={f} className="flex items-center gap-2">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>{f}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {hcError && (
+                    <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
+                      <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
+                      <p className="text-xs text-red-300">{hcError}</p>
+                    </div>
+                  )}
+
+                  <Button
+                    className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-bold"
+                    onClick={handleHandCashConnect}
+                    disabled={hcConnecting}
+                  >
+                    {hcConnecting ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Connecting…</>
+                    ) : (
+                      <>✋ Connect with HandCash</>
+                    )}
+                  </Button>
+
+                  <p className="text-[10px] text-muted-foreground/60 text-center leading-relaxed">
+                    You'll be redirected to HandCash to authorise OrahDEX, then returned here automatically.
+                    <br />
+                    Requires a HandCash developer app — set <span className="font-mono">HANDCASH_APP_ID</span> + <span className="font-mono">HANDCASH_APP_SECRET</span> in the server environment.
+                  </p>
+                </>
+              )}
+            </div>
+          </>
+        )}
+
+      </DialogContent>
+    </Dialog>
+  );
+}

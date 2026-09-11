@@ -1,0 +1,188 @@
+Active Alerts
+DEAD: price-updater
+System Outage Detected
+We are aware of the issue and working to restore service.
+Updated: just now
+Refresh
+API Uptime
+1h 23m
+BSV Block
+—
+BSV Network
+Offline
+Core Platform
+Degraded
+OrahDEX Platform
+100.00% uptime
+< 30 DAYS AGO
+TODAY
+REST API
+98.89% uptime
+< 30 DAYS AGO
+TODAY
+Trading Engine
+Outage
+Order Engine
+—
+< 30 DAYS AGO
+TODAY
+Price Feed
+98.89% uptime
+< 30 DAYS AGO
+TODAY
+Arb Engine
+—
+< 30 DAYS AGO
+TODAY
+Bridge Integrations
+Operational
+API Pairs (Primary)
+—
+< 30 DAYS AGO
+TODAY
+API Pairs (Secondary)
+—
+< 30 DAYS AGO
+TODAY
+Blockchain
+Outage
+BSV Network
+98.89% uptime
+< 30 DAYS AGO
+TODAY
+EVM Networks
+—
+< 30 DAYS AGO
+TODAY
+Internal Monitors
+26 workers
+le-coin-sync
+Last run: 1h ago
+Last ok: 1h ago
+Avg: 11.3s
+HEALTHY
+ss-pairs-sync
+Last run: 1h ago
+Last ok: 1h ago
+Avg: 137.5s
+HEALTHY
+universal-markets
+Last run: 1h ago
+Last ok: 1h ago
+Avg: 122.6s
+HEALTHY
+price-updater
+Last run: 4m ago
+Last ok: 58m ago
+Avg: 97.2s
+11 fails
+DEAD
+liquidity-bot
+Last run: 1m ago
+Last ok: 1m ago
+Avg: 105.4s
+HEALTHY
+ArbBot
+Last run: 38s ago
+Last ok: 38s ago
+Avg: 19.6s
+HEALTHY
+futures-funding
+Last run: Never
+Last ok: Never
+Avg: —
+HEALTHY
+futures-liquidation
+Last run: 38s ago
+Last ok: 38s ago
+Avg: 22.0s
+HEALTHY
+bsv-deposit-watcher
+Last run: 1m ago
+Last ok: 1m ago
+Avg: 31.2s
+HEALTHY
+evm-deposit-watcher
+Last run: 32s ago
+Last ok: 32s ago
+Avg: 7.4s
+HEALTHY
+order-reconciler
+Last run: 2m ago
+Last ok: 2m ago
+Avg: 5.1s
+HEALTHY
+le-status-sync
+Last run: 4m ago
+Last ok: 4m ago
+Avg: 8.0s
+HEALTHY
+ghost-order-detector
+Last run: 2m ago
+Last ok: 2m ago
+Avg: 9.3s
+HEALTHY
+stripe-le-reconciler
+Last run: 3m ago
+Last ok: 3m ago
+Avg: 5.9s
+HEALTHY
+db-watchdog
+Last run: 10s ago
+Last ok: 10s ago
+Avg: 10.4s
+HEALTHY
+price-watchdog
+Last run: 3m ago
+Last ok: 3m ago
+Avg: 254ms
+HEALTHY
+stale-market-repair
+Last run: 1m ago
+Last ok: 1m ago
+Avg: 7.1s
+HEALTHY
+exchange-route-monitor
+Last run: 38s ago
+Last ok: 38s ago
+Avg: 45.0s
+HEALTHY
+bsv-intent-watcher
+Last run: 22s ago
+Last ok: 22s ago
+Avg: 9.0s
+HEALTHY
+arc-status-poller
+Last run: 41s ago
+Last ok: 2m ago
+Avg: 8.0s
+1 fails
+HEALTHY
+trailing-stop-engine
+Last run: 8s ago
+Last ok: 8s ago
+Avg: 6.3s
+HEALTHY
+iceberg-engine
+Last run: 24s ago
+Last ok: 24s ago
+Avg: 3.8s
+HEALTHY
+twap-engine
+Last run: 12s ago
+Last ok: 12s ago
+Avg: 8.1s
+HEALTHY
+funding-rate-engine
+Last run: 35s ago
+Last ok: 35s ago
+Avg: 22.6s
+HEALTHY
+bsv-mempool-watcher
+Last run: 24s ago
+Last ok: 24s ago
+Avg: 30.7s
+HEALTHY
+self-diagnostic
+Last run: 1m ago
+Last ok: 1m ago

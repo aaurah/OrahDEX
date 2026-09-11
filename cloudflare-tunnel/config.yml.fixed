@@ -1,0 +1,21 @@
+# RETIRE THIS FILE — kept only as an emergency fallback during cutover.
+# Normal serving is: Pages (frontend) + Worker (api). Do NOT run this
+# against the Termux device path; the placeholder below must be replaced
+# with a real tunnel id and the JSON stored in a secrets manager if used.
+tunnel: <TUNNEL_ID>
+credentials-file: /etc/cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  # Redirect www -> apex at the edge instead of serving duplicate content.
+  - hostname: www.orahdex.app
+    service: https://orahdex.app
+    originRequest:
+      httpHostHeader: orahdex.app
+
+  - hostname: orahdex.app
+    service: http://localhost:20180
+
+  - hostname: api.orahdex.app
+    service: http://localhost:8080
+
+  - service: http_status:404

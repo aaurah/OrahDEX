@@ -1,0 +1,24 @@
+{
+  "name": "orahdex-exchange-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && wrangler deploy --dry-run",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "migrate": "node scripts/migrate.mjs"
+  },
+  "dependencies": {
+    "hono": "^4.6.14",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.2",
+    "wrangler": "^3.95.0"
+  }
+}

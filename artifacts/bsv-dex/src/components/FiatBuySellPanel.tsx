@@ -1,0 +1,614 @@
+/**
+ * FiatBuySellPanel — Custom OrahDEX-themed fiat on/off-ramp panel.
+ *
+ * Buy mode:  fiat → crypto  (routes to best provider: MoonPay, Transak, Ramp…)
+ * Sell mode: crypto → fiat  (routes to sell URL of best provider)
+ *
+ * Same two-card layout as the Swap tab. No external iframes.
+ */
+
+import { useState, useRef, useEffect, useMemo } from "react";
+import {
+  ChevronDown, RefreshCw, CreditCard, Building2,
+  Smartphone, Zap, ExternalLink, Search, X,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { CoinLogo } from "@/components/CoinLogo";
+import { useWalletStore } from "@/store/useWalletStore";
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+
+type PayMethod = "card" | "apple" | "google" | "bank";
+type Mode = "buy" | "sell";
+
+// ─── Fiat currencies ───────────────────────────────────────────────────────────
+
+const FIATS = [
+  { code: "USD", symbol: "$",  name: "US Dollar"      },
+  { code: "EUR", symbol: "€",  name: "Euro"           },
+  { code: "GBP", symbol: "£",  name: "British Pound"  },
+  { code: "CAD", symbol: "CA$",name: "Canadian Dollar" },
+  { code: "AUD", symbol: "A$", name: "Australian Dollar"},
+  { code: "JPY", symbol: "¥",  name: "Japanese Yen"   },
+  { code: "CHF", symbol: "Fr", name: "Swiss Franc"    },
+  { code: "SGD", symbol: "S$", name: "Singapore Dollar"},
+  { code: "INR", symbol: "₹",  name: "Indian Rupee"   },
+  { code: "BRL", symbol: "R$", name: "Brazilian Real" },
+  { code: "MXN", symbol: "Mex$",name:"Mexican Peso"   },
+  { code: "AED", symbol: "د.إ",name:"UAE Dirham"      },
+];
+
+// ─── Crypto coins ──────────────────────────────────────────────────────────────
+
+const COINS = [
+  { symbol: "BTC",  name: "Bitcoin",       network: "Bitcoin"   },
+  { symbol: "ETH",  name: "Ethereum",      network: "Ethereum"  },
+  { symbol: "BSV",  name: "Bitcoin SV",    network: "BSV"       },
+  { symbol: "SOL",  name: "Solana",        network: "Solana"    },
+  { symbol: "XRP",  name: "XRP",           network: "XRP Ledger"},
+  { symbol: "BNB",  name: "BNB",           network: "BNB Chain" },
+  { symbol: "ADA",  name: "Cardano",       network: "Cardano"   },
+  { symbol: "DOGE", name: "Dogecoin",      network: "Dogecoin"  },
+  { symbol: "AVAX", name: "Avalanche",     network: "Avalanche" },
+  { symbol: "MATIC",name: "Polygon",       network: "Polygon"   },
+  { symbol: "LINK", name: "Chainlink",     network: "Ethereum"  },
+  { symbol: "DOT",  name: "Polkadot",      network: "Polkadot"  },
+  { symbol: "UNI",  name: "Uniswap",       network: "Ethereum"  },
+  { symbol: "ATOM", name: "Cosmos",        network: "Cosmos"    },
+  { symbol: "LTC",  name: "Litecoin",      network: "Litecoin"  },
+  { symbol: "BCH",  name: "Bitcoin Cash",  network: "BCH"       },
+  { symbol: "NEAR", name: "NEAR Protocol", network: "NEAR"      },
+  { symbol: "ARB",  name: "Arbitrum",      network: "Arbitrum"  },
+  { symbol: "OP",   name: "Optimism",      network: "Optimism"  },
+  { symbol: "APT",  name: "Aptos",         network: "Aptos"     },
+  { symbol: "SUI",  name: "Sui",           network: "Sui"       },
+  { symbol: "USDT", name: "Tether",        network: "Ethereum"  },
+  { symbol: "USDC", name: "USD Coin",      network: "Ethereum"  },
+];
+
+// ─── Payment methods ───────────────────────────────────────────────────────────
+
+const AppleIcon = () => (
+  <svg viewBox="0 0 814 1000" className="w-3.5 h-3.5 fill-current" xmlns="http://www.w3.org/2000/svg">
+    <path d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76 0-103.7 40.8-165.9 40.8s-105-57.8-155.5-127.4C46 790.7 0 663 0 541.8c0-207.1 136-316.5 269.9-316.5 69.8 0 128.1 45.9 171.5 45.9 41.4 0 107.1-48.3 183.5-48.3 29.6 0 132.8 2.6 203.3 98.2zm-234-181.5c31.1-36.9 53.1-88.1 53.1-139.3 0-7.1-.6-14.3-1.9-20.1-50.6 1.9-110.8 33.7-147.1 75.8-28.5 32.4-55.1 83.6-55.1 135.5 0 7.8 1.3 15.6 1.9 18.1 3.2.6 8.4 1.3 13.6 1.3 45.4 0 102.5-30.4 135.5-71.3z"/>
+  </svg>
+);
+
+const PAY_METHODS: { id: PayMethod; label: string; shortLabel: string; icon: React.ReactNode }[] = [
+  { id: "card",   label: "Card",       shortLabel: "Card",       icon: <CreditCard className="w-3.5 h-3.5" /> },
+  { id: "apple",  label: "Apple Pay",  shortLabel: "Apple Pay",  icon: <AppleIcon /> },
+  { id: "google", label: "Google Pay", shortLabel: "Google Pay", icon: <span className="text-xs leading-none font-bold text-blue-400">G</span> },
+  { id: "bank",   label: "Bank",       shortLabel: "Bank",       icon: <Building2 className="w-3.5 h-3.5" /> },
+];
+
+// ─── Providers ─────────────────────────────────────────────────────────────────
+
+interface Provider {
+  id: string; name: string; fee: string; minUSD: number; maxUSD: number;
+  methods: PayMethod[]; coins: string[];
+  buyUrl:  (coin: string, fiat: string, amt: string, method: PayMethod, addr: string) => string;
+  sellUrl?: (coin: string, fiat: string, addr: string) => string;
+}
+
+interface FeaturedProvider extends Provider {
+  badge: string;
+  color: string;
+  accentBg: string;
+  accentBorder: string;
+  kycLevel: "none" | "light" | "full";
+  sellSupported: boolean;
+  tagline: string;
+}
+
+async function fetchCoinbaseToken(address?: string): Promise<string | null> {
+  try {
+    const r = await fetch("/api/coinbase/onramp-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(address ? { address } : {}),
+    });
+    const d = await r.json() as { token?: string };
+    return d.token ?? null;
+  } catch { return null; }
+}
+
+const PROVIDERS: Provider[] = [
+  {
+    id: "moonpay", name: "MoonPay", fee: "1–4.5%", minUSD: 30, maxUSD: 50000,
+    methods: ["card","apple","google","bank"],
+    coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","LTC","BCH","UNI","NEAR","ARB","OP","SUI","BSV","USDT","USDC"],
+    buyUrl:  (c,f,a,m,addr) => `https://buy.moonpay.com?${qs({ currencyCode:c.toLowerCase(), baseCurrencyCode:f.toLowerCase(), baseCurrencyAmount:a, paymentMethod:m==="card"?"credit_debit_card":m==="bank"?"sepa_bank_transfer":m, ...(addr?{walletAddress:addr}:{}) })}`,
+    sellUrl: (c,f,addr)     => `https://sell.moonpay.com?${qs({ baseCurrencyCode:c.toLowerCase(), quoteCurrencyCode:f.toLowerCase(), ...(addr?{walletAddress:addr}:{}) })}`,
+  },
+  {
+    id: "banxa", name: "Banxa", fee: "1–3%", minUSD: 50, maxUSD: 100000,
+    methods: ["card","bank"],
+    coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LTC","BCH","DOT","LINK","USDT","USDC"],
+    buyUrl:  (c,f,a,_m,addr) => `https://checkout.banxa.com?${qs({ coinType:c, fiatType:f, fiatAmount:a, ...(addr?{walletAddress:addr}:{}) })}`,
+    sellUrl: (c,f,addr)      => `https://checkout.banxa.com?${qs({ coinType:c, fiatType:f, orderType:"SELL", ...(addr?{walletAddress:addr}:{}) })}`,
+  },
+  {
+    id: "paybis", name: "Paybis", fee: "1.5–4%", minUSD: 50, maxUSD: 20000,
+    methods: ["card","bank"],
+    coins: ["BTC","ETH","XRP","BNB","LTC","BCH","DOGE","MATIC","DOT","USDT","USDC"],
+    buyUrl:  (c,f,a) => `https://paybis.com/buy-cryptocurrency/?${qs({ from:f, to:c, amount:a })}`,
+    sellUrl: (c,f)   => `https://paybis.com/sell-cryptocurrency/?${qs({ from:c, to:f })}`,
+  },
+  {
+    id: "ramp", name: "Ramp Network", fee: "0.49–2.9%", minUSD: 5, maxUSD: 10000,
+    methods: ["card","apple","google","bank"],
+    coins: ["BTC","ETH","SOL","MATIC","AVAX","DOT","UNI","LINK","ARB","OP","APT","NEAR","DOGE","USDT","USDC"],
+    buyUrl:  (c,f,a,_m,addr) => `https://app.ramp.network?${qs({ swapAsset:c, fiatCurrency:f, fiatValue:a, ...(addr?{userAddress:addr}:{}) })}`,
+    sellUrl: (c,f,addr)      => `https://app.ramp.network?${qs({ swapAsset:c, fiatCurrency:f, userActionType:"offramp", ...(addr?{userAddress:addr}:{}) })}`,
+  },
+  {
+    id: "onramper", name: "Onramper", fee: "0.5–2.5%", minUSD: 30, maxUSD: 50000,
+    methods: ["card","apple","google","bank"],
+    coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","USDT","USDC"],
+    buyUrl:  (c,f,a,_m,addr) => `https://buy.onramper.com?${qs({ defaultCrypto:c, defaultFiat:f, defaultAmount:a, ...(addr?{wallets:`${c}:${addr}`}:{}) })}`,
+  },
+  {
+    id: "guardarian", name: "Guardarian", fee: "0–3.5%", minUSD: 10, maxUSD: 30000,
+    methods: ["card","bank","apple","google"],
+    coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","SUI","USDT","USDC"],
+    buyUrl:  (c,f,a,_m,addr) => `https://guardarian.com/calculator/v1?${qs({ from_currency:f, to_currency:c, amount:a, ...(addr?{to_wallet_address:addr}:{}) })}`,
+  },
+  {
+    id: "coinbase", name: "Coinbase", fee: "1.49–3.99%", minUSD: 2, maxUSD: 50000,
+    methods: ["card","apple","google","bank"],
+    coins: ["BTC","ETH","SOL","XRP","BNB","ADA","DOGE","AVAX","MATIC","LINK","DOT","UNI","ATOM","LTC","BCH","NEAR","ARB","OP","APT","SUI","USDT","USDC"],
+    buyUrl:  (c,f,a,_m,addr) => `https://pay.coinbase.com/buy/select-asset?${qs({ defaultAsset:c, presetFiatAmount:a, fiatCurrency:f, defaultExperience:"buy", ...(addr ? {addresses:JSON.stringify({[c]:[addr]})} : {}) })}`,
+    sellUrl: (c,f,_addr) => `https://pay.coinbase.com/sell/select-asset?${qs({ defaultAsset:c, fiatCurrency:f })}`,
+  },
+];
+
+const FEATURED: FeaturedProvider[] = [
+  {
+    ...PROVIDERS.find(p => p.id === "coinbase")!,
+    badge: "🔵", color: "text-blue-400",
+    accentBg: "bg-blue-500/10", accentBorder: "border-blue-500/30",
+    kycLevel: "full", sellSupported: true,
+    tagline: "Most trusted · Apple Pay · Card · Bank",
+  },
+  {
+    ...PROVIDERS.find(p => p.id === "moonpay")!,
+    badge: "🌙", color: "text-violet-400",
+    accentBg: "bg-violet-500/10", accentBorder: "border-violet-500/30",
+    kycLevel: "light", sellSupported: true,
+    tagline: "Most popular · 160+ countries",
+  },
+  {
+    ...PROVIDERS.find(p => p.id === "banxa")!,
+    badge: "🏦", color: "text-emerald-400",
+    accentBg: "bg-emerald-500/10", accentBorder: "border-emerald-500/30",
+    kycLevel: "full", sellSupported: true,
+    tagline: "Bank-grade · High limits",
+  },
+  {
+    ...PROVIDERS.find(p => p.id === "paybis")!,
+    badge: "💳", color: "text-pink-400",
+    accentBg: "bg-pink-500/10", accentBorder: "border-pink-500/30",
+    kycLevel: "light", sellSupported: true,
+    tagline: "Fast card payments",
+  },
+];
+
+const KYC_LABEL: Record<string, string>  = { none: "No KYC", light: "Light KYC", full: "Full KYC" };
+const KYC_COLOR: Record<string, string>  = { none: "text-green-400", light: "text-yellow-400", full: "text-red-400" };
+
+function qs(obj: Record<string,string>): string {
+  return Object.entries(obj).map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+}
+
+const QUICK_AMOUNTS = [50, 100, 250, 500, 1000];
+
+// ─── Approximate rates (coarse, for UI preview only — real rate shown by provider) ──
+
+const APPROX_RATES: Record<string, Record<string, number>> = {
+  BTC:   { USD: 95000,  EUR: 87000,  GBP: 74000  },
+  ETH:   { USD: 3200,   EUR: 2950,   GBP: 2500   },
+  BSV:   { USD: 55,     EUR: 50,     GBP: 43     },
+  SOL:   { USD: 165,    EUR: 152,    GBP: 130    },
+  XRP:   { USD: 0.55,   EUR: 0.50,   GBP: 0.43   },
+  BNB:   { USD: 600,    EUR: 555,    GBP: 472    },
+  ADA:   { USD: 0.45,   EUR: 0.41,   GBP: 0.35   },
+  DOGE:  { USD: 0.18,   EUR: 0.17,   GBP: 0.14   },
+  AVAX:  { USD: 28,     EUR: 26,     GBP: 22     },
+  MATIC: { USD: 0.55,   EUR: 0.50,   GBP: 0.43   },
+  LINK:  { USD: 14,     EUR: 13,     GBP: 11     },
+  DOT:   { USD: 6.5,    EUR: 6.0,    GBP: 5.1    },
+  ATOM:  { USD: 7.5,    EUR: 6.9,    GBP: 5.9    },
+  LTC:   { USD: 90,     EUR: 83,     GBP: 70     },
+  BCH:   { USD: 380,    EUR: 350,    GBP: 298    },
+  NEAR:  { USD: 4.8,    EUR: 4.4,    GBP: 3.7    },
+  ARB:   { USD: 0.55,   EUR: 0.51,   GBP: 0.43   },
+  OP:    { USD: 1.4,    EUR: 1.3,    GBP: 1.1    },
+  APT:   { USD: 8.5,    EUR: 7.8,    GBP: 6.6    },
+  SUI:   { USD: 3.2,    EUR: 2.9,    GBP: 2.5    },
+  USDT:  { USD: 1,      EUR: 0.92,   GBP: 0.78   },
+  USDC:  { USD: 1,      EUR: 0.92,   GBP: 0.78   },
+};
+
+function estimateReceive(fiatAmt: number, fiat: string, coin: string): string | null {
+  const rate = APPROX_RATES[coin]?.[fiat] ?? APPROX_RATES[coin]?.["USD"];
+  if (!rate || !fiatAmt) return null;
+  const receive = (fiatAmt * 0.98) / rate; // ~2% blended fee
+  return receive < 0.0001
+    ? receive.toExponential(4)
+    : receive.toFixed(receive < 1 ? 6 : receive < 100 ? 4 : 2);
+}
+
+// ─── Small dropdown components ─────────────────────────────────────────────────
+
+function FiatPicker({ selected, onChange }: { selected: typeof FIATS[0]; onChange: (f: typeof FIATS[0]) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-secondary border border-border/60 hover:border-border transition-colors">
+        <span className="font-bold text-sm text-foreground">{selected.symbol}</span>
+        <span className="font-bold text-sm text-foreground">{selected.code}</span>
+        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/60" />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-50 top-full mt-1 w-52 bg-card border border-border/50 rounded-2xl shadow-2xl overflow-hidden" style={{ maxHeight: 280 }}>
+          <div className="overflow-y-auto" style={{ maxHeight: 280 }}>
+            {FIATS.map(f => (
+              <button key={f.code} type="button" onClick={() => { onChange(f); setOpen(false); }}
+                className={cn("w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-muted/40 transition-colors text-left",
+                  f.code === selected.code && "bg-muted/30")}>
+                <span className="font-semibold text-foreground">{f.code}</span>
+                <span className="text-xs text-muted-foreground">{f.symbol} · {f.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CoinPicker({ selected, onChange }: { selected: typeof COINS[0]; onChange: (c: typeof COINS[0]) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 40); else setQ(""); }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  const filtered = useMemo(() => {
+    if (!q.trim()) return COINS;
+    const qq = q.toLowerCase();
+    return COINS.filter(c => c.symbol.toLowerCase().includes(qq) || c.name.toLowerCase().includes(qq));
+  }, [q]);
+  return (
+    <div className="relative shrink-0" ref={ref}>
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-secondary border border-border/60 hover:border-border transition-colors">
+        <CoinLogo symbol={selected.symbol} size={20} />
+        <span className="font-bold text-sm text-foreground">{selected.symbol}</span>
+        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/60" />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-50 top-full mt-1 w-64 bg-card border border-border/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: 320 }}>
+          <div className="p-2.5 border-b border-border/40 flex items-center gap-2">
+            <Search className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+            <input ref={inputRef} value={q} onChange={e => setQ(e.target.value)}
+              placeholder="Search coin…"
+              className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground/40 text-foreground" />
+            {q && <button type="button" onClick={() => setQ("")}><X className="w-3.5 h-3.5 text-muted-foreground/60" /></button>}
+          </div>
+          <div className="overflow-y-auto flex-1 py-1">
+            {filtered.map(c => (
+              <button key={c.symbol} type="button" onClick={() => { onChange(c); setOpen(false); }}
+                className={cn("w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors text-left",
+                  c.symbol === selected.symbol && "bg-muted/30")}>
+                <CoinLogo symbol={c.symbol} size={26} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-foreground leading-tight">{c.symbol}</p>
+                  <p className="text-[10px] text-muted-foreground leading-tight">{c.name} · {c.network}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main panel ────────────────────────────────────────────────────────────────
+
+export function FiatBuySellPanel() {
+  const { address } = useWalletStore();
+
+  const [mode, setMode]             = useState<Mode>("buy");
+  const [fiat, setFiat]             = useState(FIATS[0]);         // USD
+  const [coin, setCoin]             = useState(COINS[0]);         // BTC
+  const [amount, setAmount]         = useState("250");
+  const [payMethod, setPayMethod]   = useState<PayMethod>("card");
+  const [selectedId, setSelectedId] = useState<string>("moonpay");
+  const [cbLoading, setCbLoading]   = useState(false);
+
+  const numAmt  = parseFloat(amount) || 0;
+  const receive = estimateReceive(numAmt, fiat.code, coin.symbol);
+
+  // Pick best provider for current selection
+  const provider = useMemo(() => {
+    return PROVIDERS.find(p =>
+      p.methods.includes(payMethod) &&
+      p.coins.includes(coin.symbol) &&
+      (mode === "buy" ? numAmt >= p.minUSD : true)
+    ) ?? PROVIDERS[0];
+  }, [payMethod, coin.symbol, mode, numAmt]);
+
+  const selectedFeatured = useMemo(() =>
+    FEATURED.find(p => p.id === selectedId) ?? FEATURED[0],
+  [selectedId]);
+
+  const canLaunch = numAmt >= (mode === "buy" ? 5 : 0);
+
+  async function handleLaunch() {
+    const url = buildUrl(selectedFeatured);
+    if (selectedFeatured.id === "coinbase") {
+      setCbLoading(true);
+      try {
+        const token = await fetchCoinbaseToken(address ?? undefined);
+        const sep = url.includes("?") ? "&" : "?";
+        window.open(token ? `${url}${sep}sessionToken=${token}` : url, "_blank", "noopener,noreferrer");
+      } finally { setCbLoading(false); }
+    } else {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+  }
+
+  function buildUrl(p: Provider) {
+    const addr = address ?? "";
+    if (mode === "buy") return p.buyUrl(coin.symbol, fiat.code, String(numAmt), payMethod, addr);
+    return p.sellUrl ? p.sellUrl(coin.symbol, fiat.code, addr)
+      : p.buyUrl(coin.symbol, fiat.code, String(numAmt), payMethod, addr);
+  }
+
+  const launchUrl = useMemo(() => {
+    if (!canLaunch) return "";
+    return buildUrl(selectedFeatured);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFeatured, canLaunch, address, mode, coin.symbol, fiat.code, numAmt, payMethod]);
+
+  return (
+    <div className="flex flex-col gap-2">
+
+      {/* ── Buy / Sell toggle ── */}
+      <div className="flex items-center gap-0.5 p-1 bg-muted/20 rounded-2xl border border-border/30">
+        {(["buy","sell"] as Mode[]).map(m => (
+          <button key={m} type="button" onClick={() => setMode(m)}
+            className={cn(
+              "flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150",
+              mode === m
+                ? "bg-card text-foreground shadow-sm border border-border/40"
+                : "text-muted-foreground hover:text-foreground/80"
+            )}>
+            {m === "buy" ? "Buy Crypto" : "Sell Crypto"}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Payment method pills ── */}
+      <div className="flex items-center gap-1.5">
+        {PAY_METHODS.map(pm => (
+          <button key={pm.id} type="button" onClick={() => setPayMethod(pm.id)}
+            className={cn(
+              "flex-1 flex items-center justify-center gap-1 py-2 rounded-xl border text-xs font-semibold transition-all",
+              payMethod === pm.id
+                ? "bg-card border-border/60 text-foreground shadow-sm"
+                : "border-border/30 text-muted-foreground hover:text-foreground bg-muted/10"
+            )}>
+            {pm.icon}
+            <span className="hidden sm:inline">{pm.shortLabel}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── You Pay / You Send card ── */}
+      <div className="rounded-2xl bg-secondary/60 border border-border/50 px-4 pt-3 pb-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-muted-foreground">{mode === "buy" ? "You Pay" : "You Send"}</span>
+          {mode === "buy"
+            ? <span className="text-xs text-muted-foreground">{fiat.name}</span>
+            : <span className="text-xs text-muted-foreground">{coin.network}</span>
+          }
+        </div>
+        <div className="flex items-center gap-2">
+          {mode === "buy" ? (
+            <>
+              <input type="number" min="0" placeholder="0" value={amount}
+                onChange={e => setAmount(e.target.value)}
+                className="flex-1 bg-transparent text-[2.2rem] font-semibold text-foreground outline-none placeholder:text-muted-foreground/30 min-w-0 leading-none py-1" />
+              <FiatPicker selected={fiat} onChange={setFiat} />
+            </>
+          ) : (
+            <>
+              <input type="number" min="0" placeholder="0" value={amount}
+                onChange={e => setAmount(e.target.value)}
+                className="flex-1 bg-transparent text-[2.2rem] font-semibold text-foreground outline-none placeholder:text-muted-foreground/30 min-w-0 leading-none py-1" />
+              <CoinPicker selected={coin} onChange={setCoin} />
+            </>
+          )}
+        </div>
+        {/* Quick amounts (buy mode only) */}
+        {mode === "buy" && (
+          <div className="flex gap-1.5 mt-2.5">
+            {QUICK_AMOUNTS.map(qa => (
+              <button key={qa} type="button" onClick={() => setAmount(String(qa))}
+                className={cn(
+                  "flex-1 py-1 rounded-lg text-[10px] font-bold border transition-colors",
+                  amount === String(qa)
+                    ? "bg-primary/15 border-primary/40 text-primary"
+                    : "bg-muted/30 border-border/30 text-muted-foreground hover:border-primary/30 hover:text-primary"
+                )}>
+                {fiat.symbol}{qa}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Swap icon ── */}
+      <div className="flex justify-center">
+        <button type="button" onClick={() => setMode(m => m === "buy" ? "sell" : "buy")}
+          className="w-8 h-8 rounded-full bg-card border border-border/60 flex items-center justify-center shadow-sm hover:border-primary/50 hover:bg-primary/10 transition-all active:scale-95">
+          <RefreshCw className="w-3.5 h-3.5 text-muted-foreground" />
+        </button>
+      </div>
+
+      {/* ── You Get / You Receive card ── */}
+      <div className="rounded-2xl bg-secondary/60 border border-border/50 px-4 pt-3 pb-4">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-muted-foreground">{mode === "buy" ? "You Get" : "You Receive"}</span>
+          {mode === "buy"
+            ? <span className="text-xs text-muted-foreground">{coin.network}</span>
+            : <span className="text-xs text-muted-foreground">{fiat.name}</span>
+          }
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex-1 text-[2.2rem] font-semibold leading-none py-1 tabular-nums">
+            {mode === "buy" ? (
+              receive && numAmt > 0
+                ? <span className="text-emerald-400">≈{receive}</span>
+                : <span className="text-muted-foreground/20">0.0</span>
+            ) : (
+              receive && numAmt > 0
+                ? <span className="text-emerald-400">≈{fiat.symbol}{(numAmt * (APPROX_RATES[coin.symbol]?.[fiat.code] ?? APPROX_RATES[coin.symbol]?.["USD"] ?? 1) * 0.97).toLocaleString(undefined,{maximumFractionDigits:2})}</span>
+                : <span className="text-muted-foreground/20">0.0</span>
+            )}
+          </div>
+          {mode === "buy"
+            ? <CoinPicker selected={coin} onChange={setCoin} />
+            : <FiatPicker selected={fiat} onChange={setFiat} />
+          }
+        </div>
+        {/* Rate / provider info */}
+        {numAmt > 0 && receive && provider && (
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <span className="text-[11px] text-muted-foreground">
+              {mode === "buy"
+                ? `1 ${coin.symbol} ≈ ${fiat.symbol}${(APPROX_RATES[coin.symbol]?.[fiat.code] ?? 0).toLocaleString()}`
+                : `1 ${coin.symbol} ≈ ${fiat.symbol}${(APPROX_RATES[coin.symbol]?.[fiat.code] ?? 0).toLocaleString()}`
+              }
+            </span>
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-border/40 bg-muted/30 text-[10px] font-semibold text-muted-foreground">
+              via {provider.name} · {provider.fee}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Note on estimated rate ── */}
+      <p className="text-[10px] text-muted-foreground/40 text-center px-2">
+        Estimate only · Final rate confirmed by provider · {mode === "buy" ? "Non-custodial" : "KYC may be required"}
+      </p>
+
+      {/* ── Featured provider selector ── */}
+      <div>
+        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-0.5">Choose provider</p>
+        <div className="grid grid-cols-3 gap-2">
+          {FEATURED.map(fp => {
+            const supported = fp.coins.includes(coin.symbol);
+            const sel = selectedId === fp.id;
+            return (
+              <button
+                key={fp.id}
+                type="button"
+                disabled={!supported}
+                onClick={() => setSelectedId(fp.id)}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 py-3 px-2 rounded-2xl border text-center transition-all",
+                  sel
+                    ? `${fp.accentBg} ${fp.accentBorder} shadow-sm`
+                    : "bg-secondary/40 border-border/40 hover:border-border",
+                  !supported && "opacity-30 cursor-not-allowed saturate-0"
+                )}
+              >
+                <span className="text-2xl leading-none">{fp.badge}</span>
+                <span className={cn("text-[11px] font-bold leading-tight", sel ? fp.color : "text-foreground")}>{fp.name}</span>
+                <span className="text-[9px] text-muted-foreground leading-tight">{fp.fee}</span>
+                <span className={cn("text-[9px] font-semibold", KYC_COLOR[fp.kycLevel])}>{KYC_LABEL[fp.kycLevel]}</span>
+              </button>
+            );
+          })}
+        </div>
+        {selectedFeatured && !selectedFeatured.coins.includes(coin.symbol) && (
+          <p className="text-[10px] text-yellow-400 mt-1.5 px-1">
+            {selectedFeatured.name} doesn't support {coin.symbol} — pick another provider or coin.
+          </p>
+        )}
+      </div>
+
+      {/* ── CTA button ── */}
+      {canLaunch ? (
+        <button
+          type="button"
+          disabled={cbLoading}
+          onClick={handleLaunch}
+          className={cn(
+            "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 mt-0.5 hover:opacity-90 active:scale-[0.99] disabled:opacity-60",
+            selectedFeatured.accentBg.replace("/10","/80"),
+            "text-white border",
+            selectedFeatured.accentBorder
+          )}
+        >
+          {cbLoading ? (
+            <><RefreshCw className="w-4 h-4 animate-spin" />Connecting to Coinbase…</>
+          ) : (
+            <>
+              <span className="text-lg">{selectedFeatured.badge}</span>
+              {mode === "buy"
+                ? `Buy ${coin.symbol} via ${selectedFeatured.name}`
+                : `Sell ${coin.symbol} via ${selectedFeatured.name}`}
+              <ExternalLink className="w-4 h-4 opacity-70" />
+            </>
+          )}
+        </button>
+      ) : (
+        <div className="w-full py-4 rounded-2xl font-bold text-base flex items-center justify-center gap-2 mt-0.5 bg-muted/50 text-muted-foreground/40 cursor-not-allowed">
+          Enter amount
+        </div>
+      )}
+
+      {/* ── Other providers row ── */}
+      <div className="flex items-center justify-between px-1">
+        <span className="text-[10px] text-muted-foreground/50">Also available:</span>
+        <div className="flex items-center gap-2">
+          {PROVIDERS.filter(p =>
+            !FEATURED.some(f => f.id === p.id) &&
+            p.methods.includes(payMethod) &&
+            p.coins.includes(coin.symbol)
+          ).slice(0, 3).map(p => (
+            <a
+              key={p.id}
+              href={canLaunch ? buildUrl(p) : "#"}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={e => !canLaunch && e.preventDefault()}
+              className="text-[10px] text-muted-foreground/50 hover:text-primary transition-colors font-medium underline-offset-2 hover:underline"
+            >
+              {p.name}
+            </a>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  );
+}

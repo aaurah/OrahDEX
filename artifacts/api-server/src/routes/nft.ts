@@ -1,0 +1,606 @@
+import { Router, type IRouter } from "express";
+import { db } from "@workspace/db";
+import {
+  nftCollectionsTable, nftsTable, nftListingsTable, nftBidsTable, nftActivityTable,
+} from "@workspace/db/schema";
+import { eq, and, desc, asc } from "drizzle-orm";
+import { logger } from "../lib/logger.js";
+import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
+
+const router: IRouter = Router();
+const USD_PEGGED_CURRENCIES = new Set(["USD", "USDT", "USDC", "USDB", "USDBC", "USDC.E", "USDBE", "BUSD", "TUSD", "USDD"]);
+
+const VALID_EVM_ADDR = /^0x[0-9a-fA-F]{40}$/;
+const VALID_BSV_ADDR = /^[1-9A-HJ-NP-Za-km-z]{25,34}$/;
+function isValidAddress(addr: string): boolean {
+  return VALID_EVM_ADDR.test(addr) || VALID_BSV_ADDR.test(addr);
+}
+
+// Scope the "not available" guard to /nft/* paths only.
+// A blanket router.use() without a path prefix intercepts every request that
+// reaches this router (e.g. /bsv-status, /staking/providers) because Express
+// walks sub-routers in registration order.
+router.use((req, res, next) => {
+  // NFT features are enabled by default; set NFT_ENABLED=false to disable
+  if (process.env.NFT_ENABLED === "false" && req.path.startsWith("/nft")) {
+    return res.status(503).json({ error: "NFT features are temporarily disabled." });
+  }
+  return next();
+});
+
+function uid(): string {
+  return crypto.randomUUID();
+}
+
+/* ── Seed helpers ─────────────────────────────────────────────────────────── */
+
+const MOCK_COLLECTIONS = [
+  {
+    id: "col-bayc",     name: "Bored Ape Yacht Club",        slug: "bayc",           chain: "ETH",
+    contractAddress: "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
+    description: "10,000 unique Bored Apes on Ethereum. Club membership card, digital identity, and more.",
+    imageUrl: "https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDgmCknF?w=500&auto=format",
+    bannerUrl: "https://i.seadn.io/gae/i5dYZRkVCUK97bfprQ3WXyrT9BnLSZtVKGJlKQ919uaUB0sxbngVCioaiyu9r5d5Ra1rcHRx3E-bn5eRFe7U3GA97wwNtna3iFbr?w=500&auto=format",
+    category: "pfp", floorPrice: "14.2", floorCurrency: "ETH", volume24h: "1820.4",
+    volumeTotal: "948200", totalSupply: 10000, holders: 5612, isVerified: true,
+  },
+  {
+    id: "col-punk",     name: "CryptoPunks",                 slug: "cryptopunks",    chain: "ETH",
+    contractAddress: "0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB",
+    description: "10,000 uniquely generated characters. One of the earliest NFT projects on Ethereum.",
+    imageUrl: "https://i.seadn.io/gae/BdxvLseXcfl57BiuQcQYdJ64v-aI8din7WPk0Pgo3qQFhAUH-B6i-dCqqc_mCkRIzULmwzwecnohLhrcH8A9mpWIZqA7ygc52Sr81hE?w=500&auto=format",
+    bannerUrl: "https://i.seadn.io/gae/Uihslg5dkJvbijJy1cGJc1_uD51z_RkQV8yY_ULDiMlR2mXqGJDJ2bSIQaVZhJ14vu_nxqCzO6HXqU3n28mFT4IrWZMNi1u?w=500&auto=format",
+    category: "pfp", floorPrice: "46.5", floorCurrency: "ETH", volume24h: "3140",
+    volumeTotal: "2180000", totalSupply: 10000, holders: 3512, isVerified: true,
+  },
+  {
+    id: "col-azuki",    name: "Azuki",                       slug: "azuki",          chain: "ETH",
+    contractAddress: "0xED5AF388653567Af2F388E6224dC7C4b3241C544",
+    description: "A brand for the metaverse. Built by a small team with a big vision.",
+    imageUrl: "https://i.seadn.io/gae/H8jOCJuQokNqGBpkBN5wk1oZwO7LM8bNnrX6rfkQ69nCTCy3qhpHAeGqnlPvDfq0tDYmXBL3Lnb_Qx1GVMPkTD?w=500&auto=format",
+    bannerUrl: "https://i.seadn.io/gae/O0XkiR_Z2--OPa_RA6FhXrR16yBOgIJqed3zAYFsbl7GFM0rFjlVb4sqD7kSaZP4KWFOIHjjHpAQJjCTfH19xVr_7kHc3O-?w=500&auto=format",
+    category: "pfp", floorPrice: "3.82", floorCurrency: "ETH", volume24h: "412",
+    volumeTotal: "98700", totalSupply: 10000, holders: 4820, isVerified: true,
+  },
+  {
+    id: "col-milady",   name: "Milady Maker",                slug: "milady",         chain: "ETH",
+    contractAddress: "0x5Af0D9827E0c53E4799BB226655A1de152A425a5",
+    description: "Milady Maker is a collection of 10,000 generative pfpNFTs in the neochibi aesthetic.",
+    imageUrl: "https://i.seadn.io/gae/a_frplnavZA9g4vN3SboJ4NkD3cM8Wp18HMdhlq4Ao8LHnAcTCH7NN5l0e0X9Kb5bOl3EYcXvhJKWLT5hhDJnHFfT97Tl5-hC0?w=500&auto=format",
+    bannerUrl: "https://i.seadn.io/gae/7-USWLR9zzVKJOaxNLMVOULpI3vP6-aRJJ9MO9GGKhHBpSGS1MiU2NAtQAEZ0kOUZKL3TIiIUJXqU8g-rq5oJj7Zl9N_f0?w=500&auto=format",
+    category: "pfp", floorPrice: "1.24", floorCurrency: "ETH", volume24h: "180",
+    volumeTotal: "24600", totalSupply: 10000, holders: 3950, isVerified: true,
+  },
+  {
+    id: "col-ordinals", name: "Bitcoin Ordinals Genesis",    slug: "ordinals-genesis", chain: "BSV",
+    contractAddress: null,
+    description: "The first series of inscribed relics on BSV — proof-of-existence artifacts for the OrahDEX genesis epoch.",
+    imageUrl: "https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UDNn5NVIT3gxvEL669OVmuORexPloJjKFLhr0a5jDqTl_bqXRXwm?w=500&auto=format",
+    bannerUrl: "https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxpYLoDl-KGSnMSmoXWijkMbZKSIQ1532MHf6DVbWObhH0yFdoVJLPT5yeBTZ?w=500&auto=format",
+    category: "relics", floorPrice: "0.24", floorCurrency: "BSV", volume24h: "18.4",
+    volumeTotal: "1240", totalSupply: 1000, holders: 420, isVerified: true,
+  },
+  {
+    id: "col-keeperrelic", name: "Keeper Relics",           slug: "keeper-relics",  chain: "BSV",
+    contractAddress: null,
+    description: "Mythic keeper identity tokens — evolve with on-chain actions, unlock AMM boosts and governance weight.",
+    imageUrl: "https://i.seadn.io/gae/Ju9CkWtV-1Okvf45wo8UctR-M9He2PjILP0oOvxE89AyiPPGtrR3gysu1Zgy0hjd2xKIgjJJtWIc0ybj4Vd7wv8t3pxDgmCknF?w=500&auto=format",
+    bannerUrl: "https://i.seadn.io/gae/i5dYZRkVCUK97bfprQ3WXyrT9BnLSZtVKGJlKQ919uaUB0sxbngVCioaiyu9r5d5Ra1rcHRx3E-bn5eRFe7U3GA97wwNtna3iFbr?w=500&auto=format",
+    category: "relics", floorPrice: "1.08", floorCurrency: "BSV", volume24h: "42",
+    volumeTotal: "3800", totalSupply: 500, holders: 210, isVerified: true,
+  },
+  {
+    id: "col-pudgy",    name: "Pudgy Penguins",              slug: "pudgy-penguins", chain: "ETH",
+    contractAddress: "0xBd3531dA5CF5857e7CfAA92426877b022e612cf8",
+    description: "A collection of 8,888 NFTs. Spreading good vibes through warmth and love.",
+    imageUrl: "https://i.seadn.io/gae/yNi-XdGxsgQCPpqSio4o31ygAV6wURdIdInWRcFIl46UDNn5NVIT3gxvEL669OVmuORexPloJjKFLhr0a5jDqTl_bqXRXwm?w=500&auto=format",
+    bannerUrl: "https://i.seadn.io/gae/lHexKRMpw-aoSyB1WdFBff5yfANLReFxpYLoDl-KGSnMSmoXWijkMbZKSIQ1532MHf6DVbWObhH0yFdoVJLPT5yeBTZ?w=500&auto=format",
+    category: "pfp", floorPrice: "8.45", floorCurrency: "ETH", volume24h: "892",
+    volumeTotal: "214000", totalSupply: 8888, holders: 4320, isVerified: true,
+  },
+  {
+    id: "col-clonex",   name: "Clone X",                    slug: "clone-x",        chain: "ETH",
+    contractAddress: "0x49cF6f5d44E70224e2E23fDcdd2C053F30aDA28B",
+    description: "20,000 next-gen Avatars, by RTFKT and Takashi Murakami.",
+    imageUrl: "https://i.seadn.io/gae/XN0XuD8Uh3jyRWNtPTFeXJg_ht8m5ofDx6aHhe0NjKActSH-kOuDDCFMtskgzQf2FcNkOiH9MKlazJPp2-e48bZfX0?w=500&auto=format",
+    bannerUrl: "https://i.seadn.io/gae/4jIPyFNR5e6xVDZBHUMrV0mUKQMg_V9QRGI7tkDXfD6ZT_cxA6Z9uT5vJk83wGT26R3zMF3P3E7k8_z4JjPvWJqy?w=500&auto=format",
+    category: "avatar", floorPrice: "1.98", floorCurrency: "ETH", volume24h: "340",
+    volumeTotal: "136000", totalSupply: 20000, holders: 9840, isVerified: true,
+  },
+];
+
+/* Seed NFT mock items for a given collection */
+function mockNftsForCollection(colId: string, chain: string, contract: string | null, n = 12) {
+  const seeds = [
+    { suffix: "#1", rare: "Legendary", rank: 1 },
+    { suffix: "#12", rare: "Epic", rank: 42 },
+    { suffix: "#88", rare: "Rare", rank: 180 },
+    { suffix: "#142", rare: "Uncommon", rank: 560 },
+    { suffix: "#303", rare: "Common", rank: 1200 },
+    { suffix: "#404", rare: "Common", rank: 2400 },
+    { suffix: "#500", rare: "Uncommon", rank: 780 },
+    { suffix: "#666", rare: "Rare", rank: 320 },
+    { suffix: "#777", rare: "Epic", rank: 65 },
+    { suffix: "#888", rare: "Rare", rank: 450 },
+    { suffix: "#999", rare: "Legendary", rank: 8 },
+    { suffix: "#1024", rare: "Common", rank: 3100 },
+  ];
+  const colInfo = MOCK_COLLECTIONS.find(c => c.id === colId);
+  const imageBase = colInfo?.imageUrl ?? "https://picsum.photos/seed/nft/400/400";
+
+  // Stable deterministic placeholder owners — not real addresses, clearly labelled
+  const PLACEHOLDER_OWNERS = [
+    "0x0000000000000000000000000000000000000001",
+    "0x0000000000000000000000000000000000000002",
+    "0x0000000000000000000000000000000000000003",
+    "0x0000000000000000000000000000000000000004",
+    "0x0000000000000000000000000000000000000005",
+    "0x0000000000000000000000000000000000000006",
+    "0x0000000000000000000000000000000000000007",
+    "0x0000000000000000000000000000000000000008",
+    "0x0000000000000000000000000000000000000009",
+    "0x000000000000000000000000000000000000000a",
+    "0x000000000000000000000000000000000000000b",
+    "0x000000000000000000000000000000000000000c",
+  ];
+  const LAST_SALE_MULTIPLIERS = [0.80, 0.85, 0.90, 0.95, 1.00, 1.05, 0.88, 0.92, 0.97, 1.02, 1.10, 1.15];
+
+  return seeds.slice(0, n).map((s, i) => ({
+    id: `nft-${colId}-${i}`,
+    collectionId: colId,
+    chain,
+    contractAddress: contract,
+    tokenId: s.suffix.replace("#", ""),
+    name: `${colInfo?.name ?? "NFT"} ${s.suffix}`,
+    description: `Unique piece from the ${colInfo?.name ?? "collection"} universe.`,
+    imageUrl: imageBase,
+    traits: JSON.stringify([
+      { trait_type: "Background", value: ["Blue", "Red", "Gold", "Purple", "Green"][i % 5] },
+      { trait_type: "Eyes", value: ["Laser", "Sleepy", "Wide", "Pixel", "X"][i % 5] },
+      { trait_type: "Mouth", value: ["Grin", "Frown", "Bored", "Gag", "Smile"][i % 5] },
+      { trait_type: "Hat", value: ["Crown", "Cap", "None", "Halo", "Helmet"][i % 5] },
+    ]),
+    rarity: s.rare,
+    rarityRank: s.rank,
+    lastSalePrice: String((parseFloat(colInfo?.floorPrice ?? "1") * LAST_SALE_MULTIPLIERS[i]!).toFixed(4)),
+    lastSaleCurrency: colInfo?.floorCurrency ?? "ETH",
+    isWrapped: false,
+    nativeChain: chain,
+    owner: PLACEHOLDER_OWNERS[i] ?? "0x0000000000000000000000000000000000000001",
+  }));
+}
+
+function mockListings(nfts: ReturnType<typeof mockNftsForCollection>, col: typeof MOCK_COLLECTIONS[0]) {
+  return nfts.slice(0, 6).map((nft, i) => ({
+    id: `lst-${nft.id}`,
+    nftId: nft.id,
+    collectionId: col.id,
+    seller: nft.owner!,
+    chain: col.chain,
+    price: String((parseFloat(col.floorPrice) * (1 + i * 0.05)).toFixed(4)),
+    currency: col.floorCurrency,
+    priceUsd: String((parseFloat(col.floorPrice) * (1 + i * 0.05) * 1800).toFixed(2)),
+    status: "active",
+  }));
+}
+
+function mockActivity(col: typeof MOCK_COLLECTIONS[0], n = 8) {
+  const types = ["sale", "listing", "bid", "transfer"];
+  const PRICE_MULTIPLIERS = [0.90, 0.95, 1.00, 1.05, 0.92, 0.98, 1.03, 1.10];
+  return Array.from({ length: n }, (_, i) => ({
+    id: `act-${col.id}-${i}`,
+    nftId: `nft-${col.id}-${i % 4}`,
+    collectionId: col.id,
+    type: types[i % types.length],
+    fromAddress: `0x000000000000000000000000000000000000000${(i + 1).toString(16)}`,
+    toAddress:   `0x00000000000000000000000000000000000000${((i + 5) % 16).toString(16).padStart(2, "0")}`,
+    price: String((parseFloat(col.floorPrice) * PRICE_MULTIPLIERS[i % PRICE_MULTIPLIERS.length]!).toFixed(4)),
+    currency: col.floorCurrency,
+    priceUsd: String((parseFloat(col.floorPrice) * 1800 * PRICE_MULTIPLIERS[i % PRICE_MULTIPLIERS.length]!).toFixed(2)),
+    txHash: null,  // mock activity — no real txhash
+    chain: col.chain,
+  }));
+}
+
+/* ── Ensure tables have seed data ─────────────────────────────────────────── */
+let seeded = false;
+
+async function ensureSeeded() {
+  if (seeded) return;
+  try {
+    const existing = await db.select({ id: nftCollectionsTable.id }).from(nftCollectionsTable).limit(1);
+    if (existing.length > 0) { seeded = true; return; }
+
+    for (const col of MOCK_COLLECTIONS) {
+      await db.insert(nftCollectionsTable).values(col as any).onConflictDoNothing();
+
+      const nfts = mockNftsForCollection(col.id, col.chain, col.contractAddress);
+      for (const nft of nfts) {
+        await db.insert(nftsTable).values(nft as any).onConflictDoNothing();
+      }
+      const listings = mockListings(nfts, col);
+      for (const lst of listings) {
+        await db.insert(nftListingsTable).values(lst as any).onConflictDoNothing();
+      }
+      const activities = mockActivity(col);
+      for (const act of activities) {
+        await db.insert(nftActivityTable).values(act as any).onConflictDoNothing();
+      }
+    }
+    seeded = true;
+    logger.info("NFT collections seeded");
+  } catch (err: any) {
+    logger.warn({ err: err?.message }, "NFT seed failed");
+  }
+}
+
+/* ── Routes ───────────────────────────────────────────────────────────────── */
+
+/* GET /nft/collections */
+router.get("/nft/collections", async (req, res) => {
+  await ensureSeeded();
+  try {
+    const { chain, category, q } = req.query as Record<string, string>;
+    let rows = await db.select().from(nftCollectionsTable).orderBy(desc(nftCollectionsTable.volume24h)).limit(200);
+
+    if (chain)    rows = rows.filter(r => r.chain.toUpperCase() === chain.toUpperCase());
+    if (category) rows = rows.filter(r => r.category === category);
+    if (q)        rows = rows.filter(r => r.name.toLowerCase().includes(q.toLowerCase()));
+
+    res.json({
+      collections: rows,
+      total: rows.length,
+      dataSource: "seeded",
+      dataSourceNote: "Collection metadata is seeded from a curated static list. Prices, volumes, and floor values are illustrative and not live market data.",
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /nft/collections/:slug */
+router.get("/nft/collections/:slug", async (req, res) => {
+  await ensureSeeded();
+  try {
+    const [col] = await db.select().from(nftCollectionsTable)
+      .where(eq(nftCollectionsTable.slug, req.params.slug));
+    if (!col) { res.status(404).json({ error: "Collection not found" }); return; }
+
+    const nfts = await db.select().from(nftsTable)
+      .where(eq(nftsTable.collectionId, col.id))
+      .orderBy(asc(nftsTable.rarityRank))
+      .limit(50);
+
+    const listings = await db.select().from(nftListingsTable)
+      .where(and(eq(nftListingsTable.collectionId, col.id), eq(nftListingsTable.status, "active")))
+      .orderBy(asc(nftListingsTable.price))
+      .limit(20);
+
+    const activity = await db.select().from(nftActivityTable)
+      .where(eq(nftActivityTable.collectionId, col.id))
+      .orderBy(desc(nftActivityTable.createdAt))
+      .limit(20);
+
+    res.json({ collection: col, nfts, listings, activity });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /nft/items — marketplace browse */
+router.get("/nft/items", async (req, res) => {
+  await ensureSeeded();
+  try {
+    const { chain, collectionId, q, sort = "rarity" } = req.query as Record<string, string>;
+
+    let rows = await db.select().from(nftsTable)
+      .orderBy(sort === "price" ? desc(nftsTable.lastSalePrice) : asc(nftsTable.rarityRank))
+      .limit(100);
+
+    if (chain)        rows = rows.filter(r => r.chain.toUpperCase() === chain.toUpperCase());
+    if (collectionId) rows = rows.filter(r => r.collectionId === collectionId);
+    if (q)            rows = rows.filter(r => r.name.toLowerCase().includes(q.toLowerCase()));
+
+    res.json({ items: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /nft/items/:id */
+router.get("/nft/items/:id", async (req, res) => {
+  await ensureSeeded();
+  try {
+    const [nft] = await db.select().from(nftsTable).where(eq(nftsTable.id, req.params.id));
+    if (!nft) { res.status(404).json({ error: "NFT not found" }); return; }
+
+    const [col] = await db.select().from(nftCollectionsTable)
+      .where(eq(nftCollectionsTable.id, nft.collectionId));
+
+    const listings = await db.select().from(nftListingsTable)
+      .where(and(eq(nftListingsTable.nftId, nft.id), eq(nftListingsTable.status, "active")))
+      .orderBy(asc(nftListingsTable.price))
+      .limit(20);
+
+    const bids = await db.select().from(nftBidsTable)
+      .where(and(eq(nftBidsTable.nftId, nft.id), eq(nftBidsTable.status, "active")))
+      .orderBy(desc(nftBidsTable.price))
+      .limit(20);
+
+    const activity = await db.select().from(nftActivityTable)
+      .where(eq(nftActivityTable.nftId, nft.id))
+      .orderBy(desc(nftActivityTable.createdAt))
+      .limit(20);
+
+    res.json({ nft, collection: col ?? null, listings, bids, activity });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /nft/listings — active marketplace listings */
+router.get("/nft/listings", async (req, res) => {
+  await ensureSeeded();
+  try {
+    const { chain, collectionId } = req.query as Record<string, string>;
+    let rows = await db.select().from(nftListingsTable)
+      .where(eq(nftListingsTable.status, "active"))
+      .orderBy(asc(nftListingsTable.price))
+      .limit(100);
+
+    if (chain)        rows = rows.filter(r => r.chain.toUpperCase() === chain.toUpperCase());
+    if (collectionId) rows = rows.filter(r => r.collectionId === collectionId);
+
+    res.json({ listings: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /nft/listings — create listing */
+router.post("/nft/listings", async (req, res) => {
+  try {
+    const {
+      nftId,
+      post_id,
+      collectionId,
+      seller,
+      chain,
+      price,
+      price_bsv,
+      currency,
+      mint_currency,
+    } = req.body as Record<string, string>;
+    const normalizedNftId = nftId ?? post_id;
+    const normalizedCollectionId = collectionId ?? (post_id ? "social-posts" : undefined);
+    const normalizedPrice = price ?? price_bsv;
+    const normalizedCurrency = (currency ?? mint_currency ?? "BSV").toUpperCase();
+    if (!normalizedNftId || !seller || !normalizedPrice) {
+      res.status(400).json({ error: "seller plus (nftId or post_id) and (price or price_bsv) are required" }); return;
+    }
+    if (!isValidAddress(seller)) {
+      res.status(400).json({ error: "seller must be a valid EVM (0x…) or BSV address" }); return;
+    }
+    const parsedPrice = parseFloat(normalizedPrice);
+    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+      res.status(400).json({ error: "price must be a positive number" }); return;
+    }
+
+    // Stablecoins are treated as $1 when no live quote is cached.
+    const quoteUsd = FALLBACK_PRICES[normalizedCurrency]
+      ?? (USD_PEGGED_CURRENCIES.has(normalizedCurrency) ? 1 : null);
+    if (!quoteUsd) {
+      res.status(400).json({ error: `Unsupported listing currency: ${normalizedCurrency}` }); return;
+    }
+    const priceUsd = String((parseFloat(normalizedPrice) * quoteUsd).toFixed(2));
+
+    const [listing] = await db.insert(nftListingsTable).values({
+      id: uid(),
+      nftId: normalizedNftId,
+      collectionId: normalizedCollectionId ?? "uncategorized",
+      seller,
+      chain: chain ?? "BSV",
+      price: normalizedPrice,
+      currency: normalizedCurrency,
+      priceUsd,
+      status: "active",
+    }).returning();
+
+    await db.insert(nftActivityTable).values({
+      id: uid(),
+      nftId: normalizedNftId,
+      collectionId: normalizedCollectionId ?? "uncategorized",
+      type: "listing",
+      fromAddress: seller,
+      price: normalizedPrice,
+      currency: normalizedCurrency,
+      priceUsd,
+      chain: chain ?? "BSV",
+    });
+
+    res.json({ success: true, listing });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* DELETE /nft/listings/:id — cancel listing (seller only) */
+router.delete("/nft/listings/:id", async (req, res) => {
+  try {
+    const { seller } = req.body as Record<string, string>;
+    if (!seller || !isValidAddress(seller)) {
+      res.status(400).json({ error: "seller address required" }); return;
+    }
+    const [listing] = await db.select().from(nftListingsTable).where(eq(nftListingsTable.id, req.params.id));
+    if (!listing) { res.status(404).json({ error: "Listing not found" }); return; }
+    if (listing.seller.toLowerCase() !== seller.toLowerCase()) {
+      res.status(403).json({ error: "Only the seller can cancel this listing" }); return;
+    }
+    await db.update(nftListingsTable)
+      .set({ status: "cancelled" })
+      .where(and(eq(nftListingsTable.id, req.params.id), eq(nftListingsTable.status, "active")));
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /nft/bids — place bid */
+router.post("/nft/bids", async (req, res) => {
+  try {
+    const { nftId, collectionId, bidder, chain, price, currency } = req.body as Record<string, string>;
+    if (!nftId || !bidder || !price) {
+      res.status(400).json({ error: "nftId, bidder, price are required" }); return;
+    }
+    if (!isValidAddress(bidder)) {
+      res.status(400).json({ error: "bidder must be a valid EVM (0x…) or BSV address" }); return;
+    }
+    const parsedBidPrice = parseFloat(price);
+    if (isNaN(parsedBidPrice) || parsedBidPrice <= 0) {
+      res.status(400).json({ error: "price must be a positive number" }); return;
+    }
+
+    const normalizedCurrency = (currency ?? "ETH").toUpperCase();
+    const quoteUsd = FALLBACK_PRICES[normalizedCurrency]
+      ?? (USD_PEGGED_CURRENCIES.has(normalizedCurrency) ? 1 : null)
+      ?? 1;
+    const priceUsd = String((parsedBidPrice * quoteUsd).toFixed(2));
+
+    const [bid] = await db.insert(nftBidsTable).values({
+      id: uid(), nftId, collectionId, bidder, chain: chain ?? "ETH",
+      price, currency: normalizedCurrency, priceUsd, status: "active",
+    }).returning();
+
+    await db.insert(nftActivityTable).values({
+      id: uid(), nftId, collectionId, type: "bid", fromAddress: bidder,
+      price, currency: normalizedCurrency, priceUsd, chain: chain ?? "ETH",
+    });
+
+    res.json({ success: true, bid });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /nft/portfolio/:address — owned NFTs */
+router.get("/nft/portfolio/:address", async (req, res) => {
+  await ensureSeeded();
+  try {
+    const { address } = req.params;
+    const owned = await db.select().from(nftsTable)
+      .where(eq(nftsTable.owner, address.toLowerCase()))
+      .orderBy(desc(nftsTable.createdAt))
+      .limit(200);
+
+    const myListings = await db.select().from(nftListingsTable)
+      .where(and(eq(nftListingsTable.seller, address.toLowerCase()), eq(nftListingsTable.status, "active")))
+      .limit(50);
+
+    const myBids = await db.select().from(nftBidsTable)
+      .where(and(eq(nftBidsTable.bidder, address.toLowerCase()), eq(nftBidsTable.status, "active")))
+      .limit(50);
+
+    res.json({ owned, myListings, myBids });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /nft/listings/:id/buy — buy now (marks listing sold, transfers ownership) */
+router.post("/nft/listings/:id/buy", async (req, res) => {
+  try {
+    const { buyer } = req.body as Record<string, string>;
+    if (!buyer || !isValidAddress(buyer)) {
+      res.status(400).json({ error: "buyer address required" }); return;
+    }
+
+    const [listing] = await db.select().from(nftListingsTable)
+      .where(and(eq(nftListingsTable.id, req.params.id), eq(nftListingsTable.status, "active")));
+    if (!listing) { res.status(404).json({ error: "Listing not found or already sold" }); return; }
+    if (listing.seller.toLowerCase() === buyer.toLowerCase()) {
+      res.status(400).json({ error: "Cannot buy your own listing" }); return;
+    }
+
+    await db.update(nftListingsTable)
+      .set({ status: "sold" })
+      .where(and(eq(nftListingsTable.id, req.params.id), eq(nftListingsTable.status, "active")));
+
+    await db.update(nftsTable)
+      .set({ owner: buyer.toLowerCase() })
+      .where(eq(nftsTable.id, listing.nftId));
+
+    await db.insert(nftActivityTable).values({
+      id: uid(), nftId: listing.nftId, collectionId: listing.collectionId,
+      type: "sale", fromAddress: listing.seller, toAddress: buyer,
+      price: listing.price, currency: listing.currency, priceUsd: listing.priceUsd ?? "0",
+      chain: listing.chain,
+    });
+
+    // Cancel outstanding bids on this NFT now that it's sold
+    await db.update(nftBidsTable)
+      .set({ status: "cancelled" })
+      .where(and(eq(nftBidsTable.nftId, listing.nftId), eq(nftBidsTable.status, "active")));
+
+    res.json({ success: true, listing, buyer, price: listing.price, currency: listing.currency });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* POST /nft/bids/:id/accept — NFT owner accepts the highest bid */
+router.post("/nft/bids/:id/accept", async (req, res) => {
+  try {
+    const { seller } = req.body as Record<string, string>;
+    if (!seller || !isValidAddress(seller)) {
+      res.status(400).json({ error: "seller address required" }); return;
+    }
+
+    const [bid] = await db.select().from(nftBidsTable)
+      .where(and(eq(nftBidsTable.id, req.params.id), eq(nftBidsTable.status, "active")));
+    if (!bid) { res.status(404).json({ error: "Bid not found or no longer active" }); return; }
+
+    const [nft] = await db.select().from(nftsTable).where(eq(nftsTable.id, bid.nftId));
+    if (!nft) { res.status(404).json({ error: "NFT not found" }); return; }
+    if ((nft.owner ?? "").toLowerCase() !== seller.toLowerCase()) {
+      res.status(403).json({ error: "Only the NFT owner can accept bids" }); return;
+    }
+
+    await db.update(nftBidsTable).set({ status: "accepted" }).where(eq(nftBidsTable.id, bid.id));
+    await db.update(nftBidsTable).set({ status: "cancelled" })
+      .where(and(eq(nftBidsTable.nftId, bid.nftId), eq(nftBidsTable.status, "active")));
+    await db.update(nftsTable).set({ owner: bid.bidder.toLowerCase() }).where(eq(nftsTable.id, bid.nftId));
+    await db.update(nftListingsTable).set({ status: "sold" })
+      .where(and(eq(nftListingsTable.nftId, bid.nftId), eq(nftListingsTable.status, "active")));
+
+    await db.insert(nftActivityTable).values({
+      id: uid(), nftId: bid.nftId, collectionId: bid.collectionId ?? "uncategorized",
+      type: "sale", fromAddress: seller, toAddress: bid.bidder,
+      price: bid.price, currency: bid.currency, priceUsd: bid.priceUsd ?? "0",
+      chain: bid.chain,
+    });
+
+    res.json({ success: true, bid, seller, buyer: bid.bidder, price: bid.price, currency: bid.currency });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* GET /nft/activity — global activity feed */
+router.get("/nft/activity", async (req, res) => {
+  await ensureSeeded();
+  try {
+    const { type, collectionId } = req.query as Record<string, string>;
+    let rows = await db.select().from(nftActivityTable)
+      .orderBy(desc(nftActivityTable.createdAt))
+      .limit(50);
+
+    if (type)         rows = rows.filter(r => r.type === type);
+    if (collectionId) rows = rows.filter(r => r.collectionId === collectionId);
+
+    res.json({ activity: rows, total: rows.length });
+  } catch (err: any) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+export default router;

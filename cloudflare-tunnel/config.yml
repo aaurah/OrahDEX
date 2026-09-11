@@ -1,0 +1,18 @@
+tunnel: orahdex
+credentials-file: /data/data/com.termux/files/home/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  # Frontend — main site
+  - hostname: orahdex.app
+    service: http://localhost:20180
+
+  # www redirect
+  - hostname: www.orahdex.app
+    service: http://localhost:20180
+
+  # API server
+  - hostname: api.orahdex.app
+    service: http://localhost:8080
+
+  # Catch-all (required)
+  - service: http_status:404

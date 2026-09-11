@@ -1,0 +1,52 @@
+name = "orahdex-exchange"
+main = "src/index.ts"
+compatibility_date = "2026-06-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[placement]
+mode = "smart"
+
+# Cron-driven exchange worker engine (replaces in-process setInterval workers).
+[triggers]
+crons = [
+  "* * * * *",    # every minute: heartbeat + webhook log cleanup
+  "*/5 * * * *"   # every 5 minutes: reconciler sweep
+]
+
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "REPLACE_WITH_PROD_HYPERDRIVE_ID"
+
+[vars]
+ENVIRONMENT = "production"
+CANONICAL_DOMAIN = "orahdex.app"
+
+# Secrets are NEVER stored here. Set via CI from GitHub Secrets:
+#   EVM_WEBHOOK_SECRET, STRIPE_WEBHOOK_SECRET,
+#   EXCHANGE_HOT_WALLET_KEY, EVM_RELAYER_KEY
+# (see .github/workflows/ci-cd.yml and DEPLOY.md)
+
+# ---------------------------------------------------------------------------
+# Staging environment
+# ---------------------------------------------------------------------------
+[env.staging]
+name = "orahdex-exchange-staging"
+workers_dev = true
+
+[[env.staging.hyperdrive]]
+binding = "HYPERDRIVE"
+id = "REPLACE_WITH_STAGING_HYPERDRIVE_ID"
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+CANONICAL_DOMAIN = "orahdex.app"
+
+# ---------------------------------------------------------------------------
+# Custom domains — uncomment ONLY after DNS for orahdex.app is moved to
+# Cloudflare (step 5 of DEPLOY.md). Until then the worker is reachable on
+# orahdex-exchange.orahdex-exchange.workers.dev and via the tunnel.
+# ---------------------------------------------------------------------------
+# [[env.production.routes]]
+# custom_domain = true
+# pattern = "api.orahdex.app"

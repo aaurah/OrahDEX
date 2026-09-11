@@ -1,0 +1,14 @@
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = [
+  "npm install -g pnpm@9",
+  "cd /app && pnpm install --frozen-lockfile"
+]
+
+[phases.build]
+cmds = ["cd /app/artifacts/api-server && node ./build.mjs"]
+
+[start]
+cmd = "node --max-old-space-size=512 --enable-source-maps /app/artifacts/api-server/dist/index.mjs"

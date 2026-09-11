@@ -1,0 +1,26 @@
+name: OrahDEX CodeQL Config
+
+paths:
+  - artifacts/api-server/src
+  - artifacts/bsv-dex/src
+  - artifacts/aura-dex-mobile/app
+  - artifacts/aura-dex-mobile/components
+  - artifacts/aura-dex-mobile/constants
+  - artifacts/aura-dex-mobile/context
+  - artifacts/aura-dex-mobile/server
+  - artifacts/aura-dex-mobile/utils
+  - contracts
+  - lib
+  - scripts
+
+paths-ignore:
+  - .agents/**
+  - '**/node_modules/**'
+  - '**/dist/**'
+  - '**/build/**'
+  - '**/coverage/**'
+  - attached_assets/**
+  - .canvas/**
+  - .codesight/**
+  - artifacts/mockup-sandbox/**
+  - artifacts/**/assets/**
