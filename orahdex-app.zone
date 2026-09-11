@@ -1,0 +1,58 @@
+; ============================================================
+;  DNS Zone File for orahdex.app
+;  Target: Replit autoscale deployment
+;  Replit URL: orahdex.replit.app
+;
+;  HOW TO USE:
+;  1. Import this file into your DNS provider, OR
+;     add the records manually one by one.
+;  2. Add orahdex.app as a custom domain inside
+;     Replit → Deploy → Custom Domains, then copy
+;     the TXT verification value Replit gives you
+;     and add it as the TXT record below.
+;  3. Wait up to 24 h for DNS propagation.
+;
+;  APEX RECORD NOTE:
+;  Standard DNS does not allow a CNAME on the apex (@).
+;  Choose one option based on your provider:
+;    • Cloudflare  → use CNAME (Cloudflare flattens it automatically)
+;    • Route 53    → use ALIAS record pointing to orahdex.replit.app.
+;    • Others      → use ANAME/ALIAS if supported, otherwise A records:
+;                    A  34.120.54.55   (Replit GCP load balancer)
+; ============================================================
+
+$ORIGIN orahdex.app.
+$TTL    300
+
+; ── Apex (root domain) ───────────────────────────────────────
+; Cloudflare / Route 53 / ALIAS-capable providers:
+@                IN  CNAME  orahdex.replit.app.
+
+; Traditional DNS providers (no ALIAS support) — use instead of CNAME above:
+; @              IN  A      34.120.54.55
+
+; ── www subdomain ────────────────────────────────────────────
+www              IN  CNAME  orahdex.replit.app.
+
+; ── Domain verification (fill in value from Replit) ──────────
+; Replit will give you a TXT record value when you add the domain.
+; Replace REPLIT_VERIFICATION_VALUE_HERE with that value.
+@                IN  TXT    "replit-verify=REPLIT_VERIFICATION_VALUE_HERE"
+
+; ── Email (AWS SES — us-east-1) ──────────────────────────────
+; Add these after verifying orahdex.app in AWS SES console.
+; SES will give you DKIM CNAME values to add (3 records like below).
+;
+; MX (SES inbound — only if you want to receive mail):
+; @              IN  MX  10  inbound-smtp.us-east-1.amazonaws.com.
+;
+; SPF (authorise SES to send as @orahdex.app):
+@                IN  TXT    "v=spf1 include:amazonses.com ~all"
+;
+; DKIM — replace TOKEN with values from AWS SES → Identities → orahdex.app → DKIM:
+; TOKEN1._domainkey  IN  CNAME  TOKEN1.dkim.amazonses.com.
+; TOKEN2._domainkey  IN  CNAME  TOKEN2.dkim.amazonses.com.
+; TOKEN3._domainkey  IN  CNAME  TOKEN3.dkim.amazonses.com.
+;
+; DMARC:
+_dmarc           IN  TXT    "v=DMARC1; p=quarantine; rua=mailto:dmarc@orahdex.app"

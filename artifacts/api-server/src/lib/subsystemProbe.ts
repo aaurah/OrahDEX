@@ -1,0 +1,381 @@
+/**
+ * subsystemProbe.ts — OrahDEX External Subsystem Health Probes
+ *
+ * Actively tests every external dependency (RPC nodes, LE API, Stripe,
+ * price engine freshness, BSV/WoC) and returns structured probe results.
+ * Designed for the /api/admin/diagnostics endpoint and the self-healing engine.
+ */
+
+import { logger } from "./logger.js";
+
+export type ProbeStatus = "ok" | "degraded" | "down";
+
+export interface ProbeResult {
+  name:       string;
+  label:      string;
+  status:     ProbeStatus;
+  latencyMs:  number;
+  detail:     string;
+  error?:     string;
+  checkedAt:  string;
+}
+
+/* ── Utility ──────────────────────────────────────────────────────────────── */
+
+async function timed<T>(
+  fn: () => Promise<T>,
+  timeoutMs: number,
+): Promise<{ value: T; latencyMs: number }> {
+  const start = Date.now();
+  const value = await Promise.race([
+    fn(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms`)), timeoutMs),
+    ),
+  ]);
+  return { value, latencyMs: Date.now() - start };
+}
+
+async function probe(
+  name: string,
+  label: string,
+  fn: () => Promise<string>,
+  timeoutMs = 6_000,
+): Promise<ProbeResult> {
+  const start = Date.now();
+  try {
+    const { value: detail, latencyMs } = await timed(fn, timeoutMs);
+    return { name, label, status: "ok", latencyMs, detail, checkedAt: new Date().toISOString() };
+  } catch (err: any) {
+    const latencyMs = Date.now() - start;
+    const status: ProbeStatus = latencyMs >= timeoutMs - 100 ? "degraded" : "down";
+    return {
+      name, label, status, latencyMs,
+      detail: "—",
+      error:  err?.message ?? String(err),
+      checkedAt: new Date().toISOString(),
+    };
+  }
+}
+
+/* ── RPC chains ───────────────────────────────────────────────────────────── */
+
+const EVM_CHAINS: Array<{ id: string; label: string; envVar: string; fallback: string }> = [
+  { id: "eth",      label: "Ethereum Mainnet",  envVar: "ETH_RPC_URL",      fallback: "https://eth.llamarpc.com" },
+  { id: "base",     label: "Base",               envVar: "BASE_RPC_URL",     fallback: "https://base.publicnode.com" },
+  { id: "arbitrum", label: "Arbitrum One",       envVar: "ARB_RPC_URL",      fallback: "https://arbitrum-one.publicnode.com" },
+  { id: "optimism", label: "Optimism",           envVar: "OP_RPC_URL",       fallback: "https://optimism.publicnode.com" },
+  { id: "bnb",      label: "BNB Smart Chain",    envVar: "BSC_RPC_URL",      fallback: "https://bsc-dataseed.binance.org" },
+  { id: "polygon",  label: "Polygon",            envVar: "POLYGON_RPC_URL",  fallback: "https://polygon-bor-rpc.publicnode.com" },
+  { id: "avax",     label: "Avalanche C-Chain",  envVar: "AVAX_RPC_URL",     fallback: "https://api.avax.network/ext/bc/C/rpc" },
+  { id: "sepolia",  label: "Sepolia Testnet",    envVar: "SEPOLIA_RPC_URL",  fallback: "https://ethereum-sepolia-rpc.publicnode.com" },
+];
+
+async function probeRpc(chain: (typeof EVM_CHAINS)[number]): Promise<ProbeResult> {
+  const url = process.env[chain.envVar] ?? chain.fallback;
+  const isCustom = !!process.env[chain.envVar];
+
+  return probe(
+    `rpc:${chain.id}`,
+    `${chain.label} RPC${isCustom ? "" : " (public)"}`,
+    async () => {
+      const r = await fetch(url, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_blockNumber", params: [] }),
+        signal:  AbortSignal.timeout(5_000),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json() as { result?: string; error?: { message: string } };
+      if (j.error) throw new Error(j.error.message);
+      const block = parseInt(j.result ?? "0x0", 16);
+      return `block ${block.toLocaleString()} · ${isCustom ? "custom node" : "public node"}`;
+    },
+    5_500,
+  );
+}
+
+export async function probeAllRpc(): Promise<ProbeResult[]> {
+  return Promise.all(EVM_CHAINS.map(probeRpc));
+}
+
+/* ── LetsExchange API ─────────────────────────────────────────────────────── */
+
+export async function probeLetsExchange(): Promise<ProbeResult> {
+  const hasKey = !!process.env["LETSEXCHANGE_API_KEY"];
+  return probe(
+    "letsexchange",
+    "LetsExchange API",
+    async () => {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (hasKey) headers["Authorization"] = `Bearer ${process.env["LETSEXCHANGE_API_KEY"]}`;
+      const r = await fetch("https://api.letsexchange.io/api/v2/coins", {
+        headers,
+        // Match lePriceCache.ts request timeout — 8 s so the outer probe wrapper
+        // (9 s) fires last, keeping "degraded" vs "down" classification accurate.
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (r.status === 403) return `Reachable (API key required for full access)`;
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json() as unknown[];
+      return `${data.length} coins available · key ${hasKey ? "configured" : "not set"}`;
+    },
+    9_000, // outer wrapper timeout > inner AbortSignal so abort fires first
+  );
+}
+
+/* ── Stripe API ───────────────────────────────────────────────────────────── */
+
+export async function probeStripe(): Promise<ProbeResult> {
+  const hasKey = !!process.env["STRIPE_SECRET_KEY"];
+  if (!hasKey) {
+    return {
+      name: "stripe", label: "Stripe API", status: "degraded",
+      latencyMs: 0, detail: "STRIPE_SECRET_KEY not configured",
+      checkedAt: new Date().toISOString(),
+    };
+  }
+  return probe(
+    "stripe",
+    "Stripe API",
+    async () => {
+      const r = await fetch("https://api.stripe.com/v1/balance", {
+        headers: { Authorization: `Bearer ${process.env["STRIPE_SECRET_KEY"]}` },
+        signal: AbortSignal.timeout(6_000),
+      });
+      if (r.status === 401) throw new Error("Invalid API key");
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json() as { object?: string; available?: Array<{ currency: string; amount: number }> };
+      const currency = j.available?.[0]?.currency?.toUpperCase() ?? "USD";
+      return `Stripe connected · ${currency} account reachable`;
+    },
+  );
+}
+
+/* ── BSV / WhatsOnChain ───────────────────────────────────────────────────── */
+
+let _wocCachedDetail: string | null = null;
+let _wocCachedAt    = 0;
+const WOC_CACHE_TTL_MS = 10 * 60_000; // serve cache for up to 10 min on 429
+
+export async function probeBsvChain(): Promise<ProbeResult> {
+  const start = Date.now();
+  try {
+    const r = await fetch("https://api.whatsonchain.com/v1/bsv/main/chain/info", {
+      signal: AbortSignal.timeout(5_000),
+      headers: { "User-Agent": "OrahDEX/1.0" },
+    });
+
+    if (r.status === 429) {
+      const latencyMs = Date.now() - start;
+      const retryAfter = r.headers.get("Retry-After");
+      const cached = _wocCachedDetail && (Date.now() - _wocCachedAt < WOC_CACHE_TTL_MS)
+        ? ` (cached: ${_wocCachedDetail})`
+        : "";
+      return {
+        name: "bsv", label: "BSV / WhatsOnChain",
+        status: "degraded", latencyMs,
+        detail: `Rate limited by WoC${retryAfter ? ` — retry after ${retryAfter}s` : ""}${cached}`,
+        checkedAt: new Date().toISOString(),
+      };
+    }
+
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json() as { blocks?: number; headers?: number };
+    const detail = `block ${(j.blocks ?? j.headers ?? 0).toLocaleString()}`;
+    _wocCachedDetail = detail;
+    _wocCachedAt     = Date.now();
+    const latencyMs  = Date.now() - start;
+    return { name: "bsv", label: "BSV / WhatsOnChain", status: "ok", latencyMs, detail, checkedAt: new Date().toISOString() };
+  } catch (err: any) {
+    const latencyMs = Date.now() - start;
+    const status: ProbeStatus = latencyMs >= 4_900 ? "degraded" : "down";
+    return {
+      name: "bsv", label: "BSV / WhatsOnChain", status, latencyMs,
+      detail: "—", error: err?.message ?? String(err),
+      checkedAt: new Date().toISOString(),
+    };
+  }
+}
+
+/* ── Database ─────────────────────────────────────────────────────────────── */
+
+export async function probeDatabase(): Promise<ProbeResult> {
+  return probe(
+    "database",
+    "PostgreSQL Database",
+    async () => {
+      const { pool } = await import("@workspace/db");
+      const start = Date.now();
+      const { rows } = await pool.query("SELECT version() AS version") as { rows: { version: string }[] };
+      const latencyMs = Date.now() - start;
+      const ver = rows[0]?.version?.split(" ").slice(0, 2).join(" ") ?? "unknown";
+      const quality = latencyMs < 50 ? "fast" : latencyMs < 200 ? "normal" : "slow";
+      return `${ver} · ${latencyMs}ms (${quality})`;
+    },
+  );
+}
+
+/* ── Price engine freshness ───────────────────────────────────────────────── */
+
+let _lastPriceCheck    = 0;
+let _priceCount        = 0;
+let _engineStartedAt   = 0; // set by notifyPriceEngineStarted()
+
+/** Call this immediately when startPriceUpdater() fires so the probe knows the
+ *  engine is warming up and won't misreport "No price run recorded" during the
+ *  initial 35-second startup delay. */
+export function notifyPriceEngineStarted() {
+  _engineStartedAt = Date.now();
+}
+
+export function recordPriceEngineRun(count: number) {
+  _lastPriceCheck = Date.now();
+  _priceCount     = count;
+}
+
+// First price run is deferred 35 s; allow 90 s before treating "no run" as degraded.
+const WARMUP_GRACE_MS = 90_000;
+
+export async function probePriceEngine(): Promise<ProbeResult> {
+  const staleSec = _lastPriceCheck ? Math.floor((Date.now() - _lastPriceCheck) / 1000) : null;
+
+  let status: ProbeStatus;
+  let detail: string;
+
+  if (staleSec === null) {
+    const uptimeMs  = _engineStartedAt ? Date.now() - _engineStartedAt : 0;
+    const remaining = Math.max(0, Math.ceil((WARMUP_GRACE_MS - uptimeMs) / 1000));
+    if (_engineStartedAt && uptimeMs < WARMUP_GRACE_MS) {
+      status = "ok";
+      detail = remaining > 0
+        ? `Warming up — first price run in ~${remaining}s`
+        : "First price run completing…";
+    } else {
+      status = "degraded";
+      detail = "No price run recorded since startup";
+    }
+  } else if (staleSec > 300) {
+    status = "down";
+    detail = `Last price update ${staleSec}s ago (>${Math.floor(staleSec / 60)}m)`;
+  } else if (staleSec > 120) {
+    status = "degraded";
+    detail = `Last price update ${staleSec}s ago`;
+  } else {
+    status = "ok";
+    detail = `${_priceCount} prices · updated ${staleSec}s ago`;
+  }
+
+  return {
+    name: "price-engine", label: "Price Engine",
+    status, latencyMs: 0, detail,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+/* ── Webhook receiver ─────────────────────────────────────────────────────── */
+
+export async function probeWebhookReceiver(): Promise<ProbeResult> {
+  const hasHmacSecret  = !!(process.env["EVM_WEBHOOK_SECRET"] ?? process.env["QUICKNODE_WEBHOOK_SECRET"]);
+  const hasStripeSecret = !!process.env["STRIPE_WEBHOOK_SECRET"];
+  const hasDomain       = !!process.env["REPLIT_DEV_DOMAIN"];
+  const domain          = process.env["REPLIT_DEV_DOMAIN"] ?? "unknown";
+
+  const parts = [
+    `EVM HMAC: ${hasHmacSecret ? "configured" : "not set (optional — EVM webhooks disabled)"}`,
+    `Stripe sig: ${hasStripeSecret ? "configured" : "⚠ not set (insecure)"}`,
+    hasDomain ? `domain: ${domain}` : "domain: unknown",
+  ];
+
+  // EVM HMAC is optional — the system falls back to RPC polling without it.
+  // Only flag degraded when the Stripe webhook secret is missing, since that
+  // allows payment events to arrive without signature verification.
+  const status: ProbeStatus = !hasStripeSecret ? "degraded" : "ok";
+
+  return {
+    name: "webhook", label: "Webhook Receiver",
+    status, latencyMs: 0,
+    detail: parts.join(" · "),
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+/* ── Swap router ──────────────────────────────────────────────────────────── */
+
+export async function probeSwapRouter(): Promise<ProbeResult> {
+  return probe(
+    "swap-router",
+    "Swap Router (LE Pairs in DB)",
+    async () => {
+      const { pool } = await import("@workspace/db");
+      const { rows } = await pool.query(
+        "SELECT COUNT(*) AS cnt FROM markets WHERE type = 'letsexchange' AND status = 'active'",
+      ) as { rows: { cnt: string }[] };
+      const cnt = parseInt(rows[0]?.cnt ?? "0", 10);
+      if (cnt === 0) throw new Error("No LE pairs seeded — run POST /api/admin/le-sync");
+      if (cnt < 1000) return `${cnt.toLocaleString()} LE pairs seeded (partial — run le-sync for full catalog)`;
+      return `${cnt.toLocaleString()} active LE swap pairs`;
+    },
+  );
+}
+
+/* ── Run all probes ───────────────────────────────────────────────────────── */
+
+export interface SubsystemReport {
+  status:      "ok" | "degraded" | "critical";
+  checkedAt:   string;
+  totalMs:     number;
+  summary:     { ok: number; degraded: number; down: number };
+  probes:      ProbeResult[];
+  rpc:         ProbeResult[];
+}
+
+export async function runAllProbes(): Promise<SubsystemReport> {
+  const start = Date.now();
+
+  const [
+    dbResult,
+    leResult,
+    stripeResult,
+    bsvResult,
+    priceResult,
+    webhookResult,
+    swapResult,
+    rpcResults,
+  ] = await Promise.all([
+    probeDatabase(),
+    probeLetsExchange(),
+    probeStripe(),
+    probeBsvChain(),
+    probePriceEngine(),
+    probeWebhookReceiver(),
+    probeSwapRouter(),
+    probeAllRpc(),
+  ]);
+
+  const probes = [dbResult, leResult, stripeResult, bsvResult, priceResult, webhookResult, swapResult];
+  const allResults = [...probes, ...rpcResults];
+
+  const downCount     = allResults.filter(r => r.status === "down").length;
+  const degradedCount = allResults.filter(r => r.status === "degraded").length;
+  const okCount       = allResults.filter(r => r.status === "ok").length;
+
+  const status: SubsystemReport["status"] =
+    downCount > 3     ? "critical"  :
+    downCount > 0     ? "degraded"  :
+    degradedCount > 0 ? "degraded"  : "ok";
+
+  logger.info(
+    { status, ok: okCount, degraded: degradedCount, down: downCount },
+    "[SubsystemProbe] probe run complete",
+  );
+
+  return {
+    status,
+    checkedAt: new Date().toISOString(),
+    totalMs:   Date.now() - start,
+    summary:   { ok: okCount, degraded: degradedCount, down: downCount },
+    probes,
+    rpc: rpcResults,
+  };
+}
