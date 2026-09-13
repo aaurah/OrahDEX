@@ -14,7 +14,7 @@ app.get("/health", async (c) => {
   const checks: Record<string, "ok" | "error"> = {};
   let dbOk = false;
   try {
-    const { rows } = await withDb(c.env, async (db) => {
+    const { hb } = await withDb(c.env, async (db) => {
       const r = await db.query(`SELECT now() AS db_time`);
       const hb = await db.query(
         `SELECT last_beat FROM worker_heartbeat WHERE id = 1`
@@ -23,8 +23,8 @@ app.get("/health", async (c) => {
     });
     checks["database"] = "ok";
     checks["worker-heartbeat"] =
-      rows.hb.rows[0] &&
-      Date.now() - new Date(rows.hb.rows[0].last_beat as string).getTime() < 5 * 60 * 1000
+      hb.rows[0] &&
+      Date.now() - new Date(hb.rows[0].last_beat as string).getTime() < 5 * 60 * 1000
         ? "ok"
         : "error";
     dbOk = true;
