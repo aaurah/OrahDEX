@@ -1082,5 +1082,6 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     </div>
   );
 }
-export { Chart };
+const Chart = OrahChart;
+
 export { Chart };

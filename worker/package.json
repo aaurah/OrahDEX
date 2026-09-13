@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && wrangler deploy --dry-run",
     "deploy:staging": "wrangler deploy --env staging",
-    "deploy:production": "wrangler deploy --env production",
+    "deploy:production": "wrangler deploy",
     "migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
