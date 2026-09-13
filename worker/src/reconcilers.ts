@@ -46,7 +46,7 @@ async function recordRun(
  */
 const MINUTE_TASKS: Record<string, TaskFn> = {
   "webhook-log-cleanup": async (env) => {
-    const { rows } = await withDb(env, async (db) => {
+    const result = await withDb(env, async (db) => {
       const r = await db.query(
         `DELETE FROM webhook_events WHERE received_at < now() - interval '30 days'`
       );
@@ -56,7 +56,7 @@ const MINUTE_TASKS: Record<string, TaskFn> = {
       );
       return r;
     });
-    return { prunedWebhookEvents: rows ? (rows as unknown as { rowCount?: number }).rowCount ?? 0 : 0 };
+    return { prunedWebhookEvents: result.rowCount ?? 0 };
   },
 };
 
