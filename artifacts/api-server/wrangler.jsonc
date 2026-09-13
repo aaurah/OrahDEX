@@ -1,7 +1,9 @@
 {
-  "name": "orahdex",
+  "name": "exchange",
   "main": "src/index.js",
   "compatibility_date": "2026-08-03",
+  "workers_dev": true,
+  "preview_urls": true,
   "routes": [
     { "pattern": "aaurah.org", "custom_domain": false }
   ],
