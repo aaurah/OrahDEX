@@ -1081,3 +1081,4 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
       )}
     </div>
   );
+}
