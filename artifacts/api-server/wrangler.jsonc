@@ -1,0 +1,11 @@
+{
+  "name": "orahdex",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-03",
+  "routes": [
+    { "pattern": "aaurah.org", "custom_domain": false }
+  ],
+  "triggers": {
+    "crons": ["* * * * *"]
+  }
+}
