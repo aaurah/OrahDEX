@@ -1,0 +1,11 @@
+name = "orahdex-dex"
+compatibility_date = "2026-09-13"
+workers_dev = true
+preview_urls = true
+
+[assets]
+directory = "./dist/public"
+not_found_handling = "single-page-application"
+
+[vars]
+BACKEND_URL = "https://exchange.orahdex.workers.dev"
