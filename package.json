@@ -50,7 +50,8 @@
       "ignoreCves": [
         "GHSA-848j-6mx2-7j84"
       ]
-    }
+    },
+    "onlyBuiltDependencies": "[\"sharp\",\"workerd\"]"
   },
   "dependencies": {
     "@vercel/speed-insights": "^2.0.0",
