@@ -6,8 +6,18 @@ packages:
 
 allowBuilds:
   '@reown/appkit': true
+  '@stellar/stellar-sdk': true
+  bigint-buffer: true
+  blake-hash: true
+  bufferutil: true
   esbuild: true
+  hyperliquid: true
   keccak: true
+  protobufjs: true
+  secp256k1: true
+  tiny-secp256k1: true
+  usb: false
+  utf-8-validate: true
 
 autoInstallPeers: false
 
@@ -42,9 +52,21 @@ minimumReleaseAgeExclude:
 
 onlyBuiltDependencies:
   - '@swc/core'
+  - '@stellar/stellar-sdk'
+  - bigint-buffer
+  - blake-hash
+  - bufferutil
   - esbuild
+  - hyperliquid
   - msw
+  - protobufjs
+  - secp256k1
+  - tiny-secp256k1
   - unrs-resolver
+  - utf-8-validate
+
+ignoredBuiltDependencies:
+  - usb
 
 overrides:
   serialize-javascript: '>=7.0.3'
@@ -60,7 +82,6 @@ overrides:
   '@expo/ngrok-bin>@expo/ngrok-bin-sunos-x64': '-'
   '@expo/ngrok-bin>@expo/ngrok-bin-win32-ia32': '-'
   '@expo/ngrok-bin>@expo/ngrok-bin-win32-x64': '-'
-  '@tailwindcss/oxide>@tailwindcss/oxide-android-arm64': '-'
   '@tailwindcss/oxide>@tailwindcss/oxide-darwin-arm64': '-'
   '@tailwindcss/oxide>@tailwindcss/oxide-darwin-x64': '-'
   '@tailwindcss/oxide>@tailwindcss/oxide-freebsd-x64': '-'
@@ -73,7 +94,6 @@ overrides:
   esbuild: 0.28.1
   esbuild>@esbuild/aix-ppc64: '-'
   esbuild>@esbuild/android-arm: '-'
-  esbuild>@esbuild/android-arm64: '-'
   esbuild>@esbuild/android-x64: '-'
   esbuild>@esbuild/darwin-arm64: '-'
   esbuild>@esbuild/darwin-x64: '-'
@@ -96,7 +116,6 @@ overrides:
   esbuild>@esbuild/win32-arm64: '-'
   esbuild>@esbuild/win32-ia32: '-'
   esbuild>@esbuild/win32-x64: '-'
-  lightningcss>lightningcss-android-arm64: '-'
   lightningcss>lightningcss-darwin-arm64: '-'
   lightningcss>lightningcss-darwin-x64: '-'
   lightningcss>lightningcss-freebsd-x64: '-'
@@ -107,7 +126,6 @@ overrides:
   lightningcss>lightningcss-win32-arm64-msvc: '-'
   lightningcss>lightningcss-win32-x64-msvc: '-'
   rollup>@rollup/rollup-android-arm-eabi: '-'
-  rollup>@rollup/rollup-android-arm64: '-'
   rollup>@rollup/rollup-darwin-arm64: '-'
   rollup>@rollup/rollup-darwin-x64: '-'
   rollup>@rollup/rollup-freebsd-arm64: '-'
