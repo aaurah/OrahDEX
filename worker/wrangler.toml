@@ -14,10 +14,6 @@ crons = [
   "*/5 * * * *"   # every 5 minutes: reconciler sweep
 ]
 
-[[hyperdrive]]
-binding = "HYPERDRIVE"
-id = "REPLACE_WITH_PROD_HYPERDRIVE_ID"
-
 [vars]
 ENVIRONMENT = "production"
 CANONICAL_DOMAIN = "orahdex.app"
@@ -33,10 +29,6 @@ CANONICAL_DOMAIN = "orahdex.app"
 [env.staging]
 name = "orahdex-exchange-staging"
 workers_dev = true
-
-[[env.staging.hyperdrive]]
-binding = "HYPERDRIVE"
-id = "REPLACE_WITH_STAGING_HYPERDRIVE_ID"
 
 [env.staging.vars]
 ENVIRONMENT = "staging"
