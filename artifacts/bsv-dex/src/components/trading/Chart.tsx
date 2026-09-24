@@ -58,7 +58,7 @@ const CHART_TYPES: { id: ChartType; label: string; svg: string }[] = [
   { id: 'bar',         label: 'Bar',          svg: 'M7,2 L7,12 M7,4 L4,4 M7,9 L10,9' },
   { id: 'line',        label: 'Line',         svg: 'M1,10 L4,6 L7,8 L10,4 L13,5' },
   { id: 'area',        label: 'Area',         svg: 'M1,10 L4,6 L7,8 L10,4 L13,5 L13,12 L1,12 Z' },
-  { id: 'baseline',    label: 'Baseline',     svg: 'M1,7 L13,7 M1,10 C3,8 5,5 7,7 C9,9 11,5 13,6' },
+  { id: 'baseline',    label: 'Baseline',      svg: 'M1,7 L13,7 M1,10 C3,8 5,5 7,7 C9,9 11,5 13,6' },
 ];
 
 /* ── Overlay indicator definitions ─────────────────────────────────────── */
@@ -77,7 +77,7 @@ const OVERLAY_INDICATORS = [
 const SUB_INDICATORS: { id: SubIndicator; label: string }[] = [
   { id: 'none',     label: 'None' },
   { id: 'rsi',      label: 'RSI' },
-  { id: 'macd',     label: 'MACD' },
+  { id: 'macd',      label: 'MACD' },
   { id: 'stoch',    label: 'Stoch' },
   { id: 'cci',      label: 'CCI' },
   { id: 'williams', label: '%R' },
@@ -264,6 +264,10 @@ function fmtPrice(v: number, price: number): string {
 
 /* ══════════════════════════════════════════════════════════════════════════
    ORAHCHART — Maximum Features Edition
+   REFRESH-FIXED: background polls no longer reset the visible range;
+   zoom-adaptive switching has hysteresis to prevent interval flapping;
+   CASCADE-FIXED: initial fitContent no longer triggers the auto-interval
+   ladder (1m→5m→30m→…→1M) on every page open.
 ══════════════════════════════════════════════════════════════════════════ */
 function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndicatorProp, hideIntervalBar, data: fallbackData }: {
   symbol: string; interval: string; onIntervalChange?: (iv: string) => void; subIndicator?: SubIndicator; hideIntervalBar?: boolean; data?: Candle[];
@@ -302,6 +306,12 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   const autoIntervalRef     = useRef(false);
   const zoomTimerRef2       = useRef<ReturnType<typeof setTimeout> | null>(null);
   const effectiveIntervalRef = useRef(interval);
+  /* REFRESH-FIX: hysteresis + view-preservation refs */
+  const spanAtSwitchRef     = useRef<number | null>(null);
+  const appliedCandlesRef   = useRef<{ key: string; data: Candle[] } | null>(null);
+  const shouldFitRef        = useRef(true);
+  /* CASCADE-FIX: ignore range-change events right after programmatic range sets */
+  const suppressAutoSwitchUntilRef = useRef(0);
 
   const { theme } = useThemeStore();
   const { showTradingViewWatermark } = useSettingsStore();
@@ -334,7 +344,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
   /* Keep effectiveIntervalRef current; reset autoInterval on parent-driven interval change */
   const effectiveInterval = autoInterval ?? interval;
   useEffect(() => { effectiveIntervalRef.current = effectiveInterval; }, [effectiveInterval]);
-  useEffect(() => { setAutoInterval(null); }, [interval]);
+  useEffect(() => { setAutoInterval(null); spanAtSwitchRef.current = null; }, [interval]);
 
   /* parsed symbol */
   const parts = useMemo(() => {
@@ -417,6 +427,9 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
 
   useEffect(() => {
     setLoading(true); setCandles([]); setTicker(null); setHoverInfo(null);
+    appliedCandlesRef.current = null;
+    shouldFitRef.current = true;      // REFRESH-FIX: fit only on symbol/interval change
+    spanAtSwitchRef.current = null;
     fetchCandles(); fetchTicker();
     if (timerRef.current) clearInterval(timerRef.current);
     timerRef.current = setInterval(() => { fetchCandles(); fetchTicker(); }, 30_000);
@@ -567,7 +580,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: { color: '#4ade80', labelBackgroundColor: c.subBg, style: 2, width: 1 },
-        horzLine: { color: '#4ade80', labelBackgroundColor: c.subBg, style: 2, width: 1 },
+        horzLine: { color: '#4aed80', labelBackgroundColor: c.subBg, style: 2, width: 1 },
       },
       handleScroll: { vertTouchDrag: false },
     });
@@ -642,6 +655,7 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     }
     series.applyOptions({ priceFormat: pf });
     priceSeriesRef.current = series;
+    shouldFitRef.current = true;   // REFRESH-FIX: rebuilt series needs a full refit
     updatePriceSeries();
   }, [chartReady, chartType]);
 
@@ -656,36 +670,90 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     } else {
       series.setData(displayCandles.map(c => ({ time: Number(c.time) as any, value: c.close })));
     }
+    /* CASCADE-FIX: any programmatic range set below would fire the range-change
+       handler — suppress auto-interval switching for 2s afterwards */
+    suppressAutoSwitchUntilRef.current = Date.now() + 2000;
     /* After a zoom-triggered fetch restore the user's visible range instead of fitContent */
     if (autoIntervalRef.current && zoomRangeRef.current) {
       const { from, to } = zoomRangeRef.current;
       try { chartRef.current?.timeScale().setVisibleRange({ from: from as any, to: to as any }); } catch (_) {}
       autoIntervalRef.current = false;
       zoomRangeRef.current = null;
-    } else {
+    } else if (shouldFitRef.current) {
       /* rAF ensures the chart has processed setData (computed its full extent) before we fit */
+      shouldFitRef.current = false;
       requestAnimationFrame(() => {
         chartRef.current?.timeScale().fitContent();
         subChartRef.current?.timeScale().fitContent();
       });
+    } else {
+      /* REFRESH-FIX: background refresh — preserve the user's current view */
+      const range = chartRef.current?.timeScale().getVisibleRange();
+      if (range) {
+        try { chartRef.current?.timeScale().setVisibleRange({ from: range.from as any, to: range.to as any }); } catch (_) {}
+      }
     }
   }, [displayCandles, chartType]);
 
-  /* ── Push candle data whenever candles change ───────────────────────── */
+  /* ── Push candle data whenever candles change ─────────────────────────
+     REFRESH-FIX: on background polls, incrementally update only the bars
+     that changed/new instead of full setData + fitContent.              */
   useEffect(() => {
     if (!chartReady || !candles.length) return;
-    updatePriceSeries();
+    const key = `${symbol}|${effectiveInterval}|${chartType}`;
+    const prev = appliedCandlesRef.current;
+    const series = priceSeriesRef.current;
+    const volSeries = volSeriesRef.current;
 
-    /* Volume */
-    if (volSeriesRef.current && showVol) {
-      volSeriesRef.current.setData(candles.map(c => ({
+    const pushPriceBar = (i: number) => {
+      const dc = displayCandles[i];
+      if (!dc) return;
+      if (chartType === 'candle' || chartType === 'heikinashi' || chartType === 'bar') {
+        series.update({ time: Number(dc.time) as any, open: dc.open, high: dc.high, low: dc.low, close: dc.close });
+      } else {
+        series.update({ time: Number(dc.time) as any, value: dc.close });
+      }
+    };
+    const pushVolBar = (c: Candle) => {
+      volSeries.update({
         time: Number(c.time) as any,
         value: (c as any).volume ?? 0,
         color: c.close >= c.open ? '#0ecb8125' : '#f6465d25',
-      })));
+      });
+    };
+
+    /* Incremental path: same symbol+interval+type, and the new array extends the old one */
+    if (series && prev && prev.key === key && prev.data.length > 0 && candles.length >= prev.data.length) {
+      const n = prev.data.length;
+      let p = 0;
+      while (p < n - 1 &&
+             candles[p].time === prev.data[p].time &&
+             candles[p].close === prev.data[p].close) p++;
+      if (p >= n - 1) {
+        for (let i = p; i < candles.length; i++) {
+          pushPriceBar(i);
+          if (showVol) pushVolBar(candles[i]);
+        }
+        appliedCandlesRef.current = { key, data: candles };
+        return;
+      }
     }
-    if (volSeriesRef.current && !showVol) { volSeriesRef.current.setData([]); }
-  }, [candles, chartReady, showVol, updatePriceSeries]);
+
+    /* Full path: first load, interval/symbol/chartType change, or non-append data change */
+    updatePriceSeries();
+    if (volSeries) {
+      if (showVol) {
+        volSeries.setData(candles.map(c => ({
+          time: Number(c.time) as any,
+          value: (c as any).volume ?? 0,
+          color: c.close >= c.open ? '#0ecb8125' : '#f6465d25',
+        })));
+      } else {
+        volSeries.setData([]);
+      }
+    }
+    appliedCandlesRef.current = { key, data: candles };
+  }, [candles, chartReady, showVol, updatePriceSeries, displayCandles, chartType, symbol, effectiveInterval]);
 
   /* ── Overlay indicators ─────────────────────────────────────────────── */
   const overlayRefs: Record<string, React.MutableRefObject<any>> = {
@@ -795,7 +863,11 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
     if (range) chart.timeScale().setVisibleRange(range as any);
   }, [subReady, subInd, candles, indicatorData]);
 
-  /* ── Subscribe to visible time range changes → auto-switch interval ─── */
+  /* ── Subscribe to visible time range changes → auto-switch interval ───
+     CASCADE-FIX: ignore range changes within 2s of programmatic range sets
+     (initial fit, refits, zoom-triggered reloads) so the auto-interval
+     ladder (1m→5m→30m→…→1M) never fires on page open.
+     REFRESH-FIX: 1600ms debounce + 1.5x hysteresis prevent interval flapping. */
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart || !chartReady) return;
@@ -809,12 +881,18 @@ function OrahChart({ symbol, interval, onIntervalChange, subIndicator: subIndica
 
       if (zoomTimerRef2.current) clearTimeout(zoomTimerRef2.current);
       zoomTimerRef2.current = setTimeout(() => {
+        /* CASCADE-FIX: skip events caused by programmatic range sets */
+        if (Date.now() < suppressAutoSwitchUntilRef.current) return;
         const best  = bestIntervalForSpan(span);
         const curIv = effectiveIntervalRef.current;
         /* Don't auto-switch for long-range presets (1Y/2Y/5Y etc.) */
-        if (RANGE_PRESET_MAP[curIv] || best === curIv) return;
+        if (RANGE_PRESET_MAP[curIv] || best === curIv) { spanAtSwitchRef.current = span; return; }
+        /* Hysteresis: require a meaningful zoom change (1.5x) since the last switch */
+        const base = spanAtSwitchRef.current ?? span;
+        if (span > base / 1.5 && span < base * 1.5) return;
+        spanAtSwitchRef.current = span;
         fetchForZoom(best, { from, to });
-      }, 900);
+      }, 1600);
     };
 
     chart.timeScale().subscribeVisibleTimeRangeChange(handler);

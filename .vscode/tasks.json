@@ -1,0 +1,18 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    { "label": "Run Dev (hot reload)", "type": "shell",
+      "command": "cd ~/OrahDEX-app/artifacts/bsv-dex && npx vite --port 5173 --host",
+      "isBackground": true, "problemMatcher": [],
+      "presentation": { "panel": "dedicated", "clear": true } },
+    { "label": "Build & Deploy (orahdex.com)", "type": "shell",
+      "command": "cd ~/OrahDEX-app && export NODE_OPTIONS=--max-old-space-size=3072 && pnpm --filter @workspace/bsv-dex build && pkill -f 'dist/index.mjs'; sleep 2; cd artifacts/api-server && nohup node --env-file=.env --enable-source-maps --max-old-space-size=3072 --expose-gc ./dist/index.mjs > ~/api-server.log 2>&1 & sleep 8; curl -s -o /dev/null -w 'DEPLOYED - domain: %{http_code}\\n' https://orahdex.com",
+      "problemMatcher": [], "presentation": { "panel": "shared", "clear": true } },
+    { "label": "Restart API", "type": "shell",
+      "command": "pkill -f 'dist/index.mjs'; sleep 2; cd ~/OrahDEX-app/artifacts/api-server && nohup node --env-file=.env --enable-source-maps --max-old-space-size=3072 --expose-gc ./dist/index.mjs > ~/api-server.log 2>&1 &",
+      "problemMatcher": [] },
+    { "label": "Health Check", "type": "shell",
+      "command": "curl -s http://localhost:8080/api/health | head -c 100; echo; curl -s -o /dev/null -w 'domain: %{http_code}\\n' https://orahdex.com",
+      "problemMatcher": [] }
+  ]
+}

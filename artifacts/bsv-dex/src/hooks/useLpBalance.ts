@@ -137,7 +137,7 @@ function resolveTokenAddresses(
 
 /** Get the public RPC for a chain (used only for read-only calls here) */
 const CHAIN_RPCS: Record<number, string> = {
-  1:        "https://ethereum-rpc.publicnode.com",
+  1:        "https://eth.llamarpc.com",
   8453:     "https://mainnet.base.org",
   11155111: "https://ethereum-sepolia-rpc.publicnode.com",
   84532:    "https://sepolia.base.org",

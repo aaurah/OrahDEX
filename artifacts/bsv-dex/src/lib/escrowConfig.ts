@@ -31,6 +31,7 @@ export const ESCROW_ABI = parseAbi([
  *     Avalanche (43114), Linea (59144), Scroll (534352)
  */
 export const ESCROW_ADDRESSES: Record<number, string> = {
+  1: "0xeE234cEb85697b64800E696699b7841e00413B4f",
   11155111: "0x4deb6023abD9E1C640aDa35201be8ff591d21cF2",  // Sepolia ✓ live
 };
 
