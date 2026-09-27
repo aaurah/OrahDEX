@@ -151,14 +151,14 @@ export interface ChainConfig {
 // Deployed OrahDEXEscrow contract address (same address on all mainnet chains via CREATE2).
 // Used as the settlement contract for EVM HTLC sessions on chains where EVM_HTLC_CONTRACT_*
 // env vars are not explicitly set.
-const DEPLOYED_CONTRACT = "0xeE234cEb85697b64800E696699b7841e00413B4f" as Address;
+// HTLC contract per chain: env EVM_HTLC_CONTRACT_* or null (settlement refused). Never fall back to another contract.
 
 export const EVM_CHAINS: Record<number, ChainConfig> = {
   1: {
     chainId:         1,
     name:            "Ethereum Mainnet",
     rpcUrl:          process.env.ETH_RPC_URL ?? "https://eth.llamarpc.com",
-    contractAddress: (process.env.EVM_HTLC_CONTRACT_ETH as Address | undefined) ?? DEPLOYED_CONTRACT,
+    contractAddress: (process.env.EVM_HTLC_CONTRACT_ETH as Address | undefined) ?? null,
     nativeSymbol:    "ETH",
     blockExplorer:   "https://etherscan.io",
     usdtAddress:     "0xdAC17F958D2ee523a2206206994597C13D831ec7",
@@ -168,7 +168,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         137,
     name:            "Polygon Mainnet",
     rpcUrl:          process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com",
-    contractAddress: (process.env.EVM_HTLC_CONTRACT_POLYGON as Address | undefined) ?? DEPLOYED_CONTRACT,
+    contractAddress: (process.env.EVM_HTLC_CONTRACT_POLYGON as Address | undefined) ?? null,
     nativeSymbol:    "MATIC",
     blockExplorer:   "https://polygonscan.com",
     usdtAddress:     "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
@@ -178,7 +178,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         56,
     name:            "BNB Smart Chain",
     rpcUrl:          process.env.BSC_RPC_URL ?? "https://bsc-dataseed.binance.org",
-    contractAddress: (process.env.EVM_HTLC_CONTRACT_BSC as Address | undefined) ?? DEPLOYED_CONTRACT,
+    contractAddress: (process.env.EVM_HTLC_CONTRACT_BSC as Address | undefined) ?? null,
     nativeSymbol:    "BNB",
     blockExplorer:   "https://bscscan.com",
     usdtAddress:     "0x55d398326f99059fF775485246999027B3197955",
@@ -188,7 +188,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         8453,
     name:            "Base",
     rpcUrl:          process.env.BASE_RPC_URL ?? "https://mainnet.base.org",
-    contractAddress: DEPLOYED_CONTRACT,
+    contractAddress: null,
     nativeSymbol:    "ETH",
     blockExplorer:   "https://basescan.org",
     usdtAddress:     null,
@@ -198,7 +198,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         42161,
     name:            "Arbitrum One",
     rpcUrl:          process.env.ARB_RPC_URL ?? "https://arb1.arbitrum.io/rpc",
-    contractAddress: DEPLOYED_CONTRACT,
+    contractAddress: null,
     nativeSymbol:    "ETH",
     blockExplorer:   "https://arbiscan.io",
     usdtAddress:     "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
@@ -208,7 +208,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         10,
     name:            "Optimism",
     rpcUrl:          process.env.OP_RPC_URL ?? "https://mainnet.optimism.io",
-    contractAddress: DEPLOYED_CONTRACT,
+    contractAddress: null,
     nativeSymbol:    "ETH",
     blockExplorer:   "https://optimistic.etherscan.io",
     usdtAddress:     "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58",
@@ -218,7 +218,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         43114,
     name:            "Avalanche",
     rpcUrl:          process.env.AVAX_RPC_URL ?? "https://api.avax.network/ext/bc/C/rpc",
-    contractAddress: DEPLOYED_CONTRACT,
+    contractAddress: null,
     nativeSymbol:    "AVAX",
     blockExplorer:   "https://snowtrace.io",
     usdtAddress:     "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7",
@@ -228,7 +228,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         324,
     name:            "zkSync Era",
     rpcUrl:          process.env.ZKSYNC_RPC_URL ?? "https://mainnet.era.zksync.io",
-    contractAddress: DEPLOYED_CONTRACT,
+    contractAddress: null,
     nativeSymbol:    "ETH",
     blockExplorer:   "https://explorer.zksync.io",
     usdtAddress:     null,
@@ -238,7 +238,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         59144,
     name:            "Linea",
     rpcUrl:          process.env.LINEA_RPC_URL ?? "https://rpc.linea.build",
-    contractAddress: DEPLOYED_CONTRACT,
+    contractAddress: null,
     nativeSymbol:    "ETH",
     blockExplorer:   "https://lineascan.build",
     usdtAddress:     "0xA219439258ca9da29E9Cc4cE5596924745e12B93",
@@ -248,7 +248,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         534352,
     name:            "Scroll",
     rpcUrl:          process.env.SCROLL_RPC_URL ?? "https://rpc.scroll.io",
-    contractAddress: DEPLOYED_CONTRACT,
+    contractAddress: null,
     nativeSymbol:    "ETH",
     blockExplorer:   "https://scrollscan.com",
     usdtAddress:     "0xf55BEC9cafDbE8730f096Aa55dad6D22d44099Df",
@@ -258,7 +258,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         1329,
     name:            "Sei",
     rpcUrl:          process.env.SEI_RPC_URL ?? "https://sei-evm-rpc.publicnode.com",
-    contractAddress: DEPLOYED_CONTRACT,
+    contractAddress: null,
     nativeSymbol:    "SEI",
     blockExplorer:   "https://seitrace.com",
     usdtAddress:     null,
@@ -268,7 +268,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         130,
     name:            "Unichain",
     rpcUrl:          process.env.UNICHAIN_RPC_URL ?? "https://mainnet.unichain.org",
-    contractAddress: DEPLOYED_CONTRACT,
+    contractAddress: null,
     nativeSymbol:    "ETH",
     blockExplorer:   "https://uniscan.xyz",
     usdtAddress:     null,
@@ -311,8 +311,8 @@ function keccak256Hex(data: Buffer): Hex {
  *
  * Matches the Solidity equivalent used in event indexing.
  */
-function deriveLockId(tradeId: string, side: "seller" | "buyer"): Hex {
-  return keccak256Hex(Buffer.from(`${tradeId}_${side}`, "utf8"));
+function deriveLockId(tradeId: string, sessionId: string, side: "seller" | "buyer"): Hex {
+  return keccak256Hex(Buffer.from(`${tradeId}_${sessionId}_${side}`, "utf8"));
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -388,7 +388,8 @@ export async function initiateEvmHtlcSession(
     buyerAsset, buyerAmount, buyerToken,
   } = params;
 
-  const chain = EVM_CHAINS[chainId] ?? EVM_CHAINS[1]!;
+  const chain = EVM_CHAINS[chainId];
+  if (!chain) throw new Error(`Unsupported EVM chain: ${chainId}`);
   const now   = Math.floor(Date.now() / 1000);
 
   const sellerTimelockUnix = now + SELLER_TIMELOCK_SECS;
@@ -400,8 +401,8 @@ export async function initiateEvmHtlcSession(
   const secretHash = ("0x" + crypto.createHash("sha256").update(secretBuf).digest("hex")) as Hex;
 
   const sessionId   = crypto.randomUUID();
-  const sellerLockId = deriveLockId(tradeId, "seller");
-  const buyerLockId  = deriveLockId(tradeId, "buyer");
+  const sellerLockId = deriveLockId(tradeId, sessionId, "seller");
+  const buyerLockId  = deriveLockId(tradeId, sessionId, "buyer");
 
   const expiresAt = new Date((now + SESSION_TIMEOUT_SECS) * 1000);
 
@@ -598,7 +599,7 @@ export async function getEvmHtlcSessionByTrade(tradeId: string): Promise<EvmHtlc
 }
 
 function rowToSession(row: typeof evmHtlcSessionsTable.$inferSelect): EvmHtlcSession {
-  const chain = EVM_CHAINS[row.chainId] ?? EVM_CHAINS[1]!;
+  const chain = EVM_CHAINS[row.chainId] ?? (() => { throw new Error(`Unsupported EVM chain: ${row.chainId}`); })();
   const ca    = (row.contractAddress !== "UNDEPLOYED" ? row.contractAddress : null) as Address | null;
 
   const sellerLock = buildLockInstruction({
@@ -673,6 +674,13 @@ export async function startEvmHtlcWatcher(): Promise<void> {
         : logger.warn({ err }, "evmHtlc: poll cycle error"))
       .finally(() => { pollRunning = false; });
   }, 30_000);
+
+  // First poll immediately instead of waiting a full interval (P1)
+  setTimeout(() => {
+    if (pollRunning) return;
+    pollRunning = true;
+    pollEvmHtlcSessions().catch(err => logger.warn({ err }, "evmHtlc: initial poll error")).finally(() => { pollRunning = false; });
+  }, 1_000);
 }
 
 async function pollEvmHtlcSessions(): Promise<void> {
@@ -717,6 +725,31 @@ async function pollEvmHtlcSessions(): Promise<void> {
   }
 }
 
+/** P0 hardening: verify the COMPLETE on-chain lock (sender, recipient, token,
+ * amount, secretHash, timelock, not revealed/refunded) — isLocked() alone only
+ * proves "some nonzero lock exists", not that it is THIS session's intended lock. */
+async function verifyLockFields(
+  client: ReturnType<typeof createPublicClient>,
+  contractAddress: Address,
+  lockId: Hex,
+  expected: { sender: string; recipient: string; token: string | null; amount: string; secretHash: string; timelockUnix: number },
+): Promise<boolean> {
+  try {
+    const l = await client.readContract({ address: contractAddress, abi: HTLC_ABI, functionName: "getLock", args: [lockId] });
+    const ZERO = "0x0000000000000000000000000000000000000000";
+    const eq = (a: string | null, b: string | null) => (a ?? "").toLowerCase() === (b ?? "").toLowerCase();
+    return (
+      eq(l[0], expected.sender) &&
+      eq(l[1], expected.recipient) &&
+      eq(l[2] === ZERO ? null : (l[2] as string), expected.token) &&
+      BigInt(l[3]).toString() === BigInt(expected.amount).toString() &&
+      (l[4] as string).toLowerCase() === expected.secretHash.toLowerCase() &&
+      Number(l[5]) === expected.timelockUnix &&
+      l[6] === false && l[7] === false
+    );
+  } catch { return false; }
+}
+
 async function checkSessionOnChain(
   session: typeof evmHtlcSessionsTable.$inferSelect,
   chain:   ChainConfig
@@ -732,11 +765,10 @@ async function checkSessionOnChain(
 
   if (!sellerLocked) {
     try {
-      const locked = await client.readContract({
-        address:      contractAddress,
-        abi:          HTLC_ABI,
-        functionName: "isLocked",
-        args:         [session.sellerLockId as Hex],
+      const locked = await verifyLockFields(client, contractAddress, session.sellerLockId as Hex, {
+        sender: session.sellerAddress, recipient: session.buyerAddress,
+        token: session.sellerToken, amount: session.sellerAmount,
+        secretHash: session.secretHash, timelockUnix: session.sellerTimelockUnix,
       });
       if (locked) {
         sellerLocked = true;
@@ -755,11 +787,10 @@ async function checkSessionOnChain(
 
   if (!buyerLocked) {
     try {
-      const locked = await client.readContract({
-        address:      contractAddress,
-        abi:          HTLC_ABI,
-        functionName: "isLocked",
-        args:         [session.buyerLockId as Hex],
+      const locked = await verifyLockFields(client, contractAddress, session.buyerLockId as Hex, {
+        sender: session.buyerAddress, recipient: session.sellerAddress,
+        token: session.buyerToken, amount: session.buyerAmount,
+        secretHash: session.secretHash, timelockUnix: session.buyerTimelockUnix,
       });
       if (locked) {
         buyerLocked = true;
@@ -822,6 +853,7 @@ async function revealBothLocks(
 
   const account = privateKeyToAccount(relayerKey);
   const viemChain = buildViemChain(chain);
+  const publicClient = createPublicClient({ transport: http(chain.rpcUrl), chain: viemChain });
 
   const walletClient = createWalletClient({
     account,
@@ -849,7 +881,9 @@ async function revealBothLocks(
         args:         [session.sellerLockId as Hex, secretHex],
       });
 
-      logger.info({ sessionId: session.id, txHash: sellerRevealHash }, "evmHtlc: seller reveal() submitted");
+      const sellerRc = await publicClient.waitForTransactionReceipt({ hash: sellerRevealHash });
+      if (sellerRc.status !== "success") throw new Error(`seller reveal reverted (tx ${sellerRevealHash})`);
+      logger.info({ sessionId: session.id, txHash: sellerRevealHash }, "evmHtlc: seller reveal() confirmed on-chain");
 
       await db
         .update(evmHtlcSessionsTable)
@@ -874,7 +908,10 @@ async function revealBothLocks(
         args:         [session.buyerLockId as Hex, secretHex],
       });
 
-      logger.info({ sessionId: session.id, txHash: buyerRevealHash }, "evmHtlc: buyer reveal() submitted");
+      const buyerRc = await publicClient.waitForTransactionReceipt({ hash: buyerRevealHash });
+      if (buyerRc.status !== "success") throw new Error(`buyer reveal reverted (tx ${buyerRevealHash})`);
+      logger.info({ sessionId: session.id, txHash: buyerRevealHash }, "evmHtlc: buyer reveal() confirmed on-chain");
+      // COMPLETED below is now only reachable after BOTH receipts are success
 
       await db
         .update(evmHtlcSessionsTable)
@@ -1010,6 +1047,20 @@ export async function confirmLockTx(
 
   if (!rows[0]) return { ok: false, status: "SESSION_NOT_FOUND" };
   const session = rows[0];
+
+  // Canonical gate: a reported lock tx is a HINT. Only getLock() field
+  // verification promotes it to locked state. (P0 hardening)
+  const chain = EVM_CHAINS[session.chainId];
+  if (!chain || !chain.contractAddress) return { ok: false, status: "CHAIN_NOT_CONFIGURED" };
+  const client = createPublicClient({ transport: http(chain.rpcUrl), chain: buildViemChain(chain) });
+  const lockId = (side === "seller" ? session.sellerLockId : session.buyerLockId) as Hex;
+  const expected = side === "seller"
+    ? { sender: session.sellerAddress, recipient: session.buyerAddress, token: session.sellerToken, amount: session.sellerAmount, secretHash: session.secretHash, timelockUnix: session.sellerTimelockUnix }
+    : { sender: session.buyerAddress, recipient: session.sellerAddress, token: session.buyerToken, amount: session.buyerAmount, secretHash: session.secretHash, timelockUnix: session.buyerTimelockUnix };
+  if (!(await verifyLockFields(client, chain.contractAddress, lockId, expected))) {
+    logger.warn({ sessionId, side, txHash }, "evmHtlc: lock failed on-chain field verification — not marking locked");
+    return { ok: false, status: "LOCK_VERIFICATION_FAILED" };
+  }
 
   const updates =
     side === "seller"
