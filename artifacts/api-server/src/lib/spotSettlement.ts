@@ -32,7 +32,6 @@ import {
   buildHtlc,
   buildP2SHLockingScript,
   MIN_LOCKTIME_BLOCKS,
-  HTLC_MIN_SAT,
   DUST_SAT,
 } from "./htlc.js";
 import { getBsvChainStatus } from "./bsvChainMonitor.js";
@@ -210,15 +209,32 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
     if (balance.funded && balance.utxos.length > 0) {
       const best    = balance.utxos.sort((a, b) => b.satoshis - a.satoshis)[0]!;
       const FEE_SAT = 500;
-      const maxHtlcSat  = best.satoshis - FEE_SAT - DUST_SAT;
-      const safeHtlcSat = Math.max(HTLC_MIN_SAT, DUST_SAT + 1);
-      const canAddHtlc  = isCrossChain && !!htlcP2SHScriptHex && maxHtlcSat >= safeHtlcSat;
-      const htlcSat     = canAddHtlc ? Math.min(safeHtlcSat, maxHtlcSat) : undefined;
+      const maxHtlcSat = best.satoshis - FEE_SAT - DUST_SAT;
 
-      if (isCrossChain && htlcP2SHScriptHex && !canAddHtlc) {
+      // P0 fix: the BSV HTLC must lock the exact BSV trade value, never dust.
+      const bsvTradeAmount =
+        baseAsset === "BSV" ? fillQty :
+        quoteAsset === "BSV" ? fillValue :
+        0;
+      const requiredHtlcSat = Math.round(bsvTradeAmount * 1e8);
+
+      const canAddHtlc =
+        isCrossChain &&
+        !!htlcP2SHScriptHex &&
+        requiredHtlcSat > 0 &&
+        maxHtlcSat >= requiredHtlcSat;
+
+      if (isCrossChain && htlcP2SHScriptHex && requiredHtlcSat <= 0) {
         log.warn(
-          { utxoSat: best.satoshis, maxHtlcSat, safeHtlcSat },
-          "spotSettlement: HTLC output skipped — UTXO too small"
+          { pair, baseAsset, quoteAsset },
+          "spotSettlement: cross-chain BSV HTLC skipped — no BSV side in pair"
+        );
+      }
+
+      if (isCrossChain && htlcP2SHScriptHex && requiredHtlcSat > 0 && !canAddHtlc) {
+        log.warn(
+          { utxoSat: best.satoshis, maxHtlcSat, requiredHtlcSat },
+          "spotSettlement: HTLC output skipped — UTXO cannot fund exact BSV trade value"
         );
       }
 
@@ -228,7 +244,7 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
         utxo:              best,
         opReturnPayload:   fallback.opReturnData,
         htlcP2SHScriptHex: canAddHtlc ? htlcP2SHScriptHex : undefined,
-        htlcSatoshis:      htlcSat,
+        htlcSatoshis:      canAddHtlc ? requiredHtlcSat : undefined,
       });
       if (result.broadcast) {
         broadcastTxid    = result.txid;
