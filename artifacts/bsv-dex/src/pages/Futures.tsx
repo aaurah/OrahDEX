@@ -1,3 +1,4 @@
+import { signFuturesChallengeIfNeeded } from "@/lib/futuresSig";
 import { useParams, useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
@@ -256,10 +257,21 @@ export function FuturesTrading() {
     if (!address) return;
     setClosingPositionId(positionId);
     try {
+      const closeAuth = await signFuturesChallengeIfNeeded({
+        walletAddress: address,
+        network,
+        action: "close",
+        fields: { positionId },
+      });
       const resp = await fetch(`${API_BASE}/futures/positions/${encodeURIComponent(positionId)}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address, markPrice }),
+        body: JSON.stringify({
+          walletAddress: address,
+          markPrice,
+          nonce: closeAuth.nonce,
+          evmSignature: closeAuth.signature,
+        }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -314,6 +326,10 @@ export function FuturesTrading() {
 
   const handleFuturesSubmit = async (side: "buy" | "sell") => {
     if (!address) { openModal(); return; }
+    if (network !== "evm" || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      toast({ title: "EVM wallet required", description: "Futures currently requires an EVM wallet.", variant: "destructive" });
+      return;
+    }
     if (!size || parseFloat(size) <= 0) {
       toast({ title: "Enter size", description: "Please enter a position size.", variant: "destructive" });
       return;
@@ -321,18 +337,28 @@ export function FuturesTrading() {
     setFuturesSide(side);
     setFuturesSubmitting(true);
     try {
+      const futuresSide = side === "buy" ? "long" : "short";
+      const futuresQty = parseFloat(size);
+      const openAuth = await signFuturesChallengeIfNeeded({
+        walletAddress: address,
+        network,
+        action: "open",
+        fields: { symbol: `${base}/USDT-PERP`, side: futuresSide, leverage, quantity: futuresQty },
+      });
       const resp = await fetch(`${API_BASE}/futures/positions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbol: `${base}/USDT-PERP`,
           walletAddress: address,
-          side: side === "buy" ? "long" : "short",
+          side: futuresSide,
           leverage,
-          quantity: parseFloat(size),
+          quantity: futuresQty,
           price: orderType !== "market" && price ? parseFloat(price) : undefined,
           orderType: orderType === "stop" ? "limit" : orderType,
           marginMode,
+          nonce: openAuth.nonce,
+          evmSignature: openAuth.signature,
         }),
       });
       if (!resp.ok) {
