@@ -14,6 +14,14 @@
 import { pool } from "@workspace/db";
 import { logger } from "./logger.js";
 
+/** P1: seeded/demo balances are allowed only in explicit demo deployments. */
+export function assertSeedBalancesAllowed(context: string): void {
+  if (process.env.DEMO_MODE !== "true") {
+    throw new Error(`SEED_BALANCES_BLOCKED_IN_PRODUCTION:${context}`);
+  }
+}
+
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface Balance {
