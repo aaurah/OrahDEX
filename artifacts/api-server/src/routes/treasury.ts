@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { sweepTreasury } from "../lib/treasurySweep.js";
-import { requireAdminToken } from "./admin.js";
+import { requireAdminToken } from "../middleware/adminAuth.js";
 
 const router: IRouter = Router();
 
