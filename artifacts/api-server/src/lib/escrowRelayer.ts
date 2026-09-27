@@ -366,6 +366,10 @@ export async function releaseEscrow(
         )
       ),
     ]);
+    const receipt = await pub.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== "success") {
+      return { ok: false, reason: `release reverted on-chain (tx ${txHash})` };
+    }
     return { ok: true, txHash, explorerUrl: escrowExplorerUrl(chainId, txHash) };
   } catch (err: any) {
     // Surface revert reasons (e.g. "already released", "not relayer") so

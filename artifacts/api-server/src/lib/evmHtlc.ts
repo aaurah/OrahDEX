@@ -767,11 +767,11 @@ async function isLegRevealed(
   client: ReturnType<typeof createPublicClient>,
   contractAddress: Address,
   lockId: Hex,
-): Promise<boolean> {
+): Promise<"yes" | "no" | "unknown"> {
   try {
     const l = await client.readContract({ address: contractAddress, abi: HTLC_ABI, functionName: "getLock", args: [lockId] });
-    return l[6] === true;
-  } catch { return false; }
+    return l[6] === true ? "yes" : "no";
+  } catch { return "unknown"; }  // RPC failure ≠ not revealed — never act on this
 }
 
 async function checkSessionOnChain(
@@ -845,8 +845,14 @@ async function checkSessionOnChain(
   } else if (staleRevealing) {
     // Crash recovery (audit P0): a reveal worker died mid-operation. Read both
     // legs on-chain, repair DB state; next cycle re-claims via BOTH_LOCKED/PARTIAL.
-    const sellerDone = await isLegRevealed(client, contractAddress, session.sellerLockId as Hex);
-    const buyerDone  = await isLegRevealed(client, contractAddress, session.buyerLockId as Hex);
+    const sState = await isLegRevealed(client, contractAddress, session.sellerLockId as Hex);
+    const bState = await isLegRevealed(client, contractAddress, session.buyerLockId as Hex);
+    if (sState === "unknown" || bState === "unknown") {
+      logger.warn({ sessionId: session.id }, "evmHtlc: RPC unknown during stale reconciliation — leaving for next cycle");
+      return;
+    }
+    const sellerDone = sState === "yes";
+    const buyerDone  = bState === "yes";
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if (sellerDone) patch.revealSellerTxid = "REVEALED_ON_CHAIN";
     if (buyerDone)  patch.revealBuyerTxid  = "REVEALED_ON_CHAIN";
@@ -917,7 +923,9 @@ async function revealBothLocks(
 
   // Idempotency/crash-recovery: a prior attempt may have confirmed the seller
   // reveal on-chain but died before the DB write. Trust the chain, not the DB.
-  if (!sellerAlreadyRevealed && await isLegRevealed(publicClient, chain.contractAddress!, session.sellerLockId as Hex)) {
+  const sellerChainState = !sellerAlreadyRevealed ? await isLegRevealed(publicClient, chain.contractAddress!, session.sellerLockId as Hex) : "no";
+  if (sellerChainState === "unknown") { logger.warn({ sessionId: session.id }, "evmHtlc: RPC unknown for seller leg — aborting this cycle"); return; }
+  if (sellerChainState === "yes") {
     await db
       .update(evmHtlcSessionsTable)
       .set({ revealSellerTxid: "REVEALED_ON_CHAIN", updatedAt: new Date() })
@@ -956,7 +964,9 @@ async function revealBothLocks(
   // Only attempt buyer reveal once seller is confirmed revealed.
   if (sellerRevealed) {
     // Idempotency/crash-recovery for the buyer leg (same pattern as seller).
-    if (await isLegRevealed(publicClient, chain.contractAddress!, session.buyerLockId as Hex)) {
+    const buyerChainState = await isLegRevealed(publicClient, chain.contractAddress!, session.buyerLockId as Hex);
+    if (buyerChainState === "unknown") { logger.warn({ sessionId: session.id }, "evmHtlc: RPC unknown for buyer leg — aborting this cycle"); return; }
+    if (buyerChainState === "yes") {
       await db
         .update(evmHtlcSessionsTable)
         .set({ revealBuyerTxid: "REVEALED_ON_CHAIN", status: "COMPLETED", updatedAt: new Date() })

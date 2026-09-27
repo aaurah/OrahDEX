@@ -607,7 +607,7 @@ router.post("/webhook/email-inbound", async (req, res) => {
       b.sender ?? b.from ?? b.From ?? b.fromAddress ?? b.from_email ?? "unknown@unknown.com";
 
     const to: string =
-      b.recipient ?? b.to ?? b.To ?? b.toAddress ?? b.to_email ?? "inbox@orahdex.org";
+      b.recipient ?? b.to ?? b.To ?? b.toAddress ?? b.to_email ?? "inbox@orahdex.com";
 
     const subject: string =
       b.subject ?? b.Subject ?? "(no subject)";
