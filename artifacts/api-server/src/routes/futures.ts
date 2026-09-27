@@ -10,6 +10,11 @@ import {
   getFuturesMarginBalance,
   computeLiquidationPrice,
 } from "../lib/futuresSettlement.js";
+import {
+  issueFuturesChallenge,
+  verifyFuturesSignature,
+  hashFuturesOpenTarget,
+} from "../lib/walletAuth.js";
 import { verifyAndLockFunding } from "../lib/fundingVerifier.js";
 import { fetchHlMarkets } from "../lib/hyperliquid.js";
 
@@ -256,6 +261,42 @@ router.get("/futures/funding-payments", async (req, res) => {
   }
 });
 
+const isEvmAddress = (addr: unknown): addr is string =>
+  typeof addr === "string" && /^0x[0-9a-fA-F]{40}$/.test(addr);
+
+router.post("/futures/challenge", (req, res) => {
+  const body = req.body ?? {};
+  const { walletAddress, action, symbol, side, leverage, quantity, positionId, amount } = body;
+
+  if (!isEvmAddress(walletAddress)) {
+    res.status(400).json({ error: "Futures auth currently requires an EVM wallet address." });
+    return;
+  }
+
+  let target = "";
+  if (action === "open") {
+    if (!symbol || !side || leverage == null || quantity == null) {
+      res.status(400).json({ error: "symbol, side, leverage, quantity are required for open challenge" });
+      return;
+    }
+    target = hashFuturesOpenTarget({
+      symbol: String(symbol),
+      side: String(side),
+      leverage: String(leverage),
+      quantity: String(quantity),
+    });
+  } else if (action === "close") {
+    target = String(positionId || "");
+  } else if (action === "deposit") {
+    target = String(amount || "");
+  } else {
+    res.status(400).json({ error: "action must be open, close, or deposit" });
+    return;
+  }
+
+  res.json(issueFuturesChallenge({ walletAddress, action, target }));
+});
+
 router.get("/futures/positions", async (req, res) => {
   try {
     const walletAddress = req.query.walletAddress as string;
@@ -304,6 +345,24 @@ router.post("/futures/positions", async (req, res) => {
     const body = req.body;
     if (!body.walletAddress || !body.symbol || !body.side || !body.leverage || !body.quantity) {
       res.status(400).json({ error: "Missing required fields: walletAddress, symbol, side, leverage, quantity" });
+      return;
+    }
+
+    try {
+      verifyFuturesSignature({
+        walletAddress: body.walletAddress,
+        nonce:         body.nonce,
+        signature:     body.evmSignature ?? body.signature,
+        action:        "open",
+        target: hashFuturesOpenTarget({
+          symbol:   String(body.symbol),
+          side:     String(body.side),
+          leverage: String(body.leverage),
+          quantity: String(body.quantity),
+        }),
+      });
+    } catch (err: any) {
+      res.status(401).json({ error: err?.message ?? "Invalid futures authorization" });
       return;
     }
 
@@ -386,6 +445,19 @@ router.delete("/futures/positions/:positionId", async (req, res) => {
     const body = req.body;
     if (!body.walletAddress) {
       res.status(400).json({ error: "walletAddress is required" });
+      return;
+    }
+
+    try {
+      verifyFuturesSignature({
+        walletAddress: body.walletAddress,
+        nonce:         body.nonce,
+        signature:     body.evmSignature ?? body.signature,
+        action:        "close",
+        target:        req.params.positionId,
+      });
+    } catch (err: any) {
+      res.status(401).json({ error: err?.message ?? "Invalid futures authorization" });
       return;
     }
 
@@ -473,7 +545,20 @@ router.post("/futures/margin/deposit", async (req, res) => {
       res.status(400).json({ error: "amount must be a positive number" });
       return;
     }
-    await depositToFuturesMargin(walletAddress, amt);
+        try {
+      verifyFuturesSignature({
+        walletAddress,
+        nonce:     req.body.nonce,
+        signature: req.body.evmSignature ?? req.body.signature,
+        action:    "deposit",
+        target:    String(amount),
+      });
+    } catch (err: any) {
+      res.status(401).json({ error: err?.message ?? "Invalid futures authorization" });
+      return;
+    }
+
+await depositToFuturesMargin(walletAddress, amt);
     const balance = await getFuturesMarginBalance(walletAddress);
     res.json({ success: true, walletAddress, deposited: amt, balance });
   } catch (err) {
