@@ -616,7 +616,7 @@ router.post("/trade/exchange/quote", async (req, res) => {
 });
 
 // ── POST /trade/exchange ───────────────────────────────────────────────────────
-// Settle a trade on the internal ledger. Seeds balances for new users.
+// Settle a trade on the internal ledger. Demo seeding is fail-closed behind DEMO_MODE and must not run in production.
 // EVM wallet callers (0x…) must supply `signature` + `nonce` to prove they
 // authorised this swap. Obtain the canonical message from
 // buildExchangeAuthMessage and sign it with personal_sign in MetaMask/ethers.
