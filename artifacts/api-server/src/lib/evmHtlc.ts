@@ -750,6 +750,21 @@ async function verifyLockFields(
   } catch { return false; }
 }
 
+/** Concurrency/crash hardening: a reveal may have been confirmed on-chain
+ * but the DB update lost to a crash — or a concurrent worker may have revealed
+ * first. The chain is the truth; never resubmit reveal() against a revealed leg
+ * (it reverts, and the receipt-check would misread that as settlement failure). */
+async function isLegRevealed(
+  client: ReturnType<typeof createPublicClient>,
+  contractAddress: Address,
+  lockId: Hex,
+): Promise<boolean> {
+  try {
+    const l = await client.readContract({ address: contractAddress, abi: HTLC_ABI, functionName: "getLock", args: [lockId] });
+    return l[6] === true;
+  } catch { return false; }
+}
+
 async function checkSessionOnChain(
   session: typeof evmHtlcSessionsTable.$inferSelect,
   chain:   ChainConfig
@@ -842,13 +857,27 @@ async function revealBothLocks(
     return;
   }
 
-  // Only transition to REVEALING when we haven't started yet.
-  // PARTIAL_REVEAL means seller was revealed but buyer failed — skip re-marking.
-  if (session.status !== "PARTIAL_REVEAL") {
-    await db
+  // Serialize reveal work per session: take a row lock; if another worker is
+  // already revealing (or the session completed), bail out. PARTIAL_REVEAL is the
+  // only re-entry point — it means seller revealed, buyer leg needs a retry.
+  const acquired = await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ status: evmHtlcSessionsTable.status })
+      .from(evmHtlcSessionsTable)
+      .where(eq(evmHtlcSessionsTable.id, session.id))
+      .for("update");
+    if (!row) return false;
+    if (row.status === "COMPLETED") return false;
+    if (row.status === "REVEALING" && session.status !== "PARTIAL_REVEAL") return false;
+    await tx
       .update(evmHtlcSessionsTable)
       .set({ status: "REVEALING", updatedAt: new Date() })
       .where(eq(evmHtlcSessionsTable.id, session.id));
+    return true;
+  }).catch(() => false);
+  if (!acquired) {
+    logger.debug({ sessionId: session.id }, "evmHtlc: reveal skipped — locked by another worker or already completed");
+    return;
   }
 
   const account = privateKeyToAccount(relayerKey);
@@ -868,7 +897,17 @@ async function revealBothLocks(
     .select({ revealSellerTxid: evmHtlcSessionsTable.revealSellerTxid })
     .from(evmHtlcSessionsTable)
     .where(eq(evmHtlcSessionsTable.id, session.id));
-  const sellerAlreadyRevealed = !!(fresh?.revealSellerTxid);
+  let sellerAlreadyRevealed = !!(fresh?.revealSellerTxid);
+
+  // Idempotency/crash-recovery: a prior attempt may have confirmed the seller
+  // reveal on-chain but died before the DB write. Trust the chain, not the DB.
+  if (!sellerAlreadyRevealed && await isLegRevealed(publicClient, chain.contractAddress!, session.sellerLockId as Hex)) {
+    await db
+      .update(evmHtlcSessionsTable)
+      .set({ revealSellerTxid: "REVEALED_ON_CHAIN", updatedAt: new Date() })
+      .where(eq(evmHtlcSessionsTable.id, session.id));
+    sellerAlreadyRevealed = true;
+  }
 
   let sellerRevealed = sellerAlreadyRevealed;
 
@@ -900,7 +939,14 @@ async function revealBothLocks(
 
   // Only attempt buyer reveal once seller is confirmed revealed.
   if (sellerRevealed) {
-    try {
+    // Idempotency/crash-recovery for the buyer leg (same pattern as seller).
+    if (await isLegRevealed(publicClient, chain.contractAddress!, session.buyerLockId as Hex)) {
+      await db
+        .update(evmHtlcSessionsTable)
+        .set({ revealBuyerTxid: "REVEALED_ON_CHAIN", status: "COMPLETED", updatedAt: new Date() })
+        .where(eq(evmHtlcSessionsTable.id, session.id));
+      logger.info({ sessionId: session.id }, "evmHtlc: EVM HTLC settlement COMPLETED (buyer leg already revealed on-chain)");
+    } else try {
       const buyerRevealHash = await walletClient.writeContract({
         address:      chain.contractAddress!,
         abi:          HTLC_ABI,
