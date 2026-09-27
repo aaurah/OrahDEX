@@ -39,10 +39,11 @@ async function ensureTables(): Promise<void> {
 }
 
 function normCoin(c: any) {
+  const symbol = String(c.code ?? c.symbol ?? c.ticker ?? "").toUpperCase();
   return {
-    symbol:       String(c.code ?? c.symbol ?? c.ticker ?? "").toUpperCase(),
-    name:         c.name ?? null,
-    network:      String(c.network ?? c.network_code ?? c.chain ?? "").toUpperCase() || null,
+    symbol,
+    name:         c.name ?? symbol,
+    network:      String(c.network ?? c.network_code ?? c.chain ?? "").toUpperCase() || symbol,
     network_name: c.network_name ?? c.networkName ?? null,
     image:        c.image ?? c.image_url ?? c.logo ?? null,
     has_extra_id: !!(c.has_extra_id ?? c.hasExtraId ?? c.memo ?? false),
