@@ -248,8 +248,8 @@ if (_replitDevDomain) {
 const _allowedOrigins: (string | RegExp)[] = process.env["ALLOWED_ORIGINS"]
   ? process.env["ALLOWED_ORIGINS"].split(",").map(o => o.trim()).filter(Boolean)
   : [
-      "https://orahdex.org",
-      "https://www.orahdex.org",
+      "https://orahdex.com",
+      "https://www.orahdex.com",
       ..._replitDevOrigins,
       /^https?:\/\/localhost(:\d+)?$/,
       /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
@@ -928,15 +928,15 @@ app.get("/api/bsv-status", async (_req, res) => {
 /* ── Thunderbird / Mozilla autoconfig XML ─────────────────────────────────── */
 const AUTOCONFIG_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <clientConfig version="1.1">
-  <emailProvider id="orahdex.org">
-    <domain>orahdex.org</domain>
+  <emailProvider id="orahdex.com">
+    <domain>orahdex.com</domain>
     <domain>orahdex.com</domain>
     <displayName>OrahDEX Mail</displayName>
     <displayShortName>OrahDEX</displayShortName>
 
     <!-- Incoming: IMAP -->
     <incomingServer type="imap">
-      <hostname>mail.orahdex.org</hostname>
+      <hostname>mail.orahdex.com</hostname>
       <port>993</port>
       <socketType>SSL</socketType>
       <authentication>password-cleartext</authentication>
@@ -945,7 +945,7 @@ const AUTOCONFIG_XML = `<?xml version="1.0" encoding="UTF-8"?>
 
     <!-- Outgoing: SMTP -->
     <outgoingServer type="smtp">
-      <hostname>mail.orahdex.org</hostname>
+      <hostname>mail.orahdex.com</hostname>
       <port>465</port>
       <socketType>SSL</socketType>
       <authentication>password-cleartext</authentication>

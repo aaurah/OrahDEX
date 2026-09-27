@@ -667,7 +667,7 @@ router.post("/orders", async (req, res) => {
             // Audit P0: same-chain invariant — external EVM orders may only match
             // a counterparty on the SAME chain. Cross-chain EVM needs the two-chain
             // HTLC protocol, not this single-chain session.
-            if (chainId != null && candidate.chainId != null && candidate.chainId !== chainId) return false;
+            if (chainId == null || candidate.chainId == null || candidate.chainId !== chainId) return false;
             return true;
           })
         : sorted;
