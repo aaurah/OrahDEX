@@ -70,6 +70,7 @@ interface Estimate {
   deposit_min_amount?: string;
   deposit_max_amount?: string;
   best_venue?: string;      // winning venue from meta-router
+  venue_quotes?: { venue: string; rate: string; output: string; minAmount: string | null; maxAmount: string | null; canExecute: boolean }[];
   stale?: boolean;          // true when rate is from DB cache (all live APIs failed)
 }
 
@@ -402,6 +403,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   const [toCoin,   setToCoin]   = useState<LeCoin|null>(null);
   const [amount,   setAmount]   = useState("");
   const [estimate, setEstimate] = useState<Estimate|null>(null);
+  const [selectedVenue, setSelectedVenue] = useState<string|null>(null);
   const [estLoading, setEstLoading] = useState(false);
   const [estError,   setEstError]   = useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -496,7 +498,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
           network_to:   toCoin.network   ?? toCoin.symbol,
           amount:       parseFloat(amount),
           float:        true,
-          ...(forceVenue ? { force_venue: forceVenue } : {}),
+          ...((selectedVenue ?? forceVenue) ? { force_venue: (selectedVenue ?? forceVenue)! } : {}),
         }),
       });
       const d = await r.json();
@@ -523,7 +525,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
       } else { setEstimate(d as Estimate); }
     } catch { setEstError("Network error"); }
     setEstLoading(false);
-  }, [fromCoin, toCoin, amount]);
+  }, [fromCoin, toCoin, amount, selectedVenue, forceVenue]);
 
   useEffect(() => { fetchEstimate(); }, [fetchEstimate, refreshKey]);
 
@@ -684,8 +686,37 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
               <span className="text-muted-foreground/20">0.0</span>
             )}
           </div>
-          <CoinPicker compact coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); }} exclude={fromCoin?.symbol} />
+          <CoinPicker compact coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); setSelectedVenue(null); }} exclude={fromCoin?.symbol} />
         </div>
+        {/* Venue comparison — tap to lock a route */}
+        {estimate?.venue_quotes && estimate.venue_quotes.length > 1 && fromCoin && toCoin && (() => {
+          const qs = estimate.venue_quotes!;
+          const bestVenue = estimate.best_venue;
+          const activeVenue = selectedVenue ?? bestVenue;
+          return (
+            <div className="flex flex-col gap-1 mt-2">
+              {qs.map(q => {
+                const isBest = bestVenue === q.venue;
+                const isActive = activeVenue === q.venue;
+                return (
+                  <button key={q.venue} type="button" disabled={!q.canExecute}
+                    onClick={() => setSelectedVenue(isActive ? null : q.venue)}
+                    className={cn(
+                      "flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all text-left",
+                      !q.canExecute && "opacity-40 cursor-not-allowed",
+                      isActive ? "border-emerald-500/40 bg-emerald-500/10" : "border-border/40 bg-muted/20 hover:border-border/70"
+                    )}>
+                    <span className={cn("font-semibold shrink-0", VENUE_COLORS[q.venue] ?? "text-muted-foreground")}>{VENUE_LABELS[q.venue] ?? q.venue}</span>
+                    <span className="text-muted-foreground truncate">≈{fmtNum(q.output, 6)} {toCoin.symbol}</span>
+                    {isBest && <span className="ml-auto shrink-0 text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold">BEST</span>}
+                    {isActive && !isBest && <span className="ml-auto shrink-0 text-[9px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 font-bold">SELECTED</span>}
+                  </button>
+                );
+              })}
+              <p className="text-[9px] text-muted-foreground/40 px-1 pt-0.5">Tap a provider to lock your route — default always picks the best rate.</p>
+            </div>
+          );
+        })()}
         {/* Rate + venue badge */}
         {estimate && fromCoin && toCoin && (
           <div className="flex flex-col gap-1.5 mt-2">
