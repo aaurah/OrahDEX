@@ -22,7 +22,7 @@ import {
   Clock, Lock, Wallet, Trash2, ArrowRight, History, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { VENUE_LABELS } from "@/lib/venues";
+import { VENUE_LABELS, VENUE_COLORS } from "@/lib/venues";
 import { CoinLogo } from "@/components/CoinLogo";
 import { API_BASE } from "@/lib/api";
 import { useAccount } from "wagmi";
