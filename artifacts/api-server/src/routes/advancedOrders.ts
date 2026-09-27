@@ -2,8 +2,70 @@ import { Router, type IRouter } from "express";
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { randomUUID } from "node:crypto";
+import { verifyAndLockFunding } from "../lib/fundingVerifier.js";
+import { unlockFunds } from "../lib/ledger.js";
 
 const router: IRouter = Router();
+
+async function lockAdvancedFunding(params: {
+  walletAddress: string;
+  symbol: string;
+  side: string;
+  quantity: string;
+  price?: string;
+  walletSource: any;
+  signature?: string;
+  utxoRef?: string;
+  chainId?: number;
+}): Promise<{ fundingRef: string; parentAuthorizationRef: string }> {
+  const [baseAsset, quoteAsset = "USDT"] = params.symbol.split("/");
+  const lockAsset = params.side === "buy" ? quoteAsset : baseAsset;
+  let amount = 0;
+
+  if (params.side === "buy") {
+    let px = params.price ? parseFloat(params.price) : 0;
+    if (!px) {
+      const { rows } = await pool.query<{ last_price: string }>(
+        `SELECT last_price FROM markets WHERE symbol = $1 LIMIT 1`,
+        [params.symbol],
+      );
+      px = parseFloat(rows[0]?.last_price ?? "0");
+    }
+    amount = px * parseFloat(params.quantity) * 1.005;
+  } else {
+    amount = parseFloat(params.quantity);
+  }
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Invalid advanced-order funding amount");
+  }
+
+  const funding = await verifyAndLockFunding({
+    walletAddress: params.walletAddress,
+    kind: "SPOT",
+    side: params.side as any,
+    walletSource: params.walletSource,
+    asset: lockAsset,
+    amount: amount.toString(),
+    signature: params.signature,
+    utxoRef: params.utxoRef,
+    chainId: params.chainId,
+  });
+
+  if (!funding.valid) {
+    throw new Error(funding.error ?? "Failed to lock advanced-order funding");
+  }
+
+  return { fundingRef: funding.fundingRef, parentAuthorizationRef: randomUUID() };
+}
+
+async function releaseAdvancedFunding(fundingRef?: string | null): Promise<void> {
+  if (!fundingRef || !fundingRef.startsWith("ledger:")) return;
+  const parts = fundingRef.split(":");
+  if (parts.length !== 4) return;
+  const [, walletAddress, asset, amount] = parts;
+  await unlockFunds({ walletAddress, asset, amount }).catch(() => {});
+}
 
 router.post("/orders/oco", async (req, res) => {
   const { walletAddress, symbol, side, quantity, limitPrice, stopPrice, networkType, chainId } = req.body as {
@@ -86,7 +148,19 @@ router.post("/orders/oco", async (req, res) => {
 });
 
 router.post("/orders/trailing-stop", async (req, res) => {
-  const { walletAddress, symbol, side, quantity, trailPercent, activationPrice, networkType, chainId } = req.body as {
+  const {
+    walletAddress,
+    symbol,
+    side,
+    quantity,
+    trailPercent,
+    activationPrice,
+    networkType,
+    chainId,
+    walletSource,
+    evmSignature,
+    utxoRef,
+  } = req.body as {
     walletAddress?: string;
     symbol?: string;
     side?: string;
@@ -95,6 +169,9 @@ router.post("/orders/trailing-stop", async (req, res) => {
     activationPrice?: string | number;
     networkType?: string;
     chainId?: number;
+    walletSource?: string;
+    evmSignature?: string;
+    utxoRef?: string;
   };
 
   if (!walletAddress || typeof walletAddress !== "string") {
@@ -116,6 +193,26 @@ router.post("/orders/trailing-stop", async (req, res) => {
   const trailPct = parseFloat(String(trailPercent));
   if (!trailPercent || isNaN(trailPct) || trailPct < 0.1 || trailPct > 50) {
     res.status(400).json({ error: "trailPercent must be between 0.1 and 50" });
+    return;
+  }
+
+  let trailingFundingRef: string | null = null;
+  let trailingParentAuth: string | null = null;
+  try {
+    const locked = await lockAdvancedFunding({
+      walletAddress: String(walletAddress),
+      symbol: String(symbol),
+      side: String(side),
+      quantity: String(quantity),
+      walletSource: (walletSource as any) ?? "orah",
+      signature: evmSignature,
+      utxoRef,
+      chainId,
+    });
+    trailingFundingRef = locked.fundingRef;
+    trailingParentAuth = locked.parentAuthorizationRef;
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message ?? "Failed to lock trailing-stop funding" });
     return;
   }
 
@@ -151,8 +248,8 @@ router.post("/orders/trailing-stop", async (req, res) => {
     const id = randomUUID();
     await client.query(
       `INSERT INTO trailing_stop_orders
-       (id, wallet_address, symbol, side, quantity, trail_percent, activation_price, current_stop_price, high_watermark, low_watermark, status, network_type, chain_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11, $12, NOW(), NOW())`,
+       (id, wallet_address, symbol, side, quantity, trail_percent, activation_price, current_stop_price, high_watermark, low_watermark, status, network_type, chain_id, parent_authorization_ref, funding_ref, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11, $12, $13, $14, NOW(), NOW())`,
       [
         id,
         walletAddress,
@@ -166,12 +263,17 @@ router.post("/orders/trailing-stop", async (req, res) => {
         status,
         net,
         chainId ?? null,
+        trailingParentAuth,
+        trailingFundingRef,
       ]
     );
 
+    await client.query("COMMIT");
     const { rows } = await client.query(`SELECT * FROM trailing_stop_orders WHERE id = $1`, [id]);
     res.status(201).json(rows[0]);
   } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    await releaseAdvancedFunding(trailingFundingRef);
     logger.error({ err }, "Failed to create trailing stop order");
     res.status(500).json({ error: "Failed to create trailing stop order" });
   } finally {
@@ -190,6 +292,9 @@ router.post("/orders/twap", async (req, res) => {
     maxSlippagePercent,
     networkType,
     chainId,
+    walletSource,
+    evmSignature,
+    utxoRef,
   } = req.body as {
     walletAddress?: string;
     symbol?: string;
@@ -200,6 +305,9 @@ router.post("/orders/twap", async (req, res) => {
     maxSlippagePercent?: string | number;
     networkType?: string;
     chainId?: number;
+    walletSource?: string;
+    evmSignature?: string;
+    utxoRef?: string;
   };
 
   if (!walletAddress || typeof walletAddress !== "string") {
@@ -236,12 +344,32 @@ router.post("/orders/twap", async (req, res) => {
   const net = networkType ?? "evm";
   const id = randomUUID();
 
+  let twapFundingRef: string | null = null;
+  let twapParentAuth: string | null = null;
+  try {
+    const locked = await lockAdvancedFunding({
+      walletAddress: String(walletAddress),
+      symbol: String(symbol),
+      side: String(side),
+      quantity: String(totalQuantity),
+      walletSource: (walletSource as any) ?? "orah",
+      signature: evmSignature,
+      utxoRef,
+      chainId,
+    });
+    twapFundingRef = locked.fundingRef;
+    twapParentAuth = locked.parentAuthorizationRef;
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message ?? "Failed to lock TWAP funding" });
+    return;
+  }
+
   const client = await pool.connect();
   try {
     await client.query(
       `INSERT INTO twap_orders
-       (id, wallet_address, symbol, side, total_quantity, filled_quantity, slices, completed_slices, interval_seconds, start_at, end_at, max_slippage_percent, average_fill_price, status, network_type, chain_id, created_at)
-       VALUES ($1, $2, $3, $4, $5, '0', $6, 0, $7, $8, $9, $10, NULL, 'active', $11, $12, NOW())`,
+       (id, wallet_address, symbol, side, total_quantity, filled_quantity, slices, completed_slices, interval_seconds, start_at, end_at, max_slippage_percent, average_fill_price, status, network_type, chain_id, parent_authorization_ref, funding_ref, created_at)
+       VALUES ($1, $2, $3, $4, $5, '0', $6, 0, $7, $8, $9, $10, NULL, 'active', $11, $12, $13, $14, NOW())`,
       [
         id,
         walletAddress,
@@ -255,12 +383,15 @@ router.post("/orders/twap", async (req, res) => {
         maxSlip.toString(),
         net,
         chainId ?? null,
+        twapParentAuth,
+        twapFundingRef,
       ]
     );
 
     const { rows } = await client.query(`SELECT * FROM twap_orders WHERE id = $1`, [id]);
     res.status(201).json(rows[0]);
   } catch (err) {
+    await releaseAdvancedFunding(twapFundingRef);
     logger.error({ err }, "Failed to create TWAP order");
     res.status(500).json({ error: "Failed to create TWAP order" });
   } finally {
@@ -269,7 +400,19 @@ router.post("/orders/twap", async (req, res) => {
 });
 
 router.post("/orders/iceberg", async (req, res) => {
-  const { walletAddress, symbol, side, price, totalQuantity, visibleQuantity, networkType, chainId } = req.body as {
+  const {
+    walletAddress,
+    symbol,
+    side,
+    price,
+    totalQuantity,
+    visibleQuantity,
+    networkType,
+    chainId,
+    walletSource,
+    evmSignature,
+    utxoRef,
+  } = req.body as {
     walletAddress?: string;
     symbol?: string;
     side?: string;
@@ -278,6 +421,9 @@ router.post("/orders/iceberg", async (req, res) => {
     visibleQuantity?: string | number;
     networkType?: string;
     chainId?: number;
+    walletSource?: string;
+    evmSignature?: string;
+    utxoRef?: string;
   };
 
   if (!walletAddress || typeof walletAddress !== "string") {
@@ -316,21 +462,42 @@ router.post("/orders/iceberg", async (req, res) => {
   const totalQtyStr = String(totalQuantity);
   const visibleQtyStr = String(visibleQuantity);
 
+  let icebergFundingRef: string | null = null;
+  let icebergParentAuth: string | null = null;
+  try {
+    const locked = await lockAdvancedFunding({
+      walletAddress: String(walletAddress),
+      symbol: String(symbol),
+      side: String(side),
+      quantity: totalQtyStr,
+      price: priceStr,
+      walletSource: (walletSource as any) ?? "orah",
+      signature: evmSignature,
+      utxoRef,
+      chainId,
+    });
+    icebergFundingRef = locked.fundingRef;
+    icebergParentAuth = locked.parentAuthorizationRef;
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message ?? "Failed to lock iceberg funding" });
+    return;
+  }
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     await client.query(
       `INSERT INTO iceberg_orders
-       (id, wallet_address, symbol, side, price, total_quantity, filled_quantity, visible_quantity, active_order_id, status, network_type, chain_id, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, '0', $7, NULL, 'active', $8, $9, NOW())`,
-      [icebergId, walletAddress, symbol, side, priceStr, totalQtyStr, visibleQtyStr, net, chainId ?? null]
+       (id, wallet_address, symbol, side, price, total_quantity, filled_quantity, visible_quantity, active_order_id, status, network_type, chain_id, parent_authorization_ref, funding_ref, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, '0', $7, NULL, 'active', $8, $9, $10, $11, NOW())`,
+      [icebergId, walletAddress, symbol, side, priceStr, totalQtyStr, visibleQtyStr, net, chainId ?? null, icebergParentAuth, icebergFundingRef]
     );
 
     await client.query(
-      `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, price, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, chain_id, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, 'limit', 'open', $6, $7, '0', $7, '0', false, false, $8, NOW(), NOW())`,
-      [firstOrderId, symbol, walletAddress, net, side, priceStr, visibleQtyStr, chainId ?? null]
+      `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, price, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, chain_id, parent_order_id, funding_ref, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, 'limit', 'open', $6, $7, '0', $7, '0', false, false, $8, $9, $10, NOW(), NOW())`,
+      [firstOrderId, symbol, walletAddress, net, side, priceStr, visibleQtyStr, chainId ?? null, icebergId, icebergFundingRef]
     );
 
     await client.query(
@@ -344,6 +511,7 @@ router.post("/orders/iceberg", async (req, res) => {
     res.status(201).json(rows[0]);
   } catch (err) {
     await client.query("ROLLBACK");
+    await releaseAdvancedFunding(icebergFundingRef);
     logger.error({ err }, "Failed to create iceberg order");
     res.status(500).json({ error: "Failed to create iceberg order" });
   } finally {
