@@ -133,7 +133,7 @@ export async function triggerCatalogSync(): Promise<void> {
         params.push(`($${n*2-1},$${n*2})`);
         if (params.length >= INSERT_CHUNK) {
           await pool.query(`INSERT INTO pair_matrix (base, quote) VALUES ${params.join(",")} ON CONFLICT DO NOTHING`, args);
-          pairs += params.length; params = []; args = [];
+          pairs += params.length; params = []; args = []; n = 0;
           if (pairs % 500000 === 0) logger.info({ pairs }, "catalog sync: pair_matrix progress");
         }
       }
