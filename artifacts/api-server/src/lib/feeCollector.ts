@@ -14,7 +14,7 @@
  *  "withdrawal"   — flat withdrawal fee
  */
 
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { keeperEarningsTable } from "@workspace/db/schema";
 import { logger } from "./logger.js";
 
@@ -40,6 +40,7 @@ export async function recordPlatformFee(params: {
   amount:  number | string;
   asset:   string;
   txRef?:  string;
+  venue?:  string;
 }): Promise<void> {
   const { source, amount, asset, txRef = "" } = params;
   const amt = parseFloat(String(amount));
@@ -51,8 +52,14 @@ export async function recordPlatformFee(params: {
       source,
       amount:        amt.toFixed(18),
       txRef,
+      venue: params.venue ?? "",
     });
   } catch (err: any) {
     logger.warn({ err: err?.message, source, amount, asset }, "feeCollector: insert failed");
   }
 }
+
+// Self-healing migration: venue + sweep-tracking columns
+pool.query(`ALTER TABLE keeper_earnings ADD COLUMN IF NOT EXISTS venue TEXT NOT NULL DEFAULT ''`).catch(() => {});
+pool.query(`ALTER TABLE keeper_earnings ADD COLUMN IF NOT EXISTS swept_tx TEXT NOT NULL DEFAULT ''`).catch(() => {});
+pool.query(`CREATE INDEX IF NOT EXISTS keeper_earnings_venue_idx ON keeper_earnings (venue)`).catch(() => {});
