@@ -278,7 +278,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
     chainId:         11155111,
     name:            "Sepolia",
     rpcUrl:          process.env.SEPOLIA_RPC_URL ?? "https://ethereum-sepolia-rpc.publicnode.com",
-    contractAddress: (process.env.EVM_HTLC_CONTRACT_SEPOLIA as Address | undefined) ?? "0x4deb6023abD9E1C640aDa35201be8ff591d21cF2" as Address,
+    contractAddress: (process.env.EVM_HTLC_CONTRACT_SEPOLIA as Address | undefined) ?? "" as Address,
     nativeSymbol:    "ETH",
     blockExplorer:   "https://sepolia.etherscan.io",
     usdtAddress:     null,
