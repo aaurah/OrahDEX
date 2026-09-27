@@ -271,6 +271,8 @@ export function Layout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!address) return;
     pollNotifications(address);
+    // Auto-follow official OrahDEX profile on connect this session (idempotent server-side)
+    fetch(`${BASE}/api/social/follow-official`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ address: address.toLowerCase() }) }).catch(() => {});
     const interval = setInterval(() => pollNotifications(address), 20_000);
     return () => clearInterval(interval);
   }, [address, pollNotifications]);
