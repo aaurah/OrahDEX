@@ -664,6 +664,10 @@ router.post("/orders", async (req, res) => {
                 !ref.startsWith("margin:"))
             );
             if (!isEvmExternal) return false;
+            // Audit P0: same-chain invariant — external EVM orders may only match
+            // a counterparty on the SAME chain. Cross-chain EVM needs the two-chain
+            // HTLC protocol, not this single-chain session.
+            if (chainId != null && candidate.chainId != null && candidate.chainId !== chainId) return false;
             return true;
           })
         : sorted;
@@ -926,9 +930,11 @@ router.post("/orders", async (req, res) => {
         let escrowGated   = false;
 
         if (bothEvmExternal) {
+          // Audit P0: fail-closed. Invalid/missing chain must NEVER default to
+          // Ethereum — it suppresses escrow release entirely.
           const releaseChainId = body.chainId && Number.isInteger(Number(body.chainId)) && isEscrowChain(Number(body.chainId))
             ? Number(body.chainId)
-            : 1;  // default to Ethereum mainnet (where escrow is deployed)
+            : null;
 
           // ── Pre-flight: does ANY escrow deposit exist for either order? ─
           // Reuse the chain values already resolved by the fail-CLOSED precheck
@@ -972,7 +978,7 @@ router.post("/orders", async (req, res) => {
             );
           }
 
-          if (isEscrowChain(releaseChainId) && isFullMatchFill && !escrowGated) {
+          if (releaseChainId !== null && isEscrowChain(releaseChainId) && isFullMatchFill && !escrowGated) {
             // Determine which order id belongs to which side. `id` is the
             // incoming order; `match.id` is the counter-order being consumed.
             const buyerOrderId  = side === "buy"  ? id : match.id;
