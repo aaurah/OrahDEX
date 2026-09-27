@@ -1182,3 +1182,78 @@ export function verifyStakeSignature(params: {
   verifyEvmSignature(params.walletAddress, stored.message, params.signature);
   stakeNonces.delete(addr);
 }
+
+// ── Futures auth nonce store ─────────────────────────────────────────────────
+export type FuturesAction = "open" | "close" | "deposit";
+
+interface FuturesNonce {
+  nonce:     string;
+  message:   string;
+  action:    FuturesAction;
+  target:    string;
+  expiresAt: number;
+}
+
+const futuresNonces = new Map<string, FuturesNonce>();
+const FUTURES_NONCE_TTL_MS = 5 * 60_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of futuresNonces.entries()) {
+    if (v.expiresAt < now) futuresNonces.delete(k);
+  }
+}, FUTURES_NONCE_TTL_MS).unref();
+
+export function hashFuturesOpenTarget(params: {
+  symbol: string; side: string; leverage: string; quantity: string;
+}): string {
+  const canon = `${params.symbol.toUpperCase()}|${params.side.toLowerCase()}|${params.leverage}|${params.quantity}`;
+  return crypto.createHash("sha256").update(canon, "utf8").digest("hex");
+}
+
+export function issueFuturesChallenge(params: {
+  walletAddress: string;
+  action:        FuturesAction;
+  target:        string;
+}): { nonce: string; message: string } {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const ts    = new Date().toISOString();
+  const message =
+    `Authorize OrahDEX futures ${params.action}\n\n` +
+    `Wallet: ${params.walletAddress}\n` +
+    `Target: ${params.target}\n` +
+    `Nonce: ${nonce}\n` +
+    `Timestamp: ${ts}\n\n` +
+    `This request will not trigger a blockchain transaction.`;
+
+  futuresNonces.set(params.walletAddress.toLowerCase(), {
+    nonce,
+    message,
+    action:    params.action,
+    target:    params.target,
+    expiresAt: Date.now() + FUTURES_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+export function verifyFuturesSignature(params: {
+  walletAddress: string;
+  nonce:         string;
+  signature:     string;
+  action:        FuturesAction;
+  target:        string;
+}): void {
+  const addr   = params.walletAddress.toLowerCase();
+  const stored = futuresNonces.get(addr);
+
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error("Futures challenge expired or not found. Request a fresh challenge via POST /futures/challenge.");
+  }
+  if (!timingSafeStringEqual(stored.nonce, params.nonce)) throw new Error("Futures nonce mismatch.");
+  if (stored.action !== params.action) throw new Error(`Futures challenge action mismatch: expected ${stored.action}.`);
+  if (stored.target !== params.target) throw new Error("Futures challenge target mismatch.");
+
+  verifyEvmSignature(params.walletAddress, stored.message, params.signature);
+  futuresNonces.delete(addr);
+}
