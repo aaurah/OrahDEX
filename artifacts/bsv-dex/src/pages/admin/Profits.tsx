@@ -116,6 +116,43 @@ function SourceBar({ entry, maxAmount }: { entry: SourceEntry; maxAmount: number
   );
 }
 
+type VenueRow = { venue: string; status: string; events: number; total: number };
+const VENUE_LABELS: Record<string, string> = {
+  letsexchange: "LetsExchange", simpleswap: "SimpleSwap", changenow: "ChangeNOW",
+  stealthex: "StealthEX", changelly: "Changelly", swapzone: "SwapZone",
+};
+function VenuePanel() {
+  const q = useQuery({
+    queryKey: ["admin-profits-venues"],
+    queryFn: async () => {
+      const r: any = await adminFetch("/api/admin/profits/venues");
+      return typeof r?.json === "function" ? r.json() : r;
+    },
+    refetchInterval: 30_000,
+  });
+  const venues = ((q.data as any)?.venues ?? []) as VenueRow[];
+  return (
+    <div className="rounded-2xl border border-border/40 bg-card/40 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold text-white uppercase tracking-wider">Swap Partners</h3>
+        <span className="text-[10px] text-muted-foreground">commissions by venue</span>
+      </div>
+      {venues.length === 0 && <p className="text-xs text-muted-foreground">No venue activity yet.</p>}
+      {venues.map(v => (
+        <div key={v.venue + v.status} className="flex items-center gap-3 text-sm">
+          <span className="font-semibold w-28 shrink-0">{VENUE_LABELS[v.venue] ?? v.venue}</span>
+          <span className={cn("text-[9px] px-1.5 py-0.5 rounded font-bold", v.status === "bridge" ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/15 text-amber-400")}>
+            {v.status === "bridge" ? "CONFIRMED" : "PENDING"}
+          </span>
+          <span className="text-muted-foreground text-xs">{v.events} swap{v.events === 1 ? "" : "s"}</span>
+          <span className="ml-auto font-mono">{fmtUsd(v.total)}</span>
+        </div>
+      ))}
+      <p className="text-[10px] text-muted-foreground/70 pt-1">Affiliate payouts are withdrawn from each venue's partner dashboard — set your payout address there. On-platform fees auto-sweep to your wallet (admin → treasury sweep).</p>
+    </div>
+  );
+}
+
 function BridgeCard({ bridge }: { bridge: ProfitsData["bridge"] }) {
   const rate = bridge.totalSwaps > 0
     ? ((bridge.finishedSwaps / bridge.totalSwaps) * 100).toFixed(1)
@@ -264,7 +301,8 @@ export function AdminProfits() {
       </div>
 
       {/* Bridge / Exchange detail */}
-      {data?.bridge && <BridgeCard bridge={data.bridge} />}
+      {data?.bridge && <BridgeCard bridge={data.bridge} />
+      <VenuePanel />}
 
       {/* How revenue is generated */}
       <div className="bg-[#0f1629] border border-white/10 rounded-2xl p-5">

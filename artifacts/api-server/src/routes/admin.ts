@@ -9,7 +9,7 @@ import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tra
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
 import { invalidateSzKeyCache } from "../lib/swapzone.js";
-import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte } from "drizzle-orm";
+import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte, count } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
 import { decrypt as decryptEvmKey } from "../lib/internalEvmWallet.js";
@@ -3740,6 +3740,23 @@ router.get("/overlay/stats", requireAdminToken, async (_req, res) => {
   } catch (err: any) {
     logger.warn({ err }, "GET /admin/overlay/stats error");
     res.status(500).json({ error: "Failed to fetch overlay stats" });
+  }
+});
+
+// ── GET /api/admin/profits/venues — per-venue bridge breakdown ────────────
+router.get("/profits/venues", requireAdminToken, async (_req, res) => {
+  try {
+    const rows = await db
+      .select({ venue: keeperEarningsTable.venue, source: keeperEarningsTable.source, events: count(), total: sum(keeperEarningsTable.amount) })
+      .from(keeperEarningsTable)
+      .where(and(
+        eq(keeperEarningsTable.walletAddress, "EXCHANGE_TREASURY"),
+        inArray(keeperEarningsTable.source, ["bridge", "bridge_pending"]),
+      ))
+      .groupBy(keeperEarningsTable.venue, keeperEarningsTable.source);
+    res.json({ venues: rows.map(r => ({ venue: r.venue || "unknown", status: r.source, events: Number(r.events), total: parseFloat(r.total ?? "0") })) });
+  } catch {
+    res.status(500).json({ error: "venue breakdown failed" });
   }
 });
 

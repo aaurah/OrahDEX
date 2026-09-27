@@ -40,7 +40,7 @@ const router: IRouter = Router();
 
 const BRIDGE_COMMISSION_RATE = 0.003; // 0.3% of deposit USD — estimated affiliate commission
 
-function recordBridgeFee(amt: number, fromCoin: string, txRef: string) {
+function recordBridgeFee(amt: number, fromCoin: string, txRef: string, venue = "") {
   const leUsd = getCachedLEPrices();
   const fromUsdPrice = leUsd[fromCoin.toUpperCase()] ?? 0;
   if (fromUsdPrice <= 0) return;
@@ -1143,7 +1143,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
-          recordBridgeFee(amt, fromU, ex.id ?? "changenow");
+          recordBridgeFee(amt, fromU, ex.id ?? "changenow", "changenow");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -1177,7 +1177,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
-          recordBridgeFee(amt, fromU, ex.id ?? "stealthex");
+          recordBridgeFee(amt, fromU, ex.id ?? "stealthex", "stealthex");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -1211,7 +1211,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
-          recordBridgeFee(amt, fromU, ex.id ?? "simpleswap");
+          recordBridgeFee(amt, fromU, ex.id ?? "simpleswap", "simpleswap");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -1250,7 +1250,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
-          recordBridgeFee(amt, fromU, ex.id ?? "changelly");
+          recordBridgeFee(amt, fromU, ex.id ?? "changelly", "changelly");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -1305,7 +1305,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
       if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: "letsexchange" }, "exchange: fell back to alternate venue");
       const d = leData as Record<string, unknown>;
       if (d?.transaction_id) {
-        recordBridgeFee(amt, fromU, String(d.transaction_id));
+        recordBridgeFee(amt, fromU, String(d.transaction_id), "letsexchange");
         const leUsd = getCachedLEPrices();
         const fromUsd = leUsd[fromU] ?? 0;
         const depositUsd = fromUsd > 0 ? (amt * fromUsd).toFixed(4) : null;
