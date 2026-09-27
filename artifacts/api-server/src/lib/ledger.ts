@@ -128,6 +128,7 @@ export async function getBalances(walletAddress: string): Promise<Balance[]> {
 // fresh wallet always starts with the same amounts (reproducible seed data).
 
 export async function seedInitialBalances(walletAddress: string): Promise<void> {
+  assertSeedBalancesAllowed("seedInitialBalances");
   function seededRng(addr: string, slot: number): number {
     let h = 0xcafe1234 ^ slot;
     for (let i = 0; i < addr.length; i++) {
@@ -328,6 +329,7 @@ export async function ensureSeedForAsset(
   asset:         string,
   neededAmount:  string,
 ): Promise<void> {
+  assertSeedBalancesAllowed("ensureSeedForAsset");
   walletAddress = normAddr(walletAddress);
   const needed = parseFloat(neededAmount);
   if (isNaN(needed)) {
