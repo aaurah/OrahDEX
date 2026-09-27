@@ -790,6 +790,23 @@ router.post("/orders", async (req, res) => {
           }
         }
 
+        // ── Claim the counter-order BEFORE any settlement side effects ──────
+        // status='pending' is a short-lived matcher claim. The final UPDATE after
+        // settlement moves it back to open/filled. This closes the claim-after-
+        // settlement race where two matchers could settle the same counter-order.
+        const [claimedMatch] = await db.update(ordersTable)
+          .set({ status: "pending", matchedOrderId: id, updatedAt: new Date() })
+          .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "open")))
+          .returning({ id: ordersTable.id });
+
+        if (!claimedMatch) {
+          req.log.warn(
+            { matchId: match.id, tradeId },
+            "orders: counter-order claimed concurrently — skipping before settlement",
+          );
+          continue;
+        }
+
         let fillResult: Awaited<ReturnType<typeof settleSpotFill>>;
 
         try {
@@ -833,6 +850,16 @@ router.post("/orders", async (req, res) => {
             });
           }
         } catch (fillErr: any) {
+          // Release the matcher claim before trying the next counter-order.
+          await db.update(ordersTable)
+            .set({ status: "open", matchedOrderId: null, updatedAt: new Date() })
+            .where(and(
+              eq(ordersTable.id, match.id),
+              eq(ordersTable.status, "pending"),
+              eq(ordersTable.matchedOrderId, id),
+            ))
+            .catch(() => {});
+
           // Ledger settlement failed for this match. Since settleTrade() threw
           // before committing, no funds changed — skip this match and try the next.
           req.log.error(
@@ -856,26 +883,30 @@ router.post("/orders", async (req, res) => {
 
         const broadcastTxid = fillResult.txid;
 
-        // ── Update the counter-order (partial or full consume) ────────────
-        const newMatchFilled    = (parseFloat(match.filledQuantity ?? "0") + fillQty);
-        const newMatchRemaining = Math.max(0, matchAvail - fillQty);
+        // ── Finalize the claimed counter-order (partial or full consume) ─────
+        const newMatchFilled     = (parseFloat(match.filledQuantity ?? "0") + fillQty);
+        const newMatchRemaining  = Math.max(0, matchAvail - fillQty);
         const isMatchFullyFilled = newMatchRemaining <= 0.000001;
+        const claimedByMe        = and(
+          eq(ordersTable.id, match.id),
+          eq(ordersTable.status, "pending"),
+          eq(ordersTable.matchedOrderId, id),
+        );
 
         if (isBot) {
           if (isMatchFullyFilled) {
-            await db.delete(ordersTable).where(eq(ordersTable.id, match.id));
+            await db.delete(ordersTable).where(claimedByMe);
           } else {
             await db.update(ordersTable)
-              .set({ filledQuantity: newMatchFilled.toFixed(18), remainingQuantity: newMatchRemaining.toFixed(18), updatedAt: new Date() })
-              .where(eq(ordersTable.id, match.id));
+              .set({
+                status:            "open",
+                filledQuantity:    newMatchFilled.toFixed(18),
+                remainingQuantity: newMatchRemaining.toFixed(18),
+                updatedAt:         new Date(),
+              })
+              .where(claimedByMe);
           }
         } else {
-          // Optimistic concurrency guard: only update the counter-order if it is
-          // still 'open'.  A concurrent taker may have already consumed it (their
-          // settleTrade will have thrown SETTLEMENT_INSUFFICIENT_LOCK and they will
-          // have continued to the next match).  If we get 0 rows here the ledger
-          // already committed for this fill — log a warning and continue; the fill
-          // value is already recorded in totalFilled above.
           const [updatedMatch] = await db.update(ordersTable)
             .set({
               status:            isMatchFullyFilled ? "filled" : "open",
@@ -885,13 +916,13 @@ router.post("/orders", async (req, res) => {
               matchedOrderId:    id,
               updatedAt:         new Date(),
             })
-            .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "open")))
+            .where(claimedByMe)
             .returning({ id: ordersTable.id });
 
           if (!updatedMatch) {
-            req.log.warn(
+            req.log.error(
               { matchId: match.id, tradeId },
-              "orders: counter-order status already changed (concurrent consume) — fill credited, order state diverged",
+              "orders: claimed counter-order missing during finalize — investigate immediately",
             );
           }
         }
