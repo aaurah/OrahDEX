@@ -563,6 +563,14 @@ router.post("/orders", async (req, res) => {
       throw insertErr; // re-throw all other DB errors
     }
     req.log.info({ orderId: id, side, networkType, walletSource }, "Order placed");
+    // Claim the incoming order for the duration of its match loop.
+    // This mirrors the counter-order claim: no other cancel/matcher should
+    // treat it as open while this request is settling fills. The final update
+    // below moves it back to open/filled.
+    await db.update(ordersTable)
+      .set({ status: "pending", updatedAt: new Date() })
+      .where(and(eq(ordersTable.id, id), eq(ordersTable.status, "open")));
+
 
     /* Push order-placed notification to the user */
     const orderPair = symbol;
