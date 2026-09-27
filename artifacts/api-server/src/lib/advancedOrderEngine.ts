@@ -1,17 +1,20 @@
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 import { isDbConnError } from "./dbErrors.js";
 import { guardedInterval, withRetry } from "./selfHealing.js";
+import { assertEngineChildOrderAuthorized } from "./engineChildOrderInvariant.js";
 
 async function runTrailingStopEngine(): Promise<void> {
-  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  let client: PoolClient | null = null;
   try {
-    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
+    client = (await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 })) as unknown as PoolClient;
   } catch (err) {
     logger.warn({ err }, "Trailing stop engine: DB connect failed, skipping cycle");
     return;
   }
+  if (!client) return;
   try {
     const { rows: activeStops } = await client.query<{
       id: string;
@@ -68,7 +71,13 @@ async function runTrailingStopEngine(): Promise<void> {
             newStopPrice = newHigh * (1 - trailPercent / 100);
           }
           if (currentPrice <= newStopPrice) {
-            const orderId = randomUUID();
+            assertEngineChildOrderAuthorized({
+                id: stop.id,
+                walletAddress: stop.wallet_address,
+                authorizationRef: (stop as any).authorization_ref ?? null,
+                fundingRef: (stop as any).funding_ref ?? null,
+              });
+              const orderId = randomUUID();
             // Wrap INSERT + UPDATE atomically so a crash between the two can't
             // spawn duplicate market orders from a single trailing stop trigger.
             await client.query("BEGIN");
@@ -97,7 +106,13 @@ async function runTrailingStopEngine(): Promise<void> {
             newStopPrice = newLow * (1 + trailPercent / 100);
           }
           if (currentPrice >= newStopPrice) {
-            const orderId = randomUUID();
+            assertEngineChildOrderAuthorized({
+                id: stop.id,
+                walletAddress: stop.wallet_address,
+                authorizationRef: (stop as any).authorization_ref ?? null,
+                fundingRef: (stop as any).funding_ref ?? null,
+              });
+              const orderId = randomUUID();
             // Atomic: INSERT order + UPDATE stop status in one transaction
             await client.query("BEGIN");
             try {
@@ -136,18 +151,19 @@ async function runTrailingStopEngine(): Promise<void> {
     if (isDbConnError(err)) logger.warn({ err }, "runTrailingStopEngine: DB error, skipping cycle");
     else logger.error({ err }, "runTrailingStopEngine error");
   } finally {
-    client!.release();
+    client?.release();
   }
 }
 
 async function runIcebergEngine(): Promise<void> {
-  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  let client: PoolClient | null = null;
   try {
-    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
+    client = (await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 })) as unknown as PoolClient;
   } catch (err) {
     logger.warn({ err }, "Iceberg engine: DB connect failed, skipping cycle");
     return;
   }
+  if (!client) return;
   try {
     const { rows: icebergs } = await client.query<{
       id: string;
@@ -211,7 +227,13 @@ async function runIcebergEngine(): Promise<void> {
 
         const remaining = totalQty - filledQty;
         const sliceQty = Math.min(visibleQty, remaining);
-        const orderId = randomUUID();
+        assertEngineChildOrderAuthorized({
+                id: iceberg.id,
+                walletAddress: iceberg.wallet_address,
+                authorizationRef: (iceberg as any).authorization_ref ?? null,
+                fundingRef: (iceberg as any).funding_ref ?? null,
+              });
+              const orderId = randomUUID();
 
         await client.query(
           `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, price, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, created_at, updated_at)
@@ -242,18 +264,19 @@ async function runIcebergEngine(): Promise<void> {
     if (isDbConnError(err)) logger.warn({ err }, "runIcebergEngine: DB error, skipping cycle");
     else logger.error({ err }, "runIcebergEngine error");
   } finally {
-    client!.release();
+    client?.release();
   }
 }
 
 async function runTwapEngine(): Promise<void> {
-  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  let client: PoolClient | null = null;
   try {
-    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
+    client = (await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 })) as unknown as PoolClient;
   } catch (err) {
     logger.warn({ err }, "TWAP engine: DB connect failed, skipping cycle");
     return;
   }
+  if (!client) return;
   try {
     const { rows: twaps } = await client.query<{
       id: string;
@@ -290,7 +313,13 @@ async function runTwapEngine(): Promise<void> {
         for (let i = 0; i < slicesToExecute; i++) {
           if (twap.completed_slices + i >= twap.slices) break;
 
-          const orderId = randomUUID();
+          assertEngineChildOrderAuthorized({
+                id: twap.id,
+                walletAddress: twap.wallet_address,
+                authorizationRef: (twap as any).authorization_ref ?? null,
+                fundingRef: (twap as any).funding_ref ?? null,
+              });
+              const orderId = randomUUID();
           await client.query(
             `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, created_at, updated_at)
              VALUES ($1, $2, $3, $4, $5, 'market', 'open', $6, '0', $6, '0', false, false, NOW(), NOW())`,
@@ -362,7 +391,7 @@ async function runTwapEngine(): Promise<void> {
     if (isDbConnError(err)) logger.warn({ err }, "runTwapEngine: DB error, skipping cycle");
     else logger.error({ err }, "runTwapEngine error");
   } finally {
-    client!.release();
+    client?.release();
   }
 }
 
