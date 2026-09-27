@@ -1,0 +1,144 @@
+/**
+ * catalogSync.ts — Coin catalog + full pair-matrix snapshot (LetsExchange).
+ * Fetches the complete /v2/coins catalog (paginated), persists it to
+ * coin_catalog, then materializes every ordered symbol pair into pair_matrix.
+ * Runs at startup (+30 s grace) and every 6 h. Prices are NOT stored —
+ * they are cross-rates computed at query time from the USD price cache.
+ */
+import { pool } from "@workspace/db";
+import { logger } from "./logger.js";
+import { leRequest } from "./lePriceCache.js";
+
+const MATRIX_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const INSERT_CHUNK = 25000;
+
+let syncRunning = false;
+let lastSyncAt: number | null = null;
+let lastSyncStats: { coins: number; pairs: number; ms: number } | null = null;
+
+async function ensureTables(): Promise<void> {
+  await pool.query(`CREATE TABLE IF NOT EXISTS coin_catalog (
+    symbol       TEXT NOT NULL,
+    name         TEXT,
+    network      TEXT,
+    network_name TEXT,
+    image        TEXT,
+    has_extra_id BOOLEAN NOT NULL DEFAULT false,
+    min_amount   TEXT,
+    max_amount   TEXT,
+    raw          JSONB,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (symbol, network)
+  )`);
+  await pool.query(`CREATE TABLE IF NOT EXISTS pair_matrix (
+    base  TEXT NOT NULL,
+    quote TEXT NOT NULL,
+    PRIMARY KEY (base, quote)
+  )`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_pair_matrix_quote ON pair_matrix (quote)`);
+}
+
+function normCoin(c: any) {
+  return {
+    symbol:       String(c.code ?? c.symbol ?? c.ticker ?? "").toUpperCase(),
+    name:         c.name ?? null,
+    network:      String(c.network ?? c.network_code ?? c.chain ?? "").toUpperCase() || null,
+    network_name: c.network_name ?? c.networkName ?? null,
+    image:        c.image ?? c.image_url ?? c.logo ?? null,
+    has_extra_id: !!(c.has_extra_id ?? c.hasExtraId ?? c.memo ?? false),
+    min_amount:   c.min_amount != null ? String(c.min_amount) : null,
+    max_amount:   c.max_amount != null ? String(c.max_amount) : null,
+    raw:          JSON.stringify(c),
+  };
+}
+
+async function fetchAllCoins(): Promise<any[]> {
+  const all: any[] = [];
+  let offset = 0;
+  const LIMIT = 1000;
+  for (;;) {
+    const { ok, data, status } = await leRequest(`/v2/coins?limit=${LIMIT}&offset=${offset}`);
+    if (!ok) throw new Error(`LE /v2/coins ${status} at offset ${offset}`);
+    const page = Array.isArray(data) ? data : [];
+    all.push(...page);
+    logger.info({ offset, got: page.length, total: all.length }, "catalog sync: page fetched");
+    if (page.length < LIMIT) break;
+    offset += LIMIT;
+    await new Promise(r => setTimeout(r, 300)); // be polite to the API
+  }
+  return all;
+}
+
+export async function triggerCatalogSync(): Promise<void> {
+  if (syncRunning) return;
+  syncRunning = true;
+  const t0 = Date.now();
+  try {
+    await ensureTables();
+    const raw = await fetchAllCoins();
+    const coins = raw.map(normCoin).filter(c => c.symbol.length > 0);
+
+    // Upsert coins in chunks
+    for (let i = 0; i < coins.length; i += 500) {
+      const chunk = coins.slice(i, i + 500);
+      const vals: unknown[] = [];
+      const ph = chunk.map((_, j) => {
+        const b = j * 9;
+        vals.push(c.symbol, c.name, c.network, c.network_name, c.image, c.has_extra_id, c.min_amount, c.max_amount, c.raw);
+        return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},now())`;
+      }).join(",");
+      await pool.query(
+        `INSERT INTO coin_catalog (symbol,name,network,network_name,image,has_extra_id,min_amount,max_amount,raw,updated_at)
+         VALUES ${ph}
+         ON CONFLICT (symbol, network) DO UPDATE SET
+           name=EXCLUDED.name, network_name=EXCLUDED.network_name, image=EXCLUDED.image,
+           has_extra_id=EXCLUDED.has_extra_id, min_amount=EXCLUDED.min_amount,
+           max_amount=EXCLUDED.max_amount, raw=EXCLUDED.raw, updated_at=now()`, vals);
+    }
+
+    // Unique symbols → full ordered pair matrix
+    const symbols = [...new Set(coins.map(c => c.symbol))].sort();
+    await pool.query(`TRUNCATE pair_matrix`);
+    let pairs = 0;
+    for (const b of symbols) {
+      for (const q of symbols) {
+        if (b === q) continue;
+        // generated below in chunks — see insert loop
+      }
+    }
+    // chunked generation
+    const rows: string[] = [];
+    let params: string[] = [];
+    let args: unknown[] = [];
+    let n = 0;
+    for (const b of symbols) {
+      for (const q of symbols) {
+        if (b === q) continue;
+        n++; args.push(b, q);
+        params.push(`($${n*2-1},$${n*2})`);
+        if (params.length >= INSERT_CHUNK) {
+          await pool.query(`INSERT INTO pair_matrix (base, quote) VALUES ${params.join(",")} ON CONFLICT DO NOTHING`, args);
+          pairs += params.length; params = []; args = [];
+          if (pairs % 500000 === 0) logger.info({ pairs }, "catalog sync: pair_matrix progress");
+        }
+      }
+    }
+    if (params.length) { await pool.query(`INSERT INTO pair_matrix (base, quote) VALUES ${params.join(",")} ON CONFLICT DO NOTHING`, args); pairs += params.length; }
+
+    lastSyncAt = Date.now();
+    lastSyncStats = { coins: coins.length, pairs, ms: Date.now() - t0 };
+    logger.info(lastSyncStats, "catalog sync: complete");
+  } catch (e) {
+    logger.error({ e }, "catalog sync: failed");
+  } finally {
+    syncRunning = false;
+  }
+}
+
+export function getCatalogStatus() {
+  return { running: syncRunning, lastSyncAt, lastSyncStats };
+}
+
+// Boot: grace 30 s (let LE warm up), then sync; repeat every 6 h
+setTimeout(() => { triggerCatalogSync().catch(() => {}); }, 30_000).unref?.();
+setInterval(() => { triggerCatalogSync().catch(() => {}); }, MATRIX_SYNC_INTERVAL_MS).unref?.();
