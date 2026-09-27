@@ -22,6 +22,7 @@ import { arcBroadcast } from "./arcBroadcaster.js";
 
 const FEE_SAT  = BSV_NET.feeSat;
 const DUST_SAT = BSV_NET.dustSat;
+const HTLC_MIN_SAT = Math.max(1000, DUST_SAT + 1);
 
 /* ── Buffer / encoding helpers ──────────────────────────────────────────── */
 
@@ -272,7 +273,7 @@ export interface BroadcastParams {
   // Cross-chain HTLC output — when present, a P2SH output is added to lock the
   // trade commitment on-chain (in addition to the OP_RETURN audit record).
   htlcP2SHScriptHex?: string; // 23-byte P2SH locking script (OP_HASH160 <20b> OP_EQUAL)
-  htlcSatoshis?:    number;   // nominal satoshis locked in the HTLC (default: 1000 = dust+)
+  htlcSatoshis?:    number;   // EXACT BSV trade value in satoshis locked by the HTLC (required when htlcP2SHScriptHex is set)
 }
 
 export interface BroadcastResult {
@@ -301,17 +302,27 @@ export async function broadcastSettlement(params: BroadcastParams): Promise<Broa
     { satoshis: 0, script: opRetScript },  // Output 0: OP_RETURN audit record (data carrier)
   ];
 
-  // Output 1 (optional): P2SH HTLC locking script for cross-chain trade commitment
-  // This locks the nominal trade amount in the HTLC, providing UTXO-scripted settlement.
-  // Structure: OP_HASH160 <20-byte script hash> OP_EQUAL
+  // Output 1 (optional): P2SH HTLC locking script for cross-chain trade commitment.
+  // P0 fix: the HTLC must lock the EXACT BSV trade value, never a nominal dust amount.
+  let htlcLockSat = 0;
   if (htlcP2SHScriptHex) {
-    const htlcScript  = Buffer.from(htlcP2SHScriptHex, "hex");
-    const htlcLockSat = htlcSatoshis ?? 1000;  // 1000 sat minimum (well above dust)
+    if (!Number.isFinite(htlcSatoshis)) {
+      throw new Error("BSV HTLC amount not bound to trade value: htlcSatoshis is required");
+    }
+    htlcLockSat = Math.floor(htlcSatoshis);
+    if (htlcLockSat < HTLC_MIN_SAT) {
+      throw new Error(`BSV HTLC amount below minimum: ${htlcLockSat} < ${HTLC_MIN_SAT}`);
+    }
+    const maxHtlcSat = utxo.satoshis - FEE_SAT - DUST_SAT;
+    if (htlcLockSat > maxHtlcSat) {
+      throw new Error(`UTXO cannot fund BSV HTLC amount ${htlcLockSat}; max fundable is ${maxHtlcSat}. Coin selection required.`);
+    }
+    const htlcScript = Buffer.from(htlcP2SHScriptHex, "hex");
     outputs.push({ satoshis: htlcLockSat, script: htlcScript });
   }
 
   // Output N (change): remainder back to settlement wallet (if above dust)
-  const htlcDeduct = htlcP2SHScriptHex ? (htlcSatoshis ?? 1000) : 0;
+  const htlcDeduct = htlcLockSat;
   const changeSat  = utxo.satoshis - FEE_SAT - htlcDeduct;
   if (changeSat > DUST_SAT) {
     outputs.push({ satoshis: changeSat, script: p2pkhScript(h160) });
