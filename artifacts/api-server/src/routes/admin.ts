@@ -3760,7 +3760,7 @@ router.get("/profits", requireAdminToken, async (_req, res) => {
       const rows = await db
         .select({ source: keeperEarningsTable.source, total: sum(keeperEarningsTable.amount) })
         .from(keeperEarningsTable)
-        .where(and(eq(keeperEarningsTable.walletAddress, TREASURY), gte(keeperEarningsTable.earnedAt, since)))
+        .where(and(eq(keeperEarningsTable.walletAddress, TREASURY), gte(keeperEarningsTable.earnedAt, since), ne(keeperEarningsTable.source, "bridge_pending")))
         .groupBy(keeperEarningsTable.source);
       return Object.fromEntries(rows.map(r => [r.source, parseFloat(r.total ?? "0")]));
     }
