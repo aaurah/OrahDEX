@@ -54,17 +54,27 @@ function normCoin(c: any) {
 
 async function fetchAllCoins(): Promise<any[]> {
   const all: any[] = [];
+  const seen = new Set<string>();
   let offset = 0;
   const LIMIT = 1000;
-  for (;;) {
-    const { ok, data, status } = await leRequest(`/v2/coins?limit=${LIMIT}&offset=${offset}`);
+  for (let page = 0; page < 20; page++) {
+    const { ok, data, status } = await Promise.race([
+      leRequest(`/v2/coins?limit=${LIMIT}&offset=${offset}`),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("page timeout")), 20000)),
+    ]) as any;
     if (!ok) throw new Error(`LE /v2/coins ${status} at offset ${offset}`);
-    const page = Array.isArray(data) ? data : [];
-    all.push(...page);
-    logger.info({ offset, got: page.length, total: all.length }, "catalog sync: page fetched");
-    if (page.length < LIMIT) break;
+    const batch = Array.isArray(data) ? data : [];
+    const fresh = batch.filter((c: any) => {
+      const k = String(c.code ?? c.symbol ?? c.ticker ?? "");
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    all.push(...fresh);
+    logger.info({ offset, got: batch.length, fresh: fresh.length, unique: all.length }, "catalog sync: page fetched");
+    if (batch.length < LIMIT || fresh.length === 0) break; // end of catalog OR offset not honoured
     offset += LIMIT;
-    await new Promise(r => setTimeout(r, 300)); // be polite to the API
+    await new Promise(r => setTimeout(r, 300));
   }
   return all;
 }
