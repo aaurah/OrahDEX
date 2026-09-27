@@ -62,12 +62,10 @@ interface PatternState {
 
 async function pingDbPool(): Promise<string> {
   try {
-    const client = await Promise.race<Awaited<ReturnType<typeof pool.connect>>>([
+    const client = await Promise.race([
       pool.connect(),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("ping timeout")), 4_000)
-      ),
-    ]);
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB connect timeout")), 10_000).unref()),
+    ]) as any;
     client.release();
     return "DB pool ping OK — connection healthy";
   } catch (e: any) {

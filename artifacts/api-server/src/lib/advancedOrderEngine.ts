@@ -1,15 +1,19 @@
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import { randomUUID } from "node:crypto";
-import type { PoolClient } from "pg";
 import { isDbConnError } from "./dbErrors.js";
 import { guardedInterval, withRetry } from "./selfHealing.js";
 import { assertEngineChildOrderAuthorized } from "./engineChildOrderInvariant.js";
 
+interface EngineDbClient {
+  query<T = any>(text: string, params?: any[]): Promise<{ rows: T[]; rowCount?: number | null }>;
+  release(): void;
+}
+
 async function runTrailingStopEngine(): Promise<void> {
-  let client: PoolClient | null = null;
+  let client: EngineDbClient | null = null;
   try {
-    client = (await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 })) as unknown as PoolClient;
+    client = (await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 })) as unknown as EngineDbClient;
   } catch (err) {
     logger.warn({ err }, "Trailing stop engine: DB connect failed, skipping cycle");
     return;
@@ -156,9 +160,9 @@ async function runTrailingStopEngine(): Promise<void> {
 }
 
 async function runIcebergEngine(): Promise<void> {
-  let client: PoolClient | null = null;
+  let client: EngineDbClient | null = null;
   try {
-    client = (await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 })) as unknown as PoolClient;
+    client = (await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 })) as unknown as EngineDbClient;
   } catch (err) {
     logger.warn({ err }, "Iceberg engine: DB connect failed, skipping cycle");
     return;
@@ -269,9 +273,9 @@ async function runIcebergEngine(): Promise<void> {
 }
 
 async function runTwapEngine(): Promise<void> {
-  let client: PoolClient | null = null;
+  let client: EngineDbClient | null = null;
   try {
-    client = (await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 })) as unknown as PoolClient;
+    client = (await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 })) as unknown as EngineDbClient;
   } catch (err) {
     logger.warn({ err }, "TWAP engine: DB connect failed, skipping cycle");
     return;

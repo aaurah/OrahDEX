@@ -288,6 +288,8 @@ export interface BroadcastResult {
 
 export async function broadcastSettlement(params: BroadcastParams): Promise<BroadcastResult> {
   const { privKeyHex, utxo, opReturnPayload, htlcP2SHScriptHex, htlcSatoshis } = params;
+  const utxoSat = Math.floor(Number((utxo as any).satoshis));
+  if (!Number.isFinite(utxoSat) || utxoSat <= 0) throw new Error("Invalid UTXO satoshis");
 
   const privKey = Buffer.from(privKeyHex, "hex");
   const pubKey  = Buffer.from(secp.getPublicKey(privKey, true));  // 33-byte compressed
@@ -309,11 +311,11 @@ export async function broadcastSettlement(params: BroadcastParams): Promise<Broa
     if (!Number.isFinite(htlcSatoshis)) {
       throw new Error("BSV HTLC amount not bound to trade value: htlcSatoshis is required");
     }
-    htlcLockSat = Math.floor(htlcSatoshis);
+    htlcLockSat = Math.floor(htlcSatoshis as number);
     if (htlcLockSat < HTLC_MIN_SAT) {
       throw new Error(`BSV HTLC amount below minimum: ${htlcLockSat} < ${HTLC_MIN_SAT}`);
     }
-    const maxHtlcSat = utxo.satoshis - FEE_SAT - DUST_SAT;
+    const maxHtlcSat = utxoSat - FEE_SAT - DUST_SAT;
     if (htlcLockSat > maxHtlcSat) {
       throw new Error(`UTXO cannot fund BSV HTLC amount ${htlcLockSat}; max fundable is ${maxHtlcSat}. Coin selection required.`);
     }
@@ -323,7 +325,7 @@ export async function broadcastSettlement(params: BroadcastParams): Promise<Broa
 
   // Output N (change): remainder back to settlement wallet (if above dust)
   const htlcDeduct = htlcLockSat;
-  const changeSat  = utxo.satoshis - FEE_SAT - htlcDeduct;
+  const changeSat  = utxoSat - FEE_SAT - htlcDeduct;
   if (changeSat > DUST_SAT) {
     outputs.push({ satoshis: changeSat, script: p2pkhScript(h160) });
   }
