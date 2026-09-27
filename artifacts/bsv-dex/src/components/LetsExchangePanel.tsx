@@ -813,7 +813,7 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
     "linea","zksync","zk","scroll","blast","mode",
   ]);
   const isEvmReceiver = EVM_NETWORKS.has((toCoin.network ?? toCoin.symbol).toLowerCase());
-  const showConnectedWallet = isEvmReceiver && !!walletAddress;
+  const showConnectedWallet = isEvmReceiver && !!walletAddress && /^0x[0-9a-fA-F]{40}$/.test(walletAddress);
 
   return (
     <div className="flex flex-col gap-4">
