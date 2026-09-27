@@ -207,9 +207,14 @@ export function AdminSecuritySettings() {
 
   // ── Private Keys tab state ─────────────────────────────────────────────
   type Vault = {
-    bsvWallet: { address: string; wif: string; privKeyHex: string; pubKeyHex: string };
+    bsvWallet: {
+      address: string;
+      pubKeyHex?: string;
+      wif?: string;
+      privKeyHex?: string;
+    };
     adminEmail: string | null;
-    totpSecret: string | null;
+    totpSecret?: string | null;
   };
   const [vault, setVault]         = useState<Vault | null>(null);
   const [vaultLoading, setVaultLoading] = useState(false);
@@ -508,9 +513,19 @@ export function AdminSecuritySettings() {
                     </div>
                   </div>
 
-                  <SecretField label="Private Key — WIF (Wallet Import Format)" value={vault.bsvWallet.wif} />
-                  <SecretField label="Private Key — Raw Hex (32 bytes)" value={vault.bsvWallet.privKeyHex} />
-                  <SecretField label="Public Key — Compressed Hex (33 bytes)" value={vault.bsvWallet.pubKeyHex} />
+                  {vault.bsvWallet.wif ? (
+                    <SecretField label="Private Key — WIF (Wallet Import Format)" value={vault.bsvWallet.wif} />
+                  ) : (
+                    <p className="text-xs text-muted-foreground py-3">
+                      Raw WIF is not exposed via the admin API. Recover it from the server DB / env if needed.
+                    </p>
+                  )}
+                  {vault.bsvWallet.privKeyHex && (
+                    <SecretField label="Private Key — Raw Hex (32 bytes)" value={vault.bsvWallet.privKeyHex} />
+                  )}
+                  {vault.bsvWallet.pubKeyHex && (
+                    <SecretField label="Public Key — Compressed Hex (33 bytes)" value={vault.bsvWallet.pubKeyHex} />
+                  )}
                 </div>
 
                 {/* Admin credentials */}
@@ -533,7 +548,13 @@ export function AdminSecuritySettings() {
                       </div>
                     </div>
                   )}
-                  {vault.totpSecret && <SecretField label="TOTP Secret (2FA)" value={vault.totpSecret} />}
+                  {vault.totpSecret ? (
+                    <SecretField label="TOTP Secret (2FA)" value={vault.totpSecret} />
+                  ) : (
+                    <p className="text-xs text-muted-foreground py-3">
+                      TOTP secret is loaded from server env and is not exposed via API.
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex justify-end pt-2">
