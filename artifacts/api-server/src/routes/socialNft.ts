@@ -537,3 +537,48 @@ router.get("/social/external/trending", async (_req, res) => {
 });
 
 export default router;
+
+// ── Follows: official OrahDEX profile auto-follow ────────────────────────────
+import { pool as socialPool } from "@workspace/db";
+
+const OFFICIAL_PROFILE = (process.env.OFFICIAL_PROFILE_ADDRESS ?? "orahdex").toLowerCase();
+
+socialPool.query(`CREATE TABLE IF NOT EXISTS follows (
+  follower_address TEXT NOT NULL,
+  followee_address TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (follower_address, followee_address)
+)`).then(() => socialPool.query(`CREATE INDEX IF NOT EXISTS idx_follows_followee ON follows (followee_address)`)).catch(() => {});
+
+// Auto-follow official OrahDEX profile — idempotent, fire-and-forget from the app
+router.post("/social/follow-official", async (req, res) => {
+  const address = String(req.body?.address ?? "").trim().toLowerCase();
+  if (!address || address === OFFICIAL_PROFILE) return res.json({ ok: true, skipped: true });
+  try {
+    await socialPool.query(
+      `INSERT INTO follows (follower_address, followee_address) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [address, OFFICIAL_PROFILE]
+    );
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: false });
+  }
+});
+
+// Follower/following counts for any address or the official handle
+router.get("/social/follows/:address", async (req, res) => {
+  const address = String(req.params.address ?? "").trim().toLowerCase();
+  const viewer  = String(req.query.viewer ?? "").trim().toLowerCase();
+  try {
+    const [f, g, m] = await Promise.all([
+      socialPool.query(`SELECT COUNT(*)::int AS n FROM follows WHERE followee_address = $1`, [address]),
+      socialPool.query(`SELECT COUNT(*)::int AS n FROM follows WHERE follower_address = $1`, [address]),
+      viewer
+        ? socialPool.query(`SELECT 1 FROM follows WHERE follower_address = $1 AND followee_address = $2`, [viewer, address])
+        : Promise.resolve({ rows: [] } as never),
+    ]);
+    res.json({ address, followers: f.rows[0]?.n ?? 0, following: g.rows[0]?.n ?? 0, isFollowing: m.rows.length > 0, isOfficial: address === OFFICIAL_PROFILE });
+  } catch {
+    res.status(500).json({ error: "follows lookup failed" });
+  }
+});
