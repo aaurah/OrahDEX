@@ -89,22 +89,26 @@ export async function triggerCatalogSync(): Promise<void> {
     const raw = await fetchAllCoins();
     const coins = raw.map(normCoin).filter(c => c.symbol.length > 0);
 
-    // Upsert coins in chunks
-    for (let i = 0; i < coins.length; i += 500) {
-      const chunk = coins.slice(i, i + 500);
+    // Replace catalog atomically: truncate + dedupe + plain chunked inserts
+    const uniq = new Map<string, (typeof coins)[number]>();
+    for (const c of coins) uniq.set(`${c.symbol}|${c.network ?? ""}`, c);
+    const clean = [...uniq.values()];
+    await pool.query(`TRUNCATE coin_catalog`);
+    for (let i = 0; i < clean.length; i += 500) {
+      const chunk = clean.slice(i, i + 500);
       const vals: unknown[] = [];
-      const ph = chunk.map((_, j) => {
+      const ph = chunk.map((c, j) => {
         const b = j * 9;
         vals.push(c.symbol, c.name, c.network, c.network_name, c.image, c.has_extra_id, c.min_amount, c.max_amount, c.raw);
         return `($${b+1},$${b+2},$${b+3},$${b+4},$${b+5},$${b+6},$${b+7},$${b+8},$${b+9},now())`;
       }).join(",");
-      await pool.query(
-        `INSERT INTO coin_catalog (symbol,name,network,network_name,image,has_extra_id,min_amount,max_amount,raw,updated_at)
-         VALUES ${ph}
-         ON CONFLICT (symbol, network) DO UPDATE SET
-           name=EXCLUDED.name, network_name=EXCLUDED.network_name, image=EXCLUDED.image,
-           has_extra_id=EXCLUDED.has_extra_id, min_amount=EXCLUDED.min_amount,
-           max_amount=EXCLUDED.max_amount, raw=EXCLUDED.raw, updated_at=now()`, vals);
+      try {
+        await pool.query(
+          `INSERT INTO coin_catalog (symbol,name,network,network_name,image,has_extra_id,min_amount,max_amount,raw,updated_at)
+           VALUES ${ph}`, vals);
+      } catch (err) {
+        throw new Error(`coin insert chunk ${i / 500} failed: ${(err as Error)?.message ?? String(err)}`);
+      }
     }
 
     // Unique symbols → full ordered pair matrix
@@ -140,7 +144,7 @@ export async function triggerCatalogSync(): Promise<void> {
     lastSyncStats = { coins: coins.length, pairs, ms: Date.now() - t0 };
     logger.info(lastSyncStats, "catalog sync: complete");
   } catch (e) {
-    logger.error({ e }, "catalog sync: failed");
+    logger.error({ err: e }, "catalog sync: failed");
   } finally {
     syncRunning = false;
   }
