@@ -1,4 +1,3 @@
-import { useSignMessage } from "wagmi";
 import { useParams, useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
@@ -236,29 +235,6 @@ export function FuturesTrading() {
   }, []);
   const futuresMarketList = liveMarkets.length > 0 ? liveMarkets : FUTURES_MARKETS;
 
-  const { signMessageAsync } = useSignMessage();
-
-  const getFuturesChallengeSignature = async (
-    action: "open" | "close" | "deposit",
-    fields: Record<string, unknown>
-  ): Promise<{ nonce: string; signature: string }> => {
-    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
-      throw new Error("Futures trading currently requires an EVM wallet address.");
-    }
-    const chResp = await fetch(`${API_BASE}/futures/challenge`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ walletAddress: address, action, ...fields }),
-    });
-    if (!chResp.ok) {
-      const err = await chResp.json().catch(() => ({}));
-      throw new Error(err.error || `Challenge HTTP ${chResp.status}`);
-    }
-    const ch = await chResp.json();
-    const signature = await signMessageAsync({ message: ch.message });
-    return { nonce: ch.nonce, signature };
-  };
-
   const fetchPositions = useCallback(async () => {
     if (!address) { setPositions([]); return; }
     setPositionsLoading(true);
@@ -280,16 +256,10 @@ export function FuturesTrading() {
     if (!address) return;
     setClosingPositionId(positionId);
     try {
-      const closeAuth = await getFuturesChallengeSignature("close", { positionId });
       const resp = await fetch(`${API_BASE}/futures/positions/${encodeURIComponent(positionId)}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          walletAddress: address,
-          markPrice,
-          nonce: closeAuth.nonce,
-          evmSignature: closeAuth.signature,
-        }),
+        body: JSON.stringify({ walletAddress: address, markPrice }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -344,14 +314,6 @@ export function FuturesTrading() {
 
   const handleFuturesSubmit = async (side: "buy" | "sell") => {
     if (!address) { openModal(); return; }
-    if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
-      toast({
-        title: "EVM wallet required",
-        description: "Futures trading currently requires an EVM wallet while challenge auth is rolling out.",
-        variant: "destructive",
-      });
-      return;
-    }
     if (!size || parseFloat(size) <= 0) {
       toast({ title: "Enter size", description: "Please enter a position size.", variant: "destructive" });
       return;
@@ -359,28 +321,18 @@ export function FuturesTrading() {
     setFuturesSide(side);
     setFuturesSubmitting(true);
     try {
-      const futuresSide = side === "buy" ? "long" : "short";
-      const futuresQty = parseFloat(size);
-      const openAuth = await getFuturesChallengeSignature("open", {
-        symbol: `${base}/USDT-PERP`,
-        side: futuresSide,
-        leverage,
-        quantity: futuresQty,
-      });
       const resp = await fetch(`${API_BASE}/futures/positions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbol: `${base}/USDT-PERP`,
           walletAddress: address,
-          side: futuresSide,
+          side: side === "buy" ? "long" : "short",
           leverage,
-          quantity: futuresQty,
+          quantity: parseFloat(size),
           price: orderType !== "market" && price ? parseFloat(price) : undefined,
           orderType: orderType === "stop" ? "limit" : orderType,
           marginMode,
-          nonce: openAuth.nonce,
-          evmSignature: openAuth.signature,
         }),
       });
       if (!resp.ok) {
