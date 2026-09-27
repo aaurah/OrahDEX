@@ -78,7 +78,7 @@ async function runTrailingStopEngine(): Promise<void> {
             assertEngineChildOrderAuthorized({
                 id: stop.id,
                 walletAddress: stop.wallet_address,
-                authorizationRef: (stop as any).authorization_ref ?? null,
+                authorizationRef: (stop as any).parent_authorization_ref ?? null,
                 fundingRef: (stop as any).funding_ref ?? null,
               });
               const orderId = randomUUID();
@@ -87,9 +87,9 @@ async function runTrailingStopEngine(): Promise<void> {
             await client.query("BEGIN");
             try {
               await client.query(
-                `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, 'market', 'open', $6, '0', $6, '0', false, false, NOW(), NOW())`,
-                [orderId, stop.symbol, stop.wallet_address, stop.network_type ?? "evm", "sell", stop.quantity]
+                `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, parent_order_id, funding_ref, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, 'market', 'open', $6, '0', $6, '0', false, false, $7, $8, NOW(), NOW())`,
+                [orderId, stop.symbol, stop.wallet_address, stop.network_type ?? "evm", "sell", stop.quantity, stop.id, (stop as any).funding_ref ?? null]
               );
               await client.query(
                 `UPDATE trailing_stop_orders SET status = 'triggered', triggered_order_id = $1, updated_at = NOW() WHERE id = $2`,
@@ -113,7 +113,7 @@ async function runTrailingStopEngine(): Promise<void> {
             assertEngineChildOrderAuthorized({
                 id: stop.id,
                 walletAddress: stop.wallet_address,
-                authorizationRef: (stop as any).authorization_ref ?? null,
+                authorizationRef: (stop as any).parent_authorization_ref ?? null,
                 fundingRef: (stop as any).funding_ref ?? null,
               });
               const orderId = randomUUID();
@@ -121,9 +121,9 @@ async function runTrailingStopEngine(): Promise<void> {
             await client.query("BEGIN");
             try {
               await client.query(
-                `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, 'market', 'open', $6, '0', $6, '0', false, false, NOW(), NOW())`,
-                [orderId, stop.symbol, stop.wallet_address, stop.network_type ?? "evm", "buy", stop.quantity]
+                `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, parent_order_id, funding_ref, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, 'market', 'open', $6, '0', $6, '0', false, false, $7, $8, NOW(), NOW())`,
+                [orderId, stop.symbol, stop.wallet_address, stop.network_type ?? "evm", "buy", stop.quantity, stop.id, (stop as any).funding_ref ?? null]
               );
               await client.query(
                 `UPDATE trailing_stop_orders SET status = 'triggered', triggered_order_id = $1, updated_at = NOW() WHERE id = $2`,
@@ -234,14 +234,14 @@ async function runIcebergEngine(): Promise<void> {
         assertEngineChildOrderAuthorized({
                 id: iceberg.id,
                 walletAddress: iceberg.wallet_address,
-                authorizationRef: (iceberg as any).authorization_ref ?? null,
+                authorizationRef: (iceberg as any).parent_authorization_ref ?? null,
                 fundingRef: (iceberg as any).funding_ref ?? null,
               });
               const orderId = randomUUID();
 
         await client.query(
-          `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, price, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, 'limit', 'open', $6, $7, '0', $7, '0', false, false, NOW(), NOW())`,
+          `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, price, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, parent_order_id, funding_ref, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, 'limit', 'open', $6, $7, '0', $7, '0', false, false, $8, $9, NOW(), NOW())`,
           [
             orderId,
             iceberg.symbol,
@@ -250,6 +250,8 @@ async function runIcebergEngine(): Promise<void> {
             iceberg.side,
             iceberg.price,
             sliceQty.toString(),
+            iceberg.id,
+            (iceberg as any).funding_ref ?? null,
           ]
         );
 
@@ -320,13 +322,13 @@ async function runTwapEngine(): Promise<void> {
           assertEngineChildOrderAuthorized({
                 id: twap.id,
                 walletAddress: twap.wallet_address,
-                authorizationRef: (twap as any).authorization_ref ?? null,
+                authorizationRef: (twap as any).parent_authorization_ref ?? null,
                 fundingRef: (twap as any).funding_ref ?? null,
               });
               const orderId = randomUUID();
           await client.query(
-            `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, 'market', 'open', $6, '0', $6, '0', false, false, NOW(), NOW())`,
+            `INSERT INTO orders (id, symbol, wallet_address, network_type, side, type, status, quantity, filled_quantity, remaining_quantity, fee, is_bot, is_synthetic, parent_order_id, funding_ref, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, 'market', 'open', $6, '0', $6, '0', false, false, $7, $8, NOW(), NOW())`,
             [
               orderId,
               twap.symbol,
@@ -334,6 +336,8 @@ async function runTwapEngine(): Promise<void> {
               twap.network_type ?? "evm",
               twap.side,
               sliceQty.toString(),
+              twap.id,
+              (twap as any).funding_ref ?? null,
             ]
           );
 
