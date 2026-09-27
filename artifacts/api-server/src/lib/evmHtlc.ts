@@ -290,7 +290,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
 
 const SELLER_TIMELOCK_SECS = 30 * 60;   // 30 minutes (outer)
 const BUYER_TIMELOCK_SECS  = 60 * 60;   // 60 minutes (inner — must OUTLIVE the 30m seller lock: secret is public after seller reveal, buyer lock must still be revealable)
-const SESSION_TIMEOUT_SECS = 35 * 60;   // 35 min — beyond both timelocks
+const SESSION_TIMEOUT_SECS = 75 * 60;   // 75 min — must exceed the 60m buyer timelock so PARTIAL_REVEAL can retry to the end
 
 // ── Hash helpers ──────────────────────────────────────────────────────────────
 
@@ -548,7 +548,7 @@ function buildLockInstruction(p: {
       `Step 1: Approve the HTLC contract to spend your ${asset} (ERC-20 approve).`,
       `Step 2: Call lockToken() to lock your ${asset} in escrow.`,
       `Your funds are released to the counterparty when the trade secret is revealed.`,
-      `If not completed within 15 minutes, you can reclaim your ${asset}.`,
+      `If not completed within 60 minutes, you can reclaim your ${asset}.`,
     ];
   }
 
