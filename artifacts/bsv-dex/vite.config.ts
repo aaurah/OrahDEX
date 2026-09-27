@@ -798,7 +798,7 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
   root: path.resolve(import.meta.dirname),
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
-    emptyOutDir: true,
+    emptyOutDir: false,
     chunkSizeWarningLimit: 6000,
     /* Let Rolldown do automatic code splitting — manualChunks was causing
        the entry chunk to statically import 4 MB of JS (modals + pages chunks),
