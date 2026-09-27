@@ -41,11 +41,12 @@
  *
  * ── TIMELOCK WINDOWS ─────────────────────────────────────────────────────────
  *
- *   Seller lock: now + 30 min  (outer; longer safety window)
- *   Buyer  lock: now + 15 min  (inner; expires first — asymmetric design)
+ *   Seller lock: now + 30 min  (revealed FIRST by the relayer)
+ *   Buyer  lock: now + 60 min  (revealed SECOND — must outlive seller's)
  *
- *   The asymmetry protects the seller: if the buyer never locks, the seller
- *   can refund without the buyer being able to claim the seller's ETH.
+ *   The relayer reveals the seller leg first, publishing the secret; the
+ *   buyer leg must remain revealable afterwards, so buyer's timelock STRICTLY
+ *   exceeds seller's. Never invert one without the other (enforced below).
  */
 
 import crypto, {
@@ -56,7 +57,7 @@ import crypto, {
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { db, withDbRetry } from "@workspace/db";
 import { evmHtlcSessionsTable } from "@workspace/db/schema";
-import { eq, and, lt, notInArray } from "drizzle-orm";
+import { eq, and, lt, notInArray, inArray } from "drizzle-orm";
 import {
   createPublicClient,
   createWalletClient,
@@ -291,6 +292,14 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
 const SELLER_TIMELOCK_SECS = 30 * 60;   // 30 minutes (outer)
 const BUYER_TIMELOCK_SECS  = 60 * 60;   // 60 minutes (inner — must OUTLIVE the 30m seller lock: secret is public after seller reveal, buyer lock must still be revealable)
 const SESSION_TIMEOUT_SECS = 75 * 60;   // 75 min — must exceed the 60m buyer timelock so PARTIAL_REVEAL can retry to the end
+
+// PROTOCOL INVARIANT: the relayer reveals the SELLER leg FIRST; the secret is
+// public from that instant, so the BUYER leg must remain revealable long
+// after — buyer's timelock MUST exceed seller's. Never invert one without
+// the other (audit P0).
+if (BUYER_TIMELOCK_SECS <= SELLER_TIMELOCK_SECS + 15 * 60) {
+  throw new Error("HTLC invariant violated: BUYER_TIMELOCK must exceed SELLER_TIMELOCK by >15m (seller leg reveals first)");
+}
 
 // ── Hash helpers ──────────────────────────────────────────────────────────────
 
@@ -822,17 +831,28 @@ async function checkSessionOnChain(
     } catch { /* isLocked may revert if not found */ }
   }
 
-  // Trigger reveal when both locks are confirmed, or when a previous buyer
-  // reveal failed (PARTIAL_REVEAL — seller paid but buyer reveal needs retry).
-  if (
-    sellerLocked && buyerLocked &&
-    session.status !== "REVEALING" &&
-    session.status !== "COMPLETED"
-  ) {
+  // Trigger reveal: fresh BOTH_LOCKED, retryable PARTIAL_REVEAL, or a stale
+  // REVEALING left by a crashed worker (reconciled from chain below).
+  const staleRevealing =
+    session.status === "REVEALING" &&
+    Date.now() - session.updatedAt.getTime() > 5 * 60 * 1000;
+
+  if (sellerLocked && buyerLocked && (session.status === "BOTH_LOCKED" || staleRevealing)) {
     await revealBothLocks(session, chain);
   } else if (session.status === "PARTIAL_REVEAL") {
     // Seller was already revealed; retry the buyer leg.
     await revealBothLocks(session, chain);
+  } else if (staleRevealing) {
+    // Crash recovery (audit P0): a reveal worker died mid-operation. Read both
+    // legs on-chain, repair DB state; next cycle re-claims via BOTH_LOCKED/PARTIAL.
+    const sellerDone = await isLegRevealed(client, contractAddress, session.sellerLockId as Hex);
+    const buyerDone  = await isLegRevealed(client, contractAddress, session.buyerLockId as Hex);
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (sellerDone) patch.revealSellerTxid = "REVEALED_ON_CHAIN";
+    if (buyerDone)  patch.revealBuyerTxid  = "REVEALED_ON_CHAIN";
+    patch.status = sellerDone && buyerDone ? "COMPLETED" : sellerDone ? "PARTIAL_REVEAL" : "BOTH_LOCKED";
+    await db.update(evmHtlcSessionsTable).set(patch).where(eq(evmHtlcSessionsTable.id, session.id));
+    logger.info({ sessionId: session.id, sellerDone, buyerDone, status: patch.status }, "evmHtlc: stale REVEALING reconciled from chain");
   }
 }
 
@@ -860,23 +880,19 @@ async function revealBothLocks(
   // Serialize reveal work per session: take a row lock; if another worker is
   // already revealing (or the session completed), bail out. PARTIAL_REVEAL is the
   // only re-entry point — it means seller revealed, buyer leg needs a retry.
-  const acquired = await db.transaction(async (tx) => {
-    const [row] = await tx
-      .select({ status: evmHtlcSessionsTable.status })
-      .from(evmHtlcSessionsTable)
-      .where(eq(evmHtlcSessionsTable.id, session.id))
-      .for("update");
-    if (!row) return false;
-    if (row.status === "COMPLETED") return false;
-    if (row.status === "REVEALING" && session.status !== "PARTIAL_REVEAL") return false;
-    await tx
-      .update(evmHtlcSessionsTable)
-      .set({ status: "REVEALING", updatedAt: new Date() })
-      .where(eq(evmHtlcSessionsTable.id, session.id));
-    return true;
-  }).catch(() => false);
-  if (!acquired) {
-    logger.debug({ sessionId: session.id }, "evmHtlc: reveal skipped — locked by another worker or already completed");
+  // Atomic claim (audit P0): conditional UPDATE against the FRESH row status.
+  // A stale in-memory PARTIAL_REVEAL can never admit a second worker — only
+  // the transaction that changes exactly one row owns the reveal attempt.
+  const claim = await db
+    .update(evmHtlcSessionsTable)
+    .set({ status: "REVEALING", updatedAt: new Date() })
+    .where(and(
+      eq(evmHtlcSessionsTable.id, session.id),
+      inArray(evmHtlcSessionsTable.status, ["BOTH_LOCKED", "PARTIAL_REVEAL"]),
+    ))
+    .returning({ id: evmHtlcSessionsTable.id });
+  if (!claim.length) {
+    logger.debug({ sessionId: session.id }, "evmHtlc: reveal claim failed — owned by another worker, wrong state, or completed");
     return;
   }
 
