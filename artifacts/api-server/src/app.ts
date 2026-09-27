@@ -930,7 +930,6 @@ const AUTOCONFIG_XML = `<?xml version="1.0" encoding="UTF-8"?>
 <clientConfig version="1.1">
   <emailProvider id="orahdex.com">
     <domain>orahdex.com</domain>
-    <domain>orahdex.com</domain>
     <displayName>OrahDEX Mail</displayName>
     <displayShortName>OrahDEX</displayShortName>
 
