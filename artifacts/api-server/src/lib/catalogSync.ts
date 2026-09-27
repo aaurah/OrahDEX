@@ -40,13 +40,14 @@ async function ensureTables(): Promise<void> {
 
 function normCoin(c: any) {
   const symbol = String(c.code ?? c.symbol ?? c.ticker ?? "").toUpperCase();
+  const net0 = Array.isArray(c.networks) ? c.networks[0] : null;
   return {
     symbol,
     name:         c.name ?? symbol,
-    network:      String(c.network ?? c.network_code ?? c.chain ?? "").toUpperCase() || symbol,
-    network_name: c.network_name ?? c.networkName ?? null,
-    image:        c.image ?? c.image_url ?? c.logo ?? null,
-    has_extra_id: !!(c.has_extra_id ?? c.hasExtraId ?? c.memo ?? false),
+    network:      String(c.default_network_code ?? net0?.network_code ?? c.network ?? "").toUpperCase() || symbol,
+    network_name: c.default_network_name ?? net0?.network_name ?? null,
+    image:        c.icon ?? c.image ?? c.image_url ?? c.logo ?? null,
+    has_extra_id: !!(c.additional_info_get ?? c.additional_info_send ?? c.has_extra_id ?? false),
     min_amount:   c.min_amount != null ? String(c.min_amount) : null,
     max_amount:   c.max_amount != null ? String(c.max_amount) : null,
     raw:          JSON.stringify(c),
@@ -87,7 +88,7 @@ export async function triggerCatalogSync(): Promise<void> {
   try {
     await ensureTables();
     const raw = await fetchAllCoins();
-    const coins = raw.map(normCoin).filter(c => c.symbol.length > 0);
+    const coins = raw.filter(c => c.is_active !== false && c.disabled !== true).map(normCoin).filter(c => c.symbol.length > 0);
 
     // Replace catalog atomically: truncate + dedupe + plain chunked inserts
     const uniq = new Map<string, (typeof coins)[number]>();
