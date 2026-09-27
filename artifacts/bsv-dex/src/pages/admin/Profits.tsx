@@ -301,8 +301,8 @@ export function AdminProfits() {
       </div>
 
       {/* Bridge / Exchange detail */}
-      {data?.bridge && <BridgeCard bridge={data.bridge} />
-      <VenuePanel />}
+      {data?.bridge && <BridgeCard bridge={data.bridge} />}
+      <VenuePanel />
 
       {/* How revenue is generated */}
       <div className="bg-[#0f1629] border border-white/10 rounded-2xl p-5">
