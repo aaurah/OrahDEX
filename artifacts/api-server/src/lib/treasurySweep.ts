@@ -32,7 +32,7 @@ export async function sweepTreasury(dryRun: boolean) {
   const dueUsd = rows.reduce((a, r) => a + parseFloat(r.amount), 0);
   const hot = await getOrCreateEvmHotWallet();
   const client = createWalletClient({ account: privateKeyToAccount(hot.privKeyHex), chain: bsc, transport: http(RPC) });
-  const bal = await client.getBalance({ address: hot.address });
+  const bal = await (client as any).getBalance({ address: hot.address });
   const sendable = bal > RESERVE ? bal - RESERVE : 0n;
 
   const base = { configured: true, payout: PAYOUT, dueUsd: +dueUsd.toFixed(2), unsweptRows: rows.length, hotBalanceBnb: (Number(bal) / 1e18).toFixed(4), sendableBnb: (Number(sendable) / 1e18).toFixed(4), dryRun };
