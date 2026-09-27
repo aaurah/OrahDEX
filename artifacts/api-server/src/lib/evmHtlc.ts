@@ -289,7 +289,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
 // ── Timelock constants ─────────────────────────────────────────────────────────
 
 const SELLER_TIMELOCK_SECS = 30 * 60;   // 30 minutes (outer)
-const BUYER_TIMELOCK_SECS  = 15 * 60;   // 15 minutes (inner — expires first)
+const BUYER_TIMELOCK_SECS  = 60 * 60;   // 60 minutes (inner — must OUTLIVE the 30m seller lock: secret is public after seller reveal, buyer lock must still be revealable)
 const SESSION_TIMEOUT_SECS = 35 * 60;   // 35 min — beyond both timelocks
 
 // ── Hash helpers ──────────────────────────────────────────────────────────────
@@ -397,7 +397,7 @@ export async function initiateEvmHtlcSession(
   // Generate random 32-byte secret (server-side)
   const secretBuf  = crypto.randomBytes(32);
   const secret     = secretBuf.toString("hex");
-  const secretHash = keccak256Hex(secretBuf);
+  const secretHash = ("0x" + crypto.createHash("sha256").update(secretBuf).digest("hex")) as Hex;
 
   const sessionId   = crypto.randomUUID();
   const sellerLockId = deriveLockId(tradeId, "seller");
