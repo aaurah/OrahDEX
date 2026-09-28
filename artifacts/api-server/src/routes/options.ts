@@ -10,10 +10,12 @@ import { eq, and, desc } from "drizzle-orm";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger.js";
 import { blackScholes, getTimeToExpiry } from "../lib/optionsPricing.js";
+import { parseUnits, formatUnits, mulPriceQty } from "../lib/money.js";
 
 const router: IRouter = Router();
 
 const CONTRACT_MULTIPLIER = 100; // 1 contract = 100 units of underlying
+const LEDGER_DECIMALS = 18;
 
 function formatContract(c: typeof optionsContractsTable.$inferSelect, liveGreeks?: ReturnType<typeof blackScholes>) {
   return {
@@ -47,15 +49,15 @@ async function getSpotPrice(symbol: string): Promise<number | null> {
   return Number.isFinite(price) && price > 0 ? price : null;
 }
 
-async function getUserUsdtBalance(walletAddress: string): Promise<number> {
+async function getUserUsdtBalance(walletAddress: string): Promise<string> {
   const { rows } = await pool.query<{ available: string }>(
     `SELECT available FROM user_balances WHERE wallet_address = $1 AND asset_symbol = 'USDT'`,
     [walletAddress.toLowerCase()],
   );
-  return parseFloat(rows[0]?.available ?? "0");
+  return rows[0]?.available ?? "0";
 }
 
-async function debitUserBalance(walletAddress: string, amount: number): Promise<void> {
+async function debitUserBalance(walletAddress: string, amount: string | number): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -63,14 +65,18 @@ async function debitUserBalance(walletAddress: string, amount: number): Promise<
       `SELECT available FROM user_balances WHERE wallet_address = $1 AND asset_symbol = 'USDT' FOR UPDATE`,
       [walletAddress.toLowerCase()],
     );
-    const avail = parseFloat(rows[0]?.available ?? "0");
-    if (avail < amount) {
-      throw new Error(`INSUFFICIENT_BALANCE: need ${amount} USDT, have ${avail}`);
+    const amountRaw = parseUnits(String(amount), LEDGER_DECIMALS);
+    const availRaw = parseUnits(rows[0]?.available ?? "0", LEDGER_DECIMALS);
+    if (availRaw < amountRaw) {
+      throw new Error(
+        `INSUFFICIENT_BALANCE: need ${formatUnits(amountRaw, LEDGER_DECIMALS)} USDT, ` +
+        `have ${formatUnits(availRaw, LEDGER_DECIMALS)}`,
+      );
     }
     await client.query(
       `UPDATE user_balances SET available = available - $1, updated_at = now()
        WHERE wallet_address = $2 AND asset_symbol = 'USDT'`,
-      [amount.toFixed(8), walletAddress.toLowerCase()],
+      [formatUnits(amountRaw, LEDGER_DECIMALS), walletAddress.toLowerCase()],
     );
     await client.query("COMMIT");
   } catch (err) {
@@ -81,13 +87,14 @@ async function debitUserBalance(walletAddress: string, amount: number): Promise<
   }
 }
 
-async function creditUserBalance(walletAddress: string, amount: number): Promise<void> {
+async function creditUserBalance(walletAddress: string, amount: string | number): Promise<void> {
+  const amountRaw = parseUnits(String(amount), LEDGER_DECIMALS);
   await pool.query(
     `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
      VALUES ($1, 'USDT', $2, 0, now())
      ON CONFLICT (wallet_address, asset_symbol)
      DO UPDATE SET available = user_balances.available + $2, updated_at = now()`,
-    [walletAddress.toLowerCase(), amount.toFixed(8)],
+    [walletAddress.toLowerCase(), formatUnits(amountRaw, LEDGER_DECIMALS)],
   );
 }
 
@@ -226,11 +233,18 @@ router.post("/options/order", async (req, res) => {
       res.status(400).json({ error: "side must be 'buy' or 'sell'" });
       return;
     }
-    const qty = parseFloat(quantity);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      res.status(400).json({ error: "quantity must be a positive number" });
+    let qtyRaw: bigint;
+    try {
+      qtyRaw = parseUnits(String(quantity), LEDGER_DECIMALS);
+    } catch {
+      res.status(400).json({ error: "quantity must be a positive decimal string" });
       return;
     }
+    if (qtyRaw <= 0n) {
+      res.status(400).json({ error: "quantity must be positive" });
+      return;
+    }
+    const qtyStr = formatUnits(qtyRaw, LEDGER_DECIMALS);
 
     const [contract] = await db
       .select()
@@ -264,29 +278,36 @@ router.post("/options/order", async (req, res) => {
       : null;
 
     const marketPremium = greeks?.premium ?? 0;
-    const effectivePremium = limitPremium ? parseFloat(limitPremium) : marketPremium;
+    const effectivePremiumRaw = limitPremium
+      ? parseUnits(String(limitPremium), LEDGER_DECIMALS)
+      : parseUnits(marketPremium.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS);
     const isMarketOrder = !limitPremium;
 
-    // Collateral requirements
-    let requiredCollateral: number;
-    if (side === "buy") {
-      // Buyer pays premium × quantity × multiplier
-      requiredCollateral = effectivePremium * qty * CONTRACT_MULTIPLIER;
-    } else {
-      // Seller (writer) must post 10x premium as collateral
-      requiredCollateral = effectivePremium * qty * CONTRACT_MULTIPLIER * 10;
-    }
+    const premiumQtyRaw = mulPriceQty({
+      priceRaw: effectivePremiumRaw,
+      priceDecimals: LEDGER_DECIMALS,
+      quantityRaw: qtyRaw,
+      quantityDecimals: LEDGER_DECIMALS,
+      outputDecimals: LEDGER_DECIMALS,
+      rounding: "ceil",
+    });
+    const requiredCollateralRaw =
+      premiumQtyRaw *
+      BigInt(side === "buy" ? CONTRACT_MULTIPLIER : CONTRACT_MULTIPLIER * 10);
+    const requiredCollateralStr = formatUnits(requiredCollateralRaw, LEDGER_DECIMALS);
 
-    const usdtBalance = await getUserUsdtBalance(walletAddress);
-    if (usdtBalance < requiredCollateral) {
+    const usdtBalanceRaw = parseUnits(await getUserUsdtBalance(walletAddress), LEDGER_DECIMALS);
+    if (usdtBalanceRaw < requiredCollateralRaw) {
       res.status(400).json({
-        error: `Insufficient USDT balance. Required: ${requiredCollateral.toFixed(2)}, available: ${usdtBalance.toFixed(2)}`,
-        code:  "INSUFFICIENT_BALANCE",
+        error:
+          `Insufficient USDT balance. Required: ${requiredCollateralStr}, ` +
+          `available: ${formatUnits(usdtBalanceRaw, LEDGER_DECIMALS)}`,
+        code: "INSUFFICIENT_BALANCE",
       });
       return;
     }
 
-    await debitUserBalance(walletAddress, requiredCollateral);
+    await debitUserBalance(walletAddress, requiredCollateralStr);
 
     const orderId = crypto.randomUUID();
     const [order] = await db
@@ -296,10 +317,10 @@ router.post("/options/order", async (req, res) => {
         walletAddress,
         contractId,
         side,
-        quantity:      qty.toFixed(8),
-        limitPremium:  limitPremium ? parseFloat(limitPremium).toFixed(8) : undefined,
+        quantity:      qtyStr,
+        limitPremium:  limitPremium ? formatUnits(parseUnits(String(limitPremium), LEDGER_DECIMALS), LEDGER_DECIMALS) : undefined,
         status:        isMarketOrder ? "filled" : "open",
-        filledQuantity: isMarketOrder ? qty.toFixed(8) : "0",
+        filledQuantity: isMarketOrder ? qtyStr : "0",
       })
       .returning();
 
@@ -316,12 +337,12 @@ router.post("/options/order", async (req, res) => {
           walletAddress,
           contractId,
           side:          positionSide,
-          quantity:      qty.toFixed(8),
-          entryPremium:  marketPremium.toFixed(8),
-          currentPremium: marketPremium.toFixed(8),
+          quantity:      qtyStr,
+          entryPremium:  formatUnits(parseUnits(marketPremium.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS), LEDGER_DECIMALS),
+          currentPremium: formatUnits(parseUnits(marketPremium.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS), LEDGER_DECIMALS),
           unrealizedPnl: "0",
           realizedPnl:   "0",
-          collateral:    requiredCollateral.toFixed(8),
+          collateral:    requiredCollateralStr,
           status:        "open",
         })
         .returning();
@@ -331,7 +352,12 @@ router.post("/options/order", async (req, res) => {
       // Increment open interest
       await db
         .update(optionsContractsTable)
-        .set({ openInterest: `${parseFloat(contract.openInterest) + qty}` })
+        .set({
+          openInterest: formatUnits(
+            parseUnits(contract.openInterest, LEDGER_DECIMALS) + qtyRaw,
+            LEDGER_DECIMALS,
+          ),
+        })
         .where(eq(optionsContractsTable.id, contractId));
     }
 
@@ -360,7 +386,7 @@ router.post("/options/order", async (req, res) => {
           }
         : null,
       marketPremium,
-      requiredCollateral,
+      requiredCollateral: Number(requiredCollateralStr),
     });
   } catch (err: any) {
     logger.error({ err }, "Failed to create options order");
@@ -532,18 +558,28 @@ router.post("/options/exercise/:positionId", async (req, res) => {
       return;
     }
 
-    const qty    = parseFloat(pos.quantity);
-    const profit = isCall
-      ? Math.max(0, spot - strike) * qty * CONTRACT_MULTIPLIER
-      : Math.max(0, strike - spot) * qty * CONTRACT_MULTIPLIER;
-
-    const collateral = parseFloat(pos.collateral);
+    const spotRaw = parseUnits(spot.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS);
+    const strikeRaw = parseUnits(contract.strike, LEDGER_DECIMALS);
+    const qtyRaw = parseUnits(pos.quantity, LEDGER_DECIMALS);
+    const intrinsicRaw = isCall
+      ? (spotRaw > strikeRaw ? spotRaw - strikeRaw : 0n)
+      : (strikeRaw > spotRaw ? strikeRaw - spotRaw : 0n);
+    const profitRaw =
+      mulPriceQty({
+        priceRaw: intrinsicRaw,
+        priceDecimals: LEDGER_DECIMALS,
+        quantityRaw: qtyRaw,
+        quantityDecimals: LEDGER_DECIMALS,
+        outputDecimals: LEDGER_DECIMALS,
+        rounding: "floor",
+      }) * BigInt(CONTRACT_MULTIPLIER);
+    const collateralRaw = parseUnits(pos.collateral, LEDGER_DECIMALS);
 
     await db
       .update(optionsPositionsTable)
       .set({
         status:       "exercised",
-        realizedPnl:  profit.toFixed(8),
+        realizedPnl:  formatUnits(profitRaw, LEDGER_DECIMALS),
         unrealizedPnl: "0",
         exercisedAt:  new Date(),
         updatedAt:    new Date(),
@@ -551,8 +587,8 @@ router.post("/options/exercise/:positionId", async (req, res) => {
       .where(eq(optionsPositionsTable.id, positionId));
 
     // Credit profit + return collateral
-    const totalCredit = profit + collateral;
-    await creditUserBalance(walletAddress, totalCredit);
+    const totalCreditRaw = profitRaw + collateralRaw;
+    await creditUserBalance(walletAddress, formatUnits(totalCreditRaw, LEDGER_DECIMALS));
 
     res.json({
       positionId,
@@ -560,10 +596,10 @@ router.post("/options/exercise/:positionId", async (req, res) => {
       optionType:      contract.optionType,
       strike,
       settlementPrice: spot,
-      quantity:        qty,
-      profit,
-      collateral,
-      totalCredit,
+      quantity:        formatUnits(qtyRaw, LEDGER_DECIMALS),
+      profit:          formatUnits(profitRaw, LEDGER_DECIMALS),
+      collateral:      formatUnits(collateralRaw, LEDGER_DECIMALS),
+      totalCredit:     formatUnits(totalCreditRaw, LEDGER_DECIMALS),
     });
   } catch (err) {
     logger.error({ err }, "Failed to exercise option");
