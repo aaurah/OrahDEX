@@ -746,6 +746,16 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
         return { id: jsFile };
       },
     },
+    {
+      name: "alias-util-polyfill",
+      enforce: "pre",
+      resolveId(id) {
+        if (id === "util" || id === "node:util") {
+          return path.resolve(import.meta.dirname, "src/stubs/util.js");
+        }
+        return null;
+      },
+    },
     nodePolyfills({
       globals: { Buffer: true, global: true, process: true },
       protocolImports: true,
