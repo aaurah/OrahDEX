@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { CoinLogo } from "@/components/CoinLogo";
-import { useStagedMarkets as useGetMarkets, useMarketSearch } from "@/hooks/useStagedMarkets";
+import { useStagedMarkets as useGetMarkets, useMarketSearch, useVenueCatalog } from "@/hooks/useStagedMarkets";
 import { useSEO } from "@/hooks/useSEO";
 import {
   USDT_MARKETS, USDC_MARKETS, TUSD_MARKETS, USDD_MARKETS,
@@ -140,6 +140,8 @@ export function Markets() {
   const [tab, setTab] = useState<Tab>("usd");
   const [usdSub, setUsdSub] = useState<UsdSub>("USDT");
   const [search, setSearch] = useState("");
+  const [catalogScope, setCatalogScope] = useState<"default" | "all">("default");
+  const [catalogOffset, setCatalogOffset] = useState(0);
   const [stars, setStars] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem("market_favorites");
@@ -188,6 +190,21 @@ export function Markets() {
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } as any });
   const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
   const { results: serverSearchResults } = useMarketSearch(search, { debounceMs: 300 });
+  const catalogQuote = tab === "usd" ? usdSub : ({
+    bsv: "BSV", btc: "BTC", eth: "ETH", bnb: "BNB", matic: "MATIC",
+    avax: "AVAX", arb: "ARB", op: "OP", ftm: "FTM", cro: "CRO", bch: "BCH",
+  } as Partial<Record<Tab, string>>)[tab] ?? "";
+  const allVenueCatalog = useVenueCatalog({
+    query: search,
+    quote: catalogQuote,
+    limit: 100,
+    offset: catalogOffset,
+    enabled: catalogScope === "all",
+  });
+
+  useEffect(() => {
+    setCatalogOffset(0);
+  }, [catalogScope, search, tab, usdSub]);
 
   // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
   const needAllPairs = tab === "sol" || tab === "eth" || tab === "favorites" || search.length > 0;
@@ -494,7 +511,7 @@ export function Markets() {
     (m.baseAsset ?? "").toLowerCase().includes(search.toLowerCase())
   );
   const _localSymbols = new Set(_localFiltered.map((m: any) => m.symbol));
-  const filtered = search
+  const defaultFiltered = search
     ? [
         ..._localFiltered,
         ...serverSearchResults
@@ -502,6 +519,9 @@ export function Markets() {
           .map((m: any) => normalise(m)),
       ]
     : _localFiltered;
+  const filtered = catalogScope === "all"
+    ? allVenueCatalog.items.map((m: any) => normalise(m))
+    : defaultFiltered;
   const toggleStar = (symbol: string) =>
     setStars(prev => {
       const n = new Set(prev);
@@ -576,6 +596,37 @@ export function Markets() {
 
       {/* Header */}
       <div className="px-3 md:px-5 pt-0 pb-3 border-b border-border bg-card/40">
+          <div className="mt-2 flex items-center gap-2">
+            <div className="inline-flex items-center rounded-lg border border-border/70 bg-background/70 p-0.5">
+              <button
+                onClick={() => setCatalogScope("default")}
+                className={cn(
+                  "px-3 py-1 rounded-md text-xs font-bold transition-all",
+                  catalogScope === "default"
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Default
+              </button>
+              <button
+                onClick={() => setCatalogScope("all")}
+                className={cn(
+                  "px-3 py-1 rounded-md text-xs font-bold transition-all",
+                  catalogScope === "all"
+                    ? "bg-green-500 text-black shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                All venues
+              </button>
+            </div>
+            <span className="text-[11px] text-muted-foreground">
+              {catalogScope === "all"
+                ? `${allVenueCatalog.total.toLocaleString()} searchable pairs`
+                : "Fast curated markets"}
+            </span>
+          </div>
           {/* Main tabs — slim Poloniex-style with desktop scroll arrows */}
           <div className="mt-2 relative flex items-center gap-0">
             {/* Left arrow — desktop only */}
@@ -604,7 +655,12 @@ export function Markets() {
                 return (
                   <button
                     key={t.id}
-                    onClick={() => { setTab(t.id); setSearch(""); }}
+                    onClick={() => {
+                      const isQuoteTab = ["usd", "bsv", "btc", "eth", "bnb", "matic", "avax", "arb", "op", "ftm", "cro", "bch"].includes(t.id);
+                      setCatalogScope(isQuoteTab ? "all" : "default");
+                      setTab(t.id);
+                      setSearch("");
+                    }}
                     style={isBsv && !isActive ? { animation: "bsv-glow 2.5s ease-in-out infinite" } : undefined}
                     className={cn(
                       "shrink-0 flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-bold transition-all border",
@@ -633,7 +689,9 @@ export function Markets() {
                       : isFav || isBsv ? "bg-green-500/20 text-green-300"
                       : "bg-white/8 text-muted-foreground"
                     )}>
-                      {tabCount(t.id)}
+                      {isActive && catalogScope === "all"
+                        ? allVenueCatalog.total.toLocaleString()
+                        : tabCount(t.id)}
                     </span>
                   </button>
                 );
@@ -657,7 +715,9 @@ export function Markets() {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
                 type="text"
-                placeholder={`Search ${tab === "usd" ? usdSub : meta.label} pairs…`}
+                placeholder={catalogScope === "all"
+                  ? "Search every venue pair…"
+                  : `Search ${tab === "usd" ? usdSub : meta.label} pairs…`}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
@@ -668,7 +728,12 @@ export function Markets() {
 
           {/* Sub-rows: USD sub-tabs and mobile search */}
           <div className="flex items-center gap-2 mt-2 flex-wrap">
-            {tab === "usd" && (
+            {catalogScope === "all" && (
+              <span className="text-xs text-green-400 font-semibold">
+                Page {Math.floor(catalogOffset / 100) + 1} · live routing checked after selection
+              </span>
+            )}
+            {catalogScope === "default" && tab === "usd" && (
               <>
                 {USD_SUBS.map(s => (
                   <button
@@ -687,7 +752,7 @@ export function Markets() {
                 <span className="text-xs text-muted-foreground">· {tabCount("usd")} pairs</span>
               </>
             )}
-            {tab !== "usd" && (
+            {catalogScope === "default" && tab !== "usd" && (
               <span className="text-xs text-muted-foreground">
                 <span className={meta.color}>{filtered.length}</span> {meta.desc.split("·")[0].trim()} pairs
               </span>
@@ -697,7 +762,7 @@ export function Markets() {
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search…"
+                placeholder={catalogScope === "all" ? "All venues…" : "Search…"}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && e.preventDefault()}
@@ -769,9 +834,10 @@ export function Markets() {
                   const price = parseFloat(m.lastPrice) || 0;
                   const chg   = parseFloat(m.priceChangePercent24h) || 0;
                   const isUp  = chg >= 0;
-                  const tradeHref = tab === "futures"
+                  const isExternalOnly = !["spot", "futures"].includes(String((m as any).type ?? "spot"));
+                  const tradeHref = (m as any).type === "futures"
                     ? `/futures/${m.symbol.replace(/\//g, "-")}`
-                    : `/trade/${m.symbol.replace(/\//g, "-")}`;
+                    : `/trade/${m.symbol.replace(/\//g, "-")}${isExternalOnly ? "?mode=swap" : ""}`;
 
                   const priceUSD = toUSD(price, quote);
                   const btcCellVal = base === "BTC" ? "1 BTC" : fmtBTC(priceUSD);
@@ -803,6 +869,16 @@ export function Markets() {
                               )}
                               {tab === "new" && (
                                 <span className="text-[10px] font-bold bg-green-500/15 text-green-400 px-1.5 py-0.5 rounded border border-green-500/30">NEW</span>
+                              )}
+                              {catalogScope === "all" && (
+                                <span className={cn(
+                                  "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border",
+                                  isExternalOnly
+                                    ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
+                                    : "bg-green-500/10 text-green-400 border-green-500/30"
+                                )}>
+                                  {isExternalOnly ? String((m as any).type ?? "venue") : "native"}
+                                </span>
                               )}
                             </div>
                             {(() => {
@@ -884,13 +960,44 @@ export function Markets() {
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={12} className="py-16 text-center text-muted-foreground text-sm">
-                      {search ? `No results for "${search}"` : tab === "favorites" ? "Star pairs to see them here" : "Loading markets…"}
+                      {allVenueCatalog.loading
+                        ? "Loading all venues…"
+                        : search
+                          ? `No results for "${search}"`
+                          : tab === "favorites"
+                            ? "Star pairs to see them here"
+                            : "Loading markets…"}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          {catalogScope === "all" && (
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <span className="text-xs text-muted-foreground">
+                {allVenueCatalog.total === 0
+                  ? "No catalog pairs"
+                  : `${catalogOffset + 1}–${Math.min(catalogOffset + filtered.length, allVenueCatalog.total)} of ${allVenueCatalog.total.toLocaleString()}`}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCatalogOffset(v => Math.max(0, v - 100))}
+                  disabled={catalogOffset === 0 || allVenueCatalog.loading}
+                  className="px-3 py-1.5 rounded-lg border border-border text-xs font-bold disabled:opacity-40 hover:bg-white/5"
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={() => setCatalogOffset(v => v + 100)}
+                  disabled={!allVenueCatalog.hasMore || allVenueCatalog.loading}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-bold disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
           <p className="text-[11px] text-muted-foreground/50 mt-3 text-center">
             Live prices via CoinGecko · On-chain settlement via Bitcoin SV · 0.1% maker fee
           </p>
