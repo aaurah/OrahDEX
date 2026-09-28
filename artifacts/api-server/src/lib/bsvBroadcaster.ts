@@ -15,10 +15,9 @@
 
 import * as secp from "@noble/secp256k1";
 import crypto from "node:crypto";
-import { hash160, type Utxo } from "./bsvWallet.js";
+import { hash160, type Utxo, toSatoshiBigInt } from "./bsvWallet.js";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
-import { parseUnits } from "./money.js";
 import { arcBroadcast } from "./arcBroadcaster.js";
 
 const FEE_SAT  = BSV_NET.feeSat;
@@ -30,9 +29,9 @@ const HTLC_MIN_SAT = Math.max(1000, DUST_SAT + 1);
 function uint32LE(n: number): Buffer {
   const b = Buffer.alloc(4); b.writeUInt32LE(n, 0); return b;
 }
-function uint64LE(n: number): Buffer {
+function uint64LE(n: number | bigint | string): Buffer {
   const b = Buffer.alloc(8);
-  b.writeBigUInt64LE(BigInt(n), 0);
+  b.writeBigUInt64LE(toSatoshiBigInt(n), 0);
   return b;
 }
 function varint(n: number): Buffer {
@@ -78,7 +77,7 @@ function bip143Sighash(params: {
   inputIndex:  number;
   lockScript:  Buffer;   // scriptCode of the input being signed
   sequence:    number;
-  outputs:     Array<{ satoshis: number; script: Buffer }>;
+  outputs:     Array<{ satoshis: bigint; script: Buffer }>;
   locktime:    number;
   sigHashType: number;
 }): Buffer {
@@ -169,7 +168,7 @@ function p2pkhFromAddress(addr: string): Buffer {
 export interface P2SHSpendParams {
   fundingTxid:   string;   // HTLC UTXO txid
   fundingVout:   number;   // HTLC UTXO output index
-  fundingSat:    number;   // satoshis locked in the HTLC
+  fundingSat:    number | bigint | string; // satoshis locked in the HTLC
   scriptSigHex:  string;   // pre-built scriptSig (no ECDSA signing needed)
   outputAddress: string;   // recipient BSV P2PKH address
   feeSat?:       number;   // defaults to BSV_NET.feeSat
@@ -197,10 +196,10 @@ export async function broadcastP2SHSpend(params: P2SHSpendParams): Promise<P2SHS
   const fee      = params.feeSat   ?? FEE_SAT;
   const locktime = params.locktime ?? 0;
   const sequence = params.sequence ?? 0xffffffff;
-  const outSat   = fundingSat - fee;
+  const outSatRaw = toSatoshiBigInt(fundingSat) - BigInt(fee);
 
-  if (outSat <= DUST_SAT) {
-    const msg = `P2SH spend: output ${outSat} sat is at or below dust — skipping`;
+  if (outSatRaw <= BigInt(DUST_SAT)) {
+    const msg = `P2SH spend: output ${outSatRaw} sat is at or below dust — skipping`;
     logger.warn({ fundingSat, fee }, msg);
     return { success: false, txid: "", rawTxHex: "", broadcast: false, arcTxid: null, arcStatus: null, error: msg };
   }
@@ -224,7 +223,7 @@ export async function broadcastP2SHSpend(params: P2SHSpendParams): Promise<P2SHS
   ]);
 
   const outputBuf = Buffer.concat([
-    uint64LE(outSat),
+    uint64LE(outSatRaw),
     varint(outputScript.length),
     outputScript,
   ]);
@@ -289,8 +288,8 @@ export interface BroadcastResult {
 
 export async function broadcastSettlement(params: BroadcastParams): Promise<BroadcastResult> {
   const { privKeyHex, utxo, opReturnPayload, htlcP2SHScriptHex, htlcSatoshis } = params;
-  const utxoSat = Number(parseUnits(String((utxo as any).satoshis), 8));
-  if (!Number.isFinite(utxoSat) || utxoSat <= 0) throw new Error("Invalid UTXO satoshis");
+  const utxoSat = toSatoshiBigInt((utxo as any).satoshis);
+  if (utxoSat <= 0n) throw new Error("Invalid UTXO satoshis");
 
   const privKey = Buffer.from(privKeyHex, "hex");
   const pubKey  = Buffer.from(secp.getPublicKey(privKey, true));  // 33-byte compressed
@@ -301,22 +300,22 @@ export async function broadcastSettlement(params: BroadcastParams): Promise<Broa
   const payload     = Buffer.from(opReturnPayload, "utf8");
   const opRetScript = opReturnScript(payload);
 
-  const outputs: Array<{ satoshis: number; script: Buffer }> = [
-    { satoshis: 0, script: opRetScript },  // Output 0: OP_RETURN audit record (data carrier)
+  const outputs: Array<{ satoshis: bigint; script: Buffer }> = [
+    { satoshis: 0n, script: opRetScript },  // Output 0: OP_RETURN audit record (data carrier)
   ];
 
   // Output 1 (optional): P2SH HTLC locking script for cross-chain trade commitment.
   // P0 fix: the HTLC must lock the EXACT BSV trade value, never a nominal dust amount.
-  let htlcLockSat = 0;
+  let htlcLockSat = 0n;
   if (htlcP2SHScriptHex) {
     if (htlcSatoshis == null) {
       throw new Error("BSV HTLC amount not bound to trade value: htlcSatoshis is required");
     }
-    htlcLockSat = Number(parseUnits(String(htlcSatoshis), 8));
-    if (htlcLockSat < HTLC_MIN_SAT) {
+    htlcLockSat = toSatoshiBigInt(htlcSatoshis);
+    if (htlcLockSat < BigInt(HTLC_MIN_SAT)) {
       throw new Error(`BSV HTLC amount below minimum: ${htlcLockSat} < ${HTLC_MIN_SAT}`);
     }
-    const maxHtlcSat = utxoSat - FEE_SAT - DUST_SAT;
+    const maxHtlcSat = utxoSat - BigInt(FEE_SAT) - BigInt(DUST_SAT);
     if (htlcLockSat > maxHtlcSat) {
       throw new Error(`UTXO cannot fund BSV HTLC amount ${htlcLockSat}; max fundable is ${maxHtlcSat}. Coin selection required.`);
     }
@@ -326,8 +325,8 @@ export async function broadcastSettlement(params: BroadcastParams): Promise<Broa
 
   // Output N (change): remainder back to settlement wallet (if above dust)
   const htlcDeduct = htlcLockSat;
-  const changeSat  = utxoSat - FEE_SAT - htlcDeduct;
-  if (changeSat > DUST_SAT) {
+  const changeSat = utxoSat - BigInt(FEE_SAT) - htlcDeduct;
+  if (changeSat > BigInt(DUST_SAT)) {
     outputs.push({ satoshis: changeSat, script: p2pkhScript(h160) });
   }
 
