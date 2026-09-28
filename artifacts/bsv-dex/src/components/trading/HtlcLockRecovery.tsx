@@ -106,7 +106,7 @@ export function HtlcLockRecovery({ chainId }: { chainId?: number }) {
     // Path 2: injected wallet (MetaMask, Coinbase Wallet, etc.) — use window.ethereum
     const eth = (window as any).ethereum;
     if (!eth) {
-      setError("No wallet detected. Connect via 'EVM Wallets' first, or install MetaMask.");
+      setError("No EVM signer detected. Open in Chrome with MetaMask or connect via 'EVM Wallets'; the app profile alone cannot send the refund transaction.");
       return;
     }
     setFallbackSending(true);
@@ -243,7 +243,7 @@ export function HtlcLockRecovery({ chainId }: { chainId?: number }) {
               <span>
                 Refund submitted — waiting for on-chain confirmation.{" "}
                 <a
-                  href={`https://etherscan.io/tx/${fallbackTxHash}`}
+                  href={`${info.chainId === 11155111 ? "https://sepolia.etherscan.io/tx/" : "https://etherscan.io/tx/"}${fallbackTxHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="underline opacity-70 hover:opacity-100"
