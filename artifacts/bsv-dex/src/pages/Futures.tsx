@@ -253,7 +253,7 @@ export function FuturesTrading() {
     return () => clearInterval(t);
   }, [address, fetchPositions]);
 
-  const handleClosePosition = async (positionId: string, markPrice: number) => {
+  const handleClosePosition = async (positionId: string, markPrice: string) => {
     if (!address) return;
     setClosingPositionId(positionId);
     try {
@@ -338,7 +338,7 @@ export function FuturesTrading() {
     setFuturesSubmitting(true);
     try {
       const futuresSide = side === "buy" ? "long" : "short";
-      const futuresQty = parseFloat(size);
+      const futuresQty = size;
       const openAuth = await signFuturesChallengeIfNeeded({
         walletAddress: address,
         network,
@@ -354,7 +354,7 @@ export function FuturesTrading() {
           side: futuresSide,
           leverage,
           quantity: futuresQty,
-          price: orderType !== "market" && price ? parseFloat(price) : undefined,
+          price: orderType !== "market" && price ? price : undefined,
           orderType: orderType === "stop" ? "limit" : orderType,
           marginMode,
           nonce: openAuth.nonce,
@@ -611,7 +611,7 @@ export function FuturesTrading() {
                       <tbody className="divide-y divide-border">
                         {positions.map((p: any) => {
                           const pnl = parseFloat(p.unrealizedPnl ?? "0");
-                          const mark = parseFloat(p.markPrice);
+                          const mark = String(p.markPrice);
                           const isClosing = closingPositionId === p.id;
                           return (
                             <tr key={p.id} className="hover:bg-white/5 transition-colors">
