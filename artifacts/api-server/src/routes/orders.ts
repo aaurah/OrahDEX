@@ -12,7 +12,7 @@ import { getCachedQuote } from "../lib/routeCache.js";
 import { unlockFunds, getBalances } from "../lib/ledger.js";
 import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
 import { settleSpotFill }        from "../lib/spotSettlement.js";
-import { parseUnits, formatUnits, mulPriceQty } from "../lib/money.js";
+import { parseUnits, formatUnits, mulPriceQty, mulDiv, pow10 } from "../lib/money.js";
 import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
 import { settleEscrowMatch, isEscrowChain, findEscrowChain, ESCROW_ADDRESSES } from "../lib/escrowRelayer.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
@@ -687,8 +687,11 @@ router.post("/orders", async (req, res) => {
       // This correctly handles large orders that span multiple counter-orders,
       // and does partial consumption of bot orders (instead of deleting the
       // entire bot order when only a fraction of it is needed).
-      let remainingQty   = quantity;
-      // totalFilled / totalFillValue are hoisted to outer scope (see above)
+      const LEDGER_DECIMALS = 18;
+      let remainingQty = quantity;
+      let remainingQtyRawTotal = parseUnits(quantity.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS);
+      let totalFilledRaw = 0n;
+      let totalFillValueRaw = 0n;
       let lastFillPrice  = 0;
       let lastTxid: string | null = null;
       let lastMatchId: string | null = null;
@@ -701,13 +704,11 @@ router.post("/orders", async (req, res) => {
         // Use remainingQuantity directly — it is always kept up-to-date by
         // prior partial fills, so we must NOT subtract filledQuantity again
         // (that would double-count and produce negative availability).
-        const LEDGER_DECIMALS = 18;
         const matchAvailRaw = parseUnits(match.remainingQuantity ?? match.quantity, LEDGER_DECIMALS);
         if (matchAvailRaw <= 0n) continue;
         const matchAvail = parseFloat(formatUnits(matchAvailRaw, LEDGER_DECIMALS));
 
-        const remainingQtyRaw = parseUnits(remainingQty.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS);
-        const fillQtyRaw = remainingQtyRaw < matchAvailRaw ? remainingQtyRaw : matchAvailRaw;
+        const fillQtyRaw = remainingQtyRawTotal < matchAvailRaw ? remainingQtyRawTotal : matchAvailRaw;
         const fillPriceRaw = match.price
           ? parseUnits(match.price, LEDGER_DECIMALS)
           : price
@@ -958,10 +959,13 @@ router.post("/orders", async (req, res) => {
           }
         }
 
-        totalFilled    += fillQty;
+        totalFilled += fillQty;
         totalFillValue += fillValue;
-        remainingQty   -= fillQty;
-        lastFillPrice   = fillPrice;
+        remainingQty -= fillQty;
+        totalFilledRaw += fillQtyRaw;
+        totalFillValueRaw += fillValueRaw;
+        remainingQtyRawTotal -= fillQtyRaw;
+        lastFillPrice = fillPrice;
         lastTxid        = broadcastTxid;
         lastMatchId     = match.id;
         settlementTxid  = broadcastTxid;
@@ -1285,35 +1289,40 @@ router.post("/orders", async (req, res) => {
       // in the locked column until we explicitly release it here.
       if (
         side === "buy" && type === "market" &&
-        remainingQty <= 0.000001 && totalFilled > 0 && parseFloat(lockAmount) > 0
+        remainingQtyRawTotal === 0n && totalFilledRaw > 0n && parseUnits(lockAmount, LEDGER_DECIMALS) > 0n
       ) {
-        const actualCost = totalFillValue;
-        const excess = parseFloat(lockAmount) - actualCost;
-        if (excess > 1e-9 && lockAsset) {
+        const lockAmountRaw = parseUnits(lockAmount, LEDGER_DECIMALS);
+        const excessRaw = lockAmountRaw - totalFillValueRaw;
+        if (excessRaw > 0n && lockAsset) {
           try {
-            await unlockFunds({ walletAddress: body.walletAddress, asset: lockAsset!, amount: excess.toFixed(18) });
+            await unlockFunds({
+              walletAddress: body.walletAddress,
+              asset: lockAsset!,
+              amount: formatUnits(excessRaw, LEDGER_DECIMALS),
+            });
           } catch (excessErr: any) {
             req.log.warn({ excessErr: excessErr?.message }, "orders: failed to release market-buy slippage buffer excess");
           }
         }
       }
 
-      if (totalFilled > 0) {
-        // ── Mark the user's order with actual fill amount ─────────────────
-        const avgFillPrice    = totalFillValue / totalFilled;
-        const isFullyFilled   = remainingQty <= 0.000001;
-        const correctFee      = (totalFillValue * feeRate).toFixed(18);
-        // Record exchange revenue from the order book fill fee
+      if (totalFilledRaw > 0n) {
+        const avgFillPriceRaw = mulDiv(totalFillValueRaw, 1n, totalFilledRaw, "floor");
+        const feeFractionRaw = parseUnits(feeRate.toString(), LEDGER_DECIMALS);
+        const correctFeeRaw = mulDiv(totalFillValueRaw, feeFractionRaw, pow10(LEDGER_DECIMALS), "ceil");
+        const correctFee = formatUnits(correctFeeRaw, LEDGER_DECIMALS);
+        const isFullyFilled = remainingQtyRawTotal === 0n;
+
         const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
         recordPlatformFee({ source: "orderbook", amount: correctFee, asset: feeAssetSymbol, txRef: id });
 
         await db.update(ordersTable)
           .set({
             status:            isFullyFilled ? "filled" : "open",
-            filledQuantity:    totalFilled.toFixed(18),
-            remainingQuantity: Math.max(0, remainingQty).toFixed(18),
-            price:             (isMarket || isStopTriggered) ? avgFillPrice.toFixed(18) : undefined,
-            total:             totalFillValue.toFixed(18),
+            filledQuantity:    formatUnits(totalFilledRaw, LEDGER_DECIMALS),
+            remainingQuantity: formatUnits(remainingQtyRawTotal < 0n ? 0n : remainingQtyRawTotal, LEDGER_DECIMALS),
+            price:             (isMarket || isStopTriggered) ? formatUnits(avgFillPriceRaw, LEDGER_DECIMALS) : undefined,
+            total:             formatUnits(totalFillValueRaw, LEDGER_DECIMALS),
             fee:               correctFee,
             txid:              lastTxid,
             matchedOrderId:    lastMatchId,
@@ -1321,13 +1330,14 @@ router.post("/orders", async (req, res) => {
           })
           .where(eq(ordersTable.id, id));
 
-        /* Push order-filled notification */
         const fillSymbol = symbol;
-        const fillBase   = fillSymbol.split("/")[0];
+        const fillBase = fillSymbol.split("/")[0];
+        const totalFilledText = formatUnits(totalFilledRaw, LEDGER_DECIMALS);
+        const avgFillPriceText = formatUnits(avgFillPriceRaw, LEDGER_DECIMALS);
         pushNotification(body.walletAddress, {
           type:  isFullyFilled ? "order_filled" : "order_partial",
-          title: isFullyFilled ? "Order Filled ✓" : `Partial Fill — ${totalFilled.toFixed(4)} ${fillBase}`,
-          body:  `${totalFilled.toFixed(4)} ${fillBase} @ $${avgFillPrice.toFixed(4)} avg · BSV settled on-chain`,
+          title: isFullyFilled ? "Order Filled ✓" : `Partial Fill — ${totalFilledText} ${fillBase}`,
+          body:  `${totalFilledText} ${fillBase} @ $${avgFillPriceText} avg · BSV settled on-chain`,
           pair:  fillSymbol,
           txid:  lastTxid ?? undefined,
           side,
