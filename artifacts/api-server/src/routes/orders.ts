@@ -1342,6 +1342,12 @@ router.post("/orders", async (req, res) => {
           txid:  lastTxid ?? undefined,
           side,
         });
+      } else {
+        // No fill occurred — release the incoming-order claim so the order remains
+        // visible as open/cancelable instead of stuck in pending.
+        await db.update(ordersTable)
+          .set({ status: "open", updatedAt: new Date() })
+          .where(and(eq(ordersTable.id, id), eq(ordersTable.status, "pending")));
       }
     }
 
