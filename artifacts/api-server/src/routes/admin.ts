@@ -9,6 +9,7 @@ import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tra
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
 import { invalidateSzKeyCache } from "../lib/swapzone.js";
+import { invalidateLetsExchangeCredentialCache } from "../lib/lePriceCache.js";
 import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
@@ -1374,6 +1375,7 @@ router.put("/integrations", async (req, res) => {
     }
     if ("changenow_api_key" in updates) invalidateCnKeyCache();
     if ("swapzone_api_key"  in updates) invalidateSzKeyCache();
+    if ("letsexchange_api_key" in updates) invalidateLetsExchangeCredentialCache();
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: "Failed to save integrations" });

@@ -14,9 +14,10 @@
  */
 
 import { logger } from "./logger.js";
+import { pool } from "@workspace/db";
 
 const LE_BASE      = "https://api.letsexchange.io/api";
-const API_KEY      = process.env.LETSEXCHANGE_API_KEY ?? "";
+let API_KEY        = (process.env.LETSEXCHANGE_API_KEY ?? "").trim();
 const LE_PRICES_TTL = 10 * 60 * 1000; // 10 minutes
 
 export interface NormalisedCoin {
@@ -31,17 +32,60 @@ export interface NormalisedCoin {
 }
 
 // ── Affiliate ID extraction ────────────────────────────────────────────────────
-function getAffiliateId(): string {
-  if (!API_KEY) return "";
+function getAffiliateId(apiKey: string): string {
+  if (!apiKey) return "";
   try {
-    const parts = API_KEY.split(".");
+    const parts = apiKey.split(".");
     if (parts.length < 2) return "";
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
     const id = payload?.data?.id ?? payload?.sub ?? "";
     return String(id);
   } catch { return ""; }
 }
-export const AFFILIATE_ID = getAffiliateId();
+export let AFFILIATE_ID = getAffiliateId(API_KEY);
+
+let credentialCheckedAt = API_KEY ? Date.now() : 0;
+const CREDENTIAL_TTL = 5 * 60 * 1000;
+
+/**
+ * The admin integrations screen stores provider credentials in platform_settings.
+ * Resolve that value when no Replit Secret is present so the saved integration is
+ * actually used by catalog, quote, and transaction requests.
+ */
+async function ensureLeCredentials(): Promise<boolean> {
+  const envKey = (process.env.LETSEXCHANGE_API_KEY ?? "").trim();
+  if (envKey && envKey !== API_KEY) {
+    API_KEY = envKey;
+    AFFILIATE_ID = getAffiliateId(API_KEY);
+    credentialCheckedAt = Date.now();
+    return true;
+  }
+  if (API_KEY || Date.now() - credentialCheckedAt < CREDENTIAL_TTL) return !!API_KEY;
+  credentialCheckedAt = Date.now();
+  try {
+    const result = await pool.query<{ value: string }>(
+      `SELECT value FROM platform_settings WHERE key = 'letsexchange_api_key' LIMIT 1`,
+    );
+    const dbKey = (result.rows[0]?.value ?? "").trim();
+    if (dbKey) {
+      API_KEY = dbKey;
+      AFFILIATE_ID = getAffiliateId(API_KEY);
+    }
+  } catch (err) {
+    logger.warn({ err }, "LetsExchange credential lookup failed");
+  }
+  return !!API_KEY;
+}
+
+export async function isLetsExchangeConfigured(): Promise<boolean> {
+  return ensureLeCredentials();
+}
+
+export function invalidateLetsExchangeCredentialCache(): void {
+  if (!process.env.LETSEXCHANGE_API_KEY) API_KEY = "";
+  AFFILIATE_ID = getAffiliateId(API_KEY);
+  credentialCheckedAt = 0;
+}
 
 // ── Shared in-memory cache ─────────────────────────────────────────────────────
 interface CacheEntry { data: Record<string, number>; ts: number }
@@ -59,7 +103,19 @@ export async function leRequest(
   method: "GET" | "POST" = "GET",
   body?: unknown,
 ): Promise<{ ok: boolean; status: number; data: unknown }> {
-  const url  = `${LE_BASE}${path}`;
+  await ensureLeCredentials();
+  const parsed = new URL(`${LE_BASE}${path}`);
+  const pathname = parsed.pathname.replace("/api", "");
+
+  // Official v1/v2 coin-list endpoints require affiliate_id and return the
+  // complete list as a single array; they do not support limit/offset paging.
+  const isCoinList = method === "GET" && /^\/v[12]\/coins$/.test(pathname);
+  if (isCoinList && AFFILIATE_ID) {
+    parsed.searchParams.set("affiliate_id", AFFILIATE_ID);
+    parsed.searchParams.delete("limit");
+    parsed.searchParams.delete("offset");
+  }
+  let url = parsed.toString();
 
   // SSRF guard: verify the URL stays within the hardcoded API base.
   if (!url.startsWith(LE_BASE + "/")) {
@@ -72,10 +128,33 @@ export async function leRequest(
   };
   if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`;
   const opts: RequestInit = { method, headers, signal: AbortSignal.timeout(15_000) };
-  if (body && method === "POST") opts.body = JSON.stringify(body);
-  const res = await fetch(url, opts);
+  if (body && method === "POST") {
+    const requestBody = (
+      AFFILIATE_ID &&
+      typeof body === "object" &&
+      body !== null &&
+      !Array.isArray(body) &&
+      !("affiliate_id" in body)
+    ) ? { ...(body as Record<string, unknown>), affiliate_id: AFFILIATE_ID } : body;
+    opts.body = JSON.stringify(requestBody);
+  }
+  let res = await fetch(url, opts);
   let data: unknown;
   try { data = await res.json(); } catch { data = null; }
+
+  // LetsExchange currently returns HTTP 500 when affiliate_id is present on
+  // coin-list calls, despite documenting it as required, while the same
+  // authenticated request without that query parameter returns the full list.
+  // Try the documented form first and narrowly retry only this provider fault.
+  if (isCoinList && parsed.searchParams.has("affiliate_id") && res.status >= 500) {
+    parsed.searchParams.delete("affiliate_id");
+    url = parsed.toString();
+    res = await fetch(url, { ...opts, signal: AbortSignal.timeout(15_000) });
+    try { data = await res.json(); } catch { data = null; }
+    if (res.ok) {
+      logger.warn({ path: pathname }, "LE coin catalog required compatibility retry without affiliate_id");
+    }
+  }
   return { ok: res.ok, status: res.status, data };
 }
 
@@ -295,7 +374,7 @@ export async function fetchLEKeyPricesIfNeeded(): Promise<Record<string, number>
 // Fetches the full LE coin list and pre-populates the price cache.
 // Called once at server start — non-blocking (fire and forget).
 export async function warmLEPriceCache(): Promise<void> {
-  if (!API_KEY) return;
+  if (!(await ensureLeCredentials())) return;
   try {
     const res = await leRequest("/v2/coins");
     if (!res.ok || !Array.isArray(res.data)) return;

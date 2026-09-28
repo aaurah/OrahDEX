@@ -93,9 +93,10 @@ export async function quoteFromSSPair(
   from:   string,
   to:     string,
   amount: number,
+  providerTickers?: { from?: string; to?: string },
 ): Promise<{ estimatedAmount: number; minAmount: number | null; maxAmount: number | null } | null> {
-  const tickerFrom = toSsTicker(from);
-  const tickerTo   = toSsTicker(to);
+  const tickerFrom = providerTickers?.from?.trim().toLowerCase() || toSsTicker(from);
+  const tickerTo   = providerTickers?.to?.trim().toLowerCase() || toSsTicker(to);
 
   const [estimateRes, rangeRes] = await Promise.all([
     ssRequest("/get_estimated", { fixed: false, currency_from: tickerFrom, currency_to: tickerTo, amount }),
@@ -151,9 +152,11 @@ export async function createSsExchangePair(args: {
   amount:     number;
   address:    string;
   extraId?:   string;
+  providerTickerFrom?: string;
+  providerTickerTo?:   string;
 }): Promise<{ ok: true; exchange: SsExchange } | { ok: false; error: string }> {
-  const tickerFrom = toSsTicker(args.from);
-  const tickerTo   = toSsTicker(args.to);
+  const tickerFrom = args.providerTickerFrom?.trim().toLowerCase() || toSsTicker(args.from);
+  const tickerTo   = args.providerTickerTo?.trim().toLowerCase() || toSsTicker(args.to);
 
   const body = {
     fixed:                false,

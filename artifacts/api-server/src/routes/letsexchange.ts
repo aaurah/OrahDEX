@@ -25,6 +25,7 @@ import { marketsTable, leSwapsTable } from "@workspace/db/schema";
 import { eq, and, ne, inArray, sql } from "drizzle-orm";
 import {
   leRequest, fetchLEPricesUSD, getCachedLEPrices, fetchLEKeyPricesIfNeeded, AFFILIATE_ID,
+  isLetsExchangeConfigured,
   type NormalisedCoin,
 } from "../lib/lePriceCache.js";
 import { getCoinChangeMap } from "../lib/priceUpdater.js";
@@ -32,7 +33,7 @@ import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
 import { getBestExternalQuote, type ExternalVenue } from "../lib/metaRouter.js";
 import { createCNExchange, getCNExchange } from "../lib/changenow.js";
 import { createSXExchange, getSXExchange } from "../lib/stealthex.js";
-import { createSsExchangePair, getSsExchange, fetchSSCurrencies } from "../lib/simpleswap.js";
+import { createSsExchangePair, getSsExchange, fetchSSCurrencies, quoteFromSSPair } from "../lib/simpleswap.js";
 import { createChangellyExchange, getChangellyExchange, isChangellyConfigured } from "../lib/changelly.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 
@@ -88,9 +89,6 @@ let currenciesInflight: Promise<NormalisedCoin[]> | null = null;
 // first load; stale data is served silently while a background refresh runs.
 let leCurrenciesBackup: NormalisedCoin[] | null = null;
 
-// Guard: only one background pagination run at a time.
-let currenciesBgFetchActive = false;
-
 // Stale-backup for SS pairs: once successfully built, kept forever so pairs
 // never vanish from the list if the SS API is temporarily down.
 // Only the admin hidden-pairs list can suppress individual symbols.
@@ -125,63 +123,19 @@ export function clearSwapCaches(): void {
   logger.info("swap caches cleared (LE currencies + SS pairs)");
 }
 
-// ── Paginated background fetch ─────────────────────────────────────────────────
-// After the first page is cached (fast path, serves the route within 5 s),
-// this function fetches all remaining pages from the LE /v2/coins endpoint and
-// extends the cache so the full 6 000+ coin list becomes available.
-// It runs fire-and-forget; errors are non-fatal.
-async function fetchRemainingCurrencyPages(
-  firstPage: unknown[],
-  metaMap: Map<string, string>,
-): Promise<void> {
-  try {
-    const PAGE = 1000;
-    const all: unknown[] = [...firstPage];
-    let offset = PAGE;
-
-    for (let p = 1; p < 20; p++) { // max 20 pages × 1 000 = 20 000 coins
-      const { ok, data } = await leRequest(`/v2/coins?limit=${PAGE}&offset=${offset}`);
-      if (!ok) break;
-      const page = Array.isArray(data) ? data : [];
-      if (!page.length) break;
-      all.push(...page);
-      offset += PAGE;
-      if (page.length < PAGE) break; // last page — stop
-    }
-
-    if (all.length > firstPage.length) {
-      const raw = normaliseV2Coins(all);
-      const coins = raw.map(c => ({
-        ...c,
-        image: c.image ?? metaMap.get(c.symbol.toUpperCase()) ?? null,
-      }));
-      setCache("currencies", coins);
-      leCurrenciesBackup = coins;
-      logger.info(
-        { total: coins.length, rawCoins: all.length, pages: Math.ceil(offset / PAGE) },
-        "LE coins: full paginated fetch complete",
-      );
-    }
-  } catch (err) {
-    logger.warn({ err }, "LE coins background pagination error (non-fatal)");
-  } finally {
-    currenciesBgFetchActive = false;
-  }
-}
-
 async function fetchAndCacheCurrencies(): Promise<NormalisedCoin[]> {
   if (currenciesInflight) return currenciesInflight;
   currenciesInflight = (async () => {
     try {
-      // Phase 1 — fast first-page fetch (completes in ~1–2 s, within the
-      // route's 5 s race window).  Request 1 000 coins to maximise the first
-      // response without blowing the timeout.
-      const { ok, data, status } = await leRequest("/v2/coins?limit=1000");
+      // Per the official API contract this is a complete, non-paginated array.
+      // leRequest injects the required affiliate_id query parameter.
+      const { ok, data, status } = await leRequest("/v2/coins");
       if (!ok) throw new Error(`LE /v2/coins returned ${status}`);
-      const firstPage = Array.isArray(data) ? data : [];
+      const fullCatalog = Array.isArray(data) ? data : [];
+      if (fullCatalog.length === 0) throw new Error("LE /v2/coins returned an empty catalog");
 
       const metaMap = await loadCoinMetaMap();
-      const raw = normaliseV2Coins(firstPage);
+      const raw = normaliseV2Coins(fullCatalog);
       const coins = raw.map(c => ({
         ...c,
         image: c.image ?? metaMap.get(c.symbol.toUpperCase()) ?? null,
@@ -189,15 +143,10 @@ async function fetchAndCacheCurrencies(): Promise<NormalisedCoin[]> {
       setCache("currencies", coins);
       leCurrenciesBackup = coins; // persist beyond TTL — never go back to built-in fallback
 
-      // Phase 2 — if the first page was full, more pages exist (LE has 6 000+
-      // coins).  Kick off a background fetch for the remaining pages so the
-      // full list is available within ~30–60 s of startup without blocking
-      // the route response.
-      if (firstPage.length >= 1000 && !currenciesBgFetchActive) {
-        currenciesBgFetchActive = true;
-        fetchRemainingCurrencyPages(firstPage, metaMap); // fire-and-forget
-      }
-
+      logger.info(
+        { assets: fullCatalog.length, networkVariants: coins.length },
+        "LE full coin catalog loaded",
+      );
       return coins;
     } finally {
       currenciesInflight = null;
@@ -281,14 +230,14 @@ router.get("/letsexchange/currencies", async (_req, res) => {
   if (leCurrenciesBackup && leCurrenciesBackup.length > 0) {
     res.json(leCurrenciesBackup);
     // Background refresh so next request gets a fresh TTL entry
-    if (process.env.LETSEXCHANGE_API_KEY) {
+    if (await isLetsExchangeConfigured()) {
       fetchAndCacheCurrencies().catch(() => { /* silent — backup still valid */ });
     }
     return;
   }
 
   // 3. True cold-start (first boot, no backup yet) — try live data within 12 s.
-  if (process.env.LETSEXCHANGE_API_KEY) {
+  if (await isLetsExchangeConfigured()) {
     try {
       if (!_timedCurrencyRace) {
         _timedCurrencyRace = Promise.race([
@@ -626,6 +575,61 @@ router.get("/letsexchange/pairs", async (req, res) => {
   res.json(result);
 });
 
+const SS_TO_CANONICAL: Record<string, string> = {
+  usdterc20: "USDT", usdttrc20: "USDT", usdtbsc: "USDT", usdtsol: "USDT",
+  usdtmatic: "USDT", usdtton: "USDT", usdtop: "USDT", usdtarb: "USDT",
+  usdtavax: "USDT", usdtalgo: "USDT", usdtkava: "USDT", usdtcelo: "USDT",
+  usdcerc20: "USDC", usdcbsc: "USDC", usdcsol: "USDC", usdcmatic: "USDC",
+  usdcop: "USDC", usdcarb: "USDC", usdcbase: "USDC", usdcavax: "USDC",
+  usdcton: "USDC", "bnb-bsc": "BNB", bnbbsc: "BNB", pol: "MATIC",
+  avaxc: "AVAX", etharb: "ETH", ethop: "ETH", ethbase: "ETH",
+  ethlinea: "ETH", ethscroll: "ETH", ethbsc: "ETH",
+  wbtcerc20: "WBTC", wbtcbsc: "WBTC", daierc20: "DAI", daibsc: "DAI",
+  daimatic: "DAI", daiarb: "DAI", linkbsc: "LINK", unibsc: "UNI",
+};
+
+function normalizeSsSymbol(ticker: string): string | null {
+  if (!ticker) return null;
+  const mapped = SS_TO_CANONICAL[ticker.toLowerCase()];
+  if (mapped) return mapped;
+  const cleaned = ticker.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return cleaned.length >= 1 && cleaned.length <= 12 ? cleaned : null;
+}
+
+// ── GET /api/simpleswap/currencies ────────────────────────────────────────────
+// Keeps every provider ticker/network variant so picker selections can route
+// back to the exact SimpleSwap asset rather than guessing from a display symbol.
+router.get("/simpleswap/currencies", async (_req, res) => {
+  const cacheKey = "ss_currencies_v1";
+  let items = cached(cacheKey, 5 * 60 * 1000) as Record<string, unknown>[] | null;
+  if (!items) {
+    const currencies = await fetchSSCurrencies();
+    items = currencies.flatMap(c => {
+      const symbol = normalizeSsSymbol(c.symbol);
+      if (!symbol) return [];
+      return [{
+        symbol,
+        name: c.name || symbol,
+        network: c.network,
+        networkName: c.network,
+        image: c.image,
+        hasExtraId: c.hasExtraId,
+        minAmount: null,
+        maxAmount: null,
+        provider: "simpleswap",
+        providerTicker: c.symbol.toLowerCase(),
+      }];
+    });
+    if (items.length > 0) setCache(cacheKey, items);
+  }
+  if (!items.length) {
+    res.status(503).json({ error: "SimpleSwap currencies unavailable" });
+    return;
+  }
+  res.set("Cache-Control", "public, max-age=60");
+  res.json(items);
+});
+
 // ── GET /api/simpleswap/pairs ─────────────────────────────────────────────────
 // Returns all SimpleSwap coins expressed as OrahDEX pair objects using the same
 // quote currencies as the LE pairs endpoint.  Deduplication against LE happens
@@ -661,8 +665,8 @@ router.get("/simpleswap/pairs", async (req, res) => {
     return cleaned;
   }
 
-  const SS_PAIRS_TTL = 60 * 60 * 1000; // 1 hour
-  const cacheKey = "ss_pairs_v1";
+  const SS_PAIRS_TTL = 5 * 60 * 1000;
+  const cacheKey = "ss_pairs_v2";
   let builtPairs = cached(cacheKey, SS_PAIRS_TTL) as Record<string, unknown>[] | null;
 
   if (!builtPairs) {
@@ -702,12 +706,12 @@ router.get("/simpleswap/pairs", async (req, res) => {
     const currencies = await fetchSSCurrencies();
     if (currencies.length > 0) {
       const seenSymbols = new Set<string>();
-      const uniqueCoins: { symbol: string; name: string; network: string | null; image: string | null; hasExtraId: boolean }[] = [];
+      const uniqueCoins: { symbol: string; providerTicker: string; name: string; network: string | null; image: string | null; hasExtraId: boolean }[] = [];
       for (const c of currencies) {
         const sym = normalizeSsSymbol(c.symbol);
         if (!sym || seenSymbols.has(sym)) continue;
         seenSymbols.add(sym);
-        uniqueCoins.push({ symbol: sym, name: c.name, network: c.network, image: c.image, hasExtraId: c.hasExtraId });
+        uniqueCoins.push({ symbol: sym, providerTicker: c.symbol.toLowerCase(), name: c.name, network: c.network, image: c.image, hasExtraId: c.hasExtraId });
       }
       const QUOTES_SET = new Set(LE_PAIR_QUOTES);
       for (const coin of uniqueCoins) {
@@ -719,6 +723,7 @@ router.get("/simpleswap/pairs", async (req, res) => {
           mergeMap.set(sym, {
             ...(existing ?? {}),
             symbol: sym, baseAsset: coin.symbol, quoteAsset: q,
+            providerTicker: coin.providerTicker,
             network: coin.network, networkName: null, image: coin.image,
             hasExtraId: coin.hasExtraId, minAmount: null, maxAmount: null,
             lastPrice:             (existing?.lastPrice as number) || 0,
@@ -972,6 +977,50 @@ router.post("/letsexchange/estimate", async (req, res) => {
       blacklistVenues: ALL_VENUES.filter(v => v !== forceVenueRaw),
     } : undefined;
 
+    // A SimpleSwap catalog selection carries the exact provider ticker. Keep
+    // that identity through quoting instead of remapping from a canonical symbol.
+    if (forceVenueRaw === "simpleswap") {
+      const providerTickerFrom = typeof body.provider_ticker_from === "string" ? body.provider_ticker_from : undefined;
+      const providerTickerTo = typeof body.provider_ticker_to === "string" ? body.provider_ticker_to : undefined;
+      const ss = await quoteFromSSPair(from, to, amt, { from: providerTickerFrom, to: providerTickerTo });
+      if (!ss) {
+        res.status(503).json({ error: `SimpleSwap has no live rate for ${from}→${to}` });
+        return;
+      }
+      if (ss.minAmount != null && amt < ss.minAmount) {
+        res.status(422).json({
+          error: "below_minimum",
+          min_amount: String(ss.minAmount),
+          pair_supported: true,
+        });
+        return;
+      }
+      if (ss.maxAmount != null && amt > ss.maxAmount) {
+        res.status(422).json({ error: "above_maximum", max_amount: String(ss.maxAmount), pair_supported: true });
+        return;
+      }
+      const rate = ss.estimatedAmount / amt;
+      res.json({
+        amount: String(ss.estimatedAmount),
+        rate: String(rate),
+        min_amount: ss.minAmount != null ? String(ss.minAmount) : "",
+        max_amount: ss.maxAmount != null ? String(ss.maxAmount) : "",
+        rate_id: null,
+        rate_id_expired_at: null,
+        withdrawal_fee: "0",
+        best_venue: "simpleswap",
+        venue_quotes: [{
+          venue: "simpleswap",
+          rate: String(rate),
+          output: String(ss.estimatedAmount),
+          minAmount: ss.minAmount != null ? String(ss.minAmount) : null,
+          maxAmount: ss.maxAmount != null ? String(ss.maxAmount) : null,
+          canExecute: true,
+        }],
+      });
+      return;
+    }
+
     const { best, all, errors, lowestMin } = await getBestExternalQuote(from, to, amt, inUsd, outUsd, routePrefs);
     if (!best) {
       const errDetails = Object.entries(errors)
@@ -1021,7 +1070,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
     // For LetsExchange winner: fetch rate_id for optional fixed-rate locking
     let rate_id: string | null = null;
     let rate_id_expired_at: string | null = null;
-    if (best.venue === "letsexchange" && process.env.LETSEXCHANGE_API_KEY) {
+    if (best.venue === "letsexchange" && await isLetsExchangeConfigured()) {
       try {
         const leBody: Record<string, unknown> = {
           from, to, network_from, network_to, amount: amt,
@@ -1099,6 +1148,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
     return: refund, return_extra_id,
     rate_id, float: isFloat, email,
     best_venue: rawBestVenue,
+    provider_ticker_from, provider_ticker_to,
   } = req.body ?? {};
 
   if (!coin_from || !coin_to || !network_from || !network_to || !deposit_amount || !withdrawal) {
@@ -1122,10 +1172,10 @@ router.post("/letsexchange/exchange", async (req, res) => {
     // Try the winning venue first; on any failure fall through to the next in
     // priority order so a single-venue outage never blocks the whole flow.
     const VENUE_PRIORITY = ["changenow", "stealthex", "simpleswap", "changelly", "letsexchange"] as const;
-    const orderedVenues = [
-      bestVenue,
-      ...VENUE_PRIORITY.filter(v => v !== bestVenue),
-    ];
+    const providerLocked = bestVenue === "simpleswap" && (!!provider_ticker_from || !!provider_ticker_to);
+    const orderedVenues = providerLocked
+      ? ["simpleswap"]
+      : [bestVenue, ...VENUE_PRIORITY.filter(v => v !== bestVenue)];
 
     const venueErrors: Record<string, string> = {};
 
@@ -1173,6 +1223,8 @@ router.post("/letsexchange/exchange", async (req, res) => {
           amount:  amt,
           address: withdrawalStr,
           extraId: withdrawal_extra_id ? String(withdrawal_extra_id) : undefined,
+          providerTickerFrom: provider_ticker_from ? String(provider_ticker_from) : undefined,
+          providerTickerTo: provider_ticker_to ? String(provider_ticker_to) : undefined,
         });
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
@@ -1273,7 +1325,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
       }
 
       // ── LetsExchange (default / last-resort) ─────────────────────────────────
-      if (!process.env.LETSEXCHANGE_API_KEY) {
+      if (!(await isLetsExchangeConfigured())) {
         venueErrors["letsexchange"] = "LETSEXCHANGE_API_KEY not configured";
         continue;
       }
