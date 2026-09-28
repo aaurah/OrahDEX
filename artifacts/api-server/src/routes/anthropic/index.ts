@@ -393,10 +393,10 @@ function buildOrderRow(p: OrderRowParams) {
 
   switch (intent.type) {
     case "market":
-      quantity = intent.quantity;
+      quantity = intent.quantity!;
       break;
     case "limit":
-      quantity = intent.quantity;
+      quantity = intent.quantity!;
       price    = intent.price;
       break;
     case "stop_limit":
