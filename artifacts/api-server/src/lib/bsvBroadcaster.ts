@@ -18,6 +18,7 @@ import crypto from "node:crypto";
 import { hash160, type Utxo } from "./bsvWallet.js";
 import { logger } from "./logger.js";
 import { BSV_NET } from "./bsvNetworkConfig.js";
+import { parseUnits } from "./money.js";
 import { arcBroadcast } from "./arcBroadcaster.js";
 
 const FEE_SAT  = BSV_NET.feeSat;
@@ -273,7 +274,7 @@ export interface BroadcastParams {
   // Cross-chain HTLC output — when present, a P2SH output is added to lock the
   // trade commitment on-chain (in addition to the OP_RETURN audit record).
   htlcP2SHScriptHex?: string; // 23-byte P2SH locking script (OP_HASH160 <20b> OP_EQUAL)
-  htlcSatoshis?:    number;   // EXACT BSV trade value in satoshis locked by the HTLC (required when htlcP2SHScriptHex is set)
+  htlcSatoshis?:    string | number; // EXACT BSV trade value in satoshis locked by the HTLC (required when htlcP2SHScriptHex is set)
 }
 
 export interface BroadcastResult {
@@ -288,7 +289,7 @@ export interface BroadcastResult {
 
 export async function broadcastSettlement(params: BroadcastParams): Promise<BroadcastResult> {
   const { privKeyHex, utxo, opReturnPayload, htlcP2SHScriptHex, htlcSatoshis } = params;
-  const utxoSat = Math.floor(Number((utxo as any).satoshis));
+  const utxoSat = Number(parseUnits(String((utxo as any).satoshis), 8));
   if (!Number.isFinite(utxoSat) || utxoSat <= 0) throw new Error("Invalid UTXO satoshis");
 
   const privKey = Buffer.from(privKeyHex, "hex");
@@ -308,10 +309,10 @@ export async function broadcastSettlement(params: BroadcastParams): Promise<Broa
   // P0 fix: the HTLC must lock the EXACT BSV trade value, never a nominal dust amount.
   let htlcLockSat = 0;
   if (htlcP2SHScriptHex) {
-    if (!Number.isFinite(htlcSatoshis)) {
+    if (htlcSatoshis == null) {
       throw new Error("BSV HTLC amount not bound to trade value: htlcSatoshis is required");
     }
-    htlcLockSat = Math.floor(htlcSatoshis as number);
+    htlcLockSat = Number(parseUnits(String(htlcSatoshis), 8));
     if (htlcLockSat < HTLC_MIN_SAT) {
       throw new Error(`BSV HTLC amount below minimum: ${htlcLockSat} < ${HTLC_MIN_SAT}`);
     }

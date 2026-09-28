@@ -27,6 +27,7 @@ import crypto from "node:crypto";
 import type { Logger } from "pino";
 import { buildSettlement } from "./settlement.js";
 import { getOrCreateWallet, fetchWalletBalance } from "./bsvWallet.js";
+import { parseUnits, formatUnits } from "./money.js";
 import { broadcastSettlement } from "./bsvBroadcaster.js";
 import {
   buildHtlc,
@@ -216,22 +217,26 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
         baseAsset === "BSV" ? fillQty :
         quoteAsset === "BSV" ? fillValue :
         0;
-      const requiredHtlcSat = Math.round(bsvTradeAmount * 1e8);
+      // Exact 8-decimal BSV -> satoshi conversion at the HTLC boundary.
+      // bsvTradeAmount is still a JS number upstream, so first pin it to 8dp text,
+      // then parse exactly; do not use Math.round(number * 1e8).
+      const requiredHtlcSatRaw = parseUnits(bsvTradeAmount.toFixed(8), 8);
+      const requiredHtlcSat = formatUnits(requiredHtlcSatRaw, 8);
 
       const canAddHtlc =
         isCrossChain &&
         !!htlcP2SHScriptHex &&
-        requiredHtlcSat > 0 &&
-        maxHtlcSat >= requiredHtlcSat;
+        requiredHtlcSatRaw > 0n &&
+        BigInt(maxHtlcSat) >= requiredHtlcSatRaw;
 
-      if (isCrossChain && htlcP2SHScriptHex && requiredHtlcSat <= 0) {
+      if (isCrossChain && htlcP2SHScriptHex && requiredHtlcSatRaw <= 0n) {
         log.warn(
           { pair, baseAsset, quoteAsset },
           "spotSettlement: cross-chain BSV HTLC skipped — no BSV side in pair"
         );
       }
 
-      if (isCrossChain && htlcP2SHScriptHex && requiredHtlcSat > 0 && !canAddHtlc) {
+      if (isCrossChain && htlcP2SHScriptHex && requiredHtlcSatRaw > 0n && !canAddHtlc) {
         log.warn(
           { utxoSat: best.satoshis, maxHtlcSat, requiredHtlcSat },
           "spotSettlement: HTLC output skipped — UTXO cannot fund exact BSV trade value"
