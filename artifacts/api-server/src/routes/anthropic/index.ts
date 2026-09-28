@@ -10,6 +10,7 @@ import {
   formatOrderConfirmation,
   type ParsedOrderIntent,
 } from "../../lib/nlOrderParser.js";
+import { isPositiveDecimalString } from "../../lib/orderIntent.js";
 
 const router = Router();
 
@@ -306,7 +307,7 @@ router.post("/ai/trade", async (req, res) => {
           intent,
           confirmation,
           executed: false,
-          hint: "Specify quantity or amount to execute this order.",
+          hint: "Specify quantity to execute this order.",
         });
         return;
       }
@@ -323,7 +324,6 @@ router.post("/ai/trade", async (req, res) => {
         expiry: expiryUnix,
         walletAddress,
         intent,
-        currentPrice,
       });
 
       await db.insert(ordersTable).values(orderRow);
@@ -348,20 +348,24 @@ router.post("/ai/trade", async (req, res) => {
  * Returns true if the intent has enough fields to place a real order
  * (i.e. we know quantity or quoteAmount).
  */
+function hasPositiveDecimal(value?: string | null): boolean {
+  return value != null && isPositiveDecimalString(value);
+}
+
 function canPlaceOrder(intent: ParsedOrderIntent): boolean {
   switch (intent.type) {
     case "market":
-      return intent.quantity != null || intent.quoteAmount != null;
+      return hasPositiveDecimal(intent.quantity);
     case "limit":
-      return (intent.quantity != null || intent.quoteAmount != null) && intent.price > 0;
+      return hasPositiveDecimal(intent.quantity) && hasPositiveDecimal(intent.price);
     case "stop_limit":
-      return intent.quantity > 0 && intent.stopPrice > 0 && intent.limitPrice > 0;
+      return hasPositiveDecimal(intent.quantity) && hasPositiveDecimal(intent.stopPrice) && hasPositiveDecimal(intent.limitPrice);
     case "trailing_stop":
-      return intent.quantity > 0 && intent.trailPercent > 0;
+      return hasPositiveDecimal(intent.quantity) && intent.trailPercent > 0;
     case "twap":
-      return intent.totalAmount > 0 && intent.durationMinutes > 0 && intent.slices >= 2;
+      return hasPositiveDecimal(intent.totalAmount) && intent.durationMinutes > 0 && intent.slices >= 2;
     case "oco":
-      return intent.quantity > 0 && intent.limitPrice > 0 && intent.stopPrice > 0;
+      return hasPositiveDecimal(intent.quantity) && hasPositiveDecimal(intent.limitPrice) && hasPositiveDecimal(intent.stopPrice);
     default:
       return false;
   }
@@ -373,7 +377,6 @@ interface OrderRowParams {
   expiry:        string;
   walletAddress: string;
   intent:        Exclude<ParsedOrderIntent, { type: "unknown" }>;
-  currentPrice:  number;
 }
 
 /**
@@ -382,50 +385,36 @@ interface OrderRowParams {
  * Stop price is stored in the stopPrice column when present.
  */
 function buildOrderRow(p: OrderRowParams) {
-  const { orderId, nonce, expiry, walletAddress, intent, currentPrice } = p;
+  const { orderId, nonce, expiry, walletAddress, intent } = p;
 
-  // Resolve quantity: use explicit quantity if set; estimate from quoteAmount when possible
   let quantity: string;
   let price: string | undefined;
   let stopPrice: string | undefined;
 
   switch (intent.type) {
-    case "market": {
-      const qty = intent.quantity ?? (
-        intent.quoteAmount != null && currentPrice > 0
-          ? intent.quoteAmount / currentPrice
-          : 0
-      );
-      quantity = String(qty);
+    case "market":
+      quantity = intent.quantity;
       break;
-    }
-    case "limit": {
-      const limitQty = intent.quantity ?? (
-        intent.quoteAmount != null && intent.price > 0
-          ? intent.quoteAmount / intent.price
-          : 0
-      );
-      quantity = String(limitQty);
-      price    = String(intent.price);
+    case "limit":
+      quantity = intent.quantity;
+      price    = intent.price;
       break;
-    }
     case "stop_limit":
-      quantity  = String(intent.quantity);
-      stopPrice = String(intent.stopPrice);
-      price     = String(intent.limitPrice);
+      quantity  = intent.quantity;
+      stopPrice = intent.stopPrice;
+      price     = intent.limitPrice;
       break;
     case "trailing_stop":
-      quantity = String(intent.quantity);
-      // Encode trailPercent in price field for now (exchange engine convention)
+      quantity = intent.quantity;
       price    = String(intent.trailPercent);
       break;
     case "twap":
-      quantity = String(intent.totalAmount);   // quantity = total USD amount for TWAP
+      quantity = intent.totalAmount;
       break;
     case "oco":
-      quantity  = String(intent.quantity);
-      price     = String(intent.limitPrice);
-      stopPrice = String(intent.stopPrice);
+      quantity  = intent.quantity;
+      price     = intent.limitPrice;
+      stopPrice = intent.stopPrice;
       break;
   }
 
