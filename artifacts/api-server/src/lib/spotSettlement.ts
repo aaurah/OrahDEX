@@ -27,7 +27,7 @@ import crypto from "node:crypto";
 import type { Logger } from "pino";
 import { buildSettlement } from "./settlement.js";
 import { getOrCreateWallet, fetchWalletBalance } from "./bsvWallet.js";
-import { parseUnits, formatUnits } from "./money.js";
+import { parseUnits, formatUnits, mulPriceQty } from "./money.js";
 import { broadcastSettlement } from "./bsvBroadcaster.js";
 import {
   buildHtlc,
@@ -55,8 +55,8 @@ export interface SpotFillParams {
     networkType?:   string | null;
   };
   pair:          string;    // e.g. "BSV/USDT"
-  fillQty:       number;    // base asset filled in this fill
-  fillPrice:     number;    // price for this fill
+  fillQty:       string | number; // base asset filled in this fill
+  fillPrice:     string | number; // price for this fill
   buyerAddress:  string;
   sellerAddress: string;
   buyerNetwork:  string;    // "evm" | "bsv"
@@ -98,8 +98,20 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
     buyerNetwork, sellerNetwork, buyerChainId, sellerChainId, isBot, feePct, log,
   } = params;
 
-  const fillValue = fillQty * fillPrice;
-  const fillTotal = fillValue.toFixed(8);
+  const LEDGER_DECIMALS = 18;
+  const fillQtyRaw = parseUnits(String(fillQty), LEDGER_DECIMALS);
+  const fillPriceRaw = parseUnits(String(fillPrice), LEDGER_DECIMALS);
+  const fillValueRaw = mulPriceQty({
+    priceRaw: fillPriceRaw,
+    priceDecimals: LEDGER_DECIMALS,
+    quantityRaw: fillQtyRaw,
+    quantityDecimals: LEDGER_DECIMALS,
+    outputDecimals: LEDGER_DECIMALS,
+    rounding: "ceil",
+  });
+  const fillQtyStr = formatUnits(fillQtyRaw, LEDGER_DECIMALS);
+  const fillPriceStr = formatUnits(fillPriceRaw, LEDGER_DECIMALS);
+  const fillTotal = formatUnits(fillValueRaw, LEDGER_DECIMALS);
   const [baseAsset, quoteAsset = "USDT"] = pair.split("/");
 
   // ── 1. Cross-chain detection ─────────────────────────────────────────────
@@ -163,8 +175,8 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
     sellerAddress,
     buyerNetwork,
     sellerNetwork,
-    amount:             fillQty.toString(),
-    price:              fillPrice.toString(),
+    amount:             fillQtyStr,
+    price:              fillPriceStr,
     total:              fillTotal,
     timestamp:          Date.now(),
     htlcSecretHash:     htlcResult?.secretHash,
@@ -183,8 +195,8 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
       sellerAddress,
       baseAsset:   baseAsset!,
       quoteAsset:  quoteAsset!,
-      amount:      fillQty.toString(),
-      price:       fillPrice.toString(),
+      amount:      fillQtyStr,
+      price:       fillPriceStr,
       feePct,
       isBotSeller: sellerAddress === BOT_ADDRESS,
       isBotBuyer:  buyerAddress  === BOT_ADDRESS,
@@ -213,15 +225,18 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
       const maxHtlcSat = best.satoshis - FEE_SAT - DUST_SAT;
 
       // P0 fix: the BSV HTLC must lock the exact BSV trade value, never dust.
-      const bsvTradeAmount =
-        baseAsset === "BSV" ? fillQty :
-        quoteAsset === "BSV" ? fillValue :
-        0;
-      // Exact 8-decimal BSV -> satoshi conversion at the HTLC boundary.
-      // bsvTradeAmount is still a JS number upstream, so first pin it to 8dp text,
-      // then parse exactly; do not use Math.round(number * 1e8).
-      const requiredHtlcSatRaw = parseUnits(bsvTradeAmount.toFixed(8), 8);
-      const requiredHtlcSat = formatUnits(requiredHtlcSatRaw, 8);
+      // P0 fix: the BSV HTLC must lock the exact BSV trade value, never dust.
+      // Convert from 18-decimal ledger units to integer satoshis exactly.
+      const bsvAmountRaw18 =
+        baseAsset === "BSV" ? fillQtyRaw :
+        quoteAsset === "BSV" ? fillValueRaw :
+        0n;
+      const SAT_PER_BSV_RAW18 = 10n ** 10n; // 1e18 ledger units -> 1e8 satoshis
+      if (bsvAmountRaw18 % SAT_PER_BSV_RAW18 !== 0n) {
+        throw new Error(`BSV trade amount has sub-satoshi precision: ${formatUnits(bsvAmountRaw18, LEDGER_DECIMALS)}`);
+      }
+      const requiredHtlcSatRaw = bsvAmountRaw18 / SAT_PER_BSV_RAW18;
+      const requiredHtlcSat = String(requiredHtlcSatRaw);
 
       const canAddHtlc =
         isCrossChain &&
@@ -269,8 +284,8 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
   log.info(
     {
       txid:           broadcastTxid,
-      fillQty,
-      fillPrice,
+      fillQty:        fillQtyStr,
+      fillPrice:      fillPriceStr,
       isBot,
       realBroadcast:  wasRealBroadcast,
       settlementType: fallback.settlementType,
