@@ -25,8 +25,8 @@ export interface LeaderTradeEvent {
   traderAddress: string;
   symbol: string;
   side: "buy" | "sell";
-  price: number;
-  quantity: number;
+  price: string;
+  quantity: string;
   orderId?: string;
   /** Optional — leader's portfolio value used for proportional sizing. */
   traderPortfolioValue?: number;
@@ -75,14 +75,16 @@ async function mirrorTradeToVault(
     // fits the vault, otherwise size down so we never spend more than vaultTvl
     // on a single mirror. This is a safe lower bound (never larger than the
     // proportional formula above).
-    const tradeNotional = event.price * event.quantity;
+    const eventPrice = Number(event.price);
+  const eventQty = Number(event.quantity);
+  const tradeNotional = eventPrice * eventQty;
     const leaderPortfolio = event.traderPortfolioValue;
     const allocationRatio =
       leaderPortfolio && leaderPortfolio > 0
         ? Math.min(1, vaultTvl / leaderPortfolio)
         : tradeNotional > 0 ? Math.min(1, vaultTvl / tradeNotional) : 0;
-    const copyQuantity = event.quantity * allocationRatio;
-    const copyTotal = copyQuantity * event.price;
+    const copyQuantity = eventQty * allocationRatio;
+    const copyTotal = copyQuantity * eventPrice;
 
     if (copyQuantity < 0.000001) {
       logger.debug({ vaultId: vault.id, copyQuantity }, "Copy qty too small, skipping");
@@ -96,7 +98,7 @@ async function mirrorTradeToVault(
       leaderOrderId: event.orderId ?? null,
       symbol: event.symbol,
       side: event.side,
-      price: String(event.price),
+      price: event.price,
       quantity: String(copyQuantity),
       total: String(copyTotal),
       status: "executed",

@@ -302,16 +302,16 @@ export async function settleSpotFill(params: SpotFillParams): Promise<SpotFillRe
     traderAddress: buyerAddress,
     symbol: pair,
     side: "buy",
-    price: fillPrice,
-    quantity: fillQty,
+    price: fillPriceStr,
+    quantity: fillQtyStr,
     orderId: newOrderId,
   }).catch(err => log.warn({ err }, "spotSettlement: copyVault hook (buy) failed"));
   void copyVaultOnTradeSettled({
     traderAddress: sellerAddress,
     symbol: pair,
     side: "sell",
-    price: fillPrice,
-    quantity: fillQty,
+    price: fillPriceStr,
+    quantity: fillQtyStr,
     orderId: matchOrder.id,
   }).catch(err => log.warn({ err }, "spotSettlement: copyVault hook (sell) failed"));
 
