@@ -915,10 +915,10 @@ router.post("/orders", async (req, res) => {
         const broadcastTxid = fillResult.txid;
 
         // ── Finalize the claimed counter-order (partial or full consume) ─────
-        const newMatchFilled     = (parseFloat(match.filledQuantity ?? "0") + fillQty);
-        const newMatchRemaining  = Math.max(0, matchAvail - fillQty);
-        const isMatchFullyFilled = newMatchRemaining <= 0.000001;
-        const claimedByMe        = and(
+        const newMatchFilledRaw = parseUnits(match.filledQuantity ?? "0", LEDGER_DECIMALS) + fillQtyRaw;
+        const newMatchRemainingRaw = matchAvailRaw - fillQtyRaw;
+        const isMatchFullyFilled = newMatchRemainingRaw === 0n;
+        const claimedByMe = and(
           eq(ordersTable.id, match.id),
           eq(ordersTable.status, "pending"),
           eq(ordersTable.matchedOrderId, id),
@@ -931,8 +931,8 @@ router.post("/orders", async (req, res) => {
             await db.update(ordersTable)
               .set({
                 status:            "open",
-                filledQuantity:    newMatchFilled.toFixed(18),
-                remainingQuantity: newMatchRemaining.toFixed(18),
+                filledQuantity:    formatUnits(newMatchFilledRaw, LEDGER_DECIMALS),
+                remainingQuantity: formatUnits(newMatchRemainingRaw, LEDGER_DECIMALS),
                 updatedAt:         new Date(),
               })
               .where(claimedByMe);
@@ -941,8 +941,8 @@ router.post("/orders", async (req, res) => {
           const [updatedMatch] = await db.update(ordersTable)
             .set({
               status:            isMatchFullyFilled ? "filled" : "open",
-              filledQuantity:    newMatchFilled.toFixed(18),
-              remainingQuantity: newMatchRemaining.toFixed(18),
+              filledQuantity:    formatUnits(newMatchFilledRaw, LEDGER_DECIMALS),
+              remainingQuantity: formatUnits(newMatchRemainingRaw, LEDGER_DECIMALS),
               txid:              broadcastTxid,
               matchedOrderId:    id,
               updatedAt:         new Date(),
