@@ -213,7 +213,7 @@ function u32LE(n: number): Buffer {
   return b;
 }
 
-function toSatoshiBigInt(value: number | bigint | string): bigint {
+export function toSatoshiBigInt(value: number | bigint | string): bigint {
   if (typeof value === "bigint") return value;
   if (typeof value === "number") {
     if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
