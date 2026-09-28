@@ -213,12 +213,22 @@ function u32LE(n: number): Buffer {
   return b;
 }
 
-function u64LE(satoshis: number): Buffer {
+function toSatoshiBigInt(value: number | bigint | string): bigint {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+      throw new Error(`Invalid satoshi amount: ${value}`);
+    }
+    return BigInt(value);
+  }
+  const v = value.trim();
+  if (!/^\d+$/.test(v)) throw new Error(`Invalid satoshi amount string: ${value}`);
+  return BigInt(v);
+}
+
+function u64LE(satoshis: number | bigint | string): Buffer {
   const b = Buffer.alloc(8);
-  const lo = satoshis >>> 0;
-  const hi = Math.floor(satoshis / 0x100000000);
-  b.writeUInt32LE(lo, 0);
-  b.writeUInt32LE(hi, 4);
+  b.writeBigUInt64LE(toSatoshiBigInt(satoshis), 0);
   return b;
 }
 
@@ -236,7 +246,7 @@ function p2pkhScript(address: string): Buffer {
 /** BSV BIP143 sighash (SIGHASH_ALL | SIGHASH_FORKID = 0x41) */
 function bsvSighash(
   inputIdx: number,
-  utxoSatoshis: number,
+  utxoSatoshis: number | bigint | string,
   scriptCode: Buffer,
   inputs: Array<{ txid: string; vout: number }>,
   outputsRaw: Buffer[],
@@ -294,24 +304,29 @@ export interface BroadcastResult {
  */
 export async function buildAndBroadcastBsvTx(
   toAddress: string,
-  satoshis: number,
+  satoshis: number | bigint | string,
   wallet: WalletInfo,
   utxos: Utxo[],
-  feeSats = 500,
+  feeSats: number | bigint | string = 500,
 ): Promise<BroadcastResult> {
+  const satoshisRaw = toSatoshiBigInt(satoshis);
+  const feeRaw = toSatoshiBigInt(feeSats);
+
   // Select UTXOs
-  let totalIn = 0;
+  let totalIn = 0n;
   const selected: Utxo[] = [];
   for (const u of utxos) {
     selected.push(u);
-    totalIn += u.satoshis;
-    if (totalIn >= satoshis + feeSats) break;
+    totalIn += toSatoshiBigInt(u.satoshis);
+    if (totalIn >= satoshisRaw + feeRaw) break;
   }
-  if (totalIn < satoshis + feeSats) {
-    throw new Error(`Insufficient BSV: wallet has ${totalIn} sat, need ${satoshis + feeSats} sat (incl. fee)`);
+  if (totalIn < satoshisRaw + feeRaw) {
+    throw new Error(
+      `Insufficient BSV: wallet has ${totalIn} sat, need ${satoshisRaw + feeRaw} sat (incl. fee)`,
+    );
   }
 
-  const change      = totalIn - satoshis - feeSats;
+  const change = totalIn - satoshisRaw - feeRaw;
   const privKey     = Buffer.from(wallet.privKeyHex, "hex");
   const pubKeyBuf   = Buffer.from(wallet.pubKeyHex,  "hex"); // 33-byte compressed
 
@@ -319,8 +334,10 @@ export async function buildAndBroadcastBsvTx(
   const toScript     = p2pkhScript(toAddress);
   const changeScript = p2pkhScript(wallet.address);
   const outputsRaw: Buffer[] = [
-    Buffer.concat([u64LE(satoshis), varint(toScript.length),     toScript]),
-    ...(change > 546 ? [Buffer.concat([u64LE(change), varint(changeScript.length), changeScript])] : []),
+    Buffer.concat([u64LE(satoshisRaw), varint(toScript.length), toScript]),
+    ...(change > 546n
+      ? [Buffer.concat([u64LE(change), varint(changeScript.length), changeScript])]
+      : []),
   ];
 
   const inputs = selected.map(u => ({ txid: u.txid, vout: u.vout }));
@@ -329,7 +346,7 @@ export async function buildAndBroadcastBsvTx(
   // Sign each input
   const scriptSigs: Buffer[] = [];
   for (let i = 0; i < selected.length; i++) {
-    const msgHash = bsvSighash(i, selected[i].satoshis, fromScript, inputs, outputsRaw);
+    const msgHash = bsvSighash(i, toSatoshiBigInt(selected[i].satoshis), fromScript, inputs, outputsRaw);
     const sig     = await secp.signAsync(msgHash, privKey, { lowS: true, prehash: false }); // returns compact Uint8Array [r|s]
     const der     = derEncode(sig); // compact [r|s] → DER
     const derWithType = Buffer.concat([der, Buffer.from([0x41])]); // SIGHASH_ALL|FORKID
@@ -357,7 +374,10 @@ export async function buildAndBroadcastBsvTx(
 
   // Broadcast via ARC (with automatic WoC fallback)
   const arcResult = await arcBroadcast(txHex);
-  logger.info({ txid: arcResult.txid, arcStatus: arcResult.arcStatus, satoshis, toAddress }, "BSV transaction broadcast");
+  logger.info(
+    { txid: arcResult.txid, arcStatus: arcResult.arcStatus, satoshis: satoshisRaw.toString(), toAddress },
+    "BSV transaction broadcast",
+  );
   return { txid: arcResult.txid, hex: txHex, arcTxid: arcResult.arcTxid, arcStatus: arcResult.arcStatus };
 }
 
