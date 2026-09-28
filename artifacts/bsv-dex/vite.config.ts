@@ -757,6 +757,8 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
       },
     },
     nodePolyfills({
+      include: ["util", "node:util"],
+      protocolImports: true,
       globals: { Buffer: true, global: true, process: true },
       protocolImports: true,
     }),
