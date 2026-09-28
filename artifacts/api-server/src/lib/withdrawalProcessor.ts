@@ -298,7 +298,7 @@ async function processBsvWithdrawal(params: {
   const wallet = await getOrCreateWallet();
   const balance = await fetchWalletBalance(wallet.address);
 
-  const satoshis = Math.round(params.amount * 1e8);
+  const satoshis = Number(parseUnits(params.amount.toFixed(8), 8));
   const FEE = 500;
 
   if (balance.totalSatoshis < satoshis + FEE) {

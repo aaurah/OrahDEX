@@ -23,6 +23,7 @@ import { sendMail, testSmtpConnection, getSmtpStatus, autoSetupTestEmail } from 
 import { updateMarketPrices, syncAllLEPairs } from "../lib/priceUpdater.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
 import { logger } from "../lib/logger.js";
+import { parseUnits, mulDiv, pow10 } from "../lib/money.js";
 import {
   buildFilterFunction,
   WATCHED_CONTRACTS,
@@ -1516,7 +1517,14 @@ router.post("/bot-profit/withdraw", async (req, res) => {
         .limit(1);
       const bsvPriceUsd = parseFloat(bsvMarket[0]?.lastPrice ?? "0") || 14.35; // fallback
 
-      const satoshis = Math.round((amount / bsvPriceUsd) * 1e8);
+      const satoshis = Number(
+        mulDiv(
+          parseUnits(amount.toFixed(8), 8),
+          pow10(8),
+          parseUnits(bsvPriceUsd.toFixed(8), 8),
+          "round",
+        ),
+      );
       if (satoshis < 546) {
         { res.status(400).json({ error: `Amount too small. Minimum is $${((546 * bsvPriceUsd) / 1e8).toFixed(4)} (546 sat dust limit)` }); return; }
       }
@@ -1857,7 +1865,7 @@ router.post("/bsv-wallet/send", requireAdminToken, async (req, res) => {
     if (!isBsvAddress(toAddress))              { res.status(400).json({ error: "Invalid BSV address (must start with 1, 26–35 chars)" }); return; }
     if (!bsvAmount || bsvAmount <= 0)          { res.status(400).json({ error: "Enter a valid BSV amount" }); return; }
 
-    const satoshis = Math.round(bsvAmount * 1e8);
+    const satoshis = Number(parseUnits(bsvAmount.toFixed(8), 8));
     if (satoshis < 546)                        { res.status(400).json({ error: "Amount below dust limit (546 sat)" }); return; }
 
     const wallet  = await getOrCreateWallet();
