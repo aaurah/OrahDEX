@@ -775,6 +775,9 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
       // @walletconnect/logger@2.1.2 calls logger.bindings() as a function.
       // Alias to our stub that always has bindings() as a callable method.
       "pino": path.resolve(import.meta.dirname, "src/stubs/pino.js"),
+      // Vite/Rolldown can externalize Node's util builtin; client deps may access util.inspect.custom.
+      "util": path.resolve(import.meta.dirname, "src/stubs/util.js"),
+      "node:util": path.resolve(import.meta.dirname, "src/stubs/util.js"),
       // Rolldown (Vite 8) cannot resolve @reown/appkit subpath exports through
       // symlinks created by bsv-dex-symlinks buildStart. Point directly to the
       // dist files so rolldown never needs to follow the symlink for subpaths.
