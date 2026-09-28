@@ -704,6 +704,7 @@ router.post("/orders", async (req, res) => {
         const LEDGER_DECIMALS = 18;
         const matchAvailRaw = parseUnits(match.remainingQuantity ?? match.quantity, LEDGER_DECIMALS);
         if (matchAvailRaw <= 0n) continue;
+        const matchAvail = parseFloat(formatUnits(matchAvailRaw, LEDGER_DECIMALS));
 
         const remainingQtyRaw = parseUnits(remainingQty.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS);
         const fillQtyRaw = remainingQtyRaw < matchAvailRaw ? remainingQtyRaw : matchAvailRaw;
