@@ -14,10 +14,7 @@
  */
 
 import { db } from "@workspace/db";
-import {
-  copyVaultsTable,
-  copyVaultTradesTable,
-} from "@workspace/db/schema";
+import { copyVaultsTable, copyVaultTradesTable } from "@workspace/db/schema";
 import { eq, and, sql } from "drizzle-orm";
 import { logger } from "./logger.js";
 
@@ -43,7 +40,7 @@ export async function onTradeSettled(event: LeaderTradeEvent): Promise<void> {
         and(
           eq(copyVaultsTable.leaderWallet, trader),
           eq(copyVaultsTable.status, "active"),
-        )
+        ),
       );
 
     if (!vaults.length) return;
@@ -53,7 +50,10 @@ export async function onTradeSettled(event: LeaderTradeEvent): Promise<void> {
     }
   } catch (err: any) {
     // Never let copy-vault bookkeeping fail the underlying trade.
-    logger.error({ err: err?.message }, "copyOrchestrator onTradeSettled error");
+    logger.error(
+      { err: err?.message },
+      "copyOrchestrator onTradeSettled error",
+    );
   }
 }
 
@@ -76,18 +76,23 @@ async function mirrorTradeToVault(
     // on a single mirror. This is a safe lower bound (never larger than the
     // proportional formula above).
     const eventPrice = Number(event.price);
-  const eventQty = Number(event.quantity);
-  const tradeNotional = eventPrice * eventQty;
+    const eventQty = Number(event.quantity);
+    const tradeNotional = eventPrice * eventQty;
     const leaderPortfolio = event.traderPortfolioValue;
     const allocationRatio =
       leaderPortfolio && leaderPortfolio > 0
         ? Math.min(1, vaultTvl / leaderPortfolio)
-        : tradeNotional > 0 ? Math.min(1, vaultTvl / tradeNotional) : 0;
+        : tradeNotional > 0
+          ? Math.min(1, vaultTvl / tradeNotional)
+          : 0;
     const copyQuantity = eventQty * allocationRatio;
     const copyTotal = copyQuantity * eventPrice;
 
     if (copyQuantity < 0.000001) {
-      logger.debug({ vaultId: vault.id, copyQuantity }, "Copy qty too small, skipping");
+      logger.debug(
+        { vaultId: vault.id, copyQuantity },
+        "Copy qty too small, skipping",
+      );
       return;
     }
 
@@ -107,17 +112,28 @@ async function mirrorTradeToVault(
     // Atomic increment — concurrent fills against the same leader must not
     // lose updates. SQL `total_trades = total_trades + 1` avoids the
     // read-modify-write race entirely.
-    await db.update(copyVaultsTable).set({
-      totalTrades: sql`${copyVaultsTable.totalTrades} + 1`,
-      updatedAt: new Date(),
-    }).where(eq(copyVaultsTable.id, vault.id));
+    await db
+      .update(copyVaultsTable)
+      .set({
+        totalTrades: sql`${copyVaultsTable.totalTrades} + 1`,
+        updatedAt: new Date(),
+      })
+      .where(eq(copyVaultsTable.id, vault.id));
 
     logger.info(
-      { vaultId: vault.id, symbol: event.symbol, side: event.side, copyQuantity },
+      {
+        vaultId: vault.id,
+        symbol: event.symbol,
+        side: event.side,
+        copyQuantity,
+      },
       "CopyVault: mirrored leader trade",
     );
   } catch (err: any) {
-    logger.error({ err: err?.message, vaultId: vault.id }, "mirrorTradeToVault error");
+    logger.error(
+      { err: err?.message, vaultId: vault.id },
+      "mirrorTradeToVault error",
+    );
   }
 }
 
