@@ -17,12 +17,16 @@ export function isDecimalString(value: string): boolean {
   return /^-?\d+(\.\d+)?$/.test(value.trim());
 }
 
-export function parseUnits(value: string, decimals: number): bigint {
+export function parseUnits(value: string, decimals: number, allowNegative = false): bigint {
   requireDecimals(decimals);
   const v = value.trim();
   if (!isDecimalString(v)) throw new Error(`Invalid decimal amount: ${value}`);
 
   const negative = v.startsWith("-");
+  if (negative && !allowNegative) {
+    throw new Error(`Negative monetary amount is not allowed: ${value}`);
+  }
+
   const unsigned = negative ? v.slice(1) : v;
   const [intPart, fracPart = ""] = unsigned.split(".");
 
@@ -58,26 +62,25 @@ export function cmp(a: bigint, b: bigint): -1 | 0 | 1 {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-function roundDivision(value: bigint, divisor: bigint, mode: RoundingMode): bigint {
-  if (divisor === 0n) throw new Error("Division by zero");
+function assertNonNegative(name: string, value: bigint): void {
+  if (value < 0n) throw new Error(`${name} must be non-negative`);
+}
+
+function roundDivisionNonNegative(value: bigint, divisor: bigint, mode: RoundingMode): bigint {
+  if (divisor <= 0n) throw new Error("Division by non-positive divisor");
+  if (value < 0n) throw new Error("Negative monetary division input");
   if (mode === "floor") return value / divisor;
   if (mode === "ceil") {
     const q = value / divisor;
     return value % divisor === 0n ? q : q + 1n;
   }
 
-  // round = half away from zero
+  // round = half up
   const q = value / divisor;
   const r = value % divisor;
   if (r === 0n) return q;
-  const absR = r < 0n ? -r : r;
   const half = divisor / 2n;
-  if (absR > half) return q + (value < 0n ? -1n : 1n);
-  if (absR === half) {
-    // tie: away from zero
-    return q + (value < 0n ? -1n : 1n);
-  }
-  return q;
+  return r > half ? q + 1n : q;
 }
 
 export function mulPriceQty(params: {
@@ -86,7 +89,7 @@ export function mulPriceQty(params: {
   quantityRaw: bigint;
   quantityDecimals: number;
   outputDecimals: number;
-  rounding?: RoundingMode;
+  rounding: RoundingMode;
 }): bigint {
   const {
     priceRaw,
@@ -94,24 +97,29 @@ export function mulPriceQty(params: {
     quantityRaw,
     quantityDecimals,
     outputDecimals,
-    rounding = "ceil",
+    rounding,
   } = params;
 
   requireDecimals(priceDecimals);
   requireDecimals(quantityDecimals);
   requireDecimals(outputDecimals);
+  assertNonNegative("priceRaw", priceRaw);
+  assertNonNegative("quantityRaw", quantityRaw);
 
   const product = priceRaw * quantityRaw;
   const shift = priceDecimals + quantityDecimals - outputDecimals;
 
   if (shift === 0) return product;
-  if (shift > 0) return roundDivision(product, pow10(shift), rounding);
+  if (shift > 0) return roundDivisionNonNegative(product, pow10(shift), rounding);
   return product * pow10(-shift);
 }
 
-export function mulDiv(a: bigint, b: bigint, c: bigint, rounding: RoundingMode = "floor"): bigint {
+export function mulDiv(a: bigint, b: bigint, c: bigint, rounding: RoundingMode): bigint {
+  assertNonNegative("a", a);
+  assertNonNegative("b", b);
+  assertNonNegative("c", c);
   if (c === 0n) throw new Error("Division by zero");
-  return roundDivision(a * b, c, rounding);
+  return roundDivisionNonNegative(a * b, c, rounding);
 }
 
 export function abs(value: bigint): bigint {
