@@ -12,6 +12,7 @@ import { getCachedQuote } from "../lib/routeCache.js";
 import { unlockFunds, getBalances } from "../lib/ledger.js";
 import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
 import { settleSpotFill }        from "../lib/spotSettlement.js";
+import { parseUnits, formatUnits, mulPriceQty } from "../lib/money.js";
 import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
 import { settleEscrowMatch, isEscrowChain, findEscrowChain, ESCROW_ADDRESSES } from "../lib/escrowRelayer.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
@@ -700,13 +701,34 @@ router.post("/orders", async (req, res) => {
         // Use remainingQuantity directly — it is always kept up-to-date by
         // prior partial fills, so we must NOT subtract filledQuantity again
         // (that would double-count and produce negative availability).
-        const matchAvail = parseFloat(match.remainingQuantity ?? match.quantity);
-        if (matchAvail <= 0.000001) continue;
+        const LEDGER_DECIMALS = 18;
+        const matchAvailRaw = parseUnits(match.remainingQuantity ?? match.quantity, LEDGER_DECIMALS);
+        if (matchAvailRaw <= 0n) continue;
 
-        const fillQty   = Math.min(remainingQty, matchAvail);
-        const fillPrice = parseFloat(match.price ?? price?.toString() ?? "0");
-        const fillValue = fillQty * fillPrice;
-        const isBot     = match.walletAddress === BOT_ADDRESS;
+        const remainingQtyRaw = parseUnits(remainingQty.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS);
+        const fillQtyRaw = remainingQtyRaw < matchAvailRaw ? remainingQtyRaw : matchAvailRaw;
+        const fillPriceRaw = match.price
+          ? parseUnits(match.price, LEDGER_DECIMALS)
+          : price
+            ? parseUnits(price.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS)
+            : 0n;
+        const fillValueRaw = mulPriceQty({
+          priceRaw: fillPriceRaw,
+          priceDecimals: LEDGER_DECIMALS,
+          quantityRaw: fillQtyRaw,
+          quantityDecimals: LEDGER_DECIMALS,
+          outputDecimals: LEDGER_DECIMALS,
+          rounding: "ceil",
+        });
+
+        // Exact values for settlement; legacy numeric mirrors for existing loop accounting.
+        const fillQtyStr = formatUnits(fillQtyRaw, LEDGER_DECIMALS);
+        const fillPriceStr = formatUnits(fillPriceRaw, LEDGER_DECIMALS);
+        const fillValueStr = formatUnits(fillValueRaw, LEDGER_DECIMALS);
+        const fillQty = parseFloat(fillQtyStr);
+        const fillPrice = parseFloat(fillPriceStr);
+        const fillValue = parseFloat(fillValueStr);
+        const isBot = match.walletAddress === BOT_ADDRESS;
 
         const tradeId       = crypto.randomUUID();
         const buyerNetwork  = side === "buy" ? networkType : (match.networkType ?? "evm");
@@ -844,8 +866,8 @@ router.post("/orders", async (req, res) => {
               newOrderId:    id,
               matchOrder:    match,
               pair:          symbol,
-              fillQty,
-              fillPrice,
+              fillQty:       fillQtyStr,
+              fillPrice:     fillPriceStr,
               buyerAddress,
               sellerAddress,
               buyerNetwork,
