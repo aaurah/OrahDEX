@@ -780,6 +780,12 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
   ],
   resolve: {
     alias: {
+      stream: 'stream-browserify',
+      crypto: 'crypto-browserify',
+      http: 'stream-http',
+      https: 'https-browserify',
+      zlib: 'browserify-zlib',
+
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
       // pino is used by @walletconnect/logger. Pino's browser bundle stores
