@@ -34,7 +34,7 @@
     "express-rate-limit": "^8.4.1",
     "helmet": "^8.1.0",
     "hyperliquid": "^1.7.7",
-    "nodemailer": "^9.1.1",
+    "nodemailer": "^10.0.9",
     "p-retry": "^7.1.1",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
