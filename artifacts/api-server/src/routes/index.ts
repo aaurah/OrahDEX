@@ -76,8 +76,13 @@ import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { arcBroadcast } from "../lib/arcBroadcaster.js";
 import { randomBytes } from "node:crypto";
+import externalDepthRouter from "./externalDepth";
+import leEstimateShimRouter from "./leEstimateShim";
 
-const router: IRouter = Router();
+const router: IRouter = Router()
+
+router.use(externalDepthRouter);
+router.use(leEstimateShimRouter);;
 
 // Public settings — only whitelisted keys exposed (Reown project ID is a public identifier)
 const PUBLIC_SETTING_KEYS = ["reown_project_id"];
