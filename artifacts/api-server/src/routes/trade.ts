@@ -30,7 +30,6 @@ import {
   verifyExchangeSignature,
 } from "../lib/walletAuth.js";
 
-// ── Chain RPC map (for on-chain tx verification) ──────────────────────────────
 const VERIFY_RPC: Record<number, string> = {
   1:      process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
   56:     process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
@@ -64,10 +63,8 @@ function tradeExplorerUrl(txid: string | null | undefined, chainId?: number | nu
 import { TOKEN_REGISTRY } from "../lib/tokenRegistry.js";
 
 const router: IRouter = Router();
+const FEE_PCT = 0.003;
 
-const FEE_PCT = 0.003; // 0.3%
-
-// ── Shared: resolve mid-market rate from DB ────────────────────────────────────
 async function resolveRate(assetIn: string, assetOut: string): Promise<number | null> {
   const toUsd = async (sym: string): Promise<number | null> => {
     if (sym === "USDT" || sym === "USDC" || sym === "DAI") return 1;
@@ -119,9 +116,7 @@ async function executeExchangeTrade(params: {
   const amountIn = params.amountIn;
 
   const rate = await resolveRate(assetIn, assetOut);
-  if (!rate) {
-    throw new Error("NO_PRICE");
-  }
+  if (!rate) throw new Error("NO_PRICE");
 
   const grossOut = amountIn * rate;
   const fee = grossOut * FEE_PCT;
@@ -131,13 +126,7 @@ async function executeExchangeTrade(params: {
     throw new Error(`SLIPPAGE_EXCEEDED:${amtOut.toFixed(8)}`);
   }
 
-  await settleSwap({
-    walletAddress,
-    assetIn,
-    assetOut,
-    amountIn: amountIn.toFixed(8),
-    amountOut: amtOut.toFixed(8),
-  });
+  await settleSwap({ walletAddress, assetIn, assetOut, amountIn: amountIn.toFixed(8), amountOut: amtOut.toFixed(8) });
   await recordPlatformFee({ source: "swap", amount: fee, asset: assetOut });
 
   const tradeId = crypto.randomUUID();
@@ -164,14 +153,13 @@ async function executeExchangeTrade(params: {
   return { tradeId, assetIn, assetOut, amountIn, amountOut: amtOut, fee, rate, balances };
 }
 
-// ── GET /trade/modes ───────────────────────────────────────────────────────────
 router.get("/trade/modes", (_req, res) => {
   res.json({
     modes: [
       {
         id: "wallet",
         name: "Wallet Mode (On-chain Swap)",
-        description: "Routes through an on-chain DEX router (Uniswap-style). User signs the transaction with their own wallet. Funds never touch OrahDEX — ETH leaves the wallet, USDC returns directly.",
+        description: "Routes through an on-chain DEX router (Uniswap-style). User signs the transaction with their own wallet. Funds never touch OrahDEX — ETH leaves the wallet, USDC returns directly to it.",
         settlementLayer: "on-chain",
         gasRequired: true,
         custodial: false,
@@ -197,10 +185,6 @@ router.get("/trade/modes", (_req, res) => {
   });
 });
 
-// ── POST /trade/wallet/quote ───────────────────────────────────────────────────
-// Returns price-only quote for an on-chain swap. The actual transaction is
-// signed and submitted by the user's wallet — this endpoint just provides
-// the expected output and routing context.
 router.post("/trade/wallet/quote", async (req, res) => {
   const { assetIn, assetOut, amountIn, chainId } = req.body ?? {};
   if (!assetIn || !assetOut || !amountIn) {
@@ -220,15 +204,14 @@ router.post("/trade/wallet/quote", async (req, res) => {
     const fee      = grossOut * FEE_PCT;
     const amtOut   = grossOut - fee;
 
-    // Determine router address by chain — Uniswap V3 SwapRouter02 addresses
     const ROUTERS: Record<number, string> = {
-      1:     "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45", // Ethereum
-      56:    "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4", // BSC (PancakeSwap V3)
-      137:   "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45", // Polygon
-      42161: "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45", // Arbitrum
-      10:    "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45", // Optimism
-      8453:  "0x2626664c2603336E57B271c5C0b26F421741e481", // Base
-      324:   "0x99c56385daBCE3E81d8499d0b8d0257aBC07E8A3", // zkSync
+      1:     "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+      56:    "0x13f4EA83D0bd40E75C8222255bc855a974568Dd4",
+      137:   "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+      42161: "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+      10:    "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+      8453:  "0x2626664c2603336E57B271c5C0b26F421741e481",
+      324:   "0x99c56385daBCE3E81d8499d0b8d0257aBC07E8A3",
     };
 
     res.json({
@@ -250,9 +233,6 @@ router.post("/trade/wallet/quote", async (req, res) => {
   }
 });
 
-// ── POST /trade/wallet ─────────────────────────────────────────────────────────
-// Returns validated routing parameters for the client to build & sign an
-// on-chain DEX transaction. No funds touch the server.
 router.post("/trade/wallet", async (req, res) => {
   const { assetIn, assetOut, amountIn, walletAddress, chainId, slippagePct } = req.body ?? {};
   if (!assetIn || !assetOut || !amountIn || !walletAddress) {
@@ -294,17 +274,6 @@ router.post("/trade/wallet", async (req, res) => {
   }
 });
 
-// ── POST /trade/wallet/settle — record confirmed on-chain swap & credit balance ──
-/**
- * Called by the frontend AFTER the user's on-chain swap transaction is confirmed.
- * 1. Verifies the EVM wallet signature to prove the caller owns walletAddress.
- * 2. Fetches the tx receipt from the chain to verify success.
- * 3. Inserts a record in the trades table (with txid).
- * 4. Credits the user's internal exchange balance with the received assetOut amount,
- *    so tokens are immediately available for exchange-mode trading or withdrawal.
- *
- * Body: { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature }
- */
 router.post("/trade/wallet/settle", async (req, res) => {
   const { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature } = req.body ?? {};
 
@@ -313,14 +282,11 @@ router.post("/trade/wallet/settle", async (req, res) => {
     return;
   }
 
-  // Only EVM wallets can initiate on-chain swap settlements via this endpoint.
   if (!/^0x[0-9a-fA-F]{40}$/.test(String(walletAddress))) {
     res.status(400).json({ error: "walletAddress must be an EVM address (0x...) for /trade/wallet/settle." });
     return;
   }
 
-  // Require a wallet signature to prove the caller owns walletAddress.
-  // This prevents any party who merely knows a wallet address from crediting its balance.
   if (!walletSignature) {
     res.status(401).json({
       error: "walletSignature is required. Sign the settlement auth message with your EVM wallet before calling this endpoint.",
@@ -329,8 +295,6 @@ router.post("/trade/wallet/settle", async (req, res) => {
     return;
   }
 
-  // Verify the signature. The auth message commits to the txHash so the signature
-  // is single-purpose and cannot be replayed for a different transaction.
   const authMsg = [
     "Authorize OrahDEX on-chain swap settlement",
     `Wallet: ${walletAddress}`,
@@ -351,24 +315,15 @@ router.post("/trade/wallet/settle", async (req, res) => {
     return;
   }
 
-  // Guard: reject duplicate tx settlements
-  const existing = await db.select({ id: tradesTable.id })
-    .from(tradesTable)
-    .where(eq(tradesTable.txid, txHash))
-    .limit(1);
+  const existing = await db.select({ id: tradesTable.id }).from(tradesTable).where(eq(tradesTable.txid, txHash)).limit(1);
   if (existing.length > 0) {
     res.status(409).json({ error: "Transaction already settled", tradeId: existing[0].id });
     return;
   }
 
   try {
-    // Verify the tx on-chain — require the receipt; do NOT proceed optimistically
     const client = createPublicClient({ transport: http(VERIFY_RPC[numChain]) });
-    let receipt: {
-      status: string;
-      logs: { topics: string[]; data: string; address: string }[];
-      blockNumber: bigint;
-    } | null = null;
+    let receipt: { status: string; logs: { topics: string[]; data: string; address: string }[]; blockNumber: bigint } | null = null;
     try {
       receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` }) as any;
     } catch (rpcErr: any) {
@@ -386,43 +341,26 @@ router.post("/trade/wallet/settle", async (req, res) => {
       return;
     }
 
-    // Derive the credited amount from the ERC-20 Transfer logs destined to the
-    // caller's wallet, rather than trusting the client-supplied amountOut.
-    // ERC-20 Transfer event signature: Transfer(address indexed from, address indexed to, uint256 value)
     const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
     const walletLower    = walletAddress.toLowerCase();
     const assetOutUpper  = assetOut.toUpperCase();
-
-    // Look up the expected token contract address and decimals for assetOut on this chain
     const tokenInfo = TOKEN_REGISTRY[numChain]?.[assetOutUpper];
 
-    let rawTransferAmount = 0n; // raw BigInt sum before decimal scaling
-
+    let rawTransferAmount = 0n;
     for (const log of (receipt.logs ?? [])) {
-      // Standard ERC-20 Transfer: topics[0]=sig, topics[1]=from, topics[2]=to
       if (
         log.topics[0]?.toLowerCase() !== TRANSFER_TOPIC ||
         log.topics.length < 3 ||
         log.topics[2]?.slice(-40).toLowerCase() !== walletLower.replace("0x", "")
       ) continue;
 
-      // Reject transfers from unrecognised token contracts if we have a registry entry.
-      // Unknown tokens (not in the registry) are accepted for forward compatibility but
-      // assumed 18 decimals — operators should add them to TOKEN_REGISTRY as needed.
       if (tokenInfo && log.address?.toLowerCase() !== tokenInfo.address) continue;
-
       rawTransferAmount += BigInt(log.data || "0x0");
     }
 
-    // Scale using the correct decimal count for the token
     const tokenDecimals   = tokenInfo?.decimals ?? 18;
     let   verifiedAmount  = Number(rawTransferAmount) / 10 ** tokenDecimals;
 
-    // If no ERC-20 Transfer to the user was found, attempt to measure the
-    // native-asset balance change for the caller's address between the block
-    // before the tx and the tx block. This correctly captures ETH/BNB/MATIC
-    // output swaps that arrive as internal transfers rather than ERC-20 events.
-    // Trusting the client-supplied amountOut is explicitly prohibited here.
     if (verifiedAmount <= 0) {
       const NATIVE_SYMBOLS: Record<number, string> = { 1:"ETH", 56:"BNB", 137:"MATIC", 8453:"ETH", 42161:"ETH", 10:"ETH", 43114:"AVAX" };
       if (assetOutUpper === (NATIVE_SYMBOLS[numChain] ?? "") && receipt.blockNumber > 0n) {
@@ -451,9 +389,6 @@ router.post("/trade/wallet/settle", async (req, res) => {
 
     const tradeId = crypto.randomUUID();
 
-    // Insert trade record and credit balance atomically. Without a shared transaction,
-    // a failure in creditAvailable after the trade is inserted would prevent retries
-    // (the dedup guard above would reject them as already settled).
     const dbClient = await pool.connect();
     try {
       await dbClient.query("BEGIN");
@@ -469,7 +404,6 @@ router.post("/trade/wallet/settle", async (req, res) => {
         ],
       );
 
-      // Credit the verified received amount to the user's internal balance
       await dbClient.query(
         `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
          VALUES ($1, $2, $3, '0', now())
@@ -506,7 +440,6 @@ router.post("/trade/wallet/settle", async (req, res) => {
   }
 });
 
-// ── GET /trade/settlements/:walletAddress — settlement history ────────────────
 router.get("/trade/settlements/:walletAddress", async (req, res) => {
   const { walletAddress } = req.params;
   if (!walletAddress) {
@@ -516,33 +449,26 @@ router.get("/trade/settlements/:walletAddress", async (req, res) => {
 
   try {
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-
-    const settlements = await db
-      .select()
-      .from(tradesTable)
-      .where(eq(tradesTable.walletAddress, walletAddress))
-      .orderBy(desc(tradesTable.timestamp))
-      .limit(limit);
-
-    const onChain   = settlements.filter(t => !!t.txid);
-    const exchange  = settlements.filter(t => !t.txid);
+    const settlements = await db.select().from(tradesTable).where(eq(tradesTable.walletAddress, walletAddress)).orderBy(desc(tradesTable.timestamp)).limit(limit);
+    const onChain = settlements.filter(t => !!t.txid);
+    const exchange = settlements.filter(t => !t.txid);
 
     res.json({
       walletAddress,
-      total:       settlements.length,
-      onChain:     onChain.length,
-      exchange:    exchange.length,
+      total: settlements.length,
+      onChain: onChain.length,
+      exchange: exchange.length,
       settlements: settlements.map(t => ({
-        id:        t.id,
-        symbol:    t.symbol,
-        side:      t.side,
-        price:     parseFloat(t.price),
-        quantity:  parseFloat(t.quantity),
-        total:     parseFloat(t.total),
-        fee:       parseFloat(t.fee),
-        feeAsset:  t.feeAsset,
-        txid:      t.txid ?? null,
-        mode:      t.txid ? "on-chain" : "exchange",
+        id: t.id,
+        symbol: t.symbol,
+        side: t.side,
+        price: parseFloat(t.price),
+        quantity: parseFloat(t.quantity),
+        total: parseFloat(t.total),
+        fee: parseFloat(t.fee),
+        feeAsset: t.feeAsset,
+        txid: t.txid ?? null,
+        mode: t.txid ? "on-chain" : "exchange",
         explorerUrl: tradeExplorerUrl(t.txid, null),
         timestamp: t.timestamp,
       })),
@@ -553,10 +479,6 @@ router.get("/trade/settlements/:walletAddress", async (req, res) => {
   }
 });
 
-// ── POST /trade/exchange/challenge ────────────────────────────────────────────
-// Issues a server-side nonce the EVM wallet must sign before POST /trade/exchange.
-// Clients: call this endpoint, sign the returned `message` with personal_sign,
-// then include `signature` + `nonce` in the POST /trade/exchange body.
 router.post("/trade/exchange/challenge", (req, res) => {
   const { walletAddress, assetIn, assetOut, amountIn } = req.body as {
     walletAddress?: string; assetIn?: string; assetOut?: string; amountIn?: string;
@@ -578,7 +500,6 @@ router.post("/trade/exchange/challenge", (req, res) => {
   res.json(challenge);
 });
 
-// ── POST /trade/exchange/quote ─────────────────────────────────────────────────
 router.post("/trade/exchange/quote", async (req, res) => {
   const { assetIn, assetOut, amountIn } = req.body ?? {};
   if (!assetIn || !assetOut || !amountIn) {
@@ -615,11 +536,6 @@ router.post("/trade/exchange/quote", async (req, res) => {
   }
 });
 
-// ── POST /trade/exchange ───────────────────────────────────────────────────────
-// Settle a trade on the internal ledger. Demo seeding is fail-closed behind DEMO_MODE and must not run in production.
-// EVM wallet callers (0x…) must supply `signature` + `nonce` to prove they
-// authorised this swap. Obtain the canonical message from
-// buildExchangeAuthMessage and sign it with personal_sign in MetaMask/ethers.
 router.post("/trade/exchange", async (req, res) => {
   const body = req.body ?? {};
   const walletAddress = body.walletAddress;
@@ -631,20 +547,22 @@ router.post("/trade/exchange", async (req, res) => {
     return;
   }
 
-  // Require wallet signature for EVM wallets to prove the caller owns walletAddress.
-  // The signature must have been produced over the server-issued challenge from
-  // POST /trade/exchange/challenge — this enforces single-use nonces and prevents replay.
   if (walletAddress.startsWith("0x")) {
     if (!signature || !nonce) {
       res.status(401).json({
-        error: "signature and nonce are required for EVM wallet exchange swaps. " +
-               "Request a challenge via POST /trade/exchange/challenge, sign the returned message, " +
-               "and include signature + nonce in this request.",
+        error: "signature and nonce are required for EVM wallet exchange swaps. Request a challenge via POST /trade/exchange/challenge, sign the returned message, and include signature + nonce in this request.",
       });
       return;
     }
     try {
-      verifyExchangeSignature(walletAddress, String(nonce), signature);
+      const assetIn = normalizeAssetSymbol(body.assetIn);
+      const assetOut = normalizeAssetSymbol(body.assetOut);
+      const amountIn = body.amountIn != null ? String(body.amountIn) : undefined;
+      verifyExchangeSignature(walletAddress, String(nonce), signature, {
+        assetIn: assetIn ?? undefined,
+        assetOut: assetOut ?? undefined,
+        amountIn,
+      });
     } catch (authErr: any) {
       res.status(401).json({ error: authErr.message });
       return;
@@ -657,7 +575,6 @@ router.post("/trade/exchange", async (req, res) => {
     let amtIn = parseFloat(String(body.amountIn ?? "NaN"));
     let minOut = body.minAmountOut != null ? parseFloat(String(body.minAmountOut)) : undefined;
 
-    // Advanced path: accept { symbol: "ETH/USDC", side: "sell|buy", quantity }
     if ((!assetIn || !assetOut || !Number.isFinite(amtIn)) && body.symbol && body.side && body.quantity != null) {
       const pair = parseTradeSymbol(body.symbol);
       const side = String(body.side).toLowerCase();
@@ -678,7 +595,6 @@ router.post("/trade/exchange", async (req, res) => {
           res.status(422).json({ error: "No price available for this pair" });
           return;
         }
-        // quantity for BUY is desired base output; convert to required quote input
         amtIn = qty / (r * (1 - FEE_PCT));
         if (minOut == null) minOut = qty * 0.999;
       }
@@ -689,13 +605,7 @@ router.post("/trade/exchange", async (req, res) => {
       return;
     }
 
-    const trade = await executeExchangeTrade({
-      walletAddress,
-      assetIn,
-      assetOut,
-      amountIn: amtIn,
-      minAmountOut: minOut,
-    });
+    const trade = await executeExchangeTrade({ walletAddress, assetIn, assetOut, amountIn: amtIn, minAmountOut: minOut });
 
     const vaultActive  = isVaultConfigured();
     const vaultAddress = vaultActive ? getVaultAddress() : null;
@@ -730,10 +640,7 @@ router.post("/trade/exchange", async (req, res) => {
     if (err?.message === "NO_PRICE") {
       res.status(422).json({ error: "No price available for this pair" });
     } else if (err?.message?.startsWith("SLIPPAGE_EXCEEDED:")) {
-      res.status(422).json({
-        error: "Slippage exceeded",
-        amountOut: err.message.split(":")[1] ?? null,
-      });
+      res.status(422).json({ error: "Slippage exceeded", amountOut: err.message.split(":")[1] ?? null });
     } else if (err?.message?.includes("Insufficient") || err?.message?.includes("INSUFFICIENT_FUNDS")) {
       res.status(400).json({ error: "Internal server error", code: "INSUFFICIENT_FUNDS" });
     } else {
@@ -742,8 +649,6 @@ router.post("/trade/exchange", async (req, res) => {
   }
 });
 
-// ── POST /trade/exchange/advanced ───────────────────────────────────────────────
-// Dedicated advanced market-style endpoint: { walletAddress, symbol, side, quantity }
 router.post("/trade/exchange/advanced", async (req, res) => {
   const { walletAddress, symbol, side, quantity, minAmountOut, signature, nonce } = req.body ?? {};
   const pair = parseTradeSymbol(symbol);
@@ -763,7 +668,16 @@ router.post("/trade/exchange/advanced", async (req, res) => {
       return;
     }
     try {
-      verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
+      let assetIn: string | undefined;
+      let assetOut: string | undefined;
+      if (normalizedSide === "sell") {
+        assetIn = pair.base;
+        assetOut = pair.quote;
+      } else {
+        assetIn = pair.quote;
+        assetOut = pair.base;
+      }
+      verifyExchangeSignature(String(walletAddress), String(nonce), String(signature), { assetIn, assetOut, amountIn: String(qty) });
     } catch (authErr: any) {
       res.status(401).json({ error: authErr.message });
       return;
@@ -792,13 +706,7 @@ router.post("/trade/exchange/advanced", async (req, res) => {
       if (minOut == null) minOut = qty * 0.999;
     }
 
-    const trade = await executeExchangeTrade({
-      walletAddress,
-      assetIn,
-      assetOut,
-      amountIn,
-      minAmountOut: minOut,
-    });
+    const trade = await executeExchangeTrade({ walletAddress, assetIn, assetOut, amountIn, minAmountOut: minOut });
 
     res.json({
       mode: "exchange-advanced",
@@ -830,7 +738,6 @@ router.post("/trade/exchange/advanced", async (req, res) => {
   }
 });
 
-// ── POST /trade/exchange/mint ───────────────────────────────────────────────────
 router.post("/trade/exchange/mint", async (req, res) => {
   const walletAddress = req.body?.walletAddress;
   const asset = normalizeAssetSymbol(req.body?.asset) ?? "USDC";
@@ -858,7 +765,6 @@ router.post("/trade/exchange/mint", async (req, res) => {
   }
 });
 
-// ── POST /trade/exchange/burn ───────────────────────────────────────────────────
 router.post("/trade/exchange/burn", async (req, res) => {
   const walletAddress = req.body?.walletAddress;
   const asset = normalizeAssetSymbol(req.body?.asset) ?? "USDC";
