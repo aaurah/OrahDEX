@@ -2,7 +2,7 @@
 
 OrahDEX is a sovereign, permissionless, multi-chain trading protocol. Users hold their own keys at all times. Trades settle on-chain via atomic swaps and EVM escrow contracts — **OrahDEX never holds your funds**.
 
-Live at **[orahdex.org](https://orahdex.com)**
+Live at **[orahdex.com](https://orahdex.com)**
 
 ---
 
