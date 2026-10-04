@@ -65,5 +65,5 @@
     "stripe": "^22.1.0",
     "stripe-replit-sync": "^1.0.0"
   },
-  "packageManager": "pnpm@12.6.0"
+  "packageManager": "pnpm@9.15.9"
 }
