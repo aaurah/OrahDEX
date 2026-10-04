@@ -1,0 +1,6 @@
+{
+  "installCommand": "cd ../.. && npm install -g pnpm@9.15.9 && pnpm install --frozen-lockfile",
+  "buildCommand": "PORT=8081 BASE_PATH=/ pnpm run build",
+  "outputDirectory": "dist",
+  "framework": "vite"
+}
