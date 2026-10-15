@@ -56,6 +56,8 @@ const CHAIN_NATIVE: Record<number, string> = {
 interface LeCoin {
   symbol: string; name: string; network: string|null; networkName: string|null;
   image: string|null; hasExtraId: boolean; minAmount: string|null; maxAmount: string|null;
+  provider?: "letsexchange" | "simpleswap";
+  providerTicker?: string;
 }
 
 // Response from POST /v1/info (now hybrid — also includes best_venue)
@@ -131,29 +133,60 @@ const LS_KEY = "le_swap_history";
 // All panel instances share one fetch so simultaneous mounts don't fire
 // multiple requests. The result is kept for 30 min (matching backend TTL).
 
-const COINS_CLIENT_TTL = 30 * 60 * 1000;
+const COINS_CLIENT_TTL = 5 * 60 * 1000;
+
+function canonicalNetworkKey(network?: string | null, providerTicker?: string): string {
+  const raw = String(network || providerTicker || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!raw) return "";
+  if (raw === "eth" || raw.includes("ethereum") || raw.includes("erc20")) return "ethereum";
+  if (raw === "trx" || raw.includes("tron") || raw.includes("trc20")) return "tron";
+  if (raw === "bsc" || raw.includes("binancesmartchain") || raw.includes("bep20")) return "bsc";
+  if (raw === "matic" || raw === "pol" || raw.includes("polygon")) return "polygon";
+  if (raw === "arb" || raw.includes("arbitrum")) return "arbitrum";
+  if (raw === "op" || raw.includes("optimism")) return "optimism";
+  if (raw === "avaxc" || raw.includes("avalanchec")) return "avalanche-c";
+  if (raw.includes("solana") || raw === "sol") return "solana";
+  if (raw.includes("bitcoin") || raw === "btc") return "bitcoin";
+  return raw.replace(/network$/, "");
+}
 let _coinsCache: LeCoin[] | null = null;
 let _coinsCacheTs = 0;
 let _coinsInflight: Promise<LeCoin[]> | null = null;
-
-// Only treat a response as authoritative once it exceeds the built-in fallback
-// size (331 coins). Anything smaller is likely the cold-cache fallback and
-// should not be cached — the next call will re-fetch and get the live list.
-const LIVE_COIN_THRESHOLD = 400;
+const isLiveCatalog = (items: LeCoin[]) => items.some(coin => !!coin.network);
 
 async function fetchCoins(): Promise<LeCoin[]> {
-  // Only use cache when it has the full live list (> 400 coins)
-  if (_coinsCache && _coinsCache.length >= LIVE_COIN_THRESHOLD && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
+  if (_coinsCache && isLiveCatalog(_coinsCache) && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
   if (_coinsInflight) return _coinsInflight;
-  _coinsInflight = fetch(`${API}/letsexchange/currencies`)
-    .then(r => { if (!r.ok) throw new Error("currencies failed"); return r.json(); })
-    .then((d: LeCoin[]) => {
-      if (d.length >= LIVE_COIN_THRESHOLD) { // only cache the full live list
-        _coinsCache = d;
+  _coinsInflight = Promise.all([
+    fetch(`${API}/letsexchange/currencies`),
+    fetch(`${API}/simpleswap/currencies`),
+  ])
+    .then(async ([leResponse, ssResponse]) => {
+      if (!leResponse.ok) throw new Error("LetsExchange currencies failed");
+      const leData = (await leResponse.json() as LeCoin[]).map(coin => ({
+        ...coin,
+        provider: "letsexchange" as const,
+      }));
+      const ssData = ssResponse.ok ? await ssResponse.json() as LeCoin[] : [];
+      const merged = new Map<string, LeCoin>();
+      // LetsExchange wins exact symbol/network duplicates; SimpleSwap adds its
+      // provider-only symbols and network variants with native ticker metadata.
+      for (const coin of leData) {
+        merged.set(`${coin.symbol}::${canonicalNetworkKey(coin.network, coin.providerTicker) || coin.symbol}`, coin);
+      }
+      for (const coin of ssData) {
+        const key = `${coin.symbol}::${canonicalNetworkKey(coin.network, coin.providerTicker) || coin.symbol}`;
+        if (!merged.has(key)) merged.set(key, { ...coin, provider: "simpleswap" });
+      }
+      return [...merged.values()];
+    })
+    .then((coins: LeCoin[]) => {
+      if (isLiveCatalog(coins)) {
+        _coinsCache = coins;
         _coinsCacheTs = Date.now();
       }
       _coinsInflight = null;
-      return d;
+      return coins;
     })
     .catch(err => { _coinsInflight = null; throw err; });
   return _coinsInflight;
@@ -337,16 +370,18 @@ function CoinPicker({ coins, selected, onChange, exclude, compact }: {
           <div className="overflow-y-auto flex-1 py-1">
             {filtered.length === 0 ? <p className="text-xs text-muted-foreground/60 text-center py-6">No coins found</p> : (
               filtered.map(c => (
-                <button type="button" key={`${c.symbol}::${c.network ?? ""}`}
+                <button type="button" key={`${c.provider ?? "letsexchange"}::${c.providerTicker ?? c.symbol}::${c.network ?? ""}`}
                   onClick={() => { onChange(c); setOpen(false); }}
                   className={cn("w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors text-left",
-                    selected?.symbol === c.symbol && selected?.network === c.network && "bg-muted/30")}>
+                    selected?.symbol === c.symbol && selected?.network === c.network && selected?.provider === c.provider && "bg-muted/30")}>
                   <CoinLogo symbol={c.symbol} size={28} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold leading-tight text-foreground">{c.symbol}</p>
-                    <p className="text-[10px] text-muted-foreground leading-tight truncate">{c.name}{c.networkName ? ` · ${c.networkName}` : ""}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight truncate">
+                      {c.name}{c.networkName ? ` · ${c.networkName}` : ""}
+                    </p>
                   </div>
-                  {selected?.symbol === c.symbol && selected?.network === c.network && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                  {selected?.symbol === c.symbol && selected?.network === c.network && selected?.provider === c.provider && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
                 </button>
               ))
             )}
@@ -488,6 +523,8 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
     if (!fromCoin || !toCoin || !amount || parseFloat(amount) <= 0) { setEstimate(null); return; }
     setEstLoading(true); setEstError(null);
     try {
+      const simpleSwapSelected = fromCoin.provider === "simpleswap" || toCoin.provider === "simpleswap";
+      const effectiveVenue = simpleSwapSelected ? "simpleswap" : forceVenue;
       const r = await fetch(`${API}/letsexchange/estimate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -498,7 +535,13 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
           network_to:   toCoin.network   ?? toCoin.symbol,
           amount:       parseFloat(amount),
           float:        true,
+<<<<<<< HEAD
+          ...(effectiveVenue ? { force_venue: effectiveVenue } : {}),
+          ...(fromCoin.providerTicker ? { provider_ticker_from: fromCoin.providerTicker } : {}),
+          ...(toCoin.providerTicker ? { provider_ticker_to: toCoin.providerTicker } : {}),
+=======
           ...((selectedVenue ?? forceVenue) ? { force_venue: (selectedVenue ?? forceVenue)! } : {}),
+>>>>>>> origin/Main
         }),
       });
       const d = await r.json();
@@ -525,7 +568,11 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
       } else { setEstimate(d as Estimate); }
     } catch { setEstError("Network error"); }
     setEstLoading(false);
+<<<<<<< HEAD
+  }, [fromCoin, toCoin, amount, forceVenue]);
+=======
   }, [fromCoin, toCoin, amount, selectedVenue, forceVenue]);
+>>>>>>> origin/Main
 
   useEffect(() => { fetchEstimate(); }, [fetchEstimate, refreshKey]);
 
@@ -1595,14 +1642,10 @@ export function LetsExchangePanel({
           if (cancelled) return;
           setCoins(d);
           setLoading(false);
-          // Got the cold-start fallback (< LIVE_COIN_THRESHOLD) — retry in 5 s
-          // to pick up the full live list once the server finishes pagination.
-          if (d.length < LIVE_COIN_THRESHOLD && attempts <= MAX_RETRIES) {
+          if (d.length > 0 && !isLiveCatalog(d) && attempts <= MAX_RETRIES) {
             retryTimer = setTimeout(() => {
               if (cancelled) return;
-              fetchCoins().then(fresh => {
-                if (!cancelled && fresh.length > d.length) setCoins(fresh);
-              }).catch(() => {});
+              load();
             }, 5000);
           }
         })
@@ -1643,6 +1686,8 @@ export function LetsExchangePanel({
         float:               !fixedRateId,
         best_venue:          estimate?.best_venue ?? "letsexchange",
       };
+      if (fromCoin.providerTicker) body.provider_ticker_from = fromCoin.providerTicker;
+      if (toCoin.providerTicker) body.provider_ticker_to = toCoin.providerTicker;
       if (fixedRateId) body.rate_id = fixedRateId;
       if (refund) body.return = refund;
 

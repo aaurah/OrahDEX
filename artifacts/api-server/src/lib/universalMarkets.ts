@@ -1,28 +1,22 @@
 /**
- * universalMarkets.ts — Full N×(N-1) tradeable pair catalog.
+ * universalMarkets.ts — Virtual N×(N-1) tradeable pair catalog.
  *
  * Collects unique canonical asset symbols from:
  *   1. Internal FALLBACK_PRICES (~160 coins) — highest priority, always present
  *   2. LetsExchange live /v2/coins or built-in fallback (~190–331 coins)
  *   3. SimpleSwap /get_all_currencies (~3 000 coins, normalized to canonical tickers)
  *
- * Caps the universe at CATALOG_MAX_ASSETS = 1 114, generating:
- *   1 114 × 1 113 = 1 239 882 directional pairs stored as type = "catalog".
- *
- * ISOLATION — catalog markets are intentionally excluded from all background services:
- *   • liquidityBot  – only handles type IN ('spot','futures') → no order books
- *   • priceUpdater  – only updates type IN ('spot','futures') → prices stay at seed value
- *   • SOR / routes  – catalog pairs resolve price via the USDT bridge at trade time
+ * Pairs are generated only for the requested page. They are never inserted into
+ * PostgreSQL, so a 5,000-asset universe can expose ~25M directional pairs safely.
  */
-import { db, pool } from "@workspace/db";
-import { marketsTable } from "@workspace/db/schema";
+import { pool } from "@workspace/db";
 import { logger } from "./logger.js";
 import { FALLBACK_PRICES } from "./priceUpdater.js";
 
-export const CATALOG_MAX_ASSETS = 1_114;
-
-const BASE_BATCH   = 20;    // base coins processed per outer iteration
-const INSERT_CHUNK = 1_000; // DB insert batch size (avoids giant transactions)
+export const CATALOG_MAX_ASSETS = 10_000;
+const ASSET_CACHE_TTL = 30 * 60 * 1000;
+let assetCache: { assets: string[]; expiresAt: number } | null = null;
+let assetInflight: Promise<string[]> | null = null;
 
 // ── SS network-specific ticker → canonical OrahDEX symbol ─────────────────────
 // Mirrors SS_TO_SYMBOL in priceUpdater.ts; duplicated here to avoid circular import.
@@ -48,21 +42,14 @@ function normSS(ticker: string): string | null {
   return c.length >= 1 && c.length <= 12 ? c : null;
 }
 
-// Price formatter — mirrors fmtPrice() in priceUpdater.ts (not exported there)
-function fmtP(p: number): string {
-  if (!p || p <= 0 || !isFinite(p)) return "0";
-  if (p >= 1_000)  return p.toFixed(2);
-  if (p >= 1)      return p.toFixed(4);
-  if (p >= 0.01)   return p.toFixed(6);
-  if (p >= 0.0001) return p.toFixed(8);
-  return p.toFixed(12).replace(/0+$/, "").replace(/\.$/, "0");
-}
-
 /**
  * Collect up to CATALOG_MAX_ASSETS unique canonical symbols, priority-ordered:
- *   internal FALLBACK_PRICES → LE live / built-in → SS live
+ *   internal FALLBACK_PRICES → LE live / built-in → SS live → persisted venues.
  */
 export async function collectCatalogAssets(): Promise<string[]> {
+  if (assetCache && assetCache.expiresAt > Date.now()) return assetCache.assets;
+  if (assetInflight) return assetInflight;
+  assetInflight = (async () => {
   const seen    = new Set<string>();
   const ordered: string[] = [];
 
@@ -109,106 +96,151 @@ export async function collectCatalogAssets(): Promise<string[]> {
     }
   } catch { /* non-fatal — SS is optional */ }
 
-  return ordered.slice(0, CATALOG_MAX_ASSETS);
+  // 4. Swapzone live currency catalog. Network variants collapse to their
+  // canonical symbol for Trade; the exact network remains an execution concern.
+  try {
+    const { fetchSzCurrencies, isSwapzoneConfigured } = await import("./swapzone.js");
+    if (await isSwapzoneConfigured()) {
+      const currencies = await fetchSzCurrencies();
+      for (const c of currencies) {
+        const sym = normSS(c.ticker ?? "");
+        if (sym) add(sym);
+      }
+    }
+  } catch { /* non-fatal — Swapzone is optional */ }
+
+  // Persisted provider rows keep imported assets searchable
+  // when a provider catalog is temporarily unavailable.
+  try {
+    const result = await pool.query<{ asset: string }>(
+      `SELECT base_asset AS asset FROM markets
+        WHERE enabled = true AND type IN ('letsexchange','simpleswap')
+       UNION
+       SELECT quote_asset AS asset FROM markets
+        WHERE enabled = true AND type IN ('letsexchange','simpleswap')`,
+    );
+    for (const row of result.rows) add(row.asset);
+  } catch { /* the live catalogs above are still usable */ }
+
+  const assets = ordered.slice(0, CATALOG_MAX_ASSETS);
+  assetCache = { assets, expiresAt: Date.now() + ASSET_CACHE_TTL };
+  logger.info({ assets: assets.length, virtualPairs: assets.length * (assets.length - 1) }, "virtual market asset universe refreshed");
+  return assets;
+  })().finally(() => { assetInflight = null; });
+  return assetInflight;
 }
 
-// Guards against concurrent runs (the job can take 2–5 min)
-let _running = false;
+export interface VirtualCatalogPair {
+  symbol: string;
+  baseAsset: string;
+  quoteAsset: string;
+}
 
 /**
- * Generate the full N×(N-1) catalog of type="catalog" markets.
- *
- * Idempotent — ON CONFLICT DO NOTHING makes re-runs safe.
- * Expected runtime: ~2–5 min for 1.24 M pairs.
+ * Return one deterministic page of the virtual Cartesian pair catalog.
+ * Filtering is index-aware, so large offsets do not scan or allocate N² rows.
  */
+export async function getVirtualCatalogPage(options: {
+  q?: string;
+  quote?: string;
+  limit: number;
+  offset: number;
+}): Promise<{ items: VirtualCatalogPair[]; total: number; assets: number }> {
+  const assets = await collectCatalogAssets();
+  const n = assets.length;
+  const q = (options.q ?? "").trim().toUpperCase();
+  const quote = (options.quote ?? "").trim().toUpperCase();
+  const limit = Math.max(1, Math.min(200, options.limit));
+  const offset = Math.max(0, options.offset);
+  const items: VirtualCatalogPair[] = [];
+
+  const emit = (baseIndex: number, quoteIndex: number) => {
+    if (baseIndex === quoteIndex || items.length >= limit) return;
+    const baseAsset = assets[baseIndex];
+    const quoteAsset = assets[quoteIndex];
+    items.push({ symbol: `${baseAsset}/${quoteAsset}`, baseAsset, quoteAsset });
+  };
+
+  // Exact quote filters have only N-1 possible rows and can be indexed directly.
+  if (quote) {
+    const quoteIndex = assets.indexOf(quote);
+    if (quoteIndex < 0) return { items, total: 0, assets: n };
+    const [basePrefix, pairQuotePrefix] = q.includes("/") ? q.split("/", 2) : ["", ""];
+    const baseIndices = assets
+      .map((asset, index) => ({ asset, index }))
+      .filter(({ asset, index }) => {
+        if (index === quoteIndex) return false;
+        if (!q) return true;
+        if (q.includes("/")) return asset.startsWith(basePrefix) && quote.startsWith(pairQuotePrefix);
+        return asset.startsWith(q) || quote.startsWith(q);
+      })
+      .map(({ index }) => index);
+    for (const index of baseIndices.slice(offset, offset + limit)) emit(index, quoteIndex);
+    return { items, total: baseIndices.length, assets: n };
+  }
+
+  // Full pair-prefix search, e.g. BTC/US, directly enumerates matching blocks.
+  if (q.includes("/")) {
+    const [basePrefix, quotePrefix] = q.split("/", 2);
+    const bases = assets.map((asset, index) => ({ asset, index })).filter(v => v.asset.startsWith(basePrefix));
+    const quotes = assets.map((asset, index) => ({ asset, index })).filter(v => v.asset.startsWith(quotePrefix));
+    let total = 0;
+    let skip = offset;
+    for (const base of bases) {
+      const blockSize = quotes.length - (quotes.some(v => v.index === base.index) ? 1 : 0);
+      total += blockSize;
+      if (skip >= blockSize) { skip -= blockSize; continue; }
+      for (const target of quotes) {
+        if (target.index === base.index) continue;
+        if (skip > 0) { skip--; continue; }
+        emit(base.index, target.index);
+      }
+    }
+    return { items, total, assets: n };
+  }
+
+  if (q) {
+    const matched = assets.map((asset, index) => ({ asset, index })).filter(v => v.asset.startsWith(q));
+    const matchedSet = new Set(matched.map(v => v.index));
+    const unmatched = assets.map((asset, index) => ({ asset, index })).filter(v => !matchedSet.has(v.index));
+    const firstCount = matched.length * Math.max(0, n - 1);
+    const secondCount = unmatched.length * matched.length;
+    const total = firstCount + secondCount;
+    let cursor = offset;
+
+    if (cursor < firstCount && n > 1) {
+      while (cursor < firstCount && items.length < limit) {
+        const base = matched[Math.floor(cursor / (n - 1))].index;
+        const slot = cursor % (n - 1);
+        emit(base, slot < base ? slot : slot + 1);
+        cursor++;
+      }
+    }
+    if (items.length >= limit) return { items, total, assets: n };
+    if (cursor >= firstCount) cursor -= firstCount;
+    while (cursor >= 0 && cursor < secondCount && items.length < limit && matched.length > 0) {
+      const base = unmatched[Math.floor(cursor / matched.length)].index;
+      const target = matched[cursor % matched.length].index;
+      emit(base, target);
+      cursor++;
+    }
+    return { items, total, assets: n };
+  }
+
+  const total = n * Math.max(0, n - 1);
+  let cursor = offset;
+  while (cursor < total && items.length < limit && n > 1) {
+    const baseIndex = Math.floor(cursor / (n - 1));
+    const quoteSlot = cursor % (n - 1);
+    emit(baseIndex, quoteSlot < baseIndex ? quoteSlot : quoteSlot + 1);
+    cursor++;
+  }
+  return { items, total, assets: n };
+}
+
+/** Legacy entry point retained for callers; catalog rows are virtual now. */
 export async function generateUniversalMarkets(): Promise<{ assets: number; inserted: number }> {
-  if (_running) {
-    logger.info("generateUniversalMarkets: already running — skipping this cycle");
-    return { assets: 0, inserted: 0 };
-  }
-  _running = true;
-
-  try {
-    logger.info("generateUniversalMarkets: collecting asset universe…");
-    const assets = await collectCatalogAssets();
-    const N = assets.length;
-
-    logger.info(
-      { N, pairs: N * (N - 1) },
-      `generateUniversalMarkets: ${N} unique assets → ${N * (N - 1)} pairs`,
-    );
-
-    // Skip if catalog rows already exist — LE all-to-all (1.99M rows) already
-    // covers the full symbol universe; repeated inserts waste DB pool connections.
-    const [{ cnt }] = await pool.query<{ cnt: string }>(
-      `SELECT COUNT(*) AS cnt FROM markets WHERE type = 'catalog' LIMIT 1`,
-    ).then(r => r.rows);
-    if (parseInt(cnt, 10) > 10_000) {
-      logger.info(
-        { existing: cnt },
-        "generateUniversalMarkets: catalog already populated — skipping",
-      );
-      return { assets: N, inserted: 0 };
-    }
-
-    let totalInserted = 0;
-
-    for (let bi = 0; bi < N; bi += BASE_BATCH) {
-      const baseBatch = assets.slice(bi, bi + BASE_BATCH);
-      const rows: (typeof marketsTable.$inferInsert)[] = [];
-
-      for (const base of baseBatch) {
-        const baseUSD = FALLBACK_PRICES[base] ?? 0;
-        for (const quote of assets) {
-          if (base === quote) continue;
-          const quoteUSD = FALLBACK_PRICES[quote] ?? 0;
-          const price    = (baseUSD > 0 && quoteUSD > 0) ? fmtP(baseUSD / quoteUSD) : "0";
-          rows.push({
-            symbol:                `${base}/${quote}`,
-            baseAsset:             base,
-            quoteAsset:            quote,
-            lastPrice:             price,
-            priceChange24h:        "0",
-            priceChangePercent24h: "0",
-            volume24h:             "0",
-            high24h:               price,
-            low24h:                price,
-            status:                "active",
-            type:                  "catalog",
-          });
-        }
-      }
-
-      for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
-        try {
-          const result = await db
-            .insert(marketsTable)
-            .values(rows.slice(i, i + INSERT_CHUNK))
-            .onConflictDoNothing();
-          totalInserted += (result as any).rowCount ?? 0;
-        } catch (err) {
-          logger.warn({ err, base: baseBatch[0] }, "generateUniversalMarkets: chunk insert failed (non-fatal)");
-        }
-        // Yield between chunks so background services can acquire pool connections.
-        await new Promise(r => setTimeout(r, 80));
-      }
-
-      if (Math.floor(bi / BASE_BATCH) % 10 === 0) {
-        logger.info(
-          { progress: `${bi + baseBatch.length}/${N} bases`, inserted: totalInserted },
-          "generateUniversalMarkets: progress",
-        );
-      }
-      // Yield between outer batches — keeps pool available for concurrent services.
-      await new Promise(r => setTimeout(r, 200));
-    }
-
-    logger.info(
-      { N, inserted: totalInserted, total: N * (N - 1) },
-      "generateUniversalMarkets: complete",
-    );
-    return { assets: N, inserted: totalInserted };
-  } finally {
-    _running = false;
-  }
+  const assets = await collectCatalogAssets();
+  logger.info({ assets: assets.length, virtualPairs: assets.length * (assets.length - 1) }, "universal catalog is virtual; no DB rows inserted");
+  return { assets: assets.length, inserted: 0 };
 }
