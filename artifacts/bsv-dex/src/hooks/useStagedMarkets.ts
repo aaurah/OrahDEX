@@ -84,13 +84,14 @@ export function useMarketSearch(
 
     const id = setTimeout(() => {
       controller = new AbortController();
-      fetch(`${API_BASE}/markets/search?q=${encodeURIComponent(q)}&limit=${limit}`, {
+      fetch(`${API_BASE}/markets/catalog?scope=all&q=${encodeURIComponent(q)}&limit=${limit}`, {
         headers: { Accept: "application/json" },
         signal: controller.signal,
       })
-        .then(r => r.ok ? r.json() : [])
+        .then(r => r.ok ? r.json() : { items: [] })
         .then((data: unknown) => {
-          setResults(Array.isArray(data) ? data : []);
+          const payload = data as { items?: unknown[] };
+          setResults(Array.isArray(payload?.items) ? payload.items : []);
           setLoading(false);
         })
         .catch((err: unknown) => {
@@ -105,4 +106,92 @@ export function useMarketSearch(
   }, [query, limit, debounceMs]);
 
   return { results, loading };
+}
+
+export interface VenueCatalogPage {
+  items: any[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+const EMPTY_CATALOG_PAGE: VenueCatalogPage = {
+  items: [],
+  total: 0,
+  limit: 100,
+  offset: 0,
+  hasMore: false,
+};
+
+/** Paginated all-venues browser. Never downloads the complete provider catalog. */
+export function useVenueCatalog(opts: {
+  query?: string;
+  quote?: string;
+  sources?: string[];
+  limit?: number;
+  offset?: number;
+  enabled?: boolean;
+} = {}): VenueCatalogPage & { loading: boolean } {
+  const {
+    query = "",
+    quote = "",
+    sources = [],
+    limit = 100,
+    offset = 0,
+    enabled = true,
+  } = opts;
+  const [page, setPage] = useState<VenueCatalogPage>(EMPTY_CATALOG_PAGE);
+  const [loading, setLoading] = useState(false);
+  const sourcesKey = sources.join(",");
+
+  useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      scope: "all",
+      limit: String(limit),
+      offset: String(offset),
+    });
+    if (query.trim()) params.set("q", query.trim().toUpperCase());
+    if (quote.trim()) params.set("quote", quote.trim().toUpperCase());
+    if (sourcesKey) params.set("sources", sourcesKey);
+
+    setLoading(true);
+    const timer = setTimeout(() => {
+      fetch(`${API_BASE}/markets/catalog?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      })
+        .then(r => r.ok ? r.json() : EMPTY_CATALOG_PAGE)
+        .then((data: unknown) => {
+          const d = data as Partial<VenueCatalogPage>;
+          setPage({
+            items: Array.isArray(d.items) ? d.items : [],
+            total: Number(d.total) || 0,
+            limit: Number(d.limit) || limit,
+            offset: Number(d.offset) || 0,
+            hasMore: Boolean(d.hasMore),
+          });
+          setLoading(false);
+        })
+        .catch((err: unknown) => {
+          if ((err as any)?.name !== "AbortError") {
+            setPage(EMPTY_CATALOG_PAGE);
+            setLoading(false);
+          }
+        });
+    }, query.trim() ? 250 : 0);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, quote, sourcesKey, limit, offset, enabled]);
+
+  return { ...page, loading };
 }
