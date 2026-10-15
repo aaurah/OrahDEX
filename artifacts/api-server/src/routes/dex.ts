@@ -274,7 +274,7 @@ router.get("/dex/exchanges", async (_req, res) => {
   const exchanges = [
     // OrahDEX always pinned first
     {
-      id: "orahdex", name: "OrahDEX", url: "https://orahdex.org",
+      id: "orahdex", name: "OrahDEX", url: "https://orahdex.com",
       image: "/orahdex-logo.jpg", country: null, yearEstablished: 2026,
       type: "dex", chain: "BSV", rank: 1, trustScore: 9,
       tradeVolume24hBtc: 120,
@@ -1462,7 +1462,7 @@ export async function prefetchCgMarkets(retryDelayMs = 90_000): Promise<void> {
       return;
     }
     if (!r.ok) { logger.warn({ status: r.status }, "CG markets prefetch failed"); return; }
-    const coins: any[] = await r.json();
+    const coins = (await r.json()) as any[];
     let seeded = 0;
     for (const c of coins) {
       const sym = (c.symbol ?? "").toUpperCase();

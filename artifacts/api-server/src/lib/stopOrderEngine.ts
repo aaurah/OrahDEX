@@ -22,6 +22,16 @@ import { BOT_ADDRESS } from "./liquidityBot.js";
 import { getOrCreateWallet, fetchWalletBalance } from "./bsvWallet.js";
 import { broadcastSettlement } from "./bsvBroadcaster.js";
 import { pushNotification } from "./notifQueue.js";
+import { parseUnits, formatUnits, mulPriceQty } from "./money.js";
+
+const LEDGER_DECIMALS = 18;
+
+function raw18(value: string): bigint {
+  return parseUnits(value, LEDGER_DECIMALS);
+}
+function nonNegative(value: bigint): bigint {
+  return value < 0n ? 0n : value;
+}
 
 export async function triggerStopOrders(): Promise<void> {
   try {
@@ -43,18 +53,31 @@ export async function triggerStopOrders(): Promise<void> {
         lastPrice: marketsTable.lastPrice,
       }).from(marketsTable).where(inArray(marketsTable.type, ["spot", "futures"]))
     );
-    const priceMap = new Map<string, number>(
-      markets.map(m => [m.symbol, parseFloat(m.lastPrice)])
-    );
+    const priceMap = new Map<string, bigint>();
+    for (const m of markets) {
+      try {
+        priceMap.set(m.symbol, raw18(m.lastPrice));
+      } catch {
+        // skip malformed market prices
+      }
+    }
 
     // ── Identify triggered orders in-memory — no per-order DB round-trips ────
     const triggeredOrders = openStops.filter(order => {
-      const stopPrice = order.stopPrice ? parseFloat(order.stopPrice) : null;
-      if (!stopPrice || stopPrice <= 0) return false;
-      const marketPrice = priceMap.get(order.symbol) ?? 0;
-      if (marketPrice <= 0) return false;
-      return (order.side === "buy"  && marketPrice >= stopPrice) ||
-             (order.side === "sell" && marketPrice <= stopPrice);
+      if (!order.stopPrice) return false;
+      let stopRaw: bigint;
+      let marketRaw: bigint;
+      try {
+        stopRaw = raw18(order.stopPrice);
+        const market = priceMap.get(order.symbol);
+        if (!market) return false;
+        marketRaw = market;
+      } catch {
+        return false;
+      }
+      if (stopRaw <= 0n || marketRaw <= 0n) return false;
+      return (order.side === "buy"  && marketRaw >= stopRaw) ||
+             (order.side === "sell" && marketRaw <= stopRaw);
     });
 
     if (triggeredOrders.length === 0) return;
@@ -80,13 +103,27 @@ export async function triggerStopOrders(): Promise<void> {
     }
 
     for (const order of triggeredOrders) {
-      const stopPrice = order.stopPrice ? parseFloat(order.stopPrice) : null;
-      if (!stopPrice || stopPrice <= 0) continue;
-      const marketPrice = priceMap.get(order.symbol) ?? 0;
-      if (marketPrice <= 0) continue;
+      if (!order.stopPrice) continue;
+      let stopRaw: bigint;
+      let marketRaw: bigint;
+      try {
+        stopRaw = raw18(order.stopPrice);
+        const market = priceMap.get(order.symbol);
+        if (!market) continue;
+        marketRaw = market;
+      } catch {
+        continue;
+      }
+      if (stopRaw <= 0n || marketRaw <= 0n) continue;
 
       logger.info(
-        { orderId: order.id, symbol: order.symbol, side: order.side, stopPrice, marketPrice },
+        {
+          orderId: order.id,
+          symbol: order.symbol,
+          side: order.side,
+          stopPrice: order.stopPrice,
+          marketPrice: formatUnits(marketRaw, LEDGER_DECIMALS),
+        },
         "Stop order triggered — executing as market fill"
       );
 
@@ -95,21 +132,33 @@ export async function triggerStopOrders(): Promise<void> {
       const sorted = (counterMap.get(`${order.symbol}:${counterSide}`) ?? [])
         .filter(c => c.walletAddress !== order.walletAddress)
         .sort((a, b) => {
-          const pa = parseFloat(a.price || "0") || 0;
-          const pb = parseFloat(b.price || "0") || 0;
-          return order.side === "buy" ? pa - pb : pb - pa;
+          const pa = (() => { try { return raw18(a.price || "0"); } catch { return 0n; } })();
+          const pb = (() => { try { return raw18(b.price || "0"); } catch { return 0n; } })();
+          return order.side === "buy"
+            ? (pa < pb ? -1 : pa > pb ? 1 : 0)
+            : (pb < pa ? -1 : pb > pa ? 1 : 0);
         });
 
       const match = sorted[0];
       // Use remainingQuantity so a partially-consumed stop order fills the correct amount
-      const quantity = parseFloat(order.remainingQuantity ?? order.quantity);
+      const quantityRaw = raw18(order.remainingQuantity ?? order.quantity);
 
       if (match) {
-        const matchAvail = parseFloat(match.remainingQuantity ?? match.quantity);
-        const fillQty   = Math.min(quantity, matchAvail);
-        const fillPrice = parseFloat(match.price ?? marketPrice.toString());
-        const fillTotal = (fillQty * fillPrice).toFixed(8);
-        const tradeId   = crypto.randomUUID();
+        const matchAvailRaw = raw18(match.remainingQuantity ?? match.quantity);
+        const fillQtyRaw = quantityRaw < matchAvailRaw ? quantityRaw : matchAvailRaw;
+        const fillPriceRaw = match.price ? raw18(match.price) : marketRaw;
+        const fillTotalRaw = mulPriceQty({
+          priceRaw: fillPriceRaw,
+          priceDecimals: LEDGER_DECIMALS,
+          quantityRaw: fillQtyRaw,
+          quantityDecimals: LEDGER_DECIMALS,
+          outputDecimals: LEDGER_DECIMALS,
+          rounding: "ceil",
+        });
+        const fillQty = formatUnits(fillQtyRaw, LEDGER_DECIMALS);
+        const fillPrice = formatUnits(fillPriceRaw, LEDGER_DECIMALS);
+        const fillTotal = formatUnits(fillTotalRaw, LEDGER_DECIMALS);
+        const tradeId = crypto.randomUUID();
 
         const buyerAddress  = order.side === "buy"  ? order.walletAddress : match.walletAddress;
         const sellerAddress = order.side === "sell" ? order.walletAddress : match.walletAddress;
@@ -123,8 +172,8 @@ export async function triggerStopOrders(): Promise<void> {
           sellerAddress,
           buyerNetwork:  order.side === "buy"  ? (order.networkType ?? "evm") : (match.networkType ?? "evm"),
           sellerNetwork: order.side === "sell" ? (order.networkType ?? "evm") : (match.networkType ?? "evm"),
-          amount:        fillQty.toString(),
-          price:         fillPrice.toString(),
+          amount:        fillQty,
+          price:         fillPrice,
           total:         fillTotal,
           timestamp:     Date.now(),
         });
@@ -153,35 +202,37 @@ export async function triggerStopOrders(): Promise<void> {
         }
 
         // Mark counter-order (partially or fully consumed)
-        const newMatchFilled    = parseFloat(match.filledQuantity ?? "0") + fillQty;
-        const newMatchRemaining = Math.max(0, matchAvail - fillQty);
-        const matchFullyFilled  = newMatchRemaining <= 0.000001;
+        const newMatchFilledRaw = raw18(match.filledQuantity ?? "0") + fillQtyRaw;
+        const newMatchRemainingRaw = nonNegative(matchAvailRaw - fillQtyRaw);
+        const matchFullyFilled = newMatchRemainingRaw === 0n;
         if (match.walletAddress === BOT_ADDRESS) {
           if (matchFullyFilled) {
             await db.delete(ordersTable).where(eq(ordersTable.id, match.id));
           } else {
             await db.update(ordersTable)
-              .set({ filledQuantity: newMatchFilled.toFixed(18), remainingQuantity: newMatchRemaining.toFixed(18), updatedAt: new Date() })
+              .set({ filledQuantity: formatUnits(newMatchFilledRaw, LEDGER_DECIMALS), remainingQuantity: formatUnits(newMatchRemainingRaw, LEDGER_DECIMALS), updatedAt: new Date() })
               .where(eq(ordersTable.id, match.id));
           }
         } else {
           await db.update(ordersTable)
             .set({ status: matchFullyFilled ? "filled" : "open",
-                   filledQuantity: newMatchFilled.toFixed(18), remainingQuantity: newMatchRemaining.toFixed(18),
+                   filledQuantity: formatUnits(newMatchFilledRaw, LEDGER_DECIMALS),
+                   remainingQuantity: formatUnits(newMatchRemainingRaw, LEDGER_DECIMALS),
                    txid: broadcastTxid, matchedOrderId: order.id, updatedAt: new Date() })
             .where(eq(ordersTable.id, match.id));
         }
 
         // Mark the stop order (fully or partially filled)
-        const prevStopFilled   = parseFloat(order.filledQuantity ?? "0");
-        const newStopFilled    = prevStopFilled + fillQty;
-        const newStopRemaining = Math.max(0, quantity - fillQty);
-        const stopFullyFilled  = newStopRemaining <= 0.000001;
+        const prevStopFilledRaw = raw18(order.filledQuantity ?? "0");
+        const newStopFilledRaw = prevStopFilledRaw + fillQtyRaw;
+        const newStopRemainingRaw = nonNegative(quantityRaw - fillQtyRaw);
+        const stopFullyFilled = newStopRemainingRaw === 0n;
         await db.update(ordersTable)
           .set({ status: stopFullyFilled ? "filled" : "open",
-                 filledQuantity: newStopFilled.toFixed(18),
-                 remainingQuantity: newStopRemaining.toFixed(18),
-                 price: fillPrice.toFixed(18), total: (fillQty * fillPrice).toFixed(18),
+                 filledQuantity: formatUnits(newStopFilledRaw, LEDGER_DECIMALS),
+                 remainingQuantity: formatUnits(newStopRemainingRaw, LEDGER_DECIMALS),
+                 price: fillPrice,
+                 total: fillTotal,
                  txid: broadcastTxid, matchedOrderId: match.id, updatedAt: new Date() })
           .where(eq(ordersTable.id, order.id));
 
@@ -196,8 +247,8 @@ export async function triggerStopOrders(): Promise<void> {
             sellerAddress,
             baseAsset:  baseAsset!,
             quoteAsset,
-            amount:     fillQty.toString(),
-            price:      fillPrice.toString(),
+            amount:     fillQty,
+            price:      fillPrice,
             isBotSeller: sellerAddress === BOT_ADDRESS,
             isBotBuyer:  buyerAddress  === BOT_ADDRESS,
           });
@@ -209,7 +260,7 @@ export async function triggerStopOrders(): Promise<void> {
         pushNotification(order.walletAddress, {
           type:  stopFullyFilled ? "order_filled" : "order_partial",
           title: stopFullyFilled ? `Stop Order Triggered ✓` : `Stop Order Partial Fill`,
-          body:  `${fillQty} ${base} stop-${order.side} @ $${fillPrice.toFixed(4)} · executed on-chain`,
+          body:  `${fillQty} ${base} stop-${order.side} @ $${fillPrice} · executed on-chain`,
           pair:  order.symbol,
           txid:  broadcastTxid ?? undefined,
           side:  order.side,

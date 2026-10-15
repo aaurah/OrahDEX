@@ -21,7 +21,7 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import { db, pool } from "@workspace/db";
-import { marketsTable, leSwapsTable } from "@workspace/db/schema";
+import { marketsTable, leSwapsTable, keeperEarningsTable } from "@workspace/db/schema";
 import { eq, and, ne, inArray, sql } from "drizzle-orm";
 import {
   leRequest, fetchLEPricesUSD, getCachedLEPrices, fetchLEKeyPricesIfNeeded, AFFILIATE_ID,
@@ -41,14 +41,14 @@ const router: IRouter = Router();
 
 const BRIDGE_COMMISSION_RATE = 0.003; // 0.3% of deposit USD — estimated affiliate commission
 
-function recordBridgeFee(amt: number, fromCoin: string, txRef: string) {
+function recordBridgeFee(amt: number, fromCoin: string, txRef: string, venue = "") {
   const leUsd = getCachedLEPrices();
   const fromUsdPrice = leUsd[fromCoin.toUpperCase()] ?? 0;
   if (fromUsdPrice <= 0) return;
   const depositUsd = amt * fromUsdPrice;
   const commission = depositUsd * BRIDGE_COMMISSION_RATE;
   if (commission > 0) {
-    recordPlatformFee({ source: "bridge", amount: commission, asset: "USD", txRef }).catch(() => {});
+    recordPlatformFee({ source: "bridge_pending", amount: commission, asset: "USD", txRef }).catch(() => {});
   }
 }
 
@@ -1193,7 +1193,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
-          recordBridgeFee(amt, fromU, ex.id ?? "changenow");
+          recordBridgeFee(amt, fromU, ex.id ?? "changenow", "changenow");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -1229,7 +1229,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
-          recordBridgeFee(amt, fromU, ex.id ?? "stealthex");
+          recordBridgeFee(amt, fromU, ex.id ?? "stealthex", "stealthex");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -1263,7 +1263,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
-          recordBridgeFee(amt, fromU, ex.id ?? "simpleswap");
+          recordBridgeFee(amt, fromU, ex.id ?? "simpleswap", "simpleswap");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -1302,7 +1302,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
         if (result.ok) {
           if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: venue }, "exchange: fell back to alternate venue");
           const ex = result.exchange;
-          recordBridgeFee(amt, fromU, ex.id ?? "changelly");
+          recordBridgeFee(amt, fromU, ex.id ?? "changelly", "changelly");
           res.json({
             transaction_id:    ex.id,
             status:            "wait",
@@ -1357,7 +1357,7 @@ router.post("/letsexchange/exchange", async (req, res) => {
       if (venue !== bestVenue) logger.warn({ originalVenue: bestVenue, fallbackVenue: "letsexchange" }, "exchange: fell back to alternate venue");
       const d = leData as Record<string, unknown>;
       if (d?.transaction_id) {
-        recordBridgeFee(amt, fromU, String(d.transaction_id));
+        recordBridgeFee(amt, fromU, String(d.transaction_id), "letsexchange");
         const leUsd = getCachedLEPrices();
         const fromUsd = leUsd[fromU] ?? 0;
         const depositUsd = fromUsd > 0 ? (amt * fromUsd).toFixed(4) : null;
@@ -1391,6 +1391,17 @@ router.post("/letsexchange/exchange", async (req, res) => {
 // ── GET /api/letsexchange/status/:id ─────────────────────────────────────────
 // Hybrid: routes to the correct venue via ?venue=changenow|stealthex|simpleswap.
 // Defaults to LetsExchange. Normalises all responses to a common StatusResult shape.
+// Promote a pending bridge estimate to confirmed revenue once a venue
+// reports the deposit received / swap progressing. Called from the status
+// route (polled live by the swap-tracking UI): funded swaps confirm
+// themselves; unfunded exchanges stay "bridge_pending" forever — honest books.
+function promoteBridgeFee(txRef: string): void {
+  db.update(keeperEarningsTable)
+    .set({ source: "bridge" })
+    .where(and(eq(keeperEarningsTable.txRef, txRef), eq(keeperEarningsTable.source, "bridge_pending")))
+    .catch((e: any) => logger.warn({ err: e?.message }, "bridge fee promote failed"));
+}
+
 router.get("/letsexchange/status/:id", async (req, res) => {
   const { id } = req.params;
   const venue = typeof req.query.venue === "string" ? req.query.venue : "letsexchange";
@@ -1459,6 +1470,7 @@ router.get("/letsexchange/status/:id", async (req, res) => {
         } as any).where(eq(leSwapsTable.id, String(primaryResult.transaction_id)))
           .catch(e => logger.warn({ err: e }, "le_swaps status sync failed"));
       }
+      if (["confirmation","exchanging","sending","finished"].includes(String(primaryResult.status))) promoteBridgeFee(String(id));
       res.json(primaryResult);
       return;
     }
@@ -1469,6 +1481,7 @@ router.get("/letsexchange/status/:id", async (req, res) => {
       const rescued = await tryGetStatus(fallbackVenue, id);
       if (rescued) {
         logger.info({ id, originalVenue: venue, foundVenue: fallbackVenue }, "status: rescued exchange on alternate venue");
+        if (["confirmation","exchanging","sending","finished"].includes(String(rescued.status))) promoteBridgeFee(String(id));
         res.json({ ...rescued, venue_rescued: true });
         return;
       }

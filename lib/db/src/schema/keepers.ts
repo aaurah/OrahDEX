@@ -36,6 +36,8 @@ export const keeperEarningsTable = pgTable("keeper_earnings", {
   source:        text("source").notNull(),  // "lp_fee" | "bridge_relay" | "referral"
   amount:        numeric("amount", { precision: 36, scale: 18 }).notNull(),
   txRef:         text("tx_ref").default(""),  // order/swap/bridge id
+  venue:         text("venue").notNull().default(""),   // exchange venue for bridge fees
+  sweptTx:       text("swept_tx").notNull().default(""), // treasury sweep tx hash ("" = unswept)
   earnedAt:      timestamp("earned_at").notNull().defaultNow(),
 }, (t) => [
   index("keeper_earnings_wallet_idx").on(t.walletAddress),

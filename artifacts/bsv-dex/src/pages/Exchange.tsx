@@ -647,15 +647,25 @@ export function ExchangePage() {
     setQuoteLoading(true);
     setQuoteError(null);
     try {
-      const r = await fetch(`${API_BASE}/swap/multi-quote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          assetIn: from.symbol,
-          assetOut: to.symbol,
-          amountIn: amt,
-        }),
-      });
+      let r: Response | undefined;
+      let lastErr: any;
+      for (let attempt = 0; attempt < 3 && !r; attempt++) {
+        try {
+          r = await fetch(`${API_BASE}/swap/multi-quote`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              assetIn: from.symbol,
+              assetOut: to.symbol,
+              amountIn: amt,
+            }),
+          });
+        } catch (e) {
+          lastErr = e;
+          if (attempt < 2) await new Promise((res) => setTimeout(res, 1500));
+        }
+      }
+      if (!r) throw lastErr ?? new Error("Network error");
       if (!r.ok) throw new Error(await r.text());
       const d = await r.json();
       setQuote({

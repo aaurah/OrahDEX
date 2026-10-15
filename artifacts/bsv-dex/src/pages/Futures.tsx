@@ -1,3 +1,4 @@
+import { signFuturesChallengeIfNeeded } from "@/lib/futuresSig";
 import { useParams, useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
@@ -252,14 +253,25 @@ export function FuturesTrading() {
     return () => clearInterval(t);
   }, [address, fetchPositions]);
 
-  const handleClosePosition = async (positionId: string, markPrice: number) => {
+  const handleClosePosition = async (positionId: string, markPrice: string) => {
     if (!address) return;
     setClosingPositionId(positionId);
     try {
+      const closeAuth = await signFuturesChallengeIfNeeded({
+        walletAddress: address,
+        network,
+        action: "close",
+        fields: { positionId },
+      });
       const resp = await fetch(`${API_BASE}/futures/positions/${encodeURIComponent(positionId)}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address, markPrice }),
+        body: JSON.stringify({
+          walletAddress: address,
+          markPrice,
+          nonce: closeAuth.nonce,
+          evmSignature: closeAuth.signature,
+        }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -314,6 +326,10 @@ export function FuturesTrading() {
 
   const handleFuturesSubmit = async (side: "buy" | "sell") => {
     if (!address) { openModal(); return; }
+    if (network !== "evm" || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      toast({ title: "EVM wallet required", description: "Futures currently requires an EVM wallet.", variant: "destructive" });
+      return;
+    }
     if (!size || parseFloat(size) <= 0) {
       toast({ title: "Enter size", description: "Please enter a position size.", variant: "destructive" });
       return;
@@ -321,18 +337,28 @@ export function FuturesTrading() {
     setFuturesSide(side);
     setFuturesSubmitting(true);
     try {
+      const futuresSide = side === "buy" ? "long" : "short";
+      const futuresQty = size;
+      const openAuth = await signFuturesChallengeIfNeeded({
+        walletAddress: address,
+        network,
+        action: "open",
+        fields: { symbol: `${base}/USDT-PERP`, side: futuresSide, leverage, quantity: futuresQty },
+      });
       const resp = await fetch(`${API_BASE}/futures/positions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbol: `${base}/USDT-PERP`,
           walletAddress: address,
-          side: side === "buy" ? "long" : "short",
+          side: futuresSide,
           leverage,
-          quantity: parseFloat(size),
-          price: orderType !== "market" && price ? parseFloat(price) : undefined,
+          quantity: futuresQty,
+          price: orderType !== "market" && price ? price : undefined,
           orderType: orderType === "stop" ? "limit" : orderType,
           marginMode,
+          nonce: openAuth.nonce,
+          evmSignature: openAuth.signature,
         }),
       });
       if (!resp.ok) {
@@ -585,7 +611,7 @@ export function FuturesTrading() {
                       <tbody className="divide-y divide-border">
                         {positions.map((p: any) => {
                           const pnl = parseFloat(p.unrealizedPnl ?? "0");
-                          const mark = parseFloat(p.markPrice);
+                          const mark = String(p.markPrice);
                           const isClosing = closingPositionId === p.id;
                           return (
                             <tr key={p.id} className="hover:bg-white/5 transition-colors">

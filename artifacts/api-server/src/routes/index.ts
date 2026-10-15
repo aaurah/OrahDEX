@@ -32,6 +32,8 @@ import withdrawalsRouter from "./withdrawals.js";
 import depositRouter from "./deposit.js";
 import nftRouter from "./nft.js";
 import socialNftRouter from "./socialNft.js";
+import catalogRouter from "./catalog.js";
+import treasuryRouter from "./treasury.js";
 import aiImageRouter from "./aiImage.js";
 import creatorCoinsRouter from "./creatorCoins.js";
 import predictionRouter from "./prediction.js";
@@ -74,8 +76,13 @@ import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { arcBroadcast } from "../lib/arcBroadcaster.js";
 import { randomBytes } from "node:crypto";
+import externalDepthRouter from "./externalDepth";
+import leEstimateShimRouter from "./leEstimateShim";
 
-const router: IRouter = Router();
+const router: IRouter = Router()
+
+router.use(externalDepthRouter);
+router.use(leEstimateShimRouter);;
 
 // Public settings — only whitelisted keys exposed (Reown project ID is a public identifier)
 const PUBLIC_SETTING_KEYS = ["reown_project_id"];
@@ -149,6 +156,8 @@ router.use("/settlement/evm", evmSettlementRouter);
 router.use(depositRouter);
 router.use(nftRouter);
 router.use(socialNftRouter);
+router.use(catalogRouter);
+router.use(treasuryRouter);
 router.use(aiImageRouter);
 router.use(creatorCoinsRouter);
 router.use(predictionRouter);
@@ -603,7 +612,7 @@ router.post("/webhook/email-inbound", async (req, res) => {
       b.sender ?? b.from ?? b.From ?? b.fromAddress ?? b.from_email ?? "unknown@unknown.com";
 
     const to: string =
-      b.recipient ?? b.to ?? b.To ?? b.toAddress ?? b.to_email ?? "inbox@orahdex.org";
+      b.recipient ?? b.to ?? b.To ?? b.toAddress ?? b.to_email ?? "inbox@orahdex.com";
 
     const subject: string =
       b.subject ?? b.Subject ?? "(no subject)";

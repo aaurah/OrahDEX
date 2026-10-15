@@ -138,7 +138,30 @@
     }
     </script>
 
-  </head>
+  
+<script>
+window.__orahdexErrors = [];
+function showOrahdexBootError() {
+  let d = document.getElementById("orahdex-boot-error");
+  if (!d) {
+    d = document.createElement("pre");
+    d.id = "orahdex-boot-error";
+    d.style = "position:fixed;left:8px;top:8px;right:8px;bottom:8px;z-index:99999;background:#300;color:#fff;padding:12px;overflow:auto;white-space:pre-wrap;font:12px monospace";
+    (document.documentElement || document.body).appendChild(d);
+  }
+  d.textContent = window.__orahdexErrors.join("\n\n");
+}
+window.addEventListener("error", (e) => {
+  window.__orahdexErrors.push((e.message || "Error") + " @ " + (e.filename || "") + ":" + (e.lineno || ""));
+  showOrahdexBootError();
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e.reason;
+  window.__orahdexErrors.push("Unhandled promise rejection: " + (r && (r.stack || r.message) || String(r)));
+  showOrahdexBootError();
+});
+</script>
+</head>
   <body>
     <div id="root"></div>
     <div id="modal-root" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;pointer-events:none;"></div>

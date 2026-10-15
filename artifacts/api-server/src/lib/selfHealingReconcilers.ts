@@ -160,6 +160,61 @@ export function startGhostOrderDetector(): void {
   );
 }
 
+
+/* ── Stale pending matcher-claim detector ──────────────────────────────────
+ * The matcher now moves counter-orders open → pending before settlement and
+ * back to open/filled after settlement. A row stuck in pending means either a
+ * crashed matcher or a bug in the claim/finalize path. Alert only — do NOT
+ * auto-release here until settlement idempotency is proven.
+ */
+export function startStalePendingOrderDetector(): void {
+  const INTERVAL_MS = 5 * 60_000;
+  const STALE_MS    = 10 * 60_000;
+
+  guardedInterval(
+    "stale-pending-order-detector",
+    async () => {
+      const cutoff = new Date(Date.now() - STALE_MS).toISOString();
+
+      const { rows } = await pool.query<{
+        id: string;
+        symbol: string;
+        side: string;
+        wallet_address: string;
+        matched_order_id: string | null;
+        updated_at: string;
+      }>(
+        `SELECT id, symbol, side, wallet_address, matched_order_id, updated_at::text
+         FROM orders
+         WHERE status = 'pending'
+           AND updated_at < $1
+         ORDER BY updated_at ASC
+         LIMIT 50`,
+        [cutoff],
+      );
+
+      for (const order of rows) {
+        const ageMin = Math.round((Date.now() - new Date(order.updated_at).getTime()) / 60_000);
+        alertCritical(
+          "order",
+          `Stale pending matcher claim: ${order.id} (${order.symbol}) pending ${ageMin}min`,
+          `wallet: ${order.wallet_address} · matchedOrderId: ${order.matched_order_id ?? "null"}`,
+        );
+        logger.error(
+          { orderId: order.id, symbol: order.symbol, matchedOrderId: order.matched_order_id, ageMin },
+          "[Reconciler] Stale pending matcher claim detected",
+        );
+      }
+
+      if (rows.length > 0) {
+        logger.warn({ count: rows.length }, "[Reconciler] Stale pending matcher claims found");
+      }
+    },
+    INTERVAL_MS,
+    { timeoutMs: 60_000, initialDelayMs: 60_000 },
+  );
+}
+
 /* ── 3. Stripe ↔ LE reconciler ───────────────────────────────────────────── */
 // Finds Stripe payment_intents in le_swaps that never progressed past 'waiting'
 // and are older than 30 minutes — a sign the webhook may have been missed.
@@ -280,7 +335,8 @@ export function startPriceEngineWatchdog(): void {
 export function startAllReconcilers(): void {
   try { startLeStatusSync();        } catch (e) { logger.error({ err: e }, "startLeStatusSync failed"); }
   try { startGhostOrderDetector();  } catch (e) { logger.error({ err: e }, "startGhostOrderDetector failed"); }
-  try { startStripeLeReconciler();  } catch (e) { logger.error({ err: e }, "startStripeLeReconciler failed"); }
+    try { startStalePendingOrderDetector(); } catch (e) { logger.error({ err: e }, "startStalePendingOrderDetector failed"); }
+try { startStripeLeReconciler();  } catch (e) { logger.error({ err: e }, "startStripeLeReconciler failed"); }
   try { startDbWatchdog();          } catch (e) { logger.error({ err: e }, "startDbWatchdog failed"); }
   try { startPriceEngineWatchdog(); } catch (e) { logger.error({ err: e }, "startPriceEngineWatchdog failed"); }
   logger.info("[SelfHeal] All data-integrity reconcilers started");

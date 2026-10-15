@@ -3,7 +3,8 @@ import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { WagmiProvider } from "wagmi";
 import App from "./App";
-import "./index.css";
+import "./index.css"
+import "./lib/fetchRetry";;
 import { applyStoredTheme } from "./store/useThemeStore";
 import { migrateStaleDerivedAddresses } from "./lib/walletPin";
 import { wagmiConfig } from "./lib/reown";

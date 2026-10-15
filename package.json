@@ -4,9 +4,10 @@
   "license": "MIT",
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
-    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "build": "pnpm --filter worker... run build",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
+    "postinstall": "node scripts/strip-reown-footer.mjs"
   },
   "private": true,
   "devDependencies": {
@@ -44,17 +45,25 @@
       "dompurify": ">=3.4.11 <4.0.0",
       "ua-parser-js": ">=2.0.10 <3.0.0",
       "js-yaml": ">=4.2.0 <5.0.0",
-      "@babel/core": ">=7.29.6 <8.0.0"
+      "@babel/core": ">=7.29.6 <8.0.0",
+      "@ledgerhq/context-module": "2.6.0",
+      "@reown/appkit": "1.8.22",
+      "@reown/appkit-adapter-wagmi": "1.8.22"
     },
     "auditConfig": {
       "ignoreCves": [
         "GHSA-848j-6mx2-7j84"
       ]
-    }
+    },
+    "onlyBuiltDependencies": [
+      "sharp",
+      "workerd"
+    ]
   },
   "dependencies": {
     "@vercel/speed-insights": "^2.0.0",
     "stripe": "^22.1.0",
     "stripe-replit-sync": "^1.0.0"
-  }
+  },
+  "packageManager": "pnpm@9.15.9"
 }

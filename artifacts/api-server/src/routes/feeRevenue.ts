@@ -8,7 +8,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { keeperEarningsTable, tradesTable, ordersTable } from "@workspace/db/schema";
-import { eq, and, gte, sum, sql } from "drizzle-orm";
+import { eq, and, gte, sum, sql, ne } from "drizzle-orm";
 import { EXCHANGE_TREASURY, type FeeSource } from "../lib/feeCollector.js";
 
 const router = Router();
@@ -71,7 +71,7 @@ async function sumFeesBySource(since: Date): Promise<Record<string, number>> {
     .from(keeperEarningsTable)
     .where(
       and(
-        eq(keeperEarningsTable.walletAddress, EXCHANGE_TREASURY),
+        eq(keeperEarningsTable.walletAddress, EXCHANGE_TREASURY), ne(keeperEarningsTable.source, "bridge_pending"),
         gte(keeperEarningsTable.earnedAt, since),
       )
     )

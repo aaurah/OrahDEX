@@ -126,6 +126,15 @@ export function canonicalIntentPayload(
 
 // ── Server-side structural validation ────────────────────────────────────────
 
+/** Exact positive decimal-string check; no JS Number conversion. */
+export function isPositiveDecimalString(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const v = value.trim();
+  if (!/^\d+(\.\d+)?$/.test(v)) return false;
+  const [intPart, fracPart = ""] = v.split(".");
+  return !( /^0*$/.test(intPart) && /^0*$/.test(fracPart) );
+}
+
 /**
  * Validate an OrderIntent for structural correctness.
  * Does NOT check funding — that is handled by fundingVerifier.ts.
@@ -144,18 +153,14 @@ export function validateOrderIntent(intent: Partial<OrderIntent>): IntentValidat
   if (!["MARKET", "LIMIT"].includes(intent.type ?? "")) {
     return { valid: false, error: "type must be MARKET or LIMIT", code: "INVALID_TYPE" };
   }
-  const amount = parseFloat(intent.amount ?? "0");
-  if (!isFinite(amount) || amount <= 0) {
-    return { valid: false, error: "amount must be a positive number", code: "INVALID_AMOUNT" };
+  if (!isPositiveDecimalString(intent.amount)) {
+    return { valid: false, error: "amount must be a positive decimal string", code: "INVALID_AMOUNT" };
   }
   if (intent.type === "LIMIT" && !intent.price) {
     return { valid: false, error: "price is required for LIMIT orders", code: "PRICE_REQUIRED" };
   }
-  if (intent.price !== undefined) {
-    const p = parseFloat(intent.price);
-    if (!isFinite(p) || p <= 0) {
-      return { valid: false, error: "price must be a positive number", code: "INVALID_PRICE" };
-    }
+  if (intent.price !== undefined && !isPositiveDecimalString(intent.price)) {
+    return { valid: false, error: "price must be a positive decimal string", code: "INVALID_PRICE" };
   }
   if (!intent.walletAddress) {
     return { valid: false, error: "walletAddress is required", code: "MISSING_WALLET" };

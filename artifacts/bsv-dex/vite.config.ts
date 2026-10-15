@@ -746,7 +746,19 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
         return { id: jsFile };
       },
     },
+    {
+      name: "alias-util-polyfill",
+      enforce: "pre",
+      resolveId(id) {
+        if (id === "util" || id === "node:util") {
+          return path.resolve(import.meta.dirname, "src/stubs/util.js");
+        }
+        return null;
+      },
+    },
     nodePolyfills({
+      include: ["util", "node:util"],
+      protocolImports: true,
       globals: { Buffer: true, global: true, process: true },
       protocolImports: true,
     }),
@@ -768,6 +780,12 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
   ],
   resolve: {
     alias: {
+      stream: 'stream-browserify',
+      crypto: 'crypto-browserify',
+      http: 'stream-http',
+      https: 'https-browserify',
+      zlib: 'browserify-zlib',
+
       "@": path.resolve(import.meta.dirname, "src"),
       "@assets": path.resolve(import.meta.dirname, "..", "..", "attached_assets"),
       // pino is used by @walletconnect/logger. Pino's browser bundle stores
@@ -775,6 +793,9 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
       // @walletconnect/logger@2.1.2 calls logger.bindings() as a function.
       // Alias to our stub that always has bindings() as a callable method.
       "pino": path.resolve(import.meta.dirname, "src/stubs/pino.js"),
+      // Vite/Rolldown can externalize Node's util builtin; client deps may access util.inspect.custom.
+      "util": path.resolve(import.meta.dirname, "src/stubs/util.js"),
+      "node:util": path.resolve(import.meta.dirname, "src/stubs/util.js"),
       // Rolldown (Vite 8) cannot resolve @reown/appkit subpath exports through
       // symlinks created by bsv-dex-symlinks buildStart. Point directly to the
       // dist files so rolldown never needs to follow the symlink for subpaths.
@@ -798,7 +819,7 @@ export const base64ToUint8Array = (s) => Uint8Array.from(atob(s), c => c.charCod
   root: path.resolve(import.meta.dirname),
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
-    emptyOutDir: true,
+    emptyOutDir: false,
     chunkSizeWarningLimit: 6000,
     /* Let Rolldown do automatic code splitting — manualChunks was causing
        the entry chunk to statically import 4 MB of JS (modals + pages chunks),

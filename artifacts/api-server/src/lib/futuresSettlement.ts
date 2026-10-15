@@ -49,6 +49,7 @@ import { pool, db, withDbRetry } from "@workspace/db";
 import { futuresPositionsTable, marketsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import crypto from "node:crypto";
+import { parseUnits, formatUnits, mulDiv, mulPriceQty, pow10 } from "./money.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -57,17 +58,52 @@ const DEFAULT_TAKER_FEE_RATE    = 0.0005;  // 0.05% — fallback when market row
 /** Maximum allowed leverage to prevent instant-liquidation abuse. */
 export const MAX_FUTURES_LEVERAGE = 100;
 
+const PRICE_DECIMALS = 8;
+const QTY_DECIMALS = 8;
+const MONEY_DECIMALS = 18;
+
+function moneyRaw(value: string | number): bigint {
+  return parseUnits(String(value), MONEY_DECIMALS);
+}
+function priceRaw(value: string | number): bigint {
+  return parseUnits(String(value), PRICE_DECIMALS);
+}
+function qtyRaw(value: string | number): bigint {
+  return parseUnits(String(value), QTY_DECIMALS);
+}
+function feeFractionRaw(value: string | number): bigint {
+  return parseUnits(String(value), MONEY_DECIMALS);
+}
+function unit(): bigint {
+  return pow10(MONEY_DECIMALS);
+}
+function liquidationPriceRawFromEntry(entryRaw: bigint, leverage: bigint, side: "long" | "short"): bigint {
+  if (leverage < 1n) throw new Error("INVALID_LEVERAGE");
+  const mmrRaw = feeFractionRaw(MAINTENANCE_MARGIN_RATE);
+  const moveRaw = (unit() - mmrRaw) / leverage;
+  return side === "long"
+    ? mulDiv(entryRaw, unit() - moveRaw, unit(), "floor")
+    : mulDiv(entryRaw, unit() + moveRaw, unit(), "ceil");
+}
+
 /** Look up the taker fee for a perp symbol from the markets table; falls back to the constant. */
-async function getTakerFeeRate(symbol: string): Promise<number> {
+async function getTakerFeeRate(symbol: string): Promise<string> {
   try {
     const baseSym = symbol.replace("-PERP", "");
     const [m] = await withDbRetry(() =>
       db.select().from(marketsTable).where(eq(marketsTable.symbol, baseSym))
     );
-    const fee = m ? parseFloat(m.takerFee) : NaN;
-    return Number.isFinite(fee) && fee >= 0 ? fee : DEFAULT_TAKER_FEE_RATE;
+    if (m?.takerFee) {
+      try {
+        feeFractionRaw(m.takerFee);
+        return m.takerFee;
+      } catch {
+        // fall through
+      }
+    }
+    return DEFAULT_TAKER_FEE_RATE.toString();
   } catch {
-    return DEFAULT_TAKER_FEE_RATE;
+    return DEFAULT_TAKER_FEE_RATE.toString();
   }
 }
 
@@ -79,10 +115,10 @@ export interface FuturesOpenParams {
   side:          "long" | "short";
   leverage:      number;
   /** Margin amount in USDT committed from futures_margin_accounts */
-  margin:        number;
-  /** Notional quantity (margin × leverage / entryPrice) */
-  quantity:      number;
-  entryPrice:    number;
+  margin:        string | number;
+  /** Notional quantity */
+  quantity:      string | number;
+  entryPrice:    string | number;
   /** Proves the margin was locked from the futures bucket */
   fundingRef:    string;
 }
@@ -96,7 +132,7 @@ export interface FuturesOpenResult {
 
 export interface FuturesCloseParams {
   positionId: string;
-  markPrice:  number;
+  markPrice:  string | number;
 }
 
 export interface FuturesCloseResult {
@@ -112,18 +148,14 @@ export interface FuturesLiquidateResult {
 // ── Liquidation price computation ─────────────────────────────────────────────
 
 export function computeLiquidationPrice(
-  entryPrice: number,
+  entryPrice: string | number,
   leverage:   number,
   side:       "long" | "short",
 ): number {
-  // Standard isolated-margin liquidation: position is closed when loss
-  // equals (1 - mmr) of the posted margin, leaving the maintenance buffer
-  // for the protocol to safely unwind. Equivalent price move = (1 - mmr)/leverage.
-  const mmr  = MAINTENANCE_MARGIN_RATE;
-  const move = (1 - mmr) / leverage;
-  return side === "long"
-    ? entryPrice * (1 - move)
-    : entryPrice * (1 + move);
+  const entryRaw = priceRaw(entryPrice);
+  const leverageBig = BigInt(Math.round(leverage));
+  const liqRaw = liquidationPriceRawFromEntry(entryRaw, leverageBig, side);
+  return Number(formatUnits(liqRaw, PRICE_DECIMALS));
 }
 
 // ── Margin bucket helpers ─────────────────────────────────────────────────────
@@ -135,7 +167,7 @@ export function computeLiquidationPrice(
  */
 export async function lockFuturesMargin(
   walletAddress: string,
-  amount:        number,
+  amount:        string | number,
   asset:         string = "USDT",
 ): Promise<void> {
   const client = await pool.connect();
@@ -156,9 +188,14 @@ export async function lockFuturesMargin(
       [walletAddress, asset],
     );
 
-    const avail = parseFloat(rows[0]?.available ?? "0");
-    if (avail < amount) {
-      throw new Error(`INSUFFICIENT_FUTURES_MARGIN:${asset}:need=${amount},have=${avail}`);
+    const amountRaw = moneyRaw(amount);
+    if (amountRaw <= 0n) throw new Error(`lockFuturesMargin: invalid amount ${amount}`);
+    const availRaw = moneyRaw(rows[0]?.available ?? "0");
+    if (availRaw < amountRaw) {
+      throw new Error(
+        `INSUFFICIENT_FUTURES_MARGIN:${asset}:need=${formatUnits(amountRaw, MONEY_DECIMALS)},` +
+        `have=${formatUnits(availRaw, MONEY_DECIMALS)}`,
+      );
     }
 
     await client.query(
@@ -167,7 +204,7 @@ export async function lockFuturesMargin(
            locked     = locked + $1,
            updated_at = now()
        WHERE wallet_address = $2 AND asset = $3`,
-      [amount.toFixed(8), walletAddress, asset],
+      [formatUnits(amountRaw, MONEY_DECIMALS), walletAddress, asset],
     );
 
     await client.query("COMMIT");
@@ -185,10 +222,11 @@ export async function lockFuturesMargin(
  */
 export async function releaseFuturesMargin(
   walletAddress: string,
-  amount:        number,
+  amount:        string | number,
   asset:         string = "USDT",
 ): Promise<void> {
-  if (!Number.isFinite(amount) || amount <= 0) {
+  const amountRaw = moneyRaw(amount);
+  if (amountRaw <= 0n) {
     throw new Error(`releaseFuturesMargin: invalid amount ${amount}`);
   }
   const client = await pool.connect();
@@ -200,20 +238,21 @@ export async function releaseFuturesMargin(
        FOR UPDATE`,
       [walletAddress, asset],
     );
-    const currentLocked = parseFloat(rows[0]?.locked ?? "0");
-    if (currentLocked < amount - 1e-8) {
+    const currentLockedRaw = moneyRaw(rows[0]?.locked ?? "0");
+    if (currentLockedRaw < amountRaw) {
       throw new Error(
-        `releaseFuturesMargin: cannot release ${amount} ${asset} — only ${currentLocked} is locked for ${walletAddress}`,
+        `releaseFuturesMargin: cannot release ${amount} ${asset} — only ` +
+        `${formatUnits(currentLockedRaw, MONEY_DECIMALS)} is locked for ${walletAddress}`,
       );
     }
-    const actualRelease = Math.min(amount, currentLocked);
+    const actualReleaseRaw = amountRaw;
     await client.query(
       `UPDATE futures_margin_accounts
        SET locked     = locked - $1,
            available  = available + $1,
            updated_at = now()
        WHERE wallet_address = $2 AND asset = $3`,
-      [actualRelease.toFixed(8), walletAddress, asset],
+      [formatUnits(actualReleaseRaw, MONEY_DECIMALS), walletAddress, asset],
     );
     await client.query("COMMIT");
   } catch (err) {
@@ -234,7 +273,7 @@ export async function releaseFuturesMargin(
  */
 export async function depositToFuturesMargin(
   walletAddress: string,
-  amount:        number,
+  amount:        string | number,
   asset:         string = "USDT",
 ): Promise<void> {
   const client = await pool.connect();
@@ -248,15 +287,19 @@ export async function depositToFuturesMargin(
        FOR UPDATE`,
       [walletAddress, asset],
     );
-    const avail = parseFloat(rows[0]?.available ?? "0");
-    if (avail < amount) {
+    const amountRaw = moneyRaw(amount);
+    if (amountRaw <= 0n) throw new Error(`depositToFuturesMargin: invalid amount ${amount}`);
+    const availRaw = moneyRaw(rows[0]?.available ?? "0");
+    if (availRaw < amountRaw) {
       throw new Error(`INSUFFICIENT_FUNDS:${asset}`);
     }
+    const amountSql = formatUnits(amountRaw, MONEY_DECIMALS);
+
     await client.query(
       `UPDATE user_balances
        SET available = available - $1, updated_at = now()
        WHERE wallet_address = $2 AND asset_symbol = $3`,
-      [amount.toFixed(8), walletAddress, asset],
+      [amountSql, walletAddress, asset],
     );
 
     // Credit futures margin
@@ -265,7 +308,7 @@ export async function depositToFuturesMargin(
        VALUES ($1, $2, $3, 0, now())
        ON CONFLICT (wallet_address, asset)
        DO UPDATE SET available = futures_margin_accounts.available + $3, updated_at = now()`,
-      [walletAddress, asset, amount.toFixed(8)],
+      [walletAddress, asset, amountSql],
     );
 
     await client.query("COMMIT");
@@ -316,17 +359,36 @@ export async function openFuturesPosition(
     margin, quantity, entryPrice, fundingRef,
   } = params;
 
-  // Validate leverage to prevent instant-liquidation abuse
-  if (!Number.isFinite(leverage) || leverage < 1 || leverage > MAX_FUTURES_LEVERAGE) {
+  const leverageNumber = Number(leverage);
+  if (!Number.isFinite(leverageNumber) || leverageNumber < 1 || leverageNumber > MAX_FUTURES_LEVERAGE) {
     throw new Error(
       `INVALID_LEVERAGE: leverage must be between 1 and ${MAX_FUTURES_LEVERAGE}, got ${leverage}`,
     );
   }
+  const leverageBig = BigInt(Math.round(leverageNumber));
 
-  const liquidationPrice = computeLiquidationPrice(entryPrice, leverage, side);
-  const notionalValue    = quantity * entryPrice;
-  const takerFeeRate     = await getTakerFeeRate(symbol);
-  const openingFee       = notionalValue * takerFeeRate;
+  const entryRaw = priceRaw(entryPrice);
+  const quantityRaw = qtyRaw(quantity);
+  const marginRaw = moneyRaw(margin);
+  if (entryRaw <= 0n || quantityRaw <= 0n || marginRaw <= 0n) {
+    throw new Error(`Invalid open params: entry=${entryPrice}, qty=${quantity}, margin=${margin}`);
+  }
+
+  const liquidationPriceRaw = liquidationPriceRawFromEntry(entryRaw, leverageBig, side);
+  const notionalRaw = mulPriceQty({
+    priceRaw: entryRaw,
+    priceDecimals: PRICE_DECIMALS,
+    quantityRaw,
+    quantityDecimals: QTY_DECIMALS,
+    outputDecimals: MONEY_DECIMALS,
+    rounding: "ceil",
+  });
+  const takerFeeRate = await getTakerFeeRate(symbol);
+  const openingFeeRaw = mulDiv(notionalRaw, feeFractionRaw(takerFeeRate), unit(), "floor");
+
+  const liquidationPrice = Number(formatUnits(liquidationPriceRaw, PRICE_DECIMALS));
+  const notionalValue = Number(formatUnits(notionalRaw, MONEY_DECIMALS));
+  const openingFee = Number(formatUnits(openingFeeRaw, MONEY_DECIMALS));
   const positionId       = crypto.randomUUID();
   const txid             = crypto.createHash("sha256")
     .update(`futures-open:${positionId}:${Date.now()}`)
@@ -352,9 +414,12 @@ export async function openFuturesPosition(
        WHERE wallet_address = $1 AND asset = 'USDT' FOR UPDATE`,
       [walletAddress],
     );
-    const avail = parseFloat(marginRows[0]?.available ?? "0");
-    if (avail < margin) {
-      throw new Error(`INSUFFICIENT_FUTURES_MARGIN:USDT:need=${margin},have=${avail}`);
+    const availRaw = moneyRaw(marginRows[0]?.available ?? "0");
+    if (availRaw < marginRaw) {
+      throw new Error(
+        `INSUFFICIENT_FUTURES_MARGIN:USDT:need=${formatUnits(marginRaw, MONEY_DECIMALS)},` +
+        `have=${formatUnits(availRaw, MONEY_DECIMALS)}`,
+      );
     }
 
     // Move margin: available → locked
@@ -364,7 +429,7 @@ export async function openFuturesPosition(
            locked     = locked + $1,
            updated_at = now()
        WHERE wallet_address = $2 AND asset = 'USDT'`,
-      [margin.toFixed(8), walletAddress],
+      [formatUnits(marginRaw, MONEY_DECIMALS), walletAddress],
     );
 
     // Insert the position row in the same transaction — no race window
@@ -376,8 +441,13 @@ export async function openFuturesPosition(
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'0','0','0','0','isolated','open',$11,now())`,
       [
         positionId, walletAddress, symbol, side,
-        leverage.toFixed(2), entryPrice.toFixed(8), entryPrice.toFixed(8),
-        liquidationPrice.toFixed(8), quantity.toFixed(8), margin.toFixed(8), txid,
+        leverageNumber.toFixed(2),
+        formatUnits(entryRaw, PRICE_DECIMALS),
+        formatUnits(entryRaw, PRICE_DECIMALS),
+        formatUnits(liquidationPriceRaw, PRICE_DECIMALS),
+        formatUnits(quantityRaw, QTY_DECIMALS),
+        formatUnits(marginRaw, MONEY_DECIMALS),
+        txid,
       ],
     );
 
@@ -420,16 +490,40 @@ export async function closeFuturesPosition(
     if (!pos) throw new Error(`POSITION_NOT_FOUND:${positionId}`);
     if (pos.status !== "open") throw new Error(`POSITION_NOT_OPEN:${positionId}:${pos.status}`);
 
-    const entryPrice = parseFloat(pos.entry_price);
-    const quantity   = parseFloat(pos.quantity);
-    const margin     = parseFloat(pos.margin);
+    const entryRaw = parseUnits(pos.entry_price, PRICE_DECIMALS);
+    const markRaw = priceRaw(markPrice);
+    const quantityRaw = parseUnits(pos.quantity, QTY_DECIMALS);
+    const marginRaw = moneyRaw(pos.margin);
 
-    const priceDiff     = markPrice - entryPrice;
-    const dirMult       = pos.side === "long" ? 1 : -1;
-    const realizedPnl   = dirMult * priceDiff * quantity;
-    const takerFeeRate  = await getTakerFeeRate(pos.symbol);
-    const closingFee    = markPrice * quantity * takerFeeRate;
-    const returnedMargin = Math.max(0, margin + realizedPnl - closingFee);
+    const priceDiffRaw = markRaw - entryRaw;
+    const absDiffRaw = priceDiffRaw < 0n ? -priceDiffRaw : priceDiffRaw;
+    const absolutePnlRaw = mulPriceQty({
+      priceRaw: absDiffRaw,
+      priceDecimals: PRICE_DECIMALS,
+      quantityRaw,
+      quantityDecimals: QTY_DECIMALS,
+      outputDecimals: MONEY_DECIMALS,
+      rounding: "floor",
+    });
+    const realizedPnlRaw = pos.side === "long" ? absolutePnlRaw : -absolutePnlRaw;
+
+    const takerFeeRate = await getTakerFeeRate(pos.symbol);
+    const notionalRaw = mulPriceQty({
+      priceRaw: markRaw,
+      priceDecimals: PRICE_DECIMALS,
+      quantityRaw,
+      quantityDecimals: QTY_DECIMALS,
+      outputDecimals: MONEY_DECIMALS,
+      rounding: "ceil",
+    });
+    const closingFeeRaw = mulDiv(notionalRaw, feeFractionRaw(takerFeeRate), unit(), "floor");
+
+    const returnedMarginRawCandidate = marginRaw + realizedPnlRaw - closingFeeRaw;
+    const returnedMarginRaw = returnedMarginRawCandidate > 0n ? returnedMarginRawCandidate : 0n;
+
+    const realizedPnl = Number(formatUnits(realizedPnlRaw, MONEY_DECIMALS));
+    const returnedMargin = Number(formatUnits(returnedMarginRaw, MONEY_DECIMALS));
+    const closingFeeNumber = Number(formatUnits(closingFeeRaw, MONEY_DECIMALS));
 
     const { rowCount: marginRows } = await client.query(
       `UPDATE futures_margin_accounts
@@ -437,7 +531,7 @@ export async function closeFuturesPosition(
            available  = available + $2,
            updated_at = now()
        WHERE wallet_address = $3 AND asset = 'USDT'`,
-      [margin.toFixed(8), returnedMargin.toFixed(8), pos.wallet_address],
+      [formatUnits(marginRaw, MONEY_DECIMALS), formatUnits(returnedMarginRaw, MONEY_DECIMALS), pos.wallet_address],
     );
     if ((marginRows ?? 0) < 1) throw new Error(`NO_MARGIN_ACCOUNT:${pos.wallet_address}`);
 
@@ -448,11 +542,11 @@ export async function closeFuturesPosition(
            realized_pnl = $2,
            closed_at    = now()
        WHERE id = $3 AND status = 'open'`,
-      [markPrice.toFixed(8), realizedPnl.toFixed(8), positionId],
+      [formatUnits(markRaw, PRICE_DECIMALS), formatUnits(realizedPnlRaw, MONEY_DECIMALS), positionId],
     );
 
     await client.query("COMMIT");
-    return { realizedPnl, returnedMargin, closingFee };
+    return { realizedPnl, returnedMargin, closingFee: closingFeeNumber };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
@@ -470,7 +564,7 @@ export async function closeFuturesPosition(
  */
 export async function liquidateFuturesPosition(
   positionId: string,
-  markPrice:  number,
+  markPrice:  string | number,
 ): Promise<FuturesLiquidateResult> {
   const client = await pool.connect();
   try {
@@ -491,7 +585,8 @@ export async function liquidateFuturesPosition(
       return { loss: 0 };
     }
 
-    const margin = parseFloat(pos.margin);
+    const marginRaw = moneyRaw(pos.margin);
+    const markRaw = priceRaw(markPrice);
 
     // Confiscate the locked margin (it stays locked, removed from account)
     await client.query(
@@ -499,7 +594,7 @@ export async function liquidateFuturesPosition(
        SET locked     = GREATEST(locked - $1, 0),
            updated_at = now()
        WHERE wallet_address = $2 AND asset = 'USDT'`,
-      [margin.toFixed(8), pos.wallet_address],
+      [formatUnits(marginRaw, MONEY_DECIMALS), pos.wallet_address],
     );
 
     await client.query(
@@ -508,11 +603,11 @@ export async function liquidateFuturesPosition(
            mark_price = $1,
            closed_at  = now()
        WHERE id = $2 AND status = 'open'`,
-      [markPrice.toFixed(8), positionId],
+      [formatUnits(markRaw, PRICE_DECIMALS), positionId],
     );
 
     await client.query("COMMIT");
-    return { loss: margin };
+    return { loss: Number(formatUnits(marginRaw, MONEY_DECIMALS)) };
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

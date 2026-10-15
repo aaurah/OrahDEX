@@ -18,7 +18,7 @@ const router: IRouter = Router();
 
 // ── GET /portfolio ─────────────────────────────────────────────────────────────
 // Reads from the user_balances ledger (single source of truth).
-// On first visit, seeds the wallet with initial balances so the UI is populated.
+// Production must not seed demo balances. Demo seeding is fail-closed behind DEMO_MODE and currently has no src callers.
 router.get("/portfolio", async (req, res) => {
   const walletAddress = req.query.walletAddress as string;
   if (!walletAddress) {

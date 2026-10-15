@@ -9,8 +9,13 @@ import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tra
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
 import { invalidateSzKeyCache } from "../lib/swapzone.js";
+<<<<<<< HEAD
 import { invalidateLetsExchangeCredentialCache } from "../lib/lePriceCache.js";
 import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte } from "drizzle-orm";
+=======
+import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte, count } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
+>>>>>>> origin/Main
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
 import { decrypt as decryptEvmKey } from "../lib/internalEvmWallet.js";
@@ -23,6 +28,7 @@ import { sendMail, testSmtpConnection, getSmtpStatus, autoSetupTestEmail } from 
 import { updateMarketPrices, syncAllLEPairs } from "../lib/priceUpdater.js";
 import { processWithdrawal } from "../lib/withdrawalProcessor.js";
 import { logger } from "../lib/logger.js";
+import { parseUnits, mulDiv, pow10 } from "../lib/money.js";
 import {
   buildFilterFunction,
   WATCHED_CONTRACTS,
@@ -1517,7 +1523,14 @@ router.post("/bot-profit/withdraw", async (req, res) => {
         .limit(1);
       const bsvPriceUsd = parseFloat(bsvMarket[0]?.lastPrice ?? "0") || 14.35; // fallback
 
-      const satoshis = Math.round((amount / bsvPriceUsd) * 1e8);
+      const satoshis = Number(
+        mulDiv(
+          parseUnits(amount.toFixed(8), 8),
+          pow10(8),
+          parseUnits(bsvPriceUsd.toFixed(8), 8),
+          "round",
+        ),
+      );
       if (satoshis < 546) {
         { res.status(400).json({ error: `Amount too small. Minimum is $${((546 * bsvPriceUsd) / 1e8).toFixed(4)} (546 sat dust limit)` }); return; }
       }
@@ -1668,18 +1681,18 @@ async function seedWelcomeEmail() {
     const welcomeEmails = [
       {
         folder: "inbox",
-        fromAddress: "system@orahdex.org",
-        toAddress: "admin@orahdex.org",
+        fromAddress: "system@orahdex.com",
+        toAddress: "admin@orahdex.com",
         subject: "🎉 Welcome to OrahDEX Admin Panel",
-        body: `Hi Admin,\n\nWelcome to OrahDEX! Your platform is live and ready.\n\nNext steps:\n1. Complete the Setup Guide (A–Z) to configure all platform features\n2. Add your API keys in Integrations\n3. Configure trading pairs and fees\n4. Set your fee collection wallet\n\nFor support: support@orahdex.org\nLegal: legal@orahdex.org\nPrivacy: privacy@orahdex.org\n\nBest,\nOrahDEX System`,
+        body: `Hi Admin,\n\nWelcome to OrahDEX! Your platform is live and ready.\n\nNext steps:\n1. Complete the Setup Guide (A–Z) to configure all platform features\n2. Add your API keys in Integrations\n3. Configure trading pairs and fees\n4. Set your fee collection wallet\n\nFor support: support@orahdex.com\nLegal: legal@orahdex.com\nPrivacy: privacy@orahdex.com\n\nBest,\nOrahDEX System`,
         isRead: false,
         isStarred: true,
         category: "system",
       },
       {
         folder: "inbox",
-        fromAddress: "setup@orahdex.org",
-        toAddress: "admin@orahdex.org",
+        fromAddress: "setup@orahdex.com",
+        toAddress: "admin@orahdex.com",
         subject: "⚙️ Setup Checklist — Action Required",
         body: `Admin,\n\nYour platform has required steps that need attention:\n\n✅ Required:\n- [ ] Reown Project ID (wallet connect)\n- [ ] Site Settings (name, domain)\n\n⚡ Recommended:\n- [ ] Trading fees configuration\n- [ ] Fee collection wallet\n- [ ] Security settings\n\nVisit Admin → Setup to complete all steps.\n\nOrahDEX Setup Wizard`,
         isRead: false,
@@ -1688,8 +1701,8 @@ async function seedWelcomeEmail() {
       },
       {
         folder: "inbox",
-        fromAddress: "security@orahdex.org",
-        toAddress: "admin@orahdex.org",
+        fromAddress: "security@orahdex.com",
+        toAddress: "admin@orahdex.com",
         subject: "🔐 Security Recommendation",
         body: `Security Notice,\n\nWe recommend enabling 2FA on your admin account immediately.\n\nTo set up 2FA:\n1. Go to Admin → Security Settings\n2. Enable two-factor authentication\n3. Scan the QR code with Google Authenticator\n\nAdditionally consider:\n- IP whitelist for admin access\n- Session timeout configuration\n- Rate limiting on the API\n\nStay secure,\nOrahDEX Security`,
         isRead: true,
@@ -1858,7 +1871,7 @@ router.post("/bsv-wallet/send", requireAdminToken, async (req, res) => {
     if (!isBsvAddress(toAddress))              { res.status(400).json({ error: "Invalid BSV address (must start with 1, 26–35 chars)" }); return; }
     if (!bsvAmount || bsvAmount <= 0)          { res.status(400).json({ error: "Enter a valid BSV amount" }); return; }
 
-    const satoshis = Math.round(bsvAmount * 1e8);
+    const satoshis = Number(parseUnits(bsvAmount.toFixed(8), 8));
     if (satoshis < 546)                        { res.status(400).json({ error: "Amount below dust limit (546 sat)" }); return; }
 
     const wallet  = await getOrCreateWallet();
@@ -2417,12 +2430,12 @@ router.patch("/markets/:symbol/enabled", requireAdminToken, async (req, res) => 
 
 const SITE_DEFAULTS: Record<string, string> = {
   site_name: "OrahDEX",
-  site_domain: "orahdex.org",
-  contact_email: "support@orahdex.org",
-  legal_email: "legal@orahdex.org",
-  privacy_email: "privacy@orahdex.org",
+  site_domain: "orahdex.com",
+  contact_email: "support@orahdex.com",
+  legal_email: "legal@orahdex.com",
+  privacy_email: "privacy@orahdex.com",
   company_name: "OrahDEX Ltd.",
-  canonical_url: "https://orahdex.org",
+  canonical_url: "https://orahdex.com",
   maker_fee: "0.001",
   taker_fee: "0.001",
   seo_title: "OrahDEX — Trade means DEX | BSV Settlement Exchange",
@@ -3745,6 +3758,23 @@ router.get("/overlay/stats", requireAdminToken, async (_req, res) => {
   }
 });
 
+// ── GET /api/admin/profits/venues — per-venue bridge breakdown ────────────
+router.get("/profits/venues", requireAdminToken, async (_req, res) => {
+  try {
+    const rows = await db
+      .select({ venue: keeperEarningsTable.venue, source: keeperEarningsTable.source, events: count(), total: sum(keeperEarningsTable.amount) })
+      .from(keeperEarningsTable)
+      .where(and(
+        eq(keeperEarningsTable.walletAddress, "EXCHANGE_TREASURY"),
+        inArray(keeperEarningsTable.source, ["bridge", "bridge_pending"]),
+      ))
+      .groupBy(keeperEarningsTable.venue, keeperEarningsTable.source);
+    res.json({ venues: rows.map(r => ({ venue: r.venue || "unknown", status: r.source, events: Number(r.events), total: parseFloat(r.total ?? "0") })) });
+  } catch {
+    res.status(500).json({ error: "venue breakdown failed" });
+  }
+});
+
 // ── GET /api/admin/profits ────────────────────────────────────────────────────
 // Unified platform profit dashboard — all revenue streams in one response.
 router.get("/profits", requireAdminToken, async (_req, res) => {
@@ -3762,7 +3792,7 @@ router.get("/profits", requireAdminToken, async (_req, res) => {
       const rows = await db
         .select({ source: keeperEarningsTable.source, total: sum(keeperEarningsTable.amount) })
         .from(keeperEarningsTable)
-        .where(and(eq(keeperEarningsTable.walletAddress, TREASURY), gte(keeperEarningsTable.earnedAt, since)))
+        .where(and(eq(keeperEarningsTable.walletAddress, TREASURY), gte(keeperEarningsTable.earnedAt, since), ne(keeperEarningsTable.source, "bridge_pending")))
         .groupBy(keeperEarningsTable.source);
       return Object.fromEntries(rows.map(r => [r.source, parseFloat(r.total ?? "0")]));
     }
