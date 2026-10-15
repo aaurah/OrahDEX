@@ -119,7 +119,13 @@ export async function getBalances(walletAddress: string): Promise<Balance[]> {
   );
   return rows
     .map(r => ({ asset: r.asset_symbol, available: r.available, locked: r.locked }))
-    .filter(r => parseFloat(r.available) > 0 || parseFloat(r.locked) > 0);
+    .filter(r => {
+      try {
+        return parseUnits(r.available, 18) > 0n || parseUnits(r.locked, 18) > 0n;
+      } catch {
+        return false;
+      }
+    });
 }
 
 // ── Seed initial balances (first-time user) ──────────────────────────────────
@@ -330,10 +336,13 @@ export async function ensureSeedForAsset(
 ): Promise<void> {
   assertSeedBalancesAllowed("ensureSeedForAsset");
   walletAddress = normAddr(walletAddress);
-  const needed = parseFloat(neededAmount);
-  if (isNaN(needed)) {
+  let neededRaw: bigint;
+  try {
+    neededRaw = parseUnits(neededAmount, 18);
+  } catch {
     throw new Error(`Invalid neededAmount: ${neededAmount}`);
   }
+  if (neededRaw <= 0n) return;
   // Run inside a transaction with a row lock so two concurrent callers
   // cannot both read the same balance and both decide to seed.
   const client = await pool.connect();
@@ -354,15 +363,26 @@ export async function ensureSeedForAsset(
        FOR UPDATE`,
       [walletAddress, asset],
     );
-    const current = rows[0] ? parseFloat(rows[0].available) : 0;
-    if (current >= needed) {
+    const currentStr = rows[0]?.available ?? "0";
+    let currentRaw: bigint;
+    try {
+      currentRaw = parseUnits(currentStr, 18);
+    } catch {
+      currentRaw = 0n;
+    }
+    if (currentRaw >= neededRaw) {
       await client.query("ROLLBACK");
       return;  // already sufficient — no seeding required
     }
 
     // Credit the difference (or a default seed amount, whichever is larger)
-    const defaultSeed = parseFloat(ASSET_SEED_AMOUNTS[asset]?.amount ?? "1000");
-    const credit = Math.max(needed - current + defaultSeed * 0.5, defaultSeed).toFixed(8);
+    const defaultSeedStr = ASSET_SEED_AMOUNTS[asset]?.amount ?? "1000";
+    const defaultSeedRaw = parseUnits(defaultSeedStr, 18);
+    const halfDefault = defaultSeedRaw / 2n;
+    const creditRaw = neededRaw - currentRaw + halfDefault > defaultSeedRaw
+      ? neededRaw - currentRaw + halfDefault
+      : defaultSeedRaw;
+    const credit = formatUnits(creditRaw, 18);
     await client.query(
       `UPDATE user_balances
        SET available = available + $1, updated_at = now()

@@ -3,7 +3,7 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useGetTicker, useGetCandles, useGetOrderBook, useGetRecentTrades, useGetOrders, useCancelOrder, getGetOrdersQueryKey } from "@workspace/api-client-react";
-import { useStagedMarkets as useGetMarkets } from "@/hooks/useStagedMarkets";
+import { useStagedMarkets as useGetMarkets, useMarketSearch } from "@/hooks/useStagedMarkets";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import type { OrderBookFill } from "@/components/trading/OrderBook";
 import type { OrderFormFill } from "@/components/trading/OrderForm";
@@ -16,8 +16,6 @@ import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
 import { PriceCompareBar } from "@/components/trading/PriceCompareBar";
 import { useLetsExchangeCoins } from "@/hooks/useLetsExchangeCoins";
 import { usePairPrices } from "@/hooks/usePairPrices";
-import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
-import { useSSPairs } from "@/hooks/useSSPairs";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTrades, generateTickerForSymbol, ALL_SPOT_MOCK } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn, formatVolume, marketMatchesQuery } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -298,6 +296,12 @@ export function SpotTrading() {
   const symbol = decodedRaw.includes('/') ? decodedRaw : decodedRaw.replace(/-/g, '/');
   const [base = '', quote = ''] = symbol.split('/');
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("mode") === "swap") {
+      setTradeMode("swap");
+    }
+  }, [symbol]);
+
   const noStoreRequest = { cache: "no-store" as const };
   const { data: apiTicker }    = useGetTicker(encodeURIComponent(symbol), { request: noStoreRequest });
   const { data: apiCandles }   = useGetCandles(encodeURIComponent(symbol), { interval: candleInterval as any, limit: 300 }, { request: noStoreRequest });
@@ -319,11 +323,13 @@ export function SpotTrading() {
 
   // ── LetsExchange integration ──────────────────────────────────────────────
   const { getCoin: getLECoin, isLECoin } = useLetsExchangeCoins();
-  // Server-provided pairs — all LE coins against all supported quote assets.
-  // Fetched once per quote tab on demand; falls back to [] while loading.
-  const { pairs: lePairs } = useLetsExchangePairs({ all: true });
-  // SimpleSwap pairs — additional coins not covered by LE; SS fills gaps, LE wins on overlap.
-  const { pairs: ssPairs  } = useSSPairs({ all: true });
+  // Search the complete venue catalog on demand instead of downloading every
+  // provider pair into browser memory.
+  const catalogSearchQuery = pairDropOpen ? dropSearch : marketSearch;
+  const { results: catalogSearchResults } = useMarketSearch(catalogSearchQuery, {
+    limit: 200,
+    debounceMs: 250,
+  });
 
   // Full Base chain token catalog + live DexScreener prices (cached 1h / 60s)
   const { data: baseTokenList } = useBaseTokenList(true);
@@ -591,17 +597,15 @@ export function SpotTrading() {
       deduped.set(m.symbol, { ...m, priceChangePercent24h: chg });
     });
 
-    // Merge server-provided LE pairs — skip pairs that already exist natively
-    lePairs.forEach(p => {
+    // Merge the current server-side venue search page. Full-catalog results are
+    // discoverable without retaining the entire database in the client.
+    catalogSearchResults.forEach((p: any) => {
       if (!deduped.has(p.symbol)) {
-        deduped.set(p.symbol, normalise(p as any));
-      }
-    });
-
-    // Merge SimpleSwap pairs — only fills gaps not covered by native or LE
-    ssPairs.forEach(p => {
-      if (!deduped.has(p.symbol)) {
-        deduped.set(p.symbol, normalise(p as any));
+        deduped.set(p.symbol, normalise({
+          ...p,
+          leSource: p.type === "letsexchange",
+          ssSource: p.type === "simpleswap",
+        }));
       }
     });
 
@@ -631,7 +635,7 @@ export function SpotTrading() {
 
     return Array.from(deduped.values());
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiMarkets, lePairs, ssPairs, baseTokenList, basePrices, zoraRows]);
+  }, [apiMarkets, catalogSearchResults, baseTokenList, basePrices, zoraRows]);
 
   const currentMarket = useMemo(
     () => allMarkets.find(m => m.baseAsset === base && m.quoteAsset === quote) ?? null,
