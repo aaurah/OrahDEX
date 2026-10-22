@@ -524,7 +524,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
     setEstLoading(true); setEstError(null);
     try {
       const simpleSwapSelected = fromCoin.provider === "simpleswap" || toCoin.provider === "simpleswap";
-      const effectiveVenue = simpleSwapSelected ? "simpleswap" : forceVenue;
+      const effectiveVenue = simpleSwapSelected ? "simpleswap" : (selectedVenue ?? forceVenue);
       const r = await fetch(`${API}/letsexchange/estimate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -535,13 +535,9 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
           network_to:   toCoin.network   ?? toCoin.symbol,
           amount:       parseFloat(amount),
           float:        true,
-<<<<<<< HEAD
           ...(effectiveVenue ? { force_venue: effectiveVenue } : {}),
           ...(fromCoin.providerTicker ? { provider_ticker_from: fromCoin.providerTicker } : {}),
           ...(toCoin.providerTicker ? { provider_ticker_to: toCoin.providerTicker } : {}),
-=======
-          ...((selectedVenue ?? forceVenue) ? { force_venue: (selectedVenue ?? forceVenue)! } : {}),
->>>>>>> origin/Main
         }),
       });
       const d = await r.json();
@@ -568,11 +564,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
       } else { setEstimate(d as Estimate); }
     } catch { setEstError("Network error"); }
     setEstLoading(false);
-<<<<<<< HEAD
-  }, [fromCoin, toCoin, amount, forceVenue]);
-=======
   }, [fromCoin, toCoin, amount, selectedVenue, forceVenue]);
->>>>>>> origin/Main
 
   useEffect(() => { fetchEstimate(); }, [fetchEstimate, refreshKey]);
 
