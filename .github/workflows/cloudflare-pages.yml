@@ -57,6 +57,12 @@ jobs:
           path: artifacts/bsv-dex/dist/public/
           retention-days: 7
 
+      - name: Compile Pages Functions
+        run: |
+          npx --yes wrangler@4 pages functions build \
+            artifacts/bsv-dex/functions \
+            --outfile=artifacts/bsv-dex/dist/public/_worker.js
+
       - name: Deploy Cloudflare Pages
         if: github.event_name != 'pull_request'
         env:
@@ -71,5 +77,4 @@ jobs:
           npx --yes wrangler@4 pages deploy \
             artifacts/bsv-dex/dist/public \
             --project-name="$CLOUDFLARE_PAGES_PROJECT" \
-            --branch=Main \
-            --functions=artifacts/bsv-dex/functions
+            --branch=Main
