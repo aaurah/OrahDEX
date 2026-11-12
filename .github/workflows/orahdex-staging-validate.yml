@@ -61,7 +61,7 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
           VITE_ORAHDEX_STAGING_CATALOG: "true"
           VITE_API_BASE: "/api"
-        run: pnpm --filter @workspace/bsv-dex build
+        run: pnpm --filter @workspace/bsv-dex exec vite build --config vite.staging.config.ts
 
       - name: Verify staging bundle safety
         run: node scripts/verify-staging-bundle.mjs
@@ -113,7 +113,7 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=4096
           VITE_ORAHDEX_STAGING_CATALOG: "true"
           VITE_API_BASE: "/api"
-        run: pnpm --filter @workspace/bsv-dex build
+        run: pnpm --filter @workspace/bsv-dex exec vite build --config vite.staging.config.ts
 
       - name: Verify isolated deployment
         run: |
