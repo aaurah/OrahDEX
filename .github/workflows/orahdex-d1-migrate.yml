@@ -1,11 +1,7 @@
 name: OrahDEX D1 Staging Migration
 
 on:
-  push:
-    branches:
-      - feature/orahdex-cloud-api
-    paths:
-      - ".github/workflows/orahdex-d1-migrate.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
