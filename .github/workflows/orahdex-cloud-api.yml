@@ -1,12 +1,6 @@
 name: OrahDEX Cloud API
 
 on:
-  push:
-    branches:
-      - feature/orahdex-cloud-api
-    paths:
-      - "artifacts/orahdex-cloud-api/**"
-      - ".github/workflows/orahdex-cloud-api.yml"
   workflow_dispatch:
 
 permissions:
