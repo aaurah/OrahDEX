@@ -1,0 +1,64 @@
+name: OrahDEX Pages Staging Preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-preview:
+    if: github.ref == 'refs/heads/feature/orahdex-cloud-api'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout staging source
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "9.15.9"
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Validate staging Worker
+        run: pnpm --filter orahdex-cloud-api check
+
+      - name: Build read-only frontend
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          VITE_ORAHDEX_STAGING_CATALOG: "true"
+          VITE_API_BASE: "/api"
+        run: pnpm --filter @workspace/bsv-dex build
+
+      - name: Verify staging bundle
+        run: |
+          test -f artifacts/bsv-dex/dist/public/index.html
+          test -f 'artifacts/bsv-dex/functions/api/[[path]].ts'
+          grep -R -l \
+            'Cross-chain catalog preview' \
+            artifacts/bsv-dex/dist/public/assets
+
+      - name: Deploy isolated Pages preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+          cd artifacts/bsv-dex
+
+          npx --yes wrangler@4 pages deploy \
+            dist/public \
+            --project-name=orahdex-preview \
+            --branch=staging-catalog

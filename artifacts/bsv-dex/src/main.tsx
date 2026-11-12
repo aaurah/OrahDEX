@@ -1,31 +1,24 @@
-import "./polyfills";
-import { createElement } from "react";
-import { createRoot } from "react-dom/client";
-import { WagmiProvider } from "wagmi";
-import App from "./App";
-import "./index.css"
-import "./lib/fetchRetry";;
-import { applyStoredTheme } from "./store/useThemeStore";
-import { migrateStaleDerivedAddresses } from "./lib/walletPin";
-import { wagmiConfig } from "./lib/reown";
+import "./index.css";
 
-applyStoredTheme();
-migrateStaleDerivedAddresses();
+const STAGING =
+  import.meta.env.VITE_ORAHDEX_STAGING_CATALOG === "true";
 
-// Initialize Reown AppKit in the background so the EVM Wallet modal is ready.
-import("./lib/reown-appkit").catch(() => {});
+async function start() {
+  if (STAGING) {
+    const [{ createElement }, { createRoot }, { default: App }] =
+      await Promise.all([
+        import("react"),
+        import("react-dom/client"),
+        import("./StagingCatalogApp"),
+      ]);
 
-const root = createRoot(document.getElementById("root")!);
+    createRoot(document.getElementById("root")!)
+      .render(createElement(App));
 
-root.render(
-  createElement(WagmiProvider, { config: wagmiConfig },
-    createElement(App)
-  )
-);
-
-window.addEventListener("error", (e) => {
-  if (e.message === "ResizeObserver loop limit exceeded" || e.message === "") {
-    e.stopImmediatePropagation();
-    e.preventDefault();
+    return;
   }
-});
+
+  await import("./production-main");
+}
+
+start().catch(console.error);
