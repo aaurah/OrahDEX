@@ -48,6 +48,33 @@ for (const file of files) {
   }
 }
 
+
+const html = fs.readFileSync(
+  path.join(root, "index.html"),
+  "utf8"
+);
+
+if (!html.includes("Read-Only Cloud Preview")) {
+  throw Error("Incorrect staging HTML generated");
+}
+
+const forbiddenHtml = [
+  'href="/trade/',
+  'href="/futures/',
+  'href="/swap"',
+  'href="https://orahdex.org/"',
+  '/src/production-main',
+  '/src/main.tsx',
+  'WalletConnect',
+  'eth_sendTransaction'
+];
+
+for (const token of forbiddenHtml) {
+  if (html.includes(token)) {
+    throw Error(`Forbidden staging HTML: ${token}`);
+  }
+}
+
 console.log("PASS: No forbidden tokens detected");
 console.log("JavaScript files:", files.length);
 console.log("Total JS bytes:", total);
