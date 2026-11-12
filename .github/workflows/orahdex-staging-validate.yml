@@ -70,7 +70,7 @@ jobs:
         run: |
           test -f artifacts/bsv-dex/dist/public/index.html
           grep -R -l \
-            "Cross-chain catalog preview" \
+            "Read-only cross-chain currency catalog" \
             artifacts/bsv-dex/dist/public/assets
 
       - name: Upload staging build artifact
@@ -125,7 +125,7 @@ jobs:
             exit 1
           fi
 
-          grep -R -q             'Cross-chain catalog preview'             artifacts/bsv-dex/dist/public/assets
+          grep -R -q             'Read-only cross-chain currency catalog'             artifacts/bsv-dex/dist/public/assets
 
       - name: Deploy Cloudflare Pages staging
         env:
