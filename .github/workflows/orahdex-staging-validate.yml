@@ -1,0 +1,142 @@
+name: OrahDEX Staging Validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_preview:
+        description: "Deploy isolated Cloudflare Pages preview"
+        required: true
+        type: boolean
+        default: false
+  push:
+    branches:
+      - feature/orahdex-cloud-api
+    paths:
+      - "artifacts/bsv-dex/**"
+      - "artifacts/orahdex-cloud-api/**"
+      - ".github/workflows/orahdex-staging-validate.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout staging branch
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "9.15.9"
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Validate Worker TypeScript
+        run: pnpm --filter orahdex-cloud-api check
+
+      - name: Validate Worker bundle
+        working-directory: artifacts/orahdex-cloud-api
+        run: |
+          npx wrangler deploy --dry-run --outdir /tmp/orahdex-worker-bundle
+          test -n "$(find /tmp/orahdex-worker-bundle -type f -print -quit)"
+
+      - name: Audit frontend TypeScript
+        continue-on-error: true
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm --filter @workspace/bsv-dex typecheck
+
+      - name: Build read-only staging frontend
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          VITE_ORAHDEX_STAGING_CATALOG: "true"
+          VITE_API_BASE: "/api"
+        run: pnpm --filter @workspace/bsv-dex exec vite build --config vite.staging.config.ts
+
+      - name: Verify staging bundle safety
+        run: node scripts/verify-staging-bundle.mjs
+
+      - name: Verify build output
+        run: |
+          test -f artifacts/bsv-dex/dist/public/index.html
+          grep -R -l \
+            "Read-only cross-chain currency catalog" \
+            artifacts/bsv-dex/dist/public/assets
+
+      - name: Upload staging build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: orahdex-staging-frontend
+          path: artifacts/bsv-dex/dist/public/
+          retention-days: 3
+
+  deploy-preview:
+    name: Deploy isolated Pages preview
+    needs: validate
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/feature/orahdex-cloud-api' &&
+      inputs.deploy_preview == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout staging branch
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "9.15.9"
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build read-only staging frontend
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          VITE_ORAHDEX_STAGING_CATALOG: "true"
+          VITE_API_BASE: "/api"
+        run: pnpm --filter @workspace/bsv-dex exec vite build --config vite.staging.config.ts
+
+      - name: Verify staging bundle safety
+        run: node scripts/verify-staging-bundle.mjs
+
+      - name: Verify isolated deployment
+        run: |
+          test -f artifacts/bsv-dex/dist/public/index.html
+          test -f 'artifacts/bsv-dex/functions/api/[[path]].ts'
+
+          if grep -Fq '"https://orahdex.com"'             'artifacts/bsv-dex/functions/api/[[path]].ts'; then
+            echo "Production API upstream detected"
+            exit 1
+          fi
+
+          grep -R -q             'Read-only cross-chain currency catalog'             artifacts/bsv-dex/dist/public/assets
+
+      - name: Deploy Cloudflare Pages staging
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: artifacts/bsv-dex
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+          pnpm dlx wrangler@4 pages deploy dist/public --project-name=orahdex-preview --branch=staging-catalog

@@ -1,0 +1,13 @@
+name = "orahdex-cloud-api"
+main = "src/index.ts"
+compatibility_date = "2026-11-12"
+workers_dev = true
+
+[observability]
+enabled = true
+
+
+[[d1_databases]]
+binding = "DB"
+database_name = "orahdex-cloud-staging"
+database_id = "7cc7c3a8-5368-4328-a0bf-6c63ec8698d2"
