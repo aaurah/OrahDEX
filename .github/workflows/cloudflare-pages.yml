@@ -38,6 +38,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      # Remove the accidentally committed conflict markers before Vite parses TSX.
+      # Keep provider tickers and let a user-selected venue override the default.
+      - name: Resolve LetsExchange estimate merge conflict
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("artifacts/bsv-dex/src/components/LetsExchangePanel.tsx")
+          text = p.read_text()
+          start = text.index("<<<<<<< HEAD", text.index("// Live rate fetch"))
+          end = text.index(">>>>>>> origin/Main", start) + len(">>>>>>> origin/Main")
+          replacement = '''          ...(effectiveVenue ? { force_venue: effectiveVenue } : {}),
+                    ...(fromCoin.providerTicker ? { provider_ticker_from: fromCoin.providerTicker } : {}),
+                    ...(toCoin.providerTicker ? { provider_ticker_to: toCoin.providerTicker } : {}),'''
+          text = text[:start] + replacement + text[end:]
+          start = text.index("<<<<<<< HEAD", text.index("// Live rate fetch"))
+          end = text.index(">>>>>>> origin/Main", start) + len(">>>>>>> origin/Main")
+          text = text[:start] + "  }, [fromCoin, toCoin, amount, selectedVenue, forceVenue]);" + text[end:]
+          p.write_text(text)
+          PY
+
       - name: Build OrahDEX frontend
         env:
           VITE_API_BASE: ${{ vars.VITE_API_BASE }}
