@@ -115,6 +115,9 @@ jobs:
           VITE_API_BASE: "/api"
         run: pnpm --filter @workspace/bsv-dex exec vite build --config vite.staging.config.ts
 
+      - name: Verify staging bundle safety
+        run: node scripts/verify-staging-bundle.mjs
+
       - name: Verify isolated deployment
         run: |
           test -f artifacts/bsv-dex/dist/public/index.html
