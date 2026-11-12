@@ -214,7 +214,7 @@ export function WhitePaper() {
                 <span>·</span>
                 <span className="font-semibold text-foreground/70">{FOUNDER}</span>
                 <span>·</span>
-                <a href="https://orahdex.org" className="text-primary hover:underline flex items-center gap-1">orahdex.org <ExternalLink className="w-2.5 h-2.5" /></a>
+                <a href="https://orahdex.com" className="text-primary hover:underline flex items-center gap-1">orahdex.com <ExternalLink className="w-2.5 h-2.5" /></a>
                 <span>·</span>
                 <a href="https://orahdex.com" className="text-primary hover:underline flex items-center gap-1">orahdex.com <ExternalLink className="w-2.5 h-2.5" /></a>
               </div>
@@ -1428,7 +1428,7 @@ without creating any data collection liability for the protocol.`}</Code>
                   {[
                     { target: "The Company", status: "Not a chokepoint", detail: "OrahDEX is a protocol, not a company. Protocol mathematics cannot be injuncted, raided, or de-banked. The Bitcoin protocol continued to exist through multiple 'Bitcoin is dead' regulatory announcements — because the protocol is the code, and the code runs wherever a node runs." },
                     { target: "The Servers", status: "Not a chokepoint", detail: "The BSV settlement layer runs on thousands of independent nodes across every jurisdiction on earth. The OrahDEX application server holds zero funds and zero keys. Its compromise affects UI convenience only — the on-chain settlement layer continues operating independently." },
-                    { target: "The Domain", status: "Not a chokepoint", detail: "orahdex.org and orahdex.com are convenient access points, not the protocol. The protocol is accessible via any IPFS gateway, any self-hosted node, or any direct contract interaction — no domain required. DNS seizure removes convenience, not capability." },
+                    { target: "The Domain", status: "Not a chokepoint", detail: "orahdex.com and orahdex.com are convenient access points, not the protocol. The protocol is accessible via any IPFS gateway, any self-hosted node, or any direct contract interaction — no domain required. DNS seizure removes convenience, not capability." },
                     { target: "The Founder", status: "Not a chokepoint", detail: "The HTLC scripts, AMM contracts, and OP_RETURN settlement logic are deployed on-chain and run autonomously. No founder action is required for any trade to settle. The protocol operates 24/7/365 with no human input once deployed." },
                     { target: "The Banking Relationship", status: "Not a chokepoint", detail: "OrahDEX has no fiat banking relationship at the protocol layer. There is no bank account to freeze. Fiat on-ramp is provided by third-party providers (MoonPay, Transak) — their restriction affects one feature, not the core protocol." },
                     { target: "User Accounts", status: "Not a chokepoint", detail: "OrahDEX has no user accounts. There are only wallet addresses. A wallet address cannot be 'banned' — the blockchain accepts any valid transaction from any valid key." },
@@ -1584,7 +1584,7 @@ Ethereum-based DEXs to full DEX participation.`}</Code>
                       bg: "bg-green-400/5 border-green-400/10",
                     },
                     {
-                      scenario: "Domain Seizure (orahdex.org / orahdex.com)",
+                      scenario: "Domain Seizure (orahdex.com / orahdex.com)",
                       cost: "Low (ICANN process)",
                       impact: "Low",
                       response: "Protocol remains accessible via IPFS-hosted interface, alternative domains, self-hosted nodes, and direct contract interaction. Domain seizure removes one of many access points. Protocol functionality is unaffected.",
@@ -2060,9 +2060,9 @@ If any authority requests user identity data:
                 <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">v4.5.0 · 17 April 2026</p>
                 <ul className="space-y-1.5 text-xs text-muted-foreground">
                   {[
-                    "Outbound email system live — SMTP via Brevo (smtp-relay.brevo.com:587) fully configured and verified. All platform emails sent from support@orahdex.org.",
-                    "Sitewide domain rebrand — all contact addresses, support links, and API fallbacks updated from .com to orahdex.org (support@orahdex.org, legal@orahdex.org).",
-                    "Inbound email routing — ImprovMX MX records added to orahdex.org DNS (mx1/mx2.improvmx.com). Inbound mail to support@, legal@, and admin@ forwarded externally.",
+                    "Outbound email system live — SMTP via Brevo (smtp-relay.brevo.com:587) fully configured and verified. All platform emails sent from support@orahdex.com.",
+                    "Sitewide domain rebrand — all contact addresses, support links, and API fallbacks updated from .com to orahdex.com (support@orahdex.com, legal@orahdex.com).",
+                    "Inbound email routing — ImprovMX MX records added to orahdex.com DNS (mx1/mx2.improvmx.com). Inbound mail to support@, legal@, and admin@ forwarded externally.",
                     "Admin Integrations page wired into navigation — accessible via Plug icon in the admin sidebar. Covers SMTP configuration, connection tests, and third-party service management.",
                     "Admin Email Inbox enhanced — SMTP status badge shows live connection state and test-account warning; send results display real delivery confirmation or SMTP error detail.",
                     "Internal wallet balance display fixed — Orah wallet users now always read balance from the OrahDEX internal ledger rather than on-chain RPC. Balance correctly deducts after every trade without requiring a page refresh.",
@@ -2366,7 +2366,7 @@ If any authority requests user identity data:
                 </div>
 
                 <p className="font-semibold text-amber-300 border-t border-amber-400/20 pt-3">
-                  © {new Date().getFullYear()} OrahDEX · {FOUNDER} ({FOUNDER_ALIASES}). All rights reserved. Version {VERSION} · {PUBLISH_DATE} · <a href="https://orahdex.org" className="underline">orahdex.org</a> · <a href="https://orahdex.com" className="underline">orahdex.com</a>
+                  © {new Date().getFullYear()} OrahDEX · {FOUNDER} ({FOUNDER_ALIASES}). All rights reserved. Version {VERSION} · {PUBLISH_DATE} · <a href="https://orahdex.com" className="underline">orahdex.com</a> · <a href="https://orahdex.com" className="underline">orahdex.com</a>
                 </p>
               </div>
             </Section>

@@ -145,7 +145,7 @@ export function FuturesTrading() {
       "@type": "WebPage",
       "name": `${seoBase} Perpetual Futures on OrahDEX`,
       "description": `${seoBase} perpetual futures with up to 100x leverage, cross and isolated margin`,
-      "url": `https://orahdex.org/futures/${rawSymbol}`
+      "url": `https://orahdex.com/futures/${rawSymbol}`
     }
   });
 

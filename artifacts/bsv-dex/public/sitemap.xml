@@ -4,7 +4,7 @@
 
   <!-- Home / Landing -->
   <url>
-    <loc>https://orahdex.org/</loc>
+    <loc>https://orahdex.com/</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>1.0</priority>
@@ -12,7 +12,7 @@
 
   <!-- Markets overview -->
   <url>
-    <loc>https://orahdex.org/markets</loc>
+    <loc>https://orahdex.com/markets</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.9</priority>
@@ -20,85 +20,85 @@
 
   <!-- Spot Trading — top pairs -->
   <url>
-    <loc>https://orahdex.org/trade/BTC-USDT</loc>
+    <loc>https://orahdex.com/trade/BTC-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/ETH-USDT</loc>
+    <loc>https://orahdex.com/trade/ETH-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/BSV-USDT</loc>
+    <loc>https://orahdex.com/trade/BSV-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/BCH-USDT</loc>
+    <loc>https://orahdex.com/trade/BCH-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/SOL-USDT</loc>
+    <loc>https://orahdex.com/trade/SOL-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/BNB-USDT</loc>
+    <loc>https://orahdex.com/trade/BNB-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/XRP-USDT</loc>
+    <loc>https://orahdex.com/trade/XRP-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/DOGE-USDT</loc>
+    <loc>https://orahdex.com/trade/DOGE-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/ADA-USDT</loc>
+    <loc>https://orahdex.com/trade/ADA-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/AVAX-USDT</loc>
+    <loc>https://orahdex.com/trade/AVAX-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/MATIC-USDT</loc>
+    <loc>https://orahdex.com/trade/MATIC-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/DOT-USDT</loc>
+    <loc>https://orahdex.com/trade/DOT-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/LINK-USDT</loc>
+    <loc>https://orahdex.com/trade/LINK-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/trade/SUI-USDT</loc>
+    <loc>https://orahdex.com/trade/SUI-USDT</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.7</priority>
@@ -106,25 +106,25 @@
 
   <!-- Futures -->
   <url>
-    <loc>https://orahdex.org/futures/BTC-USDT-PERP</loc>
+    <loc>https://orahdex.com/futures/BTC-USDT-PERP</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/futures/ETH-USDT-PERP</loc>
+    <loc>https://orahdex.com/futures/ETH-USDT-PERP</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/futures/BSV-USDT-PERP</loc>
+    <loc>https://orahdex.com/futures/BSV-USDT-PERP</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/futures/SOL-USDT-PERP</loc>
+    <loc>https://orahdex.com/futures/SOL-USDT-PERP</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>always</changefreq>
     <priority>0.8</priority>
@@ -132,19 +132,19 @@
 
   <!-- Swap / Bridge / DEX -->
   <url>
-    <loc>https://orahdex.org/swap</loc>
+    <loc>https://orahdex.com/swap</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/bridge</loc>
+    <loc>https://orahdex.com/bridge</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/dex</loc>
+    <loc>https://orahdex.com/dex</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
@@ -152,7 +152,7 @@
 
   <!-- P2P -->
   <url>
-    <loc>https://orahdex.org/p2p</loc>
+    <loc>https://orahdex.com/p2p</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>hourly</changefreq>
     <priority>0.8</priority>
@@ -160,7 +160,7 @@
 
   <!-- Copy Trading -->
   <url>
-    <loc>https://orahdex.org/copy</loc>
+    <loc>https://orahdex.com/copy</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.8</priority>
@@ -168,13 +168,13 @@
 
   <!-- Liquidity / Genesis -->
   <url>
-    <loc>https://orahdex.org/liquidity</loc>
+    <loc>https://orahdex.com/liquidity</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/genesis</loc>
+    <loc>https://orahdex.com/genesis</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
@@ -182,7 +182,7 @@
 
   <!-- NFT -->
   <url>
-    <loc>https://orahdex.org/nft</loc>
+    <loc>https://orahdex.com/nft</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.7</priority>
@@ -190,7 +190,7 @@
 
   <!-- Prediction -->
   <url>
-    <loc>https://orahdex.org/prediction</loc>
+    <loc>https://orahdex.com/prediction</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.7</priority>
@@ -198,7 +198,7 @@
 
   <!-- Staking -->
   <url>
-    <loc>https://orahdex.org/staking</loc>
+    <loc>https://orahdex.com/staking</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
@@ -206,7 +206,7 @@
 
   <!-- Keeper Program -->
   <url>
-    <loc>https://orahdex.org/keeper</loc>
+    <loc>https://orahdex.com/keeper</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
@@ -214,7 +214,7 @@
 
   <!-- Revenue / Fees -->
   <url>
-    <loc>https://orahdex.org/fees</loc>
+    <loc>https://orahdex.com/fees</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -222,13 +222,13 @@
 
   <!-- AI -->
   <url>
-    <loc>https://orahdex.org/ora-ai</loc>
+    <loc>https://orahdex.com/ora-ai</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/devai</loc>
+    <loc>https://orahdex.com/devai</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
@@ -236,7 +236,7 @@
 
   <!-- Sovereign -->
   <url>
-    <loc>https://orahdex.org/sovereign</loc>
+    <loc>https://orahdex.com/sovereign</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
@@ -244,7 +244,7 @@
 
   <!-- Support -->
   <url>
-    <loc>https://orahdex.org/support</loc>
+    <loc>https://orahdex.com/support</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.6</priority>
@@ -252,19 +252,19 @@
 
   <!-- Informational / Legal -->
   <url>
-    <loc>https://orahdex.org/whitepaper</loc>
+    <loc>https://orahdex.com/whitepaper</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/terms</loc>
+    <loc>https://orahdex.com/terms</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
-    <loc>https://orahdex.org/privacy</loc>
+    <loc>https://orahdex.com/privacy</loc>
     <lastmod>2026-05-16</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>

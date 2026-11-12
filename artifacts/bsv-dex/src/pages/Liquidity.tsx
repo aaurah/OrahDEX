@@ -1307,7 +1307,7 @@ export function Liquidity() {
       "@type": "WebPage",
       "name": "OrahDEX Liquidity Pools",
       "description": "Automated Market Maker (AMM) liquidity pools with competitive yield",
-      "url": "https://orahdex.org/liquidity"
+      "url": "https://orahdex.com/liquidity"
     }
   });
 

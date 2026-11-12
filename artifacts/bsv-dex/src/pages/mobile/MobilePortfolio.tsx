@@ -1707,7 +1707,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                           <p className="text-[11px] text-amber-400/80">Exchange done — sending funds to your address now.</p>
                         )}
                         {isBad && (
-                          <p className="text-[11px] text-red-400">Exchange {label.toLowerCase()}. Contact OrahDEX support at support@orahdex.org with this ID.</p>
+                          <p className="text-[11px] text-red-400">Exchange {label.toLowerCase()}. Contact OrahDEX support at support@orahdex.com with this ID.</p>
                         )}
                       </div>
                     );

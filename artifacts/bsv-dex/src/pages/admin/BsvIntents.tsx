@@ -139,9 +139,9 @@ function SumCard({ label, value, color }: { label: string; value: number; color:
 function DetailRow({ label, value, mono = true, truncate = false }: { label: string; value: string | number | null; mono?: boolean; truncate?: boolean }) {
   const str = value === null || value === undefined ? "—" : String(value);
   return (
-    <div className="flex items-start gap-2 py-1 border-b border-zinc-800/60 last:border-0">
-      <span className="text-[11px] text-zinc-500 w-40 shrink-0 pt-0.5">{label}</span>
-      <span className={cn("text-[11px] flex-1 break-all", mono && "font-mono text-zinc-200", truncate && "truncate")}>
+    <div className="flex flex-col sm:flex-row items-start gap-1 sm:gap-2 py-2 border-b border-zinc-800/60 last:border-0 min-w-0">
+      <span className="text-[11px] text-zinc-500 w-full sm:w-40 shrink-0 pt-0.5">{label}</span>
+      <span className={cn("text-[11px] min-w-0 w-full sm:w-auto flex-1 break-all", mono && "font-mono text-zinc-200", truncate && "truncate")}>
         {str || "—"}
       </span>
       {str && str !== "—" && mono && <CopyBtn text={str} />}
@@ -312,9 +312,9 @@ export function AdminBsvIntents() {
   });
 
   return (
-    <div className="space-y-5 p-6">
+    <div className="min-w-0 space-y-5 p-3 sm:p-6">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-white flex items-center gap-2">
             <Link2 className="w-5 h-5 text-emerald-400" />
@@ -340,7 +340,7 @@ export function AdminBsvIntents() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
         <SumCard label="Active"    value={totalActive}    color="text-blue-300" />
         <SumCard label="Claimed"   value={totalClaimed}   color="text-emerald-400" />
         <SumCard label="Refunded"  value={totalRefunded}  color="text-orange-300" />
@@ -351,7 +351,7 @@ export function AdminBsvIntents() {
       {/* Lifecycle flow */}
       <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl px-4 py-3">
         <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-2 font-bold">Lifecycle</p>
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] min-w-0">
           {["PENDING_FUNDING","FUNDED","CONFIRMED","FILLED","CLAIMING","CLAIMED"].map((s, i, arr) => (
             <span key={s} className="flex items-center gap-1.5">
               <StatusBadge status={s} />
@@ -408,7 +408,7 @@ export function AdminBsvIntents() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search address, txid, hash…"
-              className="pl-8 pr-8 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 w-64 transition-colors"
+              className="pl-8 pr-8 py-1.5 bg-zinc-900 border border-zinc-700 rounded-lg text-xs text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500 w-full sm:w-64 transition-colors"
             />
             {search && (
               <button onClick={() => setSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300">
@@ -435,9 +435,9 @@ export function AdminBsvIntents() {
           )}
         </div>
       ) : (
-        <div className="rounded-xl border border-zinc-800 overflow-hidden">
+        <div className="rounded-xl border border-zinc-800 overflow-x-auto">
           {/* Table header */}
-          <div className="grid grid-cols-[1fr_1fr_auto_auto_auto_auto] gap-4 px-4 py-2.5 bg-zinc-900/80 border-b border-zinc-800 text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
+          <div className="hidden lg:grid lg:min-w-[900px] grid-cols-[minmax(150px,1.2fr)_minmax(110px,1fr)_minmax(150px,1fr)_minmax(135px,1fr)_minmax(105px,auto)_minmax(90px,auto)] gap-4 px-4 py-2.5 bg-zinc-900/80 border-b border-zinc-800 text-[10px] uppercase tracking-widest text-zinc-500 font-bold">
             <span>User / Solver</span>
             <span>Swap</span>
             <span>HTLC Address</span>
@@ -454,10 +454,97 @@ export function AdminBsvIntents() {
                 "border-b border-zinc-800 last:border-0 transition-colors",
                 isExp ? "bg-zinc-900/50" : "hover:bg-zinc-900/30"
               )}>
-                {/* Row */}
+
+                {/* Mobile session card */}
+                <div className="lg:hidden p-4 space-y-3 min-w-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm font-semibold text-emerald-400">
+                        {intent.tokenIn}
+                      </span>
+                      <ArrowRight className="w-4 h-4 text-zinc-500 shrink-0" />
+                      <span className="text-sm font-semibold text-blue-400">
+                        {intent.tokenOut}
+                      </span>
+                    </div>
+                    <StatusBadge status={intent.status} />
+                  </div>
+
+                  <div className="border-t border-zinc-800 pt-3 space-y-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">
+                        User BSV Address
+                      </p>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <span className="text-xs font-mono text-zinc-200 break-all min-w-0 flex-1">
+                          {intent.userAddress || "—"}
+                        </span>
+                        <CopyBtn text={intent.userAddress} />
+                      </div>
+                    </div>
+
+                    {intent.solverAddress && (
+                      <div className="min-w-0">
+                        <p className="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">
+                          Solver Address
+                        </p>
+                        <div className="flex items-start gap-2 min-w-0">
+                          <span className="text-xs font-mono text-zinc-300 break-all min-w-0 flex-1">
+                            {intent.solverAddress}
+                          </span>
+                          <CopyBtn text={intent.solverAddress} />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="min-w-0">
+                      <p className="text-[10px] uppercase tracking-wide text-zinc-500 mb-1">
+                        HTLC Address
+                      </p>
+                      <div className="flex items-start gap-2 min-w-0">
+                        <span className="text-xs font-mono text-zinc-200 break-all min-w-0 flex-1">
+                          {intent.htlcAddress || "—"}
+                        </span>
+                        <CopyBtn text={intent.htlcAddress} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 border-t border-zinc-800 pt-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-zinc-500 mb-1">Amount</p>
+                      <p className="text-xs font-mono text-zinc-200 break-words">
+                        {satToBsv(intent.amountInSat)} BSV
+                      </p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] text-zinc-500 mb-1">Minimum Output</p>
+                      <p className="text-xs font-mono text-zinc-200 break-words">
+                        {intent.minAmountOut} {intent.tokenOut}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setExpanded(isExp ? null : intent.id)}
+                    aria-expanded={isExp}
+                    className="w-full flex items-center justify-between gap-2 border-t border-zinc-800 pt-3 text-xs text-zinc-400"
+                  >
+                    <span>Created {fmtAgo(intent.createdAt)}</span>
+                    <span className="inline-flex items-center gap-1 text-emerald-400">
+                      {isExp ? "Hide Details" : "View Details"}
+                      {isExp
+                        ? <ChevronDown className="w-4 h-4" />
+                        : <ChevronRight className="w-4 h-4" />}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Desktop session row */}
                 <div
                   onClick={() => setExpanded(isExp ? null : intent.id)}
-                  className="grid grid-cols-[1fr_1fr_auto_auto_auto_auto] gap-4 px-4 py-3 cursor-pointer items-center"
+                  className="hidden lg:grid lg:min-w-[900px] lg:grid-cols-[minmax(150px,1.2fr)_minmax(110px,1fr)_minmax(150px,1fr)_minmax(135px,1fr)_minmax(105px,auto)_minmax(90px,auto)] gap-3 lg:gap-4 px-3 sm:px-4 py-3 cursor-pointer items-center"
                 >
                   {/* User / Solver */}
                   <div className="min-w-0">
@@ -490,7 +577,7 @@ export function AdminBsvIntents() {
                   </div>
 
                   {/* Amount */}
-                  <div className="text-right whitespace-nowrap">
+                  <div className="text-left lg:text-right min-w-0">
                     <p className="text-xs font-mono text-zinc-200">{satToBsv(intent.amountInSat)} BSV</p>
                     <p className="text-[10px] text-zinc-500">≥{intent.minAmountOut} {intent.tokenOut}</p>
                   </div>
@@ -535,7 +622,7 @@ export function AdminBsvIntents() {
         <p className="text-[10px] uppercase tracking-widest text-zinc-500 mb-3 font-bold flex items-center gap-2">
           <Zap className="w-3 h-3" /> BSV Locking Script (P2SH)
         </p>
-        <pre className="text-[10px] font-mono text-emerald-300/80 leading-relaxed overflow-x-auto">
+        <pre className="block max-w-full text-[10px] font-mono text-emerald-300/80 leading-relaxed overflow-x-auto whitespace-pre">
 {`OP_IF
   OP_SHA256 <secretHash>  OP_EQUALVERIFY   ← HTLC preimage
   OP_SHA256 <intentHash>  OP_EQUALVERIFY   ← full trade terms commitment

@@ -342,7 +342,7 @@ function ApiPanel({ onClose }: { onClose: () => void }) {
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors"><X className="w-3.5 h-3.5" /></button>
       </div>
       <div className="p-3 space-y-1">
-        <div className="text-[10px] text-muted-foreground mb-2 font-mono">base: orahdex.org</div>
+        <div className="text-[10px] text-muted-foreground mb-2 font-mono">base: orahdex.com</div>
         {API_SECTIONS.map(section => (
           <div key={section.label} className="border border-border/30 rounded-lg overflow-hidden">
             <button onClick={() => setExpanded(expanded === section.label ? null : section.label)}
@@ -400,7 +400,7 @@ function ApiPanel({ onClose }: { onClose: () => void }) {
 
         <div className="mt-2 border border-border/30 rounded-lg p-3">
           <div className="text-xs font-bold mb-1">WebSocket</div>
-          <div className="font-mono text-[10px] text-muted-foreground break-all">wss://orahdex.org/ws</div>
+          <div className="font-mono text-[10px] text-muted-foreground break-all">wss://orahdex.com/ws</div>
           <div className="text-[10px] text-muted-foreground mt-1">Channels: ticker, orderbook, trades, portfolio</div>
         </div>
       </div>

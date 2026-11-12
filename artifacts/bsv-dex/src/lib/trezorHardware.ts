@@ -22,8 +22,8 @@ async function getTrezorConnect() {
     await TrezorConnect.init({
       manifest: {
         appName: "OrahDEX",
-        email:   "support@orahdex.org",
-        appUrl:  "https://orahdex.org",
+        email:   "support@orahdex.com",
+        appUrl:  "https://orahdex.com",
       },
       lazyLoad: true,
     });

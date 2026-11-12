@@ -1114,7 +1114,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
             </div>
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
-            <a href="mailto:support@orahdex.org"
+            <a href="mailto:support@orahdex.com"
               className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
               Contact OrahDEX Support <ExternalLink className="w-3 h-3" />
             </a>

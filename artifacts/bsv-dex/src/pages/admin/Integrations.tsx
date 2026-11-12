@@ -730,13 +730,13 @@ export function AdminIntegrations() {
               {
                 label: "SendGrid",
                 color: "text-blue-400 border-blue-500/30 bg-blue-500/8 hover:bg-blue-500/15",
-                fill: { smtp_host: "smtp.sendgrid.net", smtp_port: "587", smtp_user: "apikey", smtp_from: "support@orahdex.org" },
+                fill: { smtp_host: "smtp.sendgrid.net", smtp_port: "587", smtp_user: "apikey", smtp_from: "support@orahdex.com" },
                 note: "Username = apikey\nPassword = your SG API key\nFree: 100 emails/day",
               },
               {
                 label: "Mailgun",
                 color: "text-red-400 border-red-500/30 bg-red-500/8 hover:bg-red-500/15",
-                fill: { smtp_host: "smtp.mailgun.org", smtp_port: "587", smtp_user: "", smtp_from: "support@orahdex.org" },
+                fill: { smtp_host: "smtp.mailgun.org", smtp_port: "587", smtp_user: "", smtp_from: "support@orahdex.com" },
                 note: "Username = your Mailgun SMTP login\nPassword = Mailgun SMTP password\nFree: 100 emails/day (sandbox)",
               },
               {
@@ -811,7 +811,7 @@ export function AdminIntegrations() {
             label="From Email Address"
             value={form.smtp_from}
             onChange={set("smtp_from")}
-            placeholder="noreply@orahdex.org"
+            placeholder="noreply@orahdex.com"
             type="email"
             hint="Sender address shown on all outgoing emails."
           />

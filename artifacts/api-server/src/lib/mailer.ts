@@ -22,7 +22,7 @@ export interface MailResult {
 // Used when POSTMARK_SERVER_TOKEN env var is present. Takes priority over SMTP.
 
 const POSTMARK_TOKEN = process.env.POSTMARK_SERVER_TOKEN;
-const POSTMARK_FROM  = "support@orahdex.org";
+const POSTMARK_FROM  = "support@orahdex.com";
 
 async function sendViaPostmark(opts: {
   from: string;

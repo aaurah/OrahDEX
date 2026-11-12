@@ -494,7 +494,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
       <div className="flex items-start gap-2 px-1 pt-1">
         <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          Your PIN and passkeys are stored on <strong>this device</strong> and tied to <strong>this website URL</strong>. A PIN set on one domain (e.g. dev) won't work on another (e.g. orahdex.org) — just set a new one there.
+          Your PIN and passkeys are stored on <strong>this device</strong> and tied to <strong>this website URL</strong>. A PIN set on one domain (e.g. dev) won't work on another (e.g. orahdex.com) — just set a new one there.
         </p>
       </div>
 

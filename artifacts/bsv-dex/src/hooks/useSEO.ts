@@ -2,7 +2,7 @@ import { useEffect } from "react";
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/$/, "");
 
-const FALLBACK_SITE_URL = "https://orahdex.org";
+const FALLBACK_SITE_URL = "https://orahdex.com";
 const CONFIGURED_SITE_URL = normalizeBaseUrl(import.meta.env.VITE_SITE_URL ?? FALLBACK_SITE_URL);
 const DEFAULT_IMAGE = `${CONFIGURED_SITE_URL}/opengraph.jpg`;
 const SITE_NAME = "OrahDEX";

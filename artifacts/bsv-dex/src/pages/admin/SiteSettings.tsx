@@ -55,7 +55,7 @@ const DEFAULT_SETTINGS = {
   seoDescription: "OrahDEX is a full-featured BSV-settled DEX with spot trading, futures, P2P, AMM pools, cross-chain bridge, on-chain copy trading (CopyVault), and 7-tab mobile navigation.",
   seoKeywords: "BSV DEX, Bitcoin SV, decentralized exchange, crypto trading, spot futures, cross-chain bridge, copy trading, paper trading, mobile DEX",
   ogImageUrl: "",
-  canonicalUrl: "https://orahdex.org",
+  canonicalUrl: "https://orahdex.com",
   twitterCard: "summary_large_image",
   twitterSite: "@orahdex",
   // Legal
@@ -64,10 +64,10 @@ const DEFAULT_SETTINGS = {
   whitepaperUrl: "/whitepaper",
   cookiesUrl: "/legal/cookies",
   amlUrl: "/legal/aml",
-  contactEmail: "support@orahdex.org",
-  legalEmail: "legal@orahdex.org",
-  privacyEmail: "privacy@orahdex.org",
-  supportUrl: "https://support.orahdex.org",
+  contactEmail: "support@orahdex.com",
+  legalEmail: "legal@orahdex.com",
+  privacyEmail: "privacy@orahdex.com",
+  supportUrl: "https://support.orahdex.com",
   companyName: "OrahDEX Ltd.",
   companyAddress: "",
   registrationNumber: "",
@@ -401,7 +401,7 @@ export function AdminSiteSettings() {
               <Input value={settings.seoKeywords} onChange={set("seoKeywords")} placeholder="BSV DEX, crypto trading, Bitcoin SV exchange" />
             </Field>
             <Field label="Canonical URL" description="Canonical domain for SEO">
-              <Input value={settings.canonicalUrl} onChange={set("canonicalUrl")} placeholder="https://orahdex.org" />
+              <Input value={settings.canonicalUrl} onChange={set("canonicalUrl")} placeholder="https://orahdex.com" />
             </Field>
             <Field label="Open Graph Image URL" description="1200×630 image for social sharing previews">
               <Input value={settings.ogImageUrl} onChange={set("ogImageUrl")} placeholder="https://cdn.example.com/og.png" />
@@ -444,49 +444,49 @@ export function AdminSiteSettings() {
                   type="email"
                   value={settings.contactEmail}
                   onChange={e => set("contactEmail")(e.target.value)}
-                  placeholder="support@orahdex.org"
+                  placeholder="support@orahdex.com"
                   className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none font-mono"
                 />
                 <a href={`mailto:${settings.contactEmail}`} className="text-[10px] text-primary/70 hover:text-primary font-semibold shrink-0 transition-colors">Test</a>
               </div>
             </Field>
-            <Field label="Legal Email" description="Terms of service, legal notices, compliance — legal@orahdex.org">
+            <Field label="Legal Email" description="Terms of service, legal notices, compliance — legal@orahdex.com">
               <div className="flex items-center gap-3 bg-background border border-border rounded-xl px-4 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
                 <span className="text-xs font-black text-violet-400 shrink-0">@</span>
                 <input
                   type="email"
                   value={settings.legalEmail}
                   onChange={e => set("legalEmail")(e.target.value)}
-                  placeholder="legal@orahdex.org"
+                  placeholder="legal@orahdex.com"
                   className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none font-mono"
                 />
                 <a href={`mailto:${settings.legalEmail}`} className="text-[10px] text-primary/70 hover:text-primary font-semibold shrink-0 transition-colors">Test</a>
               </div>
             </Field>
-            <Field label="Privacy Email" description="GDPR requests, data subject rights, privacy complaints — privacy@orahdex.org">
+            <Field label="Privacy Email" description="GDPR requests, data subject rights, privacy complaints — privacy@orahdex.com">
               <div className="flex items-center gap-3 bg-background border border-border rounded-xl px-4 py-2.5 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
                 <span className="text-xs font-black text-blue-400 shrink-0">@</span>
                 <input
                   type="email"
                   value={settings.privacyEmail}
                   onChange={e => set("privacyEmail")(e.target.value)}
-                  placeholder="privacy@orahdex.org"
+                  placeholder="privacy@orahdex.com"
                   className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none font-mono"
                 />
                 <a href={`mailto:${settings.privacyEmail}`} className="text-[10px] text-primary/70 hover:text-primary font-semibold shrink-0 transition-colors">Test</a>
               </div>
             </Field>
             <Field label="Support Portal URL" description="External help desk or support portal">
-              <Input value={settings.supportUrl} onChange={set("supportUrl")} placeholder="https://support.orahdex.org" />
+              <Input value={settings.supportUrl} onChange={set("supportUrl")} placeholder="https://support.orahdex.com" />
             </Field>
 
             {/* Quick email summary card */}
             <div className="mx-4 my-3 p-4 bg-primary/5 border border-primary/15 rounded-2xl space-y-2">
               <p className="text-[10px] font-black uppercase tracking-widest text-primary/70 mb-2">Active Email Summary</p>
               {[
-                { label: "Support", email: settings.contactEmail || "support@orahdex.org", color: "text-primary" },
-                { label: "Legal",   email: settings.legalEmail   || "legal@orahdex.org",   color: "text-violet-400" },
-                { label: "Privacy", email: settings.privacyEmail || "privacy@orahdex.org", color: "text-blue-400" },
+                { label: "Support", email: settings.contactEmail || "support@orahdex.com", color: "text-primary" },
+                { label: "Legal",   email: settings.legalEmail   || "legal@orahdex.com",   color: "text-violet-400" },
+                { label: "Privacy", email: settings.privacyEmail || "privacy@orahdex.com", color: "text-blue-400" },
               ].map(({ label, email, color }) => (
                 <div key={label} className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-muted-foreground w-14">{label}</span>

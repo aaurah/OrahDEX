@@ -533,7 +533,7 @@ export function DexHub() {
       "@type": "WebPage",
       "name": "OrahDEX Market Hub",
       "description": "Cross-chain DEX market data aggregator",
-      "url": "https://orahdex.org/dex"
+      "url": "https://orahdex.com/dex"
     }
   });
 
