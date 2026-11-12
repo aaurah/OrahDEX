@@ -1,3 +1,4 @@
+import simpleSwapCatalog from "./simpleswap-catalog.json";
 export interface Env {
   DB: D1Database;
 }
@@ -257,6 +258,11 @@ export default {
         production: false,
         termuxRequiredForProduction: true
       });
+    }
+
+
+    if (url.pathname === "/api/simpleswap/currencies") {
+      return json(simpleSwapCatalog);
     }
 
     if (url.pathname === "/api/markets/stats") {
