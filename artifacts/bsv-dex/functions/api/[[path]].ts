@@ -77,7 +77,7 @@ export const onRequest = async (
 
   const upstream = new URL(
     incoming.pathname + incoming.search,
-    "https://orahdex.com"
+    "https://orahdex-cloud-api.orahdex.workers.dev"
   );
 
   try {
