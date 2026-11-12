@@ -149,12 +149,26 @@ function canonicalNetworkKey(network?: string | null, providerTicker?: string): 
   if (raw.includes("bitcoin") || raw === "btc") return "bitcoin";
   return raw.replace(/network$/, "");
 }
+const STAGING_CATALOG_ONLY = import.meta.env.VITE_ORAHDEX_STAGING_CATALOG === "true";
 let _coinsCache: LeCoin[] | null = null;
 let _coinsCacheTs = 0;
 let _coinsInflight: Promise<LeCoin[]> | null = null;
 const isLiveCatalog = (items: LeCoin[]) => items.some(coin => !!coin.network);
 
 async function fetchCoins(): Promise<LeCoin[]> {
+
+  if (STAGING_CATALOG_ONLY) {
+    const response = await fetch(`${API}/simpleswap/currencies`);
+    if (!response.ok) throw new Error("Staging catalog unavailable");
+    const data = await response.json() as LeCoin[];
+    if (!Array.isArray(data)) throw new Error("Invalid staging catalog");
+    return data.filter(coin =>
+      coin &&
+      typeof coin.symbol === "string" &&
+      typeof coin.network === "string" &&
+      coin.network.length > 0
+    );
+  }
   if (_coinsCache && isLiveCatalog(_coinsCache) && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
   if (_coinsInflight) return _coinsInflight;
   _coinsInflight = Promise.all([
@@ -1730,6 +1744,44 @@ export function LetsExchangePanel({
     return (
       <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 shrink-0 text-yellow-400/70" /> Cross-chain swap unavailable.
+      </div>
+    );
+  }
+
+  if (STAGING_CATALOG_ONLY) {
+    return (
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 text-yellow-400" />
+          <h3 className="font-bold text-foreground">
+            Cross-chain catalog preview
+          </h3>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Staging environment — read-only currency information.
+          Quotes, exchanges, deposits and wallet transactions are disabled.
+        </p>
+        <p className="text-sm font-semibold text-foreground">
+          {coins.length.toLocaleString()} currency/network entries available
+        </p>
+        <div className="max-h-80 overflow-y-auto rounded-xl border border-border">
+          {coins.slice(0, 100).map((coin, index) => (
+            <div
+              key={`${coin.symbol}-${coin.network}-${index}`}
+              className="flex justify-between gap-3 border-b border-border/40 px-3 py-2 text-sm"
+            >
+              <span className="font-medium text-foreground">
+                {coin.symbol}
+              </span>
+              <span className="text-muted-foreground">
+                {coin.networkName || coin.network}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Showing the first 100 entries. Trading is not available in this preview.
+        </p>
       </div>
     );
   }
