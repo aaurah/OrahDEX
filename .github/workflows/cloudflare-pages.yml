@@ -71,4 +71,5 @@ jobs:
           npx --yes wrangler@4 pages deploy \
             artifacts/bsv-dex/dist/public \
             --project-name="$CLOUDFLARE_PAGES_PROJECT" \
-            --branch=Main
+            --branch=Main \
+            --functions=artifacts/bsv-dex/functions
