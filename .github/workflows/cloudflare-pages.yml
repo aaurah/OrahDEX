@@ -68,7 +68,8 @@ jobs:
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test -n "$CLOUDFLARE_PAGES_PROJECT"
 
+          cd artifacts/bsv-dex
           npx --yes wrangler@4 pages deploy \
-            artifacts/bsv-dex/dist/public \
+            dist/public \
             --project-name="$CLOUDFLARE_PAGES_PROJECT" \
             --branch=Main
