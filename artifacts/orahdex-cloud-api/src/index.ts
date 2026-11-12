@@ -1,5 +1,18 @@
 export interface Env { DB: D1Database }
 
+async function checkDatabase(env: Env): Promise<boolean> {
+  try {
+    const result = await env.DB
+      .prepare("SELECT 1 AS connected")
+      .first<{ connected: number }>();
+
+    return result?.connected === 1;
+  } catch {
+    return false;
+  }
+}
+
+
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
@@ -12,11 +25,21 @@ function json(data: unknown, status = 200): Response {
 }
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
     if (request.method !== "GET") {
       return json({ error: "Method not allowed" }, 405);
+    }
+
+    if (url.pathname === "/api/health/database") {
+      const connected = await checkDatabase(env);
+      return json({
+        service: "orahdex-cloud-api",
+        database: "orahdex-cloud-staging",
+        connected,
+        timestamp: new Date().toISOString()
+      }, connected ? 200 : 503);
     }
 
     if (url.pathname === "/api/health") {
@@ -26,7 +49,7 @@ export default {
         runtime: "cloudflare-workers",
         version: "0.1.0",
         apiReady: true,
-        databaseReady: false,
+        databaseReady: await checkDatabase(env),
         tradingReady: false,
         blockchainReady: false,
         timestamp: new Date().toISOString()
