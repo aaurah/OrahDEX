@@ -121,7 +121,7 @@
     "@walletconnect/utils": "^2.23.9",
     "@walletconnect/web3wallet": "^1.16.1",
     "@workspace/integrations-openai-ai-react": "workspace:*",
-    "bitcoinjs-lib": "6.1.7",
+    "bitcoinjs-lib": "6.1.8",
     "buffer": "^6.0.3",
     "dompurify": "^3.4.17",
     "gridplus-sdk": "^4.0.0",

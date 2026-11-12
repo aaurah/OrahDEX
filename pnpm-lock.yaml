@@ -508,8 +508,8 @@ importers:
         specifier: workspace:*
         version: link:../../lib/integrations-openai-ai-react
       bitcoinjs-lib:
-        specifier: 6.1.7
-        version: 6.1.7
+        specifier: 6.1.8
+        version: 6.1.8
       buffer:
         specifier: ^6.0.3
         version: 6.0.3
@@ -4143,7 +4143,9 @@ packages:
   '@smithy/core@3.35.0':
     resolution: {integrity: sha512-zRMhfkByhT2snNdr1si24vJitU6Cr9ix2MikUfWmkAgp4jrNP0GcKSP5YvwQ+TlI8AZXER5QOGJn3JsVtSD9/A==}
     engines: {node: '>=18.0.0'}
-    deprecated: Deprecated due to a bug in custom logger data redaction. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
+    deprecated: |-
+      Deprecated due to a bug in custom logger data redaction. Upgrade to the latest version. If you used a custom logger with this
+        version, review your logs and rotate any credentials or other secrets. See https://github.com/aws/aws-sdk-js-v3/issues/8393.
 
   '@smithy/credential-provider-imds@4.5.2':
     resolution: {integrity: sha512-A9uSdn72ozbRUSit0eib0TW7nXuNPlaeM0zcGkJ+nE6tFcSDbnmtwoxbTCFBukVQcszDAyvsd7+rTduPTXpygg==}
@@ -5106,11 +5108,13 @@ packages:
 
   '@trezor/connect-web@9.7.3':
     resolution: {integrity: sha512-oTI/v9sUJMvLZgLa0seSGyPaumXydRYeAT4OVTQxIaEiL1hOA0yH+UvEfT4WKwxbxOtOqWosD8chP3uuWSArcg==}
+    deprecated: 'Trezor Connect 9 is no longer supported and gets no fixes. Upgrade to Trezor Connect 10: https://connect.trezor.io/10/guides/migrating-to-connect-10/'
     peerDependencies:
       tslib: ^2.6.2
 
   '@trezor/connect@9.7.3':
     resolution: {integrity: sha512-oAOfvJHT8tPqOXTmCOhn8uTZcoqSDuWAiWXQegx7C46tq+NLg+enkYXxUYEHq/9PmfZAOrUT9VMxZDsXM2thkA==}
+    deprecated: 'Trezor Connect 9 is no longer supported and gets no fixes. Upgrade to Trezor Connect 10: https://connect.trezor.io/10/guides/migrating-to-connect-10/'
     peerDependencies:
       tslib: ^2.6.2
 
@@ -5834,6 +5838,7 @@ packages:
 
   axios-retry@4.5.0:
     resolution: {integrity: sha512-aR99oXhpEDGo0UuAlYcn2iGRds30k366Zfa05XWScR9QaQD4JYiP3/1Qt1u7YlefUOK+cn0CcwoL1oefavQUlQ==}
+    deprecated: axios-retry is no longer maintained. See https://github.com/softonic/axios-retry for alternatives.
     peerDependencies:
       axios: 1.16.1
 
@@ -5994,6 +5999,10 @@ packages:
 
   bitcoinjs-lib@6.1.7:
     resolution: {integrity: sha512-tlf/r2DGMbF7ky1MgUqXHzypYHakkEnm0SZP23CJKIqNY/5uNAnMbFhMJdhjrL/7anfb/U8+AlpdjPWjPnAalg==}
+    engines: {node: '>=8.0.0'}
+
+  bitcoinjs-lib@6.1.8:
+    resolution: {integrity: sha512-A6o+yq7BvwlmLj4F0NC5f3XX109rRe5evxi368S9zil5voOtUfiqfiMCzZYKHk4k7iIJ3+NmcQW05Ar4CBlKyg==}
     engines: {node: '>=8.0.0'}
 
   bitwise@2.2.1:
@@ -18218,6 +18227,15 @@ snapshots:
   bitcoin-ops@1.4.1: {}
 
   bitcoinjs-lib@6.1.7:
+    dependencies:
+      '@noble/hashes': 1.8.0
+      bech32: 2.0.0
+      bip174: 2.1.1
+      bs58check: 3.0.1
+      typeforce: 1.18.0
+      varuint-bitcoin: 1.1.2
+
+  bitcoinjs-lib@6.1.8:
     dependencies:
       '@noble/hashes': 1.8.0
       bech32: 2.0.0
