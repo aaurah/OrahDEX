@@ -133,4 +133,4 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
 
-          npx --yes wrangler@4 pages deploy             dist/public             --project-name=orahdex-preview             --branch=staging-catalog
+          pnpm dlx wrangler@4 pages deploy dist/public --project-name=orahdex-preview --branch=staging-catalog
