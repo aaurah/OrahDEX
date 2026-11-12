@@ -1,4 +1,4 @@
-export interface Env {}
+export interface Env { DB: D1Database }
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
