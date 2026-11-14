@@ -18,7 +18,7 @@ import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
 import { logger } from "./logger.js";
-import { BSV_NET } from "./bsvNetworkConfig.js";
+import { BSV_NET, getBsvNetworkConfig, type BsvNetwork } from "./bsvNetworkConfig.js";
 import { arcBroadcast } from "./arcBroadcaster.js";
 
 /* ── Base-58 alphabet (Bitcoin / BSV) ──────────────────────────────────── */
@@ -89,17 +89,20 @@ export function privKeyToPubKey(privKey: Buffer): Buffer {
 }
 
 /** Derive P2PKH address from a compressed public key (33-byte hex or Buffer) */
-export function pubKeyToAddress(pubKeyHexOrBuf: string | Buffer | Uint8Array): string {
+export function pubKeyToAddress(
+  pubKeyHexOrBuf: string | Buffer | Uint8Array,
+  network: BsvNetwork = BSV_NET.network,
+): string {
   const buf = typeof pubKeyHexOrBuf === "string"
     ? Buffer.from(pubKeyHexOrBuf.replace(/^0x/, ""), "hex")
     : Buffer.from(pubKeyHexOrBuf);
   const h160 = hash160(buf);
-  return base58Check(h160, BSV_NET.p2pkhVersion);
+  return base58Check(h160, getBsvNetworkConfig(network).p2pkhVersion);
 }
 
 /** Check whether a string looks like a BSV P2PKH address on the configured network */
-export function isBsvAddress(addr: string): boolean {
-  return BSV_NET.addressRegex.test(addr);
+export function isBsvAddress(addr: string, network: BsvNetwork = BSV_NET.network): boolean {
+  return getBsvNetworkConfig(network).addressRegex.test(addr);
 }
 
 /** Check whether a string looks like a paymail address (user@domain.tld) */
