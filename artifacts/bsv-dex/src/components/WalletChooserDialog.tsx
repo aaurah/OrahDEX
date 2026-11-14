@@ -365,7 +365,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   const finishWithAddrs = (addrs: Awaited<ReturnType<typeof deriveAllAddresses>>) => {
     const chains: PasskeyChainAddresses = {
       evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch,
-      bsv: addrs.bsv, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+      bsv: addrs.bsv, bsvTest: addrs.bsvTest, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     };
     saveDerivedAddresses(addrs.evm, chains);
     applyOrahWallet(addrs.evm, chains);
@@ -704,7 +704,7 @@ function SeedCreatePanel({ onDone }: { onDone: () => void }) {
   const finishWithAddrs = (addrs: Awaited<ReturnType<typeof deriveAllAddresses>>) => {
     const chains: PasskeyChainAddresses = {
       evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch,
-      bsv: addrs.bsv, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+      bsv: addrs.bsv, bsvTest: addrs.bsvTest, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     };
     saveDerivedAddresses(addrs.evm, chains);
     applyOrahWallet(addrs.evm, chains);
