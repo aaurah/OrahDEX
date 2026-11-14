@@ -12,7 +12,7 @@ import { WalletDApps } from "@/components/wallet/WalletDApps";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
-import { useEvmBalances, scanTokensFromExplorer } from "@/hooks/useEvmBalances";
+import { useEvmBalances, useAllEvmChainBalances, scanTokensFromExplorer } from "@/hooks/useEvmBalances";
 import { useOnChainTxHistory, type OnChainTx } from "@/hooks/useOnChainTxHistory";
 import { useIncomingTxWatcher } from "@/hooks/useIncomingTxWatcher";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
@@ -194,15 +194,7 @@ function BsvSendSheet({
 
 /** Sums balances across all 8 live EVM chains for a given address. */
 function useAllEvmBalances(address: string | null) {
-  const c1     = useEvmBalances(address, 1);
-  const c56    = useEvmBalances(address, 56);
-  const c137   = useEvmBalances(address, 137);
-  const c42161 = useEvmBalances(address, 42161);
-  const c10    = useEvmBalances(address, 10);
-  const c8453  = useEvmBalances(address, 8453);
-  const c43114 = useEvmBalances(address, 43114);
-  const c59144 = useEvmBalances(address, 59144);
-  const all = [c1, c56, c137, c42161, c10, c8453, c43114, c59144];
+  const all = useAllEvmChainBalances(address);
   return all.reduce((sum, { balances }) =>
     sum + balances.reduce((s, b) => s + (b.usdValue ?? 0), 0), 0);
 }
@@ -642,7 +634,7 @@ function EvmChainRow({
     if (!evmAddress || !chain.evmChainId || scanning) return;
     setScanning(true);
     try {
-      const found = await scanTokensFromExplorer(evmAddress, chain.evmChainId);
+      const found = await scanTokensFromExplorer(evmAddress, chain.evmChainId, true);
       await refresh();
       if (found > 0) {
         toast({ title: `Found ${found} token${found === 1 ? "" : "s"}`, description: "Balances are loading now." });
