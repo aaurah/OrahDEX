@@ -2,7 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { buildOrderAuthMessage, buildOrderActionAuthMessage, issueExchangeChallenge, verifyExchangeSignature, verifyEvmSignature } from "./walletAuth.js";
+import {
+  buildOrderAuthMessage, buildOrderActionAuthMessage, issueExchangeChallenge,
+  issueLiquidityChallenge, verifyExchangeSignature, verifyEvmSignature,
+  verifyLiquiditySignature,
+} from "./walletAuth.js";
 
 test("order signatures bind all execution terms", async () => {
   const account = privateKeyToAccount(generatePrivateKey());
@@ -40,6 +44,34 @@ test("cancellation signature cannot target another order", async () => {
   const signature = await account.signMessage({ message: buildOrderActionAuthMessage(intent) });
   assert.throws(() => verifyEvmSignature(account.address,
     buildOrderActionAuthMessage({ ...intent, orderId: "order-b" }), signature));
+});
+
+test("liquidity challenges bind add amounts and the exact removal position", async () => {
+  const addAccount = privateKeyToAccount(generatePrivateKey());
+  const add = { walletAddress: addAccount.address, action: "add" as const, poolId: "ETH-USDT", amountA: "2", amountB: "5000" };
+  const addChallenge = issueLiquidityChallenge(add);
+  const addSignature = await addAccount.signMessage({ message: addChallenge.message });
+  assert.throws(() => verifyLiquiditySignature({
+    walletAddress: add.walletAddress, nonce: addChallenge.nonce, signature: addSignature,
+    action: "add", poolId: add.poolId, amountA: "20", amountB: add.amountB,
+  }), /amounts do not match/);
+  assert.doesNotThrow(() => verifyLiquiditySignature({
+    walletAddress: add.walletAddress, nonce: addChallenge.nonce, signature: addSignature,
+    action: "add", poolId: add.poolId, amountA: add.amountA, amountB: add.amountB,
+  }));
+
+  const removeAccount = privateKeyToAccount(generatePrivateKey());
+  const remove = { walletAddress: removeAccount.address, action: "remove" as const, poolId: "ETH-USDT", positionId: 42 };
+  const removeChallenge = issueLiquidityChallenge(remove);
+  const removeSignature = await removeAccount.signMessage({ message: removeChallenge.message });
+  assert.throws(() => verifyLiquiditySignature({
+    walletAddress: remove.walletAddress, nonce: removeChallenge.nonce, signature: removeSignature,
+    action: "remove", poolId: remove.poolId, positionId: 43,
+  }), /position does not match/);
+  assert.doesNotThrow(() => verifyLiquiditySignature({
+    walletAddress: remove.walletAddress, nonce: removeChallenge.nonce, signature: removeSignature,
+    action: "remove", poolId: remove.poolId, positionId: remove.positionId,
+  }));
 });
 
 test("API rejects altered intents and unfunded orders without recording a fill",
