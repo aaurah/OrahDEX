@@ -268,7 +268,7 @@ export function MobileMarkets() {
     results: serverSearchResults,
     loading: serverSearchLoading,
     error: serverSearchError,
-  } = useMarketSearch(search, { debounceMs: 300 });
+  } = useMarketSearch(search, { debounceMs: 500, limit: 50 });
   const [cat, setCat]             = useState<Cat>("usd");
   const [usdSub, setUsdSub]       = useState<UsdSub>("USDT");
   const [sortKey, setSortKey]     = useState<SortKey>("base");
@@ -321,8 +321,9 @@ export function MobileMarkets() {
     refetchInterval: 30_000,
   });
 
-  // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
-  const needAllPairs = cat === "eth" || cat === "sol" || cat === "favorites" || search.length > 0;
+  // Search uses the paginated server catalog; don't fetch every provider pair
+  // just because the user is searching.
+  const needAllPairs = cat === "eth" || cat === "sol" || cat === "favorites";
   const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
   const leAllPairs = useMemo<MktRow[]>(() =>
     (rawLeAllPairs ?? []).map(p => ({
@@ -393,7 +394,10 @@ export function MobileMarkets() {
     ].map((m: MktRow) => [m.symbol, m])
   ).values()), [apiRows, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs]);
 
-  let rows = getCatRows(cat, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs, apiRows);
+  let rows = search
+    ? []
+    : getCatRows(cat, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs, apiRows);
+  let searchHasMore = false;
 
   const applyLiveMerge = (rows: MktRow[], src: any[]): MktRow[] => {
     const byBase = new Map(src.map((s: any) => [s.base, s]));
@@ -417,17 +421,25 @@ export function MobileMarkets() {
   }
 
   if (search) {
-    const q = search.toUpperCase();
-    const localMatches = globalRows.filter(m =>
-      m.base.includes(q) || m.quote.includes(q) || m.symbol.includes(q)
-    );
-    const localSymbols = new Set(localMatches.map(m => m.symbol));
-    const catalogMatches = serverSearchResults
-      .filter((m: any) => m.symbol && !localSymbols.has(m.symbol))
-      .map((m: any) => normalise(m));
-    rows = [...new Map(
-      [...localMatches, ...catalogMatches].map(m => [m.symbol, m])
-    ).values()];
+    const q = search.trim().toUpperCase();
+    if (q.length >= 2) {
+      const localMatches: MktRow[] = [];
+      for (const market of globalRows) {
+        if (market.base.includes(q) || market.quote.includes(q) || market.symbol.includes(q)) {
+          localMatches.push(market);
+          if (localMatches.length >= 50) break;
+        }
+      }
+      const localSymbols = new Set(localMatches.map(m => m.symbol));
+      const catalogMatches = serverSearchResults
+        .filter((m: any) => m.symbol && !localSymbols.has(m.symbol))
+        .map((m: any) => normalise(m));
+      const merged = [...new Map(
+        [...localMatches, ...catalogMatches].map(m => [m.symbol, m])
+      ).values()];
+      searchHasMore = merged.length > 50;
+      rows = merged.slice(0, 50);
+    }
   }
 
   rows = [...rows].sort((a, b) => {
@@ -604,7 +616,9 @@ export function MobileMarkets() {
           {/* ── Market list ── */}
           {rows.length === 0 ? (
             <div className="flex-1 flex items-center justify-center py-20 text-muted-foreground text-sm">
-              {search && serverSearchLoading
+              {search.trim().length < 2
+                ? "Type at least 2 characters to search"
+                : serverSearchLoading
                 ? "Searching all markets…"
                 : search && serverSearchError
                   ? serverSearchError
@@ -626,6 +640,11 @@ export function MobileMarkets() {
                   onBuy={() => goTrade(m)}
                 />
               ))}
+              {searchHasMore && (
+                <div className="py-3 text-center text-xs text-muted-foreground">
+                  Showing 50 matches. Add more letters to narrow your search.
+                </div>
+              )}
               {search && serverSearchLoading && (
                 <div className="py-3 text-center text-xs text-muted-foreground">Searching all markets…</div>
               )}
