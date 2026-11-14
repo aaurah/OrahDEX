@@ -966,6 +966,8 @@ export function Markets() {
                     <td colSpan={12} className="py-16 text-center text-muted-foreground text-sm">
                       {allVenueCatalog.loading
                         ? "Loading all venues…"
+                        : catalogScope === "all" && allVenueCatalog.error
+                          ? allVenueCatalog.error
                         : catalogScope === "default" && serverSearchLoading
                           ? "Searching markets…"
                         : catalogScope === "default" && serverSearchError

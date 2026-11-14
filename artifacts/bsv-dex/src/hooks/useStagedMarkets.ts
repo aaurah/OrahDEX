@@ -83,6 +83,7 @@ export function useMarketSearch(
     if (!q) { setLoading(false); return; }
 
     setLoading(true);
+    let active = true;
     let controller: AbortController | null = null;
 
     const id = setTimeout(() => {
@@ -96,13 +97,14 @@ export function useMarketSearch(
           return r.json();
         })
         .then((data: unknown) => {
+          if (!active) return;
           const payload = data as { items?: unknown[] };
           if (!Array.isArray(payload?.items)) throw new Error("Invalid market search response");
           setResults(payload.items);
           setLoading(false);
         })
         .catch((err: unknown) => {
-          if ((err as any)?.name !== "AbortError") {
+          if (active && (err as any)?.name !== "AbortError") {
             setResults([]);
             setError("Market search is unavailable. Please try again.");
             setLoading(false);
@@ -111,12 +113,13 @@ export function useMarketSearch(
     }, debounceMs);
 
     return () => {
+      active = false;
       clearTimeout(id);
       controller?.abort();
     };
   }, [query, limit, debounceMs]);
 
-  return { results, loading };
+  return { results, loading, error };
 }
 
 export interface VenueCatalogPage {
@@ -143,7 +146,7 @@ export function useVenueCatalog(opts: {
   limit?: number;
   offset?: number;
   enabled?: boolean;
-} = {}): VenueCatalogPage & { loading: boolean } {
+} = {}): VenueCatalogPage & { loading: boolean; error: string | null } {
   const {
     query = "",
     quote = "",
@@ -154,6 +157,7 @@ export function useVenueCatalog(opts: {
   } = opts;
   const [page, setPage] = useState<VenueCatalogPage>(EMPTY_CATALOG_PAGE);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const sourcesKey = sources.join(",");
 
   useEffect(() => {
@@ -162,7 +166,11 @@ export function useVenueCatalog(opts: {
       return;
     }
 
+    setPage(EMPTY_CATALOG_PAGE);
+    setError(null);
+    setLoading(true);
     const controller = new AbortController();
+    let active = true;
     const params = new URLSearchParams({
       scope: "all",
       limit: String(limit),
@@ -172,17 +180,21 @@ export function useVenueCatalog(opts: {
     if (quote.trim()) params.set("quote", quote.trim().toUpperCase());
     if (sourcesKey) params.set("sources", sourcesKey);
 
-    setLoading(true);
     const timer = setTimeout(() => {
       fetch(`${API_BASE}/markets/catalog?${params.toString()}`, {
         headers: { Accept: "application/json" },
         signal: controller.signal,
       })
-        .then(r => r.ok ? r.json() : EMPTY_CATALOG_PAGE)
+        .then(r => {
+          if (!r.ok) throw new Error(`Market catalog failed (${r.status})`);
+          return r.json();
+        })
         .then((data: unknown) => {
+          if (!active) return;
           const d = data as Partial<VenueCatalogPage>;
+          if (!Array.isArray(d.items)) throw new Error("Invalid market catalog response");
           setPage({
-            items: Array.isArray(d.items) ? d.items : [],
+            items: d.items,
             total: Number(d.total) || 0,
             limit: Number(d.limit) || limit,
             offset: Number(d.offset) || 0,
@@ -191,18 +203,20 @@ export function useVenueCatalog(opts: {
           setLoading(false);
         })
         .catch((err: unknown) => {
-          if ((err as any)?.name !== "AbortError") {
+          if (active && (err as any)?.name !== "AbortError") {
             setPage(EMPTY_CATALOG_PAGE);
+            setError("Market catalog is unavailable. Please try again.");
             setLoading(false);
           }
         });
     }, query.trim() ? 250 : 0);
 
     return () => {
+      active = false;
       clearTimeout(timer);
       controller.abort();
     };
   }, [query, quote, sourcesKey, limit, offset, enabled]);
 
-  return { ...page, loading };
+  return { ...page, loading, error };
 }
