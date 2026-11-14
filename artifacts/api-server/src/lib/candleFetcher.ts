@@ -444,10 +444,10 @@ export async function fetchFullHistoryCandles(
     } catch (_) {}
   }
 
-  /* 4. Synthetic fallback */
-  if (merged.length < 5) {
-    const inception = getInceptionTs(symbol);
-    merged = generateFallbackCandles(lastPrice, "1w", 2000, inception);
+  // Keep sparse real history rather than inventing price movements.
+  if (merged.length === 0) {
+    logger.warn({ symbol }, "Historical candle sources unavailable");
+    return [];
   }
 
   historyCache.set(cacheKey, { data: merged, ts: Date.now() });
@@ -603,14 +603,11 @@ export async function fetchRealCandles(
         return pinLastCandle(candles, lastPrice);
       }
     } catch (err) {
-      logger.warn({ err, symbol }, "Poloniex candle fetch failed — using synthetic");
+      logger.warn({ err, symbol }, "Poloniex candle fetch failed");
     }
   }
 
-  // ── 6. Synthetic fallback ───────────────────────────────────────────────────
-  logger.warn({ symbol, interval }, "All real candle sources failed — using synthetic fallback");
-  const inception = getInceptionTs(symbol);
-  const candles   = generateFallbackCandles(lastPrice, interval, limit, inception);
-  setCached(cacheKey, candles);
-  return pinLastCandle(candles, lastPrice);
+  logger.warn({ symbol, interval }, "Real candle sources unavailable — returning no history");
+  setCached(cacheKey, []);
+  return [];
 }
