@@ -2,7 +2,9 @@ import { useParams, useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useGetTicker, useGetCandles, useGetOrderBook, useGetOrders, useCancelOrder } from "@workspace/api-client-react";
+import { useGetTicker, useGetCandles, useGetOrderBook, useGetOrders } from "@workspace/api-client-react";
+import { useMutation } from "@tanstack/react-query";
+import { buildOrderActionMessage, signWalletMessage } from "@/lib/tradeAuth";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
 import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, FUTURES_MARKETS } from "@/lib/mock-data";
@@ -202,8 +204,20 @@ export function FuturesTrading() {
     { walletAddress: altAddress || "" },
     { query: { enabled: !!altAddress, refetchInterval: 5000 } as any }
   );
-  const cancelOrder = useCancelOrder({
-    mutation: { onSuccess: () => { refetchOrders(); refetchAltOrders(); } },
+  const cancelOrder = useMutation({
+    mutationFn: async ({ orderId, data }: { orderId: string; data: { walletAddress: string } }) => {
+      const nonce = crypto.randomUUID();
+      const expiry = String(Math.floor(Date.now() / 1000) + 300);
+      const signature = await signWalletMessage(data.walletAddress, provider ?? undefined,
+        buildOrderActionMessage({ walletAddress: data.walletAddress, action: "cancel", orderId, nonce, expiry }));
+      const response = await fetch(`${API_BASE}/orders/${encodeURIComponent(orderId)}`, {
+        method: "DELETE", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, nonce, expiry, signature }),
+      });
+      if (!response.ok) throw new Error((await response.json()).error ?? "Cancellation failed");
+      return response.json();
+    },
+    onSuccess: () => { refetchOrders(); refetchAltOrders(); },
   });
 
   const allOrders = useMemo(() => {
