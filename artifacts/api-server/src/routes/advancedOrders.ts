@@ -5,6 +5,13 @@ import { randomUUID } from "node:crypto";
 
 const router: IRouter = Router();
 
+// These endpoints previously wrote orders without authenticated, funded intents.
+// Keep them closed until each strategy has signed authorization and settlement
+// accounting equivalent to the standard spot order path.
+router.use((_req, res) => {
+  res.status(503).json({ error: "Advanced order strategies are temporarily unavailable pending signed-intent support." });
+});
+
 router.post("/orders/oco", async (req, res) => {
   const { walletAddress, symbol, side, quantity, limitPrice, stopPrice, networkType, chainId } = req.body as {
     walletAddress?: string;
