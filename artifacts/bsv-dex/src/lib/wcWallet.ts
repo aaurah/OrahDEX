@@ -63,8 +63,8 @@ export async function getWeb3Wallet(projectId: string): Promise<IWeb3Wallet> {
       metadata: {
         name: "Orah Wallet",
         description: "OrahDEX Multi-Chain HD Wallet — connect to any web3 app",
-        url: "https://orahdex.org",
-        icons: ["https://orahdex.org/orah-icon.png"],
+        url: "https://orahdex.com",
+        icons: ["https://orahdex.com/orah-icon.png"],
       },
     });
 

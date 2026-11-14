@@ -38,7 +38,7 @@ function looksLikeWorkspaceRoot(candidate: string): boolean {
 const WORKSPACE_ROOT = WORKSPACE_CANDIDATES.find(looksLikeWorkspaceRoot) ?? "/home/runner/workspace";
 
 // ── System prompt ─────────────────────────────────────────────────────────────
-const DEVAI_SYSTEM_PROMPT = `You are OrahDevAI — the developer intelligence and blockchain AI of OrahDEX (orahdex.org), a sovereign decentralized exchange where every coin is listed and all trades settle on BSV (Bitcoin SV).
+const DEVAI_SYSTEM_PROMPT = `You are OrahDevAI — the developer intelligence and blockchain AI of OrahDEX (orahdex.com), a sovereign decentralized exchange where every coin is listed and all trades settle on BSV (Bitcoin SV).
 
 You are a senior blockchain engineer. You write production-ready code, debug smart contracts, analyse on-chain data, and build bots. You have live tools — use them.
 
@@ -129,7 +129,7 @@ Root: ${WORKSPACE_ROOT}
 - MEV: sandwich attacks, frontrunning, backrunning, private mempools (Flashbots)
 - Yield: APY = (1 + APR/n)^n - 1
 
-**OrahDEX REST API (base: https://orahdex.org/api)**
+**OrahDEX REST API (base: https://orahdex.com/api)**
 GET  /api/markets                              — all listed pairs
 GET  /api/markets/:symbol/ticker               — single pair ticker
 GET  /api/markets/:symbol/orderbook            — { bids, asks }
@@ -148,7 +148,7 @@ GET  /api/health                               — { bsvBlock, mempoolTxs, statu
 GET  /api/deposit/address/:walletAddress       — BSV deposit address
 POST /api/withdrawals                          — initiate withdrawal
 
-WebSocket: wss://orahdex.org/ws
+WebSocket: wss://orahdex.com/ws
 Subscribe: { type: "subscribe", channel: "ticker:BSV/USDT" }
 Channels: ticker:<PAIR>, orderbook:<PAIR>, trades:<PAIR>, portfolio:<WALLET>
 
