@@ -1455,10 +1455,10 @@ function normalizeSsTicker(ticker: string): string | null {
  * syncSSPairs — seed and sync SimpleSwap pairs into the DB.
  *
  * Fetches the live SS currency catalog, deduplicates by normalized symbol,
- * then upserts coin × SS_QUOTE_ASSETS rows as type='simpleswap'.
+ * then inserts only pair symbols not already stored in the markets table.
  *
- *   - First run: full seed — inserts all ~3 000 coins × 22 quotes (~66 K rows)
- *   - Subsequent runs: onConflictDoNothing makes repeat runs safe and fast
+ *   - First run: full seed of the current SS catalog
+ *   - Subsequent runs: only newly discovered pair symbols are built and inserted
  *   - New SS coins appear in DB within 4 hours — no manual admin action needed
  *   - Skips silently when SIMPLESWAP_API_KEY is not configured
  */
@@ -1484,42 +1484,77 @@ export async function syncSSPairs(): Promise<{ coins: number; inserted: number }
     uniqueSymbols.push(sym);
   }
 
-  logger.info({ coins: uniqueSymbols.length }, "syncSSPairs: building pairs");
+  const QUOTES_SET = new Set(SS_QUOTE_ASSETS);
+  const candidateSymbols: string[] = [];
+  for (const base of uniqueSymbols) {
+    if (QUOTES_SET.has(base)) continue;
+    for (const quote of SS_QUOTE_ASSETS) {
+      if (base !== quote) candidateSymbols.push(`${base}/${quote}`);
+    }
+  }
 
-  // Get sovereign prices for cross-rate math
+  if (candidateSymbols.length === 0) {
+    return { coins: uniqueSymbols.length, inserted: 0 };
+  }
+
+  // markets.symbol is unique across providers. Check the stored pair keys first
+  // so recurring catalog checks do not rebuild or attempt to insert old pairs.
+  const existingResult = await withDbRetry(() =>
+    pool.query<{ symbol: string }>(
+      "SELECT symbol FROM markets WHERE symbol = ANY($1::text[])",
+      [candidateSymbols],
+    ),
+  );
+  const existingSymbols = new Set(existingResult.rows.map(row => row.symbol));
+  const missingSymbols = candidateSymbols.filter(symbol => !existingSymbols.has(symbol));
+
+  if (missingSymbols.length === 0) {
+    logger.debug(
+      { coins: uniqueSymbols.length, checkedPairs: candidateSymbols.length },
+      "syncSSPairs: catalog is current",
+    );
+    return { coins: uniqueSymbols.length, inserted: 0 };
+  }
+
+  logger.info(
+    { coins: uniqueSymbols.length, newPairs: missingSymbols.length },
+    "syncSSPairs: inserting newly discovered pairs",
+  );
+
+  // Price data is only needed when there are rows to add.
   const prices = await fetchSovereignPrices();
   const usdOf = (sym: string): number => prices[sym]?.usd || FALLBACK_PRICES[sym] || 0;
 
-  const QUOTES_SET = new Set(SS_QUOTE_ASSETS);
   const CHUNK = 500;
   let inserted = 0;
   const rows: (typeof marketsTable.$inferInsert)[] = [];
 
-  for (const base of uniqueSymbols) {
-    if (QUOTES_SET.has(base)) continue; // pure quote asset — skip as base
+  for (const symbol of missingSymbols) {
+    const [base, quote] = symbol.split("/");
+    if (!base || !quote) continue;
     const baseUSD = usdOf(base);
-
-    for (const quote of SS_QUOTE_ASSETS) {
-      if (base === quote) continue;
-      const quoteUSD = usdOf(quote);
-      const p = (baseUSD > 0 && quoteUSD > 0) ? fmtPrice(baseUSD / quoteUSD) : "0";
-      rows.push({
-        symbol: `${base}/${quote}`, baseAsset: base, quoteAsset: quote,
-        lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
-        volume24h: "0", high24h: p, low24h: p,
-        status: "active", type: "simpleswap",
-      });
-    }
+    const quoteUSD = usdOf(quote);
+    const p = (baseUSD > 0 && quoteUSD > 0) ? fmtPrice(baseUSD / quoteUSD) : "0";
+    rows.push({
+      symbol, baseAsset: base, quoteAsset: quote,
+      lastPrice: p, priceChange24h: "0", priceChangePercent24h: "0",
+      volume24h: "0", high24h: p, low24h: p,
+      status: "active", type: "simpleswap",
+    });
   }
 
-  // Upsert in chunks — onConflictDoNothing preserves any live prices already stored
+  // Insert only missing symbols in bounded chunks; conflicts can still occur
+  // if another sync worker adds a pair after the existence check.
   for (let i = 0; i < rows.length; i += CHUNK) {
     const chunk = rows.slice(i, i + CHUNK);
     const result = await db.insert(marketsTable).values(chunk).onConflictDoNothing();
     inserted += (result as any).rowCount ?? 0;
   }
 
-  logger.info({ coins: uniqueSymbols.length, pairs: rows.length, inserted }, "syncSSPairs: complete");
+  logger.info(
+    { coins: uniqueSymbols.length, checkedPairs: candidateSymbols.length, newPairs: rows.length, inserted },
+    "syncSSPairs: complete",
+  );
   return { coins: uniqueSymbols.length, inserted };
 }
 
