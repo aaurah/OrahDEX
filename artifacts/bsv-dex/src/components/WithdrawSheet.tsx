@@ -28,6 +28,7 @@ import {
   Copy,
   Check,
   AlertCircle,
+  AlertTriangle,
   ExternalLink,
   Download,
   RefreshCw,
@@ -85,6 +86,7 @@ function isHandCashHandle(s: string): boolean {
 const NON_EVM_WITHDRAW_CHAINS = [
   { id: "evm",  label: "EVM",  color: "#627EEA" },
   { id: "bsv",  label: "BSV",  color: "#22C55E" },
+  { id: "bsv-test", label: "BSV Testnet", color: "#14B8A6" },
   { id: "btc",  label: "BTC",  color: "#F97316" },
   { id: "sol",  label: "SOL",  color: "#9945FF" },
   { id: "xrp",  label: "XRP",  color: "#00A9E0" },
@@ -390,7 +392,7 @@ export function WithdrawSheet({
   const { addNotification } = useNotificationStore();
   const { isHardwareWallet, hardwareWalletType } = useWalletStore();
 
-  const isBitcoinFork = ["bsv", "btc", "bch"].includes(network.toLowerCase());
+  const isBitcoinFork = ["bsv", "bsv-test", "btc", "bch"].includes(network.toLowerCase());
   const isSolana      = network.toLowerCase() === "sol";
   const isEvmNetwork  = !isBitcoinFork && !isSolana && (network.toLowerCase() === "evm" || network === "");
   const isAltChain    = !isBitcoinFork && !isSolana && !isEvmNetwork; // LTC, DOGE, XRP, ADA, TRON, TON, etc.
@@ -435,6 +437,7 @@ export function WithdrawSheet({
     const d = getDerivedAddresses(resolvedSigningEvmAddress);
     const auto: Record<string, string | undefined> = d ? {
       bsv:  d.bsv  ?? undefined,
+      bsvTest: d.bsvTest ?? undefined,
       btc:  d.btc  ?? undefined,
       bch:  d.bch  ?? undefined,
       sol:  d.sol  ?? undefined,
@@ -603,7 +606,7 @@ export function WithdrawSheet({
         if (!r.ok) return [];
         return r.json();
       },
-      enabled: network.toLowerCase() === "bsv" && !!walletAddress && open && tab === "deposit",
+      enabled: ["bsv", "bsv-test"].includes(network.toLowerCase()) && !!walletAddress && open && tab === "deposit",
       refetchInterval: 15_000,
       staleTime: 5_000,
     });
@@ -664,10 +667,40 @@ export function WithdrawSheet({
     if (!bsvTxHash.trim() || bsvVerifying || !walletAddress) return;
     setBsvVerifying(true);
     try {
+      const verifyBody: Record<string, string> = {
+        walletAddress,
+        txHash: bsvTxHash.trim(),
+        network: network.toLowerCase(),
+      };
+
+      if (/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+        const isBsvTestnet = network.toLowerCase() === "bsv-test";
+        const bsvSignerAddress =
+          effectiveNonEvmAddresses?.[isBsvTestnet ? "bsvTest" : "bsv"] ??
+          (!isBsvTestnet ? useWalletStore.getState().internalBsvAddress : undefined) ??
+          "";
+        if (!bsvSignerAddress) {
+          throw new Error("Connect the BSV wallet that sent this deposit before verifying it.");
+        }
+        const challengeRes = await fetch(`${API_BASE}/deposit/bsv-challenge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ walletAddress, bsvSignerAddress, txHash: bsvTxHash.trim() }),
+        });
+        const challengeData = await challengeRes.json().catch(() => ({}));
+        if (!challengeRes.ok) throw new Error(challengeData.error ?? "Could not authorize this BSV deposit.");
+        const signature = await signBsvChallengeFromAddress(
+          resolvedSigningEvmAddress,
+          challengeData.message,
+        );
+        verifyBody.bsvSignerAddress = bsvSignerAddress;
+        verifyBody.bsvSignerSignature = signature;
+      }
+
       const r = await fetch(`${API_BASE}/deposit/bsv-verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress, txHash: bsvTxHash.trim() }),
+        body: JSON.stringify(verifyBody),
       });
       const data = await r.json();
       if (!r.ok) {
@@ -675,6 +708,7 @@ export function WithdrawSheet({
       } else {
         toast({ title: "BSV deposit credited!", description: `${data.amount} BSV has been added to your trading balance.` });
         addNotification({ type: "deposit", title: "BSV Deposit Credited", body: `${data.amount} BSV added to your exchange balance.` });
+        useWalletStore.getState().triggerBalanceRefresh();
         setBsvTxHash("");
       }
     } catch {
@@ -818,16 +852,18 @@ export function WithdrawSheet({
   // ── wallet send: non-EVM balance fetch (BSV, LTC, XRP, …) ───────────────
   const fetchNonEvmBalance = useCallback(async () => {
     const net     = withdrawChainMode.toLowerCase();
-    const chainAddr = effectiveNonEvmAddresses?.[net] ?? (net !== "evm" ? undefined : walletAddress);
+    const addressKey = net === "bsv-test" ? "bsvTest" : net;
+    const chainAddr = effectiveNonEvmAddresses?.[addressKey] ?? (net !== "evm" ? undefined : walletAddress);
     if (!chainAddr) return;
     setNonEvmSendBalance(null);
     setNonEvmSendBalFetch(true);
     try {
-      if (net === "bsv") {
-        const r = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${chainAddr}/balance`);
+      if (net === "bsv" || net === "bsv-test") {
+        const selectedNetwork = network.toLowerCase() === "bsv-test" || net === "bsv-test" ? "test" : "main";
+        const r = await fetch(`${API_BASE}/bsv/balance/${encodeURIComponent(chainAddr)}?network=${selectedNetwork}`);
         if (r.ok) {
-          const { confirmed, unconfirmed } = await r.json();
-          setNonEvmSendBalance(((confirmed ?? 0) + (unconfirmed ?? 0)) / 1e8);
+          const data = await r.json();
+          if (Number.isFinite(data.balance)) setNonEvmSendBalance(data.balance);
         }
       } else if (net === "ltc") {
         const r = await fetch(`https://litecoinspace.org/api/address/${chainAddr}`);
@@ -896,7 +932,7 @@ export function WithdrawSheet({
     } finally {
       setNonEvmSendBalFetch(false);
     }
-  }, [walletAddress, effectiveNonEvmAddresses, withdrawChainMode]);
+  }, [walletAddress, effectiveNonEvmAddresses, network, withdrawChainMode]);
 
   useEffect(() => {
     if (open && tab === "withdraw" && (isOrahWallet || canSignNonEvm) && withdrawChainMode !== "evm") {
@@ -939,10 +975,11 @@ export function WithdrawSheet({
     setNonEvmSendError(null);
     try {
       const activeChain = withdrawChainMode.toLowerCase();
-      const isBitcoinForkChain = ["bsv", "btc", "bch"].includes(activeChain);
+      const isBitcoinForkChain = ["bsv", "bsv-test", "btc", "bch"].includes(activeChain);
+      const chainAddressKey = activeChain === "bsv-test" ? "bsvTest" : activeChain;
 
       const chainAddress = isBitcoinForkChain
-        ? (effectiveNonEvmAddresses?.[activeChain] ?? effectiveNonEvmAddresses?.[activeChain.toUpperCase()])
+        ? (effectiveNonEvmAddresses?.[chainAddressKey] ?? effectiveNonEvmAddresses?.[chainAddressKey.toUpperCase()])
         : undefined;
 
       // ── BSV via HandCash: connected wallet + $handle recipient ──────────────
@@ -991,7 +1028,7 @@ export function WithdrawSheet({
       //
       // If the recipient is a $handle (but HandCash is not connected for sending),
       // resolve the handle to a BSV address first via the backend.
-      if (activeChain === "bsv") {
+      if (activeChain === "bsv" || activeChain === "bsv-test") {
         let recipient = nonEvmSendRecipient.trim();
         if (isHandCashHandle(recipient)) {
           const raw = recipient.replace(/^\$/, "").replace(/@handcash\.io$/i, "");
@@ -1010,6 +1047,7 @@ export function WithdrawSheet({
           chainAddress!,
           recipient,
           parsedAmt,
+          activeChain === "bsv-test" ? "test" : "main",
         );
         setNonEvmSendTxHash(result.txid);
         toast({
@@ -1021,7 +1059,7 @@ export function WithdrawSheet({
           title: "BSV Sent",
           body:  `${parsedAmt} BSV sent from wallet (fee: ${result.feeSat} sat).`,
           txid:  result.txid,
-          href:  `https://whatsonchain.com/tx/${result.txid}`,
+          href:  `${activeChain === "bsv-test" ? "https://test.whatsonchain.com" : "https://whatsonchain.com"}/tx/${result.txid}`,
         });
         refetchHistory?.();
         setTimeout(() => fetchNonEvmBalance(), 8_000);
@@ -1146,13 +1184,17 @@ export function WithdrawSheet({
         }
         const { message } = await challengeRes.json();
         const signature = await signBsvChallengeFromAddress(resolvedSigningEvmAddress, message);
-        const wAsset = withdrawChainMode.toUpperCase();
+        const wAsset = activeChain.startsWith("bsv") ? "BSV" : withdrawChainMode.toUpperCase();
+        const requestNetwork =
+          activeChain === "bsv" && network.toLowerCase() === "bsv-test"
+            ? "bsv-test"
+            : withdrawChainMode;
         const withdrawRes = await fetch(`${API_BASE}/withdrawals`, {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
           body:    JSON.stringify({
             walletAddress, asset: wAsset, amount: parsedAmt,
-            network: withdrawChainMode, networkLabel: wAsset,
+            network: requestNetwork, networkLabel: requestNetwork.toUpperCase(),
             recipient: nonEvmSendRecipient.trim(), signature,
             ...(chainAddress ? { bsvSignerAddress: chainAddress } : {}),
           }),
@@ -1534,6 +1576,10 @@ export function WithdrawSheet({
                                   {dep.status === "mempool" ? (
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-yellow-400 bg-yellow-400/10 rounded-full px-2 py-0.5 shrink-0">
                                       <Clock className="w-2.5 h-2.5" /> Pending
+                                    </span>
+                                  ) : dep.status === "stale" ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-400/10 rounded-full px-2 py-0.5 shrink-0">
+                                      <AlertTriangle className="w-2.5 h-2.5" /> Needs check
                                     </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-400 bg-green-400/10 rounded-full px-2 py-0.5 shrink-0">
@@ -1995,7 +2041,11 @@ export function WithdrawSheet({
                     );
                   })()}
                   <Input
-                    placeholder={withdrawChainMode.toLowerCase() === "bsv" ? "$handle or BSV address" : addressPlaceholder}
+                    placeholder={
+                      withdrawChainMode.toLowerCase() === "bsv" ? "$handle or BSV address" :
+                      withdrawChainMode.toLowerCase() === "bsv-test" ? "BSV testnet address (m…/n…)" :
+                      addressPlaceholder
+                    }
                     value={nonEvmSendRecipient}
                     onChange={e => setNonEvmSendRecipient(e.target.value)}
                     className="h-11 font-mono text-xs"
@@ -2032,7 +2082,7 @@ export function WithdrawSheet({
 
                 {/* ── EVM-only wallet with no OrahDEX passkey → can't sign BSV/BTC/BCH ── */}
                 {/* Hidden for BSV when HandCash is connected (HandCash covers the send) */}
-                {!canSignNonEvm && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) &&
+                {!canSignNonEvm && ["bsv", "bsv-test", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) &&
                   !(withdrawChainMode.toLowerCase() === "bsv" && hcAuthToken) && (
                   <div className="flex items-start gap-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
@@ -2113,7 +2163,7 @@ export function WithdrawSheet({
                         {(() => {
                           const chain = withdrawChainMode.toLowerCase();
                           const url =
-                            chain === "bsv"  ? `https://whatsonchain.com/tx/${nonEvmSendTxHash}` :
+                            chain.startsWith("bsv")  ? `${chain === "bsv-test" || network.toLowerCase() === "bsv-test" ? "https://test.whatsonchain.com" : "https://whatsonchain.com"}/tx/${nonEvmSendTxHash}` :
                             chain === "btc"  ? `https://mempool.space/tx/${nonEvmSendTxHash}` :
                             chain === "bch"  ? `https://blockchair.com/bitcoin-cash/transaction/${nonEvmSendTxHash}` :
                             chain === "ltc"  ? `https://blockchair.com/litecoin/transaction/${nonEvmSendTxHash}` :
@@ -2145,7 +2195,7 @@ export function WithdrawSheet({
                     hcAuthToken &&
                     isHandCashHandle(nonEvmSendRecipient.trim());
                   const canSend = isBsvHandCashSend || canSignNonEvm ||
-                    !["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase());
+                    !["bsv", "bsv-test", "btc", "bch"].includes(withdrawChainMode.toLowerCase());
                   return (
                     <Button
                       onClick={handleNonEvmWalletSend}

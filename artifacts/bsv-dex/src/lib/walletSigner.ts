@@ -140,12 +140,13 @@ export async function sendBsvFromAddress(
   senderBsvAddress: string,
   recipientAddress: string,
   amountBsv:        number,
+  network:          "main" | "test" = "main",
 ): Promise<{ txid: string; feeSat: number }> {
   const { buildSignBroadcastBsvTx } = await import("./bsvTx.js");
   const secret     = await getSecretForAddress(evmAddress, { title: "Confirm BSV Send", subtitle: "Enter your PIN to sign and broadcast this BSV transaction." });
   const bsvPrivKey = await deriveBsvPrivKeyFromSecret(secret);
   const amountSat  = Math.round(amountBsv * 1e8);
-  return buildSignBroadcastBsvTx(senderBsvAddress, recipientAddress, amountSat, bsvPrivKey);
+  return buildSignBroadcastBsvTx(senderBsvAddress, recipientAddress, amountSat, bsvPrivKey, network);
 }
 
 export async function sendBtcFromAddress(

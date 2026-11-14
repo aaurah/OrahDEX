@@ -46,6 +46,7 @@ export interface HdWalletAddresses {
   btc: string;
   bch: string;
   bsv: string;
+  bsvTest: string;
   sol: string;
   tron: string;
   xrp: string;
@@ -66,6 +67,7 @@ export async function deriveAllAddresses(mnemonic: string[]): Promise<HdWalletAd
 
   const bsvKey = root.derive("m/44'/236'/0'/0/0");
   const bsv = deriveP2PKH(bsvKey);
+  const bsvTest = deriveP2PKH(bsvKey, 0x6f);
 
   const bchKey = root.derive("m/44'/145'/0'/0/0");
   const bch = deriveCashAddr(bchKey);
@@ -85,7 +87,7 @@ export async function deriveAllAddresses(mnemonic: string[]): Promise<HdWalletAd
   const dogeKey = root.derive("m/44'/3'/0'/0/0");
   const doge = deriveDogeAddress(dogeKey);
 
-  return { evm, btc, bch, bsv, sol, tron, xrp, ltc, doge };
+  return { evm, btc, bch, bsv, bsvTest, sol, tron, xrp, ltc, doge };
 }
 
 // ─── Base58 with configurable alphabet ───────────────────────────────────────
@@ -140,10 +142,10 @@ function encodeBase58CheckWithAlphabet(payload: Uint8Array, version: number, alp
 
 // ─── P2PKH Base58Check (BSV — version 0x00 → starts with "1") ───────────────
 
-function deriveP2PKH(key: HDKey): string {
+function deriveP2PKH(key: HDKey, version = 0x00): string {
   if (!key.publicKey) throw new Error("no public key");
   const pkh = hash160(key.publicKey);
-  return encodeBase58Check(pkh, 0x00);
+  return encodeBase58Check(pkh, version);
 }
 
 // ─── Bech32 (BTC Native SegWit P2WPKH — BIP84 → starts with "bc1q") ─────────
@@ -198,7 +200,7 @@ async function deriveTronAddressFromHdKey(key: HDKey): Promise<string> {
   if (!key.privateKey) throw new Error("no TRON private key");
   // Lazy import avoids iOS Safari module-initialization race where the static
   // import resolves to `undefined` when the chunk first executes.
-  const { secp256k1 } = await import("@noble/curves/secp256k1");
+  const { secp256k1 } = await import("@noble/curves/secp256k1.js");
   // getPublicKey(privateKey, false) → 65-byte uncompressed point (04 || x || y)
   // This is equivalent to ProjectivePoint.fromHex(compressedPubKey).toRawBytes(false)
   // but avoids the point-decompression path that crashes on iOS Safari.
@@ -252,7 +254,7 @@ function deriveDogeAddress(key: HDKey): string {
  * Address = plain Base58 of the 32-byte ed25519 public key.
  */
 async function deriveSolanaAddress(seed: Uint8Array): Promise<string> {
-  const { ed25519 } = await import("@noble/curves/ed25519");
+  const { ed25519 } = await import("@noble/curves/ed25519.js");
   const privateKey = slip10Derive(seed, [
     0x80000000 + 44,   // 44'
     0x80000000 + 501,  // 501'  (Solana coin type)

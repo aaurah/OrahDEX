@@ -229,6 +229,7 @@ export interface DerivedAddresses {
   btc?: string;
   bch?: string;
   bsv?: string;
+  bsvTest?: string;
   sol?: string;
   tron?: string;
   xrp?: string;
