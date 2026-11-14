@@ -189,7 +189,11 @@ export function Markets() {
 
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } as any });
   const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
-  const { results: serverSearchResults } = useMarketSearch(search, { debounceMs: 300 });
+  const {
+    results: serverSearchResults,
+    loading: serverSearchLoading,
+    error: serverSearchError,
+  } = useMarketSearch(search, { debounceMs: 300 });
   const catalogQuote = tab === "usd" ? usdSub : ({
     bsv: "BSV", btc: "BTC", eth: "ETH", bnb: "BNB", matic: "MATIC",
     avax: "AVAX", arb: "ARB", op: "OP", ftm: "FTM", cro: "CRO", bch: "BCH",
@@ -962,6 +966,10 @@ export function Markets() {
                     <td colSpan={12} className="py-16 text-center text-muted-foreground text-sm">
                       {allVenueCatalog.loading
                         ? "Loading all venues…"
+                        : catalogScope === "default" && serverSearchLoading
+                          ? "Searching markets…"
+                        : catalogScope === "default" && serverSearchError
+                          ? serverSearchError
                         : search
                           ? `No results for "${search}"`
                           : tab === "favorites"
