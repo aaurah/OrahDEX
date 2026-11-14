@@ -20,7 +20,9 @@ const router: IRouter = Router();
 // accounting. The previous environment switch alone was not authorization.
 const TRADING_PATHS = ["/futures/open", "/futures/close", "/futures/deposit", "/futures/positions", "/futures/margin/deposit"];
 router.use((req, res, next) => {
-  const isTrading = TRADING_PATHS.some(p => req.path.startsWith(p));
+  // Keep read-only position queries available so users can still inspect open
+  // positions while signed, replay-safe futures mutations are being completed.
+  const isTrading = req.method !== "GET" && TRADING_PATHS.some(p => req.path.startsWith(p));
   if (isTrading) {
     return res.status(503).json({ error: "Futures trading is temporarily unavailable pending signed wallet authorization." });
   }
