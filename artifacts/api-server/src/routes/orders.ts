@@ -81,6 +81,16 @@ function detectIsSolAddress(addr: string): boolean {
   return addr.length >= 32 && addr.length <= 44 && decodeBase58(addr)?.length === 32;
 }
 
+async function releaseLedgerOrderFunds(
+  fundingRef: string,
+  walletAddress: string,
+  asset: string,
+  amount: number,
+): Promise<void> {
+  if (!fundingRef.startsWith("ledger:") || !asset || !Number.isFinite(amount) || amount <= 0) return;
+  await unlockFunds({ walletAddress, asset, amount: amount.toFixed(18) });
+}
+
 /**
  * Detect whether a DB unique-index violation was triggered.
  * Postgres raises error code 23505 for unique constraint violations; the
@@ -324,6 +334,10 @@ router.post("/orders", async (req, res) => {
     // execution at an arbitrary or zero price after the trigger fires.
     if (type === "stop" && (rawPrice == null || !Number.isFinite(rawPrice) || rawPrice <= 0)) {
       res.status(400).json({ error: "Stop orders require a valid price (limit price after trigger)" });
+      return;
+    }
+    if (type === "stop") {
+      res.status(503).json({ error: "Stop orders are temporarily unavailable while settlement safeguards are completed." });
       return;
     }
     if (type === "limit" && (rawPrice == null || !Number.isFinite(rawPrice) || rawPrice <= 0)) {
@@ -618,6 +632,8 @@ router.post("/orders", async (req, res) => {
     try {
       await db.insert(ordersTable).values(newOrder);
     } catch (insertErr: unknown) {
+      await releaseLedgerOrderFunds(fundingRef, body.walletAddress, lockAsset, parseFloat(lockAmount))
+        .catch((unlockErr) => req.log.error({ unlockErr, orderId: id }, "Failed to release funds after order insert failure"));
       // Catch unique constraint violations on (wallet_address, nonce) — orders_wallet_nonce_uidx
       if (isNonceUniqueViolation(insertErr)) {
         res.status(409).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
@@ -1295,6 +1311,7 @@ router.post("/orders", async (req, res) => {
         // ── Mark the user's order with actual fill amount ─────────────────
         const avgFillPrice    = totalFillValue / totalFilled;
         const isFullyFilled   = remainingQty <= 0.000001;
+        const marketRemainderCancelled = isMarket && !isFullyFilled;
         const correctFee      = (totalFillValue * feeRate).toFixed(18);
         // Record exchange revenue from the order book fill fee
         const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
@@ -1302,7 +1319,7 @@ router.post("/orders", async (req, res) => {
 
         await db.update(ordersTable)
           .set({
-            status:            isFullyFilled ? "filled" : "open",
+            status:            isFullyFilled ? "filled" : marketRemainderCancelled ? "cancelled" : "open",
             filledQuantity:    totalFilled.toFixed(18),
             remainingQuantity: Math.max(0, remainingQty).toFixed(18),
             price:             (isMarket || isStopTriggered) ? avgFillPrice.toFixed(18) : undefined,
@@ -1313,6 +1330,19 @@ router.post("/orders", async (req, res) => {
             updatedAt:         new Date(),
           })
           .where(eq(ordersTable.id, id));
+
+        // Market orders are IOC. Release any unfilled reservation; for limit
+        // buys release only price improvement on the units that actually filled.
+        const releaseAmount = isMarket
+          ? side === "buy"
+            ? Math.max(0, parseFloat(lockAmount) - totalFillValue)
+            : Math.max(0, quantity - totalFilled)
+          : side === "buy" && type === "limit" && price != null
+            ? Math.max(0, price * totalFilled - totalFillValue)
+            : 0;
+        if (releaseAmount > 0) {
+          await releaseLedgerOrderFunds(fundingRef, body.walletAddress, lockAsset, releaseAmount);
+        }
 
         /* Push order-filled notification */
         const fillSymbol = symbol;
@@ -1328,70 +1358,11 @@ router.post("/orders", async (req, res) => {
       }
     }
 
-    // ── Market orders are Immediate-Or-Cancel: if nothing filled, try LE auto-route ──
-    // When the DEX order book has no matching counter-orders, route the trade
-    // through the best external swap venue (LetsExchange / SimpleSwap / etc.)
-    // transparently. The order is marked "filled" at the venue's quoted rate —
-    // the user sees a normal filled trade in their order log, not a swap.
-    // Only applies to custodial (internal-ledger) users; external wallet users
-    // fall through to the standard NO_LIQUIDITY error.
+    // ── Market orders are Immediate-Or-Cancel ─────────────────────────────────
+    // Never report an external venue quote as a DEX fill. If there is no match,
+    // return the reservation and reject explicitly.
     if ((isMarket || isStopTriggered) && totalFilled === 0) {
-      const leRoute = await attemptLeAutoRoute({
-        orderId:       id,
-        walletAddress: body.walletAddress,
-        symbol,
-        side,
-        quantity,
-        lockAmount:    parseFloat(lockAmount),
-        fundingRef:    fundingRef ?? "",
-        feeRate,
-      });
-
-      if (leRoute.ok) {
-        // Record platform fee on the fill value
-        const routeFee       = (leRoute.fillValue * feeRate).toFixed(18);
-        const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
-        recordPlatformFee({ source: "le_autoroute", amount: routeFee, asset: feeAssetSymbol, txRef: id });
-
-        // Mark the order as filled at the venue-quoted rate
-        await db.update(ordersTable).set({
-          status:            "filled",
-          filledQuantity:    leRoute.filledQty.toFixed(18),
-          remainingQuantity: "0",
-          price:             leRoute.fillPrice.toFixed(18),
-          total:             leRoute.fillValue.toFixed(18),
-          fee:               routeFee,
-          txid:              leRoute.leTransactionId ?? null,
-          updatedAt:         new Date(),
-        }).where(eq(ordersTable.id, id));
-
-        // Push filled notification
-        const fillBase = symbol.split("/")[0] ?? symbol;
-        pushNotification(body.walletAddress, {
-          type:  "order_filled",
-          title: "Order Filled ✓",
-          body:  `${leRoute.filledQty.toFixed(4)} ${fillBase} @ $${leRoute.fillPrice.toFixed(4)} avg`,
-          pair:  symbol,
-          txid:  leRoute.leTransactionId ?? undefined,
-          side,
-        });
-
-        const [created]  = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
-        const quoteSymbol = (symbol.split("/")[1] ?? "USDT").replace("-PERP", "");
-        res.status(201).json({
-          ...serializeOrder(created),
-          matched:        true,
-          settlementTxid: leRoute.leTransactionId ?? null,
-          quoteSymbol,
-          explorerUrl:    null,
-          settlement:     null,
-        });
-        return;
-      }
-
-      req.log.info({ orderId: id, leError: leRoute.error }, "orders: LE auto-route unavailable — returning NO_LIQUIDITY");
-
-      // No venue could fill it — clean up the order and reject
+      await releaseLedgerOrderFunds(fundingRef, body.walletAddress, lockAsset, parseFloat(lockAmount));
       await db.delete(ordersTable).where(eq(ordersTable.id, id));
       res.status(422).json({
         error: "No matching sellers found for this market order. Place a limit order to set your price, or try again when liquidity is available.",
