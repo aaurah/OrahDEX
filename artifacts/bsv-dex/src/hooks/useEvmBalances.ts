@@ -492,8 +492,14 @@ async function fetchBlockscoutTokens(
 
       for (const item of data.items) {
         const tok = item.token;
-        if (!tok?.address || tok.type !== "ERC-20") continue;
-        const decimals = parseInt(tok.decimals ?? "18", 10) || 18;
+        const tokenType = String(tok?.type ?? "").toUpperCase();
+        // The endpoint itself is filtered to ERC-20; some Blockscout chains
+        // omit the per-token type field, so only reject explicit other types.
+        if (!tok?.address || (tokenType && tokenType !== "ERC-20")) continue;
+        const parsedDecimals = parseInt(tok.decimals ?? "18", 10);
+        const decimals = Number.isInteger(parsedDecimals) && parsedDecimals >= 0 && parsedDecimals <= 255
+          ? parsedDecimals
+          : 18;
         const rawVal = BigInt(item.value ?? "0");
         if (rawVal === 0n) continue; // skip tokens with no current balance
         const balance = Number(rawVal) / Math.pow(10, decimals);
@@ -616,8 +622,17 @@ async function scanTokensFromExplorerInternal(
     return Math.max(0, useCustomTokenStore.getState().getByChainId(chainId).length - prevCount);
   }
 
+  const explorerKnownAddresses = new Set([
+    ...knownAddresses,
+    ...tokens.map(token => token.address.toLowerCase()),
+  ]);
   const newTokens = tokens.filter(t => !knownAddresses.has(t.address.toLowerCase()));
-  if (newTokens.length === 0) return 0;
+  if (newTokens.length === 0) {
+    // A partial explorer response can be non-empty while still omitting newer
+    // held tokens. Use the recent Transfer-log scan as a second discovery path.
+    await discoverNewTokens(walletAddress, chainId, explorerKnownAddresses, forceRescan);
+    return 0;
+  }
 
   const toDiscover: Omit<CustomToken, "id" | "addedAt">[] = newTokens.map(t => ({
     chainId,
@@ -630,6 +645,7 @@ async function scanTokensFromExplorerInternal(
   }));
 
   store.addAutoDiscovered(toDiscover);
+  await discoverNewTokens(walletAddress, chainId, explorerKnownAddresses, forceRescan);
 
   // Return how many tokens were actually new (not already in store)
   const newCount = useCustomTokenStore.getState().getByChainId(chainId).length;
