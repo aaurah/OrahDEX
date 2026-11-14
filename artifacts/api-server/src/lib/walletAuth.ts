@@ -523,10 +523,11 @@ export function verifyExchangeSignature(
 interface LiquidityNonce {
   nonce:     string;
   message:   string;
-  /** Action the challenge was issued for ("add" | "remove"). Bound at verify. */
   action:    "add" | "remove";
-  /** Pool the challenge was issued for. Bound at verify to prevent cross-pool replay. */
   poolId:    string;
+  amountA:   string;
+  amountB:   string;
+  positionId: number | null;
   expiresAt: number;
 }
 
@@ -551,13 +552,22 @@ export function issueLiquidityChallenge(params: {
   walletAddress: string;
   action:        "add" | "remove";
   poolId:        string;
+  amountA?:      string;
+  amountB?:      string;
+  positionId?:   number;
 }): { nonce: string; message: string } {
   const nonce   = crypto.randomBytes(16).toString("hex");
   const ts      = new Date().toISOString();
+  const amountA = params.action === "add" ? params.amountA ?? "" : "";
+  const amountB = params.action === "add" ? params.amountB ?? "" : "";
+  const positionId = params.action === "remove" ? params.positionId ?? null : null;
   const message =
     `Authorize OrahDEX liquidity ${params.action}\n\n` +
     `Wallet: ${params.walletAddress}\n` +
     `Pool: ${params.poolId}\n` +
+    (params.action === "add"
+      ? `Amount A: ${amountA}\nAmount B: ${amountB}\n`
+      : `Position ID: ${positionId}\n`) +
     `Nonce: ${nonce}\n` +
     `Timestamp: ${ts}\n\n` +
     `This request will not trigger a blockchain transaction.`;
@@ -567,6 +577,9 @@ export function issueLiquidityChallenge(params: {
     message,
     action:    params.action,
     poolId:    params.poolId,
+    amountA,
+    amountB,
+    positionId,
     expiresAt: Date.now() + LP_NONCE_TTL_MS,
   });
 
@@ -575,10 +588,7 @@ export function issueLiquidityChallenge(params: {
 
 /**
  * Verify a liquidity-action signature. Single-use nonce; consumed on success.
- * The challenge is bound to (action, poolId) — verification fails if the
- * incoming request targets a different action or pool, even if the signature
- * itself is valid. This prevents a captured-but-unused challenge from being
- * spent against a different intent within its TTL.
+ * Adds bind both amounts; removals bind the exact position as well as its pool.
  *
  * Throws on any failure — wrap with try/catch and respond 401 to the client.
  */
@@ -588,6 +598,9 @@ export function verifyLiquiditySignature(params: {
   signature:     string;
   action:        "add" | "remove";
   poolId:        string;
+  amountA?:      string;
+  amountB?:      string;
+  positionId?:   number;
 }): void {
   const addr   = params.walletAddress.toLowerCase();
   const stored = liquidityNonces.get(addr);
@@ -612,6 +625,13 @@ export function verifyLiquiditySignature(params: {
       `Liquidity challenge was issued for pool '${stored.poolId}', not '${params.poolId}'. ` +
       `Request a fresh challenge for the correct pool.`,
     );
+  }
+  if (params.action === "add" &&
+      (stored.amountA !== (params.amountA ?? "") || stored.amountB !== (params.amountB ?? ""))) {
+    throw new Error("Liquidity challenge amounts do not match the submitted amounts.");
+  }
+  if (params.action === "remove" && stored.positionId !== (params.positionId ?? null)) {
+    throw new Error("Liquidity challenge position does not match the submitted position.");
   }
 
   verifyEvmSignature(params.walletAddress, stored.message, params.signature);
