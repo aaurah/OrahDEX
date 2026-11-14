@@ -16,6 +16,7 @@ import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 
 /* ── Lazy page imports ───────────────────────────────────────────────────── */
 const MobileMarkets         = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
+const ExplorerPage          = lazy(() => import("@/pages/Explorer").then(m => ({ default: m.ExplorerPage })));
 const MobileTrade           = lazy(() => import("@/pages/mobile/MobileTrade").then(m => ({ default: m.MobileTrade })));
 const MobileWalletPortfolio = lazy(() => import("@/pages/mobile/MobileWalletPortfolio").then(m => ({ default: m.MobileWalletPortfolio })));
 const MobileSettings        = lazy(() => import("@/pages/mobile/MobileSettings").then(m => ({ default: m.MobileSettings })));
@@ -51,6 +52,7 @@ const PASSTHROUGH_PREFIXES = [
   "/settings/api-keys",
   "/deposit-bsv",
   "/qr-scan",
+  "/explorer",
 ];
 
 function isPassthrough(location: string) {
@@ -159,6 +161,7 @@ export function MobileTabKeeper() {
           <Route path="/settings/api-keys" component={UserApiKeys} />
           <Route path="/deposit-bsv"       component={MobileHandCashBridge} />
           <Route path="/qr-scan"           component={MobileQRScanner} />
+          <Route path="/explorer"          component={ExplorerPage} />
         </Switch>
       </Suspense>
     );
