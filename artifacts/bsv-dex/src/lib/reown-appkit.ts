@@ -376,7 +376,7 @@ export function subscribeReownAccount(
         _suppressNextConnect = false;
         cb(null, 1, false);
       }
-    });
+    }, "eip155");
   } catch {
     return () => {};
   }
@@ -391,14 +391,14 @@ export function getAppKitWagmiConfig() {
   return wagmiAdapter.wagmiConfig;
 }
 
-export function openReownModal(): void {
+export function openReownModal(namespace?: "eip155" | "solana" | "bip122"): void {
   _suppressNextConnect = false;
   // Sync theme right before opening — guarantees the modal always opens in the
   // current OrahDEX theme even if the Zustand subscription hasn't fired yet
   // (e.g. the module just loaded for the first time after a theme change).
   try { syncReownTheme(readStoredOrahTheme()); } catch {}
   try {
-    appKit.open({ view: "Connect" });
+    appKit.open({ view: "Connect", ...(namespace ? { namespace } : {}) });
   } catch (e) {
     console.error("[OrahDEX] Failed to open Reown modal:", e);
   }
