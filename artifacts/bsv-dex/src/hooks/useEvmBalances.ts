@@ -44,6 +44,7 @@ export const ERC20_TOKENS: Record<number, Array<{ symbol: string; name: string; 
     { symbol: "SAND",  name: "The Sandbox",         address: "0x3845badAde8e6dFF049820680d1F14bD3903a5d0", decimals: 18, color: "#00ADEF" },
     { symbol: "MANA",  name: "Decentraland",        address: "0x0F5D2fB29fb7d3CFeE444a200298f468908cC942", decimals: 18, color: "#FF2D55" },
     { symbol: "AXS",   name: "Axie Infinity",       address: "0xBB0E17EF65F82Ab018d8EDd776e8DD940327B28b", decimals: 18, color: "#0055D5" },
+    { symbol: "A8",    name: "Ancient8",            address: "0x3e5a19c91266ad8ce2477b91585d1856b84062df", decimals: 18, color: "#F97316" },
     { symbol: "OCEAN", name: "Ocean Protocol",      address: "0x967da4048cD07aB37855c090aAF366e4ce1b9F48", decimals: 18, color: "#141414" },
     { symbol: "YFI",   name: "yearn.finance",       address: "0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e", decimals: 18, color: "#0066FF" },
     { symbol: "BAL",   name: "Balancer",            address: "0xba100000625a3754423978a60c9317c58a424e3D", decimals: 18, color: "#1E1E1E" },
