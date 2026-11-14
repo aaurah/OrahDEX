@@ -43,7 +43,7 @@ router.post("/support/contact", async (req, res) => {
 
     const settings = await db.select().from(platformSettingsTable);
     const get = (k: string) => settings.find(r => r.key === k)?.value ?? "";
-    const supportEmail = get("support_email") || get("contact_email") || "support@orahdex.org";
+    const supportEmail = get("support_email") || get("contact_email") || "support@orahdex.com";
 
     try {
       await sendMail({
@@ -137,7 +137,7 @@ router.patch("/admin/support/tickets/:id", async (req, res) => {
       try {
         const settings = await db.select().from(platformSettingsTable);
         const siteName = settings.find(r => r.key === "site_name")?.value || "OrahDEX";
-        const supportEmail = settings.find(r => r.key === "support_email")?.value || "support@orahdex.org";
+        const supportEmail = settings.find(r => r.key === "support_email")?.value || "support@orahdex.com";
         await sendMail({
           from: supportEmail,
           to: ticket.email,

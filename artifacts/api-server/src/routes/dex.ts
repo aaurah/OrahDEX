@@ -274,7 +274,7 @@ router.get("/dex/exchanges", async (_req, res) => {
   const exchanges = [
     // OrahDEX always pinned first
     {
-      id: "orahdex", name: "OrahDEX", url: "https://orahdex.org",
+      id: "orahdex", name: "OrahDEX", url: "https://orahdex.com",
       image: "/orahdex-logo.jpg", country: null, yearEstablished: 2026,
       type: "dex", chain: "BSV", rank: 1, trustScore: 9,
       tradeVolume24hBtc: 120,

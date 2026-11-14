@@ -10,7 +10,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import {
   Maximize2, Minimize2, ZoomIn, ZoomOut, AlignCenter,
   Camera, ChevronDown, ChevronUp,
-  TrendingUp, BarChart2,
+  TrendingUp, BarChart2, X,
 } from 'lucide-react';
 
 const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') ?? '';
@@ -343,6 +343,19 @@ function OrahChart({
   const effectiveInterval = autoInterval ?? interval;
   useEffect(() => { effectiveIntervalRef.current = effectiveInterval; }, [effectiveInterval]);
   useEffect(() => { setAutoInterval(null); }, [interval]);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullscreen(false);
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [fullscreen]);
 
   /* parsed symbol */
   const parts = useMemo(() => {
@@ -910,7 +923,18 @@ function OrahChart({
   });
 
   return (
-    <div ref={wrapRef} className={`flex flex-col ${fullscreen ? 'fixed inset-0 z-[9999]' : 'h-full'}`} style={{ backgroundColor: col.bg, color: col.text }}>
+    <div ref={wrapRef} className={`relative flex flex-col ${fullscreen ? 'fixed inset-0 z-[9999]' : 'h-full'}`} style={{ backgroundColor: col.bg, color: col.text }}>
+      {fullscreen && (
+        <button
+          onClick={() => setFullscreen(false)}
+          title="Close expanded chart"
+          aria-label="Close expanded chart"
+          className="absolute right-2 z-[10001] rounded-full border border-white/15 bg-black/75 p-2 text-white shadow-lg backdrop-blur-sm"
+          style={{ top: "calc(env(safe-area-inset-top, 0px) + 8px)" }}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
 
       {/* ── TOP STATS BAR ── */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b shrink-0 overflow-x-auto scrollbar-hide" style={{ borderColor: col.grid }}>
@@ -973,7 +997,16 @@ function OrahChart({
           </>
         )}
 
-        {hideIntervalBar && <div className="flex-1" />}
+        {hideIntervalBar && (
+          <button
+            onClick={fitContent}
+            title="Fit all candles"
+            aria-label="Fit all candles"
+            className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+          >
+            <AlignCenter className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         <div className="w-px h-5 mx-1 shrink-0" style={{ background: col.grid }} />
 
@@ -1030,7 +1063,9 @@ function OrahChart({
         {/* Zoom controls */}
         <button onClick={zoomIn}  title="Zoom In"  className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><ZoomIn  className="w-3.5 h-3.5" /></button>
         <button onClick={zoomOut} title="Zoom Out" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><ZoomOut className="w-3.5 h-3.5" /></button>
-        <button onClick={fitContent} title="Fit" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><AlignCenter className="w-3.5 h-3.5" /></button>
+        {!hideIntervalBar && (
+          <button onClick={fitContent} title="Fit" aria-label="Fit all candles" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><AlignCenter className="w-3.5 h-3.5" /></button>
+        )}
 
         <div className="w-px h-5 mx-1 shrink-0" style={{ background: col.grid }} />
 

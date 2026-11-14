@@ -324,8 +324,8 @@ export function MobileSettings() {
           icon={Mail}
           iconColor="#3b82f6"
           label="Email Support"
-          value="support@orahdex.org"
-          onClick={() => { window.open("mailto:support@orahdex.org"); }}
+          value="support@orahdex.com"
+          onClick={() => { window.open("mailto:support@orahdex.com"); }}
         />
         <Row
           icon={HelpCircle}

@@ -325,6 +325,203 @@ router.get("/evm-tx-history/:address", async (req, res) => {
   return res.json(deduped);
 });
 
+// ─── Base ERC-20 holdings via Alchemy Token API ───────────────────────────────
+// Base's public Blockscout endpoint is protected by Cloudflare and Basescan's
+// legacy v1 API is retired. Keep the Alchemy key server-side; only return token
+// contract addresses and nonzero balances to the connected wallet client.
+const BASE_TOKEN_CACHE_MS = 60_000;
+const BASE_TOKEN_SCAN_MAX_PAGES = 5;
+const baseTokenBalanceCache = new Map<string, {
+  fetchedAt: number;
+  tokens: Array<{ address: string; symbol: string; name: string; decimals: number; balance: string }>;
+  pageKey?: string;
+  complete: boolean;
+  pagingStalled?: boolean;
+}>();
+const baseTokenMetadataCache = new Map<string, {
+  fetchedAt: number;
+  metadata: { symbol: string; name: string; decimals: number };
+}>();
+
+function normalizeBaseTokenMetadata(
+  address: string,
+  result?: { symbol?: string | null; name?: string | null; decimals?: number | null },
+): { symbol: string; name: string; decimals: number } {
+  const shortAddress = address.slice(2, 8).toUpperCase();
+  const symbol = result?.symbol?.trim() || shortAddress;
+  const name = result?.name?.trim() || `Unknown token ${symbol}`;
+  const rawDecimals = Number(result?.decimals);
+  const decimals = Number.isInteger(rawDecimals) && rawDecimals >= 0 && rawDecimals <= 255
+    ? rawDecimals
+    : 18;
+  return { symbol: symbol.slice(0, 20), name: name.slice(0, 64), decimals };
+}
+
+async function getBaseTokenMetadata(
+  apiKey: string,
+  address: string,
+): Promise<{ symbol: string; name: string; decimals: number }> {
+  const cached = baseTokenMetadataCache.get(address);
+  if (cached && Date.now() - cached.fetchedAt < 86_400_000) return cached.metadata;
+
+  const fallback = normalizeBaseTokenMetadata(address);
+  try {
+    const response = await fetch(`https://base-mainnet.g.alchemy.com/v2/${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "alchemy_getTokenMetadata",
+        params: [address],
+      }),
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!response.ok) return fallback;
+    const payload = await response.json() as {
+      result?: { symbol?: string | null; name?: string | null; decimals?: number | null };
+    };
+    const metadata = normalizeBaseTokenMetadata(address, payload.result);
+    baseTokenMetadataCache.set(address, { fetchedAt: Date.now(), metadata });
+    if (baseTokenMetadataCache.size > 5_000) {
+      const oldestKey = baseTokenMetadataCache.keys().next().value;
+      if (oldestKey) baseTokenMetadataCache.delete(oldestKey);
+    }
+    return metadata;
+  } catch {
+    return fallback;
+  }
+}
+
+router.get("/base-token-balances/:address", async (req, res) => {
+  const address = req.params.address ?? "";
+  if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    return res.status(400).json({ error: "Invalid EVM address" });
+  }
+
+  const apiKey = process.env.ALCHEMY_API_KEY;
+  if (!apiKey) {
+    return res.status(503).json({ error: "Base token indexing needs an Alchemy API key" });
+  }
+
+  const cacheKey = address.toLowerCase();
+  const cached = baseTokenBalanceCache.get(cacheKey);
+  if (cached?.complete && Date.now() - cached.fetchedAt < BASE_TOKEN_CACHE_MS) {
+    return res.json({ tokens: cached.tokens, complete: true, cached: true });
+  }
+  if (cached?.pagingStalled) {
+    return res.json({ tokens: cached.tokens, complete: false, pagingStalled: true, cached: true });
+  }
+
+  try {
+    const previousState = cached && !cached.complete ? cached : undefined;
+    const tokensByAddress = new Map<string, { address: string; balance: string }>(
+      (previousState?.tokens ?? []).map(token => [token.address, { address: token.address, balance: token.balance }]),
+    );
+    let pageKey = previousState?.pageKey;
+    let scanComplete = false;
+    let pagingStalled = false;
+    const seenPageKeys = new Set<string>(pageKey ? [pageKey] : []);
+
+    // Advance large portfolios a few pages at a time; unfinished scans resume
+    // from their cursor on the next wallet refresh instead of timing out.
+    for (let page = 0; page < BASE_TOKEN_SCAN_MAX_PAGES; page++) {
+      const options: Record<string, unknown> = { maxCount: 100 };
+      if (pageKey) options.pageKey = pageKey;
+      const params: unknown[] = [address, "erc20", options];
+      const response = await fetch(`https://base-mainnet.g.alchemy.com/v2/${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: page + 1,
+          method: "alchemy_getTokenBalances",
+          params,
+        }),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) {
+        if (response.status === 429) {
+          res.setHeader("Retry-After", "2");
+          return res.status(429).json({ error: "Base token indexer is rate-limited; retry shortly" });
+        }
+        return res.status(502).json({ error: "Base token indexer request failed" });
+      }
+
+      const payload = await response.json() as {
+        error?: { message?: string };
+        result?: {
+          tokenBalances?: Array<{ contractAddress?: string; tokenBalance?: string | null }>;
+          pageKey?: string;
+        };
+      };
+      if (payload.error) {
+        if (/rate|limit|quota/i.test(payload.error.message ?? "")) {
+          res.setHeader("Retry-After", "2");
+          return res.status(429).json({ error: "Base token indexer is rate-limited; retry shortly" });
+        }
+        return res.status(502).json({ error: "Base token indexer rejected the request" });
+      }
+
+      for (const token of payload.result?.tokenBalances ?? []) {
+        const tokenAddress = token.contractAddress?.toLowerCase();
+        const balance = token.tokenBalance ?? "0x0";
+        if (!tokenAddress || !/^0x[0-9a-f]{40}$/.test(tokenAddress)) continue;
+        try {
+          if (BigInt(balance) > 0n) tokensByAddress.set(tokenAddress, { address: tokenAddress, balance });
+        } catch { /* ignore malformed provider results */ }
+      }
+
+      const nextPageKey = payload.result?.pageKey;
+      if (!nextPageKey) {
+        pageKey = undefined;
+        scanComplete = true;
+        break;
+      }
+      if (seenPageKeys.has(nextPageKey)) {
+        pageKey = nextPageKey;
+        pagingStalled = true;
+        break;
+      }
+      pageKey = nextPageKey;
+      seenPageKeys.add(nextPageKey);
+    }
+
+    const tokens = [...tokensByAddress.values()];
+    const previousMetadata = new Map((previousState?.tokens ?? []).map(token => [token.address, token]));
+    const enrichedTokens: Array<{
+      address: string;
+      symbol: string;
+      name: string;
+      decimals: number;
+      balance: string;
+    }> = [];
+    for (let i = 0; i < tokens.length; i += 8) {
+      const chunk = await Promise.all(tokens.slice(i, i + 8).map(async token => ({
+        ...token,
+        ...(previousMetadata.get(token.address) ?? await getBaseTokenMetadata(apiKey, token.address)),
+      })));
+      enrichedTokens.push(...chunk);
+    }
+
+    baseTokenBalanceCache.set(cacheKey, {
+      fetchedAt: Date.now(),
+      tokens: enrichedTokens,
+      pageKey,
+      complete: scanComplete,
+      pagingStalled,
+    });
+    if (baseTokenBalanceCache.size > 500) {
+      const oldestKey = baseTokenBalanceCache.keys().next().value;
+      if (oldestKey) baseTokenBalanceCache.delete(oldestKey);
+    }
+    res.setHeader("Cache-Control", "private, max-age=30");
+    return res.json({ tokens: enrichedTokens, complete: scanComplete, pagingStalled, cached: false });
+  } catch {
+    return res.status(502).json({ error: "Could not load Base token balances" });
+  }
+});
+
 // ─── Solana balance proxy ─────────────────────────────────────────────────────
 // Browser → our API (server-side) → Solana RPC
 // Avoids CORS / outbound-POST restrictions in the Replit preview iframe.

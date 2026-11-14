@@ -41,6 +41,24 @@ const Liquidity    = lazy(() => import("@/pages/Liquidity").then(m => ({ default
 const CopyTrading  = lazy(() => import("@/pages/CopyTrading").then(m => ({ default: m.CopyTrading })));
 const RevenuePage  = lazy(() => import("@/pages/Revenue"));
 const SovereignOverviewPage = lazy(() => import("@/pages/SovereignOverview").then(m => ({ default: m.SovereignOverviewPage })));
+
+async function linkHandCashReceivingAddress(handle: string) {
+  const [{ API_BASE }, { saveDerivedAddresses }] = await Promise.all([
+    import("@/lib/api"),
+    import("@/lib/walletPin"),
+  ]);
+  const response = await fetch(
+    `${API_BASE}/handcash/resolve-handle?handle=${encodeURIComponent(handle)}`,
+  );
+  if (!response.ok) return;
+  const result = await response.json().catch(() => ({}));
+  if (typeof result.address !== "string" || !result.address) return;
+
+  const wallet = useWalletStore.getState();
+  wallet.setInternalBsvAddress(result.address);
+  const ownerAddress = wallet.internalEvmAddress ?? (wallet.network === "evm" ? wallet.address : null);
+  if (ownerAddress) saveDerivedAddresses(ownerAddress, { bsv: result.address });
+}
 const NotFound     = lazy(() => import("@/pages/not-found"));
 const OraAIPage    = lazy(() => import("@/pages/OraAI").then(m => ({ default: m.OraAIPage })));
 const DevAIPage    = lazy(() => import("@/pages/DevAI").then(m => ({ default: m.DevAIPage })));
@@ -356,7 +374,9 @@ function Router() {
       unsub = subscribeReownAccount((address, chainId, isSocialOrEmail) => {
         if (address) {
           const { provider, address: storedAddress } = useWalletStore.getState();
-          if (!provider || provider === "reown") {
+          const handCashLinkedAlongsideEvm = provider === "handcash"
+            && localStorage.getItem("orahdex-handcash-link-only") === "1";
+          if (!provider || provider === "reown" || handCashLinkedAlongsideEvm) {
             // Guard: when already connected via Reown and AppKit emits a DIFFERENT
             // address (happens on some mobile WalletConnect wallets after a chain
             // switch — the wallet returns the account registered on the new chain,
@@ -407,17 +427,24 @@ function Router() {
     return () => { unsub?.(); };
   }, []);
 
-  // ── Sync persisted HandCash auth → global wallet store on startup ─────────
-  // useHandCashStore is persisted; useWalletStore is not. On every page load
-  // we need to tell the wallet store that HandCash is connected.
+  // ── Restore HandCash as a primary wallet or linked BSV address ────────────
+  // Keep the EVM connection selected when HandCash was linked from the BSV row.
   useEffect(() => {
     const hc = useHandCashStore.getState();
     if (hc.authToken && hc.profile) {
-      useWalletStore.getState().connect({
-        address:  `$${hc.profile.handle}`,
-        provider: "handcash",
-        network:  "bsv",
-      });
+      const wallet = useWalletStore.getState();
+      const hasEvmWallet = wallet.network === "evm" && !!wallet.address;
+      const linkOnly = localStorage.getItem("orahdex-handcash-link-only") === "1" || hasEvmWallet;
+      if (linkOnly) {
+        localStorage.setItem("orahdex-handcash-link-only", "1");
+        void linkHandCashReceivingAddress(hc.profile.handle).catch(() => {});
+      } else {
+        useWalletStore.getState().connect({
+          address:  `$${hc.profile.handle}`,
+          provider: "handcash",
+          network:  "bsv",
+        });
+      }
       hc.fetchBalance();
     }
   }, []);
@@ -437,12 +464,20 @@ function Router() {
         if (res.ok) {
           const profile = await res.json();
           useHandCashStore.getState().setAuth(hcToken, profile);
-          // Also update the global wallet store so the whole app knows
-          useWalletStore.getState().connect({
-            address:  `$${profile.handle}`,
-            provider: "handcash",
-            network:  "bsv",
-          });
+          const wallet = useWalletStore.getState();
+          const hasEvmWallet = wallet.network === "evm" && !!wallet.address;
+          const linkOnly = localStorage.getItem("orahdex-handcash-link-only") === "1" || hasEvmWallet;
+          if (linkOnly) {
+            localStorage.setItem("orahdex-handcash-link-only", "1");
+            await linkHandCashReceivingAddress(profile.handle);
+          } else {
+            localStorage.removeItem("orahdex-handcash-link-only");
+            wallet.connect({
+              address:  `$${profile.handle}`,
+              provider: "handcash",
+              network:  "bsv",
+            });
+          }
           // Kick off balance fetch in background
           useHandCashStore.getState().fetchBalance();
         }

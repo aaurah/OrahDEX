@@ -494,7 +494,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
       <div className="flex items-start gap-2 px-1 pt-1">
         <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          Your PIN and passkeys are stored on <strong>this device</strong> and tied to <strong>this website URL</strong>. A PIN set on one domain (e.g. dev) won't work on another (e.g. orahdex.org) — just set a new one there.
+          Your PIN and passkeys are stored on <strong>this device</strong> and tied to <strong>this website URL</strong>. A PIN set on one domain (e.g. dev) won't work on another (e.g. orahdex.com) — just set a new one there.
         </p>
       </div>
 
@@ -1116,13 +1116,17 @@ function MobileQRPanel({ onDone }: { onDone: () => void }) {
 /* ─── Main Dialog ───────────────────────────────────────────────────────── */
 
 export function WalletChooserDialog() {
-  const { isOpen, close } = useWalletModalStore();
+  const { isOpen, close, initialTab, handCashLinkOnly } = useWalletModalStore();
   const [tab, setTab] = useState<Tab>("choose");
   const [socialOrigin, setSocialOrigin] = useState<string | null>(null);
 
   const handleClose = () => { setTab("choose"); setSocialOrigin(null); close(); };
   const handleMobileQr = () => setTab("mobile-qr");
   const handleHWPick = (device: HWDevice) => setTab(device);
+
+  useEffect(() => {
+    if (isOpen) setTab(initialTab);
+  }, [isOpen, initialTab]);
 
   const hcProfile   = useHandCashStore(s => s.profile);
   const hcBalance   = useHandCashStore(s => s.balance);
@@ -1141,6 +1145,11 @@ export function WalletChooserDialog() {
         return;
       }
       const { url } = await res.json();
+      if (handCashLinkOnly) {
+        localStorage.setItem("orahdex-handcash-link-only", "1");
+      } else {
+        localStorage.removeItem("orahdex-handcash-link-only");
+      }
       window.location.href = url;
     } catch {
       setHcError("Could not reach the server. Please try again.");
@@ -1460,7 +1469,16 @@ export function WalletChooserDialog() {
                   <Button
                     variant="outline"
                     className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-500/50"
-                    onClick={() => { hcDisconnect(); useWalletStore.getState().disconnect(); setTab("choose"); }}
+                    onClick={() => {
+                      hcDisconnect();
+                      localStorage.removeItem("orahdex-handcash-link-only");
+                      if (handCashLinkOnly) {
+                        useWalletStore.getState().setInternalBsvAddress(null);
+                      } else if (useWalletStore.getState().provider === "handcash") {
+                        useWalletStore.getState().disconnect();
+                      }
+                      setTab("choose");
+                    }}
                   >
                     Disconnect HandCash
                   </Button>
