@@ -150,7 +150,7 @@ router.post("/aws/ses/send", async (req, res) => {
 // ─── SES: test (send to self) ─────────────────────────────────────────────────
 
 router.post("/aws/ses/test", async (req, res) => {
-  const from = (req.body as any)?.from ?? "support@orahdex.org";
+  const from = (req.body as any)?.from ?? "support@orahdex.com";
   const result = await sesSendMail({
     from,
     to:      from,

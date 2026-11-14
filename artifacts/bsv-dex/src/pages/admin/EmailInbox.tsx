@@ -62,7 +62,7 @@ export function AdminEmailInbox() {
   const [selected, setSelected] = useState<Email | null>(null);
   const [search, setSearch] = useState("");
   const [composing, setComposing] = useState(false);
-  const [compose, setCompose] = useState({ from: "support@orahdex.org", to: "", subject: "", body: "" });
+  const [compose, setCompose] = useState({ from: "support@orahdex.com", to: "", subject: "", body: "" });
   const [fromOpen, setFromOpen] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>("list");
@@ -86,10 +86,10 @@ export function AdminEmailInbox() {
   };
 
   const FROM_OPTIONS = [
-    { value: "support@orahdex.org",  label: "support@orahdex.org",  color: "text-primary" },
-    { value: "legal@orahdex.org",    label: "legal@orahdex.org",    color: "text-violet-400" },
-    { value: "privacy@orahdex.org",  label: "privacy@orahdex.org",  color: "text-blue-400" },
-    { value: "admin@orahdex.org",    label: "admin@orahdex.org",    color: "text-muted-foreground" },
+    { value: "support@orahdex.com",  label: "support@orahdex.com",  color: "text-primary" },
+    { value: "legal@orahdex.com",    label: "legal@orahdex.com",    color: "text-violet-400" },
+    { value: "privacy@orahdex.com",  label: "privacy@orahdex.com",  color: "text-blue-400" },
+    { value: "admin@orahdex.com",    label: "admin@orahdex.com",    color: "text-muted-foreground" },
   ];
 
   const { data: emails = [], isLoading, refetch } = useQuery<Email[]>({
@@ -141,7 +141,7 @@ export function AdminEmailInbox() {
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ["admin-mail"] });
       setComposing(false);
-      setCompose({ from: "support@orahdex.org", to: "", subject: "", body: "" });
+      setCompose({ from: "support@orahdex.com", to: "", subject: "", body: "" });
       if (data?.smtpSent) {
         if (data?.previewUrl) {
           toast({
@@ -168,7 +168,7 @@ export function AdminEmailInbox() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           from: "test@example.com",
-          to: "inbox@orahdex.org",
+          to: "inbox@orahdex.com",
           subject: "✅ Webhook Test — Inbound Email Working",
           text: "This is a test email sent directly to your inbound webhook to verify it is working correctly. If you can see this message in your inbox, the webhook endpoint is live and ready to receive emails from your chosen email provider.",
         }),
@@ -369,9 +369,9 @@ export function AdminEmailInbox() {
                       <span className="text-sm font-bold text-foreground">ImprovMX</span>
                     </div>
                     <ol className="space-y-1.5 text-xs text-muted-foreground">
-                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">1.</span>Go to <a href="https://improvmx.com" target="_blank" rel="noreferrer" className="text-primary underline">improvmx.com</a> → add your domain (e.g. <code className="font-mono">orahdex.org</code>)</li>
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">1.</span>Go to <a href="https://improvmx.com" target="_blank" rel="noreferrer" className="text-primary underline">improvmx.com</a> → add your domain (e.g. <code className="font-mono">orahdex.com</code>)</li>
                       <li className="flex gap-2"><span className="text-primary font-bold shrink-0">2.</span>Add the MX records they provide to your domain registrar (Cloudflare / Namecheap / etc.)</li>
-                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">3.</span>In ImprovMX, create an alias: <code className="font-mono text-foreground">*@orahdex.org</code> → enable "forward to webhook"</li>
+                      <li className="flex gap-2"><span className="text-primary font-bold shrink-0">3.</span>In ImprovMX, create an alias: <code className="font-mono text-foreground">*@orahdex.com</code> → enable "forward to webhook"</li>
                       <li className="flex gap-2"><span className="text-primary font-bold shrink-0">4.</span>Paste your webhook URL above → Save</li>
                     </ol>
                   </div>
@@ -451,13 +451,13 @@ export function AdminEmailInbox() {
                 </p>
                 <div className="space-y-2">
                   {[
-                    { addr: "support@orahdex.org",  color: "text-primary",          label: "General Support" },
-                    { addr: "admin@orahdex.org",    color: "text-violet-400",       label: "Admin" },
-                    { addr: "legal@orahdex.org",    color: "text-blue-400",         label: "Legal & Compliance" },
-                    { addr: "contact@orahdex.org",  color: "text-green-400",        label: "General Contact" },
-                    { addr: "privacy@orahdex.org",  color: "text-cyan-400",         label: "Privacy / GDPR" },
-                    { addr: "billing@orahdex.org",  color: "text-amber-400",        label: "Billing" },
-                    { addr: "press@orahdex.org",    color: "text-orange-400",       label: "Press & Media" },
+                    { addr: "support@orahdex.com",  color: "text-primary",          label: "General Support" },
+                    { addr: "admin@orahdex.com",    color: "text-violet-400",       label: "Admin" },
+                    { addr: "legal@orahdex.com",    color: "text-blue-400",         label: "Legal & Compliance" },
+                    { addr: "contact@orahdex.com",  color: "text-green-400",        label: "General Contact" },
+                    { addr: "privacy@orahdex.com",  color: "text-cyan-400",         label: "Privacy / GDPR" },
+                    { addr: "billing@orahdex.com",  color: "text-amber-400",        label: "Billing" },
+                    { addr: "press@orahdex.com",    color: "text-orange-400",       label: "Press & Media" },
                   ].map(({ addr, color, label }) => (
                     <div key={addr} className="flex items-center gap-3 p-3 bg-secondary/50 border border-border rounded-xl">
                       <AtSign className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
@@ -483,10 +483,10 @@ export function AdminEmailInbox() {
                 </p>
                 <div className="space-y-2">
                   {[
-                    { key: "imap_host",  icon: Inbox,  label: "Incoming Server (IMAP)", value: "mail.orahdex.org" },
+                    { key: "imap_host",  icon: Inbox,  label: "Incoming Server (IMAP)", value: "mail.orahdex.com" },
                     { key: "imap_port",  icon: Lock,   label: "IMAP Port",              value: "993" },
                     { key: "imap_sec",   icon: Shield, label: "IMAP Security",          value: "SSL/TLS" },
-                    { key: "smtp_host",  icon: Send,   label: "Outgoing Server (SMTP)", value: "mail.orahdex.org" },
+                    { key: "smtp_host",  icon: Send,   label: "Outgoing Server (SMTP)", value: "mail.orahdex.com" },
                     { key: "smtp_port",  icon: Lock,   label: "SMTP Port",              value: "465" },
                     { key: "smtp_sec",   icon: Shield, label: "SMTP Security",          value: "SSL/TLS" },
                     { key: "auth",       icon: User,   label: "Username",               value: "your full email address" },
@@ -518,12 +518,12 @@ export function AdminEmailInbox() {
                 <ol className="space-y-2 text-xs text-muted-foreground leading-relaxed">
                   {[
                     "Open Thunderbird → hamburger menu → New Account → Email",
-                    "Your name: OrahDEX   ·   Email: support@orahdex.org (or whichever account)",
+                    "Your name: OrahDEX   ·   Email: support@orahdex.com (or whichever account)",
                     "Password: your mailbox password   →   click Continue",
                     "If auto-detect fails, click Configure Manually",
-                    "Incoming: IMAP · mail.orahdex.org · Port 993 · SSL/TLS · Normal password",
-                    "Outgoing: SMTP · mail.orahdex.org · Port 465 · SSL/TLS · Normal password",
-                    "Username (both): your full email address (e.g. support@orahdex.org)",
+                    "Incoming: IMAP · mail.orahdex.com · Port 993 · SSL/TLS · Normal password",
+                    "Outgoing: SMTP · mail.orahdex.com · Port 465 · SSL/TLS · Normal password",
+                    "Username (both): your full email address (e.g. support@orahdex.com)",
                     "Click Re-test — Thunderbird will verify, then click Done",
                   ].map((step, i) => (
                     <li key={i} className="flex items-start gap-2.5">
@@ -542,7 +542,7 @@ export function AdminEmailInbox() {
                   <ExternalLink className="w-3.5 h-3.5 text-primary" /> Thunderbird Auto-Configure File
                 </p>
                 <p className="text-[11px] text-muted-foreground leading-relaxed mb-3">
-                  Thunderbird can auto-detect the server settings if you place this config file at <code className="font-mono text-primary">autoconfig.orahdex.org/mail/config-v1.1.xml</code> or point your DNS <code className="font-mono text-primary">autoconfig</code> CNAME to this server. The file is already served from this app.
+                  Thunderbird can auto-detect the server settings if you place this config file at <code className="font-mono text-primary">autoconfig.orahdex.com/mail/config-v1.1.xml</code> or point your DNS <code className="font-mono text-primary">autoconfig</code> CNAME to this server. The file is already served from this app.
                 </p>
                 <a
                   href={`${window.location.origin}${BASE}/.well-known/autoconfig/mail/config-v1.1.xml`}
@@ -717,9 +717,9 @@ export function AdminEmailInbox() {
           <div className="mt-3 pt-3 border-t border-border">
             <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold px-3 mb-2">Platform Emails</p>
             {[
-              { label: "support@orahdex.org",  color: "text-primary" },
-              { label: "legal@orahdex.org",    color: "text-violet-400" },
-              { label: "privacy@orahdex.org",  color: "text-blue-400" },
+              { label: "support@orahdex.com",  color: "text-primary" },
+              { label: "legal@orahdex.com",    color: "text-violet-400" },
+              { label: "privacy@orahdex.com",  color: "text-blue-400" },
             ].map(e => (
               <div key={e.label} className={cn("px-3 py-1.5 text-[10px] font-mono font-medium truncate", e.color)}>
                 {e.label}
@@ -939,14 +939,14 @@ export function AdminEmailInbox() {
                         className="flex-1 bg-background border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary"
                         onKeyDown={e => {
                           if (e.key === "Enter") {
-                            setCompose({ from: selected.toAddress ?? "support@orahdex.org", to: selected.fromAddress, subject: `Re: ${selected.subject}`, body: (e.target as HTMLInputElement).value });
+                            setCompose({ from: selected.toAddress ?? "support@orahdex.com", to: selected.fromAddress, subject: `Re: ${selected.subject}`, body: (e.target as HTMLInputElement).value });
                             setComposing(true);
                           }
                         }}
                       />
                       <button
                         onClick={() => {
-                          setCompose({ from: selected.toAddress ?? "support@orahdex.org", to: selected.fromAddress, subject: `Re: ${selected.subject}`, body: "" });
+                          setCompose({ from: selected.toAddress ?? "support@orahdex.com", to: selected.fromAddress, subject: `Re: ${selected.subject}`, body: "" });
                           setComposing(true);
                         }}
                         className="px-4 py-2.5 bg-primary/10 border border-primary/20 text-primary rounded-xl font-semibold text-sm hover:bg-primary/20 transition-all flex items-center gap-1.5"

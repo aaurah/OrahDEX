@@ -41,4 +41,4 @@ User-agent: LinkedInBot
 Allow: /
 
 # Sitemap
-Sitemap: https://orahdex.org/sitemap.xml
+Sitemap: https://orahdex.com/sitemap.xml

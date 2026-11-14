@@ -452,7 +452,6 @@ const BLOCKSCOUT_URLS: Record<number, string> = {
  */
 const ETHERSCAN_URLS: Record<number, string> = {
   1:     "https://api.etherscan.io/api",
-  8453:  "https://api.basescan.org/api",
   56:    "https://api.bscscan.com/api",
   137:   "https://api.polygonscan.com/api",
   42161: "https://api.arbiscan.io/api",
@@ -524,6 +523,50 @@ async function fetchBlockscoutTokens(
   return results;
 }
 
+async function fetchAlchemyBaseTokens(walletAddress: string): Promise<ExplorerToken[]> {
+  const response = await globalThis.fetch(
+    `${BASE_URL}/api/wallet/base-token-balances/${encodeURIComponent(walletAddress)}`,
+    { cache: "no-store", signal: AbortSignal.timeout(60_000) },
+  );
+  const payload = await response.json().catch(() => ({})) as {
+    error?: string;
+    tokens?: Array<{
+      address: string;
+      symbol: string;
+      name: string;
+      decimals: number;
+      balance: string;
+    }>;
+    complete?: boolean;
+    pagingStalled?: boolean;
+  };
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Could not load Base token balances");
+  }
+  if (payload.pagingStalled) {
+    console.warn("Base token indexer stopped on a repeated page cursor; the wallet may contain more tokens than were listed.");
+  } else if (payload.complete === false) {
+    console.info("Base token discovery will continue on the next wallet refresh.");
+  }
+
+  return (payload.tokens ?? []).flatMap(token => {
+    try {
+      const decimals = Number(token.decimals);
+      const rawBalance = BigInt(token.balance);
+      if (!token.address || rawBalance <= 0n || !Number.isInteger(decimals) || decimals < 0 || decimals > 255) return [];
+      return [{
+        address: token.address.toLowerCase(),
+        symbol: (token.symbol || token.address.slice(2, 8)).slice(0, 20),
+        name: (token.name || token.symbol || "Unknown token").slice(0, 64),
+        decimals,
+        balance: Number(rawBalance) / Math.pow(10, decimals),
+      }];
+    } catch {
+      return [];
+    }
+  });
+}
+
 /**
  * Fetches token transfer history from Etherscan-compatible APIs to derive
  * unique token addresses, then returns them as ExplorerToken stubs
@@ -562,7 +605,8 @@ async function fetchEtherscanTokens(
 
 /**
  * Main entry point for the "Scan tokens" button.
- * Tries Blockscout first (has balances + metadata), falls back to Etherscan.
+ * Tries Blockscout first, then Alchemy's indexed holdings for Base, and finally
+ * an Etherscan-compatible transfer-history scan.
  * Saves discovered tokens to useCustomTokenStore and returns count added.
  */
 const _tokenScanInFlight = new Map<string, Promise<number>>();
@@ -597,6 +641,21 @@ async function scanTokensFromExplorerInternal(
   ]);
 
   let tokens = await fetchBlockscoutTokens(walletAddress, chainId);
+  if (chainId === 8453) {
+    try {
+      const alchemyTokens = await fetchAlchemyBaseTokens(walletAddress);
+      const byAddress = new Map<string, ExplorerToken>();
+      for (const token of [...tokens, ...alchemyTokens]) {
+        byAddress.set(token.address.toLowerCase(), token);
+      }
+      tokens = [...byAddress.values()];
+    } catch (error) {
+      // Keep any partial explorer result; if it was empty, surface the indexing
+      // configuration problem so a manual scan does not claim the wallet is empty.
+      if (tokens.length === 0) throw error;
+      console.warn("Base token indexer is unavailable; using partial explorer results.", error);
+    }
+  }
 
   // Fallback to Etherscan-compatible API if Blockscout returned nothing.
   // Etherscan tokentx only gives transfer history — must verify current balance
