@@ -787,15 +787,15 @@ export function LandingPage() {
     title: "OrahDEX — Trade means DEX | Spot, Futures & P2P Crypto Exchange",
     description: "OrahDEX is a sovereign multi-chain DEX with spot trading, perpetual futures, P2P markets, copy trading, and on-chain BSV settlement. Trade 900+ markets across EVM, TRON and BSV networks.",
     keywords: "OrahDEX, DEX, decentralized exchange, crypto trading, BSV, spot trading, perpetual futures, P2P, copy trading, DeFi, multi-chain, EVM, AMM, liquidity pools",
-    url: "https://orahdex.org/",
+    url: "https://orahdex.com/",
     type: "website",
     jsonLd: {
       "@context": "https://schema.org",
       "@type": "WebPage",
       "name": "OrahDEX — Trade means DEX",
       "description": "Sovereign multi-chain decentralized exchange featuring spot trading, perpetual futures, P2P markets, copy trading, and on-chain BSV settlement.",
-      "url": "https://orahdex.org/",
-      "isPartOf": { "@type": "WebSite", "name": "OrahDEX", "url": "https://orahdex.org" }
+      "url": "https://orahdex.com/",
+      "isPartOf": { "@type": "WebSite", "name": "OrahDEX", "url": "https://orahdex.com" }
     },
   });
 
@@ -1395,7 +1395,7 @@ export function LandingPage() {
           </div>
           <SocialBar iconSize="sm" variant="landing" className="max-w-sm" />
           <p className="text-[11px] text-muted-foreground/25">
-            © {new Date().getFullYear()} OrahDEX · orahdex.org · Trade means DEX
+            © {new Date().getFullYear()} OrahDEX · orahdex.com · Trade means DEX
           </p>
         </div>
       </section>

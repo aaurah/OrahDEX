@@ -8,7 +8,7 @@ function makeProvider() {
     appLogoUrl:
       typeof window !== "undefined"
         ? `${window.location.origin}/favicon.svg`
-        : "https://orahdex.org/favicon.svg",
+        : "https://orahdex.com/favicon.svg",
   });
   return sdk.makeWeb3Provider();
 }
