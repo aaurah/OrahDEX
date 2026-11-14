@@ -91,7 +91,8 @@ const appKit = createAppKit({
     onramp:        true,
     swaps:         true,
     smartAccounts: true,
-  },
+    reownBranding: false,
+  } as any,
   enableWallets: true,
   themeMode: _initialThemeMode,
   themeVariables: {
@@ -106,25 +107,42 @@ const appKit = createAppKit({
 /** Prevents the account subscription from re-connecting after intentional disconnect. */
 let _suppressNextConnect = false;
 
-/** Injects CSS into AppKit's shadow DOM to hide Reown branding. */
+/** Hides the Reown attribution element across AppKit's nested shadow roots. */
 function hideReownBranding(): void {
   if (typeof window === "undefined") return;
-  const inject = () => {
-    const modal = document.querySelector("w3m-modal");
-    if (!modal?.shadowRoot) return;
-    const id = "orah-hide-branding";
-    if (modal.shadowRoot.getElementById(id)) return;
-    const style = document.createElement("style");
-    style.id = id;
-    style.textContent = `
-      w3m-footer, w3m-legal-footer { display: none !important; height: 0 !important; }
-      .w3m-footer { display: none !important; }
-    `;
-    modal.shadowRoot.appendChild(style);
+  const styledRoots = new WeakSet<ShadowRoot>();
+  const observedRoots = new WeakSet<ShadowRoot>();
+
+  const scan = (root: Document | ShadowRoot) => {
+    if (root instanceof ShadowRoot) {
+      if (!styledRoots.has(root)) {
+        const style = document.createElement("style");
+        style.textContent = `
+          wui-ux-by-reown, w3m-footer, w3m-legal-footer {
+            display: none !important;
+            height: 0 !important;
+            visibility: hidden !important;
+          }
+        `;
+        root.appendChild(style);
+        styledRoots.add(root);
+      }
+
+      if (!observedRoots.has(root)) {
+        const rootObserver = new MutationObserver(() => scan(root));
+        rootObserver.observe(root, { childList: true, subtree: true });
+        observedRoots.add(root);
+      }
+    }
+
+    root.querySelectorAll("*").forEach((element) => {
+      if (element.shadowRoot) scan(element.shadowRoot);
+    });
   };
-  const observer = new MutationObserver(inject);
-  observer.observe(document.body, { childList: true });
-  inject();
+
+  const observer = new MutationObserver(() => scan(document));
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  scan(document);
 }
 
 if (typeof window !== "undefined") {
