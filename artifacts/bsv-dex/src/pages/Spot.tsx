@@ -327,7 +327,11 @@ export function SpotTrading() {
   // Search the complete venue catalog on demand instead of downloading every
   // provider pair into browser memory.
   const catalogSearchQuery = pairDropOpen ? dropSearch : marketSearch;
-  const { results: catalogSearchResults } = useMarketSearch(catalogSearchQuery, {
+  const {
+    results: catalogSearchResults,
+    loading: catalogSearchLoading,
+    error: catalogSearchError,
+  } = useMarketSearch(catalogSearchQuery, {
     limit: 200,
     debounceMs: 250,
   });
@@ -998,7 +1002,13 @@ export function SpotTrading() {
           {/* Pair list */}
           <div className="flex-1 overflow-y-auto min-h-0">
             {filteredMarkets.length === 0 ? (
-              <div className="flex items-center justify-center h-16 text-[10px] text-muted-foreground">No pairs</div>
+              <div className="flex items-center justify-center h-16 text-[10px] text-muted-foreground">
+                {catalogSearchLoading
+                  ? "Searching markets…"
+                  : catalogSearchError
+                    ? catalogSearchError
+                    : "No pairs"}
+              </div>
             ) : (
               filteredMarkets.map(m => {
                 const urlSym = m.symbol.replace('/', '-');

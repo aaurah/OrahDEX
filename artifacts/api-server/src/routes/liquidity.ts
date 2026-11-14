@@ -7,11 +7,9 @@
  *  - /portfolio shows LP under defi.lpPositions as a separate field
  *
  * Auth model:
- *  EVM wallets (0x…) MUST sign a server-issued challenge before POST or
- *  DELETE so an attacker who learns a wallet address cannot drain or open
- *  positions on its behalf. Non-EVM (BSV, Solana, internal-only) wallets
- *  cannot produce an EVM personal_sign, so they fall through to the
- *  per-wallet ledger guard. Off-curve / unrecognised addresses are rejected.
+ *  EVM wallets (0x…) MUST sign a single-use challenge bound to the exact
+ *  amounts for adds, and to the exact position for removals. Non-EVM wallets
+ *  continue through the legacy per-wallet ledger guard.
  */
 
 import { Router, type IRouter } from "express";
@@ -24,7 +22,6 @@ import {
   issueLiquidityChallenge,
   verifyLiquiditySignature,
 } from "../lib/walletAuth.js";
-import { isInternalEvmWallet } from "../lib/internalEvmWallet.js";
 import { pool } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -67,10 +64,11 @@ function asAsset(v: unknown, label: string): string {
 }
 
 // ── POST /liquidity/challenge ──────────────────────────────────────────────────
-// Body: { walletAddress, action: "add"|"remove", poolId }
+// Add body includes amountA + amountB; remove body includes positionId.
 router.post("/liquidity/challenge", (req, res) => {
   const { walletAddress, action, poolId } = (req.body ?? {}) as {
     walletAddress?: string; action?: string; poolId?: string;
+    amountA?: unknown; amountB?: unknown; positionId?: unknown;
   };
   if (!isEvmAddress(walletAddress)) {
     res.status(400).json({ error: "walletAddress must be an EVM (0x…) address" });
@@ -84,7 +82,24 @@ router.post("/liquidity/challenge", (req, res) => {
     res.status(400).json({ error: "poolId is required" });
     return;
   }
-  const challenge = issueLiquidityChallenge({ walletAddress, action, poolId });
+  let amountA: string | undefined;
+  let amountB: string | undefined;
+  let positionId: number | undefined;
+  try {
+    if (action === "add") {
+      amountA = String(asAmount(req.body?.amountA, "amountA"));
+      amountB = String(asAmount(req.body?.amountB, "amountB"));
+    } else {
+      positionId = Number(req.body?.positionId);
+      if (!Number.isSafeInteger(positionId) || positionId <= 0) {
+        throw new Error("positionId must be a positive integer");
+      }
+    }
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+    return;
+  }
+  const challenge = issueLiquidityChallenge({ walletAddress, action, poolId, amountA, amountB, positionId });
   res.json(challenge);
 });
 
@@ -133,50 +148,23 @@ router.post("/liquidity", async (req, res) => {
 
   const poolId = [assetA, assetB].sort().join("-");
 
-  // External EVM wallets MUST produce a fresh signature bound to (action, pool)
-  // so an attacker who learns the address cannot deposit/drain. Internal EVM
-  // wallets are server-provisioned (rows in internal_evm_wallets) and have no
-  // off-server signing surface — we recognise them via the registry and skip
-  // the sig check. Anything that looks like an EVM address but is NOT in the
-  // registry is treated as external and rejected without a valid signature.
+  // Every EVM wallet must authorize the exact amounts being removed from its
+  // internal balance. Wallet registry membership is not proof of user intent.
   if (isEvmAddress(walletAddress)) {
     const nonce     = typeof body.nonce     === "string" ? body.nonce     : "";
     const signature = typeof body.signature === "string" ? body.signature : "";
-    const internal  = await isInternalEvmWallet(walletAddress);
-
-    if (!internal) {
-      if (!nonce || !signature) {
-        // Re-check the registry once to close the TOCTOU race where the
-        // wallet was provisioned in another request between our first check
-        // and now — we don't want to spuriously 401 a freshly-created
-        // internal wallet under concurrent provisioning.
-        const recheck = await isInternalEvmWallet(walletAddress);
-        if (recheck) {
-          // Promote to internal, fall through to the no-sig-required path.
-        } else {
-          res.status(401).json({
-            error: "Signed challenge required for external EVM wallets. " +
-                   "Call POST /liquidity/challenge first.",
-          });
-          return;
-        }
-      } else {
-        try {
-          verifyLiquiditySignature({ walletAddress, nonce, signature, action: "add", poolId });
-        } catch (err: any) {
-          res.status(401).json({ error: "Invalid signature" });
-          return;
-        }
-      }
-    } else if (signature) {
-      // Internal wallet but caller still supplied a sig — verify strictly so
-      // a forged sig can't masquerade as a valid one for audit purposes.
-      try {
-        verifyLiquiditySignature({ walletAddress, nonce, signature, action: "add", poolId });
-      } catch (err: any) {
-        res.status(401).json({ error: "Invalid signature" });
-        return;
-      }
+    if (!nonce || !signature) {
+      res.status(401).json({ error: "Signed challenge required. Call POST /liquidity/challenge first." });
+      return;
+    }
+    try {
+      verifyLiquiditySignature({
+        walletAddress, nonce, signature, action: "add", poolId,
+        amountA: amountA.toString(), amountB: amountB.toString(),
+      });
+    } catch (err: any) {
+      res.status(401).json({ error: "Invalid signature or liquidity intent" });
+      return;
     }
   }
 
@@ -227,49 +215,36 @@ router.delete("/liquidity/:positionId", async (req, res) => {
   if (isEvmAddress(walletAddress)) {
     const nonce     = typeof body.nonce     === "string" ? body.nonce     : "";
     const signature = typeof body.signature === "string" ? body.signature : "";
-    const internal  = await isInternalEvmWallet(walletAddress);
-
-    let needsSig = !internal;
-    if (needsSig && (!nonce || !signature)) {
-      // Same TOCTOU re-check as POST /liquidity: a wallet could have been
-      // provisioned concurrently after our first check.
-      const recheck = await isInternalEvmWallet(walletAddress);
-      if (recheck) {
-        needsSig = false;
-      } else {
-        res.status(401).json({
-          error: "Signed challenge required for external EVM wallets. " +
-                 "Call POST /liquidity/challenge first.",
-        });
-        return;
-      }
+    if (!nonce || !signature) {
+      res.status(401).json({ error: "Signed challenge required. Call POST /liquidity/challenge first." });
+      return;
     }
-
-    if (signature) {
-      // Bind the challenge to the position's actual poolId so a remove-
-      // challenge for pool A cannot authorise a remove on pool B.
-      let resolvedPool = "";
-      try {
-        const { rows } = await pool.query<{ pool_id: string }>(
-          "SELECT pool_id FROM liquidity_positions WHERE id = $1 AND wallet_address = $2",
-          [positionId, walletAddress],
-        );
-        resolvedPool = rows[0]?.pool_id ?? "";
-      } catch (err) {
-        req.log.error({ err }, "Failed to resolve poolId for liquidity remove");
-      }
-      if (!resolvedPool) {
-        res.status(404).json({ error: "Position not found or already removed" });
-        return;
-      }
-      try {
-        verifyLiquiditySignature({
-          walletAddress, nonce, signature, action: "remove", poolId: resolvedPool,
-        });
-      } catch (err: any) {
-        res.status(401).json({ error: "Invalid signature" });
-        return;
-      }
+    // Bind both the actual pool and position ID. A challenge for another LP
+    // position, even in the same pool, cannot authorize this withdrawal.
+    let resolvedPool = "";
+    try {
+      const { rows } = await pool.query<{ pool_id: string }>(
+        "SELECT pool_id FROM liquidity_positions WHERE id = $1 AND wallet_address = $2",
+        [positionId, walletAddress],
+      );
+      resolvedPool = rows[0]?.pool_id ?? "";
+    } catch (err) {
+      req.log.error({ err }, "Failed to resolve poolId for liquidity remove");
+      res.status(500).json({ error: "Unable to verify liquidity position" });
+      return;
+    }
+    if (!resolvedPool) {
+      res.status(404).json({ error: "Position not found or already removed" });
+      return;
+    }
+    try {
+      verifyLiquiditySignature({
+        walletAddress, nonce, signature, action: "remove",
+        poolId: resolvedPool, positionId,
+      });
+    } catch (err: any) {
+      res.status(401).json({ error: "Invalid signature or liquidity intent" });
+      return;
     }
   }
 
