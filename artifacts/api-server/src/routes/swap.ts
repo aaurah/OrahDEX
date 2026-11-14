@@ -81,9 +81,13 @@ function verifyEvmSwapSignature(
   nonce: unknown,
   signature: unknown,
   context: "swap" | "swap_internal",
+  intent: { assetIn: string; assetOut: string; amountIn: string },
 ): boolean {
   const wallet = String(walletAddress ?? "");
-  if (!wallet.startsWith("0x")) return true;
+  if (!wallet.startsWith("0x")) {
+    res.status(401).json({ error: "Internal swap settlement requires a signed EVM wallet request." });
+    return false;
+  }
   if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) {
     res.status(400).json({ error: "Valid EVM walletAddress required (0x + 40 hex chars)." });
     return false;
@@ -97,7 +101,7 @@ function verifyEvmSwapSignature(
     return false;
   }
   try {
-    verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
+    verifyExchangeSignature(String(walletAddress), String(nonce), String(signature), intent);
     return true;
   } catch {
     res.status(401).json({ error: "Invalid or expired swap signature challenge." });
@@ -224,7 +228,9 @@ router.post("/swap", async (req, res) => {
     return;
   }
 
-  if (!verifyEvmSwapSignature(res, walletAddress, nonce, signature, "swap")) {
+  if (!verifyEvmSwapSignature(res, walletAddress, nonce, signature, "swap", {
+    assetIn: String(assetIn).toUpperCase(), assetOut: String(assetOut).toUpperCase(), amountIn: String(parseFloat(amountIn)),
+  })) {
     return;
   }
 
@@ -491,7 +497,9 @@ router.post("/swap/execute", async (req, res) => {
     const requiresEvmSignature =
       source === "internal" ||
       (source === "split" && (decision.splitLegs?.internal?.amount ?? 0) > 0);
-    if (requiresEvmSignature && !verifyEvmSwapSignature(res, walletAddress, nonce, signature, "swap_internal")) {
+    if (requiresEvmSignature && !verifyEvmSwapSignature(res, walletAddress, nonce, signature, "swap_internal", {
+      assetIn: String(assetIn).toUpperCase(), assetOut: String(assetOut).toUpperCase(), amountIn: String(parseFloat(amountIn)),
+    })) {
       return;
     }
 

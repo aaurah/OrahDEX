@@ -18,7 +18,7 @@ const router: IRouter = Router();
 // Data-read routes (markets, funding-rates, ticker) are always available.
 // Trading stays closed until every mutation has signed intents and replay-safe
 // accounting. The previous environment switch alone was not authorization.
-const TRADING_PATHS = ["/futures/open", "/futures/close", "/futures/deposit", "/futures/positions"];
+const TRADING_PATHS = ["/futures/open", "/futures/close", "/futures/deposit", "/futures/positions", "/futures/margin/deposit"];
 router.use((req, res, next) => {
   const isTrading = TRADING_PATHS.some(p => req.path.startsWith(p));
   if (isTrading) {

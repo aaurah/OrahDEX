@@ -68,11 +68,13 @@ export async function signWalletMessage(
 
   if (provider === "reown") {
     const { wagmiAdapter } = await import("@/lib/reown-appkit");
-    const connector = wagmiAdapter.wagmiConfig.connectors.find(
-      (item: any) => item.id === "walletConnect" || item.type === "walletConnect",
+    const { getConnections } = await import("@wagmi/core");
+    const connection = getConnections(wagmiAdapter.wagmiConfig).find(
+      (item) => item.accounts.some((account) => account.toLowerCase() === address.toLowerCase()),
     );
-    const eip1193 = await (connector as any)?.getProvider?.();
-    if (!eip1193) throw new Error("WalletConnect provider unavailable. Reconnect your wallet and try again.");
+    const eip1193 = await connection?.connector.getProvider() as any
+      ?? (window as any).ethereum;
+    if (!eip1193?.request) throw new Error("Connected wallet provider unavailable. Reconnect your wallet and try again.");
     return await eip1193.request({ method: "personal_sign", params: [hexMessage, address] });
   }
 

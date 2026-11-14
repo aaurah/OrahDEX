@@ -30,6 +30,7 @@ import { VENUE_LABELS, VENUE_COLORS } from "@/lib/venues";
 import { useBaseTokenList } from "@/hooks/useBaseTokenList";
 import { useBaseTokenPrices } from "@/hooks/useBaseTokenPrices";
 import { useZoraCoins } from "@/hooks/useZoraCoins";
+import { buildOrderActionMessage, signWalletMessage } from "@/lib/tradeAuth";
 
 type BottomTab = "open" | "history" | "trades" | "liquidity";
 // Markets-style category tabs — same structure as the Markets page
@@ -221,7 +222,7 @@ function normalise(m: any) {
 
 export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
-  const { address, internalBsvAddress, internalEvmAddress, chainId: walletChainId } = useWalletStore();
+  const { address, provider, internalBsvAddress, internalEvmAddress, chainId: walletChainId } = useWalletStore();
   const { open: openWalletModal } = useWalletModalStore();
   const { cancelOrder: cancelOrderOnChain, escrowAvailable } = useEscrow();
   // Alt address: Orah wallet users have both a BSV and an EVM address.
@@ -382,9 +383,9 @@ export function SpotTrading() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [base, basePrices, zoraRows, leVenuePrice, ssVenuePrice]);
 
-  const _genTicker = generateTickerForSymbol(base, quote);
+  const _genTicker = { symbol, lastPrice: 0, priceChange: 0, priceChangePercent: 0,
+    priceChangePercent24h: 0, highPrice: 0, lowPrice: 0, volume: 0, quoteVolume: 0 };
   const ticker     = (apiTicker?.lastPrice && apiTicker.lastPrice > 0 ? apiTicker : null)
-    ?? MOCK_TICKER[rawSymbol]
     ?? (catalogPrice
       ? { ..._genTicker, lastPrice: catalogPrice.price,
           priceChangePercent: catalogPrice.chg, priceChangePercent24h: catalogPrice.chg }
@@ -429,8 +430,8 @@ export function SpotTrading() {
     jsonLd: seoJsonLd,
   });
 
-  const candles    = (apiCandles && apiCandles.length > 0) ? apiCandles : generateMockCandles(ticker.lastPrice);
-  const trades     = (Array.isArray(apiTrades) && apiTrades.length > 0) ? apiTrades : generateMockTrades(ticker.lastPrice);
+  const candles    = Array.isArray(apiCandles) ? apiCandles : [];
+  const trades     = Array.isArray(apiTrades) ? apiTrades : [];
 
   function toEntries(raw: number[][], descending: boolean) {
     const sorted = [...raw].sort((a, b) => descending ? b[0] - a[0] : a[0] - b[0]);
@@ -483,7 +484,7 @@ export function SpotTrading() {
     if (isExternalSwapMode) return { bids: [], asks: [] };
     if (hasRealOB && Array.isArray(rawOB.bids[0])) return { bids: toEntries(rawOB.bids, true), asks: toEntries(rawOB.asks, false) };
     if (hasRealOB) return apiOrderBook;
-    return generateMockOrderBook(ticker.lastPrice);
+    return { bids: [], asks: [] };
   })() as import("@workspace/api-client-react").OrderBook;
 
   const queryClient = useQueryClient();
@@ -521,10 +522,14 @@ export function SpotTrading() {
         }
       }
       // Step 2: Tell the server to remove the order from the orderbook.
+      const nonce = crypto.randomUUID();
+      const expiry = String(Math.floor(Date.now() / 1000) + 300);
+      const signature = await signWalletMessage(ownerWallet, provider ?? undefined,
+        buildOrderActionMessage({ walletAddress: ownerWallet, action: "cancel", orderId, nonce, expiry }));
       const res = await fetch(`${baseUrl}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: ownerWallet }),
+        body: JSON.stringify({ walletAddress: ownerWallet, signature, nonce, expiry }),
       });
       // 404 = already cancelled — treat as success.
       if (res.status === 404) return { id: orderId, status: "cancelled" };

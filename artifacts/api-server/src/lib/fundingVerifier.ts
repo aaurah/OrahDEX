@@ -79,6 +79,8 @@ export interface FundingVerificationResult {
 
 export interface VerifyFundingParams {
   walletAddress: string;
+  /** Disable on-chain funding until confirmation-driven order settlement is available. */
+  ledgerOnly?: boolean;
   /**
    * `kind` determines the balance bucket:
    *   SPOT    → user_balances (spot bucket)
@@ -167,6 +169,12 @@ async function verifySpotFunding(
       return { valid: true, fundingRef: ledgerFundingRef(walletAddress, asset, amount) };
     } catch {
       // Not enough internal balance — fall through to on-chain check
+    }
+    if (params.ledgerOnly) {
+      return {
+        valid: false, fundingRef: "", code: "INSUFFICIENT_FUNDS",
+        error: "Insufficient available trading balance. Wallet-to-wallet order settlement is paused; use the separate Swap flow for wallet-held funds.",
+      };
     }
 
     // 2. Require wallet signature (proof of identity).

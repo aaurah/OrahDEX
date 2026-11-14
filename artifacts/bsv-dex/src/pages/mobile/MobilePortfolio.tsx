@@ -469,10 +469,15 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
         }
       }
       // Step 2: Tell the server to remove the order from the orderbook.
+      const { buildOrderActionMessage, signWalletMessage } = await import("@/lib/tradeAuth");
+      const nonce = crypto.randomUUID();
+      const expiry = String(Math.floor(Date.now() / 1000) + 300);
+      const signature = await signWalletMessage(orderWalletAddress, provider ?? undefined,
+        buildOrderActionMessage({ walletAddress: orderWalletAddress, action: "cancel", orderId, nonce, expiry }));
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: orderWalletAddress }),
+        body: JSON.stringify({ walletAddress: orderWalletAddress, signature, nonce, expiry }),
       });
       // 404 = already cancelled — treat as success.
       if (res.status === 404) return { id: orderId, status: "cancelled" };
