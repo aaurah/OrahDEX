@@ -394,7 +394,11 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const [cat, setCat]         = useState<Cat>(resolvedDefault);
   const [usdSub, setUsdSub]   = useState<UsdSub>("USDT");
   const [search, setSearch]   = useState("");
-  const { results: serverSearchResults } = useMarketSearch(search, { debounceMs: 300 });
+  const {
+    results: serverSearchResults,
+    loading: serverSearchLoading,
+    error: serverSearchError,
+  } = useMarketSearch(search, { debounceMs: 300 });
   const [sortKey, setSortKey] = useState<"base"|"price"|"chg">("base");
   const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
   const [infoCoin, setInfoCoin] = useState<string | null>(null);
@@ -787,7 +791,11 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
           </div>
           {rows.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-              {cat === "favorites" ? "No favorites yet" : search ? "No results" : "Loading…"}
+              {search && serverSearchLoading
+                ? "Searching markets…"
+                : search && serverSearchError
+                  ? serverSearchError
+                  : cat === "favorites" ? "No favorites yet" : search ? "No results" : "Loading…"}
             </div>
           ) : (() => {
             // Insert a section divider before the first AOS (swap-only) row
