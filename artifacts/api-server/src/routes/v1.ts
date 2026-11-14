@@ -21,6 +21,11 @@ import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { arcBroadcast } from "../lib/arcBroadcaster.js";
 
 const router = Router();
+const LEGACY_BRIDGE_DISABLED_ERROR =
+  "Legacy bridge settlement is disabled because this endpoint does not verify or broadcast the required on-chain transaction. No status or balance was changed.";
+function legacyBridgeUnavailable(): boolean {
+  return true;
+}
 
 // ── Chain → Router contract address (Uniswap v2-compatible) ─────────────────
 const CHAIN_ROUTERS: Record<number, string> = {
@@ -652,16 +657,27 @@ async function getBsvBlockHeight(): Promise<number> {
       signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" },
     });
     clearTimeout(timer);
-    if (r.ok) {
-      const d = await r.json() as { blocks?: number };
-      return d.blocks ?? 942000;
+    if (!r.ok) throw new Error(`WhatsOnChain returned ${r.status}`);
+    const d = await r.json() as { blocks?: number };
+    if (!Number.isSafeInteger(d.blocks) || !d.blocks || d.blocks <= 0) {
+      throw new Error("WhatsOnChain returned an invalid block height");
     }
-  } catch { /* fallback */ }
-  return 942000;
+    return d.blocks;
+  } catch (err) {
+    logger.warn({ err }, "Could not verify BSV tip before creating legacy test lock");
+    throw new Error("BSV chain status is unavailable. No lock was created.");
+  }
 }
 
 // POST /v1/bridge/lock — create HTLC lock (BSV → EVM direction)
 router.post("/bridge/lock", async (req, res) => {
+  if (legacyBridgeUnavailable()) {
+    res.status(503).json({
+      error: "This legacy bridge endpoint is disabled because it cannot securely settle or refund an on-chain lock. No lock was created.",
+    });
+    return;
+  }
+
   try {
     const { amountBsv, senderBsvAddress, recipientEvmAddress, evmChainId = 1 } = req.body as {
       amountBsv?: number;
@@ -715,9 +731,9 @@ router.post("/bridge/lock", async (req, res) => {
       routerAddress: CHAIN_ROUTERS[evmChainId] ?? CHAIN_ROUTERS[1],
       instructions: [
         `Send exactly ${amountBsv} BSV to: ${htlc.htlcAddress}`,
-        "The bridge relayer monitors deposits and mints wBSV on your EVM chain.",
-        "Your EVM recipient address will receive the wrapped BSV within 2 confirmations.",
-        `Refund available after block ${locktimeBlocks} if bridge fails.`,
+        "This legacy flow is testnet-only. Never send real BSV.",
+        "Automatic EVM minting and refunds are not implemented by this endpoint.",
+        `Test locktime: block ${locktimeBlocks}.`,
       ],
     });
   } catch (err: any) {
@@ -728,6 +744,11 @@ router.post("/bridge/lock", async (req, res) => {
 
 // POST /v1/bridge/reveal — relayer reveals the preimage to claim BSV
 router.post("/bridge/reveal", async (req, res) => {
+  if (legacyBridgeUnavailable()) {
+    res.status(503).json({ error: LEGACY_BRIDGE_DISABLED_ERROR });
+    return;
+  }
+
   try {
     const { lockId, secret } = req.body as { lockId?: string; secret?: string };
 
@@ -777,6 +798,11 @@ router.post("/bridge/reveal", async (req, res) => {
 
 // POST /v1/bridge/redeem — complete HTLC redemption (EVM → BSV direction)
 router.post("/bridge/redeem", async (req, res) => {
+  if (legacyBridgeUnavailable()) {
+    res.status(503).json({ error: LEGACY_BRIDGE_DISABLED_ERROR });
+    return;
+  }
+
   try {
     const { lockId, evmTxHash } = req.body as { lockId?: string; evmTxHash?: string };
 
@@ -820,6 +846,11 @@ router.post("/bridge/redeem", async (req, res) => {
 
 // POST /v1/bridge/refund — user reclaims BSV after locktime expiry
 router.post("/bridge/refund", async (req, res) => {
+  if (legacyBridgeUnavailable()) {
+    res.status(503).json({ error: LEGACY_BRIDGE_DISABLED_ERROR });
+    return;
+  }
+
   try {
     const { lockId } = req.body as { lockId?: string };
     if (!lockId) {
@@ -869,6 +900,11 @@ router.post("/bridge/refund", async (req, res) => {
 
 // POST /v1/bridge/relay — relayer service triggers automatic bridge execution
 router.post("/bridge/relay", async (req, res) => {
+  if (legacyBridgeUnavailable()) {
+    res.status(503).json({ error: LEGACY_BRIDGE_DISABLED_ERROR });
+    return;
+  }
+
   try {
     const { lockId } = req.body as { lockId?: string };
     if (!lockId) {
@@ -925,6 +961,13 @@ router.post("/bridge/relay", async (req, res) => {
 
 // ── GET /v1/bridge/:lockId — poll bridge status ───────────────────────────────
 router.get("/bridge/:lockId", async (req, res) => {
+  if (legacyBridgeUnavailable()) {
+    res.status(503).json({
+      error: "Legacy bridge status is not authoritative because prior completion states were simulated. Provide the lock ID or transaction ID for recovery review.",
+    });
+    return;
+  }
+
   try {
     const { lockId } = req.params;
     const rows = await db.select().from(htlcLocksTable).where(eq(htlcLocksTable.id, lockId));

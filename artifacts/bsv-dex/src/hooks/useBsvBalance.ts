@@ -15,10 +15,14 @@ export interface BsvBalanceResult {
   message?: string;
 }
 
-export async function fetchBsvBalance(address: string): Promise<BsvBalanceResult | null> {
+export async function fetchBsvBalance(
+  address: string,
+  network: "bsv" | "bsv-test" = "bsv",
+): Promise<BsvBalanceResult | null> {
   try {
     const encoded = encodeURIComponent(address);
-    const res = await fetch(`${BASE_URL}/api/bsv/balance/${encoded}`);
+    const chain = network === "bsv-test" ? "test" : "main";
+    const res = await fetch(`${BASE_URL}/api/bsv/balance/${encoded}?network=${chain}`);
     if (!res.ok) return null;
     return await res.json() as BsvBalanceResult;
   } catch {
@@ -28,16 +32,20 @@ export async function fetchBsvBalance(address: string): Promise<BsvBalanceResult
 
 export function useBsvBalance() {
   const { address, network, setBalance, setBsvUnconfirmed } = useWalletStore();
+  const balanceRefreshKey = useWalletStore(s => s.balanceRefreshKey);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastAddressRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const currentAddress = useWalletStore.getState().address;
-    const currentNetwork = useWalletStore.getState().network;
+    const requestedState = useWalletStore.getState();
+    const currentAddress = requestedState.address;
+    const currentNetwork = requestedState.network;
     if (!currentAddress || (currentNetwork !== "bsv" && currentNetwork !== "bsv-test")) return;
 
-    const result = await fetchBsvBalance(currentAddress);
-    if (result && result.balance !== undefined && result.error !== "paymail_unresolved") {
+    const result = await fetchBsvBalance(currentAddress, currentNetwork);
+    const latestState = useWalletStore.getState();
+    if (latestState.address !== currentAddress || latestState.network !== currentNetwork) return;
+    if (result && Number.isFinite(result.balance) && result.error !== "paymail_unresolved") {
       setBalance(result.balance.toFixed(8));
       setBsvUnconfirmed(result.unconfirmed ?? 0);
     }
@@ -51,8 +59,9 @@ export function useBsvBalance() {
       return;
     }
 
-    if (lastAddressRef.current !== address) {
-      lastAddressRef.current = address;
+    const addressKey = `${network}:${address}`;
+    if (lastAddressRef.current !== addressKey) {
+      lastAddressRef.current = addressKey;
       refresh();
     }
 
@@ -63,6 +72,10 @@ export function useBsvBalance() {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, [address, network, refresh]);
+
+  useEffect(() => {
+    if (balanceRefreshKey > 0) refresh();
+  }, [balanceRefreshKey, refresh]);
 
   return { refresh };
 }

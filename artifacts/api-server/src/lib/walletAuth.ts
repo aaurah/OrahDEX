@@ -26,6 +26,7 @@ import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import * as ed from "@noble/ed25519";
 import { sha512 } from "@noble/hashes/sha2.js";
+import { BSV_NET } from "./bsvNetworkConfig.js";
 
 // @noble/ed25519 v2 requires a synchronous SHA-512 implementation to be
 // provided via the utils hook before any sign/verify call.
@@ -226,6 +227,46 @@ export function verifyBsvWithdrawSignature(
   withdrawNonces.delete(key);
 }
 
+export function issueBsvDepositChallenge(
+  creditWalletAddress: string,
+  bsvSignerAddress: string,
+  txHash: string,
+): { nonce: string; message: string } {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const key = `bsv-deposit:${creditWalletAddress.toLowerCase()}:${txHash.toLowerCase()}`;
+  const message =
+    `Authorize OrahDEX BSV deposit credit\n\n` +
+    `Credit wallet: ${creditWalletAddress}\n` +
+    `BSV sender: ${bsvSignerAddress}\n` +
+    `Transaction: ${txHash.toLowerCase()}\n` +
+    `Nonce: ${nonce}\n` +
+    `Timestamp: ${new Date().toISOString()}\n\n` +
+    `This signature only authorizes crediting this transaction. It does not send a blockchain transaction.`;
+
+  withdrawNonces.set(key, {
+    nonce,
+    message,
+    expiresAt: Date.now() + WITHDRAW_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+export function verifyBsvDepositSignature(
+  creditWalletAddress: string,
+  bsvSignerAddress: string,
+  txHash: string,
+  signatureBase64: string,
+): void {
+  const key = `bsv-deposit:${creditWalletAddress.toLowerCase()}:${txHash.toLowerCase()}`;
+  const stored = withdrawNonces.get(key);
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error("BSV deposit authorization expired or was not found. Request a fresh challenge.");
+  }
+  verifyBsvMessageSignature(bsvSignerAddress, stored.message, signatureBase64);
+  withdrawNonces.delete(key);
+}
+
 /**
  * Verify a Bitcoin (BSV) message signature against an address.
  * Signature is base64-encoded (compact 65-byte format: 1 byte header + r + s).
@@ -298,8 +339,7 @@ function bsvPubKeyToAddress(pubKey: Uint8Array, compressed: boolean): string {
   const keyBytes = compressed ? pubKey : secp.Point.fromBytes(pubKey).toBytes(false);
   const sha256d  = crypto.createHash("sha256").update(keyBytes).digest();
   const ripemd   = crypto.createHash("ripemd160").update(sha256d).digest();
-  // BSV mainnet P2PKH version byte: 0x00
-  const versioned = Buffer.concat([Buffer.from([0x00]), ripemd]);
+  const versioned = Buffer.concat([Buffer.from([BSV_NET.p2pkhVersion]), ripemd]);
   const checksum  = crypto.createHash("sha256")
     .update(crypto.createHash("sha256").update(versioned).digest())
     .digest()
