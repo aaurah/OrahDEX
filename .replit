@@ -113,4 +113,4 @@ AWS_S3_BUCKET = "orahdex.org"
 AWS_S3_ACCESS_POINT = "orahdex-1oynoh3ehk8imhgs46cay7pnj9b3cuse1a-s3alias"
 
 [userenv.development]
-BSV_NETWORK = "test"
+BSV_NETWORK = "main"
