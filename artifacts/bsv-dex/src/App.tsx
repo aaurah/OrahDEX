@@ -28,6 +28,7 @@ const AiAssistant = lazy(() => import("@/components/AiAssistant").then(m => ({ d
 
 /* ─── Lazy page imports — each becomes its own JS chunk ─── */
 const LandingPage  = lazy(() => import("@/pages/Landing").then(m => ({ default: m.LandingPage })));
+const ExplorerPage = lazy(() => import("@/pages/Explorer").then(m => ({ default: m.ExplorerPage })));
 const Markets      = lazy(() => import("@/pages/Markets").then(m => ({ default: m.Markets })));
 const SpotTrading  = lazy(() => import("@/pages/Spot").then(m => ({ default: m.SpotTrading })));
 const FuturesTrading = lazy(() => import("@/pages/Futures").then(m => ({ default: m.FuturesTrading })));
@@ -575,6 +576,7 @@ function Router() {
             <Layout>
               <Suspense fallback={<PageSkeleton />}>
                 <Switch>
+                  <Route path="/explorer"      component={ExplorerPage} />
                   <Route path="/markets"        component={Markets} />
                   <Route path="/trade/:symbol"  component={SpotTrading} />
                   <Route path="/futures/:symbol" component={FuturesTrading} />
