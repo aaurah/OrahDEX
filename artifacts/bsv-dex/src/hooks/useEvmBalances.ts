@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, getWagmiConfig } from "@/lib/reown";
 import { useCustomTokenStore, type CustomToken } from "@/store/useCustomTokenStore";
 import { useCustomChainStore } from "@/store/useCustomChainStore";
@@ -560,7 +560,15 @@ async function fetchEtherscanTokens(
 export async function scanTokensFromExplorer(
   walletAddress: string,
   chainId: number,
+  forceRescan = false,
 ): Promise<number> {
+  const store = useCustomTokenStore.getState();
+  const prevCount = store.getByChainId(chainId).length;
+  const knownAddresses = new Set([
+    ...(ERC20_TOKENS[chainId] ?? []).map(token => token.address.toLowerCase()),
+    ...store.getByChainId(chainId).map(token => token.address.toLowerCase()),
+  ]);
+
   let tokens = await fetchBlockscoutTokens(walletAddress, chainId);
 
   // Fallback to Etherscan-compatible API if Blockscout returned nothing.
@@ -580,12 +588,17 @@ export async function scanTokensFromExplorer(
     }
   }
 
-  if (tokens.length === 0) return 0;
+  if (tokens.length === 0) {
+    // Explorer APIs may be unavailable, unsupported, or incomplete. Fall back
+    // to the chain RPC so a failed indexer does not silently hide held tokens.
+    await discoverNewTokens(walletAddress, chainId, knownAddresses, forceRescan);
+    return Math.max(0, useCustomTokenStore.getState().getByChainId(chainId).length - prevCount);
+  }
 
-  const store = useCustomTokenStore.getState();
-  const prevCount = store.getByChainId(chainId).length;
+  const newTokens = tokens.filter(t => !knownAddresses.has(t.address.toLowerCase()));
+  if (newTokens.length === 0) return 0;
 
-  const toDiscover: Omit<CustomToken, "id" | "addedAt">[] = tokens.map(t => ({
+  const toDiscover: Omit<CustomToken, "id" | "addedAt">[] = newTokens.map(t => ({
     chainId,
     address:          t.address,
     symbol:           t.symbol,
@@ -619,10 +632,25 @@ function padTopic(addr: string): string {
 
 function decodeAbiString(hex: string): string {
   try {
-    if (!hex || hex.length < 130) return "";
-    const len = parseInt(hex.slice(66, 130), 16);
-    if (len === 0 || len > 80) return "";
-    const chars = hex.slice(130, 130 + len * 2).match(/.{1,2}/g) ?? [];
+    if (!hex) return "";
+    const data = hex.replace(/^0x/i, "");
+    const decodeText = (value: string) => {
+      const bytes = (value.match(/.{1,2}/g) ?? []).map(byte => parseInt(byte, 16));
+      const terminator = bytes.indexOf(0);
+      return bytes
+        .slice(0, terminator < 0 ? bytes.length : terminator)
+        .filter(byte => byte >= 32 && byte < 127)
+        .map(byte => String.fromCharCode(byte))
+        .join("")
+        .trim();
+    };
+
+    // Older ERC-20 contracts sometimes return bytes32 instead of an ABI string.
+    if (data.length === 64) return decodeText(data);
+    if (data.length < 128) return "";
+    const len = parseInt(data.slice(64, 128), 16);
+    if (!Number.isSafeInteger(len) || len <= 0 || len > 80) return "";
+    const chars = data.slice(128, 128 + len * 2).match(/.{1,2}/g) ?? [];
     return chars
       .map(b => String.fromCharCode(parseInt(b, 16)))
       .filter(c => c.charCodeAt(0) >= 32 && c.charCodeAt(0) < 127)
@@ -737,8 +765,17 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
   const [balances,  setBalances]  = useState<TokenBalance[]>(_cached?.balances ?? []);
   const [loading,   setLoading]   = useState(false);
   const [lastFetch, setLastFetch] = useState(_cached?.fetchedAt ?? 0);
+  const activeCacheKey = useRef(cacheKey);
 
-  const fetch = useCallback(async () => {
+  useEffect(() => {
+    activeCacheKey.current = cacheKey;
+    const current = cacheKey ? _balanceCache.get(cacheKey) : undefined;
+    setBalances(current?.balances ?? []);
+    setLastFetch(current?.fetchedAt ?? 0);
+    setLoading(false);
+  }, [cacheKey]);
+
+  const fetch = useCallback(async (forceRefresh = false) => {
     if (!address || !chainId || !cacheKey) return;
 
     // If a fetch is already in-flight for this address+chain, attach to it so
@@ -747,6 +784,7 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
     const existing = _inFlight.get(cacheKey);
     if (existing) {
       await existing;
+      if (activeCacheKey.current !== cacheKey) return;
       const c = _balanceCache.get(cacheKey);
       if (c) { setBalances(c.balances); setLastFetch(c.fetchedAt); }
       return;
@@ -754,9 +792,12 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
 
     // Skip fetch if cache is still fresh (e.g. second hook instance mounts
     // within CACHE_TTL_MS of the first).
-    if (_cached && Date.now() - _cached.fetchedAt < CACHE_TTL_MS) {
-      setBalances(_cached.balances);
-      setLastFetch(_cached.fetchedAt);
+    const currentCache = _balanceCache.get(cacheKey);
+    if (!forceRefresh && currentCache && Date.now() - currentCache.fetchedAt < CACHE_TTL_MS) {
+      if (activeCacheKey.current === cacheKey) {
+        setBalances(currentCache.balances);
+        setLastFetch(currentCache.fetchedAt);
+      }
       return;
     }
 
@@ -862,6 +903,7 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
       // hook instances that attach to the in-flight promise get fresh data.
       const fetchedAt = Date.now();
       _balanceCache.set(cacheKey, { balances: result, fetchedAt });
+      if (activeCacheKey.current !== cacheKey) return;
       setBalances(result);
       setLastFetch(fetchedAt);
 
@@ -886,6 +928,7 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
         ).then(cgPrices => {
           if (Object.keys(cgPrices).length === 0) return;
           setBalances(prev => {
+            if (activeCacheKey.current !== cacheKey) return prev;
             const updated = prev.map(t => {
               if (!t.contractAddress || t.price > 0) return t;
               const p = cgPrices[t.contractAddress.toLowerCase()];
@@ -900,12 +943,14 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
     } catch (err) {
       console.error("EVM balance fetch error:", err);
     } finally {
-      setLoading(false);
+      if (activeCacheKey.current === cacheKey) setLoading(false);
       // Resolve the in-flight promise so waiting hook instances wake up.
-      _inFlight.delete(cacheKey);
+      if (_inFlight.get(cacheKey) === promise) _inFlight.delete(cacheKey);
       _resolve();
     }
   }, [address, chainId, cacheKey]);
+
+  const refresh = useCallback(() => fetch(true), [fetch]);
 
   useEffect(() => {
     if (!address || !chainId) return;
@@ -937,11 +982,11 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
         // Bust the cache so the re-fetch always hits the RPC (the token list
         // changed — stale cache would suppress the update).
         if (cacheKey) _balanceCache.delete(cacheKey);
-        fetch();
+        fetch(true);
       }
     });
     return unsub;
   }, [address, chainId, cacheKey, fetch]);
 
-  return { balances, loading, refresh: fetch, lastFetch };
+  return { balances, loading, refresh, lastFetch };
 }
