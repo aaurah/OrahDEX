@@ -27,6 +27,7 @@ import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
 import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
 import { hasEscrow, chainLabel, checkEscrowDeposit, resolveEscrowAsset } from "@/lib/escrow";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
+import { buildOrderIntentMessage, buildOrderActionMessage, signWalletMessage } from "@/lib/tradeAuth";
 import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
 
 /* ── Notifications drawer — backed by the real notification store ── */
@@ -278,7 +279,7 @@ type BottomTab = "orderbook" | "trades" | "orders";
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop-limit" | "stop-market" | "trailing-stop" | "post-only";
 
-const ORDER_TYPES: OrderType[] = ["limit", "market", "stop-limit", "stop-market", "trailing-stop", "post-only"];
+const ORDER_TYPES: OrderType[] = ["limit", "market"];
 const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   "limit":         "Limit",
   "market":        "Market",
@@ -350,7 +351,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Only Orah Wallet uses internal exchange ledger as the primary available balance source.
   // External wallets (EVM/BSV/BTC/SOL) use on-chain wallet balances, optionally merged with
   // internal exchange balances for assets accumulated via exchange trades.
-  const usesApiBalance = isOrahWallet && !isEvm;
+  const usesApiBalance = true;
   // Show pending state only when the current mode depends on ledger balances.
   const balancesPending = usesApiBalance && apiBalancesLoading;
 
@@ -468,10 +469,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         }
       }
       // Step 2: tell the server to remove the order from the orderbook.
+      const nonce = crypto.randomUUID();
+      const expiry = String(Math.floor(Date.now() / 1000) + 300);
+      const signature = await signWalletMessage(orderWalletAddress, provider ?? undefined,
+        buildOrderActionMessage({ walletAddress: orderWalletAddress, action: "cancel", orderId, nonce, expiry }));
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: orderWalletAddress }),
+        body: JSON.stringify({ walletAddress: orderWalletAddress, signature, nonce, expiry }),
       });
       // 404 means the order is already cancelled (desired state) — treat as success.
       // This handles double-tap, stale cache, and races gracefully.
@@ -1041,7 +1046,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const volQuote = lastPrice * vol24;
 
   // Fallback price for candles/orderbook when ticker hasn't loaded yet
-  const fallbackPrice = lastPrice > 0 ? lastPrice : (MOCK_TICKER[rawSymbol]?.lastPrice || liveBridgeRate || 14.35);
+  const fallbackPrice = lastPrice > 0 ? lastPrice : 0;
   const chartCandles = Array.isArray(candles) ? candles : [];
   // Ensure order book always shows data
   const rawOB = orderBook as any;
@@ -1049,7 +1054,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const hasRealOB = !isBridgePair && (rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0);
   // Memoized so the mock order book (which uses Math.random) doesn't regenerate on every render
   const effectiveOrderBook = useMemo(
-    () => hasRealOB ? orderBook : generateMockOrderBook(fallbackPrice),
+    () => hasRealOB ? orderBook : { bids: [], asks: [] },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [hasRealOB, orderBook, fallbackPrice],
   );
@@ -1158,10 +1163,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // source, but merge in the on-chain native balance so BSV shows correctly even
   // when no funds have been deposited to the internal ledger yet.
   const grossSellBalance = usesApiBalance
-    ? Math.max(internalBaseBalance,  isNativeBase  ? walletBal : 0)
+    ? internalBaseBalance
     : walletBaseBalance;
   const grossBuyBalance  = usesApiBalance
-    ? Math.max(internalQuoteBalance, isNativeQuote ? walletBal : 0)
+    ? internalQuoteBalance
     : walletQuoteBalance;
   // Self-custody EVM (Orah Wallet on EVM, or external wallet): open orders are
   // signed intents — funds remain on-chain in the wallet until fill. We DO NOT
@@ -1275,6 +1280,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       return;
     }
 
+    if (side === "buy" && amtNum * effectivePrice * (orderType === "market" ? 1.005 : 1) > buyBalance + 1e-12) {
+      toast({ title: "Insufficient trading balance", description: `Not enough available ${quote}. Use Swap for wallet-held funds.`, variant: "destructive" });
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      lastOrderFingerprintRef.current = null;
+      return;
+    }
+
     // ── SELL guard: block impossible sell orders before the network round-trip ──
     // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
     // never falsely blocked by floating-point arithmetic.
@@ -1322,15 +1335,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       orderExpiry = String(Math.floor(Date.now() / 1000) + 5 * 60);
 
       // Canonical message — must mirror buildOrderAuthMessage() in walletAuth.ts
-      const orderMsg = [
-        "Authorize OrahDEX order",
-        `Wallet: ${address}`,
-        `Symbol: ${symbol}`,
-        `Side: ${side}`,
-        `Quantity: ${amtNum.toString()}`,
-        `Nonce: ${orderNonce}`,
-        `Expiry: ${orderExpiry}`,
-      ].join("\n");
+      const orderMsg = buildOrderIntentMessage({
+        walletAddress: address!, symbol, side, quantity: amtNum.toString(),
+        type: apiType, price: usePrice?.toString() ?? "", stopPrice: useStop?.toString() ?? "",
+        chainId: walletChainId ? String(walletChainId) : "",
+        timeInForce: apiType === "market" ? "IOC" : "GTC",
+        nonce: orderNonce, expiry: orderExpiry,
+      });
 
       try {
         if (isOrahWallet) {
@@ -1409,6 +1420,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       price:     usePrice,
       stopPrice: useStop,
       quantity:  amtNum,
+      timeInForce: apiType === "market" ? "IOC" : "GTC",
       networkType:    address.startsWith("0x") ? "evm" : "bsv",
       walletSource:   (isOrahWallet && !isEvm) ? "orah" : "external",
       receiveAddress: receiveAddress.trim() || undefined,
@@ -1983,7 +1995,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {isSelfCustodyEvm && (
               <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-[11px] bg-primary/8 border border-primary/20">
                 <ShieldCheck size={12} className="text-primary shrink-0" />
-                <span className="text-primary/80 font-medium">Non-custodial — your wallet settles on-chain. No deposit required.</span>
+                <span className="text-primary/80 font-medium">Order-book trading uses available trading balance. Wallet-to-wallet matching is paused; use Swap for wallet-held funds.</span>
               </div>
             )}
 
@@ -2689,49 +2701,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   )}
                 </div>
 
-                {/* OrahBridge instant-swap quote — shown when no native liquidity */}
+                {/* A separate swap is an explicit user action, never a claimed fill. */}
                 {orderError.code === "NO_LIQUIDITY" && (
-                  swapQuoteLoading ? (
-                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border/40 bg-card text-xs text-muted-foreground">
-                      <span className="animate-spin w-3.5 h-3.5 border-2 border-primary/30 border-t-primary rounded-full shrink-0" />
-                      Checking OrahBridge rates…
-                    </div>
-                  ) : swapQuote ? (
-                    <div className="flex flex-col gap-2.5 px-3 py-3 rounded-xl border border-primary/25 bg-primary/5">
-                      <div className="flex items-center justify-between">
-                        <span className={cn("text-xs font-bold", VENUE_COLORS[swapQuote.venue] ?? "text-primary")}>
-                          {VENUE_LABELS[swapQuote.venue] ?? swapQuote.venue}
-                        </span>
-                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Instant Swap</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-                        <span className="text-muted-foreground">Send</span>
-                        <span className="font-mono font-semibold text-foreground">
-                          {swapQuote.amountIn % 1 === 0
-                            ? swapQuote.amountIn.toFixed(0)
-                            : parseFloat(swapQuote.amountIn.toFixed(8)).toString()}
-                        </span>
-                        <span className="font-semibold text-foreground">{swapQuote.assetIn}</span>
-                        <span className="text-muted-foreground px-0.5">→</span>
-                        <span className="text-muted-foreground">Receive</span>
-                        <span className="font-mono font-semibold text-primary">
-                          ≈ {parseFloat(swapQuote.expectedOutput.toFixed(8)).toString()}
-                        </span>
-                        <span className="font-semibold text-primary">{swapQuote.assetOut}</span>
-                      </div>
-                      {!swapQuote.canExecute && (
-                        <p className="text-[10px] text-amber-400/80">Amount may be below this provider's minimum — try a larger size.</p>
-                      )}
-                      <a
-                        href={`${BASE}/swap`}
-                        className="w-full py-2.5 rounded-lg text-xs font-bold text-center text-white bg-primary hover:bg-primary/90 transition-colors"
-                      >
-                        Swap via {VENUE_LABELS[swapQuote.venue] ?? "OrahBridge"} →
-                      </a>
-                    </div>
-                  ) : (
                     <div className="flex flex-col gap-2 px-3 py-2.5 rounded-xl border border-border/40 bg-card">
-                      <p className="text-xs text-muted-foreground">No instant-swap quote available for this pair right now.</p>
+                      <p className="text-xs text-muted-foreground">No order-book fill was made. Open Swap to request a separate quote.</p>
                       <a
                         href={`${BASE}/swap`}
                         className="text-xs font-bold text-primary underline underline-offset-2"
@@ -2739,7 +2712,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         Browse OrahBridge →
                       </a>
                     </div>
-                  )
                 )}
               </div>
             )}

@@ -45,6 +45,7 @@ function detectIsEvmAddress(addr: string): boolean {
 }
 
 function decodeBase58(address: string): Uint8Array | null {
+  if (typeof address !== "string" || address.length < 1 || address.length > 44) return null;
   const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
   let value = 0n;
   for (const char of address) {
@@ -353,6 +354,10 @@ router.post("/orders", async (req, res) => {
       res.status(400).json({ error: "Market orders must use IOC to prevent unintended resting orders" });
       return;
     }
+    if (type === "limit" && timeInForce !== "GTC") {
+      res.status(400).json({ error: "Limit orders currently support GTC only" });
+      return;
+    }
 
     const id            = crypto.randomUUID();
     const price         = rawPrice;
@@ -404,7 +409,8 @@ router.post("/orders", async (req, res) => {
       const expiryUnixSec = parseInt(orderExpiry, 10);
 
       // Enforce expiry.
-      if (expiryUnixSec <= Math.floor(Date.now() / 1000)) {
+      if (!Number.isSafeInteger(expiryUnixSec) || expiryUnixSec <= Math.floor(Date.now() / 1000) ||
+          expiryUnixSec > Math.floor(Date.now() / 1000) + 300) {
         res.status(401).json({ error: "Order signature has expired. Sign a fresh order with a future expiry.", code: "SIGNATURE_EXPIRED" });
         return;
       }
@@ -537,8 +543,8 @@ router.post("/orders", async (req, res) => {
     ]);
     let chainId: number | undefined;
     if (body.chainId != null) {
-      const n = parseInt(String(body.chainId), 10);
-      if (!SUPPORTED_CHAIN_IDS.has(n)) {
+      const n = Number(body.chainId);
+      if (!Number.isSafeInteger(n) || !SUPPORTED_CHAIN_IDS.has(n)) {
         res.status(400).json({ error: `Unsupported chainId: ${n}. Supported: ${[...SUPPORTED_CHAIN_IDS].sort((a, b) => a - b).join(", ")}` });
         return;
       }
@@ -563,12 +569,16 @@ router.post("/orders", async (req, res) => {
     const lockAsset = side === "buy" ? quoteAsset : baseAsset;
 
     let lockPrice = price;
-    if (!lockPrice && side === "buy") {
+    if (!lockPrice) {
       const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
       lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
     }
     if (side === "buy" && (lockPrice == null || !Number.isFinite(lockPrice) || lockPrice <= 0)) {
       res.status(400).json({ error: "Unable to determine buy price for funding lock" });
+      return;
+    }
+    if (type === "market" && (!lockPrice || !Number.isFinite(lockPrice) || lockPrice <= 0)) {
+      res.status(422).json({ error: "A valid reference price is required for protected market execution" });
       return;
     }
 
@@ -585,6 +595,7 @@ router.post("/orders", async (req, res) => {
     if (parseFloat(lockAmount) > 0 && lockAsset) {
       const fundingVerif = await verifyAndLockFunding({
         walletAddress:   body.walletAddress,
+        ledgerOnly:      true,
         kind:            "SPOT",   // orders.ts always handles SPOT (MARKET + LIMIT)
         side,
         walletSource,
@@ -600,6 +611,13 @@ router.post("/orders", async (req, res) => {
       }
       fundingRef = fundingVerif.fundingRef;
     }
+    if (!fundingRef.startsWith("ledger:")) {
+      res.status(503).json({
+        error: "Wallet-to-wallet order matching is paused until confirmed on-chain settlement is tracked. Use the separate swap flow instead.",
+        code: "SETTLEMENT_UNAVAILABLE",
+      });
+      return;
+    }
 
     // ── All checks passed — insert the order ──────────────────────────────────
     const newOrder = {
@@ -609,7 +627,7 @@ router.post("/orders", async (req, res) => {
       networkType,
       side,                                      // "buy" | "sell"
       type,                                      // "limit" | "market" | "stop"
-      status:            "open",
+      status:            "processing",
       price:             price != null ? price.toFixed(18) : undefined,
       stopPrice:         stopPrice != null ? stopPrice.toFixed(18) : undefined,
       quantity:          quantity.toFixed(18),
@@ -642,17 +660,6 @@ router.post("/orders", async (req, res) => {
       throw insertErr; // re-throw all other DB errors
     }
     req.log.info({ orderId: id, side, networkType, walletSource }, "Order placed");
-
-    /* Push order-placed notification to the user */
-    const orderPair = symbol;
-    const orderSide = side.toUpperCase();
-    pushNotification(body.walletAddress, {
-      type: "order_placed",
-      title: `${orderSide} Order Placed`,
-      body: `${quantity} ${orderPair.split("/")[0]} @ ${price ? `$${price}` : "market"} · waiting for match`,
-      pair: orderPair,
-      side,
-    });
 
     // ── Attempt order matching ───────────────────────────────────────────────
     // Works for limit, market, AND stop orders.
@@ -699,7 +706,7 @@ router.post("/orders", async (req, res) => {
       // For limit orders restrict by price; market/stop orders accept any price
       // Format price safely — avoid scientific notation (e.g. 1e-8) which
       // breaks numeric DB comparisons on very small asset prices.
-      const safePriceStr = price != null ? price.toFixed(8) : undefined;
+      const safePriceStr = price != null ? price.toFixed(18) : undefined;
 
       // Fetch counter-orders sorted by best price, capped at 500 rows.
       // ORDER BY pushes sorting into the DB so only the cheapest sells / most
@@ -709,7 +716,15 @@ router.post("/orders", async (req, res) => {
           eq(ordersTable.symbol, symbol),
           eq(ordersTable.side, counterSide),
           eq(ordersTable.status, "open"),
+          eq(ordersTable.type, "limit"),
+          sql`${ordersTable.fundingRef} LIKE 'ledger:%'`,
+          ne(ordersTable.walletAddress, BOT_ADDRESS),
           ne(ordersTable.walletAddress, body.walletAddress),
+          ...(isMarket && lockPrice
+            ? [side === "buy"
+              ? lte(ordersTable.price, (lockPrice * 1.005).toFixed(18))
+              : gte(ordersTable.price, (lockPrice * 0.995).toFixed(18))]
+            : []),
           // Limit orders have price constraints; market + triggered-stop orders take any price
           ...(isLimit && safePriceStr
             ? [side === "buy"
@@ -728,7 +743,7 @@ router.post("/orders", async (req, res) => {
       // so settlement remains wallet-to-wallet via HTLC, not synthetic ledger fill.
       // When both the incoming order and a candidate have a chainId, they must match —
       // cross-chain EVM fills (e.g. Ethereum vs Arbitrum) are rejected here.
-      const requiresDefiWalletToWallet = walletSource === "external" && networkType === "evm";
+      const requiresDefiWalletToWallet = fundingRef.startsWith("evm-");
       const eligibleMatches = requiresDefiWalletToWallet
         ? sorted.filter((candidate) => {
             const isBot = candidate.walletAddress === BOT_ADDRESS;
@@ -787,7 +802,7 @@ router.post("/orders", async (req, res) => {
         //   • match.fundingRef starts with "evm-sig:" or "evm-balance:"  (counter-order)
         //     OR the counter-order's address is 0x-prefixed with no internal fundingRef
         // Bot orders always use the internal ledger and are never EVM-HTLC candidates.
-        const incomingIsEvmExternal = walletSource === "external" && networkType === "evm";
+        const incomingIsEvmExternal = fundingRef.startsWith("evm-");
         const matchFundingRef0 = match.fundingRef ?? "";
         const matchIsEvmExternal = !isBot && (
           matchFundingRef0.startsWith("evm-sig:") ||
@@ -863,6 +878,17 @@ router.post("/orders", async (req, res) => {
           }
         }
 
+        // Claim the exact snapshot before settling. Concurrent takers and
+        // cancellation must not consume a reservation already being processed.
+        const [claimedMatch] = await db.update(ordersTable)
+          .set({ status: "processing", updatedAt: new Date() })
+          .where(and(
+            eq(ordersTable.id, match.id),
+            eq(ordersTable.status, "open"),
+            eq(ordersTable.remainingQuantity, match.remainingQuantity!),
+          )).returning({ id: ordersTable.id });
+        if (!claimedMatch) continue;
+
         let fillResult: Awaited<ReturnType<typeof settleSpotFill>>;
 
         try {
@@ -906,6 +932,8 @@ router.post("/orders", async (req, res) => {
             });
           }
         } catch (fillErr: any) {
+          await db.update(ordersTable).set({ status: "open", updatedAt: new Date() })
+            .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "processing")));
           // Ledger settlement failed for this match. Since settleTrade() threw
           // before committing, no funds changed — skip this match and try the next.
           req.log.error(
@@ -958,7 +986,7 @@ router.post("/orders", async (req, res) => {
               matchedOrderId:    id,
               updatedAt:         new Date(),
             })
-            .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "open")))
+            .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "processing")))
             .returning({ id: ordersTable.id });
 
           if (!updatedMatch) {
@@ -1350,7 +1378,7 @@ router.post("/orders", async (req, res) => {
         pushNotification(body.walletAddress, {
           type:  isFullyFilled ? "order_filled" : "order_partial",
           title: isFullyFilled ? "Order Filled ✓" : `Partial Fill — ${totalFilled.toFixed(4)} ${fillBase}`,
-          body:  `${totalFilled.toFixed(4)} ${fillBase} @ $${avgFillPrice.toFixed(4)} avg · BSV settled on-chain`,
+          body:  `${totalFilled.toFixed(4)} ${fillBase} @ ${avgFillPrice.toFixed(4)} avg · settled in trading balance${marketRemainderCancelled ? " · unfilled remainder cancelled" : ""}`,
           pair:  fillSymbol,
           txid:  lastTxid ?? undefined,
           side,
@@ -1363,7 +1391,8 @@ router.post("/orders", async (req, res) => {
     // return the reservation and reject explicitly.
     if ((isMarket || isStopTriggered) && totalFilled === 0) {
       await releaseLedgerOrderFunds(fundingRef, body.walletAddress, lockAsset, parseFloat(lockAmount));
-      await db.delete(ordersTable).where(eq(ordersTable.id, id));
+      await db.update(ordersTable).set({ status: "cancelled", updatedAt: new Date() })
+        .where(eq(ordersTable.id, id));
       res.status(422).json({
         error: "No matching sellers found for this market order. Place a limit order to set your price, or try again when liquidity is available.",
         code:  "NO_LIQUIDITY",
@@ -1372,7 +1401,16 @@ router.post("/orders", async (req, res) => {
     }
 
     // Return the created order (re-read for updated status if matched)
+    await db.update(ordersTable).set({ status: "open", updatedAt: new Date() })
+      .where(and(eq(ordersTable.id, id), eq(ordersTable.status, "processing")));
     const [created] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+    if (created.status === "open" && totalFilled === 0) {
+      pushNotification(body.walletAddress, {
+        type: "order_placed", title: `${side.toUpperCase()} Order Placed`,
+        body: `${quantity} ${baseAsset} @ ${price} ${quoteAsset} · waiting for match`,
+        pair: symbol, side,
+      });
+    }
 
     // Derive quoteSymbol from the order symbol so the client never has to
     // parse it — required for fill notification display on all order types.
@@ -1493,7 +1531,7 @@ router.delete("/orders/:orderId", async (req, res) => {
         `UPDATE orders
          SET status = 'cancelled', updated_at = NOW()
          WHERE id = $1
-           AND wallet_address = $2
+           AND lower(wallet_address) = lower($2)
            AND status = 'open'
          RETURNING *`,
         [req.params.orderId, body.walletAddress],
@@ -1588,6 +1626,16 @@ router.post("/orders/recover-locked", requireAdminToken, async (req, res) => {
 
     const addresses: string[] = [walletAddress];
     if (altAddress && altAddress !== walletAddress) addresses.push(altAddress);
+    const pending = await pool.query(
+      `SELECT id FROM orders
+       WHERE lower(wallet_address) = ANY($1::text[])
+         AND status IN ('processing', 'pending') LIMIT 1`,
+      [addresses.map(address => String(address).toLowerCase())],
+    );
+    if (pending.rows.length > 0) {
+      res.status(409).json({ error: "Reconcile pending settlement before recovering locked balances." });
+      return;
+    }
 
     // 1. Gather all open orders across all wallet addresses
     const openOrders = await db

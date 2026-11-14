@@ -224,7 +224,7 @@ function getRows(
   /** All DB spot pairs for a given quote currency, priced > 0, sorted by base */
   const dbByQuote = (quote: string): NormRow[] =>
     apiRows
-      .filter(m => m.quote === quote && m.type !== "futures" && m.price > 0)
+      .filter(m => m.quote === quote && m.type !== "futures")
       .sort((a, b) => a.base.localeCompare(b.base));
 
   // Merge native rows with ONE AOS row per unique base coin (best quote for the chain).
@@ -234,7 +234,7 @@ function getRows(
 
     const eligible = aosPairs.filter(p => {
       const net = (p.network ?? "").toLowerCase();
-      return keywords.some(kw => net.includes(kw)) && p.price > 0;
+      return keywords.some(kw => net.includes(kw));
     });
 
     const byBase = new Map<string, NormRow[]>();
@@ -283,7 +283,7 @@ function getRows(
     // Deduplicate within AOS pairs by base — same coin on multiple chains → show once (best price)
     const aosByBase = new Map<string, NormRow>();
     for (const p of aosPairs) {
-      if (p.quote !== quote || p.price <= 0) continue;
+      if (p.quote !== quote) continue;
       if (seenBases.has(p.base) || seenSymbols.has(p.symbol)) continue;
       const cur = aosByBase.get(p.base);
       if (!cur || p.price > cur.price) aosByBase.set(p.base, p);
@@ -309,7 +309,6 @@ function getRows(
   const aosOnly = (() => {
     const bestByBase = new Map<string, NormRow>();
     for (const p of aosPairs) {
-      if (p.price <= 0) continue;
       if (nativeSymbols.has(p.symbol) || nativeBases.has(p.base)) continue;
       const cur = bestByBase.get(p.base);
       if (!cur || p.price > cur.price) bestByBase.set(p.base, p);
@@ -320,7 +319,7 @@ function getRows(
     const merged = new Map<string, NormRow>();
     // 1. DB rows — authoritative live prices (includes LE/SS DB entries)
     for (const m of apiRows) {
-      if (m.type !== "futures" && m.price > 0) merged.set(m.symbol, m);
+      if (m.type !== "futures") merged.set(m.symbol, m);
     }
     // 2. Static-mock enriched rows — fills coins not yet in DB
     for (const m of enrich(ALL_POOL_DEDUPED)) {
@@ -539,7 +538,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     const merged = new Map<string, NormRow>();
     for (const m of apiRows) merged.set(m.symbol, m);
     for (const p of aosPairs) {
-      if (p.price <= 0) continue;
       if (!merged.has(p.symbol)) merged.set(p.symbol, p);
     }
     return Array.from(merged.values());
