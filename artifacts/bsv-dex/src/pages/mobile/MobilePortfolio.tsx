@@ -924,24 +924,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
               </div>
             )}
 
-            {/* Allocation bar */}
-            {total > 0 && nonZero.length > 0 && (
-              <>
-                <div className="flex h-1.5 rounded-full overflow-hidden mt-4 gap-0.5">
-                  {nonZero.map(r => (
-                    <div key={r.key} className="h-full rounded-full" style={{ flex: r.value / total, backgroundColor: r.color }} />
-                  ))}
-                </div>
-                <div className="flex gap-3 mt-2 flex-wrap">
-                  {nonZero.map(r => (
-                    <div key={r.key} className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.color }} />
-                      <span className="text-[10px] text-muted-foreground">{r.asset}{r.chainName ? ` · ${r.chainName}` : ""}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
           </div>
 
           {/* Self-custody info banner: open orders are signed intents only */}
@@ -1096,22 +1078,17 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                       {r.asset[0]}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-baseline gap-x-1.5">
                         <p className="text-sm font-semibold text-foreground">{r.asset}</p>
                         {r.chainName && (
-                          <span className="text-[9px] text-muted-foreground rounded bg-secondary px-1.5 py-0.5">{r.chainName}</span>
-                        )}
-                        {r.isNative && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-green-500/15 text-green-400 border border-green-500/25">
-                            NATIVE
-                          </span>
-                        )}
-                        {r.isNative && network === "bsv" && bsvUnconfirmed > 0 && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/25 animate-pulse">
-                            +{bsvUnconfirmed.toFixed(8)} PENDING
-                          </span>
+                          <span className="text-[10px] text-muted-foreground">{r.chainName}</span>
                         )}
                       </div>
+                      {r.isNative && network === "bsv" && bsvUnconfirmed > 0 && (
+                        <p className="text-[10px] text-amber-400/80 mt-0.5">
+                          +{bsvUnconfirmed.toFixed(8)} pending
+                        </p>
+                      )}
                       <p className="text-xs text-muted-foreground mt-0.5 font-mono">
                         {r.amount > 0
                           ? r.amount.toLocaleString(undefined, { maximumFractionDigits: r.amount < 0.0001 ? 8 : 6 })
@@ -1758,7 +1735,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                           <p className="text-[11px] text-amber-400/80">Exchange done — sending funds to your address now.</p>
                         )}
                         {isBad && (
-                          <p className="text-[11px] text-red-400">Exchange {label.toLowerCase()}. Contact OrahDEX support at support@orahdex.org with this ID.</p>
+                          <p className="text-[11px] text-red-400">Exchange {label.toLowerCase()}. Contact OrahDEX support at support@orahdex.com with this ID.</p>
                         )}
                       </div>
                     );

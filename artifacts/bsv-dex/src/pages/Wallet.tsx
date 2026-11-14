@@ -12,6 +12,7 @@ import { WalletDApps } from "@/components/wallet/WalletDApps";
 import { useLocation } from "wouter";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { useHandCashStore } from "@/store/useHandCashStore";
 import { useEvmBalances, useAllEvmChainBalances, scanTokensFromExplorer } from "@/hooks/useEvmBalances";
 import { useOnChainTxHistory, type OnChainTx } from "@/hooks/useOnChainTxHistory";
 import { useIncomingTxWatcher } from "@/hooks/useIncomingTxWatcher";
@@ -31,6 +32,9 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { useToast } from "@/hooks/use-toast";
 import { useNotificationStore } from "@/store/useNotificationStore";
 import { cn } from "@/lib/utils";
+import { openReownModal } from "@/lib/reown-appkit";
+import { API_BASE } from "@/lib/api";
+import { useAppKitAccount } from "@reown/appkit/react";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -261,7 +265,7 @@ function addressForChain(
 // ─── Chain row shell (imToken / MetaMask hybrid style) ───────────────────────
 
 function ChainRowShell({
-  chain, chainAddr, balanceSlot, onReceive, onImport, onSend,
+  chain, chainAddr, balanceSlot, onReceive, onImport, onConnect, onSend,
   expandable, expanded, onToggleExpand, extra,
 }: {
   chain: ChainRow;
@@ -269,6 +273,7 @@ function ChainRowShell({
   balanceSlot: ReactNode;
   onReceive: () => void;
   onImport: () => void;
+  onConnect?: () => void;
   onSend?: () => void;
   expandable?: boolean;
   expanded?: boolean;
@@ -322,11 +327,12 @@ function ChainRowShell({
           ) : (
             chain.live ? (
               <button
-                onClick={e => { e.stopPropagation(); onImport(); }}
+                onClick={e => { e.stopPropagation(); (onConnect ?? onImport)(); }}
+                data-testid={`wallet-connect-${chain.family}`}
                 className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-primary/80 hover:text-primary transition-colors"
               >
-                <Plus size={10} />
-                Link address or import key
+                <Link2 size={10} />
+                {["bsv", "btc", "solana", "tron", "evm"].includes(chain.family) ? "Connect wallet" : "Link public address"}
               </button>
             ) : (
               <p className="text-[11px] text-muted-foreground mt-0.5">{addrLabel}</p>
@@ -342,7 +348,8 @@ function ChainRowShell({
           {chain.family !== "evm" && chain.live && (
             <button
               onClick={e => { e.stopPropagation(); onImport(); }}
-              title={hasAddr ? "Manage linked address" : "Link address or import key"}
+              title={hasAddr ? "Manage linked address" : "Link public address"}
+              data-testid={`wallet-manage-${chain.family}`}
               className={cn(
                 "w-8 h-8 rounded-lg flex items-center justify-center transition-colors shrink-0",
                 hasAddr
@@ -612,13 +619,14 @@ function AddCustomTokenDialog({
 // ─── EVM row ─────────────────────────────────────────────────────────────────
 
 function EvmChainRow({
-  chain, evmAddress, quoteCurrency, onReceive, onImport, onAddToken, onSendToken, onTokenReceive,
+  chain, evmAddress, quoteCurrency, onReceive, onImport, onConnect, onAddToken, onSendToken, onTokenReceive,
 }: {
   chain: ChainRow;
   evmAddress: string | null;
   quoteCurrency: string;
   onReceive: () => void;
   onImport: () => void;
+  onConnect: () => void;
   onAddToken: (chainId: number) => void;
   onSendToken: (chainId: number, symbol: string) => void;
   onTokenReceive: (symbol: string, chainName: string, address: string) => void;
@@ -641,8 +649,12 @@ function EvmChainRow({
       } else {
         toast({ title: "No new tokens found", description: "All your tokens are already listed." });
       }
-    } catch {
-      toast({ variant: "destructive", title: "Scan failed", description: "Could not reach the explorer. Try again." });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Scan failed",
+        description: error instanceof Error ? error.message : "Could not reach the token indexer. Try again.",
+      });
     } finally {
       setScanning(false);
     }
@@ -797,6 +809,7 @@ function EvmChainRow({
       balanceSlot={balanceSlot}
       onReceive={onReceive}
       onImport={onImport}
+      onConnect={onConnect}
       expandable={!!evmAddress}
       expanded={expanded}
       onToggleExpand={() => setExpanded(e => !e)}
@@ -808,13 +821,14 @@ function EvmChainRow({
 // ─── Native (non-EVM) row ─────────────────────────────────────────────────────
 
 function NativeChainRow({
-  chain, chainAddr, quoteCurrency, onReceive, onImport, onSend,
+  chain, chainAddr, quoteCurrency, onReceive, onImport, onConnect, onSend,
 }: {
   chain: ChainRow;
   chainAddr: string | null;
   quoteCurrency: string;
   onReceive: () => void;
   onImport: () => void;
+  onConnect: () => void;
   onSend?: () => void;
 }) {
   const family = chain.family as any;
@@ -842,6 +856,7 @@ function NativeChainRow({
       balanceSlot={balanceSlot}
       onReceive={onReceive}
       onImport={onImport}
+      onConnect={onConnect}
       onSend={onSend}
     />
   );
@@ -851,7 +866,7 @@ function NativeChainRow({
 
 function ChainBalanceRow({
   chain, address, evmAddress, network, derived, quoteCurrency,
-  onReceive, onImport, onAddToken, onSendToken, onTokenReceive, onSendBsv, onSendChain,
+  onReceive, onImport, onConnect, onAddToken, onSendToken, onTokenReceive, onSendBsv, onSendChain,
 }: {
   chain: ChainRow;
   address: string | null;
@@ -861,6 +876,7 @@ function ChainBalanceRow({
   quoteCurrency: string;
   onReceive: (chain: ChainRow) => void;
   onImport:  (chain: ChainRow) => void;
+  onConnect: (chain: ChainRow) => void;
   onAddToken: (chainId: number) => void;
   onSendToken: (chainId: number, symbol: string) => void;
   onTokenReceive: (symbol: string, chainName: string, address: string) => void;
@@ -870,6 +886,7 @@ function ChainBalanceRow({
   const chainAddr    = addressForChain(chain, evmAddress, address, network, derived);
   const handleReceive = () => onReceive(chain);
   const handleImport  = () => onImport(chain);
+  const handleConnect = () => onConnect(chain);
 
   if (chain.family === "evm") {
     return (
@@ -879,6 +896,7 @@ function ChainBalanceRow({
         quoteCurrency={quoteCurrency}
         onReceive={handleReceive}
         onImport={handleImport}
+        onConnect={handleConnect}
         onAddToken={onAddToken}
         onSendToken={onSendToken}
         onTokenReceive={onTokenReceive}
@@ -901,6 +919,7 @@ function ChainBalanceRow({
       quoteCurrency={quoteCurrency}
       onReceive={handleReceive}
       onImport={handleImport}
+      onConnect={handleConnect}
       onSend={handleSend}
     />
   );
@@ -934,6 +953,9 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
     setInternalLtcAddress, setInternalDogeAddress,
   } = useWalletStore();
   const openWalletModal = useWalletModalStore(s => s.open);
+  const openHandCashForLink = useWalletModalStore(s => s.openHandCashForLink);
+  const bitcoinAccount = useAppKitAccount({ namespace: "bip122" });
+  const solanaAccount = useAppKitAccount({ namespace: "solana" });
   const [, navigate]   = useLocation();
   const { toast }      = useToast();
 
@@ -1010,6 +1032,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   const [copied, setCopied]                   = useState(false);
   const [refreshing, setRefreshing]           = useState(false);
   const [importChain, setImportChain]         = useState<ChainRow | null>(null);
+  const [pendingConnectFamily, setPendingConnectFamily] = useState<"btc" | "solana" | null>(null);
   const [addTokenChainId, setAddTokenChainId] = useState<number | null>(null);
   const [bsvSend, setBsvSend] = useState<{ open: boolean; addr: string }>({ open: false, addr: "" });
 
@@ -1047,7 +1070,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
     tron: "tron", xrp: "xrp", ltc: "ltc", doge: "doge",
   };
 
-  const handleImportSave = (chain: ImportChain, importedAddr: string) => {
+  const handleImportSave = useCallback((chain: ImportChain, importedAddr: string) => {
     if (!derivedKey) return;
     const field = familyToField[chain.family];
     if (!field) return;
@@ -1071,6 +1094,103 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       title: `${chain.name} address linked`,
       description: `${importedAddr.slice(0, 14)}…`,
     });
+  }, [
+    derivedKey, setInternalBsvAddress, setInternalBtcAddress, setInternalBchAddress,
+    setInternalSolAddress, setInternalTronAddress, setInternalXrpAddress,
+    setInternalLtcAddress, setInternalDogeAddress, toast,
+  ]);
+
+  useEffect(() => {
+    if (!derivedKey || !pendingConnectFamily) return;
+    const account = pendingConnectFamily === "btc" ? bitcoinAccount : solanaAccount;
+    if (!account.isConnected || !account.address) return;
+    const chain = CHAINS.find(item => item.family === pendingConnectFamily);
+    if (!chain) return;
+    handleImportSave(chain, account.address);
+    setPendingConnectFamily(null);
+  }, [
+    bitcoinAccount.address, bitcoinAccount.isConnected,
+    solanaAccount.address, solanaAccount.isConnected,
+    pendingConnectFamily, derivedKey, handleImportSave,
+  ]);
+
+  const handleConnectChain = async (chain: ChainRow) => {
+    if (chain.family === "evm") {
+      openReownModal("eip155");
+      return;
+    }
+
+    if (chain.family === "btc" || chain.family === "solana") {
+      setPendingConnectFamily(chain.family);
+      openReownModal(chain.family === "btc" ? "bip122" : "solana");
+      return;
+    }
+
+    if (chain.family === "bsv") {
+      const profile = useHandCashStore.getState().profile;
+      if (profile?.handle) {
+        try {
+          const response = await fetch(
+            `${API_BASE}/handcash/resolve-handle?handle=${encodeURIComponent(profile.handle)}`,
+          );
+          const result = await response.json().catch(() => ({}));
+          if (response.ok && typeof result.address === "string" && result.address) {
+            handleImportSave(chain, result.address);
+            return;
+          }
+          toast({ title: "Could not resolve the HandCash BSV address", description: "You can link a public BSV address instead." });
+          setImportChain(chain);
+        } catch {
+          toast({ title: "Could not reach HandCash", description: "Link a public BSV address instead." });
+          setImportChain(chain);
+        }
+      } else {
+        openHandCashForLink();
+      }
+      return;
+    }
+
+    if (chain.family === "tron") {
+      type TronWallet = {
+        request?: (args: { method: string }) => Promise<unknown>;
+        tronWeb?: { defaultAddress?: { base58?: string } | false };
+      };
+      const tronWindow = window as Window & { tron?: TronWallet; tronLink?: TronWallet };
+      const provider = tronWindow.tron ?? tronWindow.tronLink;
+      if (!provider?.request) {
+        toast({
+          title: "No TRON wallet detected",
+          description: "Open this page in a TRON wallet browser or link a public address.",
+        });
+        setImportChain(chain);
+        return;
+      }
+
+      try {
+        const response = await provider.request({ method: "eth_requestAccounts" });
+        const accounts = Array.isArray(response) ? response : [];
+        const defaultAddress = provider.tronWeb?.defaultAddress;
+        const address = accounts.find((item): item is string => typeof item === "string")
+          ?? (defaultAddress && typeof defaultAddress === "object" ? defaultAddress.base58 : undefined);
+        if (!address || !/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(address)) {
+          toast({ title: "TRON wallet did not return an address", description: "Try again or link a public TRON address." });
+          return;
+        }
+        handleImportSave(chain, address);
+      } catch (error) {
+        toast({
+          title: "TRON wallet connection was not completed",
+          description: error instanceof Error ? error.message : "Approve the connection in your wallet and try again.",
+        });
+      }
+      return;
+    }
+
+    toast({
+      title: `No direct ${chain.name} connector is configured`,
+      description: "Link the public address from that chain's wallet. Never paste a recovery phrase.",
+    });
+    setImportChain(chain);
   };
 
   const handleImportRemove = (chain: ImportChain) => {
@@ -1411,6 +1531,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
                 }
               }}
               onImport={(chain) => setImportChain(chain)}
+              onConnect={handleConnectChain}
               onAddToken={(chainId) => setAddTokenChainId(chainId)}
               onSendToken={(chainId, symbol) => setSendTokenConfig({ chainId, symbol })}
               onTokenReceive={(symbol, chainName, addr) => setTokenReceive({ symbol, chainName, address: addr })}
@@ -1574,7 +1695,7 @@ function ActivityTab({
 }: {
   txs: OnChainTx[];
   loading: boolean;
-  evmAddress?: string;
+  evmAddress?: string | null;
 }) {
   const [chainFilter, setChainFilter] = useState<number | null>(null);
 
