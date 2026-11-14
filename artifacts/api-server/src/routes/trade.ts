@@ -306,6 +306,12 @@ router.post("/trade/wallet", async (req, res) => {
  *
  * Body: { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature }
  */
+router.use("/trade/wallet/settle", (_req, res) => {
+  res.status(503).json({
+    error: "On-chain swap settlement is temporarily unavailable. Wallet swaps must not be credited to the internal ledger without verified input and output transfers.",
+  });
+});
+
 router.post("/trade/wallet/settle", async (req, res) => {
   const { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature } = req.body ?? {};
 

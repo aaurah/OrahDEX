@@ -16,12 +16,13 @@ import { fetchHlMarkets } from "../lib/hyperliquid.js";
 const router: IRouter = Router();
 
 // Data-read routes (markets, funding-rates, ticker) are always available.
-// Trading routes (open/close/deposit) require FUTURES_ENABLED=true.
+// Trading stays closed until every mutation has signed intents and replay-safe
+// accounting. The previous environment switch alone was not authorization.
 const TRADING_PATHS = ["/futures/open", "/futures/close", "/futures/deposit", "/futures/positions"];
 router.use((req, res, next) => {
   const isTrading = TRADING_PATHS.some(p => req.path.startsWith(p));
-  if (isTrading && process.env.FUTURES_ENABLED !== "true") {
-    return res.status(503).json({ error: "Futures trading is not yet enabled." });
+  if (isTrading) {
+    return res.status(503).json({ error: "Futures trading is temporarily unavailable pending signed wallet authorization." });
   }
   return next();
 });
