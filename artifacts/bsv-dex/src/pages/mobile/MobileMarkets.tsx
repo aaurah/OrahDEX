@@ -24,6 +24,7 @@ import {
   UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { useMarketSearch } from "@/hooks/useStagedMarkets";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
 import { useZoraCoins } from "@/hooks/useZoraCoins";
 import { useBaseTokenList } from "@/hooks/useBaseTokenList";
@@ -263,6 +264,11 @@ function getCatRows(
 export function MobileMarkets() {
   const [, navigate] = useLocation();
   const [search, setSearch]       = useState("");
+  const {
+    results: serverSearchResults,
+    loading: serverSearchLoading,
+    error: serverSearchError,
+  } = useMarketSearch(search, { debounceMs: 300 });
   const [cat, setCat]             = useState<Cat>("usd");
   const [usdSub, setUsdSub]       = useState<UsdSub>("USDT");
   const [sortKey, setSortKey]     = useState<SortKey>("base");
@@ -412,7 +418,16 @@ export function MobileMarkets() {
 
   if (search) {
     const q = search.toUpperCase();
-    rows = globalRows.filter(m => m.base.includes(q) || m.symbol.includes(q));
+    const localMatches = globalRows.filter(m =>
+      m.base.includes(q) || m.quote.includes(q) || m.symbol.includes(q)
+    );
+    const localSymbols = new Set(localMatches.map(m => m.symbol));
+    const catalogMatches = serverSearchResults
+      .filter((m: any) => m.symbol && !localSymbols.has(m.symbol))
+      .map((m: any) => normalise(m));
+    rows = [...new Map(
+      [...localMatches, ...catalogMatches].map(m => [m.symbol, m])
+    ).values()];
   }
 
   rows = [...rows].sort((a, b) => {
@@ -589,7 +604,11 @@ export function MobileMarkets() {
           {/* ── Market list ── */}
           {rows.length === 0 ? (
             <div className="flex-1 flex items-center justify-center py-20 text-muted-foreground text-sm">
-              {cat === "favorites" ? "Star coins to add favorites" : search ? `No results for "${search}"` : "Loading…"}
+              {search && serverSearchLoading
+                ? "Searching all markets…"
+                : search && serverSearchError
+                  ? serverSearchError
+                  : cat === "favorites" ? "Star coins to add favorites" : search ? `No results for "${search}"` : "Loading…"}
             </div>
           ) : (
             <div>
@@ -607,6 +626,9 @@ export function MobileMarkets() {
                   onBuy={() => goTrade(m)}
                 />
               ))}
+              {search && serverSearchLoading && (
+                <div className="py-3 text-center text-xs text-muted-foreground">Searching all markets…</div>
+              )}
             </div>
           )}
         </>
