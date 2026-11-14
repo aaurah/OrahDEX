@@ -69,15 +69,18 @@ export function useStagedMarkets(opts?: Parameters<typeof useGetMarkets>[0]) {
 export function useMarketSearch(
   query: string,
   opts: { limit?: number; debounceMs?: number } = {},
-): { results: any[]; loading: boolean } {
+): { results: any[]; loading: boolean; error: string | null } {
   const limit      = opts.limit      ?? 100;
   const debounceMs = opts.debounceMs ?? 300;
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query.trim().toUpperCase();
-    if (!q) { setResults([]); setLoading(false); return; }
+    setResults([]);
+    setError(null);
+    if (!q) { setLoading(false); return; }
 
     setLoading(true);
     let controller: AbortController | null = null;
@@ -88,14 +91,22 @@ export function useMarketSearch(
         headers: { Accept: "application/json" },
         signal: controller.signal,
       })
-        .then(r => r.ok ? r.json() : { items: [] })
+        .then(r => {
+          if (!r.ok) throw new Error(`Market search failed (${r.status})`);
+          return r.json();
+        })
         .then((data: unknown) => {
           const payload = data as { items?: unknown[] };
-          setResults(Array.isArray(payload?.items) ? payload.items : []);
+          if (!Array.isArray(payload?.items)) throw new Error("Invalid market search response");
+          setResults(payload.items);
           setLoading(false);
         })
         .catch((err: unknown) => {
-          if ((err as any)?.name !== "AbortError") setLoading(false);
+          if ((err as any)?.name !== "AbortError") {
+            setResults([]);
+            setError("Market search is unavailable. Please try again.");
+            setLoading(false);
+          }
         });
     }, debounceMs);
 
