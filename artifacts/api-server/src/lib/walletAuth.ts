@@ -479,6 +479,7 @@ export function verifyExchangeSignature(
   walletAddress: string,
   nonce:         string,
   signature:     string,
+  intent:        { assetIn: string; assetOut: string; amountIn: string },
 ): void {
   const addr   = walletAddress.toLowerCase();
   const stored = exchangeNonces.get(addr);
@@ -495,6 +496,17 @@ export function verifyExchangeSignature(
       "Exchange nonce mismatch. " +
       "Use the nonce returned by POST /trade/exchange/challenge.",
     );
+  }
+
+  const expectedMessage = buildExchangeAuthMessage({
+    walletAddress,
+    assetIn: intent.assetIn,
+    assetOut: intent.assetOut,
+    amountIn: intent.amountIn,
+    nonce,
+  });
+  if (!timingSafeStringEqual(stored.message, expectedMessage)) {
+    throw new Error("Exchange challenge does not match the submitted assets and amount.");
   }
 
   // verifyEvmSignature throws on mismatch
@@ -861,6 +873,11 @@ export function buildOrderAuthMessage(params: {
   symbol:        string;
   side:          string;
   quantity:      string;
+  type?:         string;
+  price?:        string;
+  stopPrice?:    string;
+  chainId?:      string;
+  timeInForce?:  string;
   nonce:         string;
   expiry:        string;
 }): string {
@@ -870,6 +887,28 @@ export function buildOrderAuthMessage(params: {
     `Symbol: ${params.symbol}`,
     `Side: ${params.side}`,
     `Quantity: ${params.quantity}`,
+    `Type: ${params.type ?? ""}`,
+    `Price: ${params.price ?? ""}`,
+    `Stop price: ${params.stopPrice ?? ""}`,
+    `Chain ID: ${params.chainId ?? ""}`,
+    `Time in force: ${params.timeInForce ?? "GTC"}`,
+    `Nonce: ${params.nonce}`,
+    `Expiry: ${params.expiry}`,
+  ].join("\n");
+}
+
+export function buildOrderActionAuthMessage(params: {
+  walletAddress: string;
+  action:        string;
+  orderId:       string;
+  nonce:         string;
+  expiry:        string;
+}): string {
+  return [
+    "Authorize OrahDEX order action",
+    `Wallet: ${params.walletAddress}`,
+    `Action: ${params.action}`,
+    `Order ID: ${params.orderId}`,
     `Nonce: ${params.nonce}`,
     `Expiry: ${params.expiry}`,
   ].join("\n");
@@ -883,9 +922,10 @@ export function buildOrderAuthMessage(params: {
 interface BsvOrderNonce {
   nonce:    string;
   message:  string;
-  symbol:   string;
-  side:     string;
-  quantity: string;
+  intent:   {
+    symbol: string; side: string; quantity: string; type: string;
+    price: string; stopPrice: string; chainId: string; timeInForce: string; expiry: string;
+  };
   expiresAt: number;
 }
 
@@ -908,6 +948,11 @@ export function issueBsvOrderChallenge(params: {
   symbol:        string;
   side:          string;
   quantity:      string;
+  type:          string;
+  price:         string;
+  stopPrice:     string;
+  chainId:       string;
+  timeInForce:   string;
   nonce:         string;
   expiry:        string;
 }): { nonce: string; message: string } {
@@ -919,6 +964,11 @@ export function issueBsvOrderChallenge(params: {
     symbol:        params.symbol,
     side:          params.side,
     quantity:      params.quantity,
+    type:          params.type,
+    price:         params.price,
+    stopPrice:     params.stopPrice,
+    chainId:       params.chainId,
+    timeInForce:   params.timeInForce,
     nonce,
     expiry:        params.expiry,
   });
@@ -928,9 +978,11 @@ export function issueBsvOrderChallenge(params: {
   bsvOrderNonces.set(`bsv:${params.walletAddress.toLowerCase()}`, {
     nonce,
     message,
-    symbol:   params.symbol,
-    side:     params.side,
-    quantity: params.quantity,
+    intent: {
+      symbol: params.symbol, side: params.side, quantity: params.quantity,
+      type: params.type, price: params.price, stopPrice: params.stopPrice,
+      chainId: params.chainId, timeInForce: params.timeInForce, expiry: params.expiry,
+    },
     expiresAt: Date.now() + BSV_ORDER_NONCE_TTL_MS,
   });
 
@@ -939,14 +991,17 @@ export function issueBsvOrderChallenge(params: {
 
 /**
  * Verify a BSV order challenge signature.
- * Binds to (symbol, side, quantity) to prevent cross-intent replay.
+ * Binds to the complete order intent to prevent cross-intent replay.
  * Consumes the nonce on success (single-use).
  * Throws on any failure.
  */
 export function verifyBsvOrderSignature(
   walletAddress:   string,
   signatureBase64: string,
-  expectedParams: { symbol: string; side: string; quantity: string },
+  expectedParams: {
+    symbol: string; side: string; quantity: string; type: string; price: string;
+    stopPrice: string; chainId: string; timeInForce: string; expiry: string;
+  },
 ): void {
   const key    = `bsv:${walletAddress.toLowerCase()}`;
   const stored = bsvOrderNonces.get(key);
@@ -958,14 +1013,10 @@ export function verifyBsvOrderSignature(
     );
   }
 
-  if (stored.symbol !== expectedParams.symbol) {
-    throw new Error(`BSV order challenge symbol mismatch: expected ${stored.symbol}, got ${expectedParams.symbol}.`);
-  }
-  if (stored.side !== expectedParams.side) {
-    throw new Error(`BSV order challenge side mismatch: expected ${stored.side}, got ${expectedParams.side}.`);
-  }
-  if (stored.quantity !== expectedParams.quantity) {
-    throw new Error(`BSV order challenge quantity mismatch.`);
+  for (const key of Object.keys(expectedParams) as Array<keyof typeof expectedParams>) {
+    if (stored.intent[key] !== expectedParams[key]) {
+      throw new Error(`BSV order challenge ${key} mismatch.`);
+    }
   }
 
   verifyBsvMessageSignature(walletAddress, stored.message, signatureBase64);
@@ -977,9 +1028,10 @@ export function verifyBsvOrderSignature(
 interface SolOrderNonce {
   nonce:     string;
   message:   string;
-  symbol:    string;
-  side:      string;
-  quantity:  string;
+  intent:    {
+    symbol: string; side: string; quantity: string; type: string;
+    price: string; stopPrice: string; chainId: string; timeInForce: string; expiry: string;
+  };
   expiresAt: number;
 }
 
@@ -1001,6 +1053,11 @@ export function issueSolOrderChallenge(params: {
   symbol:        string;
   side:          string;
   quantity:      string;
+  type:          string;
+  price:         string;
+  stopPrice:     string;
+  chainId:       string;
+  timeInForce:   string;
   nonce:         string;
   expiry:        string;
 }): { nonce: string; message: string } {
@@ -1011,6 +1068,11 @@ export function issueSolOrderChallenge(params: {
     symbol:        params.symbol,
     side:          params.side,
     quantity:      params.quantity,
+    type:          params.type,
+    price:         params.price,
+    stopPrice:     params.stopPrice,
+    chainId:       params.chainId,
+    timeInForce:   params.timeInForce,
     nonce,
     expiry:        params.expiry,
   });
@@ -1018,9 +1080,11 @@ export function issueSolOrderChallenge(params: {
   solOrderNonces.set(`sol:${params.walletAddress.toLowerCase()}`, {
     nonce,
     message,
-    symbol:   params.symbol,
-    side:     params.side,
-    quantity: params.quantity,
+    intent: {
+      symbol: params.symbol, side: params.side, quantity: params.quantity,
+      type: params.type, price: params.price, stopPrice: params.stopPrice,
+      chainId: params.chainId, timeInForce: params.timeInForce, expiry: params.expiry,
+    },
     expiresAt: Date.now() + SOL_ORDER_NONCE_TTL_MS,
   });
 
@@ -1029,13 +1093,16 @@ export function issueSolOrderChallenge(params: {
 
 /**
  * Verify a Solana order challenge signature.
- * Binds to (symbol, side, quantity) to prevent cross-intent replay.
+ * Binds to the complete order intent to prevent cross-intent replay.
  * Consumes the nonce on success (single-use).
  */
 export function verifySolOrderSignature(
   walletAddress:   string,
   signatureBase64: string,
-  expectedParams: { symbol: string; side: string; quantity: string },
+  expectedParams: {
+    symbol: string; side: string; quantity: string; type: string; price: string;
+    stopPrice: string; chainId: string; timeInForce: string; expiry: string;
+  },
 ): void {
   const key    = `sol:${walletAddress.toLowerCase()}`;
   const stored = solOrderNonces.get(key);
@@ -1047,14 +1114,10 @@ export function verifySolOrderSignature(
     );
   }
 
-  if (stored.symbol !== expectedParams.symbol) {
-    throw new Error(`Solana order challenge symbol mismatch.`);
-  }
-  if (stored.side !== expectedParams.side) {
-    throw new Error(`Solana order challenge side mismatch.`);
-  }
-  if (stored.quantity !== expectedParams.quantity) {
-    throw new Error(`Solana order challenge quantity mismatch.`);
+  for (const key of Object.keys(expectedParams) as Array<keyof typeof expectedParams>) {
+    if (stored.intent[key] !== expectedParams[key]) {
+      throw new Error(`Solana order challenge ${key} mismatch.`);
+    }
   }
 
   verifySolanaSignature(walletAddress, stored.message, signatureBase64);
