@@ -17,9 +17,9 @@ import { settleEscrowMatch, isEscrowChain, findEscrowChain, ESCROW_ADDRESSES } f
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
-import { attemptLeAutoRoute } from "../lib/leAutoRoute.js";
+import { requireAdminToken } from "../middleware/adminAuth.js";
 import {
-  buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
+  buildOrderAuthMessage, buildOrderActionAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
   verifyBsvWithdrawSignature, verifySolWithdrawSignature,
   issueBsvOrderChallenge, verifyBsvOrderSignature,
   issueSolOrderChallenge, verifySolOrderSignature,
@@ -44,15 +44,41 @@ function detectIsEvmAddress(addr: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(addr);
 }
 
-/** Detect BSV / legacy Bitcoin / Bitcoin Cash addresses (base58 P2PKH / P2SH). */
+function decodeBase58(address: string): Uint8Array | null {
+  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  let value = 0n;
+  for (const char of address) {
+    const digit = alphabet.indexOf(char);
+    if (digit < 0) return null;
+    value = value * 58n + BigInt(digit);
+  }
+  const bytes: number[] = [];
+  while (value > 0n) {
+    bytes.unshift(Number(value & 0xffn));
+    value >>= 8n;
+  }
+  for (const char of address) {
+    if (char !== "1") break;
+    bytes.unshift(0);
+  }
+  return Uint8Array.from(bytes);
+}
+
+/** Detect Base58Check BSV P2PKH/P2SH addresses, not arbitrary base58 strings. */
 function detectIsBsvAddress(addr: string): boolean {
-  // BSV mainnet: 1xxx (P2PKH) or 3xxx (P2SH) or bchtest / bitcoincash prefixed
-  return /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(addr);
+  const decoded = decodeBase58(addr);
+  if (!decoded || decoded.length !== 25 || (decoded[0] !== 0 && decoded[0] !== 5)) return false;
+  const payload = Buffer.from(decoded.subarray(0, 21));
+  const checksum = Buffer.from(decoded.subarray(21));
+  const expected = crypto.createHash("sha256")
+    .update(crypto.createHash("sha256").update(payload).digest())
+    .digest().subarray(0, 4);
+  return crypto.timingSafeEqual(checksum, expected);
 }
 
 /** Detect Solana public keys (base58, 32–44 chars, no O/0/I/l). */
 function detectIsSolAddress(addr: string): boolean {
-  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) && !addr.startsWith("0x");
+  return addr.length >= 32 && addr.length <= 44 && decodeBase58(addr)?.length === 32;
 }
 
 /**
@@ -209,31 +235,43 @@ router.get("/orders", async (req, res) => {
 // and sign it before placing an order.  This prevents a withdrawal challenge
 // from being replayed as an order signature.
 router.post("/orders/bsv-challenge", (req, res) => {
-  const { walletAddress, symbol, side, quantity, nonce, expiry } = req.body;
-  if (!walletAddress || !symbol || !side || !quantity || !nonce || !expiry) {
-    res.status(400).json({ error: "walletAddress, symbol, side, quantity, nonce, and expiry are required" });
+  const { walletAddress, symbol, side, quantity, type, price, stopPrice, chainId, timeInForce, nonce, expiry } = req.body;
+  if (!walletAddress || !symbol || !side || !quantity || !type || !timeInForce || !nonce || !expiry) {
+    res.status(400).json({ error: "wallet and complete order intent fields are required" });
     return;
   }
   if (!detectIsBsvAddress(walletAddress)) {
     res.status(400).json({ error: "walletAddress must be a BSV P2PKH/P2SH address" });
     return;
   }
-  const challenge = issueBsvOrderChallenge({ walletAddress, symbol, side, quantity, nonce, expiry });
+  const challenge = issueBsvOrderChallenge({
+    walletAddress, symbol, side, quantity, type,
+    price: price == null ? "" : String(price),
+    stopPrice: stopPrice == null ? "" : String(stopPrice),
+    chainId: chainId == null ? "" : String(chainId),
+    timeInForce, nonce, expiry,
+  });
   res.json(challenge);
 });
 
 // ── POST /orders/sol-challenge — Issue a Solana order challenge ───────────────
 router.post("/orders/sol-challenge", (req, res) => {
-  const { walletAddress, symbol, side, quantity, nonce, expiry } = req.body;
-  if (!walletAddress || !symbol || !side || !quantity || !nonce || !expiry) {
-    res.status(400).json({ error: "walletAddress, symbol, side, quantity, nonce, and expiry are required" });
+  const { walletAddress, symbol, side, quantity, type, price, stopPrice, chainId, timeInForce, nonce, expiry } = req.body;
+  if (!walletAddress || !symbol || !side || !quantity || !type || !timeInForce || !nonce || !expiry) {
+    res.status(400).json({ error: "wallet and complete order intent fields are required" });
     return;
   }
   if (!detectIsSolAddress(walletAddress)) {
     res.status(400).json({ error: "walletAddress must be a Solana base58 address" });
     return;
   }
-  const challenge = issueSolOrderChallenge({ walletAddress, symbol, side, quantity, nonce, expiry });
+  const challenge = issueSolOrderChallenge({
+    walletAddress, symbol, side, quantity, type,
+    price: price == null ? "" : String(price),
+    stopPrice: stopPrice == null ? "" : String(stopPrice),
+    chainId: chainId == null ? "" : String(chainId),
+    timeInForce, nonce, expiry,
+  });
   res.json(challenge);
 });
 
@@ -292,6 +330,15 @@ router.post("/orders", async (req, res) => {
       res.status(400).json({ error: "Limit orders require a valid price" });
       return;
     }
+    const timeInForce = String(body.timeInForce ?? (type === "market" ? "IOC" : "GTC")).toUpperCase();
+    if (timeInForce !== "GTC" && timeInForce !== "IOC") {
+      res.status(400).json({ error: "Only GTC and IOC time-in-force values are supported" });
+      return;
+    }
+    if (type === "market" && timeInForce !== "IOC") {
+      res.status(400).json({ error: "Market orders must use IOC to prevent unintended resting orders" });
+      return;
+    }
 
     const id            = crypto.randomUUID();
     const price         = rawPrice;
@@ -312,15 +359,13 @@ router.post("/orders", async (req, res) => {
     const isEvmAddress = detectIsEvmAddress(body.walletAddress);
     const isBsvAddress = detectIsBsvAddress(body.walletAddress);
     const isSolAddress = detectIsSolAddress(body.walletAddress);
+    if (!isEvmAddress && !isBsvAddress && !isSolAddress) {
+      res.status(400).json({ error: "Unsupported wallet address format for signed spot orders" });
+      return;
+    }
 
-    // Derive networkType from address format when not explicitly provided.
-    // Detection order matters: Solana addresses are base58 like BSV, so Sol must
-    // be checked before BSV; EVM is unambiguous (0x prefix + 40 hex chars).
-    const networkType = body.networkType ?? (
-      isEvmAddress ? "evm" :
-      isSolAddress ? "sol" :
-      "bsv"
-    );
+    // Derive the network from the decoded address format; never trust a client label.
+    const networkType = isEvmAddress ? "evm" : isBsvAddress ? "bsv" : "sol";
 
     // Any recognized chain wallet format must be treated as external so clients
     // cannot spoof walletSource to bypass signature verification.
@@ -330,6 +375,7 @@ router.post("/orders", async (req, res) => {
       : "orah";
 
     const isExternalWallet = walletSource === "external";
+    const signedChainId = body.chainId == null ? "" : String(parseInt(String(body.chainId), 10));
 
     // ── Verify wallet ownership for external wallets ─────────────────────────
     // The signature must have been produced by the private key of walletAddress
@@ -385,6 +431,11 @@ router.post("/orders", async (req, res) => {
           symbol:        symbol,
           side:          body.side,
           quantity:      quantity.toString(),
+          type,
+          price:         rawPrice == null ? "" : rawPrice.toString(),
+          stopPrice:     stopPrice == null ? "" : stopPrice.toString(),
+          chainId:       signedChainId,
+          timeInForce,
           nonce:         orderNonce,
           expiry:        orderExpiry,
         });
@@ -413,6 +464,12 @@ router.post("/orders", async (req, res) => {
             symbol,
             side,
             quantity: quantity.toString(),
+            type,
+            price: rawPrice == null ? "" : rawPrice.toString(),
+            stopPrice: stopPrice == null ? "" : stopPrice.toString(),
+            chainId: signedChainId,
+            timeInForce,
+            expiry: orderExpiry,
           });
         } catch (authErr: any) {
           res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
@@ -436,6 +493,12 @@ router.post("/orders", async (req, res) => {
             symbol,
             side,
             quantity: quantity.toString(),
+            type,
+            price: rawPrice == null ? "" : rawPrice.toString(),
+            stopPrice: stopPrice == null ? "" : stopPrice.toString(),
+            chainId: signedChainId,
+            timeInForce,
+            expiry: orderExpiry,
           });
         } catch (authErr: any) {
           res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
@@ -541,7 +604,7 @@ router.post("/orders", async (req, res) => {
       total:             total != null ? total.toFixed(18) : undefined,
       fee:               fee.toFixed(18),
       feeAsset:          symbol.split("/")[1] || "USDT",
-      timeInForce:       body.timeInForce || "GTC",
+       timeInForce,
       txid:              null as string | null,
       // EVM signature from MetaMask personal_sign — proves the trader authorised this order
       signedTx:          body.evmSignature || body.signedTx || null,
@@ -1425,8 +1488,27 @@ router.get("/orders/:orderId", async (req, res) => {
 router.delete("/orders/:orderId", async (req, res) => {
   try {
     const body = req.body;
-    if (!body.walletAddress) {
-      res.status(400).json({ error: "walletAddress is required" });
+    if (!detectIsEvmAddress(body.walletAddress) || !body.signature || !body.nonce || !body.expiry) {
+      res.status(401).json({ error: "A valid EVM wallet, signed cancellation, nonce, and expiry are required" });
+      return;
+    }
+    const expiry = parseInt(String(body.expiry), 10);
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (!Number.isFinite(expiry) || expiry <= nowSec || expiry > nowSec + 5 * 60) {
+      res.status(401).json({ error: "Cancellation signature is expired or has an invalid expiry" });
+      return;
+    }
+    const actionMessage = buildOrderActionAuthMessage({
+      walletAddress: body.walletAddress,
+      action: "cancel",
+      orderId: req.params.orderId,
+      nonce: String(body.nonce),
+      expiry: String(expiry),
+    });
+    try {
+      verifyEvmSignature(body.walletAddress, actionMessage, String(body.signature));
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
       return;
     }
 
@@ -1474,7 +1556,7 @@ router.delete("/orders/:orderId", async (req, res) => {
       const lockAmount = side === "buy" ? lockPrice * remaining : remaining;
 
       // Step 3: Unlock reserved balance in the same transaction
-      if (lockAmount > 0 && lockAsset) {
+      if (lockAmount > 0 && lockAsset && String(orderRow.funding_ref ?? "").startsWith("ledger:")) {
         const wallet     = String(orderRow.wallet_address ?? "");
         const normWallet = /^0x/i.test(wallet) ? wallet.toLowerCase() : wallet;
         await client.query(
@@ -1525,7 +1607,7 @@ router.delete("/orders/:orderId", async (req, res) => {
 // This recovers funds that were orphaned when a cancel request previously
 // failed silently (e.g. wallet-address mismatch across BSV/EVM networks).
 // Accepts optional `altAddress` for cross-network Orah wallet users.
-router.post("/orders/recover-locked", async (req, res) => {
+router.post("/orders/recover-locked", requireAdminToken, async (req, res) => {
   try {
     const { walletAddress, altAddress } = req.body ?? {};
     if (!walletAddress) {

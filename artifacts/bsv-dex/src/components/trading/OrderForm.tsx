@@ -27,6 +27,7 @@ import {
 import { QRCodeCanvas } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
+import { buildOrderIntentMessage } from "@/lib/tradeAuth";
 import {
   CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
   getAssetNativeChain, walletCanReceive,
@@ -879,16 +880,20 @@ export function OrderForm({
       orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
       orderExpiry = String(Math.floor(Date.now() / 1000) + 5 * 60);
 
-      // Canonical message — must mirror buildOrderAuthMessage() in walletAuth.ts
-      const orderMsg = [
-        "Authorize OrahDEX order",
-        `Wallet: ${address}`,
-        `Symbol: ${symbol}`,
-        `Side: ${side}`,
-        `Quantity: ${parseFloat(amount).toString()}`,
-        `Nonce: ${orderNonce}`,
-        `Expiry: ${orderExpiry}`,
-      ].join("\n");
+      const timeInForce = type === "market" ? "IOC" : "GTC";
+      const orderMsg = buildOrderIntentMessage({
+        walletAddress: address,
+        symbol,
+        side,
+        quantity: parseFloat(amount).toString(),
+        type,
+        price: type !== "market" ? parseFloat(price).toString() : "",
+        stopPrice: type === "stop" ? parseFloat(stopPrice).toString() : "",
+        chainId: isEvm && chainId ? String(chainId) : "",
+        timeInForce,
+        nonce: orderNonce,
+        expiry: orderExpiry,
+      });
 
       try {
         setSigningOrder(true);
@@ -973,6 +978,7 @@ export function OrderForm({
           price:          type !== "market" ? parseFloat(price) : undefined,
           stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
           quantity:       parseFloat(amount),
+          timeInForce:    type === "market" ? "IOC" : "GTC",
           networkType:    isEvm ? "evm" : network === 'bch' ? "bch" : network === 'btc' ? "btc" : network === 'sol' ? "sol" : "bsv",
           walletSource:   (isOrahWallet && !isEvm) ? "orah" : "external",
           reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,

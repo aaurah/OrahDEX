@@ -23,6 +23,7 @@ import { db as _db, pool } from "@workspace/db";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { requireAdminToken } from "../middleware/adminAuth.js";
 import {
   buildExchangeAuthMessage,
   verifyEvmSignature,
@@ -569,11 +570,16 @@ router.post("/trade/exchange/challenge", (req, res) => {
     res.status(400).json({ error: "assetIn, assetOut, amountIn are required" });
     return;
   }
+  const parsedAmountIn = parseFloat(amountIn);
+  if (!Number.isFinite(parsedAmountIn) || parsedAmountIn <= 0) {
+    res.status(400).json({ error: "amountIn must be a positive finite number" });
+    return;
+  }
   const challenge = issueExchangeChallenge({
     walletAddress,
-    assetIn:  assetIn.toUpperCase(),
-    assetOut: assetOut.toUpperCase(),
-    amountIn: String(parseFloat(amountIn)),
+    assetIn:  assetIn.trim().toUpperCase(),
+    assetOut: assetOut.trim().toUpperCase(),
+    amountIn: parsedAmountIn.toString(),
   });
   res.json(challenge);
 });
@@ -626,29 +632,16 @@ router.post("/trade/exchange", async (req, res) => {
   const signature = body.signature;
   const nonce = body.nonce;
 
-  if (!walletAddress) {
-    res.status(400).json({ error: "walletAddress is required" });
+  if (typeof walletAddress !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+    res.status(400).json({ error: "A valid EVM walletAddress is required" });
     return;
   }
 
-  // Require wallet signature for EVM wallets to prove the caller owns walletAddress.
-  // The signature must have been produced over the server-issued challenge from
-  // POST /trade/exchange/challenge — this enforces single-use nonces and prevents replay.
-  if (walletAddress.startsWith("0x")) {
-    if (!signature || !nonce) {
-      res.status(401).json({
-        error: "signature and nonce are required for EVM wallet exchange swaps. " +
-               "Request a challenge via POST /trade/exchange/challenge, sign the returned message, " +
-               "and include signature + nonce in this request.",
-      });
-      return;
-    }
-    try {
-      verifyExchangeSignature(walletAddress, String(nonce), signature);
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
-    }
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: "signature and nonce are required. Request and sign a challenge for the exact swap parameters.",
+    });
+    return;
   }
 
   try {
@@ -686,6 +679,17 @@ router.post("/trade/exchange", async (req, res) => {
 
     if (!assetIn || !assetOut || !Number.isFinite(amtIn) || amtIn <= 0) {
       res.status(400).json({ error: "walletAddress, assetIn, assetOut, amountIn are required" });
+      return;
+    }
+
+    try {
+      verifyExchangeSignature(walletAddress, String(nonce), String(signature), {
+        assetIn,
+        assetOut,
+        amountIn: amtIn.toString(),
+      });
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
       return;
     }
 
@@ -750,24 +754,14 @@ router.post("/trade/exchange/advanced", async (req, res) => {
   const normalizedSide = String(side ?? "").toLowerCase();
   const qty = parseFloat(String(quantity));
 
-  if (!walletAddress || !pair || (normalizedSide !== "buy" && normalizedSide !== "sell") || !Number.isFinite(qty) || qty <= 0) {
-    res.status(400).json({ error: "walletAddress, symbol, side (buy|sell), quantity are required" });
+  if (typeof walletAddress !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress) ||
+      !pair || (normalizedSide !== "buy" && normalizedSide !== "sell") || !Number.isFinite(qty) || qty <= 0) {
+    res.status(400).json({ error: "A valid EVM wallet, symbol, side (buy|sell), and positive quantity are required" });
     return;
   }
-
-  if (String(walletAddress).startsWith("0x")) {
-    if (!signature || !nonce) {
-      res.status(401).json({
-        error: "signature and nonce are required for EVM wallet exchange swaps. Request a challenge via POST /trade/exchange/challenge and include signature + nonce.",
-      });
-      return;
-    }
-    try {
-      verifyExchangeSignature(String(walletAddress), String(nonce), String(signature));
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
-    }
+  if (!signature || !nonce) {
+    res.status(401).json({ error: "signature and nonce are required for the exact exchange trade." });
+    return;
   }
 
   try {
@@ -790,6 +784,17 @@ router.post("/trade/exchange/advanced", async (req, res) => {
       }
       amountIn = qty / (rate * (1 - FEE_PCT));
       if (minOut == null) minOut = qty * 0.999;
+    }
+
+    try {
+      verifyExchangeSignature(String(walletAddress), String(nonce), String(signature), {
+        assetIn,
+        assetOut,
+        amountIn: amountIn.toString(),
+      });
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
+      return;
     }
 
     const trade = await executeExchangeTrade({
@@ -831,7 +836,7 @@ router.post("/trade/exchange/advanced", async (req, res) => {
 });
 
 // ── POST /trade/exchange/mint ───────────────────────────────────────────────────
-router.post("/trade/exchange/mint", async (req, res) => {
+router.post("/trade/exchange/mint", requireAdminToken, async (req, res) => {
   const walletAddress = req.body?.walletAddress;
   const asset = normalizeAssetSymbol(req.body?.asset) ?? "USDC";
   const amount = parseFloat(String(req.body?.amount ?? "NaN"));
@@ -859,7 +864,7 @@ router.post("/trade/exchange/mint", async (req, res) => {
 });
 
 // ── POST /trade/exchange/burn ───────────────────────────────────────────────────
-router.post("/trade/exchange/burn", async (req, res) => {
+router.post("/trade/exchange/burn", requireAdminToken, async (req, res) => {
   const walletAddress = req.body?.walletAddress;
   const asset = normalizeAssetSymbol(req.body?.asset) ?? "USDC";
   const amount = parseFloat(String(req.body?.amount ?? "NaN"));
