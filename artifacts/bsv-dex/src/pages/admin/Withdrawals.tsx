@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useSendTransaction, useWaitForTransactionReceipt } from "wagmi";
 import { parseEther } from "viem";
 import { adminFetch } from "@/lib/adminFetch";
+import { useToast } from "@/hooks/use-toast";
 
 const API_BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
 
@@ -416,6 +417,7 @@ function BalanceAdjustPanel() {
 
 export function AdminWithdrawals() {
   const qc = useQueryClient();
+  const { toast } = useToast();
   const [filter, setFilter] = useState<"all" | "pending" | "processing" | "completed" | "cancelled">("all");
   const [txidModal, setTxidModal] = useState<string | null>(null);
   const [cancelModal, setCancelModal] = useState<string | null>(null);
@@ -431,16 +433,23 @@ export function AdminWithdrawals() {
   });
 
   const patch = useMutation({
-    mutationFn: async ({ id, status, txid, note }: { id: string; status: string; txid?: string; note?: string }) => {
+    mutationFn: async ({ id, status, txid, note, confirmNoBroadcast }: {
+      id: string; status: string; txid?: string; note?: string; confirmNoBroadcast?: boolean;
+    }) => {
       const r = await adminFetch(`/api/withdrawals/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, txid, note }),
+        body: JSON.stringify({ status, txid, note, confirmNoBroadcast }),
       });
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error ?? "Request failed"); }
       return r.json();
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-withdrawals"] }),
+    onError: (error: Error) => toast({
+      title: "Withdrawal update failed",
+      description: error.message,
+      variant: "destructive",
+    }),
   });
 
   const retryAll = useMutation({
@@ -553,7 +562,8 @@ export function AdminWithdrawals() {
                     const StatusIcon = sm.icon;
                     const isPending = w.status === "pending";
                     const isProcessing = w.status === "processing";
-                    const isActionable = isPending || isProcessing;
+                    const isActionable = isPending;
+                    const canReview = isPending || isProcessing;
                     return (
                       <tr key={w.id} className={cn("border-b border-border/50 hover:bg-muted/20", i % 2 === 0 ? "" : "bg-muted/5")}>
                         <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
@@ -586,6 +596,12 @@ export function AdminWithdrawals() {
                             <StatusIcon className={cn("w-3 h-3", w.status === "processing" && "animate-spin")} />
                             {sm.label}
                           </span>
+                          {isProcessing && (
+                            <div className="max-w-[190px] mt-1 text-[10px] text-amber-400">
+                              <span className="block">Check the chain before retrying or refunding.</span>
+                              {w.note && <span className="block truncate text-muted-foreground" title={w.note}>{w.note}</span>}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           {w.txid ? (
@@ -620,7 +636,7 @@ export function AdminWithdrawals() {
                                 onComplete={txid => patch.mutate({ id: w.id, status: "completed", txid })}
                               />
                             )}
-                            {isActionable && (
+                            {canReview && (
                               <button
                                 disabled={patch.isPending}
                                 onClick={() => setTxidModal(w.id)}
@@ -629,7 +645,7 @@ export function AdminWithdrawals() {
                                 Complete
                               </button>
                             )}
-                            {isActionable && (
+                            {canReview && (
                               <button
                                 disabled={patch.isPending}
                                 onClick={() => setCancelModal(w.id)}
@@ -667,7 +683,21 @@ export function AdminWithdrawals() {
         <NoteModal
           id={cancelModal}
           onClose={() => setCancelModal(null)}
-          onSave={note => { patch.mutate({ id: cancelModal, status: "cancelled", note: note || undefined }); setCancelModal(null); }}
+          onSave={note => {
+            const row = withdrawals.find(w => w.id === cancelModal);
+            const processingNeedsCheck = row?.status === "processing";
+            if (
+              processingNeedsCheck &&
+              !window.confirm("I checked the relevant chain and confirmed no transaction was broadcast. Refund this withdrawal?")
+            ) return;
+            patch.mutate({
+              id: cancelModal,
+              status: "cancelled",
+              note: note || undefined,
+              ...(processingNeedsCheck ? { confirmNoBroadcast: true } : {}),
+            });
+            setCancelModal(null);
+          }}
         />
       )}
     </>

@@ -212,6 +212,7 @@ export interface PasskeyChainAddresses {
   btc?: string;
   bch?: string;
   bsv?: string;
+  bsvTest?: string;
   tron?: string;
   xrp?: string;
   ltc?: string;
@@ -280,14 +281,14 @@ export async function registerPasskeyWallet(
   };
   saveWallet(wallet);
   saveDerivedAddresses(addrs.evm, {
-    evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+    evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, bsvTest: addrs.bsvTest, sol: addrs.sol,
     tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
   });
   pushBackupToServer(wallet);
   return {
     address: addrs.evm, credentialId, label,
     chains: {
-      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv,
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, bsvTest: addrs.bsvTest,
       tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     },
   };
@@ -316,14 +317,14 @@ export async function importPasskeyWallet(
   };
   saveWallet(wallet);
   saveDerivedAddresses(addrs.evm, {
-    evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+    evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, bsvTest: addrs.bsvTest, sol: addrs.sol,
     tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
   });
   pushBackupToServer(wallet);
   return {
     address: addrs.evm, credentialId, label,
     chains: {
-      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv,
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, bsvTest: addrs.bsvTest,
       tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     },
     addrs,
@@ -408,11 +409,11 @@ export async function loginWithPasskey(opts?: { hybrid?: boolean }): Promise<Log
     const addrs = await deriveAllAddresses(secret.trim().split(/\s+/));
     address = addrs.evm;
     chains  = {
-      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv,
+      evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, bsvTest: addrs.bsvTest,
       tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     };
     saveDerivedAddresses(addrs.evm, {
-      evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, sol: addrs.sol,
+      evm: addrs.evm, btc: addrs.btc, bch: addrs.bch, bsv: addrs.bsv, bsvTest: addrs.bsvTest, sol: addrs.sol,
       tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     });
   } else {
@@ -1179,7 +1180,7 @@ export async function signBsvChallengeFromSecret(
   secret:  string,
 ): Promise<string> {
   const { sha256 }    = await import("@noble/hashes/sha2.js");
-  const { secp256k1 } = await import("@noble/curves/secp256k1");
+  const { secp256k1 } = await import("@noble/curves/secp256k1.js");
   const bsvPrivKey    = await deriveBsvPrivKeyFromSecret(secret);
 
   const msgBuf = new TextEncoder().encode(message);
@@ -1197,9 +1198,9 @@ export async function signBsvChallengeFromSecret(
   preimage.set(msgBuf, prefix.length + varint.length);
 
   const msgHash     = sha256(sha256(preimage));
-  const sig         = secp256k1.sign(msgHash, bsvPrivKey, { lowS: true, prehash: false });
-  const recoveryBit = sig.recovery ?? 0;
-  const compact64   = sig.toCompactRawBytes();
+  const sig         = secp256k1.sign(msgHash, bsvPrivKey, { lowS: true, prehash: false, format: "recovered" });
+  const recoveryBit = sig[0];
+  const compact64   = sig.slice(1);
   const sigBytes    = new Uint8Array([31 + recoveryBit, ...compact64]);
   return btoa(String.fromCharCode(...sigBytes));
 }

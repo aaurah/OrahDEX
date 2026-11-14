@@ -24,10 +24,11 @@ import {
   type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { getOrCreateWallet, fetchWalletBalance, buildAndBroadcastBsvTx } from "./bsvWallet.js";
+import { getOrCreateWallet, fetchWalletBalance, buildAndBroadcastBsvTx, isBsvAddress } from "./bsvWallet.js";
 import { getOrCreateEvmHotWallet } from "./exchangeHotWallet.js";
 import { isVaultConfigured, vaultWithdraw } from "./orahVault.js";
 import { logger } from "./logger.js";
+import { BSV_NET } from "./bsvNetworkConfig.js";
 import {
   getSolHotWallet,
   getSolBalance,
@@ -317,10 +318,7 @@ async function processBsvWithdrawal(params: {
     FEE,
   );
 
-  const isMainnet = (process.env.BSV_NETWORK ?? "mainnet") === "mainnet";
-  const explorer = isMainnet
-    ? `https://whatsonchain.com/tx/${result.txid}`
-    : `https://test.whatsonchain.com/tx/${result.txid}`;
+  const explorer = `${BSV_NET.explorer}/tx/${result.txid}`;
 
   logger.info({ txid: result.txid, arcStatus: result.arcStatus, asset: params.asset, amount: params.amount, recipient: params.recipient }, "BSV withdrawal broadcast");
   return { txid: result.txid, explorer, arcTxid: result.arcTxid, arcStatus: result.arcStatus };
@@ -416,7 +414,21 @@ export async function processWithdrawal(params: {
       return { status: "completed", txid, explorer };
     }
 
+    if (net === "bsv-test") {
+      if (!BSV_NET.isTestnet) {
+        throw new Error("Refusing BSV testnet withdrawal while the server is configured for mainnet.");
+      }
+      if (!isBsvAddress(params.recipient, "test")) {
+        throw new Error("Invalid BSV testnet recipient address.");
+      }
+      const result = await processBsvWithdrawal(params);
+      return { status: "completed", txid: result.txid, explorer: result.explorer, arcTxid: result.arcTxid, arcStatus: result.arcStatus };
+    }
+
     if (net === "bsv" || net === "bch") {
+      if (net === "bsv" && BSV_NET.isTestnet) {
+        throw new Error("Refusing BSV mainnet withdrawal while the server is configured for testnet.");
+      }
       if (!BSV_ADDRESS_RE.test(params.recipient)) {
         throw new Error(`Invalid BSV/BCH recipient address: ${params.recipient}`);
       }

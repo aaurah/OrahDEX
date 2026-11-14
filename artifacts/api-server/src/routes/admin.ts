@@ -3051,7 +3051,7 @@ router.post("/retry-pending-withdrawals", requireAdminToken, async (req, res) =>
     }>(
       `SELECT id, asset, amount, network, recipient, wallet_address
          FROM withdrawal_requests
-        WHERE status = 'pending'
+        WHERE status = 'pending' AND txid IS NULL
         ORDER BY created_at ASC
         LIMIT 50`,
     );
@@ -3066,36 +3066,66 @@ router.post("/retry-pending-withdrawals", requireAdminToken, async (req, res) =>
     const results: { id: string; status: string; txid?: string; error?: string }[] = [];
 
     for (const row of rows) {
+      let knownTxid: string | null = null;
       try {
-        await pool.query(`UPDATE withdrawal_requests SET status = 'processing' WHERE id = $1`, [row.id]);
+        const claimed = await pool.query(
+          `UPDATE withdrawal_requests SET status = 'processing', note = 'Bulk retry claimed'
+           WHERE id = $1 AND status = 'pending' AND txid IS NULL
+           RETURNING id`,
+          [row.id],
+        );
+        if (!claimed.rowCount) continue;
+
         const result = await processWithdrawal({
           asset:     row.asset,
           amount:    parseFloat(row.amount),
           network:   row.network,
           recipient: row.recipient,
         });
-        if (result.status === "completed") {
+        knownTxid = result.txid ?? null;
+
+        if (result.status === "completed" && result.txid) {
           await pool.query(
-            `UPDATE withdrawal_requests SET status = 'completed', txid = $1, processed_at = now(), note = 'Auto-retried by admin', arc_txid = $3, arc_status = $4 WHERE id = $2`,
+            `UPDATE withdrawal_requests
+             SET status = 'completed', txid = $1, processed_at = now(), note = 'Auto-retried by admin',
+                 arc_txid = $3, arc_status = $4
+             WHERE id = $2 AND status = 'processing'`,
             [result.txid, row.id, result.arcTxid ?? null, result.arcStatus ?? null],
           );
           succeeded++;
           results.push({ id: row.id, status: "completed", txid: result.txid });
         } else {
+          const uncertain =
+            result.status === "completed" || Boolean(result.txid) ||
+            Boolean(result.note?.startsWith("Auto-processing failed:"));
+          const nextStatus = uncertain ? "processing" : "pending";
           await pool.query(
-            `UPDATE withdrawal_requests SET status = 'pending', note = $1 WHERE id = $2`,
-            [result.note, row.id],
+            `UPDATE withdrawal_requests
+             SET status = $1, txid = COALESCE($2, txid), note = $3
+             WHERE id = $4 AND status = 'processing'`,
+            [nextStatus, result.txid ?? null, result.note ?? "Retry returned no transaction ID.", row.id],
           );
-          failed++;
-          results.push({ id: row.id, status: "pending", error: result.note });
+          if (uncertain) {
+            failed++;
+            results.push({ id: row.id, status: "processing", error: "On-chain reconciliation required before retry." });
+          } else {
+            failed++;
+            results.push({ id: row.id, status: "pending", error: result.note });
+          }
         }
       } catch (err: any) {
         await pool.query(
-          `UPDATE withdrawal_requests SET status = 'pending', note = $1 WHERE id = $2`,
-          [err?.message ?? "Retry failed", row.id],
-        );
+          `UPDATE withdrawal_requests
+           SET status = 'processing', txid = COALESCE($3, txid), note = $1
+           WHERE id = $2 AND status = 'processing'`,
+          [
+            `Retry outcome is uncertain; verify the chain before retrying or refunding. ${(err?.message ?? "Retry failed").toString().slice(0, 200)}`,
+            row.id,
+            knownTxid,
+          ],
+        ).catch(() => {});
         failed++;
-        results.push({ id: row.id, status: "pending", error: err?.message });
+        results.push({ id: row.id, status: "processing", error: "On-chain reconciliation required before retry." });
       }
     }
 
