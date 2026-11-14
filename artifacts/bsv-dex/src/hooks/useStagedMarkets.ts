@@ -80,7 +80,7 @@ export function useMarketSearch(
     const q = query.trim().toUpperCase();
     setResults([]);
     setError(null);
-    if (!q) { setLoading(false); return; }
+    if (q.length < 2) { setLoading(false); return; }
 
     setLoading(true);
     let active = true;
