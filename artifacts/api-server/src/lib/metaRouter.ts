@@ -138,7 +138,7 @@ async function quoteLetsExchange(
       network_to:     networkTo,
       amount,
       affiliate_id:   AFFILIATE_ID,
-    });
+    }, 8_000);
 
     if (!ok || !data || typeof data !== "object") {
       return { quote: null, error: `LetsExchange HTTP ${status}` };
