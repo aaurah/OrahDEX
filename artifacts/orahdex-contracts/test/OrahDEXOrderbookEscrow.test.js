@@ -42,13 +42,14 @@ describe("OrahDEXOrderbookEscrow", function () {
     const { seller, buyer, feeRecipient, base, escrow } = ctx;
     const sellerId = id("seller-order");
     const buyerId = id("buyer-order");
+    const settlementId = id("fill-1");
     const { buyerQuote } = await openA8EthPair({ ...ctx, sellerId, buyerId });
     const grossQuote = 22n * E18;
     const fee = (grossQuote * 10n) / 10_010n;
     const sellerEthBefore = await ethers.provider.getBalance(seller.address);
     const feeEthBefore = await ethers.provider.getBalance(feeRecipient.address);
 
-    await escrow.settle(buyerId, sellerId, scale(10), grossQuote);
+    await escrow.settle(settlementId, buyerId, sellerId, scale(10), grossQuote);
 
     assert.equal(await base.balanceOf(buyer.address), scale(10));
     assert.equal(await base.balanceOf(escrow.target), 0n);
@@ -58,6 +59,8 @@ describe("OrahDEXOrderbookEscrow", function () {
     assert.equal(await escrow.orders(buyerId).then((o) => o.active), false);
     assert.equal(await escrow.orders(sellerId).then((o) => o.active), false);
     assert.equal(buyerQuote, 30n * E18);
+    await escrow.settle(settlementId, buyerId, sellerId, scale(10), grossQuote);
+    assert.equal(await base.balanceOf(buyer.address), scale(10));
   });
 
   it("rejects an out-of-limit fill without changing either escrow", async function () {
@@ -67,7 +70,7 @@ describe("OrahDEXOrderbookEscrow", function () {
     const buyerId = id("buyer-price-order");
     await openA8EthPair({ ...ctx, sellerId, buyerId });
 
-    await assert.rejects(() => escrow.settle(buyerId, sellerId, scale(10), 19n * E18));
+    await assert.rejects(() => escrow.settle(id("bad-fill"), buyerId, sellerId, scale(10), 19n * E18));
     assert.equal(await base.balanceOf(escrow.target), scale(10));
     assert.equal(await ethers.provider.getBalance(escrow.target), 30n * E18);
     assert.equal(await escrow.orders(buyerId).then((o) => o.active), true);
@@ -82,7 +85,7 @@ describe("OrahDEXOrderbookEscrow", function () {
     await openA8EthPair({ ...ctx, sellerId, buyerId });
     const grossQuote = 9n * E18;
 
-    await escrow.settle(buyerId, sellerId, scale(4), grossQuote);
+    await escrow.settle(id("partial-fill"), buyerId, sellerId, scale(4), grossQuote);
     assert.equal(await base.balanceOf(buyer.address), scale(4));
     assert.equal(await base.balanceOf(escrow.target), scale(6));
     assert.equal(await ethers.provider.getBalance(escrow.target), 21n * E18);
@@ -110,6 +113,6 @@ describe("OrahDEXOrderbookEscrow", function () {
       buyerId, 0, other.target, ethers.ZeroAddress, scale(10), scale(30), 3n * E18, expiresAt,
       { value: scale(30) },
     );
-    await assert.rejects(() => escrow.settle(buyerId, sellerId, scale(1), 3n * E18));
+    await assert.rejects(() => escrow.settle(id("cross-pair"), buyerId, sellerId, scale(1), 3n * E18));
   });
 });

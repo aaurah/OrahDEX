@@ -44,6 +44,7 @@ contract OrahDEXOrderbookEscrow is ReentrancyGuard {
     }
 
     mapping(bytes32 => Order) public orders;
+    mapping(bytes32 => bool) public settledFills;
 
     event OrderOpened(
         bytes32 indexed orderId,
@@ -57,6 +58,7 @@ contract OrahDEXOrderbookEscrow is ReentrancyGuard {
         uint64 expiresAt
     );
     event OrderSettled(
+        bytes32 indexed settlementId,
         bytes32 indexed buyOrderId,
         bytes32 indexed sellOrderId,
         address buyer,
@@ -152,12 +154,16 @@ contract OrahDEXOrderbookEscrow is ReentrancyGuard {
      * Any failed validation or transfer reverts both legs and fill accounting.
      */
     function settle(
+        bytes32 settlementId,
         bytes32 buyOrderId,
         bytes32 sellOrderId,
         uint256 baseAmount,
         uint256 grossQuoteAmount
     ) external nonReentrant {
-        if (baseAmount == 0 || grossQuoteAmount == 0) revert InvalidFill();
+        if (settlementId == bytes32(0) || baseAmount == 0 || grossQuoteAmount == 0) {
+            revert InvalidFill();
+        }
+        if (settledFills[settlementId]) return;
 
         Order storage buy = orders[buyOrderId];
         Order storage sell = orders[sellOrderId];
@@ -193,6 +199,7 @@ contract OrahDEXOrderbookEscrow is ReentrancyGuard {
         buy.remainingEscrowAmount -= grossQuoteAmount;
         sell.remainingBaseAmount -= baseAmount;
         sell.remainingEscrowAmount -= baseAmount;
+        settledFills[settlementId] = true;
 
         address buyer = buy.maker;
         address seller = sell.maker;
@@ -211,7 +218,7 @@ contract OrahDEXOrderbookEscrow is ReentrancyGuard {
         if (feeAmount > 0) _sendExact(buy.quoteToken, feeRecipient, feeAmount);
 
         emit OrderSettled(
-            buyOrderId, sellOrderId, buyer, seller,
+            settlementId, buyOrderId, sellOrderId, buyer, seller,
             baseAmount, grossQuoteAmount, feeAmount
         );
     }
