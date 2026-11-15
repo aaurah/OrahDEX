@@ -4,7 +4,13 @@ import "@nomicfoundation/hardhat-ethers";
 const PK = process.env.DEPLOYER_PRIVATE_KEY ?? "";
 const accounts = PK ? [PK] : [];
 
-const rpc = (envKey: string, fallback: string) => process.env[envKey] ?? fallback;
+const rpc = (envKey: string, fallback: string) => {
+  if (process.env[envKey]) return process.env[envKey]!;
+  if (envKey === "ETH_RPC_URL" && process.env.ALCHEMY_API_KEY) {
+    return `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`;
+  }
+  return fallback;
+};
 
 const config: HardhatUserConfig = {
   solidity: {

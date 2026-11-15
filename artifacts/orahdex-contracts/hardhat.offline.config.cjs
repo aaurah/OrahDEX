@@ -12,6 +12,12 @@ const longVersion = require(require.resolve("solc", {
   paths: [path.dirname(hardhatEntry)],
 })).version();
 const localVersion = longVersion.split("+")[0];
+const deployerKey = process.env.DEPLOYER_PRIVATE_KEY || "";
+const accounts = deployerKey ? [deployerKey] : [];
+const ethereumRpc = process.env.ETH_RPC_URL ||
+  (process.env.ALCHEMY_API_KEY
+    ? `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
+    : "https://ethereum-rpc.publicnode.com");
 
 subtask(TASK_COMPILE_SOLIDITY_GET_SOLC_BUILD).setAction(
   async ({ solcVersion }, _hre, runSuper) => {
@@ -35,7 +41,10 @@ module.exports = {
       viaIR: true,
     },
   },
-  networks: { hardhat: {} },
+  networks: {
+    hardhat: {},
+    ethereum: { chainId: 1, accounts, url: ethereumRpc },
+  },
   paths: {
     sources: path.join(root, "contracts"),
     tests: path.join(root, "test"),
