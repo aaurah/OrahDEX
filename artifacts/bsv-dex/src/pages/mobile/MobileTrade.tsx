@@ -348,9 +348,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (!address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
   }, [address, symbol, fetchApiBalances, base, quote]);
-  // Only Orah Wallet uses internal exchange ledger as the primary available balance source.
-  // External wallets (EVM/BSV/BTC/SOL) use on-chain wallet balances, optionally merged with
-  // internal exchange balances for assets accumulated via exchange trades.
+  // Spot order submission is currently ledger-only on the server because wallet-to-wallet
+  // matching is paused until confirmed settlement is available. Keep orderable balances
+  // separate from wallet-held balances so wallet funds are not mistaken for reserved funds.
   const usesApiBalance = true;
   // Show pending state only when the current mode depends on ledger balances.
   const balancesPending = usesApiBalance && apiBalancesLoading;
@@ -1177,6 +1177,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const available    = side === "sell" ? sellBalance : buyBalance;
   const availableSym = side === "sell" ? base        : quote;
+  const walletAvailable = side === "sell" ? walletBaseBalance : walletQuoteBalance;
+  const formatBalance = (value: number) => value > 0
+    ? value.toLocaleString("en-US", { maximumFractionDigits: 8, useGrouping: false })
+    : "0.0000";
   const fundingAsset = (side === "sell" ? base : quote).toUpperCase();
   const coinWalletHref = `/portfolio/${encodeURIComponent(fundingAsset)}`;
 
@@ -2394,7 +2398,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <div className="bg-blue-500/5 border border-blue-500/25 rounded-xl px-3 py-2 flex items-start gap-2">
                 <svg className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
                 <div className="text-[10px] leading-relaxed text-blue-300/90">
-                  <span className="font-bold text-blue-300">Non-custodial.</span> Available reflects your real on-chain wallet balance. Orders are signed intents — funds stay in your wallet (Rabby/MetaMask) until fill.
+                  <span className="font-bold text-blue-300">Wallet funds stay yours.</span> On-chain wallet balances are shown separately below. Order-book trades require a funded trading balance; use Swap for wallet-held funds.
                   {hasEscrow(walletChainId ?? 0) && <span className="text-emerald-400"> On-chain escrow available on this chain.</span>}
                 </div>
               </div>
@@ -2403,7 +2407,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {/* Available / Max Buy / Est. Fee */}
             <div className="space-y-1.5 px-1">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Available</span>
+                <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">
+                  {isEvm ? "Trading balance" : "Available"}
+                </span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleFillMin}
@@ -2420,16 +2426,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     MAX
                   </button>
                   <span className="text-xs font-semibold tabular-nums text-primary flex items-center gap-1">
-                    {balancesPending
-                      ? "—"
-                      : available > 0
-                        ? available.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })
-                        : "0.0000"}&nbsp;{availableSym}
-                    {isEvm && (
-                      <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
-                        On-chain
-                      </span>
-                    )}
+                    {balancesPending ? "—" : formatBalance(available)}&nbsp;{availableSym}
                     {!isEvm && side === "sell" && isNativeBase && chainInfo?.l2Label && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
                         {chainInfo.l2Label}
@@ -2445,11 +2442,22 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </button>
                 </div>
               </div>
+              {isEvm && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Wallet balance</span>
+                  <span className="text-xs font-semibold tabular-nums text-foreground flex items-center gap-1">
+                    {evmBalancesLoading ? "—" : formatBalance(walletAvailable)}&nbsp;{availableSym}
+                    <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
+                      On-chain
+                    </span>
+                  </span>
+                </div>
+              )}
               {/* Low balance hint — shown when no balance available on any source */}
-              {address && available === 0 && !apiBalancesLoading && (
+              {address && available === 0 && !apiBalancesLoading && (!isEvm || !evmBalancesLoading) && walletAvailable <= 0 && (
                 <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
                   <span>
-                    No {side === "buy" ? quote : base} in wallet —{" "}
+                    No {availableSym} in {isEvm ? "trading balance or connected wallet" : "wallet"} —{" "}
                     get it via{" "}
                     <a
                       href="/swap"
@@ -2458,6 +2466,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       Bridge
                     </a>
                     {" "}or deposit on-chain.
+                  </span>
+                </div>
+              )}
+              {address && isEvm && available === 0 && !apiBalancesLoading && !evmBalancesLoading && walletAvailable > 0 && (
+                <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
+                  <span>
+                    {formatBalance(walletAvailable)} {availableSym} is in your wallet, not your trading balance. Use{" "}
+                    <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold">Swap</a>
+                    {" "}or deposit to trade on the order book.
                   </span>
                 </div>
               )}
