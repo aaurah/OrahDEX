@@ -607,19 +607,27 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   // ── Debounced smart-route check ──────────────────────────────────────────
   useEffect(() => {
     if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
+    routeControllerRef.current?.abort();
+    routeControllerRef.current = null;
+    const requestId = ++routeRequestIdRef.current;
     const amt = parseFloat(amount);
     if (!fromCoin || !toCoin || !amount || !isFinite(amt) || amt <= 0) {
-      setRouteSource(null); setRouteError(false); return;
+      setRouteSource(null); setRouteError(false); setRouteLoading(false); return;
     }
     setRouteLoading(true); setRouteError(false);
     routeTimerRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      routeControllerRef.current = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 10_000);
       try {
         const r = await fetch(`${API}/swap/route`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({ assetIn: fromCoin.symbol, assetOut: toCoin.symbol, amountIn: amt }),
         });
         const d = await r.json();
+        if (requestId !== routeRequestIdRef.current) return;
         if (r.ok && d.source) {
           setRouteSource(d.source as "internal"|"letsexchange");
           setRouteError(false);
@@ -627,11 +635,23 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
           setRouteSource(null); setRouteError(true);
         }
       } catch {
-        setRouteSource(null); setRouteError(true);
+        if (requestId === routeRequestIdRef.current) {
+          setRouteSource(null); setRouteError(true);
+        }
+      } finally {
+        window.clearTimeout(timeout);
+        if (requestId === routeRequestIdRef.current) {
+          routeControllerRef.current = null;
+          setRouteLoading(false);
+        }
       }
-      setRouteLoading(false);
     }, 600);
-    return () => { if (routeTimerRef.current) clearTimeout(routeTimerRef.current); };
+    return () => {
+      if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
+      routeRequestIdRef.current += 1;
+      routeControllerRef.current?.abort();
+      routeControllerRef.current = null;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromCoin?.symbol, toCoin?.symbol, amount]);
 

@@ -66,6 +66,7 @@ async function ssRequest(
       method,
       headers: { "Content-Type": "application/json" },
       body: method === "POST" && body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(8_000),
     });
     const text = await res.text();
     let data: unknown = null;
