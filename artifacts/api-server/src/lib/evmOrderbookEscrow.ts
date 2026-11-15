@@ -61,8 +61,16 @@ function getDeploymentBlock(): bigint | null {
 function publicClient() {
   return createPublicClient({
     chain: mainnet,
-    transport: http(process.env.ETH_RPC_URL ?? "https://ethereum-rpc.publicnode.com"),
+    transport: http(getEthRpcUrl()),
   });
+}
+
+function getEthRpcUrl() {
+  if (process.env.ETH_RPC_URL) return process.env.ETH_RPC_URL;
+  if (process.env.ALCHEMY_API_KEY) {
+    return `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`;
+  }
+  return "https://ethereum-rpc.publicnode.com";
 }
 
 function expandDecimal(value: string | number): string {
@@ -329,7 +337,7 @@ export async function settleEvmOrderFill(params: {
   const baseAmount = toUnits(params.baseAmount, baseAsset.decimals);
   const grossQuoteAmount = toUnits(params.grossQuoteAmount, quoteAsset.decimals, true);
   const account = getRelayerAccount();
-  const wallet = createWalletClient({ account, chain: mainnet, transport: http(process.env.ETH_RPC_URL ?? "https://ethereum-rpc.publicnode.com") });
+  const wallet = createWalletClient({ account, chain: mainnet, transport: http(getEthRpcUrl()) });
   const txHash = await wallet.writeContract({
     address: config.address,
     abi: ORDERBOOK_ESCROW_ABI,
