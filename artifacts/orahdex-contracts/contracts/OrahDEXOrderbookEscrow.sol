@@ -185,13 +185,13 @@ contract OrahDEXOrderbookEscrow is ReentrancyGuard {
 
         uint256 feeAmount = feeBps == 0
             ? 0
-            : Math.mulDiv(grossQuoteAmount, feeBps, 10_000 + feeBps);
+            : Math.mulDiv(grossQuoteAmount, feeBps, 10_000);
         uint256 netQuoteAmount = grossQuoteAmount - feeAmount;
 
         uint256 buyerMaxQuote = Math.mulDiv(baseAmount, buy.limitPriceX18, PRICE_SCALE);
         uint256 sellerMinQuote = Math.mulDiv(baseAmount, sell.limitPriceX18, PRICE_SCALE);
         if (mulmod(baseAmount, sell.limitPriceX18, PRICE_SCALE) != 0) sellerMinQuote += 1;
-        if (grossQuoteAmount > buyerMaxQuote || netQuoteAmount < sellerMinQuote) {
+        if (grossQuoteAmount > buyerMaxQuote || grossQuoteAmount < sellerMinQuote) {
             revert PriceNotCrossed();
         }
 
