@@ -1070,7 +1070,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
     // For LetsExchange winner: fetch rate_id for optional fixed-rate locking
     let rate_id: string | null = null;
     let rate_id_expired_at: string | null = null;
-    if (best.venue === "letsexchange" && await isLetsExchangeConfigured()) {
+    if (best.venue === "letsexchange" && !isFloat && await isLetsExchangeConfigured()) {
       try {
         const leBody: Record<string, unknown> = {
           from, to, network_from, network_to, amount: amt,
