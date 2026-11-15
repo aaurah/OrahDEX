@@ -102,6 +102,7 @@ export async function leRequest(
   path: string,
   method: "GET" | "POST" = "GET",
   body?: unknown,
+  timeoutMs = 15_000,
 ): Promise<{ ok: boolean; status: number; data: unknown }> {
   await ensureLeCredentials();
   const parsed = new URL(`${LE_BASE}${path}`);
@@ -127,7 +128,7 @@ export async function leRequest(
     "Accept":       "application/json",
   };
   if (API_KEY) headers["Authorization"] = `Bearer ${API_KEY}`;
-  const opts: RequestInit = { method, headers, signal: AbortSignal.timeout(15_000) };
+  const opts: RequestInit = { method, headers, signal: AbortSignal.timeout(timeoutMs) };
   if (body && method === "POST") {
     const requestBody = (
       AFFILIATE_ID &&
@@ -149,7 +150,7 @@ export async function leRequest(
   if (isCoinList && parsed.searchParams.has("affiliate_id") && res.status >= 500) {
     parsed.searchParams.delete("affiliate_id");
     url = parsed.toString();
-    res = await fetch(url, { ...opts, signal: AbortSignal.timeout(15_000) });
+    res = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeoutMs) });
     try { data = await res.json(); } catch { data = null; }
     if (res.ok) {
       logger.warn({ path: pathname }, "LE coin catalog required compatibility retry without affiliate_id");
