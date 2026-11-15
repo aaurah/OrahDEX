@@ -45,7 +45,7 @@ describe("OrahDEXOrderbookEscrow", function () {
     const settlementId = id("fill-1");
     const { buyerQuote } = await openA8EthPair({ ...ctx, sellerId, buyerId });
     const grossQuote = 22n * E18;
-    const fee = (grossQuote * 10n) / 10_010n;
+    const fee = (grossQuote * 10n) / 10_000n;
     const sellerEthBefore = await ethers.provider.getBalance(seller.address);
     const feeEthBefore = await ethers.provider.getBalance(feeRecipient.address);
 
