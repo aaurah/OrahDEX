@@ -12,7 +12,7 @@ import {
   switchChain as wagmiSwitchChain,
   getAccount as wagmiGetAccount,
 } from "@wagmi/core";
-import { ESCROW_ADDRESSES, ESCROW_ABI, ESCROW_CHAIN_ID } from "./escrowConfig";
+import { ESCROW_ADDRESSES, ESCROW_ABI, ORDERBOOK_ESCROW_ABI, ESCROW_CHAIN_ID } from "./escrowConfig";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "./onChainLiquidity";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, getWagmiConfig } from "./reown";
 import { getAppKitWagmiConfig } from "./reown-appkit";
@@ -553,6 +553,175 @@ export function getPublicClient(chainId: number) {
     chain: inlineChain(chainId) as any,
     transport: rpcTransport(chainId),
   });
+}
+
+const ZERO_EVM_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
+
+function amountAsUnits(value: string | number, decimals: number): bigint {
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+    throw new Error("Enter a positive order amount and limit price");
+  }
+  return parseUnits(numberValue.toFixed(decimals), decimals);
+}
+
+function orderbookToken(symbol: string, chainId: number) {
+  const normalized = symbol.toUpperCase();
+  if (normalized === "ETH") {
+    return { address: ZERO_EVM_ADDRESS, decimals: 18, native: true };
+  }
+  const address = CHAIN_TOKEN_ADDRESSES[chainId]?.[normalized];
+  if (!address) throw new Error(`${normalized} is not supported by Ethereum order settlement`);
+  return { address: address as `0x${string}`, decimals: TOKEN_DECIMALS[normalized] ?? 18, native: false };
+}
+
+async function sendOrderbookWalletTx(params: {
+  from: string;
+  to: string;
+  data: `0x${string}`;
+  value?: bigint;
+  chainId: number;
+  isOrahWallet: boolean;
+  confirmations?: number;
+}): Promise<`0x${string}`> {
+  let txHash: `0x${string}`;
+  if (params.isOrahWallet) {
+    const client = await getOrahWalletClient(params.from, params.chainId);
+    const nonce = await freshNonce(params.chainId, params.from);
+    const gas = await estimateGasForReown({
+      from: params.from,
+      to: params.to,
+      data: params.data,
+      value: params.value,
+    }, params.chainId, 350000n);
+    txHash = await client.sendTransaction({
+      to: params.to as `0x${string}`,
+      data: params.data,
+      value: params.value,
+      nonce,
+      gas,
+    } as any);
+  } else {
+    txHash = await sendTxUniversal({
+      from: params.from,
+      to: params.to,
+      data: params.data,
+      value: params.value,
+      chainId: params.chainId,
+    }) as `0x${string}`;
+  }
+
+  const receipt = await getPublicClient(params.chainId).waitForTransactionReceipt({
+    hash: txHash,
+    confirmations: params.confirmations ?? 1,
+    timeout: 180_000,
+  });
+  if (receipt.status !== "success") throw new Error("Ethereum order escrow transaction reverted");
+  return txHash;
+}
+
+export async function lockOrderbookOrder(params: {
+  escrowAddress: string;
+  nonce: string;
+  side: "buy" | "sell";
+  base: string;
+  quote: string;
+  quantity: string | number;
+  price: string | number;
+  expiresAt: number;
+  from: string;
+  chainId: number;
+  isOrahWallet: boolean;
+}): Promise<{ orderKey: `0x${string}`; txHash: `0x${string}`; explorerUrl: string }> {
+  if (params.chainId !== 1) throw new Error("Wallet-funded order settlement is currently available on Ethereum mainnet only");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(params.escrowAddress)) throw new Error("Ethereum order escrow is not configured");
+  const baseAsset = orderbookToken(params.base, params.chainId);
+  const quoteAsset = orderbookToken(params.quote, params.chainId);
+  if (baseAsset.decimals !== 18 || quoteAsset.decimals !== 18) {
+    throw new Error("Ethereum wallet order settlement currently supports 18-decimal tokens only");
+  }
+  const baseAmount = amountAsUnits(params.quantity, baseAsset.decimals);
+  const priceWad = amountAsUnits(params.price, 18);
+  const quoteScale = 10n ** BigInt(quoteAsset.decimals);
+  const baseScale = 10n ** BigInt(baseAsset.decimals);
+  const priceNumerator = priceWad * quoteScale;
+  let limitPriceX18 = priceNumerator / baseScale;
+  if (params.side === "sell" && priceNumerator % baseScale !== 0n) limitPriceX18 += 1n;
+  const quoteAmount = (baseAmount * limitPriceX18 + 10n ** 18n - 1n) / (10n ** 18n);
+  const escrowAmount = params.side === "buy" ? quoteAmount : baseAmount;
+  const escrowToken = params.side === "buy" ? quoteAsset : baseAsset;
+  const escrow = params.escrowAddress as `0x${string}`;
+  const from = params.from as `0x${string}`;
+
+  if (!escrowToken.native) {
+    const pub = getPublicClient(params.chainId);
+    const allowance = await pub.readContract({
+      address: escrowToken.address,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [from, escrow],
+    });
+    if (allowance < escrowAmount) {
+      const approveData = buildApproveCalldata(escrow, escrowAmount);
+      await sendOrderbookWalletTx({
+        from, to: escrowToken.address, data: approveData,
+        chainId: params.chainId, isOrahWallet: params.isOrahWallet,
+      });
+    }
+  }
+
+  const orderKey = keccak256(toBytes(params.nonce));
+  const data = encodeFunctionData({
+    abi: ORDERBOOK_ESCROW_ABI,
+    functionName: "openOrder",
+    args: [
+      orderKey,
+      params.side === "buy" ? 0 : 1,
+      baseAsset.address,
+      quoteAsset.address,
+      baseAmount,
+      params.side === "buy" ? quoteAmount : 0n,
+      limitPriceX18,
+      BigInt(params.expiresAt),
+    ],
+  });
+  const txHash = await sendOrderbookWalletTx({
+    from,
+    to: escrow,
+    data,
+    value: params.side === "buy" && quoteAsset.native ? quoteAmount : undefined,
+    chainId: params.chainId,
+    isOrahWallet: params.isOrahWallet,
+    confirmations: 3,
+  });
+  return {
+    orderKey,
+    txHash,
+    explorerUrl: `https://etherscan.io/tx/${txHash}`,
+  };
+}
+
+export async function cancelOrderbookOrder(params: {
+  escrowAddress: string;
+  orderKey: `0x${string}`;
+  from: string;
+  chainId: number;
+  isOrahWallet: boolean;
+}): Promise<{ txHash: `0x${string}`; explorerUrl: string }> {
+  if (params.chainId !== 1) throw new Error("Order escrow cancellation is available on Ethereum mainnet only");
+  const txHash = await sendOrderbookWalletTx({
+    from: params.from,
+    to: params.escrowAddress,
+    data: encodeFunctionData({
+      abi: ORDERBOOK_ESCROW_ABI,
+      functionName: "cancel",
+      args: [params.orderKey],
+    }),
+    chainId: params.chainId,
+    isOrahWallet: params.isOrahWallet,
+    confirmations: 3,
+  });
+  return { txHash, explorerUrl: `https://etherscan.io/tx/${txHash}` };
 }
 
 /**
