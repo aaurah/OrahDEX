@@ -77,6 +77,7 @@ export const TOKEN_REGISTRY: Record<number, Record<string, TokenInfo>> = {
     MATIC:  { address: "0x7d1afa7b718fb893db30a3abc0cfc608aacfebb0", decimals: 18 },
     CELR:   { address: "0x4f9254c83eb525f9fcf346490bbb3ed28a81c667", decimals: 18 },
     // Gaming / metaverse
+    A8:      { address: "0x3e5a19c91266ad8ce2477b91585d1856b84062df", decimals: 18 },
     MANA:   { address: "0x0f5d2fb29fb7d3cfee444a200298f468908cc942", decimals: 18 },
     SAND:   { address: "0x3845badade8e6dff049820680d1f14bd3903a5d0", decimals: 18 },
     AXS:    { address: "0xbb0e17ef65f82ab018d8edd776e8dd940327b28b", decimals: 18 },
