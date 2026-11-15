@@ -446,6 +446,10 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError,   setRouteError]   = useState(false);
   const routeTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const routeControllerRef = useRef<AbortController|null>(null);
+  const routeRequestIdRef = useRef(0);
+  const estimateControllerRef = useRef<AbortController|null>(null);
+  const estimateRequestIdRef = useRef(0);
 
   // Real on-chain EVM balance for the "from" coin
   // useAccount (wagmi) is the authoritative source for the connected chain ID,
@@ -518,14 +522,27 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
 
   // Live rate fetch using correct API fields
   const fetchEstimate = useCallback(async () => {
-    if (!fromCoin || !toCoin || !amount || parseFloat(amount) <= 0) { setEstimate(null); return; }
+    estimateControllerRef.current?.abort();
+    estimateControllerRef.current = null;
+    const requestId = ++estimateRequestIdRef.current;
+    if (!fromCoin || !toCoin || !amount || parseFloat(amount) <= 0) {
+      setEstimate(null);
+      setEstError(null);
+      setEstLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    estimateControllerRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
     setEstLoading(true); setEstError(null);
+    setEstimate(null);
     try {
       const simpleSwapSelected = fromCoin.provider === "simpleswap" || toCoin.provider === "simpleswap";
       const effectiveVenue = simpleSwapSelected ? "simpleswap" : forceVenue;
       const r = await fetch(`${API}/letsexchange/estimate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           from:         fromCoin.symbol,
           to:           toCoin.symbol,
@@ -539,6 +556,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
         }),
       });
       const d = await r.json();
+      if (requestId !== estimateRequestIdRef.current) return;
       if (!r.ok) {
         if (d.code === "LE_KEY_NOT_CONFIGURED") {
           setEstError("Cross-chain exchange is temporarily unavailable. Please try again later or contact support.");
@@ -560,11 +578,31 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
         }
         if (d.error !== "below_minimum") setEstimate(null);
       } else { setEstimate(d as Estimate); }
-    } catch { setEstError("Network error"); }
-    setEstLoading(false);
+    } catch (err) {
+      if (requestId === estimateRequestIdRef.current) {
+        setEstimate(null);
+        setEstError((err as Error)?.name === "AbortError"
+          ? "Quote timed out. Please try again."
+          : "Network error");
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      if (requestId === estimateRequestIdRef.current) {
+        estimateControllerRef.current = null;
+        setEstLoading(false);
+      }
+    }
   }, [fromCoin, toCoin, amount, forceVenue]);
 
-  useEffect(() => { fetchEstimate(); }, [fetchEstimate, refreshKey]);
+  useEffect(() => {
+    const debounce = window.setTimeout(() => { void fetchEstimate(); }, 350);
+    return () => {
+      window.clearTimeout(debounce);
+      estimateRequestIdRef.current += 1;
+      estimateControllerRef.current?.abort();
+      estimateControllerRef.current = null;
+    };
+  }, [fetchEstimate, refreshKey]);
 
   // ── Debounced smart-route check ──────────────────────────────────────────
   useEffect(() => {
@@ -622,7 +660,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   const rateSecondsLeft = rateIdExpiresMs ? Math.max(0, Math.round((rateIdExpiresMs - Date.now()) / 1000)) : RATE_REFRESH;
 
   // Require a confirmed live quote before allowing continue — no quote means no venue is ready
-  const canContinue = fromCoin && toCoin && numAmt && numAmt > 0 && estimateValid && !belowMin && !aboveMax;
+  const canContinue = fromCoin && toCoin && numAmt && numAmt > 0 && estimateValid && !estLoading && !belowMin && !aboveMax;
 
   return (
     <div className="flex flex-col gap-2">
