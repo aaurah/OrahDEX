@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSignMessage, useAccount } from "wagmi";
+import { keccak256, toBytes } from "viem";
 import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle, ShieldCheck } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
@@ -25,7 +26,7 @@ import { usePairPrices } from "@/hooks/usePairPrices";
 import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
 import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
 import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
-import { hasEscrow, chainLabel, checkEscrowDeposit, resolveEscrowAsset } from "@/lib/escrow";
+import { hasEscrow, chainLabel, checkEscrowDeposit, resolveEscrowAsset, lockOrderbookOrder, cancelOrderbookOrder } from "@/lib/escrow";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 import { buildOrderIntentMessage, buildOrderActionMessage, signWalletMessage } from "@/lib/tradeAuth";
 import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
@@ -83,6 +84,7 @@ function getOrderExplorerUrl(order: any): string | null {
   const txid = String(order?.txid ?? "");
   if (!txid) return null;
   if (txid.startsWith("htlc-pending-")) return null;
+  if (txid.startsWith("evm-settlement:")) return null;
   if (txid.startsWith("local:")) return null;
   if (txid.startsWith("0x")) {
     const chainId = order?.chainId ?? order?.evmChainId;
@@ -311,14 +313,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
   const isExternalEvm = isEvm && !isOrahWallet;
-  // Non-custodial mode: any EVM wallet (including Orah self-custody) trades
-  // directly from its on-chain balance — no exchange deposit required.
-  // Only non-EVM Orah chains (BSV/BTC/SOL) still use the internal ledger.
   const isSelfCustodyEvm = isEvm && !!address;
   // Default to chainId 1 (Ethereum mainnet) when wallet hasn't reported a chain yet,
   // matching Portfolio behavior — otherwise the balance fetch never starts and Trade
   // shows 0 even though the wallet holds funds.
   const { balances: evmTokenBalances, loading: evmBalancesLoading, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, isEvm ? (walletChainId ?? 1) : null);
+  const { data: evmOrderbookConfig } = useQuery({
+    queryKey: ["evm-orderbook-settlement-config", walletChainId],
+    queryFn: async () => {
+      const response = await fetch(`${BASE}/api/orders/evm-settlement/config`, { cache: "no-store" });
+      if (!response.ok) return { available: false, chainId: 1 };
+      return response.json();
+    },
+    enabled: isEvm && !!address && walletChainId === 1,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+  const walletOrderbookAvailable =
+    isEvm && walletChainId === 1 && evmOrderbookConfig?.available === true;
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -348,10 +360,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (!address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
   }, [address, symbol, fetchApiBalances, base, quote]);
-  // Spot order submission is currently ledger-only on the server because wallet-to-wallet
-  // matching is paused until confirmed settlement is available. Keep orderable balances
-  // separate from wallet-held balances so wallet funds are not mistaken for reserved funds.
-  const usesApiBalance = true;
+  // Mainnet wallet balances become orderable only when the API confirms the
+  // atomic escrow and matching path is enabled. Otherwise keep ledger-only
+  // behavior so wallet balances are never mistaken for reserved funds.
+  const usesApiBalance = !walletOrderbookAvailable;
   // Show pending state only when the current mode depends on ledger balances.
   const balancesPending = usesApiBalance && apiBalancesLoading;
 
@@ -414,8 +426,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       return true;
     });
   }, [myOrdersData, altOrdersData, address, altAddress]);
-  const openOrders   = myOrders.filter(o => o.status === "open"  && o.symbol === symbol);
-  const historyOrders = myOrders.filter(o => o.status !== "open" && o.symbol === symbol);
+  const openOrders   = myOrders.filter(o =>
+    (o.status === "open" || (o.status === "processing" && String(o.fundingRef ?? "").startsWith("evm-order:1:"))) &&
+    o.symbol === symbol
+  );
+  const historyOrders = myOrders.filter(o =>
+    o.status !== "open" &&
+    !(o.status === "processing" && String(o.fundingRef ?? "").startsWith("evm-order:1:")) &&
+    o.symbol === symbol
+  );
 
   // ── Compute amounts locked in open orders ACROSS ALL markets ──────────────
   // External wallets hold funds on-chain; the exchange cannot debit them until
@@ -436,13 +455,31 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   );
 
   const cancelMutation = useMutation({
-    mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
+    mutationFn: async ({ orderId, walletAddress: orderWalletAddress, fundingRef }: {
+      orderId: string;
+      walletAddress: string;
+      fundingRef?: string | null;
+    }) => {
+      let orderbookCancelTxHash: string | undefined;
       // Step 1 (best-effort): release any on-chain escrow lock so the user
       // gets their coins back. Only send the on-chain cancel tx if there is
       // actually a deposit in escrow — calling cancel() on an order that was
       // never locked causes "OrahDEXEscrow: no deposit" to revert, which
       // triggers a confusing "Gas fee estimation failed" prompt in the wallet.
-      if (escrowAvailable && walletChainId) {
+      if (fundingRef?.startsWith("evm-order:1:")) {
+        const [, , escrowAddress, orderKey] = fundingRef.split(":");
+        if (!escrowAddress || !/^0x[0-9a-fA-F]{64}$/.test(orderKey ?? "")) {
+          throw new Error("Order escrow details are invalid. Refresh and retry.");
+        }
+        const cancelled = await cancelOrderbookOrder({
+          escrowAddress,
+          orderKey: orderKey as `0x${string}`,
+          from: orderWalletAddress,
+          chainId: 1,
+          isOrahWallet,
+        });
+        orderbookCancelTxHash = cancelled.txHash;
+      } else if (escrowAvailable && walletChainId) {
         let hasDeposit = false;
         try {
           // 4-second timeout: a slow RPC shouldn't stall the cancel button.
@@ -476,7 +513,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: orderWalletAddress, signature, nonce, expiry }),
+        body: JSON.stringify({
+          walletAddress: orderWalletAddress,
+          signature,
+          nonce,
+          expiry,
+          orderbookCancelTxHash,
+        }),
       });
       // 404 means the order is already cancelled (desired state) — treat as success.
       // This handles double-tap, stale cache, and races gracefully.
@@ -526,6 +569,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
+      if (walletOrderbookAvailable) void refreshEvmBalances();
     },
   });
   const handleCancelOrder = useCallback((order: any) => {
@@ -538,7 +582,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       });
       return;
     }
-    cancelMutation.mutate({ orderId: String(order.id), walletAddress });
+    cancelMutation.mutate({
+      orderId: String(order.id),
+      walletAddress,
+      fundingRef: order.fundingRef,
+    });
   }, [cancelMutation, toast]);
 
   // ── Submission lock — prevents any multi-submit path ─────────────────────────
@@ -662,6 +710,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         } catch { /* ignore parse error */ }
         const err: any = new Error(errMsg);
         err.code = errCode;
+        err.status = res.status;
         throw err;
       }
       return res.json();
@@ -752,9 +801,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
+      if (walletOrderbookAvailable) void refreshEvmBalances();
       setTimeout(() => setOrderResult(null), 10000);
 
-      if (matched && address) {
+      if (data?.settlementPending) {
+        toast({
+          title: "Trade settlement confirming",
+          description: "The matched wallet orders are still reserved in Ethereum escrow. The trade status will update after confirmation.",
+        });
+      } else if (matched && address) {
         // Compute credited amount from fill payload — never from wallet diff
         let receivedQty: string;
         let receivedTok: string;
@@ -1329,6 +1384,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       ? (parseFloat(stopPrice || "0") || undefined)
       : undefined;
 
+    if (walletOrderbookAvailable && apiType !== "limit") {
+      toast({
+        title: "Limit orders only",
+        description: "Ethereum wallet settlement currently supports limit orders. Switch order type to Limit.",
+        variant: "destructive",
+      });
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      lastOrderFingerprintRef.current = null;
+      return;
+    }
+
     let evmSignature: string | undefined;
     let orderNonce:   string | undefined;
     let orderExpiry:  string | undefined;
@@ -1416,7 +1483,43 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       }
     }
 
-    orderMutation.mutate({
+    let orderbookLockTxHash: `0x${string}` | undefined;
+    let orderbookExpiresAt: number | undefined;
+    if (walletOrderbookAvailable) {
+      try {
+        const escrowAddress = evmOrderbookConfig?.address;
+        if (!escrowAddress || !orderNonce || !usePrice || walletChainId !== 1) {
+          throw new Error("Ethereum order escrow configuration or limit price is missing");
+        }
+        orderbookExpiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+        const lock = await lockOrderbookOrder({
+          escrowAddress,
+          nonce: orderNonce,
+          side,
+          base,
+          quote,
+          quantity: amtNum,
+          price: usePrice,
+          expiresAt: orderbookExpiresAt,
+          from: address,
+          chainId: 1,
+          isOrahWallet,
+        });
+        orderbookLockTxHash = lock.txHash;
+      } catch (lockError: any) {
+        toast({
+          title: "Could not lock order funds",
+          description: String(lockError?.message ?? "Ethereum order escrow transaction failed."),
+          variant: "destructive",
+        });
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        lastOrderFingerprintRef.current = null;
+        return;
+      }
+    }
+
+    const orderPayload = {
       symbol,
       walletAddress: address,
       side,
@@ -1433,7 +1536,46 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       nonce:  orderNonce,
       expiry: orderExpiry,
       chainId: walletChainId ?? undefined,
-    } as any);
+      orderbookLockTxHash,
+      orderbookExpiresAt,
+    } as any;
+
+    try {
+      await orderMutation.mutateAsync(orderPayload);
+    } catch (submissionError: any) {
+      if (orderbookLockTxHash && orderbookExpiresAt && submissionError?.status >= 400 && evmOrderbookConfig?.address) {
+        let serverHasOrder = false;
+        for (let attempt = 0; attempt < 2 && !serverHasOrder; attempt += 1) {
+          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
+          try {
+            const response = await fetch(
+              `${BASE}/api/orders?walletAddress=${encodeURIComponent(address)}`,
+              { cache: "no-store" },
+            );
+            const rows = response.ok ? await response.json() : [];
+            serverHasOrder = Array.isArray(rows) && rows.some((order: any) => String(order.nonce) === String(orderNonce));
+          } catch { /* leave funds locked if order creation cannot be verified */ }
+        }
+        if (!serverHasOrder) {
+          try {
+            const orderKey = keccak256(toBytes(orderNonce!));
+            await cancelOrderbookOrder({
+              escrowAddress: evmOrderbookConfig.address,
+              orderKey,
+              from: address,
+              chainId: 1,
+              isOrahWallet,
+            });
+          } catch (cancelError: any) {
+            toast({
+              title: "Order was rejected; funds may remain escrowed",
+              description: `Keep this wallet connected and retry cancellation. ${String(cancelError?.message ?? "")}`,
+              variant: "destructive",
+            });
+          }
+        }
+      }
+    }
   }
 
   return (
@@ -1880,6 +2022,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                             </span>
                             <span className="text-xs text-foreground font-semibold">{o.symbol}</span>
                             <span className="text-[9px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">{o.type ?? "limit"}</span>
+                            {o.status === "processing" && (
+                              <span className="text-[9px] text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">Settlement pending</span>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
                             <span>Price: <span className="text-foreground font-mono">{o.price ? fmt(Number(o.price)) : "—"}</span></span>
@@ -1999,7 +2144,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {isSelfCustodyEvm && (
               <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-[11px] bg-primary/8 border border-primary/20">
                 <ShieldCheck size={12} className="text-primary shrink-0" />
-                <span className="text-primary/80 font-medium">Order-book trading uses available trading balance. Wallet-to-wallet matching is paused; use Swap for wallet-held funds.</span>
+                <span className="text-primary/80 font-medium">
+                  {walletOrderbookAvailable
+                    ? "Ethereum limit orders lock the required wallet funds until the order fills or you cancel it."
+                    : "Order-book trading uses available trading balance. Wallet-to-wallet matching is paused; use Swap for wallet-held funds."}
+                </span>
               </div>
             )}
 
@@ -2398,7 +2547,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <div className="bg-blue-500/5 border border-blue-500/25 rounded-xl px-3 py-2 flex items-start gap-2">
                 <svg className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
                 <div className="text-[10px] leading-relaxed text-blue-300/90">
-                  <span className="font-bold text-blue-300">Wallet funds stay yours.</span> On-chain wallet balances are shown separately below. Order-book trades require a funded trading balance; use Swap for wallet-held funds.
+                  {walletOrderbookAvailable
+                    ? <><span className="font-bold text-blue-300">Wallet-funded limit trading is enabled.</span> Required funds are locked in Ethereum escrow until filled or canceled.</>
+                    : <><span className="font-bold text-blue-300">Wallet funds stay yours.</span> On-chain wallet balances are shown separately below. Order-book trades require a funded trading balance; use Swap for wallet-held funds.</>}
                   {hasEscrow(walletChainId ?? 0) && <span className="text-emerald-400"> On-chain escrow available on this chain.</span>}
                 </div>
               </div>
