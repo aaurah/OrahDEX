@@ -3,7 +3,7 @@ import { db, pool } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
 import { eq, and, lte, gte, ne, isNotNull, desc, asc, sql } from "drizzle-orm";
 import crypto from "node:crypto";
-import { recoverMessageAddress } from "viem";
+import { keccak256, recoverMessageAddress, toBytes } from "viem";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
@@ -13,6 +13,15 @@ import { unlockFunds, getBalances } from "../lib/ledger.js";
 import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
 import { settleSpotFill }        from "../lib/spotSettlement.js";
 import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
+import {
+  getConfirmedEvmOrderSettlement,
+  getEvmOrderbookEscrowConfig,
+  getEvmSettlementTxStatus,
+  orderKeyFromNonce,
+  settleEvmOrderFill,
+  verifyEvmOrderbookCancelTx,
+  verifyEvmOrderLock,
+} from "../lib/evmOrderbookEscrow.js";
 import { settleEscrowMatch, isEscrowChain, findEscrowChain, ESCROW_ADDRESSES } from "../lib/escrowRelayer.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
@@ -36,6 +45,14 @@ const router: IRouter = Router();
 // can be rolled out without breaking existing integrations immediately.
 const _readChallenges = new Map<string, { nonce: string; expiresAt: number }>();
 const READ_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+router.get("/orders/evm-settlement/config", async (_req, res) => {
+  try {
+    res.json(await getEvmOrderbookEscrowConfig());
+  } catch {
+    res.status(503).json({ chainId: 1, available: false });
+  }
+});
 
 // ── Wallet-format helpers ─────────────────────────────────────────────────────
 
@@ -82,6 +99,14 @@ function detectIsSolAddress(addr: string): boolean {
   return addr.length >= 32 && addr.length <= 44 && decodeBase58(addr)?.length === 32;
 }
 
+function evmOrderKeyFromFundingRef(fundingRef: string | null | undefined): `0x${string}` | null {
+  const parts = String(fundingRef ?? "").split(":");
+  return parts[0] === "evm-order" && parts[1] === "1" &&
+    /^0x[0-9a-fA-F]{64}$/.test(parts[3] ?? "")
+    ? parts[3] as `0x${string}`
+    : null;
+}
+
 async function releaseLedgerOrderFunds(
   fundingRef: string,
   walletAddress: string,
@@ -111,7 +136,7 @@ function settlementExplorerUrl(txid: string | null | undefined, chainId?: number
   if (!txid) return null;
 
   // Pending EVM HTLC sessions do not have a final settlement tx yet.
-  if (txid.startsWith("htlc-pending-")) {
+  if (txid.startsWith("htlc-pending-") || txid.startsWith("evm-settlement:")) {
     const cfg = chainId ? EVM_CHAINS[chainId] : null;
     if (!cfg) return null;
     return cfg.contractAddress
@@ -141,6 +166,114 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
     fee:               parseFloat(o.fee),
     explorerUrl:       settlementExplorerUrl(o.txid, null),
   };
+}
+
+async function reconcilePendingEvmOrderbookOrders(rows: Array<typeof ordersTable.$inferSelect>, log: any): Promise<boolean> {
+  let changed = false;
+  const handled = new Set<string>();
+  for (const row of rows) {
+    const marker = String(row.txid ?? "");
+    if (row.status !== "processing" || !String(row.fundingRef ?? "").startsWith("evm-order:1:")) continue;
+    if (/^0x[0-9a-fA-F]{64}$/.test(marker)) {
+      const ageMs = Date.now() - new Date(row.updatedAt).getTime();
+      if (ageMs < 600_000) continue;
+      const remaining = Number(row.remainingQuantity ?? row.quantity);
+      await db.update(ordersTable)
+        .set({ status: remaining <= 1e-9 ? "filled" : "open", updatedAt: new Date() })
+        .where(and(
+          eq(ordersTable.id, row.id),
+          eq(ordersTable.status, "processing"),
+          eq(ordersTable.txid, marker),
+        ));
+      changed = true;
+      continue;
+    }
+    if (!marker.startsWith("evm-settlement:")) continue;
+    const [, settlementId, txHash] = marker.split(":");
+    if (!/^0x[0-9a-fA-F]{64}$/.test(settlementId ?? "") || handled.has(settlementId)) continue;
+    handled.add(settlementId);
+
+    const partnerId = row.matchedOrderId;
+    if (!partnerId) continue;
+    const [partner] = await db.select().from(ordersTable).where(eq(ordersTable.id, partnerId)).limit(1);
+    if (!partner) continue;
+    const rowKey = evmOrderKeyFromFundingRef(row.fundingRef);
+    const partnerKey = evmOrderKeyFromFundingRef(partner.fundingRef);
+    if (!rowKey || !partnerKey) continue;
+
+    if (txHash && /^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+      const txStatus = await getEvmSettlementTxStatus(txHash as `0x${string}`);
+      if (txStatus === "reverted") {
+        await db.transaction(async (tx) => {
+          for (const order of [row, partner]) {
+            if (order.status !== "processing" || !String(order.txid ?? "").startsWith(`evm-settlement:${settlementId}:`)) continue;
+            await tx.update(ordersTable)
+              .set({ status: "open", txid: null, matchedOrderId: null, updatedAt: new Date() })
+              .where(and(
+                eq(ordersTable.id, order.id),
+                eq(ordersTable.status, "processing"),
+                eq(ordersTable.txid, order.txid!),
+              ));
+          }
+        });
+        changed = true;
+        continue;
+      }
+      if (txStatus === "pending") continue;
+    }
+
+    const settlement = await getConfirmedEvmOrderSettlement(settlementId as `0x${string}`);
+    if (!settlement) continue;
+    const isCorrectPair =
+      (rowKey.toLowerCase() === settlement.buyOrderKey.toLowerCase() &&
+        partnerKey.toLowerCase() === settlement.sellOrderKey.toLowerCase()) ||
+      (rowKey.toLowerCase() === settlement.sellOrderKey.toLowerCase() &&
+        partnerKey.toLowerCase() === settlement.buyOrderKey.toLowerCase());
+    if (!isCorrectPair) {
+      log.error({ settlementId, rowId: row.id, partnerId }, "orderbook recovery event does not match saved order pair");
+      continue;
+    }
+
+    const quantity = Number(settlement.baseAmount);
+    const gross = Number(settlement.grossQuoteAmount);
+    const fee = Number(settlement.feeAmount);
+    if (!(quantity > 0) || !(gross > 0)) continue;
+    await db.transaction(async (tx) => {
+      for (const order of [row, partner]) {
+        if (
+          order.status !== "processing" ||
+          !String(order.txid ?? "").startsWith(`evm-settlement:${settlementId}`)
+        ) continue;
+        const previousFilled = Number(order.filledQuantity ?? "0");
+        const previousRemaining = Number(order.remainingQuantity ?? order.quantity);
+        if (quantity > previousRemaining + 1e-9) {
+          log.error({ settlementId, orderId: order.id, quantity, previousRemaining }, "orderbook recovery fill exceeds saved remainder");
+          continue;
+        }
+        const filledQuantity = previousFilled + quantity;
+        const remainingQuantity = Math.max(0, previousRemaining - quantity);
+        const priorTotal = previousFilled > 0 ? Number(order.total ?? "0") : 0;
+        const priorFee = previousFilled > 0 && order.side === "sell" ? Number(order.fee ?? "0") : 0;
+        await tx.update(ordersTable)
+          .set({
+            status: "processing",
+            filledQuantity: filledQuantity.toFixed(18),
+            remainingQuantity: remainingQuantity.toFixed(18),
+            total: (priorTotal + gross).toFixed(18),
+            fee: (priorFee + (order.side === "sell" ? fee : 0)).toFixed(18),
+            txid: settlement.txHash,
+            updatedAt: new Date(),
+          })
+          .where(and(
+            eq(ordersTable.id, order.id),
+            eq(ordersTable.status, "processing"),
+            eq(ordersTable.txid, order.txid!),
+          ));
+      }
+    });
+    changed = true;
+  }
+  return changed;
 }
 
 // ── GET /orders/challenge — issue a read-ownership nonce ─────────────────────
@@ -229,10 +362,22 @@ router.get("/orders", async (req, res) => {
     if (symbol) conditions.push(eq(ordersTable.symbol, symbol));
     if (status) conditions.push(eq(ordersTable.status, status));
 
-    const orders = await db.select().from(ordersTable)
+    let orders = await db.select().from(ordersTable)
       .where(and(...conditions))
       .orderBy(desc(ordersTable.createdAt))
       .limit(limit);
+
+    try {
+      const recovered = await reconcilePendingEvmOrderbookOrders(orders, req.log);
+      if (recovered) {
+        orders = await db.select().from(ordersTable)
+          .where(and(...conditions))
+          .orderBy(desc(ordersTable.createdAt))
+          .limit(limit);
+      }
+    } catch (reconcileErr: any) {
+      req.log.warn({ err: reconcileErr?.message }, "orders: orderbook settlement recovery check failed");
+    }
 
     res.json(orders.map(serializeOrder));
   } catch (err) {
@@ -592,7 +737,55 @@ router.post("/orders", async (req, res) => {
       : quantity.toString();
 
     let fundingRef = "";
-    if (parseFloat(lockAmount) > 0 && lockAsset) {
+    let onchainOrderKey: `0x${string}` | null = null;
+    if (body.orderbookLockTxHash != null) {
+      if (!isEvmAddress || chainId !== 1 || type !== "limit") {
+        res.status(400).json({
+          error: "Wallet-funded orderbook settlement currently supports Ethereum mainnet limit orders only.",
+          code: "ORDERBOOK_NETWORK_UNSUPPORTED",
+        });
+        return;
+      }
+      const config = await getEvmOrderbookEscrowConfig();
+      if (!config.available) {
+        res.status(503).json({
+          error: "Ethereum order escrow is not deployed and verified yet.",
+          code: "ORDERBOOK_SETTLEMENT_UNAVAILABLE",
+        });
+        return;
+      }
+      if (Math.abs(feeRate - config.feeBps / 10_000) > 1e-9) {
+        res.status(503).json({
+          error: "Ethereum escrow fee does not match this market's configured trading fee.",
+          code: "ORDERBOOK_FEE_MISMATCH",
+        });
+        return;
+      }
+      try {
+        const verifiedLock = await verifyEvmOrderLock({
+          chainId,
+          walletAddress: body.walletAddress,
+          nonce: String(body.nonce ?? ""),
+          txHash: String(body.orderbookLockTxHash),
+          side,
+          base: baseAsset,
+          quote: quoteAsset,
+          quantity: body.quantity,
+          price: body.price,
+          expiresAt: Number(body.orderbookExpiresAt),
+        });
+        fundingRef = verifiedLock.fundingRef;
+        onchainOrderKey = verifiedLock.orderKey;
+      } catch (lockErr: any) {
+        const message = String(lockErr?.message ?? "Could not verify Ethereum order escrow");
+        const awaitingConfirmations = message.includes("awaiting Ethereum confirmations");
+        res.status(awaitingConfirmations ? 425 : 400).json({
+          error: message,
+          code: awaitingConfirmations ? "ORDERBOOK_LOCK_PENDING" : "ORDERBOOK_LOCK_INVALID",
+        });
+        return;
+      }
+    } else if (parseFloat(lockAmount) > 0 && lockAsset) {
       const fundingVerif = await verifyAndLockFunding({
         walletAddress:   body.walletAddress,
         ledgerOnly:      true,
@@ -611,7 +804,7 @@ router.post("/orders", async (req, res) => {
       }
       fundingRef = fundingVerif.fundingRef;
     }
-    if (!fundingRef.startsWith("ledger:")) {
+    if (!fundingRef.startsWith("ledger:") && !fundingRef.startsWith("evm-order:1:")) {
       res.status(503).json({
         error: "Wallet-to-wallet order matching is paused until confirmed on-chain settlement is tracked. Use the separate swap flow instead.",
         code: "SETTLEMENT_UNAVAILABLE",
@@ -636,7 +829,7 @@ router.post("/orders", async (req, res) => {
       total:             total != null ? total.toFixed(18) : undefined,
       fee:               fee.toFixed(18),
       feeAsset:          symbol.split("/")[1] || "USDT",
-       timeInForce,
+      timeInForce,
       txid:              null as string | null,
       // EVM signature from MetaMask personal_sign — proves the trader authorised this order
       signedTx:          body.evmSignature || body.signedTx || null,
@@ -717,7 +910,7 @@ router.post("/orders", async (req, res) => {
           eq(ordersTable.side, counterSide),
           eq(ordersTable.status, "open"),
           eq(ordersTable.type, "limit"),
-          sql`${ordersTable.fundingRef} LIKE 'ledger:%'`,
+          sql`(${ordersTable.fundingRef} LIKE 'ledger:%' OR ${ordersTable.fundingRef} LIKE 'evm-order:1:%')`,
           ne(ordersTable.walletAddress, BOT_ADDRESS),
           ne(ordersTable.walletAddress, body.walletAddress),
           ...(isMarket && lockPrice
@@ -743,8 +936,14 @@ router.post("/orders", async (req, res) => {
       // so settlement remains wallet-to-wallet via HTLC, not synthetic ledger fill.
       // When both the incoming order and a candidate have a chainId, they must match —
       // cross-chain EVM fills (e.g. Ethereum vs Arbitrum) are rejected here.
+      const incomingIsOrderbookEscrow = fundingRef.startsWith("evm-order:1:");
       const requiresDefiWalletToWallet = fundingRef.startsWith("evm-");
-      const eligibleMatches = requiresDefiWalletToWallet
+      const eligibleMatches = incomingIsOrderbookEscrow
+        ? sorted.filter((candidate) =>
+            !!evmOrderKeyFromFundingRef(candidate.fundingRef) &&
+            Number(candidate.chainId ?? 1) === Number(chainId ?? 1))
+        : sorted.filter((candidate) => !evmOrderKeyFromFundingRef(candidate.fundingRef));
+      const walletMatchCandidates = requiresDefiWalletToWallet
         ? sorted.filter((candidate) => {
             const isBot = candidate.walletAddress === BOT_ADDRESS;
             if (isBot) return false;
@@ -760,7 +959,10 @@ router.post("/orders", async (req, res) => {
             if (!isEvmExternal) return false;
             return true;
           })
-        : sorted;
+        : eligibleMatches;
+      const finalEligibleMatches = incomingIsOrderbookEscrow
+        ? eligibleMatches.filter((candidate) => candidate.walletAddress !== body.walletAddress)
+        : walletMatchCandidates.filter((candidate) => !evmOrderKeyFromFundingRef(candidate.fundingRef));
 
       // ── Multi-fill loop: consume counter-orders until qty is satisfied ───────
       // This correctly handles large orders that span multiple counter-orders,
@@ -774,7 +976,7 @@ router.post("/orders", async (req, res) => {
 
       const [baseAsset, quoteAsset = "USDT"] = symbol.split("/");
 
-      for (const match of eligibleMatches) {
+      for (const match of finalEligibleMatches) {
         if (remainingQty <= 0.000001) break;
 
         // Use remainingQuantity directly — it is always kept up-to-date by
@@ -813,6 +1015,9 @@ router.post("/orders", async (req, res) => {
            !matchFundingRef0.startsWith("margin:"))
         );
         const bothEvmExternal = incomingIsEvmExternal && matchIsEvmExternal;
+        const bothOrderbookEscrow =
+          !!onchainOrderKey && !!evmOrderKeyFromFundingRef(matchFundingRef0) &&
+          Number(chainId ?? 1) === Number(match.chainId ?? 1);
 
         // ─────────────────────────────────────────────────────────────────────
         // ESCROW INTEGRITY PRECHECK — runs BEFORE any DB writes / fillResult.
@@ -832,7 +1037,7 @@ router.post("/orders", async (req, res) => {
         let prefetchedSellerChain: number | null = null;
         let prefetchedBuyerChain:  number | null = null;
         let escrowAnyDeposit = false;
-        if (bothEvmExternal) {
+        if (bothEvmExternal && !bothOrderbookEscrow) {
           try {
             const buyerOrderId  = side === "buy"  ? id : match.id;
             const sellerOrderId = side === "sell" ? id : match.id;
@@ -890,9 +1095,61 @@ router.post("/orders", async (req, res) => {
         if (!claimedMatch) continue;
 
         let fillResult: Awaited<ReturnType<typeof settleSpotFill>>;
+        let orderbookSettlementId: `0x${string}` | null = null;
 
         try {
-          if (bothEvmExternal) {
+          if (bothOrderbookEscrow) {
+            const incomingOrderKey = onchainOrderKey ?? orderKeyFromNonce(String(body.nonce ?? ""));
+            const matchedOrderKey = evmOrderKeyFromFundingRef(matchFundingRef0);
+            if (!matchedOrderKey) {
+              await db.update(ordersTable)
+                .set({ status: "open", updatedAt: new Date() })
+                .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "processing")));
+              continue;
+            }
+            const buyerOrderKey = side === "buy" ? incomingOrderKey : matchedOrderKey;
+            const sellerOrderKey = side === "sell" ? incomingOrderKey : matchedOrderKey;
+            const incomingFilledAfter = (totalFilled + fillQty).toFixed(18);
+            const matchFilledAfter = (parseFloat(match.filledQuantity ?? "0") + fillQty).toFixed(18);
+            const buyerFilledAfter = side === "buy" ? incomingFilledAfter : matchFilledAfter;
+            const sellerFilledAfter = side === "sell" ? incomingFilledAfter : matchFilledAfter;
+            const settlementId = keccak256(toBytes(
+              `${buyerOrderKey}:${sellerOrderKey}:${buyerFilledAfter}:${sellerFilledAfter}`,
+            ));
+            orderbookSettlementId = settlementId;
+            const pendingRef = `evm-settlement:${settlementId}`;
+
+            await Promise.all([
+              db.update(ordersTable)
+                .set({ txid: pendingRef, matchedOrderId: match.id, updatedAt: new Date() })
+                .where(eq(ordersTable.id, id)),
+              db.update(ordersTable)
+                .set({ txid: pendingRef, matchedOrderId: id, updatedAt: new Date() })
+                .where(eq(ordersTable.id, match.id)),
+            ]);
+
+            const settlement = await settleEvmOrderFill({
+              settlementId,
+              buyOrderKey: buyerOrderKey,
+              sellOrderKey: sellerOrderKey,
+              base: baseAsset,
+              quote: quoteAsset,
+              baseAmount: fillQty.toFixed(18),
+              grossQuoteAmount: fillValue.toFixed(18),
+            }, async (txHash) => {
+              const submittedRef = `evm-settlement:${settlementId}:${txHash}`;
+              await Promise.all([
+                db.update(ordersTable).set({ txid: submittedRef, updatedAt: new Date() }).where(eq(ordersTable.id, id)),
+                db.update(ordersTable).set({ txid: submittedRef, updatedAt: new Date() }).where(eq(ordersTable.id, match.id)),
+              ]);
+            });
+            fillResult = {
+              txid: settlement.txHash,
+              wasRealBroadcast: !settlement.alreadySettled,
+              settlementType: "evm_orderbook",
+              isCrossChain: false,
+            };
+          } else if (bothEvmExternal) {
             // ── On-chain EVM path: HTLC atomic settlement ──────────────────
             // Both parties hold funds in their own wallets. Skip internal ledger
             // settlement — funds are transferred directly on-chain via the HTLC
@@ -932,6 +1189,20 @@ router.post("/orders", async (req, res) => {
             });
           }
         } catch (fillErr: any) {
+          if (bothOrderbookEscrow) {
+            req.log.error(
+              { err: fillErr?.message, tradeId, settlementId: orderbookSettlementId, matchId: match.id },
+              "orders: atomic Ethereum settlement is pending reconciliation; order state remains processing",
+            );
+            res.status(202).json({
+              id,
+              symbol,
+              status: "processing",
+              settlementPending: true,
+              code: "ONCHAIN_SETTLEMENT_PENDING",
+            });
+            return;
+          }
           await db.update(ordersTable).set({ status: "open", updatedAt: new Date() })
             .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "processing")));
           // Ledger settlement failed for this match. Since settleTrade() threw
@@ -977,11 +1248,18 @@ router.post("/orders", async (req, res) => {
           // have continued to the next match).  If we get 0 rows here the ledger
           // already committed for this fill — log a warning and continue; the fill
           // value is already recorded in totalFilled above.
+          const previousMatchFilled = parseFloat(match.filledQuantity ?? "0");
+          const previousMatchTotal = previousMatchFilled > 0 ? parseFloat(match.total ?? "0") : 0;
+          const previousMatchFee = previousMatchFilled > 0 && match.side === "sell" ? parseFloat(match.fee ?? "0") : 0;
           const [updatedMatch] = await db.update(ordersTable)
             .set({
               status:            isMatchFullyFilled ? "filled" : "open",
               filledQuantity:    newMatchFilled.toFixed(18),
               remainingQuantity: newMatchRemaining.toFixed(18),
+              total:             bothOrderbookEscrow ? (previousMatchTotal + fillValue).toFixed(18) : undefined,
+              fee:               bothOrderbookEscrow
+                ? (previousMatchFee + (match.side === "sell" ? fillValue * feeRate : 0)).toFixed(18)
+                : undefined,
               txid:              broadcastTxid,
               matchedOrderId:    id,
               updatedAt:         new Date(),
@@ -995,6 +1273,20 @@ router.post("/orders", async (req, res) => {
               "orders: counter-order status already changed (concurrent consume) — fill credited, order state diverged",
             );
           }
+        }
+
+        if (bothOrderbookEscrow) {
+          await db.update(ordersTable)
+            .set({
+              filledQuantity: (totalFilled + fillQty).toFixed(18),
+              remainingQuantity: Math.max(0, remainingQty - fillQty).toFixed(18),
+              total: (totalFillValue + fillValue).toFixed(18),
+              fee: (side === "sell" ? (totalFillValue + fillValue) * feeRate : 0).toFixed(18),
+              txid: broadcastTxid,
+              matchedOrderId: match.id,
+              updatedAt: new Date(),
+            })
+            .where(eq(ordersTable.id, id));
         }
 
         totalFilled    += fillQty;
@@ -1029,10 +1321,10 @@ router.post("/orders", async (req, res) => {
         //                    must NOT run because that would create a parallel
         //                    settlement against the same locked funds. Funds
         //                    stay safe in escrow; user cancels to refund.
-        let escrowSettled = false;
+        let escrowSettled = bothOrderbookEscrow;
         let escrowGated   = false;
 
-        if (bothEvmExternal) {
+        if (bothEvmExternal && !bothOrderbookEscrow) {
           const releaseChainId = body.chainId && Number.isInteger(Number(body.chainId)) && isEscrowChain(Number(body.chainId))
             ? Number(body.chainId)
             : 1;  // default to Ethereum mainnet (where escrow is deployed)
@@ -1252,7 +1544,7 @@ router.post("/orders", async (req, res) => {
         // we can't safely release (partial fill, one-sided lock, cross-chain).
         // Running HTLC in those cases would create a parallel claim against
         // the same locked funds — the very bug the safety gate prevents.
-        if (bothEvmExternal && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
+        if (bothEvmExternal && !bothOrderbookEscrow && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
           // Determine chain — prefer incoming order's chainId, then counterparty's, then Ethereum.
           const rawChainId = body.chainId
             ? Number(body.chainId)
@@ -1340,7 +1632,11 @@ router.post("/orders", async (req, res) => {
         const avgFillPrice    = totalFillValue / totalFilled;
         const isFullyFilled   = remainingQty <= 0.000001;
         const marketRemainderCancelled = isMarket && !isFullyFilled;
-        const correctFee      = (totalFillValue * feeRate).toFixed(18);
+        const correctFee      = (
+          fundingRef.startsWith("evm-order:1:") && side !== "sell"
+            ? 0
+            : totalFillValue * feeRate
+        ).toFixed(18);
         // Record exchange revenue from the order book fill fee
         const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
         recordPlatformFee({ source: "orderbook", amount: correctFee, asset: feeAssetSymbol, txRef: id });
@@ -1378,7 +1674,7 @@ router.post("/orders", async (req, res) => {
         pushNotification(body.walletAddress, {
           type:  isFullyFilled ? "order_filled" : "order_partial",
           title: isFullyFilled ? "Order Filled ✓" : `Partial Fill — ${totalFilled.toFixed(4)} ${fillBase}`,
-          body:  `${totalFilled.toFixed(4)} ${fillBase} @ ${avgFillPrice.toFixed(4)} avg · settled in trading balance${marketRemainderCancelled ? " · unfilled remainder cancelled" : ""}`,
+          body:  `${totalFilled.toFixed(4)} ${fillBase} @ ${avgFillPrice.toFixed(4)} avg · ${fundingRef.startsWith("evm-order:1:") ? "settled directly on Ethereum" : "settled in trading balance"}${marketRemainderCancelled ? " · unfilled remainder cancelled" : ""}`,
           pair:  fillSymbol,
           txid:  lastTxid ?? undefined,
           side,
@@ -1521,6 +1817,39 @@ router.delete("/orders/:orderId", async (req, res) => {
       return;
     }
 
+    const [existingOrder] = await db.select().from(ordersTable)
+      .where(eq(ordersTable.id, String(req.params.orderId)))
+      .limit(1);
+    const fundingRef = String(existingOrder?.fundingRef ?? "");
+    const isOrderbookEscrowOrder = fundingRef.startsWith("evm-order:1:");
+    let orderbookCancelVerified = false;
+    if (isOrderbookEscrowOrder) {
+      const [, , escrowAddress, orderKey] = fundingRef.split(":");
+      if (!escrowAddress || !orderKey || !body.orderbookCancelTxHash) {
+        res.status(400).json({
+          error: "Ethereum escrow orders must be canceled on-chain before removing them from the orderbook.",
+          code: "ORDERBOOK_CANCEL_PROOF_REQUIRED",
+        });
+        return;
+      }
+      try {
+        await verifyEvmOrderbookCancelTx({
+          escrowAddress,
+          orderKey: orderKey as `0x${string}`,
+          walletAddress: String(body.walletAddress),
+          txHash: String(body.orderbookCancelTxHash),
+        });
+        orderbookCancelVerified = true;
+        if (existingOrder) await reconcilePendingEvmOrderbookOrders([existingOrder], req.log);
+      } catch (cancelErr: any) {
+        res.status(400).json({
+          error: String(cancelErr?.message ?? "Could not verify escrow cancellation"),
+          code: "ORDERBOOK_CANCEL_INVALID",
+        });
+        return;
+      }
+    }
+
     const client = await pool.connect();
     let orderRow: Record<string, unknown>;
     try {
@@ -1532,9 +1861,12 @@ router.delete("/orders/:orderId", async (req, res) => {
          SET status = 'cancelled', updated_at = NOW()
          WHERE id = $1
            AND lower(wallet_address) = lower($2)
-           AND status = 'open'
+           AND (
+             status = 'open'
+             OR ($3::boolean = true AND status = 'processing' AND funding_ref LIKE 'evm-order:1:%')
+           )
          RETURNING *`,
-        [req.params.orderId, body.walletAddress],
+        [req.params.orderId, body.walletAddress, orderbookCancelVerified],
       );
 
       if (!cancelRows.length) {
