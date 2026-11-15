@@ -455,7 +455,28 @@ async function executeSwap(
 ): Promise<`0x${string}`> {
   const routerAddr = routerOverride ?? SWAP_ROUTER[chainId];
   const weth       = WETH[chainId];
-  const config     = getWagmiConfig();
+  // The minimal config in reown.ts intentionally has no wallet connectors.
+  // Use AppKit's live config so WalletConnect/Reown transactions have the
+  // connector session that supplied the address shown in the wallet header.
+  const [{ getAppKitWagmiConfig }, { getAccount, getConnections, switchChain }] = await Promise.all([
+    import("@/lib/reown-appkit"),
+    import("@wagmi/core"),
+  ]);
+  const config = getAppKitWagmiConfig();
+  const connection = getConnections(config).find(conn =>
+    conn.accounts.some(account => account.toLowerCase() === userAddress.toLowerCase())
+  );
+  if (!connection) {
+    throw new Error("Wallet connector not connected. Reconnect the displayed wallet and try again.");
+  }
+  const connectedAccount = getAccount(config);
+  if (!connectedAccount.address || connectedAccount.address.toLowerCase() !== userAddress.toLowerCase()) {
+    throw new Error("The active wallet account changed. Reconnect the displayed account and try again.");
+  }
+  if (connectedAccount.chainId !== chainId) {
+    await switchChain(config, { chainId });
+  }
+
   const tokenIn    = fromToken.isNative ? weth : fromToken.address;
   const tokenOut   = toToken.isNative   ? weth : toToken.address;
   const isEthIn    = fromToken.isNative;
