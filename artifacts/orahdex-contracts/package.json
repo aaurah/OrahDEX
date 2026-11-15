@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "compile": "hardhat compile",
+    "test": "hardhat --config hardhat.offline.config.cjs test",
     "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
     "deploy:base-sepolia": "hardhat run scripts/deploy.ts --network base-sepolia",
     "deploy:localhost": "hardhat run scripts/deploy.ts --network localhost",
