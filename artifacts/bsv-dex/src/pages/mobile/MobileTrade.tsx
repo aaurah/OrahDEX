@@ -30,6 +30,7 @@ import { hasEscrow, chainLabel, checkEscrowDeposit, resolveEscrowAsset, lockOrde
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 import { buildOrderIntentMessage, buildOrderActionMessage, signWalletMessage } from "@/lib/tradeAuth";
 import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
+import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -299,6 +300,12 @@ const ORDER_TYPE_DESCS: Record<OrderType, string> = {
   "post-only":     "Always placed as maker. Rejected if it would immediately fill.",
 };
 
+function supportsEthereumWalletOrderbookAsset(symbol: string): boolean {
+  const normalized = symbol.trim().toUpperCase();
+  if (normalized === "ETH") return true;
+  return Boolean(CHAIN_TOKEN_ADDRESSES[1]?.[normalized]) &&
+    (TOKEN_DECIMALS[normalized] ?? 18) === 18;
+}
 
 export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Only replace the first hyphen (base-quote separator); keep -PERP suffix intact
@@ -325,12 +332,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (!response.ok) return { available: false, chainId: 1 };
       return response.json();
     },
-    enabled: isEvm && !!address && walletChainId === 1,
+    enabled: isEvm && !!address && (walletChainId == null || walletChainId === 1),
     staleTime: 60_000,
     refetchInterval: 60_000,
   });
   const walletOrderbookAvailable =
-    isEvm && walletChainId === 1 && evmOrderbookConfig?.available === true;
+    isEvm &&
+    (walletChainId ?? 1) === 1 &&
+    !isFutures &&
+    supportsEthereumWalletOrderbookAsset(base) &&
+    supportsEthereumWalletOrderbookAsset(quote) &&
+    evmOrderbookConfig?.available === true;
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -918,6 +930,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     setTimeout(() => setShareToastVisible(false), 2200);
   };
   const [orderType, setOrderType] = useState<OrderType>("limit");
+  const selectableOrderTypes = walletOrderbookAvailable
+    ? (["limit"] as OrderType[])
+    : ORDER_TYPES;
+  useEffect(() => {
+    if (walletOrderbookAvailable && orderType !== "limit") setOrderType("limit");
+  }, [walletOrderbookAvailable, orderType]);
   const [orderTypeOpen, setOrderTypeOpen] = useState(false);
   const [fundingSheetOpen, setFundingSheetOpen] = useState(false);
   const [price, setPrice] = useState("");
@@ -3091,13 +3109,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           >
             <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-1" />
             <p className="text-center text-xs text-muted-foreground pb-2 px-6">Order Type</p>
-            {ORDER_TYPES.map((t, i) => (
+            {selectableOrderTypes.map((t, i) => (
               <button
                 key={t}
                 onClick={() => { setOrderType(t); setOrderTypeOpen(false); }}
                 className={cn(
                   "w-full px-6 py-3.5 text-left transition-colors flex items-center justify-between gap-3",
-                  i < ORDER_TYPES.length - 1 && "border-b border-border/50",
+                  i < selectableOrderTypes.length - 1 && "border-b border-border/50",
                   orderType === t ? "bg-primary/5" : "hover:bg-white/5"
                 )}
               >
