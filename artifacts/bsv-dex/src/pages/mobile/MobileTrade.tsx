@@ -1098,19 +1098,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const mobileApiInterval = mobilePreset ? mobilePreset.apiInterval : interval;
   const mobileCandleLimit = mobilePreset ? mobilePreset.limit : 150;
 
-  const { data: candles = [], isLoading: candlesLoading } = useQuery({
+  const { data: candleFeed = { candles: [] as any[], source: "unknown" }, isLoading: candlesLoading } = useQuery({
     queryKey: ["candles", symbol, mobileApiInterval, mobileCandleLimit],
     queryFn: async () => {
       const response = await fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`);
       if (!response.ok) throw new Error(`Candle request failed: ${response.status}`);
       const payload = await response.json();
       if (!Array.isArray(payload)) throw new Error("Invalid candle response");
-      return payload;
+      return { candles: payload, source: response.headers.get("X-Candle-Source") ?? "unknown" };
     },
     refetchInterval: 30000,
     staleTime: 20000,
     retry: 2,
   });
+  const candles = candleFeed.candles;
 
   const { data: perfCandles = [] } = useQuery({
     queryKey: ["perf-candles", symbol],
@@ -1189,6 +1190,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Fallback price for candles/orderbook when ticker hasn't loaded yet
   const fallbackPrice = lastPrice > 0 ? lastPrice : 0;
   const chartCandles = Array.isArray(candles) ? candles : [];
+  const candleSourceLabels: Record<string, string> = {
+    coingecko: "CoinGecko reference",
+    okx: "OKX reference",
+    binance: "Binance reference",
+    gateio: "Gate.io reference",
+    poloniex: "Poloniex reference",
+  };
+  const candleSourceLabel = candleSourceLabels[candleFeed.source] ?? "";
   // Ensure order book always shows data
   const rawOB = orderBook as any;
   // Bridge pairs cannot synthesize fillable depth, but confirmed wallet-escrow
@@ -1829,7 +1838,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             data={chartCandles}
             externalDataOnly={true}
             externalDataLoading={candlesLoading}
-            dataSourceLabel={symbol.toUpperCase() === "A8/ETH" && recentTrades.length === 0 ? "CoinGecko reference" : undefined}
+            dataSourceLabel={candleSourceLabel || undefined}
           />
         </div>
 
