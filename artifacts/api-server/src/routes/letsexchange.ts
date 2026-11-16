@@ -1009,6 +1009,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
         rate_id_expired_at: null,
         withdrawal_fee: "0",
         best_venue: "simpleswap",
+        venue_status: [{ venue: "simpleswap", hasQuote: true }],
         venue_quotes: [{
           venue: "simpleswap",
           rate: String(rate),
@@ -1111,6 +1112,10 @@ router.post("/letsexchange/estimate", async (req, res) => {
       maxAmount:  q.maxAmount != null ? String(q.maxAmount) : null,
       canExecute: q.canExecute,
     }));
+    const venue_status = ALL_VENUES.map(venue => ({
+      venue,
+      hasQuote: all.some(quote => quote.venue === venue),
+    }));
 
     const responseBody = {
       amount:             String(estimatedOutput),
@@ -1121,6 +1126,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
       rate_id_expired_at,
       withdrawal_fee:     "0",
       best_venue:         best.venue,
+      venue_status,
       venue_quotes,
     };
 
