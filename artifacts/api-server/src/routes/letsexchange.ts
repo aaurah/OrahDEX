@@ -28,7 +28,7 @@ import {
   isLetsExchangeConfigured,
   type NormalisedCoin,
 } from "../lib/lePriceCache.js";
-import { fetchCoinGeckoPrices, getCoinChangeMap } from "../lib/priceUpdater.js";
+import { fetchGatePairPrices, fetchMarketUsdPrices, getCoinChangeMap } from "../lib/priceUpdater.js";
 import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
 import { getBestExternalQuote, type ExternalVenue } from "../lib/metaRouter.js";
 import { createCNExchange, getCNExchange } from "../lib/changenow.js";
@@ -534,16 +534,21 @@ router.get("/letsexchange/pairs", async (req, res) => {
   // Layer 1: static fallbacks
   const usdPrices: Record<string, number> = { ...FALLBACK_USD };
 
-  // Layer 2: CoinGecko live USD prices for mapped assets.
-  // The price updater shares a short-lived cache, so the all-pairs endpoint
-  // does not create a request per token or per pair.
+  // Layer 2: cached live USD prices from supported market feeds.
+  // Shared caches keep this all-pairs endpoint from fetching per token/pair.
   try {
-    const coingeckoPrices = await fetchCoinGeckoPrices();
-    for (const [symbol, price] of Object.entries(coingeckoPrices)) {
+    const livePrices = await fetchMarketUsdPrices();
+    for (const [symbol, price] of Object.entries(livePrices)) {
       if (price.usd > 0) usdPrices[symbol.toUpperCase()] = price.usd;
     }
   } catch (err) {
     logger.warn({ err }, "letsexchange /pairs: CoinGecko prices unavailable; keeping cached and fallback prices");
+  }
+  let directPairPrices: Record<string, number> = {};
+  try {
+    directPairPrices = await fetchGatePairPrices();
+  } catch (err) {
+    logger.warn({ err }, "letsexchange /pairs: direct market prices unavailable");
   }
 
   // Layer 3: LE live rates from shared cache (non-blocking).
@@ -569,6 +574,9 @@ router.get("/letsexchange/pairs", async (req, res) => {
   // Enrich LE-only pairs that still have lastPrice === 0
   let allPairs = Array.from(bySymbol.values()).map(p => {
     if ((p.lastPrice as number) > 0) return p; // already has a real price
+    const pairSymbol = `${p.baseAsset}/${p.quoteAsset}`.toUpperCase();
+    const directPrice = directPairPrices[pairSymbol];
+    if (directPrice && directPrice > 0) return { ...p, lastPrice: directPrice };
     const baseUsd  = usdPrices[(p.baseAsset  as string)?.toUpperCase()];
     const quoteUsd = usdPrices[(p.quoteAsset as string)?.toUpperCase()];
     if (!baseUsd || !quoteUsd) return p;
