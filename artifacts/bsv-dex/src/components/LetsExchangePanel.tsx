@@ -1280,6 +1280,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const [txHash,         setTxHash]         = useState<string|null>(null);
   const [sendError,      setSendError]      = useState<string|null>(null);
   const [sendDiagnostic, setSendDiagnostic] = useState<string|null>(null);
+  const [sendInsufficientToken, setSendInsufficientToken] = useState(false);
   const [walletPromptDelayed, setWalletPromptDelayed] = useState(false);
   const [walletTokenBalance, setWalletTokenBalance] = useState<bigint|null>(null);
   const [walletTokenBalanceLoading, setWalletTokenBalanceLoading] = useState(false);
@@ -1361,9 +1362,19 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const walletTokenBalanceTooLow = walletTokenBalance !== null
     && requiredErc20Amount !== null
     && walletTokenBalance < requiredErc20Amount;
+  const walletTokenNeedsBuffer = sendInsufficientToken
+    && walletTokenBalance !== null
+    && requiredErc20Amount !== null
+    && walletTokenBalance <= requiredErc20Amount;
+  const walletTokenSendBlocked = walletTokenBalanceTooLow || walletTokenNeedsBuffer;
   const formattedWalletTokenBalance = walletTokenBalance !== null && erc20Entry
     ? formatUnits(walletTokenBalance, erc20Entry.decimals)
     : null;
+  const formattedRequiredErc20Amount = requiredErc20Amount !== null && erc20Entry
+    ? formatUnits(requiredErc20Amount, erc20Entry.decimals)
+    : null;
+  const exactDepositAmountDisplay = formattedRequiredErc20Amount
+    ?? (typeof order.deposit_amount === "string" ? order.deposit_amount : String(order.deposit_amount));
 
   async function handleSwitchWalletNetwork() {
     if (!chainId) return;
@@ -1388,7 +1399,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
 
   async function handleSendFromWallet() {
     if (!evmAddress || !chainId) return;
-    setSendState("checking"); setSendError(null); setSendDiagnostic(null); setTxHash(null);
+    setSendState("checking"); setSendError(null); setSendDiagnostic(null); setSendInsufficientToken(false); setTxHash(null);
     setWalletPromptDelayed(false);
     let walletPromptTimer: ReturnType<typeof setTimeout> | null = null;
     const onStage = () => {
@@ -1441,10 +1452,24 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
         typeof part === "string" && part.length > 0 && all.indexOf(part) === index,
       ).join("\n\n").slice(0, 2000);
       const insufficientToken = /transfer amount exceeds balance/i.test(`${msg}\n${diagnostic}`);
+      setSendInsufficientToken(insufficientToken);
+      let failureBalance = walletTokenBalance;
+      if (insufficientToken && erc20Entry) {
+        try {
+          failureBalance = await fetchErc20BalanceRaw(evmAddress, erc20Entry.address, chainId);
+          setWalletTokenBalance(failureBalance);
+          setWalletTokenBalanceError(null);
+        } catch {
+          // Keep the last preflight result available if the follow-up read fails.
+        }
+      }
+      const failureBalanceText = failureBalance !== null && erc20Entry
+        ? formatUnits(failureBalance, erc20Entry.decimals)
+        : "unavailable";
       setSendError(msg.toLowerCase().includes("reject")
         ? "Transaction rejected by wallet."
         : insufficientToken
-          ? `Insufficient ${fromCoin.symbol} in the connected wallet. Check the ${fromCoin.networkName ?? fromCoin.network} token balance before retrying.`
+          ? `The token rejected this transfer. Balance at check: ${failureBalanceText} ${fromCoin.symbol}; exact quote: ${exactDepositAmountDisplay} ${fromCoin.symbol}. No VVV was deposited. Add more VVV or create a smaller quote; a mined failed transaction may still cost gas.`
           : msg.slice(0, 240));
       setSendDiagnostic(diagnostic || null);
       setSendState("error");
@@ -1521,7 +1546,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
       <div className="rounded-xl bg-muted/40 p-4">
         <p className="text-xs text-muted-foreground mb-1">Send exactly</p>
         <p className="text-2xl font-bold">
-          <span className="text-emerald-400 font-mono">{fmtNum(order.deposit_amount, 8)}</span>
+          <span className="text-emerald-400 font-mono">{exactDepositAmountDisplay}</span>
           <span className="text-foreground ml-2">{fromCoin.symbol}</span>
           <span className="text-muted-foreground text-base font-normal ml-2">({fromCoin.networkName ?? fromCoin.network ?? fromCoin.symbol})</span>
         </p>
@@ -1625,7 +1650,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
             <p className="text-sm font-semibold text-emerald-300">Send from connected wallet</p>
           </div>
           <p className="text-xs text-muted-foreground">
-            Send exactly <span className="text-foreground font-mono font-bold">{order.deposit_amount} {fromCoin.symbol}</span> directly from{" "}
+            Send exactly <span className="text-foreground font-mono font-bold">{exactDepositAmountDisplay} {fromCoin.symbol}</span> directly from{" "}
             <span className="font-mono">{evmAddress?.slice(0,6)}…{evmAddress?.slice(-4)}</span>.
             Confirm the network, token, recipient, and amount in your wallet. Base transfers also need ETH for gas.
           </p>
@@ -1642,12 +1667,25 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
                       : "Not verified"}
                 </span>
               </div>
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-muted-foreground">Exact amount required</span>
+                <span className="font-mono text-foreground text-right break-all">
+                  {formattedRequiredErc20Amount !== null
+                    ? `${formattedRequiredErc20Amount} ${fromCoin.symbol}`
+                    : `${order.deposit_amount} ${fromCoin.symbol}`}
+                </span>
+              </div>
               <p className="text-[10px] text-muted-foreground break-all">
                 Token contract: {erc20Entry.address}
               </p>
               {walletTokenBalanceTooLow && formattedWalletTokenBalance !== null && (
                 <p className="text-[11px] text-red-300">
-                  This wallet has less than the required {order.deposit_amount} {fromCoin.symbol}. No transfer will be sent.
+                  This wallet has less than the exact quote amount. No transfer will be sent.
+                </p>
+              )}
+              {walletTokenNeedsBuffer && formattedWalletTokenBalance !== null && (
+                <p className="text-[11px] text-red-300">
+                  The previous transfer was rejected. Add more {fromCoin.symbol} than the quote amount before retrying.
                 </p>
               )}
               {walletTokenBalanceError && (
@@ -1677,14 +1715,16 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
                 type="button"
                 onClick={handleSendFromWallet}
                 disabled={!!erc20Entry && !isNative && (
-                  walletTokenBalanceLoading || walletTokenBalance === null || walletTokenBalanceTooLow
+                  walletTokenBalanceLoading || walletTokenBalance === null || walletTokenSendBlocked
                 )}
                 data-testid="button-send-from-wallet"
                 className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-muted/60 disabled:text-muted-foreground disabled:cursor-not-allowed text-black font-bold text-sm transition-all active:scale-[0.98]"
               >
                 {walletTokenBalanceLoading && erc20Entry && !isNative
                   ? "Checking token balance…"
-                  : walletTokenBalanceTooLow
+                  : walletTokenNeedsBuffer
+                    ? `Add more ${fromCoin.symbol} to retry`
+                    : walletTokenBalanceTooLow
                     ? `Insufficient ${fromCoin.symbol} balance`
                     : "Send " + order.deposit_amount + " " + fromCoin.symbol + " from Wallet"}
               </button>
@@ -1802,10 +1842,22 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
                   <CopyButton text={txHash} />
                 </div>
               )}
-              <button type="button" onClick={() => { setSendState("idle"); setSendError(null); setSendDiagnostic(null); setTxHash(null); }}
+              <button type="button" onClick={() => {
+                setSendState("idle");
+                setSendError(null);
+                setSendDiagnostic(null);
+                setTxHash(null);
+                if (sendInsufficientToken) void refreshWalletTokenBalance();
+              }}
                 className="text-xs text-muted-foreground hover:text-foreground underline transition-colors">
-                Retry after checking wallet status
+                {sendInsufficientToken ? "Refresh balance after adding VVV" : "Retry after checking wallet status"}
               </button>
+              {sendInsufficientToken && (
+                <button type="button" onClick={onReset}
+                  className="ml-3 text-xs text-emerald-300 hover:text-emerald-200 underline transition-colors">
+                  Create a smaller quote
+                </button>
+              )}
             </div>
           )}
         </div>
