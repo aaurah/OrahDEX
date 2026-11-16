@@ -72,6 +72,8 @@ export function CoinLogo({ symbol, size = 32, className = "", ring = false }: Pr
       alt={symbol}
       width={size}
       height={size}
+      loading="lazy"
+      decoding="async"
       className={`rounded-full object-cover shrink-0 bg-secondary ${ringCls} ${className}`}
       onError={() => {
         if (srcIdx + 1 < sources.length) {
