@@ -233,6 +233,14 @@ const CHAINS: ChainRow[] = [
   { id: "doge",    name: "Dogecoin",     symbol: "DOGE", color: "#C2A633", family: "doge",                     live: true },
 ];
 
+const CONNECTABLE_WALLET_TARGETS = [
+  { family: "evm", id: "eth", label: "EVM networks", provider: "Reown" },
+  { family: "solana", id: "sol", label: "Solana", provider: "Reown" },
+  { family: "btc", id: "btc", label: "Bitcoin", provider: "Reown" },
+  { family: "bsv", id: "bsv", label: "Bitcoin SV", provider: "HandCash" },
+  { family: "tron", id: "tron", label: "TRON", provider: "TronLink" },
+] as const;
+
 function shortAddr(a: string | null) {
   if (!a) return "";
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -1071,13 +1079,15 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   };
 
   const handleImportSave = useCallback((chain: ImportChain, importedAddr: string) => {
-    if (!derivedKey) return;
     const field = familyToField[chain.family];
     if (!field) return;
 
-    // Persist to localStorage (source of truth for manually imported addresses)
-    saveDerivedAddresses(derivedKey, { [field]: importedAddr });
-    setStoredDerived(getDerivedAddresses(derivedKey));
+    // Keep the link independently when there is no primary EVM wallet yet.
+    // Once a primary wallet exists, also index the address under that wallet.
+    if (derivedKey) {
+      saveDerivedAddresses(derivedKey, { [field]: importedAddr });
+      setStoredDerived(getDerivedAddresses(derivedKey));
+    }
 
     // Mirror to store so other parts of the app can read it immediately
     if (chain.family === "bsv")    setInternalBsvAddress(importedAddr);
@@ -1101,12 +1111,21 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
   ]);
 
   useEffect(() => {
-    if (!derivedKey || !pendingConnectFamily) return;
+    if (!pendingConnectFamily) return;
     const account = pendingConnectFamily === "btc" ? bitcoinAccount : solanaAccount;
     if (!account.isConnected || !account.address) return;
     const chain = CHAINS.find(item => item.family === pendingConnectFamily);
     if (!chain) return;
     handleImportSave(chain, account.address);
+    // A standalone Reown connection should still open the portfolio when no
+    // EVM or BSV primary account was connected first.
+    if (!derivedKey) {
+      useWalletStore.getState().connect({
+        address: account.address,
+        provider: "reown",
+        network: pendingConnectFamily === "btc" ? "btc" : "sol",
+      });
+    }
     setPendingConnectFamily(null);
   }, [
     bitcoinAccount.address, bitcoinAccount.isConnected,
@@ -1156,7 +1175,8 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         tronWeb?: { defaultAddress?: { base58?: string } | false };
       };
       const tronWindow = window as Window & { tron?: TronWallet; tronLink?: TronWallet };
-      const provider = tronWindow.tron ?? tronWindow.tronLink;
+      const provider = [tronWindow.tronLink, tronWindow.tron]
+        .find(candidate => typeof candidate?.request === "function");
       if (!provider?.request) {
         toast({
           title: "No TRON wallet detected",
@@ -1167,8 +1187,20 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       }
 
       try {
-        const response = await provider.request({ method: "eth_requestAccounts" });
-        const accounts = Array.isArray(response) ? response : [];
+        const response = await provider.request({ method: "tron_requestAccounts" });
+        const responseData = response && typeof response === "object"
+          ? (response as { data?: unknown }).data
+          : undefined;
+        const nestedAddress = responseData && typeof responseData === "object"
+          ? (responseData as { address?: unknown }).address
+          : undefined;
+        const accounts = Array.isArray(response)
+          ? response
+          : Array.isArray(responseData)
+            ? responseData
+            : typeof nestedAddress === "string"
+              ? [nestedAddress]
+              : [];
         const defaultAddress = provider.tronWeb?.defaultAddress;
         const address = accounts.find((item): item is string => typeof item === "string")
           ?? (defaultAddress && typeof defaultAddress === "object" ? defaultAddress.base58 : undefined);
@@ -1191,6 +1223,25 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
       description: "Link the public address from that chain's wallet. Never paste a recovery phrase.",
     });
     setImportChain(chain);
+  };
+
+  const getConnectorTargetAddress = (family: typeof CONNECTABLE_WALLET_TARGETS[number]["family"]) => {
+    const chain = CHAINS.find(item => item.family === family);
+    return chain ? addressForChain(chain, evmAddress, address, network, derived) : null;
+  };
+
+  const handleConnectNextWallet = () => {
+    const next = CONNECTABLE_WALLET_TARGETS
+      .find(target => !getConnectorTargetAddress(target.family));
+    if (!next) {
+      toast({
+        title: "All available wallet connectors are linked",
+        description: "BCH, XRP, Litecoin, and Dogecoin can still be added as watch-only addresses.",
+      });
+      return;
+    }
+    const chain = CHAINS.find(item => item.id === next.id);
+    if (chain) void handleConnectChain(chain);
   };
 
   const handleImportRemove = (chain: ImportChain) => {
@@ -1253,7 +1304,7 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         </div>
         <h2 className="text-2xl font-bold text-foreground mb-2 text-center">Your Sovereign Wallet</h2>
         <p className="text-sm text-muted-foreground text-center max-w-xs mb-8 leading-relaxed">
-          One identity, all chains. Import a seed phrase, create a passkey wallet, or connect any external wallet.
+          Connect a wallet, then add each supported chain separately. Every wallet connection needs your approval.
         </p>
         <div className="grid grid-cols-3 gap-3 w-full max-w-xs mb-8">
           {[
@@ -1273,6 +1324,26 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
         >
           <Plus size={16} /> Connect Wallet
         </button>
+        <div className="w-full max-w-xs mt-3">
+          <p className="text-[10px] text-center text-muted-foreground mb-2">Connect directly with a supported chain wallet</p>
+          <div className="grid grid-cols-2 gap-2">
+            {CONNECTABLE_WALLET_TARGETS.map(target => {
+              const chain = CHAINS.find(item => item.id === target.id)!;
+              return (
+                <button
+                  key={target.family}
+                  type="button"
+                  onClick={() => { void handleConnectChain(chain); }}
+                  data-testid={`button-start-connect-${target.family}`}
+                  className="rounded-xl border border-border bg-card px-3 py-2 text-left hover:border-primary/40 transition-colors"
+                >
+                  <span className="block text-xs font-semibold text-foreground">{target.label}</span>
+                  <span className="block mt-0.5 text-[10px] text-muted-foreground">{target.provider}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
     );
   }
@@ -1465,6 +1536,66 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
           </p>
         </div>
       )}
+
+      {/* ── Multi-chain connection flow ── */}
+      <section
+        className="mb-4 rounded-2xl border border-primary/20 bg-primary/[0.04] p-3.5"
+        data-testid="panel-multichain-connect"
+      >
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+            <Link2 size={14} className="text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-foreground">Connect wallets across chains</p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+              Each wallet needs your approval. Reown handles EVM, Solana, and Bitcoin; BSV and TRON use their own wallets.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            onClick={handleConnectNextWallet}
+            data-testid="button-connect-next-wallet"
+            className="shrink-0"
+          >
+            <Plus size={13} className="mr-1" />
+            Connect next
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 mt-3">
+          {CONNECTABLE_WALLET_TARGETS.map(target => {
+            const chain = CHAINS.find(item => item.id === target.id)!;
+            const linked = !!getConnectorTargetAddress(target.family);
+            return (
+              <button
+                key={target.family}
+                type="button"
+                onClick={() => { if (!linked) void handleConnectChain(chain); }}
+                disabled={linked}
+                data-testid={`button-connect-chain-${target.family}`}
+                className={cn(
+                  "min-w-0 rounded-xl border px-2 py-2 text-left transition-colors",
+                  linked
+                    ? "border-emerald-500/20 bg-emerald-500/[0.06] cursor-default"
+                    : "border-border/70 bg-card hover:border-primary/40 hover:bg-primary/[0.04]",
+                )}
+              >
+                <span className="block truncate text-[10px] font-semibold text-foreground">{target.label}</span>
+                <span className={cn(
+                  "mt-0.5 block truncate text-[9px]",
+                  linked ? "text-emerald-400" : "text-muted-foreground",
+                )}>
+                  {linked ? "Address linked" : `Connect · ${target.provider}`}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-2.5 text-[10px] leading-relaxed text-muted-foreground">
+          BCH, XRP, Litecoin, and Dogecoin currently support linking a public address for viewing; that does not authorize transactions.
+        </p>
+      </section>
 
       {/* ── Search + filter bar ── */}
       <div className="flex items-center gap-2 mb-3">
