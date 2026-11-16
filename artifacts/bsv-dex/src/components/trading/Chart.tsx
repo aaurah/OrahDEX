@@ -27,6 +27,7 @@ interface ChartProps {
   hideIntervalBar?: boolean;
   subIndicator?: SubIndicator;
   externalDataOnly?: boolean;
+  externalDataLoading?: boolean;
 }
 
 /* ── Intervals ──────────────────────────────────────────────────────────── */
@@ -274,6 +275,7 @@ function OrahChart({
   hideIntervalBar,
   data: fallbackData,
   externalDataOnly = false,
+  externalDataLoading = false,
 }: ChartProps) {
   const mainRef   = useRef<HTMLDivElement>(null);
   const subRef    = useRef<HTMLDivElement>(null);
@@ -456,6 +458,10 @@ function OrahChart({
      never clear the last good chart merely because a refetch is in flight. */
   useEffect(() => {
     if (!externalDataOnly || !Array.isArray(fallbackData)) return;
+    if (externalDataLoading) {
+      setLoading(true);
+      return;
+    }
     const unique = new Map<number, Candle>();
     for (const raw of fallbackData) {
       const time = Number(raw?.time);
@@ -477,9 +483,11 @@ function OrahChart({
     const next = [...unique.values()].sort((a, b) => Number(a.time) - Number(b.time));
     if (next.length >= 2) {
       setCandles(next);
-      setLoading(false);
+    } else {
+      setCandles([]);
     }
-  }, [externalDataOnly, fallbackData, symbol, interval]);
+    setLoading(false);
+  }, [externalDataOnly, externalDataLoading, fallbackData, symbol, interval]);
 
   /* When the API fetch completes with no data, fall back to the provided candles */
   useEffect(() => {
@@ -1109,6 +1117,13 @@ function OrahChart({
           <div className="absolute inset-0 flex flex-col items-center justify-center z-10 gap-3" style={{ backgroundColor: col.bg }}>
             <div className="flex gap-1">{[0,1,2].map(i => (<span key={i} className="w-2 h-2 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: `${i*150}ms` }} />))}</div>
             <p className="text-xs" style={{ color: col.text }}>Loading {parts.base}/{parts.quote}…</p>
+          </div>
+        )}
+        {!loading && candles.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center px-6 text-center pointer-events-none">
+            <p className="text-xs" style={{ color: col.text, opacity: 0.72 }}>
+              No candle history is available for {parts.base}/{parts.quote} yet.
+            </p>
           </div>
         )}
         <div ref={mainRef} className="w-full h-full" />
