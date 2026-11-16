@@ -1,6 +1,7 @@
 import { getCoinbaseProvider } from "./coinbaseWallet";
 import {
   createConfig, getAccount, http,
+  sendTransaction as wagmiSendTransaction,
   switchChain as wagmiSwitchChain, waitForTransactionReceipt as wagmiWaitForTransactionReceipt,
 } from "@wagmi/core";
 import { encodeFunctionData, erc20Abi } from "viem";
@@ -141,46 +142,36 @@ export async function fetchEvmBalance(
 }
 
 export async function sendEvmTransfer({
-  from, to, valueWei, targetChainId,
-}: { from: string; to: string; valueWei: bigint; targetChainId: number }): Promise<string> {
+  from, to, valueWei, targetChainId, onStage,
+}: { from: string; to: string; valueWei: bigint; targetChainId: number; onStage?: (stage: "switching" | "sending") => void }): Promise<string> {
   const config = getAppKitWagmiConfig();
-  const provider = await getActiveWalletProvider(config, from, targetChainId);
-  const hash = await provider.request({
-    method: "eth_sendTransaction",
-    params: [{
-      from,
-      to,
-      value: `0x${valueWei.toString(16)}`,
-    }],
+  await prepareWalletSend(config, from, targetChainId, onStage);
+  onStage?.("sending");
+  return wagmiSendTransaction(config, {
+    account: from as `0x${string}`,
+    to: to as `0x${string}`,
+    value: valueWei,
+    chainId: targetChainId as (typeof config.chains)[number]["id"],
   });
-  if (typeof hash !== "string" || !/^0x[0-9a-f]{64}$/i.test(hash)) {
-    throw new Error("The wallet did not return a valid transaction ID.");
-  }
-  return hash;
 }
 
 export async function sendErc20Transfer({
-  tokenAddress, from, to, amount, targetChainId,
-}: { tokenAddress: string; from: string; to: string; amount: bigint; targetChainId: number }): Promise<string> {
+  tokenAddress, from, to, amount, targetChainId, onStage,
+}: { tokenAddress: string; from: string; to: string; amount: bigint; targetChainId: number; onStage?: (stage: "switching" | "sending") => void }): Promise<string> {
   const config = getAppKitWagmiConfig();
-  const provider = await getActiveWalletProvider(config, from, targetChainId);
+  await prepareWalletSend(config, from, targetChainId, onStage);
   const data = encodeFunctionData({
     abi: erc20Abi,
     functionName: "transfer",
     args: [to as `0x${string}`, amount],
   });
-  const hash = await provider.request({
-    method: "eth_sendTransaction",
-    params: [{
-      from,
-      to: tokenAddress,
-      data,
-    }],
+  onStage?.("sending");
+  return wagmiSendTransaction(config, {
+    account: from as `0x${string}`,
+    to: tokenAddress as `0x${string}`,
+    data,
+    chainId: targetChainId as (typeof config.chains)[number]["id"],
   });
-  if (typeof hash !== "string" || !/^0x[0-9a-f]{64}$/i.test(hash)) {
-    throw new Error("The wallet did not return a valid transaction ID.");
-  }
-  return hash;
 }
 
 export async function waitForEvmTransaction(
@@ -196,11 +187,12 @@ export async function waitForEvmTransaction(
   return receipt.status;
 }
 
-async function getActiveWalletProvider(
+async function prepareWalletSend(
   config: ReturnType<typeof getAppKitWagmiConfig>,
   expectedAddress: string,
   targetChainId: number,
-): Promise<{ request: (args: { method: string; params?: unknown[] }) => Promise<any> }> {
+  onStage?: (stage: "switching" | "sending") => void,
+): Promise<void> {
   const account = getAccount(config);
   if (!account.address || !account.connector) {
     throw new Error("The connected wallet session is unavailable. Reconnect your wallet and try again.");
@@ -209,45 +201,19 @@ async function getActiveWalletProvider(
     throw new Error("The active wallet changed. Reconnect the wallet shown for this exchange and try again.");
   }
 
-  type Eip1193Provider = {
-    request: (args: { method: string; params?: unknown[] }) => Promise<any>;
-  };
-  const connector = account.connector as unknown as {
-    getProvider?: () => Promise<unknown>;
-  };
-  if (typeof connector.getProvider !== "function") {
-    throw new Error("The connected wallet does not provide a transaction session. Reconnect it and try again.");
-  }
-
-  let provider = await connector.getProvider() as Eip1193Provider;
-  if (!provider || typeof provider.request !== "function") {
-    throw new Error("The connected wallet returned an invalid transaction provider. Reconnect it and try again.");
-  }
-  const accounts = await provider.request({ method: "eth_accounts" });
-  if (!Array.isArray(accounts) || !accounts.some(
-    address => typeof address === "string" && address.toLowerCase() === expectedAddress.toLowerCase(),
-  )) {
-    throw new Error("The active wallet provider does not expose the connected account. Reconnect MetaMask and try again.");
-  }
-
-  const parseChainId = (value: unknown) => {
-    if (typeof value === "number") return value;
-    const raw = String(value ?? "");
-    return Number.parseInt(raw, raw.startsWith("0x") ? 16 : 10);
-  };
-  const currentChainId = parseChainId(await provider.request({ method: "eth_chainId" }));
-  if (currentChainId !== targetChainId) {
-    await wagmiSwitchChain(config, { chainId: targetChainId });
-    provider = await connector.getProvider() as Eip1193Provider;
-    if (!provider || typeof provider.request !== "function") {
-      throw new Error("The wallet returned an invalid provider after switching networks.");
+  if (account.chainId !== targetChainId) {
+    onStage?.("switching");
+    await wagmiSwitchChain(config, {
+      chainId: targetChainId as (typeof config.chains)[number]["id"],
+    });
+    const switchedAccount = getAccount(config);
+    if (switchedAccount.address?.toLowerCase() !== expectedAddress.toLowerCase()) {
+      throw new Error("The active wallet changed while switching networks. Reconnect and try again.");
     }
-    const switchedChainId = parseChainId(await provider.request({ method: "eth_chainId" }));
-    if (switchedChainId !== targetChainId) {
+    if (switchedAccount.chainId !== targetChainId) {
       throw new Error("The wallet did not switch to the required network.");
     }
   }
-  return provider;
 }
 
 export async function approveToken(

@@ -1275,10 +1275,11 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const [effectiveVenue, setEffectiveVenue] = useState<string>(order.best_venue ?? "letsexchange");
   const [infoOpen,       setInfoOpen]       = useState(false);
   const [refreshKey,     setRefreshKey]     = useState(0);
-  const [sendState,      setSendState]      = useState<"idle"|"sending"|"confirming"|"sent"|"unconfirmed"|"error">("idle");
+  const [sendState,      setSendState]      = useState<"idle"|"switching"|"sending"|"confirming"|"sent"|"unconfirmed"|"error">("idle");
   const [txHash,         setTxHash]         = useState<string|null>(null);
   const [sendError,      setSendError]      = useState<string|null>(null);
   const [sendDiagnostic, setSendDiagnostic] = useState<string|null>(null);
+  const [walletPromptDelayed, setWalletPromptDelayed] = useState(false);
 
   const { address: evmAddress } = useAccount();
   const customTokens = useCustomTokenStore(state => state.tokens);
@@ -1304,7 +1305,16 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
 
   async function handleSendFromWallet() {
     if (!evmAddress || !chainId) return;
-    setSendState("sending"); setSendError(null); setSendDiagnostic(null); setTxHash(null);
+    setSendState("switching"); setSendError(null); setSendDiagnostic(null); setTxHash(null);
+    setWalletPromptDelayed(false);
+    let walletPromptTimer: ReturnType<typeof setTimeout> | null = null;
+    const onStage = (stage: "switching" | "sending") => {
+      setSendState(stage);
+      if (stage === "sending") {
+        if (walletPromptTimer) clearTimeout(walletPromptTimer);
+        walletPromptTimer = setTimeout(() => setWalletPromptDelayed(true), 45_000);
+      }
+    };
     let hash: string;
     try {
       if (isNative) {
@@ -1315,6 +1325,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
           to: order.deposit,
           valueWei: weiAmt,
           targetChainId: chainId,
+          onStage,
         });
       } else if (erc20Entry) {
         // ERC-20 token — preserve the provider's exact decimal amount.
@@ -1325,6 +1336,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
           to: order.deposit,
           amount: rawAmt,
           targetChainId: chainId,
+          onStage,
         });
       } else {
         throw new Error("Token not supported for wallet-send on this chain.");
@@ -1343,6 +1355,9 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
       setSendDiagnostic(diagnostic || null);
       setSendState("error");
       return;
+    } finally {
+      if (walletPromptTimer) clearTimeout(walletPromptTimer);
+      setWalletPromptDelayed(false);
     }
 
     setTxHash(hash);
@@ -1529,9 +1544,24 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
           )}
 
           {sendState === "sending" && (
+            <div className="space-y-2">
+              <button type="button" disabled
+                className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {walletPromptDelayed ? "Wallet is still waiting…" : "Confirm transaction in your wallet…"}
+              </button>
+              {walletPromptDelayed && (
+                <p className="text-[11px] text-amber-300/90">
+                  Open your wallet app and approve or reject the request. Don’t send again while this request is pending.
+                </p>
+              )}
+            </div>
+          )}
+
+          {sendState === "switching" && (
             <button type="button" disabled
               className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
-              <Loader2 className="w-4 h-4 animate-spin" /> Waiting for wallet confirmation…
+              <Loader2 className="w-4 h-4 animate-spin" /> Switching wallet to {fromCoin.networkName ?? fromCoin.network}…
             </button>
           )}
 
