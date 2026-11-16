@@ -1120,24 +1120,13 @@ export function WalletChooserDialog() {
   const { isOpen, close, initialTab, handCashLinkOnly } = useWalletModalStore();
   const [tab, setTab] = useState<Tab>("choose");
   const [socialOrigin, setSocialOrigin] = useState<string | null>(null);
+  const openReownAfterCloseRef = useRef(false);
   const { toast } = useToast();
 
   const handleClose = () => { setTab("choose"); setSocialOrigin(null); close(); };
   const handleOpenEvmWallet = () => {
+    openReownAfterCloseRef.current = true;
     handleClose();
-    // Radix keeps its focus trap during the exit animation. Open AppKit after
-    // that dialog has fully unmounted so its portal is not hidden or inert.
-    window.setTimeout(() => {
-      void openReownModal().then((opened) => {
-        if (!opened) {
-          toast({
-            title: "Wallet picker did not open",
-            description: "Reload the page and try connecting again.",
-            variant: "destructive",
-          });
-        }
-      });
-    }, 250);
   };
   const handleMobileQr = () => setTab("mobile-qr");
   const handleHWPick = (device: HWDevice) => setTab(device);
@@ -1182,6 +1171,24 @@ export function WalletChooserDialog() {
   return (
     <Dialog open={isOpen} onOpenChange={v => { if (!v) handleClose(); }}>
       <DialogContent
+        onCloseAutoFocus={(event) => {
+          if (!openReownAfterCloseRef.current) return;
+          openReownAfterCloseRef.current = false;
+          // Wait until Radix has removed its focus trap and hidden-layer state;
+          // otherwise AppKit can appear dimmed behind the old chooser.
+          event.preventDefault();
+          window.setTimeout(() => {
+            void openReownModal().then((opened) => {
+              if (!opened) {
+                toast({
+                  title: "Wallet picker did not open",
+                  description: "Reload the page and try connecting again.",
+                  variant: "destructive",
+                });
+              }
+            });
+          }, 0);
+        }}
         className="p-0 gap-0 bg-background border-border sm:max-w-[420px] overflow-hidden rounded-2xl shadow-2xl flex flex-col max-h-[90dvh]"
         style={{ backgroundImage: "radial-gradient(ellipse 70% 40% at 50% -5%, hsl(var(--primary) / 0.08) 0%, transparent 70%)" }}
       >
