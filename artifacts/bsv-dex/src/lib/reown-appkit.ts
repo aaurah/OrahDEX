@@ -404,6 +404,19 @@ export function openReownModal(namespace?: "eip155" | "solana" | "bip122"): void
   }
 }
 
+export async function openReownSwap(arguments_: {
+  fromToken?: string;
+  toToken?: string;
+  amount?: string;
+} = {}): Promise<void> {
+  try {
+    await appKit.open({ view: "Swap", arguments: arguments_ });
+  } catch (e) {
+    console.error("[OrahDEX] Failed to open Reown swap:", e);
+    throw e;
+  }
+}
+
 export function disconnectReown(): void {
   _suppressNextConnect = true;
   try {
