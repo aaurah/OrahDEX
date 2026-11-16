@@ -473,12 +473,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       fundingRef?: string | null;
     }) => {
       let orderbookCancelTxHash: string | undefined;
-      // Step 1 (best-effort): release any on-chain escrow lock so the user
-      // gets their coins back. Only send the on-chain cancel tx if there is
-      // actually a deposit in escrow — calling cancel() on an order that was
-      // never locked causes "OrahDEXEscrow: no deposit" to revert, which
-      // triggers a confusing "Gas fee estimation failed" prompt in the wallet.
       if (fundingRef?.startsWith("evm-order:1:")) {
+        const readServerOrder = async () => {
+          const response = await fetch(
+            `${BASE}/api/orders?walletAddress=${encodeURIComponent(orderWalletAddress)}`,
+            { cache: "no-store" },
+          );
+          if (!response.ok) throw new Error("Could not refresh the order status before cancellation.");
+          const rows = await response.json();
+          return Array.isArray(rows) ? rows.find((order: any) => String(order.id) === orderId) : null;
+        };
+
+        // The chain transaction may already have completed even if a previous
+        // page session failed before syncing its status to the API.
+        const currentOrder = await readServerOrder();
+        if (currentOrder?.status === "cancelled" || currentOrder?.status === "filled") {
+          return { id: orderId, status: currentOrder.status };
+        }
+        if (currentOrder?.status !== "open") {
+          throw new Error("Order status changed. Refresh My Orders before retrying.");
+        }
+
         const [, , escrowAddress, orderKey] = fundingRef.split(":");
         if (!escrowAddress || !/^0x[0-9a-fA-F]{64}$/.test(orderKey ?? "")) {
           throw new Error("Order escrow details are invalid. Refresh and retry.");
@@ -491,7 +506,25 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           isOrahWallet,
         });
         orderbookCancelTxHash = cancelled.txHash;
-      } else if (escrowAvailable && walletChainId) {
+
+        // The confirmed on-chain event authorizes the server update, so a
+        // second wallet-signature prompt is unnecessary.
+        for (let attempt = 0; attempt < 4; attempt += 1) {
+          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
+          const updatedOrder = await readServerOrder();
+          if (updatedOrder?.status === "cancelled" || updatedOrder?.status === "filled") {
+            return { id: orderId, status: updatedOrder.status, txHash: orderbookCancelTxHash };
+          }
+        }
+        throw new Error("The wallet confirmed cancellation, but the order is still syncing. Do not cancel again; refresh My Orders shortly.");
+      }
+
+      // Step 1 (best-effort): release any on-chain escrow lock so the user
+      // gets their coins back. Only send the on-chain cancel tx if there is
+      // actually a deposit in escrow — calling cancel() on an order that was
+      // never locked causes "OrahDEXEscrow: no deposit" to revert, which
+      // triggers a confusing "Gas fee estimation failed" prompt in the wallet.
+      if (escrowAvailable && walletChainId) {
         let hasDeposit = false;
         try {
           // 4-second timeout: a slow RPC shouldn't stall the cancel button.
@@ -577,6 +610,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["orderbook", symbol] });
       if (usesApiBalance && address) {
         void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
