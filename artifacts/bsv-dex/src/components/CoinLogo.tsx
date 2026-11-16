@@ -38,12 +38,13 @@ function coinSources(symbol: string): string[] {
 
 interface Props {
   symbol: string;
+  imageUrl?: string;
   size?: number;
   className?: string;
   ring?: boolean;
 }
 
-export function CoinLogo({ symbol, size = 32, className = "", ring = false }: Props) {
+export function CoinLogo({ symbol, imageUrl, size = 32, className = "", ring = false }: Props) {
   const [srcIdx, setSrcIdx] = useState(0);
   const [failed, setFailed] = useState(false);
 
@@ -53,7 +54,7 @@ export function CoinLogo({ symbol, size = 32, className = "", ring = false }: Pr
   const fontSize = size <= 20 ? 8 : size <= 28 ? 9 : size <= 36 ? 11 : 12;
   const ringCls = ring ? "ring-2 ring-border" : "";
 
-  const sources = coinSources(safeSym);
+  const sources = imageUrl ? [imageUrl, ...coinSources(safeSym)] : coinSources(safeSym);
 
   if (failed) {
     return (
