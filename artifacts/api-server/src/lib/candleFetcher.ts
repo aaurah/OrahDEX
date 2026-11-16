@@ -531,7 +531,10 @@ export async function fetchRealCandles(
 ): Promise<Candle[]> {
   const cacheKey = `${symbol}:${interval}:${limit}`;
   const cached   = getCached(cacheKey);
-  if (cached) return pinLastCandle([...cached.slice(0, -1), { ...cached[cached.length - 1]! }], lastPrice);
+  if (cached !== null) {
+    if (cached.length === 0) return [];
+    return pinLastCandle([...cached.slice(0, -1), { ...cached[cached.length - 1]! }], lastPrice);
+  }
 
   const parts     = symbol.split("/");
   const base      = parts[0]?.toUpperCase() ?? "";
