@@ -464,6 +464,9 @@ importers:
       '@reown/appkit-adapter-wagmi':
         specifier: ^1.8.22
         version: 1.8.22(e0a9db68ce04e44dbcf074a393a40137)
+      '@reown/appkit-controllers':
+        specifier: 1.8.22
+        version: 1.8.22(@types/react@19.2.14)(bufferutil@4.1.0)(react@19.2.4)(typescript@6.0.2)(utf-8-validate@6.0.6)(zod@4.6.7)
       '@scure/bip32':
         specifier: ^2.0.1
         version: 2.0.1
