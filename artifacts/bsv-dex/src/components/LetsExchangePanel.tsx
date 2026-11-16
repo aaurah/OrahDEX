@@ -30,7 +30,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useEvmBalances, ERC20_TOKENS } from "@/hooks/useEvmBalances";
 import { sendEvmTransfer, sendErc20Transfer, waitForEvmTransaction } from "@/lib/reown";
-import { openReownSwap } from "@/lib/reown-appkit";
+import { fetchReownSwapCoins, type ReownSwapCoin } from "@/lib/reown-appkit";
 
 // ─── EVM chain helpers ────────────────────────────────────────────────────────
 // Maps LetsExchange / venue network codes → EVM chainId
@@ -77,6 +77,9 @@ interface LeCoin {
   image: string|null; hasExtraId: boolean; minAmount: string|null; maxAmount: string|null;
   provider?: "letsexchange" | "simpleswap";
   providerTicker?: string;
+  tokenAddress?: string;
+  tokenDecimals?: number;
+  tokenSource?: "reown";
 }
 
 // Response from POST /v1/info (now hybrid — also includes best_venue)
@@ -221,6 +224,38 @@ async function fetchCoins(): Promise<LeCoin[]> {
   return _coinsInflight;
 }
 
+function mergeReownCoins(base: LeCoin[], reownCoins: ReownSwapCoin[]): LeCoin[] {
+  const merged = [...base];
+  const names = new Set(base.map(coin =>
+    `${coin.symbol.toUpperCase()}::${canonicalNetworkKey(coin.network, coin.providerTicker)}::${coin.name.trim().toLowerCase()}`,
+  ));
+  const addresses = new Set(base.map(coin => coin.tokenAddress?.toLowerCase()).filter(Boolean));
+
+  for (const token of reownCoins) {
+    const nameKey = `${token.symbol.toUpperCase()}::${canonicalNetworkKey(token.network)}::${token.name.trim().toLowerCase()}`;
+    const addressKey = token.address.toLowerCase();
+    if (names.has(nameKey) || addresses.has(addressKey)) continue;
+    names.add(nameKey);
+    addresses.add(addressKey);
+    merged.push({
+      symbol: token.symbol,
+      name: token.name,
+      network: token.network,
+      networkName: token.networkName,
+      provider: undefined,
+      providerTicker: undefined,
+      image: token.logoUri,
+      hasExtraId: false,
+      minAmount: null,
+      maxAmount: null,
+      tokenAddress: token.address,
+      tokenDecimals: token.decimals,
+      tokenSource: "reown",
+    });
+  }
+  return merged;
+}
+
 function loadHistory(): HistoryEntry[] {
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -326,8 +361,10 @@ const DONE_STATUSES = new Set(["finished", "success", "done", "failed", "error",
 
 // ─── CoinPicker ───────────────────────────────────────────────────────────────
 
-function CoinPicker({ coins, selected, onChange, exclude, compact }: {
+function CoinPicker({ coins, selected, onChange, exclude, compact, onOpen, supplementalLoading }: {
   coins: LeCoin[]; selected: LeCoin|null; onChange: (c: LeCoin) => void; exclude?: string|null; compact?: boolean;
+  onOpen?: () => void;
+  supplementalLoading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -357,16 +394,31 @@ function CoinPicker({ coins, selected, onChange, exclude, compact }: {
       return Number(bNative) - Number(aNative);
     }) : matches;
   }, [coins, q, exclude]);
+  const visibleCoins = useMemo(() => {
+    if (q.trim()) return filtered.slice(0, 100);
+    const reownCoins = filtered.filter(coin => coin.tokenSource === "reown").slice(0, 30);
+    const otherCoins = filtered.filter(coin => coin.tokenSource !== "reown").slice(0, reownCoins.length ? 70 : 100);
+    return [...otherCoins, ...reownCoins];
+  }, [filtered, q]);
+  const isSelectedCoin = (coin: LeCoin) =>
+    selected?.symbol === coin.symbol &&
+    selected?.network === coin.network &&
+    selected?.provider === coin.provider &&
+    selected?.tokenAddress === coin.tokenAddress;
 
   return (
     <div className="relative" ref={panelRef}>
       {compact ? (
         /* Compact pill trigger — coin logo + symbol + chevron */
-        <button type="button" onClick={() => setOpen(v => !v)}
+        <button type="button" onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) onOpen?.();
+        }}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-secondary border border-border/60 hover:border-border transition-colors shrink-0">
           {selected ? (
             <>
-              <CoinLogo symbol={selected.symbol} size={20} />
+              <CoinLogo symbol={selected.symbol} imageUrl={selected.image ?? undefined} size={20} />
               <span className="font-bold text-sm text-foreground">{selected.symbol}</span>
             </>
           ) : (
@@ -375,11 +427,15 @@ function CoinPicker({ coins, selected, onChange, exclude, compact }: {
           <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/60" />
         </button>
       ) : (
-        <button type="button" onClick={() => setOpen(v => !v)}
+        <button type="button" onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) onOpen?.();
+        }}
           className="flex items-center gap-2 w-full px-3 py-3 rounded-xl bg-muted/60 border border-border/40 hover:border-border/60 transition-colors text-left">
           {selected ? (
             <>
-              <CoinLogo symbol={selected.symbol} size={28} />
+              <CoinLogo symbol={selected.symbol} imageUrl={selected.image ?? undefined} size={28} />
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-sm leading-tight">{selected.symbol}</p>
                 <p className="text-[11px] text-muted-foreground leading-tight truncate">{selected.networkName ?? selected.network ?? selected.name}</p>
@@ -404,25 +460,26 @@ function CoinPicker({ coins, selected, onChange, exclude, compact }: {
           </div>
           <div className="overflow-y-auto flex-1 py-1">
             {filtered.length === 0 ? <p className="text-xs text-muted-foreground/60 text-center py-6">No coins found</p> : (
-              filtered.map(c => (
-                <button type="button" key={`${c.provider ?? "letsexchange"}::${c.providerTicker ?? c.symbol}::${c.network ?? ""}`}
+              visibleCoins.map(c => (
+                <button type="button" key={`${c.provider ?? c.tokenSource ?? "letsexchange"}::${c.providerTicker ?? c.symbol}::${c.network ?? ""}::${c.tokenAddress ?? ""}`}
                   onClick={() => { onChange(c); setOpen(false); }}
                   className={cn("w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors text-left",
-                    selected?.symbol === c.symbol && selected?.network === c.network && selected?.provider === c.provider && "bg-muted/30")}>
-                  <CoinLogo symbol={c.symbol} size={28} />
+                    isSelectedCoin(c) && "bg-muted/30")}>
+                  <CoinLogo symbol={c.symbol} imageUrl={c.image ?? undefined} size={28} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold leading-tight text-foreground">{c.symbol}</p>
                     <p className="text-[10px] text-muted-foreground leading-tight truncate">
                       {c.name}{c.networkName ? ` · ${c.networkName}` : ""}
                     </p>
                   </div>
-                  {selected?.symbol === c.symbol && selected?.network === c.network && selected?.provider === c.provider && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                  {isSelectedCoin(c) && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
                 </button>
               ))
             )}
           </div>
           <div className="px-3 py-1.5 border-t border-border/40 text-[10px] text-muted-foreground/60 text-center">
-            {filtered.length.toLocaleString()} of {coins.length.toLocaleString()} coins
+            {visibleCoins.length.toLocaleString()} shown of {filtered.length.toLocaleString()} matches · {coins.length.toLocaleString()} coins
+            {supplementalLoading ? " · loading Reown coins…" : ""}
           </div>
         </div>
       )}
@@ -461,13 +518,15 @@ function Countdown({ seconds, onEnd }: { seconds: number; onEnd: () => void }) {
 
 // ─── Step 1: Amount ───────────────────────────────────────────────────────────
 
-function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, forceVenue }: {
+function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, forceVenue, onLoadReownCoins, reownCoinsLoading }: {
   coins: LeCoin[];
   onContinue: (from: LeCoin, to: LeCoin, amount: string, estimate: Estimate|null) => void;
   initialFrom?: string;
   initialTo?: string;
   walletAddress?: string | null;
   forceVenue?: string;
+  onLoadReownCoins: () => void;
+  reownCoinsLoading: boolean;
 }) {
   const [fromCoin, setFromCoin] = useState<LeCoin|null>(null);
   const [toCoin,   setToCoin]   = useState<LeCoin|null>(null);
@@ -477,7 +536,6 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   const [estError,   setEstError]   = useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [selectedVenue, setSelectedVenue] = useState<string|null>(null);
-  const [reownSwapError, setReownSwapError] = useState<string|null>(null);
 
   // ── Smart router state ───────────────────────────────────────────────────
   const [routeSource,  setRouteSource]  = useState<"internal"|"letsexchange"|null>(null);
@@ -537,27 +595,31 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
           ?? null;
     }
 
-    if (initialFrom) {
-      const c = pickCoin(initialFrom);
-      if (c) setFromCoin(c);
-    } else {
-      const btc = pickCoin("BTC");
-      if (btc) setFromCoin(btc);
+    if (!fromCoin) {
+      if (initialFrom) {
+        const c = pickCoin(initialFrom);
+        if (c) setFromCoin(c);
+      } else {
+        const btc = pickCoin("BTC");
+        if (btc) setFromCoin(btc);
+      }
     }
 
-    if (initialTo) {
-      const c = pickCoin(initialTo);
-      if (c) setToCoin(c);
-    } else {
-      const bsv = pickCoin("BSV");
-      const eth = pickCoin("ETH");
-      if (bsv ?? eth) setToCoin(bsv ?? eth ?? null);
+    if (!toCoin) {
+      if (initialTo) {
+        const c = pickCoin(initialTo);
+        if (c) setToCoin(c);
+      } else {
+        const bsv = pickCoin("BSV");
+        const eth = pickCoin("ETH");
+        if (bsv ?? eth) setToCoin(bsv ?? eth ?? null);
+      }
     }
-  }, [coins, initialFrom, initialTo]);
+  }, [coins, initialFrom, initialTo, fromCoin, toCoin]);
 
   useEffect(() => {
     setSelectedVenue(null);
-  }, [fromCoin?.symbol, fromCoin?.network, fromCoin?.provider, toCoin?.symbol, toCoin?.network, toCoin?.provider, amount, forceVenue]);
+  }, [fromCoin?.symbol, fromCoin?.network, fromCoin?.provider, fromCoin?.tokenAddress, toCoin?.symbol, toCoin?.network, toCoin?.provider, toCoin?.tokenAddress, amount, forceVenue]);
 
   // Live rate fetch using correct API fields
   const fetchEstimate = useCallback(async () => {
@@ -692,7 +754,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
       routeControllerRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromCoin?.symbol, toCoin?.symbol, amount]);
+  }, [fromCoin?.symbol, fromCoin?.network, fromCoin?.tokenAddress, toCoin?.symbol, toCoin?.network, toCoin?.tokenAddress, amount]);
 
   const sortedVenueQuotes = useMemo(
     () => [...(estimate?.venue_quotes ?? [])].sort(
@@ -810,7 +872,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
           <input type="number" min="0" placeholder="0.0" value={amount}
             onChange={e => setAmount(e.target.value)}
             className="flex-1 bg-transparent text-[2.2rem] font-semibold text-foreground outline-none placeholder:text-muted-foreground/30 min-w-0 leading-none py-1" />
-          <CoinPicker compact coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); }} exclude={toCoin?.symbol} />
+          <CoinPicker compact coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); }} exclude={toCoin?.symbol} onOpen={onLoadReownCoins} supplementalLoading={reownCoinsLoading} />
         </div>
         {/* Wallet balance and spend limits */}
         {fromCoin && (
@@ -922,7 +984,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
               <span className="text-muted-foreground/20">0.0</span>
             )}
           </div>
-          <CoinPicker compact coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); }} exclude={fromCoin?.symbol} />
+          <CoinPicker compact coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); }} exclude={fromCoin?.symbol} onOpen={onLoadReownCoins} supplementalLoading={reownCoinsLoading} />
         </div>
         {/* Rate + venue badge */}
         {activeEstimate && fromCoin && toCoin && (
@@ -964,7 +1026,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
         {supplierRows.length > 0 && fromCoin && toCoin && (
           <div className="mt-3 pt-3 border-t border-border/40">
             <div className="flex items-center justify-between gap-2 mb-2">
-              <span className="text-[11px] font-semibold text-foreground">Available supplier quotes</span>
+              <span className="text-[11px] font-semibold text-foreground">Supplier comparison</span>
               <span className="text-[10px] text-muted-foreground/60">Best output highlighted</span>
             </div>
             <div className="flex flex-col gap-1.5">
@@ -1029,27 +1091,6 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
             </p>
           </div>
         )}
-        <div className="mt-3 rounded-xl border border-violet-500/15 bg-violet-500/5 px-3 py-2.5 flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold text-foreground">Reown wallet swap</p>
-            <p className="text-[10px] text-muted-foreground/70">Browse Reown-supported coins and quotes</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setReownSwapError(null);
-              void openReownSwap({
-                ...(fromCoin ? { fromToken: fromCoin.symbol } : {}),
-                ...(toCoin ? { toToken: toCoin.symbol } : {}),
-                ...(amount && Number.isFinite(parseFloat(amount)) ? { amount } : {}),
-              }).catch(() => setReownSwapError("Reown Swap could not be opened. Please try again."));
-            }}
-            className="shrink-0 rounded-lg border border-violet-500/30 px-3 py-2 text-[10px] font-semibold text-violet-300 hover:bg-violet-500/10"
-          >
-            Open Reown
-          </button>
-        </div>
-        {reownSwapError && <p className="text-[10px] text-red-400 px-1">{reownSwapError}</p>}
       </div>
 
       {/* Smart Router badge — very subtle */}
@@ -1960,6 +2001,8 @@ export function LetsExchangePanel({
   const [coins,    setCoins]    = useState<LeCoin[]>([]);
   const [coinsErr, setCoinsErr] = useState(false);
   const [loading,  setLoading]  = useState(true);
+  const [reownCoinsLoading, setReownCoinsLoading] = useState(false);
+  const reownCoinsLoadStarted = useRef(false);
 
   const [step,       setStep]       = useState<1|2|3>(1);
   const [fromCoin,   setFromCoin]   = useState<LeCoin|null>(null);
@@ -1969,6 +2012,19 @@ export function LetsExchangePanel({
   const [creating,   setCreating]   = useState(false);
   const [createError, setCreateError] = useState<string|null>(null);
   const [order,      setOrder]      = useState<OrderResult|null>(null);
+
+  const loadReownCoins = useCallback(() => {
+    if (reownCoinsLoadStarted.current) return;
+    reownCoinsLoadStarted.current = true;
+    setReownCoinsLoading(true);
+    void fetchReownSwapCoins()
+      .then(tokens => setCoins(current => mergeReownCoins(current, tokens)))
+      .catch(error => {
+        reownCoinsLoadStarted.current = false;
+        console.warn("[OrahDEX] Could not load Reown swap coins:", error);
+      })
+      .finally(() => setReownCoinsLoading(false));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2125,7 +2181,7 @@ export function LetsExchangePanel({
               </div>
             )}
 
-            {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} walletAddress={walletAddress} forceVenue={forceVenue} />}
+            {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} walletAddress={walletAddress} forceVenue={forceVenue} onLoadReownCoins={loadReownCoins} reownCoinsLoading={reownCoinsLoading} />}
             {step === 2 && fromCoin && toCoin && (
               <StepAddress fromCoin={fromCoin} toCoin={toCoin} amount={sendAmount} estimate={estimate}
                 onBack={() => setStep(1)} onContinue={handleAddressContinue}

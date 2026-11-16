@@ -2,6 +2,7 @@ import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { SolanaAdapter } from "@reown/appkit-adapter-solana";
 import { BitcoinAdapter } from "@reown/appkit-adapter-bitcoin";
+import { BlockchainApiController } from "@reown/appkit-controllers";
 import {
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
   linea, zkSync, scroll, sepolia,
@@ -404,17 +405,63 @@ export function openReownModal(namespace?: "eip155" | "solana" | "bip122"): void
   }
 }
 
-export async function openReownSwap(arguments_: {
-  fromToken?: string;
-  toToken?: string;
-  amount?: string;
-} = {}): Promise<void> {
-  try {
-    await appKit.open({ view: "Swap", arguments: arguments_ });
-  } catch (e) {
-    console.error("[OrahDEX] Failed to open Reown swap:", e);
-    throw e;
+export interface ReownSwapCoin {
+  symbol: string;
+  name: string;
+  address: string;
+  decimals: number;
+  logoUri: string | null;
+  network: string;
+  networkName: string;
+}
+
+const REOWN_SWAP_NETWORKS = [
+  { chainId: 1, network: "ETH", networkName: "Ethereum" },
+  { chainId: 137, network: "MATIC", networkName: "Polygon" },
+  { chainId: 42161, network: "ARB", networkName: "Arbitrum" },
+  { chainId: 10, network: "OP", networkName: "Optimism" },
+  { chainId: 8453, network: "BASE", networkName: "Base" },
+  { chainId: 56, network: "BSC", networkName: "BNB Chain" },
+  { chainId: 43114, network: "AVAXC", networkName: "Avalanche" },
+  { chainId: 59144, network: "LINEA", networkName: "Linea" },
+  { chainId: 324, network: "ZKSYNC", networkName: "zkSync Era" },
+  { chainId: 534352, network: "SCROLL", networkName: "Scroll" },
+];
+
+export async function fetchReownSwapCoins(): Promise<ReownSwapCoin[]> {
+  const results: ReownSwapCoin[] = [];
+  for (let offset = 0; offset < REOWN_SWAP_NETWORKS.length; offset += 3) {
+    const batch = REOWN_SWAP_NETWORKS.slice(offset, offset + 3);
+    const batches = await Promise.all(batch.map(async network => {
+      try {
+        const response = await BlockchainApiController.fetchSwapTokens({
+          chainId: `eip155:${network.chainId}`,
+        });
+        return (response?.tokens ?? [])
+          .filter(token =>
+            typeof token.symbol === "string" &&
+            token.symbol.trim().length > 0 &&
+            typeof token.name === "string" &&
+            typeof token.address === "string" &&
+            token.address.toLowerCase().startsWith(`eip155:${network.chainId}:`),
+          )
+          .map(token => ({
+            symbol: token.symbol.trim().toUpperCase(),
+            name: token.name.trim(),
+            address: token.address,
+            decimals: token.decimals,
+            logoUri: token.logoUri || null,
+            network: network.network,
+            networkName: network.networkName,
+          }));
+      } catch (error) {
+        console.warn(`[OrahDEX] Reown token list unavailable for ${network.networkName}:`, error);
+        return [];
+      }
+    }));
+    results.push(...batches.flat());
   }
+  return [...new Map(results.map(token => [token.address.toLowerCase(), token])).values()];
 }
 
 export function disconnectReown(): void {
