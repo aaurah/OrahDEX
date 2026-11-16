@@ -10,7 +10,7 @@
  *   6. Synthetic fallback — generated from lastPrice when no external data available
  */
 
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { tradesTable } from "@workspace/db/schema";
 import { gte, and, eq } from "drizzle-orm";
 import { logger } from "./logger.js";
@@ -112,6 +112,91 @@ interface Candle {
 interface CacheEntry { data: Candle[]; ts: number }
 const candleCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 60 * 1000;
+const COINGECKO_OHLC_TTL_MS = 5 * 60 * 1000;
+const coingeckoOhlcCache = new Map<string, { data: Candle[]; ts: number }>();
+const coingeckoOhlcPending = new Map<string, Promise<Candle[]>>();
+let coingeckoApiKeyPromise: Promise<string | null> | null = null;
+
+async function getCoinGeckoApiKey(): Promise<string | null> {
+  if (!coingeckoApiKeyPromise) {
+    coingeckoApiKeyPromise = (async () => {
+      try {
+        const result = await pool.query<{ value: string }>(
+          "SELECT value FROM platform_settings WHERE key = 'coingecko_api_key' LIMIT 1",
+        );
+        const stored = result.rows[0]?.value;
+        if (typeof stored === "string" && stored.trim()) return stored.trim();
+      } catch {
+        // The platform settings table may not exist in every environment.
+      }
+      return process.env.COINGECKO_API_KEY?.trim() || null;
+    })();
+  }
+  return coingeckoApiKeyPromise;
+}
+
+async function fetchA8EthReferenceCandles(days: "1" | "30" | "365"): Promise<Candle[]> {
+  const cacheKey = `ancient8:eth:${days}`;
+  const cached = coingeckoOhlcCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < COINGECKO_OHLC_TTL_MS) return cached.data;
+
+  const pending = coingeckoOhlcPending.get(cacheKey);
+  if (pending) return pending;
+
+  const request = (async () => {
+    const apiKey = await getCoinGeckoApiKey();
+    const usePro = Boolean(apiKey && !apiKey.startsWith("CG-"));
+    const apiBase = usePro
+      ? "https://pro-api.coingecko.com/api/v3"
+      : "https://api.coingecko.com/api/v3";
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (apiKey) {
+      headers[apiKey.startsWith("CG-") ? "x-cg-demo-api-key" : "x-cg-pro-api-key"] = apiKey;
+    }
+
+    const url = `${apiBase}/coins/ancient8/ohlc?vs_currency=eth&days=${days}`;
+    const response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) throw new Error(`CoinGecko OHLC HTTP ${response.status}`);
+    const raw = await response.json() as number[][];
+    if (!Array.isArray(raw)) throw new Error("CoinGecko OHLC response was not an array");
+
+    const candles = raw
+      .filter((row) => Array.isArray(row) && row.length >= 5)
+      .map(([timeMs, open, high, low, close]) => ({
+        time: Math.floor(Number(timeMs) / 1000),
+        open: Number(open),
+        high: Number(high),
+        low: Number(low),
+        close: Number(close),
+        volume: 0,
+      }))
+      .filter((c) =>
+        Number.isFinite(c.time) &&
+        Number.isFinite(c.open) &&
+        Number.isFinite(c.high) &&
+        Number.isFinite(c.low) &&
+        Number.isFinite(c.close) &&
+        c.time > 0 &&
+        Math.min(c.open, c.high, c.low, c.close) > 0 &&
+        c.high >= Math.max(c.open, c.close) &&
+        c.low <= Math.min(c.open, c.close),
+      )
+      .sort((a, b) => a.time - b.time)
+      .filter((c, i, all) => i === 0 || c.time !== all[i - 1]!.time);
+
+    if (candles.length) coingeckoOhlcCache.set(cacheKey, { data: candles, ts: Date.now() });
+    return candles;
+  })();
+  coingeckoOhlcPending.set(cacheKey, request);
+  try {
+    return await request;
+  } finally {
+    coingeckoOhlcPending.delete(cacheKey);
+  }
+}
 
 function getCached(key: string): Candle[] | null {
   const e = candleCache.get(key);
@@ -530,9 +615,11 @@ export async function fetchRealCandles(
   limit:     number,
 ): Promise<Candle[]> {
   const cacheKey = `${symbol}:${interval}:${limit}`;
+  const isA8EthPair = symbol.toUpperCase() === "A8/ETH";
   const cached   = getCached(cacheKey);
   if (cached !== null) {
     if (cached.length === 0) return [];
+    if (isA8EthPair) return cached.map((candle) => ({ ...candle }));
     return pinLastCandle([...cached.slice(0, -1), { ...cached[cached.length - 1]! }], lastPrice);
   }
 
@@ -548,10 +635,37 @@ export async function fetchRealCandles(
     const ownCandles  = await buildCandlesFromOwnTrades(symbol, intervalSec, limit);
     if (isValidCandleSet(ownCandles, minRequired)) {
       setCached(cacheKey, ownCandles);
+      if (isA8EthPair) return ownCandles;
       return pinLastCandle(ownCandles, lastPrice);
     }
   } catch (err) {
     logger.warn({ err, symbol }, "Own-trades candle build failed");
+  }
+
+  // A8/ETH has no OrahDEX executions yet, but CoinGecko provides genuine
+  // Ancient8-vs-ETH OHLC reference data. Keep it explicitly separate from
+  // OrahDEX fills and do not pin its last close to the independent swap quote.
+  if (isA8EthPair) {
+    const days: "1" | "30" | "365" =
+      ["1m", "3m", "5m", "15m", "30m", "1h"].includes(interval) ? "1" :
+      ["1d", "3d", "1w", "1M"].includes(interval) ? "365" : "30";
+    try {
+      let candles: Candle[];
+      try {
+        candles = await fetchA8EthReferenceCandles(days);
+      } catch (err) {
+        if (days !== "365") throw err;
+        logger.warn({ err, symbol }, "Long-range CoinGecko candles unavailable; trying shorter reference history");
+        candles = await fetchA8EthReferenceCandles("30");
+      }
+      if (isValidCandleSet(candles, minRequired)) {
+        const result = candles.slice(-limit);
+        setCached(cacheKey, result);
+        return result;
+      }
+    } catch (err) {
+      logger.warn({ err, symbol, days }, "CoinGecko reference candles unavailable");
+    }
   }
 
   // ── 2. OKX (primary real-data source — global, not geo-blocked) ────────────

@@ -28,6 +28,7 @@ interface ChartProps {
   subIndicator?: SubIndicator;
   externalDataOnly?: boolean;
   externalDataLoading?: boolean;
+  dataSourceLabel?: string;
 }
 
 /* ── Intervals ──────────────────────────────────────────────────────────── */
@@ -276,6 +277,7 @@ function OrahChart({
   data: fallbackData,
   externalDataOnly = false,
   externalDataLoading = false,
+  dataSourceLabel,
 }: ChartProps) {
   const mainRef   = useRef<HTMLDivElement>(null);
   const subRef    = useRef<HTMLDivElement>(null);
@@ -965,8 +967,14 @@ function OrahChart({
           </>
         )}
         <div className="ml-auto flex items-center gap-1 shrink-0">
-          <span className="text-[10px] text-green-400/70 font-mono">OrahDEX Live</span>
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
+          <span
+            className={`text-[10px] font-mono ${dataSourceLabel ? 'text-amber-300/80' : 'text-green-400/70'}`}
+            title={dataSourceLabel ? "External reference history; these are not OrahDEX trade fills." : "Live OrahDEX market data"}
+            data-testid="text-chart-data-source"
+          >
+            {dataSourceLabel ?? "OrahDEX Live"}
+          </span>
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dataSourceLabel ? 'bg-amber-300' : 'bg-green-400 animate-pulse'}`} />
         </div>
       </div>
 
