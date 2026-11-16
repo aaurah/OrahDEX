@@ -1098,24 +1098,29 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const mobileApiInterval = mobilePreset ? mobilePreset.apiInterval : interval;
   const mobileCandleLimit = mobilePreset ? mobilePreset.limit : 150;
 
-  const { data: candleFeed = { candles: [] as any[], source: "unknown" }, isLoading: candlesLoading } = useQuery({
+  const { data: candles = [], isLoading: candlesLoading } = useQuery({
     queryKey: ["candles", symbol, mobileApiInterval, mobileCandleLimit],
     queryFn: async () => {
-      const response = await fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`);
+      const response = await fetch(
+        `${BASE}/api/markets/${encodedSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`,
+        { cache: "no-store" },
+      );
       if (!response.ok) throw new Error(`Candle request failed: ${response.status}`);
       const payload = await response.json();
       if (!Array.isArray(payload)) throw new Error("Invalid candle response");
-      return { candles: payload, source: response.headers.get("X-Candle-Source") ?? "unknown" };
+      return payload;
     },
     refetchInterval: 30000,
     staleTime: 20000,
     retry: 2,
   });
-  const candles = candleFeed.candles;
 
   const { data: perfCandles = [] } = useQuery({
     queryKey: ["perf-candles", symbol],
-    queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=1d&limit=400`).then(r => r.json()),
+    queryFn: () => fetch(
+      `${BASE}/api/markets/${encodedSymbol}/candles?interval=1d&limit=400`,
+      { cache: "no-store" },
+    ).then(r => r.json()),
     refetchInterval: 300_000,
     staleTime: 240_000,
   });
@@ -1190,14 +1195,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Fallback price for candles/orderbook when ticker hasn't loaded yet
   const fallbackPrice = lastPrice > 0 ? lastPrice : 0;
   const chartCandles = Array.isArray(candles) ? candles : [];
-  const candleSourceLabels: Record<string, string> = {
-    coingecko: "CoinGecko reference",
-    okx: "OKX reference",
-    binance: "Binance reference",
-    gateio: "Gate.io reference",
-    poloniex: "Poloniex reference",
-  };
-  const candleSourceLabel = candleSourceLabels[candleFeed.source] ?? "";
   // Ensure order book always shows data
   const rawOB = orderBook as any;
   // Bridge pairs cannot synthesize fillable depth, but confirmed wallet-escrow
@@ -1838,7 +1835,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             data={chartCandles}
             externalDataOnly={true}
             externalDataLoading={candlesLoading}
-            dataSourceLabel={candleSourceLabel || undefined}
           />
         </div>
 

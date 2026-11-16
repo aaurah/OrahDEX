@@ -2,19 +2,17 @@
  * candleFetcher.ts — Sovereign candle engine
  *
  * Priority order:
- *   1. Own trades table  →  aggregate into OHLCV candles (most authoritative)
- *   2. OKX public candles API (no key, not geo-blocked — primary real-data source)
- *   3. Binance public klines API (no key required) — geo-blocked from some regions
- *   4. Gate.io public candles API (no key required) — broad pair coverage
- *   5. Poloniex — for BSV (listed as BCHSV) and other renamed coins
- *   6. No history — unsupported pairs remain empty rather than inventing price movement
+ *   1. Own executed trades → OHLCV candles (most authoritative)
+ *   2. OrahDEX escrow-backed order-book snapshots → quote candles with zero volume
+ *   3. Public market OHLC feeds → reference history where local data is absent
+ *   4. No history → unsupported pairs remain empty rather than inventing movement
  */
 
 import { db, pool } from "@workspace/db";
 import { tradesTable } from "@workspace/db/schema";
 import { gte, and, eq } from "drizzle-orm";
 import { logger } from "./logger.js";
-import { COINGECKO_IDS } from "./priceUpdater.js";
+import { getCoinGeckoApiKey, resolveCoinGeckoId } from "./priceUpdater.js";
 
 const INTERVAL_SECONDS: Record<string, number> = {
   "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
@@ -94,7 +92,6 @@ const CACHE_TTL_MS = 60 * 1000;
 const COINGECKO_OHLC_TTL_MS = 5 * 60 * 1000;
 const coingeckoOhlcCache = new Map<string, { data: Candle[]; ts: number }>();
 const coingeckoOhlcPending = new Map<string, Promise<Candle[]>>();
-let coingeckoApiKeyPromise: Promise<string | null> | null = null;
 let coingeckoBackoffUntil = 0;
 const candleSourceCache = new Map<string, string>();
 
@@ -106,24 +103,6 @@ const COINGECKO_VS_CURRENCY: Record<string, string> = {
   BNB: "bnb",
   SOL: "sol",
 };
-
-async function getCoinGeckoApiKey(): Promise<string | null> {
-  if (!coingeckoApiKeyPromise) {
-    coingeckoApiKeyPromise = (async () => {
-      try {
-        const result = await pool.query<{ value: string }>(
-          "SELECT value FROM platform_settings WHERE key = 'coingecko_api_key' LIMIT 1",
-        );
-        const stored = result.rows[0]?.value;
-        if (typeof stored === "string" && stored.trim()) return stored.trim();
-      } catch {
-        // The platform settings table may not exist in every environment.
-      }
-      return process.env.COINGECKO_API_KEY?.trim() || null;
-    })();
-  }
-  return coingeckoApiKeyPromise;
-}
 
 async function fetchCoinGeckoOhlc(
   coinId: string,
@@ -224,6 +203,62 @@ function setCached(key: string, data: Candle[], source: string) {
   }
   candleCache.set(key, { data, ts: Date.now() });
   candleSourceCache.set(key, source);
+}
+
+export function invalidateCandlesForOrderbookUpdate(symbol: string) {
+  const prefix = `${symbol.toUpperCase()}:`;
+  for (const [key, source] of candleSourceCache) {
+    if (!key.startsWith(prefix) || source === "orahdex-trades") continue;
+    candleCache.delete(key);
+    candleSourceCache.delete(key);
+  }
+  historyCache.delete(`history:${symbol.toUpperCase()}`);
+}
+
+async function buildCandlesFromOrderbookSnapshots(
+  symbol: string,
+  intervalSec: number,
+  limit: number,
+): Promise<Candle[]> {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const lookbackSec = Math.max(intervalSec * limit, intervalSec);
+  const retentionStartSec = nowSec - 30 * 24 * 60 * 60;
+  const requestedStartSec = nowSec - lookbackSec;
+  const startSec = Math.floor(Math.max(retentionStartSec, requestedStartSec) / 60) * 60;
+  const { rows } = await pool.query<{
+    bucket_sec: number;
+    open: string;
+    high: string;
+    low: string;
+    close: string;
+  }>(
+    `SELECT bucket_sec, open, high, low, close
+       FROM orderbook_quote_candles
+      WHERE symbol = $1 AND bucket_sec >= $2
+      ORDER BY bucket_sec ASC`,
+    [symbol.toUpperCase(), startSec],
+  );
+  if (!rows.length) return [];
+
+  const buckets = new Map<number, Candle>();
+  for (const row of rows) {
+    const time = Math.floor(Number(row.bucket_sec) / intervalSec) * intervalSec;
+    const open = Number(row.open);
+    const high = Number(row.high);
+    const low = Number(row.low);
+    const close = Number(row.close);
+    if (![time, open, high, low, close].every(Number.isFinite) || Math.min(open, high, low, close) <= 0) continue;
+    const existing = buckets.get(time);
+    if (!existing) {
+      buckets.set(time, { time, open, high, low, close, volume: 0 });
+      continue;
+    }
+    existing.high = Math.max(existing.high, high);
+    existing.low = Math.min(existing.low, low);
+    existing.close = close;
+  }
+
+  return [...buckets.values()].sort((a, b) => a.time - b.time).slice(-limit);
 }
 
 /* ── 1. Own trades → OHLCV candles ──────────────────────────────────────────── */
@@ -431,7 +466,7 @@ async function fetchBitfinexHistory(base: string): Promise<Candle[]> {
 }
 
 /* ── 6-hour cache for full history (static data changes very slowly) ─────────── */
-interface HistoryCacheEntry { data: Candle[]; ts: number }
+interface HistoryCacheEntry { data: Candle[]; ts: number; includesOrderbook: boolean }
 const historyCache = new Map<string, HistoryCacheEntry>();
 const HISTORY_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -451,7 +486,9 @@ export async function fetchFullHistoryCandles(
   const cacheKey = `history:${symbol}`;
   const cached = historyCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < HISTORY_TTL_MS) {
-    return pinLastCandle([...cached.data], lastPrice);
+    return cached.includesOrderbook
+      ? cached.data.map((candle) => ({ ...candle }))
+      : pinLastCandle([...cached.data], lastPrice);
   }
 
   const parts = symbol.split("/");
@@ -497,15 +534,32 @@ export async function fetchFullHistoryCandles(
     } catch (_) {}
   }
 
+  let includesOrderbook = false;
+  try {
+    const quoteCandles = await buildCandlesFromOrderbookSnapshots(symbol, 86_400, 30);
+    if (quoteCandles.length) {
+      const quoteDays = new Set(quoteCandles.map((candle) => candle.time));
+      merged = [
+        ...merged.filter((candle) => !quoteDays.has(candle.time)),
+        ...quoteCandles,
+      ].sort((a, b) => a.time - b.time);
+      includesOrderbook = true;
+    }
+  } catch (err) {
+    logger.warn({ err, symbol }, "Order-book daily candle history unavailable");
+  }
+
   // Keep sparse real history rather than inventing price movements.
   if (merged.length === 0) {
     logger.warn({ symbol }, "Historical candle sources unavailable");
     return [];
   }
 
-  historyCache.set(cacheKey, { data: merged, ts: Date.now() });
+  historyCache.set(cacheKey, { data: merged, ts: Date.now(), includesOrderbook });
   logger.info({ symbol, total: merged.length }, "Full history assembled");
-  return pinLastCandle([...merged], lastPrice);
+  return includesOrderbook
+    ? merged.map((candle) => ({ ...candle }))
+    : pinLastCandle([...merged], lastPrice);
 }
 
 /* ── Resample daily candles into weekly or monthly OHLCV bars ────────────────── */
@@ -591,7 +645,9 @@ export async function fetchRealCandles(
     const source = candleSourceCache.get(cacheKey) ?? "unknown";
     onSource?.(source);
     if (cached.length === 0) return [];
-    if (source === "coingecko") return cached.map((candle) => ({ ...candle }));
+    if (source === "coingecko" || source === "orderbook-snapshots") {
+      return cached.map((candle) => ({ ...candle }));
+    }
     return pinLastCandle([...cached.slice(0, -1), { ...cached[cached.length - 1]! }], lastPrice);
   }
 
@@ -614,7 +670,20 @@ export async function fetchRealCandles(
     logger.warn({ err, symbol }, "Own-trades candle build failed");
   }
 
-  // ── 2. OKX (primary real-data source — global, not geo-blocked) ────────────
+  // ── 2. First-party live order-book quotes, never reported as traded volume ──
+  try {
+    const intervalSec = INTERVAL_SECONDS[interval] || 3600;
+    const quoteCandles = await buildCandlesFromOrderbookSnapshots(symbol, intervalSec, limit);
+    if (quoteCandles.length) {
+      setCached(cacheKey, quoteCandles, "orderbook-snapshots");
+      onSource?.("orderbook-snapshots");
+      return quoteCandles;
+    }
+  } catch (err) {
+    logger.warn({ err, symbol }, "Order-book candle history unavailable");
+  }
+
+  // ── 3. OKX (primary external history source — global, not geo-blocked) ─────
   if (isUsdtPair && !OKX_SKIP_PAIRS.has(base)) {
     try {
       const candles = await fetchOkxCandles(base, interval, limit);
@@ -693,7 +762,7 @@ export async function fetchRealCandles(
   // Known non-USDT markets can use genuine CoinGecko OHLC as a reference
   // source when OrahDEX has no executions. Direct exchange feeds above take
   // precedence; reference candles are labeled separately in the chart.
-  const coinId = COINGECKO_IDS[base];
+  const coinId = await resolveCoinGeckoId(base);
   const vsCurrency = COINGECKO_VS_CURRENCY[quote];
   if (coinId && vsCurrency) {
     const days: "1" | "30" | "365" =
