@@ -2,10 +2,15 @@ import { Router, type IRouter } from "express";
 import { db, pool, withDbRetry } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
 import { eq, and, desc, inArray, ne, or, sql } from "drizzle-orm";
-import { FALLBACK_PRICES, fetchCoinGeckoPrices } from "../lib/priceUpdater.js";
+import { FALLBACK_PRICES, fetchGatePairPrices, fetchMarketUsdPrices } from "../lib/priceUpdater.js";
 import { fetchKeyPrices } from "./dex.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
-import { fetchRealCandles, fetchFullHistoryCandles, resampleCandles } from "../lib/candleFetcher.js";
+import {
+  fetchRealCandles,
+  fetchFullHistoryCandles,
+  resampleCandles,
+} from "../lib/candleFetcher.js";
+import { midpointFromOrderbook, recordOrderbookQuoteCandle } from "../lib/orderbookCandleRecorder.js";
 import { logger } from "../lib/logger.js";
 import { getVirtualCatalogPage } from "../lib/universalMarkets.js";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
@@ -192,16 +197,22 @@ router.get("/markets", async (req, res) => {
 
     let liveCoinPrices: Record<string, { usd?: number }> = {};
     try {
-      liveCoinPrices = await fetchCoinGeckoPrices();
+      liveCoinPrices = await fetchMarketUsdPrices();
     } catch (err) {
       req.log.warn({ err }, "CoinGecko cross-prices unavailable; using stored and fallback prices");
+    }
+    let directPairPrices: Record<string, number> = {};
+    try {
+      directPairPrices = await fetchGatePairPrices();
+    } catch (err) {
+      req.log.warn({ err }, "Direct market prices unavailable; using cross-prices and stored values");
     }
 
     const result = markets.map((m) => ({
       symbol:                m.symbol,
       baseAsset:             m.baseAsset,
       quoteAsset:            m.quoteAsset,
-      lastPrice:             resolveCrossPrice(m.symbol, parseFloat(m.lastPrice), liveCoinPrices),
+      lastPrice:             resolveCrossPrice(m.symbol, parseFloat(m.lastPrice), liveCoinPrices, directPairPrices),
       priceChange24h:        parseFloat(m.priceChange24h),
       priceChangePercent24h: parseFloat(m.priceChangePercent24h),
       volume24h:             parseFloat(m.volume24h),
@@ -350,16 +361,22 @@ router.get("/markets/search", async (req, res) => {
 
     let liveCoinPrices: Record<string, { usd?: number }> = {};
     try {
-      liveCoinPrices = await fetchCoinGeckoPrices();
+      liveCoinPrices = await fetchMarketUsdPrices();
     } catch (err) {
       logger.warn({ err }, "CoinGecko cross-prices unavailable for market search");
+    }
+    let directPairPrices: Record<string, number> = {};
+    try {
+      directPairPrices = await fetchGatePairPrices();
+    } catch (err) {
+      logger.warn({ err }, "Direct market prices unavailable for market search");
     }
 
     const result = rows.map(m => ({
       symbol:                m.symbol,
       baseAsset:             m.baseAsset,
       quoteAsset:            m.quoteAsset,
-      lastPrice:             resolveCrossPrice(m.symbol, parseFloat(m.lastPrice), liveCoinPrices),
+      lastPrice:             resolveCrossPrice(m.symbol, parseFloat(m.lastPrice), liveCoinPrices, directPairPrices),
       priceChangePercent24h: parseFloat(m.priceChangePercent24h),
       volume24h:             parseFloat(m.volume24h),
       type:                  m.type,
@@ -595,14 +612,89 @@ function resolveCrossPrice(
   symbol: string,
   dbPrice: number,
   liveCoinPrices: Record<string, { usd?: number }> = {},
+  directPairPrices: Record<string, number> = {},
 ): number {
   if (dbPrice > 0) return dbPrice;
+  const directPrice = directPairPrices[symbol.toUpperCase()];
+  if (directPrice && directPrice > 0) return directPrice;
   const [base, quote] = symbol.split("/");
   if (!base || !quote) return 0;
   const baseUsd  = liveCoinPrices[base]?.usd ?? FALLBACK_PRICES[base] ?? 0;
   const quoteUsd = usdStable(quote) ? 1 : (liveCoinPrices[quote]?.usd ?? FALLBACK_PRICES[quote] ?? 0);
   if (baseUsd > 0 && quoteUsd > 0) return baseUsd / quoteUsd;
   return 0;
+}
+
+async function resolveLiveCrossPrice(symbol: string, dbPrice: number): Promise<number> {
+  if (dbPrice > 0) return dbPrice;
+  const [coinPricesResult, directPricesResult] = await Promise.allSettled([
+    fetchMarketUsdPrices(),
+    fetchGatePairPrices(),
+  ]);
+  const coinPrices = coinPricesResult.status === "fulfilled" ? coinPricesResult.value : {};
+  const directPrices = directPricesResult.status === "fulfilled" ? directPricesResult.value : {};
+  return resolveCrossPrice(symbol, dbPrice, coinPrices, directPrices);
+}
+
+type OrderbookLevel = [number, number];
+
+async function fetchVerifiedEscrowOrderbook(symbol: string, depth = 20): Promise<{
+  bids: OrderbookLevel[];
+  asks: OrderbookLevel[];
+}> {
+  const ordersPromise = db
+    .select({
+      side: ordersTable.side,
+      price: ordersTable.price,
+      remainingQuantity: ordersTable.remainingQuantity,
+    })
+    .from(ordersTable)
+    .where(and(
+      eq(ordersTable.symbol, symbol),
+      eq(ordersTable.status, "open"),
+      eq(ordersTable.type, "limit"),
+      or(
+        sql`${ordersTable.fundingRef} LIKE 'ledger:%'`,
+        sql`${ordersTable.fundingRef} LIKE 'evm-order:1:%'`,
+      ),
+      ne(ordersTable.walletAddress, BOT_ADDRESS),
+    ));
+  const rows = await Promise.race([
+    ordersPromise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("orderbook db timeout")), 3000)
+    ),
+  ]) as Awaited<typeof ordersPromise>;
+
+  const bidMap = new Map<number, number>();
+  const askMap = new Map<number, number>();
+  for (const order of rows) {
+    const price = Number(order.price);
+    const quantity = Number(order.remainingQuantity);
+    if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(quantity) || quantity <= 0) continue;
+    const sideMap = order.side === "buy" ? bidMap : askMap;
+    sideMap.set(price, (sideMap.get(price) ?? 0) + quantity);
+  }
+
+  return {
+    bids: [...bidMap.entries()].sort((a, b) => b[0] - a[0]).slice(0, depth),
+    asks: [...askMap.entries()].sort((a, b) => a[0] - b[0]).slice(0, depth),
+  };
+}
+
+async function resolveOrderbookPrice(symbol: string): Promise<number> {
+  const cachedBook = orderbookCache.get(`${symbol}:20`);
+  if (cachedBook) {
+    const cachedPrice = midpointFromOrderbook(cachedBook.bids ?? [], cachedBook.asks ?? []);
+    if (cachedPrice > 0) return cachedPrice;
+  }
+  try {
+    const { bids, asks } = await fetchVerifiedEscrowOrderbook(symbol, 1);
+    return midpointFromOrderbook(bids, asks);
+  } catch (error) {
+    logger.warn({ err: error, symbol }, "Ticker order-book price unavailable");
+    return 0;
+  }
 }
 
 router.get("/markets/:symbol/ticker", async (req, res) => {
@@ -629,21 +721,21 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
     let priceChange24h: number;
     let pctChange: number;
     let sym: string;
+    let usesOrderbookPrice = false;
 
     if (!market) {
       // Unknown pair — derive price from cross-rate fallback prices (same as candles)
-      lastPrice = resolveCrossPrice(symbol, 0);
-      if (!(lastPrice > 0)) { res.status(404).json({ error: "Market not found" }); return; }
-      high24h       = lastPrice * 1.02;
-      low24h        = lastPrice * 0.98;
+      lastPrice = await resolveLiveCrossPrice(symbol, 0);
+      high24h       = usesOrderbookPrice ? lastPrice : lastPrice * 1.02;
+      low24h        = usesOrderbookPrice ? lastPrice : lastPrice * 0.98;
       volume24h     = 0;
       priceChange24h = 0;
       pctChange     = 0;
       sym           = symbol;
     } else {
       lastPrice = parseFloat(market.lastPrice);
-      // For cross-pairs with stale/zero DB price, recompute from FALLBACK_PRICES
-      if (!(lastPrice > 0)) lastPrice = resolveCrossPrice(market.symbol, 0);
+      // For cross-pairs with a zero DB price, resolve from live markets too.
+      if (!(lastPrice > 0)) lastPrice = await resolveLiveCrossPrice(market.symbol, 0);
 
       pctChange = parseFloat(market.priceChangePercent24h);
       // Cross-pairs often have 0 stored — compute from high/low if available
@@ -656,12 +748,24 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
         }
       }
 
-      high24h       = parseFloat(market.high24h) || lastPrice * 1.02;
-      low24h        = parseFloat(market.low24h)  || lastPrice * 0.98;
+      high24h       = parseFloat(market.high24h) || (usesOrderbookPrice ? lastPrice : lastPrice * 1.02);
+      low24h        = parseFloat(market.low24h)  || (usesOrderbookPrice ? lastPrice : lastPrice * 0.98);
       volume24h     = parseFloat(market.volume24h);
       priceChange24h = parseFloat(market.priceChange24h);
       sym           = market.symbol;
     }
+
+    const orderbookPrice = await resolveOrderbookPrice(sym);
+    if (orderbookPrice > 0) {
+      lastPrice = orderbookPrice;
+      usesOrderbookPrice = true;
+      high24h = lastPrice;
+      low24h = lastPrice;
+      volume24h = 0;
+      priceChange24h = 0;
+      pctChange = 0;
+    }
+    if (!(lastPrice > 0)) { res.status(404).json({ error: "Market not found" }); return; }
 
     const ticker = {
       ...generateTicker({
@@ -694,6 +798,7 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
  */
 router.get("/markets/:symbol/history", async (req, res) => {
   try {
+    res.setHeader("Cache-Control", "no-store");
     const symbol   = normSymbol(req.params.symbol!);
     const resample = (req.query.interval as string) || "";
 
@@ -702,10 +807,11 @@ router.get("/markets/:symbol/history", async (req, res) => {
       const [market] = await db.select().from(marketsTable)
         .where(eq(marketsTable.symbol, symbol)).limit(1);
       price = market?.lastPrice ? parseFloat(market.lastPrice) : 0;
-      if (!(price > 0)) price = resolveCrossPrice(symbol, 0);
+      price = await resolveLiveCrossPrice(symbol, price);
     } catch (_) {
-      price = resolveCrossPrice(symbol, 0);
+      price = await resolveLiveCrossPrice(symbol, 0);
     }
+    if (!(price > 0)) price = await resolveOrderbookPrice(symbol);
 
     let candles = await fetchFullHistoryCandles(symbol, price);
 
@@ -723,6 +829,7 @@ router.get("/markets/:symbol/history", async (req, res) => {
 
 router.get("/markets/:symbol/candles", async (req, res) => {
   try {
+    res.setHeader("Cache-Control", "no-store");
     const symbol   = normSymbol(req.params.symbol);
     const interval = (req.query.interval as string) || "1h";
     const limit    = Math.min(parseInt(req.query.limit as string) || 200, 1500);
@@ -740,17 +847,12 @@ router.get("/markets/:symbol/candles", async (req, res) => {
     let sym: string;
     if (!market) {
       // Unknown pair or DB unavailable — derive from fallback prices
-      price = resolveCrossPrice(symbol, 0);
+      price = await resolveLiveCrossPrice(symbol, 0);
       sym   = symbol;
     } else {
-      // Prefer live DB price; fall back to cross-rate computation if DB is stale/zero
-      price = resolveCrossPrice(market.symbol, parseFloat(market.lastPrice));
+      // Prefer stored price; resolve an empty cross-pair from live feeds if needed.
+      price = await resolveLiveCrossPrice(market.symbol, parseFloat(market.lastPrice));
       sym   = market.symbol;
-    }
-
-    if (!price || price <= 0) {
-      res.json([]);
-      return;
     }
 
     let candleSource = "unknown";
@@ -786,24 +888,6 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
       market = undefined;
     }
 
-    // For unknown markets, attempt to build a synthetic book from fallback prices
-    let lastPrice: number;
-    if (!market) {
-      const [base, quote] = symbol.split("/");
-      const baseUsd  = base  ? (FALLBACK_PRICES[base]  ?? 0) : 0;
-      const quoteUsd = quote ? (FALLBACK_PRICES[quote] ?? (quote === "USDT" || quote === "USDC" ? 1 : 0)) : 0;
-      lastPrice = (baseUsd > 0 && quoteUsd > 0) ? baseUsd / quoteUsd : 0;
-      if (lastPrice <= 0) {
-        // Completely unknown — return empty book, not an error
-        res.json({ bids: [], asks: [], lastPrice: 0 });
-        return;
-      }
-    } else {
-      lastPrice = parseFloat(market.lastPrice);
-      // For markets with stale/zero DB price, fall back to cross-rate (same as candles/ticker)
-      if (!(lastPrice > 0)) lastPrice = resolveCrossPrice(market.symbol, 0);
-
-    }
     // Bridge pairs have no synthetic liquidity, but wallet-funded limit orders
     // are real escrow-backed orders and must still appear in the order book.
     const bridgePairInfo = market && (market.type === "letsexchange" || market.type === "simpleswap")
@@ -815,64 +899,28 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
         }
       : {};
 
-    // A market with no price yet can't produce meaningful synthetic depth
-    if (!lastPrice || lastPrice <= 0) {
-      res.json({ bids: [], asks: [], lastPrice: 0, ...bridgePairInfo });
-      return;
-    }
-
-    // Try to build from real open orders — with a hard 3 s wall-clock limit
-    let bids: [number, number][] = [];
-    let asks: [number, number][] = [];
-
+    // Only verified, escrow-backed open orders are considered chartable liquidity.
+    let bids: OrderbookLevel[] = [];
+    let asks: OrderbookLevel[] = [];
     try {
-      const orderPromise = db
-        .select()
-        .from(ordersTable)
-        .where(and(
-          eq(ordersTable.symbol, symbol), eq(ordersTable.status, "open"),
-          eq(ordersTable.type, "limit"),
-          or(
-            sql`${ordersTable.fundingRef} LIKE 'ledger:%'`,
-            sql`${ordersTable.fundingRef} LIKE 'evm-order:1:%'`,
-          ),
-          ne(ordersTable.walletAddress, BOT_ADDRESS),
-        ));
-
-      const timeoutPromise = new Promise<null>((_, reject) =>
-        setTimeout(() => reject(new Error("orderbook db timeout")), 3000)
-      );
-
-      const openOrders = await Promise.race([orderPromise, timeoutPromise]) as Awaited<typeof orderPromise>;
-
-      if (openOrders && openOrders.length > 0) {
-        const bidMap = new Map<string, number>();
-        const askMap = new Map<string, number>();
-        for (const o of openOrders) {
-          if (!o.price) continue;
-          const px  = parseFloat(o.price);
-          const qty = parseFloat(o.remainingQuantity);
-          if (!px || !qty) continue;
-          const key = px.toString();
-          if (o.side === "buy")  bidMap.set(key, (bidMap.get(key) ?? 0) + qty);
-          else                   askMap.set(key, (askMap.get(key) ?? 0) + qty);
-        }
-        bids = [...bidMap.entries()]
-          .sort((a, b) => parseFloat(b[0]) - parseFloat(a[0]))
-          .slice(0, depth)
-          .map(([price, qty]) => [parseFloat(price), qty]);
-        asks = [...askMap.entries()]
-          .sort((a, b) => parseFloat(a[0]) - parseFloat(b[0]))
-          .slice(0, depth)
-          .map(([price, qty]) => [parseFloat(price), qty]);
-      }
+      ({ bids, asks } = await fetchVerifiedEscrowOrderbook(symbol, depth));
     } catch (error) {
       req.log.warn({ error, symbol }, "Order book unavailable");
       res.status(503).json({ error: "Order book temporarily unavailable" });
       return;
     }
 
+    const bookPrice = midpointFromOrderbook(bids, asks);
+    const lastPrice = bookPrice > 0
+      ? bookPrice
+      : market
+        ? await resolveLiveCrossPrice(market.symbol, parseFloat(market.lastPrice))
+        : await resolveLiveCrossPrice(symbol, 0);
     const result = { bids, asks, lastPrice, ...bridgePairInfo };
+    if (bids.length || asks.length) {
+      void recordOrderbookQuoteCandle(symbol, bids, asks)
+        .catch((error) => req.log.warn({ err: error, symbol }, "Could not persist order-book candle sample"));
+    }
     orderbookCache.set(cacheKey, result);
     res.json(result);
   } catch (err) {
