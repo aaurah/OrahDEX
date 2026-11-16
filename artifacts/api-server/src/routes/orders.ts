@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
-import { eq, and, lte, gte, ne, isNotNull, desc, asc, sql } from "drizzle-orm";
+import { eq, and, lte, gte, ne, isNotNull, desc, asc, inArray, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { keccak256, recoverMessageAddress, toBytes } from "viem";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
@@ -17,6 +17,7 @@ import {
   getConfirmedEvmOrderSettlement,
   getEvmOrderbookEscrowConfig,
   getEvmSettlementTxStatus,
+  findConfirmedEvmOrderbookCancellation,
   orderKeyFromNonce,
   settleEvmOrderFill,
   verifyEvmOrderbookCancelTx,
@@ -276,6 +277,45 @@ async function reconcilePendingEvmOrderbookOrders(rows: Array<typeof ordersTable
   return changed;
 }
 
+async function reconcileConfirmedEvmOrderbookCancellations(
+  rows: Array<typeof ordersTable.$inferSelect>,
+  log: any,
+): Promise<boolean> {
+  let changed = false;
+  for (const row of rows) {
+    const needsStatusUpdate = row.status === "open" || row.status === "processing";
+    const needsProofBackfill = row.status === "cancelled" && !row.txid;
+    if ((!needsStatusUpdate && !needsProofBackfill) ||
+        !String(row.fundingRef ?? "").startsWith("evm-order:1:")) continue;
+
+    const [, , escrowAddress, orderKey, lockTxHash] = String(row.fundingRef).split(":");
+    if (!escrowAddress || !/^0x[0-9a-fA-F]{64}$/.test(orderKey ?? "") ||
+        !/^0x[0-9a-fA-F]{64}$/.test(lockTxHash ?? "")) continue;
+
+    try {
+      const cancellation = await findConfirmedEvmOrderbookCancellation({
+        escrowAddress,
+        orderKey: orderKey as `0x${string}`,
+        walletAddress: row.walletAddress,
+        lockTxHash,
+      });
+      if (!cancellation || cancellation.refundAmount <= 0n) continue;
+
+      await db.update(ordersTable)
+        .set({ status: "cancelled", txid: cancellation.txHash, updatedAt: new Date() })
+        .where(and(
+          eq(ordersTable.id, row.id),
+          inArray(ordersTable.status, ["open", "processing", "cancelled"]),
+        ));
+      log.info({ orderId: row.id, txHash: cancellation.txHash }, "reconciled confirmed Ethereum order cancellation");
+      changed = true;
+    } catch (error: any) {
+      log.warn({ orderId: row.id, err: error?.message }, "Ethereum order cancellation reconciliation failed");
+    }
+  }
+  return changed;
+}
+
 // ── GET /orders/challenge — issue a read-ownership nonce ─────────────────────
 // Clients request a nonce, sign it with their private key (EVM: personal_sign),
 // then pass `sig` + `nonce` to GET /orders to prove they own the address.
@@ -367,16 +407,22 @@ router.get("/orders", async (req, res) => {
       .orderBy(desc(ordersTable.createdAt))
       .limit(limit);
 
+    let ordersChanged = false;
     try {
-      const recovered = await reconcilePendingEvmOrderbookOrders(orders, req.log);
-      if (recovered) {
-        orders = await db.select().from(ordersTable)
-          .where(and(...conditions))
-          .orderBy(desc(ordersTable.createdAt))
-          .limit(limit);
-      }
+      ordersChanged = await reconcilePendingEvmOrderbookOrders(orders, req.log);
     } catch (reconcileErr: any) {
       req.log.warn({ err: reconcileErr?.message }, "orders: orderbook settlement recovery check failed");
+    }
+    try {
+      ordersChanged = (await reconcileConfirmedEvmOrderbookCancellations(orders, req.log)) || ordersChanged;
+    } catch (reconcileErr: any) {
+      req.log.warn({ err: reconcileErr?.message }, "orders: cancellation reconciliation check failed");
+    }
+    if (ordersChanged) {
+      orders = await db.select().from(ordersTable)
+        .where(and(...conditions))
+        .orderBy(desc(ordersTable.createdAt))
+        .limit(limit);
     }
 
     res.json(orders.map(serializeOrder));

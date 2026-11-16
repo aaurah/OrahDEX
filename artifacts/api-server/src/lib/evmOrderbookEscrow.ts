@@ -2,12 +2,15 @@ import {
   createPublicClient,
   createWalletClient,
   decodeEventLog,
+  encodeAbiParameters,
   formatUnits,
   http,
   isAddress,
   keccak256,
   parseAbi,
+  parseAbiParameters,
   parseUnits,
+  stringToHex,
   toBytes,
   type Address,
   type Hex,
@@ -34,6 +37,12 @@ export const ORDERBOOK_ESCROW_ABI = parseAbi([
 const ORDER_SETTLED_EVENT = ORDERBOOK_ESCROW_ABI.find(
   (entry) => entry.type === "event" && entry.name === "OrderSettled",
 ) as any;
+const ORDER_CANCELLED_TOPIC = keccak256(stringToHex("OrderCancelled(bytes32,address,uint256)"));
+const cancellationLookupCache = new Map<string, {
+  checkedAt: number;
+  result: { txHash: Hex; refundAmount: bigint } | null;
+}>();
+const CANCELLATION_LOOKUP_TTL_MS = 3_000;
 
 export interface OnchainOrderLockParams {
   chainId: number;
@@ -290,6 +299,86 @@ export async function verifyEvmOrderbookCancelTx(params: {
     }
   });
   if (!cancelled) throw new Error("Transaction does not prove cancellation of this wallet's escrow order");
+}
+
+/**
+ * Find a confirmed cancellation already recorded on Ethereum for an order.
+ * This lets the API recover when the wallet completed the chain transaction
+ * but the page closed before it could update the server-side order row.
+ */
+export async function findConfirmedEvmOrderbookCancellation(params: {
+  escrowAddress: string;
+  orderKey: Hex;
+  walletAddress: string;
+  lockTxHash: string;
+}): Promise<{ txHash: Hex; refundAmount: bigint } | null> {
+  if (
+    !isAddress(params.escrowAddress) ||
+    !/^0x[0-9a-fA-F]{64}$/.test(params.orderKey) ||
+    !/^0x[0-9a-fA-F]{40}$/.test(params.walletAddress) ||
+    !/^0x[0-9a-fA-F]{64}$/.test(params.lockTxHash)
+  ) {
+    throw new Error("Invalid Ethereum order cancellation lookup");
+  }
+
+  const cacheKey = `${params.escrowAddress.toLowerCase()}:${params.orderKey.toLowerCase()}:${params.walletAddress.toLowerCase()}:${params.lockTxHash.toLowerCase()}`;
+  const cached = cancellationLookupCache.get(cacheKey);
+  if (cached && Date.now() - cached.checkedAt < CANCELLATION_LOOKUP_TTL_MS) return cached.result;
+
+  const client = publicClient();
+  const lockReceipt = await client.getTransactionReceipt({ hash: params.lockTxHash as Hex });
+  if (lockReceipt.status !== "success") throw new Error("Original Ethereum order lock is not confirmed");
+
+  const latestBlock = await client.getBlockNumber();
+  const makerTopic = encodeAbiParameters(parseAbiParameters("address"), [params.walletAddress as Address]);
+  const logs: Array<{ blockNumber: string; transactionHash: Hex }> = [];
+  // Some RPC providers cap eth_getLogs to a 10-block range on free plans.
+  // Keep scans portable by querying small consecutive chunks.
+  for (let fromBlock = lockReceipt.blockNumber; fromBlock <= latestBlock;) {
+    const toBlock = fromBlock + 9n < latestBlock ? fromBlock + 9n : latestBlock;
+    const chunk = await client.request({
+      method: "eth_getLogs",
+      params: [{
+        address: params.escrowAddress,
+        fromBlock: `0x${fromBlock.toString(16)}`,
+        toBlock: `0x${toBlock.toString(16)}`,
+        topics: [ORDER_CANCELLED_TOPIC, params.orderKey, makerTopic],
+      }],
+    } as any) as Array<{ blockNumber: string; transactionHash: Hex }>;
+    logs.push(...chunk);
+    fromBlock = toBlock + 1n;
+  }
+
+  for (const log of logs) {
+    const blockNumber = BigInt(log.blockNumber);
+    if (latestBlock - blockNumber + 1n < MIN_CONFIRMATIONS) continue;
+    const receipt = await client.getTransactionReceipt({ hash: log.transactionHash });
+    if (receipt.status !== "success") continue;
+    for (const entry of receipt.logs) {
+      if (entry.address.toLowerCase() !== params.escrowAddress.toLowerCase()) continue;
+      try {
+        const decoded = decodeEventLog({
+          abi: ORDERBOOK_ESCROW_ABI,
+          eventName: "OrderCancelled",
+          data: entry.data,
+          topics: entry.topics,
+        });
+        if (
+          decoded.args.orderId.toLowerCase() === params.orderKey.toLowerCase() &&
+          decoded.args.maker.toLowerCase() === params.walletAddress.toLowerCase()
+        ) {
+          const result = { txHash: log.transactionHash, refundAmount: decoded.args.refundAmount };
+          cancellationLookupCache.set(cacheKey, { checkedAt: Date.now(), result });
+          return result;
+        }
+      } catch {
+        // Ignore unrelated events in the transaction receipt.
+      }
+    }
+  }
+
+  cancellationLookupCache.set(cacheKey, { checkedAt: Date.now(), result: null });
+  return null;
 }
 
 function getRelayerAccount() {
