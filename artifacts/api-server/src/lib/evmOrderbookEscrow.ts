@@ -37,6 +37,9 @@ export const ORDERBOOK_ESCROW_ABI = parseAbi([
 const ORDER_SETTLED_EVENT = ORDERBOOK_ESCROW_ABI.find(
   (entry) => entry.type === "event" && entry.name === "OrderSettled",
 ) as any;
+const ORDER_OPENED_TOPIC = keccak256(stringToHex(
+  "OrderOpened(bytes32,address,uint8,address,address,uint256,uint256,uint256,uint64)",
+));
 const ORDER_CANCELLED_TOPIC = keccak256(stringToHex("OrderCancelled(bytes32,address,uint256)"));
 const cancellationLookupCache = new Map<string, {
   checkedAt: number;
@@ -328,6 +331,19 @@ export async function findConfirmedEvmOrderbookCancellation(params: {
   const client = publicClient();
   const lockReceipt = await client.getTransactionReceipt({ hash: params.lockTxHash as Hex });
   if (lockReceipt.status !== "success") throw new Error("Original Ethereum order lock is not confirmed");
+  const currentOrder = await client.readContract({
+    address: params.escrowAddress as Address,
+    abi: ORDERBOOK_ESCROW_ABI,
+    functionName: "orders",
+    args: [params.orderKey],
+  });
+  if (currentOrder[0].toLowerCase() !== params.walletAddress.toLowerCase()) {
+    throw new Error("Ethereum escrow order maker does not match the wallet");
+  }
+  if (currentOrder[9]) {
+    cancellationLookupCache.set(cacheKey, { checkedAt: Date.now(), result: null });
+    return null;
+  }
 
   const latestBlock = await client.getBlockNumber();
   const makerTopic = encodeAbiParameters(parseAbiParameters("address"), [params.walletAddress as Address]);
@@ -379,6 +395,133 @@ export async function findConfirmedEvmOrderbookCancellation(params: {
 
   cancellationLookupCache.set(cacheKey, { checkedAt: Date.now(), result: null });
   return null;
+}
+
+/**
+ * Recover active, confirmed orderbook escrows that were opened on Ethereum
+ * but never saved in the API database.
+ */
+export async function findActiveEvmOrderbookOrders(
+  walletAddress: string,
+  knownLockTxHashes: string[] = [],
+): Promise<Array<{
+  orderKey: Hex;
+  lockTxHash: Hex;
+  escrowAddress: Address;
+  side: "buy" | "sell";
+  baseToken: Address;
+  quoteToken: Address;
+  originalBaseAmountRaw: string;
+  remainingBaseAmountRaw: string;
+  limitPriceX18: string;
+  expiresAt: number;
+}>> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+    throw new Error("A valid Ethereum wallet address is required");
+  }
+  const config = await getDeployedOrderbookEscrowConfig();
+  const deploymentBlock = getDeploymentBlock();
+  if (!config.available || deploymentBlock == null) return [];
+
+  const client = publicClient();
+  const latestBlock = await client.getBlockNumber();
+  const recentScanFloor = latestBlock > 999n ? latestBlock - 999n : 0n;
+  let scanFromBlock = deploymentBlock > recentScanFloor ? deploymentBlock : recentScanFloor;
+  for (const txHash of knownLockTxHashes) {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) continue;
+    try {
+      const receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
+      if (receipt.status === "success" && receipt.blockNumber > scanFromBlock) {
+        scanFromBlock = receipt.blockNumber;
+      }
+    } catch {
+      // A stale stored reference must not prevent recovery of other orders.
+    }
+  }
+  const makerTopic = encodeAbiParameters(parseAbiParameters("address"), [walletAddress as Address]);
+  const logs: Array<{ blockNumber: string; transactionHash: Hex }> = [];
+
+  // Respect RPC plans that cap eth_getLogs at ten blocks per request.
+  for (let fromBlock = scanFromBlock; fromBlock <= latestBlock;) {
+    const toBlock = fromBlock + 9n < latestBlock ? fromBlock + 9n : latestBlock;
+    const chunk = await client.request({
+      method: "eth_getLogs",
+      params: [{
+        address: config.address,
+        fromBlock: `0x${fromBlock.toString(16)}`,
+        toBlock: `0x${toBlock.toString(16)}`,
+        topics: [ORDER_OPENED_TOPIC, null, makerTopic],
+      }],
+    } as any) as Array<{ blockNumber: string; transactionHash: Hex }>;
+    logs.push(...chunk);
+    fromBlock = toBlock + 1n;
+    if (fromBlock <= latestBlock) await new Promise((resolve) => setTimeout(resolve, 75));
+  }
+
+  const recovered = new Map<string, {
+    orderKey: Hex;
+    lockTxHash: Hex;
+    escrowAddress: Address;
+    side: "buy" | "sell";
+    baseToken: Address;
+    quoteToken: Address;
+    originalBaseAmountRaw: string;
+    remainingBaseAmountRaw: string;
+    limitPriceX18: string;
+    expiresAt: number;
+  }>();
+  for (const log of logs) {
+    const blockNumber = BigInt(log.blockNumber);
+    if (latestBlock - blockNumber + 1n < MIN_CONFIRMATIONS) continue;
+    const receipt = await client.getTransactionReceipt({ hash: log.transactionHash });
+    if (receipt.status !== "success") continue;
+
+    for (const entry of receipt.logs) {
+      if (entry.address.toLowerCase() !== config.address.toLowerCase()) continue;
+      try {
+        const decoded = decodeEventLog({
+          abi: ORDERBOOK_ESCROW_ABI,
+          eventName: "OrderOpened",
+          data: entry.data,
+          topics: entry.topics,
+        });
+        const args = decoded.args;
+        if (args.maker.toLowerCase() !== walletAddress.toLowerCase()) continue;
+        const order = await client.readContract({
+          address: config.address,
+          abi: ORDERBOOK_ESCROW_ABI,
+          functionName: "orders",
+          args: [args.orderId],
+        });
+        if (
+          !order[9] ||
+          order[0].toLowerCase() !== walletAddress.toLowerCase() ||
+          order[1].toLowerCase() !== args.baseToken.toLowerCase() ||
+          order[2].toLowerCase() !== args.quoteToken.toLowerCase() ||
+          order[3] !== args.baseAmount ||
+          order[6] !== args.limitPriceX18 ||
+          order[7] !== args.expiresAt ||
+          order[8] !== args.side
+        ) continue;
+
+        recovered.set(args.orderId.toLowerCase(), {
+          orderKey: args.orderId,
+          lockTxHash: log.transactionHash,
+          escrowAddress: config.address,
+          side: args.side === 0 ? "buy" : "sell",
+          baseToken: args.baseToken,
+          quoteToken: args.quoteToken,
+          originalBaseAmountRaw: args.baseAmount.toString(),
+          remainingBaseAmountRaw: order[4].toString(),
+          limitPriceX18: args.limitPriceX18.toString(),
+          expiresAt: Number(args.expiresAt),
+        });
+      } catch {
+        // Ignore unrelated or malformed escrow logs.
+      }
+    }
+  }
+  return [...recovered.values()];
 }
 
 function getRelayerAccount() {

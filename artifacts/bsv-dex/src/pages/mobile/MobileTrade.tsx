@@ -462,6 +462,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // price: null and need lastPrice as a fallback to compute the correct spend amount.
 
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [recoveringEvmOrders, setRecoveringEvmOrders] = useState(false);
   const getOrderWalletAddress = (order: any) => (
     String(order?.walletAddress || order?.ownerWalletAddress || "")
   );
@@ -634,6 +635,39 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       fundingRef: order.fundingRef,
     });
   }, [cancelMutation, toast]);
+
+  const handleRecoverEvmOrders = async () => {
+    if (!address || recoveringEvmOrders) return;
+    setRecoveringEvmOrders(true);
+    try {
+      const response = await fetch(`${BASE}/api/orders/recover-evm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: address }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result?.error ?? "Could not scan Ethereum escrow orders.");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["orders", address] }),
+        queryClient.invalidateQueries({ queryKey: ["orderbook", symbol] }),
+      ]);
+      const count = Number(result?.count ?? 0);
+      toast({
+        title: count > 0 ? "Active order restored" : "No missing active orders",
+        description: count > 0
+          ? `${count} confirmed on-chain order${count === 1 ? " is" : "s are"} now listed in My Orders. Cancel there to request a wallet refund.`
+          : "No confirmed active Ethereum orders were missing from My Orders.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Could not recover order list",
+        description: String(error?.message ?? "Ethereum escrow scan failed."),
+        variant: "destructive",
+      });
+    } finally {
+      setRecoveringEvmOrders(false);
+    }
+  };
 
   // ── Submission lock — prevents any multi-submit path ─────────────────────────
   // useRef is synchronous (unlike useState) so it blocks double-taps that happen
@@ -2188,7 +2222,21 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
             {/* Recover stuck on-chain HTLC funds — only for EVM wallets */}
             {isSelfCustodyEvm && address && (
-              <div className="px-3 pb-3">
+              <div className="px-3 pb-3 space-y-2">
+                <div className="rounded-xl border border-border bg-card/60 p-3">
+                  <div className="text-xs font-semibold">Missing an Ethereum order?</div>
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    Scan confirmed escrow orders that are missing from My Orders. This only syncs the order list; it does not send a wallet transaction.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleRecoverEvmOrders}
+                    disabled={recoveringEvmOrders}
+                    className="mt-2 w-full rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary disabled:opacity-50"
+                  >
+                    {recoveringEvmOrders ? "Scanning Ethereum…" : "Rescan Ethereum escrow"}
+                  </button>
+                </div>
                 <HtlcLockRecovery chainId={walletChainId ?? 1} />
               </div>
             )}
