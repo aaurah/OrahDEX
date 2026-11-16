@@ -1,10 +1,10 @@
 import { getCoinbaseProvider } from "./coinbaseWallet";
 import {
   createConfig, getAccount, http,
-  sendTransaction as wagmiSendTransaction,
   switchChain as wagmiSwitchChain, waitForTransactionReceipt as wagmiWaitForTransactionReceipt,
 } from "@wagmi/core";
 import { encodeFunctionData, erc20Abi } from "viem";
+import { ConnectionController } from "@reown/appkit-controllers";
 import { getAppKitWagmiConfig } from "./reown-appkit";
 import {
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
@@ -141,37 +141,39 @@ export async function fetchEvmBalance(
   }
 }
 
-export async function sendEvmTransfer({
+export function sendEvmTransfer({
   from, to, valueWei, targetChainId, onStage,
-}: { from: string; to: string; valueWei: bigint; targetChainId: number; onStage?: (stage: "switching" | "sending") => void }): Promise<string> {
+}: { from: string; to: string; valueWei: bigint; targetChainId: number; onStage?: (stage: "sending") => void }): Promise<string> {
   const config = getAppKitWagmiConfig();
-  await prepareWalletSend(config, from, targetChainId, onStage);
+  assertWalletReady(config, from, targetChainId);
   onStage?.("sending");
-  return wagmiSendTransaction(config, {
-    account: from as `0x${string}`,
+  return ConnectionController.sendTransaction({
+    chainNamespace: "eip155",
+    address: from as `0x${string}`,
     to: to as `0x${string}`,
+    data: "0x",
     value: valueWei,
-    chainId: targetChainId as (typeof config.chains)[number]["id"],
-  });
+  }).then(validateEvmTransactionHash);
 }
 
-export async function sendErc20Transfer({
+export function sendErc20Transfer({
   tokenAddress, from, to, amount, targetChainId, onStage,
-}: { tokenAddress: string; from: string; to: string; amount: bigint; targetChainId: number; onStage?: (stage: "switching" | "sending") => void }): Promise<string> {
+}: { tokenAddress: string; from: string; to: string; amount: bigint; targetChainId: number; onStage?: (stage: "sending") => void }): Promise<string> {
   const config = getAppKitWagmiConfig();
-  await prepareWalletSend(config, from, targetChainId, onStage);
+  assertWalletReady(config, from, targetChainId);
   const data = encodeFunctionData({
     abi: erc20Abi,
     functionName: "transfer",
     args: [to as `0x${string}`, amount],
   });
   onStage?.("sending");
-  return wagmiSendTransaction(config, {
-    account: from as `0x${string}`,
+  return ConnectionController.sendTransaction({
+    chainNamespace: "eip155",
+    address: from as `0x${string}`,
     to: tokenAddress as `0x${string}`,
     data,
-    chainId: targetChainId as (typeof config.chains)[number]["id"],
-  });
+    value: 0n,
+  }).then(validateEvmTransactionHash);
 }
 
 export async function waitForEvmTransaction(
@@ -187,12 +189,30 @@ export async function waitForEvmTransaction(
   return receipt.status;
 }
 
-async function prepareWalletSend(
+export function switchEvmNetwork(targetChainId: number): Promise<void> {
+  const config = getAppKitWagmiConfig();
+  const account = getAccount(config);
+  if (!account.address || !account.connector) {
+    return Promise.reject(new Error("The connected wallet session is unavailable. Reconnect your wallet and try again."));
+  }
+  return wagmiSwitchChain(config, {
+    chainId: targetChainId as (typeof config.chains)[number]["id"],
+  }).then(() => {
+    const switchedAccount = getAccount(config);
+    if (switchedAccount.address?.toLowerCase() !== account.address?.toLowerCase()) {
+      throw new Error("The active wallet changed while switching networks. Reconnect and try again.");
+    }
+    if (switchedAccount.chainId !== targetChainId) {
+      throw new Error("The wallet did not switch to the required network.");
+    }
+  });
+}
+
+function assertWalletReady(
   config: ReturnType<typeof getAppKitWagmiConfig>,
   expectedAddress: string,
   targetChainId: number,
-  onStage?: (stage: "switching" | "sending") => void,
-): Promise<void> {
+): void {
   const account = getAccount(config);
   if (!account.address || !account.connector) {
     throw new Error("The connected wallet session is unavailable. Reconnect your wallet and try again.");
@@ -200,20 +220,16 @@ async function prepareWalletSend(
   if (account.address.toLowerCase() !== expectedAddress.toLowerCase()) {
     throw new Error("The active wallet changed. Reconnect the wallet shown for this exchange and try again.");
   }
-
   if (account.chainId !== targetChainId) {
-    onStage?.("switching");
-    await wagmiSwitchChain(config, {
-      chainId: targetChainId as (typeof config.chains)[number]["id"],
-    });
-    const switchedAccount = getAccount(config);
-    if (switchedAccount.address?.toLowerCase() !== expectedAddress.toLowerCase()) {
-      throw new Error("The active wallet changed while switching networks. Reconnect and try again.");
-    }
-    if (switchedAccount.chainId !== targetChainId) {
-      throw new Error("The wallet did not switch to the required network.");
-    }
+    throw new Error("Switch your wallet to the deposit network before sending.");
   }
+}
+
+function validateEvmTransactionHash(hash: string | null | undefined): string {
+  if (typeof hash !== "string" || !/^0x[0-9a-f]{64}$/i.test(hash)) {
+    throw new Error("The wallet did not return a transaction ID.");
+  }
+  return hash;
 }
 
 export async function approveToken(
