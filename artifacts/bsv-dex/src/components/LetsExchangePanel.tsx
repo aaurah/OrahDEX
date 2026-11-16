@@ -315,11 +315,17 @@ function CoinPicker({ coins, selected, onChange, exclude, compact }: {
   const filtered = useMemo(() => {
     const qq = q.toLowerCase().trim();
     const list = exclude ? coins.filter(c => c.symbol !== exclude) : coins;
-    if (!qq) return list;
-    return list.filter(c =>
+    const matches = !qq ? list : list.filter(c =>
       c.symbol.toLowerCase().includes(qq) || c.name.toLowerCase().includes(qq) ||
       (c.networkName ?? "").toLowerCase().includes(qq)
     );
+    // Put a native-network entry (BTC on btc, ETH on eth) before a
+    // networkless catalog fallback for the same symbol.
+    return qq ? matches.sort((a, b) => {
+      const aNative = a.network?.toUpperCase() === a.symbol;
+      const bNative = b.network?.toUpperCase() === b.symbol;
+      return Number(bNative) - Number(aNative);
+    }) : matches;
   }, [coins, q, exclude]);
 
   return (
@@ -494,7 +500,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
 
     function pickCoin(sym: string): LeCoin | null {
       const up = sym.toUpperCase();
-      return coins.find(c => c.symbol === up && c.network === up)
+      return coins.find(c => c.symbol === up && c.network?.toUpperCase() === up)
           ?? coins.find(c => c.symbol === up)
           ?? null;
     }
@@ -503,7 +509,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
       const c = pickCoin(initialFrom);
       if (c) setFromCoin(c);
     } else {
-      const btc = coins.find(c => c.symbol === "BTC" && c.network === "BTC");
+      const btc = pickCoin("BTC");
       if (btc) setFromCoin(btc);
     }
 
@@ -511,8 +517,8 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
       const c = pickCoin(initialTo);
       if (c) setToCoin(c);
     } else {
-      const bsv = coins.find(c => c.symbol === "BSV" && c.network === "BSV");
-      const eth = coins.find(c => c.symbol === "ETH" && c.network === "ETH");
+      const bsv = pickCoin("BSV");
+      const eth = pickCoin("ETH");
       if (bsv ?? eth) setToCoin(bsv ?? eth ?? null);
     }
   }, [coins, initialFrom, initialTo]);
