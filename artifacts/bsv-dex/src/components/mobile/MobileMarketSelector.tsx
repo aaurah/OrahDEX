@@ -918,7 +918,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                           {isUp ? "+" : ""}{m.chg.toFixed(2)}%
                         </span>
                       ) : (
-                        <span className="text-[10px] text-blue-400/60">live →</span>
+                        <span
+                          className="text-[10px] text-muted-foreground/70"
+                          title="No verified market price is currently available."
+                        >
+                          No data
+                        </span>
                       )}
                     </button>
                   </div>

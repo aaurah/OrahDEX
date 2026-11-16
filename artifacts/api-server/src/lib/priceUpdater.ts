@@ -441,23 +441,122 @@ interface CoinGeckoPrice {
 let _cgCacheTs = 0;
 let _cgCache: Record<string, CoinGeckoPrice> = {};
 const CG_CACHE_MS = 55_000;
+let _cgIdCacheTs = 0;
+let _cgIdCache: Record<string, string> = {};
+const _cgIdMissCache = new Map<string, number>();
+const CG_ID_CACHE_MS = 10 * 60_000;
+let _cgApiKeyPromise: Promise<string | null> | null = null;
 
 /** Market cap (USD) per symbol — populated on each successful CG simple/price call. */
 export const cgMarketCapCache = new Map<string, number>();
+
+export async function getCoinGeckoApiKey(): Promise<string | null> {
+  if (!_cgApiKeyPromise) {
+    _cgApiKeyPromise = (async () => {
+      try {
+        const result = await pool.query<{ value: string }>(
+          "SELECT value FROM platform_settings WHERE key = 'coingecko_api_key' LIMIT 1",
+        );
+        const stored = result.rows[0]?.value;
+        if (typeof stored === "string" && stored.trim()) return stored.trim();
+      } catch {
+        // Platform settings may not be available in every environment.
+      }
+      return process.env.COINGECKO_API_KEY?.trim() || null;
+    })();
+  }
+  return _cgApiKeyPromise;
+}
+
+async function getCoinGeckoIdMap(): Promise<Record<string, string>> {
+  if (Date.now() - _cgIdCacheTs < CG_ID_CACHE_MS && Object.keys(_cgIdCache).length > 0) {
+    return _cgIdCache;
+  }
+
+  let fromDatabase: Record<string, string> = {};
+  try {
+    const result = await pool.query<{ symbol: string; coingecko_id: string }>(
+      `SELECT symbol, coingecko_id
+       FROM coin_metadata
+       WHERE coingecko_id IS NOT NULL AND coingecko_id <> ''
+       ORDER BY market_cap_rank NULLS LAST
+       LIMIT 500`,
+    );
+    for (const row of result.rows) fromDatabase[row.symbol.toUpperCase()] = row.coingecko_id;
+  } catch {
+    // The metadata table may not exist during early startup; static IDs remain usable.
+  }
+
+  // Curated IDs override importer matches when a ticker is ambiguous.
+  _cgIdCache = { ...fromDatabase, ...COINGECKO_IDS };
+  _cgIdCacheTs = Date.now();
+  return _cgIdCache;
+}
+
+export async function resolveCoinGeckoId(symbol: string): Promise<string | null> {
+  const normalized = symbol.toUpperCase();
+  const idMap = await getCoinGeckoIdMap();
+  if (idMap[normalized]) return idMap[normalized]!;
+
+  const missedAt = _cgIdMissCache.get(normalized);
+  if (missedAt && Date.now() - missedAt < CG_ID_CACHE_MS) return null;
+  try {
+    const result = await pool.query<{ coingecko_id: string }>(
+      `SELECT coingecko_id FROM coin_metadata
+       WHERE upper(symbol) = $1 AND coingecko_id IS NOT NULL AND coingecko_id <> ''
+       LIMIT 1`,
+      [normalized],
+    );
+    const discoveredId = result.rows[0]?.coingecko_id;
+    if (discoveredId) {
+      _cgIdCache[normalized] = discoveredId;
+      return discoveredId;
+    }
+  } catch {
+    // Keep the chart path usable if coin metadata is unavailable.
+  }
+  _cgIdMissCache.set(normalized, Date.now());
+  if (_cgIdMissCache.size > 2_000) {
+    const oldest = [..._cgIdMissCache.entries()].sort((a, b) => a[1] - b[1])[0];
+    if (oldest) _cgIdMissCache.delete(oldest[0]);
+  }
+  return null;
+}
 
 export async function fetchCoinGeckoPrices(): Promise<Record<string, CoinGeckoPrice>> {
   if (Date.now() - _cgCacheTs < CG_CACHE_MS && Object.keys(_cgCache).length > 0) {
     return _cgCache;
   }
-  const ids = Object.values(COINGECKO_IDS).join(",");
-  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(8_000) });
-  if (!res.ok) throw new Error(`CoinGecko HTTP ${res.status}`);
+  const coinIds = await getCoinGeckoIdMap();
+  const ids = [...new Set(Object.values(coinIds))].join(",");
+  const apiKey = await getCoinGeckoApiKey();
+  const usePro = Boolean(apiKey && !apiKey.startsWith("CG-"));
+  const apiBase = usePro ? "https://pro-api.coingecko.com/api/v3" : "https://api.coingecko.com/api/v3";
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (apiKey) headers[apiKey.startsWith("CG-") ? "x-cg-demo-api-key" : "x-cg-pro-api-key"] = apiKey;
+  const url = `${apiBase}/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_market_cap=true`;
+  let res: Response;
+  try {
+    res = await fetch(url, { headers, signal: AbortSignal.timeout(8_000) });
+  } catch (err) {
+    if (_cgCacheTs && Date.now() - _cgCacheTs < 10 * 60_000) {
+      logger.warn({ err }, "CoinGecko unavailable; serving recent cached prices");
+      return _cgCache;
+    }
+    throw err;
+  }
+  if (!res.ok) {
+    if (_cgCacheTs && Date.now() - _cgCacheTs < 10 * 60_000) {
+      logger.warn({ status: res.status }, "CoinGecko price request failed; serving recent cached prices");
+      return _cgCache;
+    }
+    throw new Error(`CoinGecko HTTP ${res.status}`);
+  }
   const data = await res.json() as Record<string, { usd?: number; usd_24h_change?: number; usd_24h_vol?: number; usd_market_cap?: number }>;
 
   // Reverse-map: geckoId → our symbol
   const idToSym: Record<string, string> = {};
-  for (const [sym, id] of Object.entries(COINGECKO_IDS)) idToSym[id] = sym;
+  for (const [sym, id] of Object.entries(coinIds)) idToSym[id] = sym;
 
   const out: Record<string, CoinGeckoPrice> = {};
   for (const [id, v] of Object.entries(data)) {
@@ -475,6 +574,153 @@ export async function fetchCoinGeckoPrices(): Promise<Record<string, CoinGeckoPr
   _cgCache = out;
   _cgCacheTs = Date.now();
   return out;
+}
+
+interface GateSpotTicker {
+  currency_pair: string;
+  last: string;
+  change_percentage?: string;
+  quote_volume?: string;
+}
+
+let _gateTickerCacheTs = 0;
+let _gateTickerCache: GateSpotTicker[] = [];
+let _gateTickerPending: Promise<GateSpotTicker[]> | null = null;
+let _gatePriceCacheTs = 0;
+let _gatePriceCache: Record<string, CoinGeckoPrice> = {};
+let _gatePricePending: Promise<Record<string, CoinGeckoPrice>> | null = null;
+const GATE_PRICE_CACHE_MS = 30_000;
+
+async function getGateSpotTickers(): Promise<GateSpotTicker[]> {
+  if (Date.now() - _gateTickerCacheTs < GATE_PRICE_CACHE_MS && _gateTickerCache.length) {
+    return _gateTickerCache;
+  }
+  if (_gateTickerPending) return _gateTickerPending;
+  _gateTickerPending = (async () => {
+    try {
+      const response = await fetch("https://api.gateio.ws/api/v4/spot/tickers", {
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) throw new Error(`Gate spot ticker HTTP ${response.status}`);
+      const tickers = await response.json() as GateSpotTicker[];
+      if (!Array.isArray(tickers)) throw new Error("Gate spot ticker response was not an array");
+      _gateTickerCache = tickers;
+      _gateTickerCacheTs = Date.now();
+      return tickers;
+    } catch (err) {
+      if (_gateTickerCache.length && Date.now() - _gateTickerCacheTs < 10 * 60_000) {
+        logger.warn({ err }, "Gate spot tickers unavailable; serving recent cached tickers");
+        return _gateTickerCache;
+      }
+      throw err;
+    } finally {
+      _gateTickerPending = null;
+    }
+  })();
+  return _gateTickerPending;
+}
+
+export async function fetchGatePairPrices(): Promise<Record<string, number>> {
+  const tickers = await getGateSpotTickers();
+  const pairPrices: Record<string, number> = {};
+  for (const ticker of tickers) {
+    const [base, quote] = ticker.currency_pair.toUpperCase().split("_");
+    const last = Number(ticker.last);
+    if (!base || !quote || !Number.isFinite(last) || last <= 0) continue;
+    if (Number(ticker.quote_volume || 0) <= 0) continue;
+    pairPrices[`${base}/${quote}`] = last;
+  }
+  return pairPrices;
+}
+
+/** Batch current USD prices from Gate spot markets, cached across route callers. */
+export async function fetchGateSpotPrices(): Promise<Record<string, CoinGeckoPrice>> {
+  if (Date.now() - _gatePriceCacheTs < GATE_PRICE_CACHE_MS && Object.keys(_gatePriceCache).length) {
+    return _gatePriceCache;
+  }
+  if (_gatePricePending) return _gatePricePending;
+
+  _gatePricePending = (async () => {
+    try {
+      const tickers = await getGateSpotTickers();
+
+      const stableQuotes: Record<string, number> = {
+        USDT: 1, USDC: 1, DAI: 1, TUSD: 1, BUSD: 1, FDUSD: 1, USDD: 1,
+      };
+      const prices: Record<string, CoinGeckoPrice> = {};
+      const quoteUsd: Record<string, number> = { ...stableQuotes };
+      const ordered = tickers
+        .filter((ticker) => typeof ticker.currency_pair === "string" && Number(ticker.last) > 0)
+        .sort((a, b) => Number(b.quote_volume || 0) - Number(a.quote_volume || 0));
+
+      // Establish direct USD/stablecoin prices first so crypto-cross tickers
+      // can fill the remaining symbols using their own live quote markets.
+      for (const ticker of ordered) {
+        const [base, quote] = ticker.currency_pair.toUpperCase().split("_");
+        const last = Number(ticker.last);
+        const quoteValue = quote ? stableQuotes[quote] : undefined;
+        if (!base || !quote || !quoteValue || prices[base]) continue;
+        const volumeUsd = Number(ticker.quote_volume || 0) * quoteValue;
+        if (volumeUsd < 10) continue;
+        const usd = last * quoteValue;
+        prices[base] = {
+          usd,
+          usd_24h_change: Number(ticker.change_percentage || 0),
+          usd_24h_vol: volumeUsd,
+          usd_market_cap: 0,
+        };
+        quoteUsd[base] = usd;
+      }
+
+      for (let pass = 0; pass < 2; pass++) {
+        for (const ticker of ordered) {
+          const [base, quote] = ticker.currency_pair.toUpperCase().split("_");
+          const last = Number(ticker.last);
+          if (!base || !quote || prices[base] || !quoteUsd[quote]) continue;
+          const usd = last * quoteUsd[quote]!;
+          const volumeUsd = Number(ticker.quote_volume || 0) * quoteUsd[quote]!;
+          if (!Number.isFinite(usd) || usd <= 0 || volumeUsd < 10) continue;
+          prices[base] = {
+            usd,
+            usd_24h_change: Number(ticker.change_percentage || 0),
+            usd_24h_vol: volumeUsd,
+            usd_market_cap: 0,
+          };
+          quoteUsd[base] = usd;
+        }
+      }
+
+      _gatePriceCache = prices;
+      _gatePriceCacheTs = Date.now();
+      return prices;
+    } catch (err) {
+      if (Object.keys(_gatePriceCache).length && Date.now() - _gatePriceCacheTs < 10 * 60_000) {
+        logger.warn({ err }, "Gate spot prices unavailable; serving recent cached prices");
+        return _gatePriceCache;
+      }
+      throw err;
+    } finally {
+      _gatePricePending = null;
+    }
+  })();
+  return _gatePricePending;
+}
+
+export async function fetchMarketUsdPrices(): Promise<Record<string, CoinGeckoPrice>> {
+  const [coingecko, gate] = await Promise.all([
+    fetchCoinGeckoPrices().catch((err) => {
+      logger.warn({ err }, "CoinGecko prices unavailable while building live market prices");
+      return {} as Record<string, CoinGeckoPrice>;
+    }),
+    fetchGateSpotPrices().catch((err) => {
+      logger.warn({ err }, "Gate prices unavailable while building live market prices");
+      return {} as Record<string, CoinGeckoPrice>;
+    }),
+  ]);
+  // Current Gate exchange prices take precedence where listed; CoinGecko fills
+  // mapped assets that do not have a Gate spot market.
+  return { ...coingecko, ...gate };
 }
 
 /**
@@ -585,6 +831,17 @@ async function fetchSovereignPrices(): Promise<Record<string, CoinGeckoPrice>> {
     logger.info({ new: cgNew, total: Object.keys(cgPrices).length }, "CoinGecko prices loaded");
   } catch (err) {
     logger.warn({ err }, "CoinGecko price fetch failed — continuing with LE + FALLBACK");
+  }
+
+  // ── 1d. Gate spot markets — fill additional real prices ───────────────────
+  try {
+    const gatePrices = await fetchGateSpotPrices();
+    for (const [sym, data] of Object.entries(gatePrices)) {
+      if (!out[sym]) out[sym] = data;
+    }
+    logger.debug({ symbols: Object.keys(gatePrices).length }, "Gate spot prices loaded");
+  } catch (err) {
+    logger.warn({ err }, "Gate spot price fetch failed — continuing with existing prices");
   }
 
   // ── 2. BSV via WhatsOnChain exchange rate ─────────────────────────────────
