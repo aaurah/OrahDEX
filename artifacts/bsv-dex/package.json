@@ -95,6 +95,7 @@
     "@reown/appkit-adapter-bitcoin": "1.8.22",
     "@reown/appkit-adapter-solana": "1.8.22",
     "@reown/appkit-adapter-wagmi": "^1.8.22",
+    "@reown/appkit-controllers": "1.8.22",
     "@scure/bip32": "^2.0.1",
     "@scure/bip39": "^2.0.1",
     "@solana/spl-token": "0.4.14",
