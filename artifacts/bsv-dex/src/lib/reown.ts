@@ -141,6 +141,50 @@ export async function fetchEvmBalance(
   }
 }
 
+/**
+ * Reads an exact ERC-20 balance before a wallet-send flow. Uses the same
+ * server-side RPC proxy as the app's balance hooks, then the configured public
+ * fallback; it never asks the wallet to sign or submit a transaction.
+ */
+export async function fetchErc20BalanceRaw(
+  owner: string,
+  tokenAddress: string,
+  chainId: number,
+): Promise<bigint> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(owner) || !/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) {
+    throw new Error("A valid wallet and token address are required to check this balance.");
+  }
+
+  const ownerWord = owner.slice(2).toLowerCase().padStart(64, "0");
+  const callData = `0x70a08231${ownerWord}`;
+  const endpoints = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter(Boolean);
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint!, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_call",
+          params: [{ to: tokenAddress, data: callData }, "latest"],
+        }),
+      });
+      if (!response.ok) continue;
+      const payload = await response.json();
+      if (payload?.error || typeof payload?.result !== "string" || !/^0x[0-9a-f]+$/i.test(payload.result)) {
+        continue;
+      }
+      return BigInt(payload.result);
+    } catch {
+      continue;
+    }
+  }
+
+  throw new Error("Could not verify the token balance. Retry the balance check before sending.");
+}
+
 export function sendEvmTransfer({
   from, to, valueWei, targetChainId, onStage,
 }: { from: string; to: string; valueWei: bigint; targetChainId: number; onStage?: (stage: "sending") => void }): Promise<string> {

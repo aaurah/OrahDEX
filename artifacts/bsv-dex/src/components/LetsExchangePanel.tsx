@@ -26,10 +26,11 @@ import { VENUE_COLORS, VENUE_LABELS } from "@/lib/venues";
 import { CoinLogo } from "@/components/CoinLogo";
 import { API_BASE } from "@/lib/api";
 import { useAccount } from "wagmi";
+import { formatUnits } from "viem";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useEvmBalances, ERC20_TOKENS } from "@/hooks/useEvmBalances";
-import { sendEvmTransfer, sendErc20Transfer, switchEvmNetwork, waitForEvmTransaction } from "@/lib/reown";
+import { fetchErc20BalanceRaw, sendEvmTransfer, sendErc20Transfer, switchEvmNetwork, waitForEvmTransaction } from "@/lib/reown";
 import { fetchReownSwapCoins, type ReownSwapCoin } from "@/lib/reown-appkit";
 
 // ─── EVM chain helpers ────────────────────────────────────────────────────────
@@ -1275,11 +1276,15 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const [effectiveVenue, setEffectiveVenue] = useState<string>(order.best_venue ?? "letsexchange");
   const [infoOpen,       setInfoOpen]       = useState(false);
   const [refreshKey,     setRefreshKey]     = useState(0);
-  const [sendState,      setSendState]      = useState<"idle"|"switching"|"sending"|"confirming"|"sent"|"unconfirmed"|"error">("idle");
+  const [sendState,      setSendState]      = useState<"idle"|"switching"|"checking"|"sending"|"confirming"|"sent"|"unconfirmed"|"error">("idle");
   const [txHash,         setTxHash]         = useState<string|null>(null);
   const [sendError,      setSendError]      = useState<string|null>(null);
   const [sendDiagnostic, setSendDiagnostic] = useState<string|null>(null);
   const [walletPromptDelayed, setWalletPromptDelayed] = useState(false);
+  const [walletTokenBalance, setWalletTokenBalance] = useState<bigint|null>(null);
+  const [walletTokenBalanceLoading, setWalletTokenBalanceLoading] = useState(false);
+  const [walletTokenBalanceError, setWalletTokenBalanceError] = useState<string|null>(null);
+  const tokenBalanceRequestRef = useRef(0);
 
   const { address: evmAddress, chainId: evmChainId } = useAccount();
   const customTokens = useCustomTokenStore(state => state.tokens);
@@ -1291,6 +1296,22 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const builtInErc20 = chainId !== null && !isNative
     ? (ERC20_TOKENS[chainId] ?? []).find(t => t.symbol.toUpperCase() === fromCoin.symbol.toUpperCase()) ?? null
     : null;
+  const reownAddressParts = fromCoin.tokenSource === "reown"
+    ? fromCoin.tokenAddress?.match(/^eip155:(\d+):(0x[0-9a-fA-F]{40})$/)
+    : null;
+  const selectedReownAddress = chainId !== null && reownAddressParts && Number(reownAddressParts[1]) === chainId
+    ? reownAddressParts[2]
+    : chainId !== null && fromCoin.tokenSource === "reown" && /^0x[0-9a-fA-F]{40}$/.test(fromCoin.tokenAddress ?? "")
+      ? fromCoin.tokenAddress!
+      : null;
+  const selectedReownErc20 = selectedReownAddress && Number.isInteger(fromCoin.tokenDecimals)
+    ? {
+        symbol: fromCoin.symbol,
+        name: fromCoin.name,
+        address: selectedReownAddress,
+        decimals: fromCoin.tokenDecimals!,
+      }
+    : null;
   const matchingCustomTokens = chainId !== null && !isNative
     ? customTokens.filter(t =>
         t.chainId === chainId && t.symbol.toUpperCase() === fromCoin.symbol.toUpperCase(),
@@ -1298,10 +1319,51 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
     : [];
   // A symbol can be reused by unrelated tokens, so only trust a custom token
   // when the wallet has exactly one matching chain-specific contract.
-  const erc20Entry = builtInErc20 ?? (matchingCustomTokens.length === 1 ? matchingCustomTokens[0] : null);
+  const erc20Entry = selectedReownErc20 ?? builtInErc20 ?? (matchingCustomTokens.length === 1 ? matchingCustomTokens[0] : null);
   const isEvmDeposit = typeof order.deposit === "string" && /^0x[0-9a-fA-F]{40}$/.test(order.deposit);
   const canSendFromWallet = !!evmAddress && isEvmDeposit && chainId !== null && (isNative || erc20Entry !== null);
   const walletSendTokenMissing = !!evmAddress && isEvmDeposit && chainId !== null && !isNative && !erc20Entry;
+
+  const refreshWalletTokenBalance = useCallback(async () => {
+    if (!evmAddress || chainId === null || !erc20Entry || isNative) return;
+    const requestId = ++tokenBalanceRequestRef.current;
+    setWalletTokenBalanceLoading(true);
+    setWalletTokenBalanceError(null);
+    try {
+      const balance = await fetchErc20BalanceRaw(evmAddress, erc20Entry.address, chainId);
+      if (requestId === tokenBalanceRequestRef.current) setWalletTokenBalance(balance);
+    } catch (error) {
+      if (requestId === tokenBalanceRequestRef.current) {
+        setWalletTokenBalance(null);
+        setWalletTokenBalanceError(error instanceof Error ? error.message : "Could not verify this token balance.");
+      }
+    } finally {
+      if (requestId === tokenBalanceRequestRef.current) setWalletTokenBalanceLoading(false);
+    }
+  }, [evmAddress, chainId, erc20Entry?.address, isNative]);
+
+  useEffect(() => {
+    if (!canSendFromWallet || isNative || !erc20Entry || !evmAddress || chainId === null) {
+      tokenBalanceRequestRef.current++;
+      setWalletTokenBalance(null);
+      setWalletTokenBalanceLoading(false);
+      setWalletTokenBalanceError(null);
+      return;
+    }
+    void refreshWalletTokenBalance();
+    return () => { tokenBalanceRequestRef.current++; };
+  }, [canSendFromWallet, isNative, erc20Entry?.address, evmAddress, chainId, refreshWalletTokenBalance]);
+
+  let requiredErc20Amount: bigint|null = null;
+  if (erc20Entry) {
+    try { requiredErc20Amount = decimalToTokenUnits(order.deposit_amount, erc20Entry.decimals); } catch {}
+  }
+  const walletTokenBalanceTooLow = walletTokenBalance !== null
+    && requiredErc20Amount !== null
+    && walletTokenBalance < requiredErc20Amount;
+  const formattedWalletTokenBalance = walletTokenBalance !== null && erc20Entry
+    ? formatUnits(walletTokenBalance, erc20Entry.decimals)
+    : null;
 
   async function handleSwitchWalletNetwork() {
     if (!chainId) return;
@@ -1326,7 +1388,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
 
   async function handleSendFromWallet() {
     if (!evmAddress || !chainId) return;
-    setSendState("sending"); setSendError(null); setSendDiagnostic(null); setTxHash(null);
+    setSendState("checking"); setSendError(null); setSendDiagnostic(null); setTxHash(null);
     setWalletPromptDelayed(false);
     let walletPromptTimer: ReturnType<typeof setTimeout> | null = null;
     const onStage = () => {
@@ -1349,6 +1411,14 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
       } else if (erc20Entry) {
         // ERC-20 token — preserve the provider's exact decimal amount.
         const rawAmt = decimalToTokenUnits(order.deposit_amount, erc20Entry.decimals);
+        const currentBalance = await fetchErc20BalanceRaw(evmAddress, erc20Entry.address, chainId);
+        setWalletTokenBalance(currentBalance);
+        if (rawAmt > currentBalance) {
+          throw new Error(
+            `Insufficient ${fromCoin.symbol} on ${fromCoin.networkName ?? fromCoin.network}: ` +
+            `this wallet has ${formatUnits(currentBalance, erc20Entry.decimals)}, but the exchange requires ${order.deposit_amount}.`,
+          );
+        }
         hash = await sendErc20Transfer({
           tokenAddress: erc20Entry.address,
           from: evmAddress,
@@ -1370,7 +1440,12 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
       ].filter((part, index, all): part is string =>
         typeof part === "string" && part.length > 0 && all.indexOf(part) === index,
       ).join("\n\n").slice(0, 2000);
-      setSendError(msg.toLowerCase().includes("reject") ? "Transaction rejected by wallet." : msg.slice(0, 240));
+      const insufficientToken = /transfer amount exceeds balance/i.test(`${msg}\n${diagnostic}`);
+      setSendError(msg.toLowerCase().includes("reject")
+        ? "Transaction rejected by wallet."
+        : insufficientToken
+          ? `Insufficient ${fromCoin.symbol} in the connected wallet. Check the ${fromCoin.networkName ?? fromCoin.network} token balance before retrying.`
+          : msg.slice(0, 240));
       setSendDiagnostic(diagnostic || null);
       setSendState("error");
       return;
@@ -1555,6 +1630,42 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
             Confirm the network, token, recipient, and amount in your wallet. Base transfers also need ETH for gas.
           </p>
 
+          {erc20Entry && !isNative && (
+            <div className="rounded-lg border border-border/50 bg-background/50 px-3 py-2.5 space-y-1.5">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-muted-foreground">Connected wallet balance</span>
+                <span className="font-mono text-foreground text-right break-all">
+                  {walletTokenBalanceLoading
+                    ? "Checking…"
+                    : formattedWalletTokenBalance !== null
+                      ? `${formattedWalletTokenBalance} ${fromCoin.symbol}`
+                      : "Not verified"}
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground break-all">
+                Token contract: {erc20Entry.address}
+              </p>
+              {walletTokenBalanceTooLow && formattedWalletTokenBalance !== null && (
+                <p className="text-[11px] text-red-300">
+                  This wallet has less than the required {order.deposit_amount} {fromCoin.symbol}. No transfer will be sent.
+                </p>
+              )}
+              {walletTokenBalanceError && (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-amber-300">{walletTokenBalanceError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void refreshWalletTokenBalance()}
+                    data-testid="button-retry-token-balance"
+                    className="shrink-0 text-[11px] font-semibold text-primary hover:text-primary/80"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {sendState === "idle" && (
             evmChainId !== chainId ? (
               <button type="button" onClick={handleSwitchWalletNetwork}
@@ -1562,11 +1673,29 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
                 Switch wallet to {fromCoin.networkName ?? fromCoin.network}
               </button>
             ) : (
-              <button type="button" onClick={handleSendFromWallet}
-                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition-all active:scale-[0.98]">
-                Send {order.deposit_amount} {fromCoin.symbol} from Wallet
+              <button
+                type="button"
+                onClick={handleSendFromWallet}
+                disabled={!!erc20Entry && !isNative && (
+                  walletTokenBalanceLoading || walletTokenBalance === null || walletTokenBalanceTooLow
+                )}
+                data-testid="button-send-from-wallet"
+                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-muted/60 disabled:text-muted-foreground disabled:cursor-not-allowed text-black font-bold text-sm transition-all active:scale-[0.98]"
+              >
+                {walletTokenBalanceLoading && erc20Entry && !isNative
+                  ? "Checking token balance…"
+                  : walletTokenBalanceTooLow
+                    ? `Insufficient ${fromCoin.symbol} balance`
+                    : "Send " + order.deposit_amount + " " + fromCoin.symbol + " from Wallet"}
               </button>
             )
+          )}
+
+          {sendState === "checking" && (
+            <button type="button" disabled
+              className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
+              <Loader2 className="w-4 h-4 animate-spin" /> Checking token balance before sending…
+            </button>
           )}
 
           {sendState === "sending" && (
