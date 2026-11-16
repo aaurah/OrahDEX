@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, pool, withDbRetry } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
 import { eq, and, desc, inArray, ne, or, sql } from "drizzle-orm";
-import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
+import { FALLBACK_PRICES, fetchCoinGeckoPrices } from "../lib/priceUpdater.js";
 import { fetchKeyPrices } from "./dex.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
 import { fetchRealCandles, fetchFullHistoryCandles, resampleCandles } from "../lib/candleFetcher.js";
@@ -190,11 +190,18 @@ router.get("/markets", async (req, res) => {
 
     const markets = await withDbRetry(() => db.select().from(marketsTable).where(conditions));
 
+    let liveCoinPrices: Record<string, { usd?: number }> = {};
+    try {
+      liveCoinPrices = await fetchCoinGeckoPrices();
+    } catch (err) {
+      req.log.warn({ err }, "CoinGecko cross-prices unavailable; using stored and fallback prices");
+    }
+
     const result = markets.map((m) => ({
       symbol:                m.symbol,
       baseAsset:             m.baseAsset,
       quoteAsset:            m.quoteAsset,
-      lastPrice:             parseFloat(m.lastPrice),
+      lastPrice:             resolveCrossPrice(m.symbol, parseFloat(m.lastPrice), liveCoinPrices),
       priceChange24h:        parseFloat(m.priceChange24h),
       priceChangePercent24h: parseFloat(m.priceChangePercent24h),
       volume24h:             parseFloat(m.volume24h),
@@ -341,11 +348,18 @@ router.get("/markets/search", async (req, res) => {
       .offset(offset)
     );
 
+    let liveCoinPrices: Record<string, { usd?: number }> = {};
+    try {
+      liveCoinPrices = await fetchCoinGeckoPrices();
+    } catch (err) {
+      logger.warn({ err }, "CoinGecko cross-prices unavailable for market search");
+    }
+
     const result = rows.map(m => ({
       symbol:                m.symbol,
       baseAsset:             m.baseAsset,
       quoteAsset:            m.quoteAsset,
-      lastPrice:             resolveCrossPrice(m.symbol, parseFloat(m.lastPrice)),
+      lastPrice:             resolveCrossPrice(m.symbol, parseFloat(m.lastPrice), liveCoinPrices),
       priceChangePercent24h: parseFloat(m.priceChangePercent24h),
       volume24h:             parseFloat(m.volume24h),
       type:                  m.type,
@@ -577,12 +591,16 @@ function usdStable(q: string) {
   return ["USDT","USDC","USD","BUSD","TUSD","USDD","DAI","FDUSD"].includes(q.toUpperCase());
 }
 
-function resolveCrossPrice(symbol: string, dbPrice: number): number {
+function resolveCrossPrice(
+  symbol: string,
+  dbPrice: number,
+  liveCoinPrices: Record<string, { usd?: number }> = {},
+): number {
   if (dbPrice > 0) return dbPrice;
   const [base, quote] = symbol.split("/");
   if (!base || !quote) return 0;
-  const baseUsd  = FALLBACK_PRICES[base]  ?? 0;
-  const quoteUsd = usdStable(quote) ? 1 : (FALLBACK_PRICES[quote] ?? 0);
+  const baseUsd  = liveCoinPrices[base]?.usd ?? FALLBACK_PRICES[base] ?? 0;
+  const quoteUsd = usdStable(quote) ? 1 : (liveCoinPrices[quote]?.usd ?? FALLBACK_PRICES[quote] ?? 0);
   if (baseUsd > 0 && quoteUsd > 0) return baseUsd / quoteUsd;
   return 0;
 }
@@ -735,7 +753,11 @@ router.get("/markets/:symbol/candles", async (req, res) => {
       return;
     }
 
-    const candles = await fetchRealCandles(sym, price, interval, limit);
+    let candleSource = "unknown";
+    const candles = await fetchRealCandles(sym, price, interval, limit, (source) => {
+      candleSource = source;
+    });
+    res.setHeader("X-Candle-Source", candleSource);
     res.json(candles);
   } catch (err) {
     req.log.error({ err }, "Failed to get candles");
