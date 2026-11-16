@@ -26,7 +26,7 @@ let _cachedKey: string | null = null;
 let _cacheExpiry = 0;
 
 async function getApiKey(): Promise<string> {
-  const envKey = process.env.CHANGENOW_API_KEY ?? "";
+  const envKey = process.env.CHANGENOW_API_KEY ?? process.env.Changenow_API ?? "";
   if (envKey) return envKey;
 
   const now = Date.now();
