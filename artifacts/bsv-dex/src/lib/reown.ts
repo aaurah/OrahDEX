@@ -209,14 +209,20 @@ async function getActiveWalletProvider(
     throw new Error("The active wallet changed. Reconnect the wallet shown for this exchange and try again.");
   }
 
-  const connector = account.connector as typeof account.connector & {
-    getProvider?: () => Promise<{ request: (args: { method: string; params?: unknown[] }) => Promise<any> }>;
+  type Eip1193Provider = {
+    request: (args: { method: string; params?: unknown[] }) => Promise<any>;
+  };
+  const connector = account.connector as unknown as {
+    getProvider?: () => Promise<unknown>;
   };
   if (typeof connector.getProvider !== "function") {
     throw new Error("The connected wallet does not provide a transaction session. Reconnect it and try again.");
   }
 
-  let provider = await connector.getProvider();
+  let provider = await connector.getProvider() as Eip1193Provider;
+  if (!provider || typeof provider.request !== "function") {
+    throw new Error("The connected wallet returned an invalid transaction provider. Reconnect it and try again.");
+  }
   const accounts = await provider.request({ method: "eth_accounts" });
   if (!Array.isArray(accounts) || !accounts.some(
     address => typeof address === "string" && address.toLowerCase() === expectedAddress.toLowerCase(),
@@ -232,7 +238,10 @@ async function getActiveWalletProvider(
   const currentChainId = parseChainId(await provider.request({ method: "eth_chainId" }));
   if (currentChainId !== targetChainId) {
     await wagmiSwitchChain(config, { chainId: targetChainId });
-    provider = await connector.getProvider();
+    provider = await connector.getProvider() as Eip1193Provider;
+    if (!provider || typeof provider.request !== "function") {
+      throw new Error("The wallet returned an invalid provider after switching networks.");
+    }
     const switchedChainId = parseChainId(await provider.request({ method: "eth_chainId" }));
     if (switchedChainId !== targetChainId) {
       throw new Error("The wallet did not switch to the required network.");
