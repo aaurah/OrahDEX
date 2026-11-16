@@ -1829,6 +1829,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             data={chartCandles}
             externalDataOnly={true}
             externalDataLoading={candlesLoading}
+            dataSourceLabel={symbol.toUpperCase() === "A8/ETH" && recentTrades.length === 0 ? "CoinGecko reference" : undefined}
           />
         </div>
 
