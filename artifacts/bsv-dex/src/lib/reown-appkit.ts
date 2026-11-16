@@ -94,6 +94,10 @@ const appKit = createAppKit({
     smartAccounts: true,
     reownBranding: false,
   } as any,
+  // Universal links work more reliably than custom wallet URI schemes in
+  // mobile browsers such as Brave, which can silently return without opening
+  // the installed wallet app.
+  experimental_preferUniversalLinks: true,
   enableWallets: true,
   themeMode: _initialThemeMode,
   themeVariables: {
