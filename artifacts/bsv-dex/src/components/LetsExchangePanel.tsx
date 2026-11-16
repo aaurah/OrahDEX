@@ -27,6 +27,7 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { API_BASE } from "@/lib/api";
 import { useAccount } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useEvmBalances, ERC20_TOKENS } from "@/hooks/useEvmBalances";
 import { sendEvmTransfer, sendErc20Transfer } from "@/lib/reown";
 
@@ -50,6 +51,23 @@ const CHAIN_NATIVE: Record<number, string> = {
   10: "ETH", 8453: "ETH", 43114: "AVAX", 59144: "ETH",
   534352: "ETH", 324: "ETH",
 };
+
+function decimalToTokenUnits(value: string, decimals: number): bigint {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new Error("Token precision is unavailable or invalid.");
+  }
+  const match = value.trim().match(/^(\d+)(?:\.(\d*))?$/);
+  if (!match) throw new Error("The deposit amount is invalid.");
+
+  const whole = match[1];
+  const fraction = match[2] ?? "";
+  if (fraction.slice(decimals).replace(/0/g, "").length > 0) {
+    throw new Error(`The deposit amount has more precision than this token supports (${decimals} decimals).`);
+  }
+  const paddedFraction = fraction.slice(0, decimals).padEnd(decimals, "0");
+  const scale = 10n ** BigInt(decimals);
+  return BigInt(whole) * scale + BigInt(paddedFraction || "0");
+}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1067,27 +1085,36 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const [sendError,      setSendError]      = useState<string|null>(null);
 
   const { address: evmAddress } = useAccount();
+  const customTokens = useCustomTokenStore(state => state.tokens);
 
   // Resolve chain info for the from-coin so we can offer wallet-send
   const network    = (fromCoin.network ?? fromCoin.symbol ?? "").toUpperCase();
   const chainId    = LE_NETWORK_CHAIN[network] ?? null;
   const isNative   = chainId !== null && CHAIN_NATIVE[chainId] === fromCoin.symbol.toUpperCase();
-  const erc20Entry = chainId !== null && !isNative
+  const builtInErc20 = chainId !== null && !isNative
     ? (ERC20_TOKENS[chainId] ?? []).find(t => t.symbol.toUpperCase() === fromCoin.symbol.toUpperCase()) ?? null
     : null;
+  const matchingCustomTokens = chainId !== null && !isNative
+    ? customTokens.filter(t =>
+        t.chainId === chainId && t.symbol.toUpperCase() === fromCoin.symbol.toUpperCase(),
+      )
+    : [];
+  // A symbol can be reused by unrelated tokens, so only trust a custom token
+  // when the wallet has exactly one matching chain-specific contract.
+  const erc20Entry = builtInErc20 ?? (matchingCustomTokens.length === 1 ? matchingCustomTokens[0] : null);
   const isEvmDeposit = typeof order.deposit === "string" && /^0x[0-9a-fA-F]{40}$/.test(order.deposit);
   const canSendFromWallet = !!evmAddress && isEvmDeposit && chainId !== null && (isNative || erc20Entry !== null);
+  const walletSendTokenMissing = !!evmAddress && isEvmDeposit && chainId !== null && !isNative && !erc20Entry;
 
   async function handleSendFromWallet() {
     if (!evmAddress || !chainId) return;
     setSendState("sending"); setSendError(null); setTxHash(null);
     try {
-      const depositAmt = parseFloat(order.deposit_amount);
       let hash: string;
 
       if (isNative) {
-        // Native coin (ETH, BNB, AVAX…) — convert to wei (18 decimals)
-        const weiAmt = BigInt(Math.round(depositAmt * 1e9)) * BigInt(1e9);
+        // Native coin (ETH, BNB, AVAX…) — convert the exact provider amount to wei.
+        const weiAmt = decimalToTokenUnits(order.deposit_amount, 18);
         hash = await sendEvmTransfer({
           from: evmAddress,
           to: order.deposit,
@@ -1095,9 +1122,8 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
           targetChainId: chainId,
         });
       } else if (erc20Entry) {
-        // ERC-20 token — convert to smallest unit using token decimals
-        const factor = 10 ** erc20Entry.decimals;
-        const rawAmt = BigInt(Math.round(depositAmt * factor));
+        // ERC-20 token — preserve the provider's exact decimal amount.
+        const rawAmt = decimalToTokenUnits(order.deposit_amount, erc20Entry.decimals);
         hash = await sendErc20Transfer({
           tokenAddress: erc20Entry.address,
           from: evmAddress,
@@ -1275,7 +1301,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
           <p className="text-xs text-muted-foreground">
             Send exactly <span className="text-foreground font-mono font-bold">{order.deposit_amount} {fromCoin.symbol}</span> directly from{" "}
             <span className="font-mono">{evmAddress?.slice(0,6)}…{evmAddress?.slice(-4)}</span>.
-            Your wallet will prompt you to confirm.
+            Confirm the network, token, recipient, and amount in your wallet. Base transfers also need ETH for gas.
           </p>
 
           {sendState === "idle" && (
@@ -1318,6 +1344,13 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
               </button>
             </div>
           )}
+        </div>
+      )}
+      {walletSendTokenMissing && !isDone && (
+        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3">
+          <p className="text-xs text-yellow-200">
+            Direct wallet send is unavailable because {fromCoin.symbol} on {fromCoin.networkName ?? fromCoin.network} has no unique contract and decimals in your wallet token list. Import the correct token first, or send manually to the deposit address above. Keep enough native coin for network fees.
+          </p>
         </div>
       )}
 
