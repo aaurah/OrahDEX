@@ -1083,6 +1083,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const [sendState,      setSendState]      = useState<"idle"|"sending"|"confirming"|"sent"|"unconfirmed"|"error">("idle");
   const [txHash,         setTxHash]         = useState<string|null>(null);
   const [sendError,      setSendError]      = useState<string|null>(null);
+  const [sendDiagnostic, setSendDiagnostic] = useState<string|null>(null);
 
   const { address: evmAddress } = useAccount();
   const customTokens = useCustomTokenStore(state => state.tokens);
@@ -1108,7 +1109,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
 
   async function handleSendFromWallet() {
     if (!evmAddress || !chainId) return;
-    setSendState("sending"); setSendError(null); setTxHash(null);
+    setSendState("sending"); setSendError(null); setSendDiagnostic(null); setTxHash(null);
     let hash: string;
     try {
       if (isNative) {
@@ -1134,8 +1135,17 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
         throw new Error("Token not supported for wallet-send on this chain.");
       }
     } catch (err: any) {
-      const msg: string = err?.message ?? "Transaction failed";
-      setSendError(msg.includes("rejected") ? "Transaction rejected by wallet." : msg.slice(0, 90));
+      const msg: string = err?.shortMessage ?? err?.cause?.shortMessage ?? err?.message ?? "Transaction failed";
+      const diagnostic = [
+        err?.code != null ? `Code: ${String(err.code)}` : "",
+        err?.details,
+        err?.cause?.message,
+        err?.message,
+      ].filter((part, index, all): part is string =>
+        typeof part === "string" && part.length > 0 && all.indexOf(part) === index,
+      ).join("\n\n").slice(0, 2000);
+      setSendError(msg.toLowerCase().includes("reject") ? "Transaction rejected by wallet." : msg.slice(0, 240));
+      setSendDiagnostic(diagnostic || null);
       setSendState("error");
       return;
     }
@@ -1391,13 +1401,20 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
                 <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
                 <p className="text-sm text-red-300">{sendError ?? "Transaction failed"}</p>
               </div>
+              {sendDiagnostic && (
+                <details className="rounded-lg bg-black/20 p-2">
+                  <summary className="cursor-pointer text-xs text-red-200/80">Technical details</summary>
+                  <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-all text-[10px] text-red-100/70">{sendDiagnostic}</pre>
+                  <CopyButton text={sendDiagnostic} className="mt-2" />
+                </details>
+              )}
               {txHash && (
                 <div className="flex items-center gap-2">
                   <p className="text-xs font-mono text-red-200 break-all">{txHash}</p>
                   <CopyButton text={txHash} />
                 </div>
               )}
-              <button type="button" onClick={() => { setSendState("idle"); setSendError(null); setTxHash(null); }}
+              <button type="button" onClick={() => { setSendState("idle"); setSendError(null); setSendDiagnostic(null); setTxHash(null); }}
                 className="text-xs text-muted-foreground hover:text-foreground underline transition-colors">
                 Retry after checking wallet status
               </button>
