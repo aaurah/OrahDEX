@@ -177,7 +177,7 @@ export function MobileTabKeeper() {
       {vis("swap")       && <Tab active={act("swap")}>       <Suspense fallback={<Skeleton />}><SwapPage /></Suspense></Tab>}
       {vis("trade")      && <Tab active={act("trade")}>      <Suspense fallback={<Skeleton />}><MobileTrade symbol={tradeSymbol} /></Suspense></Tab>}
       {vis("futures")    && <Tab active={act("futures")}>    <Suspense fallback={<Skeleton />}><MobileTrade symbol={futuresSymbol} /></Suspense></Tab>}
-      {vis("wallet")     && <Tab active={act("wallet")}>     <Suspense fallback={<Skeleton />}><MobileWalletPortfolio /></Suspense></Tab>}
+      {vis("wallet")     && <Tab active={act("wallet")}>     <Suspense fallback={<Skeleton />}><MobileWalletPortfolio defaultTab={location === "/wallet" ? "wallet" : "portfolio"} /></Suspense></Tab>}
       {vis("settings")   && <Tab active={act("settings")}>   <Suspense fallback={<Skeleton />}><MobileSettings /></Suspense></Tab>}
       {vis("staking")    && <Tab active={act("staking")}>    <Suspense fallback={<Skeleton />}><MobileStaking /></Suspense></Tab>}
       {vis("nft")        && <Tab active={act("nft")}>        <Suspense fallback={<Skeleton />}><MobileNFT /></Suspense></Tab>}
