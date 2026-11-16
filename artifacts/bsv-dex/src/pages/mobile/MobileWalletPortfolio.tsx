@@ -9,7 +9,7 @@
  * and internal state survive tab switches without re-fetching.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Briefcase, Wallet } from "lucide-react";
 import { MobilePortfolio } from "./MobilePortfolio";
 import WalletContent from "@/pages/Wallet";
@@ -18,6 +18,7 @@ type TopTab = "portfolio" | "wallet";
 
 export function MobileWalletPortfolio({ defaultTab = "portfolio" }: { defaultTab?: TopTab }) {
   const [topTab, setTopTab] = useState<TopTab>(defaultTab);
+  useEffect(() => setTopTab(defaultTab), [defaultTab]);
 
   return (
     <div className="flex flex-col min-h-full">
