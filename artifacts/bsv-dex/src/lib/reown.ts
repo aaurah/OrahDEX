@@ -1,5 +1,10 @@
 import { getCoinbaseProvider } from "./coinbaseWallet";
-import { createConfig, http } from "@wagmi/core";
+import {
+  createConfig, getAccount, http, sendTransaction as wagmiSendTransaction,
+  switchChain as wagmiSwitchChain, writeContract,
+} from "@wagmi/core";
+import { erc20Abi } from "viem";
+import { getAppKitWagmiConfig } from "./reown-appkit";
 import {
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
   linea, zkSync, scroll, mantle, fantom, cronos, sepolia,
@@ -138,61 +143,46 @@ export async function fetchEvmBalance(
 export async function sendEvmTransfer({
   from, to, valueWei, targetChainId,
 }: { from: string; to: string; valueWei: bigint; targetChainId: number }): Promise<string> {
-  const valueHex = "0x" + valueWei.toString(16);
-  const chainHex = "0x" + targetChainId.toString(16);
-
-  async function tryProvider(provider: any): Promise<string | null> {
-    try {
-      const currentHex: string = await provider.request({ method: "eth_chainId" });
-      if (parseInt(currentHex, 16) !== targetChainId) {
-        await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainHex }] });
-      }
-      const hash: string = await provider.request({
-        method: "eth_sendTransaction",
-        params: [{ from, to, value: valueHex }],
-      });
-      return hash ?? null;
-    } catch (err: any) {
-      if (err?.code === 4001 || err?.message?.includes("rejected")) throw err;
-      return null;
-    }
-  }
-
-  const injected = (window as any).ethereum;
-  if (injected) { const h = await tryProvider(injected); if (h) return h; }
-
-  throw new Error("No active wallet found. Please connect MetaMask or install a browser wallet.");
+  const config = getAppKitWagmiConfig();
+  await ensureActiveWalletOnChain(config, from, targetChainId);
+  return wagmiSendTransaction(config, {
+    account: from as `0x${string}`,
+    to: to as `0x${string}`,
+    value: valueWei,
+    chainId: targetChainId,
+  });
 }
 
 export async function sendErc20Transfer({
   tokenAddress, from, to, amount, targetChainId,
 }: { tokenAddress: string; from: string; to: string; amount: bigint; targetChainId: number }): Promise<string> {
-  const paddedTo  = to.replace("0x", "").padStart(64, "0");
-  const paddedAmt = amount.toString(16).padStart(64, "0");
-  const data      = "0xa9059cbb" + paddedTo + paddedAmt;
-  const chainHex  = "0x" + targetChainId.toString(16);
+  const config = getAppKitWagmiConfig();
+  await ensureActiveWalletOnChain(config, from, targetChainId);
+  return writeContract(config, {
+    account: from as `0x${string}`,
+    address: tokenAddress as `0x${string}`,
+    abi: erc20Abi,
+    functionName: "transfer",
+    args: [to as `0x${string}`, amount],
+    chainId: targetChainId,
+  });
+}
 
-  async function tryProvider(provider: any): Promise<string | null> {
-    try {
-      const currentHex: string = await provider.request({ method: "eth_chainId" });
-      if (parseInt(currentHex, 16) !== targetChainId) {
-        await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainHex }] });
-      }
-      const hash: string = await provider.request({
-        method: "eth_sendTransaction",
-        params: [{ from, to: tokenAddress, data }],
-      });
-      return hash ?? null;
-    } catch (err: any) {
-      if (err?.code === 4001 || err?.message?.includes("rejected")) throw err;
-      return null;
-    }
+async function ensureActiveWalletOnChain(
+  config: ReturnType<typeof getAppKitWagmiConfig>,
+  expectedAddress: string,
+  targetChainId: number,
+): Promise<void> {
+  const account = getAccount(config);
+  if (!account.address || !account.connector) {
+    throw new Error("The connected wallet session is unavailable. Reconnect your wallet and try again.");
   }
-
-  const injected = (window as any).ethereum;
-  if (injected) { const h = await tryProvider(injected); if (h) return h; }
-
-  throw new Error("No active wallet found. Please connect MetaMask or install a browser wallet.");
+  if (account.address.toLowerCase() !== expectedAddress.toLowerCase()) {
+    throw new Error("The active wallet changed. Reconnect the wallet shown for this exchange and try again.");
+  }
+  if (account.chainId !== targetChainId) {
+    await wagmiSwitchChain(config, { chainId: targetChainId });
+  }
 }
 
 export async function approveToken(
