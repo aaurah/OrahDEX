@@ -1135,13 +1135,30 @@ export default function Wallet({ afterActions }: { afterActions?: ReactNode } = 
 
   const handleConnectChain = async (chain: ChainRow) => {
     if (chain.family === "evm") {
-      openReownModal("eip155");
+      void openReownModal("eip155").then((opened) => {
+        if (!opened) {
+          toast({
+            title: "Wallet picker did not open",
+            description: "Reload the page and try connecting again.",
+            variant: "destructive",
+          });
+        }
+      });
       return;
     }
 
     if (chain.family === "btc" || chain.family === "solana") {
       setPendingConnectFamily(chain.family);
-      openReownModal(chain.family === "btc" ? "bip122" : "solana");
+      void openReownModal(chain.family === "btc" ? "bip122" : "solana").then((opened) => {
+        if (!opened) {
+          setPendingConnectFamily(null);
+          toast({
+            title: "Wallet picker did not open",
+            description: "Reload the page and try connecting again.",
+            variant: "destructive",
+          });
+        }
+      });
       return;
     }
 
