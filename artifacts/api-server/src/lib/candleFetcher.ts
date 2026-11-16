@@ -7,7 +7,7 @@
  *   3. Binance public klines API (no key required) — geo-blocked from some regions
  *   4. Gate.io public candles API (no key required) — broad pair coverage
  *   5. Poloniex — for BSV (listed as BCHSV) and other renamed coins
- *   6. Synthetic fallback — generated from lastPrice when no external data available
+ *   6. No history — unsupported pairs remain empty rather than inventing price movement
  */
 
 import { db, pool } from "@workspace/db";
@@ -15,28 +15,6 @@ import { tradesTable } from "@workspace/db/schema";
 import { gte, and, eq } from "drizzle-orm";
 import { logger } from "./logger.js";
 import { COINGECKO_IDS } from "./priceUpdater.js";
-
-/* ── Asset inception timestamps (Unix seconds) ─────────────────────────────
-   Synthetic candle series will not extend before the asset existed.         */
-const ASSET_INCEPTION: Record<string, number> = {
-  "BTC":  1231006505, "LTC":  1317513600, "XRP":  1356998400,
-  "DOGE": 1388534400, "ETH":  1438300800, "ETC":  1469404800,
-  "ZEC":  1477929600, "BNB":  1503014400, "BCH":  1501545600,
-  "ADA":  1506643200, "XLM":  1404172800, "TRX":  1504224000,
-  "VET":  1533081600, "BSV":  1542240000, "LINK": 1503619200,
-  "ATOM": 1552953600, "MATIC":1557273600, "SOL":  1568502000,
-  "DOT":  1594684800, "AVAX": 1597622400, "UNI":  1600473600,
-  "AAVE": 1601856000, "SHIB": 1619222400, "MANA": 1511136000,
-  "SAND": 1575504000, "APE":  1645574400, "ARB":  1678924800,
-  "OP":   1655251200, "SUI":  1683072000, "PEPE": 1681948800,
-  "WIF":  1702944000, "BONK": 1672531200,
-};
-const CRYPTO_FLOOR_TS = 1483228800; // Jan 1 2017 — safe floor for unknown assets
-
-function getInceptionTs(symbol: string): number {
-  const base = symbol.split(/[-_/]/)[0]?.toUpperCase() ?? "";
-  return ASSET_INCEPTION[base] ?? CRYPTO_FLOOR_TS;
-}
 
 const INTERVAL_SECONDS: Record<string, number> = {
   "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800,
@@ -117,6 +95,7 @@ const COINGECKO_OHLC_TTL_MS = 5 * 60 * 1000;
 const coingeckoOhlcCache = new Map<string, { data: Candle[]; ts: number }>();
 const coingeckoOhlcPending = new Map<string, Promise<Candle[]>>();
 let coingeckoApiKeyPromise: Promise<string | null> | null = null;
+let coingeckoBackoffUntil = 0;
 const candleSourceCache = new Map<string, string>();
 
 const COINGECKO_VS_CURRENCY: Record<string, string> = {
@@ -154,6 +133,7 @@ async function fetchCoinGeckoOhlc(
   const cacheKey = `${coinId}:${vsCurrency}:${days}`;
   const cached = coingeckoOhlcCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < COINGECKO_OHLC_TTL_MS) return cached.data;
+  if (Date.now() < coingeckoBackoffUntil) return [];
 
   const pending = coingeckoOhlcPending.get(cacheKey);
   if (pending) return pending;
@@ -174,6 +154,11 @@ async function fetchCoinGeckoOhlc(
       headers,
       signal: AbortSignal.timeout(12_000),
     });
+    if (response.status === 429) {
+      const retryAfterSeconds = Number(response.headers.get("Retry-After"));
+      coingeckoBackoffUntil = Date.now() + Math.max(60_000, Math.min(300_000, retryAfterSeconds * 1000 || 60_000));
+      throw new Error("CoinGecko OHLC rate limit reached");
+    }
     if (!response.ok) throw new Error(`CoinGecko OHLC HTTP ${response.status}`);
     const raw = await response.json() as number[][];
     if (!Array.isArray(raw)) throw new Error("CoinGecko OHLC response was not an array");
@@ -202,7 +187,13 @@ async function fetchCoinGeckoOhlc(
       .sort((a, b) => a.time - b.time)
       .filter((c, i, all) => i === 0 || c.time !== all[i - 1]!.time);
 
-    if (candles.length) coingeckoOhlcCache.set(cacheKey, { data: candles, ts: Date.now() });
+    if (candles.length) {
+      if (coingeckoOhlcCache.size >= 200) {
+        const oldest = [...coingeckoOhlcCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
+        if (oldest) coingeckoOhlcCache.delete(oldest[0]);
+      }
+      coingeckoOhlcCache.set(cacheKey, { data: candles, ts: Date.now() });
+    }
     return candles;
   })();
   coingeckoOhlcPending.set(cacheKey, request);
@@ -216,15 +207,23 @@ async function fetchCoinGeckoOhlc(
 function getCached(key: string): Candle[] | null {
   const e = candleCache.get(key);
   if (!e) return null;
-  if (Date.now() - e.ts > CACHE_TTL_MS) { candleCache.delete(key); return null; }
+  if (Date.now() - e.ts > CACHE_TTL_MS) {
+    candleCache.delete(key);
+    candleSourceCache.delete(key);
+    return null;
+  }
   return e.data;
 }
-function setCached(key: string, data: Candle[]) {
+function setCached(key: string, data: Candle[], source: string) {
   if (candleCache.size >= 200) {
     const oldest = [...candleCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
-    if (oldest) candleCache.delete(oldest[0]);
+    if (oldest) {
+      candleCache.delete(oldest[0]);
+      candleSourceCache.delete(oldest[0]);
+    }
   }
   candleCache.set(key, { data, ts: Date.now() });
+  candleSourceCache.set(key, source);
 }
 
 /* ── 1. Own trades → OHLCV candles ──────────────────────────────────────────── */
@@ -337,12 +336,12 @@ async function fetchBinanceCandles(
 
 /* ── 4. Gate.io public candles ─────────────────────────────────────────────────── */
 async function fetchGateCandles(
-  base:     string,
+  pair:     string,
   interval: string,
   limit:    number,
 ): Promise<Candle[]> {
   const gInterval = GATE_INTERVAL_MAP[interval] || "1h";
-  const url = `https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=${base}_USDT&interval=${gInterval}&limit=${Math.min(limit, 1000)}`;
+  const url = `https://api.gateio.ws/api/v4/spot/candlesticks?currency_pair=${pair}&interval=${gInterval}&limit=${Math.min(limit, 1000)}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(5000) });
   if (!res.ok) throw new Error(`Gate.io candles HTTP ${res.status}`);
   const data = await res.json() as string[][];
@@ -384,52 +383,6 @@ async function fetchPoloniexCandles(
       volume: parseFloat(k[5]),
     }))
     .sort((a, b) => a.time - b.time);
-}
-
-/* ── 6. Synthetic fallback — proper random walk ────────────────────────────────── */
-function makeRng(seed: number) {
-  let s = (seed | 0) >>> 0;
-  return () => {
-    s = (Math.imul(1664525, s) + 1013904223) >>> 0;
-    return s / 4294967296;
-  };
-}
-
-function intervalVol(sec: number): number {
-  const annualVol = 0.80;
-  const secsPerYear = 365 * 24 * 3600;
-  return annualVol * Math.sqrt(sec / secsPerYear);
-}
-
-function generateFallbackCandles(lastPrice: number, interval: string, limit: number, inceptionTs: number = CRYPTO_FLOOR_TS): Candle[] {
-  const sec   = INTERVAL_SECONDS[interval] || 3600;
-  const now   = Math.floor(Date.now() / 1000);
-  const vol   = intervalVol(sec);
-
-  const maxCandles  = Math.max(1, Math.floor((now - inceptionTs) / sec));
-  const actualLimit = Math.min(limit, maxCandles);
-
-  const timeBucket = Math.floor(now / 60);
-  const rng = makeRng(timeBucket ^ (lastPrice * 1000 | 0));
-
-  const logCloses = new Array<number>(actualLimit);
-  logCloses[actualLimit - 1] = Math.log(Math.max(lastPrice, 1e-12));
-  for (let i = actualLimit - 2; i >= 0; i--) {
-    logCloses[i] = logCloses[i + 1] + (rng() * 2 - 1) * vol;
-  }
-
-  const candles: Candle[] = [];
-  for (let i = 0; i < actualLimit; i++) {
-    const close   = Math.exp(logCloses[i]);
-    const open    = i === 0 ? close * Math.exp((rng() - 0.5) * vol * 0.5) : Math.exp(logCloses[i - 1]);
-    const body    = Math.abs(close - open);
-    const minWick = close * 0.0008;
-    const high    = Math.max(open, close) + Math.max(body * (0.4 + rng() * 1.2), minWick);
-    const low     = Math.min(open, close) - Math.max(body * (0.4 + rng() * 1.2), minWick);
-    const volume  = Math.exp(Math.log(500 * (sec / 3600)) + (rng() - 0.5) * 1.2);
-    candles.push({ time: now - sec * (actualLimit - i), open, high, low, close, volume });
-  }
-  return candles;
 }
 
 /* ── Bitfinex symbol map (our base → Bitfinex pair suffix, no t-prefix) ─────── */
@@ -539,7 +492,7 @@ export async function fetchFullHistoryCandles(
   /* 3. Gate.io — fallback for obscure pairs not on Bitfinex/OKX */
   if (merged.length < 5) {
     try {
-      const gate = await fetchGateCandles(base, "1d", 1000);
+      const gate = await fetchGateCandles(`${base}_USDT`, "1d", 1000);
       if (gate.length >= 5) merged = gate;
     } catch (_) {}
   }
@@ -616,10 +569,12 @@ function pinLastCandle(candles: Candle[], lastPrice: number): Candle[] {
 /* ── Validate that a candle array looks like real price data ─────────────────── */
 function isValidCandleSet(candles: Candle[], minCount: number): boolean {
   if (candles.length < minCount) return false;
-  // Reject if all candles have the same close (flat line = bad data)
+  // Reject flat data using relative precision so tiny-priced tokens are not
+  // rounded to zero by a fixed decimal comparison.
   const closes = candles.map(c => c.close);
-  const unique  = new Set(closes.map(v => v.toFixed(6)));
-  return unique.size > 1;
+  const minClose = Math.min(...closes);
+  const maxClose = Math.max(...closes);
+  return maxClose - minClose > Math.max(Math.abs(maxClose) * 1e-10, 1e-30);
 }
 
 /* ── Main export ───────────────────────────────────────────────────────────────── */
@@ -628,13 +583,15 @@ export async function fetchRealCandles(
   lastPrice: number,
   interval:  string,
   limit:     number,
+  onSource?: (source: string) => void,
 ): Promise<Candle[]> {
   const cacheKey = `${symbol}:${interval}:${limit}`;
-  const isA8EthPair = symbol.toUpperCase() === "A8/ETH";
   const cached   = getCached(cacheKey);
   if (cached !== null) {
+    const source = candleSourceCache.get(cacheKey) ?? "unknown";
+    onSource?.(source);
     if (cached.length === 0) return [];
-    if (isA8EthPair) return cached.map((candle) => ({ ...candle }));
+    if (source === "coingecko") return cached.map((candle) => ({ ...candle }));
     return pinLastCandle([...cached.slice(0, -1), { ...cached[cached.length - 1]! }], lastPrice);
   }
 
@@ -649,38 +606,12 @@ export async function fetchRealCandles(
     const intervalSec = INTERVAL_SECONDS[interval] || 3600;
     const ownCandles  = await buildCandlesFromOwnTrades(symbol, intervalSec, limit);
     if (isValidCandleSet(ownCandles, minRequired)) {
-      setCached(cacheKey, ownCandles);
-      if (isA8EthPair) return ownCandles;
+      setCached(cacheKey, ownCandles, "orahdex-trades");
+      onSource?.("orahdex-trades");
       return pinLastCandle(ownCandles, lastPrice);
     }
   } catch (err) {
     logger.warn({ err, symbol }, "Own-trades candle build failed");
-  }
-
-  // A8/ETH has no OrahDEX executions yet, but CoinGecko provides genuine
-  // Ancient8-vs-ETH OHLC reference data. Keep it explicitly separate from
-  // OrahDEX fills and do not pin its last close to the independent swap quote.
-  if (isA8EthPair) {
-    const days: "1" | "30" | "365" =
-      ["1m", "3m", "5m", "15m", "30m", "1h"].includes(interval) ? "1" :
-      ["1d", "3d", "1w", "1M"].includes(interval) ? "365" : "30";
-    try {
-      let candles: Candle[];
-      try {
-        candles = await fetchA8EthReferenceCandles(days);
-      } catch (err) {
-        if (days !== "365") throw err;
-        logger.warn({ err, symbol }, "Long-range CoinGecko candles unavailable; trying shorter reference history");
-        candles = await fetchA8EthReferenceCandles("30");
-      }
-      if (isValidCandleSet(candles, minRequired)) {
-        const result = candles.slice(-limit);
-        setCached(cacheKey, result);
-        return result;
-      }
-    } catch (err) {
-      logger.warn({ err, symbol, days }, "CoinGecko reference candles unavailable");
-    }
   }
 
   // ── 2. OKX (primary real-data source — global, not geo-blocked) ────────────
@@ -688,7 +619,8 @@ export async function fetchRealCandles(
     try {
       const candles = await fetchOkxCandles(base, interval, limit);
       if (isValidCandleSet(candles, minRequired)) {
-        setCached(cacheKey, candles);
+        setCached(cacheKey, candles, "okx");
+        onSource?.("okx");
         logger.debug({ symbol, count: candles.length, source: "okx" }, "Candles from OKX");
         return pinLastCandle(candles, lastPrice);
       }
@@ -702,7 +634,8 @@ export async function fetchRealCandles(
     try {
       const candles = await fetchBinanceCandles(`${base}USDT`, interval, limit);
       if (isValidCandleSet(candles, minRequired)) {
-        setCached(cacheKey, candles);
+        setCached(cacheKey, candles, "binance");
+        onSource?.("binance");
         logger.debug({ symbol, count: candles.length, source: "binance" }, "Candles from Binance");
         return pinLastCandle(candles, lastPrice);
       }
@@ -714,9 +647,10 @@ export async function fetchRealCandles(
   // ── 4. Gate.io (broad coverage, USDT pairs, not geo-blocked) ───────────────
   if (isUsdtPair) {
     try {
-      const candles = await fetchGateCandles(base, interval, limit);
+      const candles = await fetchGateCandles(`${base}_USDT`, interval, limit);
       if (isValidCandleSet(candles, minRequired)) {
-        setCached(cacheKey, candles);
+        setCached(cacheKey, candles, "gateio");
+        onSource?.("gateio");
         logger.debug({ symbol, count: candles.length, source: "gateio" }, "Candles from Gate.io");
         return pinLastCandle(candles, lastPrice);
       }
@@ -730,7 +664,8 @@ export async function fetchRealCandles(
     try {
       const candles = await fetchPoloniexCandles(POLONIEX_SYMBOL_MAP[base]!, interval, limit);
       if (isValidCandleSet(candles, minRequired)) {
-        setCached(cacheKey, candles);
+        setCached(cacheKey, candles, "poloniex");
+        onSource?.("poloniex");
         logger.debug({ symbol, count: candles.length, source: "poloniex" }, "Candles from Poloniex");
         return pinLastCandle(candles, lastPrice);
       }
@@ -739,7 +674,53 @@ export async function fetchRealCandles(
     }
   }
 
+  // Gate.io lists many direct crypto-cross markets (for example AAVE_ETH).
+  // Query that exact pair before using CoinGecko as a broader reference feed.
+  if (quote && quote !== "USDT") {
+    try {
+      const candles = await fetchGateCandles(`${base}_${quote}`, interval, limit);
+      if (isValidCandleSet(candles, minRequired)) {
+        setCached(cacheKey, candles, "gateio");
+        onSource?.("gateio");
+        logger.debug({ symbol, count: candles.length, source: "gateio-cross" }, "Cross-pair candles from Gate.io");
+        return pinLastCandle(candles, lastPrice);
+      }
+    } catch (err) {
+      logger.debug({ symbol, err }, "Gate.io cross-pair candles unavailable");
+    }
+  }
+
+  // Known non-USDT markets can use genuine CoinGecko OHLC as a reference
+  // source when OrahDEX has no executions. Direct exchange feeds above take
+  // precedence; reference candles are labeled separately in the chart.
+  const coinId = COINGECKO_IDS[base];
+  const vsCurrency = COINGECKO_VS_CURRENCY[quote];
+  if (coinId && vsCurrency) {
+    const days: "1" | "30" | "365" =
+      ["1m", "3m", "5m", "15m", "30m", "1h"].includes(interval) ? "1" :
+      ["1d", "3d", "1w", "1M"].includes(interval) ? "365" : "30";
+    try {
+      let candles: Candle[];
+      try {
+        candles = await fetchCoinGeckoOhlc(coinId, vsCurrency, days);
+      } catch (err) {
+        if (days !== "365") throw err;
+        logger.warn({ err, symbol }, "Long-range CoinGecko candles unavailable; trying shorter reference history");
+        candles = await fetchCoinGeckoOhlc(coinId, vsCurrency, "30");
+      }
+      if (isValidCandleSet(candles, minRequired)) {
+        const result = candles.slice(-limit);
+        setCached(cacheKey, result, "coingecko");
+        onSource?.("coingecko");
+        return result;
+      }
+    } catch (err) {
+      logger.warn({ err, symbol, coinId, vsCurrency, days }, "CoinGecko reference candles unavailable");
+    }
+  }
+
   logger.warn({ symbol, interval }, "Real candle sources unavailable — returning no history");
-  setCached(cacheKey, []);
+  setCached(cacheKey, [], "none");
+  onSource?.("none");
   return [];
 }
