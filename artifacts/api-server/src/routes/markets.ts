@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, pool, withDbRetry } from "@workspace/db";
 import { marketsTable, ordersTable } from "@workspace/db/schema";
-import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, ne, or, sql } from "drizzle-orm";
 import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 import { fetchKeyPrices } from "./dex.js";
 import { generateRecentTrades, generateTicker } from "../lib/mockData.js";
@@ -781,28 +781,21 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
       // For markets with stale/zero DB price, fall back to cross-rate (same as candles/ticker)
       if (!(lastPrice > 0)) lastPrice = resolveCrossPrice(market.symbol, 0);
 
-      // Bridge pairs (LetsExchange / SimpleSwap): return an empty real-order book
-      // plus metadata so the frontend renders live-quoted swap levels instead of
-      // fake synthetic depth that can never actually be filled.
-      if (market.type === "letsexchange" || market.type === "simpleswap") {
-        const bridgeResult = {
-          bids:         [] as [number, number][],
-          asks:         [] as [number, number][],
-          lastPrice,
+    }
+    // Bridge pairs have no synthetic liquidity, but wallet-funded limit orders
+    // are real escrow-backed orders and must still appear in the order book.
+    const bridgePairInfo = market && (market.type === "letsexchange" || market.type === "simpleswap")
+      ? {
           isBridgePair: true,
-          provider:     market.type,
+          provider: market.type,
           minOrderSize: market.minOrderSize ?? null,
           maxOrderSize: market.maxOrderSize ?? null,
-        };
-        orderbookCache.set(cacheKey, bridgeResult);
-        res.json(bridgeResult);
-        return;
-      }
-    }
+        }
+      : {};
 
     // A market with no price yet can't produce meaningful synthetic depth
     if (!lastPrice || lastPrice <= 0) {
-      res.json({ bids: [], asks: [], lastPrice: 0 });
+      res.json({ bids: [], asks: [], lastPrice: 0, ...bridgePairInfo });
       return;
     }
 
@@ -817,7 +810,10 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
         .where(and(
           eq(ordersTable.symbol, symbol), eq(ordersTable.status, "open"),
           eq(ordersTable.type, "limit"),
-          sql`${ordersTable.fundingRef} LIKE 'ledger:%'`,
+          or(
+            sql`${ordersTable.fundingRef} LIKE 'ledger:%'`,
+            sql`${ordersTable.fundingRef} LIKE 'evm-order:1:%'`,
+          ),
           ne(ordersTable.walletAddress, BOT_ADDRESS),
         ));
 
@@ -854,7 +850,7 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
       return;
     }
 
-    const result = { bids, asks, lastPrice };
+    const result = { bids, asks, lastPrice, ...bridgePairInfo };
     orderbookCache.set(cacheKey, result);
     res.json(result);
   } catch (err) {
