@@ -1254,12 +1254,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const formatBalance = (value: number) => value > 0
     ? value.toLocaleString("en-US", { maximumFractionDigits: 8, useGrouping: false })
     : "0.0000";
+  // Quick-fill values must never round above the actual wallet balance.
+  const formatAmountInput = (value: number) => {
+    if (!Number.isFinite(value) || value <= 0) return "";
+    const scale = 100_000_000;
+    const roundingGuard = Number.EPSILON * Math.max(1, Math.abs(value)) * 8;
+    const floored = Math.floor((value + roundingGuard) * scale) / scale;
+    return floored > 0 ? floored.toFixed(8).replace(/\.?0+$/, "") : "";
+  };
   const fundingAsset = (side === "sell" ? base : quote).toUpperCase();
   const coinWalletHref = `/portfolio/${encodeURIComponent(fundingAsset)}`;
 
   const maxBuyNum = effectivePrice > 0 ? (buyBalance / effectivePrice) : 0;
-  const maxBuy  = maxBuyNum   > 0 ? maxBuyNum.toFixed(6)   : "0";
-  const maxSell = sellBalance > 0 ? sellBalance.toFixed(6) : "0";
+  const maxBuy  = formatBalance(maxBuyNum);
+  const maxSell = formatBalance(sellBalance);
 
   // Click available → fill max amount, fee-adjusted so the order never exceeds balance.
   // BUY : fee is charged on the quote spend, so max base = balance / (price × (1 + fee))
@@ -1269,9 +1277,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (side === "buy") {
       if (effectivePrice <= 0) return;
       const maxQty = buyBalance / (effectivePrice * (1 + FEE_RATE));
-      setAmount(maxQty.toFixed(6));
+      setAmount(formatAmountInput(maxQty));
     } else {
-      setAmount(sellBalance.toFixed(6));
+      setAmount(formatAmountInput(sellBalance));
     }
   };
   const handleFillMin = () => {
@@ -1280,10 +1288,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (effectivePrice <= 0) return;
       const maxQty = buyBalance / (effectivePrice * (1 + FEE_RATE));
       const minQty = Math.min(maxQty, MIN_QUICK_FILL_QTY);
-      setAmount(minQty > 0 ? minQty.toFixed(6) : "");
+      setAmount(formatAmountInput(minQty));
     } else {
       const minQty = Math.min(sellBalance, MIN_QUICK_FILL_QTY);
-      setAmount(minQty > 0 ? minQty.toFixed(6) : "");
+      setAmount(formatAmountInput(minQty));
     }
   };
 
@@ -1366,12 +1374,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     }
 
     // ── SELL guard: block impossible sell orders before the network round-trip ──
-    // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
-    // never falsely blocked by floating-point arithmetic.
+    // Quick-fill values are floored to eight decimals, leaving only a tiny
+    // floating-point tolerance rather than accepting a rounded-up amount.
     if (side === "sell" && amtNum > sellBalance + 1e-9) {
       toast({
         title:       "Insufficient balance",
-        description: `You only have ${maxSell} ${base} available to sell`,
+        description: `Your wallet has ${maxSell} ${base}, but this order asks for ${formatBalance(amtNum)} ${base}. Reduce the amount or choose MAX.`,
         variant:     "destructive",
       });
       isSubmittingRef.current = false;
@@ -2315,10 +2323,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     disabled={balancesPending}
                     onClick={() => {
                       if (balancesPending) return;
+                      if (p === 100) {
+                        handleFillMax();
+                        return;
+                      }
                       if (side === "buy" && buyBalance > 0 && effectivePrice > 0) {
-                        setAmount(((buyBalance / effectivePrice) * p / 100).toFixed(6));
+                        const feeAdjustedBuy = buyBalance / (effectivePrice * (1 + (orderType === "market" ? FEE_RATE : 0)));
+                        setAmount(formatAmountInput(feeAdjustedBuy * p / 100));
                       } else if (side === "sell" && sellBalance > 0) {
-                        setAmount((sellBalance * p / 100).toFixed(6));
+                        setAmount(formatAmountInput(sellBalance * p / 100));
                       }
                     }}
                     className="text-[10px] text-muted-foreground font-semibold disabled:opacity-40"
