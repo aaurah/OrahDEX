@@ -29,7 +29,7 @@ import { useAccount } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useEvmBalances, ERC20_TOKENS } from "@/hooks/useEvmBalances";
-import { sendEvmTransfer, sendErc20Transfer } from "@/lib/reown";
+import { sendEvmTransfer, sendErc20Transfer, waitForEvmTransaction } from "@/lib/reown";
 
 // ─── EVM chain helpers ────────────────────────────────────────────────────────
 // Maps LetsExchange / venue network codes → EVM chainId
@@ -1080,7 +1080,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const [effectiveVenue, setEffectiveVenue] = useState<string>(order.best_venue ?? "letsexchange");
   const [infoOpen,       setInfoOpen]       = useState(false);
   const [refreshKey,     setRefreshKey]     = useState(0);
-  const [sendState,      setSendState]      = useState<"idle"|"sending"|"sent"|"error">("idle");
+  const [sendState,      setSendState]      = useState<"idle"|"sending"|"confirming"|"sent"|"unconfirmed"|"error">("idle");
   const [txHash,         setTxHash]         = useState<string|null>(null);
   const [sendError,      setSendError]      = useState<string|null>(null);
 
@@ -1109,9 +1109,8 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   async function handleSendFromWallet() {
     if (!evmAddress || !chainId) return;
     setSendState("sending"); setSendError(null); setTxHash(null);
+    let hash: string;
     try {
-      let hash: string;
-
       if (isNative) {
         // Native coin (ETH, BNB, AVAX…) — convert the exact provider amount to wei.
         const weiAmt = decimalToTokenUnits(order.deposit_amount, 18);
@@ -1134,13 +1133,26 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
       } else {
         throw new Error("Token not supported for wallet-send on this chain.");
       }
-
-      setTxHash(hash);
-      setSendState("sent");
     } catch (err: any) {
       const msg: string = err?.message ?? "Transaction failed";
       setSendError(msg.includes("rejected") ? "Transaction rejected by wallet." : msg.slice(0, 90));
       setSendState("error");
+      return;
+    }
+
+    setTxHash(hash);
+    setSendState("confirming");
+    try {
+      const receiptStatus = await waitForEvmTransaction(hash, chainId);
+      if (receiptStatus === "reverted") {
+        setSendError("Base included the transaction, but the token transfer reverted. Network fees may still have been charged.");
+        setSendState("error");
+        return;
+      }
+      setSendState("sent");
+    } catch {
+      setSendError("The wallet returned an ID, but no Base transaction receipt was found. Check your wallet or the explorer before retrying.");
+      setSendState("unconfirmed");
     }
   }
 
@@ -1318,17 +1330,58 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
             </button>
           )}
 
+          {sendState === "confirming" && (
+            <button type="button" disabled
+              className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
+              <Loader2 className="w-4 h-4 animate-spin" /> Waiting for Base confirmation…
+            </button>
+          )}
+
           {sendState === "sent" && txHash && (
             <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 space-y-1">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <p className="text-sm font-semibold text-emerald-300">Transaction submitted!</p>
+                <p className="text-sm font-semibold text-emerald-300">Transfer confirmed on-chain</p>
               </div>
               <p className="text-xs text-muted-foreground">TX hash:</p>
               <div className="flex items-center gap-2">
                 <p className="text-xs font-mono text-emerald-400 break-all">{txHash}</p>
                 <CopyButton text={txHash} />
               </div>
+              {chainId === 8453 && (
+                <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1 pt-1 text-xs text-emerald-300 hover:text-emerald-200">
+                  View on BaseScan <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+          )}
+
+          {sendState === "unconfirmed" && (
+            <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/30 p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0" />
+                <p className="text-sm font-semibold text-yellow-200">Not confirmed on Base</p>
+              </div>
+              <p className="text-xs text-yellow-100/80">{sendError}</p>
+              {txHash && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-mono text-yellow-100 break-all">{txHash}</p>
+                    <CopyButton text={txHash} />
+                  </div>
+                  {chainId === 8453 && (
+                    <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-yellow-200 hover:text-yellow-100">
+                      Check BaseScan <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </>
+              )}
+              <button type="button" onClick={() => { setSendState("idle"); setSendError(null); setTxHash(null); }}
+                className="block text-xs text-muted-foreground hover:text-foreground underline transition-colors">
+                Retry only after confirming the wallet says failed
+              </button>
             </div>
           )}
 
@@ -1338,9 +1391,15 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
                 <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
                 <p className="text-sm text-red-300">{sendError ?? "Transaction failed"}</p>
               </div>
-              <button type="button" onClick={() => setSendState("idle")}
+              {txHash && (
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-mono text-red-200 break-all">{txHash}</p>
+                  <CopyButton text={txHash} />
+                </div>
+              )}
+              <button type="button" onClick={() => { setSendState("idle"); setSendError(null); setTxHash(null); }}
                 className="text-xs text-muted-foreground hover:text-foreground underline transition-colors">
-                Try again
+                Retry after checking wallet status
               </button>
             </div>
           )}

@@ -1,7 +1,8 @@
 import { getCoinbaseProvider } from "./coinbaseWallet";
 import {
   createConfig, getAccount, http, sendTransaction as wagmiSendTransaction,
-  switchChain as wagmiSwitchChain, writeContract,
+  switchChain as wagmiSwitchChain, waitForTransactionReceipt as wagmiWaitForTransactionReceipt,
+  writeContract,
 } from "@wagmi/core";
 import { erc20Abi } from "viem";
 import { getAppKitWagmiConfig } from "./reown-appkit";
@@ -166,6 +167,19 @@ export async function sendErc20Transfer({
     args: [to as `0x${string}`, amount],
     chainId: targetChainId,
   });
+}
+
+export async function waitForEvmTransaction(
+  hash: string,
+  targetChainId: number,
+): Promise<"success" | "reverted"> {
+  const config = getAppKitWagmiConfig();
+  const receipt = await wagmiWaitForTransactionReceipt(config, {
+    hash: hash as `0x${string}`,
+    chainId: targetChainId,
+    timeout: 45_000,
+  });
+  return receipt.status;
 }
 
 async function ensureActiveWalletOnChain(
