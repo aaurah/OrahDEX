@@ -173,7 +173,7 @@ export function MobileTabKeeper() {
 
   return (
     <>
-      {vis("markets")    && <Tab active={act("markets")}>    <Suspense fallback={<Skeleton />}><MobileMarkets /></Suspense></Tab>}
+      {vis("markets")    && <Tab active={act("markets")}>    <Suspense fallback={<Skeleton />}><MobileMarkets active={act("markets")} /></Suspense></Tab>}
       {vis("swap")       && <Tab active={act("swap")}>       <Suspense fallback={<Skeleton />}><SwapPage /></Suspense></Tab>}
       {vis("trade")      && <Tab active={act("trade")}>      <Suspense fallback={<Skeleton />}><MobileTrade symbol={tradeSymbol} /></Suspense></Tab>}
       {vis("futures")    && <Tab active={act("futures")}>    <Suspense fallback={<Skeleton />}><MobileTrade symbol={futuresSymbol} /></Suspense></Tab>}
@@ -195,7 +195,7 @@ export function MobileTabKeeper() {
 
       {/* Fallback: unrecognised route — show markets */}
       {activeKey === null && !isPassthrough(location) && (
-        <Suspense fallback={<Skeleton />}><MobileMarkets /></Suspense>
+        <Suspense fallback={<Skeleton />}><MobileMarkets active /></Suspense>
       )}
     </>
   );
