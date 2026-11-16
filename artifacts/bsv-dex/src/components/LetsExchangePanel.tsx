@@ -22,7 +22,7 @@ import {
   Clock, Lock, Wallet, Trash2, ArrowRight, History, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { VENUE_LABELS } from "@/lib/venues";
+import { VENUE_COLORS, VENUE_LABELS } from "@/lib/venues";
 import { CoinLogo } from "@/components/CoinLogo";
 import { API_BASE } from "@/lib/api";
 import { useAccount } from "wagmi";
@@ -30,6 +30,7 @@ import { useWalletStore } from "@/store/useWalletStore";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useEvmBalances, ERC20_TOKENS } from "@/hooks/useEvmBalances";
 import { sendEvmTransfer, sendErc20Transfer, waitForEvmTransaction } from "@/lib/reown";
+import { openReownSwap } from "@/lib/reown-appkit";
 
 // ─── EVM chain helpers ────────────────────────────────────────────────────────
 // Maps LetsExchange / venue network codes → EVM chainId
@@ -90,7 +91,18 @@ interface Estimate {
   deposit_min_amount?: string;
   deposit_max_amount?: string;
   best_venue?: string;      // winning venue from meta-router
+  venue_quotes?: VenueQuote[];
+  venue_status?: { venue: string; hasQuote: boolean }[];
   stale?: boolean;          // true when rate is from DB cache (all live APIs failed)
+}
+
+interface VenueQuote {
+  venue: string;
+  rate: string|null;
+  output: string;
+  minAmount: string|null;
+  maxAmount: string|null;
+  canExecute: boolean;
 }
 
 // Response from POST /v1/transaction (normalised across all venues)
@@ -464,6 +476,8 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   const [estLoading, setEstLoading] = useState(false);
   const [estError,   setEstError]   = useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [selectedVenue, setSelectedVenue] = useState<string|null>(null);
+  const [reownSwapError, setReownSwapError] = useState<string|null>(null);
 
   // ── Smart router state ───────────────────────────────────────────────────
   const [routeSource,  setRouteSource]  = useState<"internal"|"letsexchange"|null>(null);
@@ -540,6 +554,10 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
       if (bsv ?? eth) setToCoin(bsv ?? eth ?? null);
     }
   }, [coins, initialFrom, initialTo]);
+
+  useEffect(() => {
+    setSelectedVenue(null);
+  }, [fromCoin?.symbol, fromCoin?.network, fromCoin?.provider, toCoin?.symbol, toCoin?.network, toCoin?.provider, amount, forceVenue]);
 
   // Live rate fetch using correct API fields
   const fetchEstimate = useCallback(async () => {
@@ -676,11 +694,57 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromCoin?.symbol, toCoin?.symbol, amount]);
 
-  // A live estimate with a positive output is proof the amount is accepted by at least one venue
-  const estimateValid = estimate !== null && parseFloat(estimate.amount) > 0;
+  const sortedVenueQuotes = useMemo(
+    () => [...(estimate?.venue_quotes ?? [])].sort(
+      (a, b) => (parseFloat(b.output) || 0) - (parseFloat(a.output) || 0),
+    ),
+    [estimate?.venue_quotes],
+  );
+  const supplierRows = useMemo(() => {
+    const quotesByVenue = new Map(sortedVenueQuotes.map(quote => [quote.venue, quote]));
+    const venues = new Set([
+      ...(estimate?.venue_status ?? []).map(status => status.venue),
+      ...sortedVenueQuotes.map(quote => quote.venue),
+    ]);
+    return [...venues]
+      .map(venue => ({ venue, quote: quotesByVenue.get(venue) ?? null }))
+      .sort((a, b) => {
+        if (a.quote && b.quote) return (parseFloat(b.quote.output) || 0) - (parseFloat(a.quote.output) || 0);
+        if (a.quote) return -1;
+        if (b.quote) return 1;
+        return (VENUE_LABELS[a.venue] ?? a.venue).localeCompare(VENUE_LABELS[b.venue] ?? b.venue);
+      });
+  }, [estimate?.venue_status, sortedVenueQuotes]);
+  const executableQuotes = sortedVenueQuotes.filter(
+    quote => quote.canExecute && Number.isFinite(parseFloat(quote.output)) && parseFloat(quote.output) > 0,
+  );
+  const bestOutputQuote = executableQuotes[0] ?? null;
+  const selectedQuote = selectedVenue
+    ? executableQuotes.find(quote => quote.venue === selectedVenue) ?? null
+    : null;
+  const activeQuote = selectedQuote ?? bestOutputQuote;
+  const activeEstimate: Estimate|null = estimate && activeQuote
+    ? {
+        ...estimate,
+        amount: activeQuote.output,
+        rate: activeQuote.rate ?? (
+          parseFloat(amount) > 0
+            ? String(parseFloat(activeQuote.output) / parseFloat(amount))
+            : estimate.rate
+        ),
+        min_amount: activeQuote.minAmount ?? "",
+        max_amount: activeQuote.maxAmount ?? "",
+        best_venue: activeQuote.venue,
+        rate_id: activeQuote.venue === "letsexchange" ? estimate.rate_id : null,
+        rate_id_expired_at: activeQuote.venue === "letsexchange" ? estimate.rate_id_expired_at : null,
+      }
+    : estimate;
+
+  // A live estimate with a positive output is proof the amount is accepted by at least one venue.
+  const estimateValid = activeEstimate !== null && parseFloat(activeEstimate.amount) > 0;
 
   // Prefer the current quote's minimum; use catalog metadata when a quote omits it.
-  const liveMinAmt = estimate?.min_amount ? parseFloat(estimate.min_amount) : null;
+  const liveMinAmt = activeEstimate?.min_amount ? parseFloat(activeEstimate.min_amount) : null;
   const catalogMinAmt = fromCoin?.minAmount ? parseFloat(fromCoin.minAmount) : null;
   const minAmt = liveMinAmt !== null && Number.isFinite(liveMinAmt) && liveMinAmt > 0
     ? liveMinAmt
@@ -689,7 +753,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
       : null;
   // Only use live max_amount from the estimate response.
   // Static coin-list maxAmount values are unreliable (e.g. 282994 ETH) and must not be shown.
-  const maxAmtRaw = estimate?.max_amount ? parseFloat(estimate.max_amount) : null;
+  const maxAmtRaw = activeEstimate?.max_amount ? parseFloat(activeEstimate.max_amount) : null;
   // Hide max if it is astronomically large (> 10 000 of any coin) — it means "no real cap"
   const providerMaxAmt = (maxAmtRaw !== null && maxAmtRaw > 0 && maxAmtRaw < 10_000) ? maxAmtRaw : null;
   const maxCandidates = [providerMaxAmt, availBal].filter((value): value is number => value !== null);
@@ -723,7 +787,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   const balanceTooLowForMin = availBal !== null && minAmt !== null && availBal < minAmt;
 
   // rate_id_expired_at from LE API is a Unix timestamp in seconds — multiply by 1000 to get ms
-  const rateIdExpiresMs = estimate?.rate_id_expired_at ? parseInt(estimate.rate_id_expired_at) * 1000 : null;
+  const rateIdExpiresMs = activeEstimate?.rate_id_expired_at ? parseInt(activeEstimate.rate_id_expired_at) * 1000 : null;
   const rateSecondsLeft = rateIdExpiresMs ? Math.max(0, Math.round((rateIdExpiresMs - Date.now()) / 1000)) : RATE_REFRESH;
 
   // Require a confirmed live quote before allowing continue — no quote means no venue is ready
@@ -836,8 +900,8 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
                 {toCoin.networkName ?? toCoin.network ?? toCoin.name}
               </span>
             )}
-            {estimate && (
-              <Countdown key={`${refreshKey}-${estimate.rate_id ?? ""}`}
+            {activeEstimate && (
+              <Countdown key={`${refreshKey}-${activeEstimate.rate_id ?? ""}`}
                 seconds={Math.min(rateSecondsLeft, RATE_REFRESH)}
                 onEnd={() => setRefreshKey(k => k + 1)} />
             )}
@@ -845,11 +909,11 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
         </div>
         <div className="flex items-center gap-2">
           <div className="flex-1 text-[2.2rem] font-semibold leading-none py-1 tabular-nums">
-            {estLoading && !estimate ? (
+            {estLoading && !activeEstimate ? (
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/40" />
-            ) : estimate ? (
-              <span className={cn("text-emerald-400", estimate && estLoading && "opacity-60")}>
-                ≈{fmtNum(estimate.amount, 8)}
+            ) : activeEstimate ? (
+              <span className={cn("text-emerald-400", estLoading && "opacity-60")}>
+                ≈{fmtNum(activeEstimate.amount, 8)}
                 {estLoading && <Loader2 className="w-3 h-3 animate-spin inline ml-1.5 text-muted-foreground/40" />}
               </span>
             ) : estError ? (
@@ -861,34 +925,35 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
           <CoinPicker compact coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); }} exclude={fromCoin?.symbol} />
         </div>
         {/* Rate + venue badge */}
-        {estimate && fromCoin && toCoin && (
+        {activeEstimate && fromCoin && toCoin && (
           <div className="flex flex-col gap-1.5 mt-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] text-muted-foreground">
-                1 {fromCoin.symbol} ≈ <span className={cn("font-mono", estimate.stale ? "text-amber-400/80" : "text-emerald-400/80")}>{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
+                1 {fromCoin.symbol} ≈ <span className={cn("font-mono", activeEstimate.stale ? "text-amber-400/80" : "text-emerald-400/80")}>{fmtNum(activeEstimate.rate, 8)} {toCoin.symbol}</span>
               </span>
-              {estimate.stale ? (
+              {activeEstimate.stale ? (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold bg-amber-500/10 border-amber-500/30 text-amber-400">
                   <Clock className="w-2.5 h-2.5" /> Cached rate
                 </span>
               ) : (
                 <span className={cn(
                   "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold",
-                  estimate.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/30 text-sky-400" :
-                  estimate.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
-                  estimate.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/30 text-orange-400" :
+                  activeEstimate.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/30 text-sky-400" :
+                  activeEstimate.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
+                  activeEstimate.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/30 text-orange-400" :
                   "bg-violet-500/10 border-violet-500/30 text-violet-400"
                 )}>
-                  ⚡ {VENUE_LABELS[estimate.best_venue ?? ""] ?? "OrahRouter"}
+                  {activeQuote?.venue === bestOutputQuote?.venue ? "⚡ Best output · " : "✓ Selected · "}
+                  {VENUE_LABELS[activeEstimate.best_venue ?? ""] ?? "OrahRouter"}
                 </span>
               )}
-              {estimate.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && (
+              {activeEstimate.withdrawal_fee && parseFloat(activeEstimate.withdrawal_fee) > 0 && (
                 <span className="text-[10px] text-muted-foreground/50 ml-auto">
-                  Fee: <span className="font-mono">{fmtNum(estimate.withdrawal_fee, 6)} {toCoin.symbol}</span>
+                  Fee: <span className="font-mono">{fmtNum(activeEstimate.withdrawal_fee, 6)} {toCoin.symbol}</span>
                 </span>
               )}
             </div>
-            {estimate.stale && (
+            {activeEstimate.stale && (
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-500/8 border border-amber-500/20 text-[10px] text-amber-400/80">
                 <AlertTriangle className="w-3 h-3 shrink-0" />
                 Live rates temporarily unavailable — using last known rate. Swap will use best live price at execution.
@@ -896,6 +961,95 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
             )}
           </div>
         )}
+        {supplierRows.length > 0 && fromCoin && toCoin && (
+          <div className="mt-3 pt-3 border-t border-border/40">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-[11px] font-semibold text-foreground">Available supplier quotes</span>
+              <span className="text-[10px] text-muted-foreground/60">Best output highlighted</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {supplierRows.map(({ venue, quote }) => {
+                if (!quote) {
+                  return (
+                    <div
+                      key={venue}
+                      className="w-full flex items-center justify-between gap-3 rounded-xl border border-border/30 bg-background/20 px-3 py-2 text-left opacity-55"
+                    >
+                      <span className={cn("text-xs font-semibold truncate", VENUE_COLORS[venue] ?? "text-foreground")}>
+                        {VENUE_LABELS[venue] ?? venue}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">No live quote</span>
+                    </div>
+                  );
+                }
+                const output = parseFloat(quote.output);
+                const canSelect = quote.canExecute && Number.isFinite(output) && output > 0;
+                const isBest = quote.venue === bestOutputQuote?.venue;
+                const isSelected = quote.venue === activeQuote?.venue;
+                const limitText = quote.minAmount
+                  ? `Min ${fmtNum(quote.minAmount, 8)} ${fromCoin.symbol}`
+                  : quote.maxAmount
+                    ? `Max ${fmtNum(quote.maxAmount, 8)} ${fromCoin.symbol}`
+                    : "Amount not supported";
+                return (
+                  <button
+                    type="button"
+                    key={venue}
+                    disabled={!canSelect}
+                    onClick={() => setSelectedVenue(quote.venue)}
+                    className={cn(
+                      "w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition-colors",
+                      !canSelect && "opacity-45 cursor-not-allowed border-border/30",
+                      canSelect && isSelected && "border-primary/60 bg-primary/8",
+                      canSelect && !isSelected && "border-border/40 hover:border-primary/35 bg-background/30",
+                    )}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className={cn("text-xs font-semibold truncate", VENUE_COLORS[quote.venue] ?? "text-foreground")}>
+                        {VENUE_LABELS[quote.venue] ?? quote.venue}
+                      </span>
+                      {isBest && canSelect && (
+                        <span className="shrink-0 rounded-md bg-emerald-500/10 border border-emerald-500/25 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-400">
+                          Best
+                        </span>
+                      )}
+                      {!canSelect && (
+                        <span className="text-[9px] text-muted-foreground truncate">{limitText}</span>
+                      )}
+                    </span>
+                    <span className={cn("shrink-0 text-xs font-mono tabular-nums", canSelect ? "text-foreground" : "text-muted-foreground")}>
+                      {canSelect ? `≈${fmtNum(output, 8)} ${toCoin.symbol}` : "Unavailable"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[10px] text-muted-foreground/60">
+              Estimates can change before the exchange order is created.
+            </p>
+          </div>
+        )}
+        <div className="mt-3 rounded-xl border border-violet-500/15 bg-violet-500/5 px-3 py-2.5 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold text-foreground">Reown wallet swap</p>
+            <p className="text-[10px] text-muted-foreground/70">Browse Reown-supported coins and quotes</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setReownSwapError(null);
+              void openReownSwap({
+                ...(fromCoin ? { fromToken: fromCoin.symbol } : {}),
+                ...(toCoin ? { toToken: toCoin.symbol } : {}),
+                ...(amount && Number.isFinite(parseFloat(amount)) ? { amount } : {}),
+              }).catch(() => setReownSwapError("Reown Swap could not be opened. Please try again."));
+            }}
+            className="shrink-0 rounded-lg border border-violet-500/30 px-3 py-2 text-[10px] font-semibold text-violet-300 hover:bg-violet-500/10"
+          >
+            Open Reown
+          </button>
+        </div>
+        {reownSwapError && <p className="text-[10px] text-red-400 px-1">{reownSwapError}</p>}
       </div>
 
       {/* Smart Router badge — very subtle */}
@@ -911,8 +1065,8 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
       )}
 
       {/* ── Swap button ── */}
-      <button type="button" disabled={!canContinue}
-        onClick={() => canContinue && fromCoin && toCoin && onContinue(fromCoin, toCoin, amount, estimate)}
+        <button type="button" disabled={!canContinue}
+          onClick={() => canContinue && fromCoin && toCoin && onContinue(fromCoin, toCoin, amount, activeEstimate)}
         className={cn(
           "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 mt-1",
           canContinue
