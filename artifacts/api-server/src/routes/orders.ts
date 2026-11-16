@@ -3,7 +3,7 @@ import { db, pool } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
 import { eq, and, lte, gte, ne, isNotNull, desc, asc, inArray, sql } from "drizzle-orm";
 import crypto from "node:crypto";
-import { keccak256, recoverMessageAddress, toBytes } from "viem";
+import { formatUnits, keccak256, recoverMessageAddress, toBytes } from "viem";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
@@ -17,12 +17,14 @@ import {
   getConfirmedEvmOrderSettlement,
   getEvmOrderbookEscrowConfig,
   getEvmSettlementTxStatus,
+  findActiveEvmOrderbookOrders,
   findConfirmedEvmOrderbookCancellation,
   orderKeyFromNonce,
   settleEvmOrderFill,
   verifyEvmOrderbookCancelTx,
   verifyEvmOrderLock,
 } from "../lib/evmOrderbookEscrow.js";
+import { TOKEN_REGISTRY } from "../lib/tokenRegistry.js";
 import { settleEscrowMatch, isEscrowChain, findEscrowChain, ESCROW_ADDRESSES } from "../lib/escrowRelayer.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
@@ -429,6 +431,90 @@ router.get("/orders", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "Failed to get orders");
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── POST /orders/recover-evm ─────────────────────────────────────────────────
+// Recreates rows for confirmed active Ethereum escrow orders that were not
+// saved after the wallet transaction. This only syncs verified chain state;
+// it never sends or signs a transaction.
+router.post("/orders/recover-evm", async (req, res) => {
+  try {
+    const walletAddress = String(req.body?.walletAddress ?? "");
+    if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+      res.status(400).json({ error: "A valid Ethereum wallet address is required." });
+      return;
+    }
+
+    const rows = await db.select().from(ordersTable)
+      .where(sql`lower(${ordersTable.walletAddress}) = ${walletAddress.toLowerCase()}`);
+    const knownLockTxHashes = rows
+      .map((row) => String(row.fundingRef ?? "").split(":")[4] ?? "")
+      .filter((txHash) => /^0x[0-9a-fA-F]{64}$/.test(txHash));
+    const onchainOrders = await findActiveEvmOrderbookOrders(walletAddress, knownLockTxHashes);
+    const knownKeys = new Set(rows.map((row) => String(row.fundingRef ?? "").split(":")[3]?.toLowerCase()));
+    const tokenSymbol = (address: string) => {
+      if (address.toLowerCase() === "0x0000000000000000000000000000000000000000") return "ETH";
+      return Object.entries(TOKEN_REGISTRY[1] ?? {})
+        .find(([, info]) => info.address.toLowerCase() === address.toLowerCase())?.[0] ?? null;
+    };
+    const tokenDecimals = (address: string) => {
+      if (address.toLowerCase() === "0x0000000000000000000000000000000000000000") return 18;
+      return Object.values(TOKEN_REGISTRY[1] ?? {})
+        .find((info) => info.address.toLowerCase() === address.toLowerCase())?.decimals ?? null;
+    };
+
+    const recovered: Array<ReturnType<typeof serializeOrder>> = [];
+    for (const order of onchainOrders) {
+      if (knownKeys.has(order.orderKey.toLowerCase())) continue;
+      const baseSymbol = tokenSymbol(order.baseToken);
+      const quoteSymbol = tokenSymbol(order.quoteToken);
+      const decimals = tokenDecimals(order.baseToken);
+      if (!baseSymbol || !quoteSymbol || decimals == null) {
+        req.log.warn({ orderKey: order.orderKey }, "Skipping recovered escrow order with unsupported token");
+        continue;
+      }
+      const symbol = `${baseSymbol}/${quoteSymbol}`;
+      const quantityRaw = BigInt(order.originalBaseAmountRaw);
+      const remainingRaw = BigInt(order.remainingBaseAmountRaw);
+      const recoveredOrder = {
+        id: crypto.randomUUID(),
+        symbol,
+        walletAddress,
+        networkType: "evm",
+        side: order.side,
+        type: "limit",
+        status: "open",
+        price: formatUnits(BigInt(order.limitPriceX18), 18),
+        quantity: formatUnits(quantityRaw, decimals),
+        filledQuantity: formatUnits(quantityRaw - remainingRaw, decimals),
+        remainingQuantity: formatUnits(remainingRaw, decimals),
+        fee: "0",
+        feeAsset: quoteSymbol,
+        timeInForce: "GTC",
+        txid: null,
+        signedTx: null,
+        matchedOrderId: null,
+        fundingRef: `evm-order:1:${order.escrowAddress}:${order.orderKey}:${order.lockTxHash}`,
+        nonce: `recovered:${order.orderKey.toLowerCase()}`,
+        expiry: String(order.expiresAt),
+        chainId: 1,
+      };
+      await db.insert(ordersTable).values(recoveredOrder).onConflictDoNothing();
+      const [saved] = await db.select().from(ordersTable).where(and(
+        sql`lower(${ordersTable.walletAddress}) = ${walletAddress.toLowerCase()}`,
+        eq(ordersTable.nonce, recoveredOrder.nonce),
+      )).limit(1);
+      if (saved) {
+        knownKeys.add(order.orderKey.toLowerCase());
+        recovered.push(serializeOrder(saved));
+      }
+    }
+
+    res.json({ recovered, count: recovered.length });
+  } catch (err: any) {
+    req.log.error({ err: err?.message }, "Failed to recover active Ethereum order rows");
+    res.status(500).json({ error: "Could not scan and recover active Ethereum orders." });
   }
 });
 
