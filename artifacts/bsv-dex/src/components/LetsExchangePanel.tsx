@@ -1310,10 +1310,8 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
     let walletPromptTimer: ReturnType<typeof setTimeout> | null = null;
     const onStage = (stage: "switching" | "sending") => {
       setSendState(stage);
-      if (stage === "sending") {
-        if (walletPromptTimer) clearTimeout(walletPromptTimer);
-        walletPromptTimer = setTimeout(() => setWalletPromptDelayed(true), 45_000);
-      }
+      if (walletPromptTimer) clearTimeout(walletPromptTimer);
+      walletPromptTimer = setTimeout(() => setWalletPromptDelayed(true), 45_000);
     };
     let hash: string;
     try {
@@ -1559,10 +1557,18 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
           )}
 
           {sendState === "switching" && (
-            <button type="button" disabled
-              className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
-              <Loader2 className="w-4 h-4 animate-spin" /> Switching wallet to {fromCoin.networkName ?? fromCoin.network}…
-            </button>
+            <div className="space-y-2">
+              <button type="button" disabled
+                className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {walletPromptDelayed ? "Wallet network switch is still pending…" : `Switch wallet to ${fromCoin.networkName ?? fromCoin.network}…`}
+              </button>
+              {walletPromptDelayed && (
+                <p className="text-[11px] text-amber-300/90">
+                  Approve or reject the network switch in your wallet. Don’t retry while the wallet request is pending.
+                </p>
+              )}
+            </div>
           )}
 
           {sendState === "confirming" && (
