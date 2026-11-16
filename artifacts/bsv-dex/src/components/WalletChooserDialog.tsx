@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useWalletStore } from "@/store/useWalletStore";
+import { openReownModal } from "@/lib/reown-appkit";
 import {
   registerPasskeyWallet,
   importPasskeyWallet,
@@ -1119,8 +1120,25 @@ export function WalletChooserDialog() {
   const { isOpen, close, initialTab, handCashLinkOnly } = useWalletModalStore();
   const [tab, setTab] = useState<Tab>("choose");
   const [socialOrigin, setSocialOrigin] = useState<string | null>(null);
+  const { toast } = useToast();
 
   const handleClose = () => { setTab("choose"); setSocialOrigin(null); close(); };
+  const handleOpenEvmWallet = () => {
+    handleClose();
+    // Radix keeps its focus trap during the exit animation. Open AppKit after
+    // that dialog has fully unmounted so its portal is not hidden or inert.
+    window.setTimeout(() => {
+      void openReownModal().then((opened) => {
+        if (!opened) {
+          toast({
+            title: "Wallet picker did not open",
+            description: "Reload the page and try connecting again.",
+            variant: "destructive",
+          });
+        }
+      });
+    }, 250);
+  };
   const handleMobileQr = () => setTab("mobile-qr");
   const handleHWPick = (device: HWDevice) => setTab(device);
 
@@ -1213,12 +1231,7 @@ export function WalletChooserDialog() {
             <div className="flex-1 overflow-y-auto overscroll-contain px-6 pb-4">
               <div className="space-y-2">
                 <OptionCard
-                  onClick={() => {
-                    close();
-                    import("@/lib/reown-appkit")
-                      .then(({ openReownModal }) => openReownModal())
-                      .catch(() => {});
-                  }}
+                  onClick={handleOpenEvmWallet}
                   iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
                   icon={<Globe className="w-5 h-5 text-blue-400" />}
                   title="EVM Wallet"
