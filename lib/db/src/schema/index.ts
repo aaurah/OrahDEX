@@ -30,3 +30,4 @@ export * from "./options";
 export * from "./fundingRates";
 export * from "./evmToBsvSwaps";
 export * from "./overlayRecords";
+export * from "./orderbookQuoteCandles";
