@@ -557,12 +557,30 @@ export function getPublicClient(chainId: number) {
 
 const ZERO_EVM_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
 
-function amountAsUnits(value: string | number, decimals: number): bigint {
-  const numberValue = Number(value);
-  if (!Number.isFinite(numberValue) || numberValue <= 0) {
+function expandDecimal(value: string): string {
+  const input = value.trim();
+  if (!/[eE]/.test(input)) return input;
+  const match = input.match(/^([+-]?)(\d+)(?:\.(\d*))?[eE]([+-]?\d+)$/);
+  if (!match) throw new Error("Invalid order amount");
+  const sign = match[1] ?? "";
+  const digits = `${match[2] ?? "0"}${match[3] ?? ""}`;
+  const point = (match[2] ?? "0").length + Number(match[4]);
+  if (point <= 0) return `${sign}0.${"0".repeat(-point)}${digits}`;
+  if (point >= digits.length) return `${sign}${digits}${"0".repeat(point - digits.length)}`;
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
+}
+
+function amountAsUnits(value: string | number, decimals: number, roundUp = false): bigint {
+  const text = expandDecimal(String(value));
+  const [whole = "0", fraction = ""] = text.split(".");
+  if (text.startsWith("-") || !/^\d+$/.test(whole) || !/^\d*$/.test(fraction)) {
     throw new Error("Enter a positive order amount and limit price");
   }
-  return parseUnits(numberValue.toFixed(decimals), decimals);
+  const kept = fraction.slice(0, decimals).padEnd(decimals, "0");
+  let result = parseUnits(kept ? `${whole}.${kept}` : whole, decimals);
+  if (roundUp && /[1-9]/.test(fraction.slice(decimals))) result += 1n;
+  if (result <= 0n) throw new Error("Enter a positive order amount and limit price");
+  return result;
 }
 
 function orderbookToken(symbol: string, chainId: number) {
@@ -641,7 +659,7 @@ export async function lockOrderbookOrder(params: {
     throw new Error("Ethereum wallet order settlement currently supports 18-decimal tokens only");
   }
   const baseAmount = amountAsUnits(params.quantity, baseAsset.decimals);
-  const priceWad = amountAsUnits(params.price, 18);
+  const priceWad = amountAsUnits(params.price, 18, params.side === "sell");
   const quoteScale = 10n ** BigInt(quoteAsset.decimals);
   const baseScale = 10n ** BigInt(baseAsset.decimals);
   const priceNumerator = priceWad * quoteScale;
