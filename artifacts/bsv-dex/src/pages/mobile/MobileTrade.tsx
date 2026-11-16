@@ -1030,7 +1030,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const mobileApiInterval = mobilePreset ? mobilePreset.apiInterval : interval;
   const mobileCandleLimit = mobilePreset ? mobilePreset.limit : 150;
 
-  const { data: candles = [] } = useQuery({
+  const { data: candles = [], isLoading: candlesLoading } = useQuery({
     queryKey: ["candles", symbol, mobileApiInterval, mobileCandleLimit],
     queryFn: async () => {
       const response = await fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`);
@@ -1123,8 +1123,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const chartCandles = Array.isArray(candles) ? candles : [];
   // Ensure order book always shows data
   const rawOB = orderBook as any;
-  const isBridgePair = rawOB?.isBridgePair === true || (ticker as any)?.isBridgePair === true;
-  const hasRealOB = !isBridgePair && (rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0);
+  // Bridge pairs cannot synthesize fillable depth, but confirmed wallet-escrow
+  // orders returned by the API are real and must remain visible.
+  const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
   // Memoized so the mock order book (which uses Math.random) doesn't regenerate on every render
   const effectiveOrderBook = useMemo(
     () => hasRealOB ? orderBook : { bids: [], asks: [] },
@@ -1759,6 +1760,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             subIndicator={activeIndicator ? (INDICATOR_TO_SUB[activeIndicator] ?? undefined) : undefined}
             data={chartCandles}
             externalDataOnly={true}
+            externalDataLoading={candlesLoading}
           />
         </div>
 
