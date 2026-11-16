@@ -29,7 +29,7 @@ import { useAccount } from "wagmi";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useEvmBalances, ERC20_TOKENS } from "@/hooks/useEvmBalances";
-import { sendEvmTransfer, sendErc20Transfer, waitForEvmTransaction } from "@/lib/reown";
+import { sendEvmTransfer, sendErc20Transfer, switchEvmNetwork, waitForEvmTransaction } from "@/lib/reown";
 import { fetchReownSwapCoins, type ReownSwapCoin } from "@/lib/reown-appkit";
 
 // ─── EVM chain helpers ────────────────────────────────────────────────────────
@@ -1281,7 +1281,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const [sendDiagnostic, setSendDiagnostic] = useState<string|null>(null);
   const [walletPromptDelayed, setWalletPromptDelayed] = useState(false);
 
-  const { address: evmAddress } = useAccount();
+  const { address: evmAddress, chainId: evmChainId } = useAccount();
   const customTokens = useCustomTokenStore(state => state.tokens);
 
   // Resolve chain info for the from-coin so we can offer wallet-send
@@ -1303,13 +1303,34 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const canSendFromWallet = !!evmAddress && isEvmDeposit && chainId !== null && (isNative || erc20Entry !== null);
   const walletSendTokenMissing = !!evmAddress && isEvmDeposit && chainId !== null && !isNative && !erc20Entry;
 
+  async function handleSwitchWalletNetwork() {
+    if (!chainId) return;
+    setSendState("switching");
+    setSendError(null);
+    setSendDiagnostic(null);
+    setWalletPromptDelayed(false);
+    const timer = window.setTimeout(() => setWalletPromptDelayed(true), 45_000);
+    try {
+      // Start the wallet network request directly from this button click.
+      await switchEvmNetwork(chainId);
+      setSendState("idle");
+    } catch (err: any) {
+      const msg: string = err?.shortMessage ?? err?.cause?.shortMessage ?? err?.message ?? "Network switch failed";
+      setSendError(msg.slice(0, 240));
+      setSendState("error");
+    } finally {
+      window.clearTimeout(timer);
+      setWalletPromptDelayed(false);
+    }
+  }
+
   async function handleSendFromWallet() {
     if (!evmAddress || !chainId) return;
-    setSendState("switching"); setSendError(null); setSendDiagnostic(null); setTxHash(null);
+    setSendState("sending"); setSendError(null); setSendDiagnostic(null); setTxHash(null);
     setWalletPromptDelayed(false);
     let walletPromptTimer: ReturnType<typeof setTimeout> | null = null;
-    const onStage = (stage: "switching" | "sending") => {
-      setSendState(stage);
+    const onStage = () => {
+      setSendState("sending");
       if (walletPromptTimer) clearTimeout(walletPromptTimer);
       walletPromptTimer = setTimeout(() => setWalletPromptDelayed(true), 45_000);
     };
@@ -1535,10 +1556,17 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
           </p>
 
           {sendState === "idle" && (
-            <button type="button" onClick={handleSendFromWallet}
-              className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition-all active:scale-[0.98]">
-              Send {order.deposit_amount} {fromCoin.symbol} from Wallet
-            </button>
+            evmChainId !== chainId ? (
+              <button type="button" onClick={handleSwitchWalletNetwork}
+                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition-all active:scale-[0.98]">
+                Switch wallet to {fromCoin.networkName ?? fromCoin.network}
+              </button>
+            ) : (
+              <button type="button" onClick={handleSendFromWallet}
+                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition-all active:scale-[0.98]">
+                Send {order.deposit_amount} {fromCoin.symbol} from Wallet
+              </button>
+            )
           )}
 
           {sendState === "sending" && (
@@ -1561,7 +1589,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
               <button type="button" disabled
                 className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                {walletPromptDelayed ? "Wallet network switch is still pending…" : `Switch wallet to ${fromCoin.networkName ?? fromCoin.network}…`}
+                {walletPromptDelayed ? "Wallet network switch is still pending…" : `Approve network switch in your wallet…`}
               </button>
               {walletPromptDelayed && (
                 <p className="text-[11px] text-amber-300/90">
