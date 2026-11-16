@@ -459,37 +459,34 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   const effectiveChainId = wagmiChainId ?? storeChainId ?? null;
   const effectiveAddress  = wagmiAddress ?? walletAddress ?? null;
 
-  const { balances: evmBalances } = useEvmBalances(effectiveAddress, effectiveChainId);
+  const sourceChainId = fromCoin
+    ? LE_NETWORK_CHAIN[String(fromCoin.network ?? fromCoin.providerTicker ?? fromCoin.symbol).toUpperCase()] ?? null
+    : null;
+  const activeWalletMatchesSource = sourceChainId !== null && effectiveChainId === sourceChainId;
+
+  // Read the selected asset on its own network. EVM addresses are shared across
+  // EVM chains, so the active wallet network should not hide its source-chain balance.
+  const { balances: evmBalances, loading: evmBalancesLoading } = useEvmBalances(effectiveAddress, sourceChainId);
 
   // Resolve the available balance: native token (e.g. ETH) or ERC-20 token
   const availBal = useMemo(() => {
-    if (!fromCoin || !effectiveAddress) return null;
+    if (!fromCoin || !effectiveAddress || sourceChainId === null) return null;
     const sym = fromCoin.symbol.toUpperCase();
     // Native + ERC-20 balances from the on-chain hook
     if (evmBalances.length > 0) {
       const match = evmBalances.find(b => b.symbol.toUpperCase() === sym);
-      if (match && match.amount > 0) return match.amount;
+      if (match) return Math.max(0, match.amount);
     }
     // Fallback: wallet store native balance string (e.g. "0.0121")
-    if (nativeBal) {
-      const nativeSym = effectiveChainId === 56 ? "BNB"
-                      : effectiveChainId === 137 ? "POL"
-                      : "ETH";
+    if (activeWalletMatchesSource && nativeBal != null && nativeBal !== "") {
+      const nativeSym = CHAIN_NATIVE[sourceChainId];
       if (sym === nativeSym) {
         const v = parseFloat(nativeBal);
         return isNaN(v) ? null : v;
       }
     }
     return null;
-  }, [fromCoin, effectiveAddress, evmBalances, nativeBal, effectiveChainId]);
-
-  // Quick-fill helpers
-  const applyPct = (pct: number) => {
-    if (!availBal || availBal <= 0) return;
-    const val = (availBal * pct) / 100;
-    setAmount(fmtNum(val, 8));
-    setEstimate(null);
-  };
+  }, [fromCoin, effectiveAddress, evmBalances, nativeBal, sourceChainId, activeWalletMatchesSource]);
 
   // Pre-select coins — use initialFrom/initialTo when provided, else BTC → BSV
   useEffect(() => {
@@ -658,22 +655,48 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   // A live estimate with a positive output is proof the amount is accepted by at least one venue
   const estimateValid = estimate !== null && parseFloat(estimate.amount) > 0;
 
-  // Use live min/max from estimate when meaningful (min > 0), otherwise fall back to coin data.
-  // Only fall back to static coin data when no live estimate has confirmed the amount yet.
-  const minAmt = (estimate?.min_amount && parseFloat(estimate.min_amount) > 0)
-    ? parseFloat(estimate.min_amount)
-    : (!estimateValid && fromCoin?.minAmount) ? parseFloat(fromCoin.minAmount) : null;
+  // Prefer the current quote's minimum; use catalog metadata when a quote omits it.
+  const liveMinAmt = estimate?.min_amount ? parseFloat(estimate.min_amount) : null;
+  const catalogMinAmt = fromCoin?.minAmount ? parseFloat(fromCoin.minAmount) : null;
+  const minAmt = liveMinAmt !== null && Number.isFinite(liveMinAmt) && liveMinAmt > 0
+    ? liveMinAmt
+    : catalogMinAmt !== null && Number.isFinite(catalogMinAmt) && catalogMinAmt > 0
+      ? catalogMinAmt
+      : null;
   // Only use live max_amount from the estimate response.
   // Static coin-list maxAmount values are unreliable (e.g. 282994 ETH) and must not be shown.
   const maxAmtRaw = estimate?.max_amount ? parseFloat(estimate.max_amount) : null;
   // Hide max if it is astronomically large (> 10 000 of any coin) — it means "no real cap"
-  const maxAmt = (maxAmtRaw !== null && maxAmtRaw > 0 && maxAmtRaw < 10_000) ? maxAmtRaw : null;
+  const providerMaxAmt = (maxAmtRaw !== null && maxAmtRaw > 0 && maxAmtRaw < 10_000) ? maxAmtRaw : null;
+  const maxCandidates = [providerMaxAmt, availBal].filter((value): value is number => value !== null);
+  const maxAmt = maxCandidates.length ? Math.min(...maxCandidates) : null;
   const numAmt = amount !== "" ? parseFloat(amount) : null;
 
+  // Quick-fill helpers; MAX is capped by both the provider limit and the
+  // connected wallet's matching on-chain balance when that balance is known.
+  const applyPct = (pct: number) => {
+    if (availBal === null || availBal <= 0) return;
+    const percentageAmount = (availBal * pct) / 100;
+    const val = providerMaxAmt !== null ? Math.min(percentageAmount, providerMaxAmt) : percentageAmount;
+    setAmount(val > 0 ? val.toFixed(18).replace(/\.?0+$/, "") : "");
+    setEstimate(null);
+  };
+  const applyMin = () => {
+    if (minAmt === null) return;
+    setAmount(minAmt.toFixed(18).replace(/\.?0+$/, ""));
+    setEstimate(null);
+  };
+  const applyMax = () => {
+    if (maxAmt === null || maxAmt <= 0) return;
+    setAmount(maxAmt.toFixed(18).replace(/\.?0+$/, ""));
+    setEstimate(null);
+  };
+
   // Suppress below/above errors while the estimate is loading — it may prove the amount valid
-  // by routing to a venue with a lower minimum.  Also suppress when estimate already confirmed.
+  // by routing to a venue with a lower minimum.
   const belowMin = !estLoading && !estimateValid && minAmt !== null && numAmt !== null && numAmt < minAmt;
-  const aboveMax = !estLoading && !estimateValid && maxAmt !== null && numAmt !== null && numAmt > maxAmt;
+  const aboveMax = !estLoading && maxAmt !== null && numAmt !== null && numAmt > maxAmt;
+  const balanceTooLowForMin = availBal !== null && minAmt !== null && availBal < minAmt;
 
   // rate_id_expired_at from LE API is a Unix timestamp in seconds — multiply by 1000 to get ms
   const rateIdExpiresMs = estimate?.rate_id_expired_at ? parseInt(estimate.rate_id_expired_at) * 1000 : null;
@@ -701,24 +724,54 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
             className="flex-1 bg-transparent text-[2.2rem] font-semibold text-foreground outline-none placeholder:text-muted-foreground/30 min-w-0 leading-none py-1" />
           <CoinPicker compact coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); }} exclude={toCoin?.symbol} />
         </div>
-        {/* Balance tap + % fill */}
-        {availBal !== null && fromCoin && (
-          <div className="flex items-center gap-1.5 mt-2">
-            <button type="button" onClick={() => applyPct(100)}
-              className="text-[11px] text-muted-foreground/60 hover:text-primary transition-colors mr-1">
-              Bal: {fmtNum(availBal, 6)} {fromCoin.symbol}
-            </button>
-            {availBal > 0 && ([25, 50, 75, 100] as const).map(pct => (
-              <button key={pct} type="button" onClick={() => applyPct(pct)}
-                className={cn(
-                  "px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors",
-                  pct === 100
-                    ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
-                    : "bg-muted/40 border-border/40 text-muted-foreground hover:border-primary/30 hover:text-primary"
-                )}>
-                {pct === 100 ? "MAX" : `${pct}%`}
+        {/* Wallet balance and spend limits */}
+        {fromCoin && (
+          <div className="mt-3 pt-2 border-t border-border/40 space-y-2">
+            <div className="flex items-center justify-between gap-2 text-[11px]">
+              <span className="text-muted-foreground">Available balance</span>
+              <span className={cn("text-right", availBal !== null ? "text-foreground" : "text-muted-foreground/70")}>
+                {!effectiveAddress ? "Connect wallet to view" :
+                 sourceChainId === null ? `Connect a ${fromCoin.networkName ?? fromCoin.network ?? fromCoin.symbol} wallet` :
+                 evmBalancesLoading && availBal === null ? "Loading on-chain balance…" :
+                 availBal !== null ? `${fmtNum(availBal, 8)} ${fromCoin.symbol} · ${activeWalletMatchesSource ? "on-chain" : `switch to ${fromCoin.networkName ?? fromCoin.network ?? fromCoin.symbol} to send`}` :
+                 "Balance unavailable"}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {availBal !== null && availBal > 0 && ([25, 50, 75] as const).map(pct => (
+                <button key={pct} type="button" onClick={() => applyPct(pct)}
+                  className="flex-1 px-2 py-1 rounded-md text-[10px] font-bold border bg-muted/40 border-border/40 text-muted-foreground hover:border-primary/30 hover:text-primary transition-colors">
+                  {pct}%
+                </button>
+              ))}
+              <button type="button" disabled={minAmt === null} onClick={applyMin}
+                title={minAmt === null ? "Minimum amount unavailable" : `Set minimum: ${fmtNum(minAmt)} ${fromCoin.symbol}`}
+                className="flex-1 px-2 py-1 rounded-md text-[10px] font-bold border bg-muted/40 border-border/40 text-muted-foreground hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                MIN
               </button>
-            ))}
+              <button type="button" disabled={maxAmt === null || maxAmt <= 0} onClick={applyMax}
+                title={maxAmt === null ? "Maximum amount unavailable" : `Set maximum: ${fmtNum(maxAmt)} ${fromCoin.symbol}`}
+                className="flex-1 px-2 py-1 rounded-md text-[10px] font-bold border bg-primary/10 border-primary/30 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                MAX
+              </button>
+            </div>
+            {(minAmt !== null || maxAmt !== null) && (
+              <div className="flex items-center justify-between gap-2 text-[9px] text-muted-foreground/70">
+                {minAmt !== null && <span>Min {fmtNum(minAmt, 8)} {fromCoin.symbol}</span>}
+                {maxAmt !== null && <span className="text-right">Max {fmtNum(maxAmt, 8)} {fromCoin.symbol}</span>}
+              </div>
+            )}
+            {balanceTooLowForMin && (
+              <p className="text-[10px] leading-relaxed text-amber-400">
+                Wallet balance is below the minimum swap amount ({fmtNum(minAmt)} {fromCoin.symbol}).
+              </p>
+            )}
+            {sourceChainId !== null && availBal !== null && maxAmt !== null && numAmt !== null && numAmt > availBal && (
+              <p className="text-[10px] text-amber-400">Amount exceeds your available on-chain balance.</p>
+            )}
+            {effectiveAddress && sourceChainId !== null && CHAIN_NATIVE[sourceChainId] === fromCoin.symbol.toUpperCase() && (
+              <p className="text-[10px] text-muted-foreground/60">Leave enough {fromCoin.symbol} for the network fee when sending.</p>
+            )}
           </div>
         )}
         {/* Min/max hints */}
