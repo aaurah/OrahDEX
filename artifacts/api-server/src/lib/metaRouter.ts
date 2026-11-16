@@ -407,14 +407,24 @@ export async function getBestExternalQuote(
     preferredVenues: prefs?.preferredVenues ?? ["letsexchange"],
   };
 
-  // Fire all provider quote requests in parallel
+  // If the caller pinned a venue (for example, because the selected coin is
+  // only listed with SimpleSwap), do not wait for unrelated providers. A slow
+  // provider must not make a valid quote from the requested venue time out.
+  const queryVenue = (
+    venue: ExternalVenue,
+    query: () => Promise<{ quote: RouteQuote | null; error: string | null }>,
+  ) => prefs?.blacklistVenues?.includes(venue)
+    ? Promise.resolve({ quote: null, error: null })
+    : query();
+
+  // Fire only eligible provider quote requests in parallel
   const [leR, ssR, cnR, sxR, clR, szR] = await Promise.all([
-    quoteLetsExchange(fromU, toU, amount),
-    quoteSimpleSwap(fromU, toU, amount),
-    quoteChangeNow(fromU, toU, amount),
-    quoteStealthEx(fromU, toU, amount),
-    quoteChangelly(fromU, toU, amount),
-    quoteSwapzone(fromU, toU, amount),
+    queryVenue("letsexchange", () => quoteLetsExchange(fromU, toU, amount)),
+    queryVenue("simpleswap", () => quoteSimpleSwap(fromU, toU, amount)),
+    queryVenue("changenow", () => quoteChangeNow(fromU, toU, amount)),
+    queryVenue("stealthex", () => quoteStealthEx(fromU, toU, amount)),
+    queryVenue("changelly", () => quoteChangelly(fromU, toU, amount)),
+    queryVenue("swapzone", () => quoteSwapzone(fromU, toU, amount)),
   ]);
 
   const errors: Record<ExternalVenue, string | null> = {
