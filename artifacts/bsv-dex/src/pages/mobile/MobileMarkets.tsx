@@ -261,14 +261,14 @@ function getCatRows(
   }
 }
 
-export function MobileMarkets() {
+export function MobileMarkets({ active = true }: { active?: boolean }) {
   const [, navigate] = useLocation();
   const [search, setSearch]       = useState("");
   const {
     results: serverSearchResults,
     loading: serverSearchLoading,
     error: serverSearchError,
-  } = useMarketSearch(search, { debounceMs: 500, limit: 50 });
+  } = useMarketSearch(active ? search : "", { debounceMs: 500, limit: 50 });
   const [cat, setCat]             = useState<Cat>("usd");
   const [usdSub, setUsdSub]       = useState<UsdSub>("USDT");
   const [sortKey, setSortKey]     = useState<SortKey>("base");
@@ -318,12 +318,13 @@ export function MobileMarkets() {
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    refetchInterval: 30_000,
+    enabled: active,
+    refetchInterval: active ? 30_000 : false,
   });
 
   // Search uses the paginated server catalog; don't fetch every provider pair
   // just because the user is searching.
-  const needAllPairs = cat === "eth" || cat === "sol" || cat === "favorites";
+  const needAllPairs = active && (cat === "eth" || cat === "sol" || cat === "favorites");
   const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
   const leAllPairs = useMemo<MktRow[]>(() =>
     (rawLeAllPairs ?? []).map(p => ({
@@ -340,7 +341,7 @@ export function MobileMarkets() {
   [rawLeAllPairs]);
 
   // LE BSV-quoted pairs — only needed for BSV tab
-  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV", enabled: cat === "bsv" });
+  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV", enabled: active && cat === "bsv" });
   const lePairs = useMemo<MktRow[]>(() =>
     (rawLePairs ?? []).map(p => ({
       symbol: p.symbol,
@@ -355,7 +356,7 @@ export function MobileMarkets() {
   [rawLePairs]);
 
   // LE BTC-quoted pairs — only needed for BTC tab
-  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC", enabled: cat === "btc" });
+  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC", enabled: active && cat === "btc" });
   const leBtcPairs = useMemo<MktRow[]>(() =>
     (rawLeBtcPairs ?? []).map(p => ({
       symbol: p.symbol,
@@ -379,13 +380,13 @@ export function MobileMarkets() {
   ), [apiRows]);
 
   // Live on-chain data from GeckoTerminal (chain/category tabs, cached 90s)
-  const { data: geckoRows } = useGeckoTerminalPools(cat);
+  const { data: geckoRows } = useGeckoTerminalPools(active ? cat : "inactive");
   // Live Zora Coins API data (zora tab only)
-  const { data: zoraRows } = useZoraCoins(cat === "zora");
+  const { data: zoraRows } = useZoraCoins(active && cat === "zora");
   // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
-  const { data: baseTokenList } = useBaseTokenList(cat === "base");
+  const { data: baseTokenList } = useBaseTokenList(active && cat === "base");
   // DexScreener prices for catalog tokens not covered by GeckoTerminal (cached 60s)
-  const basePrices = useBaseTokenPrices(baseTokenList, cat === "base" && baseTokenList.length > 0);
+  const basePrices = useBaseTokenPrices(baseTokenList, active && cat === "base" && baseTokenList.length > 0);
 
   const globalRows = useMemo(() => Array.from(new Map(
     [
@@ -475,6 +476,10 @@ export function MobileMarkets() {
       ? <ChevronUp className="inline w-3 h-3 ml-0.5 text-primary" />
       : <ChevronDown className="inline w-3 h-3 ml-0.5 text-primary" />;
   }
+
+  // Keep the tab's filters and search state, but don't render thousands of
+  // hidden market rows or their logo requests while another tab is active.
+  if (!active) return null;
 
   return (
     <>
