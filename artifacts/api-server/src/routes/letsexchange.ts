@@ -28,7 +28,7 @@ import {
   isLetsExchangeConfigured,
   type NormalisedCoin,
 } from "../lib/lePriceCache.js";
-import { getCoinChangeMap } from "../lib/priceUpdater.js";
+import { fetchCoinGeckoPrices, getCoinChangeMap } from "../lib/priceUpdater.js";
 import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
 import { getBestExternalQuote, type ExternalVenue } from "../lib/metaRouter.js";
 import { createCNExchange, getCNExchange } from "../lib/changenow.js";
@@ -534,7 +534,19 @@ router.get("/letsexchange/pairs", async (req, res) => {
   // Layer 1: static fallbacks
   const usdPrices: Record<string, number> = { ...FALLBACK_USD };
 
-  // Layer 2: LE live rates from shared cache (non-blocking).
+  // Layer 2: CoinGecko live USD prices for mapped assets.
+  // The price updater shares a short-lived cache, so the all-pairs endpoint
+  // does not create a request per token or per pair.
+  try {
+    const coingeckoPrices = await fetchCoinGeckoPrices();
+    for (const [symbol, price] of Object.entries(coingeckoPrices)) {
+      if (price.usd > 0) usdPrices[symbol.toUpperCase()] = price.usd;
+    }
+  } catch (err) {
+    logger.warn({ err }, "letsexchange /pairs: CoinGecko prices unavailable; keeping cached and fallback prices");
+  }
+
+  // Layer 3: LE live rates from shared cache (non-blocking).
   // getCachedLEPrices() returns {} on a cold cache; kick off a refresh for next time.
   // When serving from DB we may not have coins loaded — skip the background warmup
   // if coins isn't available (it will be warmed on the next live-fallback cycle).
@@ -542,7 +554,7 @@ router.get("/letsexchange/pairs", async (req, res) => {
   if (Object.keys(lePrices).length === 0 && coins) fetchLEPricesUSD(coins).catch(() => {});
   Object.assign(usdPrices, lePrices); // LE rates overwrite static fallbacks
 
-  // Layer 3: DB native USDT/USDC prices (most accurate)
+  // Layer 4: DB native USDT/USDC prices (most accurate)
   for (const p of nativePairs) {
     const q     = p.quoteAsset as string;
     const price = p.lastPrice  as number;
@@ -551,7 +563,7 @@ router.get("/letsexchange/pairs", async (req, res) => {
     }
   }
 
-  // Layer 4: stablecoins always pinned at $1
+  // Layer 5: stablecoins always pinned at $1
   Object.assign(usdPrices, STABLES);
 
   // Enrich LE-only pairs that still have lastPrice === 0
