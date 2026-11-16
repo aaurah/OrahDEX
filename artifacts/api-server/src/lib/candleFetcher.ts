@@ -14,6 +14,7 @@ import { db, pool } from "@workspace/db";
 import { tradesTable } from "@workspace/db/schema";
 import { gte, and, eq } from "drizzle-orm";
 import { logger } from "./logger.js";
+import { COINGECKO_IDS } from "./priceUpdater.js";
 
 /* ── Asset inception timestamps (Unix seconds) ─────────────────────────────
    Synthetic candle series will not extend before the asset existed.         */
@@ -116,6 +117,16 @@ const COINGECKO_OHLC_TTL_MS = 5 * 60 * 1000;
 const coingeckoOhlcCache = new Map<string, { data: Candle[]; ts: number }>();
 const coingeckoOhlcPending = new Map<string, Promise<Candle[]>>();
 let coingeckoApiKeyPromise: Promise<string | null> | null = null;
+const candleSourceCache = new Map<string, string>();
+
+const COINGECKO_VS_CURRENCY: Record<string, string> = {
+  USD: "usd", USDT: "usd", USDC: "usd", TUSD: "usd", USDD: "usd",
+  BUSD: "usd", DAI: "usd", FDUSD: "usd",
+  ETH: "eth", WETH: "eth",
+  BTC: "btc", WBTC: "btc",
+  BNB: "bnb",
+  SOL: "sol",
+};
 
 async function getCoinGeckoApiKey(): Promise<string | null> {
   if (!coingeckoApiKeyPromise) {
@@ -135,8 +146,12 @@ async function getCoinGeckoApiKey(): Promise<string | null> {
   return coingeckoApiKeyPromise;
 }
 
-async function fetchA8EthReferenceCandles(days: "1" | "30" | "365"): Promise<Candle[]> {
-  const cacheKey = `ancient8:eth:${days}`;
+async function fetchCoinGeckoOhlc(
+  coinId: string,
+  vsCurrency: string,
+  days: "1" | "30" | "365",
+): Promise<Candle[]> {
+  const cacheKey = `${coinId}:${vsCurrency}:${days}`;
   const cached = coingeckoOhlcCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < COINGECKO_OHLC_TTL_MS) return cached.data;
 
@@ -154,7 +169,7 @@ async function fetchA8EthReferenceCandles(days: "1" | "30" | "365"): Promise<Can
       headers[apiKey.startsWith("CG-") ? "x-cg-demo-api-key" : "x-cg-pro-api-key"] = apiKey;
     }
 
-    const url = `${apiBase}/coins/ancient8/ohlc?vs_currency=eth&days=${days}`;
+    const url = `${apiBase}/coins/${encodeURIComponent(coinId)}/ohlc?vs_currency=${encodeURIComponent(vsCurrency)}&days=${days}`;
     const response = await fetch(url, {
       headers,
       signal: AbortSignal.timeout(12_000),
