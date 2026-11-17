@@ -115,6 +115,7 @@ const AdminAnnouncements  = lazy(() => import("@/pages/admin/Announcements").the
 const AdminEmailInbox     = lazy(() => import("@/pages/admin/EmailInbox").then(m => ({ default: m.AdminEmailInbox })));
 const AdminAiIntelligence = lazy(() => import("@/pages/admin/AiIntelligence").then(m => ({ default: m.AdminAiIntelligence })));
 const AdminDevAISettings  = lazy(() => import("@/pages/admin/AdminDevAI").then(m => ({ default: m.AdminDevAI })));
+const AdminDevAIWorkspace = lazy(() => import("@/pages/admin/DevAIWorkspace"));
 const AdminSystemHealth   = lazy(() => import("@/pages/admin/SystemHealth").then(m => ({ default: m.AdminSystemHealth })));
 const AdminLiquidityBot   = lazy(() => import("@/pages/admin/LiquidityBot").then(m => ({ default: m.AdminLiquidityBot })));
 const AdminCopyVault      = lazy(() => import("@/pages/admin/CopyVaultAdmin").then(m => ({ default: m.AdminCopyVault })));
@@ -527,6 +528,11 @@ function Router() {
       <Route path="/admin/integrations"> <AdminRoute><AdminIntegrations /></AdminRoute></Route>
       <Route path="/admin/ai">        <AdminRoute><AdminAiIntelligence /></AdminRoute></Route>
       <Route path="/admin/devai/settings"><AdminRoute><AdminDevAISettings /></AdminRoute></Route>
+      <Route path="/admin/devai/workspace">
+        <RequireAdminAuth>
+          <Suspense fallback={<PageSkeleton />}><AdminDevAIWorkspace /></Suspense>
+        </RequireAdminAuth>
+      </Route>
       <Route path="/admin/devai">
         <RequireAdminAuth>
           <Suspense fallback={<PageSkeleton />}><DevAIPage /></Suspense>
