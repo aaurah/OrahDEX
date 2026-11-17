@@ -1924,40 +1924,33 @@ router.get("/orders/:orderId", async (req, res) => {
 // reconciliation tool for any previously-orphaned locks.
 router.delete("/orders/:orderId", async (req, res) => {
   try {
-    const body = req.body;
-    if (!detectIsEvmAddress(body.walletAddress) || !body.signature || !body.nonce || !body.expiry) {
-      res.status(401).json({ error: "A valid EVM wallet, signed cancellation, nonce, and expiry are required" });
-      return;
-    }
-    const expiry = parseInt(String(body.expiry), 10);
-    const nowSec = Math.floor(Date.now() / 1000);
-    if (!Number.isFinite(expiry) || expiry <= nowSec || expiry > nowSec + 5 * 60) {
-      res.status(401).json({ error: "Cancellation signature is expired or has an invalid expiry" });
-      return;
-    }
-    const actionMessage = buildOrderActionAuthMessage({
-      walletAddress: body.walletAddress,
-      action: "cancel",
-      orderId: req.params.orderId,
-      nonce: String(body.nonce),
-      expiry: String(expiry),
-    });
-    try {
-      verifyEvmSignature(body.walletAddress, actionMessage, String(body.signature));
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
-    }
-
+    const body = req.body ?? {};
     const [existingOrder] = await db.select().from(ordersTable)
       .where(eq(ordersTable.id, String(req.params.orderId)))
       .limit(1);
+    if (!existingOrder) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
     const fundingRef = String(existingOrder?.fundingRef ?? "");
     const isOrderbookEscrowOrder = fundingRef.startsWith("evm-order:1:");
     let orderbookCancelVerified = false;
+    let verifiedCancelTxHash: string | null = null;
     if (isOrderbookEscrowOrder) {
+      const walletAddress = String(body.walletAddress ?? "");
+      if (
+        !detectIsEvmAddress(walletAddress) ||
+        walletAddress.toLowerCase() !== String(existingOrder.walletAddress).toLowerCase()
+      ) {
+        res.status(401).json({ error: "The cancellation wallet does not own this order" });
+        return;
+      }
       const [, , escrowAddress, orderKey] = fundingRef.split(":");
-      if (!escrowAddress || !orderKey || !body.orderbookCancelTxHash) {
+      if (
+        !/^0x[a-f\d]{40}$/i.test(escrowAddress ?? "") ||
+        !/^0x[a-f\d]{64}$/i.test(orderKey ?? "") ||
+        !body.orderbookCancelTxHash
+      ) {
         res.status(400).json({
           error: "Ethereum escrow orders must be canceled on-chain before removing them from the orderbook.",
           code: "ORDERBOOK_CANCEL_PROOF_REQUIRED",
@@ -1972,12 +1965,36 @@ router.delete("/orders/:orderId", async (req, res) => {
           txHash: String(body.orderbookCancelTxHash),
         });
         orderbookCancelVerified = true;
-        if (existingOrder) await reconcilePendingEvmOrderbookOrders([existingOrder], req.log);
+        verifiedCancelTxHash = String(body.orderbookCancelTxHash);
       } catch (cancelErr: any) {
         res.status(400).json({
           error: String(cancelErr?.message ?? "Could not verify escrow cancellation"),
           code: "ORDERBOOK_CANCEL_INVALID",
         });
+        return;
+      }
+    } else {
+      if (!detectIsEvmAddress(body.walletAddress) || !body.signature || !body.nonce || !body.expiry) {
+        res.status(401).json({ error: "A valid EVM wallet, signed cancellation, nonce, and expiry are required" });
+        return;
+      }
+      const expiry = parseInt(String(body.expiry), 10);
+      const nowSec = Math.floor(Date.now() / 1000);
+      if (!Number.isFinite(expiry) || expiry <= nowSec || expiry > nowSec + 5 * 60) {
+        res.status(401).json({ error: "Cancellation signature is expired or has an invalid expiry" });
+        return;
+      }
+      const actionMessage = buildOrderActionAuthMessage({
+        walletAddress: body.walletAddress,
+        action: "cancel",
+        orderId: req.params.orderId,
+        nonce: String(body.nonce),
+        expiry: String(expiry),
+      });
+      try {
+        verifyEvmSignature(body.walletAddress, actionMessage, String(body.signature));
+      } catch (authErr: any) {
+        res.status(401).json({ error: authErr.message });
         return;
       }
     }
@@ -1990,7 +2007,9 @@ router.delete("/orders/:orderId", async (req, res) => {
       // Step 1: Mark the order cancelled (only if open and owned by this wallet)
       const { rows: cancelRows } = await client.query<Record<string, unknown>>(
         `UPDATE orders
-         SET status = 'cancelled', updated_at = NOW()
+         SET status = 'cancelled',
+             txid = CASE WHEN $4::text IS NULL THEN txid ELSE $4::text END,
+             updated_at = NOW()
          WHERE id = $1
            AND lower(wallet_address) = lower($2)
            AND (
@@ -1998,7 +2017,7 @@ router.delete("/orders/:orderId", async (req, res) => {
              OR ($3::boolean = true AND status = 'processing' AND funding_ref LIKE 'evm-order:1:%')
            )
          RETURNING *`,
-        [req.params.orderId, body.walletAddress, orderbookCancelVerified],
+        [req.params.orderId, body.walletAddress, orderbookCancelVerified, verifiedCancelTxHash],
       );
 
       if (!cancelRows.length) {
