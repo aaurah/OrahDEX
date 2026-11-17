@@ -431,7 +431,7 @@ function DevAIChangeReviewCard() {
 /* ── Chat Tester ────────────────────────────────────────────────────────────── */
 function DevAIChatTester() {
   const [convId, setConvId] = useState<number | null>(null);
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
+  const [messages, setMessages] = useState<{ role: string; content: string; status?: string }[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -491,18 +491,38 @@ function DevAIChatTester() {
           if (!line.startsWith("data: ")) continue;
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.done) break;
+            if (data.done) {
+              setMessages(m => m.map((message, index) =>
+                index === m.length - 1 ? { ...message, status: undefined } : message
+              ));
+              break;
+            }
             if (data.error) {
               setMessages(m => {
                 const copy = [...m];
-                copy[copy.length - 1] = { ...copy[copy.length - 1], content: `Error: ${data.error}` };
+                copy[copy.length - 1] = { ...copy[copy.length - 1], content: `Error: ${data.error}`, status: undefined };
                 return copy;
               });
               continue;
             }
+            if (data.status) setMessages(m => {
+              const copy = [...m];
+              copy[copy.length - 1] = { ...copy[copy.length - 1], status: data.status };
+              return copy;
+            });
+            if (data.tool_call) setMessages(m => {
+              const copy = [...m];
+              copy[copy.length - 1] = { ...copy[copy.length - 1], status: `Using ${data.tool_call.name}…` };
+              return copy;
+            });
+            if (data.tool_result) setMessages(m => {
+              const copy = [...m];
+              copy[copy.length - 1] = { ...copy[copy.length - 1], status: "Reviewing exchange results…" };
+              return copy;
+            });
             if (data.content) setMessages(m => {
               const copy = [...m];
-              copy[copy.length - 1] = { ...copy[copy.length - 1], content: copy[copy.length - 1].content + data.content };
+              copy[copy.length - 1] = { ...copy[copy.length - 1], content: copy[copy.length - 1].content + data.content, status: undefined };
               return copy;
             });
           } catch { }
@@ -512,7 +532,13 @@ function DevAIChatTester() {
       if (err?.name !== "AbortError") {
         setMessages(m => {
           const copy = [...m];
-          copy[copy.length - 1] = { ...copy[copy.length - 1], content: `Error: ${err?.message ?? "DevAI request failed."}` };
+          copy[copy.length - 1] = { ...copy[copy.length - 1], content: `Error: ${err?.message ?? "DevAI request failed."}`, status: undefined };
+          return copy;
+        });
+      } else {
+        setMessages(m => {
+          const copy = [...m];
+          if (copy.length) copy[copy.length - 1] = { ...copy[copy.length - 1], content: copy[copy.length - 1].content || "Stopped.", status: undefined };
           return copy;
         });
       }
@@ -573,7 +599,7 @@ function DevAIChatTester() {
                 )}>
                   {m.content
                     ? <pre className="whitespace-pre-wrap font-sans">{m.content}</pre>
-                    : <Loader2 className="w-3 h-3 animate-spin text-green-400" />}
+                    : <span className="flex items-center gap-2 text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin text-green-400" />{m.status ?? "Thinking…"}</span>}
                 </div>
               </div>
             ))}
@@ -596,7 +622,7 @@ function DevAIChatTester() {
             style={{ overflowY: "auto" }}
           />
           {streaming
-            ? <button onClick={() => { abortRef.current?.abort(); setStreaming(false); }} className="shrink-0 w-7 h-7 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 hover:bg-red-500/30 transition-colors"><XCircle className="w-3.5 h-3.5" /></button>
+            ? <button onClick={() => { abortRef.current?.abort(); }} className="shrink-0 w-7 h-7 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 hover:bg-red-500/30 transition-colors"><XCircle className="w-3.5 h-3.5" /></button>
             : <button onClick={send} disabled={!input.trim()} className="shrink-0 w-7 h-7 rounded-lg bg-green-500 flex items-center justify-center text-black hover:bg-green-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"><Send className="w-3 h-3" /></button>}
         </div>
       </div>
