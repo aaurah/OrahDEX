@@ -157,7 +157,7 @@ export const EVM_CHAINS: Record<number, ChainConfig> = {
   1: {
     chainId:         1,
     name:            "Ethereum Mainnet",
-    rpcUrl:          process.env.ETH_RPC_URL ?? "https://eth.llamarpc.com",
+    rpcUrl:          process.env.ETH_RPC_URL ?? "https://ethereum-rpc.publicnode.com",
     contractAddress: (process.env.EVM_HTLC_CONTRACT_ETH as Address | undefined) ?? DEPLOYED_CONTRACT,
     nativeSymbol:    "ETH",
     blockExplorer:   "https://etherscan.io",
