@@ -210,31 +210,43 @@ router.get("/orders", async (req, res) => {
 // and sign it before placing an order.  This prevents a withdrawal challenge
 // from being replayed as an order signature.
 router.post("/orders/bsv-challenge", (req, res) => {
-  const { walletAddress, symbol, side, quantity, nonce, expiry } = req.body;
-  if (!walletAddress || !symbol || !side || !quantity || !nonce || !expiry) {
-    res.status(400).json({ error: "walletAddress, symbol, side, quantity, nonce, and expiry are required" });
+  const { walletAddress, symbol, side, quantity, type, price, stopPrice, chainId, timeInForce, nonce, expiry } = req.body;
+  if (!walletAddress || !symbol || !side || !quantity || !type || !timeInForce || !nonce || !expiry) {
+    res.status(400).json({ error: "wallet and complete order intent fields are required" });
     return;
   }
   if (!detectIsBsvAddress(walletAddress)) {
     res.status(400).json({ error: "walletAddress must be a BSV P2PKH/P2SH address" });
     return;
   }
-  const challenge = issueBsvOrderChallenge({ walletAddress, symbol, side, quantity, nonce, expiry });
+  const challenge = issueBsvOrderChallenge({
+    walletAddress, symbol, side, quantity, type,
+    price: price == null ? "" : String(price),
+    stopPrice: stopPrice == null ? "" : String(stopPrice),
+    chainId: chainId == null ? "" : String(chainId),
+    timeInForce, nonce, expiry,
+  });
   res.json(challenge);
 });
 
 // ── POST /orders/sol-challenge — Issue a Solana order challenge ───────────────
 router.post("/orders/sol-challenge", (req, res) => {
-  const { walletAddress, symbol, side, quantity, nonce, expiry } = req.body;
-  if (!walletAddress || !symbol || !side || !quantity || !nonce || !expiry) {
-    res.status(400).json({ error: "walletAddress, symbol, side, quantity, nonce, and expiry are required" });
+  const { walletAddress, symbol, side, quantity, type, price, stopPrice, chainId, timeInForce, nonce, expiry } = req.body;
+  if (!walletAddress || !symbol || !side || !quantity || !type || !timeInForce || !nonce || !expiry) {
+    res.status(400).json({ error: "wallet and complete order intent fields are required" });
     return;
   }
   if (!detectIsSolAddress(walletAddress)) {
     res.status(400).json({ error: "walletAddress must be a Solana base58 address" });
     return;
   }
-  const challenge = issueSolOrderChallenge({ walletAddress, symbol, side, quantity, nonce, expiry });
+  const challenge = issueSolOrderChallenge({
+    walletAddress, symbol, side, quantity, type,
+    price: price == null ? "" : String(price),
+    stopPrice: stopPrice == null ? "" : String(stopPrice),
+    chainId: chainId == null ? "" : String(chainId),
+    timeInForce, nonce, expiry,
+  });
   res.json(challenge);
 });
 
@@ -283,6 +295,19 @@ router.post("/orders", async (req, res) => {
       res.status(400).json({ error: "Stop orders require a valid stopPrice" });
       return;
     }
+    const timeInForce = String(body.timeInForce ?? (type === "market" ? "IOC" : "GTC")).toUpperCase();
+    if (timeInForce !== "GTC" && timeInForce !== "IOC") {
+      res.status(400).json({ error: "timeInForce must be GTC or IOC" });
+      return;
+    }
+    const chainIdInput = body.chainId == null || body.chainId === ""
+      ? ""
+      : String(Number.parseInt(String(body.chainId), 10));
+    if (chainIdInput && !Number.isSafeInteger(Number(chainIdInput))) {
+      res.status(400).json({ error: "chainId must be an integer" });
+      return;
+    }
+    const signedChainId = chainIdInput;
     // Stop orders also require a limit price (worst-case fill price) to prevent
     // execution at an arbitrary or zero price after the trigger fires.
     if (type === "stop" && (rawPrice == null || !Number.isFinite(rawPrice) || rawPrice <= 0)) {
@@ -386,6 +411,11 @@ router.post("/orders", async (req, res) => {
           symbol:        symbol,
           side:          body.side,
           quantity:      quantity.toString(),
+          type,
+          price:         rawPrice == null ? "" : rawPrice.toString(),
+          stopPrice:     stopPrice == null ? "" : stopPrice.toString(),
+          chainId:       signedChainId,
+          timeInForce,
           nonce:         orderNonce,
           expiry:        orderExpiry,
         });
@@ -398,7 +428,7 @@ router.post("/orders", async (req, res) => {
       } else if (isBsvAddress) {
         // BSV: verify ECDSA signature against an order-bound challenge.
         // Clients must obtain a challenge via POST /orders/bsv-challenge
-        // (which binds to symbol/side/quantity) and sign it.
+        // (which binds to the complete order intent) and sign it.
         const sig = body.bsvSignature ?? body.signedTx;
         if (!sig) {
           res.status(401).json({
@@ -414,6 +444,12 @@ router.post("/orders", async (req, res) => {
             symbol,
             side,
             quantity: quantity.toString(),
+            type,
+            price: rawPrice == null ? "" : rawPrice.toString(),
+            stopPrice: stopPrice == null ? "" : stopPrice.toString(),
+            chainId: signedChainId,
+            timeInForce,
+            expiry: orderExpiry,
           });
         } catch (authErr: any) {
           res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
@@ -437,6 +473,12 @@ router.post("/orders", async (req, res) => {
             symbol,
             side,
             quantity: quantity.toString(),
+            type,
+            price: rawPrice == null ? "" : rawPrice.toString(),
+            stopPrice: stopPrice == null ? "" : stopPrice.toString(),
+            chainId: signedChainId,
+            timeInForce,
+            expiry: orderExpiry,
           });
         } catch (authErr: any) {
           res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
@@ -542,7 +584,7 @@ router.post("/orders", async (req, res) => {
       total:             total != null ? total.toFixed(18) : undefined,
       fee:               fee.toFixed(18),
       feeAsset:          symbol.split("/")[1] || "USDT",
-      timeInForce:       body.timeInForce || "GTC",
+      timeInForce,
       txid:              null as string | null,
       // EVM signature from MetaMask personal_sign — proves the trader authorised this order
       signedTx:          body.evmSignature || body.signedTx || null,

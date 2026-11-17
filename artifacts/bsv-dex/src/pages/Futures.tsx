@@ -635,7 +635,7 @@ export function FuturesTrading() {
                               </td>
                               <td className="p-2 text-right">{Number(p.quantity).toFixed(4)}</td>
                               <td className="p-2 text-right">{formatPrice(parseFloat(p.entryPrice))}</td>
-                              <td className="p-2 text-right">{formatPrice(mark)}</td>
+                              <td className="p-2 text-right">{formatPrice(Number(mark))}</td>
                               <td className="p-2 text-right text-orange-400">{formatPrice(parseFloat(p.liquidationPrice))}</td>
                               <td className={cn("p-2 text-right font-bold", pnl >= 0 ? "text-green-400" : "text-red-400")}>
                                 {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}
