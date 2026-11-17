@@ -151,6 +151,7 @@ router.get("/markets", async (req, res) => {
   const rawLimit      = req.query.limit       as string | undefined;
   const rawOffset     = req.query.offset      as string | undefined;
   const rawQuoteAssets = req.query.quoteAssets as string | undefined;
+  const pricedOnly = req.query.pricedOnly === "true";
   const limit     = rawLimit  ? Math.max(1, Math.min(50_000, parseInt(rawLimit,  10) || 0)) : null;
   const offset    = rawOffset ? Math.max(0,                  parseInt(rawOffset, 10) || 0)  : 0;
   // Optional post-filter by quote asset(s). Applied to the in-memory sorted list
@@ -163,14 +164,18 @@ router.get("/markets", async (req, res) => {
   const cacheKey = baseKey; // we cache the full sorted list once and slice from it
 
   const applyFilters = (full: any[]) => {
-    const filtered = quoteFilter ? full.filter(m => quoteFilter.has(m.quoteAsset)) : full;
+    const priced = pricedOnly ? full.filter(m => Number(m.lastPrice) > 0) : full;
+    const filtered = quoteFilter ? priced.filter(m => quoteFilter.has(m.quoteAsset)) : priced;
     return limit == null ? filtered : filtered.slice(offset, offset + limit);
   };
 
   const cached = marketsCache.get(cacheKey);
   if (cached) {
     const out  = applyFilters(cached);
-    const etag = (marketsETag.get(cacheKey) ?? "").replace(/"$/, `:${offset}:${limit ?? "*"}"`);
+    const etag = (marketsETag.get(cacheKey) ?? "").replace(
+      /"$/,
+      `:${offset}:${limit ?? "*"}:${pricedOnly ? "priced" : "all"}:${[...(quoteFilter ?? [])].sort().join(",")}"`,
+    );
     if (etag) {
       res.setHeader("ETag", etag);
       if (req.headers["if-none-match"] === etag) {
@@ -208,27 +213,36 @@ router.get("/markets", async (req, res) => {
       req.log.warn({ err }, "Direct market prices unavailable; using cross-prices and stored values");
     }
 
-    const result = markets.map((m) => ({
-      symbol:                m.symbol,
-      baseAsset:             m.baseAsset,
-      quoteAsset:            m.quoteAsset,
-      lastPrice:             resolveCrossPrice(m.symbol, parseFloat(m.lastPrice), liveCoinPrices, directPairPrices),
-      priceChange24h:        parseFloat(m.priceChange24h),
-      priceChangePercent24h: parseFloat(m.priceChangePercent24h),
-      volume24h:             parseFloat(m.volume24h),
-      high24h:               parseFloat(m.high24h),
-      low24h:                parseFloat(m.low24h),
-      marketCap:             m.marketCap ? parseFloat(m.marketCap) : undefined,
-      status:                m.status,
-      type:                  m.type,
-      enabled:               m.enabled,
-      pinned:                m.pinned,
-      minOrderSize:          parseFloat(m.minOrderSize),
-      maxOrderSize:          parseFloat(m.maxOrderSize),
-      tickSize:              parseFloat(m.tickSize),
-      makerFee:              parseFloat(m.makerFee),
-      takerFee:              parseFloat(m.takerFee),
-    }));
+    const result = markets.map((m) => {
+      const storedPrice = parseFloat(m.lastPrice);
+      const marketReferencePrice = m.type === "simpleswap"
+        ? resolveCrossPrice(m.symbol, 0, liveCoinPrices, directPairPrices)
+        : 0;
+      const lastPrice = m.type === "simpleswap" && marketReferencePrice > 0
+        ? marketReferencePrice
+        : resolveCrossPrice(m.symbol, storedPrice, liveCoinPrices, directPairPrices);
+      return {
+        symbol:                m.symbol,
+        baseAsset:             m.baseAsset,
+        quoteAsset:            m.quoteAsset,
+        lastPrice,
+        priceChange24h:        parseFloat(m.priceChange24h),
+        priceChangePercent24h: parseFloat(m.priceChangePercent24h),
+        volume24h:             parseFloat(m.volume24h),
+        high24h:               parseFloat(m.high24h),
+        low24h:                parseFloat(m.low24h),
+        marketCap:             m.marketCap ? parseFloat(m.marketCap) : undefined,
+        status:                m.status,
+        type:                  m.type,
+        enabled:               m.enabled,
+        pinned:                m.pinned,
+        minOrderSize:          parseFloat(m.minOrderSize),
+        maxOrderSize:          parseFloat(m.maxOrderSize),
+        tickSize:              parseFloat(m.tickSize),
+        makerFee:              parseFloat(m.makerFee),
+        takerFee:              parseFloat(m.takerFee),
+      };
+    });
 
     // Stable priority sort — deterministic across all environments:
     // 1. Major assets by hardcoded rank (BTC > ETH > BNB > SOL > XRP …)
@@ -764,6 +778,35 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
       volume24h = 0;
       priceChange24h = 0;
       pctChange = 0;
+    } else if (market?.type === "simpleswap") {
+      // Use the same current reference series as the chart for conversion-only
+      // pairs; never pin historical candles to a separate swap quote.
+      let candleSource = "unknown";
+      try {
+        const referenceCandles = await fetchRealCandles(sym, 0, "1h", 48, (source) => {
+          candleSource = source;
+        });
+        const nowSec = Math.floor(Date.now() / 1000);
+        const latest = referenceCandles.at(-1);
+        if (
+          latest &&
+          candleSource !== "none" &&
+          candleSource !== "orderbook-snapshots" &&
+          nowSec - latest.time <= 24 * 60 * 60
+        ) {
+          const recent = referenceCandles.filter((candle) => candle.time >= nowSec - 24 * 60 * 60);
+          lastPrice = latest.close;
+          high24h = recent.length ? Math.max(...recent.map((candle) => candle.high)) : latest.high;
+          low24h = recent.length ? Math.min(...recent.map((candle) => candle.low)) : latest.low;
+          volume24h = 0;
+          priceChange24h = lastPrice - (recent[0]?.open ?? latest.open);
+          pctChange = recent[0]?.open
+            ? ((lastPrice - recent[0].open) / recent[0].open) * 100
+            : 0;
+        }
+      } catch (error) {
+        logger.debug({ err: error, symbol: sym }, "Reference candle price unavailable for swap-only pair");
+      }
     }
     if (!(lastPrice > 0)) { res.status(404).json({ error: "Market not found" }); return; }
 

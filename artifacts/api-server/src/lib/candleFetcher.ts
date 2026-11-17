@@ -89,11 +89,13 @@ interface Candle {
 interface CacheEntry { data: Candle[]; ts: number }
 const candleCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 60 * 1000;
+const STALE_CANDLE_TTL_MS = 24 * 60 * 60 * 1000;
 const COINGECKO_OHLC_TTL_MS = 5 * 60 * 1000;
 const coingeckoOhlcCache = new Map<string, { data: Candle[]; ts: number }>();
 const coingeckoOhlcPending = new Map<string, Promise<Candle[]>>();
 let coingeckoBackoffUntil = 0;
 const candleSourceCache = new Map<string, string>();
+const candleRefreshBackoff = new Map<string, number>();
 
 const COINGECKO_VS_CURRENCY: Record<string, string> = {
   USD: "usd", USDT: "usd", USDC: "usd", TUSD: "usd", USDD: "usd",
@@ -186,13 +188,17 @@ async function fetchCoinGeckoOhlc(
 function getCached(key: string): Candle[] | null {
   const e = candleCache.get(key);
   if (!e) return null;
-  if (Date.now() - e.ts > CACHE_TTL_MS) {
-    candleCache.delete(key);
-    candleSourceCache.delete(key);
-    return null;
-  }
+  if (Date.now() - e.ts > CACHE_TTL_MS) return null;
   return e.data;
 }
+function getStaleCached(key: string): { data: Candle[]; source: string } | null {
+  const entry = candleCache.get(key);
+  const source = candleSourceCache.get(key);
+  if (!entry || !source || source === "none" || !entry.data.length) return null;
+  if (Date.now() - entry.ts > STALE_CANDLE_TTL_MS) return null;
+  return { data: entry.data, source };
+}
+
 function setCached(key: string, data: Candle[], source: string) {
   if (candleCache.size >= 200) {
     const oldest = [...candleCache.entries()].sort((a, b) => a[1].ts - b[1].ts)[0];
@@ -203,6 +209,7 @@ function setCached(key: string, data: Candle[], source: string) {
   }
   candleCache.set(key, { data, ts: Date.now() });
   candleSourceCache.set(key, source);
+  if (data.length) candleRefreshBackoff.delete(key);
 }
 
 export function invalidateCandlesForOrderbookUpdate(symbol: string) {
@@ -211,6 +218,7 @@ export function invalidateCandlesForOrderbookUpdate(symbol: string) {
     if (!key.startsWith(prefix) || source === "orahdex-trades") continue;
     candleCache.delete(key);
     candleSourceCache.delete(key);
+    candleRefreshBackoff.delete(key);
   }
   historyCache.delete(`history:${symbol.toUpperCase()}`);
 }
@@ -259,6 +267,26 @@ async function buildCandlesFromOrderbookSnapshots(
   }
 
   return [...buckets.values()].sort((a, b) => a.time - b.time).slice(-limit);
+}
+
+function buildCandlesFromCrossReference(
+  baseCandles: Candle[],
+  quoteCandles: Candle[],
+  limit: number,
+): Candle[] {
+  const quoteByTime = new Map(quoteCandles.map((candle) => [Number(candle.time), candle]));
+  const derived: Candle[] = [];
+  for (const base of baseCandles) {
+    const quote = quoteByTime.get(Number(base.time));
+    if (!quote || quote.open <= 0 || quote.high <= 0 || quote.low <= 0 || quote.close <= 0) continue;
+    const open = base.open / quote.open;
+    const close = base.close / quote.close;
+    const high = Math.max(open, close, base.high / quote.low);
+    const low = Math.min(open, close, base.low / quote.high);
+    if (![open, high, low, close].every((value) => Number.isFinite(value) && value > 0)) continue;
+    derived.push({ time: Number(base.time), open, high, low, close, volume: 0 });
+  }
+  return derived.slice(-limit);
 }
 
 /* ── 1. Own trades → OHLCV candles ──────────────────────────────────────────── */
@@ -645,10 +673,16 @@ export async function fetchRealCandles(
     const source = candleSourceCache.get(cacheKey) ?? "unknown";
     onSource?.(source);
     if (cached.length === 0) return [];
-    if (source === "coingecko" || source === "orderbook-snapshots") {
+    if (source === "coingecko" || source === "orderbook-snapshots" || source === "cross-reference") {
       return cached.map((candle) => ({ ...candle }));
     }
     return pinLastCandle([...cached.slice(0, -1), { ...cached[cached.length - 1]! }], lastPrice);
+  }
+
+  const stale = getStaleCached(cacheKey);
+  if (stale && Date.now() < (candleRefreshBackoff.get(cacheKey) ?? 0)) {
+    onSource?.(stale.source);
+    return stale.data.slice(-limit).map((candle) => ({ ...candle }));
   }
 
   const parts     = symbol.split("/");
@@ -786,6 +820,33 @@ export async function fetchRealCandles(
     } catch (err) {
       logger.warn({ err, symbol, coinId, vsCurrency, days }, "CoinGecko reference candles unavailable");
     }
+  }
+
+  // Derive a genuine cross-rate reference series when the exact pair is not
+  // listed by a candle provider but both assets have candles against USDT.
+  const stableQuotes = new Set(["USD", "USDT", "USDC", "BUSD", "TUSD", "USDD", "DAI", "FDUSD"]);
+  if (base && quote && !stableQuotes.has(quote) && !stableQuotes.has(base)) {
+    try {
+      const [baseCandles, quoteCandles] = await Promise.all([
+        fetchRealCandles(`${base}/USDT`, 0, interval, limit),
+        fetchRealCandles(`${quote}/USDT`, 0, interval, limit),
+      ]);
+      const crossCandles = buildCandlesFromCrossReference(baseCandles, quoteCandles, limit);
+      if (isValidCandleSet(crossCandles, minRequired)) {
+        setCached(cacheKey, crossCandles, "cross-reference");
+        onSource?.("cross-reference");
+        return crossCandles;
+      }
+    } catch (err) {
+      logger.debug({ err, symbol }, "Cross-reference candles unavailable");
+    }
+  }
+
+  const staleFallback = getStaleCached(cacheKey);
+  if (staleFallback) {
+    candleRefreshBackoff.set(cacheKey, Date.now() + CACHE_TTL_MS);
+    onSource?.(staleFallback.source);
+    return staleFallback.data.slice(-limit).map((candle) => ({ ...candle }));
   }
 
   logger.warn({ symbol, interval }, "Real candle sources unavailable — returning no history");
