@@ -1,7 +1,6 @@
 import simpleSwapCatalog from "./simpleswap-catalog.json";
-export interface Env {
-  DB: D1Database;
-}
+import { getOrderbookConfig, handleOrderRequest, type OrderbookEnv } from "./orders.js";
+export interface Env extends OrderbookEnv {}
 
 interface MarketRow {
   symbol: string;
@@ -217,8 +216,10 @@ async function getMarket(
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    const orderResponse = await handleOrderRequest(request, env, ctx);
+    if (orderResponse) return orderResponse;
 
     if (request.method !== "GET") {
       return json({ error: "Method not allowed" }, 405);
@@ -237,16 +238,17 @@ export default {
 
     if (url.pathname === "/api/health") {
       const databaseReady = await checkDatabase(env);
+      const tradingConfig = await getOrderbookConfig(env);
 
       return json({
         status: databaseReady ? "ok" : "degraded",
         service: "orahdex-cloud-api",
         runtime: "cloudflare-workers",
-        version: "0.2.0",
+        version: "0.3.0",
         apiReady: true,
         databaseReady,
-        tradingReady: false,
-        blockchainReady: false,
+        tradingReady: tradingConfig.available,
+        blockchainReady: tradingConfig.available,
         timestamp: new Date().toISOString()
       }, databaseReady ? 200 : 503);
     }
@@ -254,7 +256,7 @@ export default {
     if (url.pathname === "/api/status") {
       return json({
         service: "OrahDEX Cloud API",
-        migration: "stage-7e",
+        migration: "stage-7f",
         production: false,
         termuxRequiredForProduction: true
       });

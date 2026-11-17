@@ -38,6 +38,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
+      - name: Verify Cloudflare trading API
+        run: |
+          pnpm --filter orahdex-cloud-api check
+          pnpm --filter orahdex-cloud-api test
+          pnpm --filter orahdex-cloud-api exec wrangler d1 migrations apply \
+            orahdex-cloud-staging --local --persist-to "${RUNNER_TEMP}/orahdex-cloud-d1"
+          pnpm --filter orahdex-cloud-api exec wrangler deploy \
+            --dry-run --outdir "${RUNNER_TEMP}/orahdex-cloud-api"
+
       # Remove the accidentally committed conflict markers before Vite parses TSX.
       # Keep provider tickers and let a user-selected venue override the default.
       - name: Build OrahDEX frontend
