@@ -25,7 +25,7 @@ const DEVAI_CHANGE_PREFIX = "devai_change_proposal:";
 const DEVAI_CONTEXT_TOKENS = 8192;
 const DEVAI_MAX_RESPONSE_TOKENS = 1024;
 const DEVAI_MIN_OLLAMA_HEADROOM_BYTES =
-  process.env.NODE_ENV === "development" ? 4.5 * 1024 ** 3 : 6 * 1024 ** 3;
+  process.env.NODE_ENV === "development" ? 3.5 * 1024 ** 3 : 6 * 1024 ** 3;
 router.use("/devai", requireAdminToken);
 
 // ── Internal API base (same process, same port) ───────────────────────────────
@@ -68,6 +68,7 @@ You are a senior blockchain engineer. You write production-ready code, debug sma
 - **decode_eth_address** — Fetch EVM address info: native balance, recent transactions. Use when the user shares an ETH/EVM address.
 - **read_project_file** — Read any live source file from the current OrahDEX workspace. Use to inspect backend routes, frontend components, DB schema, configs.
 - **list_project_dir** — Browse any directory in the current OrahDEX workspace. Use to navigate the project structure before reading specific files.
+- **search_project_code** — Find the current implementation across exchange UI, API, contracts, database libraries, and docs; read matches before explaining or proposing edits.
 - **query_database** — Run a read-only SELECT query against the live OrahDEX PostgreSQL database. Use to inspect real data, schemas, order books, user counts, etc.
 - **write_project_file** — Stage a source-file change for admin review. Never apply it directly; an authenticated admin must review and approve the proposal.
 
@@ -168,7 +169,7 @@ Standard: 30bps | Guardian (1K ORAH): 25bps | Elder (10K ORAH): 20bps | Archon (
 - Always show error handling in code
 - For transaction building: always build unsigned — never include private keys
 - When you write a complete file: use create_file so the user can download it
-- Today is May 2026`;
+- Current date: ${new Date().toISOString().slice(0, 10)}`;
 
 // ── Tool definitions (OpenAI function calling) ─────────────────────────────────
 const DEVAI_TOOLS: any[] = [
@@ -933,16 +934,17 @@ async function toolQueryDatabase(args: { sql: string }): Promise<string> {
     return "Write operations are not permitted. Only read-only SELECT queries allowed.";
   }
   // Enforce row limit
-  const limitedQuery = upper.includes("LIMIT") ? query : `${query} LIMIT 100`;
-  let client: Awaited<ReturnType<typeof pool.connect>> | undefined;
+  const limitedQuery = /\bLIMIT\b/i.test(uncommented) ? uncommented : `${uncommented} LIMIT 100`;
+  let client: { query: (sql: string) => Promise<any>; release: () => void } | null = null;
   let transactionOpen = false;
   try {
-    client = await pool.connect();
-    await client.query("BEGIN READ ONLY");
+    const connection = await pool.connect();
+    client = connection;
+    await connection.query("BEGIN READ ONLY");
     transactionOpen = true;
-    await client.query("SET LOCAL statement_timeout = '5s'");
-    const result = await client.query(limitedQuery);
-    await client.query("ROLLBACK");
+    await connection.query("SET LOCAL statement_timeout = '5s'");
+    const result = await connection.query(limitedQuery);
+    await connection.query("ROLLBACK");
     transactionOpen = false;
     const { rows, fields } = result;
     if (!rows.length) return "Query returned 0 rows.";
@@ -1001,6 +1003,16 @@ function sse(res: any, payload: object) {
 
 async function getLocalModelStatus() {
   return getDevaiOllamaStatus();
+}
+
+async function waitForLocalModelStatus(timeoutMs = 12_000) {
+  const deadline = Date.now() + timeoutMs;
+  let status = await getLocalModelStatus();
+  while (status.enabled && !status.reachable && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    status = await getLocalModelStatus();
+  }
+  return status;
 }
 
 async function getRuntimeMemory() {
@@ -1096,7 +1108,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
   const content = (req.body?.content ?? "").trim();
   if (!content) { res.status(400).json({ error: "Content is required" }); return; }
 
-  const modelStatus = await getLocalModelStatus();
+  const modelStatus = await waitForLocalModelStatus();
   if (!modelStatus.enabled || !modelStatus.reachable || !modelStatus.modelAvailable) {
     res.status(503).json({ error: modelStatus.error, provider: "local_ollama" });
     return;
@@ -1108,7 +1120,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
   const requestAbort = new AbortController();
-  sse(res, { status: "Connected to local Ollama; preparing exchange context…" });
+  sse(res, { status: "Starting the local model and preparing exchange context…" });
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) sse(res, { status: "The local model is still working; this can take a little while on the VM." });
   }, 10_000);
@@ -1544,47 +1556,57 @@ router.delete("/devai/conversations/:id", async (req, res) => {
 // start Ollama from the API process only after normal services have booted and
 // measured cgroup headroom is still sufficient.
 if (process.env.NODE_ENV === "development" && isDevaiOllamaEnabled()) {
-  const startTimer = setTimeout(async () => {
-    try {
-      const currentStatus = await getLocalModelStatus();
-      if (currentStatus.reachable) return;
+  const scheduleOllamaStart = (attempt = 0, delayMs = 5_000) => {
+    const startTimer = setTimeout(async () => {
+      try {
+        const currentStatus = await getLocalModelStatus();
+        if (currentStatus.reachable) return;
 
-      const memory = await getRuntimeMemory();
-      const minimumHeadroom = DEVAI_MIN_OLLAMA_HEADROOM_BYTES;
-      if (!memory || memory.availableBytes < minimumHeadroom) {
-        logger.warn({
-          availableBytes: memory?.availableBytes ?? null,
-          requiredBytes: minimumHeadroom,
-        }, "DevAI Ollama autostart skipped because VM memory headroom is too low");
-        return;
+        const memory = await getRuntimeMemory();
+        const minimumHeadroom = DEVAI_MIN_OLLAMA_HEADROOM_BYTES;
+        if (!memory || memory.availableBytes < minimumHeadroom) {
+          logger.warn({
+            availableBytes: memory?.availableBytes ?? null,
+            requiredBytes: minimumHeadroom,
+            attempt: attempt + 1,
+          }, "DevAI Ollama autostart delayed because VM memory headroom is too low");
+          if (attempt < 4) scheduleOllamaStart(attempt + 1, 15_000);
+          return;
+        }
+
+        const modelDir = process.env.OLLAMA_MODELS || path.join(os.homedir(), ".ollama", "models");
+        const localOllamaProc = spawn("ollama", ["serve"], {
+          stdio: "inherit",
+          env: {
+            ...process.env,
+            OLLAMA_HOST: "127.0.0.1:11434",
+            OLLAMA_MODELS: modelDir,
+            OLLAMA_NUM_PARALLEL: "1",
+            OLLAMA_MAX_LOADED_MODELS: "1",
+            OLLAMA_KEEP_ALIVE: "30s",
+            OLLAMA_CONTEXT_LENGTH: String(DEVAI_CONTEXT_TOKENS),
+          },
+        });
+        localOllamaProc.on("error", (err) => {
+          logger.error({ err: err.message, attempt: attempt + 1 }, "DevAI Ollama autostart failed");
+          if (attempt < 4) scheduleOllamaStart(attempt + 1, 15_000);
+        });
+        localOllamaProc.on("exit", (code, signal) => {
+          logger.warn({ code, signal }, "DevAI Ollama process exited");
+          if (!process.exitCode && signal !== "SIGTERM" && attempt < 4) {
+            scheduleOllamaStart(attempt + 1, 15_000);
+          }
+        });
+        process.once("exit", () => localOllamaProc.kill("SIGTERM"));
+        logger.info({ contextTokens: DEVAI_CONTEXT_TOKENS }, "DevAI Ollama started on loopback after memory check");
+      } catch (err: any) {
+        logger.error({ err: err?.message, attempt: attempt + 1 }, "DevAI Ollama autostart failed");
+        if (attempt < 4) scheduleOllamaStart(attempt + 1, 15_000);
       }
-
-      const modelDir = process.env.OLLAMA_MODELS || path.join(os.homedir(), ".ollama", "models");
-      const localOllamaProc = spawn("ollama", ["serve"], {
-        stdio: "inherit",
-        env: {
-          ...process.env,
-          OLLAMA_HOST: "127.0.0.1:11434",
-          OLLAMA_MODELS: modelDir,
-          OLLAMA_NUM_PARALLEL: "1",
-          OLLAMA_MAX_LOADED_MODELS: "1",
-          OLLAMA_KEEP_ALIVE: "30s",
-          OLLAMA_CONTEXT_LENGTH: "8192",
-        },
-      });
-      localOllamaProc.on("error", (err) => {
-        logger.error({ err: err.message }, "DevAI Ollama autostart failed");
-      });
-      localOllamaProc.on("exit", (code, signal) => {
-        logger.warn({ code, signal }, "DevAI Ollama process exited");
-      });
-      process.once("exit", () => localOllamaProc.kill("SIGTERM"));
-      logger.info("DevAI Ollama started on loopback after memory check");
-    } catch (err: any) {
-      logger.error({ err: err?.message }, "DevAI Ollama autostart failed");
-    }
-  }, 30_000);
-  startTimer.unref();
+    }, delayMs);
+    startTimer.unref();
+  };
+  scheduleOllamaStart();
 }
 
 export default router;
