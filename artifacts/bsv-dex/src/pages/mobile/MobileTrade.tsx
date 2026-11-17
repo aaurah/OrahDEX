@@ -1515,34 +1515,28 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             return account.signMessage!({ message: orderMsg });
           })();
           evmSignature = await withWalletRequestTimeout(signingRequest, 60_000, signController.signal);
-        } else if (provider === "reown") {
-          // Use Wagmi's active connector action for Reown sessions instead of
-          // issuing personal_sign directly to a raw WalletConnect provider.
-          // The hook is bound to the live AppKit Wagmi config and handles the
-          // connector's request/response flow on mobile.
+        } else {
           if (
-            !evmConnected ||
-            !evmAccountAddress ||
-            evmAccountAddress.toLowerCase() !== address!.toLowerCase()
+            provider === "reown" &&
+            (!evmConnected ||
+              !evmAccountAddress ||
+              evmAccountAddress.toLowerCase() !== address!.toLowerCase())
           ) {
             throw new Error("The connected wallet session is out of sync. Reconnect this wallet before signing.");
           }
-          evmSignature = await withWalletRequestTimeout(
-            signMessageAsync({ message: orderMsg }),
-            90_000,
-            signController.signal,
-          );
-        } else {
+
           // Prefer the selected wallet's raw provider. A stale wagmi connector
           // can leave signMessageAsync pending forever on mobile and prevent the
-          // actual wallet from receiving the personal_sign request.
+          // actual wallet from receiving the personal_sign request. For Reown,
+          // signWalletMessage resolves the active connector by the checked
+          // account address and sends the WalletConnect request on that session.
           const hasInjectedProvider = Boolean((window as any).ethereum?.request);
           const wagmiFallback = provider !== "reown" && !hasInjectedProvider && evmConnected
             ? signMessageAsync
             : undefined;
           evmSignature = await withWalletRequestTimeout(
             signWalletMessage(address!, provider ?? undefined, orderMsg, wagmiFallback),
-            60_000,
+            90_000,
             signController.signal,
           );
         }
