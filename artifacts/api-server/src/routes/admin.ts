@@ -264,6 +264,15 @@ router.post("/auth/totp", async (req, res) => {
 });
 
 /**
+ * GET /admin/auth/session
+ * Confirms the existing admin token without returning account or dashboard data.
+ */
+router.get("/auth/session", requireAdminToken, (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ authenticated: true });
+});
+
+/**
  * GET /admin/auth/totp-uri
  * Returns the otpauth URI for QR-code generation (uses server-side secret).
  */
