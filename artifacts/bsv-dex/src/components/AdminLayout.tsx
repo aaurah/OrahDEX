@@ -34,7 +34,7 @@ const NETWORK_STYLES: Record<string, { color: string; label: string }> = {
   btc: { color: "text-orange-400 bg-orange-400/10 border-orange-400/20", label: "BTC" },
 };
 
-interface NavItem  { href: string; label: string; icon: any; exact?: boolean; badge?: string; badgeColor?: string; }
+interface NavItem  { href: string; label: string; icon: any; exact?: boolean; }
 interface NavGroup { title: string; icon: any; color: string; items: NavItem[]; }
 
 const NAV_GROUPS: NavGroup[] = [
@@ -43,84 +43,84 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin",              label: "Dashboard",       icon: LayoutDashboard, exact: true },
       { href: "/admin/users",        label: "User Management", icon: Users },
-      { href: "/admin/setup",        label: "Setup Guide",     icon: Rocket },
-      { href: "/admin/mail",         label: "Email Inbox",     icon: Mail },
-      { href: "/admin/integrations", label: "Integrations",    icon: Plug2 },
+      { href: "/admin/trade-analytics", label: "Trade Analytics", icon: BarChart3 },
     ],
   },
   {
-    title: "Customization", icon: Palette, color: "text-pink-400",
+    title: "Finance", icon: Landmark, color: "text-orange-400",
     items: [
-      { href: "/admin/site",          label: "Site Settings",    icon: Globe },
-      { href: "/admin/home",          label: "Homepage Builder", icon: Home },
-      { href: "/admin/themes",        label: "Themes",           icon: Palette },
-      { href: "/admin/announcements", label: "Announcements",    icon: Megaphone },
+      { href: "/admin/profits",      label: "Profit Details", icon: TrendingUp },
+      { href: "/admin/withdrawals",  label: "Withdrawals",    icon: ArrowDownToLine },
+      { href: "/admin/transactions", label: "On-Chain Txns",  icon: Layers },
+      { href: "/admin/treasury",     label: "Treasury",       icon: Landmark },
+      { href: "/admin/fee-wallet",   label: "Fee Wallet",     icon: Wallet },
     ],
   },
   {
-    title: "Platform", icon: Settings, color: "text-blue-400",
+    title: "Trading", icon: ArrowRightLeft, color: "text-blue-400",
     items: [
-      { href: "/admin/features",       label: "Feature Flags",    icon: ToggleLeft },
-      { href: "/admin/pairs",          label: "Trade Pairs",      icon: ArrowRightLeft },
-      { href: "/admin/trade-analytics",label: "Trade Analytics",  icon: BarChart3 },
-      { href: "/admin/fees",           label: "Fee Config",       icon: DollarSign },
-      { href: "/admin/contracts",      label: "Contracts & Coins",icon: Cpu },
-      { href: "/admin/copy-vaults",    label: "CopyVault",        icon: Copy },
-      { href: "/admin/prediction",     label: "Prediction",       icon: Zap },
-      { href: "/admin/tradingview",    label: "TradingView Feed", icon: TrendingUp },
-      { href: "/admin/cex-connections",label: "CEX Connections",  icon: Link2 },
-    ],
-  },
-  {
-    title: "AI Intelligence", icon: Brain, color: "text-violet-400",
-    items: [
-      { href: "/admin/ai",    label: "Ora AI Settings", icon: Brain },
-      { href: "/admin/devai", label: "DevAI Settings",  icon: Bot },
+      { href: "/admin/pairs",      label: "Trade Pairs", icon: ArrowRightLeft },
+      { href: "/admin/fees",       label: "Fee Settings", icon: DollarSign },
+      { href: "/admin/liquidity",  label: "Liquidity Bot", icon: Activity },
+      { href: "/admin/copy-vaults",label: "CopyVault", icon: Copy },
+      { href: "/admin/prediction", label: "Prediction", icon: Zap },
     ],
   },
   {
     title: "Support", icon: Headphones, color: "text-cyan-400",
     items: [
-      { href: "/admin/support",       label: "Support & Contact", icon: Headphones },
-      { href: "/admin/support/inbox", label: "Support Inbox",     icon: Inbox },
+      { href: "/admin/support/inbox", label: "Support Inbox", icon: Inbox },
+      { href: "/admin/support",       label: "Support Settings", icon: Headphones },
+      { href: "/admin/mail",          label: "Email Inbox", icon: Mail },
     ],
   },
   {
-    title: "System", icon: Activity, color: "text-green-400",
+    title: "Platform", icon: Settings, color: "text-violet-400",
     items: [
-      { href: "/admin/status",         label: "Service Status",   icon: Activity },
-      { href: "/admin/health",         label: "System Health",    icon: HeartPulse },
-      { href: "/admin/diagnostics",    label: "Diagnostics",      icon: Stethoscope },
-      { href: "/admin/server-control", label: "Server Control",   icon: Server, badge: "NEW", badgeColor: "bg-emerald-500/15 text-emerald-400 border-emerald-500/25" },
-      { href: "/admin/api-monitor",    label: "API Monitor",      icon: Signal },
-      { href: "/admin/liquidity",      label: "Liquidity Bot",    icon: Activity },
-      { href: "/admin/bsv-intents",    label: "BSV Intents",      icon: Shuffle },
-      { href: "/admin/logs",           label: "System Logs",      icon: Terminal },
+      { href: "/admin/features", label: "Feature Flags", icon: ToggleLeft },
+      { href: "/admin/contracts", label: "Contracts & Coins", icon: Cpu },
+      { href: "/admin/cex-connections", label: "CEX Connections", icon: Link2 },
+      { href: "/admin/tradingview", label: "TradingView Feed", icon: TrendingUp },
     ],
   },
   {
     title: "Security", icon: Shield, color: "text-amber-400",
     items: [
       { href: "/admin/security", label: "Security Settings", icon: Shield },
-      { href: "/admin/api",      label: "API Settings",      icon: Key },
-      { href: "/admin/admins",   label: "Admin Users",       icon: ShieldCheck },
+      { href: "/admin/api",      label: "API Settings", icon: Key },
+      { href: "/admin/admins",   label: "Admin Users", icon: ShieldCheck },
     ],
   },
   {
-    title: "Finance", icon: Landmark, color: "text-orange-400",
+    title: "System", icon: Activity, color: "text-green-400",
     items: [
-      { href: "/admin/profits",      label: "All Profits",    icon: TrendingUp },
-      { href: "/admin/transactions", label: "On-Chain Txns",  icon: Layers },
-      { href: "/admin/ledger",       label: "Ledger Manager", icon: BookOpen },
-      { href: "/admin/withdrawals",  label: "Withdrawals",    icon: ArrowDownToLine },
-      { href: "/admin/treasury",     label: "Treasury",       icon: Landmark },
-      { href: "/admin/mint-burn",    label: "Mint & Burn",    icon: Printer },
-      { href: "/admin/fee-wallet",   label: "Fee Wallet",     icon: Wallet },
-      { href: "/admin/bot-profit",   label: "Bot Profit",     icon: BarChart3 },
-      { href: "/admin/arb-bot",      label: "Arb Bot",        icon: Zap },
-      { href: "/admin/seeded-pool",  label: "Seeded Pool",    icon: Database },
-      { href: "/admin/db-sync",      label: "DB Sync",        icon: ShieldCheck },
-      { href: "/admin/le-income",    label: "Swap Income",    icon: DollarSign },
+      { href: "/admin/status",      label: "Service Status", icon: Activity },
+      { href: "/admin/health",      label: "System Health", icon: HeartPulse },
+      { href: "/admin/api-monitor", label: "API Monitor", icon: Signal },
+    ],
+  },
+  {
+    title: "Advanced", icon: Layers, color: "text-muted-foreground",
+    items: [
+      { href: "/admin/setup", label: "Setup Guide", icon: Rocket },
+      { href: "/admin/ledger", label: "Ledger Manager", icon: BookOpen },
+      { href: "/admin/mint-burn", label: "Mint & Burn", icon: Printer },
+      { href: "/admin/bot-profit", label: "Bot Profit", icon: BarChart3 },
+      { href: "/admin/arb-bot", label: "Arb Bot", icon: Zap },
+      { href: "/admin/seeded-pool", label: "Seeded Pool", icon: Database },
+      { href: "/admin/db-sync", label: "DB Sync", icon: ShieldCheck },
+      { href: "/admin/le-income", label: "Swap Partner Income", icon: DollarSign },
+      { href: "/admin/bsv-intents", label: "BSV Intents", icon: Shuffle },
+      { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
+      { href: "/admin/site", label: "Site Settings", icon: Globe },
+      { href: "/admin/home", label: "Homepage Builder", icon: Home },
+      { href: "/admin/themes", label: "Themes", icon: Palette },
+      { href: "/admin/integrations", label: "Integrations", icon: Plug2 },
+      { href: "/admin/ai", label: "Ora AI Settings", icon: Brain },
+      { href: "/admin/devai", label: "DevAI Settings", icon: Bot },
+      { href: "/admin/diagnostics", label: "Diagnostics", icon: Stethoscope },
+      { href: "/admin/server-control", label: "Server Control", icon: Server },
+      { href: "/admin/logs", label: "System Logs", icon: Terminal },
     ],
   },
 ];
@@ -215,7 +215,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("admin_sidebar_collapsed") === "1"; } catch { return false; }
   });
-  const [groupCollapsed, setGroupCollapsed] = useState<Record<string, boolean>>({});
+  const [groupCollapsed, setGroupCollapsed] = useState<Record<string, boolean>>({ Advanced: true });
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -248,6 +248,9 @@ export function AdminLayout({ children }: { children: ReactNode }) {
     setGroupCollapsed(c => ({ ...c, [title]: !c[title] }));
 
   const allItems = NAV_GROUPS.flatMap(g => g.items.map(item => ({ ...item, group: g.title })));
+  const primaryItems = NAV_GROUPS
+    .filter(group => group.title !== "Advanced")
+    .flatMap(group => group.items);
   const searchResults = searchQuery.trim()
     ? allItems.filter(item =>
         item.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -368,7 +371,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           {collapsed ? (
             /* Icon-only mode */
             <div className="space-y-0.5">
-              {allItems.map(item => {
+              {primaryItems.map(item => {
                 const active = isActive(item);
                 const showUnread = item.href === "/admin/support/inbox" && adminUnreadCount > 0;
                 return (
@@ -386,6 +389,17 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                   </Link>
                 );
               })}
+              <button
+                onClick={() => setCollapsed(false)}
+                title="Advanced tools — expand sidebar"
+                data-testid="button-sidebar-advanced"
+                className="relative flex w-full items-center justify-center rounded-lg py-2.5 text-muted-foreground transition-all duration-150 hover:bg-white/[0.04] hover:text-foreground"
+              >
+                <Layers className="h-4 w-4 shrink-0" />
+                {NAV_GROUPS.find(group => group.title === "Advanced")?.items.some(isActive) && (
+                  <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r-full bg-primary" />
+                )}
+              </button>
             </div>
           ) : (
             /* Full mode with groups */
@@ -433,8 +447,6 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                               <span className="text-[9px] font-black min-w-[18px] text-center px-1.5 py-0.5 rounded-full bg-red-500 text-white tabular-nums shadow-lg shadow-red-500/30">
                                 {adminUnreadCount > 99 ? "99+" : adminUnreadCount}
                               </span>
-                            ) : item.badge ? (
-                              <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded-md border", item.badgeColor ?? "bg-primary/15 text-primary border-primary/25")}>{item.badge}</span>
                             ) : active ? (
                               <ChevronRight className="w-3 h-3 shrink-0 text-primary/60" />
                             ) : null}
