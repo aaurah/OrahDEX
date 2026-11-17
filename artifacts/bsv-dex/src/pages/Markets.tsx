@@ -132,7 +132,7 @@ export function Markets() {
       "@type": "ItemList",
       "name": "OrahDEX Cryptocurrency Markets",
       "description": "Live cryptocurrency trading pairs on OrahDEX",
-      "url": "https://orahdex.org/"
+      "url": "https://orahdex.com/"
     }
   });
 
@@ -189,7 +189,11 @@ export function Markets() {
 
   const { data: apiMarkets } = useGetMarkets({ query: { refetchInterval: 30_000, staleTime: 25_000 } as any });
   const raw = ((apiMarkets && (apiMarkets as any[]).length > 0 ? apiMarkets : []) as any[]).map(normalise);
-  const { results: serverSearchResults } = useMarketSearch(search, { debounceMs: 300 });
+  const {
+    results: serverSearchResults,
+    loading: serverSearchLoading,
+    error: serverSearchError,
+  } = useMarketSearch(search, { debounceMs: 500, limit: 50 });
   const catalogQuote = tab === "usd" ? usdSub : ({
     bsv: "BSV", btc: "BTC", eth: "ETH", bnb: "BNB", matic: "MATIC",
     avax: "AVAX", arb: "ARB", op: "OP", ftm: "FTM", cro: "CRO", bch: "BCH",
@@ -199,15 +203,16 @@ export function Markets() {
     quote: catalogQuote,
     limit: 100,
     offset: catalogOffset,
-    enabled: catalogScope === "all",
+    enabled: catalogScope === "all" && (!search.trim() || search.trim().length >= 2),
   });
 
   useEffect(() => {
     setCatalogOffset(0);
   }, [catalogScope, search, tab, usdSub]);
 
-  // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
-  const needAllPairs = tab === "sol" || tab === "eth" || tab === "favorites" || search.length > 0;
+  // Search uses the paginated server catalog; avoid loading every provider
+  // pair into the browser whenever the user types.
+  const needAllPairs = tab === "sol" || tab === "eth" || tab === "favorites";
   const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
   const leAllPairs = useMemo(() => {
     const mapped = (rawLeAllPairs ?? []).map(p => ({
@@ -503,24 +508,29 @@ export function Markets() {
   }
 
   const markets  = getMarkets();
-  const searchPool = search
+  const searchReady = search.trim().length >= 2;
+  const searchPool = searchReady
     ? [...tradeable(raw), ...leAllPairs.filter(m => !raw.some((r: any) => r.symbol === m.symbol))]
     : markets;
-  const _localFiltered = searchPool.filter(m =>
-    m.symbol.toLowerCase().includes(search.toLowerCase()) ||
-    (m.baseAsset ?? "").toLowerCase().includes(search.toLowerCase())
-  );
+  const _localFiltered = search
+    ? searchReady
+      ? searchPool.filter(m =>
+          m.symbol.toLowerCase().includes(search.trim().toLowerCase()) ||
+          (m.baseAsset ?? "").toLowerCase().includes(search.trim().toLowerCase())
+        ).slice(0, 50)
+      : []
+    : searchPool;
   const _localSymbols = new Set(_localFiltered.map((m: any) => m.symbol));
-  const defaultFiltered = search
+  const defaultFiltered = searchReady
     ? [
         ..._localFiltered,
         ...serverSearchResults
           .filter((m: any) => !_localSymbols.has(m.symbol))
           .map((m: any) => normalise(m)),
-      ]
+      ].slice(0, 100)
     : _localFiltered;
   const filtered = catalogScope === "all"
-    ? allVenueCatalog.items.map((m: any) => normalise(m))
+    ? search && !searchReady ? [] : allVenueCatalog.items.map((m: any) => normalise(m))
     : defaultFiltered;
   const toggleStar = (symbol: string) =>
     setStars(prev => {
@@ -960,8 +970,16 @@ export function Markets() {
                 {filtered.length === 0 && (
                   <tr>
                     <td colSpan={12} className="py-16 text-center text-muted-foreground text-sm">
-                      {allVenueCatalog.loading
+                      {search && !searchReady
+                        ? "Type at least 2 characters to search"
+                        : allVenueCatalog.loading
                         ? "Loading all venues…"
+                        : catalogScope === "all" && allVenueCatalog.error
+                          ? allVenueCatalog.error
+                        : catalogScope === "default" && serverSearchLoading
+                          ? "Searching markets…"
+                        : catalogScope === "default" && serverSearchError
+                          ? serverSearchError
                         : search
                           ? `No results for "${search}"`
                           : tab === "favorites"

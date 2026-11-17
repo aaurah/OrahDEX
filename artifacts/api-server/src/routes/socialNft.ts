@@ -158,7 +158,7 @@ router.post("/social/posts", async (req, res) => {
 
 /* ── On-chain EVM transaction verifier ────────────────────────────────────── */
 const CHAIN_RPC_URLS: Record<string, string> = {
-  ETH:   process.env["ETH_RPC_URL"]       ?? "https://eth.llamarpc.com",
+  ETH:   process.env["ETH_RPC_URL"]       ?? "https://ethereum-rpc.publicnode.com",
   BNB:   process.env["BSC_RPC_URL"]       ?? "https://bsc-dataseed.binance.org",
   BASE:  process.env["BASE_RPC_URL"]      ?? "https://mainnet.base.org",
   MATIC: process.env["POLYGON_RPC_URL"]   ?? "https://polygon-bor-rpc.publicnode.com",

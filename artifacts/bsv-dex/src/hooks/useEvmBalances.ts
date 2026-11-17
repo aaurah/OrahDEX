@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, getWagmiConfig } from "@/lib/reown";
 import { useCustomTokenStore, type CustomToken } from "@/store/useCustomTokenStore";
 import { useCustomChainStore } from "@/store/useCustomChainStore";
@@ -44,6 +44,7 @@ export const ERC20_TOKENS: Record<number, Array<{ symbol: string; name: string; 
     { symbol: "SAND",  name: "The Sandbox",         address: "0x3845badAde8e6dFF049820680d1F14bD3903a5d0", decimals: 18, color: "#00ADEF" },
     { symbol: "MANA",  name: "Decentraland",        address: "0x0F5D2fB29fb7d3CFeE444a200298f468908cC942", decimals: 18, color: "#FF2D55" },
     { symbol: "AXS",   name: "Axie Infinity",       address: "0xBB0E17EF65F82Ab018d8EDd776e8DD940327B28b", decimals: 18, color: "#0055D5" },
+    { symbol: "A8",    name: "Ancient8",            address: "0x3e5a19c91266ad8ce2477b91585d1856b84062df", decimals: 18, color: "#F97316" },
     { symbol: "OCEAN", name: "Ocean Protocol",      address: "0x967da4048cD07aB37855c090aAF366e4ce1b9F48", decimals: 18, color: "#141414" },
     { symbol: "YFI",   name: "yearn.finance",       address: "0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e", decimals: 18, color: "#0066FF" },
     { symbol: "BAL",   name: "Balancer",            address: "0xba100000625a3754423978a60c9317c58a424e3D", decimals: 18, color: "#1E1E1E" },
@@ -262,7 +263,8 @@ function balanceOfCalldata(address: string): string {
 
 async function rpcCall(method: string, params: any[], chainId: number): Promise<any> {
   const customRpc = useCustomChainStore.getState().getById(chainId)?.rpcUrl;
-  const urls = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId], customRpc].filter(Boolean);
+  const urls = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId], customRpc]
+    .filter((url): url is string => Boolean(url));
   for (const rpcUrl of urls) {
     try {
       const res = await globalThis.fetch(rpcUrl, {
@@ -450,7 +452,6 @@ const BLOCKSCOUT_URLS: Record<number, string> = {
  */
 const ETHERSCAN_URLS: Record<number, string> = {
   1:     "https://api.etherscan.io/api",
-  8453:  "https://api.basescan.org/api",
   56:    "https://api.bscscan.com/api",
   137:   "https://api.polygonscan.com/api",
   42161: "https://api.arbiscan.io/api",
@@ -490,8 +491,14 @@ async function fetchBlockscoutTokens(
 
       for (const item of data.items) {
         const tok = item.token;
-        if (!tok?.address || tok.type !== "ERC-20") continue;
-        const decimals = parseInt(tok.decimals ?? "18", 10) || 18;
+        const tokenType = String(tok?.type ?? "").toUpperCase();
+        // The endpoint itself is filtered to ERC-20; some Blockscout chains
+        // omit the per-token type field, so only reject explicit other types.
+        if (!tok?.address || (tokenType && tokenType !== "ERC-20")) continue;
+        const parsedDecimals = parseInt(tok.decimals ?? "18", 10);
+        const decimals = Number.isInteger(parsedDecimals) && parsedDecimals >= 0 && parsedDecimals <= 255
+          ? parsedDecimals
+          : 18;
         const rawVal = BigInt(item.value ?? "0");
         if (rawVal === 0n) continue; // skip tokens with no current balance
         const balance = Number(rawVal) / Math.pow(10, decimals);
@@ -514,6 +521,50 @@ async function fetchBlockscoutTokens(
   }
 
   return results;
+}
+
+async function fetchAlchemyBaseTokens(walletAddress: string): Promise<ExplorerToken[]> {
+  const response = await globalThis.fetch(
+    `${BASE_URL}/api/wallet/base-token-balances/${encodeURIComponent(walletAddress)}`,
+    { cache: "no-store", signal: AbortSignal.timeout(60_000) },
+  );
+  const payload = await response.json().catch(() => ({})) as {
+    error?: string;
+    tokens?: Array<{
+      address: string;
+      symbol: string;
+      name: string;
+      decimals: number;
+      balance: string;
+    }>;
+    complete?: boolean;
+    pagingStalled?: boolean;
+  };
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Could not load Base token balances");
+  }
+  if (payload.pagingStalled) {
+    console.warn("Base token indexer stopped on a repeated page cursor; the wallet may contain more tokens than were listed.");
+  } else if (payload.complete === false) {
+    console.info("Base token discovery will continue on the next wallet refresh.");
+  }
+
+  return (payload.tokens ?? []).flatMap(token => {
+    try {
+      const decimals = Number(token.decimals);
+      const rawBalance = BigInt(token.balance);
+      if (!token.address || rawBalance <= 0n || !Number.isInteger(decimals) || decimals < 0 || decimals > 255) return [];
+      return [{
+        address: token.address.toLowerCase(),
+        symbol: (token.symbol || token.address.slice(2, 8)).slice(0, 20),
+        name: (token.name || token.symbol || "Unknown token").slice(0, 64),
+        decimals,
+        balance: Number(rawBalance) / Math.pow(10, decimals),
+      }];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /**
@@ -554,14 +605,57 @@ async function fetchEtherscanTokens(
 
 /**
  * Main entry point for the "Scan tokens" button.
- * Tries Blockscout first (has balances + metadata), falls back to Etherscan.
+ * Tries Blockscout first, then Alchemy's indexed holdings for Base, and finally
+ * an Etherscan-compatible transfer-history scan.
  * Saves discovered tokens to useCustomTokenStore and returns count added.
  */
-export async function scanTokensFromExplorer(
+const _tokenScanInFlight = new Map<string, Promise<number>>();
+
+export function scanTokensFromExplorer(
   walletAddress: string,
   chainId: number,
+  forceRescan = false,
 ): Promise<number> {
+  const scanKey = `${walletAddress.toLowerCase()}_${chainId}`;
+  const existing = _tokenScanInFlight.get(scanKey);
+  if (existing) return existing;
+
+  const scan = scanTokensFromExplorerInternal(walletAddress, chainId, forceRescan)
+    .finally(() => {
+      if (_tokenScanInFlight.get(scanKey) === scan) _tokenScanInFlight.delete(scanKey);
+    });
+  _tokenScanInFlight.set(scanKey, scan);
+  return scan;
+}
+
+async function scanTokensFromExplorerInternal(
+  walletAddress: string,
+  chainId: number,
+  forceRescan: boolean,
+): Promise<number> {
+  const store = useCustomTokenStore.getState();
+  const prevCount = store.getByChainId(chainId).length;
+  const knownAddresses = new Set([
+    ...(ERC20_TOKENS[chainId] ?? []).map(token => token.address.toLowerCase()),
+    ...store.getByChainId(chainId).map(token => token.address.toLowerCase()),
+  ]);
+
   let tokens = await fetchBlockscoutTokens(walletAddress, chainId);
+  if (chainId === 8453) {
+    try {
+      const alchemyTokens = await fetchAlchemyBaseTokens(walletAddress);
+      const byAddress = new Map<string, ExplorerToken>();
+      for (const token of [...tokens, ...alchemyTokens]) {
+        byAddress.set(token.address.toLowerCase(), token);
+      }
+      tokens = [...byAddress.values()];
+    } catch (error) {
+      // Keep any partial explorer result; if it was empty, surface the indexing
+      // configuration problem so a manual scan does not claim the wallet is empty.
+      if (tokens.length === 0) throw error;
+      console.warn("Base token indexer is unavailable; using partial explorer results.", error);
+    }
+  }
 
   // Fallback to Etherscan-compatible API if Blockscout returned nothing.
   // Etherscan tokentx only gives transfer history — must verify current balance
@@ -580,12 +674,26 @@ export async function scanTokensFromExplorer(
     }
   }
 
-  if (tokens.length === 0) return 0;
+  if (tokens.length === 0) {
+    // Explorer APIs may be unavailable, unsupported, or incomplete. Fall back
+    // to the chain RPC so a failed indexer does not silently hide held tokens.
+    await discoverNewTokens(walletAddress, chainId, knownAddresses, forceRescan);
+    return Math.max(0, useCustomTokenStore.getState().getByChainId(chainId).length - prevCount);
+  }
 
-  const store = useCustomTokenStore.getState();
-  const prevCount = store.getByChainId(chainId).length;
+  const explorerKnownAddresses = new Set([
+    ...knownAddresses,
+    ...tokens.map(token => token.address.toLowerCase()),
+  ]);
+  const newTokens = tokens.filter(t => !knownAddresses.has(t.address.toLowerCase()));
+  if (newTokens.length === 0) {
+    // A partial explorer response can be non-empty while still omitting newer
+    // held tokens. Use the recent Transfer-log scan as a second discovery path.
+    await discoverNewTokens(walletAddress, chainId, explorerKnownAddresses, forceRescan);
+    return 0;
+  }
 
-  const toDiscover: Omit<CustomToken, "id" | "addedAt">[] = tokens.map(t => ({
+  const toDiscover: Omit<CustomToken, "id" | "addedAt">[] = newTokens.map(t => ({
     chainId,
     address:          t.address,
     symbol:           t.symbol,
@@ -596,6 +704,7 @@ export async function scanTokensFromExplorer(
   }));
 
   store.addAutoDiscovered(toDiscover);
+  await discoverNewTokens(walletAddress, chainId, explorerKnownAddresses, forceRescan);
 
   // Return how many tokens were actually new (not already in store)
   const newCount = useCustomTokenStore.getState().getByChainId(chainId).length;
@@ -619,10 +728,25 @@ function padTopic(addr: string): string {
 
 function decodeAbiString(hex: string): string {
   try {
-    if (!hex || hex.length < 130) return "";
-    const len = parseInt(hex.slice(66, 130), 16);
-    if (len === 0 || len > 80) return "";
-    const chars = hex.slice(130, 130 + len * 2).match(/.{1,2}/g) ?? [];
+    if (!hex) return "";
+    const data = hex.replace(/^0x/i, "");
+    const decodeText = (value: string) => {
+      const bytes = (value.match(/.{1,2}/g) ?? []).map(byte => parseInt(byte, 16));
+      const terminator = bytes.indexOf(0);
+      return bytes
+        .slice(0, terminator < 0 ? bytes.length : terminator)
+        .filter(byte => byte >= 32 && byte < 127)
+        .map(byte => String.fromCharCode(byte))
+        .join("")
+        .trim();
+    };
+
+    // Older ERC-20 contracts sometimes return bytes32 instead of an ABI string.
+    if (data.length === 64) return decodeText(data);
+    if (data.length < 128) return "";
+    const len = parseInt(data.slice(64, 128), 16);
+    if (!Number.isSafeInteger(len) || len <= 0 || len > 80) return "";
+    const chars = data.slice(128, 128 + len * 2).match(/.{1,2}/g) ?? [];
     return chars
       .map(b => String.fromCharCode(parseInt(b, 16)))
       .filter(c => c.charCodeAt(0) >= 32 && c.charCodeAt(0) < 127)
@@ -737,8 +861,17 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
   const [balances,  setBalances]  = useState<TokenBalance[]>(_cached?.balances ?? []);
   const [loading,   setLoading]   = useState(false);
   const [lastFetch, setLastFetch] = useState(_cached?.fetchedAt ?? 0);
+  const activeCacheKey = useRef(cacheKey);
 
-  const fetch = useCallback(async () => {
+  useEffect(() => {
+    activeCacheKey.current = cacheKey;
+    const current = cacheKey ? _balanceCache.get(cacheKey) : undefined;
+    setBalances(current?.balances ?? []);
+    setLastFetch(current?.fetchedAt ?? 0);
+    setLoading(false);
+  }, [cacheKey]);
+
+  const fetch = useCallback(async (forceRefresh = false) => {
     if (!address || !chainId || !cacheKey) return;
 
     // If a fetch is already in-flight for this address+chain, attach to it so
@@ -747,6 +880,7 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
     const existing = _inFlight.get(cacheKey);
     if (existing) {
       await existing;
+      if (activeCacheKey.current !== cacheKey) return;
       const c = _balanceCache.get(cacheKey);
       if (c) { setBalances(c.balances); setLastFetch(c.fetchedAt); }
       return;
@@ -754,9 +888,12 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
 
     // Skip fetch if cache is still fresh (e.g. second hook instance mounts
     // within CACHE_TTL_MS of the first).
-    if (_cached && Date.now() - _cached.fetchedAt < CACHE_TTL_MS) {
-      setBalances(_cached.balances);
-      setLastFetch(_cached.fetchedAt);
+    const currentCache = _balanceCache.get(cacheKey);
+    if (!forceRefresh && currentCache && Date.now() - currentCache.fetchedAt < CACHE_TTL_MS) {
+      if (activeCacheKey.current === cacheKey) {
+        setBalances(currentCache.balances);
+        setLastFetch(currentCache.fetchedAt);
+      }
       return;
     }
 
@@ -774,9 +911,11 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
         if (config) {
           try {
             const { getBalance } = await import("@wagmi/core");
+            const wagmiChainId = config.chains.find(chain => chain.id === resolvedChainId)?.id;
+            if (!wagmiChainId) throw new Error(`Chain ${resolvedChainId} is not configured in the wallet`);
             const result = await getBalance(config, {
               address: address as `0x${string}`,
-              chainId: resolvedChainId,
+              chainId: wagmiChainId,
             });
             return Number(result.value) / 1e18;
           } catch { /* fall through */ }
@@ -813,7 +952,10 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
       // isAutoDiscovered tokens act like built-ins (hidden at 0 balance)
       // manually-added tokens always shown even at 0 balance
       const builtInTokens = ERC20_TOKENS[chainId] ?? [];
-      const storeTokens   = useCustomTokenStore.getState().getByChainId(chainId).map(ct => ({
+      const builtInAddresses = new Set(builtInTokens.map(token => token.address.toLowerCase()));
+      const storeTokens   = useCustomTokenStore.getState().getByChainId(chainId)
+        .filter(ct => !builtInAddresses.has(ct.address.toLowerCase()))
+        .map(ct => ({
         symbol:   ct.symbol,
         name:     ct.name,
         address:  ct.address,
@@ -822,9 +964,17 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
         isCustom: !ct.isAutoDiscovered,
       }));
 
+      const tokensByAddress = new Map<string, typeof builtInTokens[number] | typeof storeTokens[number]>();
+      for (const token of [...builtInTokens, ...storeTokens]) {
+        if (!tokensByAddress.has(token.address.toLowerCase())) {
+          tokensByAddress.set(token.address.toLowerCase(), token);
+        }
+      }
       const tokens = [
-        ...builtInTokens.map(t => ({ ...t, isCustom: false as const })),
-        ...storeTokens,
+        ...[...tokensByAddress.values()].map(t => ({
+          ...t,
+          isCustom: "isCustom" in t ? t.isCustom : false as const,
+        })),
       ];
 
       // Batch all balanceOf calls in one JSON-RPC request
@@ -862,6 +1012,7 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
       // hook instances that attach to the in-flight promise get fresh data.
       const fetchedAt = Date.now();
       _balanceCache.set(cacheKey, { balances: result, fetchedAt });
+      if (activeCacheKey.current !== cacheKey) return;
       setBalances(result);
       setLastFetch(fetchedAt);
 
@@ -886,6 +1037,7 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
         ).then(cgPrices => {
           if (Object.keys(cgPrices).length === 0) return;
           setBalances(prev => {
+            if (activeCacheKey.current !== cacheKey) return prev;
             const updated = prev.map(t => {
               if (!t.contractAddress || t.price > 0) return t;
               const p = cgPrices[t.contractAddress.toLowerCase()];
@@ -900,12 +1052,14 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
     } catch (err) {
       console.error("EVM balance fetch error:", err);
     } finally {
-      setLoading(false);
+      if (activeCacheKey.current === cacheKey) setLoading(false);
       // Resolve the in-flight promise so waiting hook instances wake up.
-      _inFlight.delete(cacheKey);
+      if (_inFlight.get(cacheKey) === promise) _inFlight.delete(cacheKey);
       _resolve();
     }
   }, [address, chainId, cacheKey]);
+
+  const refresh = useCallback(() => fetch(true), [fetch]);
 
   useEffect(() => {
     if (!address || !chainId) return;
@@ -929,19 +1083,54 @@ export function useEvmBalances(address: string | null, chainId: number | null) {
   // so the balance list updates without waiting for the next 30s tick.
   useEffect(() => {
     if (!address || !chainId) return;
-    let prevCount = useCustomTokenStore.getState().getByChainId(chainId).length;
+    const getTokenSignature = () => useCustomTokenStore.getState().getByChainId(chainId)
+      .map(token => `${token.address.toLowerCase()}:${token.symbol}:${token.decimals}:${token.isAutoDiscovered ? 1 : 0}`)
+      .sort()
+      .join("|");
+    let prevTokenSignature = getTokenSignature();
     const unsub = useCustomTokenStore.subscribe(state => {
-      const count = state.getByChainId(chainId).length;
-      if (count !== prevCount) {
-        prevCount = count;
+      const tokenSignature = state.getByChainId(chainId)
+        .map(token => `${token.address.toLowerCase()}:${token.symbol}:${token.decimals}:${token.isAutoDiscovered ? 1 : 0}`)
+        .sort()
+        .join("|");
+      if (tokenSignature !== prevTokenSignature) {
+        prevTokenSignature = tokenSignature;
         // Bust the cache so the re-fetch always hits the RPC (the token list
         // changed — stale cache would suppress the update).
         if (cacheKey) _balanceCache.delete(cacheKey);
-        fetch();
+        fetch(true);
       }
     });
     return unsub;
   }, [address, chainId, cacheKey, fetch]);
 
-  return { balances, loading, refresh: fetch, lastFetch };
+  return { balances, loading, refresh, lastFetch };
+}
+
+export const EVM_PORTFOLIO_CHAINS = [
+  { chainId: 1, name: "Ethereum", symbol: "ETH" },
+  { chainId: 56, name: "BNB Chain", symbol: "BNB" },
+  { chainId: 137, name: "Polygon", symbol: "POL" },
+  { chainId: 42161, name: "Arbitrum", symbol: "ETH" },
+  { chainId: 10, name: "Optimism", symbol: "ETH" },
+  { chainId: 8453, name: "Base", symbol: "ETH" },
+  { chainId: 43114, name: "Avalanche", symbol: "AVAX" },
+  { chainId: 59144, name: "Linea", symbol: "ETH" },
+] as const;
+
+export function useAllEvmChainBalances(address: string | null) {
+  const ethereum = useEvmBalances(address, 1);
+  const bnb = useEvmBalances(address, 56);
+  const polygon = useEvmBalances(address, 137);
+  const arbitrum = useEvmBalances(address, 42161);
+  const optimism = useEvmBalances(address, 10);
+  const base = useEvmBalances(address, 8453);
+  const avalanche = useEvmBalances(address, 43114);
+  const linea = useEvmBalances(address, 59144);
+  const snapshots = [ethereum, bnb, polygon, arbitrum, optimism, base, avalanche, linea];
+
+  return EVM_PORTFOLIO_CHAINS.map((chain, index) => ({
+    ...chain,
+    ...snapshots[index],
+  }));
 }

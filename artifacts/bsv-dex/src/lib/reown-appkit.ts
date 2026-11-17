@@ -2,6 +2,7 @@ import { createAppKit } from "@reown/appkit/react";
 import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 import { SolanaAdapter } from "@reown/appkit-adapter-solana";
 import { BitcoinAdapter } from "@reown/appkit-adapter-bitcoin";
+import { BlockchainApiController } from "@reown/appkit-controllers";
 import {
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
   linea, zkSync, scroll, sepolia,
@@ -67,14 +68,14 @@ const evmNetworks = [
   linea, zkSync, scroll, sepolia,
 ] as const;
 
-export const wagmiAdapter  = new WagmiAdapter({ projectId, networks: evmNetworks });
+export const wagmiAdapter  = new WagmiAdapter({ projectId, networks: [...evmNetworks] });
 export const solanaAdapter  = new SolanaAdapter();
 export const bitcoinAdapter = new BitcoinAdapter();
 
 const appKit = createAppKit({
   adapters: [wagmiAdapter, solanaAdapter, bitcoinAdapter],
   projectId,
-  networks,
+  networks: [...networks],
   defaultNetwork: initialNetwork,
   metadata: {
     name: "OrahDEX",
@@ -91,7 +92,12 @@ const appKit = createAppKit({
     onramp:        true,
     swaps:         true,
     smartAccounts: true,
-  },
+    reownBranding: false,
+  } as any,
+  // Universal links work more reliably than custom wallet URI schemes in
+  // mobile browsers such as Brave, which can silently return without opening
+  // the installed wallet app.
+  experimental_preferUniversalLinks: true,
   enableWallets: true,
   themeMode: _initialThemeMode,
   themeVariables: {
@@ -106,25 +112,42 @@ const appKit = createAppKit({
 /** Prevents the account subscription from re-connecting after intentional disconnect. */
 let _suppressNextConnect = false;
 
-/** Injects CSS into AppKit's shadow DOM to hide Reown branding. */
+/** Hides the Reown attribution element across AppKit's nested shadow roots. */
 function hideReownBranding(): void {
   if (typeof window === "undefined") return;
-  const inject = () => {
-    const modal = document.querySelector("w3m-modal");
-    if (!modal?.shadowRoot) return;
-    const id = "orah-hide-branding";
-    if (modal.shadowRoot.getElementById(id)) return;
-    const style = document.createElement("style");
-    style.id = id;
-    style.textContent = `
-      w3m-footer, w3m-legal-footer { display: none !important; height: 0 !important; }
-      .w3m-footer { display: none !important; }
-    `;
-    modal.shadowRoot.appendChild(style);
+  const styledRoots = new WeakSet<ShadowRoot>();
+  const observedRoots = new WeakSet<ShadowRoot>();
+
+  const scan = (root: Document | ShadowRoot) => {
+    if (root instanceof ShadowRoot) {
+      if (!styledRoots.has(root)) {
+        const style = document.createElement("style");
+        style.textContent = `
+          wui-ux-by-reown, w3m-footer, w3m-legal-footer {
+            display: none !important;
+            height: 0 !important;
+            visibility: hidden !important;
+          }
+        `;
+        root.appendChild(style);
+        styledRoots.add(root);
+      }
+
+      if (!observedRoots.has(root)) {
+        const rootObserver = new MutationObserver(() => scan(root));
+        rootObserver.observe(root, { childList: true, subtree: true });
+        observedRoots.add(root);
+      }
+    }
+
+    root.querySelectorAll("*").forEach((element) => {
+      if (element.shadowRoot) scan(element.shadowRoot);
+    });
   };
-  const observer = new MutationObserver(inject);
-  observer.observe(document.body, { childList: true });
-  inject();
+
+  const observer = new MutationObserver(() => scan(document));
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  scan(document);
 }
 
 if (typeof window !== "undefined") {
@@ -358,7 +381,7 @@ export function subscribeReownAccount(
         _suppressNextConnect = false;
         cb(null, 1, false);
       }
-    });
+    }, "eip155");
   } catch {
     return () => {};
   }
@@ -373,17 +396,83 @@ export function getAppKitWagmiConfig() {
   return wagmiAdapter.wagmiConfig;
 }
 
-export function openReownModal(): void {
+export async function openReownModal(namespace?: "eip155" | "solana" | "bip122"): Promise<boolean> {
   _suppressNextConnect = false;
   // Sync theme right before opening — guarantees the modal always opens in the
   // current OrahDEX theme even if the Zustand subscription hasn't fired yet
   // (e.g. the module just loaded for the first time after a theme change).
   try { syncReownTheme(readStoredOrahTheme()); } catch {}
   try {
-    appKit.open({ view: "Connect" });
+    await appKit.open({ view: "Connect", ...(namespace ? { namespace } : {}) });
+    return true;
   } catch (e) {
     console.error("[OrahDEX] Failed to open Reown modal:", e);
+    return false;
   }
+}
+
+export interface ReownSwapCoin {
+  symbol: string;
+  name: string;
+  address: string;
+  decimals: number;
+  logoUri: string | null;
+  chainId: number;
+  network: string;
+  networkName: string;
+}
+
+const REOWN_SWAP_NETWORKS = [
+  { chainId: 1, network: "ETH", networkName: "Ethereum" },
+  { chainId: 137, network: "MATIC", networkName: "Polygon" },
+  { chainId: 42161, network: "ARB", networkName: "Arbitrum" },
+  { chainId: 10, network: "OP", networkName: "Optimism" },
+  { chainId: 8453, network: "BASE", networkName: "Base" },
+  { chainId: 56, network: "BSC", networkName: "BNB Chain" },
+  { chainId: 43114, network: "AVAXC", networkName: "Avalanche" },
+  { chainId: 59144, network: "LINEA", networkName: "Linea" },
+  { chainId: 324, network: "ZKSYNC", networkName: "zkSync Era" },
+  { chainId: 534352, network: "SCROLL", networkName: "Scroll" },
+];
+
+export async function fetchReownSwapCoins(chainIds?: readonly number[]): Promise<ReownSwapCoin[]> {
+  const results: ReownSwapCoin[] = [];
+  const networks = chainIds
+    ? REOWN_SWAP_NETWORKS.filter(network => chainIds.includes(network.chainId))
+    : REOWN_SWAP_NETWORKS;
+  for (let offset = 0; offset < networks.length; offset += 3) {
+    const batch = networks.slice(offset, offset + 3);
+    const batches = await Promise.all(batch.map(async network => {
+      try {
+        const response = await BlockchainApiController.fetchSwapTokens({
+          chainId: `eip155:${network.chainId}`,
+        });
+        return (response?.tokens ?? [])
+          .filter(token =>
+            typeof token.symbol === "string" &&
+            token.symbol.trim().length > 0 &&
+            typeof token.name === "string" &&
+            typeof token.address === "string" &&
+            token.address.toLowerCase().startsWith(`eip155:${network.chainId}:`),
+          )
+          .map(token => ({
+            symbol: token.symbol.trim().toUpperCase(),
+            name: token.name.trim(),
+            address: token.address,
+            decimals: token.decimals,
+            logoUri: token.logoUri || null,
+            chainId: network.chainId,
+            network: network.network,
+            networkName: network.networkName,
+          }));
+      } catch (error) {
+        console.warn(`[OrahDEX] Reown token list unavailable for ${network.networkName}:`, error);
+        return [];
+      }
+    }));
+    results.push(...batches.flat());
+  }
+  return [...new Map(results.map(token => [token.address.toLowerCase(), token])).values()];
 }
 
 export function disconnectReown(): void {

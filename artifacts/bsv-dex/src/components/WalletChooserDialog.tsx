@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useWalletStore } from "@/store/useWalletStore";
+import { openReownModal } from "@/lib/reown-appkit";
 import {
   registerPasskeyWallet,
   importPasskeyWallet,
@@ -365,7 +366,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
   const finishWithAddrs = (addrs: Awaited<ReturnType<typeof deriveAllAddresses>>) => {
     const chains: PasskeyChainAddresses = {
       evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch,
-      bsv: addrs.bsv, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+      bsv: addrs.bsv, bsvTest: addrs.bsvTest, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     };
     saveDerivedAddresses(addrs.evm, chains);
     applyOrahWallet(addrs.evm, chains);
@@ -494,7 +495,7 @@ function ImportPanel({ onDone }: { onDone: () => void }) {
       <div className="flex items-start gap-2 px-1 pt-1">
         <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-500" />
         <p className="text-[11px] text-muted-foreground leading-relaxed">
-          Your PIN and passkeys are stored on <strong>this device</strong> and tied to <strong>this website URL</strong>. A PIN set on one domain (e.g. dev) won't work on another (e.g. orahdex.org) — just set a new one there.
+          Your PIN and passkeys are stored on <strong>this device</strong> and tied to <strong>this website URL</strong>. A PIN set on one domain (e.g. dev) won't work on another (e.g. orahdex.com) — just set a new one there.
         </p>
       </div>
 
@@ -704,7 +705,7 @@ function SeedCreatePanel({ onDone }: { onDone: () => void }) {
   const finishWithAddrs = (addrs: Awaited<ReturnType<typeof deriveAllAddresses>>) => {
     const chains: PasskeyChainAddresses = {
       evm: addrs.evm, sol: addrs.sol, btc: addrs.btc, bch: addrs.bch,
-      bsv: addrs.bsv, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
+      bsv: addrs.bsv, bsvTest: addrs.bsvTest, tron: addrs.tron, xrp: addrs.xrp, ltc: addrs.ltc, doge: addrs.doge,
     };
     saveDerivedAddresses(addrs.evm, chains);
     applyOrahWallet(addrs.evm, chains);
@@ -1116,13 +1117,23 @@ function MobileQRPanel({ onDone }: { onDone: () => void }) {
 /* ─── Main Dialog ───────────────────────────────────────────────────────── */
 
 export function WalletChooserDialog() {
-  const { isOpen, close } = useWalletModalStore();
+  const { isOpen, close, initialTab, handCashLinkOnly } = useWalletModalStore();
   const [tab, setTab] = useState<Tab>("choose");
   const [socialOrigin, setSocialOrigin] = useState<string | null>(null);
+  const openReownAfterCloseRef = useRef(false);
+  const { toast } = useToast();
 
   const handleClose = () => { setTab("choose"); setSocialOrigin(null); close(); };
+  const handleOpenEvmWallet = () => {
+    openReownAfterCloseRef.current = true;
+    handleClose();
+  };
   const handleMobileQr = () => setTab("mobile-qr");
   const handleHWPick = (device: HWDevice) => setTab(device);
+
+  useEffect(() => {
+    if (isOpen) setTab(initialTab);
+  }, [isOpen, initialTab]);
 
   const hcProfile   = useHandCashStore(s => s.profile);
   const hcBalance   = useHandCashStore(s => s.balance);
@@ -1141,6 +1152,11 @@ export function WalletChooserDialog() {
         return;
       }
       const { url } = await res.json();
+      if (handCashLinkOnly) {
+        localStorage.setItem("orahdex-handcash-link-only", "1");
+      } else {
+        localStorage.removeItem("orahdex-handcash-link-only");
+      }
       window.location.href = url;
     } catch {
       setHcError("Could not reach the server. Please try again.");
@@ -1155,6 +1171,24 @@ export function WalletChooserDialog() {
   return (
     <Dialog open={isOpen} onOpenChange={v => { if (!v) handleClose(); }}>
       <DialogContent
+        onCloseAutoFocus={(event) => {
+          if (!openReownAfterCloseRef.current) return;
+          openReownAfterCloseRef.current = false;
+          // Wait until Radix has removed its focus trap and hidden-layer state;
+          // otherwise AppKit can appear dimmed behind the old chooser.
+          event.preventDefault();
+          window.setTimeout(() => {
+            void openReownModal().then((opened) => {
+              if (!opened) {
+                toast({
+                  title: "Wallet picker did not open",
+                  description: "Reload the page and try connecting again.",
+                  variant: "destructive",
+                });
+              }
+            });
+          }, 0);
+        }}
         className="p-0 gap-0 bg-background border-border sm:max-w-[420px] overflow-hidden rounded-2xl shadow-2xl flex flex-col max-h-[90dvh]"
         style={{ backgroundImage: "radial-gradient(ellipse 70% 40% at 50% -5%, hsl(var(--primary) / 0.08) 0%, transparent 70%)" }}
       >
@@ -1204,12 +1238,7 @@ export function WalletChooserDialog() {
             <div className="flex-1 overflow-y-auto overscroll-contain px-6 pb-4">
               <div className="space-y-2">
                 <OptionCard
-                  onClick={() => {
-                    close();
-                    import("@/lib/reown-appkit")
-                      .then(({ openReownModal }) => openReownModal())
-                      .catch(() => {});
-                  }}
+                  onClick={handleOpenEvmWallet}
                   iconBg="bg-blue-500/10 border border-blue-500/20 group-hover:bg-blue-500/15 group-hover:border-blue-500/30"
                   icon={<Globe className="w-5 h-5 text-blue-400" />}
                   title="EVM Wallet"
@@ -1460,7 +1489,16 @@ export function WalletChooserDialog() {
                   <Button
                     variant="outline"
                     className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-500/50"
-                    onClick={() => { hcDisconnect(); useWalletStore.getState().disconnect(); setTab("choose"); }}
+                    onClick={() => {
+                      hcDisconnect();
+                      localStorage.removeItem("orahdex-handcash-link-only");
+                      if (handCashLinkOnly) {
+                        useWalletStore.getState().setInternalBsvAddress(null);
+                      } else if (useWalletStore.getState().provider === "handcash") {
+                        useWalletStore.getState().disconnect();
+                      }
+                      setTab("choose");
+                    }}
                   >
                     Disconnect HandCash
                   </Button>

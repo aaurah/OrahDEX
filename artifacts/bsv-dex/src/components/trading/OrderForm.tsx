@@ -27,6 +27,7 @@ import {
 import { QRCodeCanvas } from "qrcode.react";
 import { API_BASE } from "@/lib/api";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
+import { buildOrderIntentMessage } from "@/lib/tradeAuth";
 import {
   CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
   getAssetNativeChain, walletCanReceive,
@@ -372,7 +373,6 @@ export function OrderForm({
 
   // Non-custodial mode: any EVM wallet (including Orah self-custody) trades
   // directly from its on-chain balance. Only non-EVM Orah chains use ledger.
-  const usesApiBalance = isOrahWallet && !isEvm;
 
   // ── API ledger balances (available + locked) ────────────────────────────────
   const [apiBalances, setApiBalances] = useState<Record<string, number>>({});
@@ -403,6 +403,9 @@ export function OrderForm({
 
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
+  // Only the separate external-swap flow uses wallet-held funds. Order-book
+  // matching currently requires an already funded exchange ledger reservation.
+  const usesApiBalance = !(externalSwapMode && type === "market");
   const [price, setPrice]     = useState<string>(currentPrice > 0 ? currentPrice.toFixed(2) : "");
   const [stopPrice, setStopPrice] = useState<string>("");
   const [amount, setAmount]   = useState<string>("");
@@ -524,10 +527,10 @@ export function OrderForm({
   // For OrahWallet (non-EVM): merge on-chain native balance so BSV shows correctly
   // even when no funds have been deposited to the internal ledger yet.
   const baseAvailable  = usesApiBalance
-    ? Math.max(internalBase,  isNativeBase  ? nativeBal : 0)
+    ? internalBase
     : Math.max(walletBase, internalBase);
   const quoteAvailable = usesApiBalance
-    ? Math.max(internalQuote, isNativeQuote ? nativeBal : 0)
+    ? internalQuote
     : Math.max(walletQuote, internalQuote);
   const availableAmt   = side === "sell" ? baseAvailable  : quoteAvailable;
   const availableSym   = side === "sell" ? base : quote;
@@ -879,16 +882,20 @@ export function OrderForm({
       orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
       orderExpiry = String(Math.floor(Date.now() / 1000) + 5 * 60);
 
-      // Canonical message — must mirror buildOrderAuthMessage() in walletAuth.ts
-      const orderMsg = [
-        "Authorize OrahDEX order",
-        `Wallet: ${address}`,
-        `Symbol: ${symbol}`,
-        `Side: ${side}`,
-        `Quantity: ${parseFloat(amount).toString()}`,
-        `Nonce: ${orderNonce}`,
-        `Expiry: ${orderExpiry}`,
-      ].join("\n");
+      const timeInForce = type === "market" ? "IOC" : "GTC";
+      const orderMsg = buildOrderIntentMessage({
+        walletAddress: address,
+        symbol,
+        side,
+        quantity: parseFloat(amount).toString(),
+        type,
+        price: type !== "market" ? parseFloat(price).toString() : "",
+        stopPrice: type === "stop" ? parseFloat(stopPrice).toString() : "",
+        chainId: isEvm && chainId ? String(chainId) : "",
+        timeInForce,
+        nonce: orderNonce,
+        expiry: orderExpiry,
+      });
 
       try {
         setSigningOrder(true);
@@ -973,6 +980,7 @@ export function OrderForm({
           price:          type !== "market" ? parseFloat(price) : undefined,
           stopPrice:      type === "stop" ? parseFloat(stopPrice) : undefined,
           quantity:       parseFloat(amount),
+          timeInForce:    type === "market" ? "IOC" : "GTC",
           networkType:    isEvm ? "evm" : network === 'bch' ? "bch" : network === 'btc' ? "btc" : network === 'sol' ? "sol" : "bsv",
           walletSource:   (isOrahWallet && !isEvm) ? "orah" : "external",
           reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,
@@ -1084,7 +1092,7 @@ export function OrderForm({
       <div className="p-3 flex-1 flex flex-col gap-3 overflow-y-auto">
         {/* Order type */}
         <div className="flex gap-0 text-xs font-medium bg-secondary p-0.5 rounded-lg">
-          {(["limit", "market", "stop"] as OrderType[]).map((t) => (
+          {(["limit", "market"] as OrderType[]).map((t) => (
             <button key={t}
               data-testid={`order-type-${t}`}
               className={cn("flex-1 py-1.5 rounded-md transition-colors capitalize",
@@ -1102,7 +1110,7 @@ export function OrderForm({
             {isEvm ? (
               <>
                 <Wallet className="w-3 h-3 text-emerald-400/70" />
-                Wallet Balance
+                {usesApiBalance ? "Trading Balance" : "Wallet Balance"}
               </>
             ) : "Available"}
           </div>
@@ -1126,7 +1134,7 @@ export function OrderForm({
         {isEvm && !!address && (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs -mt-0.5 bg-primary/8 border border-primary/20">
             <ShieldCheck className="w-3.5 h-3.5 text-primary shrink-0" />
-            <span className="text-primary/80 font-medium">Non-custodial — your wallet settles on-chain. No deposit required.</span>
+            <span className="text-primary/80 font-medium">Order-book trading uses available trading balance. Wallet-to-wallet matching is paused; use Swap for wallet-held funds.</span>
           </div>
         )}
 

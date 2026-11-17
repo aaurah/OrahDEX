@@ -4,6 +4,7 @@ import path from "path";
 import zlib from "zlib";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
+import { resolveStaticPath } from "./static-path.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "dist", "public");
@@ -42,7 +43,7 @@ function acceptsGzip(req) {
 }
 
 function etag(buf) {
-  return `"${crypto.createHash("sha1").update(buf).digest("hex").slice(0, 16)}"`;
+  return `"${crypto.createHash("sha256").update(buf).digest("hex")}"`;
 }
 
 const CSP = [
@@ -120,7 +121,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  let filePath = path.join(ROOT, urlPath);
+  let filePath = resolveStaticPath(ROOT, urlPath);
+  if (!filePath) {
+    res.writeHead(403, { "Content-Type": "text/plain", ...SECURITY_HEADERS });
+    res.end("Forbidden");
+    return;
+  }
 
   try {
     const stat = fs.statSync(filePath);

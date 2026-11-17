@@ -50,7 +50,9 @@ export async function runCoinPaprikaImport(): Promise<{ upserted: number }> {
     });
     if (!res.ok) throw new Error(`CoinPaprika HTTP ${res.status}`);
 
-    const coins = (await res.json()) as PaprikaCoin[];
+    const payload: unknown = await res.json();
+    if (!Array.isArray(payload)) throw new Error("CoinPaprika returned an invalid coin list.");
+    const coins = payload as PaprikaCoin[];
 
     // Deduplicate by symbol: prefer active coins, then lower rank
     const bySymbol = new Map<string, PaprikaCoin>();

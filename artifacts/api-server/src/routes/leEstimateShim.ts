@@ -15,7 +15,14 @@ async function quotePair(from: string, to: string) {
     signal: AbortSignal.timeout(15000),
   });
   if (!r.ok) return null;
-  const d = await r.json();
+  const d = await r.json() as {
+    best?: {
+      expectedOutput: string | number;
+      minAmount?: string | number | null;
+      maxAmount?: string | number | null;
+      venue?: string;
+    } | null;
+  };
   return d?.best ?? null;
 }
 

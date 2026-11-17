@@ -78,7 +78,7 @@ function base58Decode(s: string): Uint8Array {
  * Decode a P2PKH address (1…) → 20-byte hash160 (pubkey hash).
  * Validates the base58check checksum.
  */
-export async function decodeP2PKH(address: string): Promise<Uint8Array> {
+export async function decodeP2PKH(address: string, network: BsvTxNetwork = "main"): Promise<Uint8Array> {
   const decoded = base58Decode(address);
   if (decoded.length !== 25)
     throw new Error(`Bad address length: ${decoded.length} (expected 25)`);
@@ -87,7 +87,10 @@ export async function decodeP2PKH(address: string): Promise<Uint8Array> {
   const expected = (await sha256d(payload)).slice(0, 4);
   if (!checksum.every((b, i) => b === expected[i]))
     throw new Error(`Bad address checksum for ${address}`);
-  // payload[0] = version byte (0x00 = BSV mainnet P2PKH)
+  const expectedVersion = network === "test" ? 0x6f : 0x00;
+  if (payload[0] !== expectedVersion) {
+    throw new Error(`Address belongs to the wrong BSV network (expected ${network}net).`);
+  }
   return decoded.slice(1, 21);  // 20-byte hash160
 }
 
@@ -129,11 +132,13 @@ export interface BsvSendResult {
   feeSat: number;
 }
 
+export type BsvTxNetwork = "main" | "test";
+
 // ── WhatsOnChain helpers ──────────────────────────────────────────────────────
 
-export async function fetchBsvUtxos(address: string): Promise<UTXO[]> {
+export async function fetchBsvUtxos(address: string, network: BsvTxNetwork = "main"): Promise<UTXO[]> {
   const r = await fetch(
-    `https://api.whatsonchain.com/v1/bsv/main/address/${address}/unspent`,
+    `https://api.whatsonchain.com/v1/bsv/${network}/address/${encodeURIComponent(address)}/unspent`,
   );
   if (!r.ok) throw new Error(`WoC UTXO fetch failed: ${r.status}`);
   const data = await r.json();
@@ -145,8 +150,8 @@ export async function fetchBsvUtxos(address: string): Promise<UTXO[]> {
   }));
 }
 
-async function broadcastBsvTx(txHex: string): Promise<string> {
-  const r = await fetch("https://api.whatsonchain.com/v1/bsv/main/tx/raw", {
+async function broadcastBsvTx(txHex: string, network: BsvTxNetwork): Promise<string> {
+  const r = await fetch(`https://api.whatsonchain.com/v1/bsv/${network}/tx/raw`, {
     method:  "POST",
     headers: { "Content-Type": "application/json" },
     body:    JSON.stringify({ txhex: txHex }),
@@ -175,16 +180,17 @@ export async function buildSignBroadcastBsvTx(
   recipientAddress: string,
   amountSat:        number,
   privateKey:       Uint8Array,
+  network:          BsvTxNetwork = "main",
 ): Promise<BsvSendResult> {
   const { secp256k1 } = await import("@noble/curves/secp256k1.js");
   const { sha256 }    = await import("@noble/hashes/sha2.js");
 
   const pubkey        = secp256k1.getPublicKey(privateKey, true); // 33-byte compressed
-  const senderHash20  = await decodeP2PKH(senderAddress);
-  const recipHash20   = await decodeP2PKH(recipientAddress);
+  const senderHash20  = await decodeP2PKH(senderAddress, network);
+  const recipHash20   = await decodeP2PKH(recipientAddress, network);
 
   // ── 1. Fetch UTXOs ────────────────────────────────────────────────────────
-  const allUtxos = await fetchBsvUtxos(senderAddress);
+  const allUtxos = await fetchBsvUtxos(senderAddress, network);
   if (allUtxos.length === 0)
     throw new Error("No UTXOs found. Your BSV wallet has no spendable coins.");
 
@@ -301,7 +307,7 @@ export async function buildSignBroadcastBsvTx(
   const txid    = bytesToHex(sha256(sha256(txBytes)).reverse()); // SHA256d, display order
 
   // ── 7. Broadcast ─────────────────────────────────────────────────────────
-  const broadcastTxid = await broadcastBsvTx(txHex);
+  const broadcastTxid = await broadcastBsvTx(txHex, network);
 
   return { txid: broadcastTxid || txid, txHex, feeSat };
 }

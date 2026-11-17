@@ -10,7 +10,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import {
   Maximize2, Minimize2, ZoomIn, ZoomOut, AlignCenter,
   Camera, ChevronDown, ChevronUp,
-  TrendingUp, BarChart2,
+  TrendingUp, BarChart2, X,
 } from 'lucide-react';
 
 const BASE_URL = import.meta.env.BASE_URL?.replace(/\/$/, '') ?? '';
@@ -27,6 +27,8 @@ interface ChartProps {
   hideIntervalBar?: boolean;
   subIndicator?: SubIndicator;
   externalDataOnly?: boolean;
+  externalDataLoading?: boolean;
+  dataSourceLabel?: string;
 }
 
 /* ── Intervals ──────────────────────────────────────────────────────────── */
@@ -274,6 +276,8 @@ function OrahChart({
   hideIntervalBar,
   data: fallbackData,
   externalDataOnly = false,
+  externalDataLoading = false,
+  dataSourceLabel,
 }: ChartProps) {
   const mainRef   = useRef<HTMLDivElement>(null);
   const subRef    = useRef<HTMLDivElement>(null);
@@ -343,6 +347,19 @@ function OrahChart({
   const effectiveInterval = autoInterval ?? interval;
   useEffect(() => { effectiveIntervalRef.current = effectiveInterval; }, [effectiveInterval]);
   useEffect(() => { setAutoInterval(null); }, [interval]);
+  useEffect(() => {
+    if (!fullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullscreen(false);
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [fullscreen]);
 
   /* parsed symbol */
   const parts = useMemo(() => {
@@ -443,6 +460,10 @@ function OrahChart({
      never clear the last good chart merely because a refetch is in flight. */
   useEffect(() => {
     if (!externalDataOnly || !Array.isArray(fallbackData)) return;
+    if (externalDataLoading) {
+      setLoading(true);
+      return;
+    }
     const unique = new Map<number, Candle>();
     for (const raw of fallbackData) {
       const time = Number(raw?.time);
@@ -464,9 +485,11 @@ function OrahChart({
     const next = [...unique.values()].sort((a, b) => Number(a.time) - Number(b.time));
     if (next.length >= 2) {
       setCandles(next);
-      setLoading(false);
+    } else {
+      setCandles([]);
     }
-  }, [externalDataOnly, fallbackData, symbol, interval]);
+    setLoading(false);
+  }, [externalDataOnly, externalDataLoading, fallbackData, symbol, interval]);
 
   /* When the API fetch completes with no data, fall back to the provided candles */
   useEffect(() => {
@@ -910,7 +933,18 @@ function OrahChart({
   });
 
   return (
-    <div ref={wrapRef} className={`flex flex-col ${fullscreen ? 'fixed inset-0 z-[9999]' : 'h-full'}`} style={{ backgroundColor: col.bg, color: col.text }}>
+    <div ref={wrapRef} className={`relative flex flex-col ${fullscreen ? 'fixed inset-0 z-[9999]' : 'h-full'}`} style={{ backgroundColor: col.bg, color: col.text }}>
+      {fullscreen && (
+        <button
+          onClick={() => setFullscreen(false)}
+          title="Close expanded chart"
+          aria-label="Close expanded chart"
+          className="absolute right-2 z-[10001] rounded-full border border-white/15 bg-black/75 p-2 text-white shadow-lg backdrop-blur-sm"
+          style={{ top: "calc(env(safe-area-inset-top, 0px) + 8px)" }}
+        >
+          <X className="h-4 w-4" />
+        </button>
+      )}
 
       {/* ── TOP STATS BAR ── */}
       <div className="flex items-center gap-2 px-3 py-1.5 border-b shrink-0 overflow-x-auto scrollbar-hide" style={{ borderColor: col.grid }}>
@@ -933,8 +967,14 @@ function OrahChart({
           </>
         )}
         <div className="ml-auto flex items-center gap-1 shrink-0">
-          <span className="text-[10px] text-green-400/70 font-mono">OrahDEX Live</span>
-          <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shrink-0" />
+          <span
+            className={`text-[10px] font-mono ${dataSourceLabel ? 'text-amber-300/80' : 'text-green-400/70'}`}
+            title={dataSourceLabel ? "External reference history; these are not OrahDEX trade fills." : "Live OrahDEX market data"}
+            data-testid="text-chart-data-source"
+          >
+            {dataSourceLabel ?? "OrahDEX Live"}
+          </span>
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dataSourceLabel ? 'bg-amber-300' : 'bg-green-400 animate-pulse'}`} />
         </div>
       </div>
 
@@ -973,7 +1013,16 @@ function OrahChart({
           </>
         )}
 
-        {hideIntervalBar && <div className="flex-1" />}
+        {hideIntervalBar && (
+          <button
+            onClick={fitContent}
+            title="Fit all candles"
+            aria-label="Fit all candles"
+            className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}
+          >
+            <AlignCenter className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         <div className="w-px h-5 mx-1 shrink-0" style={{ background: col.grid }} />
 
@@ -1030,7 +1079,9 @@ function OrahChart({
         {/* Zoom controls */}
         <button onClick={zoomIn}  title="Zoom In"  className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><ZoomIn  className="w-3.5 h-3.5" /></button>
         <button onClick={zoomOut} title="Zoom Out" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><ZoomOut className="w-3.5 h-3.5" /></button>
-        <button onClick={fitContent} title="Fit" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><AlignCenter className="w-3.5 h-3.5" /></button>
+        {!hideIntervalBar && (
+          <button onClick={fitContent} title="Fit" aria-label="Fit all candles" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><AlignCenter className="w-3.5 h-3.5" /></button>
+        )}
 
         <div className="w-px h-5 mx-1 shrink-0" style={{ background: col.grid }} />
 
@@ -1074,6 +1125,13 @@ function OrahChart({
           <div className="absolute inset-0 flex flex-col items-center justify-center z-10 gap-3" style={{ backgroundColor: col.bg }}>
             <div className="flex gap-1">{[0,1,2].map(i => (<span key={i} className="w-2 h-2 rounded-full bg-green-400 animate-bounce" style={{ animationDelay: `${i*150}ms` }} />))}</div>
             <p className="text-xs" style={{ color: col.text }}>Loading {parts.base}/{parts.quote}…</p>
+          </div>
+        )}
+        {!loading && candles.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center px-6 text-center pointer-events-none">
+            <p className="text-xs" style={{ color: col.text, opacity: 0.72 }}>
+              No candle history is available for {parts.base}/{parts.quote} yet.
+            </p>
           </div>
         )}
         <div ref={mainRef} className="w-full h-full" />

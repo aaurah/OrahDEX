@@ -80,6 +80,8 @@ export interface FundingVerificationResult {
 
 export interface VerifyFundingParams {
   walletAddress: string;
+  /** Disable on-chain funding until confirmation-driven order settlement is available. */
+  ledgerOnly?: boolean;
   /**
    * `kind` determines the balance bucket:
    *   SPOT    → user_balances (spot bucket)
@@ -169,6 +171,12 @@ async function verifySpotFunding(
     } catch {
       // Not enough internal balance — fall through to on-chain check
     }
+    if (params.ledgerOnly) {
+      return {
+        valid: false, fundingRef: "", code: "INSUFFICIENT_FUNDS",
+        error: "Insufficient available trading balance. Wallet-to-wallet order settlement is paused; use the separate Swap flow for wallet-held funds.",
+      };
+    }
 
     // 2. Require wallet signature (proof of identity).
     //    Without a signature the caller cannot prove they control walletAddress.
@@ -206,7 +214,7 @@ async function verifySpotFunding(
     }
 
     const RPC_URLS: Record<number, string> = {
-      1:        process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
+      1:        process.env.ETH_RPC_URL      ?? "https://ethereum-rpc.publicnode.com",
       56:       process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
       137:      process.env.POLYGON_RPC_URL  ?? "https://polygon-bor-rpc.publicnode.com",
       8453:     process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
@@ -268,12 +276,12 @@ async function verifySpotFunding(
         // Unknown tokens: sig-only proof (balance verified at escrow lock time).
         const tokenInfo = getTokenInfo(chainId, asset);
         if (!tokenInfo) {
-          logger.warn(
-            { walletAddress, chainId, asset },
-            "fundingVerifier: token not in registry — accepting with sig-only proof",
-          );
-          const sigHash = crypto.createHash("sha256").update(signature).digest("hex").slice(0, 16);
-          return { valid: true, fundingRef: evmSigFundingRef(sigHash) };
+          return {
+            valid: false,
+            fundingRef: "",
+            error: `Token ${asset} is not registered on chain ${chainId}; balance and settlement support cannot be verified.`,
+            code: "UNSUPPORTED_ASSET",
+          };
         }
         const rawBalance = await client.readContract({
           address:      tokenInfo.address as `0x${string}`,

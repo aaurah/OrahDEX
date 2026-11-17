@@ -30,9 +30,12 @@ interface HtlcLock {
   locktimeBlocks: number;
   currentBlock: number;
   expiresIn: string;
+  explorerBase?: string;
   status: HtlcStatus;
   fundingTxid?: string | null;
   mintTxHash?: string | null;
+  chainCheckUnavailable?: boolean;
+  recoveryNotice?: string;
   instructions?: string[];
 }
 
@@ -770,8 +773,8 @@ function CanonicalPanel({ mode }: { mode: "deposit" | "withdraw" }) {
 
 const STATUS_LABEL: Record<HtlcStatus, string> = {
   pending:  "Awaiting Deposit",
-  funded:   "BSV Received — Minting wBSV",
-  minting:  "Minting wBSV on EVM",
+  funded:   "BSV Confirmed — Crediting OrahDEX",
+  minting:  "Crediting OrahDEX BSV",
   complete: "Complete",
   refunded: "Refunded",
   expired:  "Expired",
@@ -904,10 +907,9 @@ function htlcStatusStep(status: HtlcStatus): number {
 
 // ─── HTLC Deposit Panel ───────────────────────────────────────────────────────
 function HtlcDepositPanel({
-  lock, onCancel, onClose,
+  lock, onClose,
 }: {
   lock: HtlcLock;
-  onCancel: () => void;
   onClose: () => void;
 }) {
   const step = htlcStatusStep(lock.status);
@@ -917,23 +919,23 @@ function HtlcDepositPanel({
   const steps = [
     {
       icon: <Lock className="w-3.5 h-3.5" />,
-      label: "Send BSV to HTLC Address",
-      detail: `Send exactly ${lock.amountBsv} BSV — bridge detects within 1 confirmation`,
+      label: "Send testnet BSV to HTLC address",
+      detail: `Test only: send exactly ${lock.amountBsv} BSV testnet coins.`,
     },
     {
       icon: <Link2 className="w-3.5 h-3.5" />,
-      label: "Bridge Confirms Deposit",
-      detail: `Relayer verifies BSV received at HTLC script address`,
+      label: "Wait for confirmation",
+      detail: "Only confirmed testnet outputs are counted.",
     },
     {
       icon: <Layers className="w-3.5 h-3.5" />,
-      label: "Mint wBSV on EVM",
-      detail: `Bridge contract mints 1:1 wBSV to your EVM address`,
+      label: "Credit test balance",
+      detail: "A confirmed testnet deposit may credit your OrahDEX BSV balance.",
     },
     {
       icon: <Zap className="w-3.5 h-3.5" />,
-      label: "Settlement Complete",
-      detail: "wBSV delivered — swap on EVM AMM at any time",
+      label: "Test complete",
+      detail: "No EVM token mint or in-app refund is performed.",
     },
   ];
 
@@ -963,15 +965,28 @@ function HtlcDepositPanel({
             )}>
               {isDone ? "Complete" : isFailed ? lock.status.toUpperCase() : "In Progress"}
             </span>
-            {isDone && (
-              <button onClick={onClose} className="p-1.5 hover:bg-secondary rounded-lg transition-colors">
-                <X className="w-4 h-4 text-muted-foreground" />
-              </button>
-            )}
+            <button onClick={onClose} className="p-1.5 hover:bg-secondary rounded-lg transition-colors">
+              <X className="w-4 h-4 text-muted-foreground" />
+            </button>
           </div>
         </div>
 
         <div className="p-4 space-y-4">
+
+          <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-300">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>Testnet only. Never send real BSV. This legacy flow does not mint wBSV or broadcast refunds.</span>
+          </div>
+          {lock.chainCheckUnavailable && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-300">
+              BSV status could not be checked. No credit or expiry change was made.
+            </div>
+          )}
+          {lock.recoveryNotice && (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-[11px] text-red-300">
+              {lock.recoveryNotice}
+            </div>
+          )}
 
           {/* Status steps */}
           <div className="space-y-2">
@@ -1039,7 +1054,7 @@ function HtlcDepositPanel({
                 <div className="text-[10px] text-muted-foreground">
                   {lock.fundingTxid && (
                     <a
-                      href={`https://whatsonchain.com/tx/${lock.fundingTxid}`}
+                      href={`${lock.explorerBase ?? "https://whatsonchain.com"}/tx/${lock.fundingTxid}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 hover:text-foreground transition-colors"
@@ -1048,7 +1063,7 @@ function HtlcDepositPanel({
                       <ExternalLink className="w-2.5 h-2.5" />
                     </a>
                   )}
-                  Minting wBSV on EVM — usually takes 30–60 seconds.
+                  Confirmed BSV is being credited to your OrahDEX balance.
                 </div>
               </div>
             </div>
@@ -1072,7 +1087,7 @@ function HtlcDepositPanel({
               <div>
                 <div className="text-sm font-semibold text-primary">Bridge Complete!</div>
                 <div className="text-[10px] text-muted-foreground">
-                  wBSV has been minted to your EVM address. You can now swap on the AMM.
+                  BSV has been credited to your OrahDEX balance and is available for trading.
                 </div>
               </div>
             </div>
@@ -1090,8 +1105,8 @@ function HtlcDepositPanel({
                 </div>
                 <div className="text-[10px] text-muted-foreground">
                   {lock.status === "expired"
-                    ? `Locktime reached (block ${lock.locktimeBlocks}). Use the refund path in your BSV wallet to reclaim funds.`
-                    : "Bridge cancelled. Your BSV can be reclaimed via the HTLC refund path."}
+                    ? `Locktime reached (block ${lock.locktimeBlocks}); OrahDEX did not broadcast a refund.`
+                    : "This status does not confirm a refund transaction. Verify the on-chain transaction before treating funds as recovered."}
                 </div>
               </div>
             </div>
@@ -1101,10 +1116,10 @@ function HtlcDepositPanel({
           <div className="flex gap-2 pt-1">
             {lock.status === "pending" && (
               <button
-                onClick={onCancel}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-border text-muted-foreground hover:border-red-500/40 hover:text-red-400 transition-all"
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-border text-muted-foreground hover:bg-secondary transition-all"
               >
-                Cancel
+                Close view only
               </button>
             )}
             {isDone && (
@@ -1723,9 +1738,12 @@ export function BridgePage() {
         locktimeBlocks: data.locktimeBlocks,
         currentBlock:   data.currentBlock ?? 0,
         expiresIn:      data.expiresIn ?? "~24 hours",
+        explorerBase:   data.explorerBase,
         status:         data.status,
         fundingTxid:    data.fundingTxid,
         mintTxHash:     data.mintTxHash,
+        chainCheckUnavailable: data.chainCheckUnavailable,
+        recoveryNotice: data.recoveryNotice,
       };
       setHtlcLock(lock);
 
@@ -1785,6 +1803,7 @@ export function BridgePage() {
         locktimeBlocks: data.locktimeBlocks,
         currentBlock:   data.currentBlock ?? 0,
         expiresIn:      data.expiresIn ?? "~24 hours",
+        explorerBase:   data.explorerBase,
         status:         "pending",
         instructions:   data.instructions,
       });
@@ -1815,18 +1834,6 @@ export function BridgePage() {
     setTimeout(tick, 600);
   };
 
-  // ── Cancel HTLC ───────────────────────────────────────────────────────────
-  const handleCancelHtlc = async () => {
-    if (!htlcLock) return;
-    try {
-      await fetch(`/api/bridge/htlc/${htlcLock.lockId}/cancel`, { method: "POST" });
-      setHtlcLock(null);
-      if (pollRef.current) clearInterval(pollRef.current);
-    } catch {
-      toast({ title: "Cancel failed", description: "Try again in a moment.", variant: "destructive" });
-    }
-  };
-
   const handleCloseHtlc = () => {
     setHtlcLock(null);
     if (pollRef.current) clearInterval(pollRef.current);
@@ -1845,7 +1852,6 @@ export function BridgePage() {
       {htlcLock && (
         <HtlcDepositPanel
           lock={htlcLock}
-          onCancel={handleCancelHtlc}
           onClose={handleCloseHtlc}
         />
       )}
