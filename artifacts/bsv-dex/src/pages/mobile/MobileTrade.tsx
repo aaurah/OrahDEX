@@ -319,7 +319,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress, internalXrpAddress, internalLtcAddress, internalDogeAddress, switchChain } = useWalletStore();
   const { signMessageAsync } = useSignMessage();
-  const { isConnected: evmConnected } = useAccount();
+  const { address: evmAccountAddress, isConnected: evmConnected } = useAccount();
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
   const isExternalEvm = isEvm && !isOrahWallet;
@@ -1487,7 +1487,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     let orderNonce:   string | undefined;
     let orderExpiry:  string | undefined;
     if (isSelfCustodyEvm) {
-      setSubmissionStage("Sign order in wallet…");
+      setSubmissionStage("Waiting for wallet signature…");
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
       orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
@@ -1515,6 +1515,23 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             return account.signMessage!({ message: orderMsg });
           })();
           evmSignature = await withWalletRequestTimeout(signingRequest, 60_000, signController.signal);
+        } else if (provider === "reown") {
+          // Use Wagmi's active connector action for Reown sessions instead of
+          // issuing personal_sign directly to a raw WalletConnect provider.
+          // The hook is bound to the live AppKit Wagmi config and handles the
+          // connector's request/response flow on mobile.
+          if (
+            !evmConnected ||
+            !evmAccountAddress ||
+            evmAccountAddress.toLowerCase() !== address!.toLowerCase()
+          ) {
+            throw new Error("The connected wallet session is out of sync. Reconnect this wallet before signing.");
+          }
+          evmSignature = await withWalletRequestTimeout(
+            signMessageAsync({ message: orderMsg }),
+            90_000,
+            signController.signal,
+          );
         } else {
           // Prefer the selected wallet's raw provider. A stale wagmi connector
           // can leave signMessageAsync pending forever on mobile and prevent the
@@ -3010,10 +3027,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   `${side === "sell" ? "Sell" : "Buy"} ${base}`
                 )}
               </button>
-              {isSubmitting && submissionStage === "Sign order in wallet…" && (
+              {isSubmitting && submissionStage === "Waiting for wallet signature…" && (
                 <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2" aria-live="polite">
                   <p className="text-[11px] leading-snug text-amber-200/80">
-                    This signature does not move funds. Escrow is requested in a separate wallet transaction afterward.
+                    Open your connected wallet and approve the order signature. This signature alone moves no funds; a separate escrow transaction follows. If the request is not there, reconnect before retrying.
                   </p>
                   <button
                     type="button"
