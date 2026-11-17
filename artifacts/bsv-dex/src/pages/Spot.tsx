@@ -20,8 +20,10 @@ import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, generateMockTr
 import { formatPrice, formatPercent, cn, formatVolume, marketMatchesQuery } from "@/lib/utils";
 import { useWalletStore } from "@/store/useWalletStore";
 import { useWalletModalStore } from "@/store/useWalletModalStore";
+import { useToast } from "@/hooks/use-toast";
 import { useEscrow } from "@/hooks/useEscrow";
-import { checkEscrowDeposit } from "@/lib/escrow";
+import { readEscrowDeposit } from "@/lib/escrow";
+import { cancelEvmOrderbookOrder } from "@/lib/orderbookCancellation";
 import { ExternalLink, CheckCircle2, Search, ChevronDown, X, Droplets, TrendingUp, BarChart3, Zap, Building2, ArrowUpDown, ArrowLeftRight, BookOpen, RefreshCw } from "lucide-react";
 import { ContractAddressBadge } from "@/components/ContractAddressBadge";
 import { AiTradeAnalysis } from "@/components/AiTradeAnalysis";
@@ -223,6 +225,7 @@ function normalise(m: any) {
 export function SpotTrading() {
   const { symbol: rawSymbol = "BSV-USDT" } = useParams();
   const { address, provider, internalBsvAddress, internalEvmAddress, chainId: walletChainId } = useWalletStore();
+  const { toast } = useToast();
   const { open: openWalletModal } = useWalletModalStore();
   const { cancelOrder: cancelOrderOnChain, escrowAvailable } = useEscrow();
   // Alt address: Orah wallet users have both a BSV and an EVM address.
@@ -375,9 +378,9 @@ export function SpotTrading() {
   // Priority: DexScreener live price → Zora Coins API → LE exchange rate → SS exchange rate
   const catalogPrice = useMemo(() => {
     const dp = basePrices.get(base);
-    if (dp?.price > 0) return { price: dp.price, chg: dp.chg };
+    if (dp && typeof dp.price === "number" && dp.price > 0) return { price: dp.price, chg: dp.chg };
     const zr = (zoraRows ?? []).find((z: any) => z.base === base);
-    if (zr?.price > 0) return { price: zr.price, chg: zr.chg ?? 0 };
+    if (zr && typeof zr.price === "number" && zr.price > 0) return { price: zr.price, chg: zr.chg ?? 0 };
     // LE/SS rate: "rate" = how many quote tokens you receive per 1 base token (= price in quote)
     const leRate = Number(leVenuePrice?.rate);
     if (leRate > 0) return { price: leRate, chg: 0 };
@@ -394,7 +397,7 @@ export function SpotTrading() {
       ? { ..._genTicker, lastPrice: catalogPrice.price,
           priceChangePercent: catalogPrice.chg, priceChangePercent24h: catalogPrice.chg }
       : _genTicker);
-  const isPositive = (ticker.priceChangePercent ?? ticker.priceChangePercent24h ?? 0) >= 0;
+  const isPositive = (ticker.priceChangePercent ?? 0) >= 0;
 
   /* ── Cross-rate: USD equivalent of the quoted price ── */
   const { prices: crossRates } = useWalletPrices();
@@ -497,20 +500,33 @@ export function SpotTrading() {
   // Optimistic cancel: immediately mark order as cancelled in cache so the user
   // sees the change on the first click; refetch afterward to reconcile.
   const cancelOrder = useMutation({
-    mutationFn: async ({ orderId, walletAddress: ownerWallet }: { orderId: string; walletAddress: string }) => {
+    mutationFn: async ({ orderId, walletAddress: ownerWallet, fundingRef }: {
+      orderId: string;
+      walletAddress: string;
+      fundingRef?: string | null;
+    }) => {
       const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+      if (fundingRef?.startsWith("evm-order:1:")) {
+        return cancelEvmOrderbookOrder({
+          orderId,
+          walletAddress: ownerWallet,
+          fundingRef,
+          isOrahWallet: provider === "orah-wallet",
+        });
+      }
+
       // Step 1: If the order has an active on-chain escrow deposit, cancel it
       // first so the user's funds are returned to their wallet before we remove
       // the order from the orderbook.
       if (escrowAvailable && walletChainId) {
-        let hasDeposit = false;
-        try {
-          const dep = await Promise.race([
-            checkEscrowDeposit(orderId, walletChainId),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
-          ]);
-          hasDeposit = !!dep && !dep.released;
-        } catch { /* RPC failure — skip on-chain cancel, let user retry */ }
+        const dep = await Promise.race([
+          readEscrowDeposit(orderId, walletChainId),
+          new Promise<never>((_, reject) => setTimeout(
+            () => reject(new Error("Could not verify the escrow state. No cancellation was submitted; check the wallet network and retry.")),
+            4_000,
+          )),
+        ]);
+        const hasDeposit = !!dep && !dep.released;
 
         if (hasDeposit) {
           try {
@@ -557,8 +573,13 @@ export function SpotTrading() {
       });
       return { snapshots };
     },
-    onError: (_err, _vars, ctx: any) => {
+    onError: (error: any, _vars, ctx: any) => {
       ctx?.snapshots?.forEach(([k, v]: any) => queryClient.setQueryData(k, v));
+      toast({
+        title: "Cancel failed",
+        description: String(error?.message ?? "Could not cancel this order."),
+        variant: "destructive",
+      });
     },
     onSettled: (_d, _e, vars) => {
       setCancellingIds(prev => { const n = new Set(prev); n.delete(vars.orderId); return n; });
@@ -1162,7 +1183,11 @@ export function SpotTrading() {
                                 onClick={() => {
                                   const id = String(o.id);
                                   if (cancellingIds.has(id)) return;
-                                  cancelOrder.mutate({ orderId: id, walletAddress: String(o.walletAddress || address || "") });
+                                  cancelOrder.mutate({
+                                    orderId: id,
+                                    walletAddress: String(o.walletAddress || address || ""),
+                                    fundingRef: o.fundingRef,
+                                  });
                                 }}
                                 disabled={cancellingIds.has(String(o.id))}
                                 className="text-[10px] font-semibold px-2 py-0.5 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 hover:border-red-500 transition-all disabled:opacity-40"
