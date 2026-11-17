@@ -214,7 +214,12 @@ export function DevAIWorkspace() {
     if (!selectedFile || !description.trim() || fileContent === originalFile) return;
     setSaveBusy(true); setSaveMessage(""); setFileError("");
     try {
-      const result = await requestJson<{ ok: true; proposalId: string }>(`${ROOT}/change-proposals`, jsonPost({ path: selectedFile, content: fileContent, description: description.trim() }));
+      const result = await requestJson<{ ok: true; proposalId: string }>(`${ROOT}/change-proposals`, jsonPost({
+        path: selectedFile,
+        content: fileContent,
+        description: description.trim(),
+        expectedHash: fileHash,
+      }));
       setSaveMessage(`Review proposal ${result.proposalId} created. No project files were changed.`);
       setOriginalFile(fileContent); setDescription("");
       await loadProposals();
@@ -427,7 +432,7 @@ export function DevAIWorkspace() {
               const expanded = expandedProposal === proposal.id;
               return <article key={proposal.id} className="overflow-hidden rounded-xl border border-white/[0.08] bg-[#0c131c]">
                 <div className="flex flex-wrap items-start gap-3 p-4">
-                  {pending && <input aria-label={`Select ${proposal.path} for draft pull request`} type="checkbox" checked={selectedProposalIds.includes(proposal.id)} onChange={event => setSelectedProposalIds(current => event.target.checked ? [...current, proposal.id] : current.filter(id => id !== proposal.id))} className="mt-1 h-4 w-4 accent-emerald-300" />}
+                   {pending && <input aria-label={`Select ${proposal.path} for draft pull request`} type="checkbox" checked={selectedProposalIds.includes(proposal.id)} disabled={!selectedProposalIds.includes(proposal.id) && selectedProposalIds.length >= 10} title="A draft pull request can include up to 10 files" onChange={event => setSelectedProposalIds(current => event.target.checked ? [...current, proposal.id] : current.filter(id => id !== proposal.id))} className="mt-1 h-4 w-4 accent-emerald-300 disabled:opacity-40" />}
                   <div className="min-w-0 flex-1">
                     <p className="break-all font-mono text-xs font-semibold text-slate-200">{proposal.path}</p>
                     {proposal.description && <p className="mt-1.5 text-xs text-slate-400">{proposal.description}</p>}
