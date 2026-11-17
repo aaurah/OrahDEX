@@ -23,6 +23,7 @@ import { PriceAlertsDialog } from "@/components/PriceAlertsDialog";
 import { SlippagePicker, LeveragePicker } from "@/components/TradingDefaultsPickers";
 import { cn, getProviderLabel } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
+import { useVerifiedAdminSession } from "@/hooks/useVerifiedAdminSession";
 
 const THEMES: { id: Theme; label: string; Icon: any; color: string }[] = [
   { id: "dark",   label: "Dark",   Icon: Moon,       color: "#6366f1" },
@@ -121,6 +122,7 @@ function useSystemStatus(): SystemStatus {
 
 export function WebSettings() {
   const { address, provider, network, disconnect } = useWalletStore();
+  const isVerifiedAdmin = useVerifiedAdminSession();
   const { open: openWallet } = useWalletModalStore();
   const { theme, setTheme } = useThemeStore();
   const { quoteCurrency, setQuoteCurrency } = useSettingsStore();
@@ -315,6 +317,18 @@ export function WebSettings() {
             onClick={() => navigate("/settings/api-keys")}
           />
         </Section>
+
+        {isVerifiedAdmin && (
+          <Section title="Administration">
+            <Row
+              icon={Shield}
+              iconColor="#f59e0b"
+              label="Admin Panel"
+              value="Open the administration dashboard"
+              onClick={() => navigate("/admin")}
+            />
+          </Section>
+        )}
 
         {/* ── Support ── */}
         <Section title="Support">
