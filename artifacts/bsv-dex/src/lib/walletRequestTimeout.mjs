@@ -34,7 +34,7 @@ export async function withWalletRequestTimeout(request, timeoutMs, signal) {
       abortPromise,
       new Promise((_, reject) => {
         timeoutId = setTimeout(
-          () => reject(new Error("Wallet did not respond. No order was submitted; reconnect the wallet and try again.")),
+          () => reject(new Error("Wallet did not respond. No order was submitted. Check the wallet for a pending signature before retrying.")),
           timeoutMs,
         );
       }),
