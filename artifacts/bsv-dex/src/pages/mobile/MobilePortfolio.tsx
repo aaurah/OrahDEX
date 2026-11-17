@@ -21,7 +21,9 @@ import { useAllEvmChainBalances, useEvmBalances, type TokenBalance } from "@/hoo
 import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import { useEscrow } from "@/hooks/useEscrow";
-import { checkEscrowDeposit } from "@/lib/escrow";
+import { useToast } from "@/hooks/use-toast";
+import { readEscrowDeposit } from "@/lib/escrow";
+import { cancelEvmOrderbookOrder } from "@/lib/orderbookCancellation";
 
 import { EXPLORER_TX, CHAIN_NAMES } from "@/lib/onChainLiquidity";
 import { ChainSwitcherDropdown } from "@/components/ChainSwitcherDropdown";
@@ -360,6 +362,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   const [withdrawInitialTab, setWithdrawInitialTab] = useState<"deposit" | "withdraw" | "history">("withdraw");
   const [withdrawVisibleTabs, setWithdrawVisibleTabs] = useState<("deposit" | "withdraw" | "history")[] | undefined>(undefined);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: prices, isLoading: pricesLoading, refetch } = useLivePrices();
   const { balances: evmBalances, loading: evmLoading, refresh: evmRefresh } = useEvmBalances(
@@ -442,20 +445,33 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   }
 
   const cancelMutation = useMutation({
-    mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
+    mutationFn: async ({ orderId, walletAddress: orderWalletAddress, fundingRef }: {
+      orderId: string;
+      walletAddress: string;
+      fundingRef?: string | null;
+    }) => {
+      if (fundingRef?.startsWith("evm-order:1:")) {
+        return cancelEvmOrderbookOrder({
+          orderId,
+          walletAddress: orderWalletAddress,
+          fundingRef,
+          isOrahWallet: provider === "orah-wallet",
+        });
+      }
+
       // Step 1: If the order has an active on-chain escrow deposit, cancel it
       // first so funds are returned to the user's wallet. Without this, clicking
       // Cancel in the portfolio only removes the order from the DB but leaves the
       // funds locked in the OrahDEXEscrow contract indefinitely.
       if (escrowAvailable && chainId) {
-        let hasDeposit = false;
-        try {
-          const dep = await Promise.race([
-            checkEscrowDeposit(orderId, chainId),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
-          ]);
-          hasDeposit = !!dep && !dep.released;
-        } catch { /* RPC failure — skip on-chain cancel, let user retry */ }
+        const dep = await Promise.race([
+          readEscrowDeposit(orderId, chainId),
+          new Promise<never>((_, reject) => setTimeout(
+            () => reject(new Error("Could not verify the escrow state. No cancellation was submitted; check the wallet network and retry.")),
+            4_000,
+          )),
+        ]);
+        const hasDeposit = !!dep && !dep.released;
 
         if (hasDeposit) {
           try {
@@ -497,10 +513,15 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
       );
       return { prev };
     },
-    onError: (_err, _vars, context: any) => {
+    onError: (error: any, _vars, context: any) => {
       if (context?.prev !== undefined) {
         queryClient.setQueryData(["portfolio-orders", ledgerAddress], context.prev);
       }
+      toast({
+        title: "Cancel failed",
+        description: String(error?.message ?? "Could not cancel this order."),
+        variant: "destructive",
+      });
     },
     onSettled: () => {
       setCancellingId(null);
@@ -1225,7 +1246,11 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                                 </div>
                               )}
                               <button
-                                onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || ledgerAddress || "") })}
+                                onClick={() => cancelMutation.mutate({
+                                  orderId: String(o.id),
+                                  walletAddress: String(o.walletAddress || ledgerAddress || ""),
+                                  fundingRef: o.fundingRef,
+                                })}
                                 disabled={cancellingId === String(o.id)}
                                 className="mt-1 text-[10px] px-2 py-1 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 font-semibold disabled:opacity-40 transition-all"
                               >
@@ -1367,7 +1392,11 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                     </div>
                     {o.status === "open" || o.status === "pending" ? (
                       <button
-                        onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || ledgerAddress || "") })}
+                        onClick={() => cancelMutation.mutate({
+                          orderId: String(o.id),
+                          walletAddress: String(o.walletAddress || ledgerAddress || ""),
+                          fundingRef: o.fundingRef,
+                        })}
                         disabled={cancellingId === String(o.id)}
                         className="shrink-0 px-3 py-1.5 rounded-xl border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
                       >

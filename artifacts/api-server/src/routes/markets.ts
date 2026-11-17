@@ -35,6 +35,10 @@ const marketsCache    = new TtlCache<any[]>(60_000);   // 60 s — matches price
 const orderbookCache  = new TtlCache<any>(2_000);      //  2 s
 const tradesCache     = new TtlCache<any[]>(5_000);    //  5 s
 const tickerCache     = new TtlCache<any>(5_000);      //  5 s
+const swapReferenceCache = new TtlCache<{
+  lastPrice: number; high24h: number; low24h: number;
+  priceChange24h: number; priceChangePercent24h: number;
+}>(30_000);
 
 // ETag store for markets — maps cacheKey → weak ETag string
 const marketsETag = new Map<string, string>();
@@ -215,10 +219,10 @@ router.get("/markets", async (req, res) => {
 
     const result = markets.map((m) => {
       const storedPrice = parseFloat(m.lastPrice);
-      const marketReferencePrice = m.type === "simpleswap"
+      const marketReferencePrice = m.type === "simpleswap" || m.type === "letsexchange"
         ? resolveCrossPrice(m.symbol, 0, liveCoinPrices, directPairPrices)
         : 0;
-      const lastPrice = m.type === "simpleswap" && marketReferencePrice > 0
+      const lastPrice = (m.type === "simpleswap" || m.type === "letsexchange") && marketReferencePrice > 0
         ? marketReferencePrice
         : resolveCrossPrice(m.symbol, storedPrice, liveCoinPrices, directPairPrices);
       return {
@@ -478,6 +482,7 @@ router.get("/markets/catalog", async (req, res) => {
         for (const row of result.rows) overlays.set(row.symbol, row);
       }
 
+      const liveCoinPrices = await fetchMarketUsdPrices().catch(() => ({}));
       const items = virtual.items.map(pair => {
         const real = overlays.get(pair.symbol);
         const type = real?.type ?? "catalog";
@@ -485,7 +490,7 @@ router.get("/markets/catalog", async (req, res) => {
           symbol: pair.symbol,
           baseAsset: pair.baseAsset,
           quoteAsset: pair.quoteAsset,
-          lastPrice: resolveCrossPrice(pair.symbol, real ? parseFloat(real.last_price) : 0),
+          lastPrice: resolveCrossPrice(pair.symbol, real ? parseFloat(real.last_price) : 0, liveCoinPrices),
           priceChangePercent24h: real ? parseFloat(real.price_change_percent_24h) || 0 : 0,
           volume24h: real ? parseFloat(real.volume_24h) || 0 : 0,
           high24h: real ? parseFloat(real.high_24h) || 0 : 0,
@@ -554,11 +559,12 @@ router.get("/markets/catalog", async (req, res) => {
     ]);
 
     const total = Number(countResult.rows[0]?.total ?? 0);
+    const liveCoinPrices = await fetchMarketUsdPrices().catch(() => ({}));
     const items = rowsResult.rows.map(m => ({
       symbol: m.symbol,
       baseAsset: m.base_asset,
       quoteAsset: m.quote_asset,
-      lastPrice: resolveCrossPrice(m.symbol, parseFloat(m.last_price)),
+      lastPrice: resolveCrossPrice(m.symbol, parseFloat(m.last_price), liveCoinPrices),
       priceChangePercent24h: parseFloat(m.price_change_percent_24h) || 0,
       volume24h: parseFloat(m.volume_24h) || 0,
       high24h: parseFloat(m.high_24h) || 0,
@@ -589,11 +595,19 @@ router.get("/markets/:symbol", async (req, res) => {
     const symbol = normSymbol(req.params.symbol);
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
     if (!market) { res.status(404).json({ error: "Market not found" }); return; }
+    let lastPrice = await resolveLiveCrossPrice(market.symbol, parseFloat(market.lastPrice));
+    const orderbookPrice = await resolveOrderbookPrice(market.symbol);
+    if (orderbookPrice > 0) {
+      lastPrice = orderbookPrice;
+    } else if (market.type === "simpleswap" || market.type === "letsexchange") {
+      const reference = await resolveSimpleSwapReference(market.symbol).catch(() => null);
+      if (reference) lastPrice = reference.lastPrice;
+    }
     res.json({
       symbol:               market.symbol,
       baseAsset:            market.baseAsset,
       quoteAsset:           market.quoteAsset,
-      lastPrice:            parseFloat(market.lastPrice),
+      lastPrice,
       priceChange24h:       parseFloat(market.priceChange24h),
       priceChangePercent24h:parseFloat(market.priceChangePercent24h),
       volume24h:            parseFloat(market.volume24h),
@@ -648,6 +662,38 @@ async function resolveLiveCrossPrice(symbol: string, dbPrice: number): Promise<n
   const coinPrices = coinPricesResult.status === "fulfilled" ? coinPricesResult.value : {};
   const directPrices = directPricesResult.status === "fulfilled" ? directPricesResult.value : {};
   return resolveCrossPrice(symbol, dbPrice, coinPrices, directPrices);
+}
+
+async function resolveSimpleSwapReference(symbol: string) {
+  const cached = swapReferenceCache.get(symbol);
+  if (cached) return cached;
+
+  let candleSource = "unknown";
+  const referenceCandles = await fetchRealCandles(symbol, 0, "1h", 48, (source) => {
+    candleSource = source;
+  });
+  const nowSec = Math.floor(Date.now() / 1000);
+  const latest = referenceCandles.at(-1);
+  if (
+    !latest ||
+    candleSource === "none" ||
+    candleSource === "orderbook-snapshots" ||
+    nowSec - latest.time > 24 * 60 * 60
+  ) {
+    return null;
+  }
+
+  const recent = referenceCandles.filter((candle) => candle.time >= nowSec - 24 * 60 * 60);
+  const lastPrice = latest.close;
+  const high24h = recent.length ? Math.max(...recent.map((candle) => candle.high)) : latest.high;
+  const low24h = recent.length ? Math.min(...recent.map((candle) => candle.low)) : latest.low;
+  const priceChange24h = lastPrice - (recent[0]?.open ?? latest.open);
+  const priceChangePercent24h = recent[0]?.open
+    ? ((lastPrice - recent[0].open) / recent[0].open) * 100
+    : 0;
+  const result = { lastPrice, high24h, low24h, priceChange24h, priceChangePercent24h };
+  swapReferenceCache.set(symbol, result);
+  return result;
 }
 
 type OrderbookLevel = [number, number];
@@ -778,31 +824,18 @@ router.get("/markets/:symbol/ticker", async (req, res) => {
       volume24h = 0;
       priceChange24h = 0;
       pctChange = 0;
-    } else if (market?.type === "simpleswap") {
+    } else if (market?.type === "simpleswap" || market?.type === "letsexchange") {
       // Use the same current reference series as the chart for conversion-only
       // pairs; never pin historical candles to a separate swap quote.
-      let candleSource = "unknown";
       try {
-        const referenceCandles = await fetchRealCandles(sym, 0, "1h", 48, (source) => {
-          candleSource = source;
-        });
-        const nowSec = Math.floor(Date.now() / 1000);
-        const latest = referenceCandles.at(-1);
-        if (
-          latest &&
-          candleSource !== "none" &&
-          candleSource !== "orderbook-snapshots" &&
-          nowSec - latest.time <= 24 * 60 * 60
-        ) {
-          const recent = referenceCandles.filter((candle) => candle.time >= nowSec - 24 * 60 * 60);
-          lastPrice = latest.close;
-          high24h = recent.length ? Math.max(...recent.map((candle) => candle.high)) : latest.high;
-          low24h = recent.length ? Math.min(...recent.map((candle) => candle.low)) : latest.low;
+        const reference = await resolveSimpleSwapReference(sym);
+        if (reference) {
+          lastPrice = reference.lastPrice;
+          high24h = reference.high24h;
+          low24h = reference.low24h;
           volume24h = 0;
-          priceChange24h = lastPrice - (recent[0]?.open ?? latest.open);
-          pctChange = recent[0]?.open
-            ? ((lastPrice - recent[0].open) / recent[0].open) * 100
-            : 0;
+          priceChange24h = reference.priceChange24h;
+          pctChange = reference.priceChangePercent24h;
         }
       } catch (error) {
         logger.debug({ err: error, symbol: sym }, "Reference candle price unavailable for swap-only pair");
@@ -954,11 +987,19 @@ router.get("/markets/:symbol/orderbook", async (req, res) => {
     }
 
     const bookPrice = midpointFromOrderbook(bids, asks);
-    const lastPrice = bookPrice > 0
+    let lastPrice = bookPrice > 0
       ? bookPrice
       : market
         ? await resolveLiveCrossPrice(market.symbol, parseFloat(market.lastPrice))
         : await resolveLiveCrossPrice(symbol, 0);
+    if (bookPrice <= 0 && (market?.type === "simpleswap" || market?.type === "letsexchange")) {
+      try {
+        const reference = await resolveSimpleSwapReference(market.symbol);
+        if (reference) lastPrice = reference.lastPrice;
+      } catch (error) {
+        req.log.debug({ err: error, symbol }, "Reference candle price unavailable for swap-only order book");
+      }
+    }
     const result = { bids, asks, lastPrice, ...bridgePairInfo };
     if (bids.length || asks.length) {
       void recordOrderbookQuoteCandle(symbol, bids, asks)
