@@ -315,6 +315,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const base = symbol.split("/")[0];
   const quote = symbol.split("/")[1]?.replace("-PERP", "") ?? "USDT";
   const isFutures = rawSymbol.toUpperCase().includes("PERP");
+  const chartSymbol = isFutures ? symbol.replace(/-PERP$/i, "") : symbol;
 
   const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress, internalXrpAddress, internalLtcAddress, internalDogeAddress, switchChain } = useWalletStore();
   const { signMessageAsync } = useSignMessage();
@@ -1035,6 +1036,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const crossChainPlaceholder = ADDRESS_PLACEHOLDERS[baseChain] ?? `${base} address…`;
 
   const encodedSymbol = encodeURIComponent(symbol);
+  const encodedChartSymbol = encodeURIComponent(chartSymbol);
 
   const { data: ticker } = useQuery({
     queryKey: ["ticker", symbol],
@@ -1071,10 +1073,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const mobileCandleLimit = mobilePreset ? mobilePreset.limit : 150;
 
   const { data: candles = [], isLoading: candlesLoading } = useQuery({
-    queryKey: ["candles", symbol, mobileApiInterval, mobileCandleLimit],
+    queryKey: ["candles", chartSymbol, mobileApiInterval, mobileCandleLimit],
     queryFn: async () => {
       const response = await fetch(
-        `${BASE}/api/markets/${encodedSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`,
+        `${BASE}/api/markets/${encodedChartSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`,
         { cache: "no-store" },
       );
       if (!response.ok) throw new Error(`Candle request failed: ${response.status}`);
@@ -1093,6 +1095,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       `${BASE}/api/markets/${encodedSymbol}/candles?interval=1d&limit=400`,
       { cache: "no-store" },
     ).then(r => r.json()),
+    enabled: !isFutures,
     refetchInterval: 300_000,
     staleTime: 240_000,
   });
@@ -1801,6 +1804,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             data={chartCandles}
             externalDataOnly={true}
             externalDataLoading={candlesLoading}
+            dataSourceLabel={isFutures ? "SPOT REFERENCE" : undefined}
           />
         </div>
 
