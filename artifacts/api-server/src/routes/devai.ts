@@ -1,8 +1,14 @@
 import { Router, raw } from "express";
 import { db, pool } from "@workspace/db";
-import { conversations, messages } from "@workspace/db/schema";
-import { openai } from "@workspace/integrations-openai-ai-server";
-import { eq, asc } from "drizzle-orm";
+import { conversations, messages, platformSettingsTable } from "@workspace/db/schema";
+import {
+  devaiOpenAI,
+  devaiModel,
+  devaiOllamaServerUrl,
+  getDevaiOllamaStatus,
+  isDevaiOllamaEnabled,
+} from "@workspace/integrations-openai-ai-server";
+import { eq, asc, like } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { requireAdminToken } from "../middleware/adminAuth.js";
 import vm from "vm";
@@ -11,12 +17,21 @@ import { existsSync } from "fs";
 import path from "path";
 import { exec, spawn } from "child_process";
 import { fileURLToPath } from "url";
+import { createHash, randomUUID } from "node:crypto";
+import os from "node:os";
 
 const router = Router();
+const DEVAI_CHANGE_PREFIX = "devai_change_proposal:";
+const DEVAI_CONTEXT_TOKENS = 4096;
+const DEVAI_MAX_RESPONSE_TOKENS = 1024;
+const DEVAI_MIN_OLLAMA_HEADROOM_BYTES =
+  process.env.NODE_ENV === "development" ? 4.5 * 1024 ** 3 : 6 * 1024 ** 3;
+router.use("/devai", requireAdminToken);
 
 // ── Internal API base (same process, same port) ───────────────────────────────
 const INTERNAL = `http://localhost:${process.env.PORT ?? 4000}`;
-const DEVAI_MODEL = (process.env.DEVAI_MODEL ?? "gpt-4o-mini").trim() || "gpt-4o-mini";
+const DEVAI_MODEL = devaiModel;
+const DEVAI_OLLAMA_SERVER_URL = devaiOllamaServerUrl;
 const GH_HEADERS = (token?: string) => ({
   "User-Agent": "OrahDEX-DevAI/2.0",
   ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -45,7 +60,6 @@ You are a senior blockchain engineer. You write production-ready code, debug sma
 ## Your Tools (use them proactively)
 - **read_github_file** — Read actual source code from any GitHub repo. Use when the user shares a repo link or mentions their code files.
 - **list_github_repo** — Browse a repo's directory structure. Use to understand project layout before reading files.
-- **write_github_file** — Commit a file directly to a GitHub repo (create or update). ALWAYS read the file first, then write the full updated content with a clear commit message. Use for pushing code changes, fixes, or new files to the repo.
 - **execute_code** — Run JavaScript in a sandbox and see real output. Use to validate logic, compute values, simulate algorithms, test encoding/decoding.
 - **fetch_url** — Fetch live content from any URL. Use to check live API responses, read docs, verify endpoint behaviour.
 - **create_file** — Generate a downloadable file. ALWAYS use this when you write a complete bot, script, config, or contract — never just paste code in chat when you could deliver a file the user can run immediately.
@@ -55,9 +69,7 @@ You are a senior blockchain engineer. You write production-ready code, debug sma
 - **read_project_file** — Read any live source file from the current OrahDEX workspace. Use to inspect backend routes, frontend components, DB schema, configs.
 - **list_project_dir** — Browse any directory in the current OrahDEX workspace. Use to navigate the project structure before reading specific files.
 - **query_database** — Run a read-only SELECT query against the live OrahDEX PostgreSQL database. Use to inspect real data, schemas, order books, user counts, etc.
-- **write_project_file** — Write or overwrite any file in the current workspace. Use this to implement features, fix bugs, add routes, update components, or change configs. ALWAYS read the file first if it already exists so you don't lose code.
-- **run_terminal** — Run a shell command in the current workspace root (60s timeout). Use to install packages (pnpm add), check git status, run builds, restart services, list files, or any system task.
-- **publish** — After writing any code changes, ALWAYS call POST /api/admin/devai/restart (admin token required) or instruct the user to click the Publish button. This restarts both services so changes go live within ~5 seconds.
+- **write_project_file** — Stage a source-file change for admin review. Never apply it directly; an authenticated admin must review and approve the proposal.
 
 ## Primary GitHub repository
 The main OrahDEX codebase lives at **github.com/aaurah/OrahDEX**. When the user asks about the codebase, repo structure, or "the code" without specifying a repo, default to \`aaurah/OrahDEX\`. Use \`list_github_repo\` first to explore, then \`read_github_file\` to read specific files.
@@ -69,33 +81,18 @@ The main OrahDEX codebase lives at **github.com/aaurah/OrahDEX**. When the user 
 - Always use **read_github_file** when the user shares a GitHub URL — read the actual code.
 - Always use **read_project_file** / **list_project_dir** when asked about the live Replit backend or frontend source files.
 - Always use **query_database** when asked about live data, table structure, or database state.
-- When writing code changes: read the file first → make the edit with write_project_file → then ALWAYS restart so changes go live → confirm with the user.
-- After EVERY write_project_file call, immediately run_terminal with: curl -s -X POST http://localhost:3000/api/admin/devai/restart -H "X-Admin-Token: $ADMIN_TOKEN" — OR instruct the user to click the green Publish button.
-- Chain tools intelligently: explore → read → write → restart → verify.
+- When proposing a code change: inspect the file first, then use write_project_file. The tool only creates a review proposal. Never claim the change is applied or published until an admin approves it.
+- Do not commit directly to GitHub, execute shell commands, restart production, or publish changes. Admins review and apply proposals separately, then publish through Replit.
 
 ## Self-upgrade capability
-You can upgrade yourself. Your own source files are:
+You can propose changes to the OrahDEX source files. Your own source files are:
 - **Backend (tools, system prompt, API logic):** \`artifacts/api-server/src/routes/devai.ts\`
 - **Frontend (UI, chat interface, tool display):** \`artifacts/bsv-dex/src/pages/DevAI.tsx\`
 
-### How to add a new tool to yourself:
-1. Read \`artifacts/api-server/src/routes/devai.ts\` first
-2. Add the tool definition to the \`DEVAI_TOOLS\` array (follow the exact same shape as existing tools)
-3. Write the \`async function toolYourName(args)\` implementation
-4. Add a \`case "your_tool_name":\` line in the \`executeTool\` switch dispatcher
-5. Read \`artifacts/bsv-dex/src/pages/DevAI.tsx\` and add the tool to \`TOOL_META\` and \`toolSubtitle\`
-6. Restart the API server: \`run_terminal\` → \`pkill -f "api-server" || true\` — the workflow manager restarts it automatically within seconds
-
-### How to update your system prompt (this document):
-- The system prompt is the \`DEVAI_SYSTEM_PROMPT\` constant at the top of \`artifacts/api-server/src/routes/devai.ts\`
-- Read the file, make changes, write it back, then restart
-
-### Restarting / Publishing changes:
-- Use the green **Publish** button in the DevAI toolbar — it hits \`POST /api/admin/devai/restart\` and restarts both services
-- Or via run_terminal: \`pkill -f "tsx watch" || true\` for API changes, \`pkill -f "vite" || true\` for frontend
-- Frontend .tsx/.ts changes hot-reload automatically without restart
-- Backend devai.ts changes require a server restart to take effect
-- ALWAYS tell the user to click Publish (or do it yourself) after writing backend files
+### Proposing code changes:
+- Read the current file first, then use \`write_project_file\` to create a pending review proposal.
+- Never apply file changes, write to GitHub, run terminal commands, restart the live server, or publish code yourself.
+- An admin must inspect and approve a proposal in the DevAI settings page. Approval applies it to the workspace only; the user controls publishing.
 
 ## Workspace layout
 Root: ${WORKSPACE_ROOT}
@@ -193,24 +190,6 @@ const DEVAI_TOOLS: any[] = [
           path: { type: "string", description: "Directory path, omit for root" },
         },
         required: ["owner_repo"],
-      },
-    },
-  },
-  {
-    type: "function",
-    function: {
-      name: "write_github_file",
-      description: "Create or update a file in a GitHub repository by committing the new content directly. Use to push code changes, fix bugs, add features, or update configs in the GitHub repo. ALWAYS read the file first with read_github_file so you have the full current content before overwriting.",
-      parameters: {
-        type: "object",
-        properties: {
-          owner_repo: { type: "string", description: "owner/repo e.g. 'aaurah/OrahDEX'" },
-          path: { type: "string", description: "File path e.g. 'src/index.ts'" },
-          content: { type: "string", description: "Full file content to write (UTF-8 text)" },
-          message: { type: "string", description: "Commit message describing the change" },
-          branch: { type: "string", description: "Branch to commit to, omit for default branch" },
-        },
-        required: ["owner_repo", "path", "content", "message"],
       },
     },
   },
@@ -351,7 +330,7 @@ const DEVAI_TOOLS: any[] = [
     type: "function",
     function: {
       name: "write_project_file",
-      description: `Write or overwrite a file in the current OrahDEX workspace. Use this to implement features, fix bugs, create new routes, update components, or any code change. ALWAYS read the file first with read_project_file if it already exists. Paths are relative to ${WORKSPACE_ROOT}.`,
+      description: `Stage a source-file change for admin review. This never writes directly. The admin must inspect and approve the proposal. Paths are relative to ${WORKSPACE_ROOT}; only source files under artifacts/bsv-dex/src, artifacts/api-server/src, and lib are allowed.`,
       parameters: {
         type: "object",
         properties: {
@@ -380,6 +359,39 @@ const DEVAI_TOOLS: any[] = [
   },
 ];
 
+const SAFE_DEVAI_TOOLS = DEVAI_TOOLS.filter(
+  (tool) => tool.function.name !== "run_terminal",
+);
+const SAFE_DEVAI_TOOL_NAMES = new Set(SAFE_DEVAI_TOOLS.map((tool) => tool.function.name));
+
+function parseLocalTextToolCall(content: string) {
+  const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  const candidates = [fenced, content].filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate.trim()) as Record<string, unknown>;
+      const call = (parsed.tool_call && typeof parsed.tool_call === "object"
+        ? parsed.tool_call
+        : parsed) as Record<string, unknown>;
+      const name = typeof call.name === "string" ? call.name : "";
+      const rawArgs = call.arguments ?? call.parameters ?? {};
+      const args = typeof rawArgs === "string" ? JSON.parse(rawArgs) : rawArgs;
+      if (!SAFE_DEVAI_TOOL_NAMES.has(name) || !args || typeof args !== "object" || Array.isArray(args)) {
+        continue;
+      }
+      return [{
+        id: randomUUID(),
+        type: "function" as const,
+        function: { name, arguments: JSON.stringify(args) },
+      }];
+    } catch {
+      // A normal text response is not a tool call.
+    }
+  }
+  return [];
+}
+
 // ── Tool implementations ───────────────────────────────────────────────────────
 
 async function toolReadGithubFile(args: { owner_repo: string; path: string; branch?: string }): Promise<string> {
@@ -403,47 +415,6 @@ async function toolReadGithubFile(args: { owner_repo: string; path: string; bran
     return JSON.stringify(data).slice(0, 4000);
   } catch (err: any) {
     return `Error reading file: ${err?.message ?? "Network error"}`;
-  }
-}
-
-async function toolWriteGithubFile(args: { owner_repo: string; path: string; content: string; message: string; branch?: string }): Promise<string> {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) return "GITHUB_TOKEN is not configured — cannot push to GitHub.";
-  const qs = args.branch ? `?ref=${encodeURIComponent(args.branch)}` : "";
-  const contentsUrl = `https://api.github.com/repos/${args.owner_repo}/contents/${args.path.replace(/^\//, "")}`;
-  try {
-    // Step 1: get existing file SHA (required to update, absent for new files)
-    let sha: string | undefined;
-    const existing = await fetch(`${contentsUrl}${qs}`, { headers: GH_HEADERS(token), signal: AbortSignal.timeout(10000) });
-    if (existing.ok) {
-      const d = await existing.json() as any;
-      sha = d.sha;
-    } else if (existing.status !== 404) {
-      return `GitHub API error fetching existing file: ${existing.status} ${existing.statusText}`;
-    }
-    // Step 2: PUT new content
-    const body: any = {
-      message: args.message,
-      content: Buffer.from(args.content, "utf-8").toString("base64"),
-    };
-    if (sha) body.sha = sha;
-    if (args.branch) body.branch = args.branch;
-    const r = await fetch(contentsUrl, {
-      method: "PUT",
-      headers: { ...GH_HEADERS(token), "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15000),
-    });
-    if (!r.ok) {
-      const err = await r.json().catch(() => ({})) as any;
-      return `GitHub push failed (${r.status}): ${err?.message ?? r.statusText}`;
-    }
-    const result = await r.json() as any;
-    const commitSha = result?.commit?.sha?.slice(0, 7) ?? "?";
-    const commitUrl = result?.commit?.html_url ?? "";
-    return `Pushed successfully — commit ${commitSha}${commitUrl ? "\n" + commitUrl : ""}`;
-  } catch (err: any) {
-    return `Error pushing to GitHub: ${err?.message ?? "Network error"}`;
   }
 }
 
@@ -642,16 +613,74 @@ function execAsync(cmd: string, cwd: string, timeout: number): Promise<{ stdout:
   });
 }
 
+const DEVAI_EDIT_ROOTS = ["artifacts/bsv-dex/src/", "artifacts/api-server/src/", "lib/"];
+const DEVAI_EDIT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css", ".html", ".svg", ".json"]);
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function validateDevAiEditPath(filePath: string): string {
+  if (!filePath || filePath.includes("\\") || path.isAbsolute(filePath)) {
+    throw new Error("Use a relative source-file path.");
+  }
+  const normalized = path.posix.normalize(filePath);
+  if (normalized.startsWith("../") || normalized === ".." || normalized.startsWith(".")) {
+    throw new Error("Path is outside the editable source directories.");
+  }
+  if (!DEVAI_EDIT_ROOTS.some((root) => normalized.startsWith(root))) {
+    throw new Error("Only source files under artifacts/bsv-dex/src, artifacts/api-server/src, and lib can be proposed.");
+  }
+  if (!DEVAI_EDIT_EXTENSIONS.has(path.extname(normalized).toLowerCase())) {
+    throw new Error("This file type cannot be proposed.");
+  }
+  const resolved = path.resolve(WORKSPACE_ROOT, normalized);
+  if (!resolved.startsWith(`${WORKSPACE_ROOT}${path.sep}`)) {
+    throw new Error("Path is outside the workspace.");
+  }
+  return resolved;
+}
+
 async function toolWriteProjectFile(args: { path: string; content: string; description?: string }): Promise<string> {
   try {
-    const safePath = path.resolve(WORKSPACE_ROOT, args.path.replace(/^\//, ""));
-    if (!safePath.startsWith(WORKSPACE_ROOT)) return "Access denied: path outside workspace.";
-    await fs.mkdir(path.dirname(safePath), { recursive: true });
-    await fs.writeFile(safePath, args.content, "utf-8");
-    const lines = args.content.split("\n").length;
-    return `Written: ${args.path} (${lines} lines, ${args.content.length.toLocaleString()} chars)${args.description ? `\n${args.description}` : ""}`;
+    if (typeof args.content !== "string" || args.content.length > 500_000) {
+      return "Proposal rejected: content must be text and no larger than 500 KB.";
+    }
+    const safePath = validateDevAiEditPath(args.path);
+    const workspaceReal = await fs.realpath(WORKSPACE_ROOT);
+    const parentReal = await fs.realpath(path.dirname(safePath));
+    const parentRelative = path.relative(workspaceReal, parentReal);
+    if (parentRelative.startsWith("..") || path.isAbsolute(parentRelative)) {
+      return "Proposal rejected: target resolves outside the workspace.";
+    }
+    let originalContent: string | null = null;
+    try {
+      const stat = await fs.lstat(safePath);
+      if (!stat.isFile() || stat.isSymbolicLink()) return "Proposal rejected: target must be a regular source file.";
+      originalContent = await fs.readFile(safePath, "utf-8");
+    } catch (err: any) {
+      if (err?.code !== "ENOENT") throw err;
+    }
+
+    const id = randomUUID();
+    const proposal = {
+      id,
+      path: path.relative(WORKSPACE_ROOT, safePath).split(path.sep).join("/"),
+      description: String(args.description ?? "").slice(0, 500),
+      content: args.content,
+      originalContent,
+      originalHash: originalContent === null ? null : sha256(originalContent),
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+    await db.insert(platformSettingsTable).values({
+      key: `${DEVAI_CHANGE_PREFIX}${id}`,
+      value: JSON.stringify(proposal),
+      updatedAt: new Date(),
+    });
+    return `Change staged for admin review. Proposal ${id}; file ${proposal.path}. The file has not been changed.`;
   } catch (err: any) {
-    return `Error writing file: ${err?.message ?? "Unknown error"}`;
+    return `Could not stage change: ${err?.message ?? "Unknown error"}`;
   }
 }
 
@@ -777,7 +806,7 @@ async function executeTool(name: string, args: any, callId: string): Promise<Too
   switch (name) {
     case "read_github_file":   return { output: await toolReadGithubFile(args) };
     case "list_github_repo":   return { output: await toolListGithubRepo(args) };
-    case "write_github_file":  return { output: await toolWriteGithubFile(args) };
+    case "write_github_file":  return { output: "Disabled: DevAI cannot commit directly to GitHub. Use an admin-reviewed source change proposal instead." };
     case "execute_code":       return { output: toolExecuteCode(args) };
     case "fetch_url":          return { output: await toolFetchUrl(args) };
     case "create_file":        return {
@@ -791,7 +820,7 @@ async function executeTool(name: string, args: any, callId: string): Promise<Too
     case "list_project_dir":   return { output: await toolListProjectDir(args) };
     case "query_database":     return { output: await toolQueryDatabase(args) };
     case "write_project_file": return { output: await toolWriteProjectFile(args) };
-    case "run_terminal":       return { output: await toolRunTerminal(args) };
+    case "run_terminal":       return { output: "Disabled: DevAI cannot execute terminal commands." };
     default:                   return { output: `Unknown tool: ${name}` };
   }
 }
@@ -799,6 +828,57 @@ async function executeTool(name: string, args: any, callId: string): Promise<Too
 // ── Helper: SSE write ─────────────────────────────────────────────────────────
 function sse(res: any, payload: object) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
+}
+
+async function getLocalModelStatus() {
+  return getDevaiOllamaStatus();
+}
+
+async function getRuntimeMemory() {
+  try {
+    const [currentRaw, limitRaw] = await Promise.all([
+      fs.readFile("/sys/fs/cgroup/memory.current", "utf8"),
+      fs.readFile("/sys/fs/cgroup/memory.max", "utf8"),
+    ]);
+    const currentBytes = Number(currentRaw.trim());
+    const limitBytes = Number(limitRaw.trim());
+    if (Number.isFinite(currentBytes) && Number.isFinite(limitBytes) && limitBytes > 0) {
+      return { currentBytes, limitBytes, availableBytes: Math.max(0, limitBytes - currentBytes) };
+    }
+  } catch { /* use host memory info when cgroup files are unavailable */ }
+
+  try {
+    const meminfo = await fs.readFile("/proc/meminfo", "utf8");
+    const total = Number(meminfo.match(/^MemTotal:\s+(\d+)/m)?.[1]) * 1024;
+    const available = Number(meminfo.match(/^MemAvailable:\s+(\d+)/m)?.[1]) * 1024;
+    if (Number.isFinite(total) && Number.isFinite(available)) {
+      return { currentBytes: total - available, limitBytes: total, availableBytes: available };
+    }
+  } catch { /* runtime memory metrics are optional */ }
+  return null;
+}
+
+async function getChangeProposal(id: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const [row] = await db.select().from(platformSettingsTable).where(eq(platformSettingsTable.key, `${DEVAI_CHANGE_PREFIX}${id}`)).limit(1);
+  if (!row) return null;
+  return JSON.parse(row.value) as {
+    id: string;
+    path: string;
+    description: string;
+    content: string;
+    originalContent: string | null;
+    originalHash: string | null;
+    status: "pending" | "approved" | "rejected";
+    createdAt: string;
+  };
+}
+
+async function persistChangeProposal(proposal: Awaited<ReturnType<typeof getChangeProposal>>) {
+  if (!proposal) return;
+  await db.update(platformSettingsTable)
+    .set({ value: JSON.stringify(proposal), updatedAt: new Date() })
+    .where(eq(platformSettingsTable.key, `${DEVAI_CHANGE_PREFIX}${proposal.id}`));
 }
 
 // ── GET /devai/conversations ───────────────────────────────────────────────────
@@ -847,10 +927,24 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
   const content = (req.body?.content ?? "").trim();
   if (!content) { res.status(400).json({ error: "Content is required" }); return; }
 
+  const modelStatus = await getLocalModelStatus();
+  if (!modelStatus.enabled || !modelStatus.reachable || !modelStatus.modelAvailable) {
+    res.status(503).json({ error: modelStatus.error, provider: "local_ollama" });
+    return;
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+  res.write(": DevAI is preparing a response\n\n");
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(": keep-alive\n\n");
+  }, 12_000);
+  heartbeat.unref?.();
+  res.on("close", () => clearInterval(heartbeat));
+  res.on("finish", () => clearInterval(heartbeat));
 
   try {
     await db.insert(messages).values({ conversationId: id, role: "user", content });
@@ -869,33 +963,44 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
 
     const chatMessages: ChatMsg[] = [
       { role: "system", content: DEVAI_SYSTEM_PROMPT },
-      ...history.slice(-24).map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
+      ...history.slice(-2).map(m => ({
+        role: m.role as "user" | "assistant",
+        content: m.role === "user" ? m.content.slice(0, 1200) : m.content.slice(-1200),
+      })),
     ];
 
     // ── Agentic tool-use loop (non-streaming) ──────────────────────────────────
-    const MAX_TOOL_ROUNDS = 8;
+    const MAX_TOOL_ROUNDS = 4;
     let toolRounds = 0;
     let finalTextFromLoop: string | null = null;
 
     while (toolRounds < MAX_TOOL_ROUNDS) {
-      const resp = await openai.chat.completions.create({
+      const resp = await devaiOpenAI.chat.completions.create({
         model: DEVAI_MODEL,
-        max_completion_tokens: 6000,
+        max_tokens: DEVAI_MAX_RESPONSE_TOKENS,
         messages: chatMessages as any,
-        tools: DEVAI_TOOLS,
+        tools: SAFE_DEVAI_TOOLS,
         tool_choice: "auto",
         stream: false,
-      });
+        options: { num_ctx: DEVAI_CONTEXT_TOKENS },
+      } as any);
 
       const choice = resp.choices[0];
       const msg = choice.message;
+      const modelToolCalls = msg.tool_calls?.length
+        ? msg.tool_calls
+        : parseLocalTextToolCall(msg.content ?? "");
 
-      if (choice.finish_reason === "tool_calls" && msg.tool_calls?.length) {
+      if (modelToolCalls.length) {
         // Push assistant message with tool_calls
-        chatMessages.push({ role: "assistant", content: msg.content ?? null, tool_calls: msg.tool_calls });
+        chatMessages.push({
+          role: "assistant",
+          content: msg.tool_calls?.length ? msg.content ?? null : null,
+          tool_calls: modelToolCalls,
+        } as any);
 
         // Execute each tool, stream events
-        for (const tc of msg.tool_calls) {
+        for (const tc of modelToolCalls) {
           if (tc.type !== "function") {
             const unsupported = `Unsupported tool call type: ${tc.type}`;
             sse(res, { tool_result: { id: tc.id, name: "unknown", output: unsupported } });
@@ -915,10 +1020,11 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
             result = { output: `Tool error: ${err?.message ?? "Unknown"}` };
           }
 
-          sse(res, { tool_result: { id: tc.id, name, output: result.output.slice(0, 8000) } });
+          const boundedOutput = result.output.slice(0, 1000);
+          sse(res, { tool_result: { id: tc.id, name, output: boundedOutput } });
           if (result.file) sse(res, { file: result.file });
 
-          chatMessages.push({ role: "tool", tool_call_id: tc.id, content: result.output.slice(0, 8000) });
+          chatMessages.push({ role: "tool", tool_call_id: tc.id, content: boundedOutput });
         }
         toolRounds++;
         continue;
@@ -944,12 +1050,13 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
       }
     } else {
       // Tools were used: make a final streaming call for a natural summary response
-      const finalStream = await openai.chat.completions.create({
+      const finalStream = await devaiOpenAI.chat.completions.create({
         model: DEVAI_MODEL,
-        max_completion_tokens: 8192,
+        max_tokens: DEVAI_MAX_RESPONSE_TOKENS,
         messages: chatMessages as any,
         stream: true,
-      });
+        options: { num_ctx: DEVAI_CONTEXT_TOKENS },
+      } as any);
 
       for await (const chunk of finalStream) {
         const token = chunk.choices[0]?.delta?.content;
@@ -980,6 +1087,157 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
   }
 });
 
+// ── GET /admin/devai/status ────────────────────────────────────────────────────
+router.get("/admin/devai/status", requireAdminToken, async (_req, res) => {
+  const [model, memory] = await Promise.all([getLocalModelStatus(), getRuntimeMemory()]);
+  res.json({
+    provider: "local_ollama",
+    model: DEVAI_MODEL,
+    environment: process.env.NODE_ENV ?? "development",
+    ollamaAutostartEnabled: isDevaiOllamaEnabled(),
+    ...model,
+    memory,
+    minimumModelHeadroomBytes: DEVAI_MIN_OLLAMA_HEADROOM_BYTES,
+  });
+});
+
+router.post("/admin/devai/model/pull", requireAdminToken, async (_req, res) => {
+  const memory = await getRuntimeMemory();
+  const requiredHeadroom = DEVAI_MIN_OLLAMA_HEADROOM_BYTES;
+  if (!memory || memory.availableBytes < requiredHeadroom) {
+    res.status(409).json({
+      error: `Model download is blocked to protect the exchange API. At least ${(requiredHeadroom / 1024 ** 3).toFixed(1)} GiB of free VM memory is required.`,
+      availableBytes: memory?.availableBytes ?? null,
+      requiredBytes: requiredHeadroom,
+    });
+    return;
+  }
+  if (process.env.DEVAI_OLLAMA_ENABLED !== "true") {
+    res.status(503).json({ error: "Enable local Ollama autostart after the VM has enough memory, then retry." });
+    return;
+  }
+  const current = await getLocalModelStatus();
+  if (!current.reachable) {
+    res.status(503).json({ error: "Local Ollama is not running on this VM." });
+    return;
+  }
+  if (current.modelAvailable) {
+    res.json({ ok: true, model: DEVAI_MODEL, message: "The selected model is already installed." });
+    return;
+  }
+
+  try {
+    const response = await fetch(`${DEVAI_OLLAMA_SERVER_URL}/api/pull`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: DEVAI_MODEL, stream: false }),
+      signal: AbortSignal.timeout(20 * 60 * 1000),
+    });
+    if (!response.ok) {
+      res.status(502).json({ error: "Ollama could not download the selected model." });
+      return;
+    }
+    const status = await getLocalModelStatus();
+    if (!status.modelAvailable) {
+      res.status(502).json({ error: status.error ?? "Model download finished, but the model is not ready." });
+      return;
+    }
+    res.json({ ok: true, model: DEVAI_MODEL, message: "Local model downloaded and ready." });
+  } catch (err: any) {
+    logger.warn({ err: err?.message }, "DevAI: local model download failed");
+    res.status(502).json({ error: "Local model download failed or timed out. Check the VM and retry." });
+  }
+});
+
+// ── Admin-reviewed source change proposals ─────────────────────────────────────
+router.get("/admin/devai/change-proposals", requireAdminToken, async (_req, res) => {
+  try {
+    const rows = await db.select().from(platformSettingsTable)
+      .where(like(platformSettingsTable.key, `${DEVAI_CHANGE_PREFIX}%`));
+    const proposals = rows
+      .flatMap((row) => {
+        try { return [JSON.parse(row.value)]; } catch { return []; }
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 50);
+    res.json({ proposals, environment: process.env.NODE_ENV ?? "development" });
+  } catch {
+    res.status(500).json({ error: "Could not load change proposals." });
+  }
+});
+
+router.post("/admin/devai/change-proposals/:id/approve", requireAdminToken, async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    res.status(409).json({ error: "Changes cannot be applied from the published production app. Apply them in the Replit workspace, review, then publish." });
+    return;
+  }
+  try {
+    const rawId = req.params.id;
+    const proposal = await getChangeProposal(Array.isArray(rawId) ? rawId[0] ?? "" : rawId ?? "");
+    if (!proposal) { res.status(404).json({ error: "Change proposal not found." }); return; }
+    if (proposal.status !== "pending") { res.status(409).json({ error: "This proposal has already been reviewed." }); return; }
+
+    let safePath: string;
+    try { safePath = validateDevAiEditPath(proposal.path); }
+    catch (err: any) { res.status(400).json({ error: err?.message ?? "Invalid proposal path." }); return; }
+
+    const workspaceReal = await fs.realpath(WORKSPACE_ROOT);
+    const parentReal = await fs.realpath(path.dirname(safePath));
+    const parentRelative = path.relative(workspaceReal, parentReal);
+    if (parentRelative.startsWith("..") || path.isAbsolute(parentRelative)) {
+      res.status(400).json({ error: "Proposal target resolves outside the workspace." });
+      return;
+    }
+
+    let currentContent: string | null = null;
+    try {
+      const stat = await fs.lstat(safePath);
+      if (!stat.isFile() || stat.isSymbolicLink()) {
+        res.status(400).json({ error: "Proposal target is not a regular file." });
+        return;
+      }
+      currentContent = await fs.readFile(safePath, "utf-8");
+    } catch (err: any) {
+      if (err?.code !== "ENOENT") throw err;
+    }
+
+    if (proposal.originalHash === null ? currentContent !== null : currentContent === null || sha256(currentContent) !== proposal.originalHash) {
+      res.status(409).json({ error: "The source file changed after this proposal was created. Ask DevAI to reread it and create a fresh proposal." });
+      return;
+    }
+
+    await fs.writeFile(safePath, proposal.content, {
+      encoding: "utf-8",
+      flag: currentContent === null ? "wx" : "w",
+      mode: 0o644,
+    });
+    proposal.status = "approved";
+    proposal.content = "";
+    proposal.originalContent = null;
+    await persistChangeProposal(proposal);
+    res.json({ ok: true, path: proposal.path, message: "Reviewed change applied to the workspace. It has not been published." });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "DevAI: failed to apply reviewed change");
+    res.status(500).json({ error: "Could not apply the reviewed change." });
+  }
+});
+
+router.post("/admin/devai/change-proposals/:id/reject", requireAdminToken, async (req, res) => {
+  try {
+    const rawId = req.params.id;
+    const proposal = await getChangeProposal(Array.isArray(rawId) ? rawId[0] ?? "" : rawId ?? "");
+    if (!proposal) { res.status(404).json({ error: "Change proposal not found." }); return; }
+    if (proposal.status !== "pending") { res.status(409).json({ error: "This proposal has already been reviewed." }); return; }
+    proposal.status = "rejected";
+    proposal.content = "";
+    proposal.originalContent = null;
+    await persistChangeProposal(proposal);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: "Could not reject the proposal." });
+  }
+});
+
 // ── GET /admin/devai/github ────────────────────────────────────────────────────
 router.get("/admin/devai/github", requireAdminToken, async (_req, res) => {
   const token = process.env.GITHUB_TOKEN;
@@ -1005,6 +1263,10 @@ router.get("/admin/devai/github", requireAdminToken, async (_req, res) => {
 
 // ── POST /admin/devai/run-terminal — run a safe workspace command ──────────────
 router.post("/admin/devai/run-terminal", requireAdminToken, async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    res.status(409).json({ error: "Terminal commands are disabled in the published production app." });
+    return;
+  }
   const command = String(req.body?.command ?? "").trim();
   const description = typeof req.body?.description === "string" ? req.body.description : undefined;
   if (!command) {
@@ -1022,6 +1284,10 @@ router.post("/admin/devai/run-terminal", requireAdminToken, async (req, res) => 
 
 // ── POST /admin/devai/restart — restart services to apply code changes ────────
 router.post("/admin/devai/restart", requireAdminToken, (_req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    res.status(409).json({ error: "Restarting production from DevAI is disabled. Use Replit Publishing to deploy approved workspace changes." });
+    return;
+  }
   res.json({ ok: true, message: "Restarting services. Backend changes live in ~5s, frontend hot-reloads instantly." });
   setTimeout(() => {
     exec("pkill -f 'tsx watch' 2>/dev/null; pkill -f 'tsx' 2>/dev/null; true", { timeout: 5000 }, () => {});
@@ -1058,7 +1324,13 @@ router.get("/admin/devai/export", requireAdminToken, (req, res) => {
 });
 
 // ── POST /admin/devai/upload — upload & extract a tar.gz to workspace ─────────
-router.post("/admin/devai/upload", requireAdminToken, raw({ type: "*/*", limit: "500mb" }), async (req, res) => {
+router.post("/admin/devai/upload", requireAdminToken, (req, res, next) => {
+  if (process.env.NODE_ENV === "production") {
+    res.status(409).json({ error: "Workspace archive uploads are disabled in the published production app." });
+    return;
+  }
+  next();
+}, raw({ type: "*/*", limit: "500mb" }), async (req, res) => {
   const tmp = `/tmp/devai-upload-${Date.now()}.tar.gz`;
   try {
     if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
@@ -1090,5 +1362,52 @@ router.delete("/devai/conversations/:id", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+// The deployment launcher owns production startup. In the Replit workspace,
+// start Ollama from the API process only after normal services have booted and
+// measured cgroup headroom is still sufficient.
+if (process.env.NODE_ENV === "development" && isDevaiOllamaEnabled()) {
+  const startTimer = setTimeout(async () => {
+    try {
+      const currentStatus = await getLocalModelStatus();
+      if (currentStatus.reachable) return;
+
+      const memory = await getRuntimeMemory();
+      const minimumHeadroom = DEVAI_MIN_OLLAMA_HEADROOM_BYTES;
+      if (!memory || memory.availableBytes < minimumHeadroom) {
+        logger.warn({
+          availableBytes: memory?.availableBytes ?? null,
+          requiredBytes: minimumHeadroom,
+        }, "DevAI Ollama autostart skipped because VM memory headroom is too low");
+        return;
+      }
+
+      const modelDir = process.env.OLLAMA_MODELS || path.join(os.homedir(), ".ollama", "models");
+      const localOllamaProc = spawn("ollama", ["serve"], {
+        stdio: "inherit",
+        env: {
+          ...process.env,
+          OLLAMA_HOST: "127.0.0.1:11434",
+          OLLAMA_MODELS: modelDir,
+          OLLAMA_NUM_PARALLEL: "1",
+          OLLAMA_MAX_LOADED_MODELS: "1",
+          OLLAMA_KEEP_ALIVE: "30s",
+          OLLAMA_CONTEXT_LENGTH: "2048",
+        },
+      });
+      localOllamaProc.on("error", (err) => {
+        logger.error({ err: err.message }, "DevAI Ollama autostart failed");
+      });
+      localOllamaProc.on("exit", (code, signal) => {
+        logger.warn({ code, signal }, "DevAI Ollama process exited");
+      });
+      process.once("exit", () => localOllamaProc.kill("SIGTERM"));
+      logger.info("DevAI Ollama started on loopback after memory check");
+    } catch (err: any) {
+      logger.error({ err: err?.message }, "DevAI Ollama autostart failed");
+    }
+  }, 30_000);
+  startTimer.unref();
+}
 
 export default router;
