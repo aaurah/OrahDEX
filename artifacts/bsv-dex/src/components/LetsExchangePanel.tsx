@@ -537,7 +537,6 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   const [estLoading, setEstLoading] = useState(false);
   const [estError,   setEstError]   = useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [selectedVenue, setSelectedVenue] = useState<string|null>(null);
 
   // ── Smart router state ───────────────────────────────────────────────────
   const [routeSource,  setRouteSource]  = useState<"internal"|"letsexchange"|null>(null);
@@ -2410,44 +2409,6 @@ export function LetsExchangePanel({
     return (
       <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 shrink-0 text-yellow-400/70" /> Cross-chain swap unavailable.
-      </div>
-    );
-  }
-
-  if (STAGING_CATALOG_ONLY) {
-    return (
-      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center gap-2">
-          <AlertTriangle className="w-5 h-5 text-yellow-400" />
-          <h3 className="font-bold text-foreground">
-            Cross-chain catalog preview
-          </h3>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Staging environment — read-only currency information.
-          Quotes, exchanges, deposits and wallet transactions are disabled.
-        </p>
-        <p className="text-sm font-semibold text-foreground">
-          {coins.length.toLocaleString()} currency/network entries available
-        </p>
-        <div className="max-h-80 overflow-y-auto rounded-xl border border-border">
-          {coins.slice(0, 100).map((coin, index) => (
-            <div
-              key={`${coin.symbol}-${coin.network}-${index}`}
-              className="flex justify-between gap-3 border-b border-border/40 px-3 py-2 text-sm"
-            >
-              <span className="font-medium text-foreground">
-                {coin.symbol}
-              </span>
-              <span className="text-muted-foreground">
-                {coin.networkName || coin.network}
-              </span>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Showing the first 100 entries. Trading is not available in this preview.
-        </p>
       </div>
     );
   }
