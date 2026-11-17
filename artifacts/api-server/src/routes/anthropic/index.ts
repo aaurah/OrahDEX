@@ -2,8 +2,15 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { conversations, messages, marketsTable, ordersTable } from "@workspace/db/schema";
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import {
+  createDevaiOllamaStream,
+  getDevaiOllamaStatus,
+  isDevaiOllamaEnabled,
+  type DevAiChatMessage,
+} from "@workspace/integrations-openai-ai-server";
 import { eq, asc, desc } from "drizzle-orm";
 import { logger } from "../../lib/logger.js";
+import { aiChatRateLimit } from "../../middleware/aiChatRateLimit.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   parseNaturalLanguageOrder,
@@ -164,7 +171,7 @@ router.get("/anthropic/conversations/:id/messages", async (req, res) => {
   }
 });
 
-router.post("/anthropic/conversations/:id/messages", async (req, res) => {
+router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req, res) => {
   try {
     const convId = Number(req.params.id);
     if (!convId) { res.status(400).json({ error: "Invalid id" }); return; }
@@ -177,6 +184,15 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
 
     const [conv] = await db.select().from(conversations).where(eq(conversations.id, convId));
     if (!conv) { res.status(404).json({ error: "Conversation not found" }); return; }
+
+    const useLocalOllama = isDevaiOllamaEnabled();
+    if (useLocalOllama) {
+      const status = await getDevaiOllamaStatus();
+      if (!status.reachable || !status.modelAvailable) {
+        res.status(503).json({ error: status.error ?? "The local AI model is not ready." });
+        return;
+      }
+    }
 
     await db.insert(messages).values({ conversationId: convId, role: "user", content });
 
@@ -200,17 +216,32 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
 
     let fullResponse = "";
 
-    const stream = anthropic.messages.stream({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8192,
-      system: systemPrompt,
-      messages: chatMessages,
-    });
+    if (useLocalOllama) {
+      const ollamaMessages: DevAiChatMessage[] = [
+        { role: "system", content: systemPrompt },
+        ...chatMessages,
+      ];
+      const stream = await createDevaiOllamaStream(ollamaMessages, 2048);
+      for await (const chunk of stream) {
+        const text = chunk.choices[0]?.delta?.content;
+        if (text) {
+          fullResponse += text;
+          res.write(`data: ${JSON.stringify({ content: text })}\n\n`);
+        }
+      }
+    } else {
+      const stream = anthropic.messages.stream({
+        model: "claude-sonnet-4-6",
+        max_tokens: 8192,
+        system: systemPrompt,
+        messages: chatMessages,
+      });
 
-    for await (const event of stream) {
-      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-        fullResponse += event.delta.text;
-        res.write(`data: ${JSON.stringify({ content: event.delta.text })}\n\n`);
+      for await (const event of stream) {
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          fullResponse += event.delta.text;
+          res.write(`data: ${JSON.stringify({ content: event.delta.text })}\n\n`);
+        }
       }
     }
 
@@ -227,11 +258,20 @@ router.post("/anthropic/conversations/:id/messages", async (req, res) => {
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
   } catch (err) {
-    logger.error({ err }, "Anthropic stream failed");
+    const localOllama = isDevaiOllamaEnabled();
+    logger.error({ err, provider: localOllama ? "ollama" : "anthropic" }, "Ora chat stream failed");
     if (!res.headersSent) {
-      res.status(500).json({ error: "AI request failed" });
+      res.status(localOllama ? 503 : 500).json({
+        error: localOllama
+          ? "Local Ollama could not complete this chat. Check Admin → DevAI for model status."
+          : "AI request failed",
+      });
     } else {
-      res.write(`data: ${JSON.stringify({ error: "Stream error" })}\n\n`);
+      const message = localOllama
+        ? "Local Ollama could not complete this chat. Check Admin → DevAI for model status."
+        : "AI stream error. Please try again.";
+      res.write(`data: ${JSON.stringify({ content: message })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
       res.end();
     }
   }
