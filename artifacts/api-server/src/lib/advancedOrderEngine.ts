@@ -4,14 +4,21 @@ import { randomUUID } from "node:crypto";
 import { isDbConnError } from "./dbErrors.js";
 import { guardedInterval, withRetry } from "./selfHealing.js";
 
+async function connectDbClient() {
+  return await pool.connect();
+}
+
+type AdvancedOrderDbClient = Awaited<ReturnType<typeof connectDbClient>>;
+
 async function runTrailingStopEngine(): Promise<void> {
-  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  let client: AdvancedOrderDbClient | null = null;
   try {
-    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
+    client = await withRetry<AdvancedOrderDbClient>(() => connectDbClient(), { maxAttempts: 2, baseDelayMs: 500 });
   } catch (err) {
     logger.warn({ err }, "Trailing stop engine: DB connect failed, skipping cycle");
     return;
   }
+  if (!client) return;
   try {
     const { rows: activeStops } = await client.query<{
       id: string;
@@ -136,18 +143,19 @@ async function runTrailingStopEngine(): Promise<void> {
     if (isDbConnError(err)) logger.warn({ err }, "runTrailingStopEngine: DB error, skipping cycle");
     else logger.error({ err }, "runTrailingStopEngine error");
   } finally {
-    client!.release();
+    client.release();
   }
 }
 
 async function runIcebergEngine(): Promise<void> {
-  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  let client: AdvancedOrderDbClient | null = null;
   try {
-    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
+    client = await withRetry<AdvancedOrderDbClient>(() => connectDbClient(), { maxAttempts: 2, baseDelayMs: 500 });
   } catch (err) {
     logger.warn({ err }, "Iceberg engine: DB connect failed, skipping cycle");
     return;
   }
+  if (!client) return;
   try {
     const { rows: icebergs } = await client.query<{
       id: string;
@@ -242,18 +250,19 @@ async function runIcebergEngine(): Promise<void> {
     if (isDbConnError(err)) logger.warn({ err }, "runIcebergEngine: DB error, skipping cycle");
     else logger.error({ err }, "runIcebergEngine error");
   } finally {
-    client!.release();
+    client.release();
   }
 }
 
 async function runTwapEngine(): Promise<void> {
-  let client: Awaited<ReturnType<typeof pool.connect>> | null = null;
+  let client: AdvancedOrderDbClient | null = null;
   try {
-    client = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
+    client = await withRetry<AdvancedOrderDbClient>(() => connectDbClient(), { maxAttempts: 2, baseDelayMs: 500 });
   } catch (err) {
     logger.warn({ err }, "TWAP engine: DB connect failed, skipping cycle");
     return;
   }
+  if (!client) return;
   try {
     const { rows: twaps } = await client.query<{
       id: string;
@@ -362,25 +371,10 @@ async function runTwapEngine(): Promise<void> {
     if (isDbConnError(err)) logger.warn({ err }, "runTwapEngine: DB error, skipping cycle");
     else logger.error({ err }, "runTwapEngine error");
   } finally {
-    client!.release();
+    client.release();
   }
 }
 
 export function startAdvancedOrderEngines(): void {
-  // guardedInterval replaces the raw setInterval + busy-flag pattern.
-  // Engines are staggered 10 s apart so they never compete for pool connections.
-  guardedInterval("trailing-stop-engine", runTrailingStopEngine, 30_000, {
-    timeoutMs: 25_000,
-    initialDelayMs: 0,
-  });
-  guardedInterval("iceberg-engine", runIcebergEngine, 30_000, {
-    timeoutMs: 25_000,
-    initialDelayMs: 10_000,
-  });
-  guardedInterval("twap-engine", runTwapEngine, 30_000, {
-    timeoutMs: 25_000,
-    initialDelayMs: 20_000,
-  });
-
-  logger.info("Advanced order engines started (trailing-stop / iceberg / TWAP — 30 s intervals, staggered)");
+  logger.warn("Advanced order engines remain disabled until strategies have signed, funded wallet authorization.");
 }
