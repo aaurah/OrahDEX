@@ -1,9 +1,9 @@
 import { Router, type IRouter } from "express";
 import { db, pool } from "@workspace/db";
 import { ordersTable, marketsTable } from "@workspace/db/schema";
-import { eq, and, lte, gte, ne, isNotNull, desc, asc, inArray, sql } from "drizzle-orm";
+import { eq, and, lte, gte, ne, isNotNull, desc, asc, sql } from "drizzle-orm";
 import crypto from "node:crypto";
-import { formatUnits, keccak256, recoverMessageAddress, toBytes } from "viem";
+import { recoverMessageAddress } from "viem";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
@@ -12,26 +12,15 @@ import { getCachedQuote } from "../lib/routeCache.js";
 import { unlockFunds, getBalances } from "../lib/ledger.js";
 import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
 import { settleSpotFill }        from "../lib/spotSettlement.js";
+import { parseUnits, formatUnits, mulPriceQty, mulDiv, pow10 } from "../lib/money.js";
 import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
-import {
-  getConfirmedEvmOrderSettlement,
-  getEvmOrderbookEscrowConfig,
-  getEvmSettlementTxStatus,
-  findActiveEvmOrderbookOrders,
-  findConfirmedEvmOrderbookCancellation,
-  orderKeyFromNonce,
-  settleEvmOrderFill,
-  verifyEvmOrderbookCancelTx,
-  verifyEvmOrderLock,
-} from "../lib/evmOrderbookEscrow.js";
-import { TOKEN_REGISTRY } from "../lib/tokenRegistry.js";
 import { settleEscrowMatch, isEscrowChain, findEscrowChain, ESCROW_ADDRESSES } from "../lib/escrowRelayer.js";
 import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
-import { requireAdminToken } from "../middleware/adminAuth.js";
+import { attemptLeAutoRoute } from "../lib/leAutoRoute.js";
 import {
-  buildOrderAuthMessage, buildOrderActionAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
+  buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
   verifyBsvWithdrawSignature, verifySolWithdrawSignature,
   issueBsvOrderChallenge, verifyBsvOrderSignature,
   issueSolOrderChallenge, verifySolOrderSignature,
@@ -49,14 +38,6 @@ const router: IRouter = Router();
 const _readChallenges = new Map<string, { nonce: string; expiresAt: number }>();
 const READ_CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-router.get("/orders/evm-settlement/config", async (_req, res) => {
-  try {
-    res.json(await getEvmOrderbookEscrowConfig());
-  } catch {
-    res.status(503).json({ chainId: 1, available: false });
-  }
-});
-
 // ── Wallet-format helpers ─────────────────────────────────────────────────────
 
 /** Detect EVM addresses (0x + 40 hex chars). */
@@ -64,60 +45,15 @@ function detectIsEvmAddress(addr: string): boolean {
   return /^0x[0-9a-fA-F]{40}$/.test(addr);
 }
 
-function decodeBase58(address: string): Uint8Array | null {
-  if (typeof address !== "string" || address.length < 1 || address.length > 44) return null;
-  const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  let value = 0n;
-  for (const char of address) {
-    const digit = alphabet.indexOf(char);
-    if (digit < 0) return null;
-    value = value * 58n + BigInt(digit);
-  }
-  const bytes: number[] = [];
-  while (value > 0n) {
-    bytes.unshift(Number(value & 0xffn));
-    value >>= 8n;
-  }
-  for (const char of address) {
-    if (char !== "1") break;
-    bytes.unshift(0);
-  }
-  return Uint8Array.from(bytes);
-}
-
-/** Detect Base58Check BSV P2PKH/P2SH addresses, not arbitrary base58 strings. */
+/** Detect BSV / legacy Bitcoin / Bitcoin Cash addresses (base58 P2PKH / P2SH). */
 function detectIsBsvAddress(addr: string): boolean {
-  const decoded = decodeBase58(addr);
-  if (!decoded || decoded.length !== 25 || (decoded[0] !== 0 && decoded[0] !== 5)) return false;
-  const payload = Buffer.from(decoded.subarray(0, 21));
-  const checksum = Buffer.from(decoded.subarray(21));
-  const expected = crypto.createHash("sha256")
-    .update(crypto.createHash("sha256").update(payload).digest())
-    .digest().subarray(0, 4);
-  return crypto.timingSafeEqual(checksum, expected);
+  // BSV mainnet: 1xxx (P2PKH) or 3xxx (P2SH) or bchtest / bitcoincash prefixed
+  return /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(addr);
 }
 
 /** Detect Solana public keys (base58, 32–44 chars, no O/0/I/l). */
 function detectIsSolAddress(addr: string): boolean {
-  return addr.length >= 32 && addr.length <= 44 && decodeBase58(addr)?.length === 32;
-}
-
-function evmOrderKeyFromFundingRef(fundingRef: string | null | undefined): `0x${string}` | null {
-  const parts = String(fundingRef ?? "").split(":");
-  return parts[0] === "evm-order" && parts[1] === "1" &&
-    /^0x[0-9a-fA-F]{64}$/.test(parts[3] ?? "")
-    ? parts[3] as `0x${string}`
-    : null;
-}
-
-async function releaseLedgerOrderFunds(
-  fundingRef: string,
-  walletAddress: string,
-  asset: string,
-  amount: number,
-): Promise<void> {
-  if (!fundingRef.startsWith("ledger:") || !asset || !Number.isFinite(amount) || amount <= 0) return;
-  await unlockFunds({ walletAddress, asset, amount: amount.toFixed(18) });
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(addr) && !addr.startsWith("0x");
 }
 
 /**
@@ -139,7 +75,7 @@ function settlementExplorerUrl(txid: string | null | undefined, chainId?: number
   if (!txid) return null;
 
   // Pending EVM HTLC sessions do not have a final settlement tx yet.
-  if (txid.startsWith("htlc-pending-") || txid.startsWith("evm-settlement:")) {
+  if (txid.startsWith("htlc-pending-")) {
     const cfg = chainId ? EVM_CHAINS[chainId] : null;
     if (!cfg) return null;
     return cfg.contractAddress
@@ -169,153 +105,6 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
     fee:               parseFloat(o.fee),
     explorerUrl:       settlementExplorerUrl(o.txid, null),
   };
-}
-
-async function reconcilePendingEvmOrderbookOrders(rows: Array<typeof ordersTable.$inferSelect>, log: any): Promise<boolean> {
-  let changed = false;
-  const handled = new Set<string>();
-  for (const row of rows) {
-    const marker = String(row.txid ?? "");
-    if (row.status !== "processing" || !String(row.fundingRef ?? "").startsWith("evm-order:1:")) continue;
-    if (/^0x[0-9a-fA-F]{64}$/.test(marker)) {
-      const ageMs = Date.now() - new Date(row.updatedAt).getTime();
-      if (ageMs < 600_000) continue;
-      const remaining = Number(row.remainingQuantity ?? row.quantity);
-      await db.update(ordersTable)
-        .set({ status: remaining <= 1e-9 ? "filled" : "open", updatedAt: new Date() })
-        .where(and(
-          eq(ordersTable.id, row.id),
-          eq(ordersTable.status, "processing"),
-          eq(ordersTable.txid, marker),
-        ));
-      changed = true;
-      continue;
-    }
-    if (!marker.startsWith("evm-settlement:")) continue;
-    const [, settlementId, txHash] = marker.split(":");
-    if (!/^0x[0-9a-fA-F]{64}$/.test(settlementId ?? "") || handled.has(settlementId)) continue;
-    handled.add(settlementId);
-
-    const partnerId = row.matchedOrderId;
-    if (!partnerId) continue;
-    const [partner] = await db.select().from(ordersTable).where(eq(ordersTable.id, partnerId)).limit(1);
-    if (!partner) continue;
-    const rowKey = evmOrderKeyFromFundingRef(row.fundingRef);
-    const partnerKey = evmOrderKeyFromFundingRef(partner.fundingRef);
-    if (!rowKey || !partnerKey) continue;
-
-    if (txHash && /^0x[0-9a-fA-F]{64}$/.test(txHash)) {
-      const txStatus = await getEvmSettlementTxStatus(txHash as `0x${string}`);
-      if (txStatus === "reverted") {
-        await db.transaction(async (tx) => {
-          for (const order of [row, partner]) {
-            if (order.status !== "processing" || !String(order.txid ?? "").startsWith(`evm-settlement:${settlementId}:`)) continue;
-            await tx.update(ordersTable)
-              .set({ status: "open", txid: null, matchedOrderId: null, updatedAt: new Date() })
-              .where(and(
-                eq(ordersTable.id, order.id),
-                eq(ordersTable.status, "processing"),
-                eq(ordersTable.txid, order.txid!),
-              ));
-          }
-        });
-        changed = true;
-        continue;
-      }
-      if (txStatus === "pending") continue;
-    }
-
-    const settlement = await getConfirmedEvmOrderSettlement(settlementId as `0x${string}`);
-    if (!settlement) continue;
-    const isCorrectPair =
-      (rowKey.toLowerCase() === settlement.buyOrderKey.toLowerCase() &&
-        partnerKey.toLowerCase() === settlement.sellOrderKey.toLowerCase()) ||
-      (rowKey.toLowerCase() === settlement.sellOrderKey.toLowerCase() &&
-        partnerKey.toLowerCase() === settlement.buyOrderKey.toLowerCase());
-    if (!isCorrectPair) {
-      log.error({ settlementId, rowId: row.id, partnerId }, "orderbook recovery event does not match saved order pair");
-      continue;
-    }
-
-    const quantity = Number(settlement.baseAmount);
-    const gross = Number(settlement.grossQuoteAmount);
-    const fee = Number(settlement.feeAmount);
-    if (!(quantity > 0) || !(gross > 0)) continue;
-    await db.transaction(async (tx) => {
-      for (const order of [row, partner]) {
-        if (
-          order.status !== "processing" ||
-          !String(order.txid ?? "").startsWith(`evm-settlement:${settlementId}`)
-        ) continue;
-        const previousFilled = Number(order.filledQuantity ?? "0");
-        const previousRemaining = Number(order.remainingQuantity ?? order.quantity);
-        if (quantity > previousRemaining + 1e-9) {
-          log.error({ settlementId, orderId: order.id, quantity, previousRemaining }, "orderbook recovery fill exceeds saved remainder");
-          continue;
-        }
-        const filledQuantity = previousFilled + quantity;
-        const remainingQuantity = Math.max(0, previousRemaining - quantity);
-        const priorTotal = previousFilled > 0 ? Number(order.total ?? "0") : 0;
-        const priorFee = previousFilled > 0 && order.side === "sell" ? Number(order.fee ?? "0") : 0;
-        await tx.update(ordersTable)
-          .set({
-            status: "processing",
-            filledQuantity: filledQuantity.toFixed(18),
-            remainingQuantity: remainingQuantity.toFixed(18),
-            total: (priorTotal + gross).toFixed(18),
-            fee: (priorFee + (order.side === "sell" ? fee : 0)).toFixed(18),
-            txid: settlement.txHash,
-            updatedAt: new Date(),
-          })
-          .where(and(
-            eq(ordersTable.id, order.id),
-            eq(ordersTable.status, "processing"),
-            eq(ordersTable.txid, order.txid!),
-          ));
-      }
-    });
-    changed = true;
-  }
-  return changed;
-}
-
-async function reconcileConfirmedEvmOrderbookCancellations(
-  rows: Array<typeof ordersTable.$inferSelect>,
-  log: any,
-): Promise<boolean> {
-  let changed = false;
-  for (const row of rows) {
-    const needsStatusUpdate = row.status === "open" || row.status === "processing";
-    const needsProofBackfill = row.status === "cancelled" && !row.txid;
-    if ((!needsStatusUpdate && !needsProofBackfill) ||
-        !String(row.fundingRef ?? "").startsWith("evm-order:1:")) continue;
-
-    const [, , escrowAddress, orderKey, lockTxHash] = String(row.fundingRef).split(":");
-    if (!escrowAddress || !/^0x[0-9a-fA-F]{64}$/.test(orderKey ?? "") ||
-        !/^0x[0-9a-fA-F]{64}$/.test(lockTxHash ?? "")) continue;
-
-    try {
-      const cancellation = await findConfirmedEvmOrderbookCancellation({
-        escrowAddress,
-        orderKey: orderKey as `0x${string}`,
-        walletAddress: row.walletAddress,
-        lockTxHash,
-      });
-      if (!cancellation || cancellation.refundAmount <= 0n) continue;
-
-      await db.update(ordersTable)
-        .set({ status: "cancelled", txid: cancellation.txHash, updatedAt: new Date() })
-        .where(and(
-          eq(ordersTable.id, row.id),
-          inArray(ordersTable.status, ["open", "processing", "cancelled"]),
-        ));
-      log.info({ orderId: row.id, txHash: cancellation.txHash }, "reconciled confirmed Ethereum order cancellation");
-      changed = true;
-    } catch (error: any) {
-      log.warn({ orderId: row.id, err: error?.message }, "Ethereum order cancellation reconciliation failed");
-    }
-  }
-  return changed;
 }
 
 // ── GET /orders/challenge — issue a read-ownership nonce ─────────────────────
@@ -404,28 +193,10 @@ router.get("/orders", async (req, res) => {
     if (symbol) conditions.push(eq(ordersTable.symbol, symbol));
     if (status) conditions.push(eq(ordersTable.status, status));
 
-    let orders = await db.select().from(ordersTable)
+    const orders = await db.select().from(ordersTable)
       .where(and(...conditions))
       .orderBy(desc(ordersTable.createdAt))
       .limit(limit);
-
-    let ordersChanged = false;
-    try {
-      ordersChanged = await reconcilePendingEvmOrderbookOrders(orders, req.log);
-    } catch (reconcileErr: any) {
-      req.log.warn({ err: reconcileErr?.message }, "orders: orderbook settlement recovery check failed");
-    }
-    try {
-      ordersChanged = (await reconcileConfirmedEvmOrderbookCancellations(orders, req.log)) || ordersChanged;
-    } catch (reconcileErr: any) {
-      req.log.warn({ err: reconcileErr?.message }, "orders: cancellation reconciliation check failed");
-    }
-    if (ordersChanged) {
-      orders = await db.select().from(ordersTable)
-        .where(and(...conditions))
-        .orderBy(desc(ordersTable.createdAt))
-        .limit(limit);
-    }
 
     res.json(orders.map(serializeOrder));
   } catch (err) {
@@ -434,132 +205,36 @@ router.get("/orders", async (req, res) => {
   }
 });
 
-// ── POST /orders/recover-evm ─────────────────────────────────────────────────
-// Recreates rows for confirmed active Ethereum escrow orders that were not
-// saved after the wallet transaction. This only syncs verified chain state;
-// it never sends or signs a transaction.
-router.post("/orders/recover-evm", async (req, res) => {
-  try {
-    const walletAddress = String(req.body?.walletAddress ?? "");
-    if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
-      res.status(400).json({ error: "A valid Ethereum wallet address is required." });
-      return;
-    }
-
-    const rows = await db.select().from(ordersTable)
-      .where(sql`lower(${ordersTable.walletAddress}) = ${walletAddress.toLowerCase()}`);
-    const knownLockTxHashes = rows
-      .map((row) => String(row.fundingRef ?? "").split(":")[4] ?? "")
-      .filter((txHash) => /^0x[0-9a-fA-F]{64}$/.test(txHash));
-    const onchainOrders = await findActiveEvmOrderbookOrders(walletAddress, knownLockTxHashes);
-    const knownKeys = new Set(rows.map((row) => String(row.fundingRef ?? "").split(":")[3]?.toLowerCase()));
-    const tokenSymbol = (address: string) => {
-      if (address.toLowerCase() === "0x0000000000000000000000000000000000000000") return "ETH";
-      return Object.entries(TOKEN_REGISTRY[1] ?? {})
-        .find(([, info]) => info.address.toLowerCase() === address.toLowerCase())?.[0] ?? null;
-    };
-    const tokenDecimals = (address: string) => {
-      if (address.toLowerCase() === "0x0000000000000000000000000000000000000000") return 18;
-      return Object.values(TOKEN_REGISTRY[1] ?? {})
-        .find((info) => info.address.toLowerCase() === address.toLowerCase())?.decimals ?? null;
-    };
-
-    const recovered: Array<ReturnType<typeof serializeOrder>> = [];
-    for (const order of onchainOrders) {
-      if (knownKeys.has(order.orderKey.toLowerCase())) continue;
-      const baseSymbol = tokenSymbol(order.baseToken);
-      const quoteSymbol = tokenSymbol(order.quoteToken);
-      const decimals = tokenDecimals(order.baseToken);
-      if (!baseSymbol || !quoteSymbol || decimals == null) {
-        req.log.warn({ orderKey: order.orderKey }, "Skipping recovered escrow order with unsupported token");
-        continue;
-      }
-      const symbol = `${baseSymbol}/${quoteSymbol}`;
-      const quantityRaw = BigInt(order.originalBaseAmountRaw);
-      const remainingRaw = BigInt(order.remainingBaseAmountRaw);
-      const recoveredOrder = {
-        id: crypto.randomUUID(),
-        symbol,
-        walletAddress,
-        networkType: "evm",
-        side: order.side,
-        type: "limit",
-        status: "open",
-        price: formatUnits(BigInt(order.limitPriceX18), 18),
-        quantity: formatUnits(quantityRaw, decimals),
-        filledQuantity: formatUnits(quantityRaw - remainingRaw, decimals),
-        remainingQuantity: formatUnits(remainingRaw, decimals),
-        fee: "0",
-        feeAsset: quoteSymbol,
-        timeInForce: "GTC",
-        txid: null,
-        signedTx: null,
-        matchedOrderId: null,
-        fundingRef: `evm-order:1:${order.escrowAddress}:${order.orderKey}:${order.lockTxHash}`,
-        nonce: `recovered:${order.orderKey.toLowerCase()}`,
-        expiry: String(order.expiresAt),
-        chainId: 1,
-      };
-      await db.insert(ordersTable).values(recoveredOrder).onConflictDoNothing();
-      const [saved] = await db.select().from(ordersTable).where(and(
-        sql`lower(${ordersTable.walletAddress}) = ${walletAddress.toLowerCase()}`,
-        eq(ordersTable.nonce, recoveredOrder.nonce),
-      )).limit(1);
-      if (saved) {
-        knownKeys.add(order.orderKey.toLowerCase());
-        recovered.push(serializeOrder(saved));
-      }
-    }
-
-    res.json({ recovered, count: recovered.length });
-  } catch (err: any) {
-    req.log.error({ err: err?.message }, "Failed to recover active Ethereum order rows");
-    res.status(500).json({ error: "Could not scan and recover active Ethereum orders." });
-  }
-});
-
 // ── POST /orders/bsv-challenge — Issue a BSV order challenge ─────────────────
 // BSV wallets must request an order-bound challenge (not a withdrawal challenge)
 // and sign it before placing an order.  This prevents a withdrawal challenge
 // from being replayed as an order signature.
 router.post("/orders/bsv-challenge", (req, res) => {
-  const { walletAddress, symbol, side, quantity, type, price, stopPrice, chainId, timeInForce, nonce, expiry } = req.body;
-  if (!walletAddress || !symbol || !side || !quantity || !type || !timeInForce || !nonce || !expiry) {
-    res.status(400).json({ error: "wallet and complete order intent fields are required" });
+  const { walletAddress, symbol, side, quantity, nonce, expiry } = req.body;
+  if (!walletAddress || !symbol || !side || !quantity || !nonce || !expiry) {
+    res.status(400).json({ error: "walletAddress, symbol, side, quantity, nonce, and expiry are required" });
     return;
   }
   if (!detectIsBsvAddress(walletAddress)) {
     res.status(400).json({ error: "walletAddress must be a BSV P2PKH/P2SH address" });
     return;
   }
-  const challenge = issueBsvOrderChallenge({
-    walletAddress, symbol, side, quantity, type,
-    price: price == null ? "" : String(price),
-    stopPrice: stopPrice == null ? "" : String(stopPrice),
-    chainId: chainId == null ? "" : String(chainId),
-    timeInForce, nonce, expiry,
-  });
+  const challenge = issueBsvOrderChallenge({ walletAddress, symbol, side, quantity, nonce, expiry });
   res.json(challenge);
 });
 
 // ── POST /orders/sol-challenge — Issue a Solana order challenge ───────────────
 router.post("/orders/sol-challenge", (req, res) => {
-  const { walletAddress, symbol, side, quantity, type, price, stopPrice, chainId, timeInForce, nonce, expiry } = req.body;
-  if (!walletAddress || !symbol || !side || !quantity || !type || !timeInForce || !nonce || !expiry) {
-    res.status(400).json({ error: "wallet and complete order intent fields are required" });
+  const { walletAddress, symbol, side, quantity, nonce, expiry } = req.body;
+  if (!walletAddress || !symbol || !side || !quantity || !nonce || !expiry) {
+    res.status(400).json({ error: "walletAddress, symbol, side, quantity, nonce, and expiry are required" });
     return;
   }
   if (!detectIsSolAddress(walletAddress)) {
     res.status(400).json({ error: "walletAddress must be a Solana base58 address" });
     return;
   }
-  const challenge = issueSolOrderChallenge({
-    walletAddress, symbol, side, quantity, type,
-    price: price == null ? "" : String(price),
-    stopPrice: stopPrice == null ? "" : String(stopPrice),
-    chainId: chainId == null ? "" : String(chainId),
-    timeInForce, nonce, expiry,
-  });
+  const challenge = issueSolOrderChallenge({ walletAddress, symbol, side, quantity, nonce, expiry });
   res.json(challenge);
 });
 
@@ -614,25 +289,8 @@ router.post("/orders", async (req, res) => {
       res.status(400).json({ error: "Stop orders require a valid price (limit price after trigger)" });
       return;
     }
-    if (type === "stop") {
-      res.status(503).json({ error: "Stop orders are temporarily unavailable while settlement safeguards are completed." });
-      return;
-    }
     if (type === "limit" && (rawPrice == null || !Number.isFinite(rawPrice) || rawPrice <= 0)) {
       res.status(400).json({ error: "Limit orders require a valid price" });
-      return;
-    }
-    const timeInForce = String(body.timeInForce ?? (type === "market" ? "IOC" : "GTC")).toUpperCase();
-    if (timeInForce !== "GTC" && timeInForce !== "IOC") {
-      res.status(400).json({ error: "Only GTC and IOC time-in-force values are supported" });
-      return;
-    }
-    if (type === "market" && timeInForce !== "IOC") {
-      res.status(400).json({ error: "Market orders must use IOC to prevent unintended resting orders" });
-      return;
-    }
-    if (type === "limit" && timeInForce !== "GTC") {
-      res.status(400).json({ error: "Limit orders currently support GTC only" });
       return;
     }
 
@@ -655,13 +313,15 @@ router.post("/orders", async (req, res) => {
     const isEvmAddress = detectIsEvmAddress(body.walletAddress);
     const isBsvAddress = detectIsBsvAddress(body.walletAddress);
     const isSolAddress = detectIsSolAddress(body.walletAddress);
-    if (!isEvmAddress && !isBsvAddress && !isSolAddress) {
-      res.status(400).json({ error: "Unsupported wallet address format for signed spot orders" });
-      return;
-    }
 
-    // Derive the network from the decoded address format; never trust a client label.
-    const networkType = isEvmAddress ? "evm" : isBsvAddress ? "bsv" : "sol";
+    // Derive networkType from address format when not explicitly provided.
+    // Detection order matters: Solana addresses are base58 like BSV, so Sol must
+    // be checked before BSV; EVM is unambiguous (0x prefix + 40 hex chars).
+    const networkType = body.networkType ?? (
+      isEvmAddress ? "evm" :
+      isSolAddress ? "sol" :
+      "bsv"
+    );
 
     // Any recognized chain wallet format must be treated as external so clients
     // cannot spoof walletSource to bypass signature verification.
@@ -671,7 +331,6 @@ router.post("/orders", async (req, res) => {
       : "orah";
 
     const isExternalWallet = walletSource === "external";
-    const signedChainId = body.chainId == null ? "" : String(parseInt(String(body.chainId), 10));
 
     // ── Verify wallet ownership for external wallets ─────────────────────────
     // The signature must have been produced by the private key of walletAddress
@@ -686,8 +345,7 @@ router.post("/orders", async (req, res) => {
       const expiryUnixSec = parseInt(orderExpiry, 10);
 
       // Enforce expiry.
-      if (!Number.isSafeInteger(expiryUnixSec) || expiryUnixSec <= Math.floor(Date.now() / 1000) ||
-          expiryUnixSec > Math.floor(Date.now() / 1000) + 300) {
+      if (expiryUnixSec <= Math.floor(Date.now() / 1000)) {
         res.status(401).json({ error: "Order signature has expired. Sign a fresh order with a future expiry.", code: "SIGNATURE_EXPIRED" });
         return;
       }
@@ -728,11 +386,6 @@ router.post("/orders", async (req, res) => {
           symbol:        symbol,
           side:          body.side,
           quantity:      quantity.toString(),
-          type,
-          price:         rawPrice == null ? "" : rawPrice.toString(),
-          stopPrice:     stopPrice == null ? "" : stopPrice.toString(),
-          chainId:       signedChainId,
-          timeInForce,
           nonce:         orderNonce,
           expiry:        orderExpiry,
         });
@@ -761,12 +414,6 @@ router.post("/orders", async (req, res) => {
             symbol,
             side,
             quantity: quantity.toString(),
-            type,
-            price: rawPrice == null ? "" : rawPrice.toString(),
-            stopPrice: stopPrice == null ? "" : stopPrice.toString(),
-            chainId: signedChainId,
-            timeInForce,
-            expiry: orderExpiry,
           });
         } catch (authErr: any) {
           res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
@@ -790,12 +437,6 @@ router.post("/orders", async (req, res) => {
             symbol,
             side,
             quantity: quantity.toString(),
-            type,
-            price: rawPrice == null ? "" : rawPrice.toString(),
-            stopPrice: stopPrice == null ? "" : stopPrice.toString(),
-            chainId: signedChainId,
-            timeInForce,
-            expiry: orderExpiry,
           });
         } catch (authErr: any) {
           res.status(401).json({ error: authErr.message, code: "SIGNATURE_MISMATCH" });
@@ -820,8 +461,8 @@ router.post("/orders", async (req, res) => {
     ]);
     let chainId: number | undefined;
     if (body.chainId != null) {
-      const n = Number(body.chainId);
-      if (!Number.isSafeInteger(n) || !SUPPORTED_CHAIN_IDS.has(n)) {
+      const n = parseInt(String(body.chainId), 10);
+      if (!SUPPORTED_CHAIN_IDS.has(n)) {
         res.status(400).json({ error: `Unsupported chainId: ${n}. Supported: ${[...SUPPORTED_CHAIN_IDS].sort((a, b) => a - b).join(", ")}` });
         return;
       }
@@ -846,16 +487,12 @@ router.post("/orders", async (req, res) => {
     const lockAsset = side === "buy" ? quoteAsset : baseAsset;
 
     let lockPrice = price;
-    if (!lockPrice) {
+    if (!lockPrice && side === "buy") {
       const [mktRow] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, symbol));
       lockPrice = mktRow ? parseFloat(mktRow.lastPrice) : 0;
     }
     if (side === "buy" && (lockPrice == null || !Number.isFinite(lockPrice) || lockPrice <= 0)) {
       res.status(400).json({ error: "Unable to determine buy price for funding lock" });
-      return;
-    }
-    if (type === "market" && (!lockPrice || !Number.isFinite(lockPrice) || lockPrice <= 0)) {
-      res.status(422).json({ error: "A valid reference price is required for protected market execution" });
       return;
     }
 
@@ -869,58 +506,9 @@ router.post("/orders", async (req, res) => {
       : quantity.toString();
 
     let fundingRef = "";
-    let onchainOrderKey: `0x${string}` | null = null;
-    if (body.orderbookLockTxHash != null) {
-      if (!isEvmAddress || chainId !== 1 || type !== "limit") {
-        res.status(400).json({
-          error: "Wallet-funded orderbook settlement currently supports Ethereum mainnet limit orders only.",
-          code: "ORDERBOOK_NETWORK_UNSUPPORTED",
-        });
-        return;
-      }
-      const config = await getEvmOrderbookEscrowConfig();
-      if (!config.available) {
-        res.status(503).json({
-          error: "Ethereum order escrow is not deployed and verified yet.",
-          code: "ORDERBOOK_SETTLEMENT_UNAVAILABLE",
-        });
-        return;
-      }
-      if (Math.abs(feeRate - config.feeBps / 10_000) > 1e-9) {
-        res.status(503).json({
-          error: "Ethereum escrow fee does not match this market's configured trading fee.",
-          code: "ORDERBOOK_FEE_MISMATCH",
-        });
-        return;
-      }
-      try {
-        const verifiedLock = await verifyEvmOrderLock({
-          chainId,
-          walletAddress: body.walletAddress,
-          nonce: String(body.nonce ?? ""),
-          txHash: String(body.orderbookLockTxHash),
-          side,
-          base: baseAsset,
-          quote: quoteAsset,
-          quantity: body.quantity,
-          price: body.price,
-          expiresAt: Number(body.orderbookExpiresAt),
-        });
-        fundingRef = verifiedLock.fundingRef;
-        onchainOrderKey = verifiedLock.orderKey;
-      } catch (lockErr: any) {
-        const message = String(lockErr?.message ?? "Could not verify Ethereum order escrow");
-        const awaitingConfirmations = message.includes("awaiting Ethereum confirmations");
-        res.status(awaitingConfirmations ? 425 : 400).json({
-          error: message,
-          code: awaitingConfirmations ? "ORDERBOOK_LOCK_PENDING" : "ORDERBOOK_LOCK_INVALID",
-        });
-        return;
-      }
-    } else if (parseFloat(lockAmount) > 0 && lockAsset) {
+    if (parseFloat(lockAmount) > 0 && lockAsset) {
       const fundingVerif = await verifyAndLockFunding({
         walletAddress:   body.walletAddress,
-        ledgerOnly:      true,
         kind:            "SPOT",   // orders.ts always handles SPOT (MARKET + LIMIT)
         side,
         walletSource,
@@ -936,13 +524,6 @@ router.post("/orders", async (req, res) => {
       }
       fundingRef = fundingVerif.fundingRef;
     }
-    if (!fundingRef.startsWith("ledger:") && !fundingRef.startsWith("evm-order:1:")) {
-      res.status(503).json({
-        error: "Wallet-to-wallet order matching is paused until confirmed on-chain settlement is tracked. Use the separate swap flow instead.",
-        code: "SETTLEMENT_UNAVAILABLE",
-      });
-      return;
-    }
 
     // ── All checks passed — insert the order ──────────────────────────────────
     const newOrder = {
@@ -952,7 +533,7 @@ router.post("/orders", async (req, res) => {
       networkType,
       side,                                      // "buy" | "sell"
       type,                                      // "limit" | "market" | "stop"
-      status:            "processing",
+      status:            "open",
       price:             price != null ? price.toFixed(18) : undefined,
       stopPrice:         stopPrice != null ? stopPrice.toFixed(18) : undefined,
       quantity:          quantity.toFixed(18),
@@ -961,7 +542,7 @@ router.post("/orders", async (req, res) => {
       total:             total != null ? total.toFixed(18) : undefined,
       fee:               fee.toFixed(18),
       feeAsset:          symbol.split("/")[1] || "USDT",
-      timeInForce,
+      timeInForce:       body.timeInForce || "GTC",
       txid:              null as string | null,
       // EVM signature from MetaMask personal_sign — proves the trader authorised this order
       signedTx:          body.evmSignature || body.signedTx || null,
@@ -975,8 +556,6 @@ router.post("/orders", async (req, res) => {
     try {
       await db.insert(ordersTable).values(newOrder);
     } catch (insertErr: unknown) {
-      await releaseLedgerOrderFunds(fundingRef, body.walletAddress, lockAsset, parseFloat(lockAmount))
-        .catch((unlockErr) => req.log.error({ unlockErr, orderId: id }, "Failed to release funds after order insert failure"));
       // Catch unique constraint violations on (wallet_address, nonce) — orders_wallet_nonce_uidx
       if (isNonceUniqueViolation(insertErr)) {
         res.status(409).json({ error: "Order nonce has already been used. Sign a fresh order with a new nonce.", code: "NONCE_REPLAYED" });
@@ -985,6 +564,25 @@ router.post("/orders", async (req, res) => {
       throw insertErr; // re-throw all other DB errors
     }
     req.log.info({ orderId: id, side, networkType, walletSource }, "Order placed");
+    // Claim the incoming order for the duration of its match loop.
+    // This mirrors the counter-order claim: no other cancel/matcher should
+    // treat it as open while this request is settling fills. The final update
+    // below moves it back to open/filled.
+    await db.update(ordersTable)
+      .set({ status: "pending", updatedAt: new Date() })
+      .where(and(eq(ordersTable.id, id), eq(ordersTable.status, "open")));
+
+
+    /* Push order-placed notification to the user */
+    const orderPair = symbol;
+    const orderSide = side.toUpperCase();
+    pushNotification(body.walletAddress, {
+      type: "order_placed",
+      title: `${orderSide} Order Placed`,
+      body: `${quantity} ${orderPair.split("/")[0]} @ ${price ? `$${price}` : "market"} · waiting for match`,
+      pair: orderPair,
+      side,
+    });
 
     // ── Attempt order matching ───────────────────────────────────────────────
     // Works for limit, market, AND stop orders.
@@ -1031,7 +629,7 @@ router.post("/orders", async (req, res) => {
       // For limit orders restrict by price; market/stop orders accept any price
       // Format price safely — avoid scientific notation (e.g. 1e-8) which
       // breaks numeric DB comparisons on very small asset prices.
-      const safePriceStr = price != null ? price.toFixed(18) : undefined;
+      const safePriceStr = price != null ? price.toFixed(8) : undefined;
 
       // Fetch counter-orders sorted by best price, capped at 500 rows.
       // ORDER BY pushes sorting into the DB so only the cheapest sells / most
@@ -1041,15 +639,9 @@ router.post("/orders", async (req, res) => {
           eq(ordersTable.symbol, symbol),
           eq(ordersTable.side, counterSide),
           eq(ordersTable.status, "open"),
-          eq(ordersTable.type, "limit"),
-          sql`(${ordersTable.fundingRef} LIKE 'ledger:%' OR ${ordersTable.fundingRef} LIKE 'evm-order:1:%')`,
-          ne(ordersTable.walletAddress, BOT_ADDRESS),
+          // P1: expired orders must never be matchable before/without the expiry worker
+          sql`${ordersTable.expiry} > ${String(Math.floor(Date.now() / 1000))}`,
           ne(ordersTable.walletAddress, body.walletAddress),
-          ...(isMarket && lockPrice
-            ? [side === "buy"
-              ? lte(ordersTable.price, (lockPrice * 1.005).toFixed(18))
-              : gte(ordersTable.price, (lockPrice * 0.995).toFixed(18))]
-            : []),
           // Limit orders have price constraints; market + triggered-stop orders take any price
           ...(isLimit && safePriceStr
             ? [side === "buy"
@@ -1068,14 +660,8 @@ router.post("/orders", async (req, res) => {
       // so settlement remains wallet-to-wallet via HTLC, not synthetic ledger fill.
       // When both the incoming order and a candidate have a chainId, they must match —
       // cross-chain EVM fills (e.g. Ethereum vs Arbitrum) are rejected here.
-      const incomingIsOrderbookEscrow = fundingRef.startsWith("evm-order:1:");
-      const requiresDefiWalletToWallet = fundingRef.startsWith("evm-");
-      const eligibleMatches = incomingIsOrderbookEscrow
-        ? sorted.filter((candidate) =>
-            !!evmOrderKeyFromFundingRef(candidate.fundingRef) &&
-            Number(candidate.chainId ?? 1) === Number(chainId ?? 1))
-        : sorted.filter((candidate) => !evmOrderKeyFromFundingRef(candidate.fundingRef));
-      const walletMatchCandidates = requiresDefiWalletToWallet
+      const requiresDefiWalletToWallet = walletSource === "external" && networkType === "evm";
+      const eligibleMatches = requiresDefiWalletToWallet
         ? sorted.filter((candidate) => {
             const isBot = candidate.walletAddress === BOT_ADDRESS;
             if (isBot) return false;
@@ -1089,38 +675,62 @@ router.post("/orders", async (req, res) => {
                 !ref.startsWith("margin:"))
             );
             if (!isEvmExternal) return false;
+            // Audit P0: same-chain invariant — external EVM orders may only match
+            // a counterparty on the SAME chain. Cross-chain EVM needs the two-chain
+            // HTLC protocol, not this single-chain session.
+            if (chainId == null || candidate.chainId == null || candidate.chainId !== chainId) return false;
             return true;
           })
-        : eligibleMatches;
-      const finalEligibleMatches = incomingIsOrderbookEscrow
-        ? eligibleMatches.filter((candidate) => candidate.walletAddress !== body.walletAddress)
-        : walletMatchCandidates.filter((candidate) => !evmOrderKeyFromFundingRef(candidate.fundingRef));
+        : sorted;
 
       // ── Multi-fill loop: consume counter-orders until qty is satisfied ───────
       // This correctly handles large orders that span multiple counter-orders,
       // and does partial consumption of bot orders (instead of deleting the
       // entire bot order when only a fraction of it is needed).
-      let remainingQty   = quantity;
-      // totalFilled / totalFillValue are hoisted to outer scope (see above)
+      const LEDGER_DECIMALS = 18;
+      let remainingQty = quantity;
+      let remainingQtyRawTotal = parseUnits(quantity.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS);
+      let totalFilledRaw = 0n;
+      let totalFillValueRaw = 0n;
       let lastFillPrice  = 0;
       let lastTxid: string | null = null;
       let lastMatchId: string | null = null;
 
       const [baseAsset, quoteAsset = "USDT"] = symbol.split("/");
 
-      for (const match of finalEligibleMatches) {
+      for (const match of eligibleMatches) {
         if (remainingQty <= 0.000001) break;
 
         // Use remainingQuantity directly — it is always kept up-to-date by
         // prior partial fills, so we must NOT subtract filledQuantity again
         // (that would double-count and produce negative availability).
-        const matchAvail = parseFloat(match.remainingQuantity ?? match.quantity);
-        if (matchAvail <= 0.000001) continue;
+        const matchAvailRaw = parseUnits(match.remainingQuantity ?? match.quantity, LEDGER_DECIMALS);
+        if (matchAvailRaw <= 0n) continue;
+        const matchAvail = parseFloat(formatUnits(matchAvailRaw, LEDGER_DECIMALS));
 
-        const fillQty   = Math.min(remainingQty, matchAvail);
-        const fillPrice = parseFloat(match.price ?? price?.toString() ?? "0");
-        const fillValue = fillQty * fillPrice;
-        const isBot     = match.walletAddress === BOT_ADDRESS;
+        const fillQtyRaw = remainingQtyRawTotal < matchAvailRaw ? remainingQtyRawTotal : matchAvailRaw;
+        const fillPriceRaw = match.price
+          ? parseUnits(match.price, LEDGER_DECIMALS)
+          : price
+            ? parseUnits(price.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS)
+            : 0n;
+        const fillValueRaw = mulPriceQty({
+          priceRaw: fillPriceRaw,
+          priceDecimals: LEDGER_DECIMALS,
+          quantityRaw: fillQtyRaw,
+          quantityDecimals: LEDGER_DECIMALS,
+          outputDecimals: LEDGER_DECIMALS,
+          rounding: "ceil",
+        });
+
+        // Exact values for settlement; legacy numeric mirrors for existing loop accounting.
+        const fillQtyStr = formatUnits(fillQtyRaw, LEDGER_DECIMALS);
+        const fillPriceStr = formatUnits(fillPriceRaw, LEDGER_DECIMALS);
+        const fillValueStr = formatUnits(fillValueRaw, LEDGER_DECIMALS);
+        const fillQty = parseFloat(fillQtyStr);
+        const fillPrice = parseFloat(fillPriceStr);
+        const fillValue = parseFloat(fillValueStr);
+        const isBot = match.walletAddress === BOT_ADDRESS;
 
         const tradeId       = crypto.randomUUID();
         const buyerNetwork  = side === "buy" ? networkType : (match.networkType ?? "evm");
@@ -1136,7 +746,7 @@ router.post("/orders", async (req, res) => {
         //   • match.fundingRef starts with "evm-sig:" or "evm-balance:"  (counter-order)
         //     OR the counter-order's address is 0x-prefixed with no internal fundingRef
         // Bot orders always use the internal ledger and are never EVM-HTLC candidates.
-        const incomingIsEvmExternal = fundingRef.startsWith("evm-");
+        const incomingIsEvmExternal = walletSource === "external" && networkType === "evm";
         const matchFundingRef0 = match.fundingRef ?? "";
         const matchIsEvmExternal = !isBot && (
           matchFundingRef0.startsWith("evm-sig:") ||
@@ -1147,9 +757,6 @@ router.post("/orders", async (req, res) => {
            !matchFundingRef0.startsWith("margin:"))
         );
         const bothEvmExternal = incomingIsEvmExternal && matchIsEvmExternal;
-        const bothOrderbookEscrow =
-          !!onchainOrderKey && !!evmOrderKeyFromFundingRef(matchFundingRef0) &&
-          Number(chainId ?? 1) === Number(match.chainId ?? 1);
 
         // ─────────────────────────────────────────────────────────────────────
         // ESCROW INTEGRITY PRECHECK — runs BEFORE any DB writes / fillResult.
@@ -1169,7 +776,7 @@ router.post("/orders", async (req, res) => {
         let prefetchedSellerChain: number | null = null;
         let prefetchedBuyerChain:  number | null = null;
         let escrowAnyDeposit = false;
-        if (bothEvmExternal && !bothOrderbookEscrow) {
+        if (bothEvmExternal) {
           try {
             const buyerOrderId  = side === "buy"  ? id : match.id;
             const sellerOrderId = side === "sell" ? id : match.id;
@@ -1215,73 +822,27 @@ router.post("/orders", async (req, res) => {
           }
         }
 
-        // Claim the exact snapshot before settling. Concurrent takers and
-        // cancellation must not consume a reservation already being processed.
+        // ── Claim the counter-order BEFORE any settlement side effects ──────
+        // status='pending' is a short-lived matcher claim. The final UPDATE after
+        // settlement moves it back to open/filled. This closes the claim-after-
+        // settlement race where two matchers could settle the same counter-order.
         const [claimedMatch] = await db.update(ordersTable)
-          .set({ status: "processing", updatedAt: new Date() })
-          .where(and(
-            eq(ordersTable.id, match.id),
-            eq(ordersTable.status, "open"),
-            eq(ordersTable.remainingQuantity, match.remainingQuantity!),
-          )).returning({ id: ordersTable.id });
-        if (!claimedMatch) continue;
+          .set({ status: "pending", matchedOrderId: id, updatedAt: new Date() })
+          .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "open")))
+          .returning({ id: ordersTable.id });
+
+        if (!claimedMatch) {
+          req.log.warn(
+            { matchId: match.id, tradeId },
+            "orders: counter-order claimed concurrently — skipping before settlement",
+          );
+          continue;
+        }
 
         let fillResult: Awaited<ReturnType<typeof settleSpotFill>>;
-        let orderbookSettlementId: `0x${string}` | null = null;
 
         try {
-          if (bothOrderbookEscrow) {
-            const incomingOrderKey = onchainOrderKey ?? orderKeyFromNonce(String(body.nonce ?? ""));
-            const matchedOrderKey = evmOrderKeyFromFundingRef(matchFundingRef0);
-            if (!matchedOrderKey) {
-              await db.update(ordersTable)
-                .set({ status: "open", updatedAt: new Date() })
-                .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "processing")));
-              continue;
-            }
-            const buyerOrderKey = side === "buy" ? incomingOrderKey : matchedOrderKey;
-            const sellerOrderKey = side === "sell" ? incomingOrderKey : matchedOrderKey;
-            const incomingFilledAfter = (totalFilled + fillQty).toFixed(18);
-            const matchFilledAfter = (parseFloat(match.filledQuantity ?? "0") + fillQty).toFixed(18);
-            const buyerFilledAfter = side === "buy" ? incomingFilledAfter : matchFilledAfter;
-            const sellerFilledAfter = side === "sell" ? incomingFilledAfter : matchFilledAfter;
-            const settlementId = keccak256(toBytes(
-              `${buyerOrderKey}:${sellerOrderKey}:${buyerFilledAfter}:${sellerFilledAfter}`,
-            ));
-            orderbookSettlementId = settlementId;
-            const pendingRef = `evm-settlement:${settlementId}`;
-
-            await Promise.all([
-              db.update(ordersTable)
-                .set({ txid: pendingRef, matchedOrderId: match.id, updatedAt: new Date() })
-                .where(eq(ordersTable.id, id)),
-              db.update(ordersTable)
-                .set({ txid: pendingRef, matchedOrderId: id, updatedAt: new Date() })
-                .where(eq(ordersTable.id, match.id)),
-            ]);
-
-            const settlement = await settleEvmOrderFill({
-              settlementId,
-              buyOrderKey: buyerOrderKey,
-              sellOrderKey: sellerOrderKey,
-              base: baseAsset,
-              quote: quoteAsset,
-              baseAmount: fillQty.toFixed(18),
-              grossQuoteAmount: fillValue.toFixed(18),
-            }, async (txHash) => {
-              const submittedRef = `evm-settlement:${settlementId}:${txHash}`;
-              await Promise.all([
-                db.update(ordersTable).set({ txid: submittedRef, updatedAt: new Date() }).where(eq(ordersTable.id, id)),
-                db.update(ordersTable).set({ txid: submittedRef, updatedAt: new Date() }).where(eq(ordersTable.id, match.id)),
-              ]);
-            });
-            fillResult = {
-              txid: settlement.txHash,
-              wasRealBroadcast: !settlement.alreadySettled,
-              settlementType: "evm_orderbook",
-              isCrossChain: false,
-            };
-          } else if (bothEvmExternal) {
+          if (bothEvmExternal) {
             // ── On-chain EVM path: HTLC atomic settlement ──────────────────
             // Both parties hold funds in their own wallets. Skip internal ledger
             // settlement — funds are transferred directly on-chain via the HTLC
@@ -1307,8 +868,8 @@ router.post("/orders", async (req, res) => {
               newOrderId:    id,
               matchOrder:    match,
               pair:          symbol,
-              fillQty,
-              fillPrice,
+              fillQty:       fillQtyStr,
+              fillPrice:     fillPriceStr,
               buyerAddress,
               sellerAddress,
               buyerNetwork,
@@ -1321,22 +882,16 @@ router.post("/orders", async (req, res) => {
             });
           }
         } catch (fillErr: any) {
-          if (bothOrderbookEscrow) {
-            req.log.error(
-              { err: fillErr?.message, tradeId, settlementId: orderbookSettlementId, matchId: match.id },
-              "orders: atomic Ethereum settlement is pending reconciliation; order state remains processing",
-            );
-            res.status(202).json({
-              id,
-              symbol,
-              status: "processing",
-              settlementPending: true,
-              code: "ONCHAIN_SETTLEMENT_PENDING",
-            });
-            return;
-          }
-          await db.update(ordersTable).set({ status: "open", updatedAt: new Date() })
-            .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "processing")));
+          // Release the matcher claim before trying the next counter-order.
+          await db.update(ordersTable)
+            .set({ status: "open", matchedOrderId: null, updatedAt: new Date() })
+            .where(and(
+              eq(ordersTable.id, match.id),
+              eq(ordersTable.status, "pending"),
+              eq(ordersTable.matchedOrderId, id),
+            ))
+            .catch(() => {});
+
           // Ledger settlement failed for this match. Since settleTrade() threw
           // before committing, no funds changed — skip this match and try the next.
           req.log.error(
@@ -1360,71 +915,57 @@ router.post("/orders", async (req, res) => {
 
         const broadcastTxid = fillResult.txid;
 
-        // ── Update the counter-order (partial or full consume) ────────────
-        const newMatchFilled    = (parseFloat(match.filledQuantity ?? "0") + fillQty);
-        const newMatchRemaining = Math.max(0, matchAvail - fillQty);
-        const isMatchFullyFilled = newMatchRemaining <= 0.000001;
+        // ── Finalize the claimed counter-order (partial or full consume) ─────
+        const newMatchFilledRaw = parseUnits(match.filledQuantity ?? "0", LEDGER_DECIMALS) + fillQtyRaw;
+        const newMatchRemainingRaw = matchAvailRaw - fillQtyRaw;
+        const isMatchFullyFilled = newMatchRemainingRaw === 0n;
+        const claimedByMe = and(
+          eq(ordersTable.id, match.id),
+          eq(ordersTable.status, "pending"),
+          eq(ordersTable.matchedOrderId, id),
+        );
 
         if (isBot) {
           if (isMatchFullyFilled) {
-            await db.delete(ordersTable).where(eq(ordersTable.id, match.id));
+            await db.delete(ordersTable).where(claimedByMe);
           } else {
             await db.update(ordersTable)
-              .set({ filledQuantity: newMatchFilled.toFixed(18), remainingQuantity: newMatchRemaining.toFixed(18), updatedAt: new Date() })
-              .where(eq(ordersTable.id, match.id));
+              .set({
+                status:            "open",
+                filledQuantity:    formatUnits(newMatchFilledRaw, LEDGER_DECIMALS),
+                remainingQuantity: formatUnits(newMatchRemainingRaw, LEDGER_DECIMALS),
+                updatedAt:         new Date(),
+              })
+              .where(claimedByMe);
           }
         } else {
-          // Optimistic concurrency guard: only update the counter-order if it is
-          // still 'open'.  A concurrent taker may have already consumed it (their
-          // settleTrade will have thrown SETTLEMENT_INSUFFICIENT_LOCK and they will
-          // have continued to the next match).  If we get 0 rows here the ledger
-          // already committed for this fill — log a warning and continue; the fill
-          // value is already recorded in totalFilled above.
-          const previousMatchFilled = parseFloat(match.filledQuantity ?? "0");
-          const previousMatchTotal = previousMatchFilled > 0 ? parseFloat(match.total ?? "0") : 0;
-          const previousMatchFee = previousMatchFilled > 0 && match.side === "sell" ? parseFloat(match.fee ?? "0") : 0;
           const [updatedMatch] = await db.update(ordersTable)
             .set({
               status:            isMatchFullyFilled ? "filled" : "open",
-              filledQuantity:    newMatchFilled.toFixed(18),
-              remainingQuantity: newMatchRemaining.toFixed(18),
-              total:             bothOrderbookEscrow ? (previousMatchTotal + fillValue).toFixed(18) : undefined,
-              fee:               bothOrderbookEscrow
-                ? (previousMatchFee + (match.side === "sell" ? fillValue * feeRate : 0)).toFixed(18)
-                : undefined,
+              filledQuantity:    formatUnits(newMatchFilledRaw, LEDGER_DECIMALS),
+              remainingQuantity: formatUnits(newMatchRemainingRaw, LEDGER_DECIMALS),
               txid:              broadcastTxid,
               matchedOrderId:    id,
               updatedAt:         new Date(),
             })
-            .where(and(eq(ordersTable.id, match.id), eq(ordersTable.status, "processing")))
+            .where(claimedByMe)
             .returning({ id: ordersTable.id });
 
           if (!updatedMatch) {
-            req.log.warn(
+            req.log.error(
               { matchId: match.id, tradeId },
-              "orders: counter-order status already changed (concurrent consume) — fill credited, order state diverged",
+              "orders: claimed counter-order missing during finalize — investigate immediately",
             );
           }
         }
 
-        if (bothOrderbookEscrow) {
-          await db.update(ordersTable)
-            .set({
-              filledQuantity: (totalFilled + fillQty).toFixed(18),
-              remainingQuantity: Math.max(0, remainingQty - fillQty).toFixed(18),
-              total: (totalFillValue + fillValue).toFixed(18),
-              fee: (side === "sell" ? (totalFillValue + fillValue) * feeRate : 0).toFixed(18),
-              txid: broadcastTxid,
-              matchedOrderId: match.id,
-              updatedAt: new Date(),
-            })
-            .where(eq(ordersTable.id, id));
-        }
-
-        totalFilled    += fillQty;
+        totalFilled += fillQty;
         totalFillValue += fillValue;
-        remainingQty   -= fillQty;
-        lastFillPrice   = fillPrice;
+        remainingQty -= fillQty;
+        totalFilledRaw += fillQtyRaw;
+        totalFillValueRaw += fillValueRaw;
+        remainingQtyRawTotal -= fillQtyRaw;
+        lastFillPrice = fillPrice;
         lastTxid        = broadcastTxid;
         lastMatchId     = match.id;
         settlementTxid  = broadcastTxid;
@@ -1453,13 +994,15 @@ router.post("/orders", async (req, res) => {
         //                    must NOT run because that would create a parallel
         //                    settlement against the same locked funds. Funds
         //                    stay safe in escrow; user cancels to refund.
-        let escrowSettled = bothOrderbookEscrow;
+        let escrowSettled = false;
         let escrowGated   = false;
 
-        if (bothEvmExternal && !bothOrderbookEscrow) {
+        if (bothEvmExternal) {
+          // Audit P0: fail-closed. Invalid/missing chain must NEVER default to
+          // Ethereum — it suppresses escrow release entirely.
           const releaseChainId = body.chainId && Number.isInteger(Number(body.chainId)) && isEscrowChain(Number(body.chainId))
             ? Number(body.chainId)
-            : 1;  // default to Ethereum mainnet (where escrow is deployed)
+            : null;
 
           // ── Pre-flight: does ANY escrow deposit exist for either order? ─
           // Reuse the chain values already resolved by the fail-CLOSED precheck
@@ -1503,7 +1046,7 @@ router.post("/orders", async (req, res) => {
             );
           }
 
-          if (isEscrowChain(releaseChainId) && isFullMatchFill && !escrowGated) {
+          if (releaseChainId !== null && isEscrowChain(releaseChainId) && isFullMatchFill && !escrowGated) {
             // Determine which order id belongs to which side. `id` is the
             // incoming order; `match.id` is the counter-order being consumed.
             const buyerOrderId  = side === "buy"  ? id : match.id;
@@ -1676,7 +1219,7 @@ router.post("/orders", async (req, res) => {
         // we can't safely release (partial fill, one-sided lock, cross-chain).
         // Running HTLC in those cases would create a parallel claim against
         // the same locked funds — the very bug the safety gate prevents.
-        if (bothEvmExternal && !bothOrderbookEscrow && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
+        if (bothEvmExternal && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
           // Determine chain — prefer incoming order's chainId, then counterparty's, then Ethereum.
           const rawChainId = body.chainId
             ? Number(body.chainId)
@@ -1746,40 +1289,40 @@ router.post("/orders", async (req, res) => {
       // in the locked column until we explicitly release it here.
       if (
         side === "buy" && type === "market" &&
-        remainingQty <= 0.000001 && totalFilled > 0 && parseFloat(lockAmount) > 0
+        remainingQtyRawTotal === 0n && totalFilledRaw > 0n && parseUnits(lockAmount, LEDGER_DECIMALS) > 0n
       ) {
-        const actualCost = totalFillValue;
-        const excess = parseFloat(lockAmount) - actualCost;
-        if (excess > 1e-9 && lockAsset) {
+        const lockAmountRaw = parseUnits(lockAmount, LEDGER_DECIMALS);
+        const excessRaw = lockAmountRaw - totalFillValueRaw;
+        if (excessRaw > 0n && lockAsset) {
           try {
-            await unlockFunds({ walletAddress: body.walletAddress, asset: lockAsset!, amount: excess.toFixed(18) });
+            await unlockFunds({
+              walletAddress: body.walletAddress,
+              asset: lockAsset!,
+              amount: formatUnits(excessRaw, LEDGER_DECIMALS),
+            });
           } catch (excessErr: any) {
             req.log.warn({ excessErr: excessErr?.message }, "orders: failed to release market-buy slippage buffer excess");
           }
         }
       }
 
-      if (totalFilled > 0) {
-        // ── Mark the user's order with actual fill amount ─────────────────
-        const avgFillPrice    = totalFillValue / totalFilled;
-        const isFullyFilled   = remainingQty <= 0.000001;
-        const marketRemainderCancelled = isMarket && !isFullyFilled;
-        const correctFee      = (
-          fundingRef.startsWith("evm-order:1:") && side !== "sell"
-            ? 0
-            : totalFillValue * feeRate
-        ).toFixed(18);
-        // Record exchange revenue from the order book fill fee
+      if (totalFilledRaw > 0n) {
+        const avgFillPriceRaw = mulDiv(totalFillValueRaw, 1n, totalFilledRaw, "floor");
+        const feeFractionRaw = parseUnits(feeRate.toString(), LEDGER_DECIMALS);
+        const correctFeeRaw = mulDiv(totalFillValueRaw, feeFractionRaw, pow10(LEDGER_DECIMALS), "ceil");
+        const correctFee = formatUnits(correctFeeRaw, LEDGER_DECIMALS);
+        const isFullyFilled = remainingQtyRawTotal === 0n;
+
         const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
         recordPlatformFee({ source: "orderbook", amount: correctFee, asset: feeAssetSymbol, txRef: id });
 
         await db.update(ordersTable)
           .set({
-            status:            isFullyFilled ? "filled" : marketRemainderCancelled ? "cancelled" : "open",
-            filledQuantity:    totalFilled.toFixed(18),
-            remainingQuantity: Math.max(0, remainingQty).toFixed(18),
-            price:             (isMarket || isStopTriggered) ? avgFillPrice.toFixed(18) : undefined,
-            total:             totalFillValue.toFixed(18),
+            status:            isFullyFilled ? "filled" : "open",
+            filledQuantity:    formatUnits(totalFilledRaw, LEDGER_DECIMALS),
+            remainingQuantity: formatUnits(remainingQtyRawTotal < 0n ? 0n : remainingQtyRawTotal, LEDGER_DECIMALS),
+            price:             (isMarket || isStopTriggered) ? formatUnits(avgFillPriceRaw, LEDGER_DECIMALS) : undefined,
+            total:             formatUnits(totalFillValueRaw, LEDGER_DECIMALS),
             fee:               correctFee,
             txid:              lastTxid,
             matchedOrderId:    lastMatchId,
@@ -1787,40 +1330,92 @@ router.post("/orders", async (req, res) => {
           })
           .where(eq(ordersTable.id, id));
 
-        // Market orders are IOC. Release any unfilled reservation; for limit
-        // buys release only price improvement on the units that actually filled.
-        const releaseAmount = isMarket
-          ? side === "buy"
-            ? Math.max(0, parseFloat(lockAmount) - totalFillValue)
-            : Math.max(0, quantity - totalFilled)
-          : side === "buy" && type === "limit" && price != null
-            ? Math.max(0, price * totalFilled - totalFillValue)
-            : 0;
-        if (releaseAmount > 0) {
-          await releaseLedgerOrderFunds(fundingRef, body.walletAddress, lockAsset, releaseAmount);
-        }
-
-        /* Push order-filled notification */
         const fillSymbol = symbol;
-        const fillBase   = fillSymbol.split("/")[0];
+        const fillBase = fillSymbol.split("/")[0];
+        const totalFilledText = formatUnits(totalFilledRaw, LEDGER_DECIMALS);
+        const avgFillPriceText = formatUnits(avgFillPriceRaw, LEDGER_DECIMALS);
         pushNotification(body.walletAddress, {
           type:  isFullyFilled ? "order_filled" : "order_partial",
-          title: isFullyFilled ? "Order Filled ✓" : `Partial Fill — ${totalFilled.toFixed(4)} ${fillBase}`,
-          body:  `${totalFilled.toFixed(4)} ${fillBase} @ ${avgFillPrice.toFixed(4)} avg · ${fundingRef.startsWith("evm-order:1:") ? "settled directly on Ethereum" : "settled in trading balance"}${marketRemainderCancelled ? " · unfilled remainder cancelled" : ""}`,
+          title: isFullyFilled ? "Order Filled ✓" : `Partial Fill — ${totalFilledText} ${fillBase}`,
+          body:  `${totalFilledText} ${fillBase} @ $${avgFillPriceText} avg · BSV settled on-chain`,
           pair:  fillSymbol,
           txid:  lastTxid ?? undefined,
           side,
         });
+      } else {
+        // No fill occurred — release the incoming-order claim so the order remains
+        // visible as open/cancelable instead of stuck in pending.
+        await db.update(ordersTable)
+          .set({ status: "open", updatedAt: new Date() })
+          .where(and(eq(ordersTable.id, id), eq(ordersTable.status, "pending")));
       }
     }
 
-    // ── Market orders are Immediate-Or-Cancel ─────────────────────────────────
-    // Never report an external venue quote as a DEX fill. If there is no match,
-    // return the reservation and reject explicitly.
+    // ── Market orders are Immediate-Or-Cancel: if nothing filled, try LE auto-route ──
+    // When the DEX order book has no matching counter-orders, route the trade
+    // through the best external swap venue (LetsExchange / SimpleSwap / etc.)
+    // transparently. The order is marked "filled" at the venue's quoted rate —
+    // the user sees a normal filled trade in their order log, not a swap.
+    // Only applies to custodial (internal-ledger) users; external wallet users
+    // fall through to the standard NO_LIQUIDITY error.
     if ((isMarket || isStopTriggered) && totalFilled === 0) {
-      await releaseLedgerOrderFunds(fundingRef, body.walletAddress, lockAsset, parseFloat(lockAmount));
-      await db.update(ordersTable).set({ status: "cancelled", updatedAt: new Date() })
-        .where(eq(ordersTable.id, id));
+      const leRoute = await attemptLeAutoRoute({
+        orderId:       id,
+        walletAddress: body.walletAddress,
+        symbol,
+        side,
+        quantity,
+        lockAmount:    parseFloat(lockAmount),
+        fundingRef:    fundingRef ?? "",
+        feeRate,
+      });
+
+      if (leRoute.ok) {
+        // Record platform fee on the fill value
+        const routeFee       = (leRoute.fillValue * feeRate).toFixed(18);
+        const feeAssetSymbol = symbol.split("/")[1] ?? "USDT";
+        recordPlatformFee({ source: "le_autoroute", amount: routeFee, asset: feeAssetSymbol, txRef: id });
+
+        // Mark the order as filled at the venue-quoted rate
+        await db.update(ordersTable).set({
+          status:            "filled",
+          filledQuantity:    leRoute.filledQty.toFixed(18),
+          remainingQuantity: "0",
+          price:             leRoute.fillPrice.toFixed(18),
+          total:             leRoute.fillValue.toFixed(18),
+          fee:               routeFee,
+          txid:              leRoute.leTransactionId ?? null,
+          updatedAt:         new Date(),
+        }).where(eq(ordersTable.id, id));
+
+        // Push filled notification
+        const fillBase = symbol.split("/")[0] ?? symbol;
+        pushNotification(body.walletAddress, {
+          type:  "order_filled",
+          title: "Order Filled ✓",
+          body:  `${leRoute.filledQty.toFixed(4)} ${fillBase} @ $${leRoute.fillPrice.toFixed(4)} avg`,
+          pair:  symbol,
+          txid:  leRoute.leTransactionId ?? undefined,
+          side,
+        });
+
+        const [created]  = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+        const quoteSymbol = (symbol.split("/")[1] ?? "USDT").replace("-PERP", "");
+        res.status(201).json({
+          ...serializeOrder(created),
+          matched:        true,
+          settlementTxid: leRoute.leTransactionId ?? null,
+          quoteSymbol,
+          explorerUrl:    null,
+          settlement:     null,
+        });
+        return;
+      }
+
+      req.log.info({ orderId: id, leError: leRoute.error }, "orders: LE auto-route unavailable — returning NO_LIQUIDITY");
+
+      // No venue could fill it — clean up the order and reject
+      await db.delete(ordersTable).where(eq(ordersTable.id, id));
       res.status(422).json({
         error: "No matching sellers found for this market order. Place a limit order to set your price, or try again when liquidity is available.",
         code:  "NO_LIQUIDITY",
@@ -1829,16 +1424,7 @@ router.post("/orders", async (req, res) => {
     }
 
     // Return the created order (re-read for updated status if matched)
-    await db.update(ordersTable).set({ status: "open", updatedAt: new Date() })
-      .where(and(eq(ordersTable.id, id), eq(ordersTable.status, "processing")));
     const [created] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
-    if (created.status === "open" && totalFilled === 0) {
-      pushNotification(body.walletAddress, {
-        type: "order_placed", title: `${side.toUpperCase()} Order Placed`,
-        body: `${quantity} ${baseAsset} @ ${price} ${quoteAsset} · waiting for match`,
-        pair: symbol, side,
-      });
-    }
 
     // Derive quoteSymbol from the order symbol so the client never has to
     // parse it — required for fill notification display on all order types.
@@ -1924,79 +1510,10 @@ router.get("/orders/:orderId", async (req, res) => {
 // reconciliation tool for any previously-orphaned locks.
 router.delete("/orders/:orderId", async (req, res) => {
   try {
-    const body = req.body ?? {};
-    const [existingOrder] = await db.select().from(ordersTable)
-      .where(eq(ordersTable.id, String(req.params.orderId)))
-      .limit(1);
-    if (!existingOrder) {
-      res.status(404).json({ error: "Order not found" });
+    const body = req.body;
+    if (!body.walletAddress) {
+      res.status(400).json({ error: "walletAddress is required" });
       return;
-    }
-    const fundingRef = String(existingOrder?.fundingRef ?? "");
-    const isOrderbookEscrowOrder = fundingRef.startsWith("evm-order:1:");
-    let orderbookCancelVerified = false;
-    let verifiedCancelTxHash: string | null = null;
-    if (isOrderbookEscrowOrder) {
-      const walletAddress = String(body.walletAddress ?? "");
-      if (
-        !detectIsEvmAddress(walletAddress) ||
-        walletAddress.toLowerCase() !== String(existingOrder.walletAddress).toLowerCase()
-      ) {
-        res.status(401).json({ error: "The cancellation wallet does not own this order" });
-        return;
-      }
-      const [, , escrowAddress, orderKey] = fundingRef.split(":");
-      if (
-        !/^0x[a-f\d]{40}$/i.test(escrowAddress ?? "") ||
-        !/^0x[a-f\d]{64}$/i.test(orderKey ?? "") ||
-        !body.orderbookCancelTxHash
-      ) {
-        res.status(400).json({
-          error: "Ethereum escrow orders must be canceled on-chain before removing them from the orderbook.",
-          code: "ORDERBOOK_CANCEL_PROOF_REQUIRED",
-        });
-        return;
-      }
-      try {
-        await verifyEvmOrderbookCancelTx({
-          escrowAddress,
-          orderKey: orderKey as `0x${string}`,
-          walletAddress: String(body.walletAddress),
-          txHash: String(body.orderbookCancelTxHash),
-        });
-        orderbookCancelVerified = true;
-        verifiedCancelTxHash = String(body.orderbookCancelTxHash);
-      } catch (cancelErr: any) {
-        res.status(400).json({
-          error: String(cancelErr?.message ?? "Could not verify escrow cancellation"),
-          code: "ORDERBOOK_CANCEL_INVALID",
-        });
-        return;
-      }
-    } else {
-      if (!detectIsEvmAddress(body.walletAddress) || !body.signature || !body.nonce || !body.expiry) {
-        res.status(401).json({ error: "A valid EVM wallet, signed cancellation, nonce, and expiry are required" });
-        return;
-      }
-      const expiry = parseInt(String(body.expiry), 10);
-      const nowSec = Math.floor(Date.now() / 1000);
-      if (!Number.isFinite(expiry) || expiry <= nowSec || expiry > nowSec + 5 * 60) {
-        res.status(401).json({ error: "Cancellation signature is expired or has an invalid expiry" });
-        return;
-      }
-      const actionMessage = buildOrderActionAuthMessage({
-        walletAddress: body.walletAddress,
-        action: "cancel",
-        orderId: req.params.orderId,
-        nonce: String(body.nonce),
-        expiry: String(expiry),
-      });
-      try {
-        verifyEvmSignature(body.walletAddress, actionMessage, String(body.signature));
-      } catch (authErr: any) {
-        res.status(401).json({ error: authErr.message });
-        return;
-      }
     }
 
     const client = await pool.connect();
@@ -2007,17 +1524,12 @@ router.delete("/orders/:orderId", async (req, res) => {
       // Step 1: Mark the order cancelled (only if open and owned by this wallet)
       const { rows: cancelRows } = await client.query<Record<string, unknown>>(
         `UPDATE orders
-         SET status = 'cancelled',
-             txid = CASE WHEN $4::text IS NULL THEN txid ELSE $4::text END,
-             updated_at = NOW()
+         SET status = 'cancelled', updated_at = NOW()
          WHERE id = $1
-           AND lower(wallet_address) = lower($2)
-           AND (
-             status = 'open'
-             OR ($3::boolean = true AND status = 'processing' AND funding_ref LIKE 'evm-order:1:%')
-           )
+           AND wallet_address = $2
+           AND status = 'open'
          RETURNING *`,
-        [req.params.orderId, body.walletAddress, orderbookCancelVerified, verifiedCancelTxHash],
+        [req.params.orderId, body.walletAddress],
       );
 
       if (!cancelRows.length) {
@@ -2048,7 +1560,7 @@ router.delete("/orders/:orderId", async (req, res) => {
       const lockAmount = side === "buy" ? lockPrice * remaining : remaining;
 
       // Step 3: Unlock reserved balance in the same transaction
-      if (lockAmount > 0 && lockAsset && String(orderRow.funding_ref ?? "").startsWith("ledger:")) {
+      if (lockAmount > 0 && lockAsset) {
         const wallet     = String(orderRow.wallet_address ?? "");
         const normWallet = /^0x/i.test(wallet) ? wallet.toLowerCase() : wallet;
         await client.query(
@@ -2099,7 +1611,7 @@ router.delete("/orders/:orderId", async (req, res) => {
 // This recovers funds that were orphaned when a cancel request previously
 // failed silently (e.g. wallet-address mismatch across BSV/EVM networks).
 // Accepts optional `altAddress` for cross-network Orah wallet users.
-router.post("/orders/recover-locked", requireAdminToken, async (req, res) => {
+router.post("/orders/recover-locked", async (req, res) => {
   try {
     const { walletAddress, altAddress } = req.body ?? {};
     if (!walletAddress) {
@@ -2109,16 +1621,6 @@ router.post("/orders/recover-locked", requireAdminToken, async (req, res) => {
 
     const addresses: string[] = [walletAddress];
     if (altAddress && altAddress !== walletAddress) addresses.push(altAddress);
-    const pending = await pool.query(
-      `SELECT id FROM orders
-       WHERE lower(wallet_address) = ANY($1::text[])
-         AND status IN ('processing', 'pending') LIMIT 1`,
-      [addresses.map(address => String(address).toLowerCase())],
-    );
-    if (pending.rows.length > 0) {
-      res.status(409).json({ error: "Reconcile pending settlement before recovering locked balances." });
-      return;
-    }
 
     // 1. Gather all open orders across all wallet addresses
     const openOrders = await db

@@ -107,88 +107,90 @@ for (const v of LOCKTIME_VECTORS) {
   assertEquals(v.label, actual, v.expected);
 }
 
-// ── Section B: HTLC creation vs skip (dust/fee guard) ────────────────────────
+// ── Section B: HTLC creation vs skip (exact-value guard) ─────────────────────
 
 interface HtlcCreationResult {
   created: boolean;
   htlcSatoshis?: number;
+  error?: "not-cross-chain" | "below-min" | "utxo-insufficient";
 }
 
 /**
- * Mirrors the guard logic in orders.ts broadcastSettlement block:
- *
- *   safeHtlcSat  = HTLC_MIN_SAT
+ * Mirrors the required production rule:
+ *   htlcSatoshis = exact BSV trade value in satoshis
  *   maxHtlcSat   = best.satoshis - FEE_SAT - DUST_SAT
- *   canAddHtlc   = isCrossChain && htlcScript && maxHtlcSat >= safeHtlcSat
- *   htlcSatoshis = Math.min(HTLC_MIN_SAT, maxHtlcSat)
+ *   canAddHtlc   = isCrossChain && htlcScript && maxHtlcSat >= htlcSatoshis
+ *
+ * Never cap the HTLC at HTLC_MIN_SAT. If the UTXO cannot fund the exact trade
+ * value, the trade must not create a dust-valued HTLC.
  */
-function evaluateHtlcCreation(bestSatoshis: number, isCrossChain: boolean): HtlcCreationResult {
-  if (!isCrossChain) return { created: false };
-  const safeHtlcSat = HTLC_MIN_SAT;
-  const maxHtlcSat  = bestSatoshis - FEE_SAT - DUST_SAT;
-  if (maxHtlcSat < safeHtlcSat) return { created: false };
-  return { created: true, htlcSatoshis: Math.min(HTLC_MIN_SAT, maxHtlcSat) };
+function evaluateHtlcCreation(
+  bestSatoshis: number,
+  isCrossChain: boolean,
+  tradeValueSat: number,
+): HtlcCreationResult {
+  if (!isCrossChain) return { created: false, error: "not-cross-chain" };
+  if (tradeValueSat < HTLC_MIN_SAT) return { created: false, error: "below-min" };
+  const maxHtlcSat = bestSatoshis - FEE_SAT - DUST_SAT;
+  if (maxHtlcSat < tradeValueSat) return { created: false, error: "utxo-insufficient" };
+  return { created: true, htlcSatoshis: tradeValueSat };
 }
 
 interface HtlcCreationVector {
-  label:       string;
-  satoshis:    number;
-  crossChain:  boolean;
+  label:        string;
+  satoshis:     number;
+  crossChain:   boolean;
+  tradeValue:   number;
   expectCreate: boolean;
   expectSats?:  number;
 }
 
+const TRADE_VALUE_SAT = 50_000;
+
 const CREATION_VECTORS: HtlcCreationVector[] = [
   {
-    label:       "healthy UTXO — cross-chain: HTLC created at HTLC_MIN_SAT",
-    satoshis:    10_000,
-    crossChain:  true,
+    label:        "healthy UTXO — cross-chain: HTLC locks exact trade value",
+    satoshis:     100_000,
+    crossChain:   true,
+    tradeValue:   TRADE_VALUE_SAT,
     expectCreate: true,
-    expectSats:   HTLC_MIN_SAT,
+    expectSats:   TRADE_VALUE_SAT,
   },
   {
-    label:       "tight UTXO — just enough for HTLC + fee + dust",
-    satoshis:    HTLC_MIN_SAT + FEE_SAT + DUST_SAT,  // 2046 sat
-    crossChain:  true,
+    label:        "tight UTXO — exactly trade value + fee + dust",
+    satoshis:     TRADE_VALUE_SAT + FEE_SAT + DUST_SAT,
+    crossChain:   true,
+    tradeValue:   TRADE_VALUE_SAT,
     expectCreate: true,
-    expectSats:   HTLC_MIN_SAT,
+    expectSats:   TRADE_VALUE_SAT,
   },
   {
-    label:       "undersized UTXO — one sat below minimum: skip HTLC",
-    satoshis:    HTLC_MIN_SAT + FEE_SAT + DUST_SAT - 1, // 2045 sat
-    crossChain:  true,
+    label:        "undersized UTXO — one sat below exact trade value: skip HTLC",
+    satoshis:     TRADE_VALUE_SAT + FEE_SAT + DUST_SAT - 1,
+    crossChain:   true,
+    tradeValue:   TRADE_VALUE_SAT,
     expectCreate: false,
   },
   {
-    label:       "empty UTXO (zero): skip",
-    satoshis:    0,
-    crossChain:  true,
+    label:        "same-chain fill: NEVER create HTLC regardless of UTXO size",
+    satoshis:     100_000,
+    crossChain:   false,
+    tradeValue:   TRADE_VALUE_SAT,
     expectCreate: false,
   },
   {
-    label:       "same-chain fill: NEVER create HTLC regardless of UTXO size",
-    satoshis:    100_000,
-    crossChain:  false,
-    expectCreate: false,
-  },
-  {
-    label:       "bot fill (same-chain): never create HTLC",
-    satoshis:    100_000,
-    crossChain:  false,
-    expectCreate: false,
-  },
-  {
-    label:       "large UTXO — htlcSatoshis capped at HTLC_MIN_SAT",
-    satoshis:    1_000_000,
-    crossChain:  true,
+    label:        "large UTXO — still exact trade value, never capped to dust",
+    satoshis:     1_000_000,
+    crossChain:   true,
+    tradeValue:   TRADE_VALUE_SAT,
     expectCreate: true,
-    expectSats:   HTLC_MIN_SAT, // cap applies
+    expectSats:   TRADE_VALUE_SAT,
   },
 ];
 
-section("B — HTLC creation vs skip (dust/fee guard)");
+section("B — HTLC creation vs skip (exact-value guard)");
 for (const v of CREATION_VECTORS) {
-  const result = evaluateHtlcCreation(v.satoshis, v.crossChain);
+  const result = evaluateHtlcCreation(v.satoshis, v.crossChain, v.tradeValue);
   assertEquals(`${v.label} [created]`, result.created, v.expectCreate);
   if (v.expectCreate && v.expectSats !== undefined) {
     assertEquals(`${v.label} [htlcSatoshis]`, result.htlcSatoshis, v.expectSats);
