@@ -3,12 +3,12 @@ import { useParams, useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useGetTicker, useGetCandles, useGetOrderBook, useGetOrders } from "@workspace/api-client-react";
+import { useGetTicker, useGetOrderBook, useGetOrders } from "@workspace/api-client-react";
 import { useMutation } from "@tanstack/react-query";
 import { buildOrderActionMessage, signWalletMessage } from "@/lib/tradeAuth";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
-import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, FUTURES_MARKETS } from "@/lib/mock-data";
+import { MOCK_TICKER, generateMockOrderBook, FUTURES_MARKETS } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn } from "@/lib/utils";
 import { X, ChevronDown, AlertTriangle, Wallet, Loader2, Search } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -154,7 +154,6 @@ export function FuturesTrading() {
 
   const noStoreRequest = { cache: "no-store" as const };
   const { data: apiTicker } = useGetTicker(encodeURIComponent(symbol), { request: noStoreRequest });
-  const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: "1h", limit: 100 }, { request: noStoreRequest });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, { request: noStoreRequest });
 
   const defaultLeverage = useSettingsStore((s) => s.defaultLeverage);
@@ -397,7 +396,6 @@ export function FuturesTrading() {
     ?? MOCK_TICKER[rawSymbol]
     ?? MOCK_TICKER["BSV-USDT"];
   const isPositive = ticker.priceChangePercent >= 0;
-  const candles = (apiCandles && apiCandles.length > 0) ? apiCandles : generateMockCandles(ticker.lastPrice);
 
   function toEntries(raw: number[][], descending: boolean) {
     const sorted = [...raw].sort((a, b) => descending ? b[0] - a[0] : a[0] - b[0]);
@@ -566,6 +564,7 @@ export function FuturesTrading() {
                 symbol={symbol}
                 interval={chartInterval}
                 onIntervalChange={setChartInterval}
+                dataSourceLabel={symbol.toUpperCase().endsWith("-PERP") ? "SPOT REFERENCE" : undefined}
               />
             </div>
             <div className="h-[220px] shrink-0 bg-card flex flex-col">
