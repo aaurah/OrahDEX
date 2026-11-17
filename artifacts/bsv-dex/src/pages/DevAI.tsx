@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { Link as RouterLink } from "wouter";
 import {
   Code2, Send, Plus, Trash2, Terminal, Cpu, Zap, Copy, Check,
   ChevronRight, BookOpen, Bot, RefreshCw, ChevronDown, ChevronUp, X,
@@ -779,6 +780,15 @@ export function DevAIPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <RouterLink
+              href="/admin/devai/workspace"
+              title="Open project files and GitHub workspace"
+              className="flex items-center gap-1.5 rounded-lg border border-green-500/25 bg-green-500/5 px-2.5 py-1 text-[10px] font-bold text-green-300 transition-all hover:border-green-500/45 hover:bg-green-500/10"
+            >
+              <Code2 className="h-3 w-3" />
+              <span className="hidden sm:inline">Code workspace</span>
+              <span className="sm:hidden">Workspace</span>
+            </RouterLink>
             {/* New chat */}
             <button
               onClick={() => { setActiveId(null); setMessages([]); localStorage.removeItem(PERSIST_KEY); didAutoLoad.current = true; }}
