@@ -101,6 +101,7 @@ timeoutMs = 90000
 
 [nix]
 channel = "stable-25_05"
+packages = ["ollama"]
 
 [userenv]
 
@@ -119,3 +120,4 @@ EVM_ORDERBOOK_MATCHING_ENABLED = "true"
 
 [userenv.development]
 BSV_NETWORK = "main"
+DEVAI_OLLAMA_ENABLED = "true"
