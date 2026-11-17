@@ -4,7 +4,7 @@ import {
   ChevronRight, BookOpen, Bot, RefreshCw, ChevronDown, ChevronUp, X,
   Globe, Play, Download, FileCode, Hash, TrendingUp, Loader2,
   GitBranch, Activity, Layers, Search, Wallet, Shield, Database,
-  Link, CheckCircle, FolderOpen, PenLine, Wrench, Upload,
+  Link, CheckCircle, FolderOpen, PenLine, Upload,
 } from "lucide-react";
 import { useSEO } from "@/hooks/useSEO";
 import { cn } from "@/lib/utils";
@@ -40,7 +40,6 @@ interface Conversation {
 const TOOL_META: Record<string, { label: string; icon: any; color: string }> = {
   read_github_file:   { label: "Reading file",      icon: Link,      color: "text-white" },
   list_github_repo:   { label: "Browsing repo",     icon: GitBranch, color: "text-white" },
-  write_github_file:  { label: "Writing to GitHub", icon: GitBranch, color: "text-blue-400" },
   execute_code:       { label: "Running code",      icon: Play,      color: "text-amber-400" },
   fetch_url:          { label: "Fetching URL",      icon: Globe,     color: "text-blue-400" },
   create_file:        { label: "Creating file",     icon: FileCode,  color: "text-green-400" },
@@ -51,14 +50,12 @@ const TOOL_META: Record<string, { label: string; icon: any; color: string }> = {
   list_project_dir:   { label: "Browsing project",  icon: FolderOpen,color: "text-cyan-400" },
   query_database:     { label: "Querying database", icon: Database,  color: "text-purple-400" },
   write_project_file: { label: "Writing file",      icon: PenLine,   color: "text-yellow-400" },
-  run_terminal:       { label: "Running command",   icon: Wrench,    color: "text-orange-400" },
 };
 
 function toolSubtitle(name: string, args: Record<string, any>): string {
   switch (name) {
     case "read_github_file":   return `${args.owner_repo}/${args.path}`;
     case "list_github_repo":   return `${args.owner_repo}${args.path ? "/" + args.path : ""}`;
-    case "write_github_file":  return `${args.owner_repo}/${args.path}`;
     case "execute_code":       return args.description ?? "JavaScript";
     case "fetch_url":          return args.url?.replace(/^https?:\/\//, "") ?? "";
     case "create_file":        return args.filename ?? "";
@@ -69,7 +66,6 @@ function toolSubtitle(name: string, args: Record<string, any>): string {
     case "list_project_dir":   return args.path ?? "/";
     case "query_database":     return (args.sql ?? "").slice(0, 60);
     case "write_project_file": return args.path ?? "";
-    case "run_terminal":       return args.description ?? (args.command ?? "").slice(0, 60);
     default:                   return "";
   }
 }
@@ -425,8 +421,9 @@ export function DevAIPage() {
   const [streaming, setStreaming] = useState(false);
   const [loadingConvs, setLoadingConvs] = useState(true);
   const [showApiPanel, setShowApiPanel] = useState(false);
-  const [publishing, setPublishing] = useState(false);
-  const [publishDone, setPublishDone] = useState(false);
+  const [restarting, setRestarting] = useState(false);
+  const [restartDone, setRestartDone] = useState(false);
+  const [restartError, setRestartError] = useState("");
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef  = useRef<AbortController | null>(null);
@@ -511,18 +508,23 @@ export function DevAIPage() {
     if (activeId === id) { setActiveId(null); setMessages([]); }
   }, [activeId]);
 
-  const publish = useCallback(async () => {
-    if (publishing) return;
-    setPublishing(true);
-    setPublishDone(false);
+  const restartApi = useCallback(async () => {
+    if (restarting) return;
+    setRestarting(true);
+    setRestartDone(false);
+    setRestartError("");
     try {
-      await fetch(`${API}/admin/devai/restart`, { method: "POST", headers: getAdminHeaders() });
-      setPublishDone(true);
-      setTimeout(() => setPublishDone(false), 4000);
-    } catch { /* ignore */ } finally {
-      setPublishing(false);
+      const response = await fetch(`${API}/admin/devai/restart`, { method: "POST", headers: getAdminHeaders() });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "Restart failed.");
+      setRestartDone(true);
+      setTimeout(() => setRestartDone(false), 4000);
+    } catch (err: any) {
+      setRestartError(err?.message ?? "Restart failed.");
+    } finally {
+      setRestarting(false);
     }
-  }, [publishing]);
+  }, [restarting]);
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || streaming) return;
@@ -550,7 +552,11 @@ export function DevAIPage() {
         body: JSON.stringify({ content: msg }),
         signal: abortRef.current.signal,
       });
-      if (!res.ok || !res.body) throw new Error("Stream failed");
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error ?? "DevAI request failed.");
+      }
+      if (!res.body) throw new Error("DevAI stream was unavailable.");
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -615,7 +621,7 @@ export function DevAIPage() {
     } catch (err: any) {
       if (err?.name !== "AbortError") {
         setMessages(prev => prev.map(m =>
-          m.id === assistantId ? { ...m, content: "Something went wrong. Please try again." } : m
+          m.id === assistantId ? { ...m, content: `Error: ${err?.message ?? "DevAI request failed."}` } : m
         ));
       }
     } finally {
@@ -660,10 +666,9 @@ export function DevAIPage() {
           <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Capabilities</div>
           <div className="space-y-1">
             {[
-              { icon: GitBranch,  label: "Read & write GitHub repos" },
+              { icon: GitBranch,  label: "Read GitHub repos" },
               { icon: FolderOpen, label: "Browse project files" },
-              { icon: PenLine,    label: "Write & edit any file" },
-              { icon: Wrench,     label: "Run shell commands" },
+              { icon: PenLine,    label: "Stage source changes for review" },
               { icon: Database,   label: "Query live database" },
               { icon: Play,       label: "Execute JavaScript" },
               { icon: Hash,       label: "BSV blockchain lookup" },
@@ -686,9 +691,8 @@ export function DevAIPage() {
             {[
               { label: "Explore codebase",  prompt: "List the workspace root, then show me the backend routes directory and the frontend pages directory." },
               { label: "Query DB schema",   prompt: "Query the database to list all tables and show column names for the most important ones." },
-              { label: "Add a feature",     prompt: "Read the current backend routes, then add a new GET /api/status/extended endpoint that returns server uptime, DB connection status, and active market count. Write the changes directly." },
+              { label: "Propose a feature",prompt: "Read the relevant backend and frontend source files, then prepare a complete source change proposal for an admin to review. Do not apply or publish it." },
               { label: "Market maker bot",  prompt: "Build a TypeScript market making bot for BSV/USDT. Check live prices first, then write it as a downloadable file." },
-              { label: "Install a package", prompt: "Install the 'zod' validation library in the api-server and show me how to use it for request validation." },
             ].map(q => (
               <button
                 key={q.label}
@@ -777,27 +781,27 @@ export function DevAIPage() {
             {/* Live tools indicator */}
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-green-500/20 bg-green-500/5 text-green-400">
               <Activity className="w-3 h-3 animate-pulse" />
-              <span className="text-[10px] font-bold">14 live tools</span>
+              <span className="text-[10px] font-bold">12 admin tools</span>
             </div>
-            {/* Publish / restart button */}
+            {/* Development API restart button */}
             <button
-              onClick={publish}
-              disabled={publishing}
-              title="Restart services to apply code changes"
+              onClick={restartApi}
+              disabled={restarting}
+              title="Restart the development API after applying approved changes"
               className={cn(
                 "flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-all",
-                publishDone
+                restartDone
                   ? "border-green-500/40 bg-green-500/15 text-green-400"
                   : "border-orange-500/30 bg-orange-500/8 text-orange-400 hover:bg-orange-500/15"
               )}
             >
-              {publishing
+              {restarting
                 ? <RefreshCw className="w-3 h-3 animate-spin" />
-                : publishDone
+                : restartDone
                   ? <CheckCircle className="w-3 h-3" />
                   : <Upload className="w-3 h-3" />
               }
-              {publishing ? "Restarting…" : publishDone ? "Live" : "Publish"}
+              {restarting ? "Restarting…" : restartDone ? "Restarted" : "Restart API"}
             </button>
             <button
               onClick={() => setShowApiPanel(v => !v)}
@@ -813,6 +817,12 @@ export function DevAIPage() {
             </button>
           </div>
         </div>
+
+        {restartError && (
+          <div className="px-4 py-2 border-b border-amber-500/20 bg-amber-500/5 text-xs text-amber-300">
+            {restartError}
+          </div>
+        )}
 
         {/* Messages / Empty state */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
