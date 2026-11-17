@@ -66,6 +66,23 @@ function formatDateTime(value: string | Date | number) {
   });
 }
 
+async function withWalletRequestTimeout<T>(request: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      request,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new Error("Wallet did not respond. No order was submitted; reconnect the wallet and try again.")),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 const EVM_EXPLORERS: Record<number, string> = {
   1:      "https://etherscan.io/tx/",
   10:     "https://optimistic.etherscan.io/tx/",
@@ -1500,45 +1517,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           });
           evmSignature = await account.signMessage!({ message: orderMsg });
         } else {
-          // External wallet: tier-1 = wagmi/Reown, tier-2 = direct window.ethereum
-          const isUserRejection = (e: any) => {
-            const code = e?.code;
-            const msg  = (e?.message ?? "").toLowerCase();
-            return code === 4001 || code === "ACTION_REJECTED" ||
-              msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
-          };
-
-          if (evmConnected) {
-            try {
-              evmSignature = await signMessageAsync({ message: orderMsg });
-            } catch (wagmiErr: any) {
-              if (isUserRejection(wagmiErr)) throw wagmiErr;
-              // Fall through to direct provider
-            }
-          }
-
-          if (!evmSignature) {
-            const hexMsg = "0x" + Array.from(new TextEncoder().encode(orderMsg))
-              .map(b => b.toString(16).padStart(2, "0")).join("");
-
-            if (provider === "reown") {
-              // Reown/WalletConnect: window.ethereum is never injected — must call
-              // personal_sign directly on the connector's raw EIP-1193 provider.
-              const { wagmiAdapter } = await import("@/lib/reown-appkit");
-              const connector = wagmiAdapter.wagmiConfig.connectors.find(
-                (c: any) => c.id === "walletConnect" || c.type === "walletConnect"
-              );
-              const eip1193 = await (connector as any)?.getProvider?.();
-              if (!eip1193) throw new Error("WalletConnect provider unavailable. Please reconnect your wallet.");
-              evmSignature = await eip1193.request({ method: "personal_sign", params: [hexMsg, address] });
-            } else {
-              const eth = (window as any).ethereum;
-              if (!eth) {
-                throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
-              }
-              evmSignature = await eth.request({ method: "personal_sign", params: [hexMsg, address] });
-            }
-          }
+          // Prefer the selected wallet's raw provider. A stale wagmi connector
+          // can leave signMessageAsync pending forever on mobile and prevent the
+          // actual wallet from receiving the personal_sign request.
+          const hasInjectedProvider = Boolean((window as any).ethereum?.request);
+          const wagmiFallback = provider !== "reown" && !hasInjectedProvider && evmConnected
+            ? signMessageAsync
+            : undefined;
+          evmSignature = await withWalletRequestTimeout(
+            signWalletMessage(address!, provider ?? undefined, orderMsg, wagmiFallback),
+            60_000,
+          );
         }
       } catch (signErr: any) {
         const code = signErr?.code;
