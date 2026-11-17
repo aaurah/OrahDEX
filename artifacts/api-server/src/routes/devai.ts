@@ -840,6 +840,7 @@ async function createDevAiChangeProposal(args: {
   path: string;
   content: string;
   description?: string;
+  expectedHash?: string;
 }) {
   if (typeof args.content !== "string" || args.content.length > 500_000) {
     throw new Error("Content must be text and no larger than 500 KB.");
@@ -860,6 +861,14 @@ async function createDevAiChangeProposal(args: {
     originalContent = await fs.readFile(realPath, "utf-8");
   } catch (err: any) {
     if (err?.code !== "ENOENT") throw err;
+  }
+  if (args.expectedHash !== undefined) {
+    if (!/^[a-f0-9]{64}$/i.test(args.expectedHash)) {
+      throw new Error("The editor supplied an invalid source-file hash.");
+    }
+    if (originalContent === null || sha256(originalContent) !== args.expectedHash) {
+      throw new Error("This file changed after it was opened. Reload it before creating a proposal.");
+    }
   }
 
   const id = randomUUID();
@@ -1562,6 +1571,7 @@ router.post("/admin/devai/change-proposals", requireAdminToken, async (req, res)
       path: String(req.body?.path ?? ""),
       content: req.body?.content,
       description: typeof req.body?.description === "string" ? req.body.description : "",
+      expectedHash: typeof req.body?.expectedHash === "string" ? req.body.expectedHash : undefined,
     });
     res.status(201).json({ ok: true, proposalId: proposal.id });
   } catch (err: any) {
