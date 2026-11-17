@@ -19,6 +19,8 @@ import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { useSSPairs } from "@/hooks/useSSPairs";
 import { useMarketSearch } from "@/hooks/useStagedMarkets";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
+import { fetchReownSwapCoins } from "@/lib/reown-appkit";
+import { buildReownOrderbookMarkets } from "@/lib/reownOrderbookMarkets";
 import { cn, marketMatchesQuery } from "@/lib/utils";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 
@@ -43,7 +45,8 @@ function normalise(m: any) {
   const symbol   = m.symbol ?? `${base}-${quote}`;
   const network  = (m.network ?? m.networkName ?? undefined) as string | undefined;
   const swapOnly = m.swapOnly === true;      // true for AOS pairs (from LE)
-  return { symbol, base, quote, price, chg, type, network, swapOnly };
+  const reownOrderbook = m.reownOrderbook === true;
+  return { symbol, base, quote, price, chg, type, network, swapOnly, reownOrderbook };
 }
 
 type NormRow = ReturnType<typeof normalise>;
@@ -54,7 +57,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "reown" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favs"      },
@@ -64,6 +67,7 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "btc",       label: "BTC"       },
   { id: "bsv",       label: "⚡ BSV"    },
   { id: "eth",       label: "ETH"       },
+  { id: "reown",     label: "REOWN"     },
   { id: "bnb",       label: "BNB"       },
   { id: "matic",     label: "MATIC"     },
   { id: "avax",      label: "AVAX"      },
@@ -128,6 +132,7 @@ const TOPIC_TABS: { id: Cat; label: string }[] = [
   { id: "exchange",  label: "Exchange"   },
   { id: "uniswap",   label: "🦄 Uni"     },
   { id: "pancake",   label: "🥞 Cake"    },
+  { id: "reown",     label: "Reown"      },
   { id: "futures",   label: "📈 Futures" },
 ];
 
@@ -211,6 +216,7 @@ function getRows(
   favorites: Set<string>,
   aosPairs: NormRow[],   // swap-only (AOS) pairs from LetsExchange
   apiRows: NormRow[],    // all DB pairs normalised
+  reownRows: NormRow[],
 ) {
   const enrich = (mock: any[]): NormRow[] =>
     mock.map(m => {
@@ -342,6 +348,7 @@ function getRows(
     case "btc":       return quoteAllPairs("BTC",   BTC_MARKETS);
     case "bsv":       return quoteAllPairs("BSV",   BSV_MARKETS);
     case "eth":       return quoteAllPairs("ETH",  ETH_MARKETS);
+    case "reown":     return reownRows;
     case "bnb":       return chainFromDB("BNB",   cat, BNB_MARKETS);
     case "sol":       return chainFromDB("SOL",   cat, SOL_MARKETS);
     case "bch":       return chainFromDB("BCH",   cat, BCH_MARKETS);
@@ -454,8 +461,16 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   // Pull-to-refresh handlers
   const doRefresh = useCallback(async () => {
     setRefreshing(true);
-    await queryClient.invalidateQueries({ queryKey: ["markets"] });
-    await queryClient.refetchQueries({ queryKey: ["markets"] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["markets"] }),
+      queryClient.invalidateQueries({ queryKey: ["reown-orderbook-token-catalog", 1] }),
+      queryClient.invalidateQueries({ queryKey: ["evm-orderbook-settlement-config", 1] }),
+    ]);
+    await Promise.all([
+      queryClient.refetchQueries({ queryKey: ["markets"] }),
+      queryClient.refetchQueries({ queryKey: ["reown-orderbook-token-catalog", 1] }),
+      queryClient.refetchQueries({ queryKey: ["evm-orderbook-settlement-config", 1] }),
+    ]);
     setRefreshing(false);
   }, [queryClient]);
 
@@ -495,6 +510,35 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     refetchInterval: 30_000,
   });
 
+  const {
+    data: reownCoins = [],
+    isError: reownCatalogError,
+    isPending: reownCatalogLoading,
+  } = useQuery({
+    queryKey: ["reown-orderbook-token-catalog", 1],
+    queryFn: () => fetchReownSwapCoins([1]),
+    enabled: open,
+    staleTime: 15 * 60_000,
+    gcTime: 30 * 60_000,
+    retry: 1,
+  });
+
+  const {
+    data: orderbookSettlement = { available: false },
+    isError: orderbookConfigError,
+    isPending: orderbookConfigLoading,
+  } = useQuery({
+    queryKey: ["evm-orderbook-settlement-config", 1],
+    queryFn: async () => {
+      const response = await fetch(`${BASE}/api/orders/evm-settlement/config`, { cache: "no-store" });
+      if (!response.ok) return { available: false };
+      return response.json();
+    },
+    enabled: open,
+    staleTime: 60_000,
+    retry: 1,
+  });
+
   // AOS pairs from LetsExchange — available to trade via Swap tab
   const { pairs: rawAosPairs } = useLetsExchangePairs({ all: true });
   // SimpleSwap pairs — combined with LE for chain-specific tabs
@@ -511,6 +555,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       type:     "spot" as const,
       network:  p.network ?? p.networkName ?? undefined,
       swapOnly: true as const,
+      reownOrderbook: false,
     });
     const all = [
       ...(rawAosPairs ?? []).map(toNorm),
@@ -526,10 +571,25 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     return [...best.values()];
   }, [rawAosPairs, rawSsPairs]);
 
-  const apiRows = useMemo<NormRow[]>(
+  const rawApiRows = useMemo<NormRow[]>(
     () => (Array.isArray(apiData) ? apiData : []).map(normalise).filter((market) => market.price > 0),
     [apiData]
   );
+
+  const reownRows = useMemo<NormRow[]>(
+    () => orderbookSettlement.available
+      ? buildReownOrderbookMarkets(reownCoins, rawApiRows).map(normalise)
+      : [],
+    [orderbookSettlement.available, reownCoins, rawApiRows]
+  );
+
+  // Keep bridge swaps in Swap, but expose the matching allowlisted Ethereum
+  // asset here as an escrow-backed order-book option.
+  const apiRows = useMemo<NormRow[]>(() => {
+    const merged = new Map(rawApiRows.map((market) => [market.symbol, market]));
+    for (const market of reownRows) merged.set(market.symbol, market);
+    return [...merged.values()];
+  }, [rawApiRows, reownRows]);
 
   const livePrice = useMemo(() => new Map(
     apiRows.map((m: NormRow) => [m.symbol, m])
@@ -566,7 +626,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       // Use the full (no-base-dedup) pool so any starred symbol is always found,
       // regardless of whether it was the "best quote" for its base coin.
       ? fullPool.filter(m => favorites.has(m.symbol)).sort((a, b) => a.base.localeCompare(b.base))
-      : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
+      : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows, reownRows);
 
   // Merge GeckoTerminal live data: update prices for known tokens, append new ones
   if (!search && geckoRows.length > 0) {
@@ -578,7 +638,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     const existingBases = new Set(rows.map(r => r.base));
     const newRows: NormRow[] = geckoRows
       .filter(g => !existingBases.has(g.base) && g.price > 0)
-      .map(g => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, type: "spot" as const, network: g.network, swapOnly: true }));
+      .map(g => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, type: "spot" as const, network: g.network, swapOnly: true, reownOrderbook: false }));
     rows = [...rows, ...newRows];
   }
 
@@ -793,12 +853,27 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
               {refreshing ? "Refreshing…" : pullDist >= 52 ? "Release to refresh" : "Pull to refresh"}
             </span>
           </div>
+          {cat === "reown" && !search && (
+            <div className="mx-3 my-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+              Ethereum mainnet only · 18-decimal allowlisted tokens. Books show verified escrow orders only, so some may be empty.
+            </div>
+          )}
           {rows.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
               {search && serverSearchLoading
                 ? "Searching markets…"
                 : search && serverSearchError
                   ? serverSearchError
+                  : cat === "reown" && orderbookConfigLoading
+                    ? "Checking Ethereum escrow…"
+                    : cat === "reown" && (orderbookConfigError || !orderbookSettlement.available)
+                      ? "Ethereum order-book escrow is unavailable"
+                      : cat === "reown" && reownCatalogLoading
+                        ? "Loading verified Ethereum tokens…"
+                        : cat === "reown" && reownCatalogError
+                          ? "Reown token list is unavailable"
+                          : cat === "reown"
+                            ? "No allowlisted Ethereum tokens have a live price"
                   : cat === "favorites" ? "No favorites yet" : search ? "No results" : "Loading…"}
             </div>
           ) : (() => {
@@ -877,6 +952,9 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                           )}
                           {m.swapOnly && (
                             <span className="text-[8px] font-bold text-blue-400 bg-blue-500/15 px-1 py-0.5 rounded">AOS</span>
+                          )}
+                          {m.reownOrderbook && (
+                            <span className="text-[8px] font-bold text-emerald-400 bg-emerald-500/15 px-1 py-0.5 rounded">ETH BOOK</span>
                           )}
                           {isActive && (
                             <span className="text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>
