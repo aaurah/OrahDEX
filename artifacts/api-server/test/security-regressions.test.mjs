@@ -13,10 +13,13 @@ const tradePath = path.join(__dirname, "..", "src", "routes", "trade.ts");
 const fundingVerifierPath = path.join(__dirname, "..", "src", "lib", "fundingVerifier.ts");
 const routesIndexPath = path.join(__dirname, "..", "src", "routes", "index.ts");
 const adminAuthPath = path.join(__dirname, "..", "src", "middleware", "adminAuth.ts");
+const adminRoutesPath = path.join(__dirname, "..", "src", "routes", "admin.ts");
 const evmWebhookRouterPath = path.join(__dirname, "..", "src", "routes", "evmWebhookRouter.ts");
 const depositAddressesPath = path.join(__dirname, "..", "src", "lib", "depositAddresses.ts");
 const internalEvmWalletPath = path.join(__dirname, "..", "src", "lib", "internalEvmWallet.ts");
 const exchangeHotWalletPath = path.join(__dirname, "..", "src", "lib", "exchangeHotWallet.ts");
+const advancedOrderEnginePath = path.join(__dirname, "..", "src", "lib", "advancedOrderEngine.ts");
+const hotWalletGeneratorPath = path.join(__dirname, "..", "scripts", "gen-new-hotwallet.ts");
 const futuresPath = path.join(__dirname, "..", "src", "routes", "futures.ts");
 const nftPath = path.join(__dirname, "..", "src", "routes", "nft.ts");
 
@@ -68,7 +71,7 @@ test("funding verifier fails closed for unverifiable external EVM funding", asyn
 
   assert.match(src, /code:\s+"FUNDING_PROOF_REQUIRED"/);
   assert.match(src, /code:\s+"CHAIN_ID_REQUIRED"/);
-  assert.match(src, /code:\s+"TOKEN_UNSUPPORTED"/);
+  assert.match(src, /code:\s+"UNSUPPORTED_ASSET"/);
   assert.match(src, /code:\s+"BALANCE_VERIFICATION_UNAVAILABLE"/);
   assert.doesNotMatch(src, /on-chain RPC balance check failed — falling through/);
 });
@@ -91,6 +94,22 @@ test("admin auth uses timing-safe token checks", async () => {
   assert.match(src, /function hasMatchingAdminToken/);
 });
 
+test("admin API is private by default except for login and challenge routes", async () => {
+  const src = await read(adminRoutesPath);
+  const guardIndex = src.indexOf("router.use((req, res, next) => {");
+  const firstAdminRouteIndex = src.indexOf('router.get("/security-vault"');
+
+  assert.notEqual(guardIndex, -1, "admin router-wide authentication guard exists");
+  assert.ok(guardIndex < firstAdminRouteIndex, "router-wide guard runs before admin handlers");
+  assert.match(src, /requireAdminToken\(req, res, next\)/);
+  assert.match(src, /"POST \/auth"/);
+  assert.match(src, /"POST \/auth\/totp"/);
+  assert.match(src, /"POST \/auth\/wallet-challenge"/);
+  assert.match(src, /"POST \/auth\/wallet"/);
+  assert.doesNotMatch(src, /"GET \/security-vault"/);
+  assert.doesNotMatch(src, /"POST \/security-vault\/regenerate-bsv"/);
+});
+
 test("EVM webhook rejects requests when HMAC secret is missing", async () => {
   const src = await read(evmWebhookRouterPath);
 
@@ -99,22 +118,44 @@ test("EVM webhook rejects requests when HMAC secret is missing", async () => {
   assert.match(src, /if \(!secret\) \{[\s\S]*return false;\n  \}/);
 });
 
-test("wallet encryption code no longer falls back to a hard-coded secret", async () => {
-  const [depositSrc, internalSrc, hotWalletSrc] = await Promise.all([
+test("wallet encryption requires configured secrets and has no hard-coded fallback", async () => {
+  const [depositSrc, internalSrc, hotWalletSrc, bsvWalletSrc] = await Promise.all([
     read(depositAddressesPath),
     read(internalEvmWalletPath),
     read(exchangeHotWalletPath),
+    read(path.join(__dirname, "..", "src", "lib", "internalBsvWallet.ts")),
   ]);
 
-  for (const src of [depositSrc, internalSrc, hotWalletSrc]) {
+  for (const src of [depositSrc, internalSrc, hotWalletSrc, bsvWalletSrc]) {
     assert.doesNotMatch(src, /orahdex-internal-evm-fallback-key-32bytes!/);
-    assert.match(src, /getRequiredEnv\("EVM_WALLET_SECRET"/);
   }
+  assert.match(internalSrc, /getRequiredEnv\("EVM_WALLET_SECRET"/);
+  assert.match(hotWalletSrc, /getRequiredEnv\("EVM_WALLET_SECRET"/);
+  assert.match(bsvWalletSrc, /process\.env\.BSV_WALLET_SECRET\?\.trim\(\)/);
+  assert.doesNotMatch(bsvWalletSrc, /orahdex-internal-bsv-fallback-key-32bytes!/);
+  assert.match(depositSrc, /process\.env\.EVM_WALLET_SECRET/);
 });
 
-test("futures and NFT routes are behind explicit feature flags", async () => {
+test("hot-wallet generator cannot create or print private keys", async () => {
+  const src = await read(hotWalletGeneratorPath);
+
+  assert.match(src, /intentionally disabled/);
+  assert.match(src, /process\.exitCode = 1/);
+  assert.doesNotMatch(src, /randomBytes|generatePrivateKey|privateKey\s*=/);
+});
+
+test("advanced order workers stay disabled until signed funding is supported", async () => {
+  const src = await read(advancedOrderEnginePath);
+  const startup = src.match(/export function startAdvancedOrderEngines\(\): void \{[\s\S]*?\n\}/)?.[0];
+
+  assert.ok(startup, "advanced-order startup function exists");
+  assert.match(startup, /remain disabled until strategies have signed, funded wallet authorization/);
+  assert.doesNotMatch(startup, /guardedInterval|setInterval|runTwapEngine|runIcebergEngine/);
+});
+
+test("futures mutations fail closed and NFT routes can be disabled", async () => {
   const [futuresSrc, nftSrc] = await Promise.all([read(futuresPath), read(nftPath)]);
 
-  assert.match(futuresSrc, /process\.env\.FUTURES_ENABLED !== "true"/);
-  assert.match(nftSrc, /process\.env\.NFT_ENABLED !== "true"/);
+  assert.match(futuresSrc, /temporarily unavailable pending signed wallet authorization/);
+  assert.match(nftSrc, /process\.env\.NFT_ENABLED === "false"/);
 });

@@ -32,6 +32,7 @@ import { getViemAccountForAddress } from "@/lib/walletSigner";
 import { buildOrderIntentMessage, buildOrderActionMessage, signWalletMessage } from "@/lib/tradeAuth";
 import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
+import { withWalletRequestTimeout } from "@/lib/walletRequestTimeout.mjs";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -64,23 +65,6 @@ function formatDateTime(value: string | Date | number) {
     minute: "2-digit",
     second: "2-digit",
   });
-}
-
-async function withWalletRequestTimeout<T>(request: Promise<T>, timeoutMs: number): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  try {
-    return await Promise.race([
-      request,
-      new Promise<T>((_, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error("Wallet did not respond. No order was submitted; reconnect the wallet and try again.")),
-          timeoutMs,
-        );
-      }),
-    ]);
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
-  }
 }
 
 const EVM_EXPLORERS: Record<number, string> = {
@@ -659,6 +643,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isSubmittingRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionStage, setSubmissionStage] = useState("");
+  const walletSignAbortRef = useRef<(() => void) | null>(null);
   // Content fingerprint: same symbol+side+amount within 2 seconds = duplicate
   const lastOrderFingerprintRef = useRef<string | null>(null);
 
@@ -1508,14 +1493,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         nonce: orderNonce, expiry: orderExpiry,
       });
 
+      const signController = new AbortController();
+      walletSignAbortRef.current = () => signController.abort();
       try {
         if (isOrahWallet) {
           // Self-custody Orah wallet: sign with the in-app key (PIN/passkey unlock)
-          const account = await getViemAccountForAddress(address!, {
-            title:    "Authorize trade",
-            subtitle: `${side.toUpperCase()} ${amtNum} ${base} on ${symbol}`,
-          });
-          evmSignature = await account.signMessage!({ message: orderMsg });
+          const signingRequest = (async () => {
+            const account = await getViemAccountForAddress(address!, {
+              title:    "Authorize trade",
+              subtitle: `${side.toUpperCase()} ${amtNum} ${base} on ${symbol}`,
+            });
+            return account.signMessage!({ message: orderMsg });
+          })();
+          evmSignature = await withWalletRequestTimeout(signingRequest, 60_000, signController.signal);
         } else {
           // Prefer the selected wallet's raw provider. A stale wagmi connector
           // can leave signMessageAsync pending forever on mobile and prevent the
@@ -1527,17 +1517,21 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           evmSignature = await withWalletRequestTimeout(
             signWalletMessage(address!, provider ?? undefined, orderMsg, wagmiFallback),
             60_000,
+            signController.signal,
           );
         }
       } catch (signErr: any) {
         const code = signErr?.code;
         const msg: string = signErr?.message ?? "";
+        const wasStopped = signErr?.name === "AbortError";
         const isRejection = code === 4001 || code === "ACTION_REJECTED" ||
           msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("denied") ||
           msg.toLowerCase().includes("user cancelled") || msg.toLowerCase().includes("user canceled");
         toast({
-          title: isRejection ? "Wallet signature declined" : "Wallet signing failed",
-          description: isRejection
+          title: wasStopped ? "Wallet request stopped" : isRejection ? "Wallet signature declined" : "Wallet signing failed",
+          description: wasStopped
+            ? "No order or escrow transaction was submitted. Dismiss any wallet prompt that remains open before retrying."
+            : isRejection
             ? `Tap ${side === "buy" ? "Buy" : "Sell"} again and approve the signing request in your wallet to place the order.`
             : (msg || "Could not sign order. Please reconnect your wallet and try again."),
           variant: "destructive",
@@ -1547,6 +1541,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         setSubmissionStage("");
         lastOrderFingerprintRef.current = null;
         return;
+      } finally {
+        walletSignAbortRef.current = null;
       }
     }
 
@@ -2985,6 +2981,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 Connect Wallet to Trade
               </button>
             ) : (
+              <>
               <button
                 onClick={handlePlaceOrder}
                 disabled={!amount || amtNum <= 0 || isSubmitting || aboveLeMax}
@@ -3002,6 +2999,21 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   `${side === "sell" ? "Sell" : "Buy"} ${base}`
                 )}
               </button>
+              {isSubmitting && submissionStage === "Sign order in wallet…" && (
+                <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2" aria-live="polite">
+                  <p className="text-[11px] leading-snug text-amber-200/80">
+                    This signature does not move funds. Escrow is requested in a separate wallet transaction afterward.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => walletSignAbortRef.current?.()}
+                    className="shrink-0 rounded-md border border-amber-400/40 px-2 py-1 text-[11px] font-semibold text-amber-200 hover:bg-amber-500/10"
+                  >
+                    Stop waiting
+                  </button>
+                </div>
+              )}
+              </>
             )}
 
             </>)}

@@ -203,17 +203,23 @@ function CreateView({ onWalletReady }: { onWalletReady: (w: ConnectedWallet) => 
   const [revealed, setRevealed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [deriveError, setDeriveError] = useState<string | null>(null);
 
   const regen = () => {
     setMnemonic(generateMnemonic(wordCount));
     setRevealed(false); setCopied(false); setConfirmed(false);
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!confirmed || !revealed) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const address = deriveAddress(mnemonic, network);
-    onWalletReady({ address, provider: "aura-wallet", network });
+    setDeriveError(null);
+    try {
+      const address = await deriveAddress(mnemonic, network);
+      onWalletReady({ address, provider: "aura-wallet", network });
+    } catch {
+      setDeriveError("Could not derive the wallet address. Your seed phrase has not been changed.");
+    }
   };
 
   return (
@@ -291,6 +297,7 @@ function CreateView({ onWalletReady }: { onWalletReady: (w: ConnectedWallet) => 
       </View>
 
       {/* Confirm */}
+      {deriveError && <Text style={{ color: "#f87171", fontSize: 13 }}>{deriveError}</Text>}
       <TouchableOpacity
         style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}
         onPress={() => { Haptics.selectionAsync(); setConfirmed(!confirmed); }}
@@ -321,14 +328,19 @@ function ImportView({ onWalletReady }: { onWalletReady: (w: ConnectedWallet) => 
 
   const wordCount = input.trim().split(/\s+/).filter(Boolean).length;
 
-  const handleImport = () => {
+  const handleImport = async () => {
     const result = validateMnemonic(input);
     if (!result.valid) { setError(result.error ?? "Invalid phrase"); return; }
     setError(null);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    const addr = deriveAddress(result.words, network);
-    onWalletReady({ address: addr, provider: "aura-wallet", network });
-  };  return (
+    try {
+      const addr = await deriveAddress(result.words, network);
+      onWalletReady({ address: addr, provider: "aura-wallet", network });
+    } catch {
+      setError("Could not derive the wallet address. Check the selected network and try again.");
+    }
+  };
+  return (
     <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20, gap: 14, paddingBottom: 40 }}>
       <View>
         <Text style={styles.sectionLabel}>Network</Text>
