@@ -1,4 +1,5 @@
 import { Router, raw } from "express";
+import { ReplitConnectors } from "@replit/connectors-sdk";
 import { db, pool } from "@workspace/db";
 import { conversations, messages, platformSettingsTable } from "@workspace/db/schema";
 import {
@@ -32,10 +33,81 @@ router.use("/devai", requireAdminToken);
 const INTERNAL = `http://localhost:${process.env.PORT ?? 4000}`;
 const DEVAI_MODEL = devaiModel;
 const DEVAI_OLLAMA_SERVER_URL = devaiOllamaServerUrl;
-const GH_HEADERS = (token?: string) => ({
-  "User-Agent": "OrahDEX-DevAI/2.0",
-  ...(token ? { Authorization: `Bearer ${token}` } : {}),
-});
+const githubConnectors = new ReplitConnectors();
+
+type GitHubConnection = Awaited<ReturnType<ReplitConnectors["listConnections"]>>[number];
+type GitHubRequestOptions = {
+  connectionId?: string;
+  method?: string;
+  body?: unknown;
+};
+
+async function getGitHubConnection(): Promise<GitHubConnection> {
+  const connections = await githubConnectors.listConnections({
+    connector_names: "github",
+    refresh_policy: "none",
+  });
+  const connection = connections.find((item) =>
+    item.connector_name === "github" &&
+    (!item.status || ["healthy", "ready", "connected"].includes(item.status)),
+  );
+  if (!connection) {
+    throw new Error("GitHub is not connected. Connect the GitHub integration in Replit first.");
+  }
+  return connection;
+}
+
+async function githubRequest<T = any>(
+  apiPath: string,
+  options: GitHubRequestOptions = {},
+): Promise<T> {
+  const connectionId = options.connectionId ?? (await getGitHubConnection()).id;
+  const response = await githubConnectors.proxy("github", apiPath, {
+    connectionId,
+    method: options.method ?? "GET",
+    body: options.body,
+    headers: {
+      "User-Agent": "OrahDEX-DevAI/2.0",
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+  const raw = await response.text();
+  let payload: any = null;
+  if (raw) {
+    try { payload = JSON.parse(raw); }
+    catch { payload = raw; }
+  }
+  if (!response.ok) {
+    const error = new Error(
+      typeof payload?.message === "string"
+        ? payload.message
+        : `GitHub request failed with status ${response.status}.`,
+    ) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
+  }
+  return payload as T;
+}
+
+function encodeGitHubPath(value: string): string {
+  return value.split("/").filter(Boolean).map((part) => encodeURIComponent(part)).join("/");
+}
+
+function isValidGitHubRepo(value: string): boolean {
+  return /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value);
+}
+
+function getGitHubApiStatus(err: unknown): number {
+  const status = (err as { status?: unknown } | null)?.status;
+  return typeof status === "number" && status >= 400 && status <= 599 ? status : 502;
+}
+
+function routeParam(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
 const DEVAI_ROUTE_DIR = path.dirname(fileURLToPath(import.meta.url));
 const WORKSPACE_CANDIDATES = [
   process.env.DEVAI_WORKSPACE_ROOT,
@@ -421,17 +493,15 @@ function parseLocalTextToolCall(content: string) {
 // ── Tool implementations ───────────────────────────────────────────────────────
 
 async function toolReadGithubFile(args: { owner_repo: string; path: string; branch?: string }): Promise<string> {
-  const token = process.env.GITHUB_TOKEN;
+  if (!isValidGitHubRepo(args.owner_repo)) return "Invalid GitHub repository. Use owner/repository.";
+  if (args.path.split("/").some((part) => part === "." || part === "..")) return "Invalid GitHub file path.";
+  if (isCredentialLikeGitHubPath(args.path)) return "Access denied: credential-like files are not available to DevAI.";
+  const filePath = encodeGitHubPath(args.path);
   const qs = args.branch ? `?ref=${encodeURIComponent(args.branch)}` : "";
-  const url = `https://api.github.com/repos/${args.owner_repo}/contents/${args.path}${qs}`;
   try {
-    const r = await fetch(url, { headers: GH_HEADERS(token), signal: AbortSignal.timeout(12000) });
-    if (!r.ok) {
-      if (r.status === 404) return `File not found: ${args.owner_repo}/${args.path}`;
-      if (r.status === 401) return "GitHub authentication failed. Token may be invalid.";
-      return `GitHub API error: ${r.status} ${r.statusText}`;
-    }
-    const data = await r.json() as any;
+    const data = await githubRequest<any>(
+      `/repos/${args.owner_repo}/contents/${filePath}${qs}`,
+    );
     if (data.encoding === "base64" && data.content) {
       const content = Buffer.from(data.content.replace(/\n/g, ""), "base64").toString("utf-8");
       if (content.length > 12000) return content.slice(0, 12000) + "\n\n[...truncated at 12000 chars]";
@@ -440,28 +510,28 @@ async function toolReadGithubFile(args: { owner_repo: string; path: string; bran
     if (Array.isArray(data)) return "This is a directory. Use list_github_repo to browse it.";
     return JSON.stringify(data).slice(0, 4000);
   } catch (err: any) {
-    return `Error reading file: ${err?.message ?? "Network error"}`;
+    return `Error reading GitHub file: ${err?.message ?? "GitHub connection unavailable."}`;
   }
 }
 
 async function toolListGithubRepo(args: { owner_repo: string; path?: string }): Promise<string> {
-  const token = process.env.GITHUB_TOKEN;
-  const path = args.path ? `/${args.path.replace(/^\//, "")}` : "";
-  const url = `https://api.github.com/repos/${args.owner_repo}/contents${path}`;
+  if (!isValidGitHubRepo(args.owner_repo)) return "Invalid GitHub repository. Use owner/repository.";
+  const relativePath = args.path?.replace(/^\/+|\/+$/g, "") ?? "";
+  if (relativePath.split("/").some((part) => part === "." || part === "..")) return "Invalid GitHub directory path.";
+  if (isCredentialLikeGitHubPath(relativePath)) return "Access denied: credential-like paths are not available to DevAI.";
+  const encodedPath = relativePath ? `/${encodeGitHubPath(relativePath)}` : "";
   try {
-    const r = await fetch(url, { headers: GH_HEADERS(token), signal: AbortSignal.timeout(10000) });
-    if (!r.ok) {
-      if (r.status === 404) return `Repo or path not found: ${args.owner_repo}${path}`;
-      return `GitHub API error: ${r.status} ${r.statusText}`;
-    }
-    const data = await r.json() as any[];
+    const data = await githubRequest<any[]>(
+      `/repos/${args.owner_repo}/contents${encodedPath}`,
+    );
     if (!Array.isArray(data)) return "This is a file, not a directory. Use read_github_file to read it.";
     return data
+      .filter((entry) => !isCredentialLikeGitHubPath(relativePath ? `${relativePath}/${entry.name}` : entry.name))
       .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1))
       .map(f => `${f.type === "dir" ? "DIR " : "    "} ${f.name}${f.type !== "dir" ? ` (${(f.size ?? 0).toLocaleString()} bytes)` : "/"}`)
       .join("\n");
   } catch (err: any) {
-    return `Error listing repo: ${err?.message ?? "Network error"}`;
+    return `Error listing GitHub repository: ${err?.message ?? "GitHub connection unavailable."}`;
   }
 }
 
@@ -639,11 +709,20 @@ function execAsync(cmd: string, cwd: string, timeout: number): Promise<{ stdout:
   });
 }
 
-const DEVAI_EDIT_ROOTS = ["artifacts/bsv-dex/src/", "artifacts/api-server/src/", "lib/"];
-const DEVAI_EDIT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css", ".html", ".svg", ".json"]);
+const DEVAI_EDIT_DIR_ROOTS = ["artifacts/", "contracts/", "lib/", "src/", "scripts/", "docs/"];
+const DEVAI_EDIT_ROOT_FILES = new Set([
+  "package.json", "pnpm-workspace.yaml", "tsconfig.json", "tsconfig.base.json",
+  "turbo.json", "README.md",
+]);
+const DEVAI_EDIT_EXTENSIONS = new Set([
+  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css", ".html", ".svg",
+  ".json", ".md", ".sol", ".rs", ".py", ".go", ".java", ".kt", ".sh",
+  ".toml", ".yaml", ".yml", ".sql", ".xml",
+]);
 const DEVAI_BLOCKED_READ_DIRS = new Set([
   ".git", ".ollama", ".ssh", ".cache", ".config", ".local", ".agents",
   "node_modules", "attached_assets", "backups", "screenshots", "generated-artifacts",
+  "dist", "build", ".turbo", ".next", ".vite",
 ]);
 const DEVAI_SEARCH_ROOTS = ["artifacts", "contracts", "lib", "src", "scripts", "docs"];
 const DEVAI_SEARCH_EXTENSIONS = new Set([
@@ -662,6 +741,16 @@ function isDevAiBlockedReadPath(relativePath: string): boolean {
     || /(?:secret|credential|private[-_]?key)/i.test(fileName)
     || /^(?:id_rsa|id_ed25519)(?:\.|$)/i.test(fileName)
     || /\.(?:pem|key|p12|pfx|jks|keystore)$/i.test(fileName);
+}
+
+function isCredentialLikeGitHubPath(relativePath: string): boolean {
+  const parts = relativePath.split("/").filter(Boolean);
+  return parts.some((part) =>
+    /^\.env(?:\.|$)/i.test(part) ||
+    /(?:secret|credential|private[-_]?key)/i.test(part) ||
+    /^(?:id_rsa|id_ed25519)(?:\.|$)/i.test(part) ||
+    /\.(?:pem|key|p12|pfx|jks|keystore)$/i.test(part),
+  );
 }
 
 function resolveWorkspaceReadPath(input: string): string {
@@ -704,8 +793,13 @@ function validateDevAiEditPath(filePath: string): string {
   if (normalized.startsWith("../") || normalized === ".." || normalized.startsWith(".")) {
     throw new Error("Path is outside the editable source directories.");
   }
-  if (!DEVAI_EDIT_ROOTS.some((root) => normalized.startsWith(root))) {
-    throw new Error("Only source files under artifacts/bsv-dex/src, artifacts/api-server/src, and lib can be proposed.");
+  const allowedRoot = DEVAI_EDIT_DIR_ROOTS.some((root) => normalized.startsWith(root))
+    || DEVAI_EDIT_ROOT_FILES.has(normalized);
+  if (!allowedRoot) {
+    throw new Error("Only project source files and the approved root configuration files can be proposed.");
+  }
+  if (isDevAiBlockedReadPath(normalized)) {
+    throw new Error("Hidden and credential paths are not available to DevAI.");
   }
   if (!DEVAI_EDIT_EXTENSIONS.has(path.extname(normalized).toLowerCase())) {
     throw new Error("This file type cannot be proposed.");
@@ -717,44 +811,80 @@ function validateDevAiEditPath(filePath: string): string {
   return resolved;
 }
 
+function validateDevAiWorkspacePath(input: string): { relativePath: string; absolutePath: string } {
+  if (input.includes("\\") || path.isAbsolute(input)) {
+    throw new Error("Use a relative project path.");
+  }
+  const normalized = input === "" || input === "." ? "" : path.posix.normalize(input);
+  if (normalized === ".." || normalized.startsWith("../") || normalized.startsWith("./")) {
+    throw new Error("Path is outside the project source directories.");
+  }
+  if (normalized && !DEVAI_EDIT_DIR_ROOTS.some((root) =>
+    normalized.startsWith(root.replace(/\/$/, "")) &&
+    (normalized === root.replace(/\/$/, "") || normalized.startsWith(root)),
+  )) {
+    throw new Error("Only project source directories are available in this workspace.");
+  }
+  if (normalized && isDevAiBlockedReadPath(normalized)) {
+    throw new Error("Hidden and credential paths are not available to DevAI.");
+  }
+  const absolutePath = normalized ? path.resolve(WORKSPACE_ROOT, normalized) : WORKSPACE_ROOT;
+  const relative = path.relative(WORKSPACE_ROOT, absolutePath);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error("Path is outside the workspace.");
+  }
+  return { relativePath: normalized, absolutePath };
+}
+
+async function createDevAiChangeProposal(args: {
+  path: string;
+  content: string;
+  description?: string;
+}) {
+  if (typeof args.content !== "string" || args.content.length > 500_000) {
+    throw new Error("Content must be text and no larger than 500 KB.");
+  }
+  const safePath = validateDevAiEditPath(args.path);
+  const { realPath: parentReal, stat: parentStat } = await assertSafeWorkspaceReadPath(path.dirname(safePath));
+  if (!parentStat.isDirectory()) throw new Error("The source file's parent must be a project directory.");
+  const parentRelative = path.relative(await fs.realpath(WORKSPACE_ROOT), parentReal);
+  if (parentRelative.startsWith("..") || path.isAbsolute(parentRelative)) {
+    throw new Error("Target resolves outside the workspace.");
+  }
+
+  let originalContent: string | null = null;
+  try {
+    const { realPath, stat } = await assertSafeWorkspaceReadPath(safePath);
+    if (!stat.isFile()) throw new Error("Target must be a regular source file.");
+    if (stat.size > 1_000_000) throw new Error("Existing source file is too large to edit safely.");
+    originalContent = await fs.readFile(realPath, "utf-8");
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") throw err;
+  }
+
+  const id = randomUUID();
+  const proposal = {
+    id,
+    path: path.relative(WORKSPACE_ROOT, safePath).split(path.sep).join("/"),
+    description: String(args.description ?? "").slice(0, 500),
+    content: args.content,
+    originalContent,
+    originalHash: originalContent === null ? null : sha256(originalContent),
+    status: "pending" as const,
+    createdAt: new Date().toISOString(),
+  };
+  await db.insert(platformSettingsTable).values({
+    key: `${DEVAI_CHANGE_PREFIX}${id}`,
+    value: JSON.stringify(proposal),
+    updatedAt: new Date(),
+  });
+  return proposal;
+}
+
 async function toolWriteProjectFile(args: { path: string; content: string; description?: string }): Promise<string> {
   try {
-    if (typeof args.content !== "string" || args.content.length > 500_000) {
-      return "Proposal rejected: content must be text and no larger than 500 KB.";
-    }
-    const safePath = validateDevAiEditPath(args.path);
-    const workspaceReal = await fs.realpath(WORKSPACE_ROOT);
-    const parentReal = await fs.realpath(path.dirname(safePath));
-    const parentRelative = path.relative(workspaceReal, parentReal);
-    if (parentRelative.startsWith("..") || path.isAbsolute(parentRelative)) {
-      return "Proposal rejected: target resolves outside the workspace.";
-    }
-    let originalContent: string | null = null;
-    try {
-      const stat = await fs.lstat(safePath);
-      if (!stat.isFile() || stat.isSymbolicLink()) return "Proposal rejected: target must be a regular source file.";
-      originalContent = await fs.readFile(safePath, "utf-8");
-    } catch (err: any) {
-      if (err?.code !== "ENOENT") throw err;
-    }
-
-    const id = randomUUID();
-    const proposal = {
-      id,
-      path: path.relative(WORKSPACE_ROOT, safePath).split(path.sep).join("/"),
-      description: String(args.description ?? "").slice(0, 500),
-      content: args.content,
-      originalContent,
-      originalHash: originalContent === null ? null : sha256(originalContent),
-      status: "pending",
-      createdAt: new Date().toISOString(),
-    };
-    await db.insert(platformSettingsTable).values({
-      key: `${DEVAI_CHANGE_PREFIX}${id}`,
-      value: JSON.stringify(proposal),
-      updatedAt: new Date(),
-    });
-    return `Change staged for admin review. Proposal ${id}; file ${proposal.path}. The file has not been changed.`;
+    const proposal = await createDevAiChangeProposal(args);
+    return `Change staged for admin review. Proposal ${proposal.id}; file ${proposal.path}. The file has not been changed.`;
   } catch (err: any) {
     return `Could not stage change: ${err?.message ?? "Unknown error"}`;
   }
@@ -1052,6 +1182,9 @@ async function getChangeProposal(id: string) {
     originalHash: string | null;
     status: "pending" | "approved" | "rejected";
     createdAt: string;
+    githubPrUrl?: string;
+    githubPrNumber?: number;
+    githubPrBranch?: string;
   };
 }
 
@@ -1339,6 +1472,103 @@ router.post("/admin/devai/model/pull", requireAdminToken, async (_req, res) => {
 });
 
 // ── Admin-reviewed source change proposals ─────────────────────────────────────
+router.get("/admin/devai/workspace/tree", requireAdminToken, async (req, res) => {
+  try {
+    const requestedPath = typeof req.query.path === "string" ? req.query.path : "";
+    const { relativePath, absolutePath } = validateDevAiWorkspacePath(requestedPath);
+    if (!relativePath) {
+      const rootEntries = DEVAI_EDIT_DIR_ROOTS
+        .map((root) => root.replace(/\/$/, ""))
+        .filter((projectPath) => existsSync(path.join(WORKSPACE_ROOT, projectPath)))
+        .map((projectPath) => ({
+          name: projectPath,
+          path: projectPath,
+          kind: "directory" as const,
+          size: null,
+        }));
+      const rootFiles = await Promise.all([...DEVAI_EDIT_ROOT_FILES]
+        .filter((projectPath) => existsSync(path.join(WORKSPACE_ROOT, projectPath)))
+        .map(async (projectPath) => {
+          const stat = await fs.stat(path.join(WORKSPACE_ROOT, projectPath));
+          return { name: projectPath, path: projectPath, kind: "file" as const, size: stat.size };
+        }));
+      res.json({
+        path: "",
+        entries: [...rootEntries, ...rootFiles].sort((a, b) => a.name.localeCompare(b.name)),
+      });
+      return;
+    }
+
+    const { realPath, stat } = await assertSafeWorkspaceReadPath(absolutePath);
+    if (!stat.isDirectory()) {
+      res.status(400).json({ error: "The selected project path is not a directory." });
+      return;
+    }
+    const dirents = await fs.readdir(realPath, { withFileTypes: true });
+    const entries = await Promise.all(dirents.map(async (entry) => {
+      if (entry.isSymbolicLink() || entry.name.startsWith(".")) return null;
+      const childRelative = path.posix.join(relativePath, entry.name);
+      if (isDevAiBlockedReadPath(childRelative)) return null;
+      const childPath = path.join(realPath, entry.name);
+      if (entry.isDirectory()) {
+        return { name: entry.name, path: childRelative, kind: "directory" as const, size: null };
+      }
+      if (!entry.isFile() || !DEVAI_EDIT_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) return null;
+      const childStat = await fs.stat(childPath);
+      if (childStat.size > 1_000_000) return null;
+      return { name: entry.name, path: childRelative, kind: "file" as const, size: childStat.size };
+    }));
+    res.json({
+      path: relativePath,
+      entries: entries.filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+        .sort((a, b) => {
+          if (a.kind !== b.kind) return a.kind === "directory" ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        }),
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message ?? "Could not list project files." });
+  }
+});
+
+router.get("/admin/devai/workspace/file", requireAdminToken, async (req, res) => {
+  try {
+    const requestedPath = typeof req.query.path === "string" ? req.query.path : "";
+    const safePath = validateDevAiEditPath(requestedPath);
+    const { realPath, stat } = await assertSafeWorkspaceReadPath(safePath);
+    if (!stat.isFile()) {
+      res.status(400).json({ error: "The selected project path is not a file." });
+      return;
+    }
+    if (stat.size > 1_000_000) {
+      res.status(413).json({ error: "Files larger than 1 MB cannot be opened in the editor." });
+      return;
+    }
+    const content = await fs.readFile(realPath, "utf-8");
+    res.json({
+      path: path.relative(WORKSPACE_ROOT, realPath).split(path.sep).join("/"),
+      content,
+      sha256: sha256(content),
+    });
+  } catch (err: any) {
+    const status = err?.code === "ENOENT" ? 404 : 400;
+    res.status(status).json({ error: err?.message ?? "Could not read project file." });
+  }
+});
+
+router.post("/admin/devai/change-proposals", requireAdminToken, async (req, res) => {
+  try {
+    const proposal = await createDevAiChangeProposal({
+      path: String(req.body?.path ?? ""),
+      content: req.body?.content,
+      description: typeof req.body?.description === "string" ? req.body.description : "",
+    });
+    res.status(201).json({ ok: true, proposalId: proposal.id });
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message ?? "Could not stage the change proposal." });
+  }
+});
+
 router.get("/admin/devai/change-proposals", requireAdminToken, async (_req, res) => {
   try {
     const rows = await db.select().from(platformSettingsTable)
@@ -1371,7 +1601,11 @@ router.post("/admin/devai/change-proposals/:id/approve", requireAdminToken, asyn
     catch (err: any) { res.status(400).json({ error: err?.message ?? "Invalid proposal path." }); return; }
 
     const workspaceReal = await fs.realpath(WORKSPACE_ROOT);
-    const parentReal = await fs.realpath(path.dirname(safePath));
+    const { realPath: parentReal, stat: parentStat } = await assertSafeWorkspaceReadPath(path.dirname(safePath));
+    if (!parentStat.isDirectory()) {
+      res.status(400).json({ error: "Proposal parent is not a regular project directory." });
+      return;
+    }
     const parentRelative = path.relative(workspaceReal, parentReal);
     if (parentRelative.startsWith("..") || path.isAbsolute(parentRelative)) {
       res.status(400).json({ error: "Proposal target resolves outside the workspace." });
@@ -1380,12 +1614,12 @@ router.post("/admin/devai/change-proposals/:id/approve", requireAdminToken, asyn
 
     let currentContent: string | null = null;
     try {
-      const stat = await fs.lstat(safePath);
-      if (!stat.isFile() || stat.isSymbolicLink()) {
+      const { realPath, stat } = await assertSafeWorkspaceReadPath(safePath);
+      if (!stat.isFile()) {
         res.status(400).json({ error: "Proposal target is not a regular file." });
         return;
       }
-      currentContent = await fs.readFile(safePath, "utf-8");
+      currentContent = await fs.readFile(realPath, "utf-8");
     } catch (err: any) {
       if (err?.code !== "ENOENT") throw err;
     }
@@ -1427,26 +1661,321 @@ router.post("/admin/devai/change-proposals/:id/reject", requireAdminToken, async
   }
 });
 
-// ── GET /admin/devai/github ────────────────────────────────────────────────────
+// ── GitHub browsing and review-gated draft PRs ─────────────────────────────────
 router.get("/admin/devai/github", requireAdminToken, async (_req, res) => {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) { res.json({ connected: false, repos: [] }); return; }
   try {
-    const [userRes, reposRes] = await Promise.all([
-      fetch("https://api.github.com/user", { headers: GH_HEADERS(token) }),
-      fetch("https://api.github.com/user/repos?per_page=30&sort=updated", { headers: GH_HEADERS(token) }),
+    const connection = await getGitHubConnection();
+    const [user, repositories] = await Promise.all([
+      githubRequest<any>("/user", { connectionId: connection.id }),
+      githubRequest<any[]>("/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member", {
+        connectionId: connection.id,
+      }),
     ]);
-    if (!userRes.ok) { res.json({ connected: false, repos: [], error: "Invalid token" }); return; }
-    const user = await userRes.json() as { login: string };
-    const repos = reposRes.ok
-      ? (await reposRes.json() as any[]).map((r: any) => ({
-          name: r.name, full_name: r.full_name, private: r.private,
-          language: r.language ?? null, updated_at: r.updated_at,
-        }))
-      : [];
-    res.json({ connected: true, login: user.login, repos });
+    res.json({
+      connected: true,
+      login: user.login,
+      repos: repositories.map((repo) => ({
+        name: repo.name,
+        full_name: repo.full_name,
+        private: Boolean(repo.private),
+        default_branch: repo.default_branch,
+        language: repo.language ?? null,
+        updated_at: repo.updated_at,
+      })),
+    });
   } catch (err: any) {
-    res.json({ connected: false, repos: [], error: err?.message ?? "Network error" });
+    res.status(getGitHubApiStatus(err)).json({
+      connected: false,
+      repos: [],
+      error: err?.message ?? "GitHub integration is unavailable.",
+    });
+  }
+});
+
+router.get("/admin/devai/github/repos/:owner/:repo/branches", requireAdminToken, async (req, res) => {
+  const owner = routeParam(req.params.owner);
+  const repo = routeParam(req.params.repo);
+  if (!/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo)) {
+    res.status(400).json({ error: "Invalid repository path." });
+    return;
+  }
+  try {
+    const connection = await getGitHubConnection();
+    const repoPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+    const [metadata, branches] = await Promise.all([
+      githubRequest<any>(repoPath, { connectionId: connection.id }),
+      githubRequest<any[]>(`${repoPath}/branches?per_page=100`, { connectionId: connection.id }),
+    ]);
+    res.json({
+      defaultBranch: metadata.default_branch,
+      branches: branches.map((branch) => ({
+        name: branch.name,
+        protected: Boolean(branch.protected),
+      })),
+    });
+  } catch (err: any) {
+    res.status(getGitHubApiStatus(err)).json({ error: err?.message ?? "Could not load GitHub branches." });
+  }
+});
+
+router.get("/admin/devai/github/repos/:owner/:repo/tree", requireAdminToken, async (req, res) => {
+  const owner = routeParam(req.params.owner);
+  const repo = routeParam(req.params.repo);
+  const ref = typeof req.query.ref === "string" ? req.query.ref : "";
+  const requestedPath = typeof req.query.path === "string" ? req.query.path : "";
+  if (!/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo) || !ref) {
+    res.status(400).json({ error: "Select a valid GitHub repository and branch." });
+    return;
+  }
+  if (
+    requestedPath.includes("\\") ||
+    path.posix.isAbsolute(requestedPath) ||
+    requestedPath.split("/").some((part) => part === "." || part === "..")
+  ) {
+    res.status(400).json({ error: "Invalid GitHub directory path." });
+    return;
+  }
+  try {
+    const connection = await getGitHubConnection();
+    const repoPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents`;
+    const filePath = requestedPath ? `/${encodeGitHubPath(requestedPath)}` : "";
+    const data = await githubRequest<any>(
+      `${repoPath}${filePath}?ref=${encodeURIComponent(ref)}`,
+      { connectionId: connection.id },
+    );
+    if (!Array.isArray(data)) {
+      res.status(400).json({ error: "The selected GitHub path is a file, not a directory." });
+      return;
+    }
+    const entries = data
+      .filter((entry) =>
+        !isCredentialLikeGitHubPath(requestedPath ? `${requestedPath}/${entry.name}` : entry.name) &&
+        (entry.type === "dir" || (entry.type === "file" && DEVAI_EDIT_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))),
+      )
+      .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1))
+      .map((entry) => ({
+        name: entry.name,
+        path: requestedPath ? `${requestedPath.replace(/\/+$/, "")}/${entry.name}` : entry.name,
+        type: entry.type === "dir" ? "dir" as const : "file" as const,
+        size: typeof entry.size === "number" ? entry.size : null,
+      }));
+    res.json({ ref, path: requestedPath, entries });
+  } catch (err: any) {
+    res.status(getGitHubApiStatus(err)).json({ error: err?.message ?? "Could not list GitHub files." });
+  }
+});
+
+router.get("/admin/devai/github/repos/:owner/:repo/file", requireAdminToken, async (req, res) => {
+  const owner = routeParam(req.params.owner);
+  const repo = routeParam(req.params.repo);
+  const ref = typeof req.query.ref === "string" ? req.query.ref : "";
+  const requestedPath = typeof req.query.path === "string" ? req.query.path : "";
+  if (!/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo) || !ref || !requestedPath) {
+    res.status(400).json({ error: "Select a valid GitHub file and branch." });
+    return;
+  }
+  if (
+    requestedPath.includes("\\") ||
+    path.posix.isAbsolute(requestedPath) ||
+    requestedPath.split("/").some((part) => part === "." || part === "..")
+  ) {
+    res.status(400).json({ error: "Invalid GitHub file path." });
+    return;
+  }
+  if (isCredentialLikeGitHubPath(requestedPath)) {
+    res.status(403).json({ error: "Credential-like GitHub files are not available to DevAI." });
+    return;
+  }
+  try {
+    const connection = await getGitHubConnection();
+    const repoPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents/${encodeGitHubPath(requestedPath)}`;
+    const data = await githubRequest<any>(
+      `${repoPath}?ref=${encodeURIComponent(ref)}`,
+      { connectionId: connection.id },
+    );
+    if (Array.isArray(data) || data.type !== "file" || data.encoding !== "base64") {
+      res.status(400).json({ error: "The selected GitHub item is not a supported text file." });
+      return;
+    }
+    if ((data.size ?? 0) > 1_000_000) {
+      res.status(413).json({ error: "Files larger than 1 MB cannot be opened in the editor." });
+      return;
+    }
+    const content = Buffer.from(String(data.content ?? "").replace(/\n/g, ""), "base64").toString("utf-8");
+    res.json({ path: requestedPath, ref, content });
+  } catch (err: any) {
+    res.status(getGitHubApiStatus(err)).json({ error: err?.message ?? "Could not read the GitHub file." });
+  }
+});
+
+router.post("/admin/devai/github/pull-requests", requireAdminToken, async (req, res) => {
+  const ownerRepo = String(req.body?.owner_repo ?? "");
+  const base = String(req.body?.base ?? "").trim();
+  const proposalIds = Array.isArray(req.body?.proposalIds)
+    ? req.body.proposalIds.map((id: unknown) => String(id))
+    : [];
+  const title = String(req.body?.title ?? "").trim();
+  const body = String(req.body?.body ?? "").trim();
+  if (!isValidGitHubRepo(ownerRepo) || !base || base.length > 200 || !/^[A-Za-z0-9_.\/-]+$/.test(base)) {
+    res.status(400).json({ error: "Select a valid repository and base branch." });
+    return;
+  }
+  if (base.split("/").some((part) => part === "." || part === "..")) {
+    res.status(400).json({ error: "Invalid base branch name." });
+    return;
+  }
+  if (proposalIds.length < 1 || proposalIds.length > 10 || new Set(proposalIds).size !== proposalIds.length) {
+    res.status(400).json({ error: "Select between 1 and 10 distinct change proposals." });
+    return;
+  }
+  if (!title || title.length > 120 || body.length > 5_000) {
+    res.status(400).json({ error: "The pull request title is required (up to 120 characters); the description is limited to 5,000 characters." });
+    return;
+  }
+
+  try {
+    const connection = await getGitHubConnection();
+    const [owner, repo] = ownerRepo.split("/");
+    const repoPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+    const repository = await githubRequest<any>(repoPath, { connectionId: connection.id });
+    if (repository.permissions?.push === false) {
+      res.status(403).json({ error: "The connected GitHub account does not have write access to this repository." });
+      return;
+    }
+
+    const proposals = [];
+    for (const id of proposalIds) {
+      const proposal = await getChangeProposal(id);
+      if (!proposal || proposal.status !== "pending") {
+        res.status(409).json({ error: "Only pending change proposals can be published. Review the proposal list and try again." });
+        return;
+      }
+      if (proposal.githubPrUrl) {
+        res.status(409).json({ error: `Proposal ${id} already has a GitHub pull request.` });
+        return;
+      }
+      let safePath: string;
+      try { safePath = validateDevAiEditPath(proposal.path); }
+      catch (err: any) {
+        res.status(400).json({ error: err?.message ?? "A proposal contains an invalid project path." });
+        return;
+      }
+      const { realPath: parentReal, stat: parentStat } = await assertSafeWorkspaceReadPath(path.dirname(safePath));
+      if (!parentStat.isDirectory()) {
+        res.status(409).json({ error: `The parent folder for ${proposal.path} is no longer available.` });
+        return;
+      }
+      const parentRelative = path.relative(await fs.realpath(WORKSPACE_ROOT), parentReal);
+      if (parentRelative.startsWith("..") || path.isAbsolute(parentRelative)) {
+        res.status(400).json({ error: `The proposal path ${proposal.path} resolves outside the project.` });
+        return;
+      }
+      let currentContent: string | null = null;
+      try {
+        const { realPath, stat } = await assertSafeWorkspaceReadPath(safePath);
+        if (!stat.isFile()) {
+          res.status(400).json({ error: `${proposal.path} is not a regular project file.` });
+          return;
+        }
+        currentContent = await fs.readFile(realPath, "utf-8");
+      } catch (err: any) {
+        if (err?.code !== "ENOENT") throw err;
+      }
+      if (proposal.originalHash === null ? currentContent !== null : currentContent === null || sha256(currentContent) !== proposal.originalHash) {
+        res.status(409).json({ error: `${proposal.path} changed after the proposal was created. Create a fresh proposal before publishing.` });
+        return;
+      }
+
+      const encodedPath = encodeGitHubPath(proposal.path);
+      let remoteContent: string | null = null;
+      try {
+        const remoteFile = await githubRequest<any>(
+          `${repoPath}/contents/${encodedPath}?ref=${encodeURIComponent(base)}`,
+          { connectionId: connection.id },
+        );
+        if (Array.isArray(remoteFile) || remoteFile.type !== "file" || remoteFile.encoding !== "base64") {
+          res.status(409).json({ error: `GitHub's ${base} branch has a non-file entry at ${proposal.path}.` });
+          return;
+        }
+        remoteContent = Buffer.from(String(remoteFile.content ?? "").replace(/\n/g, ""), "base64").toString("utf-8");
+      } catch (err: any) {
+        if (err?.status !== 404) throw err;
+      }
+      if (proposal.originalHash === null ? remoteContent !== null : remoteContent === null || sha256(remoteContent) !== proposal.originalHash) {
+        res.status(409).json({ error: `${proposal.path} differs from GitHub's ${base} branch. Review the remote version and create a fresh proposal.` });
+        return;
+      }
+      proposals.push(proposal);
+    }
+
+    if (new Set(proposals.map((proposal) => proposal.path)).size !== proposals.length) {
+      res.status(400).json({ error: "Each proposal in a pull request must target a different file." });
+      return;
+    }
+
+    const baseRef = await githubRequest<any>(
+      `${repoPath}/git/ref/heads/${encodeURIComponent(base)}`,
+      { connectionId: connection.id },
+    );
+    const baseCommit = await githubRequest<any>(
+      `${repoPath}/git/commits/${encodeURIComponent(baseRef.object.sha)}`,
+      { connectionId: connection.id },
+    );
+    const treeEntries = [];
+    for (const proposal of proposals) {
+      const blob = await githubRequest<any>(`${repoPath}/git/blobs`, {
+        connectionId: connection.id,
+        method: "POST",
+        body: { content: proposal.content, encoding: "utf-8" },
+      });
+      treeEntries.push({
+        path: proposal.path,
+        mode: "100644",
+        type: "blob",
+        sha: blob.sha,
+      });
+    }
+    const tree = await githubRequest<any>(`${repoPath}/git/trees`, {
+      connectionId: connection.id,
+      method: "POST",
+      body: { base_tree: baseCommit.tree.sha, tree: treeEntries },
+    });
+    const commit = await githubRequest<any>(`${repoPath}/git/commits`, {
+      connectionId: connection.id,
+      method: "POST",
+      body: { message: title, tree: tree.sha, parents: [baseRef.object.sha] },
+    });
+    const headBranch = `orahdex/devai-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
+    await githubRequest<any>(`${repoPath}/git/refs`, {
+      connectionId: connection.id,
+      method: "POST",
+      body: { ref: `refs/heads/${headBranch}`, sha: commit.sha },
+    });
+    const pullRequest = await githubRequest<any>(`${repoPath}/pulls`, {
+      connectionId: connection.id,
+      method: "POST",
+      body: {
+        title,
+        head: headBranch,
+        base,
+        body: body || `Draft pull request created from ${proposals.length} admin-reviewed OrahDEX DevAI change proposal(s). Review and merge this pull request before publishing the app.`,
+        draft: true,
+      },
+    });
+
+    for (const proposal of proposals) {
+      proposal.githubPrUrl = pullRequest.html_url;
+      proposal.githubPrNumber = pullRequest.number;
+      proposal.githubPrBranch = headBranch;
+      await persistChangeProposal(proposal);
+    }
+    res.status(201).json({ url: pullRequest.html_url, number: pullRequest.number, branch: headBranch });
+  } catch (err: any) {
+    logger.error({ err: err?.message }, "DevAI: failed to create a GitHub draft pull request");
+    res.status(getGitHubApiStatus(err)).json({
+      error: err?.message ?? "Could not create the GitHub draft pull request.",
+      note: "If GitHub created the branch before reporting this error, inspect it before retrying.",
+    });
   }
 });
 
