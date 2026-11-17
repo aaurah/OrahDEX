@@ -10,7 +10,7 @@ import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
 import { invalidateSzKeyCache } from "../lib/swapzone.js";
 import { invalidateLetsExchangeCredentialCache } from "../lib/lePriceCache.js";
-import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte } from "drizzle-orm";
+import { eq, desc, and, sql, ne, isNotNull, or, like, ilike, sum, gte, gt } from "drizzle-orm";
 import { getOrCreateWallet, fetchWalletBalance, privKeyToWif, privKeyToAddress, privKeyToPubKey, buildAndBroadcastBsvTx, isBsvAddress } from "../lib/bsvWallet.js";
 import { getEvmHotWalletAddress, getOrCreateEvmHotWallet } from "../lib/exchangeHotWallet.js";
 import { decrypt as decryptEvmKey } from "../lib/internalEvmWallet.js";
@@ -3776,91 +3776,164 @@ router.get("/overlay/stats", requireAdminToken, async (_req, res) => {
 });
 
 // ── GET /api/admin/profits ────────────────────────────────────────────────────
-// Unified platform profit dashboard — all revenue streams in one response.
-router.get("/profits", requireAdminToken, async (_req, res) => {
+// Revenue stays grouped by its actual asset; bridge commissions are estimates,
+// not recorded fees.
+router.get("/profits", requireAdminToken, async (req, res) => {
   try {
-    const leSwaps = leSwapsTable;
-    const TREASURY = "EXCHANGE_TREASURY";
-
-    function since(days: number) {
-      const d = new Date();
-      d.setDate(d.getDate() - days);
-      return d;
+    const period = typeof req.query.period === "string" ? req.query.period : "30d";
+    const periodDays: Record<string, number | null> = { "24h": 1, "7d": 7, "30d": 30, all: null };
+    if (!(period in periodDays)) {
+      res.status(400).json({ error: "Invalid period" });
+      return;
+    }
+    const source = typeof req.query.source === "string" ? req.query.source : "all";
+    const asset = typeof req.query.asset === "string" ? req.query.asset.trim().toUpperCase() : "all";
+    const periodStart = periodDays[period] === null
+      ? null
+      : new Date(Date.now() - periodDays[period]! * 24 * 60 * 60 * 1000);
+    const feeConditions = [eq(keeperEarningsTable.walletAddress, "EXCHANGE_TREASURY")];
+    const tradeConditions = [gt(tradesTable.fee, "0")];
+    if (periodStart) {
+      feeConditions.push(gte(keeperEarningsTable.earnedAt, periodStart));
+      tradeConditions.push(gte(tradesTable.timestamp, periodStart));
+    }
+    if (asset !== "ALL") {
+      feeConditions.push(eq(keeperEarningsTable.asset, asset));
+      tradeConditions.push(eq(tradesTable.feeAsset, asset));
+    }
+    if (source === "historical_trade" || source === "bridge") {
+      feeConditions.push(eq(keeperEarningsTable.source, "__no_match__"));
+    } else if (source !== "all") {
+      feeConditions.push(eq(keeperEarningsTable.source, source));
+    } else if (source === "all") {
+      // This source is an affiliate estimate, not realized treasury revenue.
+      feeConditions.push(ne(keeperEarningsTable.source, "bridge"));
+    }
+    if (source === "bridge" || (source !== "all" && source !== "historical_trade")) {
+      tradeConditions.push(eq(tradesTable.id, "__no_match__"));
     }
 
-    async function feesByPeriod(since: Date) {
-      const rows = await db
-        .select({ source: keeperEarningsTable.source, total: sum(keeperEarningsTable.amount) })
-        .from(keeperEarningsTable)
-        .where(and(eq(keeperEarningsTable.walletAddress, TREASURY), gte(keeperEarningsTable.earnedAt, since)))
-        .groupBy(keeperEarningsTable.source);
-      return Object.fromEntries(rows.map(r => [r.source, parseFloat(r.total ?? "0")]));
-    }
-
-    const ALL_SOURCES = ["orderbook", "swap", "bridge", "p2p", "lp_spread", "copy_trade", "withdrawal", "buy"] as const;
-
-    const [f24h, f7d, f30d, fall] = await Promise.all([
-      feesByPeriod(since(1)),
-      feesByPeriod(since(7)),
-      feesByPeriod(since(30)),
-      feesByPeriod(new Date(0)),
+    const feeWhere = and(...feeConditions);
+    const tradeWhere = and(...tradeConditions);
+    const day = sql<Date>`date_trunc('day', ${keeperEarningsTable.earnedAt})`;
+    const tradeDay = sql<Date>`date_trunc('day', ${tradesTable.timestamp})`;
+    const [
+      feeTotals,
+      tradeTotals,
+      feeRows,
+      tradeRows,
+      feeTrend,
+      tradeTrend,
+      feeAssets,
+      tradeAssets,
+      leStats,
+    ] = await Promise.all([
+      db.select({
+        source: keeperEarningsTable.source,
+        asset: keeperEarningsTable.asset,
+        amount: sum(keeperEarningsTable.amount),
+      }).from(keeperEarningsTable).where(feeWhere)
+        .groupBy(keeperEarningsTable.source, keeperEarningsTable.asset),
+      db.select({
+        source: sql<string>`'historical_trade'`,
+        asset: tradesTable.feeAsset,
+        amount: sum(tradesTable.fee),
+      }).from(tradesTable).where(tradeWhere).groupBy(tradesTable.feeAsset),
+      source === "historical_trade" ? Promise.resolve([]) : db.select({
+        id: keeperEarningsTable.id,
+        date: keeperEarningsTable.earnedAt,
+        source: keeperEarningsTable.source,
+        asset: keeperEarningsTable.asset,
+        amount: keeperEarningsTable.amount,
+        reference: keeperEarningsTable.txRef,
+      }).from(keeperEarningsTable).where(feeWhere)
+        .orderBy(desc(keeperEarningsTable.earnedAt)).limit(501),
+      source !== "all" && source !== "historical_trade" ? Promise.resolve([]) : db.select({
+        id: tradesTable.id,
+        date: tradesTable.timestamp,
+        asset: tradesTable.feeAsset,
+        amount: tradesTable.fee,
+        reference: tradesTable.txid,
+      }).from(tradesTable).where(tradeWhere)
+        .orderBy(desc(tradesTable.timestamp)).limit(501),
+      source === "historical_trade" ? Promise.resolve([]) : db.select({
+        date: day,
+        source: keeperEarningsTable.source,
+        asset: keeperEarningsTable.asset,
+        amount: sum(keeperEarningsTable.amount),
+      }).from(keeperEarningsTable).where(feeWhere)
+        .groupBy(day, keeperEarningsTable.source, keeperEarningsTable.asset)
+        .orderBy(day),
+      source !== "all" && source !== "historical_trade" ? Promise.resolve([]) : db.select({
+        date: tradeDay,
+        source: sql<string>`'historical_trade'`,
+        asset: tradesTable.feeAsset,
+        amount: sum(tradesTable.fee),
+      }).from(tradesTable).where(tradeWhere)
+        .groupBy(tradeDay, tradesTable.feeAsset).orderBy(tradeDay),
+      db.selectDistinct({ asset: keeperEarningsTable.asset }).from(keeperEarningsTable)
+        .where(eq(keeperEarningsTable.walletAddress, "EXCHANGE_TREASURY")),
+      db.selectDistinct({ asset: tradesTable.feeAsset }).from(tradesTable).where(gt(tradesTable.fee, "0")),
+      db.select({
+        total: sql<string>`count(*)`,
+        finished: sql<string>`count(*) filter (where status = 'finished')`,
+        finishedMissingUsd: sql<string>`count(*) filter (where status = 'finished' and deposit_amount_usd is null)`,
+        volUsd: sum(leSwapsTable.depositAmountUsd),
+        finUsd: sql<string>`sum(deposit_amount_usd::numeric) filter (where status = 'finished')`,
+      }).from(leSwapsTable),
     ]);
 
-    function buildBreakdown(map: Record<string, number>) {
-      return ALL_SOURCES.map(s => ({
-        source: s,
-        label: { orderbook: "Spot Orderbook", swap: "AMM Swap", bridge: "Bridge / Exchange",
-                  p2p: "P2P Trade", lp_spread: "LP Spread", copy_trade: "Copy Trading",
-                  withdrawal: "Withdrawal Fees", buy: "Buy Orders" }[s] ?? s,
-        amount: map[s] ?? 0,
-      }));
-    }
-
-    function total(map: Record<string, number>) {
-      return Object.values(map).reduce((a, b) => a + b, 0);
-    }
-
-    // Historical trade fees from tradesTable (before feeCollector was active)
-    const [tradeRow] = await db.select({ total: sum(tradesTable.fee) }).from(tradesTable);
-    const historicalTrades = parseFloat(tradeRow?.total ?? "0");
-
-    // LE swap stats for bridge volume context
-    const [leStats] = await db
-      .select({
-        total:    sql<string>`count(*)`,
-        finished: sql<string>`count(*) filter (where status = 'finished')`,
-        volUsd:   sum(leSwaps.depositAmountUsd),
-        finUsd:   sql<string>`sum(deposit_amount_usd::numeric) filter (where status = 'finished')`,
-      })
-      .from(leSwaps);
-
-    const totalSwaps     = parseInt(leStats?.total    ?? "0");
-    const finishedSwaps  = parseInt(leStats?.finished ?? "0");
-    const finishedVolUsd = parseFloat(leStats?.finUsd ?? "0");
-    const totalVolUsd    = parseFloat(leStats?.volUsd ?? "0");
+    const normalizedFees = feeRows.slice(0, 500).map((row) => ({
+      ...row, id: String(row.id), source: row.source, type: "recorded" as const,
+    }));
+    const normalizedTrades = tradeRows.slice(0, 500).map((row) => ({
+      ...row, id: String(row.id), source: "historical_trade", type: "historical" as const,
+      reference: row.reference || row.id,
+    }));
+    const finishedSwaps = Number(leStats[0]?.finished ?? 0);
+    const finishedSwapsWithoutUsd = Number(leStats[0]?.finishedMissingUsd ?? 0);
+    const finishedVolumeUsd = finishedSwaps === 0
+      ? 0
+      : finishedSwapsWithoutUsd > 0 || leStats[0]?.finUsd == null
+        ? null
+        : Number(leStats[0].finUsd);
+    const totalVolumeUsd = leStats[0]?.volUsd == null ? null : Number(leStats[0].volUsd);
 
     res.json({
-      breakdown: {
-        "24h": buildBreakdown(f24h),
-        "7d":  buildBreakdown(f7d),
-        "30d": buildBreakdown(f30d),
-        "all": buildBreakdown(fall),
+      period,
+      filters: {
+        sources: [...new Set([
+          ...feeTotals.map((row) => row.source),
+          ...(tradeTotals.length ? ["historical_trade"] : []),
+        ])].sort(),
+        assets: [...new Set([
+          ...feeAssets.map((row) => row.asset),
+          ...tradeAssets.map((row) => row.asset),
+        ])].sort(),
       },
-      totals: {
-        "24h":  total(f24h),
-        "7d":   total(f7d),
-        "30d":  total(f30d),
-        "all":  total(fall) + historicalTrades,
+      recorded: {
+        totals: feeTotals.map((row) => ({ ...row, amount: row.amount ?? "0" })),
+        rows: normalizedFees,
+        hasMore: feeRows.length > 500,
       },
+      historical: {
+        totals: tradeTotals.map((row) => ({ ...row, amount: row.amount ?? "0" })),
+        rows: normalizedTrades,
+        hasMore: tradeRows.length > 500,
+      },
+      trends: [...feeTrend, ...tradeTrend].map((row) => ({
+        ...row, date: row.date, amount: Number(row.amount ?? 0),
+      })),
       bridge: {
-        totalSwaps,
+        totalSwaps: Number(leStats[0]?.total ?? 0),
         finishedSwaps,
-        totalVolumeUsd:    totalVolUsd,
-        finishedVolumeUsd: finishedVolUsd,
-        estimatedCommissionUsd: finishedVolUsd * 0.003,
+        finishedSwapsWithoutUsd,
+        totalVolumeUsd,
+        finishedVolumeUsd,
+        estimatedCommissionUsd: finishedVolumeUsd === null ? null : finishedVolumeUsd * 0.003,
         commissionRatePct: "0.30",
       },
-      currency: "USD-equivalent",
+      note: "Only USD-denominated fees are shown as USD. Other assets retain their original units. Bridge affiliate commission is an estimate, not recorded treasury revenue.",
     });
   } catch (err: any) {
     logger.warn({ err }, "GET /admin/profits error");
