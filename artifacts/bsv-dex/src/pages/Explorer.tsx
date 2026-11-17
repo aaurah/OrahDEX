@@ -294,10 +294,10 @@ export function ExplorerPage() {
 
         <section className="panel exchange-panel" aria-labelledby="activity-heading">
           <div className="section-heading activity-section-heading">
-            <div><div className="section-label"><Waypoints size={14} /> ORAHDEX / PUBLIC-SAFE</div><h2 id="activity-heading">Exchange activity <span className="record-count">{activityQuery.data?.items.length ?? 0} records</span></h2></div>
+            <div><div className="section-label"><Waypoints size={14} /> ORAHDEX / STORED ACTIVITY</div><h2 id="activity-heading">OrahDEX activity <span className="record-count">{activityQuery.data?.items.length ?? 0} records</span></h2></div>
             <div className="activity-caption"><ShieldCheck size={15} /><span>Wallet addresses are never shown</span></div>
           </div>
-          <div className="activity-disclosure" data-testid="text-activity-disclosure"><CircleAlert size={14} /><p>Latest public-safe records stored by OrahDEX. This feed is not an immutable or complete event audit.</p></div>
+          <div className="activity-disclosure" data-testid="text-activity-disclosure"><CircleAlert size={14} /><p>These are records stored by OrahDEX. Open orders and internal activity are not confirmed blockchain transactions; only entries with a transaction ID can be verified on-chain. This is not a complete event audit.</p></div>
           {activityQuery.isLoading ? <LoadingRows count={4} /> : activityQuery.isError ? <ErrorState testId="button-retry-activity" onRetry={() => void activityQuery.refetch()} /> : activity.length ? (
             <>
               <div className="activity-list">{activity.map((item) => <ActivityRow key={item.id} item={item} onInspect={(txid) => { setSubmittedValue(txid); setSearchInput(txid); setLookupKind("tx"); setSelectedBlock(null); }} />)}</div>
