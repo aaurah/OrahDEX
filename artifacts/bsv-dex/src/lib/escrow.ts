@@ -7,7 +7,7 @@
  * Contract:  OrahDEXEscrow @ Sepolia 0x4deb6023abD9E1C640aDa35201be8ff591d21cF2
  */
 
-import { encodeFunctionData, keccak256, toBytes, erc20Abi, createWalletClient, createPublicClient, http, parseUnits } from "viem";
+import { encodeFunctionData, keccak256, toBytes, erc20Abi, createWalletClient, createPublicClient, fallback, http, parseUnits } from "viem";
 import {
   switchChain as wagmiSwitchChain,
   getAccount as wagmiGetAccount,
@@ -521,18 +521,20 @@ export async function lockErc20Universal(
 // the active chain — no injected wallet required.
 
 function rpcTransport(chainId: number) {
-  const url = CHAIN_RPC_URLS[chainId] ?? CHAIN_RPC_FALLBACKS[chainId];
-  if (!url) throw new Error(`No RPC URL for chainId ${chainId}`);
-  return http(url);
+  const urls = [...new Set([CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter((url): url is string => Boolean(url)))];
+  if (urls.length === 0) throw new Error(`No RPC URL for chainId ${chainId}`);
+  const transports = urls.map((url) => http(url, { timeout: 8_000, retryCount: 0 }));
+  return transports.length === 1 ? transports[0] : fallback(transports, { retryCount: 1, retryDelay: 250 });
 }
 
 function inlineChain(chainId: number) {
-  const url = CHAIN_RPC_URLS[chainId] ?? CHAIN_RPC_FALLBACKS[chainId];
+  const urls = [...new Set([CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter((url): url is string => Boolean(url)))];
+  if (urls.length === 0) throw new Error(`No RPC URL for chainId ${chainId}`);
   return {
     id: chainId,
     name: `chain-${chainId}`,
     nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: { default: { http: [url] }, public: { http: [url] } },
+    rpcUrls: { default: { http: urls }, public: { http: urls } },
   } as const;
 }
 
@@ -601,8 +603,10 @@ async function sendOrderbookWalletTx(params: {
   chainId: number;
   isOrahWallet: boolean;
   confirmations?: number;
+  onStage?: (stage: string) => void;
 }): Promise<`0x${string}`> {
   let txHash: `0x${string}`;
+  params.onStage?.("Preparing wallet transaction…");
   if (params.isOrahWallet) {
     const client = await getOrahWalletClient(params.from, params.chainId);
     const nonce = await freshNonce(params.chainId, params.from);
@@ -620,6 +624,7 @@ async function sendOrderbookWalletTx(params: {
       gas,
     } as any);
   } else {
+    params.onStage?.("Confirm transaction in wallet…");
     txHash = await sendTxUniversal({
       from: params.from,
       to: params.to,
@@ -629,6 +634,7 @@ async function sendOrderbookWalletTx(params: {
     }) as `0x${string}`;
   }
 
+  params.onStage?.("Waiting for Ethereum confirmation…");
   const receipt = await getPublicClient(params.chainId).waitForTransactionReceipt({
     hash: txHash,
     confirmations: params.confirmations ?? 1,
@@ -650,6 +656,7 @@ export async function lockOrderbookOrder(params: {
   from: string;
   chainId: number;
   isOrahWallet: boolean;
+  onStage?: (stage: string) => void;
 }): Promise<{ orderKey: `0x${string}`; txHash: `0x${string}`; explorerUrl: string }> {
   if (params.chainId !== 1) throw new Error("Wallet-funded order settlement is currently available on Ethereum mainnet only");
   if (!/^0x[0-9a-fA-F]{40}$/.test(params.escrowAddress)) throw new Error("Ethereum order escrow is not configured");
@@ -672,6 +679,7 @@ export async function lockOrderbookOrder(params: {
   const from = params.from as `0x${string}`;
 
   if (!escrowToken.native) {
+    params.onStage?.("Checking token approval…");
     const pub = getPublicClient(params.chainId);
     const allowance = await pub.readContract({
       address: escrowToken.address,
@@ -681,9 +689,11 @@ export async function lockOrderbookOrder(params: {
     });
     if (allowance < escrowAmount) {
       const approveData = buildApproveCalldata(escrow, escrowAmount);
+      params.onStage?.("Approve token in wallet…");
       await sendOrderbookWalletTx({
         from, to: escrowToken.address, data: approveData,
         chainId: params.chainId, isOrahWallet: params.isOrahWallet,
+        onStage: params.onStage,
       });
     }
   }
@@ -703,6 +713,7 @@ export async function lockOrderbookOrder(params: {
       BigInt(params.expiresAt),
     ],
   });
+  params.onStage?.("Confirm escrow lock in wallet…");
   const txHash = await sendOrderbookWalletTx({
     from,
     to: escrow,
@@ -711,6 +722,7 @@ export async function lockOrderbookOrder(params: {
     chainId: params.chainId,
     isOrahWallet: params.isOrahWallet,
     confirmations: 3,
+    onStage: params.onStage,
   });
   return {
     orderKey,
