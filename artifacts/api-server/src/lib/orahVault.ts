@@ -27,6 +27,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { getOrCreateEvmHotWallet } from "./exchangeHotWallet.js";
 import { logger } from "./logger.js";
+import { parseUnits } from "./money.js";
 
 // ── Vault ABI (only the functions we call) ─────────────────────────────────────
 
@@ -186,7 +187,7 @@ export async function vaultWithdraw(params: {
   const walletClient = createWalletClient({ account, chain: viemChain, transport: http(chainCfg.rpcUrl) });
 
   // Convert human amount → token smallest unit
-  const rawAmount = BigInt(Math.round(params.amount * 10 ** tokenInfo.decimals));
+  const rawAmount = parseUnits(String(params.amount), tokenInfo.decimals);
 
   logger.info({
     vault:   vaultAddress,

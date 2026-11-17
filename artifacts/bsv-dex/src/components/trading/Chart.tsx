@@ -31,6 +31,39 @@ interface ChartProps {
   dataSourceLabel?: string;
 }
 
+function normalizeCandleRows(input: unknown): Candle[] {
+  if (!Array.isArray(input)) return [];
+
+  const unique = new Map<number, Candle>();
+  for (const item of input) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const rawTime = Number(row.time);
+    const time = Math.floor(rawTime > 1_000_000_000_000 ? rawTime / 1000 : rawTime);
+    const open = Number(row.open);
+    const high = Number(row.high);
+    const low = Number(row.low);
+    const close = Number(row.close);
+    const volume = row.volume == null ? 0 : Number(row.volume);
+
+    if (
+      !Number.isSafeInteger(time) ||
+      time <= 1_000_000_000 ||
+      ![open, high, low, close, volume].every(Number.isFinite) ||
+      Math.min(open, high, low, close) <= 0 ||
+      high < Math.max(open, close) ||
+      low > Math.min(open, close) ||
+      volume < 0
+    ) {
+      continue;
+    }
+
+    unique.set(time, { time, open, high, low, close, volume } as Candle);
+  }
+
+  return [...unique.values()].sort((a, b) => Number(a.time) - Number(b.time));
+}
+
 /* ── Intervals ──────────────────────────────────────────────────────────── */
 const INTERVALS = [
   { id: '1m', label: '1m' }, { id: '3m', label: '3m' }, { id: '5m', label: '5m' },
@@ -367,6 +400,7 @@ function OrahChart({
     const p = clean.split(/[\/\-]/);
     return { base: p[0] ?? 'BSV', quote: p[1] ?? 'USDT' };
   }, [symbol]);
+  const candleSymbol = useMemo(() => symbol.replace(/-PERP$/i, ''), [symbol]);
   const isUsd = USD_QUOTES.has(parts.quote.toUpperCase());
   const pPrefix = isUsd ? '$' : '';
   const pSuffix = isUsd ? '' : ` ${parts.quote}`;
@@ -378,30 +412,28 @@ function OrahChart({
       if (HISTORY_INTERVALS.has(interval)) {
         /* Full history from coin inception — server resamples daily→weekly/monthly */
         const res = interval === '5Y' ? '1w' : '1M';
-        url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/history?interval=${res}`;
+        url = `${BASE_URL}/api/markets/${encodeURIComponent(candleSymbol)}/history?interval=${res}`;
       } else {
         const preset = RANGE_PRESET_MAP[interval];
         const apiInterval = preset ? preset.apiInterval : interval;
         const limit = preset
           ? preset.limit
           : ['1d','3d','1w','1M'].includes(interval) ? 300 : 500;
-        url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/candles?interval=${apiInterval}&limit=${limit}`;
+        url = `${BASE_URL}/api/markets/${encodeURIComponent(candleSymbol)}/candles?interval=${apiInterval}&limit=${limit}`;
       }
       const res = await fetch(url);
       if (!res.ok) return;
       const raw = await res.json();
-      const arr: Candle[] = Array.isArray(raw) ? raw : raw.candles ?? [];
-      const MIN_TS = 1000000000; // Sep 2001 — anything older is a bad timestamp
-      const sorted = arr.filter(c => c?.time && Number(c.time) > MIN_TS && c.open && c.high && c.low && c.close)
-        .sort((a, b) => Number(a.time) - Number(b.time));
+      const arr = Array.isArray(raw) ? raw : raw?.candles;
+      const sorted = normalizeCandleRows(arr);
       if (sorted.length) setCandles(sorted);
     } catch (_) {}
     finally { setLoading(false); }
-  }, [symbol, interval]);
+  }, [candleSymbol, interval]);
 
   const fetchTicker = useCallback(async () => {
     try {
-      const r = await fetch(`${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/ticker`);
+      const r = await fetch(`${BASE_URL}/api/markets/${encodeURIComponent(candleSymbol)}/ticker`);
       if (!r.ok) return;
       const t = await r.json();
       if (t.lastPrice) {
@@ -411,7 +443,7 @@ function OrahChart({
         setTicker({ last: t.lastPrice, change: chg, high: t.highPrice ?? 0, low: t.lowPrice ?? 0, vol: t.volume ?? 0 });
       }
     } catch (_) {}
-  }, [symbol]);
+  }, [candleSymbol]);
 
   /**
    * Zoom-triggered fetch: loads candles at `iv` without clearing existing data,
@@ -422,15 +454,12 @@ function OrahChart({
       const preset = RANGE_PRESET_MAP[iv];
       const apiIv  = preset ? preset.apiInterval : iv;
       const lim    = preset ? preset.limit : ['1d','3d','1w','1M'].includes(iv) ? 300 : 500;
-      const url = `${BASE_URL}/api/markets/${encodeURIComponent(symbol)}/candles?interval=${apiIv}&limit=${lim}`;
+      const url = `${BASE_URL}/api/markets/${encodeURIComponent(candleSymbol)}/candles?interval=${apiIv}&limit=${lim}`;
       const res = await fetch(url);
       if (!res.ok) return;
       const raw = await res.json();
-      const arr: Candle[] = Array.isArray(raw) ? raw : raw.candles ?? [];
-      const MIN_TS = 1000000000;
-      const sorted = arr
-        .filter(c => c?.time && Number(c.time) > MIN_TS && c.open && c.high && c.low && c.close)
-        .sort((a, b) => Number(a.time) - Number(b.time));
+      const arr = Array.isArray(raw) ? raw : raw?.candles;
+      const sorted = normalizeCandleRows(arr);
       if (!sorted.length) return;
       /* Mark that the next updatePriceSeries should restore range, not fitContent */
       zoomRangeRef.current  = restoreRange;
@@ -438,7 +467,7 @@ function OrahChart({
       setAutoInterval(iv);
       setCandles(sorted);
     } catch (_) {}
-  }, [symbol]);
+  }, [candleSymbol]);
 
   useEffect(() => {
     setTicker(null); setHoverInfo(null);
@@ -464,25 +493,7 @@ function OrahChart({
       setLoading(true);
       return;
     }
-    const unique = new Map<number, Candle>();
-    for (const raw of fallbackData) {
-      const time = Number(raw?.time);
-      const open = Number(raw?.open);
-      const high = Number(raw?.high);
-      const low = Number(raw?.low);
-      const close = Number(raw?.close);
-      const volume = Number((raw as any)?.volume ?? 0);
-      if (
-        time <= 1_000_000_000 ||
-        ![time, open, high, low, close, volume].every(Number.isFinite) ||
-        Math.min(open, high, low, close) <= 0 ||
-        high < Math.max(open, close) ||
-        low > Math.min(open, close) ||
-        volume < 0
-      ) continue;
-      unique.set(time, { ...raw, time, open, high, low, close, volume } as Candle);
-    }
-    const next = [...unique.values()].sort((a, b) => Number(a.time) - Number(b.time));
+    const next = normalizeCandleRows(fallbackData);
     if (next.length >= 2) {
       setCandles(next);
     } else {
@@ -494,7 +505,8 @@ function OrahChart({
   /* When the API fetch completes with no data, fall back to the provided candles */
   useEffect(() => {
     if (!externalDataOnly && !loading && candles.length === 0 && fallbackData && fallbackData.length > 0) {
-      setCandles(fallbackData);
+      const normalized = normalizeCandleRows(fallbackData);
+      if (normalized.length) setCandles(normalized);
     }
   }, [externalDataOnly, loading, candles.length, fallbackData]);
 
@@ -536,7 +548,7 @@ function OrahChart({
       Number.isFinite(Number((c as any).volume ?? 0)) &&
       Number((c as any).volume ?? 0) >= 0
     );
-    if (!valid.length) return candles;
+    if (!valid.length) return [];
     // Step 2: compute median close to detect extreme outliers
     const sorted = [...valid].map(c => c.close).sort((a, b) => a - b);
     const median = sorted[Math.floor(sorted.length / 2)];

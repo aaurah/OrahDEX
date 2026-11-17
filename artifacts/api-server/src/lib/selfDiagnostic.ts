@@ -145,7 +145,7 @@ async function checkAiHealth(): Promise<DiagResult> {
     if (!hasInsights) {
       return { name: "ai-health", status: "warn", detail: "AI insights returned empty or malformed response" };
     }
-    return { name: "ai-health", status: "ok", detail: `AI insights responsive (${body.cached ? "cached" : "fresh"})` };
+    return { name: "ai-health", status: "ok", detail: `AI insights responsive (${(body as any).cached ? "cached" : "fresh"})` };
   } catch (err: any) {
     if (err?.name === "AbortError") {
       return { name: "ai-health", status: "warn", detail: "AI insights endpoint timed out (>5s)" };

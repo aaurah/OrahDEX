@@ -1,13 +1,14 @@
+import { signFuturesChallengeIfNeeded } from "@/lib/futuresSig";
 import { useParams, useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useSEO } from "@/hooks/useSEO";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useGetTicker, useGetCandles, useGetOrderBook, useGetOrders } from "@workspace/api-client-react";
+import { useGetTicker, useGetOrderBook, useGetOrders } from "@workspace/api-client-react";
 import { useMutation } from "@tanstack/react-query";
 import { buildOrderActionMessage, signWalletMessage } from "@/lib/tradeAuth";
 import { Chart } from "@/components/trading/Chart";
 import { OrderBook } from "@/components/trading/OrderBook";
-import { MOCK_TICKER, generateMockCandles, generateMockOrderBook, FUTURES_MARKETS } from "@/lib/mock-data";
+import { MOCK_TICKER, generateMockOrderBook, FUTURES_MARKETS } from "@/lib/mock-data";
 import { formatPrice, formatPercent, cn } from "@/lib/utils";
 import { X, ChevronDown, AlertTriangle, Wallet, Loader2, Search } from "lucide-react";
 import { useWalletStore } from "@/store/useWalletStore";
@@ -153,7 +154,6 @@ export function FuturesTrading() {
 
   const noStoreRequest = { cache: "no-store" as const };
   const { data: apiTicker } = useGetTicker(encodeURIComponent(symbol), { request: noStoreRequest });
-  const { data: apiCandles } = useGetCandles(encodeURIComponent(symbol), { interval: "1h", limit: 100 }, { request: noStoreRequest });
   const { data: apiOrderBook } = useGetOrderBook(encodeURIComponent(symbol), { depth: 50 }, { request: noStoreRequest });
 
   const defaultLeverage = useSettingsStore((s) => s.defaultLeverage);
@@ -266,14 +266,25 @@ export function FuturesTrading() {
     return () => clearInterval(t);
   }, [address, fetchPositions]);
 
-  const handleClosePosition = async (positionId: string, markPrice: number) => {
+  const handleClosePosition = async (positionId: string, markPrice: string) => {
     if (!address) return;
     setClosingPositionId(positionId);
     try {
+      const closeAuth = await signFuturesChallengeIfNeeded({
+        walletAddress: address,
+        network,
+        action: "close",
+        fields: { positionId },
+      });
       const resp = await fetch(`${API_BASE}/futures/positions/${encodeURIComponent(positionId)}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address, markPrice }),
+        body: JSON.stringify({
+          walletAddress: address,
+          markPrice,
+          nonce: closeAuth.nonce,
+          evmSignature: closeAuth.signature,
+        }),
       });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
@@ -328,6 +339,10 @@ export function FuturesTrading() {
 
   const handleFuturesSubmit = async (side: "buy" | "sell") => {
     if (!address) { openModal(); return; }
+    if (network !== "evm" || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      toast({ title: "EVM wallet required", description: "Futures currently requires an EVM wallet.", variant: "destructive" });
+      return;
+    }
     if (!size || parseFloat(size) <= 0) {
       toast({ title: "Enter size", description: "Please enter a position size.", variant: "destructive" });
       return;
@@ -335,18 +350,28 @@ export function FuturesTrading() {
     setFuturesSide(side);
     setFuturesSubmitting(true);
     try {
+      const futuresSide = side === "buy" ? "long" : "short";
+      const futuresQty = size;
+      const openAuth = await signFuturesChallengeIfNeeded({
+        walletAddress: address,
+        network,
+        action: "open",
+        fields: { symbol: `${base}/USDT-PERP`, side: futuresSide, leverage, quantity: futuresQty },
+      });
       const resp = await fetch(`${API_BASE}/futures/positions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           symbol: `${base}/USDT-PERP`,
           walletAddress: address,
-          side: side === "buy" ? "long" : "short",
+          side: futuresSide,
           leverage,
-          quantity: parseFloat(size),
-          price: orderType !== "market" && price ? parseFloat(price) : undefined,
+          quantity: futuresQty,
+          price: orderType !== "market" && price ? price : undefined,
           orderType: orderType === "stop" ? "limit" : orderType,
           marginMode,
+          nonce: openAuth.nonce,
+          evmSignature: openAuth.signature,
         }),
       });
       if (!resp.ok) {
@@ -371,7 +396,6 @@ export function FuturesTrading() {
     ?? MOCK_TICKER[rawSymbol]
     ?? MOCK_TICKER["BSV-USDT"];
   const isPositive = ticker.priceChangePercent >= 0;
-  const candles = (apiCandles && apiCandles.length > 0) ? apiCandles : generateMockCandles(ticker.lastPrice);
 
   function toEntries(raw: number[][], descending: boolean) {
     const sorted = [...raw].sort((a, b) => descending ? b[0] - a[0] : a[0] - b[0]);
@@ -540,6 +564,7 @@ export function FuturesTrading() {
                 symbol={symbol}
                 interval={chartInterval}
                 onIntervalChange={setChartInterval}
+                dataSourceLabel={symbol.toUpperCase().endsWith("-PERP") ? "SPOT REFERENCE" : undefined}
               />
             </div>
             <div className="h-[220px] shrink-0 bg-card flex flex-col">
@@ -599,7 +624,7 @@ export function FuturesTrading() {
                       <tbody className="divide-y divide-border">
                         {positions.map((p: any) => {
                           const pnl = parseFloat(p.unrealizedPnl ?? "0");
-                          const mark = parseFloat(p.markPrice);
+                          const mark = String(p.markPrice);
                           const isClosing = closingPositionId === p.id;
                           return (
                             <tr key={p.id} className="hover:bg-white/5 transition-colors">
@@ -609,7 +634,7 @@ export function FuturesTrading() {
                               </td>
                               <td className="p-2 text-right">{Number(p.quantity).toFixed(4)}</td>
                               <td className="p-2 text-right">{formatPrice(parseFloat(p.entryPrice))}</td>
-                              <td className="p-2 text-right">{formatPrice(mark)}</td>
+                              <td className="p-2 text-right">{formatPrice(Number(mark))}</td>
                               <td className="p-2 text-right text-orange-400">{formatPrice(parseFloat(p.liquidationPrice))}</td>
                               <td className={cn("p-2 text-right font-bold", pnl >= 0 ? "text-green-400" : "text-red-400")}>
                                 {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}

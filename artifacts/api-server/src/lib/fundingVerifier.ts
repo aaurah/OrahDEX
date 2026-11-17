@@ -67,6 +67,7 @@ import {
 } from "./orderIntent.js";
 import { getTokenInfo, isNativeAsset } from "./tokenRegistry.js";
 import { fetchUtxoValue } from "./bsvSpvVerifier.js";
+import { parseUnits } from "./money.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -144,7 +145,7 @@ async function verifySpotFunding(
         code:       "UTXO_NOT_FOUND",
       };
     }
-    const neededSats = Math.ceil(needed * 1e8);
+    const neededSats = parseUnits(amount, 8);
     if (utxoSats < neededSats) {
       return {
         valid:      false,
@@ -257,12 +258,18 @@ async function verifySpotFunding(
         },
       ] as const;
 
-      let onChain: number;
-
       if (isNativeAsset(chainId, asset)) {
-        // Native chain asset: ETH / BNB / MATIC / AVAX
+        // Native chain asset: ETH / BNB / MATIC / AVAX (18 decimals)
         const onChainBal = await client.getBalance({ address: walletAddress as `0x${string}` });
-        onChain = Number(onChainBal) / 1e18;
+        const requiredRaw = parseUnits(amount, 18);
+        if (onChainBal < requiredRaw) {
+          return {
+            valid:      false,
+            fundingRef: "",
+            error:      `Insufficient on-chain ${asset} balance (verified via RPC)`,
+            code:       "INSUFFICIENT_FUNDS",
+          };
+        }
       } else {
         // ERC-20 token: look up contract address and decimals.
         // Known tokens: full on-chain balanceOf check via RPC.
@@ -282,16 +289,15 @@ async function verifySpotFunding(
           functionName: "balanceOf",
           args:         [walletAddress as `0x${string}`],
         });
-        onChain = Number(rawBalance) / 10 ** tokenInfo.decimals;
-      }
-
-      if (onChain < needed) {
-        return {
-          valid:      false,
-          fundingRef: "",
-          error:      `Insufficient on-chain ${asset} balance (verified via RPC)`,
-          code:       "INSUFFICIENT_FUNDS",
-        };
+        const requiredRaw = parseUnits(amount, tokenInfo.decimals);
+        if (rawBalance < requiredRaw) {
+          return {
+            valid:      false,
+            fundingRef: "",
+            error:      `Insufficient on-chain ${asset} balance (verified via RPC)`,
+            code:       "INSUFFICIENT_FUNDS",
+          };
+        }
       }
     } catch (rpcErr: any) {
       // RPC verification failed — fail closed rather than proceeding unverified.
