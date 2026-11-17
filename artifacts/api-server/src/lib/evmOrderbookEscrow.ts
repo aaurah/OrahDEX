@@ -117,6 +117,14 @@ function assetDetails(symbol: string): { address: Address; decimals: number } {
   return { address: info.address as Address, decimals: info.decimals };
 }
 
+export function supportsEthereumOrderbookPair(base: string, quote: string): boolean {
+  try {
+    return assetDetails(base).decimals === 18 && assetDetails(quote).decimals === 18;
+  } catch {
+    return false;
+  }
+}
+
 function orderTerms(params: Pick<OnchainOrderLockParams, "side" | "base" | "quote" | "quantity" | "price">) {
   const baseAsset = assetDetails(params.base);
   const quoteAsset = assetDetails(params.quote);

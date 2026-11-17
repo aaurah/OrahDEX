@@ -20,6 +20,13 @@ import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 import { attemptLeAutoRoute } from "../lib/leAutoRoute.js";
 import {
+  getEvmOrderbookEscrowConfig,
+  settleEvmOrderFill,
+  supportsEthereumOrderbookPair,
+  verifyEvmOrderLock,
+  verifyEvmOrderbookCancelTx,
+} from "../lib/evmOrderbookEscrow.js";
+import {
   buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
   verifyBsvWithdrawSignature, verifySolWithdrawSignature,
   issueBsvOrderChallenge, verifyBsvOrderSignature,
@@ -92,6 +99,30 @@ function settlementExplorerUrl(txid: string | null | undefined, chainId?: number
   return `${BSV_NET.explorer}/tx/${txid}`;
 }
 
+type EvmOrderbookFunding = {
+  chainId: 1;
+  escrowAddress: string;
+  orderKey: `0x${string}`;
+  lockTxHash: `0x${string}`;
+};
+
+function parseEvmOrderbookFundingRef(ref: string | null | undefined): EvmOrderbookFunding | null {
+  if (!ref?.startsWith("evm-order:")) return null;
+  const [kind, version, escrowAddress, orderKey, lockTxHash, ...extra] = ref.split(":");
+  if (
+    kind !== "evm-order" || version !== "1" || extra.length > 0 ||
+    !/^0x[0-9a-f]{40}$/i.test(escrowAddress ?? "") ||
+    !/^0x[0-9a-f]{64}$/i.test(orderKey ?? "") ||
+    !/^0x[0-9a-f]{64}$/i.test(lockTxHash ?? "")
+  ) return null;
+  return {
+    chainId: 1,
+    escrowAddress: escrowAddress!,
+    orderKey: orderKey as `0x${string}`,
+    lockTxHash: lockTxHash as `0x${string}`,
+  };
+}
+
 // ── Helper: serialize an order row for API response ──────────────────────────
 function serializeOrder(o: typeof ordersTable.$inferSelect) {
   return {
@@ -111,6 +142,16 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
 // Clients request a nonce, sign it with their private key (EVM: personal_sign),
 // then pass `sig` + `nonce` to GET /orders to prove they own the address.
 // Enforcement is controlled by REQUIRE_ORDER_READ_SIG env var.
+router.get("/orders/evm-settlement/config", async (req, res) => {
+  try {
+    res.setHeader("Cache-Control", "no-store");
+    res.json(await getEvmOrderbookEscrowConfig());
+  } catch (err: any) {
+    req.log.warn({ err: err?.message }, "EVM orderbook settlement config check failed");
+    res.json({ chainId: 1, available: false });
+  }
+});
+
 router.get("/orders/challenge", (req, res) => {
   const walletAddress = req.query.walletAddress as string;
   if (!walletAddress) {
@@ -549,22 +590,78 @@ router.post("/orders", async (req, res) => {
 
     let fundingRef = "";
     if (parseFloat(lockAmount) > 0 && lockAsset) {
-      const fundingVerif = await verifyAndLockFunding({
-        walletAddress:   body.walletAddress,
-        kind:            "SPOT",   // orders.ts always handles SPOT (MARKET + LIMIT)
-        side,
-        walletSource,
-        asset:           lockAsset!,
-        amount:          lockAmount,
-        signature:       body.evmSignature ?? body.signedTx,
-        chainId,
-        reportedBalance: body.reportedBalance != null ? parseFloat(body.reportedBalance) : undefined,
-      });
-      if (!fundingVerif.valid) {
-        res.status(400).json({ error: fundingVerif.error, code: fundingVerif.code });
-        return;
+      const requestedOrderbookLock = body.orderbookLockTxHash;
+      const isEthereumSpotPair =
+        isEvmAddress &&
+        chainId === 1 &&
+        type === "limit" &&
+        supportsEthereumOrderbookPair(baseAsset!, quoteAsset);
+
+      if (requestedOrderbookLock != null) {
+        const expiresAt = Number(body.orderbookExpiresAt);
+        if (
+          !isEthereumSpotPair ||
+          !body.nonce ||
+          !Number.isSafeInteger(expiresAt)
+        ) {
+          res.status(400).json({
+            error: "Ethereum escrow locks require a signed Ethereum limit order with a valid expiry.",
+            code: "INVALID_ORDERBOOK_LOCK",
+          });
+          return;
+        }
+        try {
+          const verified = await verifyEvmOrderLock({
+            chainId: chainId!,
+            walletAddress: body.walletAddress,
+            nonce: String(body.nonce),
+            txHash: String(requestedOrderbookLock),
+            side,
+            base: baseAsset!,
+            quote: quoteAsset,
+            quantity: body.quantity,
+            price: rawPrice!,
+            expiresAt,
+          });
+          fundingRef = verified.fundingRef;
+        } catch (lockErr: any) {
+          res.status(400).json({
+            error: String(lockErr?.message ?? "Ethereum escrow lock could not be verified."),
+            code: "INVALID_ORDERBOOK_LOCK",
+          });
+          return;
+        }
+      } else {
+        // When escrow-backed Ethereum orderbook trading is enabled for this
+        // pair, never accept an uncollateralized wallet-balance assertion.
+        if (isEthereumSpotPair) {
+          const config = await getEvmOrderbookEscrowConfig();
+          if (config.available) {
+            res.status(400).json({
+              error: "A confirmed Ethereum escrow lock is required for this order.",
+              code: "ORDERBOOK_LOCK_REQUIRED",
+            });
+            return;
+          }
+        }
+
+        const fundingVerif = await verifyAndLockFunding({
+          walletAddress:   body.walletAddress,
+          kind:            "SPOT",   // orders.ts always handles SPOT (MARKET + LIMIT)
+          side,
+          walletSource,
+          asset:           lockAsset!,
+          amount:          lockAmount,
+          signature:       body.evmSignature ?? body.signedTx,
+          chainId,
+          reportedBalance: body.reportedBalance != null ? parseFloat(body.reportedBalance) : undefined,
+        });
+        if (!fundingVerif.valid) {
+          res.status(400).json({ error: fundingVerif.error, code: fundingVerif.code });
+          return;
+        }
+        fundingRef = fundingVerif.fundingRef;
       }
-      fundingRef = fundingVerif.fundingRef;
     }
 
     // ── All checks passed — insert the order ──────────────────────────────────
@@ -591,7 +688,12 @@ router.post("/orders", async (req, res) => {
       matchedOrderId:    null as string | null,
       fundingRef:        fundingRef || null,
       nonce:             body.nonce ?? id,   // use provided nonce or fall back to order id
-      expiry:            body.expiry ? String(body.expiry) : String(Math.floor(Date.now() / 1000) + 5 * 60),
+      // A wallet order's personal-sign expiry is short-lived and was already
+      // checked above. Escrow orders remain matchable until their on-chain
+      // expiry, which is the order's actual lifetime.
+      expiry:            fundingRef.startsWith("evm-order:") && body.orderbookExpiresAt
+        ? String(body.orderbookExpiresAt)
+        : body.expiry ? String(body.expiry) : String(Math.floor(Date.now() / 1000) + 5 * 60),
       chainId:           chainId ?? null,
     };
 
