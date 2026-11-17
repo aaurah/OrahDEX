@@ -2794,7 +2794,7 @@ router.get("/exchange-wallet", requireAdminToken, async (req, res) => {
     const _alch2 = (host: string) => process.env.ALCHEMY_API_KEY ? `https://${host}/v2/${process.env.ALCHEMY_API_KEY}` : undefined;
     const _gb2   = (tok: string | undefined) => tok ? `https://go.getblock.io/${tok}/` : undefined;
     const [ethBal, bnbBal, maticBal] = await Promise.all([
-      fetchNative(process.env.QN_ETH_ENDPOINT   ?? _alch2("eth-mainnet.g.alchemy.com")     ?? _gb2(process.env.GB_ETH_TOKEN)   ?? process.env.ETH_RPC_URL     ?? "https://eth.llamarpc.com",               "ETH"),
+      fetchNative(process.env.QN_ETH_ENDPOINT   ?? _alch2("eth-mainnet.g.alchemy.com")     ?? _gb2(process.env.GB_ETH_TOKEN)   ?? process.env.ETH_RPC_URL     ?? "https://ethereum-rpc.publicnode.com",    "ETH"),
       fetchNative(process.env.QN_BSC_ENDPOINT   ?? _alch2("bnb-mainnet.g.alchemy.com")     ?? _gb2(process.env.GB_BSC_TOKEN)   ?? process.env.BSC_RPC_URL     ?? "https://bsc-dataseed.binance.org",        "BNB"),
       fetchNative(process.env.QN_MATIC_ENDPOINT ?? _alch2("polygon-mainnet.g.alchemy.com") ?? _gb2(process.env.GB_MATIC_TOKEN) ?? process.env.POLYGON_RPC_URL ?? "https://polygon-bor-rpc.publicnode.com", "MATIC"),
     ]);
