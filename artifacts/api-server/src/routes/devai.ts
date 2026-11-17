@@ -22,7 +22,7 @@ import os from "node:os";
 
 const router = Router();
 const DEVAI_CHANGE_PREFIX = "devai_change_proposal:";
-const DEVAI_CONTEXT_TOKENS = 4096;
+const DEVAI_CONTEXT_TOKENS = 8192;
 const DEVAI_MAX_RESPONSE_TOKENS = 1024;
 const DEVAI_MIN_OLLAMA_HEADROOM_BYTES =
   process.env.NODE_ENV === "development" ? 4.5 * 1024 ** 3 : 6 * 1024 ** 3;
@@ -79,10 +79,12 @@ The main OrahDEX codebase lives at **github.com/aaurah/OrahDEX**. When the user 
 - Always use **get_orahdex_market** before writing a trading bot (get real symbol names and prices).
 - Always use **fetch_bsv_tx** when the user gives you a txid — never guess what it does.
 - Always use **read_github_file** when the user shares a GitHub URL — read the actual code.
-- Always use **read_project_file** / **list_project_dir** when asked about the live Replit backend or frontend source files.
+  - For OrahDEX implementation questions, first use **search_project_code** to locate the current code, then read relevant files and trace the UI/API/data flow before answering or proposing changes.
+  - Use **read_project_file** / **list_project_dir** for focused inspection of the live workspace; do not assume file names or rely on stale memory.
 - Always use **query_database** when asked about live data, table structure, or database state.
 - When proposing a code change: inspect the file first, then use write_project_file. The tool only creates a review proposal. Never claim the change is applied or published until an admin approves it.
-- Do not commit directly to GitHub, execute shell commands, restart production, or publish changes. Admins review and apply proposals separately, then publish through Replit.
+  - Never read secrets, environment files, private keys, or hidden credential stores. Database access is read-only.
+  - Do not place real trades, broadcast blockchain transactions, commit directly to GitHub, execute shell commands, restart production, or publish changes. Admins review and apply proposals separately; the user controls publishing.
 
 ## Self-upgrade capability
 You can propose changes to the OrahDEX source files. Your own source files are:
@@ -102,6 +104,14 @@ Root: ${WORKSPACE_ROOT}
 - artifacts/bsv-dex/src/      — React+Vite frontend
 - lib/db/src/schema.ts         — Drizzle ORM schema (all tables)
 - lib/db/src/index.ts          — DB connection (pool + drizzle instance)
+
+## Exchange feature map
+- Web exchange UI: artifacts/bsv-dex/src/pages and artifacts/bsv-dex/src/components
+- API routes and background workers: artifacts/api-server/src/routes and artifacts/api-server/src/services
+- Schema and API types: lib/db, lib/api-spec, and lib/api-zod
+- On-chain code: contracts and artifacts/orahdex-contracts
+- Mobile app: artifacts/aura-dex-mobile
+- Product and operational docs: docs
 
 ## Blockchain Knowledge
 **BSV (Bitcoin SV)**
@@ -309,6 +319,21 @@ const DEVAI_TOOLS: any[] = [
           path: { type: "string", description: "Directory path relative to workspace root. Omit or use '.' for root." },
         },
         required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_project_code",
+      description: "Search current OrahDEX source and documentation for a literal phrase or identifier. Use this to locate a feature across UI, API, database, and contracts before reading files.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "Literal text or identifier to find, such as 'cancelOrder' or 'orderbook'" },
+          path: { type: "string", description: "Optional workspace-relative source directory or file to search. Omit to search the exchange source roots." },
+        },
+        required: ["query"],
       },
     },
   },
@@ -615,6 +640,56 @@ function execAsync(cmd: string, cwd: string, timeout: number): Promise<{ stdout:
 
 const DEVAI_EDIT_ROOTS = ["artifacts/bsv-dex/src/", "artifacts/api-server/src/", "lib/"];
 const DEVAI_EDIT_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".css", ".html", ".svg", ".json"]);
+const DEVAI_BLOCKED_READ_DIRS = new Set([
+  ".git", ".ollama", ".ssh", ".cache", ".config", ".local", ".agents",
+  "node_modules", "attached_assets", "backups", "screenshots", "generated-artifacts",
+]);
+const DEVAI_SEARCH_ROOTS = ["artifacts", "contracts", "lib", "src", "scripts", "docs"];
+const DEVAI_SEARCH_EXTENSIONS = new Set([
+  ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".sol", ".rs",
+  ".json", ".md", ".toml", ".yaml", ".yml", ".sql", ".css", ".html",
+]);
+const DEVAI_IGNORED_SEARCH_DIRS = new Set([
+  ...DEVAI_BLOCKED_READ_DIRS, "dist", "build", ".turbo", ".next", ".vite",
+]);
+
+function isDevAiBlockedReadPath(relativePath: string): boolean {
+  const parts = relativePath.split(path.sep).filter(Boolean);
+  if (parts.some((part) => part.startsWith(".") || DEVAI_BLOCKED_READ_DIRS.has(part.toLowerCase()))) return true;
+  const fileName = parts.at(-1) ?? "";
+  return /^\.env(?:\.|$)/i.test(fileName)
+    || /(?:secret|credential|private[-_]?key)/i.test(fileName)
+    || /^(?:id_rsa|id_ed25519)(?:\.|$)/i.test(fileName)
+    || /\.(?:pem|key|p12|pfx|jks|keystore)$/i.test(fileName);
+}
+
+function resolveWorkspaceReadPath(input: string): string {
+  const relativeInput = input.replace(/^\/+/, "");
+  const resolved = path.resolve(WORKSPACE_ROOT, relativeInput);
+  const relative = path.relative(WORKSPACE_ROOT, resolved);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error("Access denied: path outside workspace.");
+  }
+  if (isDevAiBlockedReadPath(relative)) {
+    throw new Error("Access denied: hidden and credential paths are not available to DevAI.");
+  }
+  return resolved;
+}
+
+async function assertSafeWorkspaceReadPath(candidate: string) {
+  const stat = await fs.lstat(candidate);
+  if (stat.isSymbolicLink()) throw new Error("Access denied: symbolic links are not available to DevAI.");
+  const realPath = await fs.realpath(candidate);
+  const realRoot = await fs.realpath(WORKSPACE_ROOT);
+  const relative = path.relative(realRoot, realPath);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error("Access denied: path resolves outside workspace.");
+  }
+  if (isDevAiBlockedReadPath(relative)) {
+    throw new Error("Access denied: hidden and credential paths are not available to DevAI.");
+  }
+  return { realPath, stat };
+}
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -721,9 +796,11 @@ async function toolRunTerminal(args: { command: string; description?: string }):
 
 async function toolReadProjectFile(args: { path: string; offset?: number; limit?: number }): Promise<string> {
   try {
-    const safePath = path.resolve(WORKSPACE_ROOT, args.path.replace(/^\//, ""));
-    if (!safePath.startsWith(WORKSPACE_ROOT)) return "Access denied: path outside workspace.";
-    const raw = await fs.readFile(safePath, "utf-8");
+    const candidate = resolveWorkspaceReadPath(args.path);
+    const { realPath, stat } = await assertSafeWorkspaceReadPath(candidate);
+    if (!stat.isFile()) return "Path is not a regular file.";
+    if (stat.size > 1_000_000) return "File is too large for safe inspection; read a smaller source file instead.";
+    const raw = await fs.readFile(realPath, "utf-8");
     const lines = raw.split("\n");
     const offset = Math.max(0, (args.offset ?? 1) - 1);
     const limit = Math.min(200, args.limit ?? 200);
@@ -740,20 +817,21 @@ async function toolReadProjectFile(args: { path: string; offset?: number; limit?
 
 async function toolListProjectDir(args: { path?: string }): Promise<string> {
   try {
-    const dirPath = args.path && args.path !== "." ? args.path.replace(/^\//, "") : "";
-    const safePath = path.resolve(WORKSPACE_ROOT, dirPath);
-    if (!safePath.startsWith(WORKSPACE_ROOT)) return "Access denied: path outside workspace.";
-    const entries = await fs.readdir(safePath, { withFileTypes: true });
-    const IGNORE = new Set(["node_modules", ".git", "dist", ".cache", "__pycache__", ".turbo"]);
-    const filtered = entries.filter(e => !IGNORE.has(e.name) && !e.name.startsWith("."));
+    const dirPath = args.path && args.path !== "." ? args.path.replace(/^\/+/, "") : "";
+    const safePath = resolveWorkspaceReadPath(dirPath);
+    const { realPath, stat } = await assertSafeWorkspaceReadPath(safePath);
+    if (!stat.isDirectory()) return "Path is not a directory.";
+    const entries = await fs.readdir(realPath, { withFileTypes: true });
+    const IGNORE = new Set([...DEVAI_IGNORED_SEARCH_DIRS, "__pycache__"]);
+    const filtered = entries.filter(e => !IGNORE.has(e.name.toLowerCase()) && !e.name.startsWith(".") && !e.isSymbolicLink());
     const dirs = filtered.filter(e => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
     const files = filtered.filter(e => !e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
     const lines: string[] = [`Directory: ${dirPath || "/"} (${entries.length} entries)\n${"─".repeat(60)}`];
     for (const d of dirs) lines.push(`  DIR  ${d.name}/`);
     for (const f of files) {
       try {
-        const stat = await fs.stat(path.join(safePath, f.name));
-        lines.push(`       ${f.name} (${stat.size.toLocaleString()} bytes)`);
+        const fileStat = await fs.lstat(path.join(realPath, f.name));
+        if (fileStat.isFile()) lines.push(`       ${f.name} (${fileStat.size.toLocaleString()} bytes)`);
       } catch {
         lines.push(`       ${f.name}`);
       }
@@ -765,20 +843,107 @@ async function toolListProjectDir(args: { path?: string }): Promise<string> {
   }
 }
 
+async function toolSearchProjectCode(args: { query: string; path?: string }): Promise<string> {
+  const query = String(args.query ?? "").trim().slice(0, 120);
+  if (query.length < 2) return "Search query must contain at least 2 characters.";
+
+  try {
+    const roots: string[] = [];
+    if (args.path?.trim()) {
+      roots.push(resolveWorkspaceReadPath(args.path.trim()));
+    } else {
+      for (const root of DEVAI_SEARCH_ROOTS) {
+        const candidate = path.join(WORKSPACE_ROOT, root);
+        try {
+          await fs.access(candidate);
+          roots.push(candidate);
+        } catch { /* optional source root */ }
+      }
+    }
+
+    const stack = [...roots];
+    const matches: string[] = [];
+    const needle = query.toLowerCase();
+    let scannedFiles = 0;
+    const maxFiles = 6000;
+    const maxMatches = 12;
+
+    while (stack.length && scannedFiles < maxFiles && matches.length < maxMatches) {
+      const current = stack.pop()!;
+      const currentRelative = path.relative(WORKSPACE_ROOT, current);
+      if (isDevAiBlockedReadPath(currentRelative)) continue;
+
+      let entries;
+      try {
+        const stat = await fs.lstat(current);
+        if (stat.isSymbolicLink()) continue;
+        if (stat.isFile()) {
+          entries = null;
+          if (!DEVAI_SEARCH_EXTENSIONS.has(path.extname(current).toLowerCase()) || stat.size > 500_000) continue;
+          const content = await fs.readFile(current, "utf-8");
+          scannedFiles++;
+          const lines = content.split(/\r?\n/);
+          let fileMatches = 0;
+          for (let index = 0; index < lines.length && fileMatches < 3; index++) {
+            if (!lines[index]!.toLowerCase().includes(needle)) continue;
+            matches.push(`${currentRelative}:${index + 1}: ${lines[index]!.trim().slice(0, 240)}`);
+            fileMatches++;
+            if (matches.length >= maxMatches) break;
+          }
+          continue;
+        }
+        if (!stat.isDirectory()) continue;
+        entries = await fs.readdir(current, { withFileTypes: true });
+      } catch { continue; }
+
+      for (const entry of entries) {
+        if (entry.isSymbolicLink() || entry.name.startsWith(".")) continue;
+        if (entry.isDirectory()) {
+          if (!DEVAI_IGNORED_SEARCH_DIRS.has(entry.name.toLowerCase())) {
+            stack.push(path.join(current, entry.name));
+          }
+          continue;
+        }
+        if (entry.isFile() && DEVAI_SEARCH_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+          stack.push(path.join(current, entry.name));
+        }
+      }
+    }
+
+    if (!matches.length) return `No matches for "${query}" in ${scannedFiles.toLocaleString()} source files.`;
+    const footer = `\n\nSearched ${scannedFiles.toLocaleString()} source files. Read matching files for surrounding context.`;
+    return `Matches for "${query}":\n${matches.join("\n")}${footer}`.slice(0, 5000);
+  } catch (err: any) {
+    return `Project search failed: ${err?.message ?? "Unknown error"}`;
+  }
+}
+
 async function toolQueryDatabase(args: { sql: string }): Promise<string> {
   const query = args.sql.trim();
-  const upper = query.toUpperCase().replace(/\s+/g, " ");
-  if (!upper.startsWith("SELECT") && !upper.startsWith("WITH")) {
+  const uncommented = query.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "").trim();
+  const upper = uncommented.toUpperCase().replace(/\s+/g, " ");
+  if (!/^(SELECT|WITH)\b/.test(upper)) {
     return "Only SELECT (and WITH ... SELECT) queries are allowed for safety.";
   }
-  const BLOCKED = ["INSERT", "UPDATE", "DELETE", "DROP", "CREATE", "ALTER", "TRUNCATE", "GRANT", "REVOKE"];
-  if (BLOCKED.some(kw => upper.includes(kw))) {
+  if (uncommented.includes(";")) {
+    return "Only one read-only query is allowed at a time.";
+  }
+  const BLOCKED = /\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE|COPY|CALL|DO|EXECUTE)\b/;
+  if (BLOCKED.test(upper)) {
     return "Write operations are not permitted. Only read-only SELECT queries allowed.";
   }
   // Enforce row limit
   const limitedQuery = upper.includes("LIMIT") ? query : `${query} LIMIT 100`;
+  let client: Awaited<ReturnType<typeof pool.connect>> | undefined;
+  let transactionOpen = false;
   try {
-    const result = await pool.query(limitedQuery);
+    client = await pool.connect();
+    await client.query("BEGIN READ ONLY");
+    transactionOpen = true;
+    await client.query("SET LOCAL statement_timeout = '5s'");
+    const result = await client.query(limitedQuery);
+    await client.query("ROLLBACK");
+    transactionOpen = false;
     const { rows, fields } = result;
     if (!rows.length) return "Query returned 0 rows.";
     const headers = fields.map(f => f.name);
@@ -793,6 +958,9 @@ async function toolQueryDatabase(args: { sql: string }): Promise<string> {
     return [`${rows.length} row${rows.length === 1 ? "" : "s"} returned`, "─" + sep, headerRow, "─" + sep, ...dataRows, "─" + sep].join("\n");
   } catch (err: any) {
     return `SQL error: ${err?.message ?? "Query failed"}`;
+  } finally {
+    if (transactionOpen && client) await client.query("ROLLBACK").catch(() => {});
+    client?.release();
   }
 }
 
@@ -818,6 +986,7 @@ async function executeTool(name: string, args: any, callId: string): Promise<Too
     case "decode_eth_address": return { output: await toolDecodeEthAddress(args) };
     case "read_project_file":  return { output: await toolReadProjectFile(args) };
     case "list_project_dir":   return { output: await toolListProjectDir(args) };
+    case "search_project_code": return { output: await toolSearchProjectCode(args) };
     case "query_database":     return { output: await toolQueryDatabase(args) };
     case "write_project_file": return { output: await toolWriteProjectFile(args) };
     case "run_terminal":       return { output: "Disabled: DevAI cannot execute terminal commands." };
@@ -938,12 +1107,16 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
-  res.write(": DevAI is preparing a response\n\n");
+  const requestAbort = new AbortController();
+  sse(res, { status: "Connected to local Ollama; preparing exchange context…" });
   const heartbeat = setInterval(() => {
-    if (!res.writableEnded) res.write(": keep-alive\n\n");
-  }, 12_000);
+    if (!res.writableEnded) sse(res, { status: "The local model is still working; this can take a little while on the VM." });
+  }, 10_000);
   heartbeat.unref?.();
-  res.on("close", () => clearInterval(heartbeat));
+  res.on("close", () => {
+    clearInterval(heartbeat);
+    if (!res.writableEnded) requestAbort.abort();
+  });
   res.on("finish", () => clearInterval(heartbeat));
 
   try {
@@ -963,7 +1136,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
 
     const chatMessages: ChatMsg[] = [
       { role: "system", content: DEVAI_SYSTEM_PROMPT },
-      ...history.slice(-2).map(m => ({
+      ...history.slice(-6).map(m => ({
         role: m.role as "user" | "assistant",
         content: m.role === "user" ? m.content.slice(0, 1200) : m.content.slice(-1200),
       })),
@@ -975,6 +1148,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
     let finalTextFromLoop: string | null = null;
 
     while (toolRounds < MAX_TOOL_ROUNDS) {
+      if (requestAbort.signal.aborted) return;
       const resp = await devaiOpenAI.chat.completions.create({
         model: DEVAI_MODEL,
         max_tokens: DEVAI_MAX_RESPONSE_TOKENS,
@@ -983,7 +1157,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
         tool_choice: "auto",
         stream: false,
         options: { num_ctx: DEVAI_CONTEXT_TOKENS },
-      } as any);
+      } as any, { signal: requestAbort.signal, timeout: 120_000 });
 
       const choice = resp.choices[0];
       const msg = choice.message;
@@ -1001,6 +1175,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
 
         // Execute each tool, stream events
         for (const tc of modelToolCalls) {
+          if (requestAbort.signal.aborted) return;
           if (tc.type !== "function") {
             const unsupported = `Unsupported tool call type: ${tc.type}`;
             sse(res, { tool_result: { id: tc.id, name: "unknown", output: unsupported } });
@@ -1020,7 +1195,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
             result = { output: `Tool error: ${err?.message ?? "Unknown"}` };
           }
 
-          const boundedOutput = result.output.slice(0, 1000);
+          const boundedOutput = result.output.slice(0, 5000);
           sse(res, { tool_result: { id: tc.id, name, output: boundedOutput } });
           if (result.file) sse(res, { file: result.file });
 
@@ -1056,9 +1231,10 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
         messages: chatMessages as any,
         stream: true,
         options: { num_ctx: DEVAI_CONTEXT_TOKENS },
-      } as any) as unknown as AsyncIterable<{ choices: Array<{ delta?: { content?: string } }> }>;
+      } as any, { signal: requestAbort.signal, timeout: 120_000 }) as unknown as AsyncIterable<{ choices: Array<{ delta?: { content?: string } }> }>;
 
       for await (const chunk of finalStream) {
+        if (requestAbort.signal.aborted) return;
         const token = chunk.choices[0]?.delta?.content;
         if (token) {
           fullResponse += token;
@@ -1081,6 +1257,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
     sse(res, { done: true });
     res.end();
   } catch (err: any) {
+    if (requestAbort.signal.aborted || res.destroyed) return;
     logger.error({ err: err?.message }, "DevAI: chat error");
     sse(res, { error: err?.message ?? "AI error" });
     res.end();
@@ -1392,7 +1569,7 @@ if (process.env.NODE_ENV === "development" && isDevaiOllamaEnabled()) {
           OLLAMA_NUM_PARALLEL: "1",
           OLLAMA_MAX_LOADED_MODELS: "1",
           OLLAMA_KEEP_ALIVE: "30s",
-          OLLAMA_CONTEXT_LENGTH: "2048",
+          OLLAMA_CONTEXT_LENGTH: "8192",
         },
       });
       localOllamaProc.on("error", (err) => {
