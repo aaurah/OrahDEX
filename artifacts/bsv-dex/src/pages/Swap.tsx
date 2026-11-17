@@ -30,7 +30,7 @@ import { CoinLogo } from "@/components/CoinLogo";
 import { ALL_SPOT_MOCK } from "@/lib/mock-data";
 import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, encodeFunctionData, erc20Abi } from "viem";
 import type { Account } from "viem";
-import { writeContract as coreWriteContract, sendTransaction as coreSendTransaction, signMessage, getAccount } from "@wagmi/core";
+import { writeContract as coreWriteContract, sendTransaction as coreSendTransaction, signMessage } from "@wagmi/core";
 import { getWagmiConfig, CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS } from "@/lib/reown";
 import { checkAllowance, pollTxReceipt } from "@/lib/reown";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
@@ -443,6 +443,20 @@ async function getOpenOceanQuote(
 
 // ─── Swap executor ────────────────────────────────────────────────────────────
 
+async function hasAppKitConnectionForAddress(userAddress: string): Promise<boolean> {
+  try {
+    const [{ getAppKitWagmiConfig }, { getConnections }] = await Promise.all([
+      import("@/lib/reown-appkit"),
+      import("@wagmi/core"),
+    ]);
+    return getConnections(getAppKitWagmiConfig()).some(connection =>
+      connection.accounts.some(account => account.toLowerCase() === userAddress.toLowerCase())
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function executeSwap(
   chainId: SupportedChainId,
   fromToken: Token,
@@ -777,8 +791,8 @@ function GasTopUpPanel({
       const amtIn     = parseUnits(presetUSD.toString(), stablecoin.decimals);
       const amtOutMin = gasQuote.amountOut * 95n / 100n;
       let hash: `0x${string}`;
-      var __wagAcc = (() => { try { const c = getWagmiConfig(); return c ? getAccount(c) : undefined; } catch { return undefined; } })();
-      if (isOrahWallet || !__wagAcc?.isConnected) {
+      const hasAppKitConnection = await hasAppKitConnectionForAddress(address);
+      if (isOrahWallet && !hasAppKitConnection) {
         const account = await getViemAccountForAddress(address as `0x${string}`, {
           title: "Authorize gas top-up",
           subtitle: "Unlock your imported OrahDEX wallet to sign the gas top-up swap.",
@@ -2423,8 +2437,8 @@ export function Swap() {
       const usePancake = dexProtocol === "pancake" && !!pancakeRouter;
       const routerOverride = usePancake ? pancakeRouter : undefined;
 
-      var __wagAcc = (() => { try { const c = getWagmiConfig(); return c ? getAccount(c) : undefined; } catch { return undefined; } })();
-      if (isOrahWallet || !__wagAcc?.isConnected) {
+      const hasAppKitConnection = await hasAppKitConnectionForAddress(address);
+      if (isOrahWallet && !hasAppKitConnection) {
         let account: Account;
         try {
           account = await getViemAccountForAddress(address, {
@@ -2435,10 +2449,11 @@ export function Swap() {
           const msg: string = authErr?.message ?? "";
           if (msg.startsWith("NO_PASSKEY_WALLET")) {
             toast({
-              title: "Authentication failed",
-              description: "On-chain swaps require a connected wallet. Please connect your wallet and try again.",
+              title: "Orah wallet signing key not found",
+              description: "This address has no Orah passkey or imported key on this device. Connect the same address through an EVM wallet to sign the swap.",
               variant: "destructive",
             });
+            openWalletModal();
           } else {
             toast({ title: "Authentication failed", description: msg, variant: "destructive" });
           }

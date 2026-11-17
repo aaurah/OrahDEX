@@ -1079,6 +1079,7 @@ export function SpotTrading() {
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex-1 border-b border-border relative min-h-0" style={{ minHeight: "320px" }}>
             <Chart
+              key={symbol}
               symbol={symbol}
               interval={candleInterval}
               onIntervalChange={setCandleInterval}
