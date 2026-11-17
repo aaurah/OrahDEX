@@ -487,7 +487,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/markets`);
+      const r = await fetch(`${BASE}/api/markets?pricedOnly=true`);
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
@@ -515,7 +515,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     const all = [
       ...(rawAosPairs ?? []).map(toNorm),
       ...(rawSsPairs  ?? []).map(toNorm),
-    ];
+    ].filter((pair) => pair.price > 0);
     // Deduplicate: same base+quote on multiple chains/providers → keep highest price.
     const best = new Map<string, NormRow>();
     for (const p of all) {
@@ -527,7 +527,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   }, [rawAosPairs, rawSsPairs]);
 
   const apiRows = useMemo<NormRow[]>(
-    () => (Array.isArray(apiData) ? apiData : []).map(normalise),
+    () => (Array.isArray(apiData) ? apiData : []).map(normalise).filter((market) => market.price > 0),
     [apiData]
   );
 
@@ -554,7 +554,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const { data: geckoRows } = useGeckoTerminalPools(cat);
   const _svrRows: NormRow[] = search
     ? serverSearchResults
-        .filter((m: any) => m.symbol && !globalRows.some(r => r.symbol === m.symbol))
+        .filter((m: any) => m.symbol && Number(m.lastPrice ?? m.price) > 0 && !globalRows.some(r => r.symbol === m.symbol))
         .map((m: any) => normalise({ ...m, type: m.type ?? "catalog" }))
     : [];
   let rows: NormRow[] = search
@@ -581,6 +581,10 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       .map(g => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, type: "spot" as const, network: g.network, swapOnly: true }));
     rows = [...rows, ...newRows];
   }
+
+  // Pair charts require a real current price. Unpriced conversion-only assets
+  // remain discoverable in the dedicated Swap currency picker instead.
+  rows = rows.filter((market) => market.price > 0);
 
   rows = [...rows].sort((a, b) => {
     let v = 0;
