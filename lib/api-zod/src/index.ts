@@ -6,9 +6,9 @@ export * from "./generated/types";
 // explicitly so they win the ambiguity — this package's purpose is the runtime
 // schemas, and nothing consumes the same-named static types.
 export {
+  GetExplorerAddressHistoryParams,
+  GetExplorerBlockParams,
   GetCandlesParams,
   GetOrderBookParams,
   GetRecentTradesParams,
 } from "./generated/api";
-export * from './generated/api';
-export * from './generated/types';

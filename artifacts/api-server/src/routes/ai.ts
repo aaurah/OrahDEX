@@ -219,7 +219,7 @@ router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) 
 
     let fullResponse = "";
 
-    const stream = useLocalOllama
+    const streamResult: unknown = useLocalOllama
       ? await createDevaiOllamaStream(chatMessages, 2048)
       : await openai.chat.completions.create({
           model: "gpt-4o-mini",
@@ -227,6 +227,13 @@ router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) 
           messages: chatMessages,
           stream: true,
         });
+    const streamCandidate = streamResult as { [Symbol.asyncIterator]?: unknown } | null;
+    if (!streamCandidate || typeof streamCandidate[Symbol.asyncIterator] !== "function") {
+      throw new Error("AI provider did not return a streaming response.");
+    }
+    const stream = streamResult as AsyncIterable<{
+      choices: Array<{ delta?: { content?: string | null } }>;
+    }>;
 
     for await (const chunk of stream) {
       const token = chunk.choices[0]?.delta?.content;
