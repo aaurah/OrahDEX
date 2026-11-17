@@ -78,7 +78,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake" | "base" | "zora";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "vote",      label: "🗳️ Vote" },
@@ -314,7 +314,7 @@ export function MobileMarkets({ active = true }: { active?: boolean }) {
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/markets`);
+      const r = await fetch(`${BASE}/api/markets?pricedOnly=true`);
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
@@ -371,7 +371,7 @@ export function MobileMarkets({ active = true }: { active?: boolean }) {
   [rawLeBtcPairs]);
 
   const apiRows = useMemo<MktRow[]>(
-    () => (Array.isArray(apiData) ? apiData : []).map(normalise),
+    () => (Array.isArray(apiData) ? apiData : []).map(normalise).filter((market) => market.price > 0),
     [apiData]
   );
 
@@ -433,7 +433,7 @@ export function MobileMarkets({ active = true }: { active?: boolean }) {
       }
       const localSymbols = new Set(localMatches.map(m => m.symbol));
       const catalogMatches = serverSearchResults
-        .filter((m: any) => m.symbol && !localSymbols.has(m.symbol))
+        .filter((m: any) => m.symbol && Number(m.lastPrice ?? m.price) > 0 && !localSymbols.has(m.symbol))
         .map((m: any) => normalise(m));
       const merged = [...new Map(
         [...localMatches, ...catalogMatches].map(m => [m.symbol, m])
@@ -442,6 +442,10 @@ export function MobileMarkets({ active = true }: { active?: boolean }) {
       rows = merged.slice(0, 50);
     }
   }
+
+  // Keep the market/chart list limited to pairs with a verified current price.
+  // Unpriced conversion routes are still available in the dedicated Swap flow.
+  rows = rows.filter((market) => market.price > 0);
 
   rows = [...rows].sort((a, b) => {
     let v = 0;
