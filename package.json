@@ -76,7 +76,8 @@
       "deepmerge": "npm:@shivammathur/deepmerge@4.3.2"
     },
     "patchedDependencies": {
-      "elliptic@6.6.1": "patches/elliptic@6.6.1.patch"
+      "elliptic@6.6.1": "patches/elliptic@6.6.1.patch",
+      "metro@0.83.5": "patches/metro@0.83.5.patch"
     }
   },
   "dependencies": {

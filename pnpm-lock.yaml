@@ -127,6 +127,9 @@ patchedDependencies:
   elliptic@6.6.1:
     hash: d19f83e256ff3eb45027af6bd4f581e6b445cf5c5c5da5360bd210d993d91a6a
     path: patches/elliptic@6.6.1.patch
+  metro@0.83.5:
+    hash: 95798270d8dffd9e12e0327fd63fc74f0d12b80bb88ffa06d6a3cd495e559c44
+    path: patches/metro@0.83.5.patch
 
 importers:
 
@@ -12258,7 +12261,7 @@ snapshots:
 
   '@expo/metro@55.0.0(bufferutil@4.1.0)(utf-8-validate@6.0.6)':
     dependencies:
-      metro: 0.83.5(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      metro: 0.83.5(patch_hash=95798270d8dffd9e12e0327fd63fc74f0d12b80bb88ffa06d6a3cd495e559c44)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       metro-babel-transformer: 0.83.5
       metro-cache: 0.83.5
       metro-cache-key: 0.83.5
@@ -14039,7 +14042,7 @@ snapshots:
       '@react-native/dev-middleware': 0.84.1(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       debug: 4.4.3(supports-color@8.1.1)
       invariant: 2.2.4
-      metro: 0.83.5(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      metro: 0.83.5(patch_hash=95798270d8dffd9e12e0327fd63fc74f0d12b80bb88ffa06d6a3cd495e559c44)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       metro-config: 0.83.5(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       metro-core: 0.83.5
       semver: 7.7.4
@@ -20656,7 +20659,7 @@ snapshots:
       connect: 3.7.0
       flow-enums-runtime: 0.0.6
       jest-validate: 29.7.0
-      metro: 0.83.5(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      metro: 0.83.5(patch_hash=95798270d8dffd9e12e0327fd63fc74f0d12b80bb88ffa06d6a3cd495e559c44)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       metro-cache: 0.83.5
       metro-core: 0.83.5
       metro-runtime: 0.83.5
@@ -20743,7 +20746,7 @@ snapshots:
       '@babel/parser': 7.29.7
       '@babel/types': 7.29.7
       flow-enums-runtime: 0.0.6
-      metro: 0.83.5(bufferutil@4.1.0)(utf-8-validate@6.0.6)
+      metro: 0.83.5(patch_hash=95798270d8dffd9e12e0327fd63fc74f0d12b80bb88ffa06d6a3cd495e559c44)(bufferutil@4.1.0)(utf-8-validate@6.0.6)
       metro-babel-transformer: 0.83.5
       metro-cache: 0.83.5
       metro-cache-key: 0.83.5
@@ -20756,7 +20759,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  metro@0.83.5(bufferutil@4.1.0)(utf-8-validate@6.0.6):
+  metro@0.83.5(patch_hash=95798270d8dffd9e12e0327fd63fc74f0d12b80bb88ffa06d6a3cd495e559c44)(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     dependencies:
       '@babel/code-frame': 7.29.7
       '@babel/core': 7.29.7

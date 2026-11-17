@@ -65,6 +65,16 @@ function normalizeCandleRows(input: unknown): Candle[] {
   return [...unique.values()].sort((a, b) => Number(a.time) - Number(b.time));
 }
 
+function isNumericVisibleRange(value: unknown): value is { from: number; to: number } {
+  if (!value || typeof value !== "object") return false;
+  const range = value as { from?: unknown; to?: unknown };
+  return typeof range.from === "number" &&
+    Number.isFinite(range.from) &&
+    typeof range.to === "number" &&
+    Number.isFinite(range.to) &&
+    range.from < range.to;
+}
+
 /* ── Intervals ──────────────────────────────────────────────────────────── */
 const INTERVALS = [
   { id: '1m', label: '1m' }, { id: '3m', label: '3m' }, { id: '5m', label: '5m' },
@@ -667,11 +677,11 @@ function OrahChart({
        have any series data yet when the callback fires during initialization */
     if (chartRef.current) {
       chartRef.current.timeScale().subscribeVisibleTimeRangeChange(range => {
-        if (!range || !subChartRef.current) return;
+        if (!isNumericVisibleRange(range) || !subChartRef.current) return;
         try { subChartRef.current.timeScale().setVisibleRange(range as any); } catch (_) {}
       });
       subChartRef.current.timeScale().subscribeVisibleTimeRangeChange(range => {
-        if (!range || !chartRef.current) return;
+        if (!isNumericVisibleRange(range) || !chartRef.current) return;
         try { chartRef.current.timeScale().setVisibleRange(range as any); } catch (_) {}
       });
     }
@@ -747,7 +757,7 @@ function OrahChart({
       series.setData(displayCandles.map(c => ({ time: Number(c.time) as any, value: c.close })));
     }
     /* After a zoom-triggered fetch restore the user's visible range instead of fitContent */
-    if (autoIntervalRef.current && zoomRangeRef.current) {
+    if (autoIntervalRef.current && isNumericVisibleRange(zoomRangeRef.current)) {
       const { from, to } = zoomRangeRef.current;
       try { chartRef.current?.timeScale().setVisibleRange({ from: from as any, to: to as any }); } catch (_) {}
       autoIntervalRef.current = false;
@@ -891,7 +901,9 @@ function OrahChart({
 
     /* Sync initial time range */
     const range = chartRef.current?.timeScale().getVisibleRange();
-    if (range) chart.timeScale().setVisibleRange(range as any);
+    if (isNumericVisibleRange(range)) {
+      try { chart.timeScale().setVisibleRange(range as any); } catch (_) {}
+    }
   }, [subReady, subInd, candles, indicatorData]);
 
   /* ── Subscribe to visible time range changes → auto-switch interval ─── */
@@ -902,9 +914,8 @@ function OrahChart({
     if (!chart || !chartReady || externalDataOnly || disableAutoInterval) return;
 
     const handler = (range: any) => {
-      if (!range) return;
-      const from = range.from as number;
-      const to   = range.to   as number;
+      if (!isNumericVisibleRange(range)) return;
+      const { from, to } = range;
       const span = to - from;
       if (span <= 0 || !isFinite(span)) return;
 
@@ -927,8 +938,8 @@ function OrahChart({
 
   /* ── Zoom helpers ───────────────────────────────────────────────────── */
   const fitContent = () => { chartRef.current?.timeScale().fitContent(); subChartRef.current?.timeScale().fitContent(); };
-  const zoomIn  = () => { const ts = chartRef.current?.timeScale(); if (ts) { const r = ts.getVisibleRange(); if (r) { const mid = ((r.from as number)+(r.to as number))/2, span=((r.to as number)-(r.from as number))*0.35; ts.setVisibleRange({ from: (mid-span) as any, to: (mid+span) as any }); } } };
-  const zoomOut = () => { const ts = chartRef.current?.timeScale(); if (ts) { const r = ts.getVisibleRange(); if (r) { const mid = ((r.from as number)+(r.to as number))/2, span=((r.to as number)-(r.from as number))*0.7; ts.setVisibleRange({ from: (mid-span) as any, to: (mid+span) as any }); } } };
+  const zoomIn  = () => { const ts = chartRef.current?.timeScale(); if (ts) { const r = ts.getVisibleRange(); if (isNumericVisibleRange(r)) { const mid = (r.from+r.to)/2, span=(r.to-r.from)*0.35; try { ts.setVisibleRange({ from: (mid-span) as any, to: (mid+span) as any }); } catch (_) {} } } };
+  const zoomOut = () => { const ts = chartRef.current?.timeScale(); if (ts) { const r = ts.getVisibleRange(); if (isNumericVisibleRange(r)) { const mid = (r.from+r.to)/2, span=(r.to-r.from)*0.7; try { ts.setVisibleRange({ from: (mid-span) as any, to: (mid+span) as any }); } catch (_) {} } } };
 
   /* ── Screenshot ─────────────────────────────────────────────────────── */
   const screenshot = () => {

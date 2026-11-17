@@ -1796,6 +1796,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {/* ── CHART ── */}
         <div className="h-[340px] overflow-hidden">
           <Chart
+            key={chartSymbol}
             symbol={symbol}
             interval={interval}
             onIntervalChange={handleIntervalChange}
