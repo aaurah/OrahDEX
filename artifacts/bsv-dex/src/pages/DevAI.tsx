@@ -49,6 +49,7 @@ const TOOL_META: Record<string, { label: string; icon: any; color: string }> = {
   decode_eth_address: { label: "EVM address",       icon: Wallet,    color: "text-violet-400" },
   read_project_file:  { label: "Reading file",      icon: FileCode,  color: "text-cyan-400" },
   list_project_dir:   { label: "Browsing project",  icon: FolderOpen,color: "text-cyan-400" },
+  search_project_code:{ label: "Searching exchange",icon: Search,    color: "text-cyan-400" },
   query_database:     { label: "Querying database", icon: Database,  color: "text-purple-400" },
   write_project_file: { label: "Writing file",      icon: PenLine,   color: "text-yellow-400" },
 };
@@ -65,6 +66,7 @@ function toolSubtitle(name: string, args: Record<string, any>): string {
     case "decode_eth_address": return args.address ? args.address.slice(0, 10) + "…" + args.address.slice(-6) : "";
     case "read_project_file":  return args.path ?? "";
     case "list_project_dir":   return args.path ?? "/";
+    case "search_project_code": return `${args.query ?? ""}${args.path ? ` · ${args.path}` : ""}`;
     case "query_database":     return (args.sql ?? "").slice(0, 60);
     case "write_project_file": return args.path ?? "";
     default:                   return "";
@@ -607,6 +609,7 @@ export function DevAIPage() {
                 m.id === assistantId
                   ? {
                     ...m,
+                    status: "Reviewing exchange results…",
                     toolCalls: (m.toolCalls ?? []).map(tc =>
                       tc.id === data.tool_result.id ? { ...tc, output: data.tool_result.output, pending: false } : tc
                     ),
@@ -918,6 +921,11 @@ export function DevAIPage() {
                           <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
                             <RefreshCw className="w-3 h-3 animate-spin" />
                             {msg.status ?? "Thinking..."}
+                          </div>
+                        ) : msg.status ? (
+                          <div className="flex items-center gap-1.5 text-muted-foreground text-xs mt-1">
+                            <Loader2 className="w-3 h-3 animate-spin text-green-400" />
+                            {msg.status}
                           </div>
                         ) : (
                           msg.toolCalls.some(tc => tc.pending) && (
