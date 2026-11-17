@@ -44,6 +44,24 @@ export function recordServiceEvent(service: string, level: "info"|"warn"|"error"
 
 const router = Router();
 
+const PUBLIC_ADMIN_AUTH_ROUTES = new Set([
+  "POST /auth",
+  "POST /auth/totp",
+  "POST /auth/wallet-challenge",
+  "POST /auth/wallet",
+]);
+
+// Treat the admin API as private by default. Keep only the login and
+// authentication-challenge endpoints public; route-level checks below remain
+// useful defense in depth for especially sensitive operations.
+router.use((req, res, next) => {
+  if (PUBLIC_ADMIN_AUTH_ROUTES.has(`${req.method.toUpperCase()} ${req.path}`)) {
+    next();
+    return;
+  }
+  requireAdminToken(req, res, next);
+});
+
 /* ─── EVM SIGNATURE RECOVERY ─────────────────────────────────────────────── */
 
 function hashPersonalMessage(message: string): Uint8Array {
@@ -3987,7 +4005,10 @@ router.post("/coins-import/paprika", requireAdminToken, async (_req, res) => {
     const { ensureCoinMetadataTable }                 = await import("../lib/coinGeckoImporter.js");
     const { clearCoinsCache }                         = await import("../routes/dex.js");
     const st = getPaprikaStatus();
-    if (st.running) return res.status(409).json({ error: "CoinPaprika import already running", status: st });
+    if (st.running) {
+      res.status(409).json({ error: "CoinPaprika import already running", status: st });
+      return;
+    }
     await ensureCoinMetadataTable();
     runCoinPaprikaImport()
       .then(r => { clearCoinsCache(); logger.info(r, "coinMeta: admin CoinPaprika import done"); })
@@ -4004,7 +4025,10 @@ router.post("/coins-import", requireAdminToken, async (req, res) => {
     const { runCoinGeckoImport, ensureCoinMetadataTable, getImporterStatus } = await import("../lib/coinGeckoImporter.js");
     const { clearCoinsCache } = await import("../routes/dex.js");
     const st = getImporterStatus();
-    if (st.running) return res.status(409).json({ error: "CoinGecko import already running", status: st });
+    if (st.running) {
+      res.status(409).json({ error: "CoinGecko import already running", status: st });
+      return;
+    }
     const maxBulkPages   = Math.min(40, Math.max(1, parseInt(req.body?.maxBulkPages   ?? "8",  10) || 8));
     const maxDetailCoins = Math.min(2000, Math.max(0, parseInt(req.body?.maxDetailCoins ?? "100", 10) || 100));
     await ensureCoinMetadataTable();

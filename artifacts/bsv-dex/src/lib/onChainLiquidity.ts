@@ -434,11 +434,15 @@ async function sendTx(
   chainId: number,
 ): Promise<string> {
   const config = requireConfig();
+  const configuredChainId = config.chains.find((chain) => chain.id === chainId)?.id;
+  if (configuredChainId === undefined) {
+    throw new Error(`Wallet is not configured for chain ${chainId}.`);
+  }
   return await coreSendTx(config, {
     to,
     data,
     value: valueWei,
-    chainId,
+    chainId: configuredChainId,
   });
 }
 
@@ -454,12 +458,16 @@ async function approveErc20(
   amount: bigint,         // exact approval amount
 ): Promise<string> {
   const config = requireConfig();
+  const configuredChainId = config.chains.find((chain) => chain.id === chainId)?.id;
+  if (configuredChainId === undefined) {
+    throw new Error(`Wallet is not configured for chain ${chainId}.`);
+  }
   return await coreWriteContract(config, {
     address:      tokenAddress,
     abi:          erc20Abi,
     functionName: "approve",
     args:         [spender, amount],
-    chainId,
+    chainId:      configuredChainId,
   });
 }
 

@@ -1056,7 +1056,7 @@ router.post("/devai/conversations/:id/messages", async (req, res) => {
         messages: chatMessages as any,
         stream: true,
         options: { num_ctx: DEVAI_CONTEXT_TOKENS },
-      } as any);
+      } as any) as unknown as AsyncIterable<{ choices: Array<{ delta?: { content?: string } }> }>;
 
       for await (const chunk of finalStream) {
         const token = chunk.choices[0]?.delta?.content;

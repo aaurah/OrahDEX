@@ -4,6 +4,7 @@ import path from "path";
 import zlib from "zlib";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
+import { resolveStaticPath } from "./static-path.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT ?? 20180;
@@ -70,7 +71,7 @@ function acceptsGzip(req) {
 }
 
 function etag(buf) {
-  return `"${crypto.createHash("sha1").update(buf).digest("hex").slice(0, 16)}"`;
+  return `"${crypto.createHash("sha256").update(buf).digest("hex")}"`;
 }
 
 const START_TIME = Date.now();
@@ -84,7 +85,12 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  const filePath = path.join(dist, url.pathname);
+  const filePath = resolveStaticPath(dist, url.pathname);
+  if (!filePath) {
+    res.writeHead(403, { "Content-Type": "text/plain", ...SECURITY_HEADERS });
+    res.end("Forbidden");
+    return;
+  }
   const ext = path.extname(filePath).toLowerCase();
 
   function serveFile(fp) {

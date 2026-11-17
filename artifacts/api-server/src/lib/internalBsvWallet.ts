@@ -22,11 +22,12 @@ import { pool } from "@workspace/db";
 
 // ── Encryption helpers ────────────────────────────────────────────────────────
 
-const WALLET_SECRET =
-  process.env.BSV_WALLET_SECRET ?? "orahdex-internal-bsv-fallback-key-32bytes!";
-
 function deriveKey(): Buffer {
-  return scryptSync(WALLET_SECRET, "orahdex-bsv-salt-v1", 32) as Buffer;
+  const walletSecret = process.env.BSV_WALLET_SECRET?.trim();
+  if (!walletSecret) {
+    throw new Error("BSV_WALLET_SECRET is not configured; refusing to encrypt or decrypt internal BSV wallet keys.");
+  }
+  return scryptSync(walletSecret, "orahdex-bsv-salt-v1", 32) as Buffer;
 }
 
 function encrypt(plaintext: string): string {
