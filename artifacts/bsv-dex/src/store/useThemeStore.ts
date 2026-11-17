@@ -24,7 +24,7 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set) => ({
-      theme: 'dark',
+      theme: 'amoled',
       setTheme: (theme) => {
         applyTheme(theme);
         set({ theme });
@@ -39,6 +39,6 @@ export function applyStoredTheme() {
   if (!raw) return;
   try {
     const { state } = JSON.parse(raw);
-    applyTheme(state?.theme ?? 'dark');
+    applyTheme(state?.theme ?? 'amoled');
   } catch {}
 }

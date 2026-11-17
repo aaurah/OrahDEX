@@ -533,6 +533,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   const [toCoin,   setToCoin]   = useState<LeCoin|null>(null);
   const [amount,   setAmount]   = useState("");
   const [estimate, setEstimate] = useState<Estimate|null>(null);
+  const [selectedVenue, setSelectedVenue] = useState<string|null>(null);
   const [estLoading, setEstLoading] = useState(false);
   const [estError,   setEstError]   = useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -987,6 +988,35 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
           </div>
           <CoinPicker compact coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); }} exclude={fromCoin?.symbol} onOpen={onLoadReownCoins} supplementalLoading={reownCoinsLoading} />
         </div>
+        {/* Venue comparison — tap to lock a route */}
+        {estimate?.venue_quotes && estimate.venue_quotes.length > 1 && fromCoin && toCoin && (() => {
+          const qs = estimate.venue_quotes!;
+          const bestVenue = estimate.best_venue;
+          const activeVenue = selectedVenue ?? bestVenue;
+          return (
+            <div className="flex flex-col gap-1 mt-2">
+              {qs.map(q => {
+                const isBest = bestVenue === q.venue;
+                const isActive = activeVenue === q.venue;
+                return (
+                  <button key={q.venue} type="button" disabled={!q.canExecute}
+                    onClick={() => setSelectedVenue(isActive ? null : q.venue)}
+                    className={cn(
+                      "flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[11px] transition-all text-left",
+                      !q.canExecute && "opacity-40 cursor-not-allowed",
+                      isActive ? "border-emerald-500/40 bg-emerald-500/10" : "border-border/40 bg-muted/20 hover:border-border/70"
+                    )}>
+                    <span className={cn("font-semibold shrink-0", VENUE_COLORS[q.venue] ?? "text-muted-foreground")}>{VENUE_LABELS[q.venue] ?? q.venue}</span>
+                    <span className="text-muted-foreground truncate">≈{fmtNum(q.output, 6)} {toCoin.symbol}</span>
+                    {isBest && <span className="ml-auto shrink-0 text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold">BEST</span>}
+                    {isActive && !isBest && <span className="ml-auto shrink-0 text-[9px] px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-400 font-bold">SELECTED</span>}
+                  </button>
+                );
+              })}
+              <p className="text-[9px] text-muted-foreground/40 px-1 pt-0.5">Tap a provider to lock your route — default always picks the best rate.</p>
+            </div>
+          );
+        })()}
         {/* Rate + venue badge */}
         {activeEstimate && fromCoin && toCoin && (
           <div className="flex flex-col gap-1.5 mt-2">
@@ -1152,7 +1182,7 @@ function StepAddress({ fromCoin, toCoin, amount, estimate, onBack, onContinue, w
     "linea","zksync","zk","scroll","blast","mode",
   ]);
   const isEvmReceiver = EVM_NETWORKS.has((toCoin.network ?? toCoin.symbol).toLowerCase());
-  const showConnectedWallet = isEvmReceiver && !!walletAddress;
+  const showConnectedWallet = isEvmReceiver && !!walletAddress && /^0x[0-9a-fA-F]{40}$/.test(walletAddress);
 
   return (
     <div className="flex flex-col gap-4">
@@ -2380,6 +2410,44 @@ export function LetsExchangePanel({
     return (
       <div className="rounded-2xl border border-border bg-card p-4 text-sm text-muted-foreground flex items-center gap-2">
         <AlertTriangle className="w-4 h-4 shrink-0 text-yellow-400/70" /> Cross-chain swap unavailable.
+      </div>
+    );
+  }
+
+  if (STAGING_CATALOG_ONLY) {
+    return (
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-5 h-5 text-yellow-400" />
+          <h3 className="font-bold text-foreground">
+            Cross-chain catalog preview
+          </h3>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Staging environment — read-only currency information.
+          Quotes, exchanges, deposits and wallet transactions are disabled.
+        </p>
+        <p className="text-sm font-semibold text-foreground">
+          {coins.length.toLocaleString()} currency/network entries available
+        </p>
+        <div className="max-h-80 overflow-y-auto rounded-xl border border-border">
+          {coins.slice(0, 100).map((coin, index) => (
+            <div
+              key={`${coin.symbol}-${coin.network}-${index}`}
+              className="flex justify-between gap-3 border-b border-border/40 px-3 py-2 text-sm"
+            >
+              <span className="font-medium text-foreground">
+                {coin.symbol}
+              </span>
+              <span className="text-muted-foreground">
+                {coin.networkName || coin.network}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Showing the first 100 entries. Trading is not available in this preview.
+        </p>
       </div>
     );
   }

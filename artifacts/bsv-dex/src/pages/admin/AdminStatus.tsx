@@ -304,7 +304,16 @@ export function AdminStatusPage() {
         window.fetch(`${BASE}/api/health`).then(r => r.json()),
         adminFetch(`/api/admin/health`).then(r => r.json()),
       ]);
-      if (pub.status === "fulfilled") setPubHealth(pub.value);
+      if (pub.status === "fulfilled") {
+        const value = pub.value as PublicHealth & { services?: HealthService[] };
+        setPubHealth({
+          ...value,
+          services: (value.services ?? []).map(svc => ({
+            ...svc,
+            status: svc.status === "healthy" ? "ok" : svc.status,
+          })),
+        });
+      }
       if (adm.status === "fulfilled") setAdmHealth(adm.value);
       setLastAt(new Date());
     } finally {

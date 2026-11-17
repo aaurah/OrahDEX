@@ -1,0 +1,140 @@
+name: OrahDEX D1 Sample Import
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orahdex-d1-staging-migration
+  cancel-in-progress: false
+
+jobs:
+  import-sample:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: artifacts/orahdex-cloud-api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Verify staging configuration
+        run: |
+          python3 - <<'PY'
+          import tomllib
+          from pathlib import Path
+
+          config = tomllib.loads(
+              Path("wrangler.toml").read_text()
+          )
+
+          dbs = config["d1_databases"]
+
+          assert len(dbs) == 1
+          assert dbs[0]["binding"] == "DB"
+          assert dbs[0]["database_name"] == "orahdex-cloud-staging"
+          assert dbs[0]["database_id"] == \
+              "7cc7c3a8-5368-4328-a0bf-6c63ec8698d2"
+
+          print("Staging configuration verified")
+          PY
+
+      - name: Verify remote D1 identity
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler d1 list --json > /tmp/d1-list.json
+          python3 - <<'PY'
+          import json
+
+          dbs = json.load(open("/tmp/d1-list.json"))
+
+          matches = [
+              d for d in dbs
+              if d["name"] == "orahdex-cloud-staging"
+          ]
+
+          assert len(matches) == 1
+          assert matches[0]["uuid"] == \
+              "7cc7c3a8-5368-4328-a0bf-6c63ec8698d2"
+
+          print("Remote staging D1 identity verified")
+          PY
+
+      - name: Validate sample and import
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          SAMPLE_SQL: ${{ secrets.ORAHDEX_D1_SAMPLE_SQL }}
+        run: |
+          set -euo pipefail
+
+          umask 077
+          printf '%s\n' "$SAMPLE_SQL" > /tmp/markets-sample.sql
+          unset SAMPLE_SQL
+
+          python3 - <<'PY'
+          import sqlite3
+          from pathlib import Path
+
+          sql = Path("/tmp/markets-sample.sql").read_text()
+          migration = Path(
+              "migrations/0001_markets.sql"
+          ).read_text()
+
+          db = sqlite3.connect(":memory:")
+          db.executescript(migration)
+          db.executescript(sql)
+
+          assert db.execute(
+              "SELECT COUNT(*) FROM markets"
+          ).fetchone()[0] == 5
+
+          assert sql.count("INSERT INTO markets") == 5
+
+          print("Five-record sample validated")
+          PY
+
+          npx wrangler d1 execute orahdex-cloud-staging \
+            --remote --json \
+            --command="SELECT COUNT(*) AS total FROM markets;" \
+            > /tmp/before.json
+
+          python3 - <<'PY'
+          import json
+          data = json.load(open("/tmp/before.json"))
+          assert len(data) == 1
+          assert data[0]["success"] is True
+          assert data[0]["results"][0]["total"] == 0
+          print("Remote table empty: confirmed")
+          PY
+
+          npx wrangler d1 execute orahdex-cloud-staging \
+            --remote --file=/tmp/markets-sample.sql
+
+          npx wrangler d1 execute orahdex-cloud-staging \
+            --remote --json \
+            --command="SELECT COUNT(*) AS total FROM markets;" \
+            > /tmp/after.json
+
+          python3 - <<'PY'
+          import json
+          data = json.load(open("/tmp/after.json"))
+          assert data[0]["success"] is True
+          assert data[0]["results"][0]["total"] == 5
+          print("SUCCESS: Five staging markets imported")
+          PY
+
+      - name: Remove temporary sample
+        if: always()
+        run: rm -f /tmp/markets-sample.sql
