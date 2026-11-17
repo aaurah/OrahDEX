@@ -194,7 +194,10 @@ export function AiAssistant() {
         signal: abortRef.current.signal,
       });
 
-      if (!r.ok) throw new Error("Failed to send message");
+      if (!r.ok) {
+        const result = await r.json().catch(() => ({}));
+        throw new Error(result.error ?? "Failed to send message");
+      }
 
       const reader = r.body?.getReader();
       const decoder = new TextDecoder();
@@ -227,7 +230,7 @@ export function AiAssistant() {
       if (err.name !== "AbortError") {
         setMessages(prev => {
           const next = [...prev];
-          next[next.length - 1] = { role: "assistant", content: "Sorry, I ran into an error. Please try again." };
+          next[next.length - 1] = { role: "assistant", content: err?.message ?? "Sorry, I ran into an error. Please try again." };
           return next;
         });
       }
