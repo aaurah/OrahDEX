@@ -755,28 +755,40 @@ export async function checkEscrowDeposit(
   orderId: string,
   chainId: number,
 ): Promise<{ depositor: string; token: string; amount: bigint; lockedAt: number; released: boolean } | null> {
-  const escrow = escrowAddress(chainId);
-  if (!escrow) return null;
   try {
-    const pub = getPublicClient(chainId);
-    const data = await pub.readContract({
-      address: escrow,
-      abi: ESCROW_ABI,
-      functionName: "getDeposit",
-      args: [orderIdToBytes32(orderId)],
-    }) as readonly [`0x${string}`, `0x${string}`, bigint, bigint, boolean];
-    const depositor = data[0];
-    if (!depositor || depositor === "0x0000000000000000000000000000000000000000") return null;
-    return {
-      depositor,
-      token:    data[1],
-      amount:   data[2],
-      lockedAt: Number(data[3]),
-      released: data[4],
-    };
+    return await readEscrowDeposit(orderId, chainId);
   } catch {
     return null;
   }
+}
+
+/**
+ * Read an escrow deposit without hiding RPC failures. Cancellation flows use
+ * this strict variant so a failed/slow node cannot be mistaken for "no funds
+ * locked" and leave an order active after its escrow was skipped.
+ */
+export async function readEscrowDeposit(
+  orderId: string,
+  chainId: number,
+): Promise<{ depositor: string; token: string; amount: bigint; lockedAt: number; released: boolean } | null> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) return null;
+  const pub = getPublicClient(chainId);
+  const data = await pub.readContract({
+    address: escrow,
+    abi: ESCROW_ABI,
+    functionName: "getDeposit",
+    args: [orderIdToBytes32(orderId)],
+  }) as readonly [`0x${string}`, `0x${string}`, bigint, bigint, boolean];
+  const depositor = data[0];
+  if (!depositor || depositor === "0x0000000000000000000000000000000000000000") return null;
+  return {
+    depositor,
+    token:    data[1],
+    amount:   data[2],
+    lockedAt: Number(data[3]),
+    released: data[4],
+  };
 }
 
 /**
