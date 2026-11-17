@@ -29,6 +29,7 @@ interface ChartProps {
   externalDataOnly?: boolean;
   externalDataLoading?: boolean;
   dataSourceLabel?: string;
+  disableAutoInterval?: boolean;
 }
 
 function normalizeCandleRows(input: unknown): Candle[] {
@@ -311,6 +312,7 @@ function OrahChart({
   externalDataOnly = false,
   externalDataLoading = false,
   dataSourceLabel,
+  disableAutoInterval = false,
 }: ChartProps) {
   const mainRef   = useRef<HTMLDivElement>(null);
   const subRef    = useRef<HTMLDivElement>(null);
@@ -436,12 +438,23 @@ function OrahChart({
       const r = await fetch(`${BASE_URL}/api/markets/${encodeURIComponent(candleSymbol)}/ticker`);
       if (!r.ok) return;
       const t = await r.json();
-      if (t.lastPrice) {
-        const chg = typeof t.priceChangePercent === 'number' && isFinite(t.priceChangePercent)
-          ? t.priceChangePercent
-          : t.openPrice > 0 ? ((t.lastPrice - t.openPrice) / t.openPrice) * 100 : 0;
-        setTicker({ last: t.lastPrice, change: chg, high: t.highPrice ?? 0, low: t.lowPrice ?? 0, vol: t.volume ?? 0 });
-      }
+      const last = Number(t?.lastPrice);
+      if (!Number.isFinite(last) || last <= 0) return;
+      const open = Number(t?.openPrice);
+      const rawChange = Number(t?.priceChangePercent);
+      const rawHigh = Number(t?.highPrice);
+      const rawLow = Number(t?.lowPrice);
+      const rawVolume = Number(t?.volume);
+      const change = Number.isFinite(rawChange)
+        ? rawChange
+        : Number.isFinite(open) && open > 0 ? ((last - open) / open) * 100 : 0;
+      setTicker({
+        last,
+        change: Number.isFinite(change) ? change : 0,
+        high: Number.isFinite(rawHigh) && rawHigh > 0 ? rawHigh : last,
+        low: Number.isFinite(rawLow) && rawLow > 0 ? rawLow : last,
+        vol: Number.isFinite(rawVolume) && rawVolume >= 0 ? rawVolume : 0,
+      });
     } catch (_) {}
   }, [candleSymbol]);
 
@@ -573,12 +586,13 @@ function OrahChart({
   useEffect(() => {
     if (externalDataOnly) return;
     const series = priceSeriesRef.current;
-    const livePrice = ticker?.last;
-    if (!series || !livePrice || livePrice <= 0) return;
+    const livePrice = Number(ticker?.last);
+    if (!series || !Number.isFinite(livePrice) || livePrice <= 0) return;
     const dc = displayCandlesRef.current;
     if (!dc.length) return;
     const last = dc[dc.length - 1];
-    const t = Number(last.time) as any;
+    const t = Number(last.time);
+    if (!Number.isSafeInteger(t) || t <= 1_000_000_000) return;
     try {
       if (chartType === 'candle' || chartType === 'heikinashi' || chartType === 'bar') {
         series.update({ time: t, open: last.open, high: Math.max(last.high, livePrice), low: Math.min(last.low, livePrice), close: livePrice });
@@ -586,14 +600,6 @@ function OrahChart({
         series.update({ time: t, value: livePrice });
       }
     } catch (_) {}
-    /* Keep crosshair hover info in sync with live price */
-    const cr = candlesRef.current;
-    if (cr.length) {
-      const lr = cr[cr.length - 1];
-      lr.close = livePrice;
-      lr.high  = Math.max(lr.high, livePrice);
-      lr.low   = Math.min(lr.low,  livePrice);
-    }
   }, [ticker, chartType, externalDataOnly]);
 
   /* ── Create main chart ──────────────────────────────────────────────── */
@@ -893,7 +899,7 @@ function OrahChart({
     const chart = chartRef.current;
     // Mobile owns its candle interval and data. A second zoom-driven request
     // here can arrive late and overwrite the selected pair/timeframe.
-    if (!chart || !chartReady || externalDataOnly) return;
+    if (!chart || !chartReady || externalDataOnly || disableAutoInterval) return;
 
     const handler = (range: any) => {
       if (!range) return;
@@ -917,7 +923,7 @@ function OrahChart({
       chart.timeScale().unsubscribeVisibleTimeRangeChange(handler);
       if (zoomTimerRef2.current) clearTimeout(zoomTimerRef2.current);
     };
-  }, [chartReady, fetchForZoom, externalDataOnly]);
+  }, [chartReady, fetchForZoom, externalDataOnly, disableAutoInterval]);
 
   /* ── Zoom helpers ───────────────────────────────────────────────────── */
   const fitContent = () => { chartRef.current?.timeScale().fitContent(); subChartRef.current?.timeScale().fitContent(); };
