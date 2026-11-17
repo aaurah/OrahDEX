@@ -6,54 +6,19 @@ export const onRequest = async (
   context: PagesContext
 ): Promise<Response> => {
   const incoming = new URL(context.request.url);
-
-
-  // Staging-only, read-only currency catalog.
-  if (incoming.pathname === "/api/simpleswap/currencies") {
-    if (context.request.method !== "GET") {
-      return new Response(
-        JSON.stringify({ error: "Method not allowed" }),
-        {
-          status: 405,
-          headers: { "content-type": "application/json" },
-        }
-      );
-    }
-
-    try {
-      const upstream = await fetch(
-        "https://orahdex-cloud-api.orahdex.workers.dev/api/simpleswap/currencies",
-        {
-          method: "GET",
-          headers: { Accept: "application/json" },
-          redirect: "manual",
-        }
-      );
-
-      return new Response(upstream.body, {
-        status: upstream.status,
-        headers: {
-          "content-type": "application/json; charset=utf-8",
-          "cache-control": "no-store",
-          "x-content-type-options": "nosniff",
-        },
-      });
-    } catch {
-      return new Response(
-        JSON.stringify({ error: "Staging catalog unavailable" }),
-        {
-          status: 502,
-          headers: { "content-type": "application/json" },
-        }
-      );
-    }
-  }
-
-  // Preview only: allow health and public market data.
-  const allowed =
-    incoming.pathname === "/api/health" ||
+  const isOrderRoute =
+    incoming.pathname === "/api/orders" ||
+    incoming.pathname.startsWith("/api/orders/");
+  const isPublicMarketRoute =
     incoming.pathname === "/api/markets" ||
     incoming.pathname.startsWith("/api/markets/");
+
+  // Explicitly allow the read-only market API plus the staging EVM orderbook API.
+  const allowed =
+    incoming.pathname === "/api/health" ||
+    isPublicMarketRoute ||
+    isOrderRoute ||
+    incoming.pathname === "/api/simpleswap/currencies";
 
   if (!allowed) {
     return new Response(
@@ -65,7 +30,16 @@ export const onRequest = async (
     );
   }
 
-  if (context.request.method !== "GET") {
+  const method = context.request.method.toUpperCase();
+  const orderIdRoute = /^\/api\/orders\/[^/]+$/.test(incoming.pathname);
+  const methodAllowed =
+    method === "GET" ||
+    (method === "POST" &&
+      (incoming.pathname === "/api/orders" ||
+        incoming.pathname === "/api/orders/recover-evm")) ||
+    (method === "DELETE" && orderIdRoute);
+
+  if (!methodAllowed) {
     return new Response(
       JSON.stringify({ error: "Method not allowed" }),
       {
@@ -75,6 +49,20 @@ export const onRequest = async (
     );
   }
 
+  let body: ArrayBuffer | undefined;
+  if (method !== "GET") {
+    body = await context.request.arrayBuffer();
+    if (body.byteLength > 64 * 1024) {
+      return new Response(
+        JSON.stringify({ error: "Request body is too large" }),
+        {
+          status: 413,
+          headers: { "content-type": "application/json" },
+        }
+      );
+    }
+  }
+
   const upstream = new URL(
     incoming.pathname + incoming.search,
     "https://orahdex-cloud-api.orahdex.workers.dev"
@@ -82,8 +70,14 @@ export const onRequest = async (
 
   try {
     const response = await fetch(upstream.toString(), {
-      method: "GET",
-      headers: { Accept: "application/json" },
+      method,
+      headers: {
+        Accept: "application/json",
+        ...(context.request.headers.get("content-type")
+          ? { "Content-Type": context.request.headers.get("content-type")! }
+          : {}),
+      },
+      ...(body ? { body } : {}),
       redirect: "manual",
     });
 

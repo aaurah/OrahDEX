@@ -345,6 +345,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     !isFutures &&
     supportsEthereumWalletOrderbookAsset(base) &&
     supportsEthereumWalletOrderbookAsset(quote) &&
+    (!Array.isArray(evmOrderbookConfig?.supportedPairs) ||
+      evmOrderbookConfig.supportedPairs.includes(`${base}/${quote}`.toUpperCase())) &&
     evmOrderbookConfig?.available === true;
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
