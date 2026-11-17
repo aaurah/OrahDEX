@@ -796,7 +796,9 @@ function OrahChart({
     /* Add active overlays */
     const addLine = (ref: React.MutableRefObject<any>, color: string, data: (number|null)[], dash = false) => {
       const s = chart.addSeries(LineSeries, { color, lineWidth: 1, lineStyle: dash ? 2 : 0, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
-      s.setData(data.map((v, i) => v != null ? { time: timestamps[i], value: v } : null).filter(Boolean) as any);
+      s.setData(data.flatMap((v, i) =>
+        v != null && Number.isFinite(v) ? [{ time: timestamps[i], value: v }] : [],
+      ));
       ref.current = s;
     };
 
@@ -829,13 +831,19 @@ function OrahChart({
     const timestamps = candles.map(c => Number(c.time) as any);
     const addSub = (ref: React.MutableRefObject<any>, color: string, data: (number|null)[], width = 1) => {
       const s = chart.addSeries(LineSeries, { color, lineWidth: width as any, crosshairMarkerVisible: false, lastValueVisible: true, priceLineVisible: false });
-      s.setData(data.map((v, i) => v != null ? { time: timestamps[i], value: v } : null).filter(Boolean) as any);
+      s.setData(data.flatMap((v, i) =>
+        v != null && Number.isFinite(v) ? [{ time: timestamps[i], value: v }] : [],
+      ));
       ref.current = s;
       return s;
     };
     const addHist = (ref: React.MutableRefObject<any>, data: (number|null)[]) => {
       const s = chart.addSeries(HistogramSeries, { priceFormat: { type: 'price', precision: 6, minMove: 0.000001 }, lastValueVisible: true, priceLineVisible: false });
-      s.setData(data.map((v, i) => v != null ? { time: timestamps[i], value: v, color: v >= 0 ? '#0ecb8160' : '#f6465d60' } : null).filter(Boolean) as any);
+      s.setData(data.flatMap((v, i) =>
+        v != null && Number.isFinite(v)
+          ? [{ time: timestamps[i], value: v, color: v >= 0 ? '#0ecb8160' : '#f6465d60' }]
+          : [],
+      ));
       ref.current = s;
     };
 
