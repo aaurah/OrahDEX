@@ -12,6 +12,7 @@ import { getCachedQuote } from "../lib/routeCache.js";
 import { unlockFunds, getBalances } from "../lib/ledger.js";
 import { verifyAndLockFunding }  from "../lib/fundingVerifier.js";
 import { settleSpotFill }        from "../lib/spotSettlement.js";
+import { parseUnits, formatUnits, mulPriceQty, mulDiv, pow10 } from "../lib/money.js";
 import { initiateEvmHtlcSession, EVM_CHAINS } from "../lib/evmHtlc.js";
 import {
   getConfirmedEvmOrderSettlement,
@@ -985,6 +986,14 @@ router.post("/orders", async (req, res) => {
       throw insertErr; // re-throw all other DB errors
     }
     req.log.info({ orderId: id, side, networkType, walletSource }, "Order placed");
+    // Claim the incoming order for the duration of its match loop.
+    // This mirrors the counter-order claim: no other cancel/matcher should
+    // treat it as open while this request is settling fills. The final update
+    // below moves it back to open/filled.
+    await db.update(ordersTable)
+      .set({ status: "pending", updatedAt: new Date() })
+      .where(and(eq(ordersTable.id, id), eq(ordersTable.status, "open")));
+
 
     // ── Attempt order matching ───────────────────────────────────────────────
     // Works for limit, market, AND stop orders.
@@ -1089,6 +1098,10 @@ router.post("/orders", async (req, res) => {
                 !ref.startsWith("margin:"))
             );
             if (!isEvmExternal) return false;
+            // Audit P0: same-chain invariant — external EVM orders may only match
+            // a counterparty on the SAME chain. Cross-chain EVM needs the two-chain
+            // HTLC protocol, not this single-chain session.
+            if (chainId == null || candidate.chainId == null || candidate.chainId !== chainId) return false;
             return true;
           })
         : eligibleMatches;
@@ -1100,8 +1113,11 @@ router.post("/orders", async (req, res) => {
       // This correctly handles large orders that span multiple counter-orders,
       // and does partial consumption of bot orders (instead of deleting the
       // entire bot order when only a fraction of it is needed).
-      let remainingQty   = quantity;
-      // totalFilled / totalFillValue are hoisted to outer scope (see above)
+      const LEDGER_DECIMALS = 18;
+      let remainingQty = quantity;
+      let remainingQtyRawTotal = parseUnits(quantity.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS);
+      let totalFilledRaw = 0n;
+      let totalFillValueRaw = 0n;
       let lastFillPrice  = 0;
       let lastTxid: string | null = null;
       let lastMatchId: string | null = null;
@@ -1114,13 +1130,33 @@ router.post("/orders", async (req, res) => {
         // Use remainingQuantity directly — it is always kept up-to-date by
         // prior partial fills, so we must NOT subtract filledQuantity again
         // (that would double-count and produce negative availability).
-        const matchAvail = parseFloat(match.remainingQuantity ?? match.quantity);
-        if (matchAvail <= 0.000001) continue;
+        const matchAvailRaw = parseUnits(match.remainingQuantity ?? match.quantity, LEDGER_DECIMALS);
+        if (matchAvailRaw <= 0n) continue;
+        const matchAvail = parseFloat(formatUnits(matchAvailRaw, LEDGER_DECIMALS));
 
-        const fillQty   = Math.min(remainingQty, matchAvail);
-        const fillPrice = parseFloat(match.price ?? price?.toString() ?? "0");
-        const fillValue = fillQty * fillPrice;
-        const isBot     = match.walletAddress === BOT_ADDRESS;
+        const fillQtyRaw = remainingQtyRawTotal < matchAvailRaw ? remainingQtyRawTotal : matchAvailRaw;
+        const fillPriceRaw = match.price
+          ? parseUnits(match.price, LEDGER_DECIMALS)
+          : price
+            ? parseUnits(price.toFixed(LEDGER_DECIMALS), LEDGER_DECIMALS)
+            : 0n;
+        const fillValueRaw = mulPriceQty({
+          priceRaw: fillPriceRaw,
+          priceDecimals: LEDGER_DECIMALS,
+          quantityRaw: fillQtyRaw,
+          quantityDecimals: LEDGER_DECIMALS,
+          outputDecimals: LEDGER_DECIMALS,
+          rounding: "ceil",
+        });
+
+        // Exact values for settlement; legacy numeric mirrors for existing loop accounting.
+        const fillQtyStr = formatUnits(fillQtyRaw, LEDGER_DECIMALS);
+        const fillPriceStr = formatUnits(fillPriceRaw, LEDGER_DECIMALS);
+        const fillValueStr = formatUnits(fillValueRaw, LEDGER_DECIMALS);
+        const fillQty = parseFloat(fillQtyStr);
+        const fillPrice = parseFloat(fillPriceStr);
+        const fillValue = parseFloat(fillValueStr);
+        const isBot = match.walletAddress === BOT_ADDRESS;
 
         const tradeId       = crypto.randomUUID();
         const buyerNetwork  = side === "buy" ? networkType : (match.networkType ?? "evm");
@@ -1307,8 +1343,8 @@ router.post("/orders", async (req, res) => {
               newOrderId:    id,
               matchOrder:    match,
               pair:          symbol,
-              fillQty,
-              fillPrice,
+              fillQty:       fillQtyStr,
+              fillPrice:     fillPriceStr,
               buyerAddress,
               sellerAddress,
               buyerNetwork,
@@ -1360,18 +1396,28 @@ router.post("/orders", async (req, res) => {
 
         const broadcastTxid = fillResult.txid;
 
-        // ── Update the counter-order (partial or full consume) ────────────
-        const newMatchFilled    = (parseFloat(match.filledQuantity ?? "0") + fillQty);
-        const newMatchRemaining = Math.max(0, matchAvail - fillQty);
-        const isMatchFullyFilled = newMatchRemaining <= 0.000001;
+        // ── Finalize the claimed counter-order (partial or full consume) ─────
+        const newMatchFilledRaw = parseUnits(match.filledQuantity ?? "0", LEDGER_DECIMALS) + fillQtyRaw;
+        const newMatchRemainingRaw = matchAvailRaw - fillQtyRaw;
+        const isMatchFullyFilled = newMatchRemainingRaw === 0n;
+        const claimedByMe = and(
+          eq(ordersTable.id, match.id),
+          eq(ordersTable.status, "pending"),
+          eq(ordersTable.matchedOrderId, id),
+        );
 
         if (isBot) {
           if (isMatchFullyFilled) {
-            await db.delete(ordersTable).where(eq(ordersTable.id, match.id));
+            await db.delete(ordersTable).where(claimedByMe);
           } else {
             await db.update(ordersTable)
-              .set({ filledQuantity: newMatchFilled.toFixed(18), remainingQuantity: newMatchRemaining.toFixed(18), updatedAt: new Date() })
-              .where(eq(ordersTable.id, match.id));
+              .set({
+                status:            "open",
+                filledQuantity:    formatUnits(newMatchFilledRaw, LEDGER_DECIMALS),
+                remainingQuantity: formatUnits(newMatchRemainingRaw, LEDGER_DECIMALS),
+                updatedAt:         new Date(),
+              })
+              .where(claimedByMe);
           }
         } else {
           // Optimistic concurrency guard: only update the counter-order if it is
@@ -1400,9 +1446,9 @@ router.post("/orders", async (req, res) => {
             .returning({ id: ordersTable.id });
 
           if (!updatedMatch) {
-            req.log.warn(
+            req.log.error(
               { matchId: match.id, tradeId },
-              "orders: counter-order status already changed (concurrent consume) — fill credited, order state diverged",
+              "orders: claimed counter-order missing during finalize — investigate immediately",
             );
           }
         }
@@ -1423,8 +1469,11 @@ router.post("/orders", async (req, res) => {
 
         totalFilled    += fillQty;
         totalFillValue += fillValue;
-        remainingQty   -= fillQty;
-        lastFillPrice   = fillPrice;
+        remainingQty -= fillQty;
+        totalFilledRaw += fillQtyRaw;
+        totalFillValueRaw += fillValueRaw;
+        remainingQtyRawTotal -= fillQtyRaw;
+        lastFillPrice = fillPrice;
         lastTxid        = broadcastTxid;
         lastMatchId     = match.id;
         settlementTxid  = broadcastTxid;
@@ -1459,7 +1508,7 @@ router.post("/orders", async (req, res) => {
         if (bothEvmExternal && !bothOrderbookEscrow) {
           const releaseChainId = body.chainId && Number.isInteger(Number(body.chainId)) && isEscrowChain(Number(body.chainId))
             ? Number(body.chainId)
-            : 1;  // default to Ethereum mainnet (where escrow is deployed)
+            : null;
 
           // ── Pre-flight: does ANY escrow deposit exist for either order? ─
           // Reuse the chain values already resolved by the fail-CLOSED precheck
@@ -1503,7 +1552,7 @@ router.post("/orders", async (req, res) => {
             );
           }
 
-          if (isEscrowChain(releaseChainId) && isFullMatchFill && !escrowGated) {
+          if (releaseChainId !== null && isEscrowChain(releaseChainId) && isFullMatchFill && !escrowGated) {
             // Determine which order id belongs to which side. `id` is the
             // incoming order; `match.id` is the counter-order being consumed.
             const buyerOrderId  = side === "buy"  ? id : match.id;
@@ -1746,13 +1795,17 @@ router.post("/orders", async (req, res) => {
       // in the locked column until we explicitly release it here.
       if (
         side === "buy" && type === "market" &&
-        remainingQty <= 0.000001 && totalFilled > 0 && parseFloat(lockAmount) > 0
+        remainingQtyRawTotal === 0n && totalFilledRaw > 0n && parseUnits(lockAmount, LEDGER_DECIMALS) > 0n
       ) {
-        const actualCost = totalFillValue;
-        const excess = parseFloat(lockAmount) - actualCost;
-        if (excess > 1e-9 && lockAsset) {
+        const lockAmountRaw = parseUnits(lockAmount, LEDGER_DECIMALS);
+        const excessRaw = lockAmountRaw - totalFillValueRaw;
+        if (excessRaw > 0n && lockAsset) {
           try {
-            await unlockFunds({ walletAddress: body.walletAddress, asset: lockAsset!, amount: excess.toFixed(18) });
+            await unlockFunds({
+              walletAddress: body.walletAddress,
+              asset: lockAsset!,
+              amount: formatUnits(excessRaw, LEDGER_DECIMALS),
+            });
           } catch (excessErr: any) {
             req.log.warn({ excessErr: excessErr?.message }, "orders: failed to release market-buy slippage buffer excess");
           }
@@ -1802,7 +1855,9 @@ router.post("/orders", async (req, res) => {
 
         /* Push order-filled notification */
         const fillSymbol = symbol;
-        const fillBase   = fillSymbol.split("/")[0];
+        const fillBase = fillSymbol.split("/")[0];
+        const totalFilledText = formatUnits(totalFilledRaw, LEDGER_DECIMALS);
+        const avgFillPriceText = formatUnits(avgFillPriceRaw, LEDGER_DECIMALS);
         pushNotification(body.walletAddress, {
           type:  isFullyFilled ? "order_filled" : "order_partial",
           title: isFullyFilled ? "Order Filled ✓" : `Partial Fill — ${totalFilled.toFixed(4)} ${fillBase}`,
@@ -1811,6 +1866,12 @@ router.post("/orders", async (req, res) => {
           txid:  lastTxid ?? undefined,
           side,
         });
+      } else {
+        // No fill occurred — release the incoming-order claim so the order remains
+        // visible as open/cancelable instead of stuck in pending.
+        await db.update(ordersTable)
+          .set({ status: "open", updatedAt: new Date() })
+          .where(and(eq(ordersTable.id, id), eq(ordersTable.status, "pending")));
       }
     }
 

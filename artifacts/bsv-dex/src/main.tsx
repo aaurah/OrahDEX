@@ -1,15 +1,10 @@
-import "./polyfills";
-import { createElement } from "react";
-import { createRoot } from "react-dom/client";
-import { WagmiProvider } from "wagmi";
-import App from "./App";
 import "./index.css";
 import { applyStoredTheme } from "./store/useThemeStore";
 import { migrateStaleDerivedAddresses } from "./lib/walletPin";
 import { wagmiAdapter } from "./lib/reown-appkit";
 
-applyStoredTheme();
-migrateStaleDerivedAddresses();
+const STAGING =
+  import.meta.env.VITE_ORAHDEX_STAGING_CATALOG === "true";
 
 const root = createRoot(document.getElementById("root")!);
 
@@ -26,4 +21,8 @@ window.addEventListener("error", (e) => {
     e.stopImmediatePropagation();
     e.preventDefault();
   }
-});
+
+  await import("./production-main");
+}
+
+start().catch(console.error);

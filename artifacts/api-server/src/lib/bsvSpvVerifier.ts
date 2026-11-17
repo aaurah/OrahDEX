@@ -19,6 +19,7 @@
 import { createHash } from "node:crypto";
 import { BSV_NET } from "./bsvNetworkConfig.js";
 import { logger } from "./logger.js";
+import { parseUnits } from "./money.js";
 
 const TIMEOUT_MS = 10_000;
 
@@ -152,18 +153,30 @@ export async function fetchBlockHeight(blockHash: string): Promise<number | null
  * Fetch the amount (in satoshis) that a transaction sends to depositAddress.
  * Returns 0 if the tx is not found, or the address receives nothing.
  */
+function bsvValueToSatoshis(value: unknown): bigint {
+  if (value == null) return 0n;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0) return 0n;
+    return parseUnits(value.toFixed(8), 8);
+  }
+  if (typeof value === "string") {
+    return parseUnits(value, 8);
+  }
+  throw new Error("Unsupported BSV value type");
+}
+
 export async function fetchTxAmountToAddress(
   txid:           string,
   depositAddress: string,
-): Promise<number> {
+): Promise<bigint> {
   const data = await wocFetch(`/tx/hash/${txid}`);
-  if (!data || typeof data !== "object") return 0;
-  const tx = data as { vout?: Array<{ value: number; scriptPubKey?: { addresses?: string[] } }> };
-  if (!Array.isArray(tx.vout)) return 0;
-  let totalSat = 0;
+  if (!data || typeof data !== "object") return 0n;
+  const tx = data as { vout?: Array<{ value: unknown; scriptPubKey?: { addresses?: string[] } }> };
+  if (!Array.isArray(tx.vout)) return 0n;
+  let totalSat = 0n;
   for (const out of tx.vout) {
     if (out?.scriptPubKey?.addresses?.includes(depositAddress)) {
-      totalSat += Math.round((out.value ?? 0) * 1e8);
+      totalSat += bsvValueToSatoshis(out.value);
     }
   }
   return totalSat;
@@ -181,14 +194,14 @@ export async function fetchTxAmountToAddress(
  * This is intentionally a lightweight existence + value check only. It does NOT
  * verify that the UTXO is currently unspent — the settlement layer handles that.
  */
-export async function fetchUtxoValue(txid: string, vout: number): Promise<number | null> {
+export async function fetchUtxoValue(txid: string, vout: number): Promise<bigint | null> {
   const data = await wocFetch(`/tx/hash/${txid}`);
   if (!data || typeof data !== "object") return null;
-  const tx = data as { vout?: Array<{ value?: number }> };
+  const tx = data as { vout?: Array<{ value?: unknown }> };
   if (!Array.isArray(tx.vout) || vout < 0 || vout >= tx.vout.length) return null;
   const output = tx.vout[vout];
-  if (!output || typeof output.value !== "number") return null;
-  return Math.round(output.value * 1e8);
+  if (!output || output.value == null) return null;
+  return bsvValueToSatoshis(output.value);
 }
 
 /**
