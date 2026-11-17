@@ -106,18 +106,6 @@ await new Promise<void>((resolve, reject) => {
 });
 console.info(`[startup] Placeholder server listening on port ${port}`);
 
-/* ── Attempt to run lightweight migrations (bounded) before loading the app.
-   Migrations are idempotent. A failure here is non-fatal; we log and continue.
-   Running them here avoids running migrations at module import time and keeps
-   the index.ts/app.ts module initialization fast and predictable. ── */
-try {
-  // Dynamic import so this stays in the small initial bundle.
-  const { runMigrations } = await import("./migrations/runMigrations.js");
-  await runMigrations(10_000).catch((e: any) => console.warn("[startup] migrations failed (non-fatal)", e?.message ?? e));
-} catch (e: any) {
-  console.warn("[startup] migrations module load failed (non-fatal)", e?.message ?? e);
-}
-
 /* ── Step 2: Load the full Express application (takes ~9 s on production VM) ─
    Dynamic import keeps app.ts in a separate bundle chunk so index.ts evaluates
    first and the placeholder server is already listening before the heavy load.

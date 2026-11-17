@@ -68,14 +68,14 @@ const evmNetworks = [
   linea, zkSync, scroll, sepolia,
 ] as const;
 
-export const wagmiAdapter  = new WagmiAdapter({ projectId, networks: evmNetworks });
+export const wagmiAdapter  = new WagmiAdapter({ projectId, networks: [...evmNetworks] });
 export const solanaAdapter  = new SolanaAdapter();
 export const bitcoinAdapter = new BitcoinAdapter();
 
 const appKit = createAppKit({
   adapters: [wagmiAdapter, solanaAdapter, bitcoinAdapter],
   projectId,
-  networks,
+  networks: [...networks],
   defaultNetwork: initialNetwork,
   metadata: {
     name: "OrahDEX",
