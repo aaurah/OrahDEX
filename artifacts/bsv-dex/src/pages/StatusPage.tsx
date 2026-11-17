@@ -11,7 +11,7 @@ type BarState = "up" | "degraded" | "down" | "maintenance";
 
 interface HealthService {
   name: string;
-  status: "ok" | "degraded" | "dead" | "stuck" | "starting";
+  status: "ok" | "healthy" | "degraded" | "dead" | "stuck" | "starting";
   consecutiveFails: number;
   lastRunAt: string | null;
   lastSuccessAt: string | null;
@@ -76,7 +76,7 @@ function calcUptime(bars: BarState[]): number {
 
 function svcStatus(svc: HealthService | undefined): "operational" | "degraded" | "outage" | "unknown" {
   if (!svc) return "unknown";
-  if (svc.status === "ok") return "operational";
+  if (svc.status === "ok" || svc.status === "healthy") return "operational";
   if (svc.status === "degraded" || svc.status === "stuck") return "degraded";
   if (svc.status === "dead") return "outage";
   return "unknown";
@@ -314,7 +314,7 @@ function ServiceRow({ svc }: { svc: DisplayService }) {
             <span>·</span>
             <span className={cn(
               "font-semibold",
-              svc.raw.status === "ok"   ? "text-emerald-400"
+              svc.raw.status === "ok" || svc.raw.status === "healthy" ? "text-emerald-400"
               : svc.raw.status === "dead" ? "text-red-400"
               : "text-yellow-400"
             )}>
@@ -329,12 +329,12 @@ function ServiceRow({ svc }: { svc: DisplayService }) {
 
 function InternalMonitorRow({ svc }: { svc: HealthService }) {
   const statusColor =
-    svc.status === "ok"      ? "text-emerald-400"
+    svc.status === "ok" || svc.status === "healthy" ? "text-emerald-400"
     : svc.status === "dead"  ? "text-red-400"
     : svc.status === "stuck" ? "text-orange-400"
     : "text-yellow-400";
   const dot =
-    svc.status === "ok"      ? "bg-emerald-400"
+    svc.status === "ok" || svc.status === "healthy" ? "bg-emerald-400"
     : svc.status === "dead"  ? "bg-red-400 animate-pulse"
     : svc.status === "stuck" ? "bg-orange-400 animate-pulse"
     : "bg-yellow-400";
