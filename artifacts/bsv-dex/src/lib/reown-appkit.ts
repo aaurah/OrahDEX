@@ -417,6 +417,7 @@ export interface ReownSwapCoin {
   address: string;
   decimals: number;
   logoUri: string | null;
+  chainId: number;
   network: string;
   networkName: string;
 }
@@ -434,10 +435,13 @@ const REOWN_SWAP_NETWORKS = [
   { chainId: 534352, network: "SCROLL", networkName: "Scroll" },
 ];
 
-export async function fetchReownSwapCoins(): Promise<ReownSwapCoin[]> {
+export async function fetchReownSwapCoins(chainIds?: readonly number[]): Promise<ReownSwapCoin[]> {
   const results: ReownSwapCoin[] = [];
-  for (let offset = 0; offset < REOWN_SWAP_NETWORKS.length; offset += 3) {
-    const batch = REOWN_SWAP_NETWORKS.slice(offset, offset + 3);
+  const networks = chainIds
+    ? REOWN_SWAP_NETWORKS.filter(network => chainIds.includes(network.chainId))
+    : REOWN_SWAP_NETWORKS;
+  for (let offset = 0; offset < networks.length; offset += 3) {
+    const batch = networks.slice(offset, offset + 3);
     const batches = await Promise.all(batch.map(async network => {
       try {
         const response = await BlockchainApiController.fetchSwapTokens({
@@ -457,6 +461,7 @@ export async function fetchReownSwapCoins(): Promise<ReownSwapCoin[]> {
             address: token.address,
             decimals: token.decimals,
             logoUri: token.logoUri || null,
+            chainId: network.chainId,
             network: network.network,
             networkName: network.networkName,
           }));
