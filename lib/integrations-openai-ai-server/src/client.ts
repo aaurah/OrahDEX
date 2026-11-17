@@ -74,17 +74,25 @@ export async function getDevaiOllamaStatus() {
   }
 }
 
-export async function createDevaiOllamaStream(messages: DevAiChatMessage[], maxTokens = 2048) {
+export async function createDevaiOllamaStream(
+  messages: DevAiChatMessage[],
+  maxTokens = 2048,
+): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
   const status = await getDevaiOllamaStatus();
   if (!status.enabled) throw new Error("Local Ollama chat is disabled.");
   if (!status.reachable) throw new Error("Local Ollama is not reachable on this VM.");
   if (!status.modelAvailable) throw new Error(`Model ${devaiModel} is not installed in local Ollama.`);
 
-  return devaiOpenAI.chat.completions.create({
+  const result: unknown = await devaiOpenAI.chat.completions.create({
     model: devaiModel,
     max_tokens: Math.min(maxTokens, 1024),
     messages,
     options: { num_ctx: 2048 },
     stream: true,
   } as any, { signal: AbortSignal.timeout(120_000) });
+  const candidate = result as { [Symbol.asyncIterator]?: unknown } | null;
+  if (!candidate || typeof candidate[Symbol.asyncIterator] !== "function") {
+    throw new Error("Local Ollama did not return a streaming response.");
+  }
+  return result as AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
 }

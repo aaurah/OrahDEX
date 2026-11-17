@@ -12,17 +12,44 @@ import { getCachedLogoUrl, getCachedTokenMeta, getAllCachedSymbols, nativeLogoUr
 import { logger } from "../lib/logger.js";
 
 const router = Router();
+const TRUSTED_LOGO_HOSTS = new Set([
+  "raw.githubusercontent.com",
+  "assets.coingecko.com",
+  "static.coinpaprika.com",
+  "assets.uniswap.org",
+  "gateway.pinata.cloud",
+  "ipfs.io",
+  "cloudflare-ipfs.com",
+]);
+
+function trustedLogoUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:"
+      || !TRUSTED_LOGO_HOSTS.has(url.hostname)
+      || url.username
+      || url.password
+      || url.port
+    ) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
 
 /* ── GET /api/tokens/logo/:symbol ─────────────────────────────────────────── */
 router.get("/tokens/logo/:symbol", (req, res) => {
   const sym = (req.params.symbol ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
   if (!sym) return void res.status(400).json({ error: "Invalid symbol" });
 
-  const url = getCachedLogoUrl(sym);
+  const url = trustedLogoUrl(getCachedLogoUrl(sym));
   if (url) {
     res.set("Cache-Control", "public, max-age=86400"); // 24 h browser cache
     return void res.redirect(302, url);
   }
+  logger.warn({ symbol: sym }, "Token logo URL was missing or outside the trusted image host allowlist");
   res.status(404).json({ error: "Logo not found" });
 });
 
@@ -40,7 +67,7 @@ router.get("/tokens/metadata/:symbol", async (req, res) => {
       [sym],
     );
 
-    const logoUrl = getCachedLogoUrl(sym) ?? rows.find(r => r.logo_url)?.logo_url ?? null;
+    const logoUrl = trustedLogoUrl(getCachedLogoUrl(sym) ?? rows.find(r => r.logo_url)?.logo_url);
     const chains: Record<number, { address: string; decimals: number }> = {};
     for (const r of rows) chains[r.chain_id] = { address: r.address, decimals: r.decimals };
 
@@ -48,7 +75,7 @@ router.get("/tokens/metadata/:symbol", async (req, res) => {
       symbol:  sym,
       name:    rows[0]?.name ?? sym,
       logoUrl,
-      nativeLogo: nativeLogoUrl(sym),
+      nativeLogo: trustedLogoUrl(nativeLogoUrl(sym)),
       chains,
     });
   } catch (err) {
