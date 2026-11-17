@@ -812,7 +812,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       // Buy/Sell instead of having to find a separate "Lock funds on ETH"
       // button. Only open for unmatched (open) orders on a chain where
       // escrow is deployed, and only when self-custody escrow is available.
-      if (!matched && tradeId && escrowAvailable && hasEscrow(walletChainId ?? 0)) {
+      if (
+        !matched &&
+        tradeId &&
+        !String(data?.fundingRef ?? "").startsWith("evm-order:1:") &&
+        escrowAvailable &&
+        hasEscrow(walletChainId ?? 0)
+      ) {
         const usePrice = Number(ordPriceDisplay) > 0 ? Number(ordPriceDisplay) : lastPrice;
         const useQty   = Number(ordQtyDisplay) || 0;
         // For a buy order the lock amount = quantity × price. If price is still

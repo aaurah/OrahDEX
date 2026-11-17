@@ -664,6 +664,8 @@ router.post("/orders", async (req, res) => {
       }
     }
 
+    const incomingOrderbookFunding = parseEvmOrderbookFundingRef(fundingRef);
+
     // ── All checks passed — insert the order ──────────────────────────────────
     const newOrder = {
       id,
@@ -810,6 +812,14 @@ router.post("/orders", async (req, res) => {
             const isBot = candidate.walletAddress === BOT_ADDRESS;
             if (isBot) return false;
             const ref = candidate.fundingRef ?? "";
+            const candidateClaimsOrderbookEscrow = ref.startsWith("evm-order:");
+            const candidateOrderbookFunding = parseEvmOrderbookFundingRef(ref);
+            if (candidateClaimsOrderbookEscrow !== Boolean(incomingOrderbookFunding)) return false;
+            if (candidateClaimsOrderbookEscrow && !candidateOrderbookFunding) return false;
+            if (
+              candidateOrderbookFunding &&
+              candidateOrderbookFunding.escrowAddress.toLowerCase() !== incomingOrderbookFunding?.escrowAddress.toLowerCase()
+            ) return false;
             const isEvmExternal = (
               ref.startsWith("evm-sig:") ||
               ref.startsWith("evm-balance:") ||
@@ -839,6 +849,7 @@ router.post("/orders", async (req, res) => {
       let lastFillPrice  = 0;
       let lastTxid: string | null = null;
       let lastMatchId: string | null = null;
+      let totalEvmOrderbookFeeRaw = 0n;
 
       const [baseAsset, quoteAsset = "USDT"] = symbol.split("/");
 
@@ -901,6 +912,12 @@ router.post("/orders", async (req, res) => {
            !matchFundingRef0.startsWith("margin:"))
         );
         const bothEvmExternal = incomingIsEvmExternal && matchIsEvmExternal;
+        const matchOrderbookFunding = parseEvmOrderbookFundingRef(matchFundingRef0);
+        const bothEvmOrderbookEscrow = Boolean(
+          incomingOrderbookFunding &&
+          matchOrderbookFunding &&
+          incomingOrderbookFunding.escrowAddress.toLowerCase() === matchOrderbookFunding.escrowAddress.toLowerCase()
+        );
 
         // ─────────────────────────────────────────────────────────────────────
         // ESCROW INTEGRITY PRECHECK — runs BEFORE any DB writes / fillResult.
@@ -920,7 +937,7 @@ router.post("/orders", async (req, res) => {
         let prefetchedSellerChain: number | null = null;
         let prefetchedBuyerChain:  number | null = null;
         let escrowAnyDeposit = false;
-        if (bothEvmExternal) {
+        if (bothEvmExternal && !bothEvmOrderbookEscrow) {
           try {
             const buyerOrderId  = side === "buy"  ? id : match.id;
             const sellerOrderId = side === "sell" ? id : match.id;
@@ -986,7 +1003,36 @@ router.post("/orders", async (req, res) => {
         let fillResult: Awaited<ReturnType<typeof settleSpotFill>>;
 
         try {
-          if (bothEvmExternal) {
+          if (bothEvmOrderbookEscrow && incomingOrderbookFunding && matchOrderbookFunding) {
+            const buyFunding = side === "buy" ? incomingOrderbookFunding : matchOrderbookFunding;
+            const sellFunding = side === "sell" ? incomingOrderbookFunding : matchOrderbookFunding;
+            const matchFilledBeforeRaw = parseUnits(match.filledQuantity ?? "0", LEDGER_DECIMALS);
+            const settlementId = `0x${crypto.createHash("sha256").update([
+              "orahdex-evm-orderbook-fill-v1",
+              buyFunding.orderKey.toLowerCase(),
+              sellFunding.orderKey.toLowerCase(),
+              totalFilledRaw.toString(),
+              matchFilledBeforeRaw.toString(),
+              fillQtyRaw.toString(),
+              fillValueRaw.toString(),
+            ].join(":")).digest("hex")}` as `0x${string}`;
+            const settled = await settleEvmOrderFill({
+              settlementId,
+              buyOrderKey: buyFunding.orderKey,
+              sellOrderKey: sellFunding.orderKey,
+              base: baseAsset,
+              quote: quoteAsset,
+              baseAmount: fillQtyStr,
+              grossQuoteAmount: fillValueStr,
+            });
+            totalEvmOrderbookFeeRaw += parseUnits(settled.feeAmount, LEDGER_DECIMALS);
+            fillResult = {
+              txid: settled.txHash,
+              wasRealBroadcast: true,
+              settlementType: "evm_orderbook",
+              isCrossChain: false,
+            };
+          } else if (bothEvmExternal) {
             // ── On-chain EVM path: HTLC atomic settlement ──────────────────
             // Both parties hold funds in their own wallets. Skip internal ledger
             // settlement — funds are transferred directly on-chain via the HTLC
@@ -1141,7 +1187,7 @@ router.post("/orders", async (req, res) => {
         let escrowSettled = false;
         let escrowGated   = false;
 
-        if (bothEvmExternal) {
+        if (bothEvmExternal && !bothEvmOrderbookEscrow) {
           // Audit P0: fail-closed. Invalid/missing chain must NEVER default to
           // Ethereum — it suppresses escrow release entirely.
           const releaseChainId = body.chainId && Number.isInteger(Number(body.chainId)) && isEscrowChain(Number(body.chainId))
@@ -1363,7 +1409,7 @@ router.post("/orders", async (req, res) => {
         // we can't safely release (partial fill, one-sided lock, cross-chain).
         // Running HTLC in those cases would create a parallel claim against
         // the same locked funds — the very bug the safety gate prevents.
-        if (bothEvmExternal && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
+        if (bothEvmExternal && !bothEvmOrderbookEscrow && !lastEvmHtlcSession && !escrowSettled && !escrowGated) {
           // Determine chain — prefer incoming order's chainId, then counterparty's, then Ethereum.
           const rawChainId = body.chainId
             ? Number(body.chainId)
@@ -1453,7 +1499,9 @@ router.post("/orders", async (req, res) => {
       if (totalFilledRaw > 0n) {
         const avgFillPriceRaw = mulDiv(totalFillValueRaw, 1n, totalFilledRaw, "floor");
         const feeFractionRaw = parseUnits(feeRate.toString(), LEDGER_DECIMALS);
-        const correctFeeRaw = mulDiv(totalFillValueRaw, feeFractionRaw, pow10(LEDGER_DECIMALS), "ceil");
+        const correctFeeRaw = incomingOrderbookFunding
+          ? totalEvmOrderbookFeeRaw
+          : mulDiv(totalFillValueRaw, feeFractionRaw, pow10(LEDGER_DECIMALS), "ceil");
         const correctFee = formatUnits(correctFeeRaw, LEDGER_DECIMALS);
         const isFullyFilled = remainingQtyRawTotal === 0n;
 
@@ -1472,7 +1520,7 @@ router.post("/orders", async (req, res) => {
             matchedOrderId:    lastMatchId,
             updatedAt:         new Date(),
           })
-          .where(eq(ordersTable.id, id));
+          .where(and(eq(ordersTable.id, id), eq(ordersTable.status, "pending")));
 
         const fillSymbol = symbol;
         const fillBase = fillSymbol.split("/")[0];
@@ -1481,7 +1529,7 @@ router.post("/orders", async (req, res) => {
         pushNotification(body.walletAddress, {
           type:  isFullyFilled ? "order_filled" : "order_partial",
           title: isFullyFilled ? "Order Filled ✓" : `Partial Fill — ${totalFilledText} ${fillBase}`,
-          body:  `${totalFilledText} ${fillBase} @ $${avgFillPriceText} avg · BSV settled on-chain`,
+          body:  `${totalFilledText} ${fillBase} @ $${avgFillPriceText} avg · ${incomingOrderbookFunding ? "Ethereum escrow settled on-chain" : "settled on-chain"}`,
           pair:  fillSymbol,
           txid:  lastTxid ?? undefined,
           side,
@@ -1657,6 +1705,90 @@ router.delete("/orders/:orderId", async (req, res) => {
     const body = req.body;
     if (!body.walletAddress) {
       res.status(400).json({ error: "walletAddress is required" });
+      return;
+    }
+
+    const [existingOrder] = await db.select().from(ordersTable)
+      .where(eq(ordersTable.id, req.params.orderId))
+      .limit(1);
+    if (!existingOrder || existingOrder.walletAddress.toLowerCase() !== String(body.walletAddress).toLowerCase()) {
+      res.status(404).json({ error: "Order not found or not owned by this wallet" });
+      return;
+    }
+    if (existingOrder.fundingRef?.startsWith("evm-order:")) {
+      const escrowFunding = parseEvmOrderbookFundingRef(existingOrder.fundingRef);
+      const cancelTxHash = String(body.orderbookCancelTxHash ?? "");
+      if (!escrowFunding) {
+        res.status(409).json({ error: "Stored Ethereum escrow details are invalid; do not retry a wallet transaction.", code: "ORDERBOOK_CANCEL_INVALID" });
+        return;
+      }
+      if (!/^0x[0-9a-fA-F]{64}$/.test(cancelTxHash)) {
+        res.status(400).json({ error: "A confirmed Ethereum escrow cancellation transaction is required.", code: "ORDERBOOK_CANCEL_INVALID" });
+        return;
+      }
+      if (existingOrder.status === "cancelled") {
+        res.json(serializeOrder(existingOrder));
+        return;
+      }
+      if (existingOrder.status === "filled") {
+        res.status(409).json({ error: "This order has already filled and cannot be cancelled.", code: "ORDERBOOK_CANCEL_INVALID" });
+        return;
+      }
+      try {
+        await verifyEvmOrderbookCancelTx({
+          escrowAddress: escrowFunding.escrowAddress,
+          orderKey: escrowFunding.orderKey,
+          walletAddress: existingOrder.walletAddress,
+          txHash: cancelTxHash,
+        });
+      } catch (proofErr: any) {
+        res.status(400).json({
+          error: String(proofErr?.message ?? "Ethereum cancellation could not be verified."),
+          code: "ORDERBOOK_CANCEL_INVALID",
+        });
+        return;
+      }
+
+      const { rows } = await pool.query<Record<string, unknown>>(
+        `UPDATE orders
+            SET status = 'cancelled', txid = $3, updated_at = NOW()
+          WHERE id = $1
+            AND LOWER(wallet_address) = LOWER($2)
+            AND funding_ref = $4
+            AND status IN ('open', 'pending', 'processing')
+          RETURNING *`,
+        [req.params.orderId, body.walletAddress, cancelTxHash, existingOrder.fundingRef],
+      );
+      if (!rows.length) {
+        const [latest] = await db.select().from(ordersTable)
+          .where(eq(ordersTable.id, req.params.orderId))
+          .limit(1);
+        if (latest?.status === "cancelled") {
+          res.json(serializeOrder(latest));
+          return;
+        }
+        res.status(409).json({ error: "Order state changed while cancellation was being confirmed.", code: "ORDERBOOK_CANCEL_INVALID" });
+        return;
+      }
+      const row = rows[0]!;
+      res.json({
+        id: String(row.id ?? ""),
+        walletAddress: String(row.wallet_address ?? ""),
+        symbol: String(row.symbol ?? ""),
+        side: String(row.side ?? ""),
+        type: String(row.type ?? ""),
+        status: String(row.status ?? ""),
+        price: row.price != null ? parseFloat(String(row.price)) : undefined,
+        quantity: parseFloat(String(row.quantity ?? "0")),
+        filledQuantity: parseFloat(String(row.filled_quantity ?? "0")),
+        remainingQuantity: parseFloat(String(row.remaining_quantity ?? "0")),
+        fee: parseFloat(String(row.fee ?? "0")),
+        total: row.total != null ? parseFloat(String(row.total)) : undefined,
+        txid: row.txid ?? null,
+        fundingRef: row.funding_ref ?? null,
+        createdAt: row.created_at ?? null,
+        updatedAt: row.updated_at ?? null,
+      });
       return;
     }
 

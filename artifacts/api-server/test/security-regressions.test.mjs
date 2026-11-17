@@ -159,3 +159,20 @@ test("futures mutations fail closed and NFT routes can be disabled", async () =>
   assert.match(futuresSrc, /temporarily unavailable pending signed wallet authorization/);
   assert.match(nftSrc, /process\.env\.NFT_ENABLED === "false"/);
 });
+
+test("Ethereum orderbook orders require confirmed escrow proof and settlement pairing", async () => {
+  const [ordersSrc, escrowSrc] = await Promise.all([
+    read(ordersPath),
+    read(path.join(__dirname, "..", "src", "lib", "evmOrderbookEscrow.ts")),
+  ]);
+
+  assert.match(ordersSrc, /router\.get\("\/orders\/evm-settlement\/config"/);
+  assert.match(ordersSrc, /verifyEvmOrderLock\(\{/);
+  assert.match(ordersSrc, /ORDERBOOK_LOCK_REQUIRED/);
+  assert.match(ordersSrc, /candidateClaimsOrderbookEscrow !== Boolean\(incomingOrderbookFunding\)/);
+  assert.match(ordersSrc, /settleEvmOrderFill\(\{/);
+  assert.match(ordersSrc, /verifyEvmOrderbookCancelTx\(\{/);
+  assert.match(escrowSrc, /MIN_CONFIRMATIONS/);
+  assert.match(escrowSrc, /OrderOpened/);
+  assert.match(escrowSrc, /configuredEscrow\.toLowerCase\(\) !== params\.escrowAddress\.toLowerCase\(\)/);
+});
