@@ -23,6 +23,7 @@ import { db as _db, pool } from "@workspace/db";
 import crypto from "node:crypto";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { requireAdminToken } from "../middleware/adminAuth.js";
 import {
   buildExchangeAuthMessage,
   verifyEvmSignature,
@@ -31,7 +32,7 @@ import {
 } from "../lib/walletAuth.js";
 
 const VERIFY_RPC: Record<number, string> = {
-  1:      process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
+  1:      process.env.ETH_RPC_URL      ?? "https://ethereum-rpc.publicnode.com",
   56:     process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
   137:    process.env.POLYGON_RPC_URL  ?? "https://polygon-bor-rpc.publicnode.com",
   8453:   process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
@@ -274,6 +275,23 @@ router.post("/trade/wallet", async (req, res) => {
   }
 });
 
+// ── POST /trade/wallet/settle — record confirmed on-chain swap & credit balance ──
+/**
+ * Called by the frontend AFTER the user's on-chain swap transaction is confirmed.
+ * 1. Verifies the EVM wallet signature to prove the caller owns walletAddress.
+ * 2. Fetches the tx receipt from the chain to verify success.
+ * 3. Inserts a record in the trades table (with txid).
+ * 4. Credits the user's internal exchange balance with the received assetOut amount,
+ *    so tokens are immediately available for exchange-mode trading or withdrawal.
+ *
+ * Body: { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature }
+ */
+router.use("/trade/wallet/settle", (_req, res) => {
+  res.status(503).json({
+    error: "On-chain swap settlement is temporarily unavailable. Wallet swaps must not be credited to the internal ledger without verified input and output transfers.",
+  });
+});
+
 router.post("/trade/wallet/settle", async (req, res) => {
   const { txHash, chainId, walletAddress, assetIn, assetOut, amountIn, amountOut, walletSignature } = req.body ?? {};
 
@@ -491,11 +509,16 @@ router.post("/trade/exchange/challenge", (req, res) => {
     res.status(400).json({ error: "assetIn, assetOut, amountIn are required" });
     return;
   }
+  const parsedAmountIn = parseFloat(amountIn);
+  if (!Number.isFinite(parsedAmountIn) || parsedAmountIn <= 0) {
+    res.status(400).json({ error: "amountIn must be a positive finite number" });
+    return;
+  }
   const challenge = issueExchangeChallenge({
     walletAddress,
-    assetIn:  assetIn.toUpperCase(),
-    assetOut: assetOut.toUpperCase(),
-    amountIn: String(parseFloat(amountIn)),
+    assetIn:  assetIn.trim().toUpperCase(),
+    assetOut: assetOut.trim().toUpperCase(),
+    amountIn: parsedAmountIn.toString(),
   });
   res.json(challenge);
 });
@@ -542,31 +565,16 @@ router.post("/trade/exchange", async (req, res) => {
   const signature = body.signature;
   const nonce = body.nonce;
 
-  if (!walletAddress) {
-    res.status(400).json({ error: "walletAddress is required" });
+  if (typeof walletAddress !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+    res.status(400).json({ error: "A valid EVM walletAddress is required" });
     return;
   }
 
-  if (walletAddress.startsWith("0x")) {
-    if (!signature || !nonce) {
-      res.status(401).json({
-        error: "signature and nonce are required for EVM wallet exchange swaps. Request a challenge via POST /trade/exchange/challenge, sign the returned message, and include signature + nonce in this request.",
-      });
-      return;
-    }
-    try {
-      const assetIn = normalizeAssetSymbol(body.assetIn);
-      const assetOut = normalizeAssetSymbol(body.assetOut);
-      const amountIn = body.amountIn != null ? String(body.amountIn) : undefined;
-      verifyExchangeSignature(walletAddress, String(nonce), signature, {
-        assetIn: assetIn ?? undefined,
-        assetOut: assetOut ?? undefined,
-        amountIn,
-      });
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
-    }
+  if (!signature || !nonce) {
+    res.status(401).json({
+      error: "signature and nonce are required. Request and sign a challenge for the exact swap parameters.",
+    });
+    return;
   }
 
   try {
@@ -605,7 +613,24 @@ router.post("/trade/exchange", async (req, res) => {
       return;
     }
 
-    const trade = await executeExchangeTrade({ walletAddress, assetIn, assetOut, amountIn: amtIn, minAmountOut: minOut });
+    try {
+      verifyExchangeSignature(walletAddress, String(nonce), String(signature), {
+        assetIn,
+        assetOut,
+        amountIn: amtIn.toString(),
+      });
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
+      return;
+    }
+
+    const trade = await executeExchangeTrade({
+      walletAddress,
+      assetIn,
+      assetOut,
+      amountIn: amtIn,
+      minAmountOut: minOut,
+    });
 
     const vaultActive  = isVaultConfigured();
     const vaultAddress = vaultActive ? getVaultAddress() : null;
@@ -655,33 +680,14 @@ router.post("/trade/exchange/advanced", async (req, res) => {
   const normalizedSide = String(side ?? "").toLowerCase();
   const qty = parseFloat(String(quantity));
 
-  if (!walletAddress || !pair || (normalizedSide !== "buy" && normalizedSide !== "sell") || !Number.isFinite(qty) || qty <= 0) {
-    res.status(400).json({ error: "walletAddress, symbol, side (buy|sell), quantity are required" });
+  if (typeof walletAddress !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(walletAddress) ||
+      !pair || (normalizedSide !== "buy" && normalizedSide !== "sell") || !Number.isFinite(qty) || qty <= 0) {
+    res.status(400).json({ error: "A valid EVM wallet, symbol, side (buy|sell), and positive quantity are required" });
     return;
   }
-
-  if (String(walletAddress).startsWith("0x")) {
-    if (!signature || !nonce) {
-      res.status(401).json({
-        error: "signature and nonce are required for EVM wallet exchange swaps. Request a challenge via POST /trade/exchange/challenge and include signature + nonce.",
-      });
-      return;
-    }
-    try {
-      let assetIn: string | undefined;
-      let assetOut: string | undefined;
-      if (normalizedSide === "sell") {
-        assetIn = pair.base;
-        assetOut = pair.quote;
-      } else {
-        assetIn = pair.quote;
-        assetOut = pair.base;
-      }
-      verifyExchangeSignature(String(walletAddress), String(nonce), String(signature), { assetIn, assetOut, amountIn: String(qty) });
-    } catch (authErr: any) {
-      res.status(401).json({ error: authErr.message });
-      return;
-    }
+  if (!signature || !nonce) {
+    res.status(401).json({ error: "signature and nonce are required for the exact exchange trade." });
+    return;
   }
 
   try {
@@ -706,7 +712,24 @@ router.post("/trade/exchange/advanced", async (req, res) => {
       if (minOut == null) minOut = qty * 0.999;
     }
 
-    const trade = await executeExchangeTrade({ walletAddress, assetIn, assetOut, amountIn, minAmountOut: minOut });
+    try {
+      verifyExchangeSignature(String(walletAddress), String(nonce), String(signature), {
+        assetIn,
+        assetOut,
+        amountIn: amountIn.toString(),
+      });
+    } catch (authErr: any) {
+      res.status(401).json({ error: authErr.message });
+      return;
+    }
+
+    const trade = await executeExchangeTrade({
+      walletAddress,
+      assetIn,
+      assetOut,
+      amountIn,
+      minAmountOut: minOut,
+    });
 
     res.json({
       mode: "exchange-advanced",
@@ -738,7 +761,8 @@ router.post("/trade/exchange/advanced", async (req, res) => {
   }
 });
 
-router.post("/trade/exchange/mint", async (req, res) => {
+// ── POST /trade/exchange/mint ───────────────────────────────────────────────────
+router.post("/trade/exchange/mint", requireAdminToken, async (req, res) => {
   const walletAddress = req.body?.walletAddress;
   const asset = normalizeAssetSymbol(req.body?.asset) ?? "USDC";
   const amount = parseFloat(String(req.body?.amount ?? "NaN"));
@@ -765,7 +789,8 @@ router.post("/trade/exchange/mint", async (req, res) => {
   }
 });
 
-router.post("/trade/exchange/burn", async (req, res) => {
+// ── POST /trade/exchange/burn ───────────────────────────────────────────────────
+router.post("/trade/exchange/burn", requireAdminToken, async (req, res) => {
   const walletAddress = req.body?.walletAddress;
   const asset = normalizeAssetSymbol(req.body?.asset) ?? "USDC";
   const amount = parseFloat(String(req.body?.amount ?? "NaN"));

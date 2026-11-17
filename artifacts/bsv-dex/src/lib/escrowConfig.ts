@@ -12,6 +12,12 @@ export const ESCROW_ABI = parseAbi([
   "event OrderReleased(bytes32 indexed orderId, address indexed recipient, address token, uint256 amount)",
   "event OrderCancelled(bytes32 indexed orderId, address indexed depositor, address token, uint256 amount)",
 ]);
+
+export const ORDERBOOK_ESCROW_ABI = parseAbi([
+  "function openOrder(bytes32 orderId,uint8 side,address baseToken,address quoteToken,uint256 baseAmount,uint256 quoteAmount,uint256 limitPriceX18,uint64 expiresAt) payable",
+  "function cancel(bytes32 orderId)",
+]);
+
 /**
  * Escrow contract address per EVM chainId.
  *

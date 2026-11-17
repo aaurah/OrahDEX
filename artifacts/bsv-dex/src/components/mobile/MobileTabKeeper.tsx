@@ -16,6 +16,7 @@ import { useAdminAuthStore } from "@/store/useAdminAuthStore";
 
 /* ── Lazy page imports ───────────────────────────────────────────────────── */
 const MobileMarkets         = lazy(() => import("@/pages/mobile/MobileMarkets").then(m => ({ default: m.MobileMarkets })));
+const ExplorerPage          = lazy(() => import("@/pages/Explorer").then(m => ({ default: m.ExplorerPage })));
 const MobileTrade           = lazy(() => import("@/pages/mobile/MobileTrade").then(m => ({ default: m.MobileTrade })));
 const MobileWalletPortfolio = lazy(() => import("@/pages/mobile/MobileWalletPortfolio").then(m => ({ default: m.MobileWalletPortfolio })));
 const MobileSettings        = lazy(() => import("@/pages/mobile/MobileSettings").then(m => ({ default: m.MobileSettings })));
@@ -51,6 +52,7 @@ const PASSTHROUGH_PREFIXES = [
   "/settings/api-keys",
   "/deposit-bsv",
   "/qr-scan",
+  "/explorer",
 ];
 
 function isPassthrough(location: string) {
@@ -159,6 +161,7 @@ export function MobileTabKeeper() {
           <Route path="/settings/api-keys" component={UserApiKeys} />
           <Route path="/deposit-bsv"       component={MobileHandCashBridge} />
           <Route path="/qr-scan"           component={MobileQRScanner} />
+          <Route path="/explorer"          component={ExplorerPage} />
         </Switch>
       </Suspense>
     );
@@ -170,11 +173,11 @@ export function MobileTabKeeper() {
 
   return (
     <>
-      {vis("markets")    && <Tab active={act("markets")}>    <Suspense fallback={<Skeleton />}><MobileMarkets /></Suspense></Tab>}
+      {vis("markets")    && <Tab active={act("markets")}>    <Suspense fallback={<Skeleton />}><MobileMarkets active={act("markets")} /></Suspense></Tab>}
       {vis("swap")       && <Tab active={act("swap")}>       <Suspense fallback={<Skeleton />}><SwapPage /></Suspense></Tab>}
       {vis("trade")      && <Tab active={act("trade")}>      <Suspense fallback={<Skeleton />}><MobileTrade symbol={tradeSymbol} /></Suspense></Tab>}
       {vis("futures")    && <Tab active={act("futures")}>    <Suspense fallback={<Skeleton />}><MobileTrade symbol={futuresSymbol} /></Suspense></Tab>}
-      {vis("wallet")     && <Tab active={act("wallet")}>     <Suspense fallback={<Skeleton />}><MobileWalletPortfolio /></Suspense></Tab>}
+      {vis("wallet")     && <Tab active={act("wallet")}>     <Suspense fallback={<Skeleton />}><MobileWalletPortfolio defaultTab={location === "/wallet" ? "wallet" : "portfolio"} /></Suspense></Tab>}
       {vis("settings")   && <Tab active={act("settings")}>   <Suspense fallback={<Skeleton />}><MobileSettings /></Suspense></Tab>}
       {vis("staking")    && <Tab active={act("staking")}>    <Suspense fallback={<Skeleton />}><MobileStaking /></Suspense></Tab>}
       {vis("nft")        && <Tab active={act("nft")}>        <Suspense fallback={<Skeleton />}><MobileNFT /></Suspense></Tab>}
@@ -192,7 +195,7 @@ export function MobileTabKeeper() {
 
       {/* Fallback: unrecognised route — show markets */}
       {activeKey === null && !isPassthrough(location) && (
-        <Suspense fallback={<Skeleton />}><MobileMarkets /></Suspense>
+        <Suspense fallback={<Skeleton />}><MobileMarkets active /></Suspense>
       )}
     </>
   );

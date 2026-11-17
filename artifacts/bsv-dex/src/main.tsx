@@ -1,7 +1,6 @@
 import "./index.css";
 
-const STAGING =
-  import.meta.env.VITE_ORAHDEX_STAGING_CATALOG === "true";
+const STAGING = import.meta.env.VITE_ORAHDEX_STAGING_CATALOG === "true";
 
 async function start() {
   if (STAGING) {
@@ -12,9 +11,7 @@ async function start() {
         import("./StagingCatalogApp"),
       ]);
 
-    createRoot(document.getElementById("root")!)
-      .render(createElement(App));
-
+    createRoot(document.getElementById("root")!).render(createElement(App));
     return;
   }
 

@@ -6,7 +6,8 @@ import crypto from "node:crypto";
 import { requireAdminToken, isValidAdminToken } from "../middleware/adminAuth.js";
 import { processWithdrawal, EVM_USE_TESTNET } from "../lib/withdrawalProcessor.js";
 import { getEvmHotWalletAddress } from "../lib/exchangeHotWallet.js";
-import { getOrCreateWallet, fetchWalletBalance } from "../lib/bsvWallet.js";
+import { getOrCreateWallet, fetchWalletBalance, isBsvAddress } from "../lib/bsvWallet.js";
+import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { createPublicClient, http } from "viem";
 import {
   issueWithdrawChallenge,
@@ -18,6 +19,11 @@ import {
 } from "../lib/walletAuth.js";
 
 const router: IRouter = Router();
+
+function isBsvSignableAddress(address: string): boolean {
+  const p2pkhPrefix = BSV_NET.isTestnet ? /^[mn]/ : /^1/;
+  return p2pkhPrefix.test(address) && isBsvAddress(address);
+}
 
 // ── Per-wallet withdrawal rate limiter (5 requests / 60 s) ───────────────────
 const _withdrawRateMap = new Map<string, { count: number; resetAt: number }>();
@@ -54,12 +60,12 @@ router.post("/withdraw/challenge", (req, res) => {
     // Passkey wallets doing a BSV withdrawal supply bsvAddress so the challenge is
     // keyed on the BSV address (verified via Bitcoin message signature) while the
     // internal DEX balance remains tracked under the EVM address.
-    if (bsvAddress && /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(bsvAddress)) {
+    if (bsvAddress && isBsvSignableAddress(bsvAddress)) {
       res.json(issueBsvWithdrawChallenge(bsvAddress));
     } else {
       res.json(issueWithdrawChallenge(walletAddress));
     }
-  } else if (/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(walletAddress)) {
+  } else if (isBsvSignableAddress(walletAddress)) {
     res.json(issueBsvWithdrawChallenge(walletAddress));
   } else if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
     res.json(issueSolWithdrawChallenge(walletAddress));
@@ -80,9 +86,6 @@ const EVM_NETWORKS = new Set([
   "ETH", "BNB", "MATIC", "AVAX", "FTM", "BASE", "ARB", "OP", "ZKSYNC", "LINEA",
   "SCROLL", "BLAST", "MODE", "TAIKO", "SEPOLIA", "BASE_SEP", "ARB_SEP", "EVM",
 ]);
-// BSV P2PKH (1…) or P2SH (3…) address, base58 chars, 26-35 chars.
-const BSV_ADDRESS_RE = /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/;
-
 router.post("/withdrawals", async (req, res) => {
   const { walletAddress, asset, amount, network, networkLabel, recipient, fee, signature, bsvSignerAddress } = req.body;
   if (walletAddress && !checkWithdrawRateLimit(req, res, String(walletAddress).toLowerCase())) return;
@@ -96,14 +99,21 @@ router.post("/withdrawals", async (req, res) => {
   // This prevents misdirected withdrawals to malformed or wrong-network addresses.
   const networkUp = String(network).toUpperCase();
   const isEvmNetwork = EVM_NETWORKS.has(networkUp);
-  const isBsvNetwork = networkUp === "BSV";
+  const isBsvTestNetwork = ["BSV-TEST", "BSV_TEST", "BSV-TESTNET"].includes(networkUp);
+  const isBsvNetwork = networkUp === "BSV" || isBsvTestNetwork;
+  if (isBsvTestNetwork !== BSV_NET.isTestnet && isBsvNetwork) {
+    res.status(409).json({
+      error: `This server is configured for ${BSV_NET.isTestnet ? "BSV testnet" : "BSV mainnet"} only. Select the matching wallet network.`,
+    });
+    return;
+  }
   if (isEvmNetwork && !/^0x[0-9a-fA-F]{40}$/.test(recipient)) {
     res.status(400).json({
       error: `Invalid recipient address for ${network} network. Expected 0x-prefixed 20-byte EVM address (0x + 40 hex chars).`,
     });
     return;
   }
-  if (isBsvNetwork && !BSV_ADDRESS_RE.test(recipient)) {
+  if (isBsvNetwork && !isBsvAddress(recipient)) {
     res.status(400).json({
       error: "Invalid recipient address for BSV network. Expected a P2PKH (1…) or P2SH (3…) address.",
     });
@@ -140,7 +150,7 @@ router.post("/withdrawals", async (req, res) => {
     const isBsvWithdrawal =
       isBsvNetwork &&
       typeof bsvSignerAddress === "string" &&
-      /^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(bsvSignerAddress);
+      isBsvSignableAddress(bsvSignerAddress);
     if (isBsvWithdrawal) {
       try {
         verifyBsvWithdrawSignature(bsvSignerAddress, signature);
@@ -156,7 +166,7 @@ router.post("/withdrawals", async (req, res) => {
         return;
       }
     }
-  } else if (/^[13][a-km-zA-HJ-NP-Z1-9]{25,34}$/.test(walletAddress)) {
+  } else if (isBsvSignableAddress(walletAddress)) {
     // BSV P2PKH / P2SH wallet
     if (!signature) {
       res.status(401).json({
@@ -238,7 +248,7 @@ router.post("/withdrawals", async (req, res) => {
     await client.query(
       `INSERT INTO withdrawal_requests
          (id, wallet_address, asset, amount, network, network_label, recipient, fee, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', now())`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'processing', now())`,
       [id, walletAddress, asset, parsed.toString(), network, networkLabel ?? network, recipient, fee ?? null],
     );
 
@@ -247,73 +257,74 @@ router.post("/withdrawals", async (req, res) => {
     req.log.info({ id, walletAddress, asset, amount: parsed, network, recipient }, "withdrawals: request created and balance deducted");
 
     // ── Attempt immediate on-chain processing ─────────────────────────────────
-    // Run async so the HTTP response is fast. Errors are caught internally and
-    // leave the request in "pending" for admin fallback.
+    // Marked processing before this asynchronous send so an admin retry cannot
+    // race the first broadcast. Ambiguous failures stay processing for chain
+    // reconciliation; never refund when a send may already have reached a node.
     setImmediate(async () => {
+      let result: Awaited<ReturnType<typeof processWithdrawal>>;
       try {
-        const result = await processWithdrawal({ asset, amount: parsed, network, recipient });
+        result = await processWithdrawal({
+          asset,
+          amount: parsed,
+          network: isBsvTestNetwork ? "bsv-test" : network,
+          recipient,
+        });
+      } catch (autoErr: any) {
+        const note = `Auto-process outcome is uncertain; verify the chain before retrying or refunding. ${(autoErr?.message ?? "unknown").slice(0, 200)}`;
+        await pool.query(
+          `UPDATE withdrawal_requests SET status = 'processing', note = $1
+           WHERE id = $2 AND status = 'processing'`,
+          [note, id],
+        ).catch((persistErr: any) => {
+          req.log.error({ persistErr, autoErr, id }, "withdrawals: failed to persist uncertain send state");
+        });
+        req.log.error({ autoErr, id }, "withdrawals: automatic send outcome uncertain; balance remains reserved");
+        return;
+      }
 
-        if (result.status === "completed" && result.txid) {
+      if (result.status === "completed" && result.txid) {
+        try {
           await pool.query(
             `UPDATE withdrawal_requests
              SET status = 'completed', txid = $1, note = $2, processed_at = now(),
                  arc_txid = $3, arc_status = $4
-             WHERE id = $5`,
+              WHERE id = $5 AND status = 'processing'`,
             [result.txid, result.explorer ?? null, result.arcTxid ?? null, result.arcStatus ?? null, id],
           );
           req.log.info({ id, txid: result.txid, arcStatus: result.arcStatus }, "withdrawals: auto-processed on-chain");
-        } else if (result.note) {
+        } catch (persistErr: any) {
           await pool.query(
-            `UPDATE withdrawal_requests SET note = $1 WHERE id = $2`,
-            [result.note, id],
-          );
+            `UPDATE withdrawal_requests
+             SET status = 'processing', txid = $1, note = $2
+             WHERE id = $3 AND status = 'processing'`,
+            [result.txid, "On-chain send returned a transaction ID, but status persistence failed. Reconcile this transaction before retrying.", id],
+          ).catch(() => {});
+          req.log.error({ persistErr, id, txid: result.txid }, "withdrawals: broadcast succeeded but completion could not be persisted");
         }
-      } catch (autoErr: any) {
-        // Auto-processing threw — refund the user's available balance and mark
-        // the request as failed in a single transaction so it cannot be retried
-        // by an admin without first being reset. Without this, the user's
-        // funds were debited but no on-chain send happened, leaving them stuck.
-        const refundClient = await pool.connect();
-        try {
-          await refundClient.query("BEGIN");
-          // Only refund + fail if still pending — guards against a race where
-          // a parallel retry already advanced the row to processing/completed.
-          const { rows: stillPending } = await refundClient.query(
-            `SELECT 1 FROM withdrawal_requests WHERE id = $1 AND status = 'pending' FOR UPDATE`,
-            [id],
-          );
-          if (stillPending.length > 0) {
-            await refundClient.query(
-              `UPDATE user_balances
-               SET available = available + $1, updated_at = now()
-               WHERE wallet_address = $2 AND asset_symbol = $3`,
-              [parsed.toString(), walletAddress, asset],
-            );
-            await refundClient.query(
-              `UPDATE withdrawal_requests
-               SET status = 'failed',
-                   note   = $1,
-                   processed_at = now()
-               WHERE id = $2`,
-              [`Auto-process failed: ${(autoErr?.message ?? "unknown").slice(0, 200)}`, id],
-            );
-            req.log.warn({ autoErr, id }, "withdrawals: auto-process failed — balance refunded, request marked failed");
-          }
-          await refundClient.query("COMMIT");
-        } catch (refundErr) {
-          await refundClient.query("ROLLBACK").catch(() => {});
-          // Last resort: log loudly so operators can intervene. This is the
-          // only path where funds remain debited; should be vanishingly rare.
-          req.log.error({ refundErr, autoErr, id }, "withdrawals: AUTO-REFUND FAILED — manual intervention required");
-        } finally {
-          refundClient.release();
-        }
+        return;
+      }
+
+      const outcomeUncertain =
+        result.status === "completed" || Boolean(result.txid) ||
+        Boolean(result.note?.startsWith("Auto-processing failed:"));
+      const nextStatus = outcomeUncertain ? "processing" : "pending";
+      const note = result.note ?? "Withdrawal queued; no transaction ID was returned.";
+      await pool.query(
+        `UPDATE withdrawal_requests
+         SET status = $1, txid = COALESCE($2, txid), note = $3
+         WHERE id = $4 AND status = 'processing'`,
+        [nextStatus, result.txid ?? null, note, id],
+      ).catch((persistErr: any) => {
+        req.log.error({ persistErr, id }, "withdrawals: failed to persist processor result");
+      });
+      if (outcomeUncertain) {
+        req.log.error({ id, txid: result.txid }, "withdrawals: send outcome needs on-chain reconciliation");
       }
     });
 
     res.status(201).json({
       id,
-      status: "pending",
+      status: "processing",
       message: "Withdrawal submitted — processing on-chain now. Check withdrawal history for live status.",
       walletAddress,
       asset,
@@ -394,9 +405,9 @@ router.post("/admin/withdrawals/:id/retry", requireAdminToken, async (req, res) 
     await client.query("BEGIN");
     const { rows } = await client.query<{
       id: string; wallet_address: string; asset: string; amount: string;
-      network: string; recipient: string; status: string;
+      network: string; recipient: string; status: string; txid: string | null;
     }>(
-      `SELECT id, wallet_address, asset, amount, network, recipient, status
+      `SELECT id, wallet_address, asset, amount, network, recipient, status, txid
          FROM withdrawal_requests WHERE id = $1 FOR UPDATE`,
       [id],
     );
@@ -409,6 +420,19 @@ router.post("/admin/withdrawals/:id/retry", requireAdminToken, async (req, res) 
     if (wr.status === "completed") {
       await client.query("ROLLBACK");
       res.status(400).json({ error: "This withdrawal is already completed." });
+      return;
+    }
+    if (wr.status === "processing" || wr.txid) {
+      await client.query("ROLLBACK");
+      res.status(409).json({
+        error: "This withdrawal may already have been broadcast. Reconcile its transaction on-chain before retrying.",
+        txid: wr.txid,
+      });
+      return;
+    }
+    if (!["pending", "cancelled", "failed"].includes(wr.status)) {
+      await client.query("ROLLBACK");
+      res.status(409).json({ error: `Cannot retry a withdrawal in status '${wr.status}'.` });
       return;
     }
 
@@ -446,32 +470,62 @@ router.post("/admin/withdrawals/:id/retry", requireAdminToken, async (req, res) 
 
     // Fire the on-chain attempt asynchronously and respond fast.
     setImmediate(async () => {
+      let result: Awaited<ReturnType<typeof processWithdrawal>>;
       try {
-        const result = await processWithdrawal({
+        result = await processWithdrawal({
           asset:     wr.asset,
           amount:    parseFloat(wr.amount),
           network:   wr.network,
           recipient: wr.recipient,
         });
-        if (result.status === "completed" && result.txid) {
+      } catch (err: any) {
+        await pool.query(
+          `UPDATE withdrawal_requests SET status = 'processing', note = $1
+           WHERE id = $2 AND status = 'processing'`,
+          [`Retry outcome is uncertain; verify the chain before retrying or refunding. ${(err?.message ?? err).toString().slice(0, 200)}`, id],
+        ).catch(() => {});
+        req.log.error({ err, id }, "withdrawals: retry outcome uncertain; balance remains reserved");
+        return;
+      }
+
+      if (result.status === "completed" && result.txid) {
+        try {
           await pool.query(
             `UPDATE withdrawal_requests
                 SET status = 'completed', txid = $1, note = $2, processed_at = now(),
                     arc_txid = $3, arc_status = $4
-              WHERE id = $5`,
+              WHERE id = $5 AND status = 'processing'`,
             [result.txid, result.explorer ?? null, result.arcTxid ?? null, result.arcStatus ?? null, id],
           );
-        } else {
+        } catch (persistErr: any) {
           await pool.query(
-            `UPDATE withdrawal_requests SET status = 'pending', note = $1 WHERE id = $2`,
-            [result.note ?? "Retry: still pending", id],
-          );
+            `UPDATE withdrawal_requests SET status = 'processing', txid = $1, note = $2
+             WHERE id = $3 AND status = 'processing'`,
+            [result.txid, "Retry broadcast returned a transaction ID, but status persistence failed. Reconcile before retrying.", id],
+          ).catch(() => {});
+          req.log.error({ persistErr, id, txid: result.txid }, "withdrawals: retry broadcast succeeded but completion could not be persisted");
         }
-      } catch (err: any) {
-        await pool.query(
-          `UPDATE withdrawal_requests SET status = 'pending', note = $1 WHERE id = $2`,
-          [`Retry failed: ${err?.message ?? err}`, id],
-        );
+        return;
+      }
+
+      const outcomeUncertain =
+        result.status === "completed" || Boolean(result.txid) ||
+        Boolean(result.note?.startsWith("Auto-processing failed:"));
+      await pool.query(
+        `UPDATE withdrawal_requests
+         SET status = $1, txid = COALESCE($2, txid), note = $3
+         WHERE id = $4 AND status = 'processing'`,
+        [
+          outcomeUncertain ? "processing" : "pending",
+          result.txid ?? null,
+          result.note ?? "Retry queued; no transaction ID was returned.",
+          id,
+        ],
+      ).catch((persistErr: any) => {
+        req.log.error({ persistErr, id }, "withdrawals: failed to persist retry result");
+      });
+      if (outcomeUncertain) {
+        req.log.error({ id, txid: result.txid }, "withdrawals: retry outcome needs on-chain reconciliation");
       }
     });
 
@@ -544,7 +598,12 @@ router.get("/admin/hot-wallet-status", requireAdminToken, async (req, res) => {
 // admin LedgerManager UI calls — keep both in sync.
 router.patch(["/withdrawals/:id", "/admin/withdrawals/:id/status"], requireAdminToken, async (req, res) => {
   const { id } = req.params;
-  const { status, txid, note } = req.body as { status: string; txid?: string; note?: string };
+  const { status, txid, note, confirmNoBroadcast } = req.body as {
+    status: string;
+    txid?: string;
+    note?: string;
+    confirmNoBroadcast?: boolean;
+  };
 
   const VALID = ["cancelled", "processing", "completed"];
   if (!VALID.includes(status)) {
@@ -558,9 +617,10 @@ router.patch(["/withdrawals/:id", "/admin/withdrawals/:id/status"], requireAdmin
 
     // Fetch the current withdrawal request (lock for update)
     const { rows } = await client.query<{
-      id: string; wallet_address: string; asset: string; amount: string; status: string;
+      id: string; wallet_address: string; asset: string; amount: string;
+      status: string; txid: string | null; note: string | null;
     }>(
-      `SELECT id, wallet_address, asset, amount, status
+      `SELECT id, wallet_address, asset, amount, status, txid, note
        FROM withdrawal_requests WHERE id = $1 FOR UPDATE`,
       [id],
     );
@@ -572,6 +632,38 @@ router.patch(["/withdrawals/:id", "/admin/withdrawals/:id/status"], requireAdmin
     }
 
     const wr = rows[0];
+
+    if (status === "completed" && !txid && !wr.txid) {
+      await client.query("ROLLBACK");
+      res.status(400).json({ error: "A transaction ID is required before marking a withdrawal completed." });
+      return;
+    }
+    if (status === "cancelled" && wr.txid) {
+      await client.query("ROLLBACK");
+      res.status(409).json({
+        error: "This withdrawal has a transaction ID. Verify its on-chain result before changing its status.",
+        txid: wr.txid,
+      });
+      return;
+    }
+    if (status === "cancelled" && wr.status === "processing" && confirmNoBroadcast !== true) {
+      await client.query("ROLLBACK");
+      res.status(409).json({
+        error: "Confirm that you checked the chain and no transaction was broadcast before refunding this processing withdrawal.",
+      });
+      return;
+    }
+    if (
+      status === "cancelled" &&
+      wr.status === "processing" &&
+      !/(uncertain|outcome|failed)/i.test(wr.note ?? "")
+    ) {
+      await client.query("ROLLBACK");
+      res.status(409).json({
+        error: "The withdrawal is still being processed. Wait for the send attempt to finish before considering a refund.",
+      });
+      return;
+    }
 
     if (wr.status === status) {
       await client.query("ROLLBACK");

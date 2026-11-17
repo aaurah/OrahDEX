@@ -178,7 +178,10 @@ export function OraAIPage() {
         signal: abortRef.current.signal,
       });
 
-      if (!res.ok || !res.body) throw new Error("Stream failed");
+      if (!res.ok || !res.body) {
+        const result = await res.json().catch(() => ({}));
+        throw new Error(result.error ?? "Stream failed");
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -206,7 +209,7 @@ export function OraAIPage() {
     } catch (err: any) {
       if (err?.name !== "AbortError") {
         setMessages(prev => prev.map(m =>
-          m.id === assistantId ? { ...m, content: "Something went wrong. Please try again." } : m
+          m.id === assistantId ? { ...m, content: err?.message ?? "Something went wrong. Please try again." } : m
         ));
       }
     } finally {

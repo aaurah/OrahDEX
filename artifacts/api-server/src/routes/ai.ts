@@ -2,10 +2,16 @@ import { Router } from "express";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "@workspace/db";
 import { conversations, messages } from "@workspace/db/schema";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import {
+  openai,
+  createDevaiOllamaStream,
+  getDevaiOllamaStatus,
+  isDevaiOllamaEnabled,
+} from "@workspace/integrations-openai-ai-server";
 import { eq, asc } from "drizzle-orm";
 import { logger } from "../lib/logger.js";
 import { getTopHlMarkets } from "../lib/hyperliquid.js";
+import { aiChatRateLimit } from "../middleware/aiChatRateLimit.js";
 
 const router = Router();
 
@@ -157,12 +163,22 @@ router.get("/ai/conversations/:id", async (req, res) => {
 
 // ── POST /ai/conversations/:id/messages — send message with SSE streaming ────
 
-router.post("/ai/conversations/:id/messages", async (req, res) => {
-  const id = parseInt(req.params.id ?? "");
+router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) => {
+  const rawId = req.params.id;
+  const id = parseInt(Array.isArray(rawId) ? rawId[0] ?? "" : rawId ?? "", 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid conversation id" }); return; }
 
   const content = (req.body?.content ?? "").trim();
   if (!content) { res.status(400).json({ error: "Content is required" }); return; }
+
+  const useLocalOllama = isDevaiOllamaEnabled();
+  if (useLocalOllama) {
+    const status = await getDevaiOllamaStatus();
+    if (!status.reachable || !status.modelAvailable) {
+      res.status(503).json({ error: status.error ?? "The local AI model is not ready." });
+      return;
+    }
+  }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -179,8 +195,7 @@ router.post("/ai/conversations/:id/messages", async (req, res) => {
     return;
   }
 
-  // If AI is unavailable, stream the fallback response
-  if (!isAiAvailable()) {
+  if (!useLocalOllama && !isAiAvailable()) {
     res.write(`data: ${JSON.stringify({ content: FALLBACK_CHAT })}\n\n`);
     try {
       await db.insert(messages).values({ conversationId: id, role: "assistant", content: FALLBACK_CHAT });
@@ -204,12 +219,21 @@ router.post("/ai/conversations/:id/messages", async (req, res) => {
 
     let fullResponse = "";
 
-    const stream = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_completion_tokens: 8192,
-      messages: chatMessages,
-      stream: true,
-    });
+    const streamResult: unknown = useLocalOllama
+      ? await createDevaiOllamaStream(chatMessages, 2048)
+      : await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          max_completion_tokens: 8192,
+          messages: chatMessages,
+          stream: true,
+        });
+    const streamCandidate = streamResult as { [Symbol.asyncIterator]?: unknown } | null;
+    if (!streamCandidate || typeof streamCandidate[Symbol.asyncIterator] !== "function") {
+      throw new Error("AI provider did not return a streaming response.");
+    }
+    const stream = streamResult as AsyncIterable<{
+      choices: Array<{ delta?: { content?: string | null } }>;
+    }>;
 
     for await (const chunk of stream) {
       const token = chunk.choices[0]?.delta?.content;
@@ -230,12 +254,14 @@ router.post("/ai/conversations/:id/messages", async (req, res) => {
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();
   } catch (err: any) {
-    tripCircuitBreaker(err);
+    if (!useLocalOllama) tripCircuitBreaker(err);
     logger.error({ err: err?.message }, "AI chat error");
-    // Stream fallback so the UI shows something, not a hanging spinner
-    res.write(`data: ${JSON.stringify({ content: FALLBACK_CHAT })}\n\n`);
+    const fallback = useLocalOllama
+      ? "Local Ollama could not complete this chat. Check Admin → DevAI for model status, then try again."
+      : FALLBACK_CHAT;
+    res.write(`data: ${JSON.stringify({ content: fallback })}\n\n`);
     try {
-      await db.insert(messages).values({ conversationId: id, role: "assistant", content: FALLBACK_CHAT });
+      await db.insert(messages).values({ conversationId: id, role: "assistant", content: fallback });
     } catch { /* non-fatal */ }
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();

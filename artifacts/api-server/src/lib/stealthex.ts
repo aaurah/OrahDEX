@@ -131,15 +131,17 @@ export interface SxExchange {
  * Body: { currency_from, currency_to, amount_from, address_to, extra_id_to }
  */
 export async function createSXExchange(args: {
-  from:     string;
-  to:       string;
-  amount:   number;
-  address:  string;
-  extraId?: string;
+  from:               string;
+  to:                 string;
+  amount:             number;
+  address:            string;
+  extraId?:           string;
+  providerTickerFrom?: string;
+  providerTickerTo?:   string;
 }): Promise<{ ok: true; exchange: SxExchange } | { ok: false; error: string }> {
   const body: Record<string, unknown> = {
-    currency_from: args.from.toLowerCase(),
-    currency_to:   args.to.toLowerCase(),
+    currency_from: args.providerTickerFrom?.trim().toLowerCase() || args.from.toLowerCase(),
+    currency_to:   args.providerTickerTo?.trim().toLowerCase() || args.to.toLowerCase(),
     amount_from:   args.amount,
     address_to:    args.address.trim(),
     extra_id_to:   args.extraId ?? "",

@@ -61,7 +61,7 @@ async function probe(
 /* ── RPC chains ───────────────────────────────────────────────────────────── */
 
 const EVM_CHAINS: Array<{ id: string; label: string; envVar: string; fallback: string }> = [
-  { id: "eth",      label: "Ethereum Mainnet",  envVar: "ETH_RPC_URL",      fallback: "https://eth.llamarpc.com" },
+  { id: "eth",      label: "Ethereum Mainnet",  envVar: "ETH_RPC_URL",      fallback: "https://ethereum-rpc.publicnode.com" },
   { id: "base",     label: "Base",               envVar: "BASE_RPC_URL",     fallback: "https://base.publicnode.com" },
   { id: "arbitrum", label: "Arbitrum One",       envVar: "ARB_RPC_URL",      fallback: "https://arbitrum-one.publicnode.com" },
   { id: "optimism", label: "Optimism",           envVar: "OP_RPC_URL",       fallback: "https://optimism.publicnode.com" },

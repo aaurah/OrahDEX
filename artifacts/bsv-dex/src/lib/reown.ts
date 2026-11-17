@@ -1,5 +1,11 @@
 import { getCoinbaseProvider } from "./coinbaseWallet";
-import { createConfig, http } from "@wagmi/core";
+import {
+  createConfig, getAccount, http,
+  switchChain as wagmiSwitchChain, waitForTransactionReceipt as wagmiWaitForTransactionReceipt,
+} from "@wagmi/core";
+import { encodeFunctionData, erc20Abi } from "viem";
+import { ConnectionController } from "@reown/appkit-controllers";
+import { getAppKitWagmiConfig } from "./reown-appkit";
 import {
   mainnet, polygon, arbitrum, optimism, base, bsc, avalanche,
   linea, zkSync, scroll, mantle, fantom, cronos, sepolia,
@@ -135,64 +141,171 @@ export async function fetchEvmBalance(
   }
 }
 
-export async function sendEvmTransfer({
-  from, to, valueWei, targetChainId,
-}: { from: string; to: string; valueWei: bigint; targetChainId: number }): Promise<string> {
-  const valueHex = "0x" + valueWei.toString(16);
-  const chainHex = "0x" + targetChainId.toString(16);
+/**
+ * Reads an exact ERC-20 balance before a wallet-send flow. Uses the same
+ * server-side RPC proxy as the app's balance hooks, then the configured public
+ * fallback; it never asks the wallet to sign or submit a transaction.
+ */
+export async function fetchErc20BalanceRaw(
+  owner: string,
+  tokenAddress: string,
+  chainId: number,
+): Promise<bigint> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(owner) || !/^0x[0-9a-fA-F]{40}$/.test(tokenAddress)) {
+    throw new Error("A valid wallet and token address are required to check this balance.");
+  }
 
-  async function tryProvider(provider: any): Promise<string | null> {
+  const ownerWord = owner.slice(2).toLowerCase().padStart(64, "0");
+  const callData = `0x70a08231${ownerWord}`;
+  const endpoints = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter(Boolean);
+
+  for (const endpoint of endpoints) {
     try {
-      const currentHex: string = await provider.request({ method: "eth_chainId" });
-      if (parseInt(currentHex, 16) !== targetChainId) {
-        await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainHex }] });
-      }
-      const hash: string = await provider.request({
-        method: "eth_sendTransaction",
-        params: [{ from, to, value: valueHex }],
+      const response = await fetch(endpoint!, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_call",
+          params: [{ to: tokenAddress, data: callData }, "latest"],
+        }),
       });
-      return hash ?? null;
-    } catch (err: any) {
-      if (err?.code === 4001 || err?.message?.includes("rejected")) throw err;
-      return null;
+      if (!response.ok) continue;
+      const payload = await response.json();
+      if (payload?.error || typeof payload?.result !== "string" || !/^0x[0-9a-f]+$/i.test(payload.result)) {
+        continue;
+      }
+      return BigInt(payload.result);
+    } catch {
+      continue;
     }
   }
 
-  const injected = (window as any).ethereum;
-  if (injected) { const h = await tryProvider(injected); if (h) return h; }
-
-  throw new Error("No active wallet found. Please connect MetaMask or install a browser wallet.");
+  throw new Error("Could not verify the token balance. Retry the balance check before sending.");
 }
 
-export async function sendErc20Transfer({
-  tokenAddress, from, to, amount, targetChainId,
-}: { tokenAddress: string; from: string; to: string; amount: bigint; targetChainId: number }): Promise<string> {
-  const paddedTo  = to.replace("0x", "").padStart(64, "0");
-  const paddedAmt = amount.toString(16).padStart(64, "0");
-  const data      = "0xa9059cbb" + paddedTo + paddedAmt;
-  const chainHex  = "0x" + targetChainId.toString(16);
+export async function fetchNativeBalanceRaw(owner: string, chainId: number): Promise<bigint> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(owner)) {
+    throw new Error("A valid wallet address is required to check this balance.");
+  }
 
-  async function tryProvider(provider: any): Promise<string | null> {
+  const endpoints = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter(Boolean);
+  for (const endpoint of endpoints) {
     try {
-      const currentHex: string = await provider.request({ method: "eth_chainId" });
-      if (parseInt(currentHex, 16) !== targetChainId) {
-        await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainHex }] });
-      }
-      const hash: string = await provider.request({
-        method: "eth_sendTransaction",
-        params: [{ from, to: tokenAddress, data }],
+      const response = await fetch(endpoint!, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_getBalance",
+          params: [owner, "latest"],
+        }),
       });
-      return hash ?? null;
-    } catch (err: any) {
-      if (err?.code === 4001 || err?.message?.includes("rejected")) throw err;
-      return null;
+      if (!response.ok) continue;
+      const payload = await response.json();
+      if (payload?.error || typeof payload?.result !== "string" || !/^0x[0-9a-f]+$/i.test(payload.result)) {
+        continue;
+      }
+      return BigInt(payload.result);
+    } catch {
+      continue;
     }
   }
 
-  const injected = (window as any).ethereum;
-  if (injected) { const h = await tryProvider(injected); if (h) return h; }
+  throw new Error("Could not verify the native token balance. Retry the balance check before sending.");
+}
 
-  throw new Error("No active wallet found. Please connect MetaMask or install a browser wallet.");
+export function sendEvmTransfer({
+  from, to, valueWei, targetChainId, onStage,
+}: { from: string; to: string; valueWei: bigint; targetChainId: number; onStage?: (stage: "sending") => void }): Promise<string> {
+  const config = getAppKitWagmiConfig();
+  assertWalletReady(config, from, targetChainId);
+  onStage?.("sending");
+  return ConnectionController.sendTransaction({
+    chainNamespace: "eip155",
+    address: from as `0x${string}`,
+    to: to as `0x${string}`,
+    data: "0x",
+    value: valueWei,
+  }).then(validateEvmTransactionHash);
+}
+
+export function sendErc20Transfer({
+  tokenAddress, from, to, amount, targetChainId, onStage,
+}: { tokenAddress: string; from: string; to: string; amount: bigint; targetChainId: number; onStage?: (stage: "sending") => void }): Promise<string> {
+  const config = getAppKitWagmiConfig();
+  assertWalletReady(config, from, targetChainId);
+  const data = encodeFunctionData({
+    abi: erc20Abi,
+    functionName: "transfer",
+    args: [to as `0x${string}`, amount],
+  });
+  onStage?.("sending");
+  return ConnectionController.sendTransaction({
+    chainNamespace: "eip155",
+    address: from as `0x${string}`,
+    to: tokenAddress as `0x${string}`,
+    data,
+    value: 0n,
+  }).then(validateEvmTransactionHash);
+}
+
+export async function waitForEvmTransaction(
+  hash: string,
+  targetChainId: number,
+): Promise<"success" | "reverted"> {
+  const config = getAppKitWagmiConfig();
+  const receipt = await wagmiWaitForTransactionReceipt(config, {
+    hash: hash as `0x${string}`,
+    chainId: targetChainId,
+    timeout: 45_000,
+  });
+  return receipt.status;
+}
+
+export function switchEvmNetwork(targetChainId: number): Promise<void> {
+  const config = getAppKitWagmiConfig();
+  const account = getAccount(config);
+  if (!account.address || !account.connector) {
+    return Promise.reject(new Error("The connected wallet session is unavailable. Reconnect your wallet and try again."));
+  }
+  return wagmiSwitchChain(config, {
+    chainId: targetChainId as (typeof config.chains)[number]["id"],
+  }).then(() => {
+    const switchedAccount = getAccount(config);
+    if (switchedAccount.address?.toLowerCase() !== account.address?.toLowerCase()) {
+      throw new Error("The active wallet changed while switching networks. Reconnect and try again.");
+    }
+    if (switchedAccount.chainId !== targetChainId) {
+      throw new Error("The wallet did not switch to the required network.");
+    }
+  });
+}
+
+function assertWalletReady(
+  config: ReturnType<typeof getAppKitWagmiConfig>,
+  expectedAddress: string,
+  targetChainId: number,
+): void {
+  const account = getAccount(config);
+  if (!account.address || !account.connector) {
+    throw new Error("The connected wallet session is unavailable. Reconnect your wallet and try again.");
+  }
+  if (account.address.toLowerCase() !== expectedAddress.toLowerCase()) {
+    throw new Error("The active wallet changed. Reconnect the wallet shown for this exchange and try again.");
+  }
+  if (account.chainId !== targetChainId) {
+    throw new Error("Switch your wallet to the deposit network before sending.");
+  }
+}
+
+function validateEvmTransactionHash(hash: string | null | undefined): string {
+  if (typeof hash !== "string" || !/^0x[0-9a-f]{64}$/i.test(hash)) {
+    throw new Error("The wallet did not return a transaction ID.");
+  }
+  return hash;
 }
 
 export async function approveToken(

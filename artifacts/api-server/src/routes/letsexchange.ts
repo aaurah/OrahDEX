@@ -28,7 +28,7 @@ import {
   isLetsExchangeConfigured,
   type NormalisedCoin,
 } from "../lib/lePriceCache.js";
-import { getCoinChangeMap } from "../lib/priceUpdater.js";
+import { fetchGatePairPrices, fetchMarketUsdPrices, getCoinChangeMap } from "../lib/priceUpdater.js";
 import { getBuiltInLeCoins } from "../lib/leAllCoins.js";
 import { getBestExternalQuote, type ExternalVenue } from "../lib/metaRouter.js";
 import { createCNExchange, getCNExchange } from "../lib/changenow.js";
@@ -534,7 +534,24 @@ router.get("/letsexchange/pairs", async (req, res) => {
   // Layer 1: static fallbacks
   const usdPrices: Record<string, number> = { ...FALLBACK_USD };
 
-  // Layer 2: LE live rates from shared cache (non-blocking).
+  // Layer 2: cached live USD prices from supported market feeds.
+  // Shared caches keep this all-pairs endpoint from fetching per token/pair.
+  try {
+    const livePrices = await fetchMarketUsdPrices();
+    for (const [symbol, price] of Object.entries(livePrices)) {
+      if (price.usd > 0) usdPrices[symbol.toUpperCase()] = price.usd;
+    }
+  } catch (err) {
+    logger.warn({ err }, "letsexchange /pairs: CoinGecko prices unavailable; keeping cached and fallback prices");
+  }
+  let directPairPrices: Record<string, number> = {};
+  try {
+    directPairPrices = await fetchGatePairPrices();
+  } catch (err) {
+    logger.warn({ err }, "letsexchange /pairs: direct market prices unavailable");
+  }
+
+  // Layer 3: LE live rates from shared cache (non-blocking).
   // getCachedLEPrices() returns {} on a cold cache; kick off a refresh for next time.
   // When serving from DB we may not have coins loaded — skip the background warmup
   // if coins isn't available (it will be warmed on the next live-fallback cycle).
@@ -542,7 +559,7 @@ router.get("/letsexchange/pairs", async (req, res) => {
   if (Object.keys(lePrices).length === 0 && coins) fetchLEPricesUSD(coins).catch(() => {});
   Object.assign(usdPrices, lePrices); // LE rates overwrite static fallbacks
 
-  // Layer 3: DB native USDT/USDC prices (most accurate)
+  // Layer 4: DB native USDT/USDC prices (most accurate)
   for (const p of nativePairs) {
     const q     = p.quoteAsset as string;
     const price = p.lastPrice  as number;
@@ -551,12 +568,15 @@ router.get("/letsexchange/pairs", async (req, res) => {
     }
   }
 
-  // Layer 4: stablecoins always pinned at $1
+  // Layer 5: stablecoins always pinned at $1
   Object.assign(usdPrices, STABLES);
 
   // Enrich LE-only pairs that still have lastPrice === 0
   let allPairs = Array.from(bySymbol.values()).map(p => {
     if ((p.lastPrice as number) > 0) return p; // already has a real price
+    const pairSymbol = `${p.baseAsset}/${p.quoteAsset}`.toUpperCase();
+    const directPrice = directPairPrices[pairSymbol];
+    if (directPrice && directPrice > 0) return { ...p, lastPrice: directPrice };
     const baseUsd  = usdPrices[(p.baseAsset  as string)?.toUpperCase()];
     const quoteUsd = usdPrices[(p.quoteAsset as string)?.toUpperCase()];
     if (!baseUsd || !quoteUsd) return p;
@@ -1009,6 +1029,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
         rate_id_expired_at: null,
         withdrawal_fee: "0",
         best_venue: "simpleswap",
+        venue_status: [{ venue: "simpleswap", hasQuote: true }],
         venue_quotes: [{
           venue: "simpleswap",
           rate: String(rate),
@@ -1070,7 +1091,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
     // For LetsExchange winner: fetch rate_id for optional fixed-rate locking
     let rate_id: string | null = null;
     let rate_id_expired_at: string | null = null;
-    if (best.venue === "letsexchange" && await isLetsExchangeConfigured()) {
+    if (best.venue === "letsexchange" && !isFloat && await isLetsExchangeConfigured()) {
       try {
         const leBody: Record<string, unknown> = {
           from, to, network_from, network_to, amount: amt,
@@ -1111,6 +1132,10 @@ router.post("/letsexchange/estimate", async (req, res) => {
       maxAmount:  q.maxAmount != null ? String(q.maxAmount) : null,
       canExecute: q.canExecute,
     }));
+    const venue_status = ALL_VENUES.map(venue => ({
+      venue,
+      hasQuote: all.some(quote => quote.venue === venue),
+    }));
 
     const responseBody = {
       amount:             String(estimatedOutput),
@@ -1121,6 +1146,7 @@ router.post("/letsexchange/estimate", async (req, res) => {
       rate_id_expired_at,
       withdrawal_fee:     "0",
       best_venue:         best.venue,
+      venue_status,
       venue_quotes,
     };
 

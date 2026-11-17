@@ -61,15 +61,24 @@ interface PatternState {
 // ── Remediation helpers ────────────────────────────────────────────────────
 
 async function pingDbPool(): Promise<string> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const connectionPromise = pool.connect();
   try {
-    const client = await Promise.race([
-      pool.connect(),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("DB connect timeout")), 10_000).unref()),
-    ]) as any;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => {
+        timedOut = true;
+        reject(new Error("ping timeout"));
+      }, 4_000);
+    });
+    const client = await Promise.race([connectionPromise, timeoutPromise]);
     client.release();
     return "DB pool ping OK — connection healthy";
   } catch (e: any) {
+    if (timedOut) void connectionPromise.then((client) => client.release()).catch(() => {});
     return `DB pool ping failed: ${e?.message ?? "unknown"}`;
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }
 

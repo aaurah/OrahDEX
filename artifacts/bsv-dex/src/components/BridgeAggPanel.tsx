@@ -371,6 +371,7 @@ function TxViewer({ tx, warning, bridgeName }: { tx: BuiltTx; warning?: string; 
 
 export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
   const storeAddress = useWalletStore(s => s.address);
+  const walletProvider = useWalletStore(s => s.provider);
   const effectiveWallet = walletAddress ?? storeAddress ?? undefined;
 
   const [chains, setChains] = useState<Chain[]>([]);
@@ -397,29 +398,60 @@ export function BridgeAggPanel({ walletAddress }: { walletAddress?: string }) {
 
   async function handleExecute() {
     if (!builtTx) return;
+    if (!effectiveWallet) {
+      setExecuteError("Connect your wallet before executing this bridge.");
+      return;
+    }
     setExecuting(true);
     setExecuteError(null);
     setExecuteTxHash(null);
     try {
-      // Resolve EIP-1193 provider: window.ethereum injected wallet
-      const eth = (window as any).ethereum;
-      const provider = eth ?? null;
-      if (!provider) throw new Error("No wallet connected. Please connect a browser wallet.");
-
-      // Switch to the source chain the bridge tx needs to run on
       const targetHex = "0x" + builtTx.tx.chainId.toString(16);
-      const currentChain: string = await provider.request({ method: "eth_chainId" });
-      if (currentChain.toLowerCase() !== targetHex.toLowerCase()) {
-        await provider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: targetHex }],
-        });
+      let provider: any;
+
+      if (walletProvider === "reown") {
+        // WalletConnect/Reown wallets do not inject window.ethereum in mobile
+        // browsers. Resolve the active AppKit connector for this exact account.
+        const [{ getAppKitWagmiConfig }, { getAccount, getConnections, switchChain }] = await Promise.all([
+          import("@/lib/reown-appkit"),
+          import("@wagmi/core"),
+        ]);
+        const config = getAppKitWagmiConfig();
+        const connection = getConnections(config).find(conn =>
+          conn.accounts.some(account => account.toLowerCase() === effectiveWallet.toLowerCase())
+        );
+        if (!connection) {
+          throw new Error("The connected WalletConnect session is unavailable. Reconnect your wallet and try again.");
+        }
+        provider = await connection.connector.getProvider();
+        if (!provider?.request) throw new Error("The connected wallet cannot send bridge transactions.");
+        if (getAccount(config).chainId !== builtTx.tx.chainId) {
+          // Use wagmi's chain switch so WalletConnect receives the session update.
+          await switchChain(config, { chainId: builtTx.tx.chainId });
+        }
+      } else {
+        // Injected wallets such as MetaMask and Coinbase Wallet.
+        provider = (window as any).ethereum;
+        if (!provider?.request) {
+          throw new Error("The connected wallet provider is unavailable. Reconnect your wallet and try again.");
+        }
+        const currentChain: string = await provider.request({ method: "eth_chainId" });
+        if (currentChain.toLowerCase() !== targetHex.toLowerCase()) {
+          await provider.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: targetHex }],
+          });
+        }
       }
 
-      // Resolve from-address
-      const accounts: string[] = await provider.request({ method: "eth_accounts" });
-      const from = accounts[0] ?? effectiveWallet;
-      if (!from) throw new Error("No account found — connect your wallet.");
+      // Never sign from a different account than the one shown as connected.
+      let accounts: string[] = await provider.request({ method: "eth_accounts" });
+      let from = accounts.find(account => account.toLowerCase() === effectiveWallet.toLowerCase());
+      if (!from && walletProvider !== "reown") {
+        accounts = await provider.request({ method: "eth_requestAccounts" });
+        from = accounts.find(account => account.toLowerCase() === effectiveWallet.toLowerCase());
+      }
+      if (!from) throw new Error("The connected wallet account is not available in its transaction provider. Reconnect the same account and try again.");
 
       const txHash: string = await provider.request({
         method: "eth_sendTransaction",

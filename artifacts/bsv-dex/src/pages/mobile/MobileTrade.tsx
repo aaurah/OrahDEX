@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { CoinLogo } from "@/components/CoinLogo";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSignMessage, useAccount } from "wagmi";
+import { keccak256, toBytes } from "viem";
 import { Bell, Star, Share2, AlignJustify, X, TrendingUp, CheckCircle2, AlertCircle, Info, Zap, Check, Wallet, Clock, ListOrdered, ChevronDown, ChevronRight, Plus, Minus, ArrowLeftRight, Download, Users2, CreditCard, ShoppingCart, Link2, XCircle, ShieldCheck } from "lucide-react";
 import { Chart } from "@/components/trading/Chart";
 import { MobileMarketSelector } from "@/components/mobile/MobileMarketSelector";
@@ -25,9 +26,13 @@ import { usePairPrices } from "@/hooks/usePairPrices";
 import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
 import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
 import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
-import { hasEscrow, chainLabel, checkEscrowDeposit, resolveEscrowAsset } from "@/lib/escrow";
+import { hasEscrow, chainLabel, checkEscrowDeposit, readEscrowDeposit, resolveEscrowAsset, lockOrderbookOrder, cancelOrderbookOrder } from "@/lib/escrow";
+import { cancelEvmOrderbookOrder } from "@/lib/orderbookCancellation";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
+import { buildOrderIntentMessage, buildOrderActionMessage, signWalletMessage } from "@/lib/tradeAuth";
 import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
+import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
+import { withWalletRequestTimeout } from "@/lib/walletRequestTimeout.mjs";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -82,6 +87,7 @@ function getOrderExplorerUrl(order: any): string | null {
   const txid = String(order?.txid ?? "");
   if (!txid) return null;
   if (txid.startsWith("htlc-pending-")) return null;
+  if (txid.startsWith("evm-settlement:")) return null;
   if (txid.startsWith("local:")) return null;
   if (txid.startsWith("0x")) {
     const chainId = order?.chainId ?? order?.evmChainId;
@@ -278,7 +284,7 @@ type BottomTab = "orderbook" | "trades" | "orders";
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop-limit" | "stop-market" | "trailing-stop" | "post-only";
 
-const ORDER_TYPES: OrderType[] = ["limit", "market", "stop-limit", "stop-market", "trailing-stop", "post-only"];
+const ORDER_TYPES: OrderType[] = ["limit", "market"];
 const ORDER_TYPE_LABELS: Record<OrderType, string> = {
   "limit":         "Limit",
   "market":        "Market",
@@ -296,6 +302,12 @@ const ORDER_TYPE_DESCS: Record<OrderType, string> = {
   "post-only":     "Always placed as maker. Rejected if it would immediately fill.",
 };
 
+function supportsEthereumWalletOrderbookAsset(symbol: string): boolean {
+  const normalized = symbol.trim().toUpperCase();
+  if (normalized === "ETH") return true;
+  return Boolean(CHAIN_TOKEN_ADDRESSES[1]?.[normalized]) &&
+    (TOKEN_DECIMALS[normalized] ?? 18) === 18;
+}
 
 export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // Only replace the first hyphen (base-quote separator); keep -PERP suffix intact
@@ -310,14 +322,29 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isEvm = network === "evm" || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
   const isExternalEvm = isEvm && !isOrahWallet;
-  // Non-custodial mode: any EVM wallet (including Orah self-custody) trades
-  // directly from its on-chain balance — no exchange deposit required.
-  // Only non-EVM Orah chains (BSV/BTC/SOL) still use the internal ledger.
   const isSelfCustodyEvm = isEvm && !!address;
   // Default to chainId 1 (Ethereum mainnet) when wallet hasn't reported a chain yet,
   // matching Portfolio behavior — otherwise the balance fetch never starts and Trade
   // shows 0 even though the wallet holds funds.
   const { balances: evmTokenBalances, loading: evmBalancesLoading, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, isEvm ? (walletChainId ?? 1) : null);
+  const { data: evmOrderbookConfig } = useQuery({
+    queryKey: ["evm-orderbook-settlement-config", walletChainId],
+    queryFn: async () => {
+      const response = await fetch(`${BASE}/api/orders/evm-settlement/config`, { cache: "no-store" });
+      if (!response.ok) return { available: false, chainId: 1 };
+      return response.json();
+    },
+    enabled: isEvm && !!address && (walletChainId == null || walletChainId === 1),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
+  const walletOrderbookAvailable =
+    isEvm &&
+    (walletChainId ?? 1) === 1 &&
+    !isFutures &&
+    supportsEthereumWalletOrderbookAsset(base) &&
+    supportsEthereumWalletOrderbookAsset(quote) &&
+    evmOrderbookConfig?.available === true;
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -347,10 +374,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (!address) { setApiBalances({}); return; }
     fetchApiBalances(base, quote, address);
   }, [address, symbol, fetchApiBalances, base, quote]);
-  // Only Orah Wallet uses internal exchange ledger as the primary available balance source.
-  // External wallets (EVM/BSV/BTC/SOL) use on-chain wallet balances, optionally merged with
-  // internal exchange balances for assets accumulated via exchange trades.
-  const usesApiBalance = isOrahWallet && !isEvm;
+  // Mainnet wallet balances become orderable only when the API confirms the
+  // atomic escrow and matching path is enabled. Otherwise keep ledger-only
+  // behavior so wallet balances are never mistaken for reserved funds.
+  const usesApiBalance = !walletOrderbookAvailable;
   // Show pending state only when the current mode depends on ledger balances.
   const balancesPending = usesApiBalance && apiBalancesLoading;
 
@@ -413,8 +440,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       return true;
     });
   }, [myOrdersData, altOrdersData, address, altAddress]);
-  const openOrders   = myOrders.filter(o => o.status === "open"  && o.symbol === symbol);
-  const historyOrders = myOrders.filter(o => o.status !== "open" && o.symbol === symbol);
+  const openOrders   = myOrders.filter(o =>
+    (o.status === "open" || (o.status === "processing" && String(o.fundingRef ?? "").startsWith("evm-order:1:"))) &&
+    o.symbol === symbol
+  );
+  const historyOrders = myOrders.filter(o =>
+    o.status !== "open" &&
+    !(o.status === "processing" && String(o.fundingRef ?? "").startsWith("evm-order:1:")) &&
+    o.symbol === symbol
+  );
 
   // ── Compute amounts locked in open orders ACROSS ALL markets ──────────────
   // External wallets hold funds on-chain; the exchange cannot debit them until
@@ -430,12 +464,26 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // price: null and need lastPrice as a fallback to compute the correct spend amount.
 
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [recoveringEvmOrders, setRecoveringEvmOrders] = useState(false);
   const getOrderWalletAddress = (order: any) => (
     String(order?.walletAddress || order?.ownerWalletAddress || "")
   );
 
   const cancelMutation = useMutation({
-    mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
+    mutationFn: async ({ orderId, walletAddress: orderWalletAddress, fundingRef }: {
+      orderId: string;
+      walletAddress: string;
+      fundingRef?: string | null;
+    }) => {
+      if (fundingRef?.startsWith("evm-order:1:")) {
+        return cancelEvmOrderbookOrder({
+          orderId,
+          walletAddress: orderWalletAddress,
+          fundingRef,
+          isOrahWallet,
+        });
+      }
+
       // Step 1 (best-effort): release any on-chain escrow lock so the user
       // gets their coins back. Only send the on-chain cancel tx if there is
       // actually a deposit in escrow — calling cancel() on an order that was
@@ -446,11 +494,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         try {
           // 4-second timeout: a slow RPC shouldn't stall the cancel button.
           const dep = await Promise.race([
-            checkEscrowDeposit(orderId, walletChainId),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+            readEscrowDeposit(orderId, walletChainId),
+            new Promise<never>((_, reject) => setTimeout(
+              () => reject(new Error("Could not verify the escrow state. No cancellation was submitted; check the wallet network and retry.")),
+              4_000,
+            )),
           ]);
           hasDeposit = !!dep && !dep.released;
-        } catch { /* RPC failure — err on the side of not sending a bad tx */ }
+        } catch (error) {
+          throw error;
+        }
 
         if (hasDeposit) {
           try {
@@ -468,10 +521,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         }
       }
       // Step 2: tell the server to remove the order from the orderbook.
+      const nonce = crypto.randomUUID();
+      const expiry = String(Math.floor(Date.now() / 1000) + 300);
+      const signature = await signWalletMessage(orderWalletAddress, provider ?? undefined,
+        buildOrderActionMessage({ walletAddress: orderWalletAddress, action: "cancel", orderId, nonce, expiry }));
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: orderWalletAddress }),
+        body: JSON.stringify({
+          walletAddress: orderWalletAddress,
+          signature,
+          nonce,
+          expiry,
+        }),
       });
       // 404 means the order is already cancelled (desired state) — treat as success.
       // This handles double-tap, stale cache, and races gracefully.
@@ -517,10 +579,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       queryClient.invalidateQueries({ queryKey: ["orders", address] });
       if (altAddress) queryClient.invalidateQueries({ queryKey: ["orders", altAddress] });
       queryClient.invalidateQueries({ queryKey: ["portfolio-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["orderbook", symbol] });
       if (usesApiBalance && address) {
         void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
+      if (walletOrderbookAvailable) void refreshEvmBalances();
     },
   });
   const handleCancelOrder = useCallback((order: any) => {
@@ -533,14 +597,53 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       });
       return;
     }
-    cancelMutation.mutate({ orderId: String(order.id), walletAddress });
+    cancelMutation.mutate({
+      orderId: String(order.id),
+      walletAddress,
+      fundingRef: order.fundingRef,
+    });
   }, [cancelMutation, toast]);
+
+  const handleRecoverEvmOrders = async () => {
+    if (!address || recoveringEvmOrders) return;
+    setRecoveringEvmOrders(true);
+    try {
+      const response = await fetch(`${BASE}/api/orders/recover-evm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletAddress: address }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result?.error ?? "Could not scan Ethereum escrow orders.");
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["orders", address] }),
+        queryClient.invalidateQueries({ queryKey: ["orderbook", symbol] }),
+      ]);
+      const count = Number(result?.count ?? 0);
+      toast({
+        title: count > 0 ? "Active order restored" : "No missing active orders",
+        description: count > 0
+          ? `${count} confirmed on-chain order${count === 1 ? " is" : "s are"} now listed in My Orders. Cancel there to request a wallet refund.`
+          : "No confirmed active Ethereum orders were missing from My Orders.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Could not recover order list",
+        description: String(error?.message ?? "Ethereum escrow scan failed."),
+        variant: "destructive",
+      });
+    } finally {
+      setRecoveringEvmOrders(false);
+    }
+  };
 
   // ── Submission lock — prevents any multi-submit path ─────────────────────────
   // useRef is synchronous (unlike useState) so it blocks double-taps that happen
   // within the same React render cycle before isPending propagates.
   const isSubmittingRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionStage, setSubmissionStage] = useState("");
+  const walletSignAbortRef = useRef<(() => void) | null>(null);
   // Content fingerprint: same symbol+side+amount within 2 seconds = duplicate
   const lastOrderFingerprintRef = useRef<string | null>(null);
 
@@ -657,6 +760,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         } catch { /* ignore parse error */ }
         const err: any = new Error(errMsg);
         err.code = errCode;
+        err.status = res.status;
         throw err;
       }
       return res.json();
@@ -691,6 +795,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       // ── Release submission lock so next order can be placed ──────────────────
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setSubmissionStage("");
 
       setEscrowTx(null);
       setOrderResult({
@@ -747,9 +852,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         void fetchApiBalances(base, quote, address);
         queryClient.invalidateQueries({ queryKey: ["mobile-exchange-balances", address] });
       }
+      if (walletOrderbookAvailable) void refreshEvmBalances();
       setTimeout(() => setOrderResult(null), 10000);
 
-      if (matched && address) {
+      if (data?.settlementPending) {
+        toast({
+          title: "Trade settlement confirming",
+          description: "The matched wallet orders are still reserved in Ethereum escrow. The trade status will update after confirmation.",
+        });
+      } else if (matched && address) {
         // Compute credited amount from fill payload — never from wallet diff
         let receivedQty: string;
         let receivedTok: string;
@@ -804,6 +915,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       // Release lock on error so the user can try again
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setSubmissionStage("");
       lastOrderFingerprintRef.current = null;
       const msg  = err?.message ?? "Could not place order";
       const code = err?.code;
@@ -858,6 +970,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     setTimeout(() => setShareToastVisible(false), 2200);
   };
   const [orderType, setOrderType] = useState<OrderType>("limit");
+  const selectableOrderTypes = walletOrderbookAvailable
+    ? (["limit"] as OrderType[])
+    : ORDER_TYPES;
+  useEffect(() => {
+    if (walletOrderbookAvailable && orderType !== "limit") setOrderType("limit");
+  }, [walletOrderbookAvailable, orderType]);
   const [orderTypeOpen, setOrderTypeOpen] = useState(false);
   const [fundingSheetOpen, setFundingSheetOpen] = useState(false);
   const [price, setPrice] = useState("");
@@ -952,10 +1070,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const mobileApiInterval = mobilePreset ? mobilePreset.apiInterval : interval;
   const mobileCandleLimit = mobilePreset ? mobilePreset.limit : 150;
 
-  const { data: candles = [] } = useQuery({
+  const { data: candles = [], isLoading: candlesLoading } = useQuery({
     queryKey: ["candles", symbol, mobileApiInterval, mobileCandleLimit],
     queryFn: async () => {
-      const response = await fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`);
+      const response = await fetch(
+        `${BASE}/api/markets/${encodedSymbol}/candles?interval=${mobileApiInterval}&limit=${mobileCandleLimit}`,
+        { cache: "no-store" },
+      );
       if (!response.ok) throw new Error(`Candle request failed: ${response.status}`);
       const payload = await response.json();
       if (!Array.isArray(payload)) throw new Error("Invalid candle response");
@@ -968,7 +1089,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const { data: perfCandles = [] } = useQuery({
     queryKey: ["perf-candles", symbol],
-    queryFn: () => fetch(`${BASE}/api/markets/${encodedSymbol}/candles?interval=1d&limit=400`).then(r => r.json()),
+    queryFn: () => fetch(
+      `${BASE}/api/markets/${encodedSymbol}/candles?interval=1d&limit=400`,
+      { cache: "no-store" },
+    ).then(r => r.json()),
     refetchInterval: 300_000,
     staleTime: 240_000,
   });
@@ -1041,15 +1165,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const volQuote = lastPrice * vol24;
 
   // Fallback price for candles/orderbook when ticker hasn't loaded yet
-  const fallbackPrice = lastPrice > 0 ? lastPrice : (MOCK_TICKER[rawSymbol]?.lastPrice || liveBridgeRate || 14.35);
+  const fallbackPrice = lastPrice > 0 ? lastPrice : 0;
   const chartCandles = Array.isArray(candles) ? candles : [];
   // Ensure order book always shows data
   const rawOB = orderBook as any;
-  const isBridgePair = rawOB?.isBridgePair === true || (ticker as any)?.isBridgePair === true;
-  const hasRealOB = !isBridgePair && (rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0);
+  // Bridge pairs cannot synthesize fillable depth, but confirmed wallet-escrow
+  // orders returned by the API are real and must remain visible.
+  const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
   // Memoized so the mock order book (which uses Math.random) doesn't regenerate on every render
   const effectiveOrderBook = useMemo(
-    () => hasRealOB ? orderBook : generateMockOrderBook(fallbackPrice),
+    () => hasRealOB ? orderBook : { bids: [], asks: [] },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [hasRealOB, orderBook, fallbackPrice],
   );
@@ -1158,10 +1283,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // source, but merge in the on-chain native balance so BSV shows correctly even
   // when no funds have been deposited to the internal ledger yet.
   const grossSellBalance = usesApiBalance
-    ? Math.max(internalBaseBalance,  isNativeBase  ? walletBal : 0)
+    ? internalBaseBalance
     : walletBaseBalance;
   const grossBuyBalance  = usesApiBalance
-    ? Math.max(internalQuoteBalance, isNativeQuote ? walletBal : 0)
+    ? internalQuoteBalance
     : walletQuoteBalance;
   // Self-custody EVM (Orah Wallet on EVM, or external wallet): open orders are
   // signed intents — funds remain on-chain in the wallet until fill. We DO NOT
@@ -1172,12 +1297,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const available    = side === "sell" ? sellBalance : buyBalance;
   const availableSym = side === "sell" ? base        : quote;
+  const walletAvailable = side === "sell" ? walletBaseBalance : walletQuoteBalance;
+  const formatBalance = (value: number) => value > 0
+    ? value.toLocaleString("en-US", { maximumFractionDigits: 8, useGrouping: false })
+    : "0.0000";
+  // Quick-fill values must never round above the actual wallet balance.
+  const formatAmountInput = (value: number) => {
+    if (!Number.isFinite(value) || value <= 0) return "";
+    const scale = 100_000_000;
+    const roundingGuard = Number.EPSILON * Math.max(1, Math.abs(value)) * 8;
+    const floored = Math.floor((value + roundingGuard) * scale) / scale;
+    return floored > 0 ? floored.toFixed(8).replace(/\.?0+$/, "") : "";
+  };
   const fundingAsset = (side === "sell" ? base : quote).toUpperCase();
   const coinWalletHref = `/portfolio/${encodeURIComponent(fundingAsset)}`;
 
   const maxBuyNum = effectivePrice > 0 ? (buyBalance / effectivePrice) : 0;
-  const maxBuy  = maxBuyNum   > 0 ? maxBuyNum.toFixed(6)   : "0";
-  const maxSell = sellBalance > 0 ? sellBalance.toFixed(6) : "0";
+  const maxBuy  = formatBalance(maxBuyNum);
+  const maxSell = formatBalance(sellBalance);
 
   // Click available → fill max amount, fee-adjusted so the order never exceeds balance.
   // BUY : fee is charged on the quote spend, so max base = balance / (price × (1 + fee))
@@ -1187,9 +1324,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (side === "buy") {
       if (effectivePrice <= 0) return;
       const maxQty = buyBalance / (effectivePrice * (1 + FEE_RATE));
-      setAmount(maxQty.toFixed(6));
+      setAmount(formatAmountInput(maxQty));
     } else {
-      setAmount(sellBalance.toFixed(6));
+      setAmount(formatAmountInput(sellBalance));
     }
   };
   const handleFillMin = () => {
@@ -1198,10 +1335,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (effectivePrice <= 0) return;
       const maxQty = buyBalance / (effectivePrice * (1 + FEE_RATE));
       const minQty = Math.min(maxQty, MIN_QUICK_FILL_QTY);
-      setAmount(minQty > 0 ? minQty.toFixed(6) : "");
+      setAmount(formatAmountInput(minQty));
     } else {
       const minQty = Math.min(sellBalance, MIN_QUICK_FILL_QTY);
-      setAmount(minQty > 0 ? minQty.toFixed(6) : "");
+      setAmount(formatAmountInput(minQty));
     }
   };
 
@@ -1261,6 +1398,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     // ── Lock acquired ─────────────────────────────────────────────────────────
     isSubmittingRef.current = true;
     setIsSubmitting(true);
+    setSubmissionStage("Preparing order…");
 
     // ── Stop-limit / stop-market: require a valid stop price before submitting ──
     if ((orderType === "stop-limit" || orderType === "stop-market") && !(parseFloat(stopPrice || "0") > 0)) {
@@ -1271,21 +1409,32 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       });
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setSubmissionStage("");
+      lastOrderFingerprintRef.current = null;
+      return;
+    }
+
+    if (side === "buy" && amtNum * effectivePrice * (orderType === "market" ? 1.005 : 1) > buyBalance + 1e-12) {
+      toast({ title: "Insufficient trading balance", description: `Not enough available ${quote}. Use Swap for wallet-held funds.`, variant: "destructive" });
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      setSubmissionStage("");
       lastOrderFingerprintRef.current = null;
       return;
     }
 
     // ── SELL guard: block impossible sell orders before the network round-trip ──
-    // 1e-9 tolerance covers toFixed(6) rounding so a legitimate 100% fill is
-    // never falsely blocked by floating-point arithmetic.
+    // Quick-fill values are floored to eight decimals, leaving only a tiny
+    // floating-point tolerance rather than accepting a rounded-up amount.
     if (side === "sell" && amtNum > sellBalance + 1e-9) {
       toast({
         title:       "Insufficient balance",
-        description: `You only have ${maxSell} ${base} available to sell`,
+        description: `Your wallet has ${maxSell} ${base}, but this order asks for ${formatBalance(amtNum)} ${base}. Reduce the amount or choose MAX.`,
         variant:     "destructive",
       });
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setSubmissionStage("");
       lastOrderFingerprintRef.current = null;
       return;
     }
@@ -1312,96 +1461,131 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       ? (parseFloat(stopPrice || "0") || undefined)
       : undefined;
 
+    if (walletOrderbookAvailable && apiType !== "limit") {
+      toast({
+        title: "Limit orders only",
+        description: "Ethereum wallet settlement currently supports limit orders. Switch order type to Limit.",
+        variant: "destructive",
+      });
+      isSubmittingRef.current = false;
+      setIsSubmitting(false);
+      setSubmissionStage("");
+      lastOrderFingerprintRef.current = null;
+      return;
+    }
+
     let evmSignature: string | undefined;
     let orderNonce:   string | undefined;
     let orderExpiry:  string | undefined;
     if (isSelfCustodyEvm) {
+      setSubmissionStage("Sign order in wallet…");
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
       orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
       orderExpiry = String(Math.floor(Date.now() / 1000) + 5 * 60);
 
       // Canonical message — must mirror buildOrderAuthMessage() in walletAuth.ts
-      const orderMsg = [
-        "Authorize OrahDEX order",
-        `Wallet: ${address}`,
-        `Symbol: ${symbol}`,
-        `Side: ${side}`,
-        `Quantity: ${amtNum.toString()}`,
-        `Nonce: ${orderNonce}`,
-        `Expiry: ${orderExpiry}`,
-      ].join("\n");
+      const orderMsg = buildOrderIntentMessage({
+        walletAddress: address!, symbol, side, quantity: amtNum.toString(),
+        type: apiType, price: usePrice?.toString() ?? "", stopPrice: useStop?.toString() ?? "",
+        chainId: walletChainId ? String(walletChainId) : "",
+        timeInForce: apiType === "market" ? "IOC" : "GTC",
+        nonce: orderNonce, expiry: orderExpiry,
+      });
 
+      const signController = new AbortController();
+      walletSignAbortRef.current = () => signController.abort();
       try {
         if (isOrahWallet) {
           // Self-custody Orah wallet: sign with the in-app key (PIN/passkey unlock)
-          const account = await getViemAccountForAddress(address!, {
-            title:    "Authorize trade",
-            subtitle: `${side.toUpperCase()} ${amtNum} ${base} on ${symbol}`,
-          });
-          evmSignature = await account.signMessage!({ message: orderMsg });
+          const signingRequest = (async () => {
+            const account = await getViemAccountForAddress(address!, {
+              title:    "Authorize trade",
+              subtitle: `${side.toUpperCase()} ${amtNum} ${base} on ${symbol}`,
+            });
+            return account.signMessage!({ message: orderMsg });
+          })();
+          evmSignature = await withWalletRequestTimeout(signingRequest, 60_000, signController.signal);
         } else {
-          // External wallet: tier-1 = wagmi/Reown, tier-2 = direct window.ethereum
-          const isUserRejection = (e: any) => {
-            const code = e?.code;
-            const msg  = (e?.message ?? "").toLowerCase();
-            return code === 4001 || code === "ACTION_REJECTED" ||
-              msg.includes("rejected") || msg.includes("denied") || msg.includes("cancel");
-          };
-
-          if (evmConnected) {
-            try {
-              evmSignature = await signMessageAsync({ message: orderMsg });
-            } catch (wagmiErr: any) {
-              if (isUserRejection(wagmiErr)) throw wagmiErr;
-              // Fall through to direct provider
-            }
-          }
-
-          if (!evmSignature) {
-            const hexMsg = "0x" + Array.from(new TextEncoder().encode(orderMsg))
-              .map(b => b.toString(16).padStart(2, "0")).join("");
-
-            if (provider === "reown") {
-              // Reown/WalletConnect: window.ethereum is never injected — must call
-              // personal_sign directly on the connector's raw EIP-1193 provider.
-              const { wagmiAdapter } = await import("@/lib/reown-appkit");
-              const connector = wagmiAdapter.wagmiConfig.connectors.find(
-                (c: any) => c.id === "walletConnect" || c.type === "walletConnect"
-              );
-              const eip1193 = await (connector as any)?.getProvider?.();
-              if (!eip1193) throw new Error("WalletConnect provider unavailable. Please reconnect your wallet.");
-              evmSignature = await eip1193.request({ method: "personal_sign", params: [hexMsg, address] });
-            } else {
-              const eth = (window as any).ethereum;
-              if (!eth) {
-                throw new Error("No wallet provider found. Please connect MetaMask or use WalletConnect.");
-              }
-              evmSignature = await eth.request({ method: "personal_sign", params: [hexMsg, address] });
-            }
-          }
+          // Prefer the selected wallet's raw provider. A stale wagmi connector
+          // can leave signMessageAsync pending forever on mobile and prevent the
+          // actual wallet from receiving the personal_sign request.
+          const hasInjectedProvider = Boolean((window as any).ethereum?.request);
+          const wagmiFallback = provider !== "reown" && !hasInjectedProvider && evmConnected
+            ? signMessageAsync
+            : undefined;
+          evmSignature = await withWalletRequestTimeout(
+            signWalletMessage(address!, provider ?? undefined, orderMsg, wagmiFallback),
+            60_000,
+            signController.signal,
+          );
         }
       } catch (signErr: any) {
         const code = signErr?.code;
         const msg: string = signErr?.message ?? "";
+        const wasStopped = signErr?.name === "AbortError";
         const isRejection = code === 4001 || code === "ACTION_REJECTED" ||
           msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("denied") ||
           msg.toLowerCase().includes("user cancelled") || msg.toLowerCase().includes("user canceled");
         toast({
-          title: isRejection ? "Wallet signature declined" : "Wallet signing failed",
-          description: isRejection
+          title: wasStopped ? "Wallet request stopped" : isRejection ? "Wallet signature declined" : "Wallet signing failed",
+          description: wasStopped
+            ? "No order or escrow transaction was submitted. Dismiss any wallet prompt that remains open before retrying."
+            : isRejection
             ? `Tap ${side === "buy" ? "Buy" : "Sell"} again and approve the signing request in your wallet to place the order.`
             : (msg || "Could not sign order. Please reconnect your wallet and try again."),
           variant: "destructive",
         });
         isSubmittingRef.current = false;
         setIsSubmitting(false);
+        setSubmissionStage("");
+        lastOrderFingerprintRef.current = null;
+        return;
+      } finally {
+        walletSignAbortRef.current = null;
+      }
+    }
+
+    if (walletOrderbookAvailable) setSubmissionStage("Preparing escrow lock…");
+    let orderbookLockTxHash: `0x${string}` | undefined;
+    let orderbookExpiresAt: number | undefined;
+    if (walletOrderbookAvailable) {
+      try {
+        const escrowAddress = evmOrderbookConfig?.address;
+        if (!escrowAddress || !orderNonce || !usePrice || walletChainId !== 1) {
+          throw new Error("Ethereum order escrow configuration or limit price is missing");
+        }
+        orderbookExpiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+        const lock = await lockOrderbookOrder({
+          escrowAddress,
+          nonce: orderNonce,
+          side,
+          base,
+          quote,
+          quantity: amtNum,
+          price: usePrice,
+          expiresAt: orderbookExpiresAt,
+          from: address,
+          chainId: 1,
+          isOrahWallet,
+          onStage: setSubmissionStage,
+        });
+        orderbookLockTxHash = lock.txHash;
+      } catch (lockError: any) {
+        toast({
+          title: "Could not lock order funds",
+          description: String(lockError?.message ?? "Ethereum order escrow transaction failed."),
+          variant: "destructive",
+        });
+        isSubmittingRef.current = false;
+        setIsSubmitting(false);
+        setSubmissionStage("");
         lastOrderFingerprintRef.current = null;
         return;
       }
     }
 
-    orderMutation.mutate({
+    const orderPayload = {
       symbol,
       walletAddress: address,
       side,
@@ -1409,6 +1593,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       price:     usePrice,
       stopPrice: useStop,
       quantity:  amtNum,
+      timeInForce: apiType === "market" ? "IOC" : "GTC",
       networkType:    address.startsWith("0x") ? "evm" : "bsv",
       walletSource:   (isOrahWallet && !isEvm) ? "orah" : "external",
       receiveAddress: receiveAddress.trim() || undefined,
@@ -1417,7 +1602,47 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       nonce:  orderNonce,
       expiry: orderExpiry,
       chainId: walletChainId ?? undefined,
-    } as any);
+      orderbookLockTxHash,
+      orderbookExpiresAt,
+    } as any;
+
+    try {
+      setSubmissionStage("Submitting order…");
+      await orderMutation.mutateAsync(orderPayload);
+    } catch (submissionError: any) {
+      if (orderbookLockTxHash && orderbookExpiresAt && submissionError?.status >= 400 && evmOrderbookConfig?.address) {
+        let serverHasOrder = false;
+        for (let attempt = 0; attempt < 2 && !serverHasOrder; attempt += 1) {
+          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
+          try {
+            const response = await fetch(
+              `${BASE}/api/orders?walletAddress=${encodeURIComponent(address)}`,
+              { cache: "no-store" },
+            );
+            const rows = response.ok ? await response.json() : [];
+            serverHasOrder = Array.isArray(rows) && rows.some((order: any) => String(order.nonce) === String(orderNonce));
+          } catch { /* leave funds locked if order creation cannot be verified */ }
+        }
+        if (!serverHasOrder) {
+          try {
+            const orderKey = keccak256(toBytes(orderNonce!));
+            await cancelOrderbookOrder({
+              escrowAddress: evmOrderbookConfig.address,
+              orderKey,
+              from: address,
+              chainId: 1,
+              isOrahWallet,
+            });
+          } catch (cancelError: any) {
+            toast({
+              title: "Order was rejected; funds may remain escrowed",
+              description: `Keep this wallet connected and retry cancellation. ${String(cancelError?.message ?? "")}`,
+              variant: "destructive",
+            });
+          }
+        }
+      }
+    }
   }
 
   return (
@@ -1575,6 +1800,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             subIndicator={activeIndicator ? (INDICATOR_TO_SUB[activeIndicator] ?? undefined) : undefined}
             data={chartCandles}
             externalDataOnly={true}
+            externalDataLoading={candlesLoading}
           />
         </div>
 
@@ -1864,6 +2090,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                             </span>
                             <span className="text-xs text-foreground font-semibold">{o.symbol}</span>
                             <span className="text-[9px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">{o.type ?? "limit"}</span>
+                            {o.status === "processing" && (
+                              <span className="text-[9px] text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded">Settlement pending</span>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
                             <span>Price: <span className="text-foreground font-mono">{o.price ? fmt(Number(o.price)) : "—"}</span></span>
@@ -1965,7 +2194,21 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
             {/* Recover stuck on-chain HTLC funds — only for EVM wallets */}
             {isSelfCustodyEvm && address && (
-              <div className="px-3 pb-3">
+              <div className="px-3 pb-3 space-y-2">
+                <div className="rounded-xl border border-border bg-card/60 p-3">
+                  <div className="text-xs font-semibold">Missing an Ethereum order?</div>
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    Scan confirmed escrow orders that are missing from My Orders. This only syncs the order list; it does not send a wallet transaction.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleRecoverEvmOrders}
+                    disabled={recoveringEvmOrders}
+                    className="mt-2 w-full rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary disabled:opacity-50"
+                  >
+                    {recoveringEvmOrders ? "Scanning Ethereum…" : "Rescan Ethereum escrow"}
+                  </button>
+                </div>
                 <HtlcLockRecovery chainId={walletChainId ?? 1} />
               </div>
             )}
@@ -1983,7 +2226,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {isSelfCustodyEvm && (
               <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-[11px] bg-primary/8 border border-primary/20">
                 <ShieldCheck size={12} className="text-primary shrink-0" />
-                <span className="text-primary/80 font-medium">Non-custodial — your wallet settles on-chain. No deposit required.</span>
+                <span className="text-primary/80 font-medium">
+                  {walletOrderbookAvailable
+                    ? "Ethereum limit orders lock the required wallet funds until the order fills or you cancel it."
+                    : "Order-book trading uses available trading balance. Wallet-to-wallet matching is paused; use Swap for wallet-held funds."}
+                </span>
               </div>
             )}
 
@@ -2132,10 +2379,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     disabled={balancesPending}
                     onClick={() => {
                       if (balancesPending) return;
+                      if (p === 100) {
+                        handleFillMax();
+                        return;
+                      }
                       if (side === "buy" && buyBalance > 0 && effectivePrice > 0) {
-                        setAmount(((buyBalance / effectivePrice) * p / 100).toFixed(6));
+                        const feeAdjustedBuy = buyBalance / (effectivePrice * (1 + (orderType === "market" ? FEE_RATE : 0)));
+                        setAmount(formatAmountInput(feeAdjustedBuy * p / 100));
                       } else if (side === "sell" && sellBalance > 0) {
-                        setAmount((sellBalance * p / 100).toFixed(6));
+                        setAmount(formatAmountInput(sellBalance * p / 100));
                       }
                     }}
                     className="text-[10px] text-muted-foreground font-semibold disabled:opacity-40"
@@ -2382,7 +2634,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <div className="bg-blue-500/5 border border-blue-500/25 rounded-xl px-3 py-2 flex items-start gap-2">
                 <svg className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
                 <div className="text-[10px] leading-relaxed text-blue-300/90">
-                  <span className="font-bold text-blue-300">Non-custodial.</span> Available reflects your real on-chain wallet balance. Orders are signed intents — funds stay in your wallet (Rabby/MetaMask) until fill.
+                  {walletOrderbookAvailable
+                    ? <><span className="font-bold text-blue-300">Wallet-funded limit trading is enabled.</span> Required funds are locked in Ethereum escrow until filled or canceled.</>
+                    : <><span className="font-bold text-blue-300">Wallet funds stay yours.</span> On-chain wallet balances are shown separately below. Order-book trades require a funded trading balance; use Swap for wallet-held funds.</>}
                   {hasEscrow(walletChainId ?? 0) && <span className="text-emerald-400"> On-chain escrow available on this chain.</span>}
                 </div>
               </div>
@@ -2391,7 +2645,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {/* Available / Max Buy / Est. Fee */}
             <div className="space-y-1.5 px-1">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">Available</span>
+                <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">
+                  {isEvm ? "Trading balance" : "Available"}
+                </span>
                 <div className="flex items-center gap-2">
                   <button
                     onClick={handleFillMin}
@@ -2408,16 +2664,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     MAX
                   </button>
                   <span className="text-xs font-semibold tabular-nums text-primary flex items-center gap-1">
-                    {balancesPending
-                      ? "—"
-                      : available > 0
-                        ? available.toLocaleString("en-US", { maximumFractionDigits: 6, useGrouping: false })
-                        : "0.0000"}&nbsp;{availableSym}
-                    {isEvm && (
-                      <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
-                        On-chain
-                      </span>
-                    )}
+                    {balancesPending ? "—" : formatBalance(available)}&nbsp;{availableSym}
                     {!isEvm && side === "sell" && isNativeBase && chainInfo?.l2Label && (
                       <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
                         {chainInfo.l2Label}
@@ -2433,11 +2680,22 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </button>
                 </div>
               </div>
+              {isEvm && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">Wallet balance</span>
+                  <span className="text-xs font-semibold tabular-nums text-foreground flex items-center gap-1">
+                    {evmBalancesLoading ? "—" : formatBalance(walletAvailable)}&nbsp;{availableSym}
+                    <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
+                      On-chain
+                    </span>
+                  </span>
+                </div>
+              )}
               {/* Low balance hint — shown when no balance available on any source */}
-              {address && available === 0 && !apiBalancesLoading && (
+              {address && available === 0 && !apiBalancesLoading && (!isEvm || !evmBalancesLoading) && walletAvailable <= 0 && (
                 <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
                   <span>
-                    No {side === "buy" ? quote : base} in wallet —{" "}
+                    No {availableSym} in {isEvm ? "trading balance or connected wallet" : "wallet"} —{" "}
                     get it via{" "}
                     <a
                       href="/swap"
@@ -2446,6 +2704,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                       Bridge
                     </a>
                     {" "}or deposit on-chain.
+                  </span>
+                </div>
+              )}
+              {address && isEvm && available === 0 && !apiBalancesLoading && !evmBalancesLoading && walletAvailable > 0 && (
+                <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
+                  <span>
+                    {formatBalance(walletAvailable)} {availableSym} is in your wallet, not your trading balance. Use{" "}
+                    <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold">Swap</a>
+                    {" "}or deposit to trade on the order book.
                   </span>
                 </div>
               )}
@@ -2689,49 +2956,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   )}
                 </div>
 
-                {/* OrahBridge instant-swap quote — shown when no native liquidity */}
+                {/* A separate swap is an explicit user action, never a claimed fill. */}
                 {orderError.code === "NO_LIQUIDITY" && (
-                  swapQuoteLoading ? (
-                    <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-border/40 bg-card text-xs text-muted-foreground">
-                      <span className="animate-spin w-3.5 h-3.5 border-2 border-primary/30 border-t-primary rounded-full shrink-0" />
-                      Checking OrahBridge rates…
-                    </div>
-                  ) : swapQuote ? (
-                    <div className="flex flex-col gap-2.5 px-3 py-3 rounded-xl border border-primary/25 bg-primary/5">
-                      <div className="flex items-center justify-between">
-                        <span className={cn("text-xs font-bold", VENUE_COLORS[swapQuote.venue] ?? "text-primary")}>
-                          {VENUE_LABELS[swapQuote.venue] ?? swapQuote.venue}
-                        </span>
-                        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Instant Swap</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-                        <span className="text-muted-foreground">Send</span>
-                        <span className="font-mono font-semibold text-foreground">
-                          {swapQuote.amountIn % 1 === 0
-                            ? swapQuote.amountIn.toFixed(0)
-                            : parseFloat(swapQuote.amountIn.toFixed(8)).toString()}
-                        </span>
-                        <span className="font-semibold text-foreground">{swapQuote.assetIn}</span>
-                        <span className="text-muted-foreground px-0.5">→</span>
-                        <span className="text-muted-foreground">Receive</span>
-                        <span className="font-mono font-semibold text-primary">
-                          ≈ {parseFloat(swapQuote.expectedOutput.toFixed(8)).toString()}
-                        </span>
-                        <span className="font-semibold text-primary">{swapQuote.assetOut}</span>
-                      </div>
-                      {!swapQuote.canExecute && (
-                        <p className="text-[10px] text-amber-400/80">Amount may be below this provider's minimum — try a larger size.</p>
-                      )}
-                      <a
-                        href={`${BASE}/swap`}
-                        className="w-full py-2.5 rounded-lg text-xs font-bold text-center text-white bg-primary hover:bg-primary/90 transition-colors"
-                      >
-                        Swap via {VENUE_LABELS[swapQuote.venue] ?? "OrahBridge"} →
-                      </a>
-                    </div>
-                  ) : (
                     <div className="flex flex-col gap-2 px-3 py-2.5 rounded-xl border border-border/40 bg-card">
-                      <p className="text-xs text-muted-foreground">No instant-swap quote available for this pair right now.</p>
+                      <p className="text-xs text-muted-foreground">No order-book fill was made. Open Swap to request a separate quote.</p>
                       <a
                         href={`${BASE}/swap`}
                         className="text-xs font-bold text-primary underline underline-offset-2"
@@ -2739,7 +2967,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                         Browse OrahBridge →
                       </a>
                     </div>
-                  )
                 )}
               </div>
             )}
@@ -2754,6 +2981,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 Connect Wallet to Trade
               </button>
             ) : (
+              <>
               <button
                 onClick={handlePlaceOrder}
                 disabled={!amount || amtNum <= 0 || isSubmitting || aboveLeMax}
@@ -2766,11 +2994,26 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 )}
               >
                 {isSubmitting ? (
-                  <><span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> Placing…</>
+                  <><span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> {submissionStage || "Placing…"}</>
                 ) : (
                   `${side === "sell" ? "Sell" : "Buy"} ${base}`
                 )}
               </button>
+              {isSubmitting && submissionStage === "Sign order in wallet…" && (
+                <div className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2" aria-live="polite">
+                  <p className="text-[11px] leading-snug text-amber-200/80">
+                    This signature does not move funds. Escrow is requested in a separate wallet transaction afterward.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => walletSignAbortRef.current?.()}
+                    className="shrink-0 rounded-md border border-amber-400/40 px-2 py-1 text-[11px] font-semibold text-amber-200 hover:bg-amber-500/10"
+                  >
+                    Stop waiting
+                  </button>
+                </div>
+              )}
+              </>
             )}
 
             </>)}
@@ -2825,7 +3068,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               style={{ backgroundColor: "#16a34a" }}
             >
               {isSubmitting && side === "buy"
-                ? "Placing…"
+                ? (submissionStage || "Placing…")
                 : side === "buy" && showOrderForm && amtNum > 0
                 ? `Buy ${amtNum.toFixed(4)} ${base}`
                 : `Buy ${base}`}
@@ -2853,7 +3096,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               style={{ backgroundColor: "#dc2626" }}
             >
               {isSubmitting && side === "sell"
-                ? "Placing…"
+                ? (submissionStage || "Placing…")
                 : side === "sell" && showOrderForm && amtNum > 0
                 ? `Sell ${amtNum.toFixed(4)} ${base}`
                 : `Sell ${base}`}
@@ -2951,13 +3194,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           >
             <div className="w-10 h-1 bg-border rounded-full mx-auto mt-3 mb-1" />
             <p className="text-center text-xs text-muted-foreground pb-2 px-6">Order Type</p>
-            {ORDER_TYPES.map((t, i) => (
+            {selectableOrderTypes.map((t, i) => (
               <button
                 key={t}
                 onClick={() => { setOrderType(t); setOrderTypeOpen(false); }}
                 className={cn(
                   "w-full px-6 py-3.5 text-left transition-colors flex items-center justify-between gap-3",
-                  i < ORDER_TYPES.length - 1 && "border-b border-border/50",
+                  i < selectableOrderTypes.length - 1 && "border-b border-border/50",
                   orderType === t ? "bg-primary/5" : "hover:bg-white/5"
                 )}
               >

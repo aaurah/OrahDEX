@@ -9,10 +9,10 @@
 // ── Known-safe origins ────────────────────────────────────────────────────────
 
 const SAFE_ORIGINS = new Set([
-  "https://orahdex.org",
-  "https://www.orahdex.org",
-  "https://app.orahdex.org",
-  "https://sepolia.orahdex.org",
+  "https://orahdex.com",
+  "https://www.orahdex.com",
+  "https://app.orahdex.com",
+  "https://sepolia.orahdex.com",
   // Replit dev / preview origins
   "http://localhost:20180",
   "http://localhost:3000",

@@ -77,6 +77,7 @@ export const CHAIN_TOKEN_ADDRESSES: Record<number, Partial<Record<string, string
     CVX:     "0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B",
     FXS:     "0x3432B6A60D23Ca0dFCa7761B7AB56459D9C964D0",
     SPELL:   "0x090185f2135308baD17527004364eBcC2D37e5F6",
+    ANGLE:   "0x31429d1856ad1377a8a0079410b297e1a9e214c2",
     // L2 / infrastructure
     ARB:     "0xB50721BCf8d664c30412Cfbc6cf7a15145234ad1",
     OP:      "0x4200000000000000000000000000000000000042",
@@ -302,7 +303,7 @@ export const TOKEN_DECIMALS: Record<string, number> = {
   YFI:     18, SUSHI:  18, "1INCH":18, GRT:    18,
   LDO:     18, RPL:    18, DYDX:   18, LRC:    18,
   ENS:     18, OCEAN:  18, CVX:    18, FXS:    18,
-  SPELL:   18, PERP:   18, VELO:   18, VELODROME: 18,
+  SPELL:   18, ANGLE:  18, PERP:   18, VELO:   18, VELODROME: 18,
   STG:     18, PENDLE: 18, GMX:    18, GLP:    18,
   MAGIC:   18, RDNT:   18, AERO:   18, CAKE:   18,
   JOE:     18, PNG:    18, QI:     18, PEFI:   18,
@@ -433,11 +434,15 @@ async function sendTx(
   chainId: number,
 ): Promise<string> {
   const config = requireConfig();
+  const configuredChainId = config.chains.find((chain) => chain.id === chainId)?.id;
+  if (configuredChainId === undefined) {
+    throw new Error(`Wallet is not configured for chain ${chainId}.`);
+  }
   return await coreSendTx(config, {
     to,
     data,
     value: valueWei,
-    chainId,
+    chainId: configuredChainId,
   });
 }
 
@@ -453,12 +458,16 @@ async function approveErc20(
   amount: bigint,         // exact approval amount
 ): Promise<string> {
   const config = requireConfig();
+  const configuredChainId = config.chains.find((chain) => chain.id === chainId)?.id;
+  if (configuredChainId === undefined) {
+    throw new Error(`Wallet is not configured for chain ${chainId}.`);
+  }
   return await coreWriteContract(config, {
     address:      tokenAddress,
     abi:          erc20Abi,
     functionName: "approve",
     args:         [spender, amount],
-    chainId,
+    chainId:      configuredChainId,
   });
 }
 

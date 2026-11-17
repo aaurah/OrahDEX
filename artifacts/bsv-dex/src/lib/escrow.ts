@@ -7,12 +7,12 @@
  * Contract:  OrahDEXEscrow @ Sepolia 0x4deb6023abD9E1C640aDa35201be8ff591d21cF2
  */
 
-import { encodeFunctionData, keccak256, toBytes, erc20Abi, createWalletClient, createPublicClient, http, parseUnits } from "viem";
+import { encodeFunctionData, keccak256, toBytes, erc20Abi, createWalletClient, createPublicClient, fallback, http, parseUnits } from "viem";
 import {
   switchChain as wagmiSwitchChain,
   getAccount as wagmiGetAccount,
 } from "@wagmi/core";
-import { ESCROW_ADDRESSES, ESCROW_ABI, ESCROW_CHAIN_ID } from "./escrowConfig";
+import { ESCROW_ADDRESSES, ESCROW_ABI, ORDERBOOK_ESCROW_ABI, ESCROW_CHAIN_ID } from "./escrowConfig";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "./onChainLiquidity";
 import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, getWagmiConfig } from "./reown";
 import { getAppKitWagmiConfig } from "./reown-appkit";
@@ -521,18 +521,20 @@ export async function lockErc20Universal(
 // the active chain — no injected wallet required.
 
 function rpcTransport(chainId: number) {
-  const url = CHAIN_RPC_URLS[chainId] ?? CHAIN_RPC_FALLBACKS[chainId];
-  if (!url) throw new Error(`No RPC URL for chainId ${chainId}`);
-  return http(url);
+  const urls = [...new Set([CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter((url): url is string => Boolean(url)))];
+  if (urls.length === 0) throw new Error(`No RPC URL for chainId ${chainId}`);
+  const transports = urls.map((url) => http(url, { timeout: 8_000, retryCount: 0 }));
+  return transports.length === 1 ? transports[0] : fallback(transports, { retryCount: 1, retryDelay: 250 });
 }
 
 function inlineChain(chainId: number) {
-  const url = CHAIN_RPC_URLS[chainId] ?? CHAIN_RPC_FALLBACKS[chainId];
+  const urls = [...new Set([CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter((url): url is string => Boolean(url)))];
+  if (urls.length === 0) throw new Error(`No RPC URL for chainId ${chainId}`);
   return {
     id: chainId,
     name: `chain-${chainId}`,
     nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-    rpcUrls: { default: { http: [url] }, public: { http: [url] } },
+    rpcUrls: { default: { http: urls }, public: { http: urls } },
   } as const;
 }
 
@@ -555,6 +557,203 @@ export function getPublicClient(chainId: number) {
   });
 }
 
+const ZERO_EVM_ADDRESS = "0x0000000000000000000000000000000000000000" as const;
+
+function expandDecimal(value: string): string {
+  const input = value.trim();
+  if (!/[eE]/.test(input)) return input;
+  const match = input.match(/^([+-]?)(\d+)(?:\.(\d*))?[eE]([+-]?\d+)$/);
+  if (!match) throw new Error("Invalid order amount");
+  const sign = match[1] ?? "";
+  const digits = `${match[2] ?? "0"}${match[3] ?? ""}`;
+  const point = (match[2] ?? "0").length + Number(match[4]);
+  if (point <= 0) return `${sign}0.${"0".repeat(-point)}${digits}`;
+  if (point >= digits.length) return `${sign}${digits}${"0".repeat(point - digits.length)}`;
+  return `${sign}${digits.slice(0, point)}.${digits.slice(point)}`;
+}
+
+function amountAsUnits(value: string | number, decimals: number, roundUp = false): bigint {
+  const text = expandDecimal(String(value));
+  const [whole = "0", fraction = ""] = text.split(".");
+  if (text.startsWith("-") || !/^\d+$/.test(whole) || !/^\d*$/.test(fraction)) {
+    throw new Error("Enter a positive order amount and limit price");
+  }
+  const kept = fraction.slice(0, decimals).padEnd(decimals, "0");
+  let result = parseUnits(kept ? `${whole}.${kept}` : whole, decimals);
+  if (roundUp && /[1-9]/.test(fraction.slice(decimals))) result += 1n;
+  if (result <= 0n) throw new Error("Enter a positive order amount and limit price");
+  return result;
+}
+
+function orderbookToken(symbol: string, chainId: number) {
+  const normalized = symbol.toUpperCase();
+  if (normalized === "ETH") {
+    return { address: ZERO_EVM_ADDRESS, decimals: 18, native: true };
+  }
+  const address = CHAIN_TOKEN_ADDRESSES[chainId]?.[normalized];
+  if (!address) throw new Error(`${normalized} is not supported by Ethereum order settlement`);
+  return { address: address as `0x${string}`, decimals: TOKEN_DECIMALS[normalized] ?? 18, native: false };
+}
+
+async function sendOrderbookWalletTx(params: {
+  from: string;
+  to: string;
+  data: `0x${string}`;
+  value?: bigint;
+  chainId: number;
+  isOrahWallet: boolean;
+  confirmations?: number;
+  onStage?: (stage: string) => void;
+}): Promise<`0x${string}`> {
+  let txHash: `0x${string}`;
+  params.onStage?.("Preparing wallet transaction…");
+  if (params.isOrahWallet) {
+    const client = await getOrahWalletClient(params.from, params.chainId);
+    const nonce = await freshNonce(params.chainId, params.from);
+    const gas = await estimateGasForReown({
+      from: params.from,
+      to: params.to,
+      data: params.data,
+      value: params.value,
+    }, params.chainId, 350000n);
+    txHash = await client.sendTransaction({
+      to: params.to as `0x${string}`,
+      data: params.data,
+      value: params.value,
+      nonce,
+      gas,
+    } as any);
+  } else {
+    params.onStage?.("Confirm transaction in wallet…");
+    txHash = await sendTxUniversal({
+      from: params.from,
+      to: params.to,
+      data: params.data,
+      value: params.value,
+      chainId: params.chainId,
+    }) as `0x${string}`;
+  }
+
+  params.onStage?.("Waiting for Ethereum confirmation…");
+  const receipt = await getPublicClient(params.chainId).waitForTransactionReceipt({
+    hash: txHash,
+    confirmations: params.confirmations ?? 1,
+    timeout: 180_000,
+  });
+  if (receipt.status !== "success") throw new Error("Ethereum order escrow transaction reverted");
+  return txHash;
+}
+
+export async function lockOrderbookOrder(params: {
+  escrowAddress: string;
+  nonce: string;
+  side: "buy" | "sell";
+  base: string;
+  quote: string;
+  quantity: string | number;
+  price: string | number;
+  expiresAt: number;
+  from: string;
+  chainId: number;
+  isOrahWallet: boolean;
+  onStage?: (stage: string) => void;
+}): Promise<{ orderKey: `0x${string}`; txHash: `0x${string}`; explorerUrl: string }> {
+  if (params.chainId !== 1) throw new Error("Wallet-funded order settlement is currently available on Ethereum mainnet only");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(params.escrowAddress)) throw new Error("Ethereum order escrow is not configured");
+  const baseAsset = orderbookToken(params.base, params.chainId);
+  const quoteAsset = orderbookToken(params.quote, params.chainId);
+  if (baseAsset.decimals !== 18 || quoteAsset.decimals !== 18) {
+    throw new Error("Ethereum wallet order settlement currently supports 18-decimal tokens only");
+  }
+  const baseAmount = amountAsUnits(params.quantity, baseAsset.decimals);
+  const priceWad = amountAsUnits(params.price, 18, params.side === "sell");
+  const quoteScale = 10n ** BigInt(quoteAsset.decimals);
+  const baseScale = 10n ** BigInt(baseAsset.decimals);
+  const priceNumerator = priceWad * quoteScale;
+  let limitPriceX18 = priceNumerator / baseScale;
+  if (params.side === "sell" && priceNumerator % baseScale !== 0n) limitPriceX18 += 1n;
+  const quoteAmount = (baseAmount * limitPriceX18 + 10n ** 18n - 1n) / (10n ** 18n);
+  const escrowAmount = params.side === "buy" ? quoteAmount : baseAmount;
+  const escrowToken = params.side === "buy" ? quoteAsset : baseAsset;
+  const escrow = params.escrowAddress as `0x${string}`;
+  const from = params.from as `0x${string}`;
+
+  if (!escrowToken.native) {
+    params.onStage?.("Checking token approval…");
+    const pub = getPublicClient(params.chainId);
+    const allowance = await pub.readContract({
+      address: escrowToken.address,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [from, escrow],
+    });
+    if (allowance < escrowAmount) {
+      const approveData = buildApproveCalldata(escrow, escrowAmount);
+      params.onStage?.("Approve token in wallet…");
+      await sendOrderbookWalletTx({
+        from, to: escrowToken.address, data: approveData,
+        chainId: params.chainId, isOrahWallet: params.isOrahWallet,
+        onStage: params.onStage,
+      });
+    }
+  }
+
+  const orderKey = keccak256(toBytes(params.nonce));
+  const data = encodeFunctionData({
+    abi: ORDERBOOK_ESCROW_ABI,
+    functionName: "openOrder",
+    args: [
+      orderKey,
+      params.side === "buy" ? 0 : 1,
+      baseAsset.address,
+      quoteAsset.address,
+      baseAmount,
+      params.side === "buy" ? quoteAmount : 0n,
+      limitPriceX18,
+      BigInt(params.expiresAt),
+    ],
+  });
+  params.onStage?.("Confirm escrow lock in wallet…");
+  const txHash = await sendOrderbookWalletTx({
+    from,
+    to: escrow,
+    data,
+    value: params.side === "buy" && quoteAsset.native ? quoteAmount : undefined,
+    chainId: params.chainId,
+    isOrahWallet: params.isOrahWallet,
+    confirmations: 3,
+    onStage: params.onStage,
+  });
+  return {
+    orderKey,
+    txHash,
+    explorerUrl: `https://etherscan.io/tx/${txHash}`,
+  };
+}
+
+export async function cancelOrderbookOrder(params: {
+  escrowAddress: string;
+  orderKey: `0x${string}`;
+  from: string;
+  chainId: number;
+  isOrahWallet: boolean;
+}): Promise<{ txHash: `0x${string}`; explorerUrl: string }> {
+  if (params.chainId !== 1) throw new Error("Order escrow cancellation is available on Ethereum mainnet only");
+  const txHash = await sendOrderbookWalletTx({
+    from: params.from,
+    to: params.escrowAddress,
+    data: encodeFunctionData({
+      abi: ORDERBOOK_ESCROW_ABI,
+      functionName: "cancel",
+      args: [params.orderKey],
+    }),
+    chainId: params.chainId,
+    isOrahWallet: params.isOrahWallet,
+    confirmations: 3,
+  });
+  return { txHash, explorerUrl: `https://etherscan.io/tx/${txHash}` };
+}
+
 /**
  * Read the escrow contract to check whether `orderId` is already locked
  * on-chain. Used after a page refresh (mobile Safari kills tabs when imToken
@@ -568,28 +767,40 @@ export async function checkEscrowDeposit(
   orderId: string,
   chainId: number,
 ): Promise<{ depositor: string; token: string; amount: bigint; lockedAt: number; released: boolean } | null> {
-  const escrow = escrowAddress(chainId);
-  if (!escrow) return null;
   try {
-    const pub = getPublicClient(chainId);
-    const data = await pub.readContract({
-      address: escrow,
-      abi: ESCROW_ABI,
-      functionName: "getDeposit",
-      args: [orderIdToBytes32(orderId)],
-    }) as readonly [`0x${string}`, `0x${string}`, bigint, bigint, boolean];
-    const depositor = data[0];
-    if (!depositor || depositor === "0x0000000000000000000000000000000000000000") return null;
-    return {
-      depositor,
-      token:    data[1],
-      amount:   data[2],
-      lockedAt: Number(data[3]),
-      released: data[4],
-    };
+    return await readEscrowDeposit(orderId, chainId);
   } catch {
     return null;
   }
+}
+
+/**
+ * Read an escrow deposit without hiding RPC failures. Cancellation flows use
+ * this strict variant so a failed/slow node cannot be mistaken for "no funds
+ * locked" and leave an order active after its escrow was skipped.
+ */
+export async function readEscrowDeposit(
+  orderId: string,
+  chainId: number,
+): Promise<{ depositor: string; token: string; amount: bigint; lockedAt: number; released: boolean } | null> {
+  const escrow = escrowAddress(chainId);
+  if (!escrow) return null;
+  const pub = getPublicClient(chainId);
+  const data = await pub.readContract({
+    address: escrow,
+    abi: ESCROW_ABI,
+    functionName: "getDeposit",
+    args: [orderIdToBytes32(orderId)],
+  }) as readonly [`0x${string}`, `0x${string}`, bigint, bigint, boolean];
+  const depositor = data[0];
+  if (!depositor || depositor === "0x0000000000000000000000000000000000000000") return null;
+  return {
+    depositor,
+    token:    data[1],
+    amount:   data[2],
+    lockedAt: Number(data[3]),
+    released: data[4],
+  };
 }
 
 /**

@@ -24,6 +24,7 @@ import {
   UNISWAP_MARKETS, PANCAKE_MARKETS,
 } from "@/lib/mock-data";
 import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
+import { useMarketSearch } from "@/hooks/useStagedMarkets";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
 import { useZoraCoins } from "@/hooks/useZoraCoins";
 import { useBaseTokenList } from "@/hooks/useBaseTokenList";
@@ -77,7 +78,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "new" | "usd" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "linea" | "zk" | "scr" | "mnt" | "bch" | "bsv" | "sol" | "ai" | "meme" | "defi" | "futures" | "vote" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake" | "base" | "zora";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "vote",      label: "🗳️ Vote" },
@@ -260,9 +261,14 @@ function getCatRows(
   }
 }
 
-export function MobileMarkets() {
+export function MobileMarkets({ active = true }: { active?: boolean }) {
   const [, navigate] = useLocation();
   const [search, setSearch]       = useState("");
+  const {
+    results: serverSearchResults,
+    loading: serverSearchLoading,
+    error: serverSearchError,
+  } = useMarketSearch(active ? search : "", { debounceMs: 500, limit: 50 });
   const [cat, setCat]             = useState<Cat>("usd");
   const [usdSub, setUsdSub]       = useState<UsdSub>("USDT");
   const [sortKey, setSortKey]     = useState<SortKey>("base");
@@ -308,15 +314,17 @@ export function MobileMarkets() {
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/markets`);
+      const r = await fetch(`${BASE}/api/markets?pricedOnly=true`);
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    refetchInterval: 30_000,
+    enabled: active,
+    refetchInterval: active ? 30_000 : false,
   });
 
-  // LE "all" pairs — only needed for SOL tab, Favorites, or when searching
-  const needAllPairs = cat === "eth" || cat === "sol" || cat === "favorites" || search.length > 0;
+  // Search uses the paginated server catalog; don't fetch every provider pair
+  // just because the user is searching.
+  const needAllPairs = active && (cat === "eth" || cat === "sol" || cat === "favorites");
   const { pairs: rawLeAllPairs } = useLetsExchangePairs({ all: true, enabled: needAllPairs });
   const leAllPairs = useMemo<MktRow[]>(() =>
     (rawLeAllPairs ?? []).map(p => ({
@@ -333,7 +341,7 @@ export function MobileMarkets() {
   [rawLeAllPairs]);
 
   // LE BSV-quoted pairs — only needed for BSV tab
-  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV", enabled: cat === "bsv" });
+  const { pairs: rawLePairs } = useLetsExchangePairs({ quote: "BSV", enabled: active && cat === "bsv" });
   const lePairs = useMemo<MktRow[]>(() =>
     (rawLePairs ?? []).map(p => ({
       symbol: p.symbol,
@@ -348,7 +356,7 @@ export function MobileMarkets() {
   [rawLePairs]);
 
   // LE BTC-quoted pairs — only needed for BTC tab
-  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC", enabled: cat === "btc" });
+  const { pairs: rawLeBtcPairs } = useLetsExchangePairs({ quote: "BTC", enabled: active && cat === "btc" });
   const leBtcPairs = useMemo<MktRow[]>(() =>
     (rawLeBtcPairs ?? []).map(p => ({
       symbol: p.symbol,
@@ -363,7 +371,7 @@ export function MobileMarkets() {
   [rawLeBtcPairs]);
 
   const apiRows = useMemo<MktRow[]>(
-    () => (Array.isArray(apiData) ? apiData : []).map(normalise),
+    () => (Array.isArray(apiData) ? apiData : []).map(normalise).filter((market) => market.price > 0),
     [apiData]
   );
 
@@ -372,13 +380,13 @@ export function MobileMarkets() {
   ), [apiRows]);
 
   // Live on-chain data from GeckoTerminal (chain/category tabs, cached 90s)
-  const { data: geckoRows } = useGeckoTerminalPools(cat);
+  const { data: geckoRows } = useGeckoTerminalPools(active ? cat : "inactive");
   // Live Zora Coins API data (zora tab only)
-  const { data: zoraRows } = useZoraCoins(cat === "zora");
+  const { data: zoraRows } = useZoraCoins(active && cat === "zora");
   // Full Base chain token catalog from CoinGecko (base tab only, cached 1h)
-  const { data: baseTokenList } = useBaseTokenList(cat === "base");
+  const { data: baseTokenList } = useBaseTokenList(active && cat === "base");
   // DexScreener prices for catalog tokens not covered by GeckoTerminal (cached 60s)
-  const basePrices = useBaseTokenPrices(baseTokenList, cat === "base" && baseTokenList.length > 0);
+  const basePrices = useBaseTokenPrices(baseTokenList, active && cat === "base" && baseTokenList.length > 0);
 
   const globalRows = useMemo(() => Array.from(new Map(
     [
@@ -387,7 +395,10 @@ export function MobileMarkets() {
     ].map((m: MktRow) => [m.symbol, m])
   ).values()), [apiRows, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs]);
 
-  let rows = getCatRows(cat, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs, apiRows);
+  let rows = search
+    ? []
+    : getCatRows(cat, usdSub, livePrice, favorites, leAllPairs, lePairs, leBtcPairs, apiRows);
+  let searchHasMore = false;
 
   const applyLiveMerge = (rows: MktRow[], src: any[]): MktRow[] => {
     const byBase = new Map(src.map((s: any) => [s.base, s]));
@@ -411,9 +422,30 @@ export function MobileMarkets() {
   }
 
   if (search) {
-    const q = search.toUpperCase();
-    rows = globalRows.filter(m => m.base.includes(q) || m.symbol.includes(q));
+    const q = search.trim().toUpperCase();
+    if (q.length >= 2) {
+      const localMatches: MktRow[] = [];
+      for (const market of globalRows) {
+        if (market.base.includes(q) || market.quote.includes(q) || market.symbol.includes(q)) {
+          localMatches.push(market);
+          if (localMatches.length >= 50) break;
+        }
+      }
+      const localSymbols = new Set(localMatches.map(m => m.symbol));
+      const catalogMatches = serverSearchResults
+        .filter((m: any) => m.symbol && Number(m.lastPrice ?? m.price) > 0 && !localSymbols.has(m.symbol))
+        .map((m: any) => normalise(m));
+      const merged = [...new Map(
+        [...localMatches, ...catalogMatches].map(m => [m.symbol, m])
+      ).values()];
+      searchHasMore = merged.length > 50;
+      rows = merged.slice(0, 50);
+    }
   }
+
+  // Keep the market/chart list limited to pairs with a verified current price.
+  // Unpriced conversion routes are still available in the dedicated Swap flow.
+  rows = rows.filter((market) => market.price > 0);
 
   rows = [...rows].sort((a, b) => {
     let v = 0;
@@ -448,6 +480,10 @@ export function MobileMarkets() {
       ? <ChevronUp className="inline w-3 h-3 ml-0.5 text-primary" />
       : <ChevronDown className="inline w-3 h-3 ml-0.5 text-primary" />;
   }
+
+  // Keep the tab's filters and search state, but don't render thousands of
+  // hidden market rows or their logo requests while another tab is active.
+  if (!active) return null;
 
   return (
     <>
@@ -589,7 +625,13 @@ export function MobileMarkets() {
           {/* ── Market list ── */}
           {rows.length === 0 ? (
             <div className="flex-1 flex items-center justify-center py-20 text-muted-foreground text-sm">
-              {cat === "favorites" ? "Star coins to add favorites" : search ? `No results for "${search}"` : "Loading…"}
+              {search.trim().length < 2
+                ? "Type at least 2 characters to search"
+                : serverSearchLoading
+                ? "Searching all markets…"
+                : search && serverSearchError
+                  ? serverSearchError
+                  : cat === "favorites" ? "Star coins to add favorites" : search ? `No results for "${search}"` : "Loading…"}
             </div>
           ) : (
             <div>
@@ -607,6 +649,14 @@ export function MobileMarkets() {
                   onBuy={() => goTrade(m)}
                 />
               ))}
+              {searchHasMore && (
+                <div className="py-3 text-center text-xs text-muted-foreground">
+                  Showing 50 matches. Add more letters to narrow your search.
+                </div>
+              )}
+              {search && serverSearchLoading && (
+                <div className="py-3 text-center text-xs text-muted-foreground">Searching all markets…</div>
+              )}
             </div>
           )}
         </>
