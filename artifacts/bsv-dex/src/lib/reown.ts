@@ -185,6 +185,38 @@ export async function fetchErc20BalanceRaw(
   throw new Error("Could not verify the token balance. Retry the balance check before sending.");
 }
 
+export async function fetchNativeBalanceRaw(owner: string, chainId: number): Promise<bigint> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(owner)) {
+    throw new Error("A valid wallet address is required to check this balance.");
+  }
+
+  const endpoints = [CHAIN_RPC_URLS[chainId], CHAIN_RPC_FALLBACKS[chainId]].filter(Boolean);
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint!, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_getBalance",
+          params: [owner, "latest"],
+        }),
+      });
+      if (!response.ok) continue;
+      const payload = await response.json();
+      if (payload?.error || typeof payload?.result !== "string" || !/^0x[0-9a-f]+$/i.test(payload.result)) {
+        continue;
+      }
+      return BigInt(payload.result);
+    } catch {
+      continue;
+    }
+  }
+
+  throw new Error("Could not verify the native token balance. Retry the balance check before sending.");
+}
+
 export function sendEvmTransfer({
   from, to, valueWei, targetChainId, onStage,
 }: { from: string; to: string; valueWei: bigint; targetChainId: number; onStage?: (stage: "sending") => void }): Promise<string> {
