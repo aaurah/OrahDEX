@@ -19,6 +19,30 @@ import { logger } from "./logger.js";
 import { guardedInterval, withRetry } from "./selfHealing.js";
 import { liquidateFuturesPosition } from "./futuresSettlement.js";
 import { isDbConnError } from "./dbErrors.js";
+import { parseUnits, formatUnits, mulDiv, mulPriceQty, pow10 } from "./money.js";
+
+const PRICE_DECIMALS = 8;
+const QTY_DECIMALS = 8;
+const MONEY_DECIMALS = 18;
+
+function toMoneyRaw(value: string | number): bigint {
+  return parseUnits(String(value), MONEY_DECIMALS);
+}
+function toPriceRaw(value: string | number): bigint {
+  return parseUnits(String(value), PRICE_DECIMALS);
+}
+function toQtyRaw(value: string | number): bigint {
+  return parseUnits(String(value), QTY_DECIMALS);
+}
+function toFeeFractionRaw(value: string | number): bigint {
+  return parseUnits(String(value), MONEY_DECIMALS);
+}
+function moneyUnit(): bigint {
+  return pow10(MONEY_DECIMALS);
+}
+function absBigInt(value: bigint): bigint {
+  return value < 0n ? -value : value;
+}
 
 /* ── shared helpers ─────────────────────────────────────────────────────── */
 
@@ -40,10 +64,10 @@ async function setSetting(key: string, value: string) {
 }
 
 async function rebuildTotal() {
-  const spread   = parseFloat((await getSetting("bot_spread_profit"))      ?? "0") || 0;
-  const funding  = parseFloat((await getSetting("bot_funding_profit"))     ?? "0") || 0;
-  const liquid   = parseFloat((await getSetting("bot_liquidation_profit")) ?? "0") || 0;
-  await setSetting("bot_cumulative_profit", (spread + funding + liquid).toFixed(6));
+  const spreadRaw  = toMoneyRaw((await getSetting("bot_spread_profit"))      ?? "0");
+  const fundingRaw = toMoneyRaw((await getSetting("bot_funding_profit"))     ?? "0");
+  const liquidRaw  = toMoneyRaw((await getSetting("bot_liquidation_profit")) ?? "0");
+  await setSetting("bot_cumulative_profit", formatUnits(spreadRaw + fundingRaw + liquidRaw, MONEY_DECIMALS));
 }
 
 /* ── per-symbol funding rates (annualised to 8-h period) ─────────────────── */
@@ -69,7 +93,7 @@ async function runFundingCycle(): Promise<void> {
         .where(eq(futuresPositionsTable.status, "open"))
     );
 
-    let cycleIncome    = 0;   // total platform revenue this cycle
+    let cycleIncomeRaw = 0n;  // total platform revenue this cycle
     let appliedCount   = 0;   // positions that actually paid
     let underfundedCnt = 0;   // positions whose locked margin couldn't cover full payment
 
@@ -78,20 +102,35 @@ async function runFundingCycle(): Promise<void> {
      * Positive funding rate = longs pay; negative = shorts pay. The full
      * payment is collected by the platform (counterparty / insurance fund). */
     for (const pos of positions) {
-      const rate  = FUNDING_MAP[pos.symbol] ?? DEFAULT_FUNDING;
-      const markP = parseFloat(pos.markPrice)  || parseFloat(pos.entryPrice) || 0;
-      const qty   = parseFloat(pos.quantity)   || 0;
-      if (markP <= 0 || qty <= 0 || rate === 0) continue;
+      const rateRaw = toFeeFractionRaw(FUNDING_MAP[pos.symbol] ?? DEFAULT_FUNDING);
+      const markRaw = (() => {
+        try { return toPriceRaw(pos.markPrice); } catch { return toPriceRaw(pos.entryPrice); }
+      })();
+      const qtyRaw = toQtyRaw(pos.quantity);
+      if (markRaw <= 0n || qtyRaw <= 0n || rateRaw === 0n) continue;
 
-      // Sign convention: positive payment means the user pays the platform.
-      const sideMul = pos.side === "long" ? 1 : -1;
-      const payment = qty * markP * rate * sideMul;
-      if (payment <= 0) {
+      const notionalRaw = mulPriceQty({
+        priceRaw: markRaw,
+        priceDecimals: PRICE_DECIMALS,
+        quantityRaw: qtyRaw,
+        quantityDecimals: QTY_DECIMALS,
+        outputDecimals: MONEY_DECIMALS,
+        rounding: "floor",
+      });
+      const paymentRaw = mulDiv(notionalRaw, rateRaw, moneyUnit(), "floor");
+      const signedPaymentRaw = pos.side === "long" ? paymentRaw : -paymentRaw;
+      if (signedPaymentRaw <= 0n) {
         // User is a funding receiver. Credit their locked margin (80% of the
         // owed amount — platform keeps its 20% cut both on pay and receive).
         // This replaces the previous model where receivers got nothing.
-        const credit = Math.abs(payment) * (1 - PLATFORM_CUT);
-        if (credit > 0) {
+        const creditRaw = mulDiv(
+          absBigInt(signedPaymentRaw),
+          moneyUnit() - toFeeFractionRaw(PLATFORM_CUT),
+          moneyUnit(),
+          "floor",
+        );
+        if (creditRaw > 0n) {
+          const creditSql = formatUnits(creditRaw, MONEY_DECIMALS);
           const rcvClient = await withRetry(() => pool.connect(), { maxAttempts: 2, baseDelayMs: 500 });
           try {
             await rcvClient.query("BEGIN");
@@ -99,17 +138,17 @@ async function runFundingCycle(): Promise<void> {
               `UPDATE futures_margin_accounts
                SET locked = locked + $1, updated_at = now()
                WHERE wallet_address = $2 AND asset = 'USDT'`,
-              [credit.toFixed(8), pos.walletAddress],
+              [creditSql, pos.walletAddress],
             );
             await rcvClient.query(
               `UPDATE futures_positions
                SET funding_fee = (COALESCE(funding_fee::numeric, 0) - $1)::text,
                    margin      = (margin::numeric + $1)::text
                WHERE id = $2 AND status = 'open'`,
-              [credit.toFixed(8), pos.id],
+              [creditSql, pos.id],
             );
             await rcvClient.query("COMMIT");
-            cycleIncome -= credit; // platform paid out from its cut
+            cycleIncomeRaw -= creditRaw; // platform paid out from its cut
           } catch (rcvErr) {
             await rcvClient.query("ROLLBACK").catch(() => {});
             logger.warn({ err: rcvErr, positionId: pos.id }, "Funding credit to receiver failed");
@@ -132,25 +171,26 @@ async function runFundingCycle(): Promise<void> {
            WHERE wallet_address = $1 AND asset = 'USDT' FOR UPDATE`,
           [pos.walletAddress],
         );
-        const locked    = parseFloat(rows[0]?.locked ?? "0");
-        const charged   = Math.min(payment, locked);
-        if (charged < payment) underfundedCnt++;
+        const lockedRaw = toMoneyRaw(rows[0]?.locked ?? "0");
+        const chargedRaw = paymentRaw < lockedRaw ? paymentRaw : lockedRaw;
+        if (chargedRaw < paymentRaw) underfundedCnt++;
 
-        if (charged > 0) {
+        if (chargedRaw > 0n) {
+          const chargedSql = formatUnits(chargedRaw, MONEY_DECIMALS);
           await client.query(
             `UPDATE futures_margin_accounts
              SET locked = locked - $1, updated_at = now()
              WHERE wallet_address = $2 AND asset = 'USDT'`,
-            [charged.toFixed(8), pos.walletAddress],
+            [chargedSql, pos.walletAddress],
           );
           await client.query(
             `UPDATE futures_positions
              SET funding_fee = (COALESCE(funding_fee::numeric, 0) + $1)::text,
                  margin      = GREATEST((margin::numeric - $1), 0)::text
              WHERE id = $2 AND status = 'open'`,
-            [charged.toFixed(8), pos.id],
+            [chargedSql, pos.id],
           );
-          cycleIncome += charged;
+          cycleIncomeRaw += chargedRaw;
           appliedCount++;
         }
 
@@ -163,17 +203,18 @@ async function runFundingCycle(): Promise<void> {
       }
     }
 
-    const prev     = parseFloat((await getSetting("bot_funding_profit")) ?? "0") || 0;
-    const newTotal = prev + cycleIncome;
+    const prevRaw = toMoneyRaw((await getSetting("bot_funding_profit")) ?? "0");
+    const newTotalRaw = prevRaw + cycleIncomeRaw;
 
-    await setSetting("bot_funding_profit",     newTotal.toFixed(6));
-    await setSetting("bot_last_funding_income", cycleIncome.toFixed(6));
+    await setSetting("bot_funding_profit",     formatUnits(newTotalRaw, MONEY_DECIMALS));
+    await setSetting("bot_last_funding_income", formatUnits(cycleIncomeRaw, MONEY_DECIMALS));
     await setSetting("bot_last_funding_at",     new Date().toISOString());
     await rebuildTotal();
 
     logger.info(
       { positions: positions.length, applied: appliedCount, underfunded: underfundedCnt,
-        cycleIncome: cycleIncome.toFixed(4), cumulative: newTotal.toFixed(4) },
+        cycleIncome: formatUnits(cycleIncomeRaw, MONEY_DECIMALS),
+        cumulative: formatUnits(newTotalRaw, MONEY_DECIMALS) },
       "Futures profit engine: funding cycle complete",
     );
   } catch (err) {
@@ -200,23 +241,39 @@ async function runLiquidationCycle(): Promise<void> {
     );
 
     /* build a price map from live market data */
-    const priceMap: Record<string, number> = {};
+    const priceMapRaw: Record<string, bigint> = {};
     for (const m of markets) {
-      priceMap[m.symbol] = parseFloat(m.lastPrice ?? "0") || 0;
+      try {
+        priceMapRaw[m.symbol] = toPriceRaw(m.lastPrice ?? "0");
+      } catch {
+        // skip malformed market prices
+      }
     }
 
     /* --- update mark prices and unrealized PnL for all open positions --- */
     for (const pos of positions) {
-      const baseSym  = pos.symbol.replace("-PERP", "");
-      const markPrice = priceMap[baseSym] ?? priceMap[pos.symbol] ?? parseFloat(pos.markPrice) ?? 0;
-      if (markPrice <= 0) continue;
-      const entry    = parseFloat(pos.entryPrice) || 0;
-      const qty      = parseFloat(pos.quantity)   || 0;
-      const margin   = parseFloat(pos.margin)     || 1;
-      const priceDiff = markPrice - entry;
-      const dirMult  = pos.side === "long" ? 1 : -1;
-      const upnl     = dirMult * priceDiff * qty;
-      const upnlPct  = (upnl / margin) * 100;
+      const baseSym = pos.symbol.replace("-PERP", "");
+      const markRaw = priceMapRaw[baseSym] ?? priceMapRaw[pos.symbol] ?? (() => {
+        try { return toPriceRaw(pos.markPrice); } catch { return 0n; }
+      })();
+      if (markRaw <= 0n) continue;
+
+      const entryRaw = (() => { try { return toPriceRaw(pos.entryPrice); } catch { return 0n; } })();
+      const qtyRaw = (() => { try { return toQtyRaw(pos.quantity); } catch { return 0n; } })();
+      const marginRaw = (() => { try { return toMoneyRaw(pos.margin); } catch { return 1n; } })();
+      if (entryRaw <= 0n || qtyRaw <= 0n || marginRaw <= 0n) continue;
+
+      const priceDiffRaw = markRaw - entryRaw;
+      const absPnlRaw = mulPriceQty({
+        priceRaw: absBigInt(priceDiffRaw),
+        priceDecimals: PRICE_DECIMALS,
+        quantityRaw: qtyRaw,
+        quantityDecimals: QTY_DECIMALS,
+        outputDecimals: MONEY_DECIMALS,
+        rounding: "floor",
+      });
+      const upnlRaw = pos.side === "long" ? absPnlRaw : -absPnlRaw;
+      const upnlPct = (Number(formatUnits(upnlRaw, MONEY_DECIMALS)) / Number(formatUnits(marginRaw, MONEY_DECIMALS))) * 100;
       try {
         await withRetry(() => pool.query(
           `UPDATE futures_positions
@@ -224,46 +281,56 @@ async function runLiquidationCycle(): Promise<void> {
                unrealized_pnl        = $2,
                unrealized_pnl_percent = $3
            WHERE id = $4 AND status = 'open'`,
-          [markPrice.toFixed(8), upnl.toFixed(8), upnlPct.toFixed(4), pos.id],
+          [formatUnits(markRaw, PRICE_DECIMALS), formatUnits(upnlRaw, MONEY_DECIMALS), upnlPct.toFixed(4), pos.id],
         ), { maxAttempts: 2, baseDelayMs: 500 });
       } catch { /* non-fatal */ }
     }
 
     /* --- check and liquidate real positions --- */
-    let realLiqFees = 0;
+    let realLiqFeesRaw = 0n;
     for (const pos of positions) {
-      const baseSym   = pos.symbol.replace("-PERP", "");
-      const markPrice = priceMap[baseSym] ?? priceMap[pos.symbol] ?? parseFloat(pos.markPrice) ?? 0;
-      const liqPrice   = parseFloat(pos.liquidationPrice) || 0;
-      if (markPrice <= 0 || liqPrice <= 0) continue;
+      const baseSym = pos.symbol.replace("-PERP", "");
+      const markRaw = priceMapRaw[baseSym] ?? priceMapRaw[pos.symbol] ?? (() => {
+        try { return toPriceRaw(pos.markPrice); } catch { return 0n; }
+      })();
+      const liqRaw = (() => { try { return toPriceRaw(pos.liquidationPrice); } catch { return 0n; } })();
+      if (markRaw <= 0n || liqRaw <= 0n) continue;
 
       const isLiquidated =
-        (pos.side === "long"  && markPrice <= liqPrice) ||
-        (pos.side === "short" && markPrice >= liqPrice);
+        (pos.side === "long"  && markRaw <= liqRaw) ||
+        (pos.side === "short" && markRaw >= liqRaw);
 
       if (isLiquidated) {
         /* Delegate to the canonical liquidation function which:
          *   - confiscates (removes) the locked margin from futures_margin_accounts
          *   - marks the position row as "liquidated" with optimistic concurrency check
          * This replaces the previous raw DB update that left margin stranded. */
-        const liqResult = await liquidateFuturesPosition(pos.id, markPrice);
-        const fee = liqResult.loss * LIQUIDATION_FEE;
-        realLiqFees += fee;
+        const liqResult = await liquidateFuturesPosition(pos.id, formatUnits(markRaw, PRICE_DECIMALS));
+        const feeRaw = mulDiv(toMoneyRaw(liqResult.loss), toFeeFractionRaw(LIQUIDATION_FEE), moneyUnit(), "floor");
+        realLiqFeesRaw += feeRaw;
 
         logger.info(
-          { positionId: pos.id, symbol: pos.symbol, side: pos.side, markPrice, liqPrice, marginLost: liqResult.loss, fee: fee.toFixed(4) },
+          {
+            positionId: pos.id,
+            symbol: pos.symbol,
+            side: pos.side,
+            markPrice: formatUnits(markRaw, PRICE_DECIMALS),
+            liqPrice: formatUnits(liqRaw, PRICE_DECIMALS),
+            marginLost: liqResult.loss,
+            fee: formatUnits(feeRaw, MONEY_DECIMALS),
+          },
           "Futures profit engine: position liquidated",
         );
       }
     }
 
-    const cycleIncome = realLiqFees;
+    const cycleIncomeRaw = realLiqFeesRaw;
 
-    const prev    = parseFloat((await getSetting("bot_liquidation_profit")) ?? "0") || 0;
-    const newTotal = prev + cycleIncome;
+    const prevRaw = toMoneyRaw((await getSetting("bot_liquidation_profit")) ?? "0");
+    const newTotalRaw = prevRaw + cycleIncomeRaw;
 
-    await setSetting("bot_liquidation_profit",     newTotal.toFixed(6));
-    await setSetting("bot_last_liquidation_income", cycleIncome.toFixed(6));
+    await setSetting("bot_liquidation_profit",     formatUnits(newTotalRaw, MONEY_DECIMALS));
+    await setSetting("bot_last_liquidation_income", formatUnits(cycleIncomeRaw, MONEY_DECIMALS));
     await setSetting("bot_last_liquidation_at",     new Date().toISOString());
     await rebuildTotal();
 
