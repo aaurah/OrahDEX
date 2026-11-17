@@ -213,7 +213,7 @@ async function verifySpotFunding(
     }
 
     const RPC_URLS: Record<number, string> = {
-      1:        process.env.ETH_RPC_URL      ?? "https://eth.llamarpc.com",
+      1:        process.env.ETH_RPC_URL      ?? "https://ethereum-rpc.publicnode.com",
       56:       process.env.BSC_RPC_URL      ?? "https://bsc-dataseed.binance.org",
       137:      process.env.POLYGON_RPC_URL  ?? "https://polygon-bor-rpc.publicnode.com",
       8453:     process.env.BASE_RPC_URL     ?? "https://mainnet.base.org",
