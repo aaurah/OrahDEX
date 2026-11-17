@@ -287,6 +287,10 @@ export async function verifyEvmOrderbookCancelTx(params: {
       !/^0x[0-9a-fA-F]{64}$/.test(params.txHash)) {
     throw new Error("Invalid Ethereum order cancellation proof");
   }
+  const configuredEscrow = getEscrowAddress();
+  if (!configuredEscrow || configuredEscrow.toLowerCase() !== params.escrowAddress.toLowerCase()) {
+    throw new Error("Cancellation contract does not match the configured Ethereum order escrow");
+  }
   const client = publicClient();
   const receipt = await client.getTransactionReceipt({ hash: params.txHash as Hex });
   if (receipt.status !== "success") throw new Error("Order cancellation transaction reverted");
@@ -551,7 +555,7 @@ export async function settleEvmOrderFill(params: {
   quote: string;
   baseAmount: string | number;
   grossQuoteAmount: string | number;
-}, onSubmitted?: (txHash: Hex) => Promise<void>): Promise<{ txHash: Hex; alreadySettled: boolean }> {
+}, onSubmitted?: (txHash: Hex) => Promise<void>): Promise<{ txHash: Hex; alreadySettled: boolean; feeAmount: string }> {
   const config = await getEvmOrderbookEscrowConfig();
   if (!config.available) throw new Error("Ethereum order escrow is not available");
   const client = publicClient();
@@ -566,7 +570,7 @@ export async function settleEvmOrderFill(params: {
     const existing = await getConfirmedEvmOrderSettlement(params.settlementId);
     if (!existing) throw new Error("Settlement is awaiting Ethereum confirmations");
     await onSubmitted?.(existing.txHash);
-    return { txHash: existing.txHash, alreadySettled: true };
+    return { txHash: existing.txHash, alreadySettled: true, feeAmount: existing.feeAmount };
   }
 
   const baseAsset = assetDetails(params.base);
@@ -596,6 +600,7 @@ export async function settleEvmOrderFill(params: {
   return {
     txHash: finalized.txHash,
     alreadySettled: finalized.txHash.toLowerCase() !== txHash.toLowerCase(),
+    feeAmount: finalized.feeAmount,
   };
 }
 
