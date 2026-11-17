@@ -26,7 +26,8 @@ import { usePairPrices } from "@/hooks/usePairPrices";
 import { LockFundsDialog } from "@/components/trading/LockFundsDialog";
 import { HtlcLockRecovery } from "@/components/trading/HtlcLockRecovery";
 import { CrossChainSwapPanel } from "@/components/trading/CrossChainSwapPanel";
-import { hasEscrow, chainLabel, checkEscrowDeposit, resolveEscrowAsset, lockOrderbookOrder, cancelOrderbookOrder } from "@/lib/escrow";
+import { hasEscrow, chainLabel, checkEscrowDeposit, readEscrowDeposit, resolveEscrowAsset, lockOrderbookOrder, cancelOrderbookOrder } from "@/lib/escrow";
+import { cancelEvmOrderbookOrder } from "@/lib/orderbookCancellation";
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 import { buildOrderIntentMessage, buildOrderActionMessage, signWalletMessage } from "@/lib/tradeAuth";
 import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
@@ -473,51 +474,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       walletAddress: string;
       fundingRef?: string | null;
     }) => {
-      let orderbookCancelTxHash: string | undefined;
       if (fundingRef?.startsWith("evm-order:1:")) {
-        const readServerOrder = async () => {
-          const response = await fetch(
-            `${BASE}/api/orders?walletAddress=${encodeURIComponent(orderWalletAddress)}`,
-            { cache: "no-store" },
-          );
-          if (!response.ok) throw new Error("Could not refresh the order status before cancellation.");
-          const rows = await response.json();
-          return Array.isArray(rows) ? rows.find((order: any) => String(order.id) === orderId) : null;
-        };
-
-        // The chain transaction may already have completed even if a previous
-        // page session failed before syncing its status to the API.
-        const currentOrder = await readServerOrder();
-        if (currentOrder?.status === "cancelled" || currentOrder?.status === "filled") {
-          return { id: orderId, status: currentOrder.status };
-        }
-        if (currentOrder?.status !== "open") {
-          throw new Error("Order status changed. Refresh My Orders before retrying.");
-        }
-
-        const [, , escrowAddress, orderKey] = fundingRef.split(":");
-        if (!escrowAddress || !/^0x[0-9a-fA-F]{64}$/.test(orderKey ?? "")) {
-          throw new Error("Order escrow details are invalid. Refresh and retry.");
-        }
-        const cancelled = await cancelOrderbookOrder({
-          escrowAddress,
-          orderKey: orderKey as `0x${string}`,
-          from: orderWalletAddress,
-          chainId: 1,
+        return cancelEvmOrderbookOrder({
+          orderId,
+          walletAddress: orderWalletAddress,
+          fundingRef,
           isOrahWallet,
         });
-        orderbookCancelTxHash = cancelled.txHash;
-
-        // The confirmed on-chain event authorizes the server update, so a
-        // second wallet-signature prompt is unnecessary.
-        for (let attempt = 0; attempt < 4; attempt += 1) {
-          if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
-          const updatedOrder = await readServerOrder();
-          if (updatedOrder?.status === "cancelled" || updatedOrder?.status === "filled") {
-            return { id: orderId, status: updatedOrder.status, txHash: orderbookCancelTxHash };
-          }
-        }
-        throw new Error("The wallet confirmed cancellation, but the order is still syncing. Do not cancel again; refresh My Orders shortly.");
       }
 
       // Step 1 (best-effort): release any on-chain escrow lock so the user
@@ -530,11 +493,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         try {
           // 4-second timeout: a slow RPC shouldn't stall the cancel button.
           const dep = await Promise.race([
-            checkEscrowDeposit(orderId, walletChainId),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+            readEscrowDeposit(orderId, walletChainId),
+            new Promise<never>((_, reject) => setTimeout(
+              () => reject(new Error("Could not verify the escrow state. No cancellation was submitted; check the wallet network and retry.")),
+              4_000,
+            )),
           ]);
           hasDeposit = !!dep && !dep.released;
-        } catch { /* RPC failure — err on the side of not sending a bad tx */ }
+        } catch (error) {
+          throw error;
+        }
 
         if (hasDeposit) {
           try {
@@ -564,7 +532,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           signature,
           nonce,
           expiry,
-          orderbookCancelTxHash,
         }),
       });
       // 404 means the order is already cancelled (desired state) — treat as success.
