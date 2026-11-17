@@ -26,6 +26,7 @@ interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  status?: string;
   toolCalls?: ToolCallEvent[];
   createdAt: Date;
 }
@@ -544,6 +545,7 @@ export function DevAIPage() {
     const assistantId = Date.now() + "-a";
     setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: "", toolCalls: [], createdAt: new Date() }]);
 
+    abortRef.current?.abort();
     abortRef.current = new AbortController();
     try {
       const res = await fetch(`${API}/devai/conversations/${convId}/messages`, {
@@ -573,23 +575,31 @@ export function DevAIPage() {
           if (!line.startsWith("data: ")) continue;
           try {
             const data = JSON.parse(line.slice(6));
-            if (data.done) break;
+            if (data.done) {
+              setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, status: undefined } : m));
+              break;
+            }
             if (data.error) {
               setMessages(prev => prev.map(m =>
-                m.id === assistantId ? { ...m, content: `Error: ${data.error}` } : m
+                m.id === assistantId ? { ...m, content: `Error: ${data.error}`, status: undefined } : m
               ));
               continue;
             }
 
+            if (data.status) {
+              setMessages(prev => prev.map(m =>
+                m.id === assistantId ? { ...m, status: data.status } : m
+              ));
+            }
             if (data.content) {
               setMessages(prev => prev.map(m =>
-                m.id === assistantId ? { ...m, content: m.content + data.content } : m
+                m.id === assistantId ? { ...m, content: m.content + data.content, status: undefined } : m
               ));
             } else if (data.tool_call) {
               const tc = data.tool_call;
               setMessages(prev => prev.map(m =>
                 m.id === assistantId
-                  ? { ...m, toolCalls: [...(m.toolCalls ?? []), { id: tc.id, name: tc.name, args: tc.args, pending: true }] }
+                  ? { ...m, status: undefined, toolCalls: [...(m.toolCalls ?? []), { id: tc.id, name: tc.name, args: tc.args, pending: true }] }
                   : m
               ));
             } else if (data.tool_result) {
@@ -621,7 +631,13 @@ export function DevAIPage() {
     } catch (err: any) {
       if (err?.name !== "AbortError") {
         setMessages(prev => prev.map(m =>
-          m.id === assistantId ? { ...m, content: `Error: ${err?.message ?? "DevAI request failed."}` } : m
+          m.id === assistantId ? { ...m, content: `Error: ${err?.message ?? "DevAI request failed."}`, status: undefined } : m
+        ));
+      } else {
+        setMessages(prev => prev.map(m =>
+          m.id === assistantId && !m.content
+            ? { ...m, content: "Stopped.", status: undefined, toolCalls: (m.toolCalls ?? []).map(tc => ({ ...tc, pending: false })) }
+            : m
         ));
       }
     } finally {
@@ -901,13 +917,13 @@ export function DevAIPage() {
                         ) : !msg.toolCalls?.length ? (
                           <div className="flex items-center gap-1.5 text-muted-foreground text-xs">
                             <RefreshCw className="w-3 h-3 animate-spin" />
-                            Thinking...
+                            {msg.status ?? "Thinking..."}
                           </div>
                         ) : (
                           msg.toolCalls.some(tc => tc.pending) && (
                             <div className="flex items-center gap-1.5 text-muted-foreground text-xs mt-1">
                               <Loader2 className="w-3 h-3 animate-spin text-green-400" />
-                              Working...
+                              {msg.status ?? "Working..."}
                             </div>
                           )
                         )}
@@ -942,7 +958,7 @@ export function DevAIPage() {
             />
             {streaming ? (
               <button
-                onClick={() => { abortRef.current?.abort(); setStreaming(false); }}
+                onClick={() => { abortRef.current?.abort(); }}
                 className="shrink-0 w-8 h-8 rounded-lg bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400 hover:bg-red-500/30 transition-colors"
               >
                 <X className="w-3.5 h-3.5" />
