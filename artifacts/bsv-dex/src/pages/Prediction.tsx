@@ -458,6 +458,7 @@ export function PredictionTrading() {
                   symbol={symbol}
                   interval={candleInterval}
                   onIntervalChange={setCandleInterval}
+                  disableAutoInterval
                   data={currentPrice > 0 ? undefined : generateMockCandles(MOCK_TICKER[symbol]?.lastPrice ?? 14.35)}
                 />
               </Suspense>
