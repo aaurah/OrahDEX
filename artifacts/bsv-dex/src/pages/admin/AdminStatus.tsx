@@ -12,7 +12,7 @@ const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 interface HealthService {
   name: string;
-  status: "ok" | "degraded" | "dead" | "stuck" | "starting";
+  status: "ok" | "healthy" | "degraded" | "dead" | "stuck" | "starting";
   consecutiveFails: number;
   lastRunAt: string | null;
   lastSuccessAt: string | null;
@@ -67,6 +67,7 @@ function groupFor(name: string): string {
 
 const STATUS_CONFIG = {
   ok:       { label: "OK",        icon: CheckCircle2,  cls: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" },
+  healthy:  { label: "OK",        icon: CheckCircle2,  cls: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20" },
   degraded: { label: "Degraded",  icon: AlertTriangle, cls: "text-amber-400  bg-amber-400/10  border-amber-400/20"  },
   stuck:    { label: "Stuck",     icon: AlertTriangle, cls: "text-amber-400  bg-amber-400/10  border-amber-400/20"  },
   dead:     { label: "Dead",      icon: XCircle,       cls: "text-red-400    bg-red-400/10    border-red-400/20"    },
@@ -75,6 +76,7 @@ const STATUS_CONFIG = {
 
 const DOT: Record<string, string> = {
   ok:       "bg-emerald-400",
+  healthy:  "bg-emerald-400",
   degraded: "bg-amber-400 animate-pulse",
   stuck:    "bg-amber-400 animate-pulse",
   dead:     "bg-red-400   animate-pulse",
@@ -322,7 +324,7 @@ export function AdminStatusPage() {
   const bsv       = pubHealth?.bsvChain;
 
   const overallOk = pubHealth
-    ? services.every(s => s.status === "ok" || s.status === "starting")
+    ? services.every(s => s.status === "ok" || s.status === "healthy" || s.status === "starting")
     : null;
 
   const deadCount     = services.filter(s => s.status === "dead").length;
@@ -458,7 +460,7 @@ export function AdminStatusPage() {
         <StatChip
           label="Total Workers"
           value={String(services.length)}
-          sub={`${services.filter(s => s.status === "ok").length} healthy`}
+          sub={`${services.filter(s => s.status === "ok" || s.status === "healthy").length} healthy`}
           color={deadCount > 0 ? "red" : degradedCount > 0 ? "amber" : "green"}
         />
         <StatChip
@@ -494,7 +496,7 @@ export function AdminStatusPage() {
           <div className="bg-emerald-400/5 border border-emerald-400/20 rounded-xl p-3 flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
             <div>
-              <p className="text-xl font-bold text-emerald-400">{services.filter(s => s.status === "ok").length}</p>
+              <p className="text-xl font-bold text-emerald-400">{services.filter(s => s.status === "ok" || s.status === "healthy").length}</p>
               <p className="text-xs text-muted-foreground">Healthy</p>
             </div>
           </div>
