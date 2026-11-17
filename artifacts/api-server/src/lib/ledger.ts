@@ -13,6 +13,15 @@
 
 import { pool } from "@workspace/db";
 import { logger } from "./logger.js";
+import { parseUnits, formatUnits, mulDiv, pow10 } from "./money.js";
+
+/** P1: seeded/demo balances are allowed only in explicit demo deployments. */
+export function assertSeedBalancesAllowed(context: string): void {
+  if (process.env.DEMO_MODE !== "true") {
+    throw new Error(`SEED_BALANCES_BLOCKED_IN_PRODUCTION:${context}`);
+  }
+}
+
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,27 +69,25 @@ function normAddr(addr: unknown): string {
 }
 
 /**
- * Safely compare two decimal strings using parseFloat with error handling.
- * Returns false if either input is invalid (prevents silent NaN comparisons).
+ * Compare two 18-decimal ledger strings exactly.
+ * Invalid input fails closed instead of silently becoming NaN.
  */
 export function gte(a: string, b: string): boolean {
-  const aNum = parseFloat(a);
-  const bNum = parseFloat(b);
-  if (isNaN(aNum) || isNaN(bNum)) {
-    logger.warn({ a, b }, "gte: invalid decimal comparison");
+  try {
+    return parseUnits(a, 18) >= parseUnits(b, 18);
+  } catch (err) {
+    logger.warn({ a, b, err }, "gte: invalid decimal comparison");
     return false;
   }
-  return aNum >= bNum;
 }
 
 export function lt(a: string, b: string): boolean {
-  const aNum = parseFloat(a);
-  const bNum = parseFloat(b);
-  if (isNaN(aNum) || isNaN(bNum)) {
-    logger.warn({ a, b }, "lt: invalid decimal comparison");
+  try {
+    return parseUnits(a, 18) < parseUnits(b, 18);
+  } catch (err) {
+    logger.warn({ a, b, err }, "lt: invalid decimal comparison");
     return false;
   }
-  return aNum < bNum;
 }
 
 // ── Ensure balance row exists (upsert with 0) ─────────────────────────────
@@ -112,7 +119,13 @@ export async function getBalances(walletAddress: string): Promise<Balance[]> {
   );
   return rows
     .map(r => ({ asset: r.asset_symbol, available: r.available, locked: r.locked }))
-    .filter(r => parseFloat(r.available) > 0 || parseFloat(r.locked) > 0);
+    .filter(r => {
+      try {
+        return parseUnits(r.available, 18) > 0n || parseUnits(r.locked, 18) > 0n;
+      } catch {
+        return false;
+      }
+    });
 }
 
 // ── Seed initial balances (first-time user) ──────────────────────────────────
@@ -120,6 +133,7 @@ export async function getBalances(walletAddress: string): Promise<Balance[]> {
 // fresh wallet always starts with the same amounts (reproducible seed data).
 
 export async function seedInitialBalances(walletAddress: string): Promise<void> {
+  assertSeedBalancesAllowed("seedInitialBalances");
   function seededRng(addr: string, slot: number): number {
     let h = 0xcafe1234 ^ slot;
     for (let i = 0; i < addr.length; i++) {
@@ -320,11 +334,15 @@ export async function ensureSeedForAsset(
   asset:         string,
   neededAmount:  string,
 ): Promise<void> {
+  assertSeedBalancesAllowed("ensureSeedForAsset");
   walletAddress = normAddr(walletAddress);
-  const needed = parseFloat(neededAmount);
-  if (isNaN(needed)) {
+  let neededRaw: bigint;
+  try {
+    neededRaw = parseUnits(neededAmount, 18);
+  } catch {
     throw new Error(`Invalid neededAmount: ${neededAmount}`);
   }
+  if (neededRaw <= 0n) return;
   // Run inside a transaction with a row lock so two concurrent callers
   // cannot both read the same balance and both decide to seed.
   const client = await pool.connect();
@@ -345,15 +363,26 @@ export async function ensureSeedForAsset(
        FOR UPDATE`,
       [walletAddress, asset],
     );
-    const current = rows[0] ? parseFloat(rows[0].available) : 0;
-    if (current >= needed) {
+    const currentStr = rows[0]?.available ?? "0";
+    let currentRaw: bigint;
+    try {
+      currentRaw = parseUnits(currentStr, 18);
+    } catch {
+      currentRaw = 0n;
+    }
+    if (currentRaw >= neededRaw) {
       await client.query("ROLLBACK");
       return;  // already sufficient — no seeding required
     }
 
     // Credit the difference (or a default seed amount, whichever is larger)
-    const defaultSeed = parseFloat(ASSET_SEED_AMOUNTS[asset]?.amount ?? "1000");
-    const credit = Math.max(needed - current + defaultSeed * 0.5, defaultSeed).toFixed(8);
+    const defaultSeedStr = ASSET_SEED_AMOUNTS[asset]?.amount ?? "1000";
+    const defaultSeedRaw = parseUnits(defaultSeedStr, 18);
+    const halfDefault = defaultSeedRaw / 2n;
+    const creditRaw = neededRaw - currentRaw + halfDefault > defaultSeedRaw
+      ? neededRaw - currentRaw + halfDefault
+      : defaultSeedRaw;
+    const credit = formatUnits(creditRaw, 18);
     await client.query(
       `UPDATE user_balances
        SET available = available + $1, updated_at = now()
@@ -378,10 +407,7 @@ export async function creditAvailable(
   asset:         string,
   amount:        string,
 ): Promise<void> {
-  const amtNum = parseFloat(amount);
-  if (isNaN(amtNum) || amtNum < 0) {
-    throw new Error(`Invalid credit amount: ${amount}`);
-  }
+  parseUnits(amount, 18);
   await pool.query(
     `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
      VALUES ($1, $2, $3, '0', now())
@@ -398,10 +424,7 @@ export async function debitAvailable(
   asset:         string,
   amount:        string,
 ): Promise<void> {
-  const amtNum = parseFloat(amount);
-  if (isNaN(amtNum) || amtNum < 0) {
-    throw new Error(`Invalid debit amount: ${amount}`);
-  }
+  parseUnits(amount, 18);
   walletAddress = normAddr(walletAddress);
   const client = await pool.connect();
   try {
@@ -441,10 +464,7 @@ export async function lockForOrder(params: {
   amount:        string;
 }): Promise<void> {
   params = { ...params, walletAddress: normAddr(params.walletAddress) };
-  const amtNum = parseFloat(params.amount);
-  if (isNaN(amtNum) || amtNum < 0) {
-    throw new Error(`Invalid lock amount: ${params.amount}`);
-  }
+  parseUnits(params.amount, 18);
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -514,17 +534,17 @@ async function _unlockFundsImpl(params: {
       await client.query("COMMIT");
       return;
     }
-    const lockedNum  = parseFloat(rows[0]!.locked) || 0;
-    const requested  = parseFloat(params.amount)   || 0;
-    const moveAmount = Math.min(lockedNum, Math.max(0, requested));
-    if (moveAmount > 0) {
+    const lockedRaw = parseUnits(rows[0]!.locked, 18);
+    const requestedRaw = parseUnits(params.amount, 18);
+    const moveAmountRaw = lockedRaw < requestedRaw ? lockedRaw : requestedRaw;
+    if (moveAmountRaw > 0n) {
       await client.query(
         `UPDATE user_balances
          SET locked     = locked - $1,
              available  = available + $1,
              updated_at = now()
          WHERE wallet_address = $2 AND asset_symbol = $3`,
-        [moveAmount.toFixed(18), params.walletAddress, params.asset],
+        [formatUnits(moveAmountRaw, 18), params.walletAddress, params.asset],
       );
     }
     await client.query("COMMIT");
@@ -572,18 +592,26 @@ export async function settleTrade(params: {
   const sellerAddress = normAddr(params.sellerAddress);
   const { baseAsset, quoteAsset, amount, price, feePct = 0.001, isBotSeller = false, isBotBuyer = false } = params;
   
-  // Validate inputs before calculations
-  const amtNum = parseFloat(amount);
-  const priceNum = parseFloat(price);
-  if (isNaN(amtNum) || isNaN(priceNum) || amtNum <= 0 || priceNum <= 0) {
+  // Validate and calculate in exact 18-decimal smallest units.
+  const amountRaw = parseUnits(amount, 18);
+  const priceRaw = parseUnits(price, 18);
+  if (amountRaw <= 0n || priceRaw <= 0n) {
     throw new Error(`Invalid trade params: amount=${amount}, price=${price}`);
   }
 
-  const cost    = (amtNum * priceNum).toFixed(18);
-  const buyFee  = (amtNum * feePct).toFixed(18);
-  const sellFee = (priceNum * amtNum * feePct).toFixed(18);
-  const netBase = (amtNum - parseFloat(buyFee)).toFixed(18);
-  const netQuote = (priceNum * amtNum - parseFloat(sellFee)).toFixed(18);
+  const feeFractionRaw = parseUnits(feePct.toString(), 18);
+  const unit = pow10(18);
+
+  // Buyer debit is conservative (ceil); seller fee is floor so netQuote + fee == cost.
+  const costRaw = mulDiv(amountRaw, priceRaw, unit, "ceil");
+  const buyFeeRaw = mulDiv(amountRaw, feeFractionRaw, unit, "ceil");
+  const sellFeeRaw = mulDiv(costRaw, feeFractionRaw, unit, "floor");
+  const netBaseRaw = amountRaw - buyFeeRaw;
+  const netQuoteRaw = costRaw - sellFeeRaw;
+
+  const cost = formatUnits(costRaw, 18);
+  const netBase = formatUnits(netBaseRaw, 18);
+  const netQuote = formatUnits(netQuoteRaw, 18);
 
   const client = await pool.connect();
   try {
@@ -605,11 +633,11 @@ export async function settleTrade(params: {
     );
 
     // Helper: find the locked value for a specific (wallet, asset) pair
-    const lockedOf = (addr: string, asset: string): number => {
+    const lockedOf = (addr: string, asset: string): bigint => {
       const row = lockedRows.find(
         r => r.wallet_address === addr && r.asset_symbol === asset,
       );
-      return parseFloat(row?.locked ?? "0");
+      return parseUnits(row?.locked ?? "0", 18);
     };
 
     // Strict invariant: locked funds must cover the settlement amounts.
@@ -620,20 +648,20 @@ export async function settleTrade(params: {
 
     if (!isBotBuyer) {
       const buyerLockedQuote = lockedOf(buyerAddress, quoteAsset);
-      if (buyerLockedQuote < parseFloat(cost) - SETTLE_EPSILON) {
+      if (buyerLockedQuote < costRaw) {
         throw new Error(
           `SETTLEMENT_INSUFFICIENT_LOCK: buyer ${buyerAddress} has ` +
-          `${buyerLockedQuote} locked ${quoteAsset}, need ${cost}`,
+          `${formatUnits(buyerLockedQuote, 18)} locked ${quoteAsset}, need ${cost}`,
         );
       }
     }
 
     if (!isBotSeller) {
       const sellerLockedBase = lockedOf(sellerAddress, baseAsset);
-      if (sellerLockedBase < parseFloat(amount) - SETTLE_EPSILON) {
+      if (sellerLockedBase < amountRaw) {
         throw new Error(
           `SETTLEMENT_INSUFFICIENT_LOCK: seller ${sellerAddress} has ` +
-          `${sellerLockedBase} locked ${baseAsset}, need ${amount}`,
+          `${formatUnits(sellerLockedBase, 18)} locked ${baseAsset}, need ${amount}`,
         );
       }
     }

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import type { Trade } from '@workspace/api-client-react';
 import { Zap, ArrowRight, CheckCircle2, ArrowLeftRight } from "lucide-react";
 import { useSettingsStore } from '@/store/useSettingsStore';
+import ExternalDepthPanel from "./ExternalDepthPanel";
 
 export interface OrderBookFill {
   price: string;
@@ -21,7 +22,7 @@ export interface ExternalFlash {
 }
 
 type BookMode = "full" | "asks" | "bids";
-type Panel = "book" | "trades";
+type Panel = "book" | "trades" | "depth";
 
 interface LERate {
   rate: string;       // quote per 1 base
@@ -191,7 +192,7 @@ export function OrderBook({
     <div className="flex flex-col h-full bg-card font-mono tabular-nums overflow-hidden">
       {/* Top tabs */}
       <div className="flex items-center border-b border-border shrink-0">
-        {(["book", "trades"] as Panel[]).map(p => (
+        {(["book", "trades", "depth"] as Panel[]).map(p => (
           <button
             key={p}
             onClick={() => setPanel(p)}
@@ -202,7 +203,7 @@ export function OrderBook({
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
           >
-            {p === "book" ? "Order Book" : "Market Trades"}
+            {p === "book" ? "Order Book" : p === "trades" ? "Market Trades" : "Market Depth"}
           </button>
         ))}
 
@@ -277,6 +278,13 @@ export function OrderBook({
               ))
             )}
           </div>
+        </div>
+      )}
+
+      {/* External market depth (Gate.io + MEXC, display only) */}
+      {panel === "depth" && (
+        <div className="p-1">
+          <ExternalDepthPanel symbol={symbol || "BSV/USDT"} />
         </div>
       )}
 

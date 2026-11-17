@@ -239,7 +239,7 @@ export interface EscrowDeposit {
  * trust the order metadata. Reads are parallel so total time is ~max(rpc).
  */
 export async function findEscrowChain(orderId: string): Promise<number | null> {
-  const chainIds = Object.keys(ESCROW_ADDRESSES).map(Number);
+  const chainIds = [...DEPLOYED_ESCROW_CHAINS];
   // ── Fail-closed: any per-chain RPC error throws. ─────────────────────
   // We intentionally do NOT use allSettled here — if even one chain we
   // can't read, we can't tell whether the deposit is there. The caller
@@ -366,6 +366,10 @@ export async function releaseEscrow(
         )
       ),
     ]);
+    const receipt = await pub.waitForTransactionReceipt({ hash: txHash });
+    if (receipt.status !== "success") {
+      return { ok: false, reason: `release reverted on-chain (tx ${txHash})` };
+    }
     return { ok: true, txHash, explorerUrl: escrowExplorerUrl(chainId, txHash) };
   } catch (err: any) {
     // Surface revert reasons (e.g. "already released", "not relayer") so
