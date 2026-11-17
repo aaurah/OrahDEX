@@ -111,7 +111,10 @@ export function OraAIWidget() {
         body: JSON.stringify({ content: msg }),
       });
 
-      if (!res.ok || !res.body) throw new Error("Stream failed");
+      if (!res.ok || !res.body) {
+        const result = await res.json().catch(() => ({}));
+        throw new Error(result.error ?? "Stream failed");
+      }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -135,9 +138,9 @@ export function OraAIWidget() {
           } catch { }
         }
       }
-    } catch {
+    } catch (err: any) {
       setMessages(prev => prev.map(m =>
-        m.id === assistantId ? { ...m, content: "Something went wrong. Please try again." } : m
+        m.id === assistantId ? { ...m, content: err?.message ?? "Something went wrong. Please try again." } : m
       ));
     } finally {
       setStreaming(false);

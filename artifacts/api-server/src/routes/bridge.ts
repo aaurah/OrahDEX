@@ -8,30 +8,16 @@
 
 import { Router } from "express";
 import { randomUUID } from "crypto";
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { htlcLocksTable } from "@workspace/db/schema";
 import { eq, and } from "drizzle-orm";
-import { buildHtlc, verifySecret } from "../lib/htlc.js";
+import { buildHtlc } from "../lib/htlc.js";
 import { logger } from "../lib/logger.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { createPublicClient, http, parseAbi, encodeFunctionData, type Address, type Hex } from "viem";
-import { creditAvailable } from "../lib/ledger.js";
 import { pushNotification } from "../lib/notifQueue.js";
 
 const router = Router();
-type CctpIntentStatus = "created" | "attested" | "completed";
-interface CctpIntent {
-  id: string;
-  sourceChainId: number;
-  destinationChainId: number;
-  asset: "USDC";
-  amount: string;
-  sender: string;
-  recipient: string;
-  status: CctpIntentStatus;
-  createdAt: number;
-}
-
 const CCTP_CHAINS: Record<number, { name: string; domain: number }> = {
   1:     { name: "Ethereum", domain: 0 },
   10:    { name: "Optimism", domain: 2 },
@@ -39,8 +25,6 @@ const CCTP_CHAINS: Record<number, { name: string; domain: number }> = {
   8453:  { name: "Base", domain: 6 },
   137:   { name: "Polygon", domain: 7 },
 };
-const cctpIntents = new Map<string, CctpIntent>();
-
 const VALID_EVM_ADDR = /^0x[0-9a-fA-F]{40}$/;
 const VALID_BSV_ADDR = /^[1-9A-HJ-NP-Za-km-z]{26,35}$/;
 
@@ -54,17 +38,23 @@ async function getCurrentBlockHeight(): Promise<number> {
       headers: { "User-Agent": "OrahDEX/1.0" },
     });
     clearTimeout(timer);
-    if (res.ok) {
-      const data = await res.json() as { blocks?: number };
-      return data.blocks ?? 941000;
+    if (!res.ok) throw new Error(`WhatsOnChain returned ${res.status}`);
+    const data = await res.json() as { blocks?: number };
+    if (!Number.isSafeInteger(data.blocks) || !data.blocks || data.blocks <= 0) {
+      throw new Error("WhatsOnChain returned an invalid block height");
     }
-  } catch { /* fallback below */ }
-  return 941000; // conservative fallback
+    return data.blocks;
+  } catch (err) {
+    logger.warn({ err }, "Could not verify BSV tip before creating HTLC");
+    throw new Error("BSV chain status is unavailable. No lock was created; retry when the network is reachable.");
+  }
 }
 
 // ── Check if BSV has arrived at an address via WhatsOnChain ──────────────────
 async function checkHtlcFunding(address: string, expectedBsv: number): Promise<{
   funded: boolean;
+  hasFunds: boolean;
+  chainCheckUnavailable?: boolean;
   txid?: string;
   amountBsv?: number;
   confirmations?: number;
@@ -73,13 +63,17 @@ async function checkHtlcFunding(address: string, expectedBsv: number): Promise<{
     // Check UTXOs at address
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 5000);
-    const res = await fetch(
-      `${BSV_NET.wocBase}/address/${address}/unspent`,
-      { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
-    );
-    clearTimeout(timer);
+    let res: Response;
+    try {
+      res = await fetch(
+        `${BSV_NET.wocBase}/address/${address}/unspent`,
+        { signal: ctrl.signal, headers: { "User-Agent": "OrahDEX/1.0" } }
+      );
+    } finally {
+      clearTimeout(timer);
+    }
 
-    if (!res.ok) return { funded: false };
+    if (!res.ok) return { funded: false, hasFunds: false, chainCheckUnavailable: true };
 
     const utxos = await res.json() as Array<{
       tx_hash: string;
@@ -87,29 +81,103 @@ async function checkHtlcFunding(address: string, expectedBsv: number): Promise<{
       height: number;
     }>;
 
-    if (!utxos || utxos.length === 0) return { funded: false };
+    if (!utxos || utxos.length === 0) return { funded: false, hasFunds: false };
 
-    const totalSat = utxos.reduce((s, u) => s + (u.value ?? 0), 0);
+    const confirmedUtxos = utxos.filter(u => Number.isSafeInteger(u.height) && u.height > 0);
+    if (confirmedUtxos.length === 0) return { funded: false, hasFunds: true, amountBsv: 0, confirmations: 0 };
+
+    const totalSat = confirmedUtxos.reduce((s, u) => s + (u.value ?? 0), 0);
     const totalBsv = totalSat / 1e8;
 
     // Allow a small tolerance for network fees (0.1%) but reject clear under-funding
     if (totalBsv >= expectedBsv * 0.999) {
       return {
         funded: true,
-        txid: utxos[0].tx_hash,
+        hasFunds: true,
+        txid: confirmedUtxos[0].tx_hash,
         amountBsv: totalBsv,
-        confirmations: utxos[0].height > 0 ? 1 : 0,
+        confirmations: 1,
       };
     }
-    return { funded: false };
+    return {
+      funded: false,
+      hasFunds: true,
+      txid: confirmedUtxos[0]?.tx_hash,
+      amountBsv: totalBsv,
+      confirmations: 1,
+    };
   } catch (err: any) {
     logger.warn({ address, err: err?.message }, "HTLC funding check failed");
-    return { funded: false };
+    return { funded: false, hasFunds: false, chainCheckUnavailable: true };
+  }
+}
+
+async function creditConfirmedTestnetHtlcOnce(lockId: string, fundingTxid: string | null) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<{
+      status: string;
+      amount_bsv: string;
+      recipient_evm_address: string | null;
+      sender_bsv_address: string | null;
+    }>(
+      `SELECT status, amount_bsv, recipient_evm_address, sender_bsv_address
+       FROM htlc_locks WHERE id = $1 FOR UPDATE`,
+      [lockId],
+    );
+    if (!rows.length) throw new Error("HTLC lock was not found during credit.");
+    const lock = rows[0];
+    if (lock.status === "complete") {
+      await client.query("COMMIT");
+      return null;
+    }
+    if (lock.status !== "funded") {
+      await client.query("COMMIT");
+      return null;
+    }
+
+    const creditAddr = lock.recipient_evm_address ?? lock.sender_bsv_address;
+    if (!creditAddr) throw new Error("HTLC has no balance recipient.");
+    const grossBsv = parseFloat(lock.amount_bsv);
+    const netBsv = (grossBsv * (1 - 0.001)).toFixed(8);
+    const normalizedCreditAddr = /^0x/i.test(creditAddr) ? creditAddr.toLowerCase() : creditAddr;
+
+    await client.query(
+      `INSERT INTO user_balances (wallet_address, asset_symbol, available, locked, updated_at)
+       VALUES ($1, 'BSV', $2, '0', now())
+       ON CONFLICT (wallet_address, asset_symbol)
+       DO UPDATE SET available = user_balances.available + EXCLUDED.available, updated_at = now()`,
+      [normalizedCreditAddr, netBsv],
+    );
+    const updated = await client.query(
+      `UPDATE htlc_locks
+       SET status = 'complete', funding_txid = COALESCE(funding_txid, $2), updated_at = now()
+       WHERE id = $1 AND status = 'funded'
+       RETURNING id`,
+      [lockId, fundingTxid],
+    );
+    if (!updated.rowCount) throw new Error("HTLC status changed before credit could be committed.");
+    await client.query("COMMIT");
+
+    return { creditAddr, grossBsv, netBsv };
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
 // ── POST /api/bridge/htlc/create ─────────────────────────────────────────────
 router.post("/htlc/create", async (req, res) => {
+  if (!BSV_NET.isTestnet) {
+    res.status(503).json({
+      error: "Legacy BSV HTLC bridging is disabled on mainnet until the refund path is secured. No transaction was sent.",
+    });
+    return;
+  }
+
   try {
     const { amountBsv, senderBsvAddress, recipientEvmAddress, evmChainId } = req.body as {
       amountBsv?: number;
@@ -183,12 +251,13 @@ router.post("/htlc/create", async (req, res) => {
       expiresInBlocks: 144,
       // estimated time: BSV targets ~1 block/min but often much faster
       expiresIn:       "~24 hours",
+      explorerBase:    BSV_NET.explorer,
       status:          "pending",
       instructions: [
         `Send exactly ${amountBsv} BSV to the HTLC address below.`,
-        "The bridge will detect your deposit within 1 confirmation.",
-        "wBSV will be minted to your EVM address automatically.",
-        `If the bridge fails, you can reclaim BSV after block ${locktimeBlocks}.`,
+        "Testnet-only flow. Do not send real BSV.",
+        "A confirmed testnet deposit may credit your OrahDEX test balance.",
+        `No in-app refund or EVM mint is implemented. Test locktime: block ${locktimeBlocks}.`,
       ],
     });
   } catch (err: any) {
@@ -209,69 +278,77 @@ router.get("/htlc/:id", async (req, res) => {
     }
 
     const lock = rows[0];
+    const lockIsTestnet = lock.htlcAddress.startsWith("2");
+    if (lockIsTestnet !== BSV_NET.isTestnet) {
+      res.status(409).json({ error: "This lock belongs to a different BSV network than the server is configured for." });
+      return;
+    }
+    if (!BSV_NET.isTestnet) {
+      res.status(503).json({
+        error: "Legacy mainnet HTLC settlement is paused because the script does not securely bind claim and refund spends. No balance or on-chain funds were changed. Provide the lock ID or transaction ID for recovery review.",
+      });
+      return;
+    }
 
-    // If still pending, poll WhatsOnChain for deposit
+    let fundingCheck: Awaited<ReturnType<typeof checkHtlcFunding>> | null = null;
     if (lock.status === "pending") {
-      const check = await checkHtlcFunding(lock.htlcAddress, parseFloat(lock.amountBsv));
-      if (check.funded) {
-        // Atomic conditional transition: only proceeds if status is still "pending".
-        // The AND status = 'pending' guard prevents double-credit when two concurrent
-        // requests both see the HTLC as funded before either has committed.
+      fundingCheck = await checkHtlcFunding(lock.htlcAddress, parseFloat(lock.amountBsv));
+      if (fundingCheck.funded) {
         const fundedRows = await db.update(htlcLocksTable)
           .set({
             status:      "funded",
-            fundingTxid: check.txid ?? null,
+            fundingTxid: fundingCheck.txid ?? null,
             updatedAt:   new Date(),
           })
           .where(and(eq(htlcLocksTable.id, id), eq(htlcLocksTable.status, "pending")))
           .returning({ id: htlcLocksTable.id });
 
         if (fundedRows.length === 0) {
-          // Another request already transitioned this HTLC — re-read and return current state
           const refreshed = await db.select().from(htlcLocksTable).where(eq(htlcLocksTable.id, id));
           if (refreshed.length > 0) Object.assign(lock, refreshed[0]);
         } else {
-        lock.status      = "funded";
-        lock.fundingTxid = check.txid ?? null;
+          lock.status      = "funded";
+          lock.fundingTxid = fundingCheck.txid ?? null;
+        }
+      }
+    }
 
-        logger.info({ lockId: id, txid: check.txid, amountBsv: check.amountBsv }, "HTLC funded — crediting internal BSV balance");
-
+    // Only confirmed testnet funds can be credited. The ledger update and lock
+    // completion commit atomically so a restart cannot strand or double-credit it.
+    if (lock.status === "funded") {
+      fundingCheck ??= await checkHtlcFunding(lock.htlcAddress, parseFloat(lock.amountBsv));
+      if (fundingCheck.funded) {
         try {
-          const BRIDGE_FEE = 0.001;
-          const grossBsv   = parseFloat(lock.amountBsv);
-          const netBsv     = (grossBsv * (1 - BRIDGE_FEE)).toFixed(8);
-          const creditAddr = lock.recipientEvmAddress ?? lock.senderBsvAddress;
-
-          await db.update(htlcLocksTable)
-            .set({ status: "minting", updatedAt: new Date() })
-            .where(eq(htlcLocksTable.id, id));
-          lock.status = "minting";
-
-          if (creditAddr) {
-            await creditAvailable(creditAddr, "BSV", netBsv);
-            logger.info({ lockId: id, creditAddr, netBsv }, "Bridge: BSV credited to internal ledger");
-            pushNotification(creditAddr, {
-              type:  "bridge",
-              title: "Bridge complete",
-              body:  `${netBsv} BSV credited to your exchange balance (fee: ${(grossBsv * BRIDGE_FEE).toFixed(8)} BSV).`,
+          const credited = await creditConfirmedTestnetHtlcOnce(id, fundingCheck.txid ?? lock.fundingTxid ?? null);
+          if (credited) {
+            lock.status = "complete";
+            lock.fundingTxid = fundingCheck.txid ?? lock.fundingTxid;
+            logger.info(
+              { lockId: id, txid: fundingCheck.txid, creditAddr: credited.creditAddr, netBsv: credited.netBsv },
+              "Bridge: confirmed testnet BSV credited atomically",
+            );
+            pushNotification(credited.creditAddr, {
+              type: "bridge",
+              title: "Testnet bridge complete",
+              body: `${credited.netBsv} BSV testnet balance credited.`,
             });
           } else {
-            logger.warn({ lockId: id }, "Bridge: no recipient address on lock — BSV not credited");
+            const refreshed = await db.select().from(htlcLocksTable).where(eq(htlcLocksTable.id, id));
+            if (refreshed.length > 0) Object.assign(lock, refreshed[0]);
           }
-
-          await db.update(htlcLocksTable)
-            .set({ status: "complete", updatedAt: new Date() })
-            .where(eq(htlcLocksTable.id, id));
-          lock.status = "complete";
         } catch (e: any) {
-          logger.error({ lockId: id, err: e?.message }, "Bridge: failed to credit BSV balance");
+          logger.error({ lockId: id, err: e?.message }, "Bridge: testnet credit failed; funded status retained for retry");
         }
-        } // end else (fundedRows.length > 0)
       }
     }
 
     // Check locktime expiry
-    if (lock.status === "pending") {
+    if (
+      lock.status === "pending" &&
+      fundingCheck &&
+      !fundingCheck.chainCheckUnavailable &&
+      !fundingCheck.hasFunds
+    ) {
       const currentBlock = await getCurrentBlockHeight();
       if (currentBlock >= lock.locktimeBlocks) {
         await db.update(htlcLocksTable)
@@ -286,6 +363,11 @@ router.get("/htlc/:id", async (req, res) => {
 
     res.json({
       ...safeFields,
+      explorerBase: BSV_NET.explorer,
+      chainCheckUnavailable: Boolean(fundingCheck?.chainCheckUnavailable),
+      recoveryNotice: lock.status === "minting"
+        ? "This legacy lock has an ambiguous credit state. It was not credited again; reconcile the balance and transaction before taking action."
+        : undefined,
       // Include redeem script (not the secret — that stays server-side)
       redeemScript: lock.redeemScript,
     });
@@ -312,11 +394,9 @@ router.post("/htlc/:id/cancel", async (req, res) => {
       return;
     }
 
-    await db.update(htlcLocksTable)
-      .set({ status: "refunded", updatedAt: new Date() })
-      .where(eq(htlcLocksTable.id, id));
-
-    res.json({ success: true, status: "refunded" });
+    res.status(409).json({
+      error: "Closing a bridge request does not cancel its on-chain HTLC or refund funds. The lock status was not changed.",
+    });
   } catch (err: any) {
     logger.error({ err: err?.message }, "Failed to cancel HTLC lock");
     res.status(500).json({ error: "Failed to cancel lock." });
@@ -327,6 +407,8 @@ router.post("/htlc/:id/cancel", async (req, res) => {
 router.get("/cctp/networks", (_req, res) => {
   res.json({
     protocol: "CCTP",
+    available: false,
+    message: "CCTP settlement is not connected to Circle burn, attestation, or mint transactions.",
     asset: "USDC",
     chains: Object.entries(CCTP_CHAINS).map(([chainId, info]) => ({
       chainId: Number(chainId),
@@ -337,96 +419,16 @@ router.get("/cctp/networks", (_req, res) => {
 });
 
 // ── CCTP: create transfer intent (wallet-to-wallet, contract-based) ──────────
-router.post("/cctp/intent", (req, res) => {
-  const { sourceChainId, destinationChainId, amount, sender, recipient, asset } = req.body as {
-    sourceChainId?: number;
-    destinationChainId?: number;
-    amount?: string | number;
-    sender?: string;
-    recipient?: string;
-    asset?: string;
-  };
-
-  const srcId = Number(sourceChainId);
-  const dstId = Number(destinationChainId);
-  const amtNum = Number(amount);
-
-  if (!CCTP_CHAINS[srcId] || !CCTP_CHAINS[dstId]) {
-    res.status(400).json({ error: "Unsupported CCTP source or destination chain." });
-    return;
-  }
-  if (srcId === dstId) {
-    res.status(400).json({ error: "Source and destination chains must differ." });
-    return;
-  }
-  if (!asset || asset.toUpperCase() !== "USDC") {
-    res.status(400).json({ error: "Only USDC is supported for CCTP transfers." });
-    return;
-  }
-  if (!Number.isFinite(amtNum) || amtNum <= 0) {
-    res.status(400).json({ error: "amount must be a positive number." });
-    return;
-  }
-  if (!sender?.startsWith("0x") || !recipient?.startsWith("0x")) {
-    res.status(400).json({ error: "sender and recipient must be EVM addresses." });
-    return;
-  }
-
-  const id = randomUUID();
-  const createdAt = Date.now();
-  cctpIntents.set(id, {
-    id,
-    sourceChainId: srcId,
-    destinationChainId: dstId,
-    asset: "USDC",
-    amount: amtNum.toString(),
-    sender,
-    recipient,
-    status: "created",
-    createdAt,
-  });
-
-  logger.info({ id, sourceChainId: srcId, destinationChainId: dstId, amount: amtNum }, "CCTP transfer intent created");
-  res.status(201).json({
-    id,
-    protocol: "CCTP",
-    status: "created",
-    source: CCTP_CHAINS[srcId],
-    destination: CCTP_CHAINS[dstId],
-    asset: "USDC",
-    amount: amtNum.toString(),
-    sender,
-    recipient,
-    instructions: [
-      `Burn ${amtNum} USDC on ${CCTP_CHAINS[srcId].name}.`,
-      "Wait for Circle attestation.",
-      `Mint USDC on ${CCTP_CHAINS[dstId].name} to recipient wallet.`,
-    ],
+router.post("/cctp/intent", (_req, res) => {
+  res.status(503).json({
+    error: "CCTP transfers are disabled until real burn, attestation, and mint transactions are verified. No transfer was submitted.",
   });
 });
 
 // ── CCTP: poll transfer intent status ─────────────────────────────────────────
-router.get("/cctp/intent/:id", (req, res) => {
-  const intent = cctpIntents.get(req.params.id);
-  if (!intent) {
-    res.status(404).json({ error: "CCTP intent not found." });
-    return;
-  }
-
-  const elapsedMs = Date.now() - intent.createdAt;
-  if (elapsedMs > 45_000) intent.status = "completed";
-  else if (elapsedMs > 15_000) intent.status = "attested";
-
-  res.json({
-    id: intent.id,
-    protocol: "CCTP",
-    status: intent.status,
-    sourceChainId: intent.sourceChainId,
-    destinationChainId: intent.destinationChainId,
-    asset: intent.asset,
-    amount: intent.amount,
-    sender: intent.sender,
-    recipient: intent.recipient,
+router.get("/cctp/intent/:id", (_req, res) => {
+  res.status(503).json({
+    error: "CCTP status polling is disabled because prior status updates were simulated, not settled on-chain.",
   });
 });
 

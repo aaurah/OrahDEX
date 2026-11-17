@@ -28,6 +28,7 @@ import {
   Copy,
   Check,
   AlertCircle,
+  AlertTriangle,
   ExternalLink,
   Download,
   RefreshCw,
@@ -37,8 +38,17 @@ import {
 } from "lucide-react";
 import { API_BASE } from "@/lib/api";
 import { validateAltChainAddress } from "@/lib/addressValidation";
-import { isAddress as isEvmAddress } from "viem";
-import { CHAIN_RPC_URLS, CHAIN_RPC_FALLBACKS, fetchEvmBalance } from "@/lib/reown";
+import { formatUnits, isAddress as isEvmAddress, parseUnits } from "viem";
+import {
+  CHAIN_RPC_URLS,
+  fetchErc20BalanceRaw,
+  fetchNativeBalanceRaw,
+  sendErc20Transfer,
+  sendEvmTransfer,
+  switchEvmNetwork,
+} from "@/lib/reown";
+import { useAppKitAccount, useAppKitNetworkCore } from "@reown/appkit/react";
+import { openReownModal } from "@/lib/reown-appkit";
 import {
   getViemAccountForAddress,
   sendBsvFromAddress,
@@ -55,7 +65,7 @@ import {
   listPasskeyWallets,
   loginWithPasskey,
 } from "@/lib/passkeyWallet";
-import { getDerivedAddresses, listImportedWallets } from "@/lib/walletPin";
+import { getDerivedAddresses, getImportedWallet, listImportedWallets } from "@/lib/walletPin";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { useNotificationStore } from "@/store/useNotificationStore";
@@ -85,6 +95,7 @@ function isHandCashHandle(s: string): boolean {
 const NON_EVM_WITHDRAW_CHAINS = [
   { id: "evm",  label: "EVM",  color: "#627EEA" },
   { id: "bsv",  label: "BSV",  color: "#22C55E" },
+  { id: "bsv-test", label: "BSV Testnet", color: "#14B8A6" },
   { id: "btc",  label: "BTC",  color: "#F97316" },
   { id: "sol",  label: "SOL",  color: "#9945FF" },
   { id: "xrp",  label: "XRP",  color: "#00A9E0" },
@@ -389,8 +400,20 @@ export function WithdrawSheet({
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
   const { isHardwareWallet, hardwareWalletType } = useWalletStore();
+  const reownEvmAccount = useAppKitAccount({ namespace: "eip155" });
+  const reownEvmNetwork = useAppKitNetworkCore();
+  const reownWalletAddress = reownEvmAccount.address ?? "";
+  const reownWalletAvailable = reownEvmAccount.isConnected && isEvmAddress(reownWalletAddress);
+  const passkeyWalletAvailable = useMemo(() => {
+    if (!walletAddress) return false;
+    const normalizedAddress = walletAddress.toLowerCase();
+    return listPasskeyWallets().some(wallet => wallet.address.toLowerCase() === normalizedAddress)
+      || !!getImportedWallet(walletAddress);
+  }, [walletAddress]);
+  const localSignerAvailable = passkeyWalletAvailable || isHardwareWallet;
+  const reownChainId = Number(reownEvmNetwork.chainId);
 
-  const isBitcoinFork = ["bsv", "btc", "bch"].includes(network.toLowerCase());
+  const isBitcoinFork = ["bsv", "bsv-test", "btc", "bch"].includes(network.toLowerCase());
   const isSolana      = network.toLowerCase() === "sol";
   const isEvmNetwork  = !isBitcoinFork && !isSolana && (network.toLowerCase() === "evm" || network === "");
   const isAltChain    = !isBitcoinFork && !isSolana && !isEvmNetwork; // LTC, DOGE, XRP, ADA, TRON, TON, etc.
@@ -435,6 +458,7 @@ export function WithdrawSheet({
     const d = getDerivedAddresses(resolvedSigningEvmAddress);
     const auto: Record<string, string | undefined> = d ? {
       bsv:  d.bsv  ?? undefined,
+      bsvTest: d.bsvTest ?? undefined,
       btc:  d.btc  ?? undefined,
       bch:  d.bch  ?? undefined,
       sol:  d.sol  ?? undefined,
@@ -475,11 +499,14 @@ export function WithdrawSheet({
   // ── wallet send state (EVM) ──────────────────────────────────────────────
   const [walletSendChain,     setWalletSendChain]     = useState<WalletChain>(() => resolveWalletChainToken(asset).chain);
   const [walletSendToken,     setWalletSendToken]     = useState<WalletToken>(() => resolveWalletChainToken(asset).token);
-  const [walletSendBalance,   setWalletSendBalance]   = useState<number | null>(null);
+  const [walletSendBalanceRaw, setWalletSendBalanceRaw] = useState<bigint | null>(null);
   const [walletSendBalFetch,  setWalletSendBalFetch]  = useState(false);
   const [walletSendAmount,    setWalletSendAmount]    = useState("");
   const [walletSendRecipient, setWalletSendRecipient] = useState("");
   const [walletSending,       setWalletSending]       = useState(false);
+  const [walletSendStage,     setWalletSendStage]     = useState<"checking" | "confirming">("checking");
+  const [walletSignerSource,  setWalletSignerSource]  = useState<"reown" | "local">("local");
+  const [walletNetworkSwitching, setWalletNetworkSwitching] = useState(false);
   const [walletSendTxHash,    setWalletSendTxHash]    = useState<string | null>(null);
   const [walletSendError,     setWalletSendError]     = useState<string | null>(null);
 
@@ -502,10 +529,34 @@ export function WithdrawSheet({
   } | null>(null);
   const [hcHandleFetching, setHcHandleFetching] = useState(false);
 
+  const walletSendFromAddress = walletSignerSource === "reown" ? reownWalletAddress : walletAddress;
+  const walletSendSignerAvailable = isEvmAddress(walletSendFromAddress) && (
+    walletSignerSource === "reown" ? reownWalletAvailable : localSignerAvailable
+  );
+  const walletSendTokenDecimals = walletSendToken.isNative ? 18 : walletSendToken.decimals;
+  const walletSendAmountUnits = useMemo(() => {
+    if (!walletSendAmount.trim()) return null;
+    try {
+      return parseUnits(walletSendAmount.trim(), walletSendTokenDecimals);
+    } catch {
+      return null;
+    }
+  }, [walletSendAmount, walletSendTokenDecimals]);
+  const walletSendAmountInvalid =
+    !!walletSendAmount && (walletSendAmountUnits === null || walletSendAmountUnits <= 0n);
+  const walletSendAmountExceedsBalance =
+    walletSendAmountUnits !== null &&
+    walletSendBalanceRaw !== null &&
+    walletSendAmountUnits > walletSendBalanceRaw;
+
   // ── withdraw chain selector (overrides network prop inside withdraw tab) ──
   const [withdrawChainMode, setWithdrawChainMode] = useState<string>(
     initialNonEvmChain?.toLowerCase() ?? (isEvmNetwork ? "evm" : network.toLowerCase())
   );
+  useEffect(() => {
+    if (open) setWalletSignerSource(reownWalletAvailable ? "reown" : "local");
+  }, [open, reownWalletAvailable, walletAddress]);
+
   // Reset non-EVM form when user switches chain
   useEffect(() => {
     setNonEvmSendBalance(null);
@@ -522,6 +573,7 @@ export function WithdrawSheet({
       setWalletSendError(null);
       setWalletSendAmount("");
       setWalletSendRecipient("");
+      setWalletSendBalanceRaw(null);
       setDepFromWalletTxHash(null);
       setDepFromWalletError(null);
       setDepFromWalletAmount("");
@@ -550,14 +602,14 @@ export function WithdrawSheet({
             }
           }
           setWalletSendToken(preToken ?? (WALLET_TOKENS[initialChainId]?.[0] ?? resolveWalletChainToken(asset).token));
-          setWalletSendBalance(null);
+          setWalletSendBalanceRaw(null);
           return;
         }
       }
       const resolved = resolveWalletChainToken(asset);
       setWalletSendChain(resolved.chain);
       setWalletSendToken(resolved.token);
-      setWalletSendBalance(null);
+      setWalletSendBalanceRaw(null);
     }
   }, [open, asset, defaultRecipient, initialTab, initialChainId, initialTokenSymbol]);
 
@@ -603,7 +655,7 @@ export function WithdrawSheet({
         if (!r.ok) return [];
         return r.json();
       },
-      enabled: network.toLowerCase() === "bsv" && !!walletAddress && open && tab === "deposit",
+      enabled: ["bsv", "bsv-test"].includes(network.toLowerCase()) && !!walletAddress && open && tab === "deposit",
       refetchInterval: 15_000,
       staleTime: 5_000,
     });
@@ -664,10 +716,40 @@ export function WithdrawSheet({
     if (!bsvTxHash.trim() || bsvVerifying || !walletAddress) return;
     setBsvVerifying(true);
     try {
+      const verifyBody: Record<string, string> = {
+        walletAddress,
+        txHash: bsvTxHash.trim(),
+        network: network.toLowerCase(),
+      };
+
+      if (/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
+        const isBsvTestnet = network.toLowerCase() === "bsv-test";
+        const bsvSignerAddress =
+          effectiveNonEvmAddresses?.[isBsvTestnet ? "bsvTest" : "bsv"] ??
+          (!isBsvTestnet ? useWalletStore.getState().internalBsvAddress : undefined) ??
+          "";
+        if (!bsvSignerAddress) {
+          throw new Error("Connect the BSV wallet that sent this deposit before verifying it.");
+        }
+        const challengeRes = await fetch(`${API_BASE}/deposit/bsv-challenge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ walletAddress, bsvSignerAddress, txHash: bsvTxHash.trim() }),
+        });
+        const challengeData = await challengeRes.json().catch(() => ({}));
+        if (!challengeRes.ok) throw new Error(challengeData.error ?? "Could not authorize this BSV deposit.");
+        const signature = await signBsvChallengeFromAddress(
+          resolvedSigningEvmAddress,
+          challengeData.message,
+        );
+        verifyBody.bsvSignerAddress = bsvSignerAddress;
+        verifyBody.bsvSignerSignature = signature;
+      }
+
       const r = await fetch(`${API_BASE}/deposit/bsv-verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress, txHash: bsvTxHash.trim() }),
+        body: JSON.stringify(verifyBody),
       });
       const data = await r.json();
       if (!r.ok) {
@@ -675,6 +757,7 @@ export function WithdrawSheet({
       } else {
         toast({ title: "BSV deposit credited!", description: `${data.amount} BSV has been added to your trading balance.` });
         addNotification({ type: "deposit", title: "BSV Deposit Credited", body: `${data.amount} BSV added to your exchange balance.` });
+        useWalletStore.getState().triggerBalanceRefresh();
         setBsvTxHash("");
       }
     } catch {
@@ -770,64 +853,46 @@ export function WithdrawSheet({
   };
 
   // ── wallet send: EVM balance fetch ──────────────────────────────────────
-  const fetchWalletBalance = useCallback(async (chain: WalletChain, token: WalletToken) => {
-    if (!walletAddress) return;
-    setWalletSendBalance(null);
+  const fetchWalletBalance = useCallback(async (chain: WalletChain, token: WalletToken, owner: string) => {
+    setWalletSendBalanceRaw(null);
+    if (!isEvmAddress(owner)) return;
     setWalletSendBalFetch(true);
     try {
-      if (token.isNative) {
-        // fetchEvmBalance handles wagmi, injected provider, and RPC fallbacks
-        const bal = await fetchEvmBalance(walletAddress, chain.id);
-        setWalletSendBalance(bal !== null ? parseFloat(bal) : null);
-      } else if (token.address) {
-        // ERC-20 balanceOf: try primary RPC then fallback
-        const rpcs = [CHAIN_RPC_URLS[chain.id], CHAIN_RPC_FALLBACKS?.[chain.id]].filter(Boolean) as string[];
-        const data  = "0x70a08231" + walletAddress.toLowerCase().replace("0x", "").padStart(64, "0");
-        let fetched = false;
-        for (const rpc of rpcs) {
-          try {
-            const res = await fetch(rpc, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: token.address, data }, "latest"] }),
-            });
-            if (!res.ok) continue;
-            const json = await res.json();
-            if (!json?.result) continue;
-            const raw = BigInt(json.result);
-            setWalletSendBalance(Number(raw) / Math.pow(10, token.decimals));
-            fetched = true;
-            break;
-          } catch { continue; }
-        }
-        if (!fetched) setWalletSendBalance(null);
+      if (!token.isNative && !token.address) {
+        throw new Error("This token has no verified contract address for the selected network.");
       }
+      const rawBalance = token.isNative
+        ? await fetchNativeBalanceRaw(owner, chain.id)
+        : await fetchErc20BalanceRaw(owner, token.address!, chain.id);
+      setWalletSendBalanceRaw(rawBalance);
     } catch {
-      setWalletSendBalance(null);
+      setWalletSendBalanceRaw(null);
     } finally {
       setWalletSendBalFetch(false);
     }
-  }, [walletAddress]);
+  }, []);
 
   useEffect(() => {
-    if (open && tab === "withdraw" && isOrahWallet && isEvmNetwork) {
-      fetchWalletBalance(walletSendChain, walletSendToken);
+    if (open && tab === "withdraw" && walletSendSignerAvailable && isEvmNetwork) {
+      fetchWalletBalance(walletSendChain, walletSendToken, walletSendFromAddress);
     }
-  }, [open, tab, walletSendChain, walletSendToken, isOrahWallet, isEvmNetwork, fetchWalletBalance]);
+  }, [open, tab, walletSendChain, walletSendToken, walletSendSignerAvailable, walletSendFromAddress, isEvmNetwork, fetchWalletBalance]);
 
   // ── wallet send: non-EVM balance fetch (BSV, LTC, XRP, …) ───────────────
   const fetchNonEvmBalance = useCallback(async () => {
     const net     = withdrawChainMode.toLowerCase();
-    const chainAddr = effectiveNonEvmAddresses?.[net] ?? (net !== "evm" ? undefined : walletAddress);
+    const addressKey = net === "bsv-test" ? "bsvTest" : net;
+    const chainAddr = effectiveNonEvmAddresses?.[addressKey] ?? (net !== "evm" ? undefined : walletAddress);
     if (!chainAddr) return;
     setNonEvmSendBalance(null);
     setNonEvmSendBalFetch(true);
     try {
-      if (net === "bsv") {
-        const r = await fetch(`https://api.whatsonchain.com/v1/bsv/main/address/${chainAddr}/balance`);
+      if (net === "bsv" || net === "bsv-test") {
+        const selectedNetwork = network.toLowerCase() === "bsv-test" || net === "bsv-test" ? "test" : "main";
+        const r = await fetch(`${API_BASE}/bsv/balance/${encodeURIComponent(chainAddr)}?network=${selectedNetwork}`);
         if (r.ok) {
-          const { confirmed, unconfirmed } = await r.json();
-          setNonEvmSendBalance(((confirmed ?? 0) + (unconfirmed ?? 0)) / 1e8);
+          const data = await r.json();
+          if (Number.isFinite(data.balance)) setNonEvmSendBalance(data.balance);
         }
       } else if (net === "ltc") {
         const r = await fetch(`https://litecoinspace.org/api/address/${chainAddr}`);
@@ -896,7 +961,7 @@ export function WithdrawSheet({
     } finally {
       setNonEvmSendBalFetch(false);
     }
-  }, [walletAddress, effectiveNonEvmAddresses, withdrawChainMode]);
+  }, [walletAddress, effectiveNonEvmAddresses, network, withdrawChainMode]);
 
   useEffect(() => {
     if (open && tab === "withdraw" && (isOrahWallet || canSignNonEvm) && withdrawChainMode !== "evm") {
@@ -939,10 +1004,11 @@ export function WithdrawSheet({
     setNonEvmSendError(null);
     try {
       const activeChain = withdrawChainMode.toLowerCase();
-      const isBitcoinForkChain = ["bsv", "btc", "bch"].includes(activeChain);
+      const isBitcoinForkChain = ["bsv", "bsv-test", "btc", "bch"].includes(activeChain);
+      const chainAddressKey = activeChain === "bsv-test" ? "bsvTest" : activeChain;
 
       const chainAddress = isBitcoinForkChain
-        ? (effectiveNonEvmAddresses?.[activeChain] ?? effectiveNonEvmAddresses?.[activeChain.toUpperCase()])
+        ? (effectiveNonEvmAddresses?.[chainAddressKey] ?? effectiveNonEvmAddresses?.[chainAddressKey.toUpperCase()])
         : undefined;
 
       // ── BSV via HandCash: connected wallet + $handle recipient ──────────────
@@ -991,7 +1057,7 @@ export function WithdrawSheet({
       //
       // If the recipient is a $handle (but HandCash is not connected for sending),
       // resolve the handle to a BSV address first via the backend.
-      if (activeChain === "bsv") {
+      if (activeChain === "bsv" || activeChain === "bsv-test") {
         let recipient = nonEvmSendRecipient.trim();
         if (isHandCashHandle(recipient)) {
           const raw = recipient.replace(/^\$/, "").replace(/@handcash\.io$/i, "");
@@ -1010,6 +1076,7 @@ export function WithdrawSheet({
           chainAddress!,
           recipient,
           parsedAmt,
+          activeChain === "bsv-test" ? "test" : "main",
         );
         setNonEvmSendTxHash(result.txid);
         toast({
@@ -1021,7 +1088,7 @@ export function WithdrawSheet({
           title: "BSV Sent",
           body:  `${parsedAmt} BSV sent from wallet (fee: ${result.feeSat} sat).`,
           txid:  result.txid,
-          href:  `https://whatsonchain.com/tx/${result.txid}`,
+          href:  `${activeChain === "bsv-test" ? "https://test.whatsonchain.com" : "https://whatsonchain.com"}/tx/${result.txid}`,
         });
         refetchHistory?.();
         setTimeout(() => fetchNonEvmBalance(), 8_000);
@@ -1146,13 +1213,17 @@ export function WithdrawSheet({
         }
         const { message } = await challengeRes.json();
         const signature = await signBsvChallengeFromAddress(resolvedSigningEvmAddress, message);
-        const wAsset = withdrawChainMode.toUpperCase();
+        const wAsset = activeChain.startsWith("bsv") ? "BSV" : withdrawChainMode.toUpperCase();
+        const requestNetwork =
+          activeChain === "bsv" && network.toLowerCase() === "bsv-test"
+            ? "bsv-test"
+            : withdrawChainMode;
         const withdrawRes = await fetch(`${API_BASE}/withdrawals`, {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
           body:    JSON.stringify({
             walletAddress, asset: wAsset, amount: parsedAmt,
-            network: withdrawChainMode, networkLabel: wAsset,
+            network: requestNetwork, networkLabel: requestNetwork.toUpperCase(),
             recipient: nonEvmSendRecipient.trim(), signature,
             ...(chainAddress ? { bsvSignerAddress: chainAddress } : {}),
           }),
@@ -1177,15 +1248,88 @@ export function WithdrawSheet({
     }
   };
 
-  // ── wallet send: broadcast ───────────────────────────────────────────────
-  const handleWalletSend = async () => {
-    const parsedWalletAmount = parseFloat(walletSendAmount);
-    if (!parsedWalletAmount || !walletSendRecipient.trim() || walletSending) return;
-    setWalletSending(true);
+  const handleWalletNetworkSwitch = async () => {
+    if (walletSignerSource !== "reown" || !reownWalletAvailable || walletNetworkSwitching) return;
+    setWalletNetworkSwitching(true);
     setWalletSendError(null);
     try {
+      await switchEvmNetwork(walletSendChain.id);
+    } catch (err: any) {
+      const msg = err?.shortMessage ?? err?.cause?.shortMessage ?? err?.message ?? "Network switch failed";
+      setWalletSendError(msg);
+    } finally {
+      setWalletNetworkSwitching(false);
+    }
+  };
+
+  // ── wallet send: broadcast ───────────────────────────────────────────────
+  const handleWalletSend = async () => {
+    if (!walletSendAmount.trim() || !walletSendRecipient.trim() || walletSending) return;
+    setWalletSending(true);
+    setWalletSendStage("checking");
+    setWalletSendError(null);
+    try {
+      if (!walletSendSignerAvailable || !isEvmAddress(walletSendFromAddress)) {
+        throw new Error("Choose a connected Reown wallet or a matching OrahDEX signing wallet.");
+      }
+      if (!isEvmAddress(walletSendRecipient.trim())) {
+        throw new Error("Enter a valid EVM recipient address.");
+      }
+      if (walletSendAmountUnits === null || walletSendAmountUnits <= 0n) {
+        throw new Error(`Enter a positive amount with no more than ${walletSendTokenDecimals} decimal places.`);
+      }
+      if (!walletSendToken.isNative && (!walletSendToken.address || !isEvmAddress(walletSendToken.address))) {
+        throw new Error("This token has no verified contract address for the selected network.");
+      }
+
+      // Re-read the selected account's exact on-chain balance immediately before
+      // requesting a signature. The UI balance is only a preview and can be stale.
+      const rawBalance = walletSendToken.isNative
+        ? await fetchNativeBalanceRaw(walletSendFromAddress, walletSendChain.id)
+        : await fetchErc20BalanceRaw(walletSendFromAddress, walletSendToken.address!, walletSendChain.id);
+      setWalletSendBalanceRaw(rawBalance);
+      if (walletSendAmountUnits > rawBalance) {
+        throw new Error(
+          `Insufficient ${walletSendToken.symbol}: this wallet has ${formatUnits(rawBalance, walletSendTokenDecimals)}.`,
+        );
+      }
+
+      if (walletSignerSource === "reown") {
+        if (!reownWalletAvailable) {
+          throw new Error("The connected Reown wallet is no longer available. Reconnect it and try again.");
+        }
+        if (reownChainId !== walletSendChain.id) {
+          throw new Error(`Switch the connected wallet to ${walletSendChain.name} before sending.`);
+        }
+        setWalletSendStage("confirming");
+        const hash = walletSendToken.isNative
+          ? await sendEvmTransfer({
+              from: walletSendFromAddress,
+              to: walletSendRecipient.trim(),
+              valueWei: walletSendAmountUnits,
+              targetChainId: walletSendChain.id,
+            })
+          : await sendErc20Transfer({
+              tokenAddress: walletSendToken.address!,
+              from: walletSendFromAddress,
+              to: walletSendRecipient.trim(),
+              amount: walletSendAmountUnits,
+              targetChainId: walletSendChain.id,
+            });
+        setWalletSendTxHash(hash);
+        toast({ title: "Transaction sent!", description: `${walletSendAmount} ${walletSendToken.symbol} is being confirmed on-chain.` });
+        addNotification({
+          type: "withdrawal",
+          title: "Reown Wallet Transfer Sent",
+          body: `${walletSendAmount} ${walletSendToken.symbol} sent on ${walletSendChain.name}. TX: ${hash.slice(0, 12)}…`,
+        });
+        setTimeout(() => fetchWalletBalance(walletSendChain, walletSendToken, walletSendFromAddress), 4000);
+        return;
+      }
+
       // ── Hardware wallet signing path ──────────────────────────────────────
       if (isHardwareWallet) {
+        setWalletSendStage("confirming");
         const deviceName = hardwareWalletType
           ? hardwareWalletType.charAt(0).toUpperCase() + hardwareWalletType.slice(1)
           : "hardware wallet";
@@ -1206,7 +1350,7 @@ export function WithdrawSheet({
           } as const;
 
           const publicClient = createPublicClient({ chain: chainDef as any, transport: http(CHAIN_RPC_URLS[walletSendChain.id]) });
-          const sender = walletAddress as `0x${string}`;
+          const sender = walletSendFromAddress as `0x${string}`;
           const to     = walletSendRecipient.trim() as `0x${string}`;
 
           const [nonce, gasPrice, feeData] = await Promise.all([
@@ -1272,7 +1416,7 @@ export function WithdrawSheet({
               title: "Ledger Transfer Sent",
               body: `${walletSendAmount} ${walletSendToken.symbol} sent via Ledger on ${walletSendChain.name}. TX: ${hash.slice(0, 12)}…`,
             });
-            setTimeout(() => fetchWalletBalance(walletSendChain, walletSendToken), 4000);
+            setTimeout(() => fetchWalletBalance(walletSendChain, walletSendToken, walletSendFromAddress), 4000);
           } catch (err: unknown) {
             const msg = dmkErrMsg(err);
             setWalletSendError(msg);
@@ -1291,7 +1435,8 @@ export function WithdrawSheet({
       }
 
       // ── Software wallet signing path (passkey / private key) ────────────
-      const account = await getViemAccountForAddress(walletAddress, {
+      setWalletSendStage("confirming");
+      const account = await getViemAccountForAddress(walletSendFromAddress, {
         title: "Authorize transfer",
         subtitle: `Unlock your imported OrahDEX wallet to send ${walletSendAmount} ${walletSendToken.symbol}.`,
       });
@@ -1333,13 +1478,14 @@ export function WithdrawSheet({
         body: `${walletSendAmount} ${walletSendToken.symbol} sent on ${walletSendChain.name}. TX: ${hash.slice(0, 12)}…`,
       });
       // refresh balance after a short delay
-      setTimeout(() => fetchWalletBalance(walletSendChain, walletSendToken), 4000);
+      setTimeout(() => fetchWalletBalance(walletSendChain, walletSendToken, walletSendFromAddress), 4000);
     } catch (err: any) {
       const msg = err.shortMessage ?? err.message ?? "Transaction failed";
       setWalletSendError(msg);
       toast({ title: "Transfer failed", description: msg, variant: "destructive" });
     } finally {
       setWalletSending(false);
+      setWalletSendStage("checking");
     }
   };
 
@@ -1534,6 +1680,10 @@ export function WithdrawSheet({
                                   {dep.status === "mempool" ? (
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-yellow-400 bg-yellow-400/10 rounded-full px-2 py-0.5 shrink-0">
                                       <Clock className="w-2.5 h-2.5" /> Pending
+                                    </span>
+                                  ) : dep.status === "stale" ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-400/10 rounded-full px-2 py-0.5 shrink-0">
+                                      <AlertTriangle className="w-2.5 h-2.5" /> Needs check
                                     </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-400 bg-green-400/10 rounded-full px-2 py-0.5 shrink-0">
@@ -1995,7 +2145,11 @@ export function WithdrawSheet({
                     );
                   })()}
                   <Input
-                    placeholder={withdrawChainMode.toLowerCase() === "bsv" ? "$handle or BSV address" : addressPlaceholder}
+                    placeholder={
+                      withdrawChainMode.toLowerCase() === "bsv" ? "$handle or BSV address" :
+                      withdrawChainMode.toLowerCase() === "bsv-test" ? "BSV testnet address (m…/n…)" :
+                      addressPlaceholder
+                    }
                     value={nonEvmSendRecipient}
                     onChange={e => setNonEvmSendRecipient(e.target.value)}
                     className="h-11 font-mono text-xs"
@@ -2032,7 +2186,7 @@ export function WithdrawSheet({
 
                 {/* ── EVM-only wallet with no OrahDEX passkey → can't sign BSV/BTC/BCH ── */}
                 {/* Hidden for BSV when HandCash is connected (HandCash covers the send) */}
-                {!canSignNonEvm && ["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) &&
+                {!canSignNonEvm && ["bsv", "bsv-test", "btc", "bch"].includes(withdrawChainMode.toLowerCase()) &&
                   !(withdrawChainMode.toLowerCase() === "bsv" && hcAuthToken) && (
                   <div className="flex items-start gap-3 p-3 rounded-xl bg-red-500/10 border border-red-500/30">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0 text-red-400" />
@@ -2113,7 +2267,7 @@ export function WithdrawSheet({
                         {(() => {
                           const chain = withdrawChainMode.toLowerCase();
                           const url =
-                            chain === "bsv"  ? `https://whatsonchain.com/tx/${nonEvmSendTxHash}` :
+                            chain.startsWith("bsv")  ? `${chain === "bsv-test" || network.toLowerCase() === "bsv-test" ? "https://test.whatsonchain.com" : "https://whatsonchain.com"}/tx/${nonEvmSendTxHash}` :
                             chain === "btc"  ? `https://mempool.space/tx/${nonEvmSendTxHash}` :
                             chain === "bch"  ? `https://blockchair.com/bitcoin-cash/transaction/${nonEvmSendTxHash}` :
                             chain === "ltc"  ? `https://blockchair.com/litecoin/transaction/${nonEvmSendTxHash}` :
@@ -2145,7 +2299,7 @@ export function WithdrawSheet({
                     hcAuthToken &&
                     isHandCashHandle(nonEvmSendRecipient.trim());
                   const canSend = isBsvHandCashSend || canSignNonEvm ||
-                    !["bsv", "btc", "bch"].includes(withdrawChainMode.toLowerCase());
+                    !["bsv", "bsv-test", "btc", "bch"].includes(withdrawChainMode.toLowerCase());
                   return (
                     <Button
                       onClick={handleNonEvmWalletSend}
@@ -2173,9 +2327,94 @@ export function WithdrawSheet({
               </>
             )}
 
-            {/* ── WALLET SEND — EVM (passkey wallet direct on-chain send) ── */}
+            {/* ── WALLET SEND — EVM ── */}
             {withdrawChainMode === "evm" && (
               <>
+                {/* Select the signer explicitly; Reown sends from its connected account. */}
+                <div className="space-y-2 rounded-xl border border-border bg-secondary/20 p-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Send using</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {reownWalletAvailable && (
+                      <button
+                        type="button"
+                        data-testid="button-withdraw-source-reown"
+                        onClick={() => {
+                          setWalletSignerSource("reown");
+                          setWalletSendBalanceRaw(null);
+                          setWalletSendAmount("");
+                          setWalletSendError(null);
+                        }}
+                        className={cn(
+                          "rounded-lg border px-2 py-2 text-xs font-semibold",
+                          walletSignerSource === "reown"
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground",
+                        )}
+                      >
+                        Connected Reown wallet
+                      </button>
+                    )}
+                    {localSignerAvailable && (
+                      <button
+                        type="button"
+                        data-testid="button-withdraw-source-local"
+                        onClick={() => {
+                          setWalletSignerSource("local");
+                          setWalletSendBalanceRaw(null);
+                          setWalletSendAmount("");
+                          setWalletSendError(null);
+                        }}
+                        className={cn(
+                          "rounded-lg border px-2 py-2 text-xs font-semibold",
+                          walletSignerSource === "local"
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground",
+                        )}
+                      >
+                        {isHardwareWallet ? `${hardwareWalletType ?? "Hardware"} wallet` : "OrahDEX wallet"}
+                      </button>
+                    )}
+                  </div>
+                  {walletSendSignerAvailable ? (
+                    <p data-testid="text-withdraw-source-address" className="break-all font-mono text-[10px] text-muted-foreground">
+                      From {walletSendFromAddress}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      <p data-testid="status-withdraw-signer" className="text-xs text-amber-300">
+                        Connect a Reown wallet or use an OrahDEX passkey/imported wallet to sign this transfer.
+                      </p>
+                      <Button
+                        type="button"
+                        data-testid="button-connect-reown-for-withdraw"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          void openReownModal("eip155").catch((error: unknown) => {
+                            setWalletSendError(error instanceof Error ? error.message : "Could not open wallet connection.");
+                          });
+                        }}
+                      >
+                        Connect Reown wallet
+                      </Button>
+                    </div>
+                  )}
+                  {walletSignerSource === "reown" && reownWalletAvailable && reownChainId !== walletSendChain.id && (
+                    <Button
+                      type="button"
+                      data-testid="button-switch-withdraw-network"
+                      variant="outline"
+                      size="sm"
+                      disabled={walletNetworkSwitching}
+                      onClick={handleWalletNetworkSwitch}
+                    >
+                      {walletNetworkSwitching
+                        ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Switching network…</>
+                        : `Switch connected wallet to ${walletSendChain.name}`}
+                    </Button>
+                  )}
+                </div>
+
                 {/* Chain selector */}
                 <div className="space-y-1.5">
                   <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Network</label>
@@ -2186,8 +2425,9 @@ export function WithdrawSheet({
                         onClick={() => {
                           setWalletSendChain(ch);
                           setWalletSendToken(WALLET_TOKENS[ch.id][0]);
-                          setWalletSendBalance(null);
+                          setWalletSendBalanceRaw(null);
                           setWalletSendAmount("");
+                          setWalletSendError(null);
                         }}
                         className={cn(
                           "py-2 rounded-xl text-[11px] font-bold border transition-all text-center",
@@ -2208,8 +2448,9 @@ export function WithdrawSheet({
                         onClick={() => {
                           setWalletSendChain(ch);
                           setWalletSendToken(WALLET_TOKENS[ch.id][0]);
-                          setWalletSendBalance(null);
+                          setWalletSendBalanceRaw(null);
                           setWalletSendAmount("");
+                          setWalletSendError(null);
                         }}
                         className={cn(
                           "py-2 rounded-xl text-[11px] font-bold border transition-all text-center",
@@ -2238,7 +2479,12 @@ export function WithdrawSheet({
                       return [...builtIn, ...customTokens].map(tok => (
                         <button
                           key={tok.symbol}
-                          onClick={() => { setWalletSendToken(tok); setWalletSendBalance(null); setWalletSendAmount(""); }}
+                          onClick={() => {
+                            setWalletSendToken(tok);
+                            setWalletSendBalanceRaw(null);
+                            setWalletSendAmount("");
+                            setWalletSendError(null);
+                          }}
                           className={cn(
                             "px-3 py-1.5 rounded-lg text-xs font-bold border transition-all",
                             walletSendToken.symbol === tok.symbol
@@ -2261,13 +2507,13 @@ export function WithdrawSheet({
                     <p className="text-sm font-bold font-mono text-foreground">
                       {walletSendBalFetch
                         ? "Loading…"
-                        : walletSendBalance !== null
-                          ? `${walletSendBalance.toLocaleString(undefined, { maximumFractionDigits: walletSendBalance < 0.001 ? 8 : 6 })} ${walletSendToken.symbol}`
+                        : walletSendBalanceRaw !== null
+                          ? `${formatUnits(walletSendBalanceRaw, walletSendTokenDecimals)} ${walletSendToken.symbol}`
                           : "—"}
                     </p>
                   </div>
                   <button
-                    onClick={() => fetchWalletBalance(walletSendChain, walletSendToken)}
+                    onClick={() => fetchWalletBalance(walletSendChain, walletSendToken, walletSendFromAddress)}
                     disabled={walletSendBalFetch}
                     className="p-2 rounded-lg hover:bg-muted transition-colors disabled:opacity-40"
                   >
@@ -2285,21 +2531,27 @@ export function WithdrawSheet({
                       placeholder="0.00"
                       className={cn(
                         "pr-16 font-mono text-base",
-                        walletSendBalance !== null && parseFloat(walletSendAmount) > walletSendBalance
+                        walletSendAmountInvalid || walletSendAmountExceedsBalance
                           ? "border-red-500/60 focus-visible:ring-red-500/30" : ""
                       )}
                     />
-                    {walletSendBalance !== null && (
+                    {walletSendBalanceRaw !== null && (
                       <button
                         type="button"
-                        onClick={() => setWalletSendAmount(walletSendBalance.toFixed(walletSendBalance < 0.001 ? 8 : 6))}
+                        data-testid="button-withdraw-max"
+                        onClick={() => setWalletSendAmount(formatUnits(walletSendBalanceRaw, walletSendTokenDecimals))}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-green-400 hover:text-green-300 px-2 py-0.5 rounded bg-green-400/10 hover:bg-green-400/20 transition-colors"
                       >
                         MAX
                       </button>
                     )}
                   </div>
-                  {walletSendBalance !== null && parseFloat(walletSendAmount) > walletSendBalance && (
+                  {walletSendAmountInvalid && (
+                    <p data-testid="status-withdraw-amount-invalid" className="text-xs text-red-400">
+                      Enter a positive amount with no more than {walletSendTokenDecimals} decimal places.
+                    </p>
+                  )}
+                  {walletSendAmountExceedsBalance && (
                     <p className="text-xs text-red-400 flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" /> Exceeds wallet balance
                     </p>
@@ -2320,8 +2572,10 @@ export function WithdrawSheet({
                 {/* Biometric notice */}
                 <div className="flex gap-2.5 p-3 rounded-xl bg-green-500/8 border border-green-500/20">
                   <Zap className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    This sends funds <strong className="text-foreground">directly from your passkey wallet</strong> on-chain. Face ID / Touch ID will authenticate the transaction — no exchange involved.
+                  <p data-testid="text-withdraw-signing-notice" className="text-xs text-muted-foreground leading-relaxed">
+                    {walletSignerSource === "reown"
+                      ? <>Your connected wallet will show its transaction confirmation. Keep enough {walletSendChain.symbol} for network fees.</>
+                      : <>This sends directly from your OrahDEX wallet. {isHardwareWallet ? "Approve on your hardware device." : "Passkey or PIN authentication will authorize it."} No exchange balance is involved.</>}
                   </p>
                 </div>
 
@@ -2361,13 +2615,17 @@ export function WithdrawSheet({
                   onClick={handleWalletSend}
                   disabled={
                     !walletSendAmount || !walletSendRecipient.trim() || walletSending ||
-                    (walletSendBalance !== null && parseFloat(walletSendAmount) > walletSendBalance)
+                    !walletSendSignerAvailable ||
+                    walletSendAmountInvalid ||
+                    walletSendAmountExceedsBalance ||
+                    !isEvmAddress(walletSendRecipient.trim()) ||
+                    (walletSignerSource === "reown" && reownChainId !== walletSendChain.id)
                   }
                   className="w-full gap-2 h-11 bg-green-600 hover:bg-green-500 text-white"
                 >
                   {walletSending
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Authenticating…</>
-                    : <><ArrowRight className="w-4 h-4" /> Send {walletSendAmount ? `${walletSendAmount} ` : ""}{walletSendToken.symbol} from Wallet</>}
+                    ? <><Loader2 className="w-4 h-4 animate-spin" />{walletSendStage === "checking" ? "Checking balance…" : walletSignerSource === "reown" ? "Waiting for wallet…" : "Authenticating…"}</>
+                    : <><ArrowRight className="w-4 h-4" /> Send {walletSendAmount ? `${walletSendAmount} ` : ""}{walletSendToken.symbol} from {walletSignerSource === "reown" ? "Reown" : "Wallet"}</>}
                 </Button>
               </>
             )}

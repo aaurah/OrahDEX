@@ -3,23 +3,17 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Code2, Terminal, Cpu, Zap, RefreshCw, Send, Trash2, Eye, ChevronDown, ChevronUp,
-  CheckCircle, XCircle, Activity, MessageSquare, ToggleLeft, ToggleRight,
-  Link, Key, Settings, Loader2, Bot, Copy, Check, BookOpen, AlertCircle, ShieldCheck,
+  CheckCircle, XCircle, Activity, MessageSquare,
+  Link, Key, Loader2, Bot, Copy, Check, BookOpen, AlertCircle, ShieldCheck,
   GitBranch, FileCode, Clock, Download, Upload, PackageOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const DEVAI_MODELS = [
-  { id: "gpt-5.4",    label: "GPT-5.4",    desc: "DevAI default — highest capability for code" },
-  { id: "gpt-5.2",    label: "GPT-5.2",    desc: "Balanced — fast and capable" },
-  { id: "gpt-5-mini", label: "GPT-5 Mini", desc: "Fastest — simple Q&A" },
-];
-
-const SYSTEM_PROMPT_PREVIEW = `You are OrahDevAI — the developer intelligence of OrahDEX (orahdex.org), a sovereign decentralized exchange built on BSV (Bitcoin SV) settlement.
+const SYSTEM_PROMPT_PREVIEW = `You are OrahDevAI — the developer intelligence of OrahDEX (orahdex.com), a sovereign decentralized exchange built on BSV (Bitcoin SV) settlement.
 
 You are a senior protocol engineer who deeply understands the OrahDEX stack. You help developers build bots, integrations, wallets, and tools on top of OrahDEX.
 
-## OrahDEX REST API (base: https://orahdex.org/api)
+## OrahDEX REST API (base: https://orahdex.com/api)
 GET /api/markets — all listed pairs with price, volume, change
 GET /api/markets/:symbol/ticker — single pair ticker
 POST /api/orders — place an order
@@ -30,6 +24,7 @@ POST /api/swap/quote — get swap quote
 - Always include working, runnable code examples
 - Use TypeScript by default; include Python on request
 - Show error handling in examples
+- Stage source changes for admin review; never write files, execute commands, or publish directly
 - Be direct and concise. Skip preamble. Go straight to the code.`;
 
 /* ── CopyButton ─────────────────────────────────────────────────────────────── */
@@ -179,74 +174,107 @@ function GitHubStatusCard() {
 
 /* ── Model Settings Card ────────────────────────────────────────────────────── */
 function DevAIModelSettings() {
-  const [model, setModel] = useState("gpt-5.4");
-  const [enabled, setEnabled] = useState(true);
-  const [githubContext, setGithubContext] = useState(true);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [pullingModel, setPullingModel] = useState(false);
+  const [pullMessage, setPullMessage] = useState("");
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ["admin-devai-local-status"],
+    queryFn: async () => {
+      const response = await adminFetch("/api/admin/devai/status");
+      if (!response.ok) throw new Error("Unable to read local model status.");
+      return response.json();
+    },
+    refetchInterval: 30_000,
+    retry: false,
+  });
+  const availableGiB = data?.memory?.availableBytes != null
+    ? (data.memory.availableBytes / 1024 ** 3).toFixed(1)
+    : null;
+  const requiredGiB = data?.minimumModelHeadroomBytes != null
+    ? (data.minimumModelHeadroomBytes / 1024 ** 3).toFixed(1)
+    : "6";
+  const modelReady = data?.ollamaAutostartEnabled && data?.reachable && data?.modelAvailable;
+  const enoughMemory = data?.memory?.availableBytes != null
+    && data.memory.availableBytes >= (data?.minimumModelHeadroomBytes ?? 6 * 1024 ** 3);
+
+  async function pullModel() {
+    if (!data?.model || !window.confirm(`Download ${data.model} to this VM? This may use several gigabytes of disk.`)) return;
+    setPullingModel(true);
+    setPullMessage("");
+    try {
+      const response = await adminFetch("/api/admin/devai/model/pull", { method: "POST" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "Model download failed.");
+      setPullMessage(result.message ?? "Model downloaded.");
+      await refetch();
+    } catch (err: any) {
+      setPullMessage(err?.message ?? "Model download failed.");
+    } finally {
+      setPullingModel(false);
+    }
+  }
 
   return (
     <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
       <div className="flex items-center gap-2">
         <div className="w-8 h-8 rounded-xl bg-green-400/10 flex items-center justify-center">
-          <Settings className="w-4 h-4 text-green-400" />
+          <Cpu className="w-4 h-4 text-green-400" />
         </div>
         <div>
-          <p className="text-sm font-bold">DevAI Settings</p>
-          <p className="text-xs text-muted-foreground">Model, features, and access controls</p>
+          <p className="text-sm font-bold">Local Ollama Model</p>
+          <p className="text-xs text-muted-foreground">DevAI uses a loopback-only model, not a hosted AI integration</p>
+        </div>
+        <button onClick={() => refetch()} disabled={isFetching} className="ml-auto p-2 rounded-lg hover:bg-white/5 text-muted-foreground">
+          <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin text-green-400")} />
+        </button>
+      </div>
+
+      <div className={cn(
+        "flex items-start gap-3 p-3 rounded-xl border",
+        modelReady ? "bg-green-500/8 border-green-500/20" : "bg-amber-500/8 border-amber-500/20"
+      )}>
+        {modelReady
+          ? <CheckCircle className="w-4 h-4 text-green-400 mt-0.5" />
+          : <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5" />}
+        <div>
+          <p className={cn("text-sm font-semibold", modelReady ? "text-green-300" : "text-amber-300")}>
+            {modelReady ? "Ollama ready" : "Local model unavailable"}
+          </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {data?.error ?? (data?.modelAvailable ? "Model is available." : "Waiting for local Ollama and the selected model.")}
+          </p>
         </div>
       </div>
 
-      {/* Toggles */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between p-3 rounded-xl bg-white/3 border border-white/5">
-          <div>
-            <p className="text-sm font-semibold">DevAI Enabled</p>
-            <p className="text-xs text-muted-foreground">Allow users to access /devai on the platform</p>
-          </div>
-          <button onClick={() => setEnabled(e => !e)} className="transition-colors shrink-0">
-            {enabled
-              ? <ToggleRight className="w-8 h-8 text-green-400" />
-              : <ToggleLeft className="w-8 h-8 text-muted-foreground" />}
-          </button>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="p-3 rounded-xl bg-white/3 border border-white/5">
+          <p className="text-muted-foreground">Selected model</p>
+          <p className="font-mono mt-1">{data?.model ?? "qwen2.5-coder:1.5b"}</p>
         </div>
-        <div className="flex items-center justify-between p-3 rounded-xl bg-white/3 border border-white/5">
-          <div>
-            <p className="text-sm font-semibold">GitHub Repo Context</p>
-            <p className="text-xs text-muted-foreground">Allow DevAI to read GitHub repos as conversation context</p>
-          </div>
-          <button onClick={() => setGithubContext(e => !e)} className="transition-colors shrink-0">
-            {githubContext
-              ? <ToggleRight className="w-8 h-8 text-green-400" />
-              : <ToggleLeft className="w-8 h-8 text-muted-foreground" />}
-          </button>
+        <div className="p-3 rounded-xl bg-white/3 border border-white/5">
+          <p className="text-muted-foreground">VM memory available</p>
+          <p className="font-mono mt-1">{availableGiB ? `${availableGiB} GiB` : "Unavailable"}</p>
         </div>
       </div>
 
-      {/* Model selector */}
-      <div>
-        <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wider">Active Model</p>
-        <div className="space-y-2">
-          {DEVAI_MODELS.map(m => (
-            <button
-              key={m.id}
-              onClick={() => setModel(m.id)}
-              className={cn(
-                "w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left",
-                model === m.id
-                  ? "border-green-500/40 bg-green-500/8 text-foreground"
-                  : "border-white/5 bg-white/2 text-muted-foreground hover:bg-white/4"
-              )}
-            >
-              <Cpu className={cn("w-4 h-4 shrink-0", model === m.id ? "text-green-400" : "")} />
-              <div className="flex-1">
-                <p className={cn("text-sm font-bold", model === m.id ? "text-foreground" : "")}>{m.label}</p>
-                <p className="text-xs">{m.desc}</p>
-              </div>
-              {model === m.id && <CheckCircle className="w-4 h-4 text-green-400 shrink-0" />}
-            </button>
-          ))}
-        </div>
-      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Ollama autostart: {data?.ollamaAutostartEnabled ? "enabled" : "disabled"} · Model weights stay outside the repository. The runtime requires at least {requiredGiB} GiB available before starting a model.
+      </p>
+      {!data?.ollamaAutostartEnabled && (
+        <p className="text-[11px] text-muted-foreground">
+          To enable local inference, set <span className="font-mono">DEVAI_OLLAMA_ENABLED=true</span> for the API service and restart it. Keep it disabled unless this VM has at least {requiredGiB} GiB free after the exchange API has started.
+        </p>
+      )}
+      {data?.ollamaAutostartEnabled && data?.reachable && !data?.modelAvailable && (
+        <button
+          onClick={pullModel}
+          disabled={pullingModel || !enoughMemory}
+          className="w-full px-3 py-2.5 rounded-xl bg-green-500/10 border border-green-500/25 text-green-300 text-xs font-semibold disabled:opacity-50"
+        >
+          {pullingModel ? "Downloading local model…" : enoughMemory ? `Download ${data.model}` : `Need at least ${requiredGiB} GiB free`}
+        </button>
+      )}
+      {pullMessage && <p className="text-xs text-muted-foreground">{pullMessage}</p>}
 
       {/* System prompt preview */}
       <div>
@@ -269,6 +297,133 @@ function DevAIModelSettings() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+interface DevAIChangeProposal {
+  id: string;
+  path: string;
+  description: string;
+  content: string;
+  originalContent: string | null;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+}
+
+function DevAIChangeReviewCard() {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ["admin-devai-change-proposals"],
+    queryFn: async () => {
+      const response = await adminFetch("/api/admin/devai/change-proposals");
+      if (!response.ok) throw new Error("Unable to load change proposals.");
+      return response.json();
+    },
+    refetchInterval: 15_000,
+    retry: false,
+  });
+  const proposals: DevAIChangeProposal[] = data?.proposals ?? [];
+  const production = data?.environment === "production";
+
+  async function review(proposal: DevAIChangeProposal, action: "approve" | "reject") {
+    if (action === "approve" && !window.confirm(`Apply the reviewed change to ${proposal.path}? This only changes the workspace; it does not publish.`)) return;
+    setBusyId(proposal.id);
+    setError("");
+    try {
+      const response = await adminFetch(`/api/admin/devai/change-proposals/${proposal.id}/${action}`, { method: "POST" });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error ?? "Review failed.");
+      await refetch();
+    } catch (err: any) {
+      setError(err?.message ?? "Review failed.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-amber-400/10 flex items-center justify-center">
+            <ShieldCheck className="w-4 h-4 text-amber-400" />
+          </div>
+          <div>
+            <p className="text-sm font-bold">Review Code Changes</p>
+            <p className="text-xs text-muted-foreground">DevAI stages changes; only an admin can apply them</p>
+          </div>
+        </div>
+        <button onClick={() => refetch()} disabled={isFetching} className="p-2 rounded-lg hover:bg-white/5 text-muted-foreground">
+          <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin text-green-400")} />
+        </button>
+      </div>
+
+      {error && <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300">{error}</div>}
+      {production && proposals.some((proposal) => proposal.status === "pending") && (
+        <div className="p-3 rounded-xl bg-amber-500/8 border border-amber-500/20 text-xs text-amber-200">
+          This is the published site. Review proposals here, but apply them in the Replit workspace before publishing.
+        </div>
+      )}
+      {proposals.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-2">No code changes have been proposed.</p>
+      ) : (
+        <div className="space-y-3">
+          {proposals.map((proposal) => (
+            <div key={proposal.id} className="rounded-xl border border-white/8 bg-white/2 p-3 space-y-3">
+              <div className="flex flex-wrap items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-mono break-all">{proposal.path}</p>
+                  {proposal.description && <p className="text-xs text-muted-foreground mt-1">{proposal.description}</p>}
+                  <p className="text-[10px] text-muted-foreground mt-1">{new Date(proposal.createdAt).toLocaleString()}</p>
+                </div>
+                <span className={cn(
+                  "px-2 py-1 rounded-full text-[10px] uppercase font-bold",
+                  proposal.status === "pending" ? "bg-amber-400/10 text-amber-300" :
+                    proposal.status === "approved" ? "bg-green-400/10 text-green-300" : "bg-white/10 text-muted-foreground"
+                )}>{proposal.status}</span>
+              </div>
+
+              {proposal.status === "pending" && (
+                <>
+                  <button
+                    onClick={() => setExpandedId(expandedId === proposal.id ? null : proposal.id)}
+                    className="text-xs text-green-300 hover:text-green-200"
+                  >
+                    {expandedId === proposal.id ? "Hide change" : "Review full change"}
+                  </button>
+                  {expandedId === proposal.id && (
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1">Current</p>
+                        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/30 p-3 text-[10px] font-mono">{proposal.originalContent ?? "(new file)"}</pre>
+                      </div>
+                      <div>
+                        <p className="text-[10px] uppercase tracking-wide text-green-300 mb-1">Proposed</p>
+                        <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-black/30 p-3 text-[10px] font-mono">{proposal.content}</pre>
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => review(proposal, "reject")}
+                      disabled={busyId === proposal.id}
+                      className="px-3 py-1.5 rounded-lg border border-red-500/25 text-red-300 text-xs disabled:opacity-50"
+                    >Reject</button>
+                    <button
+                      onClick={() => review(proposal, "approve")}
+                      disabled={busyId === proposal.id || production}
+                      className="px-3 py-1.5 rounded-lg bg-green-500 text-black font-semibold text-xs disabled:opacity-50"
+                    >{production ? "Apply in workspace" : busyId === proposal.id ? "Applying…" : "Approve and apply"}</button>
+                  </div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -317,7 +472,11 @@ function DevAIChatTester() {
         signal: abortRef.current.signal,
       });
 
-      if (!resp.ok || !resp.body) throw new Error("Stream failed");
+      if (!resp.ok) {
+        const error = await resp.json().catch(() => ({}));
+        throw new Error(error.error ?? "DevAI request failed.");
+      }
+      if (!resp.body) throw new Error("DevAI stream was unavailable.");
       const reader = resp.body.getReader();
       const dec = new TextDecoder();
       let buf = "";
@@ -353,7 +512,7 @@ function DevAIChatTester() {
       if (err?.name !== "AbortError") {
         setMessages(m => {
           const copy = [...m];
-          copy[copy.length - 1] = { ...copy[copy.length - 1], content: "Error contacting DevAI." };
+          copy[copy.length - 1] = { ...copy[copy.length - 1], content: `Error: ${err?.message ?? "DevAI request failed."}` };
           return copy;
         });
       }
@@ -572,7 +731,7 @@ function DevAIAccessCard() {
       <div className="flex items-start gap-2.5 bg-green-500/8 border border-green-500/20 rounded-xl px-4 py-3">
         <Key className="w-4 h-4 text-green-400 shrink-0 mt-0.5" />
         <p className="text-[11px] text-green-400/80">
-          DevAI conversations are stored in the same PostgreSQL <span className="font-mono">conversations</span> table as Ora AI, partitioned by route. All streaming uses SSE with abort support.
+          DevAI API routes require an admin session. Code changes are staged for review; public users cannot read sessions, project files, or private data, and DevAI cannot execute shell commands or publish.
         </p>
       </div>
     </div>
@@ -581,25 +740,36 @@ function DevAIAccessCard() {
 
 /* ── Restart Services Card ──────────────────────────────────────────────────── */
 function RestartServicesCard() {
-  const [state, setState] = useState<"idle" | "restarting" | "done">("idle");
+  const [state, setState] = useState<"idle" | "restarting" | "done" | "error">("idle");
+  const [error, setError] = useState("");
 
   async function restart(target: "api" | "frontend" | "all") {
     setState("restarting");
+    setError("");
     try {
       if (target === "api" || target === "all") {
-        await adminFetch(`/api/admin/devai/restart`, { method: "POST" });
+        const response = await adminFetch(`/api/admin/devai/restart`, { method: "POST" });
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}));
+          throw new Error(result.error ?? "API restart failed.");
+        }
       }
       if (target === "frontend" || target === "all") {
-        await adminFetch(`/api/admin/devai/run-terminal`, {
+        const response = await adminFetch(`/api/admin/devai/run-terminal`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ command: "pkill -f 'vite' 2>/dev/null; true", description: "Restart frontend" }),
-        }).catch(() => {});
+        });
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}));
+          throw new Error(result.error ?? "Frontend restart failed.");
+        }
       }
       setState("done");
       setTimeout(() => setState("idle"), 5000);
-    } catch {
-      setState("idle");
+    } catch (err: any) {
+      setError(err?.message ?? "Restart failed.");
+      setState("error");
     }
   }
 
@@ -610,8 +780,8 @@ function RestartServicesCard() {
           <Zap className="w-4 h-4 text-green-400" />
         </div>
         <div>
-          <p className="text-sm font-bold">Publish Changes</p>
-          <p className="text-xs text-muted-foreground">Restart services to apply code changes made by DevAI</p>
+          <p className="text-sm font-bold">Restart Development Services</p>
+          <p className="text-xs text-muted-foreground">Available only in the Replit workspace, not on the published site</p>
         </div>
       </div>
 
@@ -625,6 +795,11 @@ function RestartServicesCard() {
       {state === "done" && (
         <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-[11px] font-medium">
           <CheckCircle className="w-3.5 h-3.5 shrink-0" /> Services restarting — changes live in ~5 seconds
+        </div>
+      )}
+      {state === "error" && (
+        <div className="px-3 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 text-[11px]">
+          {error}
         </div>
       )}
 
@@ -804,6 +979,9 @@ export function AdminDevAI() {
 
       {/* Chat tester */}
       <DevAIChatTester />
+
+      {/* Reviewable source changes */}
+      <DevAIChangeReviewCard />
 
       {/* Sessions + Access */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

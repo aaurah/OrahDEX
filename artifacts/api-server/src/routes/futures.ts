@@ -10,28 +10,21 @@ import {
   getFuturesMarginBalance,
   computeLiquidationPrice,
 } from "../lib/futuresSettlement.js";
-import {
-  issueFuturesChallenge,
-  verifyFuturesSignature,
-  hashFuturesOpenTarget,
-} from "../lib/walletAuth.js";
 import { verifyAndLockFunding } from "../lib/fundingVerifier.js";
-import { parseUnits, formatUnits, mulDiv, mulPriceQty } from "../lib/money.js";
 import { fetchHlMarkets } from "../lib/hyperliquid.js";
 
 const router: IRouter = Router();
 
-const PRICE_DECIMALS = 8;
-const QTY_DECIMALS = 8;
-const MONEY_DECIMALS = 18;
-
 // Data-read routes (markets, funding-rates, ticker) are always available.
-// Trading routes (open/close/deposit) require FUTURES_ENABLED=true.
-const TRADING_PATHS = ["/futures/open", "/futures/close", "/futures/deposit", "/futures/positions"];
+// Trading stays closed until every mutation has signed intents and replay-safe
+// accounting. The previous environment switch alone was not authorization.
+const TRADING_PATHS = ["/futures/open", "/futures/close", "/futures/deposit", "/futures/positions", "/futures/margin/deposit"];
 router.use((req, res, next) => {
-  const isTrading = TRADING_PATHS.some(p => req.path.startsWith(p));
-  if (isTrading && process.env.FUTURES_ENABLED !== "true") {
-    return res.status(503).json({ error: "Futures trading is not yet enabled." });
+  // Keep read-only position queries available so users can still inspect open
+  // positions while signed, replay-safe futures mutations are being completed.
+  const isTrading = req.method !== "GET" && TRADING_PATHS.some(p => req.path.startsWith(p));
+  if (isTrading) {
+    return res.status(503).json({ error: "Futures trading is temporarily unavailable pending signed wallet authorization." });
   }
   return next();
 });
@@ -266,42 +259,6 @@ router.get("/futures/funding-payments", async (req, res) => {
   }
 });
 
-const isEvmAddress = (addr: unknown): addr is string =>
-  typeof addr === "string" && /^0x[0-9a-fA-F]{40}$/.test(addr);
-
-router.post("/futures/challenge", (req, res) => {
-  const body = req.body ?? {};
-  const { walletAddress, action, symbol, side, leverage, quantity, positionId, amount } = body;
-
-  if (!isEvmAddress(walletAddress)) {
-    res.status(400).json({ error: "Futures auth currently requires an EVM wallet address." });
-    return;
-  }
-
-  let target = "";
-  if (action === "open") {
-    if (!symbol || !side || leverage == null || quantity == null) {
-      res.status(400).json({ error: "symbol, side, leverage, quantity are required for open challenge" });
-      return;
-    }
-    target = hashFuturesOpenTarget({
-      symbol: String(symbol),
-      side: String(side),
-      leverage: String(leverage),
-      quantity: String(quantity),
-    });
-  } else if (action === "close") {
-    target = String(positionId || "");
-  } else if (action === "deposit") {
-    target = String(amount || "");
-  } else {
-    res.status(400).json({ error: "action must be open, close, or deposit" });
-    return;
-  }
-
-  res.json(issueFuturesChallenge({ walletAddress, action, target }));
-});
-
 router.get("/futures/positions", async (req, res) => {
   try {
     const walletAddress = req.query.walletAddress as string;
@@ -353,53 +310,20 @@ router.post("/futures/positions", async (req, res) => {
       return;
     }
 
-    try {
-      verifyFuturesSignature({
-        walletAddress: body.walletAddress,
-        nonce:         body.nonce,
-        signature:     body.evmSignature ?? body.signature,
-        action:        "open",
-        target: hashFuturesOpenTarget({
-          symbol:   String(body.symbol),
-          side:     String(body.side),
-          leverage: String(body.leverage),
-          quantity: String(body.quantity),
-        }),
-      });
-    } catch (err: any) {
-      res.status(401).json({ error: err?.message ?? "Invalid futures authorization" });
-      return;
-    }
-
     // Normalize symbol: "BSV-USDT-PERP" → "BSV/USDT-PERP", strip -PERP suffix to look up base market
     const symbol = (body.symbol as string).replace(/^([A-Z0-9]+)-([A-Z0-9]+)(-PERP)?$/, "$1/$2$3");
     const baseMarketSymbol = symbol.replace("-PERP", "");
     const [market] = await db.select().from(marketsTable).where(eq(marketsTable.symbol, baseMarketSymbol));
 
-    const entryPriceStr = body.price ? String(body.price) : market?.lastPrice;
-    if (!entryPriceStr) {
+    const rawEntry = body.price || (market ? parseFloat(market.lastPrice) : null);
+    if (!rawEntry || rawEntry <= 0) {
       res.status(400).json({ error: `No market price available for ${symbol}. Please retry.` });
       return;
     }
-
-    const quantityStr = String(body.quantity);
-    const leverageNumber = Number(body.leverage);
-    if (!Number.isFinite(leverageNumber) || leverageNumber < 1 || leverageNumber > 100) {
-      res.status(400).json({ error: "leverage must be between 1 and 100" });
-      return;
-    }
-    const leverageBig = BigInt(Math.round(leverageNumber));
-
-    const notionalRaw = mulPriceQty({
-      priceRaw: parseUnits(entryPriceStr, PRICE_DECIMALS),
-      priceDecimals: PRICE_DECIMALS,
-      quantityRaw: parseUnits(quantityStr, QTY_DECIMALS),
-      quantityDecimals: QTY_DECIMALS,
-      outputDecimals: MONEY_DECIMALS,
-      rounding: "ceil",
-    });
-    const marginRaw = mulDiv(notionalRaw, 1n, leverageBig, "ceil");
-    const marginStr = formatUnits(marginRaw, MONEY_DECIMALS);
+    const entryPrice: number = parseFloat(rawEntry);
+    const leverage  = parseFloat(body.leverage);
+    const quantity  = parseFloat(body.quantity);
+    const margin    = (entryPrice * quantity) / leverage;
 
     const walletSource = body.walletSource === "external" ? "external"
       : body.walletSource === "orah" ? "orah" : "orah";
@@ -409,7 +333,7 @@ router.post("/futures/positions", async (req, res) => {
       kind:          "FUTURES",   // routes to futures_margin_accounts bucket
       walletSource,
       asset:         "USDT",
-      amount:        marginStr,
+      amount:        margin.toFixed(8),
     });
     if (!fundingVerif.valid) {
       res.status(400).json({ error: fundingVerif.error, code: fundingVerif.code });
@@ -421,10 +345,10 @@ router.post("/futures/positions", async (req, res) => {
       walletAddress: body.walletAddress,
       symbol,
       side:          body.side as "long" | "short",
-      leverage: leverageNumber,
-      margin: marginStr,
-      quantity: quantityStr,
-      entryPrice: entryPriceStr,
+      leverage,
+      margin,
+      quantity,
+      entryPrice,
       fundingRef:    fundingVerif.fundingRef,
     });
 
@@ -433,12 +357,12 @@ router.post("/futures/positions", async (req, res) => {
       walletAddress:    body.walletAddress,
       symbol,
       side:             body.side,
-      leverage: leverageNumber,
-      entryPrice: parseFloat(entryPriceStr),
-      markPrice:        parseFloat(entryPriceStr),
+      leverage,
+      entryPrice,
+      markPrice:        entryPrice,
       liquidationPrice: result.liquidationPrice,
-      quantity: parseFloat(quantityStr),
-      margin: parseFloat(marginStr),
+      quantity,
+      margin,
       notionalValue:    result.notionalValue,
       openingFee:       result.openingFee,
       unrealizedPnl:    0,
@@ -468,19 +392,6 @@ router.delete("/futures/positions/:positionId", async (req, res) => {
       return;
     }
 
-    try {
-      verifyFuturesSignature({
-        walletAddress: body.walletAddress,
-        nonce:         body.nonce,
-        signature:     body.evmSignature ?? body.signature,
-        action:        "close",
-        target:        req.params.positionId,
-      });
-    } catch (err: any) {
-      res.status(401).json({ error: err?.message ?? "Invalid futures authorization" });
-      return;
-    }
-
     // Verify the position belongs to this wallet before closing
     const [pos] = await db
       .select()
@@ -504,12 +415,12 @@ router.delete("/futures/positions/:positionId", async (req, res) => {
     // Always use the oracle-sourced mark price stored on the position.
     // Client-supplied markPrice is intentionally ignored to prevent profit
     // fabrication — users must not be able to self-report their close price.
-    const markPriceStr = pos.markPrice;
+    const markPrice = parseFloat(pos.markPrice);
 
     // closeFuturesPosition: computes PnL, releases margin ± PnL, marks row closed
     const closeResult = await closeFuturesPosition({
       positionId: req.params.positionId,
-      markPrice: markPriceStr,
+      markPrice,
     });
 
     // Re-read the updated position for the response
@@ -560,29 +471,14 @@ router.post("/futures/margin/deposit", async (req, res) => {
       res.status(400).json({ error: "walletAddress and amount are required" });
       return;
     }
-    const amountStr = String(amount);
-    try {
-      if (parseUnits(amountStr, MONEY_DECIMALS) <= 0n) throw new Error("invalid amount");
-    } catch {
-      res.status(400).json({ error: "amount must be a positive decimal string" });
+    const amt = parseFloat(amount);
+    if (!isFinite(amt) || amt <= 0) {
+      res.status(400).json({ error: "amount must be a positive number" });
       return;
     }
-        try {
-      verifyFuturesSignature({
-        walletAddress,
-        nonce:     req.body.nonce,
-        signature: req.body.evmSignature ?? req.body.signature,
-        action:    "deposit",
-        target:    amountStr,
-      });
-    } catch (err: any) {
-      res.status(401).json({ error: err?.message ?? "Invalid futures authorization" });
-      return;
-    }
-
-    await depositToFuturesMargin(walletAddress, amountStr);
+    await depositToFuturesMargin(walletAddress, amt);
     const balance = await getFuturesMarginBalance(walletAddress);
-    res.json({ success: true, walletAddress, deposited: amountStr, balance });
+    res.json({ success: true, walletAddress, deposited: amt, balance });
   } catch (err) {
     req.log.error({ err }, "Failed to deposit futures margin");
     res.status(500).json({ error: "Internal server error" });

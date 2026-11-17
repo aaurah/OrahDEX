@@ -4,6 +4,7 @@ import diagnosticsRouter from "./diagnostics.js";
 import aiRouter from "./ai.js";
 import devaiRouter from "./devai.js";
 import marketsRouter from "./markets.js";
+import explorerRouter from "./explorer.js";
 import ordersRouter from "./orders.js";
 import tradesRouter from "./trades.js";
 import portfolioRouter from "./portfolio.js";
@@ -73,7 +74,7 @@ import { getOrCreateEvmWallet, getEvmWallet } from "../lib/internalEvmWallet.js"
 import { getOrCreateBsvWallet, getBsvWallet } from "../lib/internalBsvWallet.js";
 import { pubKeyToAddress, isBsvAddress, isPaymail } from "../lib/bsvWallet.js";
 import { getNotifications, clearNotifications } from "../lib/notifQueue.js";
-import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { BSV_NET, getBsvNetworkConfig, type BsvNetwork } from "../lib/bsvNetworkConfig.js";
 import { arcBroadcast } from "../lib/arcBroadcaster.js";
 import { randomBytes } from "node:crypto";
 import externalDepthRouter from "./externalDepth";
@@ -105,6 +106,7 @@ router.use(diagnosticsRouter);
 router.use(aiRouter);
 router.use(devaiRouter);
 router.use(marketsRouter);
+router.use(explorerRouter);
 router.use(ordersRouter);
 router.use(advancedOrdersRouter);
 router.use(tradesRouter);
@@ -273,6 +275,18 @@ router.get("/bsv/network-info", (_req, res) => {
 /* ── BSV address / paymail balance lookup ─────────────────────────────────── */
 router.get("/bsv/balance/:address", async (req, res) => {
   const raw = decodeURIComponent(req.params.address ?? "").trim();
+  const networkParam = String(req.query.network ?? "").trim().toLowerCase();
+  let selectedNetwork: BsvNetwork = BSV_NET.network;
+
+  if (networkParam) {
+    if (["test", "testnet", "bsv-test"].includes(networkParam)) selectedNetwork = "test";
+    else if (["main", "mainnet", "bsv"].includes(networkParam)) selectedNetwork = "main";
+    else {
+      res.status(400).json({ error: "network must be main or test." });
+      return;
+    }
+  }
+  const networkConfig = getBsvNetworkConfig(selectedNetwork);
 
   if (!raw) {
     res.status(400).json({ error: "Address is required." });
@@ -283,7 +297,7 @@ router.get("/bsv/balance/:address", async (req, res) => {
   let paymailResolved = false;
 
   // If it's already a P2PKH address, use it directly
-  if (isBsvAddress(raw)) {
+  if (isBsvAddress(raw, selectedNetwork)) {
     bsvAddress = raw;
   } else if (isPaymail(raw)) {
     // Try paymail PKI resolution to get the P2PKH address
@@ -320,7 +334,7 @@ router.get("/bsv/balance/:address", async (req, res) => {
               const pkiData = await pkiRes.json() as any;
               const pubkey: string | undefined = pkiData?.pubkey ?? pkiData?.publicKey;
               if (pubkey && pubkey.length >= 66) {
-                bsvAddress = pubKeyToAddress(pubkey);
+                bsvAddress = pubKeyToAddress(pubkey, selectedNetwork);
                 paymailResolved = true;
                 break;
               }
@@ -350,7 +364,7 @@ router.get("/bsv/balance/:address", async (req, res) => {
             const d = await r.json() as any;
             const pubkey = d?.pubkey ?? d?.publicKey ?? d?.key;
             if (pubkey && pubkey.length >= 66) {
-              bsvAddress = pubKeyToAddress(pubkey);
+              bsvAddress = pubKeyToAddress(pubkey, selectedNetwork);
               paymailResolved = true;
               break;
             }
@@ -386,23 +400,23 @@ router.get("/bsv/balance/:address", async (req, res) => {
       finally { clearTimeout(t); }
     };
 
-    const wocRes = await fetchWithTimeout(`${BSV_NET.wocBase}/address/${bsvAddress}/balance`);
+    const wocRes = await fetchWithTimeout(`${networkConfig.wocBase}/address/${encodeURIComponent(bsvAddress)}/balance`);
+    if (!wocRes.ok) throw new Error(`WhatsOnChain balance request failed (${wocRes.status})`);
 
     let confirmedSat = 0;
     let unconfirmedSat = 0;
 
-    if (wocRes.ok) {
-      const data = await wocRes.json() as { confirmed: number; unconfirmed: number };
-      confirmedSat   = data.confirmed   ?? 0;
-      unconfirmedSat = data.unconfirmed ?? 0;
-    }
+    const data = await wocRes.json() as { confirmed: number; unconfirmed: number };
+    confirmedSat   = data.confirmed   ?? 0;
+    unconfirmedSat = data.unconfirmed ?? 0;
 
     // WhatsonChain's /balance endpoint sometimes returns 0 for both fields
     // even when an unconfirmed UTXO is in the mempool.  Fall back to the
     // /unspent endpoint and sum the raw values — it is always up-to-date.
     if (confirmedSat === 0 && unconfirmedSat === 0) {
       try {
-        const utxoRes = await fetchWithTimeout(`${BSV_NET.wocBase}/address/${bsvAddress}/unspent`);
+        const utxoRes = await fetchWithTimeout(`${networkConfig.wocBase}/address/${encodeURIComponent(bsvAddress)}/unspent`);
+        if (!utxoRes.ok) throw new Error(`WhatsOnChain UTXO request failed (${utxoRes.status})`);
         if (utxoRes.ok) {
           const utxos = await utxoRes.json() as Array<{ value: number; height: number }>;
           for (const u of utxos) {
@@ -418,16 +432,21 @@ router.get("/bsv/balance/:address", async (req, res) => {
 
     res.json({
       input: raw,
+      network: selectedNetwork,
       bsvAddress,
       paymailResolved,
       balance:        bsvBalance,
       balanceSatoshis: totalSatoshis,
       confirmed:      confirmedSat   / 1e8,
       unconfirmed:    unconfirmedSat / 1e8,
+      explorerTx:     `${networkConfig.explorer}/tx/`,
     });
   } catch (err: any) {
     logger.warn({ bsvAddress, err: err?.message }, "WhatsOnChain balance fetch failed");
-    res.json({ input: raw, bsvAddress, paymailResolved, balance: 0, balanceSatoshis: 0, confirmed: 0, unconfirmed: 0 });
+    res.status(502).json({
+      error: "balance_unavailable",
+      message: "Could not confirm the on-chain balance. The previous balance was left unchanged.",
+    });
   }
 });
 

@@ -4,8 +4,8 @@ import { OrahInline } from "@/components/BrandLogo";
 
 const EFFECTIVE_DATE = "25 March 2026";
 const COMPANY = "OrahDEX";
-const DOMAIN = "orahdex.org";
-const CONTACT = "privacy@orahdex.org";
+const DOMAIN = "orahdex.com";
+const CONTACT = "privacy@orahdex.com";
 
 function Section({ title, icon: Icon, children }: { title: string; icon?: any; children: React.ReactNode }) {
   return (

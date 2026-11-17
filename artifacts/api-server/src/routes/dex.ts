@@ -1462,7 +1462,12 @@ export async function prefetchCgMarkets(retryDelayMs = 90_000): Promise<void> {
       return;
     }
     if (!r.ok) { logger.warn({ status: r.status }, "CG markets prefetch failed"); return; }
-    const coins = (await r.json()) as any[];
+    const payload: unknown = await r.json();
+    if (!Array.isArray(payload)) {
+      logger.warn("CG markets prefetch returned an invalid response shape");
+      return;
+    }
+    const coins = payload as any[];
     let seeded = 0;
     for (const c of coins) {
       const sym = (c.symbol ?? "").toUpperCase();

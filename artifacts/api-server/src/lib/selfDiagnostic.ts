@@ -140,8 +140,8 @@ async function checkAiHealth(): Promise<DiagResult> {
     if (!res.ok) {
       return { name: "ai-health", status: "warn", detail: `AI insights endpoint returned HTTP ${res.status}` };
     }
-    const body = await res.json().catch(() => null);
-    const hasInsights = Array.isArray((body as any)?.insights) && (body as any).insights.length > 0;
+    const body = await res.json().catch(() => null) as { insights?: unknown; cached?: boolean } | null;
+    const hasInsights = Array.isArray(body?.insights) && body.insights.length > 0;
     if (!hasInsights) {
       return { name: "ai-health", status: "warn", detail: "AI insights returned empty or malformed response" };
     }

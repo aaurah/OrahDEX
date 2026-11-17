@@ -19,6 +19,8 @@ import { useLetsExchangePairs } from "@/hooks/useLetsExchangePairs";
 import { useSSPairs } from "@/hooks/useSSPairs";
 import { useMarketSearch } from "@/hooks/useStagedMarkets";
 import { useGeckoTerminalPools } from "@/hooks/useGeckoTerminalPools";
+import { fetchReownSwapCoins } from "@/lib/reown-appkit";
+import { buildReownOrderbookMarkets } from "@/lib/reownOrderbookMarkets";
 import { cn, marketMatchesQuery } from "@/lib/utils";
 import { getCoinInfo, getTagColor } from "@/lib/coinInfo";
 
@@ -43,7 +45,8 @@ function normalise(m: any) {
   const symbol   = m.symbol ?? `${base}-${quote}`;
   const network  = (m.network ?? m.networkName ?? undefined) as string | undefined;
   const swapOnly = m.swapOnly === true;      // true for AOS pairs (from LE)
-  return { symbol, base, quote, price, chg, type, network, swapOnly };
+  const reownOrderbook = m.reownOrderbook === true;
+  return { symbol, base, quote, price, chg, type, network, swapOnly, reownOrderbook };
 }
 
 type NormRow = ReturnType<typeof normalise>;
@@ -54,7 +57,7 @@ const STABLE_MOCK: Record<UsdSub, any[]> = {
   USDT: USDT_MARKETS, USDC: USDC_MARKETS, TUSD: TUSD_MARKETS, USDD: USDD_MARKETS,
 };
 
-type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
+type Cat = "all" | "favorites" | "usd" | "new" | "btc" | "eth" | "reown" | "bnb" | "matic" | "avax" | "arb" | "op" | "ftm" | "cro" | "bch" | "bsv" | "ai" | "sol" | "meme" | "defi" | "mnt" | "zk" | "scr" | "linea" | "futures" | "gaming" | "cosmos" | "rwa" | "exchange" | "depin" | "brc20" | "uniswap" | "pancake";
 
 const CATS: { id: Cat; label: string }[] = [
   { id: "favorites", label: "Favs"      },
@@ -64,6 +67,7 @@ const CATS: { id: Cat; label: string }[] = [
   { id: "btc",       label: "BTC"       },
   { id: "bsv",       label: "⚡ BSV"    },
   { id: "eth",       label: "ETH"       },
+  { id: "reown",     label: "REOWN"     },
   { id: "bnb",       label: "BNB"       },
   { id: "matic",     label: "MATIC"     },
   { id: "avax",      label: "AVAX"      },
@@ -128,6 +132,7 @@ const TOPIC_TABS: { id: Cat; label: string }[] = [
   { id: "exchange",  label: "Exchange"   },
   { id: "uniswap",   label: "🦄 Uni"     },
   { id: "pancake",   label: "🥞 Cake"    },
+  { id: "reown",     label: "Reown"      },
   { id: "futures",   label: "📈 Futures" },
 ];
 
@@ -211,6 +216,7 @@ function getRows(
   favorites: Set<string>,
   aosPairs: NormRow[],   // swap-only (AOS) pairs from LetsExchange
   apiRows: NormRow[],    // all DB pairs normalised
+  reownRows: NormRow[],
 ) {
   const enrich = (mock: any[]): NormRow[] =>
     mock.map(m => {
@@ -224,7 +230,7 @@ function getRows(
   /** All DB spot pairs for a given quote currency, priced > 0, sorted by base */
   const dbByQuote = (quote: string): NormRow[] =>
     apiRows
-      .filter(m => m.quote === quote && m.type !== "futures" && m.price > 0)
+      .filter(m => m.quote === quote && m.type !== "futures")
       .sort((a, b) => a.base.localeCompare(b.base));
 
   // Merge native rows with ONE AOS row per unique base coin (best quote for the chain).
@@ -234,7 +240,7 @@ function getRows(
 
     const eligible = aosPairs.filter(p => {
       const net = (p.network ?? "").toLowerCase();
-      return keywords.some(kw => net.includes(kw)) && p.price > 0;
+      return keywords.some(kw => net.includes(kw));
     });
 
     const byBase = new Map<string, NormRow[]>();
@@ -283,7 +289,7 @@ function getRows(
     // Deduplicate within AOS pairs by base — same coin on multiple chains → show once (best price)
     const aosByBase = new Map<string, NormRow>();
     for (const p of aosPairs) {
-      if (p.quote !== quote || p.price <= 0) continue;
+      if (p.quote !== quote) continue;
       if (seenBases.has(p.base) || seenSymbols.has(p.symbol)) continue;
       const cur = aosByBase.get(p.base);
       if (!cur || p.price > cur.price) aosByBase.set(p.base, p);
@@ -309,7 +315,6 @@ function getRows(
   const aosOnly = (() => {
     const bestByBase = new Map<string, NormRow>();
     for (const p of aosPairs) {
-      if (p.price <= 0) continue;
       if (nativeSymbols.has(p.symbol) || nativeBases.has(p.base)) continue;
       const cur = bestByBase.get(p.base);
       if (!cur || p.price > cur.price) bestByBase.set(p.base, p);
@@ -320,7 +325,7 @@ function getRows(
     const merged = new Map<string, NormRow>();
     // 1. DB rows — authoritative live prices (includes LE/SS DB entries)
     for (const m of apiRows) {
-      if (m.type !== "futures" && m.price > 0) merged.set(m.symbol, m);
+      if (m.type !== "futures") merged.set(m.symbol, m);
     }
     // 2. Static-mock enriched rows — fills coins not yet in DB
     for (const m of enrich(ALL_POOL_DEDUPED)) {
@@ -343,6 +348,7 @@ function getRows(
     case "btc":       return quoteAllPairs("BTC",   BTC_MARKETS);
     case "bsv":       return quoteAllPairs("BSV",   BSV_MARKETS);
     case "eth":       return quoteAllPairs("ETH",  ETH_MARKETS);
+    case "reown":     return reownRows;
     case "bnb":       return chainFromDB("BNB",   cat, BNB_MARKETS);
     case "sol":       return chainFromDB("SOL",   cat, SOL_MARKETS);
     case "bch":       return chainFromDB("BCH",   cat, BCH_MARKETS);
@@ -395,7 +401,11 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const [cat, setCat]         = useState<Cat>(resolvedDefault);
   const [usdSub, setUsdSub]   = useState<UsdSub>("USDT");
   const [search, setSearch]   = useState("");
-  const { results: serverSearchResults } = useMarketSearch(search, { debounceMs: 300 });
+  const {
+    results: serverSearchResults,
+    loading: serverSearchLoading,
+    error: serverSearchError,
+  } = useMarketSearch(search, { debounceMs: 300 });
   const [sortKey, setSortKey] = useState<"base"|"price"|"chg">("base");
   const [sortDir, setSortDir] = useState<"asc"|"desc">("asc");
   const [infoCoin, setInfoCoin] = useState<string | null>(null);
@@ -451,8 +461,16 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   // Pull-to-refresh handlers
   const doRefresh = useCallback(async () => {
     setRefreshing(true);
-    await queryClient.invalidateQueries({ queryKey: ["markets"] });
-    await queryClient.refetchQueries({ queryKey: ["markets"] });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["markets"] }),
+      queryClient.invalidateQueries({ queryKey: ["reown-orderbook-token-catalog", 1] }),
+      queryClient.invalidateQueries({ queryKey: ["evm-orderbook-settlement-config", 1] }),
+    ]);
+    await Promise.all([
+      queryClient.refetchQueries({ queryKey: ["markets"] }),
+      queryClient.refetchQueries({ queryKey: ["reown-orderbook-token-catalog", 1] }),
+      queryClient.refetchQueries({ queryKey: ["evm-orderbook-settlement-config", 1] }),
+    ]);
     setRefreshing(false);
   }, [queryClient]);
 
@@ -484,12 +502,41 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const { data: apiData } = useQuery({
     queryKey: ["markets"],
     queryFn: async () => {
-      const r = await fetch(`${BASE}/api/markets`);
+      const r = await fetch(`${BASE}/api/markets?pricedOnly=true`);
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
     staleTime: 25_000,
     refetchInterval: 30_000,
+  });
+
+  const {
+    data: reownCoins = [],
+    isError: reownCatalogError,
+    isPending: reownCatalogLoading,
+  } = useQuery({
+    queryKey: ["reown-orderbook-token-catalog", 1],
+    queryFn: () => fetchReownSwapCoins([1]),
+    enabled: open,
+    staleTime: 15 * 60_000,
+    gcTime: 30 * 60_000,
+    retry: 1,
+  });
+
+  const {
+    data: orderbookSettlement = { available: false },
+    isError: orderbookConfigError,
+    isPending: orderbookConfigLoading,
+  } = useQuery({
+    queryKey: ["evm-orderbook-settlement-config", 1],
+    queryFn: async () => {
+      const response = await fetch(`${BASE}/api/orders/evm-settlement/config`, { cache: "no-store" });
+      if (!response.ok) return { available: false };
+      return response.json();
+    },
+    enabled: open,
+    staleTime: 60_000,
+    retry: 1,
   });
 
   // AOS pairs from LetsExchange — available to trade via Swap tab
@@ -508,11 +555,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       type:     "spot" as const,
       network:  p.network ?? p.networkName ?? undefined,
       swapOnly: true as const,
+      reownOrderbook: false,
     });
     const all = [
       ...(rawAosPairs ?? []).map(toNorm),
       ...(rawSsPairs  ?? []).map(toNorm),
-    ];
+    ].filter((pair) => pair.price > 0);
     // Deduplicate: same base+quote on multiple chains/providers → keep highest price.
     const best = new Map<string, NormRow>();
     for (const p of all) {
@@ -523,10 +571,25 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     return [...best.values()];
   }, [rawAosPairs, rawSsPairs]);
 
-  const apiRows = useMemo<NormRow[]>(
-    () => (Array.isArray(apiData) ? apiData : []).map(normalise),
+  const rawApiRows = useMemo<NormRow[]>(
+    () => (Array.isArray(apiData) ? apiData : []).map(normalise).filter((market) => market.price > 0),
     [apiData]
   );
+
+  const reownRows = useMemo<NormRow[]>(
+    () => orderbookSettlement.available
+      ? buildReownOrderbookMarkets(reownCoins, rawApiRows).map(normalise)
+      : [],
+    [orderbookSettlement.available, reownCoins, rawApiRows]
+  );
+
+  // Keep bridge swaps in Swap, but expose the matching allowlisted Ethereum
+  // asset here as an escrow-backed order-book option.
+  const apiRows = useMemo<NormRow[]>(() => {
+    const merged = new Map(rawApiRows.map((market) => [market.symbol, market]));
+    for (const market of reownRows) merged.set(market.symbol, market);
+    return [...merged.values()];
+  }, [rawApiRows, reownRows]);
 
   const livePrice = useMemo(() => new Map(
     apiRows.map((m: NormRow) => [m.symbol, m])
@@ -539,7 +602,6 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     const merged = new Map<string, NormRow>();
     for (const m of apiRows) merged.set(m.symbol, m);
     for (const p of aosPairs) {
-      if (p.price <= 0) continue;
       if (!merged.has(p.symbol)) merged.set(p.symbol, p);
     }
     return Array.from(merged.values());
@@ -552,7 +614,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
   const { data: geckoRows } = useGeckoTerminalPools(cat);
   const _svrRows: NormRow[] = search
     ? serverSearchResults
-        .filter((m: any) => m.symbol && !globalRows.some(r => r.symbol === m.symbol))
+        .filter((m: any) => m.symbol && Number(m.lastPrice ?? m.price) > 0 && !globalRows.some(r => r.symbol === m.symbol))
         .map((m: any) => normalise({ ...m, type: m.type ?? "catalog" }))
     : [];
   let rows: NormRow[] = search
@@ -564,7 +626,7 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
       // Use the full (no-base-dedup) pool so any starred symbol is always found,
       // regardless of whether it was the "best quote" for its base coin.
       ? fullPool.filter(m => favorites.has(m.symbol)).sort((a, b) => a.base.localeCompare(b.base))
-      : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows);
+      : getRows(cat, usdSub, livePrice, favorites, aosPairs, apiRows, reownRows);
 
   // Merge GeckoTerminal live data: update prices for known tokens, append new ones
   if (!search && geckoRows.length > 0) {
@@ -576,9 +638,13 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
     const existingBases = new Set(rows.map(r => r.base));
     const newRows: NormRow[] = geckoRows
       .filter(g => !existingBases.has(g.base) && g.price > 0)
-      .map(g => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, type: "spot" as const, network: g.network, swapOnly: true }));
+      .map(g => ({ symbol: g.symbol, base: g.base, quote: g.quote, price: g.price, chg: g.chg, type: "spot" as const, network: g.network, swapOnly: true, reownOrderbook: false }));
     rows = [...rows, ...newRows];
   }
+
+  // Pair charts require a real current price. Unpriced conversion-only assets
+  // remain discoverable in the dedicated Swap currency picker instead.
+  rows = rows.filter((market) => market.price > 0);
 
   rows = [...rows].sort((a, b) => {
     let v = 0;
@@ -787,9 +853,28 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
               {refreshing ? "Refreshing…" : pullDist >= 52 ? "Release to refresh" : "Pull to refresh"}
             </span>
           </div>
+          {cat === "reown" && !search && (
+            <div className="mx-3 my-2 rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-[10px] leading-relaxed text-muted-foreground">
+              Ethereum mainnet only · 18-decimal allowlisted tokens. Books show verified escrow orders only, so some may be empty.
+            </div>
+          )}
           {rows.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-              {cat === "favorites" ? "No favorites yet" : search ? "No results" : "Loading…"}
+              {search && serverSearchLoading
+                ? "Searching markets…"
+                : search && serverSearchError
+                  ? serverSearchError
+                  : cat === "reown" && orderbookConfigLoading
+                    ? "Checking Ethereum escrow…"
+                    : cat === "reown" && (orderbookConfigError || !orderbookSettlement.available)
+                      ? "Ethereum order-book escrow is unavailable"
+                      : cat === "reown" && reownCatalogLoading
+                        ? "Loading verified Ethereum tokens…"
+                        : cat === "reown" && reownCatalogError
+                          ? "Reown token list is unavailable"
+                          : cat === "reown"
+                            ? "No allowlisted Ethereum tokens have a live price"
+                  : cat === "favorites" ? "No favorites yet" : search ? "No results" : "Loading…"}
             </div>
           ) : (() => {
             // Insert a section divider before the first AOS (swap-only) row
@@ -868,6 +953,9 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                           {m.swapOnly && (
                             <span className="text-[8px] font-bold text-blue-400 bg-blue-500/15 px-1 py-0.5 rounded">AOS</span>
                           )}
+                          {m.reownOrderbook && (
+                            <span className="text-[8px] font-bold text-emerald-400 bg-emerald-500/15 px-1 py-0.5 rounded">ETH BOOK</span>
+                          )}
                           {isActive && (
                             <span className="text-[8px] font-bold text-primary bg-primary/15 px-1.5 py-0.5 rounded">●</span>
                           )}
@@ -912,7 +1000,12 @@ export function MobileMarketSelector({ open, onClose, currentSymbol, defaultCat,
                           {isUp ? "+" : ""}{m.chg.toFixed(2)}%
                         </span>
                       ) : (
-                        <span className="text-[10px] text-blue-400/60">live →</span>
+                        <span
+                          className="text-[10px] text-muted-foreground/70"
+                          title="No verified market price is currently available."
+                        >
+                          No data
+                        </span>
                       )}
                     </button>
                   </div>

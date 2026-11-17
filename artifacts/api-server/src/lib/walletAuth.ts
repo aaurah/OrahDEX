@@ -26,6 +26,7 @@ import * as secp from "@noble/secp256k1";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import * as ed from "@noble/ed25519";
 import { sha512 } from "@noble/hashes/sha2.js";
+import { BSV_NET } from "./bsvNetworkConfig.js";
 
 // @noble/ed25519 v2 requires a synchronous SHA-512 implementation to be
 // provided via the utils hook before any sign/verify call.
@@ -35,9 +36,11 @@ ed.etc.sha512Sync = (...msgs) => sha512(ed.etc.concatBytes(...msgs));
 // Timing-safe string equality — prevents nonce brute-force via response timing.
 function timingSafeStringEqual(a: string, b: string): boolean {
   if (a.length !== b.length) {
+    // Still run timingSafeEqual on padded buffers to avoid length-leak
+    crypto.timingSafeEqual(Buffer.alloc(1), Buffer.alloc(1));
     return false;
   }
-  return crypto.timingSafeEqual(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
 // ── EVM personal_sign recovery ────────────────────────────────────────────────
@@ -162,7 +165,10 @@ export function verifyWithdrawSignature(
     );
   }
 
+  // verifyEvmSignature throws on mismatch
   verifyEvmSignature(walletAddress, stored.message, signature);
+
+  // Single-use: consume immediately after successful verification
   withdrawNonces.delete(addr);
 }
 
@@ -217,6 +223,47 @@ export function verifyBsvWithdrawSignature(
   }
 
   verifyBsvMessageSignature(walletAddress, stored.message, signatureBase64);
+
+  withdrawNonces.delete(key);
+}
+
+export function issueBsvDepositChallenge(
+  creditWalletAddress: string,
+  bsvSignerAddress: string,
+  txHash: string,
+): { nonce: string; message: string } {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const key = `bsv-deposit:${creditWalletAddress.toLowerCase()}:${txHash.toLowerCase()}`;
+  const message =
+    `Authorize OrahDEX BSV deposit credit\n\n` +
+    `Credit wallet: ${creditWalletAddress}\n` +
+    `BSV sender: ${bsvSignerAddress}\n` +
+    `Transaction: ${txHash.toLowerCase()}\n` +
+    `Nonce: ${nonce}\n` +
+    `Timestamp: ${new Date().toISOString()}\n\n` +
+    `This signature only authorizes crediting this transaction. It does not send a blockchain transaction.`;
+
+  withdrawNonces.set(key, {
+    nonce,
+    message,
+    expiresAt: Date.now() + WITHDRAW_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+export function verifyBsvDepositSignature(
+  creditWalletAddress: string,
+  bsvSignerAddress: string,
+  txHash: string,
+  signatureBase64: string,
+): void {
+  const key = `bsv-deposit:${creditWalletAddress.toLowerCase()}:${txHash.toLowerCase()}`;
+  const stored = withdrawNonces.get(key);
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error("BSV deposit authorization expired or was not found. Request a fresh challenge.");
+  }
+  verifyBsvMessageSignature(bsvSignerAddress, stored.message, signatureBase64);
   withdrawNonces.delete(key);
 }
 
@@ -237,6 +284,8 @@ function verifyBsvMessageSignature(
   }
 
   const headerByte = sigBuf[0];
+  // Bitcoin compact sig: header byte encodes recovery + compression flag.
+  // Header range: 27–30 (uncompressed), 31–34 (compressed).
   const isCompressed = headerByte >= 31;
   const recovery     = (headerByte - (isCompressed ? 31 : 27)) & 0x03;
 
@@ -286,10 +335,11 @@ function encodeVarint(n: number): Buffer {
 
 /** Derive a BSV P2PKH address from a secp256k1 public key. */
 function bsvPubKeyToAddress(pubKey: Uint8Array, compressed: boolean): string {
+  // If not compressed, expand to uncompressed (65 bytes) before hashing
   const keyBytes = compressed ? pubKey : secp.Point.fromBytes(pubKey).toBytes(false);
   const sha256d  = crypto.createHash("sha256").update(keyBytes).digest();
   const ripemd   = crypto.createHash("ripemd160").update(sha256d).digest();
-  const versioned = Buffer.concat([Buffer.from([0x00]), ripemd]);
+  const versioned = Buffer.concat([Buffer.from([BSV_NET.p2pkhVersion]), ripemd]);
   const checksum  = crypto.createHash("sha256")
     .update(crypto.createHash("sha256").update(versioned).digest())
     .digest()
@@ -357,6 +407,7 @@ export function verifySolWithdrawSignature(
   }
 
   verifySolanaSignature(walletAddress, stored.message, signatureHexOrBase64);
+
   withdrawNonces.delete(key);
 }
 
@@ -375,6 +426,7 @@ function verifySolanaSignature(
     throw new Error("Invalid Solana public key length (expected 32 bytes)");
   }
 
+  // Accept both hex and base64 encoding
   let sigBytes: Uint8Array;
   if (/^[0-9a-fA-F]{128}$/.test(signatureHexOrBase64)) {
     sigBytes = Buffer.from(signatureHexOrBase64, "hex");
@@ -413,15 +465,12 @@ function base58Decode(str: string): Buffer {
 interface ExchangeNonce {
   nonce:     string;
   message:   string;
-  assetIn:   string;
-  assetOut:  string;
-  amountIn:  string;
   expiresAt: number;
 }
 
 const exchangeNonces = new Map<string, ExchangeNonce>();
 
-const EXCHANGE_NONCE_TTL_MS = 5 * 60 * 1_000;
+const EXCHANGE_NONCE_TTL_MS = 5 * 60 * 1_000;  // 5 minutes
 const EXCHANGE_NONCE_SWEEP  = 5 * 60 * 1_000;
 
 setInterval(() => {
@@ -430,12 +479,6 @@ setInterval(() => {
     if (v.expiresAt < now) exchangeNonces.delete(k);
   }
 }, EXCHANGE_NONCE_SWEEP).unref();
-
-function normalizeExchangeAmount(value: string): string {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return "";
-  return parsed.toString();
-}
 
 /**
  * Issue a single-use, 5-minute exchange-swap challenge for an EVM wallet.
@@ -448,22 +491,18 @@ export function issueExchangeChallenge(params: {
   assetOut:      string;
   amountIn:      string;
 }): { nonce: string; message: string } {
-  const nonce = crypto.randomBytes(16).toString("hex");
-  const normalizedAmount = normalizeExchangeAmount(params.amountIn) || params.amountIn;
+  const nonce   = crypto.randomBytes(16).toString("hex");
   const message = buildExchangeAuthMessage({
     walletAddress: params.walletAddress,
     assetIn:       params.assetIn,
     assetOut:      params.assetOut,
-    amountIn:      normalizedAmount,
+    amountIn:      params.amountIn,
     nonce,
   });
 
   exchangeNonces.set(params.walletAddress.toLowerCase(), {
     nonce,
     message,
-    assetIn: params.assetIn.toUpperCase(),
-    assetOut: params.assetOut.toUpperCase(),
-    amountIn: normalizedAmount,
     expiresAt: Date.now() + EXCHANGE_NONCE_TTL_MS,
   });
 
@@ -480,7 +519,7 @@ export function verifyExchangeSignature(
   walletAddress: string,
   nonce:         string,
   signature:     string,
-  expected?: { assetIn?: string; assetOut?: string; amountIn?: string },
+  intent:        { assetIn: string; assetOut: string; amountIn: string },
 ): void {
   const addr   = walletAddress.toLowerCase();
   const stored = exchangeNonces.get(addr);
@@ -499,22 +538,21 @@ export function verifyExchangeSignature(
     );
   }
 
-  if (expected) {
-    const expectedIn = (expected.assetIn ?? stored.assetIn).toUpperCase();
-    const expectedOut = (expected.assetOut ?? stored.assetOut).toUpperCase();
-    const expectedAmount = normalizeExchangeAmount(expected.amountIn ?? stored.amountIn) || (expected.amountIn ?? stored.amountIn);
-    if (stored.assetIn !== expectedIn) {
-      throw new Error(`Exchange challenge assetIn mismatch: expected ${stored.assetIn}, got ${expectedIn}.`);
-    }
-    if (stored.assetOut !== expectedOut) {
-      throw new Error(`Exchange challenge assetOut mismatch: expected ${stored.assetOut}, got ${expectedOut}.`);
-    }
-    if (normalizeExchangeAmount(stored.amountIn) && normalizeExchangeAmount(expectedAmount) && normalizeExchangeAmount(stored.amountIn) !== normalizeExchangeAmount(expectedAmount)) {
-      throw new Error(`Exchange challenge amount mismatch: expected ${stored.amountIn}, got ${expectedAmount}.`);
-    }
+  const expectedMessage = buildExchangeAuthMessage({
+    walletAddress,
+    assetIn: intent.assetIn,
+    assetOut: intent.assetOut,
+    amountIn: intent.amountIn,
+    nonce,
+  });
+  if (!timingSafeStringEqual(stored.message, expectedMessage)) {
+    throw new Error("Exchange challenge does not match the submitted assets and amount.");
   }
 
+  // verifyEvmSignature throws on mismatch
   verifyEvmSignature(walletAddress, stored.message, signature);
+
+  // Single-use: consume immediately after successful verification
   exchangeNonces.delete(addr);
 }
 
@@ -527,6 +565,9 @@ interface LiquidityNonce {
   message:   string;
   action:    "add" | "remove";
   poolId:    string;
+  amountA:   string;
+  amountB:   string;
+  positionId: number | null;
   expiresAt: number;
 }
 
@@ -542,17 +583,31 @@ setInterval(() => {
   }
 }, LP_NONCE_SWEEP).unref();
 
+/**
+ * Issue a single-use, 5-minute liquidity-action challenge for an EVM wallet.
+ * The client signs the returned `message` and sends signature + nonce with
+ * the next call to POST /liquidity or DELETE /liquidity/:positionId.
+ */
 export function issueLiquidityChallenge(params: {
   walletAddress: string;
   action:        "add" | "remove";
   poolId:        string;
+  amountA?:      string;
+  amountB?:      string;
+  positionId?:   number;
 }): { nonce: string; message: string } {
   const nonce   = crypto.randomBytes(16).toString("hex");
   const ts      = new Date().toISOString();
+  const amountA = params.action === "add" ? params.amountA ?? "" : "";
+  const amountB = params.action === "add" ? params.amountB ?? "" : "";
+  const positionId = params.action === "remove" ? params.positionId ?? null : null;
   const message =
     `Authorize OrahDEX liquidity ${params.action}\n\n` +
     `Wallet: ${params.walletAddress}\n` +
     `Pool: ${params.poolId}\n` +
+    (params.action === "add"
+      ? `Amount A: ${amountA}\nAmount B: ${amountB}\n`
+      : `Position ID: ${positionId}\n`) +
     `Nonce: ${nonce}\n` +
     `Timestamp: ${ts}\n\n` +
     `This request will not trigger a blockchain transaction.`;
@@ -562,18 +617,30 @@ export function issueLiquidityChallenge(params: {
     message,
     action:    params.action,
     poolId:    params.poolId,
+    amountA,
+    amountB,
+    positionId,
     expiresAt: Date.now() + LP_NONCE_TTL_MS,
   });
 
   return { nonce, message };
 }
 
+/**
+ * Verify a liquidity-action signature. Single-use nonce; consumed on success.
+ * Adds bind both amounts; removals bind the exact position as well as its pool.
+ *
+ * Throws on any failure — wrap with try/catch and respond 401 to the client.
+ */
 export function verifyLiquiditySignature(params: {
   walletAddress: string;
   nonce:         string;
   signature:     string;
   action:        "add" | "remove";
   poolId:        string;
+  amountA?:      string;
+  amountB?:      string;
+  positionId?:   number;
 }): void {
   const addr   = params.walletAddress.toLowerCase();
   const stored = liquidityNonces.get(addr);
@@ -599,24 +666,278 @@ export function verifyLiquiditySignature(params: {
       `Request a fresh challenge for the correct pool.`,
     );
   }
+  if (params.action === "add" &&
+      (stored.amountA !== (params.amountA ?? "") || stored.amountB !== (params.amountB ?? ""))) {
+    throw new Error("Liquidity challenge amounts do not match the submitted amounts.");
+  }
+  if (params.action === "remove" && stored.positionId !== (params.positionId ?? null)) {
+    throw new Error("Liquidity challenge position does not match the submitted position.");
+  }
 
   verifyEvmSignature(params.walletAddress, stored.message, params.signature);
   liquidityNonces.delete(addr);
 }
 
+/**
+ * Look up the pool that a wallet's outstanding liquidity challenge was bound
+ * to. Used by DELETE /liquidity/:positionId so the route can verify the
+ * challenge against the position's resolved poolId without the client having
+ * to round-trip it.
+ */
 export function peekLiquidityChallengePoolId(walletAddress: string): string | null {
   const stored = liquidityNonces.get(walletAddress.toLowerCase());
   if (!stored || stored.expiresAt < Date.now()) return null;
   return stored.poolId;
 }
 
-// ... remainder of original file omitted here for brevity; previous code unchanged after this point.
+// ── P2P intent nonce store ───────────────────────────────────────────────────
+// Single-use nonces for POST /p2p/intents, POST /p2p/intents/:id/fill,
+// DELETE /p2p/intents/:id. Bound to (action, target) so a captured challenge
+// for one intent cannot be replayed against a different intent.
+//
+// `target` semantics:
+//   action="post"   → SHA-256 hex of `${tokenIn}|${tokenOut}|${amountIn}|${minAmountOut}`
+//   action="fill"   → intentId
+//   action="cancel" → intentId
 
+interface P2PNonce {
+  nonce:     string;
+  message:   string;
+  action:    "post" | "fill" | "cancel";
+  target:    string;
+  expiresAt: number;
+}
+
+const p2pNonces = new Map<string, P2PNonce>();
+
+const P2P_NONCE_TTL_MS = 5 * 60 * 1_000;
+const P2P_NONCE_SWEEP  = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of p2pNonces.entries()) {
+    if (v.expiresAt < now) p2pNonces.delete(k);
+  }
+}, P2P_NONCE_SWEEP).unref();
+
+/** Hash the canonical fields of a post-intent challenge target. */
+export function hashP2PPostTarget(params: {
+  tokenIn: string; tokenOut: string; amountIn: string; minAmountOut: string;
+}): string {
+  const canon = `${params.tokenIn.toUpperCase()}|${params.tokenOut.toUpperCase()}|${params.amountIn}|${params.minAmountOut}`;
+  return crypto.createHash("sha256").update(canon, "utf8").digest("hex");
+}
+
+export function issueP2PChallenge(params: {
+  walletAddress: string;
+  action:        "post" | "fill" | "cancel";
+  target:        string;
+}): { nonce: string; message: string } {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const ts    = new Date().toISOString();
+  const message =
+    `Authorize OrahDEX P2P ${params.action}\n\n` +
+    `Wallet: ${params.walletAddress}\n` +
+    `Target: ${params.target}\n` +
+    `Nonce: ${nonce}\n` +
+    `Timestamp: ${ts}\n\n` +
+    `This request will not trigger a blockchain transaction.`;
+
+  p2pNonces.set(params.walletAddress.toLowerCase(), {
+    nonce,
+    message,
+    action:    params.action,
+    target:    params.target,
+    expiresAt: Date.now() + P2P_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+export function verifyP2PSignature(params: {
+  walletAddress: string;
+  nonce:         string;
+  signature:     string;
+  action:        "post" | "fill" | "cancel";
+  target:        string;
+}): void {
+  const addr   = params.walletAddress.toLowerCase();
+  const stored = p2pNonces.get(addr);
+
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error(
+      "P2P challenge expired or not found. " +
+      "Request a fresh challenge via POST /p2p/challenge.",
+    );
+  }
+  if (!timingSafeStringEqual(stored.nonce, params.nonce)) {
+    throw new Error("P2P nonce mismatch.");
+  }
+  if (stored.action !== params.action) {
+    throw new Error(
+      `P2P challenge was issued for '${stored.action}', not '${params.action}'.`,
+    );
+  }
+  if (stored.target !== params.target) {
+    throw new Error(
+      `P2P challenge target mismatch — challenge was bound to a different intent.`,
+    );
+  }
+
+  verifyEvmSignature(params.walletAddress, stored.message, params.signature);
+  p2pNonces.delete(addr);
+}
+
+// ── Creator-coin trade nonce store ───────────────────────────────────────────
+// Single-use, 5-minute nonces for POST /social/creators/:address/trade.
+// Bound to (action, creator, side, amount) so a captured challenge cannot be
+// replayed against a different trade.
+
+interface TradeNonce {
+  nonce:     string;
+  message:   string;
+  creator:   string;   // creator address (lowercase)
+  side:      "buy" | "sell";
+  amount:    string;   // raw input amount (paymentAsset units for buy, tokens for sell)
+  asset:     string;   // payment asset symbol (uppercase)
+  expiresAt: number;
+}
+
+const tradeNonces = new Map<string, TradeNonce>();
+const TRADE_NONCE_TTL_MS = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of tradeNonces.entries()) {
+    if (v.expiresAt < now) tradeNonces.delete(k);
+  }
+}, TRADE_NONCE_TTL_MS).unref();
+
+export function issueTradeChallenge(params: {
+  walletAddress: string;
+  creator:       string;
+  side:          "buy" | "sell";
+  amount:        string;
+  asset:         string;
+}): { nonce: string; message: string } {
+  const nonce = crypto.randomBytes(16).toString("hex");
+  const ts    = new Date().toISOString();
+  const message =
+    `Authorize OrahDEX trade\n\n` +
+    `Wallet: ${params.walletAddress}\n` +
+    `Creator: ${params.creator}\n` +
+    `Side: ${params.side}\n` +
+    `Amount: ${params.amount} ${params.asset.toUpperCase()}\n` +
+    `Nonce: ${nonce}\n` +
+    `Timestamp: ${ts}\n\n` +
+    `This request will not trigger a blockchain transaction.`;
+
+  tradeNonces.set(params.walletAddress.toLowerCase(), {
+    nonce,
+    message,
+    creator:   params.creator.toLowerCase(),
+    side:      params.side,
+    amount:    params.amount,
+    asset:     params.asset.toUpperCase(),
+    expiresAt: Date.now() + TRADE_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+export function verifyTradeSignature(params: {
+  walletAddress: string;
+  nonce:         string;
+  signature:     string;
+  creator:       string;
+  side:          "buy" | "sell";
+  amount:        string;
+  asset:         string;
+}): void {
+  const addr   = params.walletAddress.toLowerCase();
+  const stored = tradeNonces.get(addr);
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error("Trade challenge expired or not found. Request a fresh challenge.");
+  }
+  if (!timingSafeStringEqual(stored.nonce, params.nonce)) throw new Error("Trade nonce mismatch.");
+  if (stored.creator !== params.creator.toLowerCase()) throw new Error("Trade challenge creator mismatch.");
+  if (stored.side !== params.side)                 throw new Error("Trade challenge side mismatch.");
+  if (stored.amount !== params.amount)             throw new Error("Trade challenge amount mismatch.");
+  if (stored.asset !== params.asset.toUpperCase()) throw new Error("Trade challenge asset mismatch.");
+  verifyEvmSignature(params.walletAddress, stored.message, params.signature);
+  tradeNonces.delete(addr);
+}
+
+// ── Consumed order nonce store ────────────────────────────────────────────────
+// Tracks used (walletAddress, nonce) pairs for spot orders to prevent replay.
+// Entries are pruned lazily once their expiry has passed.
+// Key: walletAddress.toLowerCase() → array of { nonce, expiresAt }
+
+interface ConsumedNonce {
+  nonce:     string;
+  expiresAt: number;
+}
+
+const consumedOrderNonces = new Map<string, ConsumedNonce[]>();
+
+const ORDER_NONCE_SWEEP = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [addr, entries] of consumedOrderNonces.entries()) {
+    const alive = entries.filter(e => e.expiresAt > now);
+    if (alive.length === 0) {
+      consumedOrderNonces.delete(addr);
+    } else {
+      consumedOrderNonces.set(addr, alive);
+    }
+  }
+}, ORDER_NONCE_SWEEP).unref();
+
+/**
+ * Check whether an order nonce has already been consumed for `walletAddress`.
+ * Returns true if the (address, nonce) pair is in the consumed set.
+ */
+export function isOrderNonceConsumed(walletAddress: string, nonce: string): boolean {
+  const addr    = walletAddress.toLowerCase();
+  const entries = consumedOrderNonces.get(addr);
+  if (!entries) return false;
+  return entries.some(e => e.nonce === nonce);
+}
+
+/**
+ * Mark a (walletAddress, nonce) pair as consumed.
+ * `expiryUnixSec` is the order's expiry timestamp (Unix seconds) — entries are
+ * automatically pruned after this time, since expired nonces cannot be replayed
+ * anyway (the expiry check in orders.ts rejects them first).
+ */
+export function recordConsumedOrderNonce(
+  walletAddress:  string,
+  nonce:          string,
+  expiryUnixSec:  number,
+): void {
+  const addr   = walletAddress.toLowerCase();
+  const list   = consumedOrderNonces.get(addr) ?? [];
+  list.push({ nonce, expiresAt: expiryUnixSec * 1_000 });
+  consumedOrderNonces.set(addr, list);
+}
+
+// ── Canonical auth message builders ──────────────────────────────────────────
+
+/**
+ * Canonical message a client must sign to authorise placing a spot order.
+ * Both client and server MUST produce the identical string.
+ */
 export function buildOrderAuthMessage(params: {
   walletAddress: string;
   symbol:        string;
   side:          string;
   quantity:      string;
+  type?:         string;
+  price?:        string;
+  stopPrice?:    string;
+  chainId?:      string;
+  timeInForce?:  string;
   nonce:         string;
   expiry:        string;
 }): string {
@@ -626,11 +947,247 @@ export function buildOrderAuthMessage(params: {
     `Symbol: ${params.symbol}`,
     `Side: ${params.side}`,
     `Quantity: ${params.quantity}`,
+    `Type: ${params.type ?? ""}`,
+    `Price: ${params.price ?? ""}`,
+    `Stop price: ${params.stopPrice ?? ""}`,
+    `Chain ID: ${params.chainId ?? ""}`,
+    `Time in force: ${params.timeInForce ?? "GTC"}`,
     `Nonce: ${params.nonce}`,
     `Expiry: ${params.expiry}`,
   ].join("\n");
 }
 
+export function buildOrderActionAuthMessage(params: {
+  walletAddress: string;
+  action:        string;
+  orderId:       string;
+  nonce:         string;
+  expiry:        string;
+}): string {
+  return [
+    "Authorize OrahDEX order action",
+    `Wallet: ${params.walletAddress}`,
+    `Action: ${params.action}`,
+    `Order ID: ${params.orderId}`,
+    `Nonce: ${params.nonce}`,
+    `Expiry: ${params.expiry}`,
+  ].join("\n");
+}
+
+// ── BSV / Solana order challenge store ────────────────────────────────────────
+// Server-issued single-use challenges bound to order parameters.
+// These are separate from the withdrawal-challenge store to prevent a captured
+// withdrawal challenge from being replayed as an order signature.
+
+interface BsvOrderNonce {
+  nonce:    string;
+  message:  string;
+  intent:   {
+    symbol: string; side: string; quantity: string; type: string;
+    price: string; stopPrice: string; chainId: string; timeInForce: string; expiry: string;
+  };
+  expiresAt: number;
+}
+
+const bsvOrderNonces = new Map<string, BsvOrderNonce>();
+const BSV_ORDER_NONCE_TTL_MS = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of bsvOrderNonces.entries()) {
+    if (v.expiresAt < now) bsvOrderNonces.delete(k);
+  }
+}, BSV_ORDER_NONCE_TTL_MS).unref();
+
+/**
+ * Issue a BSV order challenge bound to specific order parameters.
+ * The client must sign the returned `message` with their BSV wallet.
+ */
+export function issueBsvOrderChallenge(params: {
+  walletAddress: string;
+  symbol:        string;
+  side:          string;
+  quantity:      string;
+  type:          string;
+  price:         string;
+  stopPrice:     string;
+  chainId:       string;
+  timeInForce:   string;
+  nonce:         string;
+  expiry:        string;
+}): { nonce: string; message: string } {
+  // Always generate the nonce server-side to prevent nonce-grinding attacks.
+  // Any client-provided nonce is intentionally ignored.
+  const nonce   = crypto.randomBytes(16).toString("hex");
+  const message = buildOrderAuthMessage({
+    walletAddress: params.walletAddress,
+    symbol:        params.symbol,
+    side:          params.side,
+    quantity:      params.quantity,
+    type:          params.type,
+    price:         params.price,
+    stopPrice:     params.stopPrice,
+    chainId:       params.chainId,
+    timeInForce:   params.timeInForce,
+    nonce,
+    expiry:        params.expiry,
+  });
+
+  // Normalise wallet address to lower-case to prevent duplicate challenges
+  // from different case representations of the same BSV address.
+  bsvOrderNonces.set(`bsv:${params.walletAddress.toLowerCase()}`, {
+    nonce,
+    message,
+    intent: {
+      symbol: params.symbol, side: params.side, quantity: params.quantity,
+      type: params.type, price: params.price, stopPrice: params.stopPrice,
+      chainId: params.chainId, timeInForce: params.timeInForce, expiry: params.expiry,
+    },
+    expiresAt: Date.now() + BSV_ORDER_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+/**
+ * Verify a BSV order challenge signature.
+ * Binds to the complete order intent to prevent cross-intent replay.
+ * Consumes the nonce on success (single-use).
+ * Throws on any failure.
+ */
+export function verifyBsvOrderSignature(
+  walletAddress:   string,
+  signatureBase64: string,
+  expectedParams: {
+    symbol: string; side: string; quantity: string; type: string; price: string;
+    stopPrice: string; chainId: string; timeInForce: string; expiry: string;
+  },
+): void {
+  const key    = `bsv:${walletAddress.toLowerCase()}`;
+  const stored = bsvOrderNonces.get(key);
+
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error(
+      "BSV order challenge expired or not found. " +
+      "Request a fresh challenge via POST /orders/bsv-challenge.",
+    );
+  }
+
+  for (const key of Object.keys(expectedParams) as Array<keyof typeof expectedParams>) {
+    if (stored.intent[key] !== expectedParams[key]) {
+      throw new Error(`BSV order challenge ${key} mismatch.`);
+    }
+  }
+
+  verifyBsvMessageSignature(walletAddress, stored.message, signatureBase64);
+  bsvOrderNonces.delete(key);
+}
+
+// ── Solana order challenge store ──────────────────────────────────────────────
+
+interface SolOrderNonce {
+  nonce:     string;
+  message:   string;
+  intent:    {
+    symbol: string; side: string; quantity: string; type: string;
+    price: string; stopPrice: string; chainId: string; timeInForce: string; expiry: string;
+  };
+  expiresAt: number;
+}
+
+const solOrderNonces = new Map<string, SolOrderNonce>();
+const SOL_ORDER_NONCE_TTL_MS = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of solOrderNonces.entries()) {
+    if (v.expiresAt < now) solOrderNonces.delete(k);
+  }
+}, SOL_ORDER_NONCE_TTL_MS).unref();
+
+/**
+ * Issue a Solana order challenge bound to specific order parameters.
+ */
+export function issueSolOrderChallenge(params: {
+  walletAddress: string;
+  symbol:        string;
+  side:          string;
+  quantity:      string;
+  type:          string;
+  price:         string;
+  stopPrice:     string;
+  chainId:       string;
+  timeInForce:   string;
+  nonce:         string;
+  expiry:        string;
+}): { nonce: string; message: string } {
+  // Always generate the nonce server-side to prevent nonce-grinding attacks.
+  const nonce   = crypto.randomBytes(16).toString("hex");
+  const message = buildOrderAuthMessage({
+    walletAddress: params.walletAddress,
+    symbol:        params.symbol,
+    side:          params.side,
+    quantity:      params.quantity,
+    type:          params.type,
+    price:         params.price,
+    stopPrice:     params.stopPrice,
+    chainId:       params.chainId,
+    timeInForce:   params.timeInForce,
+    nonce,
+    expiry:        params.expiry,
+  });
+
+  solOrderNonces.set(`sol:${params.walletAddress.toLowerCase()}`, {
+    nonce,
+    message,
+    intent: {
+      symbol: params.symbol, side: params.side, quantity: params.quantity,
+      type: params.type, price: params.price, stopPrice: params.stopPrice,
+      chainId: params.chainId, timeInForce: params.timeInForce, expiry: params.expiry,
+    },
+    expiresAt: Date.now() + SOL_ORDER_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+/**
+ * Verify a Solana order challenge signature.
+ * Binds to the complete order intent to prevent cross-intent replay.
+ * Consumes the nonce on success (single-use).
+ */
+export function verifySolOrderSignature(
+  walletAddress:   string,
+  signatureBase64: string,
+  expectedParams: {
+    symbol: string; side: string; quantity: string; type: string; price: string;
+    stopPrice: string; chainId: string; timeInForce: string; expiry: string;
+  },
+): void {
+  const key    = `sol:${walletAddress.toLowerCase()}`;
+  const stored = solOrderNonces.get(key);
+
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error(
+      "Solana order challenge expired or not found. " +
+      "Request a fresh challenge via POST /orders/sol-challenge.",
+    );
+  }
+
+  for (const key of Object.keys(expectedParams) as Array<keyof typeof expectedParams>) {
+    if (stored.intent[key] !== expectedParams[key]) {
+      throw new Error(`Solana order challenge ${key} mismatch.`);
+    }
+  }
+
+  verifySolanaSignature(walletAddress, stored.message, signatureBase64);
+  solOrderNonces.delete(key);
+}
+
+/**
+ * Canonical message a client must sign to authorise an internal exchange swap.
+ * Both client and server MUST produce the identical string.
+ */
 export function buildExchangeAuthMessage(params: {
   walletAddress: string;
   assetIn:       string;
@@ -648,4 +1205,103 @@ export function buildExchangeAuthMessage(params: {
   ].join("\n");
 }
 
-// remaining file intentionally not rewritten; patch only affects exchange challenge binding.
+// ── Staking nonce store ──────────────────────────────────────────────────────
+// Single-use nonces for POST /staking/stake (EVM wallets only).
+// Key: walletAddress.toLowerCase()
+
+interface StakeNonce {
+  nonce:     string;
+  message:   string;
+  coin:      string;
+  amount:    string;
+  lockDays:  number;
+  expiresAt: number;
+}
+
+const stakeNonces = new Map<string, StakeNonce>();
+
+const STAKE_NONCE_TTL_MS = 5 * 60 * 1_000;
+const STAKE_NONCE_SWEEP  = 5 * 60 * 1_000;
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of stakeNonces.entries()) {
+    if (v.expiresAt < now) stakeNonces.delete(k);
+  }
+}, STAKE_NONCE_SWEEP).unref();
+
+/**
+ * Issue a single-use, 5-minute staking challenge for an EVM wallet.
+ * The client must sign the returned `message` with personal_sign and include
+ * `signature` + `nonce` in POST /staking/stake.
+ * The challenge is bound to (coin, amount, lockDays) to prevent tampering.
+ */
+export function issueStakeChallenge(params: {
+  walletAddress: string;
+  coin:          string;
+  amount:        string;
+  lockDays:      number;
+}): { nonce: string; message: string } {
+  const nonce   = crypto.randomBytes(16).toString("hex");
+  const ts      = new Date().toISOString();
+  const message =
+    `Authorize OrahDEX staking\n\n` +
+    `Wallet: ${params.walletAddress}\n` +
+    `Coin: ${params.coin}\n` +
+    `Amount: ${params.amount}\n` +
+    `Lock Period: ${params.lockDays} days\n` +
+    `Nonce: ${nonce}\n` +
+    `Timestamp: ${ts}\n\n` +
+    `This request will not trigger a blockchain transaction.\n` +
+    `Your funds will be locked for the specified period.`;
+
+  stakeNonces.set(params.walletAddress.toLowerCase(), {
+    nonce,
+    message,
+    coin:      params.coin,
+    amount:    params.amount,
+    lockDays:  params.lockDays,
+    expiresAt: Date.now() + STAKE_NONCE_TTL_MS,
+  });
+
+  return { nonce, message };
+}
+
+/**
+ * Verify a staking challenge signature.
+ * Bound to (coin, lockDays) — mismatch is rejected even with a valid signature.
+ * Consumes the nonce on success (single-use).
+ * Throws on any failure — wrap with try/catch and respond 401 to the client.
+ */
+export function verifyStakeSignature(params: {
+  walletAddress: string;
+  nonce:         string;
+  signature:     string;
+  coin:          string;
+  lockDays:      number;
+}): void {
+  const addr   = params.walletAddress.toLowerCase();
+  const stored = stakeNonces.get(addr);
+
+  if (!stored || stored.expiresAt < Date.now()) {
+    throw new Error(
+      "Staking challenge expired or not found. " +
+      "Request a fresh challenge via POST /staking/challenge.",
+    );
+  }
+  if (stored.nonce !== params.nonce) {
+    throw new Error("Staking nonce mismatch.");
+  }
+  if (stored.coin !== params.coin) {
+    throw new Error(
+      `Staking challenge was issued for '${stored.coin}', not '${params.coin}'. ` +
+      `Request a fresh challenge.`,
+    );
+  }
+  if (String(stored.lockDays) !== String(params.lockDays)) {
+    throw new Error("Staking lock period mismatch. Request a fresh challenge.");
+  }
+
+  verifyEvmSignature(params.walletAddress, stored.message, params.signature);
+  stakeNonces.delete(addr);
+}

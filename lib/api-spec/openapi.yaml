@@ -417,6 +417,137 @@ paths:
                 items:
                   $ref: "#/components/schemas/Trade"
 
+  /explorer/blocks:
+    get:
+      operationId: getExplorerBlocks
+      tags: [explorer]
+      summary: Get recent BSV blocks
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+            default: 8
+      responses:
+        "200":
+          description: Recent BSV block summaries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExplorerBlocksResponse"
+
+  /explorer/block/{height}:
+    get:
+      operationId: getExplorerBlock
+      tags: [explorer]
+      summary: Get a BSV block and a page of its transaction IDs
+      parameters:
+        - in: path
+          name: height
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Block details and paginated transaction IDs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExplorerBlockTransactions"
+
+  /explorer/tx/{txid}:
+    get:
+      operationId: getExplorerTransaction
+      tags: [explorer]
+      summary: Look up a BSV transaction by ID
+      parameters:
+        - in: path
+          name: txid
+          required: true
+          schema:
+            type: string
+            pattern: "^[a-fA-F0-9]{64}$"
+      responses:
+        "200":
+          description: BSV transaction details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExplorerTransaction"
+
+  /explorer/address/{address}/history:
+    get:
+      operationId: getExplorerAddressHistory
+      tags: [explorer]
+      summary: Get confirmed transactions for a BSV address
+      parameters:
+        - in: path
+          name: address
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 25
+        - in: query
+          name: token
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated confirmed address history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExplorerAddressHistory"
+
+  /explorer/activity:
+    get:
+      operationId: getExplorerActivity
+      tags: [explorer]
+      summary: Get recent public OrahDEX exchange activity
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 25
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: Paginated exchange activity with private address fields omitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExplorerActivityPage"
+
   /portfolio:
     get:
       operationId: getPortfolio
@@ -1126,6 +1257,273 @@ components:
         - amount
         - status
         - timestamp
+
+    ExplorerBlock:
+      type: object
+      properties:
+        height:
+          type: integer
+        hash:
+          type: string
+        confirmations:
+          type: integer
+        timestamp:
+          type: integer
+        sizeBytes:
+          type: integer
+        transactionCount:
+          type: integer
+        miner:
+          type: string
+          nullable: true
+        previousBlockHash:
+          type: string
+          nullable: true
+      required:
+        - height
+        - hash
+        - confirmations
+        - timestamp
+        - sizeBytes
+        - transactionCount
+        - miner
+        - previousBlockHash
+
+    ExplorerBlocksResponse:
+      type: object
+      properties:
+        network:
+          type: string
+        tipHeight:
+          type: integer
+        bestBlockHash:
+          type: string
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplorerBlock"
+        source:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - network
+        - tipHeight
+        - bestBlockHash
+        - blocks
+        - source
+        - updatedAt
+
+    ExplorerBlockTransactions:
+      type: object
+      properties:
+        block:
+          $ref: "#/components/schemas/ExplorerBlock"
+        transactions:
+          type: array
+          items:
+            type: string
+        offset:
+          type: integer
+        limit:
+          type: integer
+        totalTransactions:
+          type: integer
+        hasMore:
+          type: boolean
+      required:
+        - block
+        - transactions
+        - offset
+        - limit
+        - totalTransactions
+        - hasMore
+
+    ExplorerTransactionInput:
+      type: object
+      properties:
+        txid:
+          type: string
+          nullable: true
+        outputIndex:
+          type: integer
+          nullable: true
+        coinbase:
+          type: boolean
+        addresses:
+          type: array
+          items:
+            type: string
+      required:
+        - txid
+        - outputIndex
+        - coinbase
+        - addresses
+
+    ExplorerTransactionOutput:
+      type: object
+      properties:
+        index:
+          type: integer
+        valueBsv:
+          type: number
+        addresses:
+          type: array
+          items:
+            type: string
+        type:
+          type: string
+          nullable: true
+      required:
+        - index
+        - valueBsv
+        - addresses
+        - type
+
+    ExplorerTransaction:
+      type: object
+      properties:
+        txid:
+          type: string
+        blockHeight:
+          type: integer
+          nullable: true
+        blockHash:
+          type: string
+          nullable: true
+        confirmations:
+          type: integer
+        timestamp:
+          type: integer
+          nullable: true
+        sizeBytes:
+          type: integer
+        inputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplorerTransactionInput"
+        outputs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplorerTransactionOutput"
+        totalOutputBsv:
+          type: number
+        explorerUrl:
+          type: string
+      required:
+        - txid
+        - blockHeight
+        - blockHash
+        - confirmations
+        - timestamp
+        - sizeBytes
+        - inputs
+        - outputs
+        - totalOutputBsv
+        - explorerUrl
+
+    ExplorerAddressTransaction:
+      type: object
+      properties:
+        txid:
+          type: string
+        blockHeight:
+          type: integer
+          nullable: true
+      required:
+        - txid
+        - blockHeight
+
+    ExplorerAddressHistory:
+      type: object
+      properties:
+        address:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplorerAddressTransaction"
+        nextToken:
+          type: string
+          nullable: true
+        source:
+          type: string
+      required:
+        - address
+        - items
+        - nextToken
+        - source
+
+    ExplorerActivity:
+      type: object
+      properties:
+        id:
+          type: string
+        category:
+          type: string
+        summary:
+          type: string
+        status:
+          type: string
+        pair:
+          type: string
+          nullable: true
+        amount:
+          type: string
+          nullable: true
+        asset:
+          type: string
+          nullable: true
+        network:
+          type: string
+          nullable: true
+        txid:
+          type: string
+          nullable: true
+        blockHeight:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        onChain:
+          type: boolean
+      required:
+        - id
+        - category
+        - summary
+        - status
+        - pair
+        - amount
+        - asset
+        - network
+        - txid
+        - blockHeight
+        - createdAt
+        - onChain
+
+    ExplorerActivityPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplorerActivity"
+        limit:
+          type: integer
+        offset:
+          type: integer
+        hasMore:
+          type: boolean
+        scope:
+          type: string
+      required:
+        - items
+        - limit
+        - offset
+        - hasMore
+        - scope
 
     AnthropicConversation:
       type: object

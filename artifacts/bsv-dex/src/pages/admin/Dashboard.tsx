@@ -353,7 +353,7 @@ export function AdminDashboard() {
     const active = stats?.activeUsers24h ?? 18;
     const base = gen30d(total, "total", 0.04);
     const act  = gen30d(active, "active", 0.15);
-    return base.map((b, i) => ({ ...b, active: act[i].active }));
+    return base.map((b, i) => ({ ...b, active: act[i].value }));
   }, [stats?.totalUsers, stats?.activeUsers24h]);
 
   /* Pie chart — trade type breakdown derived from activity feed */

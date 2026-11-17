@@ -133,7 +133,7 @@ const CHAIN_BY_ID = {
 
 const RPC_URLS: Record<number, string> = {
   // ── Mainnets ────────────────────────────────────────────────────────────────
-  1:      process.env.ETH_RPC_URL       ?? "https://eth.llamarpc.com",
+  1:      process.env.ETH_RPC_URL       ?? "https://ethereum-rpc.publicnode.com",
   8453:   process.env.BASE_RPC_URL      ?? "https://mainnet.base.org",
   42161:  process.env.ARBITRUM_RPC_URL  ?? "https://arb1.arbitrum.io/rpc",
   10:     process.env.OPTIMISM_RPC_URL  ?? "https://mainnet.optimism.io",

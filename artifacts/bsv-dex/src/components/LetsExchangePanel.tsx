@@ -22,13 +22,16 @@ import {
   Clock, Lock, Wallet, Trash2, ArrowRight, History, ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { VENUE_LABELS, VENUE_COLORS } from "@/lib/venues";
+import { VENUE_COLORS, VENUE_LABELS } from "@/lib/venues";
 import { CoinLogo } from "@/components/CoinLogo";
 import { API_BASE } from "@/lib/api";
 import { useAccount } from "wagmi";
+import { formatUnits } from "viem";
 import { useWalletStore } from "@/store/useWalletStore";
+import { useCustomTokenStore } from "@/store/useCustomTokenStore";
 import { useEvmBalances, ERC20_TOKENS } from "@/hooks/useEvmBalances";
-import { sendEvmTransfer, sendErc20Transfer } from "@/lib/reown";
+import { fetchErc20BalanceRaw, sendEvmTransfer, sendErc20Transfer, switchEvmNetwork, waitForEvmTransaction } from "@/lib/reown";
+import { fetchReownSwapCoins, type ReownSwapCoin } from "@/lib/reown-appkit";
 
 // ─── EVM chain helpers ────────────────────────────────────────────────────────
 // Maps LetsExchange / venue network codes → EVM chainId
@@ -51,6 +54,23 @@ const CHAIN_NATIVE: Record<number, string> = {
   534352: "ETH", 324: "ETH",
 };
 
+function decimalToTokenUnits(value: string, decimals: number): bigint {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new Error("Token precision is unavailable or invalid.");
+  }
+  const match = value.trim().match(/^(\d+)(?:\.(\d*))?$/);
+  if (!match) throw new Error("The deposit amount is invalid.");
+
+  const whole = match[1];
+  const fraction = match[2] ?? "";
+  if (fraction.slice(decimals).replace(/0/g, "").length > 0) {
+    throw new Error(`The deposit amount has more precision than this token supports (${decimals} decimals).`);
+  }
+  const paddedFraction = fraction.slice(0, decimals).padEnd(decimals, "0");
+  const scale = 10n ** BigInt(decimals);
+  return BigInt(whole) * scale + BigInt(paddedFraction || "0");
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface LeCoin {
@@ -58,6 +78,9 @@ interface LeCoin {
   image: string|null; hasExtraId: boolean; minAmount: string|null; maxAmount: string|null;
   provider?: "letsexchange" | "simpleswap";
   providerTicker?: string;
+  tokenAddress?: string;
+  tokenDecimals?: number;
+  tokenSource?: "reown";
 }
 
 // Response from POST /v1/info (now hybrid — also includes best_venue)
@@ -72,8 +95,18 @@ interface Estimate {
   deposit_min_amount?: string;
   deposit_max_amount?: string;
   best_venue?: string;      // winning venue from meta-router
-  venue_quotes?: { venue: string; rate: string; output: string; minAmount: string | null; maxAmount: string | null; canExecute: boolean }[];
+  venue_quotes?: VenueQuote[];
+  venue_status?: { venue: string; hasQuote: boolean }[];
   stale?: boolean;          // true when rate is from DB cache (all live APIs failed)
+}
+
+interface VenueQuote {
+  venue: string;
+  rate: string|null;
+  output: string;
+  minAmount: string|null;
+  maxAmount: string|null;
+  canExecute: boolean;
 }
 
 // Response from POST /v1/transaction (normalised across all venues)
@@ -149,26 +182,12 @@ function canonicalNetworkKey(network?: string | null, providerTicker?: string): 
   if (raw.includes("bitcoin") || raw === "btc") return "bitcoin";
   return raw.replace(/network$/, "");
 }
-const STAGING_CATALOG_ONLY = import.meta.env.VITE_ORAHDEX_STAGING_CATALOG === "true";
 let _coinsCache: LeCoin[] | null = null;
 let _coinsCacheTs = 0;
 let _coinsInflight: Promise<LeCoin[]> | null = null;
 const isLiveCatalog = (items: LeCoin[]) => items.some(coin => !!coin.network);
 
 async function fetchCoins(): Promise<LeCoin[]> {
-
-  if (STAGING_CATALOG_ONLY) {
-    const response = await fetch(`${API}/simpleswap/currencies`);
-    if (!response.ok) throw new Error("Staging catalog unavailable");
-    const data = await response.json() as LeCoin[];
-    if (!Array.isArray(data)) throw new Error("Invalid staging catalog");
-    return data.filter(coin =>
-      coin &&
-      typeof coin.symbol === "string" &&
-      typeof coin.network === "string" &&
-      coin.network.length > 0
-    );
-  }
   if (_coinsCache && isLiveCatalog(_coinsCache) && Date.now() - _coinsCacheTs < COINS_CLIENT_TTL) return _coinsCache;
   if (_coinsInflight) return _coinsInflight;
   _coinsInflight = Promise.all([
@@ -204,6 +223,38 @@ async function fetchCoins(): Promise<LeCoin[]> {
     })
     .catch(err => { _coinsInflight = null; throw err; });
   return _coinsInflight;
+}
+
+function mergeReownCoins(base: LeCoin[], reownCoins: ReownSwapCoin[]): LeCoin[] {
+  const merged = [...base];
+  const names = new Set(base.map(coin =>
+    `${coin.symbol.toUpperCase()}::${canonicalNetworkKey(coin.network, coin.providerTicker)}::${coin.name.trim().toLowerCase()}`,
+  ));
+  const addresses = new Set(base.map(coin => coin.tokenAddress?.toLowerCase()).filter(Boolean));
+
+  for (const token of reownCoins) {
+    const nameKey = `${token.symbol.toUpperCase()}::${canonicalNetworkKey(token.network)}::${token.name.trim().toLowerCase()}`;
+    const addressKey = token.address.toLowerCase();
+    if (names.has(nameKey) || addresses.has(addressKey)) continue;
+    names.add(nameKey);
+    addresses.add(addressKey);
+    merged.push({
+      symbol: token.symbol,
+      name: token.name,
+      network: token.network,
+      networkName: token.networkName,
+      provider: undefined,
+      providerTicker: undefined,
+      image: token.logoUri,
+      hasExtraId: false,
+      minAmount: null,
+      maxAmount: null,
+      tokenAddress: token.address,
+      tokenDecimals: token.decimals,
+      tokenSource: "reown",
+    });
+  }
+  return merged;
 }
 
 function loadHistory(): HistoryEntry[] {
@@ -311,8 +362,10 @@ const DONE_STATUSES = new Set(["finished", "success", "done", "failed", "error",
 
 // ─── CoinPicker ───────────────────────────────────────────────────────────────
 
-function CoinPicker({ coins, selected, onChange, exclude, compact }: {
+function CoinPicker({ coins, selected, onChange, exclude, compact, onOpen, supplementalLoading }: {
   coins: LeCoin[]; selected: LeCoin|null; onChange: (c: LeCoin) => void; exclude?: string|null; compact?: boolean;
+  onOpen?: () => void;
+  supplementalLoading?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -330,22 +383,43 @@ function CoinPicker({ coins, selected, onChange, exclude, compact }: {
   const filtered = useMemo(() => {
     const qq = q.toLowerCase().trim();
     const list = exclude ? coins.filter(c => c.symbol !== exclude) : coins;
-    if (!qq) return list;
-    return list.filter(c =>
+    const matches = !qq ? list : list.filter(c =>
       c.symbol.toLowerCase().includes(qq) || c.name.toLowerCase().includes(qq) ||
       (c.networkName ?? "").toLowerCase().includes(qq)
     );
+    // Put a native-network entry (BTC on btc, ETH on eth) before a
+    // networkless catalog fallback for the same symbol.
+    return qq ? matches.sort((a, b) => {
+      const aNative = a.network?.toUpperCase() === a.symbol;
+      const bNative = b.network?.toUpperCase() === b.symbol;
+      return Number(bNative) - Number(aNative);
+    }) : matches;
   }, [coins, q, exclude]);
+  const visibleCoins = useMemo(() => {
+    if (q.trim()) return filtered.slice(0, 100);
+    const reownCoins = filtered.filter(coin => coin.tokenSource === "reown").slice(0, 30);
+    const otherCoins = filtered.filter(coin => coin.tokenSource !== "reown").slice(0, reownCoins.length ? 70 : 100);
+    return [...otherCoins, ...reownCoins];
+  }, [filtered, q]);
+  const isSelectedCoin = (coin: LeCoin) =>
+    selected?.symbol === coin.symbol &&
+    selected?.network === coin.network &&
+    selected?.provider === coin.provider &&
+    selected?.tokenAddress === coin.tokenAddress;
 
   return (
     <div className="relative" ref={panelRef}>
       {compact ? (
         /* Compact pill trigger — coin logo + symbol + chevron */
-        <button type="button" onClick={() => setOpen(v => !v)}
+        <button type="button" onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) onOpen?.();
+        }}
           className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-secondary border border-border/60 hover:border-border transition-colors shrink-0">
           {selected ? (
             <>
-              <CoinLogo symbol={selected.symbol} size={20} />
+              <CoinLogo symbol={selected.symbol} imageUrl={selected.image ?? undefined} size={20} />
               <span className="font-bold text-sm text-foreground">{selected.symbol}</span>
             </>
           ) : (
@@ -354,11 +428,15 @@ function CoinPicker({ coins, selected, onChange, exclude, compact }: {
           <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/60" />
         </button>
       ) : (
-        <button type="button" onClick={() => setOpen(v => !v)}
+        <button type="button" onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) onOpen?.();
+        }}
           className="flex items-center gap-2 w-full px-3 py-3 rounded-xl bg-muted/60 border border-border/40 hover:border-border/60 transition-colors text-left">
           {selected ? (
             <>
-              <CoinLogo symbol={selected.symbol} size={28} />
+              <CoinLogo symbol={selected.symbol} imageUrl={selected.image ?? undefined} size={28} />
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-sm leading-tight">{selected.symbol}</p>
                 <p className="text-[11px] text-muted-foreground leading-tight truncate">{selected.networkName ?? selected.network ?? selected.name}</p>
@@ -383,25 +461,26 @@ function CoinPicker({ coins, selected, onChange, exclude, compact }: {
           </div>
           <div className="overflow-y-auto flex-1 py-1">
             {filtered.length === 0 ? <p className="text-xs text-muted-foreground/60 text-center py-6">No coins found</p> : (
-              filtered.map(c => (
-                <button type="button" key={`${c.provider ?? "letsexchange"}::${c.providerTicker ?? c.symbol}::${c.network ?? ""}`}
+              visibleCoins.map(c => (
+                <button type="button" key={`${c.provider ?? c.tokenSource ?? "letsexchange"}::${c.providerTicker ?? c.symbol}::${c.network ?? ""}::${c.tokenAddress ?? ""}`}
                   onClick={() => { onChange(c); setOpen(false); }}
                   className={cn("w-full flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors text-left",
-                    selected?.symbol === c.symbol && selected?.network === c.network && selected?.provider === c.provider && "bg-muted/30")}>
-                  <CoinLogo symbol={c.symbol} size={28} />
+                    isSelectedCoin(c) && "bg-muted/30")}>
+                  <CoinLogo symbol={c.symbol} imageUrl={c.image ?? undefined} size={28} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold leading-tight text-foreground">{c.symbol}</p>
                     <p className="text-[10px] text-muted-foreground leading-tight truncate">
                       {c.name}{c.networkName ? ` · ${c.networkName}` : ""}
                     </p>
                   </div>
-                  {selected?.symbol === c.symbol && selected?.network === c.network && selected?.provider === c.provider && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
+                  {isSelectedCoin(c) && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
                 </button>
               ))
             )}
           </div>
           <div className="px-3 py-1.5 border-t border-border/40 text-[10px] text-muted-foreground/60 text-center">
-            {filtered.length.toLocaleString()} of {coins.length.toLocaleString()} coins
+            {visibleCoins.length.toLocaleString()} shown of {filtered.length.toLocaleString()} matches · {coins.length.toLocaleString()} coins
+            {supplementalLoading ? " · loading Reown coins…" : ""}
           </div>
         </div>
       )}
@@ -440,13 +519,15 @@ function Countdown({ seconds, onEnd }: { seconds: number; onEnd: () => void }) {
 
 // ─── Step 1: Amount ───────────────────────────────────────────────────────────
 
-function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, forceVenue }: {
+function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, forceVenue, onLoadReownCoins, reownCoinsLoading }: {
   coins: LeCoin[];
   onContinue: (from: LeCoin, to: LeCoin, amount: string, estimate: Estimate|null) => void;
   initialFrom?: string;
   initialTo?: string;
   walletAddress?: string | null;
   forceVenue?: string;
+  onLoadReownCoins: () => void;
+  reownCoinsLoading: boolean;
 }) {
   const [fromCoin, setFromCoin] = useState<LeCoin|null>(null);
   const [toCoin,   setToCoin]   = useState<LeCoin|null>(null);
@@ -456,12 +537,17 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   const [estLoading, setEstLoading] = useState(false);
   const [estError,   setEstError]   = useState<string|null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [selectedVenue, setSelectedVenue] = useState<string|null>(null);
 
   // ── Smart router state ───────────────────────────────────────────────────
   const [routeSource,  setRouteSource]  = useState<"internal"|"letsexchange"|null>(null);
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeError,   setRouteError]   = useState(false);
   const routeTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const routeControllerRef = useRef<AbortController|null>(null);
+  const routeRequestIdRef = useRef(0);
+  const estimateControllerRef = useRef<AbortController|null>(null);
+  const estimateRequestIdRef = useRef(0);
 
   // Real on-chain EVM balance for the "from" coin
   // useAccount (wagmi) is the authoritative source for the connected chain ID,
@@ -471,37 +557,34 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
   const effectiveChainId = wagmiChainId ?? storeChainId ?? null;
   const effectiveAddress  = wagmiAddress ?? walletAddress ?? null;
 
-  const { balances: evmBalances } = useEvmBalances(effectiveAddress, effectiveChainId);
+  const sourceChainId = fromCoin
+    ? LE_NETWORK_CHAIN[String(fromCoin.network ?? fromCoin.providerTicker ?? fromCoin.symbol).toUpperCase()] ?? null
+    : null;
+  const activeWalletMatchesSource = sourceChainId !== null && effectiveChainId === sourceChainId;
+
+  // Read the selected asset on its own network. EVM addresses are shared across
+  // EVM chains, so the active wallet network should not hide its source-chain balance.
+  const { balances: evmBalances, loading: evmBalancesLoading } = useEvmBalances(effectiveAddress, sourceChainId);
 
   // Resolve the available balance: native token (e.g. ETH) or ERC-20 token
   const availBal = useMemo(() => {
-    if (!fromCoin || !effectiveAddress) return null;
+    if (!fromCoin || !effectiveAddress || sourceChainId === null) return null;
     const sym = fromCoin.symbol.toUpperCase();
     // Native + ERC-20 balances from the on-chain hook
     if (evmBalances.length > 0) {
       const match = evmBalances.find(b => b.symbol.toUpperCase() === sym);
-      if (match && match.amount > 0) return match.amount;
+      if (match) return Math.max(0, match.amount);
     }
     // Fallback: wallet store native balance string (e.g. "0.0121")
-    if (nativeBal) {
-      const nativeSym = effectiveChainId === 56 ? "BNB"
-                      : effectiveChainId === 137 ? "POL"
-                      : "ETH";
+    if (activeWalletMatchesSource && nativeBal != null && nativeBal !== "") {
+      const nativeSym = CHAIN_NATIVE[sourceChainId];
       if (sym === nativeSym) {
         const v = parseFloat(nativeBal);
         return isNaN(v) ? null : v;
       }
     }
     return null;
-  }, [fromCoin, effectiveAddress, evmBalances, nativeBal, effectiveChainId]);
-
-  // Quick-fill helpers
-  const applyPct = (pct: number) => {
-    if (!availBal || availBal <= 0) return;
-    const val = (availBal * pct) / 100;
-    setAmount(fmtNum(val, 8));
-    setEstimate(null);
-  };
+  }, [fromCoin, effectiveAddress, evmBalances, nativeBal, sourceChainId, activeWalletMatchesSource]);
 
   // Pre-select coins — use initialFrom/initialTo when provided, else BTC → BSV
   useEffect(() => {
@@ -509,39 +592,60 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
 
     function pickCoin(sym: string): LeCoin | null {
       const up = sym.toUpperCase();
-      return coins.find(c => c.symbol === up && c.network === up)
+      return coins.find(c => c.symbol === up && c.network?.toUpperCase() === up)
           ?? coins.find(c => c.symbol === up)
           ?? null;
     }
 
-    if (initialFrom) {
-      const c = pickCoin(initialFrom);
-      if (c) setFromCoin(c);
-    } else {
-      const btc = coins.find(c => c.symbol === "BTC" && c.network === "BTC");
-      if (btc) setFromCoin(btc);
+    if (!fromCoin) {
+      if (initialFrom) {
+        const c = pickCoin(initialFrom);
+        if (c) setFromCoin(c);
+      } else {
+        const btc = pickCoin("BTC");
+        if (btc) setFromCoin(btc);
+      }
     }
 
-    if (initialTo) {
-      const c = pickCoin(initialTo);
-      if (c) setToCoin(c);
-    } else {
-      const bsv = coins.find(c => c.symbol === "BSV" && c.network === "BSV");
-      const eth = coins.find(c => c.symbol === "ETH" && c.network === "ETH");
-      if (bsv ?? eth) setToCoin(bsv ?? eth ?? null);
+    if (!toCoin) {
+      if (initialTo) {
+        const c = pickCoin(initialTo);
+        if (c) setToCoin(c);
+      } else {
+        const bsv = pickCoin("BSV");
+        const eth = pickCoin("ETH");
+        if (bsv ?? eth) setToCoin(bsv ?? eth ?? null);
+      }
     }
-  }, [coins, initialFrom, initialTo]);
+  }, [coins, initialFrom, initialTo, fromCoin, toCoin]);
+
+  useEffect(() => {
+    setSelectedVenue(null);
+  }, [fromCoin?.symbol, fromCoin?.network, fromCoin?.provider, fromCoin?.tokenAddress, toCoin?.symbol, toCoin?.network, toCoin?.provider, toCoin?.tokenAddress, amount, forceVenue]);
 
   // Live rate fetch using correct API fields
   const fetchEstimate = useCallback(async () => {
-    if (!fromCoin || !toCoin || !amount || parseFloat(amount) <= 0) { setEstimate(null); return; }
+    estimateControllerRef.current?.abort();
+    estimateControllerRef.current = null;
+    const requestId = ++estimateRequestIdRef.current;
+    if (!fromCoin || !toCoin || !amount || parseFloat(amount) <= 0) {
+      setEstimate(null);
+      setEstError(null);
+      setEstLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    estimateControllerRef.current = controller;
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
     setEstLoading(true); setEstError(null);
+    setEstimate(null);
     try {
       const simpleSwapSelected = fromCoin.provider === "simpleswap" || toCoin.provider === "simpleswap";
-      const effectiveVenue = simpleSwapSelected ? "simpleswap" : (selectedVenue ?? forceVenue);
+      const effectiveVenue = simpleSwapSelected ? "simpleswap" : forceVenue;
       const r = await fetch(`${API}/letsexchange/estimate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           from:         fromCoin.symbol,
           to:           toCoin.symbol,
@@ -555,6 +659,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
         }),
       });
       const d = await r.json();
+      if (requestId !== estimateRequestIdRef.current) return;
       if (!r.ok) {
         if (d.code === "LE_KEY_NOT_CONFIGURED") {
           setEstError("Cross-chain exchange is temporarily unavailable. Please try again later or contact support.");
@@ -576,28 +681,56 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
         }
         if (d.error !== "below_minimum") setEstimate(null);
       } else { setEstimate(d as Estimate); }
-    } catch { setEstError("Network error"); }
-    setEstLoading(false);
-  }, [fromCoin, toCoin, amount, selectedVenue, forceVenue]);
+    } catch (err) {
+      if (requestId === estimateRequestIdRef.current) {
+        setEstimate(null);
+        setEstError((err as Error)?.name === "AbortError"
+          ? "Quote timed out. Please try again."
+          : "Network error");
+      }
+    } finally {
+      window.clearTimeout(timeout);
+      if (requestId === estimateRequestIdRef.current) {
+        estimateControllerRef.current = null;
+        setEstLoading(false);
+      }
+    }
+  }, [fromCoin, toCoin, amount, forceVenue]);
 
-  useEffect(() => { fetchEstimate(); }, [fetchEstimate, refreshKey]);
+  useEffect(() => {
+    const debounce = window.setTimeout(() => { void fetchEstimate(); }, 350);
+    return () => {
+      window.clearTimeout(debounce);
+      estimateRequestIdRef.current += 1;
+      estimateControllerRef.current?.abort();
+      estimateControllerRef.current = null;
+    };
+  }, [fetchEstimate, refreshKey]);
 
   // ── Debounced smart-route check ──────────────────────────────────────────
   useEffect(() => {
     if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
+    routeControllerRef.current?.abort();
+    routeControllerRef.current = null;
+    const requestId = ++routeRequestIdRef.current;
     const amt = parseFloat(amount);
     if (!fromCoin || !toCoin || !amount || !isFinite(amt) || amt <= 0) {
-      setRouteSource(null); setRouteError(false); return;
+      setRouteSource(null); setRouteError(false); setRouteLoading(false); return;
     }
     setRouteLoading(true); setRouteError(false);
     routeTimerRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      routeControllerRef.current = controller;
+      const timeout = window.setTimeout(() => controller.abort(), 10_000);
       try {
         const r = await fetch(`${API}/swap/route`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({ assetIn: fromCoin.symbol, assetOut: toCoin.symbol, amountIn: amt }),
         });
         const d = await r.json();
+        if (requestId !== routeRequestIdRef.current) return;
         if (r.ok && d.source) {
           setRouteSource(d.source as "internal"|"letsexchange");
           setRouteError(false);
@@ -605,40 +738,124 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
           setRouteSource(null); setRouteError(true);
         }
       } catch {
-        setRouteSource(null); setRouteError(true);
+        if (requestId === routeRequestIdRef.current) {
+          setRouteSource(null); setRouteError(true);
+        }
+      } finally {
+        window.clearTimeout(timeout);
+        if (requestId === routeRequestIdRef.current) {
+          routeControllerRef.current = null;
+          setRouteLoading(false);
+        }
       }
-      setRouteLoading(false);
     }, 600);
-    return () => { if (routeTimerRef.current) clearTimeout(routeTimerRef.current); };
+    return () => {
+      if (routeTimerRef.current) clearTimeout(routeTimerRef.current);
+      routeRequestIdRef.current += 1;
+      routeControllerRef.current?.abort();
+      routeControllerRef.current = null;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromCoin?.symbol, toCoin?.symbol, amount]);
+  }, [fromCoin?.symbol, fromCoin?.network, fromCoin?.tokenAddress, toCoin?.symbol, toCoin?.network, toCoin?.tokenAddress, amount]);
 
-  // A live estimate with a positive output is proof the amount is accepted by at least one venue
-  const estimateValid = estimate !== null && parseFloat(estimate.amount) > 0;
+  const sortedVenueQuotes = useMemo(
+    () => [...(estimate?.venue_quotes ?? [])].sort(
+      (a, b) => (parseFloat(b.output) || 0) - (parseFloat(a.output) || 0),
+    ),
+    [estimate?.venue_quotes],
+  );
+  const supplierRows = useMemo(() => {
+    const quotesByVenue = new Map(sortedVenueQuotes.map(quote => [quote.venue, quote]));
+    const venues = new Set([
+      ...(estimate?.venue_status ?? []).map(status => status.venue),
+      ...sortedVenueQuotes.map(quote => quote.venue),
+    ]);
+    return [...venues]
+      .map(venue => ({ venue, quote: quotesByVenue.get(venue) ?? null }))
+      .sort((a, b) => {
+        if (a.quote && b.quote) return (parseFloat(b.quote.output) || 0) - (parseFloat(a.quote.output) || 0);
+        if (a.quote) return -1;
+        if (b.quote) return 1;
+        return (VENUE_LABELS[a.venue] ?? a.venue).localeCompare(VENUE_LABELS[b.venue] ?? b.venue);
+      });
+  }, [estimate?.venue_status, sortedVenueQuotes]);
+  const executableQuotes = sortedVenueQuotes.filter(
+    quote => quote.canExecute && Number.isFinite(parseFloat(quote.output)) && parseFloat(quote.output) > 0,
+  );
+  const bestOutputQuote = executableQuotes[0] ?? null;
+  const selectedQuote = selectedVenue
+    ? executableQuotes.find(quote => quote.venue === selectedVenue) ?? null
+    : null;
+  const activeQuote = selectedQuote ?? bestOutputQuote;
+  const activeEstimate: Estimate|null = estimate && activeQuote
+    ? {
+        ...estimate,
+        amount: activeQuote.output,
+        rate: activeQuote.rate ?? (
+          parseFloat(amount) > 0
+            ? String(parseFloat(activeQuote.output) / parseFloat(amount))
+            : estimate.rate
+        ),
+        min_amount: activeQuote.minAmount ?? "",
+        max_amount: activeQuote.maxAmount ?? "",
+        best_venue: activeQuote.venue,
+        rate_id: activeQuote.venue === "letsexchange" ? estimate.rate_id : null,
+        rate_id_expired_at: activeQuote.venue === "letsexchange" ? estimate.rate_id_expired_at : null,
+      }
+    : estimate;
 
-  // Use live min/max from estimate when meaningful (min > 0), otherwise fall back to coin data.
-  // Only fall back to static coin data when no live estimate has confirmed the amount yet.
-  const minAmt = (estimate?.min_amount && parseFloat(estimate.min_amount) > 0)
-    ? parseFloat(estimate.min_amount)
-    : (!estimateValid && fromCoin?.minAmount) ? parseFloat(fromCoin.minAmount) : null;
+  // A live estimate with a positive output is proof the amount is accepted by at least one venue.
+  const estimateValid = activeEstimate !== null && parseFloat(activeEstimate.amount) > 0;
+
+  // Prefer the current quote's minimum; use catalog metadata when a quote omits it.
+  const liveMinAmt = activeEstimate?.min_amount ? parseFloat(activeEstimate.min_amount) : null;
+  const catalogMinAmt = fromCoin?.minAmount ? parseFloat(fromCoin.minAmount) : null;
+  const minAmt = liveMinAmt !== null && Number.isFinite(liveMinAmt) && liveMinAmt > 0
+    ? liveMinAmt
+    : catalogMinAmt !== null && Number.isFinite(catalogMinAmt) && catalogMinAmt > 0
+      ? catalogMinAmt
+      : null;
   // Only use live max_amount from the estimate response.
   // Static coin-list maxAmount values are unreliable (e.g. 282994 ETH) and must not be shown.
-  const maxAmtRaw = estimate?.max_amount ? parseFloat(estimate.max_amount) : null;
+  const maxAmtRaw = activeEstimate?.max_amount ? parseFloat(activeEstimate.max_amount) : null;
   // Hide max if it is astronomically large (> 10 000 of any coin) — it means "no real cap"
-  const maxAmt = (maxAmtRaw !== null && maxAmtRaw > 0 && maxAmtRaw < 10_000) ? maxAmtRaw : null;
+  const providerMaxAmt = (maxAmtRaw !== null && maxAmtRaw > 0 && maxAmtRaw < 10_000) ? maxAmtRaw : null;
+  const maxCandidates = [providerMaxAmt, availBal].filter((value): value is number => value !== null);
+  const maxAmt = maxCandidates.length ? Math.min(...maxCandidates) : null;
   const numAmt = amount !== "" ? parseFloat(amount) : null;
 
+  // Quick-fill helpers; MAX is capped by both the provider limit and the
+  // connected wallet's matching on-chain balance when that balance is known.
+  const applyPct = (pct: number) => {
+    if (availBal === null || availBal <= 0) return;
+    const percentageAmount = (availBal * pct) / 100;
+    const val = providerMaxAmt !== null ? Math.min(percentageAmount, providerMaxAmt) : percentageAmount;
+    setAmount(val > 0 ? val.toFixed(18).replace(/\.?0+$/, "") : "");
+    setEstimate(null);
+  };
+  const applyMin = () => {
+    if (minAmt === null) return;
+    setAmount(minAmt.toFixed(18).replace(/\.?0+$/, ""));
+    setEstimate(null);
+  };
+  const applyMax = () => {
+    if (maxAmt === null || maxAmt <= 0) return;
+    setAmount(maxAmt.toFixed(18).replace(/\.?0+$/, ""));
+    setEstimate(null);
+  };
+
   // Suppress below/above errors while the estimate is loading — it may prove the amount valid
-  // by routing to a venue with a lower minimum.  Also suppress when estimate already confirmed.
+  // by routing to a venue with a lower minimum.
   const belowMin = !estLoading && !estimateValid && minAmt !== null && numAmt !== null && numAmt < minAmt;
-  const aboveMax = !estLoading && !estimateValid && maxAmt !== null && numAmt !== null && numAmt > maxAmt;
+  const aboveMax = !estLoading && maxAmt !== null && numAmt !== null && numAmt > maxAmt;
+  const balanceTooLowForMin = availBal !== null && minAmt !== null && availBal < minAmt;
 
   // rate_id_expired_at from LE API is a Unix timestamp in seconds — multiply by 1000 to get ms
-  const rateIdExpiresMs = estimate?.rate_id_expired_at ? parseInt(estimate.rate_id_expired_at) * 1000 : null;
+  const rateIdExpiresMs = activeEstimate?.rate_id_expired_at ? parseInt(activeEstimate.rate_id_expired_at) * 1000 : null;
   const rateSecondsLeft = rateIdExpiresMs ? Math.max(0, Math.round((rateIdExpiresMs - Date.now()) / 1000)) : RATE_REFRESH;
 
   // Require a confirmed live quote before allowing continue — no quote means no venue is ready
-  const canContinue = fromCoin && toCoin && numAmt && numAmt > 0 && estimateValid && !belowMin && !aboveMax;
+  const canContinue = fromCoin && toCoin && numAmt && numAmt > 0 && estimateValid && !estLoading && !belowMin && !aboveMax;
 
   return (
     <div className="flex flex-col gap-2">
@@ -657,26 +874,56 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
           <input type="number" min="0" placeholder="0.0" value={amount}
             onChange={e => setAmount(e.target.value)}
             className="flex-1 bg-transparent text-[2.2rem] font-semibold text-foreground outline-none placeholder:text-muted-foreground/30 min-w-0 leading-none py-1" />
-          <CoinPicker compact coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); }} exclude={toCoin?.symbol} />
+          <CoinPicker compact coins={coins} selected={fromCoin} onChange={c => { setFromCoin(c); setEstimate(null); }} exclude={toCoin?.symbol} onOpen={onLoadReownCoins} supplementalLoading={reownCoinsLoading} />
         </div>
-        {/* Balance tap + % fill */}
-        {availBal !== null && fromCoin && (
-          <div className="flex items-center gap-1.5 mt-2">
-            <button type="button" onClick={() => applyPct(100)}
-              className="text-[11px] text-muted-foreground/60 hover:text-primary transition-colors mr-1">
-              Bal: {fmtNum(availBal, 6)} {fromCoin.symbol}
-            </button>
-            {availBal > 0 && ([25, 50, 75, 100] as const).map(pct => (
-              <button key={pct} type="button" onClick={() => applyPct(pct)}
-                className={cn(
-                  "px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors",
-                  pct === 100
-                    ? "bg-primary/10 border-primary/30 text-primary hover:bg-primary/20"
-                    : "bg-muted/40 border-border/40 text-muted-foreground hover:border-primary/30 hover:text-primary"
-                )}>
-                {pct === 100 ? "MAX" : `${pct}%`}
+        {/* Wallet balance and spend limits */}
+        {fromCoin && (
+          <div className="mt-3 pt-2 border-t border-border/40 space-y-2">
+            <div className="flex items-center justify-between gap-2 text-[11px]">
+              <span className="text-muted-foreground">Available balance</span>
+              <span className={cn("text-right", availBal !== null ? "text-foreground" : "text-muted-foreground/70")}>
+                {!effectiveAddress ? "Connect wallet to view" :
+                 sourceChainId === null ? `Connect a ${fromCoin.networkName ?? fromCoin.network ?? fromCoin.symbol} wallet` :
+                 evmBalancesLoading && availBal === null ? "Loading on-chain balance…" :
+                 availBal !== null ? `${fmtNum(availBal, 8)} ${fromCoin.symbol} · ${activeWalletMatchesSource ? "on-chain" : `switch to ${fromCoin.networkName ?? fromCoin.network ?? fromCoin.symbol} to send`}` :
+                 "Balance unavailable"}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {availBal !== null && availBal > 0 && ([25, 50, 75] as const).map(pct => (
+                <button key={pct} type="button" onClick={() => applyPct(pct)}
+                  className="flex-1 px-2 py-1 rounded-md text-[10px] font-bold border bg-muted/40 border-border/40 text-muted-foreground hover:border-primary/30 hover:text-primary transition-colors">
+                  {pct}%
+                </button>
+              ))}
+              <button type="button" disabled={minAmt === null} onClick={applyMin}
+                title={minAmt === null ? "Minimum amount unavailable" : `Set minimum: ${fmtNum(minAmt)} ${fromCoin.symbol}`}
+                className="flex-1 px-2 py-1 rounded-md text-[10px] font-bold border bg-muted/40 border-border/40 text-muted-foreground hover:border-primary/30 hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                MIN
               </button>
-            ))}
+              <button type="button" disabled={maxAmt === null || maxAmt <= 0} onClick={applyMax}
+                title={maxAmt === null ? "Maximum amount unavailable" : `Set maximum: ${fmtNum(maxAmt)} ${fromCoin.symbol}`}
+                className="flex-1 px-2 py-1 rounded-md text-[10px] font-bold border bg-primary/10 border-primary/30 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                MAX
+              </button>
+            </div>
+            {(minAmt !== null || maxAmt !== null) && (
+              <div className="flex items-center justify-between gap-2 text-[9px] text-muted-foreground/70">
+                {minAmt !== null && <span>Min {fmtNum(minAmt, 8)} {fromCoin.symbol}</span>}
+                {maxAmt !== null && <span className="text-right">Max {fmtNum(maxAmt, 8)} {fromCoin.symbol}</span>}
+              </div>
+            )}
+            {balanceTooLowForMin && (
+              <p className="text-[10px] leading-relaxed text-amber-400">
+                Wallet balance is below the minimum swap amount ({fmtNum(minAmt)} {fromCoin.symbol}).
+              </p>
+            )}
+            {sourceChainId !== null && availBal !== null && maxAmt !== null && numAmt !== null && numAmt > availBal && (
+              <p className="text-[10px] text-amber-400">Amount exceeds your available on-chain balance.</p>
+            )}
+            {effectiveAddress && sourceChainId !== null && CHAIN_NATIVE[sourceChainId] === fromCoin.symbol.toUpperCase() && (
+              <p className="text-[10px] text-muted-foreground/60">Leave enough {fromCoin.symbol} for the network fee when sending.</p>
+            )}
           </div>
         )}
         {/* Min/max hints */}
@@ -717,8 +964,8 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
                 {toCoin.networkName ?? toCoin.network ?? toCoin.name}
               </span>
             )}
-            {estimate && (
-              <Countdown key={`${refreshKey}-${estimate.rate_id ?? ""}`}
+            {activeEstimate && (
+              <Countdown key={`${refreshKey}-${activeEstimate.rate_id ?? ""}`}
                 seconds={Math.min(rateSecondsLeft, RATE_REFRESH)}
                 onEnd={() => setRefreshKey(k => k + 1)} />
             )}
@@ -726,11 +973,11 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
         </div>
         <div className="flex items-center gap-2">
           <div className="flex-1 text-[2.2rem] font-semibold leading-none py-1 tabular-nums">
-            {estLoading && !estimate ? (
+            {estLoading && !activeEstimate ? (
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground/40" />
-            ) : estimate ? (
-              <span className={cn("text-emerald-400", estimate && estLoading && "opacity-60")}>
-                ≈{fmtNum(estimate.amount, 8)}
+            ) : activeEstimate ? (
+              <span className={cn("text-emerald-400", estLoading && "opacity-60")}>
+                ≈{fmtNum(activeEstimate.amount, 8)}
                 {estLoading && <Loader2 className="w-3 h-3 animate-spin inline ml-1.5 text-muted-foreground/40" />}
               </span>
             ) : estError ? (
@@ -739,7 +986,7 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
               <span className="text-muted-foreground/20">0.0</span>
             )}
           </div>
-          <CoinPicker compact coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); setSelectedVenue(null); }} exclude={fromCoin?.symbol} />
+          <CoinPicker compact coins={coins} selected={toCoin} onChange={c => { setToCoin(c); setEstimate(null); }} exclude={fromCoin?.symbol} onOpen={onLoadReownCoins} supplementalLoading={reownCoinsLoading} />
         </div>
         {/* Venue comparison — tap to lock a route */}
         {estimate?.venue_quotes && estimate.venue_quotes.length > 1 && fromCoin && toCoin && (() => {
@@ -771,39 +1018,108 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
           );
         })()}
         {/* Rate + venue badge */}
-        {estimate && fromCoin && toCoin && (
+        {activeEstimate && fromCoin && toCoin && (
           <div className="flex flex-col gap-1.5 mt-2">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[11px] text-muted-foreground">
-                1 {fromCoin.symbol} ≈ <span className={cn("font-mono", estimate.stale ? "text-amber-400/80" : "text-emerald-400/80")}>{fmtNum(estimate.rate, 8)} {toCoin.symbol}</span>
+                1 {fromCoin.symbol} ≈ <span className={cn("font-mono", activeEstimate.stale ? "text-amber-400/80" : "text-emerald-400/80")}>{fmtNum(activeEstimate.rate, 8)} {toCoin.symbol}</span>
               </span>
-              {estimate.stale ? (
+              {activeEstimate.stale ? (
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold bg-amber-500/10 border-amber-500/30 text-amber-400">
                   <Clock className="w-2.5 h-2.5" /> Cached rate
                 </span>
               ) : (
                 <span className={cn(
                   "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold",
-                  estimate.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/30 text-sky-400" :
-                  estimate.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
-                  estimate.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/30 text-orange-400" :
+                  activeEstimate.best_venue === "changenow"  ? "bg-sky-500/10 border-sky-500/30 text-sky-400" :
+                  activeEstimate.best_venue === "simpleswap" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400" :
+                  activeEstimate.best_venue === "stealthex"  ? "bg-orange-500/10 border-orange-500/30 text-orange-400" :
                   "bg-violet-500/10 border-violet-500/30 text-violet-400"
                 )}>
-                  ⚡ {VENUE_LABELS[estimate.best_venue ?? ""] ?? "OrahRouter"}
+                  {activeQuote?.venue === bestOutputQuote?.venue ? "⚡ Best output · " : "✓ Selected · "}
+                  {VENUE_LABELS[activeEstimate.best_venue ?? ""] ?? "OrahRouter"}
                 </span>
               )}
-              {estimate.withdrawal_fee && parseFloat(estimate.withdrawal_fee) > 0 && (
+              {activeEstimate.withdrawal_fee && parseFloat(activeEstimate.withdrawal_fee) > 0 && (
                 <span className="text-[10px] text-muted-foreground/50 ml-auto">
-                  Fee: <span className="font-mono">{fmtNum(estimate.withdrawal_fee, 6)} {toCoin.symbol}</span>
+                  Fee: <span className="font-mono">{fmtNum(activeEstimate.withdrawal_fee, 6)} {toCoin.symbol}</span>
                 </span>
               )}
             </div>
-            {estimate.stale && (
+            {activeEstimate.stale && (
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-500/8 border border-amber-500/20 text-[10px] text-amber-400/80">
                 <AlertTriangle className="w-3 h-3 shrink-0" />
                 Live rates temporarily unavailable — using last known rate. Swap will use best live price at execution.
               </div>
             )}
+          </div>
+        )}
+        {supplierRows.length > 0 && fromCoin && toCoin && (
+          <div className="mt-3 pt-3 border-t border-border/40">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <span className="text-[11px] font-semibold text-foreground">Supplier comparison</span>
+              <span className="text-[10px] text-muted-foreground/60">Best output highlighted</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {supplierRows.map(({ venue, quote }) => {
+                if (!quote) {
+                  return (
+                    <div
+                      key={venue}
+                      className="w-full flex items-center justify-between gap-3 rounded-xl border border-border/30 bg-background/20 px-3 py-2 text-left opacity-55"
+                    >
+                      <span className={cn("text-xs font-semibold truncate", VENUE_COLORS[venue] ?? "text-foreground")}>
+                        {VENUE_LABELS[venue] ?? venue}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">No live quote</span>
+                    </div>
+                  );
+                }
+                const output = parseFloat(quote.output);
+                const canSelect = quote.canExecute && Number.isFinite(output) && output > 0;
+                const isBest = quote.venue === bestOutputQuote?.venue;
+                const isSelected = quote.venue === activeQuote?.venue;
+                const limitText = quote.minAmount
+                  ? `Min ${fmtNum(quote.minAmount, 8)} ${fromCoin.symbol}`
+                  : quote.maxAmount
+                    ? `Max ${fmtNum(quote.maxAmount, 8)} ${fromCoin.symbol}`
+                    : "Amount not supported";
+                return (
+                  <button
+                    type="button"
+                    key={venue}
+                    disabled={!canSelect}
+                    onClick={() => setSelectedVenue(quote.venue)}
+                    className={cn(
+                      "w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-left transition-colors",
+                      !canSelect && "opacity-45 cursor-not-allowed border-border/30",
+                      canSelect && isSelected && "border-primary/60 bg-primary/8",
+                      canSelect && !isSelected && "border-border/40 hover:border-primary/35 bg-background/30",
+                    )}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className={cn("text-xs font-semibold truncate", VENUE_COLORS[quote.venue] ?? "text-foreground")}>
+                        {VENUE_LABELS[quote.venue] ?? quote.venue}
+                      </span>
+                      {isBest && canSelect && (
+                        <span className="shrink-0 rounded-md bg-emerald-500/10 border border-emerald-500/25 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-400">
+                          Best
+                        </span>
+                      )}
+                      {!canSelect && (
+                        <span className="text-[9px] text-muted-foreground truncate">{limitText}</span>
+                      )}
+                    </span>
+                    <span className={cn("shrink-0 text-xs font-mono tabular-nums", canSelect ? "text-foreground" : "text-muted-foreground")}>
+                      {canSelect ? `≈${fmtNum(output, 8)} ${toCoin.symbol}` : "Unavailable"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[10px] text-muted-foreground/60">
+              Estimates can change before the exchange order is created.
+            </p>
           </div>
         )}
       </div>
@@ -821,8 +1137,8 @@ function StepAmount({ coins, onContinue, initialFrom, initialTo, walletAddress, 
       )}
 
       {/* ── Swap button ── */}
-      <button type="button" disabled={!canContinue}
-        onClick={() => canContinue && fromCoin && toCoin && onContinue(fromCoin, toCoin, amount, estimate)}
+        <button type="button" disabled={!canContinue}
+          onClick={() => canContinue && fromCoin && toCoin && onContinue(fromCoin, toCoin, amount, activeEstimate)}
         className={cn(
           "w-full py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center gap-2 mt-1",
           canContinue
@@ -990,59 +1306,222 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
   const [effectiveVenue, setEffectiveVenue] = useState<string>(order.best_venue ?? "letsexchange");
   const [infoOpen,       setInfoOpen]       = useState(false);
   const [refreshKey,     setRefreshKey]     = useState(0);
-  const [sendState,      setSendState]      = useState<"idle"|"sending"|"sent"|"error">("idle");
+  const [sendState,      setSendState]      = useState<"idle"|"switching"|"checking"|"sending"|"confirming"|"sent"|"unconfirmed"|"error">("idle");
   const [txHash,         setTxHash]         = useState<string|null>(null);
   const [sendError,      setSendError]      = useState<string|null>(null);
+  const [sendDiagnostic, setSendDiagnostic] = useState<string|null>(null);
+  const [sendInsufficientToken, setSendInsufficientToken] = useState(false);
+  const [walletPromptDelayed, setWalletPromptDelayed] = useState(false);
+  const [walletTokenBalance, setWalletTokenBalance] = useState<bigint|null>(null);
+  const [walletTokenBalanceLoading, setWalletTokenBalanceLoading] = useState(false);
+  const [walletTokenBalanceError, setWalletTokenBalanceError] = useState<string|null>(null);
+  const tokenBalanceRequestRef = useRef(0);
 
-  const { address: evmAddress } = useAccount();
+  const { address: evmAddress, chainId: evmChainId } = useAccount();
+  const customTokens = useCustomTokenStore(state => state.tokens);
 
   // Resolve chain info for the from-coin so we can offer wallet-send
   const network    = (fromCoin.network ?? fromCoin.symbol ?? "").toUpperCase();
   const chainId    = LE_NETWORK_CHAIN[network] ?? null;
   const isNative   = chainId !== null && CHAIN_NATIVE[chainId] === fromCoin.symbol.toUpperCase();
-  const erc20Entry = chainId !== null && !isNative
+  const builtInErc20 = chainId !== null && !isNative
     ? (ERC20_TOKENS[chainId] ?? []).find(t => t.symbol.toUpperCase() === fromCoin.symbol.toUpperCase()) ?? null
     : null;
+  const reownAddressParts = fromCoin.tokenSource === "reown"
+    ? fromCoin.tokenAddress?.match(/^eip155:(\d+):(0x[0-9a-fA-F]{40})$/)
+    : null;
+  const selectedReownAddress = chainId !== null && reownAddressParts && Number(reownAddressParts[1]) === chainId
+    ? reownAddressParts[2]
+    : chainId !== null && fromCoin.tokenSource === "reown" && /^0x[0-9a-fA-F]{40}$/.test(fromCoin.tokenAddress ?? "")
+      ? fromCoin.tokenAddress!
+      : null;
+  const selectedReownErc20 = selectedReownAddress && Number.isInteger(fromCoin.tokenDecimals)
+    ? {
+        symbol: fromCoin.symbol,
+        name: fromCoin.name,
+        address: selectedReownAddress,
+        decimals: fromCoin.tokenDecimals!,
+      }
+    : null;
+  const matchingCustomTokens = chainId !== null && !isNative
+    ? customTokens.filter(t =>
+        t.chainId === chainId && t.symbol.toUpperCase() === fromCoin.symbol.toUpperCase(),
+      )
+    : [];
+  // A symbol can be reused by unrelated tokens, so only trust a custom token
+  // when the wallet has exactly one matching chain-specific contract.
+  const erc20Entry = selectedReownErc20 ?? builtInErc20 ?? (matchingCustomTokens.length === 1 ? matchingCustomTokens[0] : null);
   const isEvmDeposit = typeof order.deposit === "string" && /^0x[0-9a-fA-F]{40}$/.test(order.deposit);
   const canSendFromWallet = !!evmAddress && isEvmDeposit && chainId !== null && (isNative || erc20Entry !== null);
+  const walletSendTokenMissing = !!evmAddress && isEvmDeposit && chainId !== null && !isNative && !erc20Entry;
+
+  const refreshWalletTokenBalance = useCallback(async () => {
+    if (!evmAddress || chainId === null || !erc20Entry || isNative) return;
+    const requestId = ++tokenBalanceRequestRef.current;
+    setWalletTokenBalanceLoading(true);
+    setWalletTokenBalanceError(null);
+    try {
+      const balance = await fetchErc20BalanceRaw(evmAddress, erc20Entry.address, chainId);
+      if (requestId === tokenBalanceRequestRef.current) setWalletTokenBalance(balance);
+    } catch (error) {
+      if (requestId === tokenBalanceRequestRef.current) {
+        setWalletTokenBalance(null);
+        setWalletTokenBalanceError(error instanceof Error ? error.message : "Could not verify this token balance.");
+      }
+    } finally {
+      if (requestId === tokenBalanceRequestRef.current) setWalletTokenBalanceLoading(false);
+    }
+  }, [evmAddress, chainId, erc20Entry?.address, isNative]);
+
+  useEffect(() => {
+    if (!canSendFromWallet || isNative || !erc20Entry || !evmAddress || chainId === null) {
+      tokenBalanceRequestRef.current++;
+      setWalletTokenBalance(null);
+      setWalletTokenBalanceLoading(false);
+      setWalletTokenBalanceError(null);
+      return;
+    }
+    void refreshWalletTokenBalance();
+    return () => { tokenBalanceRequestRef.current++; };
+  }, [canSendFromWallet, isNative, erc20Entry?.address, evmAddress, chainId, refreshWalletTokenBalance]);
+
+  let requiredErc20Amount: bigint|null = null;
+  if (erc20Entry) {
+    try { requiredErc20Amount = decimalToTokenUnits(order.deposit_amount, erc20Entry.decimals); } catch {}
+  }
+  const walletTokenBalanceTooLow = walletTokenBalance !== null
+    && requiredErc20Amount !== null
+    && walletTokenBalance < requiredErc20Amount;
+  const walletTokenNeedsBuffer = sendInsufficientToken
+    && walletTokenBalance !== null
+    && requiredErc20Amount !== null
+    && walletTokenBalance <= requiredErc20Amount;
+  const walletTokenSendBlocked = walletTokenBalanceTooLow || walletTokenNeedsBuffer;
+  const formattedWalletTokenBalance = walletTokenBalance !== null && erc20Entry
+    ? formatUnits(walletTokenBalance, erc20Entry.decimals)
+    : null;
+  const formattedRequiredErc20Amount = requiredErc20Amount !== null && erc20Entry
+    ? formatUnits(requiredErc20Amount, erc20Entry.decimals)
+    : null;
+  const exactDepositAmountDisplay = formattedRequiredErc20Amount
+    ?? (typeof order.deposit_amount === "string" ? order.deposit_amount : String(order.deposit_amount));
+
+  async function handleSwitchWalletNetwork() {
+    if (!chainId) return;
+    setSendState("switching");
+    setSendError(null);
+    setSendDiagnostic(null);
+    setWalletPromptDelayed(false);
+    const timer = window.setTimeout(() => setWalletPromptDelayed(true), 45_000);
+    try {
+      // Start the wallet network request directly from this button click.
+      await switchEvmNetwork(chainId);
+      setSendState("idle");
+    } catch (err: any) {
+      const msg: string = err?.shortMessage ?? err?.cause?.shortMessage ?? err?.message ?? "Network switch failed";
+      setSendError(msg.slice(0, 240));
+      setSendState("error");
+    } finally {
+      window.clearTimeout(timer);
+      setWalletPromptDelayed(false);
+    }
+  }
 
   async function handleSendFromWallet() {
     if (!evmAddress || !chainId) return;
-    setSendState("sending"); setSendError(null); setTxHash(null);
+    setSendState("checking"); setSendError(null); setSendDiagnostic(null); setSendInsufficientToken(false); setTxHash(null);
+    setWalletPromptDelayed(false);
+    let walletPromptTimer: ReturnType<typeof setTimeout> | null = null;
+    const onStage = () => {
+      setSendState("sending");
+      if (walletPromptTimer) clearTimeout(walletPromptTimer);
+      walletPromptTimer = setTimeout(() => setWalletPromptDelayed(true), 45_000);
+    };
+    let hash: string;
     try {
-      const depositAmt = parseFloat(order.deposit_amount);
-      let hash: string;
-
       if (isNative) {
-        // Native coin (ETH, BNB, AVAX…) — convert to wei (18 decimals)
-        const weiAmt = BigInt(Math.round(depositAmt * 1e9)) * BigInt(1e9);
+        // Native coin (ETH, BNB, AVAX…) — convert the exact provider amount to wei.
+        const weiAmt = decimalToTokenUnits(order.deposit_amount, 18);
         hash = await sendEvmTransfer({
           from: evmAddress,
           to: order.deposit,
           valueWei: weiAmt,
           targetChainId: chainId,
+          onStage,
         });
       } else if (erc20Entry) {
-        // ERC-20 token — convert to smallest unit using token decimals
-        const factor = 10 ** erc20Entry.decimals;
-        const rawAmt = BigInt(Math.round(depositAmt * factor));
+        // ERC-20 token — preserve the provider's exact decimal amount.
+        const rawAmt = decimalToTokenUnits(order.deposit_amount, erc20Entry.decimals);
+        const currentBalance = await fetchErc20BalanceRaw(evmAddress, erc20Entry.address, chainId);
+        setWalletTokenBalance(currentBalance);
+        if (rawAmt > currentBalance) {
+          throw new Error(
+            `Insufficient ${fromCoin.symbol} on ${fromCoin.networkName ?? fromCoin.network}: ` +
+            `this wallet has ${formatUnits(currentBalance, erc20Entry.decimals)}, but the exchange requires ${order.deposit_amount}.`,
+          );
+        }
         hash = await sendErc20Transfer({
           tokenAddress: erc20Entry.address,
           from: evmAddress,
           to: order.deposit,
           amount: rawAmt,
           targetChainId: chainId,
+          onStage,
         });
       } else {
         throw new Error("Token not supported for wallet-send on this chain.");
       }
-
-      setTxHash(hash);
-      setSendState("sent");
     } catch (err: any) {
-      const msg: string = err?.message ?? "Transaction failed";
-      setSendError(msg.includes("rejected") ? "Transaction rejected by wallet." : msg.slice(0, 90));
+      const msg: string = err?.shortMessage ?? err?.cause?.shortMessage ?? err?.message ?? "Transaction failed";
+      const diagnostic = [
+        err?.code != null ? `Code: ${String(err.code)}` : "",
+        err?.details,
+        err?.cause?.message,
+        err?.message,
+      ].filter((part, index, all): part is string =>
+        typeof part === "string" && part.length > 0 && all.indexOf(part) === index,
+      ).join("\n\n").slice(0, 2000);
+      const insufficientToken = /transfer amount exceeds balance/i.test(`${msg}\n${diagnostic}`);
+      setSendInsufficientToken(insufficientToken);
+      let failureBalance = walletTokenBalance;
+      if (insufficientToken && erc20Entry) {
+        try {
+          failureBalance = await fetchErc20BalanceRaw(evmAddress, erc20Entry.address, chainId);
+          setWalletTokenBalance(failureBalance);
+          setWalletTokenBalanceError(null);
+        } catch {
+          // Keep the last preflight result available if the follow-up read fails.
+        }
+      }
+      const failureBalanceText = failureBalance !== null && erc20Entry
+        ? formatUnits(failureBalance, erc20Entry.decimals)
+        : "unavailable";
+      setSendError(msg.toLowerCase().includes("reject")
+        ? "Transaction rejected by wallet."
+        : insufficientToken
+          ? `The token rejected this transfer. Balance at check: ${failureBalanceText} ${fromCoin.symbol}; exact quote: ${exactDepositAmountDisplay} ${fromCoin.symbol}. No VVV was deposited. Add more VVV or create a smaller quote; a mined failed transaction may still cost gas.`
+          : msg.slice(0, 240));
+      setSendDiagnostic(diagnostic || null);
       setSendState("error");
+      return;
+    } finally {
+      if (walletPromptTimer) clearTimeout(walletPromptTimer);
+      setWalletPromptDelayed(false);
+    }
+
+    setTxHash(hash);
+    setSendState("confirming");
+    try {
+      const receiptStatus = await waitForEvmTransaction(hash, chainId);
+      if (receiptStatus === "reverted") {
+        setSendError("Base included the transaction, but the token transfer reverted. Network fees may still have been charged.");
+        setSendState("error");
+        return;
+      }
+      setSendState("sent");
+    } catch {
+      setSendError("The wallet returned an ID, but no Base transaction receipt was found. Check your wallet or the explorer before retrying.");
+      setSendState("unconfirmed");
     }
   }
 
@@ -1097,7 +1576,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
       <div className="rounded-xl bg-muted/40 p-4">
         <p className="text-xs text-muted-foreground mb-1">Send exactly</p>
         <p className="text-2xl font-bold">
-          <span className="text-emerald-400 font-mono">{fmtNum(order.deposit_amount, 8)}</span>
+          <span className="text-emerald-400 font-mono">{exactDepositAmountDisplay}</span>
           <span className="text-foreground ml-2">{fromCoin.symbol}</span>
           <span className="text-muted-foreground text-base font-normal ml-2">({fromCoin.networkName ?? fromCoin.network ?? fromCoin.symbol})</span>
         </p>
@@ -1159,7 +1638,7 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
             </div>
           </div>
           <div className="flex flex-wrap gap-2 pt-1">
-            <a href="mailto:support@orahdex.org"
+            <a href="mailto:support@orahdex.com"
               className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors">
               Contact OrahDEX Support <ExternalLink className="w-3 h-3" />
             </a>
@@ -1201,22 +1680,128 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
             <p className="text-sm font-semibold text-emerald-300">Send from connected wallet</p>
           </div>
           <p className="text-xs text-muted-foreground">
-            Send exactly <span className="text-foreground font-mono font-bold">{order.deposit_amount} {fromCoin.symbol}</span> directly from{" "}
+            Send exactly <span className="text-foreground font-mono font-bold">{exactDepositAmountDisplay} {fromCoin.symbol}</span> directly from{" "}
             <span className="font-mono">{evmAddress?.slice(0,6)}…{evmAddress?.slice(-4)}</span>.
-            Your wallet will prompt you to confirm.
+            Confirm the network, token, recipient, and amount in your wallet. Base transfers also need ETH for gas.
           </p>
 
+          {erc20Entry && !isNative && (
+            <div className="rounded-lg border border-border/50 bg-background/50 px-3 py-2.5 space-y-1.5">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-muted-foreground">Connected wallet balance</span>
+                <span className="font-mono text-foreground text-right break-all">
+                  {walletTokenBalanceLoading
+                    ? "Checking…"
+                    : formattedWalletTokenBalance !== null
+                      ? `${formattedWalletTokenBalance} ${fromCoin.symbol}`
+                      : "Not verified"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-muted-foreground">Exact amount required</span>
+                <span className="font-mono text-foreground text-right break-all">
+                  {formattedRequiredErc20Amount !== null
+                    ? `${formattedRequiredErc20Amount} ${fromCoin.symbol}`
+                    : `${order.deposit_amount} ${fromCoin.symbol}`}
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground break-all">
+                Token contract: {erc20Entry.address}
+              </p>
+              {walletTokenBalanceTooLow && formattedWalletTokenBalance !== null && (
+                <p className="text-[11px] text-red-300">
+                  This wallet has less than the exact quote amount. No transfer will be sent.
+                </p>
+              )}
+              {walletTokenNeedsBuffer && formattedWalletTokenBalance !== null && (
+                <p className="text-[11px] text-red-300">
+                  The previous transfer was rejected. Add more {fromCoin.symbol} than the quote amount before retrying.
+                </p>
+              )}
+              {walletTokenBalanceError && (
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] text-amber-300">{walletTokenBalanceError}</p>
+                  <button
+                    type="button"
+                    onClick={() => void refreshWalletTokenBalance()}
+                    data-testid="button-retry-token-balance"
+                    className="shrink-0 text-[11px] font-semibold text-primary hover:text-primary/80"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {sendState === "idle" && (
-            <button type="button" onClick={handleSendFromWallet}
-              className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition-all active:scale-[0.98]">
-              Send {order.deposit_amount} {fromCoin.symbol} from Wallet
+            evmChainId !== chainId ? (
+              <button type="button" onClick={handleSwitchWalletNetwork}
+                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-sm transition-all active:scale-[0.98]">
+                Switch wallet to {fromCoin.networkName ?? fromCoin.network}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleSendFromWallet}
+                disabled={!!erc20Entry && !isNative && (
+                  walletTokenBalanceLoading || walletTokenBalance === null || walletTokenSendBlocked
+                )}
+                data-testid="button-send-from-wallet"
+                className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:bg-muted/60 disabled:text-muted-foreground disabled:cursor-not-allowed text-black font-bold text-sm transition-all active:scale-[0.98]"
+              >
+                {walletTokenBalanceLoading && erc20Entry && !isNative
+                  ? "Checking token balance…"
+                  : walletTokenNeedsBuffer
+                    ? `Add more ${fromCoin.symbol} to retry`
+                    : walletTokenBalanceTooLow
+                    ? `Insufficient ${fromCoin.symbol} balance`
+                    : "Send " + order.deposit_amount + " " + fromCoin.symbol + " from Wallet"}
+              </button>
+            )
+          )}
+
+          {sendState === "checking" && (
+            <button type="button" disabled
+              className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
+              <Loader2 className="w-4 h-4 animate-spin" /> Checking token balance before sending…
             </button>
           )}
 
           {sendState === "sending" && (
+            <div className="space-y-2">
+              <button type="button" disabled
+                className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {walletPromptDelayed ? "Wallet is still waiting…" : "Confirm transaction in your wallet…"}
+              </button>
+              {walletPromptDelayed && (
+                <p className="text-[11px] text-amber-300/90">
+                  Open your wallet app and approve or reject the request. Don’t send again while this request is pending.
+                </p>
+              )}
+            </div>
+          )}
+
+          {sendState === "switching" && (
+            <div className="space-y-2">
+              <button type="button" disabled
+                className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {walletPromptDelayed ? "Wallet network switch is still pending…" : `Approve network switch in your wallet…`}
+              </button>
+              {walletPromptDelayed && (
+                <p className="text-[11px] text-amber-300/90">
+                  Approve or reject the network switch in your wallet. Don’t retry while the wallet request is pending.
+                </p>
+              )}
+            </div>
+          )}
+
+          {sendState === "confirming" && (
             <button type="button" disabled
               className="w-full py-3 rounded-xl bg-muted/60 text-muted-foreground font-bold text-sm flex items-center justify-center gap-2 cursor-not-allowed">
-              <Loader2 className="w-4 h-4 animate-spin" /> Waiting for wallet confirmation…
+              <Loader2 className="w-4 h-4 animate-spin" /> Waiting for Base confirmation…
             </button>
           )}
 
@@ -1224,13 +1809,47 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
             <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-3 space-y-1">
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                <p className="text-sm font-semibold text-emerald-300">Transaction submitted!</p>
+                <p className="text-sm font-semibold text-emerald-300">Transfer confirmed on-chain</p>
               </div>
               <p className="text-xs text-muted-foreground">TX hash:</p>
               <div className="flex items-center gap-2">
                 <p className="text-xs font-mono text-emerald-400 break-all">{txHash}</p>
                 <CopyButton text={txHash} />
               </div>
+              {chainId === 8453 && (
+                <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noreferrer"
+                  className="inline-flex items-center gap-1 pt-1 text-xs text-emerald-300 hover:text-emerald-200">
+                  View on BaseScan <ExternalLink className="w-3 h-3" />
+                </a>
+              )}
+            </div>
+          )}
+
+          {sendState === "unconfirmed" && (
+            <div className="rounded-xl bg-yellow-500/10 border border-yellow-500/30 p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-yellow-400 shrink-0" />
+                <p className="text-sm font-semibold text-yellow-200">Not confirmed on Base</p>
+              </div>
+              <p className="text-xs text-yellow-100/80">{sendError}</p>
+              {txHash && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-mono text-yellow-100 break-all">{txHash}</p>
+                    <CopyButton text={txHash} />
+                  </div>
+                  {chainId === 8453 && (
+                    <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-yellow-200 hover:text-yellow-100">
+                      Check BaseScan <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </>
+              )}
+              <button type="button" onClick={() => { setSendState("idle"); setSendError(null); setTxHash(null); }}
+                className="block text-xs text-muted-foreground hover:text-foreground underline transition-colors">
+                Retry only after confirming the wallet says failed
+              </button>
             </div>
           )}
 
@@ -1240,12 +1859,44 @@ function StepDeposit({ order, fromCoin, toCoin, onBack, onReset }: {
                 <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
                 <p className="text-sm text-red-300">{sendError ?? "Transaction failed"}</p>
               </div>
-              <button type="button" onClick={() => setSendState("idle")}
+              {sendDiagnostic && (
+                <details className="rounded-lg bg-black/20 p-2">
+                  <summary className="cursor-pointer text-xs text-red-200/80">Technical details</summary>
+                  <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-all text-[10px] text-red-100/70">{sendDiagnostic}</pre>
+                  <CopyButton text={sendDiagnostic} className="mt-2" />
+                </details>
+              )}
+              {txHash && (
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-mono text-red-200 break-all">{txHash}</p>
+                  <CopyButton text={txHash} />
+                </div>
+              )}
+              <button type="button" onClick={() => {
+                setSendState("idle");
+                setSendError(null);
+                setSendDiagnostic(null);
+                setTxHash(null);
+                if (sendInsufficientToken) void refreshWalletTokenBalance();
+              }}
                 className="text-xs text-muted-foreground hover:text-foreground underline transition-colors">
-                Try again
+                {sendInsufficientToken ? "Refresh balance after adding VVV" : "Retry after checking wallet status"}
               </button>
+              {sendInsufficientToken && (
+                <button type="button" onClick={onReset}
+                  className="ml-3 text-xs text-emerald-300 hover:text-emerald-200 underline transition-colors">
+                  Create a smaller quote
+                </button>
+              )}
             </div>
           )}
+        </div>
+      )}
+      {walletSendTokenMissing && !isDone && (
+        <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-3">
+          <p className="text-xs text-yellow-200">
+            Direct wallet send is unavailable because {fromCoin.symbol} on {fromCoin.networkName ?? fromCoin.network} has no unique contract and decimals in your wallet token list. Import the correct token first, or send manually to the deposit address above. Keep enough native coin for network fees.
+          </p>
         </div>
       )}
 
@@ -1625,6 +2276,8 @@ export function LetsExchangePanel({
   const [coins,    setCoins]    = useState<LeCoin[]>([]);
   const [coinsErr, setCoinsErr] = useState(false);
   const [loading,  setLoading]  = useState(true);
+  const [reownCoinsLoading, setReownCoinsLoading] = useState(false);
+  const reownCoinsLoadStarted = useRef(false);
 
   const [step,       setStep]       = useState<1|2|3>(1);
   const [fromCoin,   setFromCoin]   = useState<LeCoin|null>(null);
@@ -1634,6 +2287,19 @@ export function LetsExchangePanel({
   const [creating,   setCreating]   = useState(false);
   const [createError, setCreateError] = useState<string|null>(null);
   const [order,      setOrder]      = useState<OrderResult|null>(null);
+
+  const loadReownCoins = useCallback(() => {
+    if (reownCoinsLoadStarted.current) return;
+    reownCoinsLoadStarted.current = true;
+    setReownCoinsLoading(true);
+    void fetchReownSwapCoins()
+      .then(tokens => setCoins(current => mergeReownCoins(current, tokens)))
+      .catch(error => {
+        reownCoinsLoadStarted.current = false;
+        console.warn("[OrahDEX] Could not load Reown swap coins:", error);
+      })
+      .finally(() => setReownCoinsLoading(false));
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1828,7 +2494,7 @@ export function LetsExchangePanel({
               </div>
             )}
 
-            {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} walletAddress={walletAddress} forceVenue={forceVenue} />}
+            {step === 1 && <StepAmount coins={coins} onContinue={handleAmountContinue} initialFrom={initialFrom} initialTo={initialTo} walletAddress={walletAddress} forceVenue={forceVenue} onLoadReownCoins={loadReownCoins} reownCoinsLoading={reownCoinsLoading} />}
             {step === 2 && fromCoin && toCoin && (
               <StepAddress fromCoin={fromCoin} toCoin={toCoin} amount={sendAmount} estimate={estimate}
                 onBack={() => setStep(1)} onContinue={handleAddressContinue}

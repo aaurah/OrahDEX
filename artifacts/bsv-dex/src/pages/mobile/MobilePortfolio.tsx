@@ -17,11 +17,13 @@ import { ReceiveModal } from "@/components/ReceiveModal";
 import { WithdrawSheet } from "@/components/WithdrawSheet";
 import { cn, getProviderLabel } from "@/lib/utils";
 import { useSettingsStore, formatQuoteAmount } from "@/store/useSettingsStore";
-import { useEvmBalances } from "@/hooks/useEvmBalances";
+import { useAllEvmChainBalances, useEvmBalances, type TokenBalance } from "@/hooks/useEvmBalances";
 import { useTronBalances } from "@/hooks/useTronBalances";
 import { useLiquidityStore } from "@/store/useLiquidityStore";
 import { useEscrow } from "@/hooks/useEscrow";
-import { checkEscrowDeposit } from "@/lib/escrow";
+import { useToast } from "@/hooks/use-toast";
+import { readEscrowDeposit } from "@/lib/escrow";
+import { cancelEvmOrderbookOrder } from "@/lib/orderbookCancellation";
 
 import { EXPLORER_TX, CHAIN_NAMES } from "@/lib/onChainLiquidity";
 import { ChainSwitcherDropdown } from "@/components/ChainSwitcherDropdown";
@@ -360,12 +362,15 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   const [withdrawInitialTab, setWithdrawInitialTab] = useState<"deposit" | "withdraw" | "history">("withdraw");
   const [withdrawVisibleTabs, setWithdrawVisibleTabs] = useState<("deposit" | "withdraw" | "history")[] | undefined>(undefined);
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: prices, isLoading: pricesLoading, refetch } = useLivePrices();
-  const { balances: evmBalances, refresh: evmRefresh } = useEvmBalances(
+  const { balances: evmBalances, loading: evmLoading, refresh: evmRefresh } = useEvmBalances(
     network === "evm" ? address : null,
     network === "evm" ? (chainId ?? 1) : null,
   );
+  const allEvmChainBalances = useAllEvmChainBalances(network === "evm" ? address : null);
+  const allEvmLoading = allEvmChainBalances.some(chain => chain.loading);
   const { balances: tronBalances, refresh: tronRefresh } = useTronBalances(
     network === "tron" ? address : null,
   );
@@ -440,20 +445,33 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
   }
 
   const cancelMutation = useMutation({
-    mutationFn: async ({ orderId, walletAddress: orderWalletAddress }: { orderId: string; walletAddress: string }) => {
+    mutationFn: async ({ orderId, walletAddress: orderWalletAddress, fundingRef }: {
+      orderId: string;
+      walletAddress: string;
+      fundingRef?: string | null;
+    }) => {
+      if (fundingRef?.startsWith("evm-order:1:")) {
+        return cancelEvmOrderbookOrder({
+          orderId,
+          walletAddress: orderWalletAddress,
+          fundingRef,
+          isOrahWallet: provider === "orah-wallet",
+        });
+      }
+
       // Step 1: If the order has an active on-chain escrow deposit, cancel it
       // first so funds are returned to the user's wallet. Without this, clicking
       // Cancel in the portfolio only removes the order from the DB but leaves the
       // funds locked in the OrahDEXEscrow contract indefinitely.
       if (escrowAvailable && chainId) {
-        let hasDeposit = false;
-        try {
-          const dep = await Promise.race([
-            checkEscrowDeposit(orderId, chainId),
-            new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
-          ]);
-          hasDeposit = !!dep && !dep.released;
-        } catch { /* RPC failure — skip on-chain cancel, let user retry */ }
+        const dep = await Promise.race([
+          readEscrowDeposit(orderId, chainId),
+          new Promise<never>((_, reject) => setTimeout(
+            () => reject(new Error("Could not verify the escrow state. No cancellation was submitted; check the wallet network and retry.")),
+            4_000,
+          )),
+        ]);
+        const hasDeposit = !!dep && !dep.released;
 
         if (hasDeposit) {
           try {
@@ -469,10 +487,15 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
         }
       }
       // Step 2: Tell the server to remove the order from the orderbook.
+      const { buildOrderActionMessage, signWalletMessage } = await import("@/lib/tradeAuth");
+      const nonce = crypto.randomUUID();
+      const expiry = String(Math.floor(Date.now() / 1000) + 300);
+      const signature = await signWalletMessage(orderWalletAddress, provider ?? undefined,
+        buildOrderActionMessage({ walletAddress: orderWalletAddress, action: "cancel", orderId, nonce, expiry }));
       const res = await fetch(`${BASE}/api/orders/${orderId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: orderWalletAddress }),
+        body: JSON.stringify({ walletAddress: orderWalletAddress, signature, nonce, expiry }),
       });
       // 404 = already cancelled — treat as success.
       if (res.status === 404) return { id: orderId, status: "cancelled" };
@@ -490,10 +513,15 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
       );
       return { prev };
     },
-    onError: (_err, _vars, context: any) => {
+    onError: (error: any, _vars, context: any) => {
       if (context?.prev !== undefined) {
         queryClient.setQueryData(["portfolio-orders", ledgerAddress], context.prev);
       }
+      toast({
+        title: "Cancel failed",
+        description: String(error?.message ?? "Could not cancel this order."),
+        variant: "destructive",
+      });
     },
     onSettled: () => {
       setCancellingId(null);
@@ -504,29 +532,52 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
 
   // Build rows from real on-chain data where available
   const rows = (() => {
-    // EVM: use all tokens returned by useEvmBalances (includes native + ERC-20)
-    if (network === "evm" && evmBalances.length > 0) {
-      return evmBalances.map(b => {
+    if (network === "evm") {
+      const chainRows: { chainId: number; name: string; balances: TokenBalance[] }[] =
+        allEvmChainBalances.map(({ chainId: id, name, balances }) => ({ chainId: id, name, balances }));
+      const activeChainId = chainId ?? 1;
+      if (!chainRows.some(chain => chain.chainId === activeChainId)) {
+        chainRows.push({
+          chainId: activeChainId,
+          name: CHAIN_NAMES[activeChainId] ?? `EVM network ${activeChainId}`,
+          balances: evmBalances,
+        });
+      }
+
+      return chainRows.flatMap(chain => chain.balances
+        .filter(b => b.amount > 0 || b.isCustom)
+        .map(b => {
         const stableSymbols = ["USDT", "USDC", "DAI", "BUSD", "TUSD"];
         const isStable = stableSymbols.includes(b.symbol.toUpperCase());
         const mkt = prices?.[b.symbol];
         const price = b.price > 0 ? b.price : isStable ? 1 : (mkt?.lastPrice ?? 0);
         const change = b.change24h !== 0 ? b.change24h : isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
         const usdValue = b.usdValue > 0 ? b.usdValue : b.amount * price;
-        const color = ASSET_COLORS[b.symbol] ?? "#6B7280";
-        return { asset: b.symbol, color, amount: b.amount, price, change, value: usdValue, isNative: b.isNative };
-      });
+        const color = ASSET_COLORS[b.symbol] ?? b.color ?? "#6B7280";
+        const tokenKey = b.contractAddress?.toLowerCase() ?? "native";
+        return {
+          key: `${chain.chainId}:${tokenKey}`,
+          chainName: chain.name,
+          asset: b.symbol,
+          color,
+          amount: b.amount,
+          price,
+          change,
+          value: usdValue,
+          isNative: b.isNative,
+        };
+        }));
     }
     // TRON: use real balances from useTronBalances hook
     if (network === "tron" && tronBalances.length > 0) {
-      return tronBalances.map(b => {
+      return tronBalances.map((b, index) => {
         const isStable = ["USDT","USDC"].includes(b.symbol);
         const mkt = prices?.[b.symbol];
         const price = b.price ?? (isStable ? 1 : (mkt?.lastPrice ?? 0));
         const change = isStable ? 0 : (mkt?.priceChangePercent24h ?? 0);
         const usdValue = b.usdValue ?? (b.amount * price);
         const color = ASSET_COLORS[b.symbol] ?? "#EF4444";
-        return { asset: b.symbol, color, amount: b.amount, price, change, value: usdValue, isNative: b.isNative };
+        return { key: `tron:${b.symbol}:${index}`, chainName: "TRON", asset: b.symbol, color, amount: b.amount, price, change, value: usdValue, isNative: b.isNative };
       });
     }
     // Non-EVM wallets: show native asset with stored balance + live price
@@ -534,7 +585,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
     const mkt = prices?.[nativeAsset];
     const nativePrice  = mkt?.lastPrice ?? 0;
     const nativeChange = mkt?.priceChangePercent24h ?? 0;
-    return [{ asset: nativeAsset, color: nativeColor, amount: nativeBalance, price: nativePrice, change: nativeChange, value: nativeBalance * nativePrice, isNative: true }];
+    return [{ key: `${network ?? "unknown"}:${nativeAsset}`, chainName: network?.toUpperCase() ?? "Unknown chain", asset: nativeAsset, color: nativeColor, amount: nativeBalance, price: nativePrice, change: nativeChange, value: nativeBalance * nativePrice, isNative: true }];
   })();
 
   // eslint-disable-next-line prefer-const
@@ -770,7 +821,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                 className="flex items-center gap-1 mt-0.5 group active:opacity-60 transition-opacity"
               >
                 <p className="text-[10px] text-muted-foreground">
-                  {provider ? getProviderLabel(provider) : network.toUpperCase()} · {network.toUpperCase()}
+                  {provider ? getProviderLabel(provider) : network.toUpperCase()} · {network === "evm" ? "All EVM chains" : network.toUpperCase()}
                 </p>
                 <ChevronDown size={10} className="text-muted-foreground/60 group-hover:text-muted-foreground transition-colors" />
               </button>
@@ -778,7 +829,14 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
           </div>
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => { refetch(); if (network === "evm") evmRefresh?.(); if (network === "tron") tronRefresh?.(); }}
+              onClick={() => {
+                refetch();
+                if (network === "evm") {
+                  evmRefresh();
+                  void Promise.all(allEvmChainBalances.map(chain => chain.refresh()));
+                }
+                if (network === "tron") tronRefresh?.();
+              }}
               className="p-2 rounded-full border border-border text-muted-foreground hover:text-foreground transition-all"
               title="Refresh"
             >
@@ -887,24 +945,6 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
               </div>
             )}
 
-            {/* Allocation bar */}
-            {total > 0 && nonZero.length > 0 && (
-              <>
-                <div className="flex h-1.5 rounded-full overflow-hidden mt-4 gap-0.5">
-                  {nonZero.map(r => (
-                    <div key={r.asset} className="h-full rounded-full" style={{ flex: r.value / total, backgroundColor: r.color }} />
-                  ))}
-                </div>
-                <div className="flex gap-3 mt-2 flex-wrap">
-                  {nonZero.map(r => (
-                    <div key={r.asset} className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: r.color }} />
-                      <span className="text-[10px] text-muted-foreground">{r.asset}</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
           </div>
 
           {/* Self-custody info banner: open orders are signed intents only */}
@@ -1024,20 +1064,31 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
           {/* Assets tab */}
           {tab === "assets" && (
             <>
-              {/* Note about single-chain view for EVM wallets */}
+              {/* Multi-chain EVM view */}
               {network === "evm" && (
                 <div className="flex items-start gap-2.5 p-3 rounded-xl bg-primary/5 border border-primary/15">
                   <Info size={14} className="text-primary shrink-0 mt-0.5" />
                   <p className="text-[11px] text-muted-foreground leading-relaxed">
-                    Showing on-chain balances for your connected network. Switch chains in your wallet to view other assets.
+                    Showing native coins and tokens across 8 EVM networks. Each balance is labeled with its chain.
                   </p>
                 </div>
               )}
 
               <div className="bg-card border border-border rounded-2xl overflow-hidden mb-4">
+                {network === "evm" && rows.length === 0 && (allEvmLoading || evmLoading) && (
+                  <div className="flex items-center justify-center gap-2 p-5 text-xs text-muted-foreground">
+                    <Loader2 size={14} className="animate-spin" />
+                    Syncing balances across EVM networks…
+                  </div>
+                )}
+                {network === "evm" && rows.length === 0 && !allEvmLoading && !evmLoading && (
+                  <p className="p-5 text-center text-xs text-muted-foreground">
+                    No token balances found across the supported EVM networks.
+                  </p>
+                )}
                 {rows.map((r, i) => (
                   <div
-                    key={r.asset}
+                    key={r.key}
                     onClick={() => setCoinHistoryOpen(r.asset)}
                     className={`flex items-center gap-3 px-4 py-3.5 active:bg-muted/40 cursor-pointer transition-colors ${i < rows.length - 1 ? "border-b border-border" : ""}`}
                   >
@@ -1048,19 +1099,17 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                       {r.asset[0]}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-baseline gap-x-1.5">
                         <p className="text-sm font-semibold text-foreground">{r.asset}</p>
-                        {r.isNative && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-green-500/15 text-green-400 border border-green-500/25">
-                            NATIVE
-                          </span>
-                        )}
-                        {r.isNative && network === "bsv" && bsvUnconfirmed > 0 && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-400 border border-amber-500/25 animate-pulse">
-                            +{bsvUnconfirmed.toFixed(8)} PENDING
-                          </span>
+                        {r.chainName && (
+                          <span className="text-[10px] text-muted-foreground">{r.chainName}</span>
                         )}
                       </div>
+                      {r.isNative && network === "bsv" && bsvUnconfirmed > 0 && (
+                        <p className="text-[10px] text-amber-400/80 mt-0.5">
+                          +{bsvUnconfirmed.toFixed(8)} pending
+                        </p>
+                      )}
                       <p className="text-xs text-muted-foreground mt-0.5 font-mono">
                         {r.amount > 0
                           ? r.amount.toLocaleString(undefined, { maximumFractionDigits: r.amount < 0.0001 ? 8 : 6 })
@@ -1197,7 +1246,11 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                                 </div>
                               )}
                               <button
-                                onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || ledgerAddress || "") })}
+                                onClick={() => cancelMutation.mutate({
+                                  orderId: String(o.id),
+                                  walletAddress: String(o.walletAddress || ledgerAddress || ""),
+                                  fundingRef: o.fundingRef,
+                                })}
                                 disabled={cancellingId === String(o.id)}
                                 className="mt-1 text-[10px] px-2 py-1 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 font-semibold disabled:opacity-40 transition-all"
                               >
@@ -1339,7 +1392,11 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                     </div>
                     {o.status === "open" || o.status === "pending" ? (
                       <button
-                        onClick={() => cancelMutation.mutate({ orderId: String(o.id), walletAddress: String(o.walletAddress || ledgerAddress || "") })}
+                        onClick={() => cancelMutation.mutate({
+                          orderId: String(o.id),
+                          walletAddress: String(o.walletAddress || ledgerAddress || ""),
+                          fundingRef: o.fundingRef,
+                        })}
                         disabled={cancellingId === String(o.id)}
                         className="shrink-0 px-3 py-1.5 rounded-xl border border-red-500/40 text-red-400 text-[11px] font-bold active:bg-red-500/10 disabled:opacity-40 transition-all"
                       >
@@ -1707,7 +1764,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
                           <p className="text-[11px] text-amber-400/80">Exchange done — sending funds to your address now.</p>
                         )}
                         {isBad && (
-                          <p className="text-[11px] text-red-400">Exchange {label.toLowerCase()}. Contact OrahDEX support at support@orahdex.org with this ID.</p>
+                          <p className="text-[11px] text-red-400">Exchange {label.toLowerCase()}. Contact OrahDEX support at support@orahdex.com with this ID.</p>
                         )}
                       </div>
                     );

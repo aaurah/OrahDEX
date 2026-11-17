@@ -16,6 +16,7 @@ import { creditAvailable } from "../lib/ledger.js";
 import { pool } from "@workspace/db";
 import { getOrCreateWallet } from "../lib/bsvWallet.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
+import { issueBsvDepositChallenge, verifyBsvDepositSignature } from "../lib/walletAuth.js";
 import { getBsvChainStatus } from "../lib/bsvChainMonitor.js";
 import { db } from "@workspace/db";
 import { platformSettingsTable } from "@workspace/db/schema";
@@ -136,14 +137,27 @@ router.get("/deposit/history", async (req, res) => {
 // BSV uses the platform settlement wallet; BTC/BCH returns supported: false.
 router.get("/deposit/bitcoin-address", async (req, res) => {
   const network = ((req.query.network as string) ?? "bsv").toLowerCase();
+  const isBsvRequest = network === "bsv" || network === "bsv-test";
+  const requestedTestnet = network === "bsv-test";
 
-  if (network !== "bsv") {
+  if (!isBsvRequest) {
     res.json({
       network,
       supported: false,
       symbol: network.toUpperCase(),
       label: network === "btc" ? "Bitcoin" : "Bitcoin Cash",
       message: `${network.toUpperCase()} exchange deposits are coming soon. Use your personal wallet address to receive.`,
+    });
+    return;
+  }
+
+  if (requestedTestnet !== BSV_NET.isTestnet) {
+    res.json({
+      network,
+      supported: false,
+      symbol: "BSV",
+      label: requestedTestnet ? "Bitcoin SV Testnet" : "Bitcoin SV",
+      message: `This server is configured for ${BSV_NET.isTestnet ? "BSV testnet" : "BSV mainnet"} deposits only.`,
     });
     return;
   }
@@ -175,11 +189,52 @@ router.get("/deposit/bitcoin-address", async (req, res) => {
 // ── POST /deposit/bsv-verify ──────────────────────────────────────────────────
 // Verifies a BSV on-chain transaction and credits the internal ledger.
 // Body: { walletAddress, txHash }
+router.post("/deposit/bsv-challenge", (req, res) => {
+  const { walletAddress, bsvSignerAddress, txHash } = req.body ?? {};
+  if (!/^0x[0-9a-fA-F]{40}$/.test(String(walletAddress ?? ""))) {
+    res.status(400).json({ error: "A valid EVM credit wallet is required." });
+    return;
+  }
+  if (
+    typeof bsvSignerAddress !== "string" ||
+    !BSV_NET.addressRegex.test(bsvSignerAddress) ||
+    !(BSV_NET.isTestnet ? /^[mn]/ : /^1/).test(bsvSignerAddress)
+  ) {
+    res.status(400).json({ error: `A signable BSV ${BSV_NET.isTestnet ? "testnet" : "mainnet"} P2PKH address is required.` });
+    return;
+  }
+  if (typeof txHash !== "string" || !/^[0-9a-fA-F]{64}$/.test(txHash)) {
+    res.status(400).json({ error: "Invalid transaction hash format." });
+    return;
+  }
+  res.json(issueBsvDepositChallenge(walletAddress, bsvSignerAddress, txHash));
+});
+
 router.post("/deposit/bsv-verify", async (req, res) => {
-  const { walletAddress, txHash, bsvSignerAddress } = req.body ?? {};
+  const { walletAddress, txHash, bsvSignerAddress, bsvSignerSignature, network } = req.body ?? {};
 
   if (!walletAddress || !txHash) {
     res.status(400).json({ error: "walletAddress and txHash are required" });
+    return;
+  }
+
+  if (
+    network != null &&
+    String(network).toLowerCase() !== (BSV_NET.isTestnet ? "bsv-test" : "bsv")
+  ) {
+    res.status(409).json({
+      error: `This server verifies ${BSV_NET.isTestnet ? "BSV testnet" : "BSV mainnet"} deposits only.`,
+    });
+    return;
+  }
+
+  const isEvmCreditWallet = /^0x[0-9a-fA-F]{40}$/.test(String(walletAddress));
+  if (String(walletAddress).startsWith("0x") && !isEvmCreditWallet) {
+    res.status(400).json({ error: "Invalid EVM credit wallet address." });
+    return;
+  }
+  if (!isEvmCreditWallet && (typeof walletAddress !== "string" || !BSV_NET.addressRegex.test(walletAddress))) {
+    res.status(400).json({ error: `walletAddress must be a BSV ${BSV_NET.isTestnet ? "testnet" : "mainnet"} address or an EVM address.` });
     return;
   }
 
@@ -226,13 +281,29 @@ router.post("/deposit/bsv-verify", async (req, res) => {
     // Verify the transaction sender matches the account owner to prevent hijacking.
     // BSV wallets: sender must match walletAddress directly.
     // EVM wallets: require bsvSignerAddress to bind the BSV sender to the EVM account.
-    const expectedSender = walletAddress.startsWith("0x") ? bsvSignerAddress : walletAddress;
+    const expectedSender = isEvmCreditWallet ? bsvSignerAddress : walletAddress;
     if (!expectedSender) {
-      res.status(400).json({ error: "bsvSignerAddress is required for EVM wallet BSV deposits" });
+      res.status(401).json({
+        error: "EVM wallet credits require a signed BSV deposit challenge. Request one from /deposit/bsv-challenge first.",
+      });
       return;
     }
-    const senderAddr = tx.vin?.[0]?.addr;
-    if (!senderAddr || senderAddr.toLowerCase() !== expectedSender.toLowerCase()) {
+    if (
+      isEvmCreditWallet &&
+      (
+        typeof bsvSignerAddress !== "string" ||
+        !BSV_NET.addressRegex.test(bsvSignerAddress) ||
+        !(BSV_NET.isTestnet ? /^[mn]/ : /^1/).test(bsvSignerAddress) ||
+        typeof bsvSignerSignature !== "string"
+      )
+    ) {
+      res.status(401).json({ error: "A valid BSV signer and signed deposit challenge are required for EVM credits." });
+      return;
+    }
+    const senderAddresses = (tx.vin ?? [])
+      .map(input => input.addr?.toLowerCase())
+      .filter((address): address is string => Boolean(address));
+    if (!senderAddresses.includes(expectedSender.toLowerCase())) {
       res.status(403).json({
         error: "Transaction sender does not match the expected BSV address. " +
                "Only the owner of the BSV wallet that sent this transaction may claim the deposit.",
@@ -241,19 +312,29 @@ router.post("/deposit/bsv-verify", async (req, res) => {
     }
 
     // Find output paying to deposit address
-    const output = tx.vout?.find(o =>
-      o.scriptPubKey?.addresses?.some(a => a.toLowerCase() === depositAddress.toLowerCase())
-    );
+    const bsvAmount = (tx.vout ?? [])
+      .filter(output => output.scriptPubKey?.addresses?.some(
+        address => address.toLowerCase() === depositAddress.toLowerCase(),
+      ))
+      .reduce((sum, output) => sum + (Number.isFinite(output.value) ? output.value : 0), 0);
 
-    if (!output) {
+    if (bsvAmount <= 0) {
       res.status(400).json({ error: "Transaction does not send BSV to the OrahDEX deposit address. Please ensure you sent to the correct address." });
       return;
     }
 
-    const bsvAmount = output.value;
     if (bsvAmount < 0.001) {
       res.status(400).json({ error: `Deposit amount ${bsvAmount} BSV is below the minimum of 0.001 BSV.` });
       return;
+    }
+
+    if (isEvmCreditWallet) {
+      try {
+        verifyBsvDepositSignature(walletAddress, bsvSignerAddress, txHash, bsvSignerSignature);
+      } catch (authErr: any) {
+        res.status(401).json({ error: authErr.message });
+        return;
+      }
     }
 
     // Atomically record the dedup row and credit the balance in one transaction.
@@ -566,7 +647,7 @@ router.get("/deposit/bsv-pending", async (req, res) => {
                 detected_at, confirmed_at
          FROM bsv_pending_deposits
          WHERE user_wallet = $1
-           AND status IN ('mempool', 'confirmed')
+           AND status IN ('mempool', 'confirmed', 'stale')
            AND detected_at > NOW() - INTERVAL '48 hours'
          ORDER BY detected_at DESC
          LIMIT 20`,

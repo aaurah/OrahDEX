@@ -38,6 +38,7 @@ import { startExchangeApiRepairEngine } from "./lib/exchangeApiRepairEngine.js";
 import { startBsvIntentWatcher } from "./lib/bsvIntentWatcher.js";
 import { startArcStatusPoller } from "./lib/arcStatusPoller.js";
 import { startAdvancedOrderEngines } from "./lib/advancedOrderEngine.js";
+import { startOrderbookCandleSampler } from "./lib/orderbookCandleRecorder.js";
 import { startFundingRateEngine } from "./lib/fundingRateEngine.js";
 import { ensureCoinMetadataTable, runCoinGeckoImport } from "./lib/coinGeckoImporter.js";
 import { runCoinPaprikaImport } from "./lib/coinPaprikaImporter.js";
@@ -381,7 +382,7 @@ const exchangeLimiter = rateLimit({
     if (typeof wallet === "string" && wallet.length > 10) {
       return `wallet:${wallet.toLowerCase()}`;
     }
-    return ipKeyGenerator(req.ip ?? req.socket.remoteAddress ?? "unknown");
+    return ipKeyGenerator(req.ip ?? "127.0.0.1");
   },
   handler: (_req, res) => res.status(429).json({ error: "Exchange rate limit reached — wait a moment before retrying." }),
 });
@@ -746,6 +747,7 @@ process.on("unhandledRejection", (reason) => {
 
 _s(    0, startHlWebSocket,            "startHlWebSocket");
 _s(    0, startPriceUpdater,          "startPriceUpdater");
+_s(    0, startOrderbookCandleSampler, "orderbookCandleSampler");
 _s(6_000, startLiquidityBot,          "startLiquidityBot");
 _s(12_000, startArbBot,               "startArbBot");
 _s(18_000, startFuturesProfitEngine,  "startFuturesProfitEngine");
