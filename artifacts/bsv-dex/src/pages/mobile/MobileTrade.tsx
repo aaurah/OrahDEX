@@ -641,6 +641,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   // within the same React render cycle before isPending propagates.
   const isSubmittingRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionStage, setSubmissionStage] = useState("");
   // Content fingerprint: same symbol+side+amount within 2 seconds = duplicate
   const lastOrderFingerprintRef = useRef<string | null>(null);
 
@@ -792,6 +793,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       // ── Release submission lock so next order can be placed ──────────────────
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setSubmissionStage("");
 
       setEscrowTx(null);
       setOrderResult({
@@ -911,6 +913,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       // Release lock on error so the user can try again
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setSubmissionStage("");
       lastOrderFingerprintRef.current = null;
       const msg  = err?.message ?? "Could not place order";
       const code = err?.code;
@@ -1393,6 +1396,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     // ── Lock acquired ─────────────────────────────────────────────────────────
     isSubmittingRef.current = true;
     setIsSubmitting(true);
+    setSubmissionStage("Preparing order…");
 
     // ── Stop-limit / stop-market: require a valid stop price before submitting ──
     if ((orderType === "stop-limit" || orderType === "stop-market") && !(parseFloat(stopPrice || "0") > 0)) {
@@ -1403,6 +1407,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       });
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setSubmissionStage("");
       lastOrderFingerprintRef.current = null;
       return;
     }
@@ -1411,6 +1416,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       toast({ title: "Insufficient trading balance", description: `Not enough available ${quote}. Use Swap for wallet-held funds.`, variant: "destructive" });
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setSubmissionStage("");
       lastOrderFingerprintRef.current = null;
       return;
     }
@@ -1426,6 +1432,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       });
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setSubmissionStage("");
       lastOrderFingerprintRef.current = null;
       return;
     }
@@ -1460,6 +1467,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       });
       isSubmittingRef.current = false;
       setIsSubmitting(false);
+      setSubmissionStage("");
       lastOrderFingerprintRef.current = null;
       return;
     }
@@ -1468,6 +1476,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     let orderNonce:   string | undefined;
     let orderExpiry:  string | undefined;
     if (isSelfCustodyEvm) {
+      setSubmissionStage("Sign order in wallet…");
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
       orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
@@ -1546,11 +1555,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         });
         isSubmittingRef.current = false;
         setIsSubmitting(false);
+        setSubmissionStage("");
         lastOrderFingerprintRef.current = null;
         return;
       }
     }
 
+    if (walletOrderbookAvailable) setSubmissionStage("Preparing escrow lock…");
     let orderbookLockTxHash: `0x${string}` | undefined;
     let orderbookExpiresAt: number | undefined;
     if (walletOrderbookAvailable) {
@@ -1572,6 +1583,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           from: address,
           chainId: 1,
           isOrahWallet,
+          onStage: setSubmissionStage,
         });
         orderbookLockTxHash = lock.txHash;
       } catch (lockError: any) {
@@ -1582,6 +1594,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         });
         isSubmittingRef.current = false;
         setIsSubmitting(false);
+        setSubmissionStage("");
         lastOrderFingerprintRef.current = null;
         return;
       }
@@ -1609,6 +1622,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     } as any;
 
     try {
+      setSubmissionStage("Submitting order…");
       await orderMutation.mutateAsync(orderPayload);
     } catch (submissionError: any) {
       if (orderbookLockTxHash && orderbookExpiresAt && submissionError?.status >= 400 && evmOrderbookConfig?.address) {
@@ -2994,7 +3008,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 )}
               >
                 {isSubmitting ? (
-                  <><span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> Placing…</>
+                  <><span className="animate-spin inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full" /> {submissionStage || "Placing…"}</>
                 ) : (
                   `${side === "sell" ? "Sell" : "Buy"} ${base}`
                 )}
@@ -3053,7 +3067,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               style={{ backgroundColor: "#16a34a" }}
             >
               {isSubmitting && side === "buy"
-                ? "Placing…"
+                ? (submissionStage || "Placing…")
                 : side === "buy" && showOrderForm && amtNum > 0
                 ? `Buy ${amtNum.toFixed(4)} ${base}`
                 : `Buy ${base}`}
@@ -3081,7 +3095,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               style={{ backgroundColor: "#dc2626" }}
             >
               {isSubmitting && side === "sell"
-                ? "Placing…"
+                ? (submissionStage || "Placing…")
                 : side === "sell" && showOrderForm && amtNum > 0
                 ? `Sell ${amtNum.toFixed(4)} ${base}`
                 : `Sell ${base}`}
