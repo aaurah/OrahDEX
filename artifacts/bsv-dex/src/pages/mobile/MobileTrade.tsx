@@ -339,12 +339,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     staleTime: 60_000,
     refetchInterval: 60_000,
   });
+  const {
+    data: apiRuntimeConfig,
+    isError: apiRuntimeConfigError,
+    isLoading: apiRuntimeConfigLoading,
+  } = useQuery({
+    queryKey: ["api-runtime-config"],
+    queryFn: async () => {
+      const response = await fetch(`${BASE}/api/runtime-config`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Trading status unavailable");
+      return response.json() as Promise<{ safeStartup: boolean }>;
+    },
+    staleTime: 30_000,
+  });
   const ethereumOrderbookPair =
     isEvm &&
     !isFutures &&
     supportsEthereumWalletOrderbookAsset(base) &&
     supportsEthereumWalletOrderbookAsset(quote);
   const walletOrderbookNetworkPending = !!address && ethereumOrderbookPair && walletChainId == null;
+  const tradingCapabilityPending = !!address && apiRuntimeConfigLoading;
+  const tradingPausedBySafeStartup = !!address && apiRuntimeConfig?.safeStartup === true;
   const walletOrderbookAvailable =
     isEvm &&
     walletChainId === 1 &&
@@ -352,6 +367,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     (!Array.isArray(evmOrderbookConfig?.supportedPairs) ||
       evmOrderbookConfig.supportedPairs.includes(`${base}/${quote}`.toUpperCase())) &&
     evmOrderbookConfig?.available === true;
+  const walletOrderbookSafeStartup =
+    !!address && ethereumOrderbookPair && (tradingPausedBySafeStartup || evmOrderbookConfig?.safeStartup === true);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -650,6 +667,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isSubmittingRef = useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionStage, setSubmissionStage] = useState("");
+  const [walletSignatureRecoveryRequired, setWalletSignatureRecoveryRequired] = useState(false);
   const walletSignAbortRef = useRef<(() => void) | null>(null);
   const _bootOrderbookTx: {
     hash: string;
@@ -1282,10 +1300,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const leMinRaw: number = parseFloat(leMinData?.min_amount ?? 0) || 0;
   const leMaxRaw: number = parseFloat(leMinData?.max_amount ?? 0) || 0;
   // For SELL: LE min is already in base. For BUY: LE min is in quote → divide by price.
-  const leMinBase = side === "sell"
+  const leMinBase = walletOrderbookAvailable || tradingPausedBySafeStartup || walletOrderbookSafeStartup ? 0 : side === "sell"
     ? leMinRaw
     : (leMinRaw > 0 && effectivePrice > 0 ? leMinRaw / effectivePrice : 0);
-  const leMaxBase = side === "sell"
+  const leMaxBase = walletOrderbookAvailable || tradingPausedBySafeStartup || walletOrderbookSafeStartup ? 0 : side === "sell"
     ? leMaxRaw
     : (leMaxRaw > 0 && effectivePrice > 0 ? leMaxRaw / effectivePrice : 0);
   const belowLeMin = leMinBase > 0 && amtNum > 0 && amtNum < leMinBase;
@@ -1428,10 +1446,34 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   async function handlePlaceOrder() {
     if (!address || !amount || amtNum <= 0) return;
+    if (tradingCapabilityPending || apiRuntimeConfigError) {
+      toast({
+        title: "Trading status unavailable",
+        description: "The API could not confirm whether order matching is active. Wait for the connection or reload before signing.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (walletOrderbookNetworkPending) {
       toast({
         title: "Wallet network not detected",
         description: "Reconnect MetaMask and wait for Ethereum to appear before signing. No order or escrow transaction was sent.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (tradingPausedBySafeStartup) {
+      toast({
+        title: "Trading is paused in this preview",
+        description: "Order matching and settlement workers are disabled here. No wallet signature or order was submitted.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (walletSignatureRecoveryRequired) {
+      toast({
+        title: "Close the pending wallet request first",
+        description: "No order was submitted. Dismiss any pending MetaMask signature, then confirm below before retrying.",
         variant: "destructive",
       });
       return;
@@ -1612,15 +1654,19 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         const code = signErr?.code;
         const msg: string = signErr?.message ?? "";
         const wasStopped = signErr?.name === "AbortError";
+        const walletDidNotRespond = wasStopped || msg.toLowerCase().includes("wallet did not respond");
+        if (walletDidNotRespond) setWalletSignatureRecoveryRequired(true);
         const isRejection = code === 4001 || code === "ACTION_REJECTED" ||
           msg.toLowerCase().includes("rejected") || msg.toLowerCase().includes("denied") ||
           msg.toLowerCase().includes("user cancelled") || msg.toLowerCase().includes("user canceled");
         toast({
           title: wasStopped ? "Wallet request stopped" : isRejection ? "Wallet signature declined" : "Wallet signing failed",
           description: wasStopped
-            ? "No order or escrow transaction was submitted. Dismiss any wallet prompt that remains open before retrying."
+            ? "No order or escrow transaction was submitted. Dismiss any wallet prompt that remains open, then use the confirmation below before retrying."
             : isRejection
             ? `Tap ${side === "buy" ? "Buy" : "Sell"} again and approve the signing request in your wallet to place the order.`
+            : walletDidNotRespond
+            ? "No order was submitted. Close any pending MetaMask signature; the form will stay blocked until you confirm it is dismissed."
             : (msg || "Could not sign order. Please reconnect your wallet and try again."),
           variant: "destructive",
         });
@@ -2341,8 +2387,25 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <span className="text-primary/80 font-medium">
                   {walletOrderbookAvailable
                     ? "Ethereum limit orders lock the required wallet funds until the order fills or you cancel it."
+                    : walletOrderbookSafeStartup
+                    ? "Trading is paused in this preview while matching and settlement workers are disabled."
                     : "Order-book trading uses available trading balance. Wallet-to-wallet matching is paused; use Swap for wallet-held funds."}
                 </span>
+              </div>
+            )}
+            {tradingPausedBySafeStartup && (
+              <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-200" role="status">
+                This preview is read-only for orders. No wallet signature or escrow transaction will be requested.
+              </div>
+            )}
+            {tradingCapabilityPending && (
+              <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-200" role="status">
+                Checking whether trading services are active…
+              </div>
+            )}
+            {apiRuntimeConfigError && (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-[11px] leading-relaxed text-red-200" role="alert">
+                Trading status could not be verified. No order will be submitted until the API responds.
               </div>
             )}
 
@@ -3099,15 +3162,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   Ethereum is required for wallet escrow, but MetaMask has not reported its network yet. Reconnect the wallet before placing this order.
                 </div>
               )}
+              {walletSignatureRecoveryRequired && (
+                <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-[11px] leading-relaxed text-red-200" role="alert">
+                  <p>No order was submitted. Close or dismiss any pending MetaMask signature before retrying.</p>
+                  <button
+                    type="button"
+                    className="mt-1 font-semibold underline underline-offset-2"
+                    onClick={() => setWalletSignatureRecoveryRequired(false)}
+                  >
+                    I dismissed the pending request
+                  </button>
+                </div>
+              )}
               <button
                 onClick={handlePlaceOrder}
-                disabled={!amount || amtNum <= 0 || isSubmitting || aboveLeMax || walletOrderbookNetworkPending}
+                disabled={!amount || amtNum <= 0 || isSubmitting || aboveLeMax || walletOrderbookNetworkPending || tradingPausedBySafeStartup || tradingCapabilityPending || apiRuntimeConfigError || walletSignatureRecoveryRequired}
                 className={cn(
                   "w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2",
                   side === "sell"
                     ? "bg-red-600 shadow-lg shadow-red-500/20"
                     : "bg-green-600 shadow-lg shadow-green-500/20",
-                  (!amount || amtNum <= 0 || isSubmitting || aboveLeMax || walletOrderbookNetworkPending) && "opacity-50 cursor-not-allowed"
+                  (!amount || amtNum <= 0 || isSubmitting || aboveLeMax || walletOrderbookNetworkPending || tradingPausedBySafeStartup || tradingCapabilityPending || apiRuntimeConfigError || walletSignatureRecoveryRequired) && "opacity-50 cursor-not-allowed"
                 )}
               >
                 {isSubmitting ? (
