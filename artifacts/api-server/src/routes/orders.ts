@@ -5,6 +5,7 @@ import { eq, and, lte, gte, ne, isNotNull, desc, asc, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { recoverMessageAddress } from "viem";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
+import { safeApiStartup } from "../lib/startupMode.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
 import { recordTradeMetric, getMetricsSummary } from "../lib/tradeMetrics.js";
@@ -145,11 +146,19 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
 router.get("/orders/evm-settlement/config", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
-    res.json(await getEvmOrderbookEscrowConfig());
+    const config = await getEvmOrderbookEscrowConfig();
+    res.json(safeApiStartup
+      ? { ...config, available: false, safeStartup: true }
+      : config);
   } catch (err: any) {
     req.log.warn({ err: err?.message }, "EVM orderbook settlement config check failed");
-    res.json({ chainId: 1, available: false });
+    res.json({ chainId: 1, available: false, safeStartup: safeApiStartup });
   }
+});
+
+router.get("/runtime-config", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ safeStartup: safeApiStartup });
 });
 
 router.get("/orders/challenge", (req, res) => {
@@ -299,6 +308,13 @@ router.post("/orders/sol-challenge", (req, res) => {
 // are marked filled with the txid.
 router.post("/orders", async (req, res) => {
   try {
+    if (safeApiStartup) {
+      res.status(503).json({
+        error: "Order submission is paused in safe API startup because matching and settlement workers are disabled.",
+        code: "SAFE_STARTUP",
+      });
+      return;
+    }
     const body = req.body;
     if (!body.walletAddress || !body.symbol || !body.side || !body.type || !body.quantity) {
       res.status(400).json({ error: "Missing required fields" });
