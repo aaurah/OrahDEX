@@ -65,6 +65,19 @@ function normalizeCandleRows(input: unknown): Candle[] {
   return [...unique.values()].sort((a, b) => Number(a.time) - Number(b.time));
 }
 
+function sameCandleRows(first: Candle[], second: Candle[]): boolean {
+  return first.length === second.length && first.every((candle, index) => {
+    const other = second[index];
+    return !!other &&
+      Number(candle.time) === Number(other.time) &&
+      candle.open === other.open &&
+      candle.high === other.high &&
+      candle.low === other.low &&
+      candle.close === other.close &&
+      (Number((candle as any).volume) || 0) === (Number((other as any).volume) || 0);
+  });
+}
+
 function isNumericVisibleRange(value: unknown): value is { from: number; to: number } {
   if (!value || typeof value !== "object") return false;
   const range = value as { from?: unknown; to?: unknown };
@@ -342,6 +355,7 @@ function OrahChart({
   /* Always-current display candles ref for live last-bar updates */
   const displayCandlesRef = useRef<Candle[]>([]);
   const lastFitKeyRef = useRef('');
+  const fitAfterIntervalDataRef = useRef(true);
 
   /* series refs */
   const priceSeriesRef   = useRef<any>(null);
@@ -405,6 +419,7 @@ function OrahChart({
     setAutoInterval(null);
     autoIntervalRef.current = false;
     zoomRangeRef.current = null;
+    fitAfterIntervalDataRef.current = true;
     candleRequestVersionRef.current += 1;
     if (zoomTimerRef2.current) clearTimeout(zoomTimerRef2.current);
   }, [interval]);
@@ -532,20 +547,35 @@ function OrahChart({
 
   /* Mobile owns candle fetching. Accept only complete, ordered OHLC rows and
      never clear the last good chart merely because a refetch is in flight. */
+  const normalizedExternalCandles = useMemo(
+    () => externalDataOnly ? normalizeCandleRows(fallbackData) : [],
+    [externalDataOnly, fallbackData],
+  );
+  const externalCandlesReady = useMemo(() => {
+    if (!externalDataOnly) return true;
+    if (externalDataLoading || normalizedExternalCandles.length < 2 ||
+        candles.length !== normalizedExternalCandles.length) return false;
+    const currentFirst = Number(candles[0]?.time);
+    const currentLast = Number(candles[candles.length - 1]?.time);
+    const nextFirst = Number(normalizedExternalCandles[0]?.time);
+    const nextLast = Number(normalizedExternalCandles[normalizedExternalCandles.length - 1]?.time);
+    return currentFirst === nextFirst && currentLast === nextLast;
+  }, [candles, externalDataLoading, externalDataOnly, normalizedExternalCandles]);
+
   useEffect(() => {
     if (!externalDataOnly || !Array.isArray(fallbackData)) return;
     if (externalDataLoading) {
       setLoading(true);
       return;
     }
-    const next = normalizeCandleRows(fallbackData);
+    const next = normalizedExternalCandles;
     if (next.length >= 2) {
-      setCandles(next);
+      setCandles(current => sameCandleRows(current, next) ? current : next);
     } else {
-      setCandles([]);
+      setCandles(current => current.length === 0 ? current : []);
     }
     setLoading(false);
-  }, [externalDataOnly, externalDataLoading, fallbackData, symbol, interval]);
+  }, [externalDataOnly, externalDataLoading, fallbackData, normalizedExternalCandles, symbol, interval]);
 
   /* When the API fetch completes with no data, fall back to the provided candles */
   useEffect(() => {
@@ -881,21 +911,24 @@ function OrahChart({
       }
       autoIntervalRef.current = false;
       zoomRangeRef.current = null;
-    } else if (
-      lastFitKeyRef.current !== `${symbol}:${interval}:${chartType}` &&
-      !(externalDataOnly && externalDataLoading)
-    ) {
+    } else if (externalCandlesReady && (
+      fitAfterIntervalDataRef.current ||
+      lastFitKeyRef.current !== `${symbol}:${interval}:${chartType}`
+    )) {
+      fitAfterIntervalDataRef.current = false;
       lastFitKeyRef.current = `${symbol}:${interval}:${chartType}`;
-      /* rAF ensures the chart has processed setData (computed its full extent) before we fit */
-      requestAnimationFrame(() => {
+      // Wait for both the series update and auto-sized chart layout. The
+      // selected timeframe may have been cached, but the chart still needs its
+      // local candle state to catch up before fitting the new range.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
         fitChartToData(chartRef.current, priceSeriesRef.current);
         fitChartToData(
           subChartRef.current,
           subLine1Ref.current ?? subLine2Ref.current ?? subHistRef.current,
         );
-      });
+      }));
     }
-  }, [displayCandles, chartType, externalDataLoading, externalDataOnly, fitChartToData, interval, symbol]);
+  }, [displayCandles, chartType, externalCandlesReady, fitChartToData, interval, symbol]);
 
   /* ── Push candle data whenever candles change ───────────────────────── */
   useEffect(() => {
