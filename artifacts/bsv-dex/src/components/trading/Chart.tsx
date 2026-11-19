@@ -881,7 +881,10 @@ function OrahChart({
       }
       autoIntervalRef.current = false;
       zoomRangeRef.current = null;
-    } else if (lastFitKeyRef.current !== `${symbol}:${interval}:${chartType}`) {
+    } else if (
+      lastFitKeyRef.current !== `${symbol}:${interval}:${chartType}` &&
+      !(externalDataOnly && externalDataLoading)
+    ) {
       lastFitKeyRef.current = `${symbol}:${interval}:${chartType}`;
       /* rAF ensures the chart has processed setData (computed its full extent) before we fit */
       requestAnimationFrame(() => {
@@ -892,7 +895,7 @@ function OrahChart({
         );
       });
     }
-  }, [displayCandles, chartType, fitChartToData, interval, symbol]);
+  }, [displayCandles, chartType, externalDataLoading, externalDataOnly, fitChartToData, interval, symbol]);
 
   /* ── Push candle data whenever candles change ───────────────────────── */
   useEffect(() => {
