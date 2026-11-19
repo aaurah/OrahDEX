@@ -1,5 +1,10 @@
 import { pool } from "@workspace/db";
-import { orderbookTradingEnabled, safeApiStartup, tradingWorkersEnabled } from "./startupMode.js";
+import {
+  isEvmOrderbookChainEnabled,
+  orderbookTradingEnabled,
+  safeApiStartup,
+  tradingWorkersEnabled,
+} from "./startupMode.js";
 import { getEvmOrderbookEscrowConfig } from "./evmOrderbookEscrow.js";
 import { getHealthReport } from "./selfHealing.js";
 
@@ -51,8 +56,8 @@ const DISABLED_NETWORKS: Record<Exclude<TradingNetwork, "evm">, NetworkTradingCa
   },
 };
 
-function configuredEvmChainId(): number {
-  const chainId = Number(process.env.ORAHDEX_TRADING_EVM_CHAIN_ID ?? "1");
+function configuredEvmChainId(requestedChainId?: number): number {
+  const chainId = requestedChainId ?? Number(process.env.ORAHDEX_TRADING_EVM_CHAIN_ID ?? "1");
   return chainId === 1 || chainId === 11155111 ? chainId : -1;
 }
 
@@ -67,17 +72,23 @@ function readOnlyCapability(reason: string, chainId = configuredEvmChainId()): T
 }
 
 /**
- * Return the network-specific trading readiness without starting any workers.
- * Ethereum stays disabled until the operator explicitly marks the full testnet
- * lifecycle (place, match, settle, cancel, recovery) as verified.
+ * Return readiness for the requested wallet chain without starting workers.
+ * Each chain must be explicitly configured and independently verified.
  */
-export async function getTradingCapabilities(): Promise<TradingCapabilitySnapshot> {
-  const chainId = configuredEvmChainId();
+export async function getTradingCapabilities(requestedChainId?: number): Promise<TradingCapabilitySnapshot> {
+  const chainId = configuredEvmChainId(requestedChainId);
   if (chainId < 0) {
     return readOnlyCapability("The configured EVM trading chain is not supported.", chainId);
   }
-  if (safeApiStartup && !orderbookTradingEnabled) {
-    return readOnlyCapability("This preview is read-only while trading services are paused.", chainId);
+  if (!isEvmOrderbookChainEnabled(chainId)) {
+    return readOnlyCapability(
+      chainId === 1
+        ? "Ethereum mainnet needs a funded relayer and a verified escrow order lifecycle before trading can be enabled."
+        : safeApiStartup
+        ? `Trading has not been verified on EVM chain ${chainId}.`
+        : `EVM orderbook trading is not enabled on chain ${chainId}.`,
+      chainId,
+    );
   }
 
   if (!tradingWorkersEnabled && !orderbookTradingEnabled) {
@@ -88,20 +99,6 @@ export async function getTradingCapabilities(): Promise<TradingCapabilitySnapsho
           available: false,
           chainId,
           reason: "Order, deposit, and settlement workers are disabled.",
-        },
-        ...DISABLED_NETWORKS,
-      },
-    };
-  }
-
-  if (process.env.ORAHDEX_TRADING_EVM_VERIFIED !== "true") {
-    return {
-      safeStartup: safeApiStartup && !orderbookTradingEnabled,
-      networks: {
-        evm: {
-          available: false,
-          chainId,
-          reason: "EVM order trading is disabled until the testnet order, settlement, cancellation, and recovery checks are verified.",
         },
         ...DISABLED_NETWORKS,
       },
@@ -122,7 +119,7 @@ export async function getTradingCapabilities(): Promise<TradingCapabilitySnapsho
   }
   if (!databaseReady || !orderRecoveryReady) {
     return {
-      safeStartup: safeApiStartup && !orderbookTradingEnabled,
+      safeStartup: safeApiStartup && !isEvmOrderbookChainEnabled(chainId),
       networks: {
         evm: {
           available: false,
@@ -137,15 +134,17 @@ export async function getTradingCapabilities(): Promise<TradingCapabilitySnapsho
   }
 
   let escrowReady = false;
+  let escrowReason: string | undefined;
   try {
     const escrow = await getEvmOrderbookEscrowConfig(chainId);
     escrowReady = escrow.available === true && escrow.chainId === chainId;
+    escrowReason = escrow.reason;
   } catch {
     // Fail closed when RPC, contract, or relayer readiness cannot be confirmed.
   }
 
   return {
-    safeStartup: safeApiStartup && !orderbookTradingEnabled,
+    safeStartup: safeApiStartup && !isEvmOrderbookChainEnabled(chainId),
     networks: {
       evm: escrowReady
         ? {
@@ -159,7 +158,7 @@ export async function getTradingCapabilities(): Promise<TradingCapabilitySnapsho
         : {
             available: false,
             chainId,
-            reason: "EVM escrow contract, RPC, or relayer readiness could not be verified.",
+            reason: escrowReason ?? "EVM escrow contract, RPC, or relayer readiness could not be verified.",
           },
       ...DISABLED_NETWORKS,
     },
