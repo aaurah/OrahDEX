@@ -47,7 +47,7 @@ import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
 import { startOverlayScanner } from "./lib/overlayScanner.js";
 import { startSelfDiagnostic } from "./lib/selfDiagnostic.js";
 import { startErrorWatcher } from "./lib/errorWatcher.js";
-import { safeApiStartup } from "./lib/startupMode.js";
+import { safeApiStartup, tradingWorkersEnabled } from "./lib/startupMode.js";
 import { pool } from "@workspace/db";
 
 // Run the chain_id column migration at startup (idempotent — IF NOT EXISTS).
@@ -749,23 +749,30 @@ if (!safeApiStartup) {
   _s(12_000, startArbBot,               "startArbBot");
   _s(18_000, startFuturesProfitEngine,  "startFuturesProfitEngine");
   _s(24_000, startBsvChainMonitor,      "startBsvChainMonitor");
-  _s(30_000, startBsvDepositWatcher,    "startBsvDepositWatcher");
-  _s(36_000, startEvmDepositWatcher,    "startEvmDepositWatcher");
-  _s(42_000, () => {
-    startHtlcWatcher().catch(e    => logger.error({ err: e }, "startHtlcWatcher failed to init"));
-    startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
-  }, "startHtlcWatchers");
   _s(48_000, startRouteCache,           "startRouteCache");
-  _s(54_000, startOrderReconciler,      "startOrderReconciler");
   _s(60_000, startAllReconcilers,       "startAllReconcilers");
   _s(66_000, startExchangeApiRepairEngine, "startExchangeApiRepairEngine");
-  _s(72_000, startBsvIntentWatcher,       "startBsvIntentWatcher");
-  _s(78_000, startArcStatusPoller,        "startArcStatusPoller");
   _s(84_000, startAdvancedOrderEngines,  "startAdvancedOrderEngines");
   _s(90_000, startFundingRateEngine,     "startFundingRateEngine");
   _s(96_000, startBsvMempoolWatcher,    "startBsvMempoolWatcher");
   _s(102_000, startOverlayScanner,     "startOverlayScanner");
   _s(108_000, startSelfDiagnostic,    "startSelfDiagnostic");
+}
+
+// Wallet funding and order-settlement services use their own switch. This
+// keeps a trading-workflow change from starting market bots or diagnostics.
+if (tradingWorkersEnabled) {
+  _s(114_000, startOrderReconciler, "startOrderReconciler");
+  _s(120_000, startBsvDepositWatcher, "startBsvDepositWatcher");
+  _s(126_000, startEvmDepositWatcher, "startEvmDepositWatcher");
+  _s(132_000, () => {
+    startHtlcWatcher().catch(e    => logger.error({ err: e }, "startHtlcWatcher failed to init"));
+    startEvmHtlcWatcher().catch(e => logger.error({ err: e }, "startEvmHtlcWatcher failed to init"));
+  }, "startHtlcWatchers");
+  _s(138_000, startBsvIntentWatcher, "startBsvIntentWatcher");
+  _s(144_000, startArcStatusPoller, "startArcStatusPoller");
+} else if (!safeApiStartup) {
+  logger.warn("Trading workers are disabled; order, deposit, and settlement background services were not started");
 }
 
 // ── DB pool keepalive ─────────────────────────────────────────────────────────
