@@ -708,10 +708,16 @@ export async function fetchRealCandles(
   try {
     const intervalSec = INTERVAL_SECONDS[interval] || 3600;
     const quoteCandles = await buildCandlesFromOrderbookSnapshots(symbol, intervalSec, limit);
-    if (quoteCandles.length) {
+    if (isValidCandleSet(quoteCandles, minRequired)) {
       setCached(cacheKey, quoteCandles, "orderbook-snapshots");
       onSource?.("orderbook-snapshots");
       return quoteCandles;
+    }
+    if (quoteCandles.length > 0) {
+      logger.debug(
+        { symbol, interval, count: quoteCandles.length, minRequired },
+        "Order-book candle observations are too sparse; trying external reference history",
+      );
     }
   } catch (err) {
     logger.warn({ err, symbol }, "Order-book candle history unavailable");
