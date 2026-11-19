@@ -5,15 +5,40 @@
  */
 export const safeApiStartup = process.env.ORAHDEX_API_SAFE_STARTUP === "1";
 
+const VERIFIED_EVM_ORDERBOOK_CHAIN_IDS = new Set([1, 11155111]);
+
+function parseChainIds(value: string | undefined): number[] {
+  if (!value) return [];
+  return [...new Set(value.split(",")
+    .map((entry) => Number(entry.trim()))
+    .filter((chainId) => VERIFIED_EVM_ORDERBOOK_CHAIN_IDS.has(chainId)))];
+}
+
+export function configuredEvmOrderbookChainIds(): number[] {
+  const configured = parseChainIds(process.env.ORAHDEX_TRADING_EVM_CHAIN_IDS);
+  if (configured.length > 0) return configured;
+  const legacyChainId = Number(process.env.ORAHDEX_TRADING_EVM_CHAIN_ID ?? "1");
+  return VERIFIED_EVM_ORDERBOOK_CHAIN_IDS.has(legacyChainId) ? [legacyChainId] : [];
+}
+
+export function isEvmOrderbookChainEnabled(chainId: number): boolean {
+  const verified = parseChainIds(process.env.ORAHDEX_TRADING_EVM_VERIFIED_CHAIN_IDS);
+  const verifiedChainIds = verified.length > 0
+    ? verified
+    : process.env.ORAHDEX_TRADING_EVM_VERIFIED === "true"
+      ? [Number(process.env.ORAHDEX_TRADING_EVM_CHAIN_ID ?? "1")]
+      : [];
+  return process.env.ORAHDEX_ORDERBOOK_TRADING_ENABLED === "true" &&
+    configuredEvmOrderbookChainIds().includes(chainId) &&
+    verifiedChainIds.includes(chainId);
+}
+
 /**
- * The only trading mode allowed to run alongside safe API startup is the
- * explicitly verified Sepolia orderbook path. It starts the order recovery
- * worker only; it does not enable production bots or other settlement systems.
+ * Only explicitly verified escrow chains may run in safe API startup. The
+ * worker remains isolated from market bots and unrelated settlement systems.
  */
 export const orderbookTradingEnabled =
-  process.env.ORAHDEX_ORDERBOOK_TRADING_ENABLED === "true" &&
-  Number(process.env.ORAHDEX_TRADING_EVM_CHAIN_ID) === 11155111 &&
-  process.env.ORAHDEX_TRADING_EVM_VERIFIED === "true";
+  configuredEvmOrderbookChainIds().some(isEvmOrderbookChainEnabled);
 
 /**
  * Order recovery, deposit, and settlement watchers are managed separately

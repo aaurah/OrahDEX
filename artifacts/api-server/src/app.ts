@@ -772,8 +772,8 @@ if (tradingWorkersEnabled) {
   _s(138_000, startBsvIntentWatcher, "startBsvIntentWatcher");
   _s(144_000, startArcStatusPoller, "startArcStatusPoller");
 } else if (orderbookTradingEnabled) {
-  // Safe preview may run only the order recovery worker after explicit Sepolia
-  // verification; market bots and unrelated settlement workers remain stopped.
+  // Safe preview may run only the order recovery worker after explicit
+  // per-chain verification; market bots and unrelated settlement workers stay stopped.
   _s(0, startOrderReconciler, "startOrderReconciler");
 } else if (!safeApiStartup) {
   logger.warn("Trading workers are disabled; order, deposit, and settlement background services were not started");
