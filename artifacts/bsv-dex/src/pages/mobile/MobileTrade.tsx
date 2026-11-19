@@ -33,6 +33,7 @@ import { buildOrderIntentMessage, buildOrderActionMessage, signWalletMessage } f
 import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
 import { withWalletRequestTimeout } from "@/lib/walletRequestTimeout.mjs";
+import { switchTradingWalletToEthereum } from "@/lib/switchTradingWalletToEthereum";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -328,15 +329,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isOrahWallet = provider === "orah-wallet";
   const isExternalEvm = isEvm && !isOrahWallet;
   const isSelfCustodyEvm = isEvm && !!address;
+  const tradingCapabilityChainId = isEvm
+    ? walletChainId === 11155111 ? 11155111 : 1
+    : walletChainId ?? 1;
   // Default to chainId 1 (Ethereum mainnet) when wallet hasn't reported a chain yet,
   // matching Portfolio behavior — otherwise the balance fetch never starts and Trade
   // shows 0 even though the wallet holds funds.
   const { balances: evmTokenBalances, loading: evmBalancesLoading, refresh: refreshEvmBalances } = useEvmBalances(isEvm ? address : null, isEvm ? (walletChainId ?? 1) : null);
   const { data: evmOrderbookConfig } = useQuery({
-    queryKey: ["evm-orderbook-settlement-config", walletChainId],
+    queryKey: ["evm-orderbook-settlement-config", tradingCapabilityChainId],
     queryFn: async () => {
-      const response = await fetch(`${BASE}/api/orders/evm-settlement/config?chainId=${walletChainId}`, { cache: "no-store" });
-      if (!response.ok) return { available: false, chainId: walletChainId };
+      const response = await fetch(`${BASE}/api/orders/evm-settlement/config?chainId=${tradingCapabilityChainId}`, { cache: "no-store" });
+      if (!response.ok) return { available: false, chainId: tradingCapabilityChainId };
       return response.json();
     },
     enabled: isEvm && !!address && walletChainId != null,
@@ -348,9 +352,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     isError: apiRuntimeConfigError,
     isLoading: apiRuntimeConfigLoading,
   } = useQuery({
-    queryKey: ["api-runtime-config", walletChainId ?? 1],
+    queryKey: ["api-runtime-config", tradingCapabilityChainId],
     queryFn: async () => {
-      const response = await fetch(`${BASE}/api/runtime-config?chainId=${walletChainId ?? 1}`, { cache: "no-store" });
+      const response = await fetch(`${BASE}/api/runtime-config?chainId=${tradingCapabilityChainId}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Trading status unavailable");
       return response.json() as Promise<{
         safeStartup: boolean;
@@ -390,13 +394,35 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const tradingPausedBySafeStartup =
     !!address && (tradingNetworkCapability?.available !== true || walletOrderbookWrongChain || unsupportedEvmOrderbookPair);
   const tradingCapabilityReason = walletOrderbookWrongChain
-    ? `Switch your wallet to chain ${tradingNetworkCapability?.chainId} before placing this order.`
+    ? `Your wallet is on ${walletChainId == null ? "an unknown network" : chainLabel(walletChainId)}. Switch to Ethereum Mainnet before placing this order.`
     : unsupportedEvmOrderbookPair
     ? `${symbol} is not supported by the verified orderbook on chain ${tradingNetworkCapability?.chainId}.`
     : tradingNetworkCapability?.reason ??
       (apiRuntimeConfig?.safeStartup
         ? "This preview is read-only while trading services are paused."
         : "Trading is not enabled for this wallet network.");
+  const canSwitchToEthereum =
+    !!address &&
+    isEvm &&
+    walletChainId !== 1 &&
+    walletChainId !== 11155111 &&
+    tradingNetworkCapability?.available === true &&
+    tradingNetworkCapability.chainId === 1;
+  const [switchingToEthereum, setSwitchingToEthereum] = useState(false);
+  const handleSwitchToEthereum = async () => {
+    setSwitchingToEthereum(true);
+    try {
+      await switchTradingWalletToEthereum(provider);
+    } catch (error: any) {
+      toast({
+        title: "Could not switch network",
+        description: error?.message || "Open your wallet and switch to Ethereum Mainnet.",
+        variant: "destructive",
+      });
+    } finally {
+      setSwitchingToEthereum(false);
+    }
+  };
   const walletOrderbookAvailable =
     isEvm &&
     tradingNetworkCapability?.available === true &&
@@ -3322,14 +3348,25 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             <Wallet size={16} />
             Connect Wallet
           </button>
-        ) : tradingPausedBySafeStartup || tradingCapabilityPending || apiRuntimeConfigError ? (
-          <button
-            type="button"
-            disabled
-            className="w-full py-3 rounded-xl text-sm font-bold text-muted-foreground bg-secondary border border-border cursor-not-allowed"
-          >
-            {tradingPausedBySafeStartup ? "Trading unavailable on this network" : "Trading status unavailable"}
-          </button>
+        ) : tradingPausedBySafeStartup || tradingCapabilityPending || apiRuntimeConfigError || walletOrderbookNetworkPending ? (
+          canSwitchToEthereum ? (
+            <button
+              type="button"
+              onClick={handleSwitchToEthereum}
+              disabled={switchingToEthereum}
+              className="w-full py-3 rounded-xl text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60"
+            >
+              {switchingToEthereum ? "Waiting for wallet…" : "Switch to Ethereum Mainnet"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="w-full py-3 rounded-xl text-sm font-bold text-muted-foreground bg-secondary border border-border cursor-not-allowed"
+            >
+              {tradingPausedBySafeStartup ? "Trading unavailable on this network" : "Trading status unavailable"}
+            </button>
+          )
         ) : (
           <>
             {/* Buy button */}
