@@ -116,9 +116,6 @@ const RANGE_PRESET_MAP: Record<string, { apiInterval: string; limit: number }> =
   'All': { apiInterval: '1M', limit: 1500 },
 };
 
-/* Intervals that use the full A-to-Z history endpoint (Bitfinex inception data) */
-const HISTORY_INTERVALS = new Set(['5Y', '10Y', 'All']);
-
 /* ── Chart type definitions ─────────────────────────────────────────────── */
 const CHART_TYPES: { id: ChartType; label: string; svg: string }[] = [
   { id: 'candle',      label: 'Candlestick',  svg: 'M5,2 L5,5 M5,9 L5,12 M3,5 L7,5 L7,9 L3,9 Z' },
@@ -356,6 +353,7 @@ function OrahChart({
   const displayCandlesRef = useRef<Candle[]>([]);
   const lastFitKeyRef = useRef('');
   const fitAfterIntervalDataRef = useRef(true);
+  const fitPendingRef = useRef(false);
 
   /* series refs */
   const priceSeriesRef   = useRef<any>(null);
@@ -452,19 +450,14 @@ function OrahChart({
   const fetchCandles = useCallback(async () => {
     const requestVersion = ++candleRequestVersionRef.current;
     try {
-      let url: string;
-      if (HISTORY_INTERVALS.has(interval)) {
-        /* Full history from coin inception — server resamples daily→weekly/monthly */
-        const res = interval === '5Y' ? '1w' : '1M';
-        url = `${BASE_URL}/api/markets/${encodeURIComponent(candleSymbol)}/history?interval=${res}`;
-      } else {
-        const preset = RANGE_PRESET_MAP[interval];
-        const apiInterval = preset ? preset.apiInterval : interval;
-        const limit = preset
-          ? preset.limit
-          : ['1d','3d','1w','1M'].includes(interval) ? 300 : 500;
-        url = `${BASE_URL}/api/markets/${encodeURIComponent(candleSymbol)}/candles?interval=${apiInterval}&limit=${limit}`;
-      }
+      const preset = RANGE_PRESET_MAP[interval];
+      const apiInterval = preset ? preset.apiInterval : interval;
+      const limit = preset
+        ? preset.limit
+        : ['1d','3d','1w','1M'].includes(interval) ? 300 : 500;
+      // Use the same candle feed for all chart presets. The separate history
+      // endpoint can return a shorter range than the regular 1M candles feed.
+      const url = `${BASE_URL}/api/markets/${encodeURIComponent(candleSymbol)}/candles?interval=${apiInterval}&limit=${limit}`;
       const res = await fetch(url);
       if (!res.ok) return;
       const raw = await res.json();
@@ -697,6 +690,36 @@ function OrahChart({
       // Empty indicator panes have no range to fit while candle data refreshes.
     }
   }, []);
+  const applyPendingChartFit = useCallback(() => {
+    const element = mainRef.current;
+    const series = priceSeriesRef.current;
+    if (
+      !fitPendingRef.current ||
+      !element ||
+      element.clientWidth <= 0 ||
+      element.clientHeight <= 0 ||
+      typeof series?.data !== 'function' ||
+      series.data().length === 0
+    ) return;
+
+    fitChartToData(chartRef.current, series);
+    fitChartToData(
+      subChartRef.current,
+      subLine1Ref.current ?? subLine2Ref.current ?? subHistRef.current,
+    );
+    fitPendingRef.current = false;
+  }, [fitChartToData]);
+
+  // Some tab layouts resize after data arrives. Keep a fit pending until the
+  // chart has a real viewport, so hidden/zero-width layouts cannot strand data
+  // in a narrow slice of the visible range.
+  useEffect(() => {
+    const element = mainRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => applyPendingChartFit());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [applyPendingChartFit, chartReady]);
 
   /* ── Live last-bar update — fires on every ticker tick ───────────────────
      Calls series.update() instead of setData() so only the last bar redraws */
@@ -916,19 +939,14 @@ function OrahChart({
       lastFitKeyRef.current !== `${symbol}:${interval}:${chartType}`
     )) {
       fitAfterIntervalDataRef.current = false;
+      fitPendingRef.current = true;
       lastFitKeyRef.current = `${symbol}:${interval}:${chartType}`;
       // Wait for both the series update and auto-sized chart layout. The
       // selected timeframe may have been cached, but the chart still needs its
       // local candle state to catch up before fitting the new range.
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        fitChartToData(chartRef.current, priceSeriesRef.current);
-        fitChartToData(
-          subChartRef.current,
-          subLine1Ref.current ?? subLine2Ref.current ?? subHistRef.current,
-        );
-      }));
+      requestAnimationFrame(() => requestAnimationFrame(applyPendingChartFit));
     }
-  }, [displayCandles, chartType, externalCandlesReady, fitChartToData, interval, symbol]);
+  }, [displayCandles, chartType, externalCandlesReady, applyPendingChartFit, interval, symbol]);
 
   /* ── Push candle data whenever candles change ───────────────────────── */
   useEffect(() => {
