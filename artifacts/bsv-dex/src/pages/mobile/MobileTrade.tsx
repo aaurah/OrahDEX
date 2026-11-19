@@ -2385,7 +2385,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl text-[11px] bg-primary/8 border border-primary/20">
                 <ShieldCheck size={12} className="text-primary shrink-0" />
                 <span className="text-primary/80 font-medium">
-                  {walletOrderbookAvailable
+                  {tradingPausedBySafeStartup
+                    ? "Trading is paused in this preview. Wallet funds are not available for order-book trades here."
+                    : walletOrderbookAvailable
                     ? "Ethereum limit orders lock the required wallet funds until the order fills or you cancel it."
                     : walletOrderbookSafeStartup
                     ? "Trading is paused in this preview while matching and settlement workers are disabled."
@@ -2809,7 +2811,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <div className="bg-blue-500/5 border border-blue-500/25 rounded-xl px-3 py-2 flex items-start gap-2">
                 <svg className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
                 <div className="text-[10px] leading-relaxed text-blue-300/90">
-                  {walletOrderbookAvailable
+                  {tradingPausedBySafeStartup
+                    ? <><span className="font-bold text-blue-300">Order-book trading is paused.</span> Your wallet balance stays on-chain and is not an exchange trading balance.</>
+                    : walletOrderbookAvailable
                     ? <><span className="font-bold text-blue-300">Wallet-funded limit trading is enabled.</span> Required funds are locked in Ethereum escrow until filled or canceled.</>
                     : <><span className="font-bold text-blue-300">Wallet funds stay yours.</span> On-chain wallet balances are shown separately below. Order-book trades require a funded trading balance; use Swap for wallet-held funds.</>}
                   {hasEscrow(walletChainId ?? 0) && <span className="text-emerald-400"> On-chain escrow available on this chain.</span>}
@@ -2821,7 +2825,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             <div className="space-y-1.5 px-1">
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground border-b border-dashed border-muted-foreground/40">
-                  {isEvm ? "Trading balance" : "Available"}
+                  {isEvm ? "Exchange balance" : "Available"}
                 </span>
                 <div className="flex items-center gap-2">
                   <button
@@ -2848,7 +2852,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   </span>
                   <button
                     onClick={() => setFundingSheetOpen(true)}
-                    className="rounded-full border-2 border-primary text-primary shrink-0 inline-flex items-center justify-center active:bg-primary/20 transition-colors"
+                    disabled={tradingPausedBySafeStartup || tradingCapabilityPending || apiRuntimeConfigError}
+                    title={tradingPausedBySafeStartup ? "Funding is disabled in this read-only preview" : "Add trading funds"}
+                    className="rounded-full border-2 border-primary text-primary shrink-0 inline-flex items-center justify-center active:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ width: 22, height: 22, minWidth: 22, minHeight: 22 }}
                   >
                     <Plus size={10} strokeWidth={3} />
@@ -2857,7 +2863,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </div>
               {isEvm && (
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">Wallet balance</span>
+                  <span className="text-xs text-muted-foreground">On-chain wallet balance</span>
                   <span className="text-xs font-semibold tabular-nums text-foreground flex items-center gap-1">
                     {evmBalancesLoading ? "—" : formatBalance(walletAvailable)}&nbsp;{availableSym}
                     <span className="text-[9px] font-bold px-1 py-0.5 rounded border border-primary/30 bg-primary/10 text-primary leading-none">
@@ -2870,24 +2876,27 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               {address && available === 0 && !apiBalancesLoading && (!isEvm || !evmBalancesLoading) && walletAvailable <= 0 && (
                 <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
                   <span>
-                    No {availableSym} in {isEvm ? "trading balance or connected wallet" : "wallet"} —{" "}
-                    get it via{" "}
-                    <a
-                      href="/swap"
-                      className="text-cyan-400 underline underline-offset-2 font-semibold"
-                    >
-                      Bridge
-                    </a>
-                    {" "}or deposit on-chain.
+                    {tradingPausedBySafeStartup
+                      ? "This preview is read-only; no order-book balance is available here."
+                      : <>No {availableSym} in {isEvm ? "exchange balance or connected wallet" : "wallet"} — get it via{" "}
+                        <a
+                          href="/swap"
+                          className="text-cyan-400 underline underline-offset-2 font-semibold"
+                        >
+                          Bridge
+                        </a>
+                        {" "}or deposit on-chain.</>}
                   </span>
                 </div>
               )}
               {address && isEvm && available === 0 && !apiBalancesLoading && !evmBalancesLoading && walletAvailable > 0 && (
                 <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
                   <span>
-                    {formatBalance(walletAvailable)} {availableSym} is in your wallet, not your trading balance. Use{" "}
-                    <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold">Swap</a>
-                    {" "}or deposit to trade on the order book.
+                    {tradingPausedBySafeStartup
+                      ? `${formatBalance(walletAvailable)} ${availableSym} is held in your wallet. This preview is read-only and cannot use it for orders.`
+                      : <>{formatBalance(walletAvailable)} {availableSym} is in your wallet, not your exchange balance. Use{" "}
+                        <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold">Swap</a>
+                        {" "}or deposit to trade on the order book.</>}
                   </span>
                 </div>
               )}
@@ -3247,7 +3256,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       {isSelfCustodyEvm && (
         <div className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-1 border-t border-blue-500/20 bg-blue-500/5 text-[10px] text-blue-300/80 font-medium leading-none">
           <svg className="w-3 h-3 shrink-0 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-          Non-custodial — funds stay in your wallet until on-chain settlement
+          {tradingPausedBySafeStartup
+            ? "Read-only preview — no orders or wallet transactions will be sent"
+            : "Non-custodial — funds stay in your wallet until on-chain settlement"}
         </div>
       )}
 
@@ -3264,6 +3275,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           >
             <Wallet size={16} />
             Connect Wallet
+          </button>
+        ) : tradingPausedBySafeStartup || tradingCapabilityPending || apiRuntimeConfigError ? (
+          <button
+            type="button"
+            disabled
+            className="w-full py-3 rounded-xl text-sm font-bold text-muted-foreground bg-secondary border border-border cursor-not-allowed"
+          >
+            {tradingPausedBySafeStartup ? "Trading paused — read-only preview" : "Trading status unavailable"}
           </button>
         ) : (
           <>
