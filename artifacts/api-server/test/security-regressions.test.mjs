@@ -209,9 +209,11 @@ test("EVM orderbook orders require confirmed escrow proof and same-chain settlem
   ]);
 
   assert.match(ordersSrc, /router\.get\("\/orders\/evm-settlement\/config"/);
+  assert.match(ordersSrc, /getEvmOrderbookEscrowConfig\(chainId\)/);
   assert.match(ordersSrc, /router\.post\("\/orders\/recover-evm"/);
   assert.match(ordersSrc, /router\.get\("\/runtime-config"/);
-  assert.match(ordersSrc, /res\.json\(await getTradingCapabilities\(\)\)/);
+  assert.match(ordersSrc, /res\.json\(await getTradingCapabilities\(chainId\)\)/);
+  assert.match(ordersSrc, /getTradingCapabilities\(\s*chainIdInput \? Number\(chainIdInput\) : undefined/);
   assert.match(ordersSrc, /safeStartup: true/);
   assert.match(ordersSrc, /if \(safeApiStartup && !orderbookTradingEnabled\)[\s\S]*?code: "SAFE_STARTUP"/);
   assert.match(ordersSrc, /getOrderNetworkCapability\(runtimeCapabilities/);
@@ -222,11 +224,12 @@ test("EVM orderbook orders require confirmed escrow proof and same-chain settlem
   assert.match(ordersSrc, /settleEvmOrderFill\(\{/);
   assert.match(ordersSrc, /verifyEvmOrderbookCancelTx\(\{/);
   assert.match(escrowSrc, /MIN_CONFIRMATIONS/);
+  assert.match(escrowSrc, /isEvmOrderbookChainEnabled\(params\.chainId\)/);
   assert.match(escrowSrc, /OrderOpened/);
   assert.match(escrowSrc, /configuredEscrow\.toLowerCase\(\) !== params\.escrowAddress\.toLowerCase\(\)/);
 });
 
-test("only the configured verified EVM chain can trade during safe startup", async () => {
+test("only configured and verified EVM chains can trade during safe startup", async () => {
   const [src, startupSrc, appSrc, mobileTradeSrc, orderFormSrc] = await Promise.all([
     read(tradingCapabilitiesPath),
     read(startupModePath),
@@ -235,7 +238,7 @@ test("only the configured verified EVM chain can trade during safe startup", asy
     read(path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "trading", "OrderForm.tsx")),
   ]);
 
-  assert.match(src, /ORAHDEX_TRADING_EVM_VERIFIED !== "true"/);
+  assert.match(src, /!isEvmOrderbookChainEnabled\(chainId\)/);
   assert.match(src, /bsv:\s*\{\s*available: false/);
   assert.match(src, /sol:\s*\{\s*available: false/);
   assert.match(src, /btc:\s*\{\s*available: false/);
@@ -246,17 +249,18 @@ test("only the configured verified EVM chain can trade during safe startup", asy
   assert.match(src, /await pool\.query\("SELECT 1"\)/);
   assert.match(src, /service\.name === "order-reconciler"/);
   assert.match(src, /recovery\.lastSuccessAt !== null/);
-  assert.match(startupSrc, /ORAHDEX_ORDERBOOK_TRADING_ENABLED === "true"/);
-  assert.match(startupSrc, /Number\(process\.env\.ORAHDEX_TRADING_EVM_CHAIN_ID\) === 11155111/);
-  assert.match(startupSrc, /process\.env\.ORAHDEX_TRADING_EVM_VERIFIED === "true"/);
+  assert.match(startupSrc, /configuredEvmOrderbookChainIds\(\)\.some\(isEvmOrderbookChainEnabled\)/);
+  assert.match(startupSrc, /ORAHDEX_TRADING_EVM_VERIFIED_CHAIN_IDS/);
   assert.match(appSrc, /if \(tradingWorkersEnabled\) \{[\s\S]*?startOrderReconciler[\s\S]*?startBsvIntentWatcher/);
   assert.match(appSrc, /else if \(orderbookTradingEnabled\)[\s\S]*?startOrderReconciler/);
   const generalWorkerBlock = appSrc.match(/if \(!safeApiStartup\) \{\n  _s\([\s\S]*?\n\}/)?.[0] ?? "";
   assert.ok(generalWorkerBlock, "general background worker block exists");
   assert.doesNotMatch(generalWorkerBlock, /startOrderReconciler|startBsvDepositWatcher|startHtlcWatcher|startBsvIntentWatcher/);
   assert.match(mobileTradeSrc, /tradingNetworkCapability\?\.available === true/);
+  assert.match(mobileTradeSrc, /runtime-config\?chainId=\$\{walletChainId \?\? 1\}/);
   assert.match(mobileTradeSrc, /tradingCapabilityReason/);
   assert.match(orderFormSrc, /tradingNetworkCapability\?\.available === true/);
+  assert.match(orderFormSrc, /runtime-config\?chainId=\$\{walletChainId \?\? 1\}/);
   assert.match(orderFormSrc, /tradingCapabilityReason/);
 });
 

@@ -150,23 +150,35 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
 router.get("/orders/evm-settlement/config", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
-    const config = await getEvmOrderbookEscrowConfig();
+    const rawChainId = req.query.chainId;
+    const chainId = rawChainId === undefined ? undefined : Number(rawChainId);
+    if (chainId !== undefined && ![1, 11155111].includes(chainId)) {
+      res.status(400).json({ available: false, chainId, reason: "Unsupported EVM orderbook chain." });
+      return;
+    }
+    const config = await getEvmOrderbookEscrowConfig(chainId);
     res.json(safeApiStartup && !orderbookTradingEnabled
       ? { ...config, available: false, safeStartup: true }
       : config);
   } catch (err: any) {
     req.log.warn({ err: err?.message }, "EVM orderbook settlement config check failed");
     res.json({
-      chainId: Number(process.env.ORAHDEX_TRADING_EVM_CHAIN_ID ?? "1"),
+      chainId: Number(req.query.chainId ?? process.env.ORAHDEX_TRADING_EVM_CHAIN_ID ?? "1"),
       available: false,
       safeStartup: safeApiStartup && !orderbookTradingEnabled,
     });
   }
 });
 
-router.get("/runtime-config", async (_req, res) => {
+router.get("/runtime-config", async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  res.json(await getTradingCapabilities());
+  const rawChainId = req.query.chainId;
+  const chainId = rawChainId === undefined ? undefined : Number(rawChainId);
+  if (chainId !== undefined && ![1, 11155111].includes(chainId)) {
+    res.status(400).json({ error: "Unsupported EVM trading chain." });
+    return;
+  }
+  res.json(await getTradingCapabilities(chainId));
 });
 
 router.post("/orders/recover-evm", async (req, res) => {
@@ -190,7 +202,7 @@ router.post("/orders/recover-evm", async (req, res) => {
       return;
     }
 
-    const capability = (await getTradingCapabilities()).networks.evm;
+    const capability = (await getTradingCapabilities(chainId)).networks.evm;
     if (capability.available !== true || capability.chainId !== chainId) {
       res.status(503).json({
         error: capability.reason ?? "EVM order recovery is not enabled on this chain.",
@@ -520,7 +532,9 @@ router.post("/orders", async (req, res) => {
     // Expose and enforce the same per-network readiness policy. At present the
     // only path that can qualify is a verified, escrow-backed Ethereum limit
     // order; BSV/Solana/Bitcoin/BCH settlement remains disabled until verified.
-    const runtimeCapabilities = await getTradingCapabilities();
+    const runtimeCapabilities = await getTradingCapabilities(
+      chainIdInput ? Number(chainIdInput) : undefined,
+    );
     const requestCapability = getOrderNetworkCapability(runtimeCapabilities, {
       networkType,
       chainId: chainIdInput ? Number(chainIdInput) : undefined,
