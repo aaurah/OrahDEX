@@ -302,11 +302,15 @@ const ORDER_TYPE_DESCS: Record<OrderType, string> = {
   "post-only":     "Always placed as maker. Rejected if it would immediately fill.",
 };
 
-function supportsEthereumWalletOrderbookAsset(symbol: string): boolean {
+function supportsEthereumWalletOrderbookAsset(symbol: string, chainId = 1): boolean {
   const normalized = symbol.trim().toUpperCase();
   if (normalized === "ETH") return true;
-  return Boolean(CHAIN_TOKEN_ADDRESSES[1]?.[normalized]) &&
+  return Boolean(CHAIN_TOKEN_ADDRESSES[chainId]?.[normalized]) &&
     (TOKEN_DECIMALS[normalized] ?? 18) === 18;
+}
+
+function isEvmOrderbookFundingRef(ref: unknown): boolean {
+  return typeof ref === "string" && /^evm-order:(1|11155111):0x[0-9a-f]{40}:0x[0-9a-f]{64}:0x[0-9a-f]{64}$/i.test(ref);
 }
 
 export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
@@ -331,11 +335,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { data: evmOrderbookConfig } = useQuery({
     queryKey: ["evm-orderbook-settlement-config", walletChainId],
     queryFn: async () => {
-      const response = await fetch(`${BASE}/api/orders/evm-settlement/config`, { cache: "no-store" });
-      if (!response.ok) return { available: false, chainId: 1 };
+      const response = await fetch(`${BASE}/api/orders/evm-settlement/config?chainId=${walletChainId}`, { cache: "no-store" });
+      if (!response.ok) return { available: false, chainId: walletChainId };
       return response.json();
     },
-    enabled: isEvm && !!address && (walletChainId == null || walletChainId === 1),
+    enabled: isEvm && !!address && walletChainId != null,
     staleTime: 60_000,
     refetchInterval: 60_000,
   });
@@ -350,7 +354,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (!response.ok) throw new Error("Trading status unavailable");
       return response.json() as Promise<{
         safeStartup: boolean;
-        networks: Partial<Record<"evm" | "bsv" | "sol" | "btc" | "bch" | "other", { available: boolean; reason?: string }>>;
+         networks: Partial<Record<"evm" | "bsv" | "sol" | "btc" | "bch" | "other", { available: boolean; reason?: string; chainId?: number }>>;
       }>;
     },
     staleTime: 30_000,
@@ -363,25 +367,44 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     : network === "bch" ? "bch"
     : "other";
   const tradingNetworkCapability = apiRuntimeConfig?.networks?.[tradingNetworkKey];
+  const orderbookTargetChainId = tradingNetworkCapability?.chainId ?? walletChainId ?? 1;
   const ethereumOrderbookPair =
     isEvm &&
     !isFutures &&
-    supportsEthereumWalletOrderbookAsset(base) &&
-    supportsEthereumWalletOrderbookAsset(quote);
+    supportsEthereumWalletOrderbookAsset(base, orderbookTargetChainId) &&
+    supportsEthereumWalletOrderbookAsset(quote, orderbookTargetChainId);
   const walletOrderbookNetworkPending = !!address && ethereumOrderbookPair && walletChainId == null;
   const tradingCapabilityPending = !!address && apiRuntimeConfigLoading;
-  const tradingPausedBySafeStartup = !!address && tradingNetworkCapability?.available !== true;
-  const tradingCapabilityReason = apiRuntimeConfig?.safeStartup
+  const walletOrderbookWrongChain =
+    !!address &&
+    ethereumOrderbookPair &&
+    walletChainId != null &&
+    tradingNetworkCapability?.chainId != null &&
+    walletChainId !== tradingNetworkCapability.chainId;
+  const unsupportedEvmOrderbookPair =
+    !!address &&
+    isEvm &&
+    !isFutures &&
+    tradingNetworkCapability?.available === true &&
+    !ethereumOrderbookPair;
+  const tradingPausedBySafeStartup =
+    !!address && (tradingNetworkCapability?.available !== true || walletOrderbookWrongChain || unsupportedEvmOrderbookPair);
+  const tradingCapabilityReason = walletOrderbookWrongChain
+    ? `Switch your wallet to chain ${tradingNetworkCapability?.chainId} before placing this order.`
+    : unsupportedEvmOrderbookPair
+    ? `${symbol} is not supported by the verified orderbook on chain ${tradingNetworkCapability?.chainId}.`
+    : apiRuntimeConfig?.safeStartup
     ? "This preview is read-only while trading services are paused."
     : tradingNetworkCapability?.reason ?? "Trading is not enabled for this wallet network.";
   const walletOrderbookAvailable =
     isEvm &&
     tradingNetworkCapability?.available === true &&
-    walletChainId === 1 &&
+    walletChainId === tradingNetworkCapability.chainId &&
     ethereumOrderbookPair &&
     (!Array.isArray(evmOrderbookConfig?.supportedPairs) ||
       evmOrderbookConfig.supportedPairs.includes(`${base}/${quote}`.toUpperCase())) &&
-    evmOrderbookConfig?.available === true;
+    evmOrderbookConfig?.available === true &&
+    evmOrderbookConfig?.chainId === walletChainId;
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -478,12 +501,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     });
   }, [myOrdersData, altOrdersData, address, altAddress]);
   const openOrders   = myOrders.filter(o =>
-    (o.status === "open" || (o.status === "processing" && String(o.fundingRef ?? "").startsWith("evm-order:1:"))) &&
+    (o.status === "open" || (o.status === "processing" && isEvmOrderbookFundingRef(o.fundingRef))) &&
     o.symbol === symbol
   );
   const historyOrders = myOrders.filter(o =>
     o.status !== "open" &&
-    !(o.status === "processing" && String(o.fundingRef ?? "").startsWith("evm-order:1:")) &&
+    !(o.status === "processing" && isEvmOrderbookFundingRef(o.fundingRef)) &&
     o.symbol === symbol
   );
 
@@ -512,11 +535,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       walletAddress: string;
       fundingRef?: string | null;
     }) => {
-      if (fundingRef?.startsWith("evm-order:1:")) {
+      if (isEvmOrderbookFundingRef(fundingRef)) {
         return cancelEvmOrderbookOrder({
           orderId,
           walletAddress: orderWalletAddress,
-          fundingRef,
+          fundingRef: fundingRef!,
           isOrahWallet,
         });
       }
@@ -643,15 +666,26 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   const handleRecoverEvmOrders = async () => {
     if (!address || recoveringEvmOrders) return;
+    if (walletChainId == null || ![1, 11155111].includes(walletChainId)) {
+      toast({
+        title: "Wallet network not supported",
+        description: "Connect on the configured Ethereum network before recovering escrow orders.",
+        variant: "destructive",
+      });
+      return;
+    }
     setRecoveringEvmOrders(true);
     try {
+      const timestamp = Date.now();
+      const message = `OrahDEX EVM order recovery\nChain: ${walletChainId}\nWallet: ${address.toLowerCase()}\nTimestamp: ${timestamp}`;
+      const signature = await signMessageAsync({ message });
       const response = await fetch(`${BASE}/api/orders/recover-evm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address }),
+        body: JSON.stringify({ walletAddress: address, chainId: walletChainId, timestamp, signature }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result?.error ?? "Could not scan Ethereum escrow orders.");
+      if (!response.ok) throw new Error(result?.error ?? "Could not scan EVM escrow orders.");
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["orders", address] }),
         queryClient.invalidateQueries({ queryKey: ["orderbook", symbol] }),
@@ -661,12 +695,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         title: count > 0 ? "Active order restored" : "No missing active orders",
         description: count > 0
           ? `${count} confirmed on-chain order${count === 1 ? " is" : "s are"} now listed in My Orders. Cancel there to request a wallet refund.`
-          : "No confirmed active Ethereum orders were missing from My Orders.",
+          : "No confirmed active EVM orders were missing from My Orders.",
       });
     } catch (error: any) {
       toast({
         title: "Could not recover order list",
-        description: String(error?.message ?? "Ethereum escrow scan failed."),
+        description: String(error?.message ?? "EVM escrow scan failed."),
         variant: "destructive",
       });
     } finally {
@@ -898,7 +932,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (
         !matched &&
         tradeId &&
-        !String(data?.fundingRef ?? "").startsWith("evm-order:1:") &&
+        !isEvmOrderbookFundingRef(data?.fundingRef) &&
         escrowAvailable &&
         hasEscrow(walletChainId ?? 0)
       ) {
@@ -1699,8 +1733,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (walletOrderbookAvailable) {
       try {
         const escrowAddress = evmOrderbookConfig?.address;
-        if (!escrowAddress || !orderNonce || !usePrice || walletChainId !== 1) {
-          throw new Error("Ethereum order escrow configuration or limit price is missing");
+        if (!escrowAddress || !orderNonce || !usePrice || walletChainId !== evmOrderbookConfig?.chainId) {
+          throw new Error("EVM order escrow configuration or limit price is missing");
         }
         orderbookExpiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
         const lock = await lockOrderbookOrder({
@@ -1713,7 +1747,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           price: usePrice,
           expiresAt: orderbookExpiresAt,
           from: address,
-          chainId: 1,
+          chainId: walletChainId!,
           isOrahWallet,
           onStage: setSubmissionStage,
           onSubmitted: (transaction) => {
@@ -2367,7 +2401,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {isSelfCustodyEvm && address && (
               <div className="px-3 pb-3 space-y-2">
                 <div className="rounded-xl border border-border bg-card/60 p-3">
-                  <div className="text-xs font-semibold">Missing an Ethereum order?</div>
+                    <div className="text-xs font-semibold">Missing an EVM order?</div>
                   <p className="mt-1 text-[10px] text-muted-foreground">
                     Scan confirmed escrow orders that are missing from My Orders. This only syncs the order list; it does not send a wallet transaction.
                   </p>
@@ -2377,7 +2411,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                     disabled={recoveringEvmOrders}
                     className="mt-2 w-full rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary disabled:opacity-50"
                   >
-                    {recoveringEvmOrders ? "Scanning Ethereum…" : "Rescan Ethereum escrow"}
+                    {recoveringEvmOrders ? "Scanning escrow…" : "Rescan wallet escrow"}
                   </button>
                 </div>
                 <HtlcLockRecovery chainId={walletChainId ?? 1} />
