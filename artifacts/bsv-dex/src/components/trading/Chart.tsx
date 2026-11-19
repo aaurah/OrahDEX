@@ -654,11 +654,15 @@ function OrahChart({
     }
   }, []);
 
-  const fitChartToData = useCallback((chart: ReturnType<typeof createChart> | null) => {
-    if (!chart) return;
+  const fitChartToData = useCallback((
+    chart: ReturnType<typeof createChart> | null,
+    series: { data?: () => readonly unknown[] } | null,
+  ) => {
+    if (!chart || typeof series?.data !== 'function') return;
     try {
-      const range = chart.timeScale().getVisibleRange();
-      if (isNumericVisibleRange(range)) chart.timeScale().fitContent();
+      // The current visible range can be null while new interval data is being
+      // laid out. Series data is the reliable signal that fitContent is safe.
+      if (series.data().length > 0) chart.timeScale().fitContent();
     } catch {
       // Empty indicator panes have no range to fit while candle data refreshes.
     }
@@ -706,7 +710,18 @@ function OrahChart({
         vertLine: { color: '#4ade80', labelBackgroundColor: c.cross, style: 2, width: 1 },
         horzLine: { color: '#4ade80', labelBackgroundColor: c.cross, style: 2, width: 1 },
       },
-      handleScroll: { vertTouchDrag: false },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: true,
+        axisDoubleClickReset: true,
+      },
     });
 
     /* Volume series */
@@ -755,7 +770,18 @@ function OrahChart({
         vertLine: { color: '#4ade80', labelBackgroundColor: c.subBg, style: 2, width: 1 },
         horzLine: { color: '#4ade80', labelBackgroundColor: c.subBg, style: 2, width: 1 },
       },
-      handleScroll: { vertTouchDrag: false },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: true,
+        axisDoubleClickReset: true,
+      },
     });
     subChartRef.current = chart;
 
@@ -859,8 +885,11 @@ function OrahChart({
       lastFitKeyRef.current = `${symbol}:${interval}:${chartType}`;
       /* rAF ensures the chart has processed setData (computed its full extent) before we fit */
       requestAnimationFrame(() => {
-        fitChartToData(chartRef.current);
-        fitChartToData(subChartRef.current);
+        fitChartToData(chartRef.current, priceSeriesRef.current);
+        fitChartToData(
+          subChartRef.current,
+          subLine1Ref.current ?? subLine2Ref.current ?? subHistRef.current,
+        );
       });
     }
   }, [displayCandles, chartType, fitChartToData, interval, symbol]);
@@ -1027,9 +1056,50 @@ function OrahChart({
   }, [chartReady, fetchForZoom, externalDataOnly, disableAutoInterval]);
 
   /* ── Zoom helpers ───────────────────────────────────────────────────── */
-  const fitContent = () => { fitChartToData(chartRef.current); fitChartToData(subChartRef.current); };
-  const zoomIn  = () => { const ts = chartRef.current?.timeScale(); if (ts) { const r = ts.getVisibleRange(); if (isNumericVisibleRange(r)) { const mid = (r.from+r.to)/2, span=(r.to-r.from)*0.35; try { ts.setVisibleRange({ from: (mid-span) as any, to: (mid+span) as any }); } catch (_) {} } } };
-  const zoomOut = () => { const ts = chartRef.current?.timeScale(); if (ts) { const r = ts.getVisibleRange(); if (isNumericVisibleRange(r)) { const mid = (r.from+r.to)/2, span=(r.to-r.from)*0.7; try { ts.setVisibleRange({ from: (mid-span) as any, to: (mid+span) as any }); } catch (_) {} } } };
+  const fitContent = () => {
+    fitChartToData(chartRef.current, priceSeriesRef.current);
+    fitChartToData(
+      subChartRef.current,
+      subLine1Ref.current ?? subLine2Ref.current ?? subHistRef.current,
+    );
+  };
+  const changeZoom = (factor: number) => {
+    const timeScale = chartRef.current?.timeScale();
+    const candleCount = priceSeriesRef.current?.data?.().length ?? 0;
+    if (!timeScale || candleCount < 2) return;
+
+    try {
+      const range = timeScale.getVisibleLogicalRange();
+      if (!range || !Number.isFinite(range.from) || !Number.isFinite(range.to) || range.from >= range.to) {
+        fitContent();
+        return;
+      }
+
+      const maxSpan = candleCount - 1;
+      const minSpan = Math.min(5, maxSpan);
+      const currentSpan = range.to - range.from;
+      const nextSpan = Math.max(minSpan, Math.min(maxSpan, currentSpan * factor));
+      const center = (range.from + range.to) / 2;
+      let from = center - nextSpan / 2;
+      let to = center + nextSpan / 2;
+
+      if (from < 0) {
+        to = Math.min(maxSpan, to - from);
+        from = 0;
+      }
+      if (to > maxSpan) {
+        from = Math.max(0, from - (to - maxSpan));
+        to = maxSpan;
+      }
+      if (Number.isFinite(from) && Number.isFinite(to) && from < to) {
+        timeScale.setVisibleLogicalRange({ from, to });
+      }
+    } catch {
+      fitContent();
+    }
+  };
+  const zoomIn = () => changeZoom(0.7);
+  const zoomOut = () => changeZoom(1.4);
 
   /* ── Screenshot ─────────────────────────────────────────────────────── */
   const screenshot = () => {
@@ -1213,8 +1283,8 @@ function OrahChart({
         <div className="w-px h-5 mx-1 shrink-0" style={{ background: col.grid }} />
 
         {/* Zoom controls */}
-        <button onClick={zoomIn}  title="Zoom In"  className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><ZoomIn  className="w-3.5 h-3.5" /></button>
-        <button onClick={zoomOut} title="Zoom Out" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><ZoomOut className="w-3.5 h-3.5" /></button>
+        <button onClick={zoomIn} title="Zoom in" aria-label="Zoom in" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><ZoomIn className="w-3.5 h-3.5" /></button>
+        <button onClick={zoomOut} title="Zoom out" aria-label="Zoom out" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><ZoomOut className="w-3.5 h-3.5" /></button>
         {!hideIntervalBar && (
           <button onClick={fitContent} title="Fit" aria-label="Fit all candles" className={`shrink-0 p-1 rounded ${isLight ? 'text-gray-400 hover:bg-gray-100 hover:text-gray-700' : 'text-muted-foreground hover:bg-white/5 hover:text-foreground'}`}><AlignCenter className="w-3.5 h-3.5" /></button>
         )}
