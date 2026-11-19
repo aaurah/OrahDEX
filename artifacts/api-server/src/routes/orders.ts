@@ -27,6 +27,7 @@ import {
   verifyEvmOrderLock,
   verifyEvmOrderbookCancelTx,
 } from "../lib/evmOrderbookEscrow.js";
+import { getOrderNetworkCapability, getTradingCapabilities } from "../lib/tradingCapabilities.js";
 import {
   buildOrderAuthMessage, verifyEvmSignature, isOrderNonceConsumed, recordConsumedOrderNonce,
   verifyBsvWithdrawSignature, verifySolWithdrawSignature,
@@ -156,9 +157,9 @@ router.get("/orders/evm-settlement/config", async (req, res) => {
   }
 });
 
-router.get("/runtime-config", (_req, res) => {
+router.get("/runtime-config", async (_req, res) => {
   res.setHeader("Cache-Control", "no-store");
-  res.json({ safeStartup: safeApiStartup });
+  res.json(await getTradingCapabilities());
 });
 
 router.get("/orders/challenge", (req, res) => {
@@ -413,6 +414,32 @@ router.post("/orders", async (req, res) => {
       : "orah";
 
     const isExternalWallet = walletSource === "external";
+
+    // Expose and enforce the same per-network readiness policy. At present the
+    // only path that can qualify is a verified, escrow-backed Ethereum limit
+    // order; BSV/Solana/Bitcoin/BCH settlement remains disabled until verified.
+    const runtimeCapabilities = await getTradingCapabilities();
+    const requestCapability = getOrderNetworkCapability(runtimeCapabilities, {
+      networkType,
+      chainId: chainIdInput ? Number(chainIdInput) : undefined,
+      orderType: type,
+      symbol,
+      walletAddressIsEvm: isEvmAddress,
+      hasEscrowLock: typeof body.orderbookLockTxHash === "string" && body.orderbookLockTxHash.length > 0,
+      ethereumPairSupported: isEvmAddress && supportsEthereumOrderbookPair(
+        symbol.split("/")[0] ?? "",
+        symbol.split("/")[1] ?? "",
+      ),
+    });
+    if (!requestCapability.available) {
+      res.status(503).json({
+        error: requestCapability.reason ?? "Order trading is not available on this network.",
+        code: "TRADING_NETWORK_DISABLED",
+        network: networkType,
+        chainId: requestCapability.chainId,
+      });
+      return;
+    }
 
     // ── Verify wallet ownership for external wallets ─────────────────────────
     // The signature must have been produced by the private key of walletAddress
