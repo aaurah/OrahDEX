@@ -1736,11 +1736,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         toast({
           title: wasStopped ? "Wallet request stopped" : isRejection ? "Wallet signature declined" : "Wallet signing failed",
           description: wasStopped
-            ? "No order or escrow transaction was submitted. Dismiss any wallet prompt that remains open, then use the confirmation below before retrying."
+            ? "No order or escrow transaction was submitted. Close any wallet prompt that remains open, then tap the confirmation button below before retrying."
             : isRejection
             ? `Tap ${side === "buy" ? "Buy" : "Sell"} again and approve the signing request in your wallet to place the order.`
             : walletDidNotRespond
-            ? "No order was submitted. Close any pending MetaMask signature; the form will stay blocked until you confirm it is dismissed."
+            ? "No order was submitted. Close any pending MetaMask signature, then tap the confirmation button below to unblock the form."
             : (msg || "Could not sign order. Please reconnect your wallet and try again."),
           variant: "destructive",
         });
@@ -3244,14 +3244,14 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 </div>
               )}
               {walletSignatureRecoveryRequired && (
-                <div className="mb-2 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-[11px] leading-relaxed text-red-200" role="alert">
-                  <p>No order was submitted. Close or dismiss any pending MetaMask signature before retrying.</p>
+                <div className="mb-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-3 text-[11px] leading-relaxed text-amber-100" role="alert">
+                  <p>No order was submitted. First close or dismiss the pending signature in MetaMask.</p>
                   <button
                     type="button"
-                    className="mt-1 font-semibold underline underline-offset-2"
+                    className="mt-2 min-h-11 w-full rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-left font-bold text-amber-100 transition-colors hover:bg-amber-400/20 active:bg-amber-400/25"
                     onClick={() => setWalletSignatureRecoveryRequired(false)}
                   >
-                    I dismissed the pending request
+                    I closed the MetaMask request — allow retry
                   </button>
                 </div>
               )}
