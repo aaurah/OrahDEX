@@ -362,11 +362,24 @@ export function OrderForm({
     queryFn: async () => {
       const response = await fetch(`${API_BASE}/runtime-config`, { cache: "no-store" });
       if (!response.ok) throw new Error("Trading status unavailable");
-      return response.json() as Promise<{ safeStartup: boolean }>;
+      return response.json() as Promise<{
+        safeStartup: boolean;
+        networks: Partial<Record<"evm" | "bsv" | "sol" | "btc" | "bch" | "other", { available: boolean; reason?: string }>>;
+      }>;
     },
     staleTime: 30_000,
   });
-  const tradingPausedBySafeStartup = apiRuntimeConfigQuery.data?.safeStartup === true;
+  const tradingNetworkKey =
+    isEvm ? "evm"
+    : network === "bsv" || network === "bsv-test" ? "bsv"
+    : network === "sol" ? "sol"
+    : network === "btc" ? "btc"
+    : network === "bch" ? "bch"
+    : "other";
+  const tradingNetworkCapability = apiRuntimeConfigQuery.data?.networks?.[tradingNetworkKey];
+  const tradingCapabilityReason = apiRuntimeConfigQuery.data?.safeStartup
+    ? "This preview is read-only while trading services are paused."
+    : tradingNetworkCapability?.reason ?? "Trading is not enabled for this wallet network.";
   const tradingCapabilityPending = !!address && apiRuntimeConfigQuery.isLoading;
   const tradingCapabilityError = !!address && apiRuntimeConfigQuery.isError;
 
@@ -462,6 +475,9 @@ export function OrderForm({
 
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
+  const externalSwapSubmission = externalSwapMode && type === "market";
+  const tradingPausedBySafeStartup =
+    !!address && tradingNetworkCapability?.available !== true && !externalSwapSubmission;
   const [price, setPrice]     = useState<string>(currentPrice > 0 ? currentPrice.toFixed(2) : "");
   const [stopPrice, setStopPrice] = useState<string>("");
   const [amount, setAmount]   = useState<string>("");
@@ -536,14 +552,13 @@ export function OrderForm({
     !!address && isEvm && ethereumOrderbookPair && walletChainId == null;
   const walletOrderbookAvailable =
     shouldUseEthereumOrderbookEscrow &&
+    tradingNetworkCapability?.available === true &&
     walletChainId === 1 &&
     evmOrderbookConfigLoaded &&
     evmOrderbookConfig?.available === true &&
     !!evmOrderbookConfig.address &&
     (!Array.isArray(evmOrderbookConfig.supportedPairs) ||
       evmOrderbookConfig.supportedPairs.includes(`${base}/${quote}`.toUpperCase()));
-  const walletOrderbookSafeStartup =
-    shouldUseEthereumOrderbookEscrow && evmOrderbookConfig?.safeStartup === true;
   const walletOrderbookConfigPending =
     shouldUseEthereumOrderbookEscrow && walletChainId === 1 && !evmOrderbookConfigLoaded;
   // Ethereum wallet orders use the exact on-chain balance only when the
@@ -848,16 +863,8 @@ export function OrderForm({
     }
     if (tradingPausedBySafeStartup) {
       toast({
-        title: "Trading is paused in this preview",
-        description: "Matching and settlement workers are disabled here. No wallet signature or order was submitted.",
-        variant: "destructive",
-      });
-      return;
-    }
-    if (walletOrderbookSafeStartup) {
-      toast({
-        title: "Trading is paused in this preview",
-        description: "Matching and settlement workers are disabled here. No wallet signature or order was submitted.",
+        title: "Trading is unavailable on this network",
+        description: `${tradingCapabilityReason} No wallet signature or order was submitted.`,
         variant: "destructive",
       });
       return;
@@ -1326,16 +1333,10 @@ export function OrderForm({
             <span>Wallet-funded Ethereum limit orders require a message signature and a separate escrow transaction. Funds stay locked until the order fills or is canceled.</span>
           </div>
         )}
-        {walletOrderbookSafeStartup && (
-          <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-300" role="status">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>This preview is read-only for orders. Matching and settlement workers are paused, so no wallet signature or escrow transaction will be requested.</span>
-          </div>
-        )}
         {tradingPausedBySafeStartup && (
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-300" role="status">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>This preview is read-only for orders. Matching and settlement workers are paused, so no signature or order will be requested.</span>
+            <span>{tradingCapabilityReason} No signature or order will be requested.</span>
           </div>
         )}
         {tradingCapabilityPending && (
@@ -1956,13 +1957,13 @@ export function OrderForm({
           <button
             type="submit"
             data-testid="order-submit-btn"
-            disabled={!canSubmit || walletOrderbookSafeStartup || tradingPausedBySafeStartup || tradingCapabilityPending || tradingCapabilityError || (precheckResult != null && !precheckResult.ok)}
+            disabled={!canSubmit || tradingPausedBySafeStartup || tradingCapabilityPending || tradingCapabilityError || (precheckResult != null && !precheckResult.ok)}
             className={cn(
               "w-full py-3.5 rounded-xl font-bold text-sm mt-2 transition-all flex items-center justify-center gap-2",
               side === "buy"
                 ? "bg-buy text-white shadow-lg shadow-buy/20 hover:shadow-buy/40 hover:-translate-y-0.5 active:translate-y-0"
                 : "bg-sell text-white shadow-lg shadow-sell/20 hover:shadow-sell/40 hover:-translate-y-0.5 active:translate-y-0",
-              (!canSubmit || walletOrderbookSafeStartup || tradingPausedBySafeStartup || tradingCapabilityPending || tradingCapabilityError || (precheckResult != null && !precheckResult.ok)) && "opacity-60 cursor-not-allowed !transform-none"
+              (!canSubmit || tradingPausedBySafeStartup || tradingCapabilityPending || tradingCapabilityError || (precheckResult != null && !precheckResult.ok)) && "opacity-60 cursor-not-allowed !transform-none"
             )}
           >
             {isPending ? (
