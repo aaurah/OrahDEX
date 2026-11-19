@@ -5,7 +5,7 @@ import { eq, and, lte, gte, ne, isNotNull, desc, asc, sql } from "drizzle-orm";
 import crypto from "node:crypto";
 import { recoverMessageAddress } from "viem";
 import { BOT_ADDRESS } from "../lib/liquidityBot.js";
-import { safeApiStartup } from "../lib/startupMode.js";
+import { orderbookTradingEnabled, safeApiStartup } from "../lib/startupMode.js";
 import { getBsvChainStatus, queryHtlcStatus } from "../lib/bsvChainMonitor.js";
 import { pushNotification } from "../lib/notifQueue.js";
 import { recordTradeMetric, getMetricsSummary } from "../lib/tradeMetrics.js";
@@ -102,7 +102,7 @@ function settlementExplorerUrl(txid: string | null | undefined, chainId?: number
 }
 
 type EvmOrderbookFunding = {
-  chainId: 1;
+  chainId: number;
   escrowAddress: string;
   orderKey: `0x${string}`;
   lockTxHash: `0x${string}`;
@@ -110,15 +110,16 @@ type EvmOrderbookFunding = {
 
 function parseEvmOrderbookFundingRef(ref: string | null | undefined): EvmOrderbookFunding | null {
   if (!ref?.startsWith("evm-order:")) return null;
-  const [kind, version, escrowAddress, orderKey, lockTxHash, ...extra] = ref.split(":");
+  const [kind, chainIdText, escrowAddress, orderKey, lockTxHash, ...extra] = ref.split(":");
+  const chainId = Number(chainIdText);
   if (
-    kind !== "evm-order" || version !== "1" || extra.length > 0 ||
+    kind !== "evm-order" || ![1, 11155111].includes(chainId) || extra.length > 0 ||
     !/^0x[0-9a-f]{40}$/i.test(escrowAddress ?? "") ||
     !/^0x[0-9a-f]{64}$/i.test(orderKey ?? "") ||
     !/^0x[0-9a-f]{64}$/i.test(lockTxHash ?? "")
   ) return null;
   return {
-    chainId: 1,
+    chainId,
     escrowAddress: escrowAddress!,
     orderKey: orderKey as `0x${string}`,
     lockTxHash: lockTxHash as `0x${string}`,
@@ -148,12 +149,16 @@ router.get("/orders/evm-settlement/config", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
     const config = await getEvmOrderbookEscrowConfig();
-    res.json(safeApiStartup
+    res.json(safeApiStartup && !orderbookTradingEnabled
       ? { ...config, available: false, safeStartup: true }
       : config);
   } catch (err: any) {
     req.log.warn({ err: err?.message }, "EVM orderbook settlement config check failed");
-    res.json({ chainId: 1, available: false, safeStartup: safeApiStartup });
+    res.json({
+      chainId: Number(process.env.ORAHDEX_TRADING_EVM_CHAIN_ID ?? "1"),
+      available: false,
+      safeStartup: safeApiStartup && !orderbookTradingEnabled,
+    });
   }
 });
 
@@ -309,7 +314,7 @@ router.post("/orders/sol-challenge", (req, res) => {
 // are marked filled with the txid.
 router.post("/orders", async (req, res) => {
   try {
-    if (safeApiStartup) {
+    if (safeApiStartup && !orderbookTradingEnabled) {
       res.status(503).json({
         error: "Order submission is paused in safe API startup because matching and settlement workers are disabled.",
         code: "SAFE_STARTUP",
@@ -429,6 +434,7 @@ router.post("/orders", async (req, res) => {
       ethereumPairSupported: isEvmAddress && supportsEthereumOrderbookPair(
         symbol.split("/")[0] ?? "",
         symbol.split("/")[1] ?? "",
+        chainIdInput ? Number(chainIdInput) : undefined,
       ),
     });
     if (!requestCapability.available) {
@@ -636,9 +642,9 @@ router.post("/orders", async (req, res) => {
       const requestedOrderbookLock = body.orderbookLockTxHash;
       const isEthereumSpotPair =
         isEvmAddress &&
-        chainId === 1 &&
+        [1, 11155111].includes(Number(chainId)) &&
         type === "limit" &&
-        supportsEthereumOrderbookPair(baseAsset!, quoteAsset);
+        supportsEthereumOrderbookPair(baseAsset!, quoteAsset, Number(chainId));
 
       if (requestedOrderbookLock != null) {
         const expiresAt = Number(body.orderbookExpiresAt);
@@ -648,7 +654,7 @@ router.post("/orders", async (req, res) => {
           !Number.isSafeInteger(expiresAt)
         ) {
           res.status(400).json({
-            error: "Ethereum escrow locks require a signed Ethereum limit order with a valid expiry.",
+            error: "EVM escrow locks require a signed limit order with a valid expiry.",
             code: "INVALID_ORDERBOOK_LOCK",
           });
           return;
@@ -678,7 +684,7 @@ router.post("/orders", async (req, res) => {
         // When escrow-backed Ethereum orderbook trading is enabled for this
         // pair, never accept an uncollateralized wallet-balance assertion.
         if (isEthereumSpotPair) {
-          const config = await getEvmOrderbookEscrowConfig();
+          const config = await getEvmOrderbookEscrowConfig(Number(chainId));
           if (config.available) {
             res.status(400).json({
               error: "A confirmed Ethereum escrow lock is required for this order.",
@@ -1060,6 +1066,7 @@ router.post("/orders", async (req, res) => {
               fillValueRaw.toString(),
             ].join(":")).digest("hex")}` as `0x${string}`;
             const settled = await settleEvmOrderFill({
+              chainId: buyFunding.chainId,
               settlementId,
               buyOrderKey: buyFunding.orderKey,
               sellOrderKey: sellFunding.orderKey,
