@@ -206,6 +206,10 @@ test("Ethereum orderbook orders require confirmed escrow proof and settlement pa
   ]);
 
   assert.match(ordersSrc, /router\.get\("\/orders\/evm-settlement\/config"/);
+  assert.match(ordersSrc, /router\.get\("\/runtime-config"/);
+  assert.match(ordersSrc, /res\.json\(\{ safeStartup: safeApiStartup \}\)/);
+  assert.match(ordersSrc, /safeStartup: true/);
+  assert.match(ordersSrc, /if \(safeApiStartup\)[\s\S]*?code: "SAFE_STARTUP"/);
   assert.match(ordersSrc, /verifyEvmOrderLock\(\{/);
   assert.match(ordersSrc, /ORDERBOOK_LOCK_REQUIRED/);
   assert.match(ordersSrc, /candidateClaimsOrderbookEscrow !== Boolean\(incomingOrderbookFunding\)/);
