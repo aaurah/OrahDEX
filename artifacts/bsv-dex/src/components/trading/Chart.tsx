@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
-  createChart, ColorType,
+  createChart, ColorType, PriceScaleMode,
   CandlestickSeries, HistogramSeries, LineSeries, AreaSeries, BarSeries,
   CrosshairMode,
 } from 'lightweight-charts';
@@ -587,6 +587,15 @@ function OrahChart({
   const displayCandles = useMemo(() =>
     chartType === 'heikinashi' ? computeHeikinAshi(sanitizedCandles) : sanitizedCandles,
   [sanitizedCandles, chartType]);
+  const useLogPriceScale = useMemo(() => {
+    if (!['2Y', '5Y', '10Y', 'All'].includes(interval) || !displayCandles.length) {
+      return false;
+    }
+
+    const lowestPrice = Math.min(...displayCandles.map(candle => candle.low));
+    const highestPrice = Math.max(...displayCandles.map(candle => candle.high));
+    return lowestPrice > 0 && highestPrice / lowestPrice >= 10;
+  }, [displayCandles, interval]);
 
   /* Keep displayCandlesRef always current */
   useEffect(() => { displayCandlesRef.current = displayCandles; }, [displayCandles]);
@@ -622,7 +631,12 @@ function OrahChart({
       layout: { background: { type: ColorType.Solid, color: c.bg }, textColor: c.text, fontFamily: "'Inter', sans-serif", attributionLogo: showTradingViewWatermark },
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       timeScale: { borderColor: c.border, timeVisible: true, secondsVisible: false },
-      rightPriceScale: { borderColor: c.border, scaleMargins: { top: 0.05, bottom: 0.2 }, minimumWidth: 72 },
+      rightPriceScale: {
+        borderColor: c.border,
+        scaleMargins: { top: 0.05, bottom: 0.2 },
+        minimumWidth: 72,
+        mode: useLogPriceScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+      },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: { color: '#4ade80', labelBackgroundColor: c.cross, style: 2, width: 1 },
@@ -651,6 +665,14 @@ function OrahChart({
     setChartReady(true);
     return () => { chart.remove(); chartRef.current = null; setChartReady(false); };
   }, [candles.length > 0]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !chartReady) return;
+    chart.priceScale('right').applyOptions({
+      mode: useLogPriceScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+    });
+  }, [chartReady, useLogPriceScale]);
 
   /* ── Create sub chart ───────────────────────────────────────────────── */
   useEffect(() => {
@@ -1011,6 +1033,15 @@ function OrahChart({
           >
             {dataSourceLabel ?? "OrahDEX Live"}
           </span>
+          {useLogPriceScale && (
+            <span
+              className="rounded border border-amber-400/25 bg-amber-400/10 px-1 py-0.5 text-[8px] font-bold tracking-wide text-amber-300/80"
+              title="Logarithmic price scale keeps wide historical price moves readable"
+              data-testid="chart-scale-mode"
+            >
+              LOG
+            </span>
+          )}
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dataSourceLabel ? 'bg-amber-300' : 'bg-green-400 animate-pulse'}`} />
         </div>
       </div>
