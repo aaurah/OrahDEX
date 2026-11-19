@@ -291,6 +291,17 @@ export function getTokenInfo(chainId: number, symbol: string): TokenInfo | null 
   return TOKEN_REGISTRY[chainId]?.[upper] ?? null;
 }
 
+/** Reverse lookup a registered token address, including the chain native asset. */
+export function getAssetSymbolForAddress(chainId: number, address: string): string | null {
+  const normalized = address.toLowerCase();
+  if (normalized === "0x0000000000000000000000000000000000000000") {
+    return NATIVE_SYMBOLS[chainId] ?? null;
+  }
+  const entry = Object.entries(TOKEN_REGISTRY[chainId] ?? {})
+    .find(([, token]) => token.address.toLowerCase() === normalized);
+  return entry?.[0] ?? null;
+}
+
 /**
  * Returns true if `symbol` is the native asset for `chainId`
  * (i.e. use `getBalance` rather than `balanceOf`).
