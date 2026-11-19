@@ -320,7 +320,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { address, balance: walletBalance, chainId: walletChainId, network, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress, internalXrpAddress, internalLtcAddress, internalDogeAddress, switchChain } = useWalletStore();
   const { signMessageAsync } = useSignMessage();
   const { address: evmAccountAddress, isConnected: evmConnected } = useAccount();
-  const isEvm = network === "evm" || (!network && !!walletChainId);
+  const isEvm = network === "evm" || !!address?.startsWith("0x") || (!network && !!walletChainId);
   const isOrahWallet = provider === "orah-wallet";
   const isExternalEvm = isEvm && !isOrahWallet;
   const isSelfCustodyEvm = isEvm && !!address;
@@ -339,12 +339,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     staleTime: 60_000,
     refetchInterval: 60_000,
   });
-  const walletOrderbookAvailable =
+  const ethereumOrderbookPair =
     isEvm &&
-    (walletChainId ?? 1) === 1 &&
     !isFutures &&
     supportsEthereumWalletOrderbookAsset(base) &&
-    supportsEthereumWalletOrderbookAsset(quote) &&
+    supportsEthereumWalletOrderbookAsset(quote);
+  const walletOrderbookNetworkPending = !!address && ethereumOrderbookPair && walletChainId == null;
+  const walletOrderbookAvailable =
+    isEvm &&
+    walletChainId === 1 &&
+    ethereumOrderbookPair &&
     (!Array.isArray(evmOrderbookConfig?.supportedPairs) ||
       evmOrderbookConfig.supportedPairs.includes(`${base}/${quote}`.toUpperCase())) &&
     evmOrderbookConfig?.available === true;
@@ -647,8 +651,53 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionStage, setSubmissionStage] = useState("");
   const walletSignAbortRef = useRef<(() => void) | null>(null);
+  const _bootOrderbookTx: {
+    hash: string;
+    explorerUrl: string;
+    kind: "approval" | "lock";
+    walletAddress: string;
+    savedAt: number;
+  } | null = (() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem("orahdex:pendingOrderbookTx:v1") ?? "null");
+      if (
+        !saved ||
+        !/^0x[0-9a-fA-F]{40}$/.test(saved.walletAddress ?? "") ||
+        !/^0x[0-9a-fA-F]{64}$/.test(saved.hash ?? "") ||
+        typeof saved.explorerUrl !== "string" ||
+        !["approval", "lock"].includes(saved.kind) ||
+        Date.now() - Number(saved.savedAt) > 24 * 60 * 60 * 1000 ||
+        saved.walletAddress.toLowerCase() !== address?.toLowerCase()
+      ) return null;
+      return saved;
+    } catch { return null; }
+  })();
+  const [orderbookTxProgress, setOrderbookTxProgress] = useState<typeof _bootOrderbookTx>(_bootOrderbookTx);
+  const orderbookTxProgressRef = useRef<typeof _bootOrderbookTx>(_bootOrderbookTx);
   // Content fingerprint: same symbol+side+amount within 2 seconds = duplicate
   const lastOrderFingerprintRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    orderbookTxProgressRef.current = orderbookTxProgress;
+    if (typeof window === "undefined") return;
+    if (!orderbookTxProgress) {
+      window.sessionStorage.removeItem("orahdex:pendingOrderbookTx:v1");
+      return;
+    }
+    try {
+      window.sessionStorage.setItem("orahdex:pendingOrderbookTx:v1", JSON.stringify(orderbookTxProgress));
+    } catch { /* transaction hash remains visible for this page session */ }
+  }, [orderbookTxProgress]);
+  const updateOrderbookTxProgress = (next: typeof _bootOrderbookTx) => {
+    orderbookTxProgressRef.current = next;
+    setOrderbookTxProgress(next);
+    if (typeof window === "undefined") return;
+    try {
+      if (next) window.sessionStorage.setItem("orahdex:pendingOrderbookTx:v1", JSON.stringify(next));
+      else window.sessionStorage.removeItem("orahdex:pendingOrderbookTx:v1");
+    } catch { /* keep the in-memory state if browser storage is unavailable */ }
+  };
 
   // Dedup guard — prevents double banner/toast when the same fill event fires twice
   const lastProcessedTradeIdRef = useRef<string | null>(null);
@@ -799,6 +848,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       isSubmittingRef.current = false;
       setIsSubmitting(false);
       setSubmissionStage("");
+      updateOrderbookTxProgress(null);
 
       setEscrowTx(null);
       setOrderResult({
@@ -1378,6 +1428,22 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   async function handlePlaceOrder() {
     if (!address || !amount || amtNum <= 0) return;
+    if (walletOrderbookNetworkPending) {
+      toast({
+        title: "Wallet network not detected",
+        description: "Reconnect MetaMask and wait for Ethereum to appear before signing. No order or escrow transaction was sent.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (orderbookTxProgressRef.current?.kind === "lock") {
+      toast({
+        title: "Check the previous escrow first",
+        description: "An escrow transaction was submitted. Check its explorer status and My Orders before placing another order.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     // ── LetsExchange max guard ────────────────────────────────────────────────
     // belowLeMin is intentionally not a hard block here — the multi-venue router
@@ -1591,12 +1657,31 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           chainId: 1,
           isOrahWallet,
           onStage: setSubmissionStage,
+          onSubmitted: (transaction) => {
+            updateOrderbookTxProgress({
+              ...transaction,
+              walletAddress: address,
+              savedAt: Date.now(),
+            });
+          },
         });
         orderbookLockTxHash = lock.txHash;
       } catch (lockError: any) {
+        const transaction = orderbookTxProgressRef.current;
+        const errorMessage = String(lockError?.message ?? "Ethereum order escrow transaction failed.");
+        const transactionReverted = errorMessage.toLowerCase().includes("reverted");
+        if (transactionReverted) {
+          updateOrderbookTxProgress(null);
+        }
         toast({
-          title: "Could not lock order funds",
-          description: String(lockError?.message ?? "Ethereum order escrow transaction failed."),
+          title: transactionReverted
+            ? "Wallet transaction reverted"
+            : transaction?.kind === "lock" ? "Escrow confirmation is pending" : "Could not lock order funds",
+          description: transaction
+            ? transactionReverted
+              ? `${errorMessage}. No escrow was created. Check ${transaction.explorerUrl}.`
+              : `${errorMessage} Check ${transaction.explorerUrl}; do not retry until its status is clear.`
+            : errorMessage,
           variant: "destructive",
         });
         isSubmittingRef.current = false;
@@ -1645,7 +1730,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             serverHasOrder = Array.isArray(rows) && rows.some((order: any) => String(order.nonce) === String(orderNonce));
           } catch { /* leave funds locked if order creation cannot be verified */ }
         }
-        if (!serverHasOrder) {
+        if (serverHasOrder) {
+          updateOrderbookTxProgress(null);
+        } else {
           try {
             const orderKey = keccak256(toBytes(orderNonce!));
             await cancelOrderbookOrder({
@@ -1655,6 +1742,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               chainId: 1,
               isOrahWallet,
             });
+            updateOrderbookTxProgress(null);
           } catch (cancelError: any) {
             toast({
               title: "Order was rejected; funds may remain escrowed",
@@ -3006,15 +3094,20 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </button>
             ) : (
               <>
+              {walletOrderbookNetworkPending && (
+                <div className="mb-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-200" role="status">
+                  Ethereum is required for wallet escrow, but MetaMask has not reported its network yet. Reconnect the wallet before placing this order.
+                </div>
+              )}
               <button
                 onClick={handlePlaceOrder}
-                disabled={!amount || amtNum <= 0 || isSubmitting || aboveLeMax}
+                disabled={!amount || amtNum <= 0 || isSubmitting || aboveLeMax || walletOrderbookNetworkPending}
                 className={cn(
                   "w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2",
                   side === "sell"
                     ? "bg-red-600 shadow-lg shadow-red-500/20"
                     : "bg-green-600 shadow-lg shadow-green-500/20",
-                  (!amount || amtNum <= 0 || isSubmitting || aboveLeMax) && "opacity-50 cursor-not-allowed"
+                  (!amount || amtNum <= 0 || isSubmitting || aboveLeMax || walletOrderbookNetworkPending) && "opacity-50 cursor-not-allowed"
                 )}
               >
                 {isSubmitting ? (
@@ -3035,6 +3128,35 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   >
                     Stop waiting
                   </button>
+                </div>
+              )}
+              {orderbookTxProgress && (
+                <div className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-200" role="status">
+                  <p>
+                    {orderbookTxProgress.kind === "lock"
+                      ? "Escrow transaction submitted. Funds may be locked; verify My Orders before retrying."
+                      : "Token approval submitted. The escrow lock may still need a separate confirmation."}
+                  </p>
+                  <a
+                    className="mt-1 inline-block underline underline-offset-2"
+                    href={orderbookTxProgress.explorerUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View transaction
+                  </a>
+                  {orderbookTxProgress.kind === "lock" && !isSubmitting && (
+                    <button
+                      type="button"
+                      className="ml-3 underline underline-offset-2"
+                      onClick={() => {
+                        if (!window.confirm("Continue only after checking the transaction and My Orders. This does not cancel an escrow lock.")) return;
+                        updateOrderbookTxProgress(null);
+                      }}
+                    >
+                      I checked; allow retry
+                    </button>
+                  )}
                 </div>
               )}
               </>
