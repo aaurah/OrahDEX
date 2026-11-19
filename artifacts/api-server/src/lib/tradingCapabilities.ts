@@ -1,5 +1,5 @@
 import { pool } from "@workspace/db";
-import { safeApiStartup, tradingWorkersEnabled } from "./startupMode.js";
+import { orderbookTradingEnabled, safeApiStartup, tradingWorkersEnabled } from "./startupMode.js";
 import { getEvmOrderbookEscrowConfig } from "./evmOrderbookEscrow.js";
 import { getHealthReport } from "./selfHealing.js";
 
@@ -51,11 +51,16 @@ const DISABLED_NETWORKS: Record<Exclude<TradingNetwork, "evm">, NetworkTradingCa
   },
 };
 
-function readOnlyCapability(reason: string): TradingCapabilitySnapshot {
+function configuredEvmChainId(): number {
+  const chainId = Number(process.env.ORAHDEX_TRADING_EVM_CHAIN_ID ?? "1");
+  return chainId === 1 || chainId === 11155111 ? chainId : -1;
+}
+
+function readOnlyCapability(reason: string, chainId = configuredEvmChainId()): TradingCapabilitySnapshot {
   return {
     safeStartup: true,
     networks: {
-      evm: { available: false, chainId: 1, reason },
+      evm: { available: false, chainId, reason },
       ...DISABLED_NETWORKS,
     },
   };
@@ -67,17 +72,21 @@ function readOnlyCapability(reason: string): TradingCapabilitySnapshot {
  * lifecycle (place, match, settle, cancel, recovery) as verified.
  */
 export async function getTradingCapabilities(): Promise<TradingCapabilitySnapshot> {
-  if (safeApiStartup) {
-    return readOnlyCapability("This preview is read-only while trading services are paused.");
+  const chainId = configuredEvmChainId();
+  if (chainId < 0) {
+    return readOnlyCapability("The configured EVM trading chain is not supported.", chainId);
+  }
+  if (safeApiStartup && !orderbookTradingEnabled) {
+    return readOnlyCapability("This preview is read-only while trading services are paused.", chainId);
   }
 
-  if (!tradingWorkersEnabled) {
+  if (!tradingWorkersEnabled && !orderbookTradingEnabled) {
     return {
-      safeStartup: false,
+      safeStartup: safeApiStartup,
       networks: {
         evm: {
           available: false,
-          chainId: 1,
+          chainId,
           reason: "Order, deposit, and settlement workers are disabled.",
         },
         ...DISABLED_NETWORKS,
@@ -87,12 +96,12 @@ export async function getTradingCapabilities(): Promise<TradingCapabilitySnapsho
 
   if (process.env.ORAHDEX_TRADING_EVM_VERIFIED !== "true") {
     return {
-      safeStartup: false,
+      safeStartup: safeApiStartup && !orderbookTradingEnabled,
       networks: {
         evm: {
           available: false,
-          chainId: 1,
-          reason: "Ethereum order trading is disabled until its testnet order, settlement, cancellation, and recovery checks are verified.",
+          chainId,
+          reason: "EVM order trading is disabled until the testnet order, settlement, cancellation, and recovery checks are verified.",
         },
         ...DISABLED_NETWORKS,
       },
@@ -113,11 +122,11 @@ export async function getTradingCapabilities(): Promise<TradingCapabilitySnapsho
   }
   if (!databaseReady || !orderRecoveryReady) {
     return {
-      safeStartup: false,
+      safeStartup: safeApiStartup && !orderbookTradingEnabled,
       networks: {
         evm: {
           available: false,
-          chainId: 1,
+          chainId,
           reason: !databaseReady
             ? "The trading database is unavailable."
             : "The order recovery worker has not completed a healthy check yet.",
@@ -129,26 +138,28 @@ export async function getTradingCapabilities(): Promise<TradingCapabilitySnapsho
 
   let escrowReady = false;
   try {
-    const escrow = await getEvmOrderbookEscrowConfig();
-    escrowReady = escrow.available === true && escrow.chainId === 1;
+    const escrow = await getEvmOrderbookEscrowConfig(chainId);
+    escrowReady = escrow.available === true && escrow.chainId === chainId;
   } catch {
     // Fail closed when RPC, contract, or relayer readiness cannot be confirmed.
   }
 
   return {
-    safeStartup: false,
+    safeStartup: safeApiStartup && !orderbookTradingEnabled,
     networks: {
       evm: escrowReady
         ? {
             available: true,
-            chainId: 1,
+            chainId,
             orderTypes: ["limit"],
-            settlement: "confirmed Ethereum orderbook escrow",
+            settlement: chainId === 11155111
+              ? "confirmed Sepolia orderbook escrow"
+              : "confirmed Ethereum orderbook escrow",
           }
         : {
             available: false,
-            chainId: 1,
-            reason: "Ethereum escrow contract, RPC, or relayer readiness could not be verified.",
+            chainId,
+            reason: "EVM escrow contract, RPC, or relayer readiness could not be verified.",
           },
       ...DISABLED_NETWORKS,
     },
@@ -157,7 +168,7 @@ export async function getTradingCapabilities(): Promise<TradingCapabilitySnapsho
 
 /**
  * Apply stricter request-specific checks than the summary status endpoint.
- * Only Ethereum mainnet limit orders with a supported asset pair and a
+ * Only the configured Ethereum-chain limit orders with a supported asset pair and a
  * confirmed escrow-lock transaction can enter matching.
  */
 export function getOrderNetworkCapability(
@@ -174,17 +185,23 @@ export function getOrderNetworkCapability(
   if (!input.walletAddressIsEvm) {
     return { available: false, reason: "An Ethereum wallet address is required for this order." };
   }
-  if (input.chainId !== 1) {
-    return { available: false, chainId: 1, reason: "Wallet-funded order-book trading is enabled on Ethereum mainnet only." };
+  if (input.chainId !== capability.chainId) {
+    return {
+      available: false,
+      chainId: capability.chainId,
+      reason: capability.chainId === 11155111
+        ? "Wallet-funded order-book trading is enabled on Sepolia only."
+        : "Wallet-funded order-book trading is enabled on Ethereum mainnet only.",
+    };
   }
   if (input.orderType !== "limit") {
-    return { available: false, chainId: 1, reason: "Only escrow-backed Ethereum limit orders are enabled." };
+    return { available: false, chainId: capability.chainId, reason: "Only escrow-backed EVM limit orders are enabled." };
   }
   if (!input.ethereumPairSupported) {
-    return { available: false, chainId: 1, reason: `${input.symbol} is not supported by Ethereum order escrow.` };
+    return { available: false, chainId: capability.chainId, reason: `${input.symbol} is not supported by EVM order escrow.` };
   }
   if (!input.hasEscrowLock) {
-    return { available: false, chainId: 1, reason: "A confirmed Ethereum escrow lock is required before placing this order." };
+    return { available: false, chainId: capability.chainId, reason: "A confirmed EVM escrow lock is required before placing this order." };
   }
   return capability;
 }
