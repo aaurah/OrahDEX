@@ -192,17 +192,16 @@ function applyTokenOverrides(
 
   if (theme === "amoled") {
     // ── html.amoled ──────────────────────────────────────────────────────────
-    // background  0  0%  0%    card  0  0%  3%    popover  0  0%  5%
-    // secondary   0  0%  7%    border 0  0% 10%   foreground 210 20% 92%
-    // muted-fg  215 16% 50%    primary 142 71% 58%
+    // Keep wallet modals aligned with the true-black app surfaces and brighter
+    // green highlights used by the AMOLED palette.
     const bg      = hslToHex(0,   0,  0);
-    const card    = hslToHex(0,   0,  3);
-    const popover = hslToHex(0,   0,  5);
-    const surface = hslToHex(0,   0,  7);
-    const border  = hslToHex(0,   0, 10);
-    const text    = hslToHex(210, 20, 92);
-    const muted   = hslToHex(215, 16, 50);
-    const accent  = hslToHex(142, 71, 58);
+    const card    = hslToHex(0,   0,  2);
+    const popover = hslToHex(0,   0,  4);
+    const surface = hslToHex(0,   0,  6);
+    const border  = hslToHex(0,   0, 12);
+    const text    = hslToHex(210, 20, 96);
+    const muted   = hslToHex(215, 18, 72);
+    const accent  = hslToHex(142, 82, 66);
 
     set("--apkt-tokens-theme-backgroundPrimary",      bg);
     set("--apkt-tokens-theme-backgroundInvert",       "#e0e0e0");
@@ -210,12 +209,12 @@ function applyTokenOverrides(
     set("--apkt-tokens-theme-foregroundSecondary",    popover);
     set("--apkt-tokens-theme-foregroundTertiary",     surface);
     set("--apkt-tokens-theme-borderPrimary",          border);
-    set("--apkt-tokens-theme-borderPrimaryDark",      hslToHex(0, 0, 14));
+    set("--apkt-tokens-theme-borderPrimaryDark",      hslToHex(0, 0, 15));
     set("--apkt-tokens-theme-borderSecondary",        hslToHex(0, 0, 18));
     set("--apkt-tokens-theme-overlay",                "rgba(0,0,0,0.75)");
     set("--apkt-tokens-theme-textPrimary",            text);
     set("--apkt-tokens-theme-textSecondary",          muted);
-    set("--apkt-tokens-theme-textTertiary",           hslToHex(215, 16, 62));
+    set("--apkt-tokens-theme-textTertiary",           hslToHex(215, 18, 72));
     set("--apkt-tokens-theme-textInvert",             bg);
     set("--apkt-tokens-theme-iconDefault",            muted);
     set("--apkt-tokens-theme-iconInverse",            text);

@@ -155,7 +155,7 @@ function getChartColors(theme: string) {
   const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
   const eff  = theme === 'system' ? (dark ? 'dark' : 'light') : theme;
   switch (eff) {
-    case 'amoled': return { bg:'#000000', text:'#9ca3af', grid:'#111111', border:'#1c1c1c', cross:'#000000', subBg:'#050505' };
+    case 'amoled': return { bg:'#000000', text:'#d1d5db', grid:'#0b0b0b', border:'#171717', cross:'#000000', subBg:'#010101' };
     case 'light':  return { bg:'#ffffff', text:'#374151', grid:'#e5e7eb', border:'#d1d5db', cross:'#ffffff', subBg:'#f9fafb' };
     default:       return { bg:'#0d1117', text:'#848e9c', grid:'#1a2030', border:'#2b3139', cross:'#0d1117', subBg:'#0b0f18' };
   }
