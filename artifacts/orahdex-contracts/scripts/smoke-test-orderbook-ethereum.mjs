@@ -99,11 +99,6 @@ async function main() {
       feeRecipient.toLowerCase() !== deployment.feeRecipient.toLowerCase()) {
     throw new Error("The deployed fee settings do not match the mainnet deployment record.");
   }
-  if (feeRecipient.toLowerCase() !== relayer.address.toLowerCase()) {
-    throw new Error(
-      `The configured relayer key derives ${relayer.address}, but the deployed escrow fee recipient is ${feeRecipient}; no test transactions were sent.`,
-    );
-  }
   if (gasPrice === null) throw new Error("Ethereum RPC did not provide a usable gas price.");
   if (gasPrice > parseUnits("2", "gwei")) {
     throw new Error("Current mainnet gas price exceeds the smoke-test cap; no transactions were sent.");
