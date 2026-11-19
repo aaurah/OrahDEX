@@ -51,6 +51,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/profits",      label: "Profit Details", icon: TrendingUp },
       { href: "/admin/withdrawals",  label: "Withdrawals",    icon: ArrowDownToLine },
+      { href: "/admin/stripe-orders", label: "Payment Orders", icon: DollarSign },
       { href: "/admin/transactions", label: "On-Chain Txns",  icon: Layers },
       { href: "/admin/treasury",     label: "Treasury",       icon: Landmark },
       { href: "/admin/fee-wallet",   label: "Fee Wallet",     icon: Wallet },
