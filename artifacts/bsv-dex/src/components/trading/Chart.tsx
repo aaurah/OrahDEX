@@ -75,6 +75,14 @@ function isNumericVisibleRange(value: unknown): value is { from: number; to: num
     range.from < range.to;
 }
 
+function isSameVisibleRange(
+  first: { from: number; to: number },
+  second: { from: number; to: number },
+): boolean {
+  return Math.abs(first.from - second.from) < 1 &&
+    Math.abs(first.to - second.to) < 1;
+}
+
 /* ── Intervals ──────────────────────────────────────────────────────────── */
 const INTERVALS = [
   { id: '1m', label: '1m' }, { id: '3m', label: '3m' }, { id: '5m', label: '5m' },
@@ -359,6 +367,7 @@ function OrahChart({
   const autoIntervalRef     = useRef(false);
   const zoomTimerRef2       = useRef<ReturnType<typeof setTimeout> | null>(null);
   const effectiveIntervalRef = useRef(interval);
+  const syncingTimeRangeRef = useRef(false);
 
   const { theme } = useThemeStore();
   const { showTradingViewWatermark } = useSettingsStore();
@@ -600,6 +609,47 @@ function OrahChart({
   /* Keep displayCandlesRef always current */
   useEffect(() => { displayCandlesRef.current = displayCandles; }, [displayCandles]);
 
+  const syncTimeScaleRange = useCallback((
+    source: ReturnType<typeof createChart> | null,
+    target: ReturnType<typeof createChart> | null,
+  ) => {
+    if (!source || !target || syncingTimeRangeRef.current || displayCandles.length < 2) return;
+
+    try {
+      const sourceRange = source.timeScale().getVisibleRange();
+      const targetRange = target.timeScale().getVisibleRange();
+      if (!isNumericVisibleRange(sourceRange) || !isNumericVisibleRange(targetRange)) return;
+
+      const firstTime = Number(displayCandles[0]?.time);
+      const lastTime = Number(displayCandles[displayCandles.length - 1]?.time);
+      if (!Number.isFinite(firstTime) || !Number.isFinite(lastTime) || firstTime >= lastTime) return;
+
+      const from = Math.max(sourceRange.from, firstTime);
+      const to = Math.min(sourceRange.to, lastTime);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || from >= to) return;
+
+      const nextRange = { from, to };
+      if (isSameVisibleRange(targetRange, nextRange)) return;
+
+      syncingTimeRangeRef.current = true;
+      target.timeScale().setVisibleRange(nextRange as any);
+    } catch {
+      // A timeframe can briefly leave one pane without a valid visible range.
+    } finally {
+      syncingTimeRangeRef.current = false;
+    }
+  }, [displayCandles]);
+
+  const fitChartToData = useCallback((chart: ReturnType<typeof createChart> | null) => {
+    if (!chart) return;
+    try {
+      const range = chart.timeScale().getVisibleRange();
+      if (isNumericVisibleRange(range)) chart.timeScale().fitContent();
+    } catch {
+      // Empty indicator panes have no range to fit while candle data refreshes.
+    }
+  }, []);
+
   /* ── Live last-bar update — fires on every ticker tick ───────────────────
      Calls series.update() instead of setData() so only the last bar redraws */
   useEffect(() => {
@@ -695,22 +745,23 @@ function OrahChart({
     });
     subChartRef.current = chart;
 
-    /* Sync time ranges — wrapped in try/catch because the sub chart may not
-       have any series data yet when the callback fires during initialization */
-    if (chartRef.current) {
-      chartRef.current.timeScale().subscribeVisibleTimeRangeChange(range => {
-        if (!isNumericVisibleRange(range) || !subChartRef.current) return;
-        try { subChartRef.current.timeScale().setVisibleRange(range as any); } catch (_) {}
-      });
-      subChartRef.current.timeScale().subscribeVisibleTimeRangeChange(range => {
-        if (!isNumericVisibleRange(range) || !chartRef.current) return;
-        try { chartRef.current.timeScale().setVisibleRange(range as any); } catch (_) {}
-      });
-    }
+    const mainChart = chartRef.current;
+    const mainTimeScale = mainChart?.timeScale();
+    const subTimeScale = chart.timeScale();
+    const syncMainToSub = () => syncTimeScaleRange(mainChart, chart);
+    const syncSubToMain = () => syncTimeScaleRange(chart, mainChart);
+    mainTimeScale?.subscribeVisibleTimeRangeChange(syncMainToSub);
+    subTimeScale.subscribeVisibleTimeRangeChange(syncSubToMain);
 
     setSubReady(true);
-    return () => { chart.remove(); subChartRef.current = null; setSubReady(false); };
-  }, [subInd !== 'none', candles.length > 0]);
+    return () => {
+      try { mainTimeScale?.unsubscribeVisibleTimeRangeChange(syncMainToSub); } catch (_) {}
+      try { subTimeScale.unsubscribeVisibleTimeRangeChange(syncSubToMain); } catch (_) {}
+      try { chart.remove(); } catch (_) {}
+      if (subChartRef.current === chart) subChartRef.current = null;
+      setSubReady(false);
+    };
+  }, [subInd !== 'none', candles.length > 0, syncTimeScaleRange]);
 
   /* ── Destroy sub chart when subInd = none ───────────────────────────── */
   useEffect(() => {
@@ -781,18 +832,24 @@ function OrahChart({
     /* After a zoom-triggered fetch restore the user's visible range instead of fitContent */
     if (autoIntervalRef.current && isNumericVisibleRange(zoomRangeRef.current)) {
       const { from, to } = zoomRangeRef.current;
-      try { chartRef.current?.timeScale().setVisibleRange({ from: from as any, to: to as any }); } catch (_) {}
+      const firstTime = Number(displayCandles[0]?.time);
+      const lastTime = Number(displayCandles[displayCandles.length - 1]?.time);
+      const safeFrom = Math.max(from, firstTime);
+      const safeTo = Math.min(to, lastTime);
+      if (Number.isFinite(safeFrom) && Number.isFinite(safeTo) && safeFrom < safeTo) {
+        try { chartRef.current?.timeScale().setVisibleRange({ from: safeFrom as any, to: safeTo as any }); } catch (_) {}
+      }
       autoIntervalRef.current = false;
       zoomRangeRef.current = null;
     } else if (lastFitKeyRef.current !== `${symbol}:${interval}:${chartType}`) {
       lastFitKeyRef.current = `${symbol}:${interval}:${chartType}`;
       /* rAF ensures the chart has processed setData (computed its full extent) before we fit */
       requestAnimationFrame(() => {
-        chartRef.current?.timeScale().fitContent();
-        subChartRef.current?.timeScale().fitContent();
+        fitChartToData(chartRef.current);
+        fitChartToData(subChartRef.current);
       });
     }
-  }, [displayCandles, chartType]);
+  }, [displayCandles, chartType, fitChartToData, interval, symbol]);
 
   /* ── Push candle data whenever candles change ───────────────────────── */
   useEffect(() => {
@@ -922,11 +979,8 @@ function OrahChart({
     }
 
     /* Sync initial time range */
-    const range = chartRef.current?.timeScale().getVisibleRange();
-    if (isNumericVisibleRange(range)) {
-      try { chart.timeScale().setVisibleRange(range as any); } catch (_) {}
-    }
-  }, [subReady, subInd, candles, indicatorData]);
+    syncTimeScaleRange(chartRef.current, chart);
+  }, [subReady, subInd, candles, indicatorData, syncTimeScaleRange]);
 
   /* ── Subscribe to visible time range changes → auto-switch interval ─── */
   useEffect(() => {
@@ -959,7 +1013,7 @@ function OrahChart({
   }, [chartReady, fetchForZoom, externalDataOnly, disableAutoInterval]);
 
   /* ── Zoom helpers ───────────────────────────────────────────────────── */
-  const fitContent = () => { chartRef.current?.timeScale().fitContent(); subChartRef.current?.timeScale().fitContent(); };
+  const fitContent = () => { fitChartToData(chartRef.current); fitChartToData(subChartRef.current); };
   const zoomIn  = () => { const ts = chartRef.current?.timeScale(); if (ts) { const r = ts.getVisibleRange(); if (isNumericVisibleRange(r)) { const mid = (r.from+r.to)/2, span=(r.to-r.from)*0.35; try { ts.setVisibleRange({ from: (mid-span) as any, to: (mid+span) as any }); } catch (_) {} } } };
   const zoomOut = () => { const ts = chartRef.current?.timeScale(); if (ts) { const r = ts.getVisibleRange(); if (isNumericVisibleRange(r)) { const mid = (r.from+r.to)/2, span=(r.to-r.from)*0.7; try { ts.setVisibleRange({ from: (mid-span) as any, to: (mid+span) as any }); } catch (_) {} } } };
 
