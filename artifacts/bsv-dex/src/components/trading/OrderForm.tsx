@@ -36,10 +36,10 @@ import {
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
 import { lockOrderbookOrder } from "@/lib/escrow";
 
-function supportsEthereumWalletOrderbookAsset(symbol: string): boolean {
+function supportsEthereumWalletOrderbookAsset(symbol: string, chainId = 1): boolean {
   const normalized = symbol.trim().toUpperCase();
   if (normalized === "ETH") return true;
-  return Boolean(CHAIN_TOKEN_ADDRESSES[1]?.[normalized]) &&
+  return Boolean(CHAIN_TOKEN_ADDRESSES[chainId]?.[normalized]) &&
     (TOKEN_DECIMALS[normalized] ?? 18) === 18;
 }
 
@@ -364,7 +364,7 @@ export function OrderForm({
       if (!response.ok) throw new Error("Trading status unavailable");
       return response.json() as Promise<{
         safeStartup: boolean;
-        networks: Partial<Record<"evm" | "bsv" | "sol" | "btc" | "bch" | "other", { available: boolean; reason?: string }>>;
+        networks: Partial<Record<"evm" | "bsv" | "sol" | "btc" | "bch" | "other", { available: boolean; reason?: string; chainId?: number }>>;
       }>;
     },
     staleTime: 30_000,
@@ -377,9 +377,6 @@ export function OrderForm({
     : network === "bch" ? "bch"
     : "other";
   const tradingNetworkCapability = apiRuntimeConfigQuery.data?.networks?.[tradingNetworkKey];
-  const tradingCapabilityReason = apiRuntimeConfigQuery.data?.safeStartup
-    ? "This preview is read-only while trading services are paused."
-    : tradingNetworkCapability?.reason ?? "Trading is not enabled for this wallet network.";
   const tradingCapabilityPending = !!address && apiRuntimeConfigQuery.isLoading;
   const tradingCapabilityError = !!address && apiRuntimeConfigQuery.isError;
 
@@ -411,15 +408,15 @@ export function OrderForm({
   const nativeBal = balance ? parseFloat(balance) : 0;
 
   useEffect(() => {
-    if (!address || !isEvm || (walletChainId != null && walletChainId !== 1)) {
+    if (!address || !isEvm || (walletChainId != null && walletChainId !== 1 && walletChainId !== 11155111)) {
       setEvmOrderbookConfig(null);
       setEvmOrderbookConfigLoaded(true);
       return;
     }
     let active = true;
     setEvmOrderbookConfigLoaded(false);
-    fetch(`${API_BASE}/orders/evm-settlement/config`, { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() : { available: false, chainId: 1 })
+    fetch(`${API_BASE}/orders/evm-settlement/config?chainId=${walletChainId}`, { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() : { available: false, chainId: walletChainId })
       .then((config) => {
         if (!active) return;
         setEvmOrderbookConfig(config);
@@ -427,7 +424,7 @@ export function OrderForm({
       })
       .catch(() => {
         if (!active) return;
-        setEvmOrderbookConfig({ available: false, chainId: 1 });
+        setEvmOrderbookConfig({ available: false, chainId: walletChainId ?? undefined });
         setEvmOrderbookConfigLoaded(true);
       });
     return () => { active = false; };
@@ -476,8 +473,6 @@ export function OrderForm({
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
   const externalSwapSubmission = externalSwapMode && type === "market";
-  const tradingPausedBySafeStartup =
-    !!address && tradingNetworkCapability?.available !== true && !externalSwapSubmission;
   const [price, setPrice]     = useState<string>(currentPrice > 0 ? currentPrice.toFixed(2) : "");
   const [stopPrice, setStopPrice] = useState<string>("");
   const [amount, setAmount]   = useState<string>("");
@@ -540,27 +535,53 @@ export function OrderForm({
 
   const parts = symbol.split("/");
   const [base, quote = "USDT"] = parts;
+  const configuredOrderbookChainId = tradingNetworkCapability?.chainId;
+  const orderbookTargetChainId = configuredOrderbookChainId ?? walletChainId ?? 1;
   const ethereumOrderbookPair =
-    supportsEthereumWalletOrderbookAsset(base) &&
-    supportsEthereumWalletOrderbookAsset(quote);
+    supportsEthereumWalletOrderbookAsset(base, orderbookTargetChainId) &&
+    supportsEthereumWalletOrderbookAsset(quote, orderbookTargetChainId);
   const shouldUseEthereumOrderbookEscrow =
     !!address &&
     isEvm &&
-    (walletChainId == null || walletChainId === 1) &&
+    (walletChainId == null || walletChainId === configuredOrderbookChainId) &&
     ethereumOrderbookPair;
   const walletOrderbookNetworkPending =
     !!address && isEvm && ethereumOrderbookPair && walletChainId == null;
   const walletOrderbookAvailable =
     shouldUseEthereumOrderbookEscrow &&
     tradingNetworkCapability?.available === true &&
-    walletChainId === 1 &&
+    walletChainId === configuredOrderbookChainId &&
     evmOrderbookConfigLoaded &&
     evmOrderbookConfig?.available === true &&
+    evmOrderbookConfig?.chainId === walletChainId &&
     !!evmOrderbookConfig.address &&
     (!Array.isArray(evmOrderbookConfig.supportedPairs) ||
       evmOrderbookConfig.supportedPairs.includes(`${base}/${quote}`.toUpperCase()));
   const walletOrderbookConfigPending =
-    shouldUseEthereumOrderbookEscrow && walletChainId === 1 && !evmOrderbookConfigLoaded;
+    shouldUseEthereumOrderbookEscrow && walletChainId === configuredOrderbookChainId && !evmOrderbookConfigLoaded;
+  const walletOrderbookWrongChain =
+    !!address &&
+    ethereumOrderbookPair &&
+    walletChainId != null &&
+    configuredOrderbookChainId != null &&
+    walletChainId !== configuredOrderbookChainId;
+  const unsupportedEvmOrderbookPair =
+    !!address &&
+    isEvm &&
+    tradingNetworkCapability?.available === true &&
+    !ethereumOrderbookPair &&
+    !externalSwapSubmission;
+  const tradingPausedBySafeStartup =
+    !!address &&
+    (tradingNetworkCapability?.available !== true || walletOrderbookWrongChain || unsupportedEvmOrderbookPair) &&
+    !externalSwapSubmission;
+  const tradingCapabilityReason = walletOrderbookWrongChain
+    ? `Switch your wallet to chain ${configuredOrderbookChainId} before placing this order.`
+    : unsupportedEvmOrderbookPair
+    ? `${symbol} is not supported by the verified orderbook on chain ${configuredOrderbookChainId}.`
+    : apiRuntimeConfigQuery.data?.safeStartup
+    ? "This preview is read-only while trading services are paused."
+    : tradingNetworkCapability?.reason ?? "Trading is not enabled for this wallet network.";
   // Ethereum wallet orders use the exact on-chain balance only when the
   // verified orderbook escrow path is available; other orders use ledger funds.
   const usesApiBalance = !(walletOrderbookAvailable || (externalSwapMode && type === "market"));
@@ -1126,10 +1147,10 @@ export function OrderForm({
     let orderbookExpiresAt: number | undefined;
     if (walletOrderbookAvailable) {
       const escrowAddress = evmOrderbookConfig?.address;
-      if (!escrowAddress || !orderNonce || !price || walletChainId !== 1) {
+      if (!escrowAddress || !orderNonce || !price || walletChainId !== evmOrderbookConfig?.chainId) {
         toast({
-          title: "Ethereum escrow unavailable",
-          description: "The escrow address, signed order, limit price, or Ethereum network is missing. No order was submitted.",
+          title: "EVM escrow unavailable",
+          description: "The escrow address, signed order, limit price, or connected network is missing. No order was submitted.",
           variant: "destructive",
         });
         return;
@@ -1148,7 +1169,7 @@ export function OrderForm({
           price: parseFloat(price),
           expiresAt: orderbookExpiresAt,
           from: address,
-          chainId: 1,
+          chainId: walletChainId!,
           isOrahWallet,
           onStage: setEscrowStage,
           onSubmitted: (transaction) => {
@@ -1330,7 +1351,7 @@ export function OrderForm({
         {walletOrderbookAvailable && (
           <div className="flex items-start gap-2 rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-3 py-2 text-[11px] leading-relaxed text-emerald-300">
             <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>Wallet-funded Ethereum limit orders require a message signature and a separate escrow transaction. Funds stay locked until the order fills or is canceled.</span>
+            <span>Wallet-funded EVM limit orders require a message signature and a separate escrow transaction. Funds stay locked until the order fills or is canceled.</span>
           </div>
         )}
         {tradingPausedBySafeStartup && (
@@ -1352,10 +1373,10 @@ export function OrderForm({
         {walletOrderbookNetworkPending && (
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-300">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>MetaMask has not reported its network yet. Reconnect the wallet before signing; Ethereum escrow orders will not be submitted until the network is confirmed.</span>
+            <span>MetaMask has not reported its network yet. Reconnect the wallet before signing; escrow orders will not be submitted until the network is confirmed.</span>
           </div>
         )}
-        {shouldUseEthereumOrderbookEscrow && walletChainId === 1 && evmOrderbookConfigLoaded && !walletOrderbookAvailable && (
+        {shouldUseEthereumOrderbookEscrow && evmOrderbookConfigLoaded && !walletOrderbookAvailable && (
           <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-300">
             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>Wallet escrow is unavailable for this pair right now. This form can only use an available exchange trading balance; no wallet escrow will be requested.</span>

@@ -47,7 +47,7 @@ import { startBsvMempoolWatcher } from "./lib/bsvMempoolWatcher.js";
 import { startOverlayScanner } from "./lib/overlayScanner.js";
 import { startSelfDiagnostic } from "./lib/selfDiagnostic.js";
 import { startErrorWatcher } from "./lib/errorWatcher.js";
-import { safeApiStartup, tradingWorkersEnabled } from "./lib/startupMode.js";
+import { orderbookTradingEnabled, safeApiStartup, tradingWorkersEnabled } from "./lib/startupMode.js";
 import { pool } from "@workspace/db";
 
 // Run the chain_id column migration at startup (idempotent — IF NOT EXISTS).
@@ -771,6 +771,10 @@ if (tradingWorkersEnabled) {
   }, "startHtlcWatchers");
   _s(138_000, startBsvIntentWatcher, "startBsvIntentWatcher");
   _s(144_000, startArcStatusPoller, "startArcStatusPoller");
+} else if (orderbookTradingEnabled) {
+  // Safe preview may run only the order recovery worker after explicit Sepolia
+  // verification; market bots and unrelated settlement workers remain stopped.
+  _s(0, startOrderReconciler, "startOrderReconciler");
 } else if (!safeApiStartup) {
   logger.warn("Trading workers are disabled; order, deposit, and settlement background services were not started");
 }

@@ -202,20 +202,22 @@ test("futures mutations fail closed and NFT routes can be disabled", async () =>
   assert.match(nftSrc, /process\.env\.NFT_ENABLED === "false"/);
 });
 
-test("Ethereum orderbook orders require confirmed escrow proof and settlement pairing", async () => {
+test("EVM orderbook orders require confirmed escrow proof and same-chain settlement", async () => {
   const [ordersSrc, escrowSrc] = await Promise.all([
     read(ordersPath),
     read(path.join(__dirname, "..", "src", "lib", "evmOrderbookEscrow.ts")),
   ]);
 
   assert.match(ordersSrc, /router\.get\("\/orders\/evm-settlement\/config"/);
+  assert.match(ordersSrc, /router\.post\("\/orders\/recover-evm"/);
   assert.match(ordersSrc, /router\.get\("\/runtime-config"/);
   assert.match(ordersSrc, /res\.json\(await getTradingCapabilities\(\)\)/);
   assert.match(ordersSrc, /safeStartup: true/);
-  assert.match(ordersSrc, /if \(safeApiStartup\)[\s\S]*?code: "SAFE_STARTUP"/);
+  assert.match(ordersSrc, /if \(safeApiStartup && !orderbookTradingEnabled\)[\s\S]*?code: "SAFE_STARTUP"/);
   assert.match(ordersSrc, /getOrderNetworkCapability\(runtimeCapabilities/);
   assert.match(ordersSrc, /verifyEvmOrderLock\(\{/);
   assert.match(ordersSrc, /ORDERBOOK_LOCK_REQUIRED/);
+  assert.match(ordersSrc, /candidateOrderbookFunding\.chainId !== incomingOrderbookFunding\?\.chainId/);
   assert.match(ordersSrc, /candidateClaimsOrderbookEscrow !== Boolean\(incomingOrderbookFunding\)/);
   assert.match(ordersSrc, /settleEvmOrderFill\(\{/);
   assert.match(ordersSrc, /verifyEvmOrderbookCancelTx\(\{/);
@@ -224,7 +226,7 @@ test("Ethereum orderbook orders require confirmed escrow proof and settlement pa
   assert.match(escrowSrc, /configuredEscrow\.toLowerCase\(\) !== params\.escrowAddress\.toLowerCase\(\)/);
 });
 
-test("multi-network order trading stays disabled without verified settlement", async () => {
+test("only the configured verified EVM chain can trade during safe startup", async () => {
   const [src, startupSrc, appSrc, mobileTradeSrc, orderFormSrc] = await Promise.all([
     read(tradingCapabilitiesPath),
     read(startupModePath),
@@ -238,14 +240,17 @@ test("multi-network order trading stays disabled without verified settlement", a
   assert.match(src, /sol:\s*\{\s*available: false/);
   assert.match(src, /btc:\s*\{\s*available: false/);
   assert.match(src, /bch:\s*\{\s*available: false/);
-  assert.match(src, /input\.chainId !== 1/);
+  assert.match(src, /input\.chainId !== capability\.chainId/);
   assert.match(src, /input\.orderType !== "limit"/);
   assert.match(src, /!input\.hasEscrowLock/);
   assert.match(src, /await pool\.query\("SELECT 1"\)/);
   assert.match(src, /service\.name === "order-reconciler"/);
   assert.match(src, /recovery\.lastSuccessAt !== null/);
-  assert.match(startupSrc, /!safeApiStartup && process\.env\.ORAHDEX_TRADING_WORKERS_ENABLED !== "false"/);
+  assert.match(startupSrc, /ORAHDEX_ORDERBOOK_TRADING_ENABLED === "true"/);
+  assert.match(startupSrc, /Number\(process\.env\.ORAHDEX_TRADING_EVM_CHAIN_ID\) === 11155111/);
+  assert.match(startupSrc, /process\.env\.ORAHDEX_TRADING_EVM_VERIFIED === "true"/);
   assert.match(appSrc, /if \(tradingWorkersEnabled\) \{[\s\S]*?startOrderReconciler[\s\S]*?startBsvIntentWatcher/);
+  assert.match(appSrc, /else if \(orderbookTradingEnabled\)[\s\S]*?startOrderReconciler/);
   const generalWorkerBlock = appSrc.match(/if \(!safeApiStartup\) \{\n  _s\([\s\S]*?\n\}/)?.[0] ?? "";
   assert.ok(generalWorkerBlock, "general background worker block exists");
   assert.doesNotMatch(generalWorkerBlock, /startOrderReconciler|startBsvDepositWatcher|startHtlcWatcher|startBsvIntentWatcher/);
@@ -253,4 +258,9 @@ test("multi-network order trading stays disabled without verified settlement", a
   assert.match(mobileTradeSrc, /tradingCapabilityReason/);
   assert.match(orderFormSrc, /tradingNetworkCapability\?\.available === true/);
   assert.match(orderFormSrc, /tradingCapabilityReason/);
+});
+
+test("order reconciler never removes a live EVM escrow order from the database", async () => {
+  const selfHealingSrc = await read(path.join(__dirname, "..", "src", "lib", "selfHealing.ts"));
+  assert.match(selfHealingSrc, /order\.fundingRef\?\.startsWith\("evm-order:"\)\) continue/);
 });
