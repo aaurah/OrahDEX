@@ -450,7 +450,7 @@ export function MobilePortfolio({ visibleTabs, hidePreContent }: { visibleTabs?:
       walletAddress: string;
       fundingRef?: string | null;
     }) => {
-      if (fundingRef?.startsWith("evm-order:1:")) {
+      if (fundingRef?.startsWith("evm-order:")) {
         return cancelEvmOrderbookOrder({
           orderId,
           walletAddress: orderWalletAddress,

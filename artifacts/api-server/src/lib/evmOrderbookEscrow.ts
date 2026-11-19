@@ -294,6 +294,7 @@ export async function verifyEvmOrderLock(params: OnchainOrderLockParams): Promis
 }
 
 export async function verifyEvmOrderbookCancelTx(params: {
+  chainId: number;
   escrowAddress: string;
   orderKey: `0x${string}`;
   walletAddress: string;
@@ -302,12 +303,15 @@ export async function verifyEvmOrderbookCancelTx(params: {
   if (!isAddress(params.escrowAddress) || !/^0x[0-9a-fA-F]{64}$/.test(params.orderKey) ||
       !/^0x[0-9a-fA-F]{40}$/.test(params.walletAddress) ||
       !/^0x[0-9a-fA-F]{64}$/.test(params.txHash)) {
-    throw new Error("Invalid Ethereum order cancellation proof");
+    throw new Error("Invalid EVM order cancellation proof");
   }
-  const chainId = configuredChainId();
+  const chainId = params.chainId;
+  if (!SUPPORTED_CHAIN_IDS.has(chainId)) {
+    throw new Error("Order cancellation is not enabled on this EVM chain");
+  }
   const configuredEscrow = getEscrowAddress(chainId);
   if (!configuredEscrow || configuredEscrow.toLowerCase() !== params.escrowAddress.toLowerCase()) {
-    throw new Error("Cancellation contract does not match the configured Ethereum order escrow");
+    throw new Error("Cancellation contract does not match the configured EVM order escrow");
   }
   const client = publicClient(chainId);
   const receipt = await client.getTransactionReceipt({ hash: params.txHash as Hex });
@@ -435,6 +439,7 @@ export async function findConfirmedEvmOrderbookCancellation(params: {
 export async function findActiveEvmOrderbookOrders(
   walletAddress: string,
   knownLockTxHashes: string[] = [],
+  chainId = configuredChainId(),
 ): Promise<Array<{
   orderKey: Hex;
   lockTxHash: Hex;
@@ -448,9 +453,8 @@ export async function findActiveEvmOrderbookOrders(
   expiresAt: number;
 }>> {
   if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
-    throw new Error("A valid Ethereum wallet address is required");
+    throw new Error("A valid EVM wallet address is required");
   }
-  const chainId = configuredChainId();
   const config = await getDeployedOrderbookEscrowConfig(chainId);
   const deploymentBlock = getDeploymentBlock(chainId);
   if (!config.available || deploymentBlock == null) return [];

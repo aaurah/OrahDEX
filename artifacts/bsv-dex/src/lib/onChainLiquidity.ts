@@ -259,7 +259,7 @@ export const CHAIN_TOKEN_ADDRESSES: Record<number, Partial<Record<string, string
 
   // ── Sepolia Testnet ─────────────────────────────────────────────────────────
   11155111: {
-    WETH:    "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9",
+    WETH:    "0xfff9976782d46cc05630d1f6ebab18b2324d6b14",
     USDC:    "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
     USDT:    "0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0",
     WBTC:    "0x29f2D40B0605204364af54EC677bD022dA425d03",

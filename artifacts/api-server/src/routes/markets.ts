@@ -715,7 +715,7 @@ async function fetchVerifiedEscrowOrderbook(symbol: string, depth = 20): Promise
       eq(ordersTable.type, "limit"),
       or(
         sql`${ordersTable.fundingRef} LIKE 'ledger:%'`,
-        sql`${ordersTable.fundingRef} LIKE 'evm-order:1:%'`,
+        sql`${ordersTable.fundingRef} LIKE 'evm-order:%'`,
       ),
       ne(ordersTable.walletAddress, BOT_ADDRESS),
     ));
