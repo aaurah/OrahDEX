@@ -18,6 +18,7 @@ import {
 import { mainnet, sepolia } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { getTokenInfo, isNativeAsset } from "./tokenRegistry.js";
+import { isEvmOrderbookChainEnabled } from "./startupMode.js";
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const PRICE_SCALE = 10n ** 18n;
@@ -167,33 +168,44 @@ function orderTerms(params: Pick<OnchainOrderLockParams, "chainId" | "side" | "b
 
 async function getDeployedOrderbookEscrowConfig(chainId = configuredChainId()) {
   if (!SUPPORTED_CHAIN_IDS.has(chainId)) return { chainId, available: false as const };
+  if (!isEvmOrderbookChainEnabled(chainId)) {
+    return {
+      chainId,
+      available: false as const,
+      reason: `Ethereum orderbook trading has not been verified on chain ${chainId}.`,
+    };
+  }
   if (process.env.EVM_ORDERBOOK_ESCROW_ENABLED !== "true") {
-    return { chainId, available: false as const };
+    return { chainId, available: false as const, reason: "EVM escrow is disabled by configuration." };
   }
   const address = getEscrowAddress(chainId);
   if (!address || getDeploymentBlock(chainId) == null) {
-    return { chainId, available: false as const };
+    return { chainId, available: false as const, reason: "No deployed escrow is configured for this chain." };
   }
   const client = publicClient(chainId);
   const bytecode = await client.getBytecode({ address });
-  if (!bytecode || bytecode === "0x") return { chainId, available: false as const };
+  if (!bytecode || bytecode === "0x") {
+    return { chainId, available: false as const, reason: "The configured escrow contract has no code on this chain." };
+  }
   try {
     const feeBps = await client.readContract({
       address,
       abi: ORDERBOOK_ESCROW_ABI,
       functionName: "feeBps",
     });
-    if (feeBps > 200n) return { chainId, available: false as const };
+    if (feeBps > 200n) {
+      return { chainId, available: false as const, reason: "The configured escrow fee exceeds the safety limit." };
+    }
     return { chainId, address, feeBps: Number(feeBps), available: true as const };
   } catch {
-    return { chainId, available: false as const };
+    return { chainId, available: false as const, reason: "The escrow contract could not be verified by RPC." };
   }
 }
 
 export async function getEvmOrderbookEscrowConfig(chainId = configuredChainId()) {
   if (!SUPPORTED_CHAIN_IDS.has(chainId)) return { chainId, available: false as const };
   if (process.env.EVM_ORDERBOOK_MATCHING_ENABLED !== "true") {
-    return { chainId, available: false as const };
+    return { chainId, available: false as const, reason: "EVM order matching is disabled by configuration." };
   }
   const deployed = await getDeployedOrderbookEscrowConfig(chainId);
   if (!deployed.available) return deployed;
@@ -205,11 +217,15 @@ export async function getEvmOrderbookEscrowConfig(chainId = configuredChainId())
       client.getGasPrice(),
     ]);
     if (balance < gasPrice * 2_000_000n) {
-      return { chainId, available: false as const };
+      return {
+        chainId,
+        available: false as const,
+        reason: "The EVM settlement relayer needs more native gas funds on this chain.",
+      };
     }
     return deployed;
   } catch {
-    return { chainId, available: false as const };
+    return { chainId, available: false as const, reason: "The EVM relayer or chain RPC is unavailable." };
   }
 }
 
@@ -218,7 +234,7 @@ export async function verifyEvmOrderLock(params: OnchainOrderLockParams): Promis
   fundingRef: string;
   escrowAddress: Address;
 }> {
-  if (params.chainId !== configuredChainId() || !SUPPORTED_CHAIN_IDS.has(params.chainId)) {
+  if (!SUPPORTED_CHAIN_IDS.has(params.chainId) || !isEvmOrderbookChainEnabled(params.chainId)) {
     throw new Error("Wallet-funded order settlement is not enabled on the connected EVM chain.");
   }
   if (!/^0x[0-9a-fA-F]{40}$/.test(params.walletAddress)) throw new Error("Invalid EVM wallet address");
@@ -306,7 +322,7 @@ export async function verifyEvmOrderbookCancelTx(params: {
     throw new Error("Invalid EVM order cancellation proof");
   }
   const chainId = params.chainId;
-  if (!SUPPORTED_CHAIN_IDS.has(chainId)) {
+  if (!SUPPORTED_CHAIN_IDS.has(chainId) || !isEvmOrderbookChainEnabled(chainId)) {
     throw new Error("Order cancellation is not enabled on this EVM chain");
   }
   const configuredEscrow = getEscrowAddress(chainId);
@@ -581,7 +597,7 @@ export async function settleEvmOrderFill(params: {
   baseAmount: string | number;
   grossQuoteAmount: string | number;
 }, onSubmitted?: (txHash: Hex) => Promise<void>): Promise<{ txHash: Hex; alreadySettled: boolean; feeAmount: string }> {
-  if (params.chainId !== configuredChainId() || !SUPPORTED_CHAIN_IDS.has(params.chainId)) {
+  if (!SUPPORTED_CHAIN_IDS.has(params.chainId) || !isEvmOrderbookChainEnabled(params.chainId)) {
     throw new Error("EVM order settlement is not enabled on the order chain.");
   }
   const config = await getEvmOrderbookEscrowConfig(params.chainId);
