@@ -368,6 +368,7 @@ function OrahChart({
   const zoomTimerRef2       = useRef<ReturnType<typeof setTimeout> | null>(null);
   const effectiveIntervalRef = useRef(interval);
   const syncingTimeRangeRef = useRef(false);
+  const candleRequestVersionRef = useRef(0);
 
   const { theme } = useThemeStore();
   const { showTradingViewWatermark } = useSettingsStore();
@@ -400,7 +401,13 @@ function OrahChart({
   /* Keep effectiveIntervalRef current; reset autoInterval on parent-driven interval change */
   const effectiveInterval = autoInterval ?? interval;
   useEffect(() => { effectiveIntervalRef.current = effectiveInterval; }, [effectiveInterval]);
-  useEffect(() => { setAutoInterval(null); }, [interval]);
+  useEffect(() => {
+    setAutoInterval(null);
+    autoIntervalRef.current = false;
+    zoomRangeRef.current = null;
+    candleRequestVersionRef.current += 1;
+    if (zoomTimerRef2.current) clearTimeout(zoomTimerRef2.current);
+  }, [interval]);
   useEffect(() => {
     if (!fullscreen) return;
     const previousOverflow = document.body.style.overflow;
@@ -428,6 +435,7 @@ function OrahChart({
 
   /* ── Fetch candles ──────────────────────────────────────────────────── */
   const fetchCandles = useCallback(async () => {
+    const requestVersion = ++candleRequestVersionRef.current;
     try {
       let url: string;
       if (HISTORY_INTERVALS.has(interval)) {
@@ -445,11 +453,14 @@ function OrahChart({
       const res = await fetch(url);
       if (!res.ok) return;
       const raw = await res.json();
+      if (requestVersion !== candleRequestVersionRef.current) return;
       const arr = Array.isArray(raw) ? raw : raw?.candles;
       const sorted = normalizeCandleRows(arr);
       if (sorted.length) setCandles(sorted);
     } catch (_) {}
-    finally { setLoading(false); }
+    finally {
+      if (requestVersion === candleRequestVersionRef.current) setLoading(false);
+    }
   }, [candleSymbol, interval]);
 
   const fetchTicker = useCallback(async () => {
@@ -482,6 +493,7 @@ function OrahChart({
    * then restores `restoreRange` after the chart updates.
    */
   const fetchForZoom = useCallback(async (iv: string, restoreRange: { from: number; to: number }) => {
+    const requestVersion = ++candleRequestVersionRef.current;
     try {
       const preset = RANGE_PRESET_MAP[iv];
       const apiIv  = preset ? preset.apiInterval : iv;
@@ -490,6 +502,7 @@ function OrahChart({
       const res = await fetch(url);
       if (!res.ok) return;
       const raw = await res.json();
+      if (requestVersion !== candleRequestVersionRef.current) return;
       const arr = Array.isArray(raw) ? raw : raw?.candles;
       const sorted = normalizeCandleRows(arr);
       if (!sorted.length) return;
@@ -613,15 +626,16 @@ function OrahChart({
     source: ReturnType<typeof createChart> | null,
     target: ReturnType<typeof createChart> | null,
   ) => {
-    if (!source || !target || syncingTimeRangeRef.current || displayCandles.length < 2) return;
+    const currentCandles = displayCandlesRef.current;
+    if (!source || !target || syncingTimeRangeRef.current || currentCandles.length < 2) return;
 
     try {
       const sourceRange = source.timeScale().getVisibleRange();
       const targetRange = target.timeScale().getVisibleRange();
       if (!isNumericVisibleRange(sourceRange) || !isNumericVisibleRange(targetRange)) return;
 
-      const firstTime = Number(displayCandles[0]?.time);
-      const lastTime = Number(displayCandles[displayCandles.length - 1]?.time);
+      const firstTime = Number(currentCandles[0]?.time);
+      const lastTime = Number(currentCandles[currentCandles.length - 1]?.time);
       if (!Number.isFinite(firstTime) || !Number.isFinite(lastTime) || firstTime >= lastTime) return;
 
       const from = Math.max(sourceRange.from, firstTime);
@@ -638,7 +652,7 @@ function OrahChart({
     } finally {
       syncingTimeRangeRef.current = false;
     }
-  }, [displayCandles]);
+  }, []);
 
   const fitChartToData = useCallback((chart: ReturnType<typeof createChart> | null) => {
     if (!chart) return;
