@@ -3,6 +3,7 @@
 // Proxies internally to the working multi-quote (SimpleSwap/ChangeNow).
 // Also warms venue connections on server start so first user request is fast.
 import { Router } from "express";
+import { safeApiStartup } from "../lib/startupMode.js";
 const router = Router();
 const cache = new Map<string, { at: number; data: any }>();
 const PORT = process.env.PORT || 8080;
@@ -55,9 +56,11 @@ router.get("/letsexchange/estimate", async (req, res) => {
 });
 
 // Warm-up: prime venue TLS + quote caches ~8s after boot
-setTimeout(() => {
-  const pairs = [["BTC","ETH"],["BTC","USDT"],["BTC","BSV"],["ETH","USDT"]];
-  for (const [f, t] of pairs) quotePair(f, t).catch(() => {});
-}, 8000);
+if (!safeApiStartup) {
+  setTimeout(() => {
+    const pairs = [["BTC","ETH"],["BTC","USDT"],["BTC","BSV"],["ETH","USDT"]];
+    for (const [f, t] of pairs) quotePair(f, t).catch(() => {});
+  }, 8000);
+}
 
 export default router;
