@@ -348,9 +348,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     isError: apiRuntimeConfigError,
     isLoading: apiRuntimeConfigLoading,
   } = useQuery({
-    queryKey: ["api-runtime-config"],
+    queryKey: ["api-runtime-config", walletChainId ?? 1],
     queryFn: async () => {
-      const response = await fetch(`${BASE}/api/runtime-config`, { cache: "no-store" });
+      const response = await fetch(`${BASE}/api/runtime-config?chainId=${walletChainId ?? 1}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Trading status unavailable");
       return response.json() as Promise<{
         safeStartup: boolean;
@@ -393,9 +393,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     ? `Switch your wallet to chain ${tradingNetworkCapability?.chainId} before placing this order.`
     : unsupportedEvmOrderbookPair
     ? `${symbol} is not supported by the verified orderbook on chain ${tradingNetworkCapability?.chainId}.`
-    : apiRuntimeConfig?.safeStartup
-    ? "This preview is read-only while trading services are paused."
-    : tradingNetworkCapability?.reason ?? "Trading is not enabled for this wallet network.";
+    : tradingNetworkCapability?.reason ??
+      (apiRuntimeConfig?.safeStartup
+        ? "This preview is read-only while trading services are paused."
+        : "Trading is not enabled for this wallet network.");
   const walletOrderbookAvailable =
     isEvm &&
     tradingNetworkCapability?.available === true &&

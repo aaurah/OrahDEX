@@ -358,9 +358,9 @@ export function OrderForm({
   const { addNotification } = useNotificationStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const apiRuntimeConfigQuery = useQuery({
-    queryKey: ["api-runtime-config"],
+    queryKey: ["api-runtime-config", walletChainId ?? 1],
     queryFn: async () => {
-      const response = await fetch(`${API_BASE}/runtime-config`, { cache: "no-store" });
+      const response = await fetch(`${API_BASE}/runtime-config?chainId=${walletChainId ?? 1}`, { cache: "no-store" });
       if (!response.ok) throw new Error("Trading status unavailable");
       return response.json() as Promise<{
         safeStartup: boolean;
@@ -579,9 +579,10 @@ export function OrderForm({
     ? `Switch your wallet to chain ${configuredOrderbookChainId} before placing this order.`
     : unsupportedEvmOrderbookPair
     ? `${symbol} is not supported by the verified orderbook on chain ${configuredOrderbookChainId}.`
-    : apiRuntimeConfigQuery.data?.safeStartup
-    ? "This preview is read-only while trading services are paused."
-    : tradingNetworkCapability?.reason ?? "Trading is not enabled for this wallet network.";
+    : tradingNetworkCapability?.reason ??
+      (apiRuntimeConfigQuery.data?.safeStartup
+        ? "This preview is read-only while trading services are paused."
+        : "Trading is not enabled for this wallet network.");
   // Ethereum wallet orders use the exact on-chain balance only when the
   // verified orderbook escrow path is available; other orders use ledger funds.
   const usesApiBalance = !(walletOrderbookAvailable || (externalSwapMode && type === "market"));
