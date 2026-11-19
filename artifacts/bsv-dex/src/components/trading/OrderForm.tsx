@@ -32,7 +32,15 @@ import {
   CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
   getAssetNativeChain, walletCanReceive,
 } from "@/lib/crossChain";
-import { CHAIN_TOKEN_ADDRESSES } from "@/lib/onChainLiquidity";
+import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
+import { lockOrderbookOrder } from "@/lib/escrow";
+
+function supportsEthereumWalletOrderbookAsset(symbol: string): boolean {
+  const normalized = symbol.trim().toUpperCase();
+  if (normalized === "ETH") return true;
+  return Boolean(CHAIN_TOKEN_ADDRESSES[1]?.[normalized]) &&
+    (TOKEN_DECIMALS[normalized] ?? 18) === 18;
+}
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
@@ -356,10 +364,47 @@ export function OrderForm({
   // Wallet signing for external EVM wallets — used to authorise on-chain order placement.
   const { signMessageAsync } = useSignMessage();
   const [signingOrder, setSigningOrder] = useState(false);
+  const [escrowStage, setEscrowStage] = useState("");
+  const [evmOrderbookConfig, setEvmOrderbookConfig] = useState<{
+    available: boolean;
+    chainId?: number;
+    address?: string;
+    supportedPairs?: string[];
+  } | null>(null);
+  const [evmOrderbookConfigLoaded, setEvmOrderbookConfigLoaded] = useState(false);
+  const [submittedOrderbookTx, setSubmittedOrderbookTx] = useState<{
+    hash: string;
+    explorerUrl: string;
+    kind: "approval" | "lock";
+  } | null>(null);
+  const submittedOrderbookTxRef = useRef<typeof submittedOrderbookTx>(null);
 
   const chainId = walletChainId ?? 1;
   const nativeSymbol = (network === "bsv" || network === "bsv-test") ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
   const nativeBal = balance ? parseFloat(balance) : 0;
+
+  useEffect(() => {
+    if (!address || !isEvm || chainId !== 1) {
+      setEvmOrderbookConfig(null);
+      setEvmOrderbookConfigLoaded(true);
+      return;
+    }
+    let active = true;
+    setEvmOrderbookConfigLoaded(false);
+    fetch(`${API_BASE}/orders/evm-settlement/config`, { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() : { available: false, chainId: 1 })
+      .then((config) => {
+        if (!active) return;
+        setEvmOrderbookConfig(config);
+        setEvmOrderbookConfigLoaded(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setEvmOrderbookConfig({ available: false, chainId: 1 });
+        setEvmOrderbookConfigLoaded(true);
+      });
+    return () => { active = false; };
+  }, [address, isEvm, chainId]);
 
   // Fetch real on-chain token balances for the connected EVM wallet
   const { balances: tokenBalances, loading: balancesLoading, refresh: refreshBalances, lastFetch: balancesLastFetch } = useEvmBalances(
@@ -403,9 +448,6 @@ export function OrderForm({
 
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
-  // Only the separate external-swap flow uses wallet-held funds. Order-book
-  // matching currently requires an already funded exchange ledger reservation.
-  const usesApiBalance = !(externalSwapMode && type === "market");
   const [price, setPrice]     = useState<string>(currentPrice > 0 ? currentPrice.toFixed(2) : "");
   const [stopPrice, setStopPrice] = useState<string>("");
   const [amount, setAmount]   = useState<string>("");
@@ -468,6 +510,24 @@ export function OrderForm({
 
   const parts = symbol.split("/");
   const [base, quote = "USDT"] = parts;
+  const shouldUseEthereumOrderbookEscrow =
+    !!address &&
+    isEvm &&
+    chainId === 1 &&
+    supportsEthereumWalletOrderbookAsset(base) &&
+    supportsEthereumWalletOrderbookAsset(quote);
+  const walletOrderbookAvailable =
+    shouldUseEthereumOrderbookEscrow &&
+    evmOrderbookConfigLoaded &&
+    evmOrderbookConfig?.available === true &&
+    !!evmOrderbookConfig.address &&
+    (!Array.isArray(evmOrderbookConfig.supportedPairs) ||
+      evmOrderbookConfig.supportedPairs.includes(`${base}/${quote}`.toUpperCase()));
+  const walletOrderbookConfigPending =
+    shouldUseEthereumOrderbookEscrow && !evmOrderbookConfigLoaded;
+  // Ethereum wallet orders use the exact on-chain balance only when the
+  // verified orderbook escrow path is available; other orders use ledger funds.
+  const usesApiBalance = !(walletOrderbookAvailable || (externalSwapMode && type === "market"));
 
   // Cross-chain derived values (must come after `base` is declared)
   const baseChain = getAssetNativeChain(base);
