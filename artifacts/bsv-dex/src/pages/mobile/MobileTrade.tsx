@@ -348,10 +348,21 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     queryFn: async () => {
       const response = await fetch(`${BASE}/api/runtime-config`, { cache: "no-store" });
       if (!response.ok) throw new Error("Trading status unavailable");
-      return response.json() as Promise<{ safeStartup: boolean }>;
+      return response.json() as Promise<{
+        safeStartup: boolean;
+        networks: Partial<Record<"evm" | "bsv" | "sol" | "btc" | "bch" | "other", { available: boolean; reason?: string }>>;
+      }>;
     },
     staleTime: 30_000,
   });
+  const tradingNetworkKey =
+    isEvm ? "evm"
+    : network === "bsv" || network === "bsv-test" ? "bsv"
+    : network === "sol" ? "sol"
+    : network === "btc" ? "btc"
+    : network === "bch" ? "bch"
+    : "other";
+  const tradingNetworkCapability = apiRuntimeConfig?.networks?.[tradingNetworkKey];
   const ethereumOrderbookPair =
     isEvm &&
     !isFutures &&
@@ -359,16 +370,18 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     supportsEthereumWalletOrderbookAsset(quote);
   const walletOrderbookNetworkPending = !!address && ethereumOrderbookPair && walletChainId == null;
   const tradingCapabilityPending = !!address && apiRuntimeConfigLoading;
-  const tradingPausedBySafeStartup = !!address && apiRuntimeConfig?.safeStartup === true;
+  const tradingPausedBySafeStartup = !!address && tradingNetworkCapability?.available !== true;
+  const tradingCapabilityReason = apiRuntimeConfig?.safeStartup
+    ? "This preview is read-only while trading services are paused."
+    : tradingNetworkCapability?.reason ?? "Trading is not enabled for this wallet network.";
   const walletOrderbookAvailable =
     isEvm &&
+    tradingNetworkCapability?.available === true &&
     walletChainId === 1 &&
     ethereumOrderbookPair &&
     (!Array.isArray(evmOrderbookConfig?.supportedPairs) ||
       evmOrderbookConfig.supportedPairs.includes(`${base}/${quote}`.toUpperCase())) &&
     evmOrderbookConfig?.available === true;
-  const walletOrderbookSafeStartup =
-    !!address && ethereumOrderbookPair && (tradingPausedBySafeStartup || evmOrderbookConfig?.safeStartup === true);
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1300,10 +1313,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const leMinRaw: number = parseFloat(leMinData?.min_amount ?? 0) || 0;
   const leMaxRaw: number = parseFloat(leMinData?.max_amount ?? 0) || 0;
   // For SELL: LE min is already in base. For BUY: LE min is in quote → divide by price.
-  const leMinBase = walletOrderbookAvailable || tradingPausedBySafeStartup || walletOrderbookSafeStartup ? 0 : side === "sell"
+  const leMinBase = walletOrderbookAvailable || tradingPausedBySafeStartup ? 0 : side === "sell"
     ? leMinRaw
     : (leMinRaw > 0 && effectivePrice > 0 ? leMinRaw / effectivePrice : 0);
-  const leMaxBase = walletOrderbookAvailable || tradingPausedBySafeStartup || walletOrderbookSafeStartup ? 0 : side === "sell"
+  const leMaxBase = walletOrderbookAvailable || tradingPausedBySafeStartup ? 0 : side === "sell"
     ? leMaxRaw
     : (leMaxRaw > 0 && effectivePrice > 0 ? leMaxRaw / effectivePrice : 0);
   const belowLeMin = leMinBase > 0 && amtNum > 0 && amtNum < leMinBase;
@@ -1464,8 +1477,8 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     }
     if (tradingPausedBySafeStartup) {
       toast({
-        title: "Trading is paused in this preview",
-        description: "Order matching and settlement workers are disabled here. No wallet signature or order was submitted.",
+        title: "Trading is unavailable on this network",
+        description: `${tradingCapabilityReason} No wallet signature or order was submitted.`,
         variant: "destructive",
       });
       return;
@@ -2386,18 +2399,16 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <ShieldCheck size={12} className="text-primary shrink-0" />
                 <span className="text-primary/80 font-medium">
                   {tradingPausedBySafeStartup
-                    ? "Trading is paused in this preview. Wallet funds are not available for order-book trades here."
+                    ? `Order-book trading is unavailable: ${tradingCapabilityReason}`
                     : walletOrderbookAvailable
                     ? "Ethereum limit orders lock the required wallet funds until the order fills or you cancel it."
-                    : walletOrderbookSafeStartup
-                    ? "Trading is paused in this preview while matching and settlement workers are disabled."
                     : "Order-book trading uses available trading balance. Wallet-to-wallet matching is paused; use Swap for wallet-held funds."}
                 </span>
               </div>
             )}
             {tradingPausedBySafeStartup && (
               <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-amber-200" role="status">
-                This preview is read-only for orders. No wallet signature or escrow transaction will be requested.
+                {tradingCapabilityReason} No wallet signature or escrow transaction will be requested.
               </div>
             )}
             {tradingCapabilityPending && (
@@ -2812,7 +2823,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <svg className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
                 <div className="text-[10px] leading-relaxed text-blue-300/90">
                   {tradingPausedBySafeStartup
-                    ? <><span className="font-bold text-blue-300">Order-book trading is paused.</span> Your wallet balance stays on-chain and is not an exchange trading balance.</>
+                    ? <><span className="font-bold text-blue-300">Order-book trading is unavailable.</span> {tradingCapabilityReason} Wallet balances remain separate.</>
                     : walletOrderbookAvailable
                     ? <><span className="font-bold text-blue-300">Wallet-funded limit trading is enabled.</span> Required funds are locked in Ethereum escrow until filled or canceled.</>
                     : <><span className="font-bold text-blue-300">Wallet funds stay yours.</span> On-chain wallet balances are shown separately below. Order-book trades require a funded trading balance; use Swap for wallet-held funds.</>}
@@ -2853,7 +2864,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   <button
                     onClick={() => setFundingSheetOpen(true)}
                     disabled={tradingPausedBySafeStartup || tradingCapabilityPending || apiRuntimeConfigError}
-                    title={tradingPausedBySafeStartup ? "Funding is disabled in this read-only preview" : "Add trading funds"}
+                    title={tradingPausedBySafeStartup ? tradingCapabilityReason : "Add trading funds"}
                     className="rounded-full border-2 border-primary text-primary shrink-0 inline-flex items-center justify-center active:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ width: 22, height: 22, minWidth: 22, minHeight: 22 }}
                   >
@@ -2877,7 +2888,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
                   <span>
                     {tradingPausedBySafeStartup
-                      ? "This preview is read-only; no order-book balance is available here."
+                      ? `No order-book balance is available: ${tradingCapabilityReason}`
                       : <>No {availableSym} in {isEvm ? "exchange balance or connected wallet" : "wallet"} — get it via{" "}
                         <a
                           href="/swap"
@@ -2893,7 +2904,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <div className="flex items-center gap-1.5 text-[10px] text-amber-400/80 leading-tight px-0.5">
                   <span>
                     {tradingPausedBySafeStartup
-                      ? `${formatBalance(walletAvailable)} ${availableSym} is held in your wallet. This preview is read-only and cannot use it for orders.`
+                      ? `${formatBalance(walletAvailable)} ${availableSym} is held in your wallet. ${tradingCapabilityReason}`
                       : <>{formatBalance(walletAvailable)} {availableSym} is in your wallet, not your exchange balance. Use{" "}
                         <a href="/swap" className="text-cyan-400 underline underline-offset-2 font-semibold">Swap</a>
                         {" "}or deposit to trade on the order book.</>}
@@ -3257,7 +3268,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         <div className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-1 border-t border-blue-500/20 bg-blue-500/5 text-[10px] text-blue-300/80 font-medium leading-none">
           <svg className="w-3 h-3 shrink-0 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
           {tradingPausedBySafeStartup
-            ? "Read-only preview — no orders or wallet transactions will be sent"
+            ? `Trading unavailable — ${tradingCapabilityReason}`
             : "Non-custodial — funds stay in your wallet until on-chain settlement"}
         </div>
       )}
@@ -3282,7 +3293,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             disabled
             className="w-full py-3 rounded-xl text-sm font-bold text-muted-foreground bg-secondary border border-border cursor-not-allowed"
           >
-            {tradingPausedBySafeStartup ? "Trading paused — read-only preview" : "Trading status unavailable"}
+            {tradingPausedBySafeStartup ? "Trading unavailable on this network" : "Trading status unavailable"}
           </button>
         ) : (
           <>

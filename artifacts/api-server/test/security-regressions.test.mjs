@@ -11,6 +11,9 @@ const ordersPath = path.join(__dirname, "..", "src", "routes", "orders.ts");
 const ordersSchemaPath = path.join(__dirname, "..", "..", "..", "lib", "db", "src", "schema", "orders.ts");
 const tradePath = path.join(__dirname, "..", "src", "routes", "trade.ts");
 const fundingVerifierPath = path.join(__dirname, "..", "src", "lib", "fundingVerifier.ts");
+const tradingCapabilitiesPath = path.join(__dirname, "..", "src", "lib", "tradingCapabilities.ts");
+const startupModePath = path.join(__dirname, "..", "src", "lib", "startupMode.ts");
+const appPath = path.join(__dirname, "..", "src", "app.ts");
 const routesIndexPath = path.join(__dirname, "..", "src", "routes", "index.ts");
 const adminAuthPath = path.join(__dirname, "..", "src", "middleware", "adminAuth.ts");
 const adminRoutesPath = path.join(__dirname, "..", "src", "routes", "admin.ts");
@@ -207,9 +210,10 @@ test("Ethereum orderbook orders require confirmed escrow proof and settlement pa
 
   assert.match(ordersSrc, /router\.get\("\/orders\/evm-settlement\/config"/);
   assert.match(ordersSrc, /router\.get\("\/runtime-config"/);
-  assert.match(ordersSrc, /res\.json\(\{ safeStartup: safeApiStartup \}\)/);
+  assert.match(ordersSrc, /res\.json\(await getTradingCapabilities\(\)\)/);
   assert.match(ordersSrc, /safeStartup: true/);
   assert.match(ordersSrc, /if \(safeApiStartup\)[\s\S]*?code: "SAFE_STARTUP"/);
+  assert.match(ordersSrc, /getOrderNetworkCapability\(runtimeCapabilities/);
   assert.match(ordersSrc, /verifyEvmOrderLock\(\{/);
   assert.match(ordersSrc, /ORDERBOOK_LOCK_REQUIRED/);
   assert.match(ordersSrc, /candidateClaimsOrderbookEscrow !== Boolean\(incomingOrderbookFunding\)/);
@@ -218,4 +222,35 @@ test("Ethereum orderbook orders require confirmed escrow proof and settlement pa
   assert.match(escrowSrc, /MIN_CONFIRMATIONS/);
   assert.match(escrowSrc, /OrderOpened/);
   assert.match(escrowSrc, /configuredEscrow\.toLowerCase\(\) !== params\.escrowAddress\.toLowerCase\(\)/);
+});
+
+test("multi-network order trading stays disabled without verified settlement", async () => {
+  const [src, startupSrc, appSrc, mobileTradeSrc, orderFormSrc] = await Promise.all([
+    read(tradingCapabilitiesPath),
+    read(startupModePath),
+    read(appPath),
+    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "mobile", "MobileTrade.tsx")),
+    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "trading", "OrderForm.tsx")),
+  ]);
+
+  assert.match(src, /ORAHDEX_TRADING_EVM_VERIFIED !== "true"/);
+  assert.match(src, /bsv:\s*\{\s*available: false/);
+  assert.match(src, /sol:\s*\{\s*available: false/);
+  assert.match(src, /btc:\s*\{\s*available: false/);
+  assert.match(src, /bch:\s*\{\s*available: false/);
+  assert.match(src, /input\.chainId !== 1/);
+  assert.match(src, /input\.orderType !== "limit"/);
+  assert.match(src, /!input\.hasEscrowLock/);
+  assert.match(src, /await pool\.query\("SELECT 1"\)/);
+  assert.match(src, /service\.name === "order-reconciler"/);
+  assert.match(src, /recovery\.lastSuccessAt !== null/);
+  assert.match(startupSrc, /!safeApiStartup && process\.env\.ORAHDEX_TRADING_WORKERS_ENABLED !== "false"/);
+  assert.match(appSrc, /if \(tradingWorkersEnabled\) \{[\s\S]*?startOrderReconciler[\s\S]*?startBsvIntentWatcher/);
+  const generalWorkerBlock = appSrc.match(/if \(!safeApiStartup\) \{\n  _s\([\s\S]*?\n\}/)?.[0] ?? "";
+  assert.ok(generalWorkerBlock, "general background worker block exists");
+  assert.doesNotMatch(generalWorkerBlock, /startOrderReconciler|startBsvDepositWatcher|startHtlcWatcher|startBsvIntentWatcher/);
+  assert.match(mobileTradeSrc, /tradingNetworkCapability\?\.available === true/);
+  assert.match(mobileTradeSrc, /tradingCapabilityReason/);
+  assert.match(orderFormSrc, /tradingNetworkCapability\?\.available === true/);
+  assert.match(orderFormSrc, /tradingCapabilityReason/);
 });
