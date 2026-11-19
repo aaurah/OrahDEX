@@ -130,6 +130,7 @@ const SupportThreadPage      = lazy(() => import("@/pages/SupportThread").then(m
 const AdminApiMonitor        = lazy(() => import("@/pages/admin/ApiMonitor").then(m => ({ default: m.ApiMonitor })));
 const AdminTradeAnalytics    = lazy(() => import("@/pages/admin/TradeAnalytics").then(m => ({ default: m.AdminTradeAnalytics })));
 const AdminWithdrawals       = lazy(() => import("@/pages/admin/Withdrawals").then(m => ({ default: m.AdminWithdrawals })));
+const AdminStripeOrders      = lazy(() => import("@/pages/admin/StripeOrders").then(m => ({ default: m.AdminStripeOrders })));
 const AdminIntegrations      = lazy(() => import("@/pages/admin/Integrations").then(m => ({ default: m.AdminIntegrations })));
 const AdminMintBurn          = lazy(() => import("@/pages/admin/MintBurn").then(m => ({ default: m.AdminMintBurn })));
 const AdminLedgerManager     = lazy(() => import("@/pages/admin/LedgerManager").then(m => ({ default: m.AdminLedgerManager })));
@@ -510,6 +511,7 @@ function Router() {
       <Route path="/admin/transactions"><AdminRoute><AdminTransactions /></AdminRoute></Route>
 
       <Route path="/admin/withdrawals"><AdminRoute><AdminWithdrawals /></AdminRoute></Route>
+      <Route path="/admin/stripe-orders"><AdminRoute><AdminStripeOrders /></AdminRoute></Route>
       <Route path="/admin/ledger">    <AdminRoute><AdminLedgerManager /></AdminRoute></Route>
       <Route path="/admin/db-sync">   <AdminRoute><AdminDbSync /></AdminRoute></Route>
       <Route path="/admin/treasury">  <AdminRoute><AdminTreasury /></AdminRoute></Route>
