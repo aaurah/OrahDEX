@@ -67,6 +67,26 @@ export async function signWalletMessage(
     .join("")}`;
 
   if (provider === "reown") {
+    if (wagmiSign) {
+      try {
+        return await wagmiSign({ message });
+      } catch (error: any) {
+        const text = String(error?.message ?? "").toLowerCase();
+        if (error?.code === 4001 || error?.code === "ACTION_REJECTED" ||
+            text.includes("rejected") || text.includes("denied") || text.includes("cancel")) {
+          throw error;
+        }
+        const canUseRawProvider = [4100, 4900, -32601].includes(Number(error?.code)) ||
+          text.includes("connector not connected") ||
+          text.includes("provider not found") ||
+          text.includes("no provider");
+        if (!canUseRawProvider) throw error;
+        // Fall through to the active connector's raw provider if Wagmi rejects
+        // before issuing the signing request. Other errors must not trigger a
+        // second prompt because the first wallet may still be handling it.
+      }
+    }
+
     const { wagmiAdapter } = await import("@/lib/reown-appkit");
     const { getConnection, getConnections } = await import("@wagmi/core");
     const activeConnection = getConnection(wagmiAdapter.wagmiConfig);
