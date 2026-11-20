@@ -1718,15 +1718,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           // This is the standard Reown/WalletConnect path and handles mobile
           // wallet-app handoff responses. signWalletMessage falls back to the
           // selected raw provider only if Wagmi fails immediately.
-          const hasInjectedProvider = Boolean((window as any).ethereum?.request);
           const wagmiAccountMatches = evmConnected && !!evmAccountAddress &&
             evmAccountAddress.toLowerCase() === address!.toLowerCase();
-          const wagmiFallback = wagmiAccountMatches &&
-            (provider === "reown" || !hasInjectedProvider)
-            ? signMessageAsync
-            : undefined;
+          const wagmiSigner = wagmiAccountMatches ? signMessageAsync : undefined;
           evmSignature = await withWalletRequestTimeout(
-            signWalletMessage(address!, provider ?? undefined, orderMsg, wagmiFallback),
+            signWalletMessage(address!, provider ?? undefined, orderMsg, wagmiSigner),
             90_000,
             signController.signal,
           );
