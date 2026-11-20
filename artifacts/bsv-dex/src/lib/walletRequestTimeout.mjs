@@ -66,6 +66,10 @@ export async function withWalletRequestTimeout(request, timeoutMs, signal) {
       finish(reject, error);
     };
 
+    Promise.resolve(request).then(
+      (value) => finish(resolve, value),
+      (error) => finish(reject, error),
+    );
     if (signal) {
       if (signal.aborted) {
         abort();
@@ -85,9 +89,5 @@ export async function withWalletRequestTimeout(request, timeoutMs, signal) {
     // External wallet handoffs background the browser. Pause the timeout while
     // the user reviews and approves the signature, then resume on return.
     resumeTimeout();
-    Promise.resolve(request).then(
-      (value) => finish(resolve, value),
-      (error) => finish(reject, error),
-    );
   });
 }
