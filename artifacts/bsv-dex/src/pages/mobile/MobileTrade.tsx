@@ -1714,13 +1714,15 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             throw new Error("The connected wallet session is out of sync. Reconnect this wallet before signing.");
           }
 
-          // Prefer the selected wallet's raw provider. A stale wagmi connector
-          // can leave signMessageAsync pending forever on mobile and prevent the
-          // actual wallet from receiving the personal_sign request. For Reown,
-          // signWalletMessage resolves the active connector by the checked
-          // account address and sends the WalletConnect request on that session.
+          // Use Wagmi's signer when its active account matches the wallet store.
+          // This is the standard Reown/WalletConnect path and handles mobile
+          // wallet-app handoff responses. signWalletMessage falls back to the
+          // selected raw provider only if Wagmi fails immediately.
           const hasInjectedProvider = Boolean((window as any).ethereum?.request);
-          const wagmiFallback = provider !== "reown" && !hasInjectedProvider && evmConnected
+          const wagmiAccountMatches = evmConnected && !!evmAccountAddress &&
+            evmAccountAddress.toLowerCase() === address!.toLowerCase();
+          const wagmiFallback = wagmiAccountMatches &&
+            (provider === "reown" || !hasInjectedProvider)
             ? signMessageAsync
             : undefined;
           evmSignature = await withWalletRequestTimeout(
