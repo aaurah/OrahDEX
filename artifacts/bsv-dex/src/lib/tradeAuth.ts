@@ -1,5 +1,19 @@
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 
+function isWalletRequestRejected(error: any): boolean {
+  const text = String(error?.message ?? "").toLowerCase();
+  return error?.code === 4001 || error?.code === "ACTION_REJECTED" ||
+    text.includes("rejected") || text.includes("denied") || text.includes("cancel");
+}
+
+function canRetryWithRawProvider(error: any): boolean {
+  const text = String(error?.message ?? "").toLowerCase();
+  return [4100, 4900, -32601].includes(Number(error?.code)) ||
+    text.includes("connector not connected") ||
+    text.includes("provider not found") ||
+    text.includes("no provider");
+}
+
 export interface OrderIntentMessageParams {
   walletAddress: string;
   symbol: string;
@@ -53,6 +67,7 @@ export async function signWalletMessage(
   provider: string | undefined,
   message: string,
   wagmiSign?: (args: { message: string }) => Promise<string>,
+  signal?: AbortSignal,
 ): Promise<string> {
   if (provider === "orah-wallet") {
     const account = await getViemAccountForAddress(address, {
@@ -71,16 +86,7 @@ export async function signWalletMessage(
       try {
         return await wagmiSign({ message });
       } catch (error: any) {
-        const text = String(error?.message ?? "").toLowerCase();
-        if (error?.code === 4001 || error?.code === "ACTION_REJECTED" ||
-            text.includes("rejected") || text.includes("denied") || text.includes("cancel")) {
-          throw error;
-        }
-        const canUseRawProvider = [4100, 4900, -32601].includes(Number(error?.code)) ||
-          text.includes("connector not connected") ||
-          text.includes("provider not found") ||
-          text.includes("no provider");
-        if (!canUseRawProvider) throw error;
+        if (signal?.aborted || isWalletRequestRejected(error) || !canRetryWithRawProvider(error)) throw error;
         // Fall through to the active connector's raw provider if Wagmi rejects
         // before issuing the signing request. Other errors must not trigger a
         // second prompt because the first wallet may still be handling it.
@@ -117,12 +123,9 @@ export async function signWalletMessage(
     try {
       return await wagmiSign({ message });
     } catch (error: any) {
-      const text = String(error?.message ?? "").toLowerCase();
-      if (error?.code === 4001 || error?.code === "ACTION_REJECTED" ||
-          text.includes("rejected") || text.includes("denied") || text.includes("cancel")) {
-        throw error;
-      }
-      // The native provider is a fallback for wallets connected outside wagmi.
+      if (signal?.aborted || isWalletRequestRejected(error) || !canRetryWithRawProvider(error)) throw error;
+      // Retry through the raw provider only for immediate connection/provider
+      // lookup errors, never after an ambiguous wallet request or timeout.
     }
   }
 

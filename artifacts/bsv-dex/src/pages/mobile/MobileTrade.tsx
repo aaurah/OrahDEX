@@ -1703,7 +1703,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             });
             return account.signMessage!({ message: orderMsg });
           })();
-          evmSignature = await withWalletRequestTimeout(signingRequest, 60_000, signController.signal);
+          evmSignature = await withWalletRequestTimeout(
+            signingRequest,
+            60_000,
+            signController.signal,
+            () => signController.abort(),
+          );
         } else {
           if (
             provider === "reown" &&
@@ -1722,9 +1727,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             evmAccountAddress.toLowerCase() === address!.toLowerCase();
           const wagmiSigner = wagmiAccountMatches ? signMessageAsync : undefined;
           evmSignature = await withWalletRequestTimeout(
-            signWalletMessage(address!, provider ?? undefined, orderMsg, wagmiSigner),
+            signWalletMessage(address!, provider ?? undefined, orderMsg, wagmiSigner, signController.signal),
             90_000,
             signController.signal,
+            () => signController.abort(),
           );
         }
       } catch (signErr: any) {
