@@ -376,6 +376,20 @@ export function OrderForm({
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
   });
+  const { data: mainnetRuntimeConfig } = useQuery({
+    queryKey: ["api-runtime-config", 1],
+    queryFn: async () => {
+      const response = await fetch(`${API_BASE}/runtime-config?chainId=1`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Ethereum mainnet trading status unavailable");
+      return response.json() as Promise<{
+        networks: Partial<Record<"evm", { available: boolean; reason?: string; chainId?: number }>>;
+      }>;
+    },
+    enabled: isEvm && tradingCapabilityChainId !== 1,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
   const tradingNetworkKey =
     isEvm ? "evm"
     : network === "bsv" || network === "bsv-test" ? "bsv"
@@ -595,9 +609,12 @@ export function OrderForm({
     !!address &&
     isEvm &&
     walletChainId !== 1 &&
-    walletChainId !== 11155111 &&
-    tradingNetworkCapability?.available === true &&
-    tradingNetworkCapability.chainId === 1;
+    (tradingCapabilityChainId === 1
+      ? tradingNetworkCapability?.available === true && tradingNetworkCapability.chainId === 1
+      : mainnetRuntimeConfig?.networks?.evm?.available === true &&
+        mainnetRuntimeConfig.networks.evm.chainId === 1) &&
+    supportsEthereumWalletOrderbookAsset(base, 1) &&
+    supportsEthereumWalletOrderbookAsset(quote, 1);
   const handleSwitchToEthereum = async () => {
     setSwitchingToEthereum(true);
     try {
