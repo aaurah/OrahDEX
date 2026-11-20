@@ -7,9 +7,10 @@
  * @param {Promise<T>} request
  * @param {number} timeoutMs
  * @param {AbortSignal} [signal]
+ * @param {() => void} [onTimeout]
  * @returns {Promise<T>}
  */
-export async function withWalletRequestTimeout(request, timeoutMs, signal) {
+export async function withWalletRequestTimeout(request, timeoutMs, signal, onTimeout) {
   return await new Promise((resolve, reject) => {
     let timeoutId;
     let timeoutStartedAt;
@@ -39,7 +40,11 @@ export async function withWalletRequestTimeout(request, timeoutMs, signal) {
     const timeoutError = () => new Error(
       "Wallet did not respond. No order was submitted. Check the wallet for a pending signature before retrying.",
     );
-    const onTimeout = () => finish(reject, timeoutError());
+    const handleTimeout = () => {
+      if (settled) return;
+      finish(reject, timeoutError());
+      onTimeout?.();
+    };
     const pauseTimeout = () => {
       if (!timeoutId) return;
       clearTimeout(timeoutId);
@@ -50,11 +55,11 @@ export async function withWalletRequestTimeout(request, timeoutMs, signal) {
     const resumeTimeout = () => {
       if (settled || timeoutId || (hasDocument && document.hidden)) return;
       if (remainingMs <= 0) {
-        onTimeout();
+        handleTimeout();
         return;
       }
       timeoutStartedAt = Date.now();
-      timeoutId = setTimeout(onTimeout, remainingMs);
+      timeoutId = setTimeout(handleTimeout, remainingMs);
     };
     const onVisibilityChange = () => {
       if (document.hidden) pauseTimeout();
