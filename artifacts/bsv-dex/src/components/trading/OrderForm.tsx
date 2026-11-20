@@ -371,6 +371,10 @@ export function OrderForm({
       }>;
     },
     staleTime: 30_000,
+    // The API may initially pause trading while its recovery worker starts.
+    // Refresh readiness for an open form so it can recover without a reload.
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
   const tradingNetworkKey =
     isEvm ? "evm"

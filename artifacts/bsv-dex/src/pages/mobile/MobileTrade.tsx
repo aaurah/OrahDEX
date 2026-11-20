@@ -362,6 +362,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       }>;
     },
     staleTime: 30_000,
+    // Safe-startup can report trading unavailable until the recovery worker
+    // completes its first health check. Poll so an already-open trade screen
+    // unlocks as soon as the API becomes ready, without requiring a reload.
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
   const tradingNetworkKey =
     isEvm ? "evm"
