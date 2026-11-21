@@ -10,9 +10,6 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT="${PORT:-8080}"
 NODE_ENV="${NODE_ENV:-development}"
-# Replit's dev workflow should serve the API without starting database-writing
-# workers, deposit monitors, or settlement jobs. Production uses `start` directly.
-export ORAHDEX_API_SAFE_STARTUP="${ORAHDEX_API_SAFE_STARTUP:-1}"
 
 MAX_BACKOFF=30        # seconds
 STABLE_SEC=60         # run longer than this → reset back-off
@@ -96,7 +93,6 @@ log "============================================="
 log " OrahDEX API Server Watchdog — starting up"
 log "============================================="
 log "PORT=$PORT  NODE_ENV=$NODE_ENV"
-log "Safe API startup: $ORAHDEX_API_SAFE_STARTUP"
 log "Script dir: $SCRIPT_DIR"
 
 cd "$SCRIPT_DIR"

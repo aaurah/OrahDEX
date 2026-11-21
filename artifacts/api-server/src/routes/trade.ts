@@ -559,16 +559,6 @@ router.post("/trade/exchange/quote", async (req, res) => {
   }
 });
 
-// Oracle-priced internal ledger conversions are not a funded market. Keep
-// execution disabled until reserves and on-chain settlement are independently
-// verified; wallet signatures alone do not back output credits.
-const internalLedgerSwapPaused = (_req: unknown, res: any) => res.status(503).json({
-  error: "Internal-ledger swaps are paused until reserves and settlement are verified. Use a wallet-signed on-chain DEX swap instead.",
-  code: "INTERNAL_LEDGER_SWAP_DISABLED",
-});
-router.post("/trade/exchange", internalLedgerSwapPaused);
-router.post("/trade/exchange/advanced", internalLedgerSwapPaused);
-
 router.post("/trade/exchange", async (req, res) => {
   const body = req.body ?? {};
   const walletAddress = body.walletAddress;
