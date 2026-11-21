@@ -291,6 +291,16 @@ export function getTokenInfo(chainId: number, symbol: string): TokenInfo | null 
   return TOKEN_REGISTRY[chainId]?.[upper] ?? null;
 }
 
+export function getTokenSymbolByAddress(chainId: number, address: string): string | null {
+  const normalizedAddress = address.trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(normalizedAddress)) return null;
+  if (normalizedAddress === "0x0000000000000000000000000000000000000000") {
+    return NATIVE_SYMBOLS[chainId] ?? null;
+  }
+  const entries = Object.entries(TOKEN_REGISTRY[chainId] ?? {});
+  return entries.find(([, info]) => info.address.toLowerCase() === normalizedAddress)?.[0] ?? null;
+}
+
 /**
  * Returns true if `symbol` is the native asset for `chainId`
  * (i.e. use `getBalance` rather than `balanceOf`).
