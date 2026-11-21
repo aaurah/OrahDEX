@@ -357,7 +357,7 @@ export function OrderForm({
   const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
   const [switchingToEthereum, setSwitchingToEthereum] = useState(false);
-  const tradingCapabilityChainId = walletChainId === 11155111 ? 11155111 : 1;
+  const tradingCapabilityChainId = walletChainId ?? 1;
   const { addNotification } = useNotificationStore();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
   const apiRuntimeConfigQuery = useQuery({
@@ -425,7 +425,7 @@ export function OrderForm({
   const submittedOrderbookTxRef = useRef<typeof submittedOrderbookTx>(null);
 
   const chainId = walletChainId ?? 1;
-  const orderbookConfigChainId = walletChainId === 11155111 ? 11155111 : 1;
+  const orderbookConfigChainId = walletChainId ?? 1;
   const nativeSymbol = (network === "bsv" || network === "bsv-test") ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
   const nativeBal = balance ? parseFloat(balance) : 0;
 

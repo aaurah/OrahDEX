@@ -152,8 +152,8 @@ router.get("/orders/evm-settlement/config", async (req, res) => {
     res.setHeader("Cache-Control", "no-store");
     const rawChainId = req.query.chainId;
     const chainId = rawChainId === undefined ? undefined : Number(rawChainId);
-    if (chainId !== undefined && ![1, 11155111].includes(chainId)) {
-      res.status(400).json({ available: false, chainId, reason: "Unsupported EVM orderbook chain." });
+    if (chainId !== undefined && (!Number.isSafeInteger(chainId) || chainId <= 0)) {
+      res.status(400).json({ available: false, chainId, reason: "chainId must be a positive integer." });
       return;
     }
     const config = await getEvmOrderbookEscrowConfig(chainId);
@@ -174,8 +174,8 @@ router.get("/runtime-config", async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   const rawChainId = req.query.chainId;
   const chainId = rawChainId === undefined ? undefined : Number(rawChainId);
-  if (chainId !== undefined && ![1, 11155111].includes(chainId)) {
-    res.status(400).json({ error: "Unsupported EVM trading chain." });
+  if (chainId !== undefined && (!Number.isSafeInteger(chainId) || chainId <= 0)) {
+    res.status(400).json({ error: "chainId must be a positive integer." });
     return;
   }
   res.json(await getTradingCapabilities(chainId));

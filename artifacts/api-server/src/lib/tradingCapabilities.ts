@@ -58,7 +58,7 @@ const DISABLED_NETWORKS: Record<Exclude<TradingNetwork, "evm">, NetworkTradingCa
 
 function configuredEvmChainId(requestedChainId?: number): number {
   const chainId = requestedChainId ?? Number(process.env.ORAHDEX_TRADING_EVM_CHAIN_ID ?? "1");
-  return chainId === 1 || chainId === 11155111 ? chainId : -1;
+  return Number.isSafeInteger(chainId) && chainId > 0 ? chainId : -1;
 }
 
 function readOnlyCapability(reason: string, chainId = configuredEvmChainId()): TradingCapabilitySnapshot {
@@ -84,9 +84,9 @@ export async function getTradingCapabilities(requestedChainId?: number): Promise
     return readOnlyCapability(
       chainId === 1
         ? "Ethereum mainnet needs a funded relayer and a verified escrow order lifecycle before trading can be enabled."
-        : safeApiStartup
+        : chainId === 11155111 && safeApiStartup
         ? `Trading has not been verified on EVM chain ${chainId}.`
-        : `EVM orderbook trading is not enabled on chain ${chainId}.`,
+        : `Order-book trading is not verified or enabled on EVM chain ${chainId}.`,
       chainId,
     );
   }
@@ -167,7 +167,7 @@ export async function getTradingCapabilities(requestedChainId?: number): Promise
 
 /**
  * Apply stricter request-specific checks than the summary status endpoint.
- * Only the configured Ethereum-chain limit orders with a supported asset pair and a
+ * Only configured EVM limit orders with a supported asset pair and a
  * confirmed escrow-lock transaction can enter matching.
  */
 export function getOrderNetworkCapability(
@@ -190,7 +190,9 @@ export function getOrderNetworkCapability(
       chainId: capability.chainId,
       reason: capability.chainId === 11155111
         ? "Wallet-funded order-book trading is enabled on Sepolia only."
-        : "Wallet-funded order-book trading is enabled on Ethereum mainnet only.",
+        : capability.chainId === 1
+          ? "Wallet-funded order-book trading is enabled on Ethereum mainnet only."
+          : `Wallet-funded order-book trading is not enabled on EVM chain ${input.chainId}.`,
     };
   }
   if (input.orderType !== "limit") {
