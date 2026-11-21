@@ -330,9 +330,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const isOrahWallet = provider === "orah-wallet";
   const isExternalEvm = isEvm && !isOrahWallet;
   const isSelfCustodyEvm = isEvm && !!address;
-  const tradingCapabilityChainId = isEvm
-    ? walletChainId === 11155111 ? 11155111 : 1
-    : walletChainId ?? 1;
+  const tradingCapabilityChainId = walletChainId ?? 1;
   // Default to chainId 1 (Ethereum mainnet) when wallet hasn't reported a chain yet,
   // matching Portfolio behavior — otherwise the balance fetch never starts and Trade
   // shows 0 even though the wallet holds funds.
