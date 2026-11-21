@@ -3,12 +3,14 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Trash2, ShieldCheck, ShieldAlert, KeyRound, X, Crown,
-  ToggleLeft, ToggleRight, QrCode, Copy, Check, AlertTriangle, Eye, EyeOff,
+  ToggleLeft, ToggleRight, QrCode, Copy, Check, RefreshCw, AlertTriangle, Eye, EyeOff,
   Pencil, Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAdminAuthStore } from "@/store/useAdminAuthStore";
+import { generateTOTP } from "@/lib/totp";
 
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const fetchAdmins = () => adminFetch(`/api/admin/admins`).then(r => r.json());
 
 const ROLE_COLORS: Record<string, string> = {
@@ -24,58 +26,37 @@ const ALL_PERMISSIONS = ["all", "users", "pairs", "orders", "api", "contracts", 
 // ── Enable 2FA Modal (QR setup) ──────────────────────────────────────────────
 function Enable2FAModal({ onDone, onClose }: { onDone: () => void; onClose: () => void }) {
   const [copied, setCopied] = useState(false);
+  const [previewCode, setPreviewCode] = useState("");
   const [totpQrUrl, setTotpQrUrl] = useState("");
   const [totpSecret, setTotpSecret] = useState("");
   const [totpIssuer, setTotpIssuer] = useState("OrahDEX");
-  const [verificationCode, setVerificationCode] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  // Load enrollment data only for the authenticated administrator.
+  // Load TOTP setup data from server (secret never hardcoded in source)
   useEffect(() => {
-    let active = true;
     adminFetch(`/api/admin/auth/totp-uri`)
-      .then(async r => {
-        const d = await r.json().catch(() => ({}));
-        if (!r.ok) throw new Error(d.error ?? "Could not load authenticator setup.");
-        return d;
-      })
+      .then(r => r.json())
       .then(d => {
-        if (!active) return;
         setTotpQrUrl(d.qrUrl ?? "");
         const match = (d.uri ?? "").match(/secret=([^&]+)/);
         if (match) setTotpSecret(match[1]);
         const issuerMatch = (d.uri ?? "").match(/issuer=([^&]+)/);
         if (issuerMatch) setTotpIssuer(decodeURIComponent(issuerMatch[1]));
       })
-      .catch(err => { if (active) setError(err?.message ?? "Could not load authenticator setup."); });
-    return () => { active = false; };
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!totpSecret) return;
+    const refresh = () => generateTOTP(totpSecret).then(setPreviewCode);
+    refresh();
+    const t = setInterval(refresh, 5000);
+    return () => clearInterval(t);
+  }, [totpSecret]);
 
   const copySecret = () => {
     navigator.clipboard.writeText(totpSecret);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const handleEnable = async () => {
-    if (!/^\d{6}$/.test(verificationCode)) return;
-    setLoading(true);
-    setError("");
-    try {
-      const response = await adminFetch(`/api/admin/auth/totp/enable`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: verificationCode }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error ?? "Could not enable two-factor authentication.");
-      onDone();
-    } catch (err: any) {
-      setError(err?.message ?? "Could not enable two-factor authentication.");
-    } finally {
-      setLoading(false);
-    }
   };
 
   return (
@@ -132,26 +113,23 @@ function Enable2FAModal({ onDone, onClose }: { onDone: () => void; onClose: () =
             </div>
           )}
 
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1.5">Authenticator verification code</label>
-            <input
-              value={verificationCode}
-              onChange={event => setVerificationCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              placeholder="6-digit code"
-              className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 text-sm font-mono tracking-widest"
-            />
-          </div>
-          {error && <p role="alert" className="text-xs text-red-400">{error}</p>}
+          {/* Live code preview */}
+          {previewCode && (
+            <div className="flex items-center justify-between bg-green-500/10 border border-green-500/20 rounded-xl px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <RefreshCw className="w-3.5 h-3.5 text-green-400 animate-spin" style={{ animationDuration: '3s' }} />
+                <span className="text-xs text-green-400">Live code (refreshes every 30s)</span>
+              </div>
+              <code className="text-lg font-mono font-bold text-green-400 tracking-widest">{previewCode}</code>
+            </div>
+          )}
+
           <button
-            onClick={() => void handleEnable()}
-            disabled={loading || !totpSecret || verificationCode.length !== 6}
-            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-500 text-white py-3 rounded-xl font-bold text-sm shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={onDone}
+            className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-600 to-emerald-500 text-white py-3 rounded-xl font-bold text-sm shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-all"
           >
             <ShieldCheck className="w-4 h-4" />
-            {loading ? "Verifying…" : "Verify code and enable 2FA"}
+            2FA Enabled — I've set it up
           </button>
         </div>
       </div>
@@ -160,21 +138,7 @@ function Enable2FAModal({ onDone, onClose }: { onDone: () => void; onClose: () =
 }
 
 // ── Disable 2FA Confirmation Modal ───────────────────────────────────────────
-function Disable2FAModal({ adminName, onConfirm, onClose }: { adminName: string; onConfirm: (code: string) => Promise<void>; onClose: () => void }) {
-  const [code, setCode] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  const handleConfirm = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      await onConfirm(code);
-    } catch (err: any) {
-      setError(err?.message ?? "Could not disable two-factor authentication.");
-    } finally {
-      setLoading(false);
-    }
-  };
+function Disable2FAModal({ adminName, onConfirm, onClose }: { adminName: string; onConfirm: () => void; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl">
@@ -195,23 +159,12 @@ function Disable2FAModal({ adminName, onConfirm, onClose }: { adminName: string;
         <p className="text-sm text-orange-400/80 mb-6">
           This will make the account less secure. Are you sure?
         </p>
-        <label className="block text-xs text-muted-foreground mb-1.5">Current authenticator code</label>
-        <input
-          value={code}
-          onChange={event => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={6}
-          placeholder="6-digit code"
-          className="w-full bg-secondary border border-border rounded-xl px-3 py-2.5 mb-3 text-sm font-mono tracking-widest"
-        />
-        {error && <p role="alert" className="text-xs text-red-400 mb-3">{error}</p>}
         <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all">
             Cancel
           </button>
-          <button onClick={() => void handleConfirm()} disabled={loading || code.length !== 6} className="flex-1 py-2.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-400 text-sm font-semibold hover:bg-orange-500/25 transition-all disabled:opacity-50">
-            {loading ? "Verifying…" : "Disable 2FA"}
+          <button onClick={onConfirm} className="flex-1 py-2.5 rounded-xl bg-orange-500/15 border border-orange-500/30 text-orange-400 text-sm font-semibold hover:bg-orange-500/25 transition-all">
+            Disable 2FA
           </button>
         </div>
       </div>
@@ -538,7 +491,7 @@ function EditAdminModal({
 export function AdminAdmins() {
   const qc = useQueryClient();
   const {
-    email: loggedInEmail, displayName: superadminDisplayName, twoFaEnabled,
+    email: loggedInEmail, displayName: superadminDisplayName, twoFaEnabled, twoFaSetupDone,
     enable2FA, disable2FA, markSetupDone
   } = useAdminAuthStore();
 
@@ -600,29 +553,32 @@ export function AdminAdmins() {
 
   const handle2FAToggle = (a: any) => {
     const currentlyEnabled = a.isPinned ? twoFaEnabled : a.twoFa;
-    if (!a.isPinned) {
-      // Secondary admin rows are currently metadata records; they do not have
-      // independent login credentials or TOTP enrollment in this app.
-      toggle2FAAPI.mutate({ id: a.id, enable: !currentlyEnabled });
-      return;
-    }
     setModal2FA({ type: currentlyEnabled ? 'disable' : 'enable', id: a.id, name: a.name });
   };
 
-  const confirm2FADisable = async (code: string) => {
-    const response = await adminFetch(`/api/admin/auth/totp/disable`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error ?? "Could not disable two-factor authentication.");
-    disable2FA();
+  const confirm2FAEnable = () => {
+    if (!modal2FA) return;
+    if (modal2FA.id === '__superadmin__') {
+      enable2FA();
+      // Keep modal open to show QR setup
+      setModal2FA({ ...modal2FA, type: 'enable' });
+    } else {
+      toggle2FAAPI.mutate({ id: modal2FA.id, enable: true });
+      setModal2FA(null);
+    }
+  };
+
+  const confirm2FADisable = () => {
+    if (!modal2FA) return;
+    if (modal2FA.id === '__superadmin__') {
+      disable2FA();
+    } else {
+      toggle2FAAPI.mutate({ id: modal2FA.id, enable: false });
+    }
     setModal2FA(null);
   };
 
   const onSetupDone = () => {
-    enable2FA();
     markSetupDone();
     setModal2FA(null);
   };
@@ -665,6 +621,12 @@ export function AdminAdmins() {
       {modal2FA?.type === 'enable' && modal2FA.id === '__superadmin__' && (
         <Enable2FAModal
           onDone={onSetupDone}
+          onClose={() => setModal2FA(null)}
+        />
+      )}
+      {modal2FA?.type === 'enable' && modal2FA.id !== '__superadmin__' && (
+        <Enable2FAModal
+          onDone={() => { toggle2FAAPI.mutate({ id: modal2FA.id, enable: true }); setModal2FA(null); }}
           onClose={() => setModal2FA(null)}
         />
       )}
