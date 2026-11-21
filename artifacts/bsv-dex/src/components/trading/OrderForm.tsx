@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useExternalSwap } from "@/hooks/useExternalSwap";
 import { ExternalSwapStatus } from "@/components/trading/ExternalSwapStatus";
 import { useAccount, useSignMessage } from "wagmi";
@@ -32,11 +33,19 @@ import {
   CHAIN_DISPLAY, ADDRESS_PLACEHOLDERS,
   getAssetNativeChain, walletCanReceive,
 } from "@/lib/crossChain";
-import { CHAIN_TOKEN_ADDRESSES } from "@/lib/onChainLiquidity";
+import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
 import { isWorkspaceOrderbookTradingPaused, WORKSPACE_TRADING_PAUSED_MESSAGE } from "@/lib/tradingMode";
+import { lockOrderbookOrder } from "@/lib/escrow";
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
+
+function supportsWalletOrderbookAsset(symbol: string, chainId: number): boolean {
+  const normalized = symbol.trim().toUpperCase();
+  if (normalized === "ETH" && [1, 11155111].includes(chainId)) return true;
+  return Boolean(CHAIN_TOKEN_ADDRESSES[chainId]?.[normalized]) &&
+    (TOKEN_DECIMALS[normalized] ?? 18) === 18;
+}
 
 // ── Mobile QR connect panel ────────────────────────────────────────────────────
 type QRState = "idle" | "loading" | "showing" | "connected" | "expired" | "error";
@@ -348,7 +357,6 @@ export function OrderForm({
   const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
-  const workspaceTradingPaused = isWorkspaceOrderbookTradingPaused();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
 
   // External swap state — used when externalSwapMode=true and user places a market order
@@ -360,6 +368,19 @@ export function OrderForm({
   const [signingOrder, setSigningOrder] = useState(false);
 
   const chainId = walletChainId ?? 1;
+  const { data: evmOrderbookConfig } = useQuery({
+    queryKey: ["evm-orderbook-settlement-config", chainId],
+    queryFn: async () => {
+      const response = await fetch(`${API_BASE}/orders/evm-settlement/config?chainId=${chainId}`, {
+        cache: "no-store",
+      });
+      if (!response.ok) return { available: false, chainId };
+      return response.json();
+    },
+    enabled: isEvm && !!address && [1, 11155111].includes(chainId),
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+  });
   const nativeSymbol = (network === "bsv" || network === "bsv-test") ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
   const nativeBal = balance ? parseFloat(balance) : 0;
 
@@ -405,6 +426,25 @@ export function OrderForm({
 
   const [side, setSide]       = useState<Side>("buy");
   const [type, setType]       = useState<OrderType>("limit");
+  const [orderbookBase = "", orderbookQuote = ""] = symbol.split("/");
+  const walletOrderbookAvailable =
+    isEvm &&
+    [1, 11155111].includes(chainId) &&
+    type === "limit" &&
+    !externalSwapMode &&
+    supportsWalletOrderbookAsset(orderbookBase, chainId) &&
+    supportsWalletOrderbookAsset(orderbookQuote, chainId) &&
+    (!Array.isArray(evmOrderbookConfig?.supportedPairs) ||
+      evmOrderbookConfig.supportedPairs.includes(`${orderbookBase}/${orderbookQuote}`.toUpperCase())) &&
+    evmOrderbookConfig?.chainId === chainId &&
+    evmOrderbookConfig?.available === true;
+  const testnetOrderbookUnavailable = chainId === 11155111 && !walletOrderbookAvailable;
+  const workspaceTradingPaused =
+    isWorkspaceOrderbookTradingPaused(chainId, chainId === 11155111 && walletOrderbookAvailable) ||
+    testnetOrderbookUnavailable;
+  const tradingPauseMessage = testnetOrderbookUnavailable
+    ? "Sepolia orderbook trading requires an enabled ETH/DAI limit-order escrow configuration."
+    : WORKSPACE_TRADING_PAUSED_MESSAGE;
   // Only the separate external-swap flow uses wallet-held funds. Order-book
   // matching currently requires an already funded exchange ledger reservation.
   const usesApiBalance = !(externalSwapMode && type === "market");
@@ -749,7 +789,7 @@ export function OrderForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (workspaceTradingPaused) {
-      toast({ title: "Trading paused in Replit preview", description: WORKSPACE_TRADING_PAUSED_MESSAGE, variant: "destructive" });
+      toast({ title: "Trading unavailable", description: tradingPauseMessage, variant: "destructive" });
       return;
     }
     if (!address || !amount || parseFloat(amount) <= 0) return;
@@ -882,11 +922,13 @@ export function OrderForm({
     let orderNonce:   string | undefined;
     let orderExpiry:  string | undefined;
     if (isEvm && address) {
-      // Generate a random nonce and a 5-minute expiry
+      // Escrow-backed limit-order intents use the same seven-day lifetime as
+      // their on-chain lock, so the matching engine does not expire them while
+      // collateral is still locked.
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
       orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
-      orderExpiry = String(Math.floor(Date.now() / 1000) + 5 * 60);
+      orderExpiry = String(Math.floor(Date.now() / 1000) + (walletOrderbookAvailable ? 7 * 24 * 60 * 60 : 5 * 60));
 
       const timeInForce = type === "market" ? "IOC" : "GTC";
       const orderMsg = buildOrderIntentMessage({
@@ -975,9 +1017,43 @@ export function OrderForm({
       }
     }
 
-    // ── Place the order ────────────────────────────────────────────────────────
-    placeOrder.mutate(
-      {
+    let orderbookLockTxHash: `0x${string}` | undefined;
+    let orderbookExpiresAt: number | undefined;
+    if (walletOrderbookAvailable) {
+      try {
+        if (!evmOrderbookConfig?.address || !orderNonce || !price) {
+          throw new Error("The configured orderbook escrow or limit price is missing");
+        }
+        orderbookExpiresAt = Number(orderExpiry);
+        setSigningOrder(true);
+        const lock = await lockOrderbookOrder({
+          escrowAddress: evmOrderbookConfig.address,
+          nonce: orderNonce,
+          side,
+          base,
+          quote,
+          quantity: parseFloat(amount),
+          price: parseFloat(price),
+          expiresAt: orderbookExpiresAt,
+          from: address,
+          chainId,
+          isOrahWallet,
+        });
+        orderbookLockTxHash = lock.txHash;
+      } catch (lockError: any) {
+        toast({
+          title: "Could not lock order funds",
+          description: String(lockError?.message ?? "The wallet did not confirm the Sepolia escrow lock."),
+          variant: "destructive",
+        });
+        return;
+      } finally {
+        setSigningOrder(false);
+      }
+    }
+
+    try {
+      await placeOrder.mutateAsync({
         data: {
           symbol,
           walletAddress: address,
@@ -992,15 +1068,42 @@ export function OrderForm({
           reportedBalance: !usesApiBalance ? availableAmt.toString() : undefined,
           receiveAddress: receiveAddress.trim() || undefined,
           autoBorrow,
-          // EVM signature + matching nonce/expiry — server reconstructs the same
-          // canonical message and recovers the signer to verify ownership
           evmSignature,
           nonce:  orderNonce,
           expiry: orderExpiry,
           chainId: isEvm ? chainId : undefined,
+          orderbookLockTxHash,
+          orderbookExpiresAt,
         } as any,
-      },
-    );
+      });
+    } catch {
+      if (orderbookLockTxHash) {
+        try {
+          const recoveryResponse = await fetch(`${API_BASE}/orders/recover-evm`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ walletAddress: address, chainId, knownLockTxHashes: [orderbookLockTxHash] }),
+          });
+          const recoveryResult = await recoveryResponse.json();
+          if (!recoveryResponse.ok) {
+            throw new Error(recoveryResult?.error ?? "The escrow order could not be recovered automatically.");
+          }
+          onOrderPlaced?.();
+          toast({
+            title: Number(recoveryResult?.count) > 0 ? "Escrow order restored" : "Check My Orders before retrying",
+            description: Number(recoveryResult?.count) > 0
+              ? `The confirmed order was restored from ${chainId === 11155111 ? "Sepolia" : "Ethereum"} contract state. No additional wallet transaction was sent.`
+              : `An escrow lock was confirmed (${orderbookLockTxHash}). Refresh My Orders before submitting again.`,
+          });
+        } catch {
+          toast({
+            title: "Check the escrow order before retrying",
+            description: `The wallet confirmed the escrow lock (${orderbookLockTxHash}), but the order list could not be verified. Refresh My Orders and do not resubmit until the lock is resolved.`,
+            variant: "destructive",
+          });
+        }
+      }
+    }
   };
 
   if (!address) return <WalletPrompt base={base} quote={quote} />;
@@ -1679,7 +1782,7 @@ export function OrderForm({
             )}
           >
             {workspaceTradingPaused ? (
-              "Trading paused in Replit preview"
+              tradingPauseMessage
             ) : isPending ? (
               signingOrder
                 ? <><PenLine className="w-4 h-4 animate-pulse" /> Sign in wallet…</>
