@@ -3,7 +3,8 @@ import crypto from "node:crypto";
 import { db, pool } from "@workspace/db";
 import { getWatcherState, getWatcherSummary } from "../lib/errorWatcher.js";
 
-import { generateAdminToken, revokeAdminToken, requireAdminToken } from "../middleware/adminAuth.js";
+import { generateAdminToken, revokeAllAdminTokens, requireAdminToken } from "../middleware/adminAuth.js";
+// Note: generateAdminToken and revokeAllAdminTokens are now async (DB-persisted)
 import { marketsTable, platformSettingsTable, adminEmailsTable, ordersTable, tradesTable, walletsTable, conversations, messages, leSwapsTable, routingProfilesTable, keeperEarningsTable } from "@workspace/db/schema";
 import { invalidatePairConfigCache } from "../lib/hybridRouter.js";
 import { invalidateCnKeyCache } from "../lib/changenow.js";
@@ -98,14 +99,10 @@ function recoverEthAddress(message: string, sigHex: string): string {
 /* ─── WALLET AUTH NONCES (in-memory) ─────────────────────────────────────── */
 
 const pendingNonces = new Map<string, { nonce: string; message: string; expiresAt: number }>();
-const pendingTotpChallenges = new Map<string, { expiresAt: number }>();
 setInterval(() => {
   const now = Date.now();
   for (const [k, v] of pendingNonces.entries()) {
     if (v.expiresAt < now) pendingNonces.delete(k);
-  }
-  for (const [challengeId, challenge] of pendingTotpChallenges.entries()) {
-    if (challenge.expiresAt < now) pendingTotpChallenges.delete(challengeId);
   }
 }, 5 * 60 * 1000);
 
@@ -221,23 +218,6 @@ const ADMIN_COOKIE_OPTS = {
   maxAge:    30 * 24 * 60 * 60 * 1000, // 30 days (matches TOKEN_TTL_MS)
   path:      "/",
 };
-const ADMIN_TOTP_ENABLED_KEY = "admin_totp_enabled";
-
-async function isAdminTotpEnabled(): Promise<boolean> {
-  const rows = await db.select().from(platformSettingsTable)
-    .where(eq(platformSettingsTable.key, ADMIN_TOTP_ENABLED_KEY)).limit(1);
-  return rows[0]?.value === "true";
-}
-
-async function setAdminTotpEnabled(enabled: boolean): Promise<void> {
-  const value = enabled ? "true" : "false";
-  await db.insert(platformSettingsTable)
-    .values({ key: ADMIN_TOTP_ENABLED_KEY, value })
-    .onConflictDoUpdate({
-      target: platformSettingsTable.key,
-      set: { value, updatedAt: new Date() },
-    });
-}
 
 /* ─── ADMIN AUTH ENDPOINTS ────────────────────────────────────────────────── */
 
@@ -249,7 +229,7 @@ async function setAdminTotpEnabled(enabled: boolean): Promise<void> {
 router.post("/auth", async (req, res) => {
   if (!checkAuthRateLimit(req, res)) return;
 
-  const { email, password } = (req.body ?? {}) as { email?: string; password?: string };
+  const { email, password } = req.body as { email?: string; password?: string };
   const validEmail    = process.env.ADMIN_EMAIL;
   const validPassword = process.env.ADMIN_PASSWORD;
 
@@ -257,28 +237,12 @@ router.post("/auth", async (req, res) => {
     res.status(503).json({ error: "Admin credentials are not configured. Set ADMIN_EMAIL and ADMIN_PASSWORD secrets." });
     return;
   }
-  const emailMatch    = typeof email === "string" && email.trim().toLowerCase() === validEmail.trim().toLowerCase();
-  // Compare fixed-length digests so timingSafeEqual does not throw when a
-  // rejected password has a different byte length.
-  const passwordMatch = typeof password === "string" && password.length > 0 && crypto.timingSafeEqual(
-    crypto.createHash("sha256").update(password).digest(),
-    crypto.createHash("sha256").update(validPassword).digest(),
-  );
-  if (!emailMatch || !passwordMatch) {
+  const emailMatch    = !!email && email.trim().toLowerCase() === validEmail.trim().toLowerCase();
+  const passwordMatch = !!password && crypto.timingSafeEqual(Buffer.from(password), Buffer.from(validPassword));
+  if (!emailMatch || !passwordMatch
+  ) {
     recordAuthFailure(req);
     res.status(401).json({ error: "Invalid email or password." });
-    return;
-  }
-  const twoFaEnabled = await isAdminTotpEnabled();
-  if (twoFaEnabled) {
-    if (!process.env.ADMIN_TOTP_SECRET) {
-      res.status(503).json({ error: "Two-factor authentication is enabled but not configured on this server." });
-      return;
-    }
-    const challengeId = crypto.randomBytes(32).toString("hex");
-    pendingTotpChallenges.set(challengeId, { expiresAt: Date.now() + 5 * 60 * 1000 });
-    res.setHeader("Cache-Control", "no-store");
-    res.json({ success: true, requiresTotp: true, twoFaEnabled: true, challengeId });
     return;
   }
   const token = await generateAdminToken();
@@ -287,8 +251,7 @@ router.post("/auth", async (req, res) => {
   // reverse-proxy environments (e.g. Replit) where SameSite=Strict cookies
   // are not reliably forwarded.
   res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
-  res.setHeader("Cache-Control", "no-store");
-  res.json({ success: true, token, requiresTotp: false, twoFaEnabled: false });
+  res.json({ success: true, token });
 });
 
 /**
@@ -298,21 +261,9 @@ router.post("/auth", async (req, res) => {
 router.post("/auth/totp", async (req, res) => {
   if (!checkAuthRateLimit(req, res)) return;
 
-  const { code, challengeId } = (req.body ?? {}) as { code?: string; challengeId?: string };
-  if (typeof code !== "string" || !/^\d{6}$/.test(code)) {
+  const { code } = req.body as { code?: string };
+  if (!code || code.length !== 6) {
     res.status(400).json({ error: "A 6-digit code is required." });
-    return;
-  }
-  const challenge = typeof challengeId === "string" ? pendingTotpChallenges.get(challengeId) : undefined;
-  if (!challenge || challenge.expiresAt < Date.now()) {
-    if (challengeId) pendingTotpChallenges.delete(challengeId);
-    recordAuthFailure(req);
-    res.status(401).json({ error: "Your sign-in challenge expired. Enter your password again." });
-    return;
-  }
-  if (!await isAdminTotpEnabled()) {
-    pendingTotpChallenges.delete(challengeId!);
-    res.status(409).json({ error: "Two-factor authentication is no longer enabled. Sign in again." });
     return;
   }
   const secret = process.env.ADMIN_TOTP_SECRET;
@@ -322,49 +273,13 @@ router.post("/auth/totp", async (req, res) => {
   }
   const ok = await verifyTOTPServer(code, secret);
   if (ok) {
-    pendingTotpChallenges.delete(challengeId!);
     const token = await generateAdminToken();
     res.cookie("admin_session", token, ADMIN_COOKIE_OPTS);
-    res.setHeader("Cache-Control", "no-store");
     res.json({ success: true, token });
   } else {
     recordAuthFailure(req);
     res.status(401).json({ error: "Incorrect code. Try again." });
   }
-});
-
-router.post("/auth/totp/enable", requireAdminToken, async (req, res) => {
-  if (!checkAuthRateLimit(req, res)) return;
-  const { code } = (req.body ?? {}) as { code?: string };
-  const secret = process.env.ADMIN_TOTP_SECRET;
-  if (!secret) {
-    res.status(503).json({ error: "ADMIN_TOTP_SECRET is not configured on this server." });
-    return;
-  }
-  if (typeof code !== "string" || !/^\d{6}$/.test(code) || !await verifyTOTPServer(code, secret)) {
-    recordAuthFailure(req);
-    res.status(401).json({ error: "Enter the current code from your authenticator app." });
-    return;
-  }
-  await setAdminTotpEnabled(true);
-  res.json({ success: true, twoFaEnabled: true });
-});
-
-router.post("/auth/totp/disable", requireAdminToken, async (req, res) => {
-  if (!checkAuthRateLimit(req, res)) return;
-  const { code } = (req.body ?? {}) as { code?: string };
-  const secret = process.env.ADMIN_TOTP_SECRET;
-  if (!secret) {
-    res.status(503).json({ error: "ADMIN_TOTP_SECRET is not configured on this server." });
-    return;
-  }
-  if (typeof code !== "string" || !/^\d{6}$/.test(code) || !await verifyTOTPServer(code, secret)) {
-    recordAuthFailure(req);
-    res.status(401).json({ error: "Enter the current code from your authenticator app." });
-    return;
-  }
-  await setAdminTotpEnabled(false);
-  res.json({ success: true, twoFaEnabled: false });
 });
 
 /**
@@ -390,7 +305,6 @@ router.get("/auth/totp-uri", requireAdminToken, async (_req, res) => {
   const issuer  = "OrahDEX";
   const params  = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });
   const uri     = `otpauth://totp/${encodeURIComponent(issuer + ":" + email)}?${params}`;
-  res.setHeader("Cache-Control", "no-store");
   // Generate QR code server-side as a data URI — never send the TOTP secret
   // to a third-party service (e.g. api.qrserver.com).
   let qrUrl = "";
@@ -409,7 +323,7 @@ router.get("/auth/totp-uri", requireAdminToken, async (_req, res) => {
  */
 router.post("/auth/wallet-challenge", (req, res) => {
   if (!checkAuthRateLimit(req, res)) return;
-  const { address } = (req.body ?? {}) as { address?: string };
+  const { address } = req.body as { address?: string };
   if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
     res.status(400).json({ error: "Valid EVM address required (0x...)" });
     return;
@@ -428,7 +342,7 @@ router.post("/auth/wallet-challenge", (req, res) => {
 router.post("/auth/wallet", async (req, res) => {
   if (!checkAuthRateLimit(req, res)) return;
 
-  const { address, signature } = (req.body ?? {}) as { address?: string; signature?: string };
+  const { address, signature } = req.body as { address?: string; signature?: string };
   if (!address || !signature) {
     res.status(400).json({ error: "address and signature are required" });
     return;
@@ -472,9 +386,7 @@ router.post("/auth/wallet", async (req, res) => {
  * POST /admin/auth/logout — revoke all admin tokens (server-side sign-out).
  */
 router.post("/auth/logout", requireAdminToken, async (req, res) => {
-  const cookieToken = (req.cookies as Record<string, string> | undefined)?.admin_session ?? "";
-  const headerToken = (req.headers["x-admin-token"] as string | undefined) ?? "";
-  await revokeAdminToken(cookieToken || headerToken);
+  await revokeAllAdminTokens();
   // Clear the HttpOnly session cookie on the client as well
   res.clearCookie("admin_session", { path: "/" });
   res.json({ success: true });
