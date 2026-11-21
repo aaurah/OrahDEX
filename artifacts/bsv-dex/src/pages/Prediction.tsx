@@ -11,7 +11,6 @@ import {
   ChevronDown, TrendingUp, TrendingDown, Zap, History, AlertTriangle,
   Check, X, Timer, DollarSign, Shield, Target, ArrowRightLeft,
 } from "lucide-react";
-import { generateMockCandles, MOCK_TICKER } from "@/lib/mock-data";
 
 const Chart = lazy(() => import("@/components/trading/Chart").then(m => ({ default: m.Chart })));
 
@@ -350,6 +349,10 @@ export function PredictionTrading() {
   if (!address) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 px-6">
+        <div role="status" className="w-full max-w-lg flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-left text-xs text-amber-200">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          <span>Prediction trading is paused while wallet funding and round settlement are verified. No bets or claims can be submitted.</span>
+        </div>
         <div className="text-center">
           <div className="flex items-center justify-center gap-3 mb-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-green-500/30 to-red-500/30 flex items-center justify-center border border-primary/20">
@@ -358,7 +361,7 @@ export function PredictionTrading() {
           </div>
           <h2 className="text-2xl font-black mb-2">Prediction Trading</h2>
           <p className="text-sm text-muted-foreground max-w-md">
-            Predict if the price will go UP or DOWN. Win up to 100x with leverage.
+            Prediction markets are temporarily read-only. Connect a wallet only to review existing account activity.
           </p>
         </div>
         <div className="flex flex-col gap-3 w-full max-w-xs">
@@ -391,6 +394,10 @@ export function PredictionTrading() {
 
   return (
     <div className="flex flex-col h-full">
+      <div role="status" className="mx-3 mt-3 flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+        <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+        <span>Prediction trading is paused while wallet funding and round settlement are verified. No bets or claims can be submitted.</span>
+      </div>
       {/* Header */}
       <div className="flex items-center gap-2 lg:gap-3 px-3 lg:px-4 py-2 border-b border-border/50 shrink-0 overflow-x-auto">
         <div className="flex items-center gap-2 shrink-0">
@@ -459,7 +466,7 @@ export function PredictionTrading() {
                   interval={candleInterval}
                   onIntervalChange={setCandleInterval}
                   disableAutoInterval
-                  data={currentPrice > 0 ? undefined : generateMockCandles(MOCK_TICKER[symbol]?.lastPrice ?? 14.35)}
+                  data={undefined}
                 />
               </Suspense>
             </div>
@@ -549,7 +556,7 @@ export function PredictionTrading() {
                         {b.won && !b.claimed && (
                           <button
                             onClick={() => claimWinnings(b.roundId)}
-                            disabled={claiming}
+                            disabled
                             className="px-3 py-1.5 rounded-lg bg-green-500 text-white text-xs font-bold hover:bg-green-600 transition-colors disabled:opacity-60"
                           >
                             {claiming ? <Loader2 size={12} className="animate-spin" /> : "Claim"}
@@ -711,7 +718,7 @@ export function PredictionTrading() {
 
                 <button
                   onClick={placeBet}
-                  disabled={placing || effectiveAmount <= 0}
+                  disabled
                   className={cn(
                     "w-full py-3 rounded-xl font-bold text-sm transition-all disabled:opacity-60",
                     position === "bull"

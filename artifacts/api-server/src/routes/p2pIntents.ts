@@ -383,6 +383,16 @@ router.post("/p2p/intents", async (req, res) => {
   }
 });
 
+// A P2P "fill" currently only changes the intent status; it does not perform
+// or prove an asset transfer. Do not report it as a completed trade until an
+// escrowed settlement path is implemented.
+router.post("/p2p/intents/:id/fill", (_req, res) => {
+  res.status(503).json({
+    error: "P2P fills are paused because this route does not settle or verify asset transfers.",
+    code: "P2P_SETTLEMENT_UNAVAILABLE",
+  });
+});
+
 // ── GET /api/p2p/intents ─────────────────────────────────────────────────────
 router.get("/p2p/intents", async (req, res) => {
   try {

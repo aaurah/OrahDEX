@@ -14,6 +14,23 @@ import { parseUnits, formatUnits, mulPriceQty } from "../lib/money.js";
 
 const router: IRouter = Router();
 
+// The current options engine prices and settles against the internal ledger,
+// but has no signed order authorization or funded exercise payout reserve.
+// Keep both money-moving actions disabled; read-only contract/position views
+// remain available and existing records are not deleted.
+router.post("/options/order", (_req, res) => {
+  res.status(503).json({
+    error: "Options orders are paused until wallet authorization and funded settlement are verified.",
+    code: "OPTIONS_TRADING_PAUSED",
+  });
+});
+router.post("/options/exercise/:positionId", (_req, res) => {
+  res.status(503).json({
+    error: "Options exercise is paused until funded settlement is verified. Existing position records are unchanged.",
+    code: "OPTIONS_TRADING_PAUSED",
+  });
+});
+
 const CONTRACT_MULTIPLIER = 100; // 1 contract = 100 units of underlying
 const LEDGER_DECIMALS = 18;
 

@@ -348,7 +348,9 @@ export function startOrderReconciler(): void {
   };
 
   guardedInterval("order-reconciler", reconcile, RECONCILE_INTERVAL_MS, {
-    initialDelayMs: 60_000,
+    // Readiness depends on one successful recovery pass; do it immediately
+    // after boot rather than making an explicitly enabled preview wait a minute.
+    initialDelayMs: 1_000,
     timeoutMs:      4 * 60_000,
   });
   logger.info({ intervalMs: RECONCILE_INTERVAL_MS, stuckAgeMs: STUCK_ORDER_AGE_MS },
