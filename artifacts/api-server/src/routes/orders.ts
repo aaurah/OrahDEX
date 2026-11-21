@@ -22,7 +22,7 @@ import { attemptLeAutoRoute } from "../lib/leAutoRoute.js";
 import {
   getEvmOrderbookEscrowConfig,
   settleEvmOrderFill,
-  supportsEthereumOrderbookPair,
+  supportsEvmOrderbookPair,
   verifyEvmOrderLock,
   verifyEvmOrderbookCancelTx,
 } from "../lib/evmOrderbookEscrow.js";
@@ -100,7 +100,7 @@ function settlementExplorerUrl(txid: string | null | undefined, chainId?: number
 }
 
 type EvmOrderbookFunding = {
-  chainId: 1;
+  chainId: 1 | 11155111;
   escrowAddress: string;
   orderKey: `0x${string}`;
   lockTxHash: `0x${string}`;
@@ -108,15 +108,16 @@ type EvmOrderbookFunding = {
 
 function parseEvmOrderbookFundingRef(ref: string | null | undefined): EvmOrderbookFunding | null {
   if (!ref?.startsWith("evm-order:")) return null;
-  const [kind, version, escrowAddress, orderKey, lockTxHash, ...extra] = ref.split(":");
+  const [kind, chainIdText, escrowAddress, orderKey, lockTxHash, ...extra] = ref.split(":");
+  const chainId = Number(chainIdText);
   if (
-    kind !== "evm-order" || version !== "1" || extra.length > 0 ||
+    kind !== "evm-order" || ![1, 11155111].includes(chainId) || extra.length > 0 ||
     !/^0x[0-9a-f]{40}$/i.test(escrowAddress ?? "") ||
     !/^0x[0-9a-f]{64}$/i.test(orderKey ?? "") ||
     !/^0x[0-9a-f]{64}$/i.test(lockTxHash ?? "")
   ) return null;
   return {
-    chainId: 1,
+    chainId: chainId as 1 | 11155111,
     escrowAddress: escrowAddress!,
     orderKey: orderKey as `0x${string}`,
     lockTxHash: lockTxHash as `0x${string}`,
@@ -145,7 +146,12 @@ function serializeOrder(o: typeof ordersTable.$inferSelect) {
 router.get("/orders/evm-settlement/config", async (req, res) => {
   try {
     res.setHeader("Cache-Control", "no-store");
-    res.json(await getEvmOrderbookEscrowConfig());
+    const requestedChainId = req.query.chainId == null ? 1 : Number(req.query.chainId);
+    if (![1, 11155111].includes(requestedChainId)) {
+      res.status(400).json({ error: "Unsupported EVM orderbook chainId" });
+      return;
+    }
+    res.json(await getEvmOrderbookEscrowConfig(requestedChainId));
   } catch (err: any) {
     req.log.warn({ err: err?.message }, "EVM orderbook settlement config check failed");
     res.json({ chainId: 1, available: false });
@@ -299,11 +305,24 @@ router.post("/orders/sol-challenge", (req, res) => {
 // are marked filled with the txid.
 router.post("/orders", async (req, res) => {
   if (process.env.NODE_ENV === "development") {
-    res.status(423).json({
-      code: "REPLIT_PREVIEW_TRADING_PAUSED",
-      error: "New orderbook trades are disabled in the Replit development workspace. Existing orders can still be reviewed, recovered, or canceled.",
-    });
-    return;
+    const isSepoliaLimitOrder =
+      Number(req.body?.chainId) === 11155111 &&
+      String(req.body?.type).toLowerCase() === "limit";
+    let testnetEscrowAvailable = false;
+    if (isSepoliaLimitOrder) {
+      try {
+        testnetEscrowAvailable = (await getEvmOrderbookEscrowConfig(11155111)).available;
+      } catch {
+        testnetEscrowAvailable = false;
+      }
+    }
+    if (!testnetEscrowAvailable) {
+      res.status(423).json({
+        code: "REPLIT_PREVIEW_TRADING_PAUSED",
+        error: "New orders are paused in this preview unless a verified Sepolia orderbook escrow is enabled. Existing orders can still be reviewed, recovered, or canceled.",
+      });
+      return;
+    }
   }
   try {
     const body = req.body;
@@ -598,21 +617,21 @@ router.post("/orders", async (req, res) => {
     let fundingRef = "";
     if (parseFloat(lockAmount) > 0 && lockAsset) {
       const requestedOrderbookLock = body.orderbookLockTxHash;
-      const isEthereumSpotPair =
+      const isEvmOrderbookSpotPair =
         isEvmAddress &&
-        chainId === 1 &&
+        chainId != null &&
         type === "limit" &&
-        supportsEthereumOrderbookPair(baseAsset!, quoteAsset);
+        supportsEvmOrderbookPair(chainId, baseAsset!, quoteAsset);
 
       if (requestedOrderbookLock != null) {
         const expiresAt = Number(body.orderbookExpiresAt);
         if (
-          !isEthereumSpotPair ||
+          !isEvmOrderbookSpotPair ||
           !body.nonce ||
           !Number.isSafeInteger(expiresAt)
         ) {
           res.status(400).json({
-            error: "Ethereum escrow locks require a signed Ethereum limit order with a valid expiry.",
+          error: "EVM escrow locks require a signed supported-chain limit order with a valid expiry.",
             code: "INVALID_ORDERBOOK_LOCK",
           });
           return;
@@ -633,7 +652,7 @@ router.post("/orders", async (req, res) => {
           fundingRef = verified.fundingRef;
         } catch (lockErr: any) {
           res.status(400).json({
-            error: String(lockErr?.message ?? "Ethereum escrow lock could not be verified."),
+            error: String(lockErr?.message ?? "EVM escrow lock could not be verified."),
             code: "INVALID_ORDERBOOK_LOCK",
           });
           return;
@@ -641,11 +660,11 @@ router.post("/orders", async (req, res) => {
       } else {
         // When escrow-backed Ethereum orderbook trading is enabled for this
         // pair, never accept an uncollateralized wallet-balance assertion.
-        if (isEthereumSpotPair) {
-          const config = await getEvmOrderbookEscrowConfig();
+        if (isEvmOrderbookSpotPair) {
+          const config = await getEvmOrderbookEscrowConfig(chainId!);
           if (config.available) {
             res.status(400).json({
-              error: "A confirmed Ethereum escrow lock is required for this order.",
+              error: "A confirmed EVM escrow lock is required for this order.",
               code: "ORDERBOOK_LOCK_REQUIRED",
             });
             return;
@@ -923,6 +942,7 @@ router.post("/orders", async (req, res) => {
         const bothEvmOrderbookEscrow = Boolean(
           incomingOrderbookFunding &&
           matchOrderbookFunding &&
+          incomingOrderbookFunding.chainId === matchOrderbookFunding.chainId &&
           incomingOrderbookFunding.escrowAddress.toLowerCase() === matchOrderbookFunding.escrowAddress.toLowerCase()
         );
 
@@ -1024,6 +1044,7 @@ router.post("/orders", async (req, res) => {
               fillValueRaw.toString(),
             ].join(":")).digest("hex")}` as `0x${string}`;
             const settled = await settleEvmOrderFill({
+              chainId: incomingOrderbookFunding.chainId,
               settlementId,
               buyOrderKey: buyFunding.orderKey,
               sellOrderKey: sellFunding.orderKey,
