@@ -658,12 +658,14 @@ export async function lockOrderbookOrder(params: {
   isOrahWallet: boolean;
   onStage?: (stage: string) => void;
 }): Promise<{ orderKey: `0x${string}`; txHash: `0x${string}`; explorerUrl: string }> {
-  if (params.chainId !== 1) throw new Error("Wallet-funded order settlement is currently available on Ethereum mainnet only");
-  if (!/^0x[0-9a-fA-F]{40}$/.test(params.escrowAddress)) throw new Error("Ethereum order escrow is not configured");
+  if (![1, 11155111].includes(params.chainId)) {
+    throw new Error("Wallet-funded order settlement is available only on Ethereum mainnet or Sepolia");
+  }
+  if (!/^0x[0-9a-fA-F]{40}$/.test(params.escrowAddress)) throw new Error("EVM order escrow is not configured");
   const baseAsset = orderbookToken(params.base, params.chainId);
   const quoteAsset = orderbookToken(params.quote, params.chainId);
   if (baseAsset.decimals !== 18 || quoteAsset.decimals !== 18) {
-    throw new Error("Ethereum wallet order settlement currently supports 18-decimal tokens only");
+    throw new Error("EVM wallet order settlement currently supports 18-decimal tokens only");
   }
   const baseAmount = amountAsUnits(params.quantity, baseAsset.decimals);
   const priceWad = amountAsUnits(params.price, 18, params.side === "sell");
@@ -727,7 +729,7 @@ export async function lockOrderbookOrder(params: {
   return {
     orderKey,
     txHash,
-    explorerUrl: `https://etherscan.io/tx/${txHash}`,
+    explorerUrl: explorerTxUrl(params.chainId, txHash),
   };
 }
 
@@ -738,7 +740,9 @@ export async function cancelOrderbookOrder(params: {
   chainId: number;
   isOrahWallet: boolean;
 }): Promise<{ txHash: `0x${string}`; explorerUrl: string }> {
-  if (params.chainId !== 1) throw new Error("Order escrow cancellation is available on Ethereum mainnet only");
+  if (![1, 11155111].includes(params.chainId)) {
+    throw new Error("Order escrow cancellation is available only on Ethereum mainnet or Sepolia");
+  }
   const txHash = await sendOrderbookWalletTx({
     from: params.from,
     to: params.escrowAddress,
@@ -751,7 +755,7 @@ export async function cancelOrderbookOrder(params: {
     isOrahWallet: params.isOrahWallet,
     confirmations: 3,
   });
-  return { txHash, explorerUrl: `https://etherscan.io/tx/${txHash}` };
+  return { txHash, explorerUrl: explorerTxUrl(params.chainId, txHash) };
 }
 
 /**

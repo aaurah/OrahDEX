@@ -303,15 +303,14 @@ const ORDER_TYPE_DESCS: Record<OrderType, string> = {
   "post-only":     "Always placed as maker. Rejected if it would immediately fill.",
 };
 
-function supportsEthereumWalletOrderbookAsset(symbol: string): boolean {
+function supportsEthereumWalletOrderbookAsset(symbol: string, chainId: number): boolean {
   const normalized = symbol.trim().toUpperCase();
-  if (normalized === "ETH") return true;
-  return Boolean(CHAIN_TOKEN_ADDRESSES[1]?.[normalized]) &&
+  if (normalized === "ETH" && [1, 11155111].includes(chainId)) return true;
+  return Boolean(CHAIN_TOKEN_ADDRESSES[chainId]?.[normalized]) &&
     (TOKEN_DECIMALS[normalized] ?? 18) === 18;
 }
 
 export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
-  const workspaceTradingPaused = isWorkspaceOrderbookTradingPaused();
   // Only replace the first hyphen (base-quote separator); keep -PERP suffix intact
   const symbol = rawSymbol.replace(/^([^-]+)-/, "$1/");
   const base = symbol.split("/")[0];
@@ -333,23 +332,37 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const { data: evmOrderbookConfig } = useQuery({
     queryKey: ["evm-orderbook-settlement-config", walletChainId],
     queryFn: async () => {
-      const response = await fetch(`${BASE}/api/orders/evm-settlement/config`, { cache: "no-store" });
-      if (!response.ok) return { available: false, chainId: 1 };
+      const chainId = walletChainId ?? 1;
+      const response = await fetch(
+        `${BASE}/api/orders/evm-settlement/config?chainId=${chainId}`,
+        { cache: "no-store" },
+      );
+      if (!response.ok) return { available: false, chainId };
       return response.json();
     },
-    enabled: isEvm && !!address && (walletChainId == null || walletChainId === 1),
+    enabled: isEvm && !!address && [1, 11155111].includes(walletChainId ?? 1),
     staleTime: 60_000,
     refetchInterval: 60_000,
   });
+  const orderbookChainId = walletChainId ?? 1;
+  const orderbookNetworkName = orderbookChainId === 11155111 ? "Sepolia" : "Ethereum";
   const walletOrderbookAvailable =
     isEvm &&
-    (walletChainId ?? 1) === 1 &&
+    [1, 11155111].includes(orderbookChainId) &&
     !isFutures &&
-    supportsEthereumWalletOrderbookAsset(base) &&
-    supportsEthereumWalletOrderbookAsset(quote) &&
+    supportsEthereumWalletOrderbookAsset(base, orderbookChainId) &&
+    supportsEthereumWalletOrderbookAsset(quote, orderbookChainId) &&
     (!Array.isArray(evmOrderbookConfig?.supportedPairs) ||
       evmOrderbookConfig.supportedPairs.includes(`${base}/${quote}`.toUpperCase())) &&
+    evmOrderbookConfig?.chainId === orderbookChainId &&
     evmOrderbookConfig?.available === true;
+  const workspaceTradingPaused = isWorkspaceOrderbookTradingPaused(
+    orderbookChainId,
+    orderbookChainId === 11155111 && walletOrderbookAvailable,
+  );
+  const tradingPauseMessage = orderbookChainId === 11155111
+    ? "Sepolia orderbook trades require the verified ETH/DAI escrow configuration."
+    : WORKSPACE_TRADING_PAUSED_MESSAGE;
   const { open: openWallet } = useWalletModalStore();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -446,12 +459,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     });
   }, [myOrdersData, altOrdersData, address, altAddress]);
   const openOrders   = myOrders.filter(o =>
-    (o.status === "open" || (o.status === "processing" && String(o.fundingRef ?? "").startsWith("evm-order:1:"))) &&
+    (o.status === "open" || (o.status === "processing" && String(o.fundingRef ?? "").startsWith("evm-order:"))) &&
     o.symbol === symbol
   );
   const historyOrders = myOrders.filter(o =>
     o.status !== "open" &&
-    !(o.status === "processing" && String(o.fundingRef ?? "").startsWith("evm-order:1:")) &&
+    !(o.status === "processing" && String(o.fundingRef ?? "").startsWith("evm-order:")) &&
     o.symbol === symbol
   );
 
@@ -480,7 +493,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       walletAddress: string;
       fundingRef?: string | null;
     }) => {
-      if (fundingRef?.startsWith("evm-order:1:")) {
+      if (fundingRef?.startsWith("evm-order:")) {
         return cancelEvmOrderbookOrder({
           orderId,
           walletAddress: orderWalletAddress,
@@ -616,10 +629,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       const response = await fetch(`${BASE}/api/orders/recover-evm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address }),
+        body: JSON.stringify({ walletAddress: address, chainId: orderbookChainId }),
       });
       const result = await response.json();
-      if (!response.ok) throw new Error(result?.error ?? "Could not scan Ethereum escrow orders.");
+      if (!response.ok) throw new Error(result?.error ?? `Could not scan ${orderbookNetworkName} escrow orders.`);
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["orders", address] }),
         queryClient.invalidateQueries({ queryKey: ["orderbook", symbol] }),
@@ -629,12 +642,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         title: count > 0 ? "Active order restored" : "No missing active orders",
         description: count > 0
           ? `${count} confirmed on-chain order${count === 1 ? " is" : "s are"} now listed in My Orders. Cancel there to request a wallet refund.`
-          : "No confirmed active Ethereum orders were missing from My Orders.",
+          : `No confirmed active ${orderbookNetworkName} orders were missing from My Orders.`,
       });
     } catch (error: any) {
       toast({
         title: "Could not recover order list",
-        description: String(error?.message ?? "Ethereum escrow scan failed."),
+        description: String(error?.message ?? `${orderbookNetworkName} escrow scan failed.`),
         variant: "destructive",
       });
     } finally {
@@ -819,7 +832,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       if (
         !matched &&
         tradeId &&
-        !String(data?.fundingRef ?? "").startsWith("evm-order:1:") &&
+        !String(data?.fundingRef ?? "").startsWith("evm-order:") &&
         escrowAvailable &&
         hasEscrow(walletChainId ?? 0)
       ) {
@@ -1380,7 +1393,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
   async function handlePlaceOrder() {
     if (workspaceTradingPaused) {
-      toast({ title: "Trading paused in Replit preview", description: WORKSPACE_TRADING_PAUSED_MESSAGE, variant: "destructive" });
+      toast({ title: "Trading unavailable", description: tradingPauseMessage, variant: "destructive" });
       return;
     }
     if (!address || !amount || amtNum <= 0) return;
@@ -1499,7 +1512,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       const nonceBytes = new Uint8Array(16);
       crypto.getRandomValues(nonceBytes);
       orderNonce  = Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
-      orderExpiry = String(Math.floor(Date.now() / 1000) + 5 * 60);
+      // Keep the signed order record active for the same lifetime as its
+      // escrow lock; a 5-minute intent expiry would strand an otherwise live
+      // seven-day on-chain order outside the matching engine.
+      orderExpiry = String(Math.floor(Date.now() / 1000) + (walletOrderbookAvailable ? 7 * 24 * 60 * 60 : 5 * 60));
 
       // Canonical message — must mirror buildOrderAuthMessage() in walletAuth.ts
       const orderMsg = buildOrderIntentMessage({
@@ -1580,10 +1596,10 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     if (walletOrderbookAvailable) {
       try {
         const escrowAddress = evmOrderbookConfig?.address;
-        if (!escrowAddress || !orderNonce || !usePrice || walletChainId !== 1) {
-          throw new Error("Ethereum order escrow configuration or limit price is missing");
+        if (!escrowAddress || !orderNonce || !usePrice || evmOrderbookConfig?.chainId !== orderbookChainId) {
+          throw new Error("EVM order escrow configuration or limit price is missing");
         }
-        orderbookExpiresAt = Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+        orderbookExpiresAt = Number(orderExpiry);
         const lock = await lockOrderbookOrder({
           escrowAddress,
           nonce: orderNonce,
@@ -1594,7 +1610,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           price: usePrice,
           expiresAt: orderbookExpiresAt,
           from: address,
-          chainId: 1,
+          chainId: orderbookChainId,
           isOrahWallet,
           onStage: setSubmissionStage,
         });
@@ -1640,6 +1656,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     } catch (submissionError: any) {
       if (orderbookLockTxHash && orderbookExpiresAt && submissionError?.status >= 400 && evmOrderbookConfig?.address) {
         let serverHasOrder = false;
+        let orderStatusKnown = false;
         for (let attempt = 0; attempt < 2 && !serverHasOrder; attempt += 1) {
           if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 1000));
           try {
@@ -1647,27 +1664,90 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               `${BASE}/api/orders?walletAddress=${encodeURIComponent(address)}`,
               { cache: "no-store" },
             );
-            const rows = response.ok ? await response.json() : [];
-            serverHasOrder = Array.isArray(rows) && rows.some((order: any) => String(order.nonce) === String(orderNonce));
+            if (!response.ok) continue;
+            const rows = await response.json();
+            if (!Array.isArray(rows)) continue;
+            orderStatusKnown = true;
+            serverHasOrder = rows.some((order: any) => String(order.nonce) === String(orderNonce));
           } catch { /* leave funds locked if order creation cannot be verified */ }
         }
-        if (!serverHasOrder) {
+        if (orderStatusKnown && !serverHasOrder) {
           try {
             const orderKey = keccak256(toBytes(orderNonce!));
             await cancelOrderbookOrder({
               escrowAddress: evmOrderbookConfig.address,
               orderKey,
               from: address,
-              chainId: 1,
+              chainId: orderbookChainId,
               isOrahWallet,
             });
           } catch (cancelError: any) {
-            toast({
-              title: "Order was rejected; funds may remain escrowed",
-              description: `Keep this wallet connected and retry cancellation. ${String(cancelError?.message ?? "")}`,
-              variant: "destructive",
-            });
+            let restoredToOrders = false;
+            try {
+              const recoveryResponse = await fetch(`${BASE}/api/orders/recover-evm`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  walletAddress: address,
+                  chainId: orderbookChainId,
+                  knownLockTxHashes: [orderbookLockTxHash],
+                }),
+              });
+              const recoveryResult = await recoveryResponse.json();
+              restoredToOrders = recoveryResponse.ok && Number(recoveryResult?.count) > 0;
+              if (restoredToOrders) {
+                await Promise.all([
+                  queryClient.invalidateQueries({ queryKey: ["orders", address] }),
+                  queryClient.invalidateQueries({ queryKey: ["orderbook", symbol] }),
+                ]);
+              }
+            } catch {
+              // Keep the lock visible to the user as unresolved; never imply it was refunded.
+            }
+            toast(restoredToOrders
+              ? {
+                  title: "Escrow order restored",
+                  description: "The confirmed order is listed in My Orders so you can retry cancellation from the same testnet wallet.",
+                }
+              : {
+                  title: "Order was rejected; funds may remain escrowed",
+                  description: `Keep this wallet connected and retry cancellation. ${String(cancelError?.message ?? "")}`,
+                  variant: "destructive",
+                });
           }
+        } else if (!orderStatusKnown && !serverHasOrder) {
+          let restoredToOrders = false;
+          try {
+            const recoveryResponse = await fetch(`${BASE}/api/orders/recover-evm`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                walletAddress: address,
+                chainId: orderbookChainId,
+                knownLockTxHashes: [orderbookLockTxHash],
+              }),
+            });
+            const recoveryResult = await recoveryResponse.json();
+            restoredToOrders = recoveryResponse.ok && Number(recoveryResult?.count) > 0;
+            if (restoredToOrders) {
+              await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ["orders", address] }),
+                queryClient.invalidateQueries({ queryKey: ["orderbook", symbol] }),
+              ]);
+            }
+          } catch {
+            // Do not cancel while the server order state is unknown.
+          }
+          toast(restoredToOrders
+            ? {
+                title: "Escrow order restored",
+                description: "The confirmed order is listed in My Orders. Review it before retrying or cancel it from the same wallet.",
+              }
+            : {
+                title: "Order status is unverified",
+                description: "The escrow lock remains active. Refresh My Orders or use the read-only recovery scan; no automatic cancellation was sent.",
+                variant: "destructive",
+              });
         }
       }
     }
@@ -2222,21 +2302,21 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               </>
             )}
 
-            {/* Recover stuck on-chain HTLC funds — only for EVM wallets */}
+            {/* Recover confirmed on-chain orderbook locks — read-only scan */}
             {isSelfCustodyEvm && address && (
               <div className="px-3 pb-3 space-y-2">
                 <div className="rounded-xl border border-border bg-card/60 p-3">
-                  <div className="text-xs font-semibold">Missing an Ethereum order?</div>
+                  <div className="text-xs font-semibold">Missing a {orderbookNetworkName} order?</div>
                   <p className="mt-1 text-[10px] text-muted-foreground">
                     Scan confirmed escrow orders that are missing from My Orders. This only syncs the order list; it does not send a wallet transaction.
                   </p>
                   <button
                     type="button"
                     onClick={handleRecoverEvmOrders}
-                    disabled={recoveringEvmOrders}
+                    disabled={recoveringEvmOrders || ![1, 11155111].includes(orderbookChainId)}
                     className="mt-2 w-full rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary disabled:opacity-50"
                   >
-                    {recoveringEvmOrders ? "Scanning Ethereum…" : "Rescan Ethereum escrow"}
+                    {recoveringEvmOrders ? `Scanning ${orderbookNetworkName}…` : `Rescan ${orderbookNetworkName} orderbook escrow`}
                   </button>
                 </div>
                 <HtlcLockRecovery chainId={walletChainId ?? 1} />
@@ -2665,9 +2745,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 <svg className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
                 <div className="text-[10px] leading-relaxed text-blue-300/90">
                   {walletOrderbookAvailable
-                    ? <><span className="font-bold text-blue-300">Wallet-funded limit trading is enabled.</span> Required funds are locked in Ethereum escrow until filled or canceled.</>
+                    ? <><span className="font-bold text-blue-300">Wallet-funded limit trading is enabled.</span> Required funds are locked in {orderbookNetworkName} orderbook escrow until filled or canceled.</>
+                    : orderbookChainId === 11155111
+                    ? <><span className="font-bold text-blue-300">Sepolia testnet trading is not enabled for this order.</span> Only configured ETH/DAI limit orders can use the Sepolia orderbook escrow.</>
                     : <><span className="font-bold text-blue-300">Wallet funds stay yours.</span> On-chain wallet balances are shown separately below. Order-book trades require a funded trading balance; use Swap for wallet-held funds.</>}
-                  {hasEscrow(walletChainId ?? 0) && <span className="text-emerald-400"> On-chain escrow available on this chain.</span>}
+                  {walletChainId !== 11155111 && hasEscrow(walletChainId ?? 0) && <span className="text-emerald-400"> On-chain swap escrow available on this chain.</span>}
                 </div>
               </div>
             )}
@@ -3008,7 +3090,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                 disabled
                 className="w-full py-3.5 rounded-xl text-sm font-bold text-muted-foreground bg-muted/40 cursor-not-allowed"
               >
-                Order trading paused in Replit preview
+                {orderbookChainId === 11155111 ? "Sepolia escrow not ready" : "Order trading paused in Replit preview"}
               </button>
             ) : !address ? (
               <button
@@ -3078,7 +3160,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             role="status"
             className="w-full py-3 rounded-xl text-center text-xs font-semibold text-muted-foreground bg-muted/40"
           >
-            New orderbook trades paused in Replit preview
+            {tradingPauseMessage}
           </div>
         ) : !address ? (
           /* Connect Wallet CTA */
