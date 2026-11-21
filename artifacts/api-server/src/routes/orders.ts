@@ -298,6 +298,13 @@ router.post("/orders/sol-challenge", (req, res) => {
 // On match, a BSV OP_RETURN settlement transaction is generated and both orders
 // are marked filled with the txid.
 router.post("/orders", async (req, res) => {
+  if (process.env.NODE_ENV === "development") {
+    res.status(423).json({
+      code: "REPLIT_PREVIEW_TRADING_PAUSED",
+      error: "New orderbook trades are disabled in the Replit development workspace. Existing orders can still be reviewed, recovered, or canceled.",
+    });
+    return;
+  }
   try {
     const body = req.body;
     if (!body.walletAddress || !body.symbol || !body.side || !body.type || !body.quantity) {
