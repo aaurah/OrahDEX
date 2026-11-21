@@ -8,7 +8,6 @@
 import { pool } from "@workspace/db";
 import { logger } from "./logger.js";
 import { leRequest } from "./lePriceCache.js";
-import { safeApiStartup } from "./startupMode.js";
 
 const MATRIX_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const INSERT_CHUNK = 25000;
@@ -157,7 +156,5 @@ export function getCatalogStatus() {
 }
 
 // Boot: grace 30 s (let LE warm up), then sync; repeat every 6 h
-if (!safeApiStartup) {
-  setTimeout(() => { triggerCatalogSync().catch(() => {}); }, 30_000).unref?.();
-  setInterval(() => { triggerCatalogSync().catch(() => {}); }, MATRIX_SYNC_INTERVAL_MS).unref?.();
-}
+setTimeout(() => { triggerCatalogSync().catch(() => {}); }, 30_000).unref?.();
+setInterval(() => { triggerCatalogSync().catch(() => {}); }, MATRIX_SYNC_INTERVAL_MS).unref?.();

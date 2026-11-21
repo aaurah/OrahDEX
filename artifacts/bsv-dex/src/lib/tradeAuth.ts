@@ -1,19 +1,5 @@
 import { getViemAccountForAddress } from "@/lib/walletSigner";
 
-function isWalletRequestRejected(error: any): boolean {
-  const text = String(error?.message ?? "").toLowerCase();
-  return error?.code === 4001 || error?.code === "ACTION_REJECTED" ||
-    text.includes("rejected") || text.includes("denied") || text.includes("cancel");
-}
-
-function canRetryWithRawProvider(error: any): boolean {
-  const text = String(error?.message ?? "").toLowerCase();
-  return [4100, 4900, -32601].includes(Number(error?.code)) ||
-    text.includes("connector not connected") ||
-    text.includes("provider not found") ||
-    text.includes("no provider");
-}
-
 export interface OrderIntentMessageParams {
   walletAddress: string;
   symbol: string;
@@ -67,7 +53,6 @@ export async function signWalletMessage(
   provider: string | undefined,
   message: string,
   wagmiSign?: (args: { message: string }) => Promise<string>,
-  signal?: AbortSignal,
 ): Promise<string> {
   if (provider === "orah-wallet") {
     const account = await getViemAccountForAddress(address, {
@@ -82,36 +67,14 @@ export async function signWalletMessage(
     .join("")}`;
 
   if (provider === "reown") {
-    // Some mobile WalletConnect handoffs leave Wagmi's signMessage promise
-    // pending even after the wallet approved. Prefer the active connector's
-    // account-checked EIP-1193 request and use Wagmi only if no raw provider is
-    // available; never issue a second prompt after an ambiguous provider request.
     const { wagmiAdapter } = await import("@/lib/reown-appkit");
-    const { getConnection, getConnections } = await import("@wagmi/core");
-    const activeConnection = getConnection(wagmiAdapter.wagmiConfig);
-    const hasRequestedAccount = (connection: { addresses?: readonly string[] } | undefined) =>
-      connection?.addresses?.some((account) => account.toLowerCase() === address.toLowerCase()) ?? false;
-    const connection = hasRequestedAccount(activeConnection)
-      ? activeConnection
-      : getConnections(wagmiAdapter.wagmiConfig).find(
+    const { getConnections } = await import("@wagmi/core");
+    const connection = getConnections(wagmiAdapter.wagmiConfig).find(
       (item) => item.accounts.some((account) => account.toLowerCase() === address.toLowerCase()),
     );
-    let eip1193: any;
-    if (connection?.connector) {
-      try { eip1193 = await connection.connector.getProvider(); }
-      catch { /* try the injected provider after account validation */ }
-    }
-    eip1193 ??= (window as any).ethereum;
-    if (!eip1193?.request) {
-      if (wagmiSign) return await wagmiSign({ message });
-      throw new Error("Connected wallet provider unavailable. Reconnect your wallet and try again.");
-    }
-    const accounts = await eip1193.request({ method: "eth_accounts" });
-    if (!Array.isArray(accounts) || !accounts.some(
-      (account: unknown) => typeof account === "string" && account.toLowerCase() === address.toLowerCase(),
-    )) {
-      throw new Error("The active wallet account changed. Reconnect the wallet before signing.");
-    }
+    const eip1193 = await connection?.connector.getProvider() as any
+      ?? (window as any).ethereum;
+    if (!eip1193?.request) throw new Error("Connected wallet provider unavailable. Reconnect your wallet and try again.");
     return await eip1193.request({ method: "personal_sign", params: [hexMessage, address] });
   }
 
@@ -119,19 +82,16 @@ export async function signWalletMessage(
     try {
       return await wagmiSign({ message });
     } catch (error: any) {
-      if (signal?.aborted || isWalletRequestRejected(error) || !canRetryWithRawProvider(error)) throw error;
-      // Retry through the raw provider only for immediate connection/provider
-      // lookup errors, never after an ambiguous wallet request or timeout.
+      const text = String(error?.message ?? "").toLowerCase();
+      if (error?.code === 4001 || error?.code === "ACTION_REJECTED" ||
+          text.includes("rejected") || text.includes("denied") || text.includes("cancel")) {
+        throw error;
+      }
+      // The native provider is a fallback for wallets connected outside wagmi.
     }
   }
 
   const ethereum = (window as any).ethereum;
   if (!ethereum?.request) throw new Error("No EVM wallet signing provider is available.");
-  const accounts = await ethereum.request({ method: "eth_accounts" });
-  if (!Array.isArray(accounts) || !accounts.some(
-    (account: unknown) => typeof account === "string" && account.toLowerCase() === address.toLowerCase(),
-  )) {
-    throw new Error("The active wallet account changed. Reconnect the wallet before signing.");
-  }
   return await ethereum.request({ method: "personal_sign", params: [hexMessage, address] });
 }

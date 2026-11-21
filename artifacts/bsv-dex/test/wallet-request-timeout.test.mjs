@@ -14,20 +14,6 @@ test("a stalled wallet request times out without returning a signature", async (
   );
 });
 
-test("timing out aborts the signer to prevent a late provider retry", async () => {
-  const controller = new AbortController();
-  await assert.rejects(
-    withWalletRequestTimeout(
-      new Promise(() => {}),
-      5,
-      controller.signal,
-      () => controller.abort(),
-    ),
-    /Wallet did not respond/,
-  );
-  assert.equal(controller.signal.aborted, true);
-});
-
 test("stopping a wallet wait ignores a signature that resolves later", async () => {
   const controller = new AbortController();
   let resolveWalletRequest;
