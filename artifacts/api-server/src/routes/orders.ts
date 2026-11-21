@@ -923,7 +923,7 @@ router.post("/orders", async (req, res) => {
           eq(ordersTable.status, "open"),
           // P1: expired orders must never be matchable before/without the expiry worker
           sql`${ordersTable.expiry} > ${String(Math.floor(Date.now() / 1000))}`,
-          ne(ordersTable.walletAddress, body.walletAddress),
+          sql`lower(${ordersTable.walletAddress}) <> lower(${body.walletAddress})`,
           // Limit orders have price constraints; market + triggered-stop orders take any price
           ...(isLimit && safePriceStr
             ? [side === "buy"
