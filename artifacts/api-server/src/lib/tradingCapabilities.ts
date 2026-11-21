@@ -119,7 +119,7 @@ export async function getTradingCapabilities(requestedChainId?: number): Promise
   }
   if (!databaseReady || !orderRecoveryReady) {
     return {
-      safeStartup: safeApiStartup && !isEvmOrderbookChainEnabled(chainId),
+      safeStartup: safeApiStartup,
       networks: {
         evm: {
           available: false,
@@ -144,7 +144,7 @@ export async function getTradingCapabilities(requestedChainId?: number): Promise
   }
 
   return {
-    safeStartup: safeApiStartup && !isEvmOrderbookChainEnabled(chainId),
+    safeStartup: safeApiStartup,
     networks: {
       evm: escrowReady
         ? {
