@@ -50,6 +50,8 @@ export interface PrecheckParams {
   slippageBps:  number;
   availableBalance: number;
   currentPrice: number;
+  /** USD price of one quote asset when already known (for example ETH/USD). */
+  quoteUsdPrice?: number;
   network:      "evm" | "bsv" | "btc" | "sol" | "tron";
   address:      string;
   balanceLoading?: boolean;
@@ -164,11 +166,18 @@ export async function precheck(params: PrecheckParams): Promise<PrecheckResult> 
   }
 
   const MIN_USD = 0.5;
-  const orderValueUsd = side === "buy"
-    ? (price ?? currentPrice) * amount
-    : currentPrice * amount;
+  const quoteAsset = quote.toUpperCase().replace(/-PERP$/i, "");
+  const usdPeggedQuotes = new Set(["USD", "USDT", "USDC", "DAI", "TUSD", "USDD", "FDUSD"]);
+  const quoteUsdPrice = usdPeggedQuotes.has(quoteAsset)
+    ? 1
+    : Number.isFinite(params.quoteUsdPrice) && (params.quoteUsdPrice ?? 0) > 0
+    ? params.quoteUsdPrice
+    : undefined;
+  const orderValueUsd = quoteUsdPrice == null
+    ? undefined
+    : (price ?? currentPrice) * amount * quoteUsdPrice;
 
-  if (orderValueUsd < MIN_USD) {
+  if (orderValueUsd != null && orderValueUsd < MIN_USD) {
     errors.push(makeError("AMOUNT_TOO_SMALL", `Min order value is $${MIN_USD}`));
   }
 
@@ -203,7 +212,7 @@ export async function precheck(params: PrecheckParams): Promise<PrecheckResult> 
   let minReceived:    number | undefined;
   let route:          string[] | undefined;
 
-  if (amount > 0 && currentPrice > 0 && errors.length === 0) {
+  if (amount > 0 && (currentPrice > 0 || (price ?? 0) > 0) && errors.length === 0) {
     const tokenIn  = side === "buy"  ? quote : base;
     const tokenOut = side === "buy"  ? base  : quote;
     const key = routeCacheKey(tokenIn, tokenOut, amount);
@@ -254,7 +263,11 @@ export async function precheck(params: PrecheckParams): Promise<PrecheckResult> 
 
     // Local price-impact estimate when API is unreachable.
     // Use the same pool TVL model as the server (500k for top-tier pairs).
-    if (priceImpactPct === undefined) {
+    if (priceImpactPct === undefined && orderValueUsd == null) {
+      // Without an authoritative quote/USD conversion, fail closed rather than
+      // treating ETH/BTC quote units as dollars or signing an unchecked order.
+      errors.push(makeError("QUOTE_PRICE_UNAVAILABLE"));
+    } else if (priceImpactPct === undefined && orderValueUsd != null) {
       const isTopTier = HOT_PAIRS.has(symbol);
       const poolTvlUsd = isTopTier ? 500_000 : 50_000;
       priceImpactPct = Math.min((orderValueUsd / poolTvlUsd) * 100, 50);
@@ -265,24 +278,24 @@ export async function precheck(params: PrecheckParams): Promise<PrecheckResult> 
     //   Only block on truly extreme impact (>5%) that would move the market severely.
     // • Market orders respect the user's slippage tolerance.
     const slippagePct = slippageBps / 100;
-    if (priceImpactPct > 5) {
+    if (priceImpactPct != null && priceImpactPct > 5) {
       // Severe impact blocks any order type
       errors.push(makeError("PRICE_IMPACT_HIGH",
         `${priceImpactPct.toFixed(1)}% price impact — split into smaller orders`));
-    } else if (type === "market" && priceImpactPct > slippagePct) {
+    } else if (priceImpactPct != null && type === "market" && priceImpactPct > slippagePct) {
       // Only apply slippage tolerance check for market orders
       errors.push(makeError("SLIPPAGE_TOO_HIGH",
         `Price impact ${priceImpactPct.toFixed(2)}% > slippage tolerance ${slippagePct.toFixed(2)}%`));
     }
 
     // Moderate impact warning (only when not already a blocking error)
-    if (priceImpactPct > 1 && (type === "market" ? priceImpactPct <= slippagePct : true)) {
+    if (priceImpactPct != null && priceImpactPct > 1 && (type === "market" ? priceImpactPct <= slippagePct : true)) {
       warnings.push(makeWarning("PRICE_IMPACT_MODERATE"));
     }
   }
 
   // ── 5. Large order warning ─────────────────────────────────────────────────
-  if (orderValueUsd > 10_000) warnings.push(makeWarning("LARGE_ORDER"));
+  if (orderValueUsd != null && orderValueUsd > 10_000) warnings.push(makeWarning("LARGE_ORDER"));
 
   return {
     ok:      errors.length === 0,
