@@ -409,14 +409,31 @@ export function OrderForm({
   const { signMessageAsync } = useSignMessage();
   const [signingOrder, setSigningOrder] = useState(false);
   const [escrowStage, setEscrowStage] = useState("");
-  const [evmOrderbookConfig, setEvmOrderbookConfig] = useState<{
-    available: boolean;
-    safeStartup?: boolean;
-    chainId?: number;
-    address?: string;
-    supportedPairs?: string[];
-  } | null>(null);
-  const [evmOrderbookConfigLoaded, setEvmOrderbookConfigLoaded] = useState(false);
+  const chainId = walletChainId ?? 1;
+  const orderbookConfigChainId = walletChainId ?? 1;
+  const evmOrderbookConfigQuery = useQuery({
+    queryKey: ["evm-orderbook-settlement-config", orderbookConfigChainId],
+    queryFn: async () => {
+      const response = await fetch(`${API_BASE}/orders/evm-settlement/config?chainId=${orderbookConfigChainId}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Ethereum escrow status unavailable");
+      return response.json() as Promise<{
+        available: boolean;
+        safeStartup?: boolean;
+        chainId?: number;
+        address?: string;
+        supportedPairs?: string[];
+        reason?: string;
+        message?: string;
+      }>;
+    },
+    enabled: !!address && isEvm && walletChainId != null,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+  const evmOrderbookConfig = evmOrderbookConfigQuery.data;
+  const evmOrderbookConfigLoaded = !evmOrderbookConfigQuery.isLoading;
+  const evmOrderbookConfigError = evmOrderbookConfigQuery.isError;
   const [submittedOrderbookTx, setSubmittedOrderbookTx] = useState<{
     hash: string;
     explorerUrl: string;
@@ -424,33 +441,8 @@ export function OrderForm({
   } | null>(null);
   const submittedOrderbookTxRef = useRef<typeof submittedOrderbookTx>(null);
 
-  const chainId = walletChainId ?? 1;
-  const orderbookConfigChainId = walletChainId ?? 1;
   const nativeSymbol = (network === "bsv" || network === "bsv-test") ? "BSV" : network === "sol" ? "SOL" : network === "btc" ? "BTC" : getNativeSymbol(chainId);
   const nativeBal = balance ? parseFloat(balance) : 0;
-
-  useEffect(() => {
-    if (!address || !isEvm) {
-      setEvmOrderbookConfig(null);
-      setEvmOrderbookConfigLoaded(true);
-      return;
-    }
-    let active = true;
-    setEvmOrderbookConfigLoaded(false);
-    fetch(`${API_BASE}/orders/evm-settlement/config?chainId=${orderbookConfigChainId}`, { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() : { available: false, chainId: orderbookConfigChainId })
-      .then((config) => {
-        if (!active) return;
-        setEvmOrderbookConfig(config);
-        setEvmOrderbookConfigLoaded(true);
-      })
-      .catch(() => {
-        if (!active) return;
-        setEvmOrderbookConfig({ available: false, chainId: orderbookConfigChainId });
-        setEvmOrderbookConfigLoaded(true);
-      });
-    return () => { active = false; };
-  }, [address, isEvm, orderbookConfigChainId]);
 
   // Fetch real on-chain token balances for the connected EVM wallet
   const { balances: tokenBalances, loading: balancesLoading, refresh: refreshBalances, lastFetch: balancesLastFetch } = useEvmBalances(
@@ -574,6 +566,7 @@ export function OrderForm({
     tradingNetworkCapability?.available === true &&
     walletChainId === configuredOrderbookChainId &&
     evmOrderbookConfigLoaded &&
+    !evmOrderbookConfigError &&
     evmOrderbookConfig?.available === true &&
     evmOrderbookConfig?.chainId === walletChainId &&
     !!evmOrderbookConfig.address &&
@@ -581,6 +574,16 @@ export function OrderForm({
       evmOrderbookConfig.supportedPairs.includes(`${base}/${quote}`.toUpperCase()));
   const walletOrderbookConfigPending =
     shouldUseEthereumOrderbookEscrow && walletChainId === configuredOrderbookChainId && !evmOrderbookConfigLoaded;
+  const walletOrderbookConfigUnavailable =
+    shouldUseEthereumOrderbookEscrow &&
+    walletChainId === configuredOrderbookChainId &&
+    evmOrderbookConfigLoaded &&
+    (evmOrderbookConfigError ||
+      evmOrderbookConfig?.available !== true ||
+      evmOrderbookConfig?.chainId !== walletChainId ||
+      !evmOrderbookConfig?.address ||
+      (Array.isArray(evmOrderbookConfig.supportedPairs) &&
+        !evmOrderbookConfig.supportedPairs.includes(`${base}/${quote}`.toUpperCase())));
   const walletOrderbookWrongChain =
     !!address &&
     ethereumOrderbookPair &&
@@ -595,12 +598,19 @@ export function OrderForm({
     !externalSwapSubmission;
   const tradingPausedBySafeStartup =
     !!address &&
-    (tradingNetworkCapability?.available !== true || walletOrderbookWrongChain || unsupportedEvmOrderbookPair) &&
+    (tradingNetworkCapability?.available !== true ||
+      walletOrderbookWrongChain ||
+      unsupportedEvmOrderbookPair ||
+      walletOrderbookConfigUnavailable) &&
     !externalSwapSubmission;
   const tradingCapabilityReason = walletOrderbookWrongChain
     ? `Your wallet is on chain ${walletChainId}. Switch to Ethereum Mainnet before placing this order.`
     : unsupportedEvmOrderbookPair
     ? `${symbol} is not supported by the verified orderbook on chain ${configuredOrderbookChainId}.`
+    : walletOrderbookConfigUnavailable
+    ? evmOrderbookConfigError
+      ? "The API could not confirm Ethereum escrow readiness. No signature or escrow transaction was sent."
+      : evmOrderbookConfig?.reason ?? evmOrderbookConfig?.message ?? "Ethereum escrow is unavailable for this network or pair."
     : tradingNetworkCapability?.reason ??
       (apiRuntimeConfigQuery.data?.safeStartup
         ? "This preview is read-only while trading services are paused."
@@ -615,6 +625,36 @@ export function OrderForm({
         mainnetRuntimeConfig.networks.evm.chainId === 1) &&
     supportsEthereumWalletOrderbookAsset(base, 1) &&
     supportsEthereumWalletOrderbookAsset(quote, 1);
+  const refreshWalletOrderbookReadiness = async () => {
+    if (!address || walletChainId == null) {
+      return { reason: "Connect an Ethereum wallet before placing this escrow order." as string, config: null };
+    }
+    const [runtimeResult, escrowResult] = await Promise.all([
+      apiRuntimeConfigQuery.refetch(),
+      evmOrderbookConfigQuery.refetch(),
+    ]);
+    const capability = runtimeResult.data?.networks?.evm;
+    const config = escrowResult.data;
+    if (runtimeResult.isError || !capability?.available) {
+      return {
+        reason: capability?.reason ?? "The API cannot confirm healthy order matching. No wallet funds were requested.",
+        config: null,
+      };
+    }
+    if (capability.chainId !== walletChainId) {
+      return { reason: "The wallet network does not match the enabled escrow network.", config: null };
+    }
+    if (escrowResult.isError || !config?.available || config.chainId !== walletChainId || !config.address) {
+      return {
+        reason: config?.reason ?? config?.message ?? "Ethereum escrow is not ready on this network. No escrow transaction was requested.",
+        config: null,
+      };
+    }
+    if (Array.isArray(config.supportedPairs) && !config.supportedPairs.includes(`${base}/${quote}`.toUpperCase())) {
+      return { reason: `${symbol} is not listed as a supported escrow pair.`, config: null };
+    }
+    return { reason: null, config };
+  };
   const handleSwitchToEthereum = async () => {
     setSwitchingToEthereum(true);
     try {
@@ -1086,6 +1126,18 @@ export function OrderForm({
     }
     confirmRef.current = false; // Reset for next submission
 
+    if (walletOrderbookAvailable) {
+      const readiness = await refreshWalletOrderbookReadiness();
+      if (readiness.reason) {
+        toast({
+          title: "Trading readiness changed",
+          description: `${readiness.reason} No order signature or escrow transaction was submitted.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     // ── Step 4: Wallet signature for external EVM wallets ─────────────────────
     // OrahDEX is a non-custodial DEX: external EVM wallets (MetaMask / WalletConnect)
     // must sign the order intent with personal_sign to prove authorization.
@@ -1193,11 +1245,12 @@ export function OrderForm({
     let orderbookLockTxHash: `0x${string}` | undefined;
     let orderbookExpiresAt: number | undefined;
     if (walletOrderbookAvailable) {
-      const escrowAddress = evmOrderbookConfig?.address;
-      if (!escrowAddress || !orderNonce || !price || walletChainId !== evmOrderbookConfig?.chainId) {
+      const readiness = await refreshWalletOrderbookReadiness();
+      const escrowAddress = readiness.config?.address;
+      if (readiness.reason || !escrowAddress || !orderNonce || !price || walletChainId !== readiness.config?.chainId) {
         toast({
           title: "EVM escrow unavailable",
-          description: "The escrow address, signed order, limit price, or connected network is missing. No order was submitted.",
+          description: `${readiness.reason ?? "The escrow address, signed order, limit price, or connected network is missing."} No escrow transaction or order was submitted.`,
           variant: "destructive",
         });
         return;
@@ -2035,13 +2088,13 @@ export function OrderForm({
           <button
             type="submit"
             data-testid="order-submit-btn"
-            disabled={!canSubmit || tradingPausedBySafeStartup || tradingCapabilityPending || tradingCapabilityError || (precheckResult != null && !precheckResult.ok)}
+            disabled={!canSubmit || tradingPausedBySafeStartup || tradingCapabilityPending || tradingCapabilityError || walletOrderbookConfigPending || evmOrderbookConfigError || (precheckResult != null && !precheckResult.ok)}
             className={cn(
               "w-full py-3.5 rounded-xl font-bold text-sm mt-2 transition-all flex items-center justify-center gap-2",
               side === "buy"
                 ? "bg-buy text-white shadow-lg shadow-buy/20 hover:shadow-buy/40 hover:-translate-y-0.5 active:translate-y-0"
                 : "bg-sell text-white shadow-lg shadow-sell/20 hover:shadow-sell/40 hover:-translate-y-0.5 active:translate-y-0",
-              (!canSubmit || tradingPausedBySafeStartup || tradingCapabilityPending || tradingCapabilityError || (precheckResult != null && !precheckResult.ok)) && "opacity-60 cursor-not-allowed !transform-none"
+              (!canSubmit || tradingPausedBySafeStartup || tradingCapabilityPending || tradingCapabilityError || walletOrderbookConfigPending || evmOrderbookConfigError || (precheckResult != null && !precheckResult.ok)) && "opacity-60 cursor-not-allowed !transform-none"
             )}
           >
             {isPending ? (
