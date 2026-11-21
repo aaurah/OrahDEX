@@ -33,7 +33,6 @@ import {
   getAssetNativeChain, walletCanReceive,
 } from "@/lib/crossChain";
 import { CHAIN_TOKEN_ADDRESSES } from "@/lib/onChainLiquidity";
-import { isWorkspaceOrderbookTradingPaused, WORKSPACE_TRADING_PAUSED_MESSAGE } from "@/lib/tradingMode";
 
 type Side = "buy" | "sell";
 type OrderType = "limit" | "market" | "stop";
@@ -348,7 +347,6 @@ export function OrderForm({
   const { address, network, balance, chainId: walletChainId, provider, internalEvmAddress, internalBsvAddress, internalBchAddress, internalBtcAddress, internalSolAddress } = useWalletStore();
   const { toast } = useToast();
   const { addNotification } = useNotificationStore();
-  const workspaceTradingPaused = isWorkspaceOrderbookTradingPaused();
   const isEvm = !address || network === "evm" || address.startsWith("0x");
 
   // External swap state — used when externalSwapMode=true and user places a market order
@@ -748,10 +746,6 @@ export function OrderForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (workspaceTradingPaused) {
-      toast({ title: "Trading paused in Replit preview", description: WORKSPACE_TRADING_PAUSED_MESSAGE, variant: "destructive" });
-      return;
-    }
     if (!address || !amount || parseFloat(amount) <= 0) return;
 
     // ── External swap intercept (market orders on zero-liquidity pairs) ────────
@@ -1669,18 +1663,16 @@ export function OrderForm({
           <button
             type="submit"
             data-testid="order-submit-btn"
-            disabled={workspaceTradingPaused || !canSubmit || (precheckResult != null && !precheckResult.ok)}
+            disabled={!canSubmit || (precheckResult != null && !precheckResult.ok)}
             className={cn(
               "w-full py-3.5 rounded-xl font-bold text-sm mt-2 transition-all flex items-center justify-center gap-2",
               side === "buy"
                 ? "bg-buy text-white shadow-lg shadow-buy/20 hover:shadow-buy/40 hover:-translate-y-0.5 active:translate-y-0"
                 : "bg-sell text-white shadow-lg shadow-sell/20 hover:shadow-sell/40 hover:-translate-y-0.5 active:translate-y-0",
-              (workspaceTradingPaused || !canSubmit || (precheckResult != null && !precheckResult.ok)) && "opacity-60 cursor-not-allowed !transform-none"
+              (!canSubmit || (precheckResult != null && !precheckResult.ok)) && "opacity-60 cursor-not-allowed !transform-none"
             )}
           >
-            {workspaceTradingPaused ? (
-              "Trading paused in Replit preview"
-            ) : isPending ? (
+            {isPending ? (
               signingOrder
                 ? <><PenLine className="w-4 h-4 animate-pulse" /> Sign in wallet…</>
                 : <><Loader2 className="w-4 h-4 animate-spin" /> Placing…</>

@@ -89,7 +89,6 @@ interface Candle {
 interface CacheEntry { data: Candle[]; ts: number }
 const candleCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 60 * 1000;
-const EMPTY_CANDLE_RETRY_MS = 5 * 1000;
 const STALE_CANDLE_TTL_MS = 24 * 60 * 60 * 1000;
 const COINGECKO_OHLC_TTL_MS = 5 * 60 * 1000;
 const coingeckoOhlcCache = new Map<string, { data: Candle[]; ts: number }>();
@@ -97,7 +96,6 @@ const coingeckoOhlcPending = new Map<string, Promise<Candle[]>>();
 let coingeckoBackoffUntil = 0;
 const candleSourceCache = new Map<string, string>();
 const candleRefreshBackoff = new Map<string, number>();
-const emptyCandleRetryCache = new Map<string, number>();
 
 const COINGECKO_VS_CURRENCY: Record<string, string> = {
   USD: "usd", USDT: "usd", USDC: "usd", TUSD: "usd", USDD: "usd",
@@ -211,18 +209,7 @@ function setCached(key: string, data: Candle[], source: string) {
   }
   candleCache.set(key, { data, ts: Date.now() });
   candleSourceCache.set(key, source);
-  if (data.length) {
-    candleRefreshBackoff.delete(key);
-    emptyCandleRetryCache.delete(key);
-  }
-}
-
-function cacheEmptyCandleRetry(key: string) {
-  if (emptyCandleRetryCache.size >= 200) {
-    const oldestKey = emptyCandleRetryCache.keys().next().value;
-    if (oldestKey) emptyCandleRetryCache.delete(oldestKey);
-  }
-  emptyCandleRetryCache.set(key, Date.now() + EMPTY_CANDLE_RETRY_MS);
+  if (data.length) candleRefreshBackoff.delete(key);
 }
 
 export function invalidateCandlesForOrderbookUpdate(symbol: string) {
@@ -232,9 +219,6 @@ export function invalidateCandlesForOrderbookUpdate(symbol: string) {
     candleCache.delete(key);
     candleSourceCache.delete(key);
     candleRefreshBackoff.delete(key);
-  }
-  for (const key of emptyCandleRetryCache.keys()) {
-    if (key.startsWith(prefix)) emptyCandleRetryCache.delete(key);
   }
   historyCache.delete(`history:${symbol.toUpperCase()}`);
 }
@@ -687,31 +671,18 @@ export async function fetchRealCandles(
   const cached   = getCached(cacheKey);
   if (cached !== null) {
     const source = candleSourceCache.get(cacheKey) ?? "unknown";
-    if (cached.length > 0) {
-      onSource?.(source);
-      if (source === "coingecko" || source === "orderbook-snapshots" || source === "cross-reference") {
-        return cached.map((candle) => ({ ...candle }));
-      }
-      return pinLastCandle([...cached.slice(0, -1), { ...cached[cached.length - 1]! }], lastPrice);
+    onSource?.(source);
+    if (cached.length === 0) return [];
+    if (source === "coingecko" || source === "orderbook-snapshots" || source === "cross-reference") {
+      return cached.map((candle) => ({ ...candle }));
     }
-    // Older server instances cached empty results for the full positive-cache
-    // TTL. Drop those entries so a transient provider outage can recover now.
-    candleCache.delete(cacheKey);
-    candleSourceCache.delete(cacheKey);
+    return pinLastCandle([...cached.slice(0, -1), { ...cached[cached.length - 1]! }], lastPrice);
   }
 
   const stale = getStaleCached(cacheKey);
   if (stale && Date.now() < (candleRefreshBackoff.get(cacheKey) ?? 0)) {
     onSource?.(stale.source);
     return stale.data.slice(-limit).map((candle) => ({ ...candle }));
-  }
-  const retryAt = emptyCandleRetryCache.get(cacheKey);
-  if (retryAt !== undefined) {
-    if (Date.now() < retryAt) {
-      onSource?.("none");
-      return [];
-    }
-    emptyCandleRetryCache.delete(cacheKey);
   }
 
   const parts     = symbol.split("/");
@@ -885,10 +856,7 @@ export async function fetchRealCandles(
   }
 
   logger.warn({ symbol, interval }, "Real candle sources unavailable — returning no history");
-  // Do not put an empty provider failure in the normal 60-second candle cache:
-  // the chart polls every 30 seconds and otherwise can remain blank after one
-  // transient outage. A short retry dampens duplicate requests only.
-  cacheEmptyCandleRetry(cacheKey);
+  setCached(cacheKey, [], "none");
   onSource?.("none");
   return [];
 }

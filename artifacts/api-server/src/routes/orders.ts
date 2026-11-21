@@ -19,9 +19,7 @@ import type { WalletSource }     from "../lib/orderIntent.js";
 import { BSV_NET } from "../lib/bsvNetworkConfig.js";
 import { recordPlatformFee } from "../lib/feeCollector.js";
 import { attemptLeAutoRoute } from "../lib/leAutoRoute.js";
-import { getTokenSymbolByAddress } from "../lib/tokenRegistry.js";
 import {
-  findActiveEvmOrderbookOrders,
   getEvmOrderbookEscrowConfig,
   settleEvmOrderFill,
   supportsEthereumOrderbookPair,
@@ -151,133 +149,6 @@ router.get("/orders/evm-settlement/config", async (req, res) => {
   } catch (err: any) {
     req.log.warn({ err: err?.message }, "EVM orderbook settlement config check failed");
     res.json({ chainId: 1, available: false });
-  }
-});
-
-// ── POST /orders/recover-evm — restore confirmed active escrow rows ───────────
-// This reads Ethereum logs/state and inserts missing API order rows only.
-// It never submits a wallet transaction, settles an order, or unlocks funds.
-router.post("/orders/recover-evm", async (req, res) => {
-  try {
-    const walletAddress = typeof req.body?.walletAddress === "string"
-      ? req.body.walletAddress.trim()
-      : "";
-    if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
-      res.status(400).json({ error: "A valid Ethereum wallet address is required." });
-      return;
-    }
-
-    const existingRows = await db
-      .select({ fundingRef: ordersTable.fundingRef })
-      .from(ordersTable)
-      .where(and(
-        sql`lower(${ordersTable.walletAddress}) = ${walletAddress.toLowerCase()}`,
-        eq(ordersTable.chainId, 1),
-        isNotNull(ordersTable.fundingRef),
-      ));
-    const existingOrderKeys = new Set<string>();
-    const knownLockTxHashes: string[] = [];
-    for (const row of existingRows) {
-      const funding = parseEvmOrderbookFundingRef(row.fundingRef);
-      if (!funding) continue;
-      existingOrderKeys.add(funding.orderKey.toLowerCase());
-      knownLockTxHashes.push(funding.lockTxHash);
-    }
-
-    const activeOrders = await findActiveEvmOrderbookOrders(walletAddress, knownLockTxHashes);
-    let restoredCount = 0;
-    for (const activeOrder of activeOrders) {
-      const orderKey = activeOrder.orderKey.toLowerCase();
-      if (existingOrderKeys.has(orderKey)) continue;
-
-      const base = getTokenSymbolByAddress(1, activeOrder.baseToken);
-      const quote = getTokenSymbolByAddress(1, activeOrder.quoteToken);
-      if (!base || !quote || !supportsEthereumOrderbookPair(base, quote)) continue;
-
-      const originalBaseRaw = BigInt(activeOrder.originalBaseAmountRaw);
-      const remainingBaseRaw = BigInt(activeOrder.remainingBaseAmountRaw);
-      const limitPriceRaw = BigInt(activeOrder.limitPriceX18);
-      if (
-        originalBaseRaw <= 0n ||
-        remainingBaseRaw <= 0n ||
-        remainingBaseRaw > originalBaseRaw ||
-        limitPriceRaw <= 0n ||
-        !Number.isSafeInteger(activeOrder.expiresAt) ||
-        activeOrder.expiresAt <= 0
-      ) continue;
-
-      const totalRaw = mulPriceQty({
-        priceRaw: limitPriceRaw,
-        priceDecimals: 18,
-        quantityRaw: originalBaseRaw,
-        quantityDecimals: 18,
-        outputDecimals: 18,
-        rounding: "ceil",
-      });
-      let takerFeeRate = 0.001;
-      try {
-        const [market] = await db
-          .select({ takerFee: marketsTable.takerFee })
-          .from(marketsTable)
-          .where(eq(marketsTable.symbol, `${base}/${quote}`));
-        const configuredFee = Number(market?.takerFee);
-        if (Number.isFinite(configuredFee) && configuredFee >= 0) takerFeeRate = configuredFee;
-      } catch {
-        // Use the normal order-placement fee default if market metadata is unavailable.
-      }
-      const feeRateRaw = parseUnits(String(takerFeeRate), 18);
-      const feeRaw = (totalRaw * feeRateRaw) / pow10(18);
-      const symbol = `${base}/${quote}`;
-      const fundingRef = [
-        "evm-order",
-        "1",
-        activeOrder.escrowAddress.toLowerCase(),
-        orderKey,
-        activeOrder.lockTxHash.toLowerCase(),
-      ].join(":");
-
-      const inserted = await db
-        .insert(ordersTable)
-        .values({
-          id: crypto.randomUUID(),
-          symbol,
-          walletAddress,
-          networkType: "evm",
-          side: activeOrder.side,
-          type: "limit",
-          status: "open",
-          price: formatUnits(limitPriceRaw, 18),
-          quantity: formatUnits(originalBaseRaw, 18),
-          filledQuantity: formatUnits(originalBaseRaw - remainingBaseRaw, 18),
-          remainingQuantity: formatUnits(remainingBaseRaw, 18),
-          total: formatUnits(totalRaw, 18),
-          fee: formatUnits(feeRaw, 18),
-          feeAsset: quote,
-          timeInForce: "GTC",
-          txid: null,
-          signedTx: null,
-          matchedOrderId: null,
-          fundingRef,
-          nonce: orderKey,
-          expiry: String(activeOrder.expiresAt),
-          chainId: 1,
-          isBot: false,
-          isSynthetic: false,
-        })
-        .onConflictDoNothing()
-        .returning({ id: ordersTable.id });
-
-      if (inserted.length > 0) {
-        existingOrderKeys.add(orderKey);
-        restoredCount += 1;
-      }
-    }
-
-    req.log.info({ walletAddress, restoredCount, scannedCount: activeOrders.length }, "Ethereum escrow order recovery scan completed");
-    res.json({ count: restoredCount, scanned: activeOrders.length });
-  } catch (err) {
-    req.log.error({ err }, "Ethereum escrow order recovery scan failed");
-    res.status(500).json({ error: "Could not scan Ethereum escrow orders." });
   }
 });
 
@@ -427,13 +298,6 @@ router.post("/orders/sol-challenge", (req, res) => {
 // On match, a BSV OP_RETURN settlement transaction is generated and both orders
 // are marked filled with the txid.
 router.post("/orders", async (req, res) => {
-  if (process.env.NODE_ENV === "development") {
-    res.status(423).json({
-      code: "REPLIT_PREVIEW_TRADING_PAUSED",
-      error: "New orderbook trades are disabled in the Replit development workspace. Existing orders can still be reviewed, recovered, or canceled.",
-    });
-    return;
-  }
   try {
     const body = req.body;
     if (!body.walletAddress || !body.symbol || !body.side || !body.type || !body.quantity) {
@@ -923,7 +787,7 @@ router.post("/orders", async (req, res) => {
           eq(ordersTable.status, "open"),
           // P1: expired orders must never be matchable before/without the expiry worker
           sql`${ordersTable.expiry} > ${String(Math.floor(Date.now() / 1000))}`,
-          sql`lower(${ordersTable.walletAddress}) <> lower(${body.walletAddress})`,
+          ne(ordersTable.walletAddress, body.walletAddress),
           // Limit orders have price constraints; market + triggered-stop orders take any price
           ...(isLimit && safePriceStr
             ? [side === "buy"

@@ -33,7 +33,6 @@ import { buildOrderIntentMessage, buildOrderActionMessage, signWalletMessage } f
 import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
 import { withWalletRequestTimeout } from "@/lib/walletRequestTimeout.mjs";
-import { isWorkspaceOrderbookTradingPaused, WORKSPACE_TRADING_PAUSED_MESSAGE } from "@/lib/tradingMode";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -311,7 +310,6 @@ function supportsEthereumWalletOrderbookAsset(symbol: string): boolean {
 }
 
 export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
-  const workspaceTradingPaused = isWorkspaceOrderbookTradingPaused();
   // Only replace the first hyphen (base-quote separator); keep -PERP suffix intact
   const symbol = rawSymbol.replace(/^([^-]+)-/, "$1/");
   const base = symbol.split("/")[0];
@@ -1379,10 +1377,6 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   }
 
   async function handlePlaceOrder() {
-    if (workspaceTradingPaused) {
-      toast({ title: "Trading paused in Replit preview", description: WORKSPACE_TRADING_PAUSED_MESSAGE, variant: "destructive" });
-      return;
-    }
     if (!address || !amount || amtNum <= 0) return;
 
     // ── LetsExchange max guard ────────────────────────────────────────────────
@@ -3002,15 +2996,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             )}
 
             {/* Confirm / Place Order button */}
-            {workspaceTradingPaused ? (
-              <button
-                type="button"
-                disabled
-                className="w-full py-3.5 rounded-xl text-sm font-bold text-muted-foreground bg-muted/40 cursor-not-allowed"
-              >
-                Order trading paused in Replit preview
-              </button>
-            ) : !address ? (
+            {!address ? (
               <button
                 onClick={() => openWallet()}
                 className="w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2 bg-gradient-to-r from-red-500 to-primary shadow-lg"
@@ -3022,13 +3008,13 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               <>
               <button
                 onClick={handlePlaceOrder}
-                disabled={workspaceTradingPaused || !amount || amtNum <= 0 || isSubmitting || aboveLeMax}
+                disabled={!amount || amtNum <= 0 || isSubmitting || aboveLeMax}
                 className={cn(
                   "w-full py-3.5 rounded-xl text-sm font-bold text-white transition-all active:opacity-80 flex items-center justify-center gap-2",
                   side === "sell"
                     ? "bg-red-600 shadow-lg shadow-red-500/20"
                     : "bg-green-600 shadow-lg shadow-green-500/20",
-                  (workspaceTradingPaused || !amount || amtNum <= 0 || isSubmitting || aboveLeMax) && "opacity-50 cursor-not-allowed"
+                  (!amount || amtNum <= 0 || isSubmitting || aboveLeMax) && "opacity-50 cursor-not-allowed"
                 )}
               >
                 {isSubmitting ? (
@@ -3073,14 +3059,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         className="shrink-0 flex items-center gap-2 px-4 py-3 border-t border-border bg-background/95 backdrop-blur"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
       >
-        {workspaceTradingPaused ? (
-          <div
-            role="status"
-            className="w-full py-3 rounded-xl text-center text-xs font-semibold text-muted-foreground bg-muted/40"
-          >
-            New orderbook trades paused in Replit preview
-          </div>
-        ) : !address ? (
+        {!address ? (
           /* Connect Wallet CTA */
           <button
             onClick={() => openWallet()}
@@ -3102,19 +3081,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   setShowOrderForm(true);
                 }
               }}
-              disabled={workspaceTradingPaused || isSubmitting}
+              disabled={isSubmitting}
               className={cn(
                 "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
-                workspaceTradingPaused || isSubmitting ? "opacity-50 cursor-not-allowed"
+                isSubmitting ? "opacity-50 cursor-not-allowed"
                   : side === "buy" && showOrderForm && amtNum > 0
                   ? "opacity-100 scale-[1.01]"
                   : "opacity-85"
               )}
               style={{ backgroundColor: "#16a34a" }}
             >
-              {workspaceTradingPaused
-                ? "Order trading paused"
-                : isSubmitting && side === "buy"
+              {isSubmitting && side === "buy"
                 ? (submissionStage || "Placing…")
                 : side === "buy" && showOrderForm && amtNum > 0
                 ? `Buy ${amtNum.toFixed(4)} ${base}`
@@ -3132,19 +3109,17 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
                   setShowOrderForm(true);
                 }
               }}
-              disabled={workspaceTradingPaused || isSubmitting}
+              disabled={isSubmitting}
               className={cn(
                 "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
-                workspaceTradingPaused || isSubmitting ? "opacity-50 cursor-not-allowed"
+                isSubmitting ? "opacity-50 cursor-not-allowed"
                   : side === "sell" && showOrderForm && amtNum > 0
                   ? "opacity-100 scale-[1.01]"
                   : "opacity-85"
               )}
               style={{ backgroundColor: "#dc2626" }}
             >
-              {workspaceTradingPaused
-                ? "Order trading paused"
-                : isSubmitting && side === "sell"
+              {isSubmitting && side === "sell"
                 ? (submissionStage || "Placing…")
                 : side === "sell" && showOrderForm && amtNum > 0
                 ? `Sell ${amtNum.toFixed(4)} ${base}`
