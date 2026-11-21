@@ -82,17 +82,10 @@ export async function signWalletMessage(
     .join("")}`;
 
   if (provider === "reown") {
-    if (wagmiSign) {
-      try {
-        return await wagmiSign({ message });
-      } catch (error: any) {
-        if (signal?.aborted || isWalletRequestRejected(error) || !canRetryWithRawProvider(error)) throw error;
-        // Fall through to the active connector's raw provider if Wagmi rejects
-        // before issuing the signing request. Other errors must not trigger a
-        // second prompt because the first wallet may still be handling it.
-      }
-    }
-
+    // Some mobile WalletConnect handoffs leave Wagmi's signMessage promise
+    // pending even after the wallet approved. Prefer the active connector's
+    // account-checked EIP-1193 request and use Wagmi only if no raw provider is
+    // available; never issue a second prompt after an ambiguous provider request.
     const { wagmiAdapter } = await import("@/lib/reown-appkit");
     const { getConnection, getConnections } = await import("@wagmi/core");
     const activeConnection = getConnection(wagmiAdapter.wagmiConfig);
@@ -109,7 +102,10 @@ export async function signWalletMessage(
       catch { /* try the injected provider after account validation */ }
     }
     eip1193 ??= (window as any).ethereum;
-    if (!eip1193?.request) throw new Error("Connected wallet provider unavailable. Reconnect your wallet and try again.");
+    if (!eip1193?.request) {
+      if (wagmiSign) return await wagmiSign({ message });
+      throw new Error("Connected wallet provider unavailable. Reconnect your wallet and try again.");
+    }
     const accounts = await eip1193.request({ method: "eth_accounts" });
     if (!Array.isArray(accounts) || !accounts.some(
       (account: unknown) => typeof account === "string" && account.toLowerCase() === address.toLowerCase(),
