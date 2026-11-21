@@ -167,7 +167,13 @@ function orderTerms(params: Pick<OnchainOrderLockParams, "chainId" | "side" | "b
 }
 
 async function getDeployedOrderbookEscrowConfig(chainId = configuredChainId()) {
-  if (!SUPPORTED_CHAIN_IDS.has(chainId)) return { chainId, available: false as const };
+  if (!SUPPORTED_CHAIN_IDS.has(chainId)) {
+    return {
+      chainId,
+      available: false as const,
+      reason: `No verified order-book escrow is configured for EVM chain ${chainId}.`,
+    };
+  }
   if (!isEvmOrderbookChainEnabled(chainId)) {
     return {
       chainId,
@@ -203,7 +209,13 @@ async function getDeployedOrderbookEscrowConfig(chainId = configuredChainId()) {
 }
 
 export async function getEvmOrderbookEscrowConfig(chainId = configuredChainId()) {
-  if (!SUPPORTED_CHAIN_IDS.has(chainId)) return { chainId, available: false as const };
+  if (!SUPPORTED_CHAIN_IDS.has(chainId)) {
+    return {
+      chainId,
+      available: false as const,
+      reason: `No verified order-book escrow is configured for EVM chain ${chainId}.`,
+    };
+  }
   if (process.env.EVM_ORDERBOOK_MATCHING_ENABLED !== "true") {
     return { chainId, available: false as const, reason: "EVM order matching is disabled by configuration." };
   }

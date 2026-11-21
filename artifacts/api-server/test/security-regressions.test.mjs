@@ -328,6 +328,25 @@ test("only configured and verified EVM chains can trade during safe startup", as
   assert.match(orderFormSrc, /tradingCapabilityReason/);
 });
 
+test("trade readiness follows the selected chain and rejects unverified EVM networks", async () => {
+  const [capabilitySrc, orderSrc, escrowSrc, orderFormSrc, mobileTradeSrc] = await Promise.all([
+    read(tradingCapabilitiesPath),
+    read(ordersPath),
+    read(path.join(__dirname, "..", "src", "lib", "evmOrderbookEscrow.ts")),
+    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "trading", "OrderForm.tsx")),
+    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "mobile", "MobileTrade.tsx")),
+  ]);
+
+  assert.match(capabilitySrc, /Number\.isSafeInteger\(chainId\) && chainId > 0/);
+  assert.match(capabilitySrc, /Order-book trading is not verified or enabled on EVM chain \$\{chainId\}/);
+  assert.match(escrowSrc, /No verified order-book escrow is configured for EVM chain \$\{chainId\}/);
+  assert.match(orderSrc, /router\.get\("\/runtime-config"[\s\S]*?chainId <= 0/);
+  assert.match(orderSrc, /router\.get\("\/orders\/evm-settlement\/config"[\s\S]*?chainId <= 0/);
+  assert.match(orderFormSrc, /const tradingCapabilityChainId = walletChainId \?\? 1/);
+  assert.match(orderFormSrc, /const orderbookConfigChainId = walletChainId \?\? 1/);
+  assert.match(mobileTradeSrc, /const tradingCapabilityChainId = walletChainId \?\? 1/);
+});
+
 test("order reconciler never removes a live EVM escrow order from the database", async () => {
   const selfHealingSrc = await read(path.join(__dirname, "..", "src", "lib", "selfHealing.ts"));
   assert.match(selfHealingSrc, /order\.fundingRef\?\.startsWith\("evm-order:"\)\) continue/);
