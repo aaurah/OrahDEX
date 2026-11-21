@@ -5,16 +5,6 @@ import { FALLBACK_PRICES } from "../lib/priceUpdater.js";
 
 const router = Router();
 
-// Prediction trading is fail-closed until wallet-authenticated stakes and
-// independently verifiable round settlement replace the client-address ledger
-// debit/credit path and synthetic round seeding below.
-router.use("/prediction", (_req, res) => {
-  res.status(503).json({
-    error: "Prediction trading is temporarily paused pending wallet-authenticated funding and verified settlement.",
-    code: "PREDICTION_TRADING_PAUSED",
-  });
-});
-
 const ROUND_DURATION_S = 300;
 const LOCK_DURATION_S  = 30;
 

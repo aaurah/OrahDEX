@@ -221,13 +221,6 @@ router.post("/swap/quote", async (req, res) => {
 // funds-theft but does NOT prevent a user from submitting swaps under a different
 // address to observe balance/rate data.  External (on-chain) wallets with zero
 // internal balance are safe; on-chain funds are never touched here.
-router.post("/swap", (_req, res) => {
-  res.status(503).json({
-    error: "Internal-ledger swaps are paused until reserves and settlement are verified. Use a wallet-signed on-chain DEX swap instead.",
-    code: "INTERNAL_LEDGER_SWAP_DISABLED",
-  });
-});
-
 router.post("/swap", async (req, res) => {
   const { walletAddress, assetIn, assetOut, amountIn, minAmountOut, signature, nonce } = req.body ?? {};
   if (!walletAddress || !assetIn || !assetOut || !amountIn) {
@@ -499,20 +492,7 @@ router.post("/swap/execute", async (req, res) => {
       logger.warn({ a, b, forceSource }, "swap/execute: forceSource ignored (missing/invalid token)");
     }
 
-    // Keep the route source as a string so the guarded legacy branches below
-    // remain type-checked while the internal/split sources fail closed here.
-    const source: string = decision.source;
-
-    // Internal and split executions credit output assets against an oracle
-    // price without independently verified reserve backing. External-only
-    // provider swaps remain available as a separate, explicitly user-funded
-    // provider flow.
-    if (source === "internal" || source === "split") {
-      return res.status(503).json({
-        error: "Internal-ledger swap routing is paused until reserves and settlement are verified. Choose a direct wallet DEX or external provider route.",
-        code: "INTERNAL_LEDGER_SWAP_DISABLED",
-      });
-    }
+    const source = decision.source;
 
     const requiresEvmSignature =
       source === "internal" ||

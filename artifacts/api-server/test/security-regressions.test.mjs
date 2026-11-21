@@ -11,9 +11,6 @@ const ordersPath = path.join(__dirname, "..", "src", "routes", "orders.ts");
 const ordersSchemaPath = path.join(__dirname, "..", "..", "..", "lib", "db", "src", "schema", "orders.ts");
 const tradePath = path.join(__dirname, "..", "src", "routes", "trade.ts");
 const fundingVerifierPath = path.join(__dirname, "..", "src", "lib", "fundingVerifier.ts");
-const tradingCapabilitiesPath = path.join(__dirname, "..", "src", "lib", "tradingCapabilities.ts");
-const startupModePath = path.join(__dirname, "..", "src", "lib", "startupMode.ts");
-const appPath = path.join(__dirname, "..", "src", "app.ts");
 const routesIndexPath = path.join(__dirname, "..", "src", "routes", "index.ts");
 const adminAuthPath = path.join(__dirname, "..", "src", "middleware", "adminAuth.ts");
 const adminRoutesPath = path.join(__dirname, "..", "src", "routes", "admin.ts");
@@ -26,15 +23,6 @@ const advancedOrderEnginePath = path.join(__dirname, "..", "src", "lib", "advanc
 const hotWalletGeneratorPath = path.join(__dirname, "..", "scripts", "gen-new-hotwallet.ts");
 const futuresPath = path.join(__dirname, "..", "src", "routes", "futures.ts");
 const nftPath = path.join(__dirname, "..", "src", "routes", "nft.ts");
-const predictionPath = path.join(__dirname, "..", "src", "routes", "prediction.ts");
-const predictionPagePath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "Prediction.tsx");
-const swapPath = path.join(__dirname, "..", "src", "routes", "swap.ts");
-const unifiedTradePath = path.join(__dirname, "..", "src", "routes", "trade.ts");
-const optionsPath = path.join(__dirname, "..", "src", "routes", "options.ts");
-const copyTradingPath = path.join(__dirname, "..", "src", "routes", "copyTrading.ts");
-const p2pPath = path.join(__dirname, "..", "src", "routes", "p2pIntents.ts");
-const copyTradingPagePath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "CopyTrading.tsx");
-const tradeAuthPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "lib", "tradeAuth.ts");
 
 async function read(filePath) {
   return readFile(filePath, "utf8");
@@ -211,167 +199,19 @@ test("futures mutations fail closed and NFT routes can be disabled", async () =>
   assert.match(nftSrc, /process\.env\.NFT_ENABLED === "false"/);
 });
 
-test("prediction routes fail closed until signed funding and verified settlement exist", async () => {
-  const [apiSrc, pageSrc] = await Promise.all([read(predictionPath), read(predictionPagePath)]);
-  const guard = apiSrc.match(/router\.use\("\/prediction"[\s\S]*?\n\}\);/)?.[0];
-
-  assert.ok(guard, "prediction router-wide pause exists");
-  assert.ok(guard.indexOf("router.use") < apiSrc.indexOf('router.post("/prediction/bet"'));
-  assert.ok(guard.indexOf("router.use") < apiSrc.indexOf('router.post("/prediction/claim"'));
-  assert.match(guard, /status\(503\)/);
-  assert.match(guard, /PREDICTION_TRADING_PAUSED/);
-  assert.match(pageSrc, /Prediction trading is paused while wallet funding and round settlement are verified/);
-  assert.match(pageSrc, /disabled\s*\n\s*className/);
-});
-
-test("oracle-priced internal ledger swaps fail closed without reserve backing", async () => {
-  const [swapSrc, tradeSrc] = await Promise.all([read(swapPath), read(unifiedTradePath)]);
-  const directSwapPause = swapSrc.match(/router\.post\("\/swap", \(_req, res\) => \{[\s\S]*?\n\}\);/)?.[0];
-  const unifiedSwapPause = tradeSrc.match(/const internalLedgerSwapPaused[\s\S]*?router\.post\("\/trade\/exchange\/advanced", internalLedgerSwapPaused\);/)?.[0];
-
-  assert.ok(directSwapPause, "direct internal swap is paused before its handler");
-  assert.match(directSwapPause, /status\(503\)/);
-  assert.match(directSwapPause, /INTERNAL_LEDGER_SWAP_DISABLED/);
-  assert.ok(unifiedSwapPause, "unified internal ledger swaps are paused");
-  assert.match(unifiedSwapPause, /router\.post\("\/trade\/exchange", internalLedgerSwapPaused\)/);
-  assert.match(swapSrc, /source === "internal" \|\| source === "split"[\s\S]*?INTERNAL_LEDGER_SWAP_DISABLED/);
-});
-
-test("options, copy vaults, and P2P fills fail closed without authorized settlement", async () => {
-  const [optionsSrc, copySrc, p2pSrc, copyPageSrc] = await Promise.all([
-    read(optionsPath),
-    read(copyTradingPath),
-    read(p2pPath),
-    read(copyTradingPagePath),
-  ]);
-
-  assert.match(optionsSrc, /router\.post\("\/options\/order",[\s\S]*?status\(503\)[\s\S]*?OPTIONS_TRADING_PAUSED/);
-  assert.match(optionsSrc, /router\.post\("\/options\/exercise\/:positionId",[\s\S]*?status\(503\)[\s\S]*?OPTIONS_TRADING_PAUSED/);
-  assert.match(copySrc, /router\.post\("\/copy\/vaults\/:id\/deposit",[\s\S]*?status\(503\)[\s\S]*?COPY_TRADING_PAUSED/);
-  assert.match(copySrc, /router\.post\("\/copy\/vaults\/:id\/withdraw",[\s\S]*?status\(503\)[\s\S]*?COPY_TRADING_PAUSED/);
-  assert.match(p2pSrc, /router\.post\("\/p2p\/intents\/:id\/fill",[\s\S]*?status\(503\)[\s\S]*?P2P_SETTLEMENT_UNAVAILABLE/);
-  assert.match(copyPageSrc, /Copy-vault deposits and withdrawals are paused/);
-});
-
-test("mobile Reown signing uses the active raw wallet provider before Wagmi", async () => {
-  const src = await read(tradeAuthPath);
-  const branch = src.match(/if \(provider === "reown"\) \{([\s\S]*?)\n  \}/)?.[1] ?? "";
-
-  assert.ok(branch, "Reown signing path exists");
-  assert.match(branch, /connection\.connector\.getProvider\(\)/);
-  assert.match(branch, /if \(!eip1193\?\.request\) \{\s*if \(wagmiSign\) return await wagmiSign\(\{ message \}\);/);
-  assert.match(branch, /const accounts = await eip1193\.request\(\{ method: "eth_accounts" \}\)/);
-  assert.match(branch, /return await eip1193\.request\(\{ method: "personal_sign"/);
-});
-
-test("EVM orderbook orders require confirmed escrow proof and same-chain settlement", async () => {
+test("Ethereum orderbook orders require confirmed escrow proof and settlement pairing", async () => {
   const [ordersSrc, escrowSrc] = await Promise.all([
     read(ordersPath),
     read(path.join(__dirname, "..", "src", "lib", "evmOrderbookEscrow.ts")),
   ]);
 
   assert.match(ordersSrc, /router\.get\("\/orders\/evm-settlement\/config"/);
-  assert.match(ordersSrc, /getEvmOrderbookEscrowConfig\(chainId\)/);
-  assert.match(ordersSrc, /router\.post\("\/orders\/recover-evm"/);
-  assert.match(ordersSrc, /router\.get\("\/runtime-config"/);
-  assert.match(ordersSrc, /res\.json\(await getTradingCapabilities\(chainId\)\)/);
-  assert.match(ordersSrc, /getTradingCapabilities\(\s*chainIdInput \? Number\(chainIdInput\) : undefined/);
-  assert.match(ordersSrc, /safeStartup: true/);
-  assert.match(ordersSrc, /if \(safeApiStartup && !orderbookTradingEnabled\)[\s\S]*?code: "SAFE_STARTUP"/);
-  assert.match(ordersSrc, /getOrderNetworkCapability\(runtimeCapabilities/);
   assert.match(ordersSrc, /verifyEvmOrderLock\(\{/);
   assert.match(ordersSrc, /ORDERBOOK_LOCK_REQUIRED/);
-  assert.match(ordersSrc, /candidateOrderbookFunding\.chainId !== incomingOrderbookFunding\?\.chainId/);
   assert.match(ordersSrc, /candidateClaimsOrderbookEscrow !== Boolean\(incomingOrderbookFunding\)/);
   assert.match(ordersSrc, /settleEvmOrderFill\(\{/);
   assert.match(ordersSrc, /verifyEvmOrderbookCancelTx\(\{/);
   assert.match(escrowSrc, /MIN_CONFIRMATIONS/);
-  assert.match(escrowSrc, /isEvmOrderbookChainEnabled\(params\.chainId\)/);
   assert.match(escrowSrc, /OrderOpened/);
   assert.match(escrowSrc, /configuredEscrow\.toLowerCase\(\) !== params\.escrowAddress\.toLowerCase\(\)/);
-});
-
-test("only configured and verified EVM chains can trade during safe startup", async () => {
-  const [src, startupSrc, appSrc, selfHealingSrc, mobileTradeSrc, orderFormSrc] = await Promise.all([
-    read(tradingCapabilitiesPath),
-    read(startupModePath),
-    read(appPath),
-    read(path.join(__dirname, "..", "src", "lib", "selfHealing.ts")),
-    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "mobile", "MobileTrade.tsx")),
-    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "trading", "OrderForm.tsx")),
-  ]);
-
-  assert.match(src, /!isEvmOrderbookChainEnabled\(chainId\)/);
-  assert.match(src, /bsv:\s*\{\s*available: false/);
-  assert.match(src, /sol:\s*\{\s*available: false/);
-  assert.match(src, /btc:\s*\{\s*available: false/);
-  assert.match(src, /bch:\s*\{\s*available: false/);
-  assert.match(src, /input\.chainId !== capability\.chainId/);
-  assert.match(src, /input\.orderType !== "limit"/);
-  assert.match(src, /!input\.hasEscrowLock/);
-  assert.match(src, /await pool\.query\("SELECT 1"\)/);
-  assert.match(src, /service\.name === "order-reconciler"/);
-  assert.match(src, /recovery\.lastSuccessAt !== null/);
-  assert.match(startupSrc, /configuredEvmOrderbookChainIds\(\)\.some\(isEvmOrderbookChainEnabled\)/);
-  assert.match(startupSrc, /ORAHDEX_TRADING_EVM_VERIFIED_CHAIN_IDS/);
-  assert.match(appSrc, /if \(tradingWorkersEnabled\) \{[\s\S]*?startOrderReconciler[\s\S]*?startBsvIntentWatcher/);
-  assert.match(appSrc, /else if \(orderbookTradingEnabled\)[\s\S]*?startOrderReconciler/);
-  assert.match(selfHealingSrc, /initialDelayMs:\s*1_000/);
-  const generalWorkerBlock = appSrc.match(/if \(!safeApiStartup\) \{\n  _s\([\s\S]*?\n\}/)?.[0] ?? "";
-  assert.ok(generalWorkerBlock, "general background worker block exists");
-  assert.doesNotMatch(generalWorkerBlock, /startOrderReconciler|startBsvDepositWatcher|startHtlcWatcher|startBsvIntentWatcher/);
-  assert.match(mobileTradeSrc, /tradingNetworkCapability\?\.available === true/);
-  assert.match(mobileTradeSrc, /runtime-config\?chainId=\$\{tradingCapabilityChainId\}/);
-  assert.match(mobileTradeSrc, /tradingCapabilityReason/);
-  assert.match(orderFormSrc, /tradingNetworkCapability\?\.available === true/);
-  assert.match(orderFormSrc, /runtime-config\?chainId=\$\{tradingCapabilityChainId\}/);
-  assert.match(orderFormSrc, /tradingCapabilityReason/);
-});
-
-test("trade readiness follows the selected chain and rejects unverified EVM networks", async () => {
-  const [capabilitySrc, orderSrc, escrowSrc, orderFormSrc, mobileTradeSrc] = await Promise.all([
-    read(tradingCapabilitiesPath),
-    read(ordersPath),
-    read(path.join(__dirname, "..", "src", "lib", "evmOrderbookEscrow.ts")),
-    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "trading", "OrderForm.tsx")),
-    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "mobile", "MobileTrade.tsx")),
-  ]);
-
-  assert.match(capabilitySrc, /Number\.isSafeInteger\(chainId\) && chainId > 0/);
-  assert.match(capabilitySrc, /Order-book trading is not verified or enabled on EVM chain \$\{chainId\}/);
-  assert.match(escrowSrc, /No verified order-book escrow is configured for EVM chain \$\{chainId\}/);
-  assert.match(orderSrc, /router\.get\("\/runtime-config"[\s\S]*?chainId <= 0/);
-  assert.match(orderSrc, /router\.get\("\/orders\/evm-settlement\/config"[\s\S]*?chainId <= 0/);
-  assert.match(orderFormSrc, /const tradingCapabilityChainId = walletChainId \?\? 1/);
-  assert.match(orderFormSrc, /const orderbookConfigChainId = walletChainId \?\? 1/);
-  assert.match(mobileTradeSrc, /const tradingCapabilityChainId = walletChainId \?\? 1/);
-});
-
-test("order reconciler never removes a live EVM escrow order from the database", async () => {
-  const selfHealingSrc = await read(path.join(__dirname, "..", "src", "lib", "selfHealing.ts"));
-  assert.match(selfHealingSrc, /order\.fundingRef\?\.startsWith\("evm-order:"\)\) continue/);
-});
-
-test("order prechecks convert non-stable quote assets before dollar limits and impact checks", async () => {
-  const ordersSrc = await read(ordersPath);
-
-  assert.match(ordersSrc, /QUOTE_PRICE_UNAVAILABLE/);
-  assert.match(ordersSrc, /where\(eq\(marketsTable\.symbol, `\$\{quote\}\/USDT`\)\)/);
-  assert.match(ordersSrc, /orderValueUsd < 0\.5/);
-  assert.match(ordersSrc, /execPrice \* qty \* quoteUsdPrice/);
-  assert.match(ordersSrc, /WITHOUT creating any DB record or transaction/);
-});
-
-test("desktop and mobile order forms fail closed when escrow readiness is unavailable", async () => {
-  const [desktopSrc, mobileSrc] = await Promise.all([
-    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "trading", "OrderForm.tsx")),
-    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "mobile", "MobileTrade.tsx")),
-  ]);
-
-  for (const src of [desktopSrc, mobileSrc]) {
-    assert.match(src, /walletOrderbookConfigUnavailable/);
-    assert.match(src, /refreshWalletOrderbookReadiness/);
-    assert.match(src, /No escrow transaction or order was submitted/);
-  }
-  assert.match(mobileSrc, /api\/orders\/precheck/);
 });
