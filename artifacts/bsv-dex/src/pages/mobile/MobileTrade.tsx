@@ -34,6 +34,7 @@ import { CoinInfoSheet } from "@/components/mobile/CoinInfoSheet";
 import { CHAIN_TOKEN_ADDRESSES, TOKEN_DECIMALS } from "@/lib/onChainLiquidity";
 import { withWalletRequestTimeout } from "@/lib/walletRequestTimeout.mjs";
 import { switchTradingWalletToEthereum } from "@/lib/switchTradingWalletToEthereum";
+import { LetsExchangePanel } from "@/components/LetsExchangePanel";
 
 /* ── Notifications drawer — backed by the real notification store ── */
 const TYPE_ICON: Record<string, React.ReactNode> = {
@@ -1128,6 +1129,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const [shareToastVisible, setShareToastVisible] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
   const [side, setSide] = useState<Side>("buy");
+  const [mobileTradeMode, setMobileTradeMode] = useState<"order" | "swap">("order");
 
   const handleShare = async () => {
     const url = `${window.location.origin}${import.meta.env.BASE_URL}trade/${rawSymbol}`;
@@ -1166,6 +1168,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     setAmount("");
     setStopPrice("");
     setTrailingRate("");
+    setMobileTradeMode("order");
   }, [rawSymbol]);
   const [showOrderForm, setShowOrderForm] = useState(false);
   const [atomicSwapOpen, setAtomicSwapOpen] = useState(false);
@@ -1344,6 +1347,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
   const chartCandles = Array.isArray(candles) ? candles : [];
   // Ensure order book always shows data
   const rawOB = orderBook as any;
+  const isBridgePair = rawOB?.isBridgePair === true;
   // Bridge pairs cannot synthesize fillable depth, but confirmed wallet-escrow
   // orders returned by the API are real and must remain visible.
   const hasRealOB = rawOB?.bids?.length > 0 || rawOB?.asks?.length > 0;
@@ -1353,6 +1357,12 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [hasRealOB, orderBook, fallbackPrice],
   );
+
+  const openMobileCrossChainSwap = () => {
+    setMobileTradeMode("swap");
+    setShowOrderForm(true);
+    requestAnimationFrame(() => orderFormRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
+  };
 
 
   /* ── Live browser-tab price title ────────────────────────────────────── */
@@ -2477,8 +2487,51 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
         {showOrderForm && (
           <div ref={orderFormRef} className="px-3 pt-3 pb-2 border-t border-border mt-2 space-y-2.5">
 
-            {/* ── ORDER FORM ── */}
-            {(<>
+            {isBridgePair && (
+              <div className="flex overflow-hidden rounded-xl border border-border bg-card">
+                <button
+                  type="button"
+                  onClick={() => setMobileTradeMode("order")}
+                  aria-pressed={mobileTradeMode === "order"}
+                  className={cn(
+                    "flex-1 min-h-10 px-3 text-xs font-semibold transition-colors",
+                    mobileTradeMode === "order"
+                      ? "border-b-2 border-primary text-primary bg-primary/5"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  Orderbook
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileTradeMode("swap")}
+                  aria-pressed={mobileTradeMode === "swap"}
+                  className={cn(
+                    "flex-1 min-h-10 px-3 text-xs font-semibold transition-colors border-l border-border",
+                    mobileTradeMode === "swap"
+                      ? "border-b-2 border-amber-400 text-amber-300 bg-amber-400/5"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  Cross-chain Swap
+                </button>
+              </div>
+            )}
+
+            {mobileTradeMode === "swap" && isBridgePair ? (
+              <div className="space-y-2.5">
+                <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2.5 text-[11px] leading-relaxed text-amber-100/90">
+                  This is a separate third-party exchange, not an orderbook escrow trade. Review the provider, exact deposit amount and address, and expected output before sending funds.
+                </div>
+                <LetsExchangePanel
+                  key={`${symbol}-${side}-mobile-swap`}
+                  initialFrom={side === "sell" ? base : quote}
+                  initialTo={side === "sell" ? quote : base}
+                  walletAddress={address}
+                  onConnectWallet={() => openWallet()}
+                />
+              </div>
+            ) : (<>
 
             {/* Non-custodial mode disclosure */}
             {isSelfCustodyEvm && (
@@ -3354,7 +3407,9 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
       {isSelfCustodyEvm && (
         <div className="shrink-0 flex items-center justify-center gap-1.5 px-4 py-1 border-t border-blue-500/20 bg-blue-500/5 text-[10px] text-blue-300/80 font-medium leading-none">
           <svg className="w-3 h-3 shrink-0 text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
-          {tradingPausedBySafeStartup
+          {mobileTradeMode === "swap" && isBridgePair
+            ? "External swap — review provider deposit details before sending"
+            : tradingPausedBySafeStartup
             ? `Trading unavailable — ${tradingCapabilityReason}`
             : "Non-custodial — funds stay in your wallet until on-chain settlement"}
         </div>
@@ -3362,20 +3417,54 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
 
       {/* ── STICKY BOTTOM BAR ── */}
       <div
-        className="shrink-0 flex items-center gap-2 px-4 py-3 border-t border-border bg-background/95 backdrop-blur"
+        className="shrink-0 flex flex-col gap-2 px-4 py-3 border-t border-border bg-background/95 backdrop-blur"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 20px)" }}
       >
         {!address ? (
           /* Connect Wallet CTA */
-          <button
-            onClick={() => openWallet()}
-            className="flex-1 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-red-500 to-primary active:opacity-80 transition-opacity flex items-center justify-center gap-2"
-          >
-            <Wallet size={16} />
-            Connect Wallet
-          </button>
+          <>
+            <button
+              onClick={() => openWallet()}
+              className="w-full py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-red-500 to-primary active:opacity-80 transition-opacity flex items-center justify-center gap-2"
+            >
+              <Wallet size={16} />
+              Connect Wallet
+            </button>
+            {isBridgePair && (
+              <button
+                type="button"
+                onClick={openMobileCrossChainSwap}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold text-amber-200 border border-amber-500/30 bg-amber-500/10 active:bg-amber-500/20"
+              >
+                Cross-chain Swap
+              </button>
+            )}
+          </>
         ) : tradingPausedBySafeStartup || tradingCapabilityPending || apiRuntimeConfigError || walletOrderbookNetworkPending ? (
-          canSwitchToEthereum ? (
+          isBridgePair ? (
+            <div className="w-full space-y-2">
+              <p className="text-center text-[10px] leading-snug text-muted-foreground">
+                Orderbook trading is unavailable here. Provider swaps remain a separate flow.
+              </p>
+              <button
+                type="button"
+                onClick={openMobileCrossChainSwap}
+                className="w-full py-3 rounded-xl text-sm font-bold text-black bg-amber-300 hover:bg-amber-200 active:bg-amber-400"
+              >
+                Open Cross-chain Swap
+              </button>
+              {canSwitchToEthereum && (
+                <button
+                  type="button"
+                  onClick={handleSwitchToEthereum}
+                  disabled={switchingToEthereum}
+                  className="w-full py-2 rounded-xl text-xs font-semibold text-muted-foreground border border-border disabled:opacity-60"
+                >
+                  {switchingToEthereum ? "Waiting for wallet…" : "Switch to Ethereum for escrow orders"}
+                </button>
+              )}
+            </div>
+          ) : canSwitchToEthereum ? (
             <button
               type="button"
               onClick={handleSwitchToEthereum}
@@ -3395,13 +3484,24 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
           )
         ) : (
           <>
+            {isBridgePair && (
+              <button
+                type="button"
+                onClick={openMobileCrossChainSwap}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold text-amber-200 border border-amber-500/30 bg-amber-500/10 active:bg-amber-500/20"
+              >
+                Cross-chain Swap
+              </button>
+            )}
+            <div className="flex w-full items-center gap-2">
             {/* Buy button */}
             <button
               onClick={() => {
-                if (side === "buy" && showOrderForm && amtNum > 0) {
+                if (side === "buy" && showOrderForm && mobileTradeMode === "order" && amtNum > 0) {
                   handlePlaceOrder();
                 } else {
                   setSide("buy");
+                  setMobileTradeMode("order");
                   setOrderError(null);
                   setShowOrderForm(true);
                 }
@@ -3410,7 +3510,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               className={cn(
                 "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
                 isSubmitting ? "opacity-50 cursor-not-allowed"
-                  : side === "buy" && showOrderForm && amtNum > 0
+                  : side === "buy" && showOrderForm && mobileTradeMode === "order" && amtNum > 0
                   ? "opacity-100 scale-[1.01]"
                   : "opacity-85"
               )}
@@ -3418,7 +3518,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             >
               {isSubmitting && side === "buy"
                 ? (submissionStage || "Placing…")
-                : side === "buy" && showOrderForm && amtNum > 0
+                : side === "buy" && showOrderForm && mobileTradeMode === "order" && amtNum > 0
                 ? `Buy ${amtNum.toFixed(4)} ${base}`
                 : `Buy ${base}`}
             </button>
@@ -3426,10 +3526,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             {/* Sell button */}
             <button
               onClick={() => {
-                if (side === "sell" && showOrderForm && amtNum > 0) {
+                if (side === "sell" && showOrderForm && mobileTradeMode === "order" && amtNum > 0) {
                   handlePlaceOrder();
                 } else {
                   setSide("sell");
+                  setMobileTradeMode("order");
                   setOrderError(null);
                   setShowOrderForm(true);
                 }
@@ -3438,7 +3539,7 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
               className={cn(
                 "flex-1 py-3 rounded-xl text-sm font-bold text-white transition-all active:opacity-80",
                 isSubmitting ? "opacity-50 cursor-not-allowed"
-                  : side === "sell" && showOrderForm && amtNum > 0
+                  : side === "sell" && showOrderForm && mobileTradeMode === "order" && amtNum > 0
                   ? "opacity-100 scale-[1.01]"
                   : "opacity-85"
               )}
@@ -3446,11 +3547,11 @@ export function MobileTrade({ symbol: rawSymbol }: { symbol: string }) {
             >
               {isSubmitting && side === "sell"
                 ? (submissionStage || "Placing…")
-                : side === "sell" && showOrderForm && amtNum > 0
+                : side === "sell" && showOrderForm && mobileTradeMode === "order" && amtNum > 0
                 ? `Sell ${amtNum.toFixed(4)} ${base}`
                 : `Sell ${base}`}
             </button>
-
+            </div>
           </>
         )}
       </div>
