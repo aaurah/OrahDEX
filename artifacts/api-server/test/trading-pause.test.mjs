@@ -35,3 +35,26 @@ test("preview trading pause leaves existing-order recovery and cancellation rout
   assert.doesNotMatch(cancellation, /REPLIT_PREVIEW_TRADING_PAUSED/);
   assert.doesNotMatch(recovery, /REPLIT_PREVIEW_TRADING_PAUSED/);
 });
+
+test("Ethereum escrow rescan restores only confirmed active orders without moving funds", async () => {
+  const [orders, escrow, tokens] = await Promise.all([
+    read("artifacts/api-server/src/routes/orders.ts"),
+    read("artifacts/api-server/src/lib/evmOrderbookEscrow.ts"),
+    read("artifacts/api-server/src/lib/tokenRegistry.ts"),
+  ]);
+  const recovery = orders.slice(
+    orders.indexOf('router.post("/orders/recover-evm"'),
+    orders.indexOf('router.get("/orders/challenge"'),
+  );
+
+  assert.match(recovery, /valid Ethereum wallet address is required/);
+  assert.match(recovery, /findActiveEvmOrderbookOrders\(walletAddress, knownLockTxHashes\)/);
+  assert.match(recovery, /supportsEthereumOrderbookPair\(base, quote\)/);
+  assert.match(recovery, /remainingBaseRaw > originalBaseRaw/);
+  assert.match(recovery, /onConflictDoNothing\(\)/);
+  assert.match(recovery, /fundingRef/);
+  assert.doesNotMatch(recovery, /settleEvmOrderFill|verifyEvmOrderbookCancelTx|unlockFunds/);
+  assert.match(escrow, /const MIN_CONFIRMATIONS = 3n/);
+  assert.match(escrow, /if \(\s*!order\[9\]/);
+  assert.match(tokens, /getTokenSymbolByAddress/);
+});
