@@ -506,7 +506,7 @@ export function SpotTrading() {
       fundingRef?: string | null;
     }) => {
       const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
-      if (fundingRef?.startsWith("evm-order:1:")) {
+      if (fundingRef?.startsWith("evm-order:")) {
         return cancelEvmOrderbookOrder({
           orderId,
           walletAddress: ownerWallet,

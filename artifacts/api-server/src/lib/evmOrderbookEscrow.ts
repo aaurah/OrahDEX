@@ -278,7 +278,8 @@ export async function getEvmOrderbookEscrowConfig(chainId = ETHEREUM_MAINNET) {
       client.getBalance({ address: account.address }),
       client.getGasPrice(),
     ]);
-    if (balance < gasPrice * 2_000_000n) return unsupportedConfig(chainId);
+    const relayerGasReserve = chainId === ETHEREUM_SEPOLIA ? 700_000n : 2_000_000n;
+    if (balance < gasPrice * relayerGasReserve) return unsupportedConfig(chainId);
     return deployed;
   } catch {
     return unsupportedConfig(chainId);
@@ -538,19 +539,24 @@ export async function findActiveEvmOrderbookOrders(
   const latestBlock = await client.getBlockNumber();
   const recentScanFloor = latestBlock > 999n ? latestBlock - 999n : 0n;
   let scanFromBlock = deploymentBlock > recentScanFloor ? deploymentBlock : recentScanFloor;
+  const logs: Array<{ blockNumber: string; transactionHash: Hex }> = [];
   for (const txHash of knownLockTxHashes) {
     if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) continue;
     try {
       const receipt = await client.getTransactionReceipt({ hash: txHash as Hex });
-      if (receipt.status === "success" && receipt.blockNumber > scanFromBlock) {
-        scanFromBlock = receipt.blockNumber;
+      if (receipt.status !== "success") continue;
+      if (receipt.blockNumber > scanFromBlock) scanFromBlock = receipt.blockNumber;
+      if (latestBlock - receipt.blockNumber + 1n >= MIN_CONFIRMATIONS) {
+        logs.push({
+          blockNumber: `0x${receipt.blockNumber.toString(16)}`,
+          transactionHash: txHash as Hex,
+        });
       }
     } catch {
       // A stale stored reference must not prevent recovery of other orders.
     }
   }
   const makerTopic = encodeAbiParameters(parseAbiParameters("address"), [walletAddress as Address]);
-  const logs: Array<{ blockNumber: string; transactionHash: Hex }> = [];
 
   // Respect RPC plans that cap eth_getLogs at ten blocks per request.
   for (let fromBlock = scanFromBlock; fromBlock <= latestBlock;) {
@@ -581,7 +587,10 @@ export async function findActiveEvmOrderbookOrders(
     limitPriceX18: string;
     expiresAt: number;
   }>();
-  for (const log of logs) {
+  const uniqueLogs = new Map(
+    logs.map((log) => [`${log.transactionHash.toLowerCase()}:${log.blockNumber}`, log] as const),
+  );
+  for (const log of uniqueLogs.values()) {
     const blockNumber = BigInt(log.blockNumber);
     if (latestBlock - blockNumber + 1n < MIN_CONFIRMATIONS) continue;
     const receipt = await client.getTransactionReceipt({ hash: log.transactionHash });
