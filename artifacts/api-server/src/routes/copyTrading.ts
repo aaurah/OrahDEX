@@ -33,23 +33,6 @@ function verifyOrchestratorSecret(secret: unknown): boolean {
 
 const router: IRouter = Router();
 
-// Copy-vault balance moves currently accept wallet addresses without signed
-// owner authorization and use internally marked-to-market values. Preserve
-// existing records, but fail closed until authorization and reserves are
-// verified.
-router.post("/copy/vaults/:id/deposit", (_req, res) => {
-  res.status(503).json({
-    error: "Copy-vault deposits are paused until signed wallet authorization and funded trade settlement are verified.",
-    code: "COPY_TRADING_PAUSED",
-  });
-});
-router.post("/copy/vaults/:id/withdraw", (_req, res) => {
-  res.status(503).json({
-    error: "Copy-vault withdrawals are paused until signed wallet authorization and funded settlement are verified. Existing position records are unchanged.",
-    code: "COPY_TRADING_PAUSED",
-  });
-});
-
 /* ── List all public vaults (leaderboard) ──────────────────────────── */
 router.get("/copy/vaults", async (_req, res) => {
   try {
