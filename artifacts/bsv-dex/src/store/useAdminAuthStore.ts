@@ -13,7 +13,6 @@ interface AdminAuthState {
   loginMethod: "credentials" | "wallet" | null;
   displayName: string;
   token: string | null;
-  pendingTotpChallengeId: string | null;
   error: string | null;
   login: (email: string, password: string) => Promise<boolean>;
   loginViaWallet: (address: string, signature: string) => Promise<boolean>;
@@ -38,7 +37,6 @@ export const useAdminAuthStore = create<AdminAuthState>()(
       loginMethod: null,
       displayName: 'Admin',
       token: null,
-      pendingTotpChallengeId: null,
       error: null,
 
       loginViaWallet: async (address, signature) => {
@@ -70,37 +68,12 @@ export const useAdminAuthStore = create<AdminAuthState>()(
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            if (data.requiresTotp === true) {
-              if (typeof data.challengeId !== "string" || !data.challengeId) {
-                set({ error: "The server did not create a two-factor sign-in challenge." });
-                return false;
-              }
-              set({
-                email,
-                isAuthenticated: false,
-                twoFaEnabled: true,
-                twoFaSetupDone: true,
-                twoFaVerified: false,
-                token: null,
-                pendingTotpChallengeId: data.challengeId,
-                error: null,
-              });
-              return true;
+            const { twoFaEnabled } = get();
+            if (!twoFaEnabled) {
+              set({ email, isAuthenticated: true, token: data.token ?? null, error: null, twoFaVerified: false });
+            } else {
+              set({ email, token: data.token ?? null, error: null, twoFaVerified: false });
             }
-            if (typeof data.token !== "string" || !data.token) {
-              set({ error: "The server did not return an admin session." });
-              return false;
-            }
-            set({
-              email,
-              isAuthenticated: true,
-              twoFaEnabled: false,
-              twoFaSetupDone: false,
-              twoFaVerified: false,
-              token: data.token,
-              pendingTotpChallengeId: null,
-              error: null,
-            });
             return true;
           }
           set({ error: data.error ?? "Invalid email or password." });
@@ -113,31 +86,14 @@ export const useAdminAuthStore = create<AdminAuthState>()(
 
       verifyTotp: async (code) => {
         try {
-          const challengeId = get().pendingTotpChallengeId;
-          if (!challengeId) {
-            set({ error: "Your two-factor sign-in expired. Enter your password again." });
-            return false;
-          }
           const res = await fetch(`${API}/api/admin/auth/totp`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ code, challengeId }),
+            body: JSON.stringify({ code }),
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            if (typeof data.token !== "string" || !data.token) {
-              set({ error: "The server did not return an admin session." });
-              return false;
-            }
-            set({
-              isAuthenticated: true,
-              twoFaEnabled: true,
-              twoFaSetupDone: true,
-              twoFaVerified: true,
-              token: data.token,
-              pendingTotpChallengeId: null,
-              error: null,
-            });
+            set({ isAuthenticated: true, twoFaVerified: true, token: data.token ?? null, error: null });
             return true;
           }
           set({ error: data.error ?? "Incorrect code. Try again." });
@@ -167,7 +123,6 @@ export const useAdminAuthStore = create<AdminAuthState>()(
           walletAddress: null,
           loginMethod: null,
           token: null,
-          pendingTotpChallengeId: null,
           error: null,
         });
       },

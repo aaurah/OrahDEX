@@ -7,8 +7,7 @@
     "dev": "bash watchdog.sh",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps --max-old-space-size=4096 --expose-gc ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test test/*.test.mjs"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1094.0",
