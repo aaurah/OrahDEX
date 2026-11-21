@@ -2149,7 +2149,11 @@ router.post("/orders/precheck", async (req, res) => {
     const errors:   { code: string; detail?: string }[] = [];
     const warnings: { code: string; message: string  }[] = [];
 
-    const qty = parseFloat(amount);
+    const qty = Number(amount);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      res.json({ ok: false, errors: [{ code: "AMOUNT_TOO_SMALL", detail: "Amount must be greater than zero" }], warnings: [] });
+      return;
+    }
 
     // Pair enabled check (look up market) — must happen BEFORE px calculation
     // so we can use the DB market price as fallback for market orders.
@@ -2163,15 +2167,39 @@ router.post("/orders/precheck", async (req, res) => {
     const marketPrice = parseFloat(mkt.lastPrice);
     // For market orders without a price, fall back to the live market price
     // so slippage/impact calculations work correctly.
-    const px  = price ? parseFloat(price) : (currentPrice ?? marketPrice ?? 0);
-    const orderValue  = px * qty;
+    const px = price ? Number(price) : Number(currentPrice ?? marketPrice ?? 0);
+    const [base, rawQuote = "USDT"] = symbol.split("/");
+    const quote = rawQuote.replace(/-PERP$/i, "").toUpperCase();
+    const usdPeggedQuotes = new Set(["USD", "USDT", "USDC", "DAI", "TUSD", "USDD", "FDUSD"]);
+    let quoteUsdPrice = 1;
+    if (!usdPeggedQuotes.has(quote)) {
+      const [quoteUsdMarket] = await db.select({ lastPrice: marketsTable.lastPrice })
+        .from(marketsTable)
+        .where(eq(marketsTable.symbol, `${quote}/USDT`))
+        .limit(1);
+      quoteUsdPrice = Number(quoteUsdMarket?.lastPrice ?? 0);
+      if (!Number.isFinite(quoteUsdPrice) || quoteUsdPrice <= 0) {
+        errors.push({
+          code: "QUOTE_PRICE_UNAVAILABLE",
+          detail: `Could not verify the USD value of ${quote}; retry when its USD market is available.`,
+        });
+        quoteUsdPrice = 0;
+      }
+    }
+    const orderValueUsd = px * qty * quoteUsdPrice;
+    if (!Number.isFinite(px) || px <= 0) {
+      errors.push({ code: "PRICE_REQUIRED", detail: "A valid market price is required to check this order." });
+    }
 
-    // Min order size
-    if (orderValue < 0.5) errors.push({ code: "AMOUNT_TOO_SMALL", detail: "Min order $0.50" });
+    // Price is denominated in the quote asset (for example ETH in A8/ETH).
+    // Convert to USD before applying the dollar minimum.
+    if (quoteUsdPrice > 0 && orderValueUsd < 0.5) {
+      errors.push({ code: "AMOUNT_TOO_SMALL", detail: "Min order $0.50" });
+    }
 
     // Price required for limit/stop
-    if ((type === "limit" || type === "stop") && (!px || px <= 0)) {
-      errors.push({ code: "PRICE_REQUIRED" });
+    if (type === "limit" && (!price || !Number.isFinite(Number(price)) || Number(price) <= 0)) {
+      errors.push({ code: "PRICE_REQUIRED", detail: "Enter a valid limit price." });
     }
 
     // Slippage / price impact (approximate AMM model)
@@ -2182,7 +2210,7 @@ router.post("/orders/precheck", async (req, res) => {
     const isTopTier  = ["BSV","BTC","ETH","BNB","SOL"].some(s => symbol.startsWith(s));
     const poolTvlUsd = isTopTier ? 500_000 : 50_000;
     const execPrice  = (type === "limit" || type === "stop") ? marketPrice : px;
-    const impact     = ((execPrice * qty) / poolTvlUsd) * 100;
+    const impact     = ((execPrice * qty * quoteUsdPrice) / poolTvlUsd) * 100;
     const slipPct    = (slippageBps ?? 50) / 100;
 
     // Limit/stop orders execute at an exact price — slippage tolerance doesn't apply.
@@ -2200,7 +2228,6 @@ router.post("/orders/precheck", async (req, res) => {
 
     // Liquidity check — no open orders on the counter side? warn.
     // Uses LIMIT 1 so we only need to know existence, not count the entire book.
-    const [base, quote = "USDT"] = symbol.split("/");
     const counterSide = side === "buy" ? "sell" : "buy";
     const counterOrders = await db.select({ id: ordersTable.id }).from(ordersTable).where(
       and(eq(ordersTable.symbol, symbol), eq(ordersTable.side, counterSide), eq(ordersTable.status, "open"))
@@ -2223,6 +2250,8 @@ router.post("/orders/precheck", async (req, res) => {
       minReceived:   parseFloat(minReceived.toFixed(8)),
       route,
       marketPrice,
+      quoteUsdPrice: quoteUsdPrice || undefined,
+      orderValueUsd: quoteUsdPrice > 0 ? orderValueUsd : undefined,
       feePct,
     });
   } catch (err) {

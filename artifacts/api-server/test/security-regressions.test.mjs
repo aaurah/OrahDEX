@@ -351,3 +351,27 @@ test("order reconciler never removes a live EVM escrow order from the database",
   const selfHealingSrc = await read(path.join(__dirname, "..", "src", "lib", "selfHealing.ts"));
   assert.match(selfHealingSrc, /order\.fundingRef\?\.startsWith\("evm-order:"\)\) continue/);
 });
+
+test("order prechecks convert non-stable quote assets before dollar limits and impact checks", async () => {
+  const ordersSrc = await read(ordersPath);
+
+  assert.match(ordersSrc, /QUOTE_PRICE_UNAVAILABLE/);
+  assert.match(ordersSrc, /where\(eq\(marketsTable\.symbol, `\$\{quote\}\/USDT`\)\)/);
+  assert.match(ordersSrc, /orderValueUsd < 0\.5/);
+  assert.match(ordersSrc, /execPrice \* qty \* quoteUsdPrice/);
+  assert.match(ordersSrc, /WITHOUT creating any DB record or transaction/);
+});
+
+test("desktop and mobile order forms fail closed when escrow readiness is unavailable", async () => {
+  const [desktopSrc, mobileSrc] = await Promise.all([
+    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "components", "trading", "OrderForm.tsx")),
+    read(path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "mobile", "MobileTrade.tsx")),
+  ]);
+
+  for (const src of [desktopSrc, mobileSrc]) {
+    assert.match(src, /walletOrderbookConfigUnavailable/);
+    assert.match(src, /refreshWalletOrderbookReadiness/);
+    assert.match(src, /No escrow transaction or order was submitted/);
+  }
+  assert.match(mobileSrc, /api\/orders\/precheck/);
+});
