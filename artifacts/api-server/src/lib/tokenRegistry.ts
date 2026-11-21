@@ -298,3 +298,14 @@ export function getTokenInfo(chainId: number, symbol: string): TokenInfo | null 
 export function isNativeAsset(chainId: number, symbol: string): boolean {
   return NATIVE_SYMBOLS[chainId] === symbol.toUpperCase();
 }
+
+/** Resolve a registered token address to its symbol for an EVM chain. */
+export function getTokenSymbolByAddress(chainId: number, address: string): string | null {
+  const normalized = address.toLowerCase();
+  if (normalized === "0x0000000000000000000000000000000000000000") {
+    return NATIVE_SYMBOLS[chainId] ?? null;
+  }
+  const entry = Object.entries(TOKEN_REGISTRY[chainId] ?? {})
+    .find(([, token]) => token.address.toLowerCase() === normalized);
+  return entry?.[0] ?? null;
+}
