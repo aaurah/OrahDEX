@@ -14,6 +14,7 @@ const fundingVerifierPath = path.join(__dirname, "..", "src", "lib", "fundingVer
 const routesIndexPath = path.join(__dirname, "..", "src", "routes", "index.ts");
 const adminAuthPath = path.join(__dirname, "..", "src", "middleware", "adminAuth.ts");
 const adminRoutesPath = path.join(__dirname, "..", "src", "routes", "admin.ts");
+const adminLoginPath = path.join(__dirname, "..", "..", "bsv-dex", "src", "pages", "admin", "Login.tsx");
 const evmWebhookRouterPath = path.join(__dirname, "..", "src", "routes", "evmWebhookRouter.ts");
 const depositAddressesPath = path.join(__dirname, "..", "src", "lib", "depositAddresses.ts");
 const internalEvmWalletPath = path.join(__dirname, "..", "src", "lib", "internalEvmWallet.ts");
@@ -108,6 +109,44 @@ test("admin API is private by default except for login and challenge routes", as
   assert.match(src, /"POST \/auth\/wallet"/);
   assert.doesNotMatch(src, /"GET \/security-vault"/);
   assert.doesNotMatch(src, /"POST \/security-vault\/regenerate-bsv"/);
+});
+
+test("admin password comparison is safe for unequal input lengths", async () => {
+  const src = await read(adminRoutesPath);
+
+  assert.match(src, /typeof password === "string"[\s\S]*crypto\.timingSafeEqual\([\s\S]*createHash\("sha256"\)/);
+  assert.match(src, /typeof email === "string" && email\.trim\(\)/);
+});
+
+test("admin TOTP login requires a short-lived first-factor challenge", async () => {
+  const src = await read(adminRoutesPath);
+  const totpRoute = src.match(/router\.post\("\/auth\/totp",[\s\S]*?\n\}\);/)?.[0];
+
+  assert.ok(totpRoute, "TOTP login route exists");
+  assert.match(src, /requiresTotp: true[\s\S]*challengeId/);
+  assert.match(totpRoute, /pendingTotpChallenges\.get\(challengeId\)/);
+  assert.match(totpRoute, /challenge\.expiresAt < Date\.now\(\)/);
+  assert.ok(
+    totpRoute.indexOf("pendingTotpChallenges.get") < totpRoute.indexOf("generateAdminToken"),
+    "a session is issued only after a valid challenge is found",
+  );
+});
+
+test("admin logout revokes only the current session", async () => {
+  const [routesSrc, authSrc] = await Promise.all([read(adminRoutesPath), read(adminAuthPath)]);
+  const logoutRoute = routesSrc.match(/router\.post\("\/auth\/logout"[\s\S]*?\n\}\);/)?.[0];
+
+  assert.ok(logoutRoute, "admin logout route exists");
+  assert.match(logoutRoute, /revokeAdminToken/);
+  assert.doesNotMatch(logoutRoute, /revokeAllAdminTokens/);
+  assert.match(authSrc, /export async function revokeAdminToken\(token: string\)/);
+});
+
+test("admin login does not display or calculate the active TOTP code", async () => {
+  const src = await read(adminLoginPath);
+
+  assert.doesNotMatch(src, /generateTOTP|previewCode|auth\/totp-uri/);
+  assert.match(src, /verifyTotp\(totpCode\)/);
 });
 
 test("EVM webhook rejects requests when HMAC secret is missing", async () => {
