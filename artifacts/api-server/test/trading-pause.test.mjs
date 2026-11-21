@@ -58,3 +58,11 @@ test("Ethereum escrow rescan restores only confirmed active orders without movin
   assert.match(escrow, /if \(\s*!order\[9\]/);
   assert.match(tokens, /getTokenSymbolByAddress/);
 });
+
+test("matching prevents self-trades regardless of wallet address casing", async () => {
+  const source = await read("artifacts/api-server/src/routes/orders.ts");
+  assert.match(
+    source,
+    /lower\(\$\{ordersTable\.walletAddress\}\) <> lower\(\$\{body\.walletAddress\}\)/,
+  );
+});
