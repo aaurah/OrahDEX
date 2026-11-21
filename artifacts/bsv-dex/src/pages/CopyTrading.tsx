@@ -235,7 +235,7 @@ function DepositModal({ vault, onClose, onSuccess }: {
               </button>
               <button
                 onClick={() => depositMut.mutate()}
-                disabled={!address || !amount || Number(amount) <= 0 || depositMut.isPending}
+                disabled
                 className="flex-1 px-4 py-2.5 rounded-xl bg-green-500 text-black font-semibold text-sm hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
               >
                 {depositMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowDownToLine className="w-4 h-4" />}
@@ -373,7 +373,7 @@ function WithdrawModal({ position, vault, onClose, onSuccess }: {
             </button>
             <button
               onClick={() => withdrawMut.mutate()}
-              disabled={withdrawMut.isPending}
+                disabled
               className="flex-1 px-4 py-2.5 rounded-xl bg-red-500/80 text-white font-semibold text-sm hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
             >
               {withdrawMut.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <ArrowUpFromLine className="w-4 h-4" />}
@@ -723,6 +723,11 @@ export function CopyTrading() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="max-w-6xl mx-auto px-4 py-8 space-y-6">
+
+        <div role="status" className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Copy-vault deposits and withdrawals are paused until wallet authorization and trade settlement are verified. Existing position records are unchanged.</span>
+        </div>
 
         {/* Header */}
         <div className="flex items-start justify-between">
