@@ -114,7 +114,7 @@ export function startOrderbookCandleSampler(): void {
              AND remaining_quantity::numeric > 0
              AND (
                funding_ref LIKE 'ledger:%'
-                OR funding_ref LIKE 'evm-order:%'
+               OR funding_ref LIKE 'evm-order:1:%'
              )
              AND LOWER(wallet_address) <> LOWER($2)
            GROUP BY symbol

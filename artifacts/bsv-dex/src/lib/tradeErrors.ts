@@ -31,7 +31,6 @@ export type TradeErrorCode =
   | "SLIPPAGE_TOO_HIGH"
   | "PRICE_IMPACT_HIGH"
   | "PAIR_DISABLED"
-  | "QUOTE_PRICE_UNAVAILABLE"
   | "REVERT"
   | "NODE_UNREACHABLE"
   | "TIMEOUT"
@@ -62,7 +61,6 @@ const ERROR_MESSAGES: Record<TradeErrorCode, string> = {
   SLIPPAGE_TOO_HIGH:       "Price would move more than your slippage tolerance. Increase slippage or reduce size.",
   PRICE_IMPACT_HIGH:       "This trade would move the market price significantly. Split into smaller orders.",
   PAIR_DISABLED:           "This trading pair is temporarily unavailable. Try another pair.",
-  QUOTE_PRICE_UNAVAILABLE: "The quote asset USD price could not be verified. Trading is paused until pricing is available.",
   REVERT:                  "The transaction was reverted by the contract. The price may have moved — retry.",
   NODE_UNREACHABLE:        "The chain node is unreachable right now. Check your connection and retry.",
   TIMEOUT:                 "The transaction timed out waiting for confirmation. Check explorer for status.",

@@ -15,15 +15,14 @@ import {
   type Address,
   type Hex,
 } from "viem";
-import { mainnet, sepolia } from "viem/chains";
+import { mainnet } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { getTokenInfo, isNativeAsset } from "./tokenRegistry.js";
-import { isEvmOrderbookChainEnabled } from "./startupMode.js";
 
+const CHAIN_ID = 1;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000" as Address;
 const PRICE_SCALE = 10n ** 18n;
 const MIN_CONFIRMATIONS = 3n;
-const SUPPORTED_CHAIN_IDS = new Set([1, 11155111]);
 
 export const ORDERBOOK_ESCROW_ABI = parseAbi([
   "function feeBps() view returns (uint16)",
@@ -61,37 +60,24 @@ export interface OnchainOrderLockParams {
   expiresAt: number;
 }
 
-function configuredChainId(): number {
-  const chainId = Number(process.env.ORAHDEX_TRADING_EVM_CHAIN_ID ?? "1");
-  return SUPPORTED_CHAIN_IDS.has(chainId) ? chainId : -1;
-}
-
-function getEscrowAddress(chainId: number): Address | null {
-  const envName = chainId === 11155111 ? "EVM_ORDERBOOK_ESCROW_SEPOLIA" : "EVM_ORDERBOOK_ESCROW_ETH";
-  const address = process.env[envName]?.trim();
+function getEscrowAddress(): Address | null {
+  const address = process.env.EVM_ORDERBOOK_ESCROW_ETH?.trim();
   return address && isAddress(address) ? address : null;
 }
 
-function getDeploymentBlock(chainId: number): bigint | null {
-  const envName = chainId === 11155111
-    ? "EVM_ORDERBOOK_ESCROW_SEPOLIA_DEPLOY_BLOCK"
-    : "EVM_ORDERBOOK_ESCROW_ETH_DEPLOY_BLOCK";
-  const value = process.env[envName]?.trim();
+function getDeploymentBlock(): bigint | null {
+  const value = process.env.EVM_ORDERBOOK_ESCROW_ETH_DEPLOY_BLOCK?.trim();
   return value && /^\d{1,12}$/.test(value) ? BigInt(value) : null;
 }
 
-function publicClient(chainId: number) {
-  const chain = chainId === 11155111 ? sepolia : mainnet;
+function publicClient() {
   return createPublicClient({
-    chain,
-    transport: http(getRpcUrl(chainId)),
+    chain: mainnet,
+    transport: http(getEthRpcUrl()),
   });
 }
 
-function getRpcUrl(chainId: number) {
-  if (chainId === 11155111) {
-    return process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com";
-  }
+function getEthRpcUrl() {
   if (process.env.ETH_RPC_URL) return process.env.ETH_RPC_URL;
   if (process.env.ALCHEMY_API_KEY) {
     return `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`;
@@ -124,24 +110,24 @@ function toUnits(value: string | number, decimals: number, roundUp = false): big
   return result;
 }
 
-function assetDetails(symbol: string, chainId: number): { address: Address; decimals: number } {
-  if (isNativeAsset(chainId, symbol)) return { address: ZERO_ADDRESS, decimals: 18 };
-  const info = getTokenInfo(chainId, symbol);
-  if (!info) throw new Error(`${symbol} is not registered for EVM order settlement on chain ${chainId}`);
+function assetDetails(symbol: string): { address: Address; decimals: number } {
+  if (isNativeAsset(CHAIN_ID, symbol)) return { address: ZERO_ADDRESS, decimals: 18 };
+  const info = getTokenInfo(CHAIN_ID, symbol);
+  if (!info) throw new Error(`${symbol} is not registered for Ethereum order settlement`);
   return { address: info.address as Address, decimals: info.decimals };
 }
 
-export function supportsEthereumOrderbookPair(base: string, quote: string, chainId = configuredChainId()): boolean {
+export function supportsEthereumOrderbookPair(base: string, quote: string): boolean {
   try {
-    return assetDetails(base, chainId).decimals === 18 && assetDetails(quote, chainId).decimals === 18;
+    return assetDetails(base).decimals === 18 && assetDetails(quote).decimals === 18;
   } catch {
     return false;
   }
 }
 
-function orderTerms(params: Pick<OnchainOrderLockParams, "chainId" | "side" | "base" | "quote" | "quantity" | "price">) {
-  const baseAsset = assetDetails(params.base, params.chainId);
-  const quoteAsset = assetDetails(params.quote, params.chainId);
+function orderTerms(params: Pick<OnchainOrderLockParams, "side" | "base" | "quote" | "quantity" | "price">) {
+  const baseAsset = assetDetails(params.base);
+  const quoteAsset = assetDetails(params.quote);
   if (baseAsset.decimals !== 18 || quoteAsset.decimals !== 18) {
     throw new Error("Ethereum wallet order settlement currently supports 18-decimal tokens only");
   }
@@ -166,78 +152,49 @@ function orderTerms(params: Pick<OnchainOrderLockParams, "chainId" | "side" | "b
   };
 }
 
-async function getDeployedOrderbookEscrowConfig(chainId = configuredChainId()) {
-  if (!SUPPORTED_CHAIN_IDS.has(chainId)) {
-    return {
-      chainId,
-      available: false as const,
-      reason: `No verified order-book escrow is configured for EVM chain ${chainId}.`,
-    };
-  }
-  if (!isEvmOrderbookChainEnabled(chainId)) {
-    return {
-      chainId,
-      available: false as const,
-      reason: `Ethereum orderbook trading has not been verified on chain ${chainId}.`,
-    };
-  }
+async function getDeployedOrderbookEscrowConfig() {
   if (process.env.EVM_ORDERBOOK_ESCROW_ENABLED !== "true") {
-    return { chainId, available: false as const, reason: "EVM escrow is disabled by configuration." };
+    return { chainId: CHAIN_ID, available: false as const };
   }
-  const address = getEscrowAddress(chainId);
-  if (!address || getDeploymentBlock(chainId) == null) {
-    return { chainId, available: false as const, reason: "No deployed escrow is configured for this chain." };
+  const address = getEscrowAddress();
+  if (!address || getDeploymentBlock() == null) {
+    return { chainId: CHAIN_ID, available: false as const };
   }
-  const client = publicClient(chainId);
+  const client = publicClient();
   const bytecode = await client.getBytecode({ address });
-  if (!bytecode || bytecode === "0x") {
-    return { chainId, available: false as const, reason: "The configured escrow contract has no code on this chain." };
-  }
+  if (!bytecode || bytecode === "0x") return { chainId: CHAIN_ID, available: false as const };
   try {
     const feeBps = await client.readContract({
       address,
       abi: ORDERBOOK_ESCROW_ABI,
       functionName: "feeBps",
     });
-    if (feeBps > 200n) {
-      return { chainId, available: false as const, reason: "The configured escrow fee exceeds the safety limit." };
-    }
-    return { chainId, address, feeBps: Number(feeBps), available: true as const };
+    if (feeBps > 200n) return { chainId: CHAIN_ID, available: false as const };
+    return { chainId: CHAIN_ID, address, feeBps: Number(feeBps), available: true as const };
   } catch {
-    return { chainId, available: false as const, reason: "The escrow contract could not be verified by RPC." };
+    return { chainId: CHAIN_ID, available: false as const };
   }
 }
 
-export async function getEvmOrderbookEscrowConfig(chainId = configuredChainId()) {
-  if (!SUPPORTED_CHAIN_IDS.has(chainId)) {
-    return {
-      chainId,
-      available: false as const,
-      reason: `No verified order-book escrow is configured for EVM chain ${chainId}.`,
-    };
-  }
+export async function getEvmOrderbookEscrowConfig() {
   if (process.env.EVM_ORDERBOOK_MATCHING_ENABLED !== "true") {
-    return { chainId, available: false as const, reason: "EVM order matching is disabled by configuration." };
+    return { chainId: CHAIN_ID, available: false as const };
   }
-  const deployed = await getDeployedOrderbookEscrowConfig(chainId);
+  const deployed = await getDeployedOrderbookEscrowConfig();
   if (!deployed.available) return deployed;
   try {
     const account = getRelayerAccount();
-    const client = publicClient(chainId);
+    const client = publicClient();
     const [balance, gasPrice] = await Promise.all([
       client.getBalance({ address: account.address }),
       client.getGasPrice(),
     ]);
     if (balance < gasPrice * 2_000_000n) {
-      return {
-        chainId,
-        available: false as const,
-        reason: "The EVM settlement relayer needs more native gas funds on this chain.",
-      };
+      return { chainId: CHAIN_ID, available: false as const };
     }
     return deployed;
   } catch {
-    return { chainId, available: false as const, reason: "The EVM relayer or chain RPC is unavailable." };
+    return { chainId: CHAIN_ID, available: false as const };
   }
 }
 
@@ -246,20 +203,18 @@ export async function verifyEvmOrderLock(params: OnchainOrderLockParams): Promis
   fundingRef: string;
   escrowAddress: Address;
 }> {
-  if (!SUPPORTED_CHAIN_IDS.has(params.chainId) || !isEvmOrderbookChainEnabled(params.chainId)) {
-    throw new Error("Wallet-funded order settlement is not enabled on the connected EVM chain.");
-  }
+  if (params.chainId !== CHAIN_ID) throw new Error("Wallet-funded order settlement is currently supported on Ethereum mainnet only.");
   if (!/^0x[0-9a-fA-F]{40}$/.test(params.walletAddress)) throw new Error("Invalid EVM wallet address");
   if (!/^0x[0-9a-fA-F]{64}$/.test(params.txHash)) throw new Error("A confirmed escrow lock transaction is required");
   if (!Number.isSafeInteger(params.expiresAt) || params.expiresAt <= Math.floor(Date.now() / 1000)) {
     throw new Error("The signed order has expired");
   }
 
-  const config = await getEvmOrderbookEscrowConfig(params.chainId);
-  if (!config.available) throw new Error("EVM order escrow is not deployed and verified in app configuration");
+  const config = await getEvmOrderbookEscrowConfig();
+  if (!config.available) throw new Error("Ethereum order escrow is not deployed and verified in app configuration");
   const orderKey = keccak256(toBytes(params.nonce));
   const terms = orderTerms(params);
-  const client = publicClient(params.chainId);
+  const client = publicClient();
   const receipt = await client.getTransactionReceipt({ hash: params.txHash as Hex });
   if (receipt.status !== "success") throw new Error("The escrow lock transaction reverted");
   const latestBlock = await client.getBlockNumber();
@@ -316,13 +271,12 @@ export async function verifyEvmOrderLock(params: OnchainOrderLockParams): Promis
 
   return {
     orderKey,
-    fundingRef: `evm-order:${params.chainId}:${config.address}:${orderKey}:${params.txHash}`,
+    fundingRef: `evm-order:${CHAIN_ID}:${config.address}:${orderKey}:${params.txHash}`,
     escrowAddress: config.address,
   };
 }
 
 export async function verifyEvmOrderbookCancelTx(params: {
-  chainId: number;
   escrowAddress: string;
   orderKey: `0x${string}`;
   walletAddress: string;
@@ -331,17 +285,13 @@ export async function verifyEvmOrderbookCancelTx(params: {
   if (!isAddress(params.escrowAddress) || !/^0x[0-9a-fA-F]{64}$/.test(params.orderKey) ||
       !/^0x[0-9a-fA-F]{40}$/.test(params.walletAddress) ||
       !/^0x[0-9a-fA-F]{64}$/.test(params.txHash)) {
-    throw new Error("Invalid EVM order cancellation proof");
+    throw new Error("Invalid Ethereum order cancellation proof");
   }
-  const chainId = params.chainId;
-  if (!SUPPORTED_CHAIN_IDS.has(chainId) || !isEvmOrderbookChainEnabled(chainId)) {
-    throw new Error("Order cancellation is not enabled on this EVM chain");
-  }
-  const configuredEscrow = getEscrowAddress(chainId);
+  const configuredEscrow = getEscrowAddress();
   if (!configuredEscrow || configuredEscrow.toLowerCase() !== params.escrowAddress.toLowerCase()) {
-    throw new Error("Cancellation contract does not match the configured EVM order escrow");
+    throw new Error("Cancellation contract does not match the configured Ethereum order escrow");
   }
-  const client = publicClient(chainId);
+  const client = publicClient();
   const receipt = await client.getTransactionReceipt({ hash: params.txHash as Hex });
   if (receipt.status !== "success") throw new Error("Order cancellation transaction reverted");
   const latestBlock = await client.getBlockNumber();
@@ -390,8 +340,7 @@ export async function findConfirmedEvmOrderbookCancellation(params: {
   const cached = cancellationLookupCache.get(cacheKey);
   if (cached && Date.now() - cached.checkedAt < CANCELLATION_LOOKUP_TTL_MS) return cached.result;
 
-  const chainId = configuredChainId();
-  const client = publicClient(chainId);
+  const client = publicClient();
   const lockReceipt = await client.getTransactionReceipt({ hash: params.lockTxHash as Hex });
   if (lockReceipt.status !== "success") throw new Error("Original Ethereum order lock is not confirmed");
   const currentOrder = await client.readContract({
@@ -467,7 +416,6 @@ export async function findConfirmedEvmOrderbookCancellation(params: {
 export async function findActiveEvmOrderbookOrders(
   walletAddress: string,
   knownLockTxHashes: string[] = [],
-  chainId = configuredChainId(),
 ): Promise<Array<{
   orderKey: Hex;
   lockTxHash: Hex;
@@ -481,13 +429,13 @@ export async function findActiveEvmOrderbookOrders(
   expiresAt: number;
 }>> {
   if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddress)) {
-    throw new Error("A valid EVM wallet address is required");
+    throw new Error("A valid Ethereum wallet address is required");
   }
-  const config = await getDeployedOrderbookEscrowConfig(chainId);
-  const deploymentBlock = getDeploymentBlock(chainId);
+  const config = await getDeployedOrderbookEscrowConfig();
+  const deploymentBlock = getDeploymentBlock();
   if (!config.available || deploymentBlock == null) return [];
 
-  const client = publicClient(chainId);
+  const client = publicClient();
   const latestBlock = await client.getBlockNumber();
   const recentScanFloor = latestBlock > 999n ? latestBlock - 999n : 0n;
   let scanFromBlock = deploymentBlock > recentScanFloor ? deploymentBlock : recentScanFloor;
@@ -600,7 +548,6 @@ function getRelayerAccount() {
 }
 
 export async function settleEvmOrderFill(params: {
-  chainId: number;
   settlementId: Hex;
   buyOrderKey: Hex;
   sellOrderKey: Hex;
@@ -609,12 +556,9 @@ export async function settleEvmOrderFill(params: {
   baseAmount: string | number;
   grossQuoteAmount: string | number;
 }, onSubmitted?: (txHash: Hex) => Promise<void>): Promise<{ txHash: Hex; alreadySettled: boolean; feeAmount: string }> {
-  if (!SUPPORTED_CHAIN_IDS.has(params.chainId) || !isEvmOrderbookChainEnabled(params.chainId)) {
-    throw new Error("EVM order settlement is not enabled on the order chain.");
-  }
-  const config = await getEvmOrderbookEscrowConfig(params.chainId);
-  if (!config.available) throw new Error("EVM order escrow is not available");
-  const client = publicClient(params.chainId);
+  const config = await getEvmOrderbookEscrowConfig();
+  if (!config.available) throw new Error("Ethereum order escrow is not available");
+  const client = publicClient();
   const wasSettled = await client.readContract({
     address: config.address,
     abi: ORDERBOOK_ESCROW_ABI,
@@ -623,22 +567,21 @@ export async function settleEvmOrderFill(params: {
   });
 
   if (wasSettled) {
-    const existing = await getConfirmedEvmOrderSettlement(params.settlementId, params.chainId);
-    if (!existing) throw new Error("Settlement is awaiting EVM confirmations");
+    const existing = await getConfirmedEvmOrderSettlement(params.settlementId);
+    if (!existing) throw new Error("Settlement is awaiting Ethereum confirmations");
     await onSubmitted?.(existing.txHash);
     return { txHash: existing.txHash, alreadySettled: true, feeAmount: existing.feeAmount };
   }
 
-  const baseAsset = assetDetails(params.base, params.chainId);
-  const quoteAsset = assetDetails(params.quote, params.chainId);
+  const baseAsset = assetDetails(params.base);
+  const quoteAsset = assetDetails(params.quote);
   if (baseAsset.decimals !== 18 || quoteAsset.decimals !== 18) {
-    throw new Error("EVM wallet order settlement currently supports 18-decimal tokens only");
+    throw new Error("Ethereum wallet order settlement currently supports 18-decimal tokens only");
   }
   const baseAmount = toUnits(params.baseAmount, baseAsset.decimals);
   const grossQuoteAmount = toUnits(params.grossQuoteAmount, quoteAsset.decimals, true);
   const account = getRelayerAccount();
-  const chain = params.chainId === 11155111 ? sepolia : mainnet;
-  const wallet = createWalletClient({ account, chain, transport: http(getRpcUrl(params.chainId)) });
+  const wallet = createWalletClient({ account, chain: mainnet, transport: http(getEthRpcUrl()) });
   const txHash = await wallet.writeContract({
     address: config.address,
     abi: ORDERBOOK_ESCROW_ABI,
@@ -652,8 +595,8 @@ export async function settleEvmOrderFill(params: {
     timeout: 180_000,
   });
   if (receipt.status !== "success") throw new Error("Atomic order settlement transaction reverted");
-  const finalized = await getConfirmedEvmOrderSettlement(params.settlementId, params.chainId);
-  if (!finalized) throw new Error("EVM settlement receipt is confirmed; indexed settlement event is pending");
+  const finalized = await getConfirmedEvmOrderSettlement(params.settlementId);
+  if (!finalized) throw new Error("Ethereum settlement receipt is confirmed; indexed settlement event is pending");
   return {
     txHash: finalized.txHash,
     alreadySettled: finalized.txHash.toLowerCase() !== txHash.toLowerCase(),
@@ -661,7 +604,7 @@ export async function settleEvmOrderFill(params: {
   };
 }
 
-export async function getConfirmedEvmOrderSettlement(settlementId: Hex, chainId = configuredChainId()): Promise<{
+export async function getConfirmedEvmOrderSettlement(settlementId: Hex): Promise<{
   txHash: Hex;
   buyOrderKey: Hex;
   sellOrderKey: Hex;
@@ -669,9 +612,9 @@ export async function getConfirmedEvmOrderSettlement(settlementId: Hex, chainId 
   grossQuoteAmount: string;
   feeAmount: string;
 } | null> {
-  const config = await getDeployedOrderbookEscrowConfig(chainId);
+  const config = await getDeployedOrderbookEscrowConfig();
   if (!config.available) return null;
-  const client = publicClient(chainId);
+  const client = publicClient();
   const settled = await client.readContract({
     address: config.address,
     abi: ORDERBOOK_ESCROW_ABI,
@@ -683,7 +626,7 @@ export async function getConfirmedEvmOrderSettlement(settlementId: Hex, chainId 
     address: config.address,
     event: ORDER_SETTLED_EVENT,
     args: { settlementId },
-    fromBlock: getDeploymentBlock(chainId)!,
+    fromBlock: getDeploymentBlock()!,
   });
   const log = logs[0];
   if (!log?.transactionHash) return null;
@@ -711,7 +654,7 @@ export async function getConfirmedEvmOrderSettlement(settlementId: Hex, chainId 
 }
 
 export async function getEvmSettlementTxStatus(txHash: Hex): Promise<"pending" | "confirmed" | "reverted"> {
-  const client = publicClient(configuredChainId());
+  const client = publicClient();
   let receipt;
   try {
     receipt = await client.getTransactionReceipt({ hash: txHash });
