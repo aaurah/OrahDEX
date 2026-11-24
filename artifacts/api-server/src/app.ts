@@ -852,6 +852,9 @@ async function healthHandler(_req: any, res: any) {
   }
 
   try {
+    // null when the AI provider is not configured — it is then not a monitored
+    // component and must not colour the platform-wide status.
+    const aiProvider = getAiProviderHealth();
     const services = [
       ...getHealthReport().map((service) => ({
         name: service.name,
@@ -862,7 +865,7 @@ async function healthHandler(_req: any, res: any) {
         avgDurationMs: Math.round(service.avgDurationMs),
         staleSinceMs: service.staleSinceMs,
       })),
-      getAiProviderHealth(),
+      ...(aiProvider ? [aiProvider] : []),
     ];
     const anyDead = services.some((service) => service.status === "dead");
     const anyStuck = services.some((service) => service.status === "stuck");

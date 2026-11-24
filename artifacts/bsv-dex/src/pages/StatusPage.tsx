@@ -543,10 +543,14 @@ export function StatusPage() {
         {/* Service groups */}
         {groups.map(group => {
           const groupServices  = services.filter(s => s.group === group);
-          const groupOutage    = groupServices.some(s => s.currentStatus === "outage");
-          const groupDegraded  = groupServices.some(s => s.currentStatus === "degraded");
-          const groupStarting  = groupServices.some(s => s.currentStatus === "starting");
-          const groupUnknown   = groupServices.length === 0 || groupServices.some(s => s.currentStatus === "unknown");
+          // "Unknown" means no check data for that component (e.g. a feature
+          // that is not configured). It must not drag the whole group into
+          // Unknown while every monitored service in it is operational.
+          const known          = groupServices.filter(s => s.currentStatus !== "unknown");
+          const groupOutage    = known.some(s => s.currentStatus === "outage");
+          const groupDegraded  = known.some(s => s.currentStatus === "degraded");
+          const groupStarting  = known.some(s => s.currentStatus === "starting");
+          const groupUnknown   = known.length === 0;
           const groupOverall   = groupOutage ? "outage" : groupDegraded ? "degraded" : groupStarting ? "starting" : groupUnknown ? "unknown" : "operational";
 
           return (

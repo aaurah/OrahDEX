@@ -26,9 +26,13 @@ export interface ServiceHealth {
 }
 
 interface ServiceEntry extends ServiceHealth {
-  intervalMs:  number;
-  timeoutMs:   number;
-  durations:   number[];
+  intervalMs:     number;
+  timeoutMs:      number;
+  durations:      number[];
+  /** When the service was registered with guardedInterval. */
+  registeredAt:   number;
+  /** Startup delay requested by the caller (0 = first tick after one interval). */
+  initialDelayMs: number;
 }
 
 const registry = new Map<string, ServiceEntry>();
@@ -49,14 +53,33 @@ export function resetServiceHealth(name: string): boolean {
   return true;
 }
 
+/**
+ * Upper bound on how long a service may report "starting" before its first
+ * tick.  Without a bound, workers with long intervals (the funding cycle fires
+ * every 8 h) reported "starting" for their entire first interval, which pinned
+ * the public status page at "Checks Starting" / "Degraded" for hours even
+ * though nothing was wrong.
+ */
+const STARTUP_GRACE_CAP_MS = 5 * 60_000;
+
 export function getHealthReport(): ServiceHealth[] {
   const now = Date.now();
   return Array.from(registry.values()).map(e => {
     const staleSinceMs = e.lastRunAt ? now - e.lastRunAt.getTime() : null;
     const staleness    = staleSinceMs ?? 0;   // null = never run yet → not stale
 
+    // How long the first scheduled run may legitimately take: the caller's
+    // startup delay when it set one, otherwise one jittered interval (+20 %).
+    const firstRunWindowMs = Math.min(
+      Math.max(30_000, e.initialDelayMs, e.intervalMs * 1.3),
+      STARTUP_GRACE_CAP_MS,
+    );
+
     let status: ServiceHealth["status"] = "healthy";
-    if (!e.lastRunAt)                                                 status = "starting";
+    // No tick yet is only "starting" while the first run is still due; after
+    // that the service is simply on schedule (a 8 h cycle has not fired yet),
+    // not unhealthy.
+    if (!e.lastRunAt)                                                 status = now - e.registeredAt < firstRunWindowMs ? "starting" : "healthy";
     else if (e.consecutiveFails >= 10)                                status = "dead";
     else if (e.lastRunAt && staleness > e.intervalMs * 5)            status = "dead";
     else if (e.consecutiveFails >= 3)                                 status = "degraded";
@@ -66,10 +89,11 @@ export function getHealthReport(): ServiceHealth[] {
   });
 }
 
-function register(name: string, intervalMs: number, timeoutMs: number): ServiceEntry {
+function register(name: string, intervalMs: number, timeoutMs: number, initialDelayMs: number): ServiceEntry {
   if (!registry.has(name)) {
     registry.set(name, {
-      name, intervalMs, timeoutMs,
+      name, intervalMs, timeoutMs, initialDelayMs,
+      registeredAt:     Date.now(),
       status:           "healthy",
       lastRunAt:        null,
       lastSuccessAt:    null,
@@ -136,7 +160,7 @@ export function guardedInterval(
   const maxFails            = options.maxFailsBeforeBackoff ?? 5;
   const initialDelayMs      = options.initialDelayMs        ?? 0;
 
-  const entry = register(name, intervalMs, timeoutMs);
+  const entry = register(name, intervalMs, timeoutMs, initialDelayMs);
 
   let busy          = false;
   let busySince     = 0;

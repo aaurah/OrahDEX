@@ -147,8 +147,20 @@ function tripCircuitBreaker(err: unknown) {
 
 export function getAiProviderHealth() {
   const configured = !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY;
+  // An unconfigured provider is not a monitored component — reporting it as
+  // "degraded" dragged the whole platform status (and the public status page)
+  // down on deployments that simply do not use the AI features.
+  if (!configured) return null;
   const circuitOpen = aiUnavailable && Date.now() < aiUnavailableUntil;
-  const state = !configured || circuitOpen ? "degraded" : aiProviderState;
+  // A configured provider that simply has not served a request yet has no
+  // failures to report.  Keeping it at "starting" made /api/health return
+  // "unknown" indefinitely on quiet deployments, so the public status page
+  // never left "Checks Starting" until the first AI call happened.
+  const state = circuitOpen
+    ? "degraded"
+    : aiProviderState === "starting"
+      ? "healthy"
+      : aiProviderState;
   return {
     name: "ai-provider",
     status: state,
