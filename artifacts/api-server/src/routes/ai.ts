@@ -5,7 +5,7 @@ import { conversations, messages } from "@workspace/db/schema";
 import {
   openai,
   createDevaiOllamaStream,
-  devaiModel,
+  oraModel,
   getDevaiOllamaStatus,
   isDevaiOllamaEnabled,
 } from "@workspace/integrations-openai-ai-server";
@@ -31,11 +31,27 @@ const aiTimeoutMs = (): number => (oraLocalModelEnabled() ? 90_000 : 15_000);
 // ORA_AI_MODEL lets the trading assistant use a chat-tuned local model (e.g.
 // llama3.2:3b) while DevAI keeps its code-tuned DEVAI_MODEL.
 const aiModel = (): string => oraLocalModelEnabled()
-  ? (process.env.ORA_AI_MODEL || devaiModel)
+  ? oraModel
   : (process.env.AI_INTEGRATIONS_OPENAI_MODEL || "gpt-4o-mini");
 // Ollama honours `max_tokens`; the hosted provider uses `max_completion_tokens`.
 const aiTokenLimit = (maxTokens: number): Record<string, number> =>
   oraLocalModelEnabled() ? { max_tokens: maxTokens } : { max_completion_tokens: maxTokens };
+// Small local models tend to wrap JSON in prose; ask Ollama for JSON mode and a
+// deterministic sample so the portfolio / news endpoints don't fall back to
+// computed text.
+const aiJsonMode = (): { response_format?: { type: "json_object" }; temperature?: number } =>
+  oraLocalModelEnabled() ? { response_format: { type: "json_object" }, temperature: 0 } : {};
+// Local models also need an explicit "JSON only, quote every string" instruction
+// on top of the route's prompt, otherwise they emit unquoted prose values.
+const aiJsonMessages = (system: string, user: string) => oraLocalModelEnabled()
+  ? [
+      { role: "system" as const, content: `${system}\n\nYou are a JSON API: reply with one valid JSON object only, no prose, and quote every string value.` },
+      { role: "user" as const, content: user },
+    ]
+  : [
+      { role: "system" as const, content: system },
+      { role: "user" as const, content: user },
+    ];
 
 // ── Safety middleware: hard deadline on every AI route (120 s when a local
 // model is serving, 25 s for the hosted provider) ────────────────────────────
@@ -287,7 +303,7 @@ router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) 
 
   const useLocalOllama = isDevaiOllamaEnabled();
   if (useLocalOllama) {
-    const status = await getDevaiOllamaStatus();
+    const status = await getDevaiOllamaStatus(aiModel());
     if (!status.reachable || !status.modelAvailable) {
       res.status(503).json({ error: status.error ?? "The local AI model is not ready." });
       return;
@@ -334,7 +350,7 @@ router.post("/ai/conversations/:id/messages", aiChatRateLimit, async (req, res) 
     let fullResponse = "";
 
     const streamResult: unknown = useLocalOllama
-      ? await createDevaiOllamaStream(chatMessages, 2048)
+      ? await createDevaiOllamaStream(chatMessages, 2048, aiModel())
       : await openai.chat.completions.create({
           model: aiModel(),
           max_completion_tokens: 8192,
@@ -678,11 +694,9 @@ Consider: diversification, concentration risk, exposure to volatile vs stable as
 
     const response = await openai.chat.completions.create({
       model: aiModel(),
-      ...aiTokenLimit(512),
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: prompt },
-      ],
+      ...aiTokenLimit(1024),
+      ...aiJsonMode(),
+      messages: aiJsonMessages(SYSTEM_PROMPT, prompt),
     }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
 
     const raw2 = response.choices[0]?.message?.content ?? "";
@@ -691,9 +705,28 @@ Consider: diversification, concentration risk, exposure to volatile vs stable as
 
     if (!parsed) throw new Error("No JSON in response");
 
-    portfolioCache.set(fingerprint, { content: JSON.stringify(parsed), ts: Date.now() });
+    // Small local models sometimes return the right keys with the wrong types,
+    // which used to leak straight into the response (e.g. bullets as a number).
+    const bullets = Array.isArray(parsed.bullets)
+      ? parsed.bullets.filter((b: unknown): b is string => typeof b === "string" && b.trim().length > 0)
+      : [];
+    if (bullets.length === 0) throw new Error("Model returned no usable bullets");
+
+    const result = {
+      score: Number.isFinite(Number(parsed.score))
+        ? Math.max(0, Math.min(100, Math.round(Number(parsed.score))))
+        : score,
+      riskLevel: ["low", "medium", "high"].includes(parsed.riskLevel) ? parsed.riskLevel : riskLevel,
+      summary: typeof parsed.summary === "string" && parsed.summary.trim()
+        ? parsed.summary
+        : `Portfolio spans ${holdings.length} assets.`,
+      bullets,
+      sentiment: ["bullish", "bearish", "neutral"].includes(parsed.sentiment) ? parsed.sentiment : "neutral",
+    };
+
+    portfolioCache.set(fingerprint, { content: JSON.stringify(result), ts: Date.now() });
     recordAiSuccess();
-    res.json({ ...parsed, cached: false });
+    res.json({ ...result, cached: false });
   } catch (err: any) {
     tripCircuitBreaker(err);
     logger.warn({ err: err?.message }, "AI portfolio analysis failed — serving computed fallback");
@@ -748,11 +781,9 @@ Be specific to ${symbol}'s actual situation. Focus on: ecosystem developments, i
 
     const response = await openai.chat.completions.create({
       model: aiModel(),
-      ...aiTokenLimit(512),
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: prompt },
-      ],
+      ...aiTokenLimit(1024),
+      ...aiJsonMode(),
+      messages: aiJsonMessages(SYSTEM_PROMPT, prompt),
     }, { signal: AbortSignal.timeout(aiTimeoutMs()) });
 
     const raw2 = response.choices[0]?.message?.content ?? "";

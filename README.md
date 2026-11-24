@@ -244,6 +244,33 @@ PORT=20180 pnpm --filter @workspace/bsv-dex run dev
 | `OPENAI_API_KEY` | AI analysis and image generation |
 | `STRIPE_SECRET_KEY` | Fiat on-ramp |
 
+### Local AI (Ollama)
+
+Ora AI and DevAI run without a hosted model key when a local [Ollama](https://ollama.com) model is available. Everything below is optional and documented in `.env.example`.
+
+```bash
+# 1. Install Ollama and start the service on loopback
+curl -fsSL https://ollama.com/install.sh | sh
+OLLAMA_HOST=127.0.0.1:11434 ollama serve
+
+# 2. Pull the model tag you want to use (must match the env var exactly)
+ollama pull llama3.2:3b        # Ora AI chat
+ollama pull qwen2.5-coder:1.5b # DevAI (coding model)
+```
+
+| Variable | Description |
+|---|---|
+| `DEVAI_OLLAMA_ENABLED` | `true` serves Ora AI and DevAI from local Ollama instead of a hosted AI key |
+| `DEVAI_OLLAMA_BASE_URL` | Ollama OpenAI-compatible base URL (loopback only, e.g. `http://127.0.0.1:11434/v1`) |
+| `DEVAI_MODEL` | Tag DevAI uses (default `qwen2.5-coder:1.5b`) |
+| `ORA_AI_MODEL` | Tag Ora AI uses (default: same as `DEVAI_MODEL`) |
+
+Notes:
+- The tag must be pulled first; otherwise the AI endpoints answer `503 Model <tag> is not installed in local Ollama`.
+- `/api/health` reports `ai-provider` as `healthy` once the local model is the provider.
+- If neither a hosted AI key nor a local model is configured, AI endpoints return `503 AI_PROVIDER_NOT_CONFIGURED`.
+- `start.mjs` autostarts `ollama serve` when `DEVAI_OLLAMA_ENABLED=true` and at least 6 GiB of memory headroom is free.
+
 ---
 
 ## Security

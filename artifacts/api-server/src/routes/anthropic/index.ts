@@ -6,6 +6,7 @@ import {
   createDevaiOllamaStream,
   getDevaiOllamaStatus,
   isDevaiOllamaEnabled,
+  oraModel,
   type DevAiChatMessage,
 } from "@workspace/integrations-openai-ai-server";
 import { eq, asc, desc } from "drizzle-orm";
@@ -185,7 +186,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
 
     const useLocalOllama = isDevaiOllamaEnabled();
     if (useLocalOllama) {
-      const status = await getDevaiOllamaStatus();
+      const status = await getDevaiOllamaStatus(oraModel);
       if (!status.reachable || !status.modelAvailable) {
         res.status(503).json({ error: status.error ?? "The local AI model is not ready." });
         return;
@@ -219,7 +220,7 @@ router.post("/anthropic/conversations/:id/messages", aiChatRateLimit, async (req
         { role: "system", content: systemPrompt },
         ...chatMessages,
       ];
-      const stream = await createDevaiOllamaStream(ollamaMessages, 2048);
+      const stream = await createDevaiOllamaStream(ollamaMessages, 2048, oraModel);
       for await (const chunk of stream) {
         const text = chunk.choices[0]?.delta?.content;
         if (text) {

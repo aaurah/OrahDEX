@@ -15,6 +15,9 @@ export const openai = new OpenAI({
 // Local OrahDEX chats use a separate, loopback-only Ollama client so they do
 // not depend on the optional Replit AI Integration or a hosted model key.
 export const devaiModel = (process.env.DEVAI_MODEL || "qwen2.5-coder:1.5b").trim() || "qwen2.5-coder:1.5b";
+// Ora AI (the trading assistant) can use a chat-tuned tag while DevAI keeps its
+// code-tuned model; both run on the same local Ollama service.
+export const oraModel = (process.env.ORA_AI_MODEL || devaiModel).trim() || devaiModel;
 export const devaiOllamaBaseUrl = (process.env.DEVAI_OLLAMA_BASE_URL || "http://127.0.0.1:11434/v1").replace(/\/+$/, "");
 const devaiUrl = new URL(devaiOllamaBaseUrl);
 if (
@@ -42,7 +45,7 @@ export interface DevAiChatMessage {
 
 export const isDevaiOllamaEnabled = () => process.env.DEVAI_OLLAMA_ENABLED === "true";
 
-export async function getDevaiOllamaStatus() {
+export async function getDevaiOllamaStatus(model: string = devaiModel) {
   const enabled = isDevaiOllamaEnabled();
   try {
     const response = await fetch(`${devaiOllamaServerUrl}/api/tags`, {
@@ -53,7 +56,7 @@ export async function getDevaiOllamaStatus() {
     }
     const data = await response.json() as { models?: Array<{ name?: string }> };
     const models = (data.models ?? []).map((item) => item.name ?? "").filter(Boolean);
-    const modelAvailable = models.some((name) => name === devaiModel || name.startsWith(`${devaiModel}:`));
+    const modelAvailable = models.some((name) => name === model || name.startsWith(`${model}:`));
     return {
       enabled,
       reachable: true,
@@ -62,7 +65,7 @@ export async function getDevaiOllamaStatus() {
         ? "Local Ollama chat is disabled. Enable it only when the VM has enough free memory."
         : modelAvailable
           ? null
-          : `Model ${devaiModel} is not installed in local Ollama.`,
+          : `Model ${model} is not installed in local Ollama.`,
     };
   } catch {
     return {
@@ -77,14 +80,15 @@ export async function getDevaiOllamaStatus() {
 export async function createDevaiOllamaStream(
   messages: DevAiChatMessage[],
   maxTokens = 2048,
+  model: string = devaiModel,
 ): Promise<AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
-  const status = await getDevaiOllamaStatus();
+  const status = await getDevaiOllamaStatus(model);
   if (!status.enabled) throw new Error("Local Ollama chat is disabled.");
   if (!status.reachable) throw new Error("Local Ollama is not reachable on this VM.");
-  if (!status.modelAvailable) throw new Error(`Model ${devaiModel} is not installed in local Ollama.`);
+  if (!status.modelAvailable) throw new Error(`Model ${model} is not installed in local Ollama.`);
 
   const result: unknown = await devaiOpenAI.chat.completions.create({
-    model: devaiModel,
+    model,
     max_tokens: Math.min(maxTokens, 1024),
     messages,
     options: { num_ctx: 2048 },

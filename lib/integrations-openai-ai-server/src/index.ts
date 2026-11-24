@@ -2,6 +2,7 @@ export {
   openai,
   devaiOpenAI,
   devaiModel,
+  oraModel,
   devaiOllamaBaseUrl,
   devaiOllamaServerUrl,
   isDevaiOllamaEnabled,

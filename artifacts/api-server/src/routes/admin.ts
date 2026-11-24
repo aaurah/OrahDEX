@@ -425,7 +425,7 @@ router.get("/auth/totp-uri", requireAdminToken, async (_req, res) => {
     res.status(503).json({ error: "ADMIN_TOTP_SECRET is not configured on this server." });
     return;
   }
-  const email   = process.env.ADMIN_EMAIL        || "admin@orahdex.app";
+  const email   = process.env.ADMIN_EMAIL        || "admin@orahdex.com";
   const issuer  = "OrahDEX";
   const params  = new URLSearchParams({ secret, issuer, algorithm: "SHA1", digits: "6", period: "30" });
   const uri     = `otpauth://totp/${encodeURIComponent(issuer + ":" + email)}?${params}`;
